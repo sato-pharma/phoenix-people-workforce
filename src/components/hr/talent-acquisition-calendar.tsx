@@ -38,14 +38,17 @@
  * forbidden corner. Nothing below has a `rounded-*` class except the legend and mark dots and the
  * panel's own icon medallion, which are the same three exceptions `hr-command-charts.tsx` carries.
  *
- * AND THE WEEK IS A RULED SHEET, not a grid of boxes — see `InterviewRow`, where the owner's
- * 2026-10-13 "godmode heavy full premium polish" landed and what it replaced is written down.
+ * AND THE WEEK IS THE INTERVIEW CALENDAR'S OWN GRID — the half-hour slot table the whole
+ * recruitment team books in, not a second calendar invented for this page. The owner's 2026-10-13
+ * "i want her calender to show like real calender" and his "AUDIT THE INTERVIEW CALENDER" the same
+ * day both landed in `WeekSlotTable`, where what they replaced is written down in full.
  *
  * NEVER A HORIZONTAL SCROLL (owner's golden rule). No `min-width` and no `overflow-x-auto`
  * anywhere. The month is a `grid-cols-7` whose cells get narrower, never wider; at 375px each day
- * shows its marks as counted dots and from `sm` up it shows their names, wrapped. The week strip is
- * one column on a phone and five from `lg` up — a five-column week at 375px would be 75px a day,
- * which cannot hold a name without truncating it, and truncation is forbidden.
+ * shows its marks as counted dots and from `sm` up it shows their names, wrapped. The week is a
+ * `table-fixed` with a `colgroup`, so its columns divide the width they are given; below `md` it is
+ * one card per day, which is the sibling's own answer and the owner's desktop-tables/mobile-cards
+ * rule — five time columns at 375px would be 66px a day, which cannot hold a name without cutting it.
  */
 
 import {
@@ -67,17 +70,28 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { InterviewBooking } from "@/lib/recruitment/interview-calendar-types";
 import {
+  adminPanelDepthClassName,
+  adminPanelHeaderClassName,
+} from "@/components/admin/admin-design-tokens";
+import {
+  bookingsInSlot,
   buildWeekDays,
+  outsideWorkdayInterviews,
   toTalentInterview,
   type TalentCalendar,
   type TalentCalendarDay,
   type TalentInterview,
+  type TalentJoiner,
   type TalentMonthMark,
 } from "@/lib/hr/talent-acquisition-logic";
 import {
   addDays,
   formatShortDate,
+  formatTimeOfDay,
   formatWeekRange,
+  SLOT_MINUTES,
+  slotStarts,
+  weekdayName,
   weekdayShort,
 } from "@/lib/recruitment/interview-calendar-week";
 
@@ -169,135 +183,403 @@ function CouldNotLoad({ what }: { what: string }) {
 }
 
 /**
- * 🔴 THE WEEK IS A RULED SHEET, NOT A GRID OF CARDS IN A GRID OF CARDS — the owner, 2026-10-13,
- * sending the week back with one instruction: "godmode heavy full premium polish".
+ * 🔴 HER WEEK IS THE INTERVIEW CALENDAR'S OWN GRID — the owner, 13 October 2026, after looking at
+ * both: "AUDIT THE INTERVIEW CALENDER".
  *
- * WHAT HE WAS ACTUALLY LOOKING AT. Every booking was a bordered white box, inside a bordered white
- * column, inside the white panel — three nested frames around one line of type, with a second
- * bordered chip for the platform inside the innermost one. Five boxes down a column drew ten
- * hairlines that said nothing, and a day with one booking read as a card that had failed to fill.
- * It is the same fault he burned the notice band down for on 2026-10-12 ("a fucking oven"), and it
- * has the same answer: stop framing each fact and start RULING them.
+ * WHAT THIS REPLACED, AND WHY IT HAD TO GO. Between those two instructions this panel drew a week
+ * of its own invention: a time canvas at 84px an hour, every booking absolutely positioned by its
+ * start minute and sized by its duration, overlaps laned side by side, a 48px rail of 9px hours.
+ * It was a competent calendar and it was the wrong one. `interview-calendar-view.tsx` already holds
+ * THE week grid of this product — the one the whole recruitment team books in every day — and the
+ * owner's standing rule is that new UI wears its sibling's exact design identity and never invents
+ * a one-off look. Two calendars in one product is how two calendars start disagreeing.
  *
- * SO A FRAME IS NOW SPENT ONLY WHERE IT CARRIES MEANING. One hairline frame around the whole week,
- * a 1px rule between the days (the grid's own `gap-px` over a hairline ground — no element draws a
- * side border, so no rule is ever doubled), and inside a day the bookings are separated by rules,
- * not boxed. What is left over goes into the things that have to be read at a glance: the time in
- * orange tabular figures, the candidate in ink, the interviewer and the platform in faint caps that
- * step back. A row's state is its left margin edge and nothing else — the house ink rule refuses
- * filled areas, and a tinted box per booking was precisely that.
+ * SO EVERY DEVICE BELOW IS THAT FILE'S, NOT A LOCAL ONE:
  *
- * TODAY IS A COLUMN, NOT A BADGE. It takes the band's own 2px orange edge along its head, a faint
- * paper ground, and its date numeral in orange — read in one glance from the top of the sheet,
- * where a bordered "TODAY" chip had to be found and then read.
+ *   A `w-full table-fixed` TABLE with a `colgroup` — a `w-[5.75rem]` time column and one column per
+ *   day. The fits-the-screen golden rule is then structural rather than something to measure: the
+ *   columns divide the width they are given and there is no `min-width` to overflow.
+ *   HALF-HOUR ROWS, 9:00 to 17:00 (`slotStarts()`), each `h-[46px]`, odd rows on `bg-slate-50/70`.
+ *   Every row is a SLOT she can book into, which is what makes an empty sheet read as a booking
+ *   sheet rather than as the empty paint the owner rejected on the canvas version.
+ *   THE SHARED DARK HEAD BAND (`adminPanelHeaderClassName`), today's column in `bg-orange-600` —
+ *   the same band the Approvals Hub and the Coverage Report wear.
+ *   THE BOOKING CHIP — a 3px `orange-600` left edge on `bg-orange-100`, the name at 12px bold, the
+ *   interviewer under it, the time and platform under that. Byte for byte the sibling's chip.
+ *   A CONTINUATION BAR for an interview still running through a later slot, so an hour-long booking
+ *   is one interview over two rows and not two interviews.
+ *
+ * WHAT IS NOT THE SIBLING'S, AND WHY EACH ONE EARNED ITS PLACE:
+ *
+ *   THE ALL-DAY ROW. Joining days have no time — a start date is a day, not an appointment — and
+ *   the interview calendar has no such thing to copy. It is drawn only when the week holds one.
+ *   THE NOW LINE, inside today's current cell at the right fraction of it. The sibling has no clock
+ *   at all; this is her landing page, where "where am I in the day" is the question it answers.
+ *   THE OUTSIDE-THE-WORKING-DAY ROW (`outsideWorkdayInterviews`). A fixed 9-to-5 grid has no row
+ *   for an 8:30 screening, and a booking a diary does not draw is worse than no diary.
+ *
+ * A PHONE GETS CARDS, which is both the sibling's answer (`md:hidden`) and the owner's standing
+ * rule — desktop shows full tables, mobile gets cards. Five time columns at 375px would be 66px a
+ * day, which cannot hold a candidate's name without cutting it, and cutting text is forbidden.
  */
-function InterviewRow({ interview }: { interview: TalentInterview }) {
+
+/**
+ * What minute of the day it is IN CAIRO, whatever the reader's own clock says.
+ *
+ * The whole calendar is a Cairo calendar — the bookings, the week, `todayKey` the server sent — so a
+ * now line taken from `Date.getHours()` would stand in the wrong place for anybody whose laptop is
+ * on another timezone, and in the wrong place for everybody during a Cairo DST change.
+ */
+function cairoMinutesOfDay(at: Date): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    timeZone: "Africa/Cairo",
+  }).formatToParts(at);
+  const read = (type: "hour" | "minute") =>
+    Number(parts.find((part) => part.type === type)?.value ?? "0");
+  // `en-GB` with `hour12: false` answers "24" at midnight, not "00".
+  return (read("hour") % 24) * 60 + read("minute");
+}
+
+/** How tall one half-hour row is, in CSS pixels — the sibling's `h-[46px]`, named for the now line. */
+const SLOT_PX = 46;
+
+/**
+ * One interview in a slot cell — the interview calendar's own `BookingChip`.
+ *
+ * It is a `Link` rather than that file's `button` for the one reason that file cannot be copied
+ * outright: there is no dialog on this page to open. The href is the calendar itself, opened on
+ * this booking, so a click lands exactly where the chip looks like it leads.
+ */
+function SlotBooking({ interview }: { interview: TalentInterview }) {
   return (
     <Link
-      className="group/row relative block border-b border-slate-100 py-2 pl-4 pr-3 transition-colors last:border-b-0 hover:bg-orange-50/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-orange-500"
+      className="block w-full border-l-[3px] border-l-orange-600 bg-orange-100 px-1.5 py-1 text-left transition-colors hover:bg-orange-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-orange-700"
       href={interview.href}
+      title={`Open ${interview.candidateName}'s interview`}
     >
-      {/* THE MARGIN EDGE IS THE ROW'S WHOLE FRAME. A hairline that warms on hover says "this is a
-          row and it is pressable" in one pixel, where a border said it in four and boxed the day. */}
-      <span
-        aria-hidden="true"
-        className="absolute inset-y-[5px] left-0 w-px bg-slate-200 transition-colors group-hover/row:bg-orange-400"
-      />
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="whitespace-nowrap text-[9.5px] font-black uppercase tracking-[0.1em] text-orange-600 tabular-nums">
-          {interview.timeLabel}
-        </span>
-        {/* The platform is a WORD, not a chip. It is the least important thing on the row and a
-            bordered box made it the loudest. */}
-        <span className="whitespace-nowrap text-[8.5px] font-black uppercase tracking-[0.16em] text-slate-300">
-          {interview.platformLabel}
-        </span>
-      </div>
-      <p className="mt-0.5 break-words text-[12px] font-black leading-snug text-slate-900">
+      <span className="block break-words text-[12px] font-bold leading-tight text-slate-900">
         {interview.candidateName}
-      </p>
-      {/* The interviewer is a NAME or the honest absence of one — never a code, and never blank,
-          which would read as "nobody has to be there". */}
-      <p className="mt-0.5 break-words text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">
-        {interview.interviewerName ?? "No interviewer chosen yet"}
-      </p>
+      </span>
+      {/* A NAME or the honest absence of one — never blank, which reads as "nobody has to be there". */}
+      <span className="mt-0.5 block break-words text-[10.5px] font-semibold leading-tight text-slate-700">
+        {interview.interviewerName ?? "No interviewer named"}
+      </span>
+      <span className="mt-0.5 block break-words text-[10.5px] leading-tight text-slate-600">
+        {interview.timeLabel} · {interview.platformLabel}
+      </span>
     </Link>
   );
 }
 
-function DayColumn({ day }: { day: TalentCalendarDay }) {
-  const booked = day.interviews.length + day.joiners.length;
+/** One day's cell in one slot row: what starts here, what is still running, and today's now line. */
+function SlotCell({
+  day,
+  isToday,
+  nowMinutes,
+  slotStartMinutes,
+}: {
+  day: TalentCalendarDay;
+  isToday: boolean;
+  /** The Cairo minute, or null off this week / before the first client tick. */
+  nowMinutes: number | null;
+  slotStartMinutes: number;
+}) {
+  const { running, starting } = bookingsInSlot(day.interviews, slotStartMinutes);
+  const nowHere =
+    nowMinutes !== null
+    && isToday
+    && nowMinutes >= slotStartMinutes
+    && nowMinutes < slotStartMinutes + SLOT_MINUTES;
 
   return (
-    <div className={`min-w-0 ${day.isToday ? "bg-orange-50/45" : "bg-white"}`}>
-      <div className="relative flex items-baseline justify-between gap-x-2 border-b border-slate-200/80 px-3 py-2">
-        {day.isToday ? (
-          // The identity band's own edge, drawn on the day she is standing in.
-          <span aria-hidden="true" className="absolute inset-x-0 top-0 h-0.5 bg-orange-500" />
-        ) : null}
-        <span className="flex min-w-0 items-baseline gap-1.5">
-          <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">
-            {day.shortLabel}
+    <td
+      className={`relative h-[46px] border-r border-slate-200 p-1 align-top last:border-r-0 ${
+        isToday ? "bg-orange-50/40" : ""
+      }`}
+    >
+      {/* THE CONTINUATION, first: an interview that began in an earlier slot and has not ended. A
+          2px bar rather than a second chip — the booking is one booking, and the bar is what says
+          the hour is still occupied. */}
+      {running.map((interview) => (
+        <Link
+          className="mb-1 block h-2 w-full bg-orange-300 transition-colors hover:bg-orange-500"
+          href={interview.href}
+          key={interview.id}
+          title={`${interview.candidateName} — ${interview.timeLabel}`}
+        >
+          <span className="sr-only">
+            {interview.candidateName}, still running at {formatTimeOfDay(slotStartMinutes)}
           </span>
-          <span
-            className={`font-display text-[15px] font-black leading-none tabular-nums ${
-              day.isToday ? "text-orange-600" : "text-slate-900"
-            }`}
-          >
-            {day.dateKey.slice(8)}
-          </span>
+        </Link>
+      ))}
+      <div className="flex flex-col gap-1">
+        {starting.map((interview) => (
+          <SlotBooking interview={interview} key={interview.id} />
+        ))}
+      </div>
+      {/* NOW, at its real fraction of the half hour rather than at the top of it — a line that can
+          only stand on a slot boundary is a line that is wrong for 29 of every 30 minutes. It is
+          client state, so the server's HTML never carries it and nothing can mismatch. */}
+      {nowHere && nowMinutes !== null ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 z-20 h-px bg-orange-600"
+          style={{ top: ((nowMinutes - slotStartMinutes) / SLOT_MINUTES) * SLOT_PX }}
+        >
+          <span className="absolute -left-px -top-[3px] h-[7px] w-[7px] bg-orange-600" />
         </span>
-        {/* TODAY says itself; every other day carries its own figure instead, so the head of a
-            column answers "how much is on" before a single row is read. */}
-        {day.isToday ? (
-          <span className="whitespace-nowrap text-[8.5px] font-black uppercase tracking-[0.18em] text-orange-600">
-            Today
-          </span>
-        ) : booked > 0 ? (
-          <span className="text-[10px] font-black leading-none tabular-nums text-slate-300">
-            {booked}
-          </span>
-        ) : null}
-      </div>
+      ) : null}
+    </td>
+  );
+}
 
-      <div>
-        {/* The joining days first: somebody starting is the fact that governs the day. */}
-        {day.joiners.map((joiner) => (
-          <Link
-            className="group/join relative block border-b border-slate-100 py-2 pl-4 pr-3 transition-colors last:border-b-0 hover:bg-indigo-50/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-orange-500"
-            href={joiner.href}
-            key={joiner.id}
-          >
-            {/* A joining day is a DIFFERENT kind of fact, so it gets a different margin edge — not
-                a different fill. One tinted box per joiner was the ink rule's own counter-example. */}
-            <span
-              aria-hidden="true"
-              className="absolute inset-y-[5px] left-0 w-px bg-indigo-300 transition-colors group-hover/join:bg-indigo-500"
-            />
-            <span className="flex items-center gap-1.5 text-[8.5px] font-black uppercase tracking-[0.16em] text-indigo-500">
-              <UserRoundCheck aria-hidden="true" className="h-3 w-3 shrink-0" />
-              Joins today
-            </span>
-            <p className="mt-0.5 break-words text-[12px] font-black leading-snug text-slate-900">
-              {joiner.name}
-            </p>
-            <p className="mt-0.5 break-words text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">
-              {joiner.title}
-            </p>
-          </Link>
-        ))}
-        {day.interviews.map((interview) => (
-          <InterviewRow interview={interview} key={interview.id} />
-        ))}
-        {day.interviews.length === 0 && day.joiners.length === 0 ? (
-          // Said at the TOP of the column, where the first booking would have been. Centred in the
-          // column it floated in the middle of a tall empty box and made the emptiness the subject.
-          <p className="px-3 py-2.5 text-[9px] font-black uppercase tracking-[0.18em] text-slate-300">
-            Nothing booked
-          </p>
-        ) : null}
-      </div>
+/**
+ * The week, on the interview calendar's grid. Desktop only — a phone gets `WeekDayCards`.
+ */
+function WeekSlotTable({
+  days,
+  nowMinutes,
+  todayKey,
+}: {
+  days: readonly TalentCalendarDay[];
+  nowMinutes: number | null;
+  todayKey: string;
+}) {
+  const slots = slotStarts();
+  const anyJoiner = days.some((day) => day.joiners.length > 0);
+  const outside = days.map((day) => ({
+    day,
+    interviews: outsideWorkdayInterviews(day.interviews),
+  }));
+  const anyOutside = outside.some((one) => one.interviews.length > 0);
+
+  return (
+    <div
+      className={`hidden border border-slate-200 bg-white md:block ${adminPanelDepthClassName}`}
+    >
+      <table className="w-full table-fixed border-collapse">
+        <colgroup>
+          <col className="w-[5.75rem]" />
+          {days.map((day) => (
+            <col key={day.dateKey} />
+          ))}
+        </colgroup>
+        <thead>
+          <tr className={`${adminPanelHeaderClassName} text-white`}>
+            <th
+              className="border-r border-slate-700 px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide"
+              scope="col"
+            >
+              Time
+            </th>
+            {days.map((day) => (
+              <th
+                className={`border-r border-slate-700 px-2 py-2 text-left last:border-r-0 ${
+                  day.dateKey === todayKey ? "bg-orange-600" : ""
+                }`}
+                key={day.dateKey}
+                scope="col"
+              >
+                <span className="block text-[13px] font-bold">{weekdayName(day.dateKey)}</span>
+                <span className="block text-[11px] font-semibold opacity-80">
+                  {formatShortDate(day.dateKey)}
+                </span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {/* THE ALL-DAY ROW, and only when something is in it. A permanent empty strip above the
+              hours is a frame that says nothing — the fault he burned down. */}
+          {anyJoiner ? (
+            <tr className="border-t border-slate-200">
+              <th
+                className="border-r border-slate-200 px-2 py-1.5 text-left align-top text-[11px] font-bold uppercase tracking-wide text-slate-500"
+                scope="row"
+              >
+                All day
+              </th>
+              {days.map((day) => (
+                <td
+                  className={`border-r border-slate-200 p-1 align-top last:border-r-0 ${
+                    day.dateKey === todayKey ? "bg-orange-50/40" : ""
+                  }`}
+                  key={day.dateKey}
+                >
+                  <div className="flex flex-col gap-1">
+                    {day.joiners.map((joiner) => (
+                      <JoinerChip joiner={joiner} key={joiner.id} />
+                    ))}
+                  </div>
+                </td>
+              ))}
+            </tr>
+          ) : null}
+          {slots.map((minutes, rowIndex) => (
+            <tr
+              className={`border-t border-slate-200 ${rowIndex % 2 === 1 ? "bg-slate-50/70" : ""}`}
+              key={minutes}
+            >
+              <th
+                className="border-r border-slate-200 px-2 py-1.5 text-left align-top text-[12px] font-semibold tabular-nums text-slate-500"
+                scope="row"
+              >
+                {formatTimeOfDay(minutes)}
+              </th>
+              {days.map((day) => (
+                <SlotCell
+                  day={day}
+                  isToday={day.dateKey === todayKey}
+                  key={day.dateKey}
+                  nowMinutes={nowMinutes}
+                  slotStartMinutes={minutes}
+                />
+              ))}
+            </tr>
+          ))}
+          {/* OUTSIDE THE WORKING DAY — see `outsideWorkdayInterviews`. The grid has no row for an
+              8:30 screening or a 6pm overseas call, and a booking a diary does not draw at all is
+              worse than no diary. */}
+          {anyOutside ? (
+            <tr className="border-t border-slate-200">
+              <th
+                className="border-r border-slate-200 px-2 py-1.5 text-left align-top text-[11px] font-bold uppercase leading-tight tracking-wide text-slate-500"
+                scope="row"
+              >
+                Outside 9–5
+              </th>
+              {outside.map(({ day, interviews }) => (
+                <td
+                  className={`border-r border-slate-200 p-1 align-top last:border-r-0 ${
+                    day.dateKey === todayKey ? "bg-orange-50/40" : ""
+                  }`}
+                  key={day.dateKey}
+                >
+                  <div className="flex flex-col gap-1">
+                    {interviews.map((interview) => (
+                      <SlotBooking interview={interview} key={interview.id} />
+                    ))}
+                  </div>
+                </td>
+              ))}
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
     </div>
+  );
+}
+
+/**
+ * The week on a phone: one card per day, the interview calendar's own mobile answer.
+ *
+ * A day with nothing on it still gets its card and says so in words. A week of five cards, two of
+ * them reading "No interviews", is the shape of her week — five cards that silently skip the quiet
+ * days is a week that looks fuller than it is.
+ */
+function WeekDayCards({
+  days,
+  todayKey,
+}: {
+  days: readonly TalentCalendarDay[];
+  todayKey: string;
+}) {
+  return (
+    <ul className="flex flex-col gap-3 md:hidden">
+      {days.map((day) => {
+        const interviews = [...day.interviews].sort(
+          (left, right) =>
+            left.startMinutes - right.startMinutes
+            || left.candidateName.localeCompare(right.candidateName),
+        );
+        return (
+          <li
+            className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}
+            key={day.dateKey}
+          >
+            <p
+              className={`flex items-baseline justify-between gap-2 px-3 py-2 text-white ${
+                day.dateKey === todayKey ? "bg-orange-600" : "bg-slate-900"
+              }`}
+            >
+              <span className="text-[14px] font-bold">{weekdayName(day.dateKey)}</span>
+              <span className="text-[12px] font-semibold opacity-80">
+                {formatShortDate(day.dateKey)}
+              </span>
+            </p>
+            {day.joiners.length > 0 ? (
+              <div className="flex flex-col gap-1 border-b border-slate-100 p-2">
+                {day.joiners.map((joiner) => (
+                  <JoinerChip joiner={joiner} key={joiner.id} />
+                ))}
+              </div>
+            ) : null}
+            {interviews.length === 0 ? (
+              <p className="px-3 py-3 text-[12px] text-slate-500">
+                {day.joiners.length > 0 ? "No interviews." : "Nothing booked."}
+              </p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {interviews.map((interview) => (
+                  <li key={interview.id}>
+                    <Link
+                      className="flex w-full items-start gap-3 bg-orange-50 px-3 py-2.5 text-left transition-colors hover:bg-orange-100"
+                      href={interview.href}
+                    >
+                      <span className="w-[4.75rem] shrink-0 text-[12px] font-bold tabular-nums text-slate-700">
+                        {formatTimeOfDay(interview.startMinutes)}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block break-words text-[12px] font-bold leading-tight text-slate-900">
+                          {interview.candidateName}
+                        </span>
+                        <span className="mt-0.5 block break-words text-[10.5px] font-semibold leading-tight text-slate-700">
+                          {interview.interviewerName ?? "No interviewer named"}
+                        </span>
+                        <span className="mt-0.5 block break-words text-[10.5px] leading-tight text-slate-600">
+                          {interview.timeLabel} · {interview.platformLabel}
+                        </span>
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * A joining day in the all-day row — the booking chip's own shape in indigo.
+ *
+ * SAME SHAPE, DIFFERENT COLOUR, is the point. A start date and an interview are two different kinds
+ * of fact, so the edge changes colour and the word "Joins" names it; everything else — the 3px left
+ * edge, the flat 100-weight fill, the 12px name — is the chip beside it, because two chips on one
+ * sheet that differ in shape read as two unrelated systems.
+ */
+function JoinerChip({ joiner }: { joiner: TalentJoiner }) {
+  return (
+    <Link
+      className="block w-full border-l-[3px] border-l-indigo-600 bg-indigo-100 px-1.5 py-1 text-left transition-colors hover:bg-indigo-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-indigo-700"
+      href={joiner.href}
+    >
+      <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-indigo-700">
+        <UserRoundCheck aria-hidden="true" className="h-3 w-3 shrink-0" />
+        Joins
+      </span>
+      <span className="mt-0.5 block break-words text-[12px] font-bold leading-tight text-slate-900">
+        {joiner.name}
+      </span>
+      <span className="mt-0.5 block break-words text-[10.5px] font-semibold leading-tight text-slate-700">
+        {joiner.title}
+      </span>
+    </Link>
   );
 }
 
@@ -473,6 +755,32 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
   const todayKey = calendar.todayKey;
   const showingThisWeek = weekDaysState.some((day) => day.dateKey === todayKey);
 
+  /**
+   * The current Cairo minute, for the now line — CLIENT-ONLY, and deliberately absent on the server.
+   *
+   * A clock rendered on the server is the minute the page was BUILT, which would then sit frozen on
+   * the grid for as long as the tab is open and be wrong for every later reader of a cached page. It
+   * is read on a timeout rather than in the effect body so no setter runs synchronously during the
+   * effect (the rule that failed `checks` once already on this component).
+   */
+  const [nowMinutes, setNowMinutes] = useState<number | null>(null);
+  useEffect(() => {
+    const read = () => setNowMinutes(cairoMinutesOfDay(new Date()));
+    const first = setTimeout(read, 0);
+    const id = setInterval(read, 30_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(id);
+    };
+  }, []);
+
+  /**
+   * The minute the grid draws its now line at — null on any week that does not hold today.
+   *
+   * A "now" drawn on next week's sheet is a lie, and it is the kind a tired reader believes.
+   */
+  const gridNowMinutes = showingThisWeek ? nowMinutes : null;
+
   return (
     <section className="border-t border-slate-100" id="hr-group-calendar">
       <div className="flex flex-wrap items-start gap-3 border-b border-slate-200/70 bg-gradient-to-b from-white to-slate-50/60 px-5 py-4">
@@ -484,9 +792,10 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
             The calendar
           </h2>
           <p className="mt-1 break-words text-[11px] font-semibold leading-relaxed text-slate-500">
-            Your interview week, your own next three weeks, and the company month — holidays, leave,
-            events and birthdays, with every interview and joining day laid over them. The week
-            re-reads itself every minute while you are looking at it.
+            Your interview week on a real timetable — every booking sits at the hour it runs and is
+            as tall as it is long — then your own next three weeks, and the company month with its
+            holidays, leave, events and birthdays. The week re-reads itself every minute while you
+            are looking at it, and the orange line is now.
           </p>
         </div>
 
@@ -566,17 +875,24 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
                   Showing only the interviews you are on
                 </p>
               ) : null}
-              {/* ONE SHEET. The 1px rules between the days are the grid's own `gap-px` showing the
-                  hairline ground through, so a rule is drawn exactly once at every breakpoint and no
-                  column has to carry a responsive border of its own. `items-stretch` is deliberate:
-                  the days share one baseline and one foot, which is what makes it read as a week
-                  rather than as five cards of different heights. */}
+              {/* A week with nothing in it is said in WORDS as well as drawn. An empty grid is the
+                  honest picture of a free week, but it is also what a failed read would look like
+                  if `interviewsLoaded` ever stopped being checked — so the week says which it is. */}
+              {weekDaysState.every(
+                (day) => day.interviews.length === 0 && day.joiners.length === 0,
+              ) ? (
+                <p className="border-b border-slate-200/70 bg-slate-50/60 px-5 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+                  Nothing booked this week
+                </p>
+              ) : null}
+
               <div className="p-5">
-                <div className="grid grid-cols-1 gap-px border border-slate-200 bg-slate-200/80 shadow-[0_1px_2px_rgba(15,23,42,0.045)] sm:grid-cols-2 lg:grid-cols-5">
-                  {weekDaysState.map((day) => (
-                    <DayColumn day={day} key={day.dateKey} />
-                  ))}
-                </div>
+                <WeekSlotTable
+                  days={weekDaysState}
+                  nowMinutes={gridNowMinutes}
+                  todayKey={todayKey}
+                />
+                <WeekDayCards days={weekDaysState} todayKey={todayKey} />
               </div>
             </>
           ) : (
