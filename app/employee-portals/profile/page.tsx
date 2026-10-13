@@ -137,6 +137,7 @@ export default async function EmployeePortalProfilePage() {
     sharedInterviewCalendar,
     phoenixCrm.crm,
     phoenixCrm.forecast,
+    phoenixCrm.placeChecks,
   );
 
   const employmentRows: Array<{

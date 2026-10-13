@@ -21,6 +21,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import {
@@ -36,8 +37,16 @@ import {
   crmTextareaClassName,
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
+import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
-import type { ValidatedPlaceRow } from "@/lib/phoenix-crm/view-types";
+import type { PlaceNoteIndex, ValidatedPlaceRow } from "@/lib/phoenix-crm/view-types";
+
+/**
+ * The empty index, for the callers that use this list on its own and know nothing about comments. A
+ * module-level constant rather than an inline `{}` default: a fresh object every render would remount
+ * nothing here but would defeat any memo a later caller adds.
+ */
+const EMPTY_INDEX: PlaceNoteIndex = { integrity: {}, notes: {}, recommendations: {} };
 
 /** What the system read on the signboard, in the Super Admin's words. A verdict, never a decision. */
 const SIGNBOARD_TEXT: Record<NonNullable<ValidatedPlaceRow["signboard"]>["verdict"], string> = {
@@ -283,7 +292,42 @@ function Refuse({ row }: { row: ValidatedPlaceRow }) {
  * then handed rows that are already narrowed, and its own search box would be a second, confusing one.
  * It stays true by default so the component keeps its own search anywhere it is used on its own.
  */
-export function ValidatedPlaceList({ rows, showSearch = true }: { rows: ValidatedPlaceRow[]; showSearch?: boolean }) {
+/**
+ * The last column, both modes together.
+ *
+ * 🔴 `Refuse` IS NOT RENDERED FOR A MANAGER, AND NEITHER IS ITS WARNING. Refusing a validation retires
+ * the place and can send the customer back to To validate — it is a decision, and the decision is the
+ * Super Admin's alone. A manager comments and recommends, and the owner's instruction on 2026-10-13 was
+ * that his screen does not say who makes the call.
+ */
+function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: ValidatedPlaceRow }) {
+  const key = placeNoteSubjectKey("place", row.placeId);
+  return (
+    <div className="min-w-0 space-y-2">
+      {mode === "team" ? null : <Refuse row={row} />}
+      <PlaceCheckNotes
+        integrity={noteIndex.integrity[key] ?? []}
+        mode={mode}
+        notes={noteIndex.notes[key] ?? []}
+        recommendations={noteIndex.recommendations[key] ?? []}
+        subjectId={row.placeId}
+        subjectKind="place"
+      />
+    </div>
+  );
+}
+
+export function ValidatedPlaceList({
+  mode = "company",
+  noteIndex = EMPTY_INDEX,
+  rows,
+  showSearch = true,
+}: {
+  mode?: PlaceCheckNotesMode;
+  noteIndex?: PlaceNoteIndex;
+  rows: ValidatedPlaceRow[];
+  showSearch?: boolean;
+}) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
 
@@ -329,7 +373,7 @@ export function ValidatedPlaceList({ rows, showSearch = true }: { rows: Validate
                   <Who row={row} />
                 </div>
                 <Place row={row} />
-                <Refuse row={row} />
+                <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
               </div>
             ))}
           </CrmCardsOnPhone>
@@ -339,7 +383,7 @@ export function ValidatedPlaceList({ rows, showSearch = true }: { rows: Validate
                 <th className={crmThClassName}>Photo</th>
                 <th className={crmThClassName}>Customer and rep</th>
                 <th className={crmThClassName}>The place they saved</th>
-                <th className={crmThClassName}>Refuse it</th>
+                <th className={crmThClassName}>{mode === "team" ? "Your comment" : "Refuse it"}</th>
               </tr>
             </thead>
             <tbody>
@@ -355,7 +399,7 @@ export function ValidatedPlaceList({ rows, showSearch = true }: { rows: Validate
                     <Place row={row} />
                   </td>
                   <td className={crmTdClassName}>
-                    <Refuse row={row} />
+                    <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
                   </td>
                 </tr>
               ))}

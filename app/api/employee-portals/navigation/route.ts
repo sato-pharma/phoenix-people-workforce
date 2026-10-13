@@ -58,6 +58,7 @@ export async function GET(request: Request) {
       sharedInterviewCalendar,
       phoenixCrm.crm,
       phoenixCrm.forecast,
+      phoenixCrm.placeChecks,
     );
 
     const activeLocks = await locksPromise;

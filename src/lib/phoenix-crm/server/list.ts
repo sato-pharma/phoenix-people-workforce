@@ -116,6 +116,7 @@ import {
   withdrawValidationNotConfirmed,
 } from "@/lib/phoenix-crm/server/validation-reviews";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
+import { loadRepVisiblePlaceNotes, type RepPlaceNote } from "@/lib/phoenix-crm/server/place-notes";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { resolvePinGeography, resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
@@ -410,6 +411,18 @@ export type ListCustomer = {
    * blind (owner, 2026-10-03), so this is about his picture and nothing else.
    */
   validateAgainReason: string | null;
+  /**
+   * The comments written about this customer's place that the writer chose to SHOW HIM — the Super
+   * Admin's or his own district manager's (owner, 2026-10-13). Each carries the writer's ROLE and
+   * never a name, and never a recommendation.
+   *
+   * 🔴 THE ONE DOOR IN GOLDEN RULE #1, AND IT IS SILENT. Until this, nothing a rep received named any
+   * person at all (owner, 2026-10-03: "do not show the rep that a person is accepting or rejecting").
+   * A note he may NOT read never reaches this array: `loadRepVisiblePlaceNotes` filters `rep_visible`
+   * in the query, because a field a browser receives counts as shown. Nothing is notified either — no
+   * bell, no Telegram, no email, no badge — so a check being looked at never pings his phone.
+   */
+  notes: RepPlaceNote[];
   /** The pharmacy pinned as this doctor's primary, or null. */
   primaryPharmacyName: string | null;
   /**
@@ -1187,15 +1200,18 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   const { seat, isTest } = territoryForRead(viewer, seatId, readTestFlag(test));
   const monthStart = monthStartOf(viewer.cairoToday);
   await ensureReferenceCustomers(seat, isTest);
-  const [reference, { customers, placesByCustomer }, requestRows, visitCounts, pharmaciesByCustomer, readinessMap, locationChecks] = await Promise.all([
-    loadReference(seat.seatId, isTest),
-    loadTerritoryCustomers(seat.seatId, isTest),
-    loadRequestRows([seat.seatId], isTest),
-    loadMonthVisitCounts(seat.seatId, isTest, monthStart, viewer.cairoToday),
-    loadCustomerPharmacies(seat.seatId, isTest),
-    isTest ? Promise.resolve(null) : loadReadiness([seat.seatId]),
-    loadLocationChecks(seat.seatId, isTest),
-  ]);
+  const [reference, { customers, placesByCustomer }, requestRows, visitCounts, pharmaciesByCustomer, readinessMap, locationChecks, repNotes] =
+    await Promise.all([
+      loadReference(seat.seatId, isTest),
+      loadTerritoryCustomers(seat.seatId, isTest),
+      loadRequestRows([seat.seatId], isTest),
+      loadMonthVisitCounts(seat.seatId, isTest, monthStart, viewer.cairoToday),
+      loadCustomerPharmacies(seat.seatId, isTest),
+      isTest ? Promise.resolve(null) : loadReadiness([seat.seatId]),
+      loadLocationChecks(seat.seatId, isTest),
+      // The comments somebody chose to show this territory's rep. Rep-visible only, in the query.
+      loadRepVisiblePlaceNotes(seat.seatId, isTest),
+    ]);
 
   // 🔴 WHO ELSE CARRIES THESE CUSTOMERS (owner, 2026-09-30: "if a doctor is shared between this rep
   // and another rep, it was highlighted"). Answered against the iReports360 roster, because only a
@@ -1364,6 +1380,9 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       // it once the customer is validated again.
       reopenedAt: status === "pending" ? text(row.reopened_at) : null,
       validateAgainReason: status === "pending" ? (check?.reason ?? null) : null,
+      // Unlike the two lines above, a comment is NOT "while he still waits": it was written to him
+      // about this customer and it stays readable after the place is validated. Nothing clears it.
+      notes: repNotes.get(customerId) ?? [],
       primaryPharmacyName,
       phone: text(row.phone),
       pharmacyPin: mapPharmacyPin(row, names),

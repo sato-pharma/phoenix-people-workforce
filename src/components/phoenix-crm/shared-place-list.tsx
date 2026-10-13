@@ -27,6 +27,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import {
@@ -44,7 +45,8 @@ import {
   VALIDATION_REASON_REQUIRED,
   type ValidationRefusalReason,
 } from "@/lib/phoenix-crm/validation-feedback";
-import type { SharedPlaceBoardRow } from "@/lib/phoenix-crm/view-types";
+import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
+import type { PlaceNoteIndex, SharedPlaceBoardRow } from "@/lib/phoenix-crm/view-types";
 
 /** What the system read on the sign of the BUILDING. A verdict on the venue's own name, never on a person's. */
 const SIGNBOARD_TEXT: Record<string, string> = {
@@ -222,7 +224,40 @@ function Decision({ row }: { row: SharedPlaceBoardRow }) {
   );
 }
 
-export function SharedPlaceList({ rows }: { rows: SharedPlaceBoardRow[] }) {
+/**
+ * The last column, both modes together.
+ *
+ * 🔴 A MANAGER GETS NO `Decision` AND NOT EVEN THE `Cost` WARNING INSIDE IT. Rejecting a venue retires
+ * it, retires every customer seated in it and sends each of them back to To validate — the heaviest
+ * decision on this page, and the Super Admin's alone. A manager reads the venue, comments on it and
+ * recommends; whether it was already approved, and by whom, is not on his screen (owner, 2026-10-13).
+ */
+function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: SharedPlaceBoardRow }) {
+  const key = placeNoteSubjectKey("shared_place", row.sharedPlaceId);
+  return (
+    <div className="min-w-0 space-y-2">
+      {mode === "team" ? null : <Decision row={row} />}
+      <PlaceCheckNotes
+        integrity={noteIndex.integrity[key] ?? []}
+        mode={mode}
+        notes={noteIndex.notes[key] ?? []}
+        recommendations={noteIndex.recommendations[key] ?? []}
+        subjectId={row.sharedPlaceId}
+        subjectKind="shared_place"
+      />
+    </div>
+  );
+}
+
+export function SharedPlaceList({
+  mode,
+  noteIndex,
+  rows,
+}: {
+  mode: PlaceCheckNotesMode;
+  noteIndex: PlaceNoteIndex;
+  rows: SharedPlaceBoardRow[];
+}) {
   return (
     <>
       <CrmCardsOnPhone>
@@ -233,7 +268,7 @@ export function SharedPlaceList({ rows }: { rows: SharedPlaceBoardRow[] }) {
               <Venue row={row} />
             </div>
             <Where row={row} />
-            <Decision row={row} />
+            <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
           </div>
         ))}
       </CrmCardsOnPhone>
@@ -243,7 +278,7 @@ export function SharedPlaceList({ rows }: { rows: SharedPlaceBoardRow[] }) {
             <th className={crmThClassName}>Photo</th>
             <th className={crmThClassName}>The polyclinic</th>
             <th className={crmThClassName}>Where it was captured</th>
-            <th className={crmThClassName}>Decision</th>
+            <th className={crmThClassName}>{mode === "team" ? "Your comment" : "Decision"}</th>
           </tr>
         </thead>
         <tbody>
@@ -259,7 +294,7 @@ export function SharedPlaceList({ rows }: { rows: SharedPlaceBoardRow[] }) {
                 <Where row={row} />
               </td>
               <td className={crmTdClassName}>
-                <Decision row={row} />
+                <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
               </td>
             </tr>
           ))}

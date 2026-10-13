@@ -280,6 +280,20 @@ export function CustomerScreen({
             {validationRefusalRepText(customer.validateAgainReason) ?? LOCATION_NOT_CONFIRMED_TEXT}
           </CrmNote>
         ) : null}
+        {/* A comment somebody chose to show him about this customer (owner, 2026-10-13). It is the ONE
+            thing in his app that comes from a person rather than the system, and it is exactly this
+            wide: the writer's ROLE — "From the System Administrator" or "From your manager" — the
+            words, and when. Never a name, never a recommendation, and nothing pinged him about it: the
+            server sends only the comments marked visible (`loadRepVisiblePlaceNotes`), so this cannot
+            render one he may not read. */}
+        {customer.notes.map((note) => (
+          <CrmNote className="mt-3" key={note.noteId} title={note.authorText} tone="info">
+            <span className="block break-words" dir="auto">
+              {note.body}
+            </span>
+            <span className="mt-0.5 block text-xs font-semibold text-slate-500">{note.writtenAtText}</span>
+          </CrmNote>
+        ))}
         {seatedPending ? (
           <CrmNote className="mt-3" title="Waiting for this building's timetable" tone="info">
             {seatedBoardOnFile

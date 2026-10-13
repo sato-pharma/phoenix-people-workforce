@@ -17,11 +17,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, CrmTable, crmTdClassName, crmTextareaClassName, crmThClassName } from "@/components/phoenix-crm/ui";
+import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { VALIDATION_NOTE_LABEL, VALIDATION_REASON_REQUIRED, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
-import type { ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
+import type { PlaceNoteIndex, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 
 const REASON_TEXT: Record<NonNullable<ValidationReviewRow["reason"]>, string> = {
   no_confident_listing: "Google has no listing the system is sure is this customer.",
@@ -213,6 +215,26 @@ function Restore({ row }: { row: ValidationReviewRow }) {
   );
 }
 
+/**
+ * A settled row, as the DISTRICT MANAGER reads it (owner, 2026-10-13).
+ *
+ * 🔴 IT NAMES NOBODY AND CARRIES NO NOTE. `decidedByName` is the Super Admin, and the decision note is
+ * his own record of why — the owner's instruction was that the manager's screen does not show that the
+ * final call is the administrator's, so neither appears here. What DOES appear is the one sentence the
+ * rep himself was told about his photograph, because that is the thing the manager has to follow up.
+ * There is no "approve it after all" either: taking a decision back is not his.
+ */
+function Settled({ row }: { row: ValidationReviewRow }) {
+  if (row.status === "pending") return null;
+  return (
+    <div className="min-w-0 space-y-1">
+      <CrmPill tone={row.status === "approved" ? "good" : "warn"}>{row.status === "approved" ? "Validated" : "Sent back"}</CrmPill>
+      {row.decidedAtText ? <p className="break-words text-xs text-slate-500">{row.decidedAtText}</p> : null}
+      {row.refusalLabel ? <p className="break-words text-xs font-semibold text-slate-700">The rep was told: {row.refusalLabel}</p> : null}
+    </div>
+  );
+}
+
 function Decision({ row }: { row: ValidationReviewRow }) {
   const router = useRouter();
   const [note, setNote] = useState("");
@@ -285,7 +307,38 @@ function Decision({ row }: { row: ValidationReviewRow }) {
   );
 }
 
-export function ValidationReviewQueue({ rows }: { rows: ValidationReviewRow[] }) {
+/**
+ * The last column, both modes in one place so the two can never disagree about what a manager sees:
+ * the Super Admin keeps every control he has had since 2026-10-03 and reads what the manager wrote
+ * under it; the manager gets the settled state, his comments and his two recommendation buttons, and
+ * no decision control of any kind.
+ */
+function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: ValidationReviewRow }) {
+  const key = placeNoteSubjectKey("place", row.placeId);
+  return (
+    <div className="min-w-0 space-y-2">
+      {mode === "team" ? <Settled row={row} /> : <Decision row={row} />}
+      <PlaceCheckNotes
+        integrity={noteIndex.integrity[key] ?? []}
+        mode={mode}
+        notes={noteIndex.notes[key] ?? []}
+        recommendations={noteIndex.recommendations[key] ?? []}
+        subjectId={row.placeId}
+        subjectKind="place"
+      />
+    </div>
+  );
+}
+
+export function ValidationReviewQueue({
+  mode,
+  noteIndex,
+  rows,
+}: {
+  mode: PlaceCheckNotesMode;
+  noteIndex: PlaceNoteIndex;
+  rows: ValidationReviewRow[];
+}) {
   return (
     <>
       <CrmCardsOnPhone>
@@ -296,7 +349,7 @@ export function ValidationReviewQueue({ rows }: { rows: ValidationReviewRow[] })
               <Who row={row} />
             </div>
             <Evidence row={row} />
-            <Decision row={row} />
+            <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
           </div>
         ))}
       </CrmCardsOnPhone>
@@ -306,7 +359,7 @@ export function ValidationReviewQueue({ rows }: { rows: ValidationReviewRow[] })
             <th className={crmThClassName}>Photo</th>
             <th className={crmThClassName}>Customer and rep</th>
             <th className={crmThClassName}>Where they stood, and Google</th>
-            <th className={crmThClassName}>Decision</th>
+            <th className={crmThClassName}>{mode === "team" ? "Your comment" : "Decision"}</th>
           </tr>
         </thead>
         <tbody>
@@ -322,7 +375,7 @@ export function ValidationReviewQueue({ rows }: { rows: ValidationReviewRow[] })
                 <Evidence row={row} />
               </td>
               <td className={crmTdClassName}>
-                <Decision row={row} />
+                <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
               </td>
             </tr>
           ))}

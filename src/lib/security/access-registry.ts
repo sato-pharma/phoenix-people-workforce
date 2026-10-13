@@ -887,6 +887,16 @@ export const accessRegistry = [
   // Approving or rejecting a place the Google Maps check could not confirm (owner, 2026-10-03): the
   // Super Admin ALONE — `update` at the route, `canDecideValidationReviews` in the service.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // A comment on a place check, and a manager's recommendation about it (owner, 2026-10-13). NEITHER
+  // decides anything — the decision is still the Super Admin's alone, above.
+  //
+  // 🔴 `approve`, NOT `update`, AND THAT IS THE POINT OF THESE TWO ROUTES. A District Manager holds
+  // phoenix_crm ["read", "create", "approve"] and no `update` at all, so `update` would 403 the one
+  // person they exist for. Gate two is the service (`savePlaceNote` / `savePlaceRecommendation`): the
+  // Super Admin, or a district manager on his OWN team's seats, re-read from the place's own row — so
+  // the RSM, the NSM and the SFE Manager, who all hold `approve`, are refused there.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/place-notes", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/place-notes/recommendation", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // Refusing a validation the check never held — every PM customer, and the AM ones that matched
   // (2026-10-03). The same gate and the same decider; the reject underneath is the one above.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/refuse", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),

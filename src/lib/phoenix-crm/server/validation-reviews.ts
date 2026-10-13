@@ -25,8 +25,8 @@ import { distanceMeters, type GeoPoint } from "@/lib/phoenix-crm/geo";
 import type { GoogleListing, LocationCheckState } from "@/lib/phoenix-crm/google-place-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { callPhoenixCrm, numberOrNull, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { canDecideValidationReviews, placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { callPhoenixCrm, numberOrNull, seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { notifyPhoenixCrm, PHOENIX_CRM_NOTIFICATION_CATEGORY, PHOENIX_CRM_NOTIFICATION_MODULE } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -48,10 +48,14 @@ export const VALIDATION_REVIEWS_PATH = "/admin/field-crm/validation-reviews";
 /** How long a decided review stays on the page beside the waiting ones. */
 const DECIDED_SHOWN_DAYS = 14;
 
-/** The Super Admin, and nobody else (owner, 2026-10-03: "only system admin can approve or reject"). */
-export function canDecideValidationReviews(viewer: PhoenixCrmViewer): boolean {
-  return viewer.isSuperAdmin && viewer.canUpdate && !viewer.isTestPersona;
-}
+/**
+ * The decider, and the seat scope of a Place checks read — BOTH declared in `server/access.ts` and
+ * re-exported here under the names every caller already imports. The reason they cannot live in this
+ * file is written out where they are: one of the four section reads is the venue board in
+ * `server/shared-places.ts`, which this file imports from, so declaring them here and importing them
+ * there would close a cycle.
+ */
+export { canDecideValidationReviews, placeChecksSeatScope } from "@/lib/phoenix-crm/server/access";
 
 function text(value: unknown): string | null {
   const cleaned = typeof value === "string" ? value.trim() : "";
@@ -266,6 +270,13 @@ export type ValidationReviewReading = { lat: number; lon: number; accuracyMeters
 
 export type ValidationReviewRow = {
   reviewId: string;
+  /**
+   * The PLACE this review is about. Carried since 2026-10-13 because a comment and a recommendation
+   * hang off the place, not off the review: a place has exactly one review row for all time
+   * (`phoenix_crm_validation_reviews_place_idx`), while most of the places a manager comments on have
+   * no review row at all — 598 of the module's first 643 had never been looked at by anybody.
+   */
+  placeId: string;
   status: "pending" | "approved" | "rejected";
   kind: "validation" | "added_place";
   isTest: boolean;
@@ -382,18 +393,20 @@ export type ValidationBoardRead<T> = { rows: T[]; capped: boolean };
  * first means a ceiling loses only the oldest — which `capped` then says out loud.
  */
 export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<ValidationBoardRead<ValidationReviewRow>> {
-  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
+  const seats = placeChecksSeatScope(viewer);
   const since = new Date(Date.now() - DECIDED_SHOWN_DAYS * 86_400_000).toISOString();
   const read = await readEveryPage<Row>(
-    () =>
-      getSupabaseAdmin()
+    () => {
+      const query = getSupabaseAdmin()
         .from("phoenix_crm_validation_reviews")
         .select(
           "id, seat_id, customer_id, place_id, is_test, kind, status, google, created_by_hr_id, created_at, decided_by_hr_id, decided_at, decision_note, refusal_reason",
         )
-        .or(`status.eq.pending,decided_at.gte.${since}`)
+        .or(`status.eq.pending,decided_at.gte.${since}`);
+      return seatScoped(query, seats)
         .order("created_at", { ascending: false })
-        .order("id", { ascending: false }),
+        .order("id", { ascending: false });
+    },
     { maxRows: 5_000, whenFull: "stop", what: "The place checks waiting and decided", uniqueBy: (row) => String(row.id) },
   );
   throwIfError(read.error);
@@ -470,6 +483,7 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
       signNames,
       otherSigns,
       refusalLabel: status === "rejected" ? validationRefusalLabel(text(row.refusal_reason)) : null,
+      placeId: String(row.place_id),
       reviewId: String(row.id),
       status,
       kind: row.kind === "added_place" ? "added_place" : "validation",
@@ -673,10 +687,10 @@ export type ValidatedPlaceRow = {
  * first, at a ceiling far above the field, and says so when it does.
  */
 export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<ValidationBoardRead<ValidatedPlaceRow>> {
-  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
+  const seats = placeChecksSeatScope(viewer);
   const read = await readEveryPage<Row>(
-    () =>
-      getSupabaseAdmin()
+    () => {
+      const query = getSupabaseAdmin()
         .from("phoenix_crm_places")
         .select(
           // 🔴 ONE STRING, AND A COLUMN THAT IS NOT THERE YET FAILS THE WHOLE READ. `shared_place_id`
@@ -684,9 +698,11 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
           // production before this file ships.
           "id, seat_id, customer_id, is_test, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, signboard_check, shared_place_id, schedule_check",
         )
-        .eq("status", "active")
+        .eq("status", "active");
+      return seatScoped(query, seats)
         .order("created_at", { ascending: false })
-        .order("id", { ascending: false }),
+        .order("id", { ascending: false });
+    },
     { maxRows: 10_000, whenFull: "stop", what: "The validated places in use", uniqueBy: (row) => String(row.id) },
   );
   throwIfError(read.error);
@@ -901,16 +917,18 @@ export type ReopenedCustomerRow = {
  * where the page lists a row. Paged with a total order, and it stops rather than refuses: it presents.
  */
 export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<ValidationBoardRead<ReopenedCustomerRow>> {
-  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
+  const seats = placeChecksSeatScope(viewer);
   const read = await readEveryPage<Row>(
-    () =>
-      getSupabaseAdmin()
+    () => {
+      const query = getSupabaseAdmin()
         .from("phoenix_crm_customers")
         .select("id, seat_id, name, list_type, is_test, reopened_at")
         .eq("status", "pending")
-        .not("reopened_at", "is", null)
+        .not("reopened_at", "is", null);
+      return seatScoped(query, seats)
         .order("reopened_at", { ascending: true })
-        .order("id", { ascending: true }),
+        .order("id", { ascending: true });
+    },
     { maxRows: 5_000, whenFull: "stop", what: "The customers waiting to be captured again", uniqueBy: (row) => String(row.id) },
   );
   throwIfError(read.error);

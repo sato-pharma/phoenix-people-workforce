@@ -7,6 +7,8 @@ import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { GOOGLE_MATCH_METERS, GOOGLE_STALE_PIN_METERS } from "@/lib/phoenix-crm/google-place-rules";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { loadPlaceCheckIntegrity } from "@/lib/phoenix-crm/server/integrity-board";
+import { loadPlaceNoteIndex } from "@/lib/phoenix-crm/server/place-notes";
 import { loadSharedPlaceBoard } from "@/lib/phoenix-crm/server/shared-places";
 import {
   canDecideValidationReviews,
@@ -56,6 +58,15 @@ export default async function PhoenixCrmValidationReviewsPage() {
     reopened: reopenedRead.capped,
     sharedPlaces: sharedRead.capped,
   };
+  const subjects = {
+    placeIds: [...rows.map((row) => row.placeId), ...validated.map((row) => row.placeId)],
+    sharedPlaceIds: sharedPlaces.map((row) => row.sharedPlaceId),
+  };
+  // Every comment, recommendation and integrity case on this page's subjects — two reads for the whole
+  // page, both keyed by `placeNoteSubjectKey` (owner, 2026-10-13). The evidence read lives in
+  // `server/integrity-board.ts`, which is where a read of the evidence belongs, and is merged in here.
+  const [notes, integrity] = await Promise.all([loadPlaceNoteIndex(subjects), loadPlaceCheckIntegrity(viewer, subjects)]);
+  const noteIndex = { ...notes, integrity };
   const waiting = rows.filter((row) => row.status === "pending");
   const decided = rows.filter((row) => row.status !== "pending");
   // Nobody has ever looked at these — no review row of any status (598 of the first 643, 2026-10-08).
@@ -119,6 +130,8 @@ export default async function PhoenixCrmValidationReviewsPage() {
       <ValidationReviewsBoard
         capped={capped}
         decided={decided}
+        mode="company"
+        noteIndex={noteIndex}
         pending={waiting}
         reopened={reopened}
         sharedPlaces={sharedPlaces}

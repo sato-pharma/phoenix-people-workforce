@@ -124,6 +124,14 @@ export type EmployeePortalNavVisibility = {
    * rep never sees a row that opens onto "not yours to open".
    */
   showDailyForecastTab?: boolean;
+  /**
+   * Place checks — a district manager's own team's place validations, where he comments on one and
+   * recommends validating it or not (owner, 2026-10-13: "in every district manager account, build a
+   * tab in his sidebar that shows the check places only for his team"). NOT a role test, for the same
+   * reason as the two rows above: `phoenixCrmSidebarEntries` answers it with `readsTeamPlaceChecks`,
+   * the very predicate that gates the page, so the row can never open onto a redirect.
+   */
+  showTeamPlaceChecksTab?: boolean;
   // Sales Intelligence (Product / Group Product Managers): line- or product-scoped
   // analytics surfaces that mirror the admin dashboards inside the employee portal.
   showRoiIntelligenceTab?: boolean;
@@ -543,6 +551,7 @@ export function resolveEmployeePortalNavVisibility(
   hasInterviewCalendarAccess?: boolean,
   hasPhoenixCrmEntry?: boolean,
   hasPhoenixCrmForecast?: boolean,
+  hasTeamPlaceChecks?: boolean,
 ): EmployeePortalNavVisibility {
   const resolvedRole = resolvePortalRole(roleLabel, accessRole);
   const normalizedLine = String(employeeLineName ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -915,6 +924,9 @@ export function resolveEmployeePortalNavVisibility(
     showPhoenixCrmTab: hasPhoenixCrmEntry === true,
     // The same module gate, its forecast half — never a role list either.
     showDailyForecastTab: hasPhoenixCrmForecast === true,
+    // And its district-manager half (owner, 2026-10-13). `readsTeamPlaceChecks` answers it, so a
+    // manager whose seat tier changes gains or loses the row without a list here being edited.
+    showTeamPlaceChecksTab: hasTeamPlaceChecks === true,
     showRoiIntelligenceTab,
     // Mirrors PORTAL_SOS_ACTION_ROLES (portal-sos-dashboard.ts). Medical Rep added 2026-09-14 (owner):
     // he sees his own area's pharmacy action lists only, never the distributor dashboard.

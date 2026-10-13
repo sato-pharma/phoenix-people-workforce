@@ -62,6 +62,11 @@ export const LIST_CUSTOMER_BASE: ListCustomer = {
   // A pharmacy's own pin (owner, 2026-10-09) — null here because this base is a DOCTOR, and a doctor
   // can never hold one: the `pharmacy_pin_is_a_pharmacy` check refuses it in the database.
   pharmacyPin: null,
+  // The comments his manager chose to let him read (owner, 2026-10-13). Empty here, and that is the
+  // honest default: `loadRepVisiblePlaceNotes` filters `rep_visible` in the QUERY, so a customer
+  // nobody has commented on — and one whose every comment was marked unseen — arrives with exactly
+  // this.
+  notes: [],
 };
 
 /**

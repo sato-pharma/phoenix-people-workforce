@@ -2085,6 +2085,18 @@ const employeePortalNavigationSectionSeeds = [
       // listed here as well. The real gate is inside the page (the phoenix_crm permission, a
       // territory, and an open line); the coarse permission below only keeps the palette honest.
       { href: "/employee-portals/field-crm", icon: ClipboardList, label: "Phoenix CRM", permissions: [{ resource: "phoenix_crm", action: "read" }] },
+      // Place checks — a district manager's own team's place validations (owner, 2026-10-13). Listed
+      // here for the Cmd/Ctrl+K palette and the browser tab's name, exactly as the row above is; the
+      // sidebar row itself is in employee-portal-layout.tsx and the real gate is inside the page
+      // (`readsTeamPlaceChecks` — a district or acting-district seat).
+      //
+      // 🔴 NO `roles:` LIST HERE, DELIBERATELY, exactly like the Phoenix CRM row above it. An ACTING
+      // district manager holds the seat without holding the role name, so a roles list would hide the
+      // palette entry from somebody the page itself admits — and `Manager`, the name that was here
+      // first, holds no phoenix_crm grant at all, so it granted nothing and reddened
+      // `tests/nav-roles-name-only-permission-holders.test.ts`. The permission keeps the palette
+      // honest and the page's own gate is the boundary.
+      { href: "/employee-portals/place-checks", icon: MapPinCheck, label: "Place checks", permissions: [{ resource: "phoenix_crm", action: "read" }] },
     ],
     label: "Leave Management",
   },

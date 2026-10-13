@@ -13,7 +13,12 @@ import { isForbiddenError } from "@/lib/auth/server";
 import { ApiError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { forecastIsOffered } from "@/lib/phoenix-crm/daily-forecast";
-import { readsFieldHeardByProduct, resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import {
+  readsFieldHeardByProduct,
+  readsTeamPlaceChecks,
+  resolvePhoenixCrmViewer,
+  type PhoenixCrmViewer,
+} from "@/lib/phoenix-crm/server/access";
 import { PHOENIX_CRM_PORTAL_BASE, type PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
 import { loadPhoenixCrmOverview, type PhoenixCrmOverview } from "@/lib/phoenix-crm/server/overview";
 
@@ -82,29 +87,37 @@ export function phoenixCrmHasSomethingToSay(viewer: PhoenixCrmViewer): boolean {
 }
 
 /**
- * What the portal sidebar offers of Phoenix CRM: the module's own row (`crm`), and the "Daily
- * Forecast" row under Forecast & Target (`forecast`, owner, 2026-10-01: "put it under forecast in
- * sidebar"). One viewer lookup answers both, because the sidebar is drawn on every portal page.
+ * What the portal sidebar offers of Phoenix CRM: the module's own row (`crm`), the "Daily Forecast"
+ * row under Forecast & Target (`forecast`, owner, 2026-10-01: "put it under forecast in sidebar"), and
+ * the district manager's own "Place checks" row beside the module (`placeChecks`, owner, 2026-10-13:
+ * "in every district manager account, build a tab in his sidebar"). ONE viewer lookup answers all
+ * three, because the sidebar is drawn on every portal page.
  */
-export type PhoenixCrmSidebarEntries = { crm: boolean; forecast: boolean };
+export type PhoenixCrmSidebarEntries = { crm: boolean; forecast: boolean; placeChecks: boolean };
 
-/** Neither row — what a failed, refused or seatless lookup answers. */
-export const NO_PHOENIX_CRM_ENTRIES: PhoenixCrmSidebarEntries = { crm: false, forecast: false };
+/** No row at all — what a failed, refused or seatless lookup answers. */
+export const NO_PHOENIX_CRM_ENTRIES: PhoenixCrmSidebarEntries = { crm: false, forecast: false, placeChecks: false };
 
 /**
  * Whether My Visits and the portal sidebar show the Phoenix CRM row: to a holder of `phoenix_crm`
  * read whom the module has something to say to — see `phoenixCrmHasSomethingToSay`. And whether the
  * sidebar shows the Daily Forecast row: to that same person when the forecast is offered to him
  * (`forecastIsOffered`, the very function that offers the tab), so the row can never open onto a
- * refusal. It never throws: the sidebar renders whatever happens here, and a failure is logged rather
- * than shown as a missing row nobody can explain.
+ * refusal. And whether the sidebar shows Place checks: to a district manager or acting district
+ * manager (`readsTeamPlaceChecks`, the very predicate that gates the page), so that row cannot open
+ * onto a refusal either. It never throws: the sidebar renders whatever happens here, and a failure is
+ * logged rather than shown as a missing row nobody can explain.
+ *
+ * 🔴 NO ROLE LIST HERE, FOR THE THIRD ROW EITHER. The flag is the page's own gate, asked of the same
+ * viewer — a second list of roles in `src/lib/employee-portal/navigation.ts` would drift from it the
+ * first time a seat tier moves, and the sidebar would then offer a tab that redirects.
  */
 export async function phoenixCrmSidebarEntries(access: AccessContext): Promise<PhoenixCrmSidebarEntries> {
   try {
     if (!(await canAccess(access, "phoenix_crm", "read"))) return NO_PHOENIX_CRM_ENTRIES;
     const viewer = await resolvePhoenixCrmViewer(access);
     const crm = phoenixCrmHasSomethingToSay(viewer);
-    return { crm, forecast: crm && forecastIsOffered(viewer) };
+    return { crm, forecast: crm && forecastIsOffered(viewer), placeChecks: readsTeamPlaceChecks(viewer) };
   } catch (error) {
     if ((error instanceof ApiError && error.status < 500) || isForbiddenError(error)) return NO_PHOENIX_CRM_ENTRIES;
     logError("Phoenix CRM entry check failed", {
