@@ -12,6 +12,7 @@ import {
   buildScopedRepRankingExport,
   isRepRankingLine,
 } from "@/lib/sales/closing-rep-ranking-export";
+import { rankingFiltersAreEmpty } from "@/lib/sales/closing-rep-ranking-filter";
 import { loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
 import { loadPortalMonthlyClosing } from "@/lib/sales/monthly-closing-portal";
 import {
@@ -55,17 +56,31 @@ export async function POST(request: Request) {
       scope: "export:sales:closing-rep-ranking",
     });
 
-    // 🔴 THE SELECTION ONLY, AND DELIBERATELY NOT THE SCREEN'S FILTER. Every other closing export
-    // forwards the on-screen filter so the file cannot cover more than the screen; this one must
-    // not, because the two halves of this workbook come from different reads. The ranking itself is
-    // built from `loadPortalMonthlyClosing`'s matrices, which take no row filter at all, while the
-    // channel carve is built from the detail rows. Narrow the rows and the Direct/Stores split
-    // shrinks underneath a ranking that did not move — a workbook that disagrees with itself, with
-    // nothing on it saying which half was filtered. The ranking is a line-wide arrangement of the
-    // reps in one month; it covers the whole of the viewer's scope or it is not that.
+    // 🔴 THE SCREEN'S FILTER TRAVELS WITH IT, AND IT NARROWS THE WHOLE FILE - owner,
+    // 2026-10-13: "I filtered from my admin account and exported - it's supposed to follow my
+    // filter. No, it did not follow my filter. All the shit is exported."
+    //
+    // It used to be dropped here on purpose, and the objection was real: the two halves of this
+    // workbook come from different reads - the ranking from `loadPortalMonthlyClosing`'s matrices,
+    // the channel carve from the detail rows - so narrowing only the rows shrinks Stores and Office
+    // underneath a ranking that did not move. He was shown that and chose to have every filter
+    // narrow everything, so BOTH halves now take the same filter: the rows below, and the matrices
+    // inside the builder (`closing-rep-ranking-filter.ts`, which DROPS cells and never re-derives a
+    // figure, so every number stays a published one). The file then says which rectangle it is, on
+    // the Ranking sheet's own heading and in full on Trust.
     const body = (await request.json().catch(() => ({}))) as {
+      areaCodes?: string[] | null;
       line?: string | null;
       period?: string | null;
+      productCodes?: string[] | null;
+      regionCodes?: string[] | null;
+      search?: string | null;
+    };
+    const filters = {
+      areaCodes: body.areaCodes ?? [],
+      productCodes: body.productCodes ?? [],
+      regionCodes: body.regionCodes ?? [],
+      search: body.search ?? "",
     };
 
     const [availableLines, availablePeriods] = await Promise.all([
@@ -82,7 +97,7 @@ export async function POST(request: Request) {
       period: body.period ?? null,
       availableLines,
       availablePeriods,
-      filters: {},
+      filters,
       unpaged: true,
     });
     if (details.outOfScope) {
@@ -155,6 +170,7 @@ export async function POST(request: Request) {
       access,
       availablePeriods: offered,
       includeUnpublished: readsUnpublished,
+      filters,
       line: details.line,
       period: details.period,
       rows: details.rows,
@@ -163,8 +179,13 @@ export async function POST(request: Request) {
       return Response.json(
         {
           error:
-            `The rep ranking workbook could not be built for this month — the ${details.line}`
-            + " closing has no rows, no seats or no figures for it. Export XLSX still works.",
+            rankingFiltersAreEmpty(filters)
+              ? `The rep ranking workbook could not be built for this month — the ${details.line}`
+                + " closing has no rows, no seats or no figures for it. Export XLSX still works."
+              // The commonest reason a FILTERED export comes back empty, said plainly instead of
+              // the no-data sentence: the filter, not the month, is what left nothing to rank.
+              : `The rep ranking workbook could not be built — your filter leaves no ${details.line}`
+                + " seat with any figure in it. Widen it, or clear it to export the whole line.",
         },
         { status: 409 },
       );

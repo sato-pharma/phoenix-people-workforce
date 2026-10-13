@@ -19,6 +19,13 @@ import {
 import type { ClosingDetailRow } from "@/lib/sales/monthly-closing-details";
 import { loadPortalMonthlyClosing } from "@/lib/sales/monthly-closing-portal";
 import { isRepRankingLine } from "@/lib/sales/closing-rep-ranking-line";
+import {
+  describeRankingFilters,
+  narrowClosingMatrixForRanking,
+  rankingFiltersAreEmpty,
+  type RepRankingFilters,
+  searchedAreaCodes,
+} from "@/lib/sales/closing-rep-ranking-filter";
 import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -123,9 +130,26 @@ export async function buildScopedRepRankingExport(input: {
    * export never passes it: there the publish gate is the whole point.
    */
   includeUnpublished?: boolean;
+  /**
+   * 🔴 THE SCREEN'S FILTER, AND IT NARROWS THE WHOLE FILE — owner, 2026-10-13, after he filtered on
+   * the admin closing screen and got the line back: "it's supposed to follow my filter. No, it did
+   * not follow my filter. All the shit is exported." He was shown the objection that cost the
+   * filter its place here (a narrowed ROW set shrinking the channel split under a ranking that did
+   * not move) and chose "every filter narrows everything", so both halves are narrowed together:
+   * the matrices here, the rows by the caller that loads them.
+   *
+   * The PORTAL export passes nothing — there the file is the whole line by design, and a reader
+   * who filtered a screen he cannot filter has nothing to be surprised by.
+   */
+  filters?: RepRankingFilters | null;
 }): Promise<RepRankingExport | null> {
   const { access, includeUnpublished, line, period } = input;
   if (!isRepRankingLine(line)) return null;
+  const filters = rankingFiltersAreEmpty(input.filters) ? null : input.filters ?? null;
+  // Only the rows carry a customer, a brick or a client code, so the free-text search is resolved
+  // to the AREAS it touched and applied to the matrix as one more area narrowing. The rows handed
+  // in are already filtered by the caller — the same `filters`, through loadMonthlyClosingDetails.
+  const keepAreas = searchedAreaCodes(filters, input.rows);
 
   const trend = resolveTrendPeriods(input.availablePeriods, period);
   const loaded = await Promise.all(
@@ -134,7 +158,15 @@ export async function buildScopedRepRankingExport(input: {
         .catch(() => null);
       // A month whose scoped load came back on a DIFFERENT month would silently label one month's
       // figures with another's, so it is dropped rather than trusted.
-      const matrix = result?.selectedPeriod === month ? result.matrix : null;
+      const loadedMatrix = result?.selectedPeriod === month ? result.matrix : null;
+      // 🔴 NARROWED AFTER THE SCOPE CHAIN, NEVER INSTEAD OF IT. `loadPortalMonthlyClosing` has
+      // already cut this month down to what the VIEWER may see; the filter then cuts that down to
+      // what he ASKED for. A filter can only ever remove rows and columns from what scope allowed,
+      // so it cannot widen anybody — and a month the filter empties drops out below exactly as a
+      // month this line never traded in does.
+      const matrix = loadedMatrix && filters
+        ? narrowClosingMatrixForRanking(loadedMatrix, filters, keepAreas)
+        : loadedMatrix;
       // 🔴 AND A MONTH WITH NO ROWS FOR THIS LINE IS NOT A ZERO MONTH. The validated month list is
       // global, because an import batch carries no line, so `includeUnpublished` can offer a month
       // this line never traded in. Rendered as a trend column it would read as every rep scoring
@@ -172,8 +204,24 @@ export async function buildScopedRepRankingExport(input: {
     warehouseCustomers: carve.warehouseCustomers.size,
   });
 
+  // The filter in the reader's own words, built from the CLOSING MONTH's own names so a code
+  // never reaches the page (AGENTS.md §4: names, never codes).
+  const closingMatrix = matricesByPeriod.find((entry) => entry.period === period)?.matrix ?? null;
+  const areaNames = new Map<string, string>();
+  const regionNames = new Map<string, string>();
+  const productNames = new Map<string, string>();
+  for (const group of closingMatrix?.regions ?? []) {
+    regionNames.set(String(group.regionCode ?? "").toUpperCase(), group.regionName);
+    for (const area of group.areas) areaNames.set(String(area.areaCode ?? "").toUpperCase(), area.areaName);
+  }
+  for (const column of closingMatrix?.columns ?? []) {
+    productNames.set(String(column.productCode ?? "").toUpperCase(), column.productName);
+  }
+  const coverage = describeRankingFilters(filters, { areaNames, productNames, regionNames });
+
   const built = await buildRepRankingWorkbook({
     carve: { direct: carve.direct, office: carve.office, stores: carve.stores },
+    coverage,
     // 🔴 THE ROWS TAB'S OWN ROWS — the SAME set every figure above it was carved from, never a
     // second read of the month (owner, 2026-10-13: "I want the raw detailed sheet to be in the
     // export rep ranking in monthly closing"). The sheet blanks El Qema itself, for every reader,
