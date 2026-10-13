@@ -494,10 +494,11 @@ async function applyManagerAsOf(
     ] = await Promise.all([
       getSupabaseAdmin()
         .from("au_v_line_area_map_all")
-        .select("line_code,area_code,dm_seat_id,effective_from,effective_to"),
-      // The current tree, for ONE property: whether the seat is the organogram's catch-all. That is
-      // a fact about the seat, not about who sits in it, so it carries no date.
-      getSupabaseAdmin().from("au_v_org_tree").select("seat_id,is_other_pseudo_dm"),
+        .select("line_code,area_code,dm_seat_id,rep_seat_id,effective_from,effective_to"),
+      // The current tree, for TWO properties of the seat itself: whether it is the organogram's
+      // catch-all, and which area it is the rep seat OF. Neither is about who sits in it, so neither
+      // carries a date.
+      getSupabaseAdmin().from("au_v_org_tree").select("seat_id,is_other_pseudo_dm,area_code"),
       getSupabaseAdmin()
         .from("au_v_seat_occupancy_all")
         .select("seat_id,occupant_hr_id,occupant_canonical_hr_id,effective_from,effective_to"),
@@ -536,25 +537,80 @@ async function applyManagerAsOf(
       occupantOf.set(seatId, key ? nameByHrId.get(key) ?? null : null);
     }
 
-    for (const row of (mapRows ?? []) as Array<Record<string, string | null>>) {
-      if (!coversAsOf(row.effective_from, row.effective_to, asOf)) continue;
-
-      const line = lineKey(row.line_code);
+    const seatAreaOf = new Map<string, string>();
+    for (const row of (seatRows ?? []) as SeatRow[]) {
+      const seatId = String(row.seat_id ?? "").trim();
       const areaCode = String(row.area_code ?? "").trim().toUpperCase();
-      if (!line || !areaCode) continue;
-      const key = `${line}::${areaCode}`;
-      const existing = assignments.get(key);
-      if (!existing) continue;
-
-      const seatId = row.dm_seat_id ? String(row.dm_seat_id).trim() : "";
-      // A pseudo-DM seat is the organogram's catch-all for areas nobody runs; it is not a person.
-      const managerName = seatId && !pseudoSeat.has(seatId) ? occupantOf.get(seatId) ?? null : null;
-      assignments.set(key, { ...existing, managerName });
+      if (seatId && areaCode) seatAreaOf.set(seatId, areaCode);
     }
+
+    applyAreaMapAsOf(assignments, {
+      asOf,
+      mapRows: (mapRows ?? []) as Array<Record<string, string | null>>,
+      occupantOf,
+      pseudoSeat,
+      seatAreaOf,
+    });
   } catch (error) {
     logError("Performance review as-of manager read failed; keeping the current-tree answer", {
       error,
       labels: { event: "closing_performance_review_manager_asof_failed" },
+    });
+  }
+}
+
+/**
+ * Apply the dated area map to the seat assignments: the manager in force on `asOf`, and — when the
+ * map hands an area to ANOTHER area's rep seat — that seat's rep.
+ *
+ * 🔴 ONE REP CAN OWN TWO AREAS, AND ONLY THE MAP SAYS SO. CNS has a single Qena (owner, 2026-10-12:
+ * "CNS has a single Qena and both Qenas are counted to the Qena rep"), so the map points CNS Qena 2 at
+ * `SEAT-CNS-REP-UE7`. The seat tree only knows that seat as Qena 1's, so the review used to print
+ * Qena 2 with NO rep and NO manager — 176,773 EGP of September CNS outside every person's figure,
+ * while Sales vs Target, which reads `rep_seat_id`, already credited it to the Qena rep. An area whose
+ * map row names another area's rep seat now takes that seat's rep, so the two screens agree.
+ *
+ * Pure, so the rule is testable without a database.
+ */
+export function applyAreaMapAsOf(
+  assignments: Map<string, AreaSeatAssignment>,
+  input: {
+    asOf: string;
+    mapRows: Array<Record<string, string | null>>;
+    occupantOf: Map<string, string | null>;
+    pseudoSeat: Set<string>;
+    seatAreaOf: Map<string, string>;
+  },
+): void {
+  const { asOf, mapRows, occupantOf, pseudoSeat, seatAreaOf } = input;
+  // The seat's OWN area's rep, read before anything below rewrites a row, so a borrowed rep is the
+  // seat's occupant and never a value this loop has already changed.
+  const repOf = new Map(
+    [...assignments].map(([key, value]) => [key, { repIsVacant: value.repIsVacant, repName: value.repName }]),
+  );
+
+  for (const row of mapRows) {
+    if (!coversAsOf(row.effective_from, row.effective_to, asOf)) continue;
+
+    const line = lineKey(row.line_code);
+    const areaCode = String(row.area_code ?? "").trim().toUpperCase();
+    if (!line || !areaCode) continue;
+    const key = `${line}::${areaCode}`;
+
+    const repSeatId = row.rep_seat_id ? String(row.rep_seat_id).trim() : "";
+    const repSeatArea = repSeatId ? seatAreaOf.get(repSeatId) ?? "" : "";
+    const borrowed = repSeatArea && repSeatArea !== areaCode ? repOf.get(`${line}::${repSeatArea}`) : undefined;
+
+    const existing = assignments.get(key);
+    if (!existing && !borrowed) continue;
+
+    const seatId = row.dm_seat_id ? String(row.dm_seat_id).trim() : "";
+    // A pseudo-DM seat is the organogram's catch-all for areas nobody runs; it is not a person.
+    const managerName = seatId && !pseudoSeat.has(seatId) ? occupantOf.get(seatId) ?? null : null;
+    assignments.set(key, {
+      ...(existing ?? { repIsVacant: false, repName: null }),
+      ...(borrowed ?? {}),
+      managerName,
     });
   }
 }
