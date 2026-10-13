@@ -758,6 +758,48 @@ export function runIdentityStripEmblemTests() {
   );
 
   // ───────────────────────────────────────────────────────────────────────────────────────────
+  // 8b. 🔴 SHUT IS NOT BLANK — THE RESERVED AIR CARRIES THE LEDGER (owner, 2026-10-13, with that
+  //     air circled on the Talent Acquisition overview: "i donot want this blanque area empty like
+  //     this"). Collapsing by default — his OWN ruling the day before, "the notification should take
+  //     a small place and be expandable, collapsible" — had emptied the band back out, so the
+  //     portrait's overhang was a white hole on every landing carrying a photo.
+  //
+  //     THE TWO RULINGS ARE BOTH KEPT BY ONE MECHANISM, AND THAT IS WHAT THESE PINS HOLD: the shut
+  //     ledger is ABSOLUTELY POSITIONED over air that is reserved whether or not anything is drawn
+  //     in it. Absolute content contributes no height, so the band cannot grow the page even if a
+  //     row's padding is changed one day — it would be clipped, which is a fault you can SEE,
+  //     against a dashboard pushed down the page, which is the silent one. Measured on the branch
+  //     at a 101px reserve: band 101px, spacer 101px, three rows ending 6px above the foot.
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  assert.ok(
+    /reservesAir=\{Boolean\(photoSrc\)\}/.test(strip),
+    "the strip stopped telling the band whether there is reserved air — `reservesAir` is the PHOTO "
+      + "and nothing else, because the spacer that makes the air exists only when a portrait stands "
+      + "there. Without it the shut band either leaves his white hole or grows an initials landing",
+  );
+  assert.ok(
+    /\{!expanded && reservesAir \? \(/.test(noticesCode)
+      && /absolute inset-0 flex min-w-0 flex-col overflow-hidden/.test(noticesCode),
+    "the shut band is back to rendering nothing, or its ledger left the absolute fill — in normal "
+      + "flow a ledger taller than the reserve makes the `items-stretch` row grow and pushes the "
+      + "whole dashboard down the page, which is the one failure the identity strip exists to prevent",
+  );
+  assert.ok(
+    /const ledger = \(peek: boolean\)/.test(noticesCode)
+      && noticesCode.split("<KindBlock").length === 2,
+    "the ledger is written twice — shut and open must draw the SAME markup through one builder, or "
+      + "the band's whole claim (that what the shut band shows is what the open one shows) decays "
+      + "the first time a figure or a state is changed in one copy only",
+  );
+  assert.ok(
+    /if \(peek\) \{\s*return \(\s*<li className="border-t"[\s\S]{0,180}<div className=\{ROW_SHELL\}>\{body\}<\/div>/
+      .test(noticesCode),
+    "a peek row became pressable again — the shut ledger is clipped to the reserve, so a drop list "
+      + "opened there falls into space nobody can scroll to. The rail above is the control in that "
+      + "state, and it swaps the peek for the real ledger",
+  );
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────
   // 9. ONE BLOCK PER KIND, AND PRESSING IT DROPS THE LIST — the owner's second instruction on the
   //    band, taken partition by partition: "the first partition, which is the new CV received, the
   //    new WhatsApp message, the four CVs received today. We can make it this as one block. And when

@@ -35,8 +35,11 @@
  *
  * SQUARE EDGES (owner's golden rule). The month grid is written here from scratch rather than lifted
  * from `company-calendar.tsx`, which carries `rounded-xl` — copying that file would have imported a
- * forbidden corner. Nothing below has a `rounded-*` class except the 2px legend dots, which is the
- * same exception `hr-command-charts.tsx` carries.
+ * forbidden corner. Nothing below has a `rounded-*` class except the legend and mark dots and the
+ * panel's own icon medallion, which are the same three exceptions `hr-command-charts.tsx` carries.
+ *
+ * AND THE WEEK IS A RULED SHEET, not a grid of boxes — see `InterviewRow`, where the owner's
+ * 2026-10-13 "godmode heavy full premium polish" landed and what it replaced is written down.
  *
  * NEVER A HORIZONTAL SCROLL (owner's golden rule). No `min-width` and no `overflow-x-auto`
  * anywhere. The month is a `grid-cols-7` whose cells get narrower, never wider; at 375px each day
@@ -93,6 +96,32 @@ const REFRESH_MS = 60_000;
 const MONTH_COLUMN_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 /**
+ * The panel's controls, in THE PAGE'S OWN premium language rather than a flat local one.
+ *
+ * They are the same three devices `MetricTile` on her page is built from — a 180° white-to-#F7F9FC
+ * wash, a 1px `slate-200/90` edge and a 1px shadow that lifts on hover — written once here because
+ * the panel has six of them (two week arrows, two month arrows, "This week", three tabs) and six
+ * hand-written copies is how a toolbar ends up with five slightly different buttons. Square, of
+ * course: a gradient is depth, a rounded corner is a corner.
+ */
+const CONTROL_SKIN =
+  "border border-slate-200/90 bg-[linear-gradient(180deg,#FFFFFF_0%,#F7F9FC_100%)]"
+  + " shadow-[0_1px_2px_rgba(15,23,42,0.045)] transition-all duration-200 hover:border-orange-200"
+  + " hover:text-orange-600 hover:shadow-[0_6px_14px_rgba(15,23,42,0.09)]"
+  + " focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500";
+const ARROW_BUTTON = `inline-flex shrink-0 items-center p-2 text-slate-500 ${CONTROL_SKIN}`;
+const TAB_BASE =
+  "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-2 text-[10px]"
+  + " font-black uppercase tracking-[0.12em]";
+/** The chosen view wears the band's orange edge along its top — the page's own way of saying "this
+ *  one". A filled orange tab would be the ink rule's filled area, and louder than the week. */
+const TAB_ON =
+  "border border-orange-200 bg-[linear-gradient(180deg,#FFF7ED_0%,#FFF1E3_100%)] text-orange-700"
+  + " shadow-[0_1px_2px_rgba(249,115,22,0.12)] focus-visible:outline-none focus-visible:ring-2"
+  + " focus-visible:ring-orange-500";
+const TAB_OFF = `text-slate-500 ${CONTROL_SKIN}`;
+
+/**
  * How each kind of mark is drawn on the month grid: its colour, its icon and its name.
  *
  * ONE PLACE, because the grid draws a mark twice — as a dot at 375px and as a named row from `sm`
@@ -139,26 +168,57 @@ function CouldNotLoad({ what }: { what: string }) {
   );
 }
 
+/**
+ * 🔴 THE WEEK IS A RULED SHEET, NOT A GRID OF CARDS IN A GRID OF CARDS — the owner, 2026-10-13,
+ * sending the week back with one instruction: "godmode heavy full premium polish".
+ *
+ * WHAT HE WAS ACTUALLY LOOKING AT. Every booking was a bordered white box, inside a bordered white
+ * column, inside the white panel — three nested frames around one line of type, with a second
+ * bordered chip for the platform inside the innermost one. Five boxes down a column drew ten
+ * hairlines that said nothing, and a day with one booking read as a card that had failed to fill.
+ * It is the same fault he burned the notice band down for on 2026-10-12 ("a fucking oven"), and it
+ * has the same answer: stop framing each fact and start RULING them.
+ *
+ * SO A FRAME IS NOW SPENT ONLY WHERE IT CARRIES MEANING. One hairline frame around the whole week,
+ * a 1px rule between the days (the grid's own `gap-px` over a hairline ground — no element draws a
+ * side border, so no rule is ever doubled), and inside a day the bookings are separated by rules,
+ * not boxed. What is left over goes into the things that have to be read at a glance: the time in
+ * orange tabular figures, the candidate in ink, the interviewer and the platform in faint caps that
+ * step back. A row's state is its left margin edge and nothing else — the house ink rule refuses
+ * filled areas, and a tinted box per booking was precisely that.
+ *
+ * TODAY IS A COLUMN, NOT A BADGE. It takes the band's own 2px orange edge along its head, a faint
+ * paper ground, and its date numeral in orange — read in one glance from the top of the sheet,
+ * where a bordered "TODAY" chip had to be found and then read.
+ */
 function InterviewRow({ interview }: { interview: TalentInterview }) {
   return (
     <Link
-      className="group/row block border border-slate-200 bg-white px-2.5 py-2 transition-colors hover:border-orange-200 hover:bg-orange-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+      className="group/row relative block border-b border-slate-100 py-2 pl-4 pr-3 transition-colors last:border-b-0 hover:bg-orange-50/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-orange-500"
       href={interview.href}
     >
+      {/* THE MARGIN EDGE IS THE ROW'S WHOLE FRAME. A hairline that warms on hover says "this is a
+          row and it is pressable" in one pixel, where a border said it in four and boxed the day. */}
+      <span
+        aria-hidden="true"
+        className="absolute inset-y-[5px] left-0 w-px bg-slate-200 transition-colors group-hover/row:bg-orange-400"
+      />
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.1em] text-orange-700 tabular-nums">
+        <span className="whitespace-nowrap text-[9.5px] font-black uppercase tracking-[0.1em] text-orange-600 tabular-nums">
           {interview.timeLabel}
         </span>
-        <span className="whitespace-nowrap border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.1em] text-slate-500">
+        {/* The platform is a WORD, not a chip. It is the least important thing on the row and a
+            bordered box made it the loudest. */}
+        <span className="whitespace-nowrap text-[8.5px] font-black uppercase tracking-[0.16em] text-slate-300">
           {interview.platformLabel}
         </span>
       </div>
-      <p className="mt-1 break-words text-[12px] font-black leading-snug text-slate-900">
+      <p className="mt-0.5 break-words text-[12px] font-black leading-snug text-slate-900">
         {interview.candidateName}
       </p>
       {/* The interviewer is a NAME or the honest absence of one — never a code, and never blank,
           which would read as "nobody has to be there". */}
-      <p className="mt-0.5 break-words text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
+      <p className="mt-0.5 break-words text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">
         {interview.interviewerName ?? "No interviewer chosen yet"}
       </p>
     </Link>
@@ -166,39 +226,62 @@ function InterviewRow({ interview }: { interview: TalentInterview }) {
 }
 
 function DayColumn({ day }: { day: TalentCalendarDay }) {
+  const booked = day.interviews.length + day.joiners.length;
+
   return (
-    <div
-      className={`min-w-0 border p-2.5 ${
-        day.isToday ? "border-orange-300 bg-orange-50/40" : "border-slate-200 bg-white"
-      }`}
-    >
-      <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 border-b border-slate-200/70 pb-2">
-        <span className="break-words text-[10px] font-black uppercase tracking-[0.12em] text-slate-950">
-          {day.shortLabel} {day.dateKey.slice(8)}
-        </span>
+    <div className={`min-w-0 ${day.isToday ? "bg-orange-50/45" : "bg-white"}`}>
+      <div className="relative flex items-baseline justify-between gap-x-2 border-b border-slate-200/80 px-3 py-2">
         {day.isToday ? (
-          <span className="whitespace-nowrap border border-orange-300 bg-white px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.1em] text-orange-700">
+          // The identity band's own edge, drawn on the day she is standing in.
+          <span aria-hidden="true" className="absolute inset-x-0 top-0 h-0.5 bg-orange-500" />
+        ) : null}
+        <span className="flex min-w-0 items-baseline gap-1.5">
+          <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">
+            {day.shortLabel}
+          </span>
+          <span
+            className={`font-display text-[15px] font-black leading-none tabular-nums ${
+              day.isToday ? "text-orange-600" : "text-slate-900"
+            }`}
+          >
+            {day.dateKey.slice(8)}
+          </span>
+        </span>
+        {/* TODAY says itself; every other day carries its own figure instead, so the head of a
+            column answers "how much is on" before a single row is read. */}
+        {day.isToday ? (
+          <span className="whitespace-nowrap text-[8.5px] font-black uppercase tracking-[0.18em] text-orange-600">
             Today
+          </span>
+        ) : booked > 0 ? (
+          <span className="text-[10px] font-black leading-none tabular-nums text-slate-300">
+            {booked}
           </span>
         ) : null}
       </div>
 
-      <div className="mt-2 space-y-1.5">
+      <div>
         {/* The joining days first: somebody starting is the fact that governs the day. */}
         {day.joiners.map((joiner) => (
           <Link
-            className="block border border-indigo-200 bg-indigo-50/70 px-2.5 py-2 transition-colors hover:bg-indigo-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+            className="group/join relative block border-b border-slate-100 py-2 pl-4 pr-3 transition-colors last:border-b-0 hover:bg-indigo-50/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-orange-500"
             href={joiner.href}
             key={joiner.id}
           >
-            <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-[0.12em] text-indigo-700">
+            {/* A joining day is a DIFFERENT kind of fact, so it gets a different margin edge — not
+                a different fill. One tinted box per joiner was the ink rule's own counter-example. */}
+            <span
+              aria-hidden="true"
+              className="absolute inset-y-[5px] left-0 w-px bg-indigo-300 transition-colors group-hover/join:bg-indigo-500"
+            />
+            <span className="flex items-center gap-1.5 text-[8.5px] font-black uppercase tracking-[0.16em] text-indigo-500">
               <UserRoundCheck aria-hidden="true" className="h-3 w-3 shrink-0" />
               Joins today
             </span>
-            <p className="mt-1 break-words text-[12px] font-black leading-snug text-indigo-900">
+            <p className="mt-0.5 break-words text-[12px] font-black leading-snug text-slate-900">
               {joiner.name}
             </p>
-            <p className="mt-0.5 break-words text-[10px] font-bold uppercase tracking-[0.1em] text-indigo-400">
+            <p className="mt-0.5 break-words text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">
               {joiner.title}
             </p>
           </Link>
@@ -207,7 +290,9 @@ function DayColumn({ day }: { day: TalentCalendarDay }) {
           <InterviewRow interview={interview} key={interview.id} />
         ))}
         {day.interviews.length === 0 && day.joiners.length === 0 ? (
-          <p className="py-3 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-slate-300">
+          // Said at the TOP of the column, where the first booking would have been. Centred in the
+          // column it floated in the middle of a tall empty box and made the emptiness the subject.
+          <p className="px-3 py-2.5 text-[9px] font-black uppercase tracking-[0.18em] text-slate-300">
             Nothing booked
           </p>
         ) : null}
@@ -228,24 +313,26 @@ function MonthCell({
   isToday: boolean;
   marks: TalentMonthMark[];
 }) {
-  if (!date) return <div className="min-h-16 border border-slate-100 bg-slate-50/40" />;
+  if (!date) return <div className="min-h-16 bg-slate-50/70 sm:min-h-24" />;
 
   const ordered = MARK_ORDER.flatMap((kind) => marks.filter((mark) => mark.kind === kind));
 
   return (
+    // No border of its own: the grid's `gap-px` over a hairline ground draws every rule in the
+    // month exactly once, which is what removes the doubled 2px lines the bordered cells left.
     <div
-      className={`min-h-16 min-w-0 border p-1 sm:min-h-24 sm:p-1.5 ${
-        isToday
-          ? "border-orange-300 bg-orange-50/50"
-          : inMonth
-            ? "border-slate-200 bg-white"
-            : "border-slate-100 bg-slate-50/50"
+      className={`relative min-h-16 min-w-0 p-1 sm:min-h-24 sm:p-1.5 ${
+        isToday ? "bg-orange-50/50" : inMonth ? "bg-white" : "bg-slate-50/70"
       }`}
     >
+      {isToday ? (
+        // The same 2px orange edge the week's today column wears, so the two views agree.
+        <span aria-hidden="true" className="absolute inset-x-0 top-0 h-0.5 bg-orange-500" />
+      ) : null}
       <div className="flex items-baseline justify-between gap-1">
         <span
-          className={`text-[10px] font-black tabular-nums ${
-            isToday ? "text-orange-700" : inMonth ? "text-slate-900" : "text-slate-300"
+          className={`font-display text-[12px] font-black leading-none tabular-nums sm:text-[13px] ${
+            isToday ? "text-orange-600" : inMonth ? "text-slate-900" : "text-slate-300"
           }`}
         >
           {date.slice(8)}
@@ -409,15 +496,14 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
           {VIEWS.map((one) => (
             <button
               aria-pressed={view === one.key}
-              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
-                view === one.key
-                  ? "border-orange-300 bg-orange-50 text-orange-700"
-                  : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
-              }`}
+              className={`${TAB_BASE} ${view === one.key ? TAB_ON : TAB_OFF}`}
               key={one.key}
               onClick={() => setView(one.key)}
               type="button"
             >
+              {view === one.key ? (
+                <span aria-hidden="true" className="absolute inset-x-0 top-0 h-0.5 bg-orange-500" />
+              ) : null}
               {one.label}
             </button>
           ))}
@@ -430,18 +516,20 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/70 bg-slate-50/60 px-5 py-3">
             <button
               aria-label="The week before"
-              className="inline-flex shrink-0 items-center border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+              className={ARROW_BUTTON}
               onClick={() => go({ taWeek: addDays(calendar.weekStart, -7) })}
               type="button"
             >
               <ChevronLeft aria-hidden="true" className="h-3.5 w-3.5" />
             </button>
-            <span className="break-words text-[10px] font-black uppercase tracking-[0.12em] text-slate-950">
+            {/* The week she is looking at, set in the display serif — the one line in the toolbar
+                that has to be read, so it is the one line that is not in small caps. */}
+            <span className="font-display break-words text-[13px] font-black leading-none tracking-[0.01em] text-slate-950 tabular-nums">
               {formatWeekRange(calendar.weekStart)}
             </span>
             <button
               aria-label="The week after"
-              className="inline-flex shrink-0 items-center border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+              className={ARROW_BUTTON}
               onClick={() => go({ taWeek: addDays(calendar.weekStart, 7) })}
               type="button"
             >
@@ -449,7 +537,7 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
             </button>
             {showingThisWeek ? null : (
               <button
-                className="inline-flex shrink-0 items-center border border-slate-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                className={`inline-flex shrink-0 items-center px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600 ${CONTROL_SKIN}`}
                 onClick={() => go({ taWeek: null })}
                 type="button"
               >
@@ -457,7 +545,7 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
               </button>
             )}
             {refreshedAt ? (
-              <span className="whitespace-nowrap text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+              <span className="ml-auto whitespace-nowrap text-[8.5px] font-black uppercase tracking-[0.16em] text-slate-300">
                 Updated{" "}
                 {new Intl.DateTimeFormat("en-GB", {
                   hour: "2-digit",
@@ -478,10 +566,17 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
                   Showing only the interviews you are on
                 </p>
               ) : null}
-              <div className="grid grid-cols-1 gap-2 p-5 sm:grid-cols-2 lg:grid-cols-5">
-                {weekDaysState.map((day) => (
-                  <DayColumn day={day} key={day.dateKey} />
-                ))}
+              {/* ONE SHEET. The 1px rules between the days are the grid's own `gap-px` showing the
+                  hairline ground through, so a rule is drawn exactly once at every breakpoint and no
+                  column has to carry a responsive border of its own. `items-stretch` is deliberate:
+                  the days share one baseline and one foot, which is what makes it read as a week
+                  rather than as five cards of different heights. */}
+              <div className="p-5">
+                <div className="grid grid-cols-1 gap-px border border-slate-200 bg-slate-200/80 shadow-[0_1px_2px_rgba(15,23,42,0.045)] sm:grid-cols-2 lg:grid-cols-5">
+                  {weekDaysState.map((day) => (
+                    <DayColumn day={day} key={day.dateKey} />
+                  ))}
+                </div>
               </div>
             </>
           ) : (
@@ -504,29 +599,51 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
               when you are its interviewer, on its panel, or the person who asked for it.
             </p>
           ) : (
-            <ul className="space-y-2 p-5">
-              {calendar.mine.map((interview) => (
-                <li className="min-w-0" key={interview.id}>
-                  <Link
-                    className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border border-slate-200 bg-white px-3 py-2.5 transition-colors hover:border-orange-200 hover:bg-orange-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
-                    href={interview.href}
-                  >
-                    <span className="whitespace-nowrap border border-slate-200 bg-slate-50 px-2 py-1 text-[9px] font-black uppercase tracking-[0.1em] text-slate-600 tabular-nums">
-                      {weekdayShort(interview.dateKey)} {formatShortDate(interview.dateKey)}
-                    </span>
-                    <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.1em] text-orange-700 tabular-nums">
-                      {interview.timeLabel}
-                    </span>
-                    <span className="min-w-0 break-words text-[12px] font-black text-slate-900">
-                      {interview.candidateName}
-                    </span>
-                    <span className="break-words text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
-                      {interview.platformLabel}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            // HER OWN DIARY IS A RULED LEDGER, not a stack of cards — the same pass the week got.
+            // The date sits in a fixed gutter so the whole column of dates lines up and a day that
+            // carries two interviews reads as two rules under one date rather than two identical
+            // boxes; the day is said once and the second row leaves the gutter empty.
+            <div className="p-5">
+              <ul className="border border-slate-200 bg-white">
+                {calendar.mine.map((interview, index) => {
+                  const sameDayAsAbove =
+                    index > 0 && calendar.mine[index - 1]?.dateKey === interview.dateKey;
+
+                  return (
+                    <li className="min-w-0" key={interview.id}>
+                      <Link
+                        className={`group/mine flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2.5 transition-colors hover:bg-orange-50/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-orange-500 ${
+                          index === 0
+                            ? ""
+                            : sameDayAsAbove
+                              ? "border-t border-slate-100"
+                              : "border-t border-slate-200/80"
+                        }`}
+                        href={interview.href}
+                      >
+                        <span
+                          aria-hidden={sameDayAsAbove ? "true" : undefined}
+                          className="w-[72px] shrink-0 whitespace-nowrap text-[9px] font-black uppercase tracking-[0.14em] text-slate-400 tabular-nums"
+                        >
+                          {sameDayAsAbove
+                            ? ""
+                            : `${weekdayShort(interview.dateKey)} ${formatShortDate(interview.dateKey)}`}
+                        </span>
+                        <span className="whitespace-nowrap text-[9.5px] font-black uppercase tracking-[0.1em] text-orange-600 tabular-nums">
+                          {interview.timeLabel}
+                        </span>
+                        <span className="min-w-0 flex-1 break-words text-[12px] font-black text-slate-900">
+                          {interview.candidateName}
+                        </span>
+                        <span className="break-words text-[8.5px] font-black uppercase tracking-[0.16em] text-slate-300">
+                          {interview.platformLabel}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           )}
         </div>
       ) : null}
@@ -537,7 +654,7 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/70 bg-slate-50/60 px-5 py-3">
             <button
               aria-label="The month before"
-              className="inline-flex shrink-0 items-center border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+              className={ARROW_BUTTON}
               onClick={() =>
                 go({ taMonth: String(previousMonth.month), taYear: String(previousMonth.year) })
               }
@@ -545,12 +662,12 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
             >
               <ChevronLeft aria-hidden="true" className="h-3.5 w-3.5" />
             </button>
-            <span className="break-words text-[10px] font-black uppercase tracking-[0.12em] text-slate-950">
+            <span className="font-display break-words text-[13px] font-black leading-none tracking-[0.01em] text-slate-950 tabular-nums">
               {calendar.month.label}
             </span>
             <button
               aria-label="The month after"
-              className="inline-flex shrink-0 items-center border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+              className={ARROW_BUTTON}
               onClick={() => go({ taMonth: String(nextMonth.month), taYear: String(nextMonth.year) })}
               type="button"
             >
@@ -558,7 +675,7 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
             </button>
 
             {legendKinds.length > 0 ? (
-              <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5 sm:ml-auto">
                 {legendKinds.map((kind) => {
                   const style = MARK_STYLES[kind];
                   return (
@@ -585,10 +702,10 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
           )}
 
           <div className="p-5">
-            <div className="grid grid-cols-7 gap-px">
+            <div className="grid grid-cols-7 gap-px border border-slate-200 bg-slate-200/80 shadow-[0_1px_2px_rgba(15,23,42,0.045)]">
               {MONTH_COLUMN_LABELS.map((label) => (
                 <div
-                  className="min-w-0 border-b border-slate-200 bg-slate-50/60 px-1 py-1.5 text-center text-[9px] font-black uppercase tracking-[0.1em] text-slate-500"
+                  className="min-w-0 bg-white px-1 py-1.5 text-center text-[8.5px] font-black uppercase tracking-[0.18em] text-slate-400"
                   key={label}
                 >
                   {label}

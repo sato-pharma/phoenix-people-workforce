@@ -1007,7 +1007,14 @@ export function PhoenixIdentityStrip({
         NO PHOTO, NO COLUMN: there is no standing portrait, nothing is reserved, and the notices take
         the full width under the bar. */}
     <div className="flex items-stretch gap-4">
-      {showNotices ? <PhoenixIdentityNotices className="flex-1" /> : <span className="flex-1" />}
+      {showNotices ? (
+        // `reservesAir` is the photo, and nothing else: the spacer beside this band exists only when
+        // there IS a standing portrait, so it is the one condition under which the shut band has air
+        // to fill without growing the page. See the prop's own header in that file.
+        <PhoenixIdentityNotices className="flex-1" reservesAir={Boolean(photoSrc)} />
+      ) : (
+        <span className="flex-1" />
+      )}
       {photoSrc ? (
         <span
           aria-hidden="true"
