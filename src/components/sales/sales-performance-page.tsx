@@ -51,6 +51,11 @@ import type {
 } from "@/lib/sales/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { reportClientError } from "@/lib/error-monitor/report-client-error";
+import {
+  isStaleDeployChunkError,
+  isTransientRouterMountError,
+  recoverFromStaleDeployOnce,
+} from "@/lib/utils/stale-deploy-recovery";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
@@ -64,16 +69,23 @@ interface ChartErrorBoundaryProps {
 
 interface ChartErrorBoundaryState {
   hasError: boolean;
+  staleDeploy: boolean;
 }
 
+// Recharts arrives through next/dynamic, so a deploy that lands while this dashboard is open makes
+// the chart's own chunk 404 — the same failure the portal shell's boundary had (see
+// workspace-error-boundary.tsx). "Try again" cannot fix a file that is gone; a reload can.
 class ChartErrorBoundary extends Component<ChartErrorBoundaryProps, ChartErrorBoundaryState> {
   constructor(props: ChartErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, staleDeploy: false };
   }
 
-  static getDerivedStateFromError(): ChartErrorBoundaryState {
-    return { hasError: true };
+  static getDerivedStateFromError(error: Error): ChartErrorBoundaryState {
+    return {
+      hasError: true,
+      staleDeploy: isStaleDeployChunkError(error) || isTransientRouterMountError(error),
+    };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
@@ -81,24 +93,36 @@ class ChartErrorBoundary extends Component<ChartErrorBoundaryProps, ChartErrorBo
       window.console.error("[ChartErrorBoundary]", error, info.componentStack);
     }
     reportClientError({ error, componentStack: info.componentStack });
+    if (isStaleDeployChunkError(error) || isTransientRouterMountError(error)) {
+      recoverFromStaleDeployOnce();
+    }
   }
 
   render() {
     if (this.state.hasError) {
+      const stale = this.state.staleDeploy;
       return (
         <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-3 rounded border border-dashed border-slate-200 bg-slate-50/60 p-6 text-center">
           <div className="flex h-10 w-10 items-center justify-center rounded bg-amber-50 text-amber-500 ring-1 ring-amber-100">
             <AlertTriangle className="h-5 w-5" />
           </div>
           <p className="text-sm font-semibold text-slate-700">
-            {this.props.fallbackLabel ?? "Chart could not be rendered"}
+            {stale
+              ? "Phoenix was just updated — reload to see this chart"
+              : (this.props.fallbackLabel ?? "Chart could not be rendered")}
           </p>
           <button
             type="button"
-            onClick={() => this.setState({ hasError: false })}
+            onClick={() => {
+              if (stale) {
+                if (typeof window !== "undefined") window.location.reload();
+                return;
+              }
+              this.setState({ hasError: false, staleDeploy: false });
+            }}
             className="rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
           >
-            Try again
+            {stale ? "Reload" : "Try again"}
           </button>
         </div>
       );

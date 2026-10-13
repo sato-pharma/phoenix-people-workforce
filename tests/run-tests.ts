@@ -1324,6 +1324,7 @@ import { runSalesMarketingLineScopeTests } from "./sales-marketing-line-scope.te
 import { runApprovalsHubCompletionTests } from "./approvals-hub-completion.test.ts";
 import { runApprovalsHubEmployeeContextGuardTests } from "./approvals-hub-employee-context-guard.test.ts";
 import { runStaleDeployRecoveryTests } from "./stale-deploy-recovery.test.ts";
+import { runErrorBoundaryStaleDeployRecoveryTests } from "./error-boundaries-recover-from-a-stale-deploy.test.ts";
 import { runPayrollCopilotTests } from "./payroll-copilot.test.ts";
 import { runPayrollStatutoryTests } from "./payroll-statutory.test.ts";
 import { runEmployeeSalaryAutofillTests } from "./employee-salary-autofill.test.ts";
@@ -5313,6 +5314,7 @@ await runTest("sales-marketing ROI line scope (product/region/distributor leak l
 await runTest("approvals hub completion (deep-link render + canonical actor + history scope)", runApprovalsHubCompletionTests);
 await runTest("approvals hub employee context (a 403 body never becomes context state, so HR Operations does not crash the hub on an employee she may approve for but not read)", runApprovalsHubEmployeeContextGuardTests);
 await runTest("stale-deploy chunk-error recovery", runStaleDeployRecoveryTests);
+await runTest("every class error boundary recovers from a stale deploy, not just reports it (the portal shell's boundary left a missing chunk unrecovered)", runErrorBoundaryStaleDeployRecoveryTests);
 await runTest("payroll copilot (assemble + flags + validator + parser)", runPayrollCopilotTests);
 await runTest("payroll statutory (Egypt tax + social insurance)", runPayrollStatutoryTests);
 await runTest(
