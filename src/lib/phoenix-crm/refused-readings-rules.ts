@@ -31,8 +31,92 @@
  * rather than refused again, and why the metres that matter are the distance to the listing, never the
  * accuracy radius.
  */
-export type RefusedReason = "no_fix" | "rough" | "off_listing";
+/**
+ * 🔴 `blocked` IS THE ONLY REASON THE SERVER DID NOT DECIDE, AND IT IS THE REASON NOTHING USED TO
+ * REACH THIS BOARD AT ALL. The other three are refusals: the phone sent a reading and a door turned
+ * it away. A permission the BROWSER blocks never produces a reading, never reaches a door and never
+ * reached a row — the rep read the message, the capture ended on her screen, and the only trace
+ * anywhere was the touch trail, and only if she pressed the message.
+ *
+ * What that cost, on 2026-10-13: Norhan Gamal could not validate on her iPhone on 10 and 12 October.
+ * Her phone answered PERMISSION_DENIED within ~5 s of each press, this table held ZERO rows for her
+ * seat, and finding her took a forensic dig through a trail that across 4-12 October carried 42
+ * location and 30 camera refusal messages from four reps — every one of them invisible here.
+ *
+ * So a blocked permission is REPORTED by the browser rather than refused by the server, and the row
+ * names WHICH permission (`blockedPermission`). It carries no reading at all, which is correct and is
+ * not a gap: there was nothing to read. Nothing a rep sees changes (golden rule #1) — the message is
+ * byte-for-byte the one she read before, and this row exists only so somebody can help her.
+ */
+export type RefusedReason = "no_fix" | "rough" | "off_listing" | "blocked";
 export type RefusedSubject = "visit" | "place";
+/** Which permission the browser blocked. Only these two are capable of ending a capture. */
+export type BlockedPermission = "location" | "camera";
+
+/** Every reason the table's own CHECK allows, in the order it was taught them. */
+export const REFUSED_REASONS: readonly RefusedReason[] = ["no_fix", "rough", "off_listing", "blocked"];
+
+/**
+ * The stored reason, read EXHAUSTIVELY.
+ *
+ * 🔴 THE READER USED TO ASK ONE QUESTION AND ASSUME THE REST: `row.reason === "no_fix" ? "no_fix" :
+ * "rough"`. That is correct for exactly two of the four, so from 5 October every `off_listing` row
+ * on the board printed the "the position was too rough" sentence — the one thing that refusal is
+ * NOT, with both its readings precise and the account's own pin at fault. Two of 13 October's
+ * refusals were being told that about reps who were standing within 5 m.
+ *
+ * An unrecognised value falls back to `rough` because the type admits nothing else, and that branch
+ * is unreachable by construction: `tests/phoenix-crm-refused-readings-board.test.ts` reads the
+ * CHECK constraint out of the migrations and asserts this function recognises every value it
+ * allows, so teaching the table a fifth reason without teaching this function fails the suite.
+ */
+export function parseRefusedReason(value: unknown): RefusedReason {
+  return typeof value === "string" && (REFUSED_REASONS as readonly string[]).includes(value)
+    ? (value as RefusedReason)
+    : "rough";
+}
+
+export const BLOCKED_PERMISSIONS: readonly BlockedPermission[] = ["location", "camera"];
+
+/** A permission name from a browser, or null for anything else — the row's own CHECK allows two. */
+export function parseBlockedPermission(value: unknown): BlockedPermission | null {
+  return typeof value === "string" && (BLOCKED_PERMISSIONS as readonly string[]).includes(value)
+    ? (value as BlockedPermission)
+    : null;
+}
+
+/** What the browser posts when a permission it needed was blocked. */
+export type BlockedPermissionReport = {
+  subjectKind: RefusedSubject;
+  permission: BlockedPermission;
+  /** The territory's seat, when the screen names one in its path. Null is correct, never missing. */
+  seatId: string | null;
+  test: boolean;
+};
+
+/**
+ * Read one report off the wire.
+ *
+ * Bounded and total: a body that is not this shape answers null and the route files nothing. The
+ * SEAT is the only free text it accepts, at the touch trail's own 120 characters — the rep is the
+ * SESSION's, never the body's, exactly as the trail does it.
+ */
+export function parseBlockedPermissionReport(raw: unknown): BlockedPermissionReport | null {
+  if (!raw || typeof raw !== "object") return null;
+  const body = raw as Record<string, unknown>;
+  const permission = parseBlockedPermission(body.permission);
+  if (permission === null) return null;
+  const subjectKind: RefusedSubject | null =
+    body.subjectKind === "place" ? "place" : body.subjectKind === "visit" ? "visit" : null;
+  if (subjectKind === null) return null;
+  const seat = typeof body.seatId === "string" ? body.seatId.trim() : "";
+  return {
+    subjectKind,
+    permission,
+    seatId: seat.length === 0 ? null : seat.slice(0, 120),
+    test: body.test === true,
+  };
+}
 
 /** One refused capture, as the reader hands it over. Numbers are already numbers; nothing is a code. */
 export type RefusedAttempt = {
@@ -49,6 +133,8 @@ export type RefusedAttempt = {
   photoAccuracyMeters: number | null;
   /** The line it had to be inside, stored with the row so an old refusal reads against ITS rule. */
   maxAccuracyMeters: number | null;
+  /** Which permission the browser blocked, for `blocked` only. Null for every server refusal. */
+  blockedPermission: BlockedPermission | null;
 };
 
 /** A capture of the same kind that LATER saved, which is how a refusal reads as resolved. */
@@ -88,7 +174,15 @@ function metres(value: number | null): string {
  * the photo?") and because the two can differ by an order of magnitude. A reading the phone did not
  * send reads "not reported" and is never printed as 0 m, which is a rep standing exactly on the pin.
  */
-export function refusalSentence(attempt: Pick<RefusedAttempt, "subjectKind" | "reason" | "accuracyMeters" | "photoAccuracyMeters" | "maxAccuracyMeters">): string {
+export function refusalSentence(attempt: Pick<RefusedAttempt, "subjectKind" | "reason" | "accuracyMeters" | "photoAccuracyMeters" | "maxAccuracyMeters" | "blockedPermission">): string {
+  if (attempt.reason === "blocked") {
+    // Never a radius here: the capture never produced one. What the SFE needs is the one sentence
+    // that tells him this is a phone SETTING and not a place, a line or a reading — and which of the
+    // two settings it is, because the rep is looking for that exact switch in her own browser.
+    return attempt.blockedPermission === "camera"
+      ? "The browser on this phone blocked the camera, so the capture never reached Phoenix and there is no reading to read. The camera has to be allowed for this site in that browser's own settings."
+      : "The browser on this phone blocked the location, so the capture never reached Phoenix and there is no reading to read. Location has to be allowed for this site in that browser's own settings.";
+  }
   if (attempt.reason === "no_fix") {
     return "The phone sent no usable position at all — location permission off, or no fix yet.";
   }
