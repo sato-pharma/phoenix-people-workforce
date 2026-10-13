@@ -446,7 +446,7 @@ export async function runClosingRepRankingTests(): Promise<void> {
 
   // ── THE EMITTED FILE ──────────────────────────────────────────────────────────────────────────
   const built = await buildRepRankingWorkbook({
-    carve: { direct: carve.direct, stores: carve.stores },
+    carve: { direct: carve.direct, office: carve.office, stores: carve.stores },
     probationByName: new Map(),
     publications: [{ period: PERIOD, published_at: "2026-10-01T09:00:00Z", published_by: "B-10", unpublished_at: null }],
     ranking: report,
@@ -512,7 +512,7 @@ export async function runClosingRepRankingTests(): Promise<void> {
   })) as unknown as ClosingDetailRow[];
 
   const withRows = await buildRepRankingWorkbook({
-    carve: { direct: carve.direct, stores: carve.stores },
+    carve: { direct: carve.direct, office: carve.office, stores: carve.stores },
     details: detailRows,
     distributorNames: new Map([["IS", "Ibn Sina"], ["QM", "El Qema"]]),
     probationByName: new Map(),
@@ -595,7 +595,7 @@ export async function runClosingRepRankingTests(): Promise<void> {
     const shortRanking = ranking(months);
     assert.equal(shortRanking.trend.length, months, `the fixture really trends over ${months} month(s)`);
     const shortBuilt = await buildRepRankingWorkbook({
-      carve: { direct: carve.direct, stores: carve.stores },
+      carve: { direct: carve.direct, office: carve.office, stores: carve.stores },
       probationByName: new Map(),
       publications: [{ period: PERIOD, published_at: "2026-10-01T09:00:00Z", published_by: "B-10", unpublished_at: null }],
       ranking: shortRanking,
@@ -633,8 +633,158 @@ export async function runClosingRepRankingTests(): Promise<void> {
   }
 
   await assertCnsWearsItsOwnIdentity();
+  await assertOfficeIsCnsThirdChannel();
 
   assertAdminRepRankingButton();
+}
+
+/**
+ * OFFICE IS CNS'S THIRD CHANNEL, WHERE EVERY OTHER LINE HAS DIRECT ORDERS.
+ *
+ * Owner, 2026-10-13: "in CNS, instead of the direct order column in channels, you will put office,
+ * okay? In only CNS. CNS don't have direct orders. So instead of the direct you will consider the
+ * office as the direct, and put it in a separate column in the tab that shows this." Measured on
+ * production the same day: CNS 2026-09 has ZERO direct rows and 6,971,180 EGP of Office over 3,960
+ * rows — the line's biggest channel.
+ *
+ * 🔴 THE TWO HALVES BOTH HAVE TEETH HERE. The CARVE half must take Office out of the distributor
+ * book, because Office is not a distributor and leaving it in would have the three channel shares
+ * read past the sales they divide. The COLUMN half must be measured on the EMITTED header row, not
+ * on the HEADS constant: the heading reaches the file through `headerRow`, and a build that
+ * resolved the line's third channel correctly and still printed the other line's word is exactly
+ * the defect this catches. One line list only — `lineHasOfficeChannel` — so a second list here
+ * could not drift from the one the upload enforces.
+ */
+async function assertOfficeIsCnsThirdChannel(): Promise<void> {
+  const rows = [
+    { areaCode: "DK1", clientCode: "C9", clientName: "Sayed Pharmacy", distributorCode: "IS", includedInClosing: true, invoicePeriod: PERIOD, isDirect: false, productCode: "RF500", salesValue: 70_000 },
+    { areaCode: "DK1", clientCode: null, clientName: null, distributorCode: "Office", includedInClosing: true, invoicePeriod: PERIOD, isDirect: false, productCode: "RF500", salesValue: 30_000 },
+    { areaCode: "DK1", clientCode: "C1", clientName: "مخزن الاهرام", distributorCode: "IS", includedInClosing: true, invoicePeriod: PERIOD, isDirect: false, productCode: "RF500", salesValue: 50_000 },
+  ] as unknown as ClosingDetailRow[];
+
+  const cnsCarve = carveChannelsByArea(rows, "CNS");
+  assert.equal(cnsCarve.office.get(`${PERIOD}|DK1|RF500`), 30_000, "the Office row lands in the Office map");
+  assert.equal(cnsCarve.stores.get(`${PERIOD}|DK1|RF500`), 50_000, "the warehouse row still lands in Stores");
+  assert.ok(!cnsCarve.direct.has(`${PERIOD}|DK1|RF500`), "and nothing here is a direct order");
+  assert.equal(cnsCarve.warehouseCustomers.size, 1, "an Office row is never counted as a warehouse customer");
+
+  // 🔴 AND NOT ON ANY OTHER LINE. The same rows, read as Anti Infective, carve no Office at all —
+  // the gate is the repo's own `lineHasOfficeChannel`, so this is the half that fails if a future
+  // edit widens the channel by hand instead of widening that list.
+  const aiCarve = carveChannelsByArea(rows, LINE);
+  assert.equal(aiCarve.office.size, 0, "Anti Infective has no Office channel, so its map stays empty");
+  assert.equal(
+    aiCarve.stores.get(`${PERIOD}|DK1|RF500`),
+    50_000,
+    "and its warehouse carve is untouched by the new one",
+  );
+
+  // THE SEAT'S CHANNELS ADD TO ITS SALES, with Office taken OUT of the distributor book.
+  const cnsRanking = buildRepRanking({
+    directByArea: new Map(),
+    line: "CNS",
+    matricesByPeriod: [{ matrix: matrixOf(PERIOD, SEPTEMBER), period: PERIOD }],
+    officeByArea: carveByArea(cnsCarve.office),
+    period: PERIOD,
+    probationByName: new Map(),
+    seats: new Map(),
+    storesByArea: carveByArea(cnsCarve.stores),
+    warehouseCustomers: cnsCarve.warehouseCustomers.size,
+  });
+  const dk1 = cnsRanking.seats.find((seat) => seat.areaCode === "DK1")!;
+  assert.equal(dk1.channels.office, 30_000, "the seat carries its Office money");
+  assert.equal(dk1.channels.direct, 0, "and no direct money on this line");
+  assert.equal(
+    dk1.channels.distributor + dk1.channels.stores + dk1.channels.office + dk1.channels.direct,
+    dk1.salesValue,
+    "the channels add to the seat's published sales, exactly",
+  );
+  assert.ok(
+    dk1.channels.distributor < dk1.salesValue - dk1.channels.stores,
+    "Office came OUT of the distributor book — leaving it in is the defect this measures",
+  );
+
+  // THE EMITTED HEADER ROW — the owner's "separate column", read back out of the file.
+  const heads = async (line: string, carve: Parameters<typeof buildRepRankingWorkbook>[0]["carve"]) => {
+    const built = await buildRepRankingWorkbook({
+      carve,
+      probationByName: new Map(),
+      ranking: ranking(3, line),
+    });
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load(built.buffer as unknown as ArrayBuffer);
+    const out: string[] = [];
+    book.getWorksheet("Ranking")!.eachRow((row) => row.eachCell((cell) => {
+      if (typeof cell.value === "string") out.push(cell.value);
+    }));
+    return out;
+  };
+
+  const cnsHeads = await heads("CNS", { direct: new Map(), office: cnsCarve.office, stores: cnsCarve.stores });
+  assert.ok(cnsHeads.includes("Office EGP"), "the CNS Ranking sheet heads its third channel Office");
+  assert.ok(cnsHeads.includes("Office %"), "and shares it as Office too");
+  assert.ok(!cnsHeads.includes("Direct EGP"), "and never offers a direct column on a line with no direct orders");
+  assert.ok(!cnsHeads.includes("Direct %"), "nor a direct share of it");
+
+  const aiHeads = await heads(LINE, { direct: aiCarve.direct, office: aiCarve.office, stores: aiCarve.stores });
+  assert.ok(aiHeads.includes("Direct EGP"), "every other line keeps its Direct column");
+  assert.ok(!aiHeads.includes("Office EGP"), "and never grows an Office one");
+
+  // 🔴 A NEGATIVE CHANNEL FIGURE IS PRINTED, NOT CALLED "none" — and the three columns still add.
+  //
+  // This is the absence-is-not-zero mistake with its sign reversed, and it was live: the Ranking
+  // sheet wrote `store > 0 ? store : "none"`, so a month whose warehouse credits outweighed its
+  // warehouse invoices read as no warehouse trade at all. Measured on the real CNS September 2026
+  // file — Cairo East 2's warehouses are -25,640 EGP — where it did worse than hide a number: the
+  // row's Distributor + Office came to 25,640 EGP MORE than its own published sales, on a sheet
+  // whose Trust page says the channels add up exactly, with nothing on the row to explain it.
+  const negativeStores = buildRepRanking({
+    directByArea: new Map(),
+    line: "CNS",
+    matricesByPeriod: [{ matrix: matrixOf(PERIOD, SEPTEMBER), period: PERIOD }],
+    officeByArea: new Map([[`${PERIOD}|DK1`, 30_000]]),
+    period: PERIOD,
+    probationByName: new Map(),
+    seats: new Map(),
+    storesByArea: new Map([[`${PERIOD}|DK1`, -25_640]]),
+    warehouseCustomers: 1,
+  });
+  const negativeBuilt = await buildRepRankingWorkbook({
+    carve: { direct: new Map(), office: new Map(), stores: new Map() },
+    probationByName: new Map(),
+    ranking: negativeStores,
+  });
+  const negativeBook = new ExcelJS.Workbook();
+  await negativeBook.xlsx.load(negativeBuilt.buffer as unknown as ArrayBuffer);
+  const ranking1 = negativeBook.getWorksheet("Ranking")!;
+  let measured = 0;
+  // 🔴 FROM THE HEADER ROW DOWN, NEVER OVER THE WHOLE SHEET. The keycards above the table hold
+  // numbers in these same columns — one of them is an achievement ratio in column 9 — so a scan of
+  // every row "adds" a keycard to a table row and fails on arithmetic nobody wrote.
+  let headAt = 0;
+  ranking1.eachRow((row, n) => {
+    if (!headAt && row.getCell(1).value === "Rank") headAt = n;
+  });
+  assert.ok(headAt > 0, "the Ranking sheet has a header row to measure from");
+  ranking1.eachRow((row, rowNumber) => {
+    if (rowNumber <= headAt) return;
+    const sales = row.getCell(9).value;
+    const dist = row.getCell(6).value;
+    if (typeof sales !== "number" || typeof dist !== "number") return;
+    const store = row.getCell(7).value;
+    const office = row.getCell(8).value;
+    const n = (v: unknown) => (typeof v === "number" ? v : 0);
+    assert.ok(
+      Math.abs(dist + n(store) + n(office) - sales) < 1,
+      `a seat's three printed channels add to its printed sales (${String(row.getCell(4).value)}: ${dist} + ${String(store)} + ${String(office)} vs ${sales})`,
+    );
+    if (String(row.getCell(4).value) === "Dakahlia 1") {
+      measured += 1;
+      assert.equal(store, -25_640, "the negative warehouse figure is PRINTED, never written as none");
+      assert.equal(office, 30_000, "beside its Office money");
+    }
+  });
+  assert.equal(measured, 1, "the seat carrying the negative figure really is on the sheet");
 }
 
 /**
@@ -650,7 +800,7 @@ export async function runClosingRepRankingTests(): Promise<void> {
  */
 async function assertCnsWearsItsOwnIdentity(): Promise<void> {
   const cns = await buildRepRankingWorkbook({
-    carve: { direct: new Map(), stores: new Map() },
+    carve: { direct: new Map(), office: new Map(), stores: new Map() },
     probationByName: new Map(),
     ranking: ranking(3, "CNS"),
   });
