@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
+import { runDatabaseRestartCheck } from "@/lib/observability/database-restart-alert";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { describeJobHeartbeats } from "@/lib/observability/job-heartbeat-assess";
 import { notifyJobsStranded } from "@/lib/observability/job-heartbeat-alert";
@@ -59,6 +60,14 @@ export async function GET(request: Request) {
   // one question — "is the sweeper running?" — see the header note on why findings never turn it
   // red; the alert is the channel a human reads, and it is bucketed to one message a Cairo day.
   const deadTokenPolling = await runDeadTokenPollingCheck();
+
+  // A THIRD INDEPENDENT WATCH on this clock, for the same reasons as the second, and placed here
+  // on purpose: the production database crash-restarted on 2026-10-10 and again on 2026-10-12 and
+  // nothing told the owner either time — /api/healthz does not touch the database, and the GCP 5xx
+  // alert died with its billing. Fifteen minutes is the whole ask: it needs to arrive while the
+  // event is still the thing he is looking at, not a day later. One RPC per sweep, and it swallows
+  // its own errors so a database that is still refusing connections cannot take the sweep with it.
+  const databaseRestart = await runDatabaseRestartCheck();
 
   try {
     const verdict = await sweepJobHeartbeats();
@@ -117,6 +126,11 @@ export async function GET(request: Request) {
         alertDelivered: alert.delivered,
         awaitingBootstrap: verdict.awaitingBootstrap,
         checked: verdict.checked,
+        databaseRestart: {
+          alertDelivered: databaseRestart.delivered,
+          kind: databaseRestart.verdict?.kind ?? null,
+          skippedReason: databaseRestart.reason ?? null,
+        },
         deadTokenPolling: {
           alertDelivered: deadTokenPolling.delivered,
           polled: deadTokenPolling.verdict?.polled ?? [],

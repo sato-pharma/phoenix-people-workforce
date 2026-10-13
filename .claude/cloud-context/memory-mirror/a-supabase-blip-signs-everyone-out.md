@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: c2459188-d8cb-4f56-9232-71f4bd841139
-  modified: 2026-10-10T08:32:18.451Z
+  modified: 2026-10-13T01:40:00.469Z
 ---
 
 Reported 2026-10-10 as "the system is failing with some colleagues like mostafa galal". It was not
@@ -13,7 +13,11 @@ about those people at all — it was a platform-wide forced logout, and the name
 one of whoever happened to be working during the window.
 
 **The chain.** The hosted Supabase endpoint answered Cloudflare **521 Web server is down** and **525
-SSL handshake failed** between **11:03 and 11:17 Cairo**. Then:
+SSL handshake failed** between **11:03 and 11:17 Cairo**. 🔴 **Those codes were the SYMPTOM, not the
+cause — the production Postgres CRASH-RESTARTED at 11:05:48 Cairo** ("database system was not
+properly shut down; automatic recovery in progress"), which is why the edge had no origin to reach;
+read [[a-production-postgres-crash-restart-wears-cloudflare-codes]] before attributing this class to
+Cloudflare again. Then:
 
 1. `resolveEmployeeLifecycleGate` (src/lib/auth/server.ts) fails closed on any query error or thrown
    exception → `{ allowed: false, reason: "employee_lookup_failed" }`.

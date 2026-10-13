@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 0be92338-9743-4b23-ba29-cd28bd8597f5
-  modified: 2026-10-12T23:04:19.707Z
+  modified: 2026-10-13T00:48:19.942Z
 ---
 
 🔴 **A GOVERNORATE'S CITY IS ONE BRICK IN ONE AREA — NEVER A CITY BRICK IN EACH HALF.**
@@ -39,7 +39,17 @@ and **insert a row per touched batch into `source_of_sales_brick_move_files`** s
 rebuilt — see [[a-brick-move-leaves-its-rollup-files-pending-with-nothing-draining-them]], without
 which the fold never reaches a single screen.
 
-End state: **`B209B-4` مدينة قنا, Qena 2, 1,125 shops**, with `B209-1` and `B209B-1` both historical
-and superseding into it. 🔴 Never recreate a Qena-city brick in Qena 1, and never read the brick
+End state: **`B209B-4` مدينة قنا, Qena 2**, with `B209-1` and `B209B-1` both dated out `2026-10-12`,
+holding zero mapped shops, and superseding into it. Its shop count is **not a fixed number** — read
+it live (1,098 at 13 Oct 03:42 Cairo against 813+312 = 1,125 at the fold), because the address-first
+mapping work moves individual shops between neighbouring bricks continuously.
+
+🔴 **THE TWO RETIRED CITY BRICKS STAY EXACTLY AS THEY ARE** — owner, 13 Oct 2026, asked whether to
+tidy them: *"leave the two Qena city bricks as they are"*. They are dated history and the audit trail
+of the fold: never deleted, never re-pointed, never reactivated, and never re-created as a live city
+brick in Qena 1. A session that finds two `مدينة قنا` rows in the brick master is looking at that
+history, not at a defect.
+
+🔴 Never recreate a Qena-city brick in Qena 1, and never read the brick
 master alone when asked for a line's territory — the per-line truth is the seat map
 (`au.f_line_area_map_asof`) plus which bricks actually carry that line's sales.
