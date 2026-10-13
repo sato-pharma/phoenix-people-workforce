@@ -513,6 +513,62 @@ function assertAdminRepRankingButton(): void {
     "and the portal still gets the ranking workbook from its own branch, by the same gate",
   );
 
+  // ── 2b · HIS OWN COPY READS AN UNPUBLISHED MONTH; NOBODY ELSE'S DOES ─────────────────────────
+  // Owner, 2026-10-13, asked why the button refused September: every Anti Infective month was
+  // unpublished — September since 9 Oct, July and August since the 12th — so a publish-gated
+  // builder could produce nothing for the one reader who opens unpublished months everywhere else.
+  // He chose to have his own copy read the month his screen reads. It widens WHICH MONTHS, never
+  // whose figures: the scoping chain inside the loader is untouched.
+  assert.ok(
+    route.includes("const readsUnpublished = readsUnpublishedClosings(access);"),
+    "the route decides it with the ONE predicate — the same the details gate uses",
+  );
+  assert.ok(
+    route.includes("includeUnpublished: readsUnpublished"),
+    "and passes that answer through rather than a literal true",
+  );
+  assert.ok(
+    !/includeUnpublished:\s*true/.test(route),
+    "never an unconditional true: that would hand every sales:export role an unpublished month",
+  );
+  assert.ok(
+    !frozen.includes("includeUnpublished"),
+    "🔒 the portal export never asks for it — there the publish gate is the whole point",
+  );
+  // The flag is opt-in at the loader, so every existing portal caller keeps the gate by DEFAULT.
+  const portal = read("src/lib/sales/monthly-closing-portal.ts");
+  assert.ok(
+    portal.includes("includeUnpublished?: boolean"),
+    "the loader's flag is optional — absent means published months, as it always did",
+  );
+  assert.ok(
+    portal.includes("input.includeUnpublished ? await listMonthlyClosingPeriods() : []")
+      && portal.includes("input.includeUnpublished ? validatedPeriods : await listPublishedPeriodsForLine(line)"),
+    "and it swaps ONLY the month list — the validated months are read once, not per line",
+  );
+  for (const step of [
+    "const safe = stripRestrictedColumns(locked);",
+    "scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe",
+    "applyRegionScope(productScoped, scope.regionNames, scope.areaCodes)",
+  ]) {
+    assert.ok(
+      portal.includes(step),
+      `the scoping chain is untouched by the flag — ${step.slice(0, 40)}… still runs for every caller`,
+    );
+  }
+  // A validated month the line never traded in is NOT a zero month. The validated list is global,
+  // because an import batch carries no line, so the builder has to drop an empty matrix rather than
+  // render a trend column in which every rep scored nothing.
+  const builder = read("src/lib/sales/closing-rep-ranking-export.ts");
+  assert.ok(
+    builder.includes("matrix && matrix.regions.length > 0 ? { matrix, period: month } : null"),
+    "a month with no rows for this line is dropped from the trend, never shown as zero",
+  );
+  assert.ok(
+    builder.includes("loadPortalMonthlyClosing({ access, includeUnpublished, line, period: month })"),
+    "and every trend month is loaded with the same answer, so the file cannot mix gated and ungated months",
+  );
+
   // ── 3 · THE REGISTRY ─────────────────────────────────────────────────────────────────────────
   // Asked of the registry itself, not of its source text: every route under app/api needs a
   // declaration or the required validate job goes red, and the permission it declares is what the
