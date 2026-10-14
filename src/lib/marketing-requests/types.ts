@@ -964,6 +964,11 @@ export type MarketingAllRequestsWorkspace = {
 export type MarketingApprovedRequestRow = {
   contactForMoneyTransfer: string;
   customerName: string;
+  /**
+   * Set when Finance settled this request against a direct order's debt instead of paying it out.
+   * No money-transfer proof exists or is expected for such a request. The order is named in words.
+   */
+  directOrderOffset: { amount: number; note: string | null; orderLabel: string } | null;
   financeProofFileName: string | null;
   financeProofStoragePath: string | null;
   id: string;

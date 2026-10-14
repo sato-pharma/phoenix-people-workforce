@@ -10,6 +10,8 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { isSamePerson } from "@/lib/auth/identity-aliases";
+import { canRecordDirectOrderCollection } from "@/lib/direct-orders/finance-authority";
+import { loadOffsetsByRequestId } from "@/lib/direct-orders/marketing-offset-service";
 import { writeAuditLog, writeRequiredAuditLog } from "@/lib/admin/audit";
 // Pure, JSX-free SLA tone helper (see src/lib/approvals-hub/service.ts, which imports it the same
 // way) so the marketing badge graduates to "overdue" on exactly the rule the other badges use.
@@ -685,6 +687,8 @@ export type MarketingRequestDraftWorkspace = {
   // unrestricted oversight role). False for company-wide reviewers who are not a
   // directory requester — they still see the request lists in read-only mode.
   canCreateDraft: boolean;
+  /** Finance (and System Admin) may settle an approved request against a direct order's debt. */
+  canSettleAgainstDirectOrder: boolean;
   customers: MarketingCustomer[];
   distributors: MarketingDistributor[];
   drafts: MarketingRequest[];
@@ -4872,6 +4876,8 @@ export function buildMarketingApprovedRequestRows(params: {
   customers: MarketingCustomer[];
   employeeRows: EmployeeDirectoryRow[];
   financeRequirements: MarketingRequestFinanceRequirement[];
+  /** Requests settled against a direct order, by request id (direct-orders/marketing-offset-service.ts). */
+  offsets?: Map<string, { amount: number; note: string | null; orderLabel: string }>;
   requests: MarketingRequest[];
 }): MarketingApprovedRequestRow[] {
   const customersById = new Map(params.customers.map((customer) => [customer.id, customer]));
@@ -4901,6 +4907,7 @@ export function buildMarketingApprovedRequestRows(params: {
       // codes or ids. The loader resolves deactivated customers by id so this fallback should now
       // only fire when the customer row is genuinely gone; when it does, say so in words.
       customerName: customer?.displayName ?? "Unknown customer",
+      directOrderOffset: params.offsets?.get(request.id) ?? null,
       financeProofFileName: finance?.moneyTransferProofOriginalFileName ?? null,
       financeProofStoragePath: finance?.moneyTransferProofStoragePath ?? null,
       id: request.id,
@@ -8118,6 +8125,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
       .in("request_id", approvedRequestIds)
     : { data: [], error: null };
   if (financeRequirementsResult.error) throw financeRequirementsResult.error;
+  const offsetsByRequestId = await loadOffsetsByRequestId(approvedRequestIds);
 
   const validatedCustomerIds = new Set(
     ((validatedLinksResult.data ?? []) as Array<{ customer_id: string }>).map((row) => row.customer_id),
@@ -8252,9 +8260,11 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
       customers: approvedRowCustomers,
       employeeRows,
       financeRequirements: ((financeRequirementsResult.data ?? []) as MarketingRequestFinanceRequirementDbRow[]).map(mapFinanceRequirement),
+      offsets: offsetsByRequestId,
       requests: approvedRequests,
     }),
     canCreateDraft: productScope.canCreateDraft,
+    canSettleAgainstDirectOrder: canRecordDirectOrderCollection(access),
     contactsByCustomer,
     customers,
     pharmaciesByCustomer,
@@ -10191,6 +10201,7 @@ export async function uploadMarketingFinanceEvidence(params: {
     customers: ((customerResult.data ?? []) as MarketingCustomerDbRow[]).map(mapCustomer),
     employeeRows,
     financeRequirements: [mapFinanceRequirement(financeUpsert.data as MarketingRequestFinanceRequirementDbRow)],
+    offsets: await loadOffsetsByRequestId([requestId]),
     requests: [mapRequest(requestRow)],
   });
 

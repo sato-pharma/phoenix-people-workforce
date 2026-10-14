@@ -1368,6 +1368,7 @@ import { runRepMilestonesPortalTests } from "./rep-milestones-portal.test.ts";
 import { runDirectOrderCountersRefusedTests } from "./direct-orders-counters-refused.test.ts";
 import { runDirectOrderFinanceMonthBadgeTests } from "./direct-orders-finance-month-badge.test.ts";
 import { runDirectOrderCollectionTests } from "./direct-orders-collection.test.ts";
+import { runDirectOrderMarketingOffsetTests } from "./direct-order-marketing-offset.test.ts";
 import { runDirectOrderRlsCoverageTests } from "./direct-orders-rls-coverage.test.ts";
 import { runDirectOrderRegistryReplayTests } from "./direct-orders-registry-replay.test.ts";
 import { runDirectOrderDeskShellTests } from "./direct-orders-desk-shell.test.ts";
@@ -5378,6 +5379,7 @@ await runTest("a Medical Rep's 'My Milestones' page (rep-only audience, self-sco
 await runTest("direct orders counters survive cleanup (a refusal on a REJECTED pharmacy counts, an ordinary rejection never does, the page does not go blank)", runDirectOrderCountersRefusedTests);
 await runTest("direct orders finance-month badge (approved never shows alone, one shared pill not four, the gate gets the row not a constant)", runDirectOrderFinanceMonthBadgeTests);
 await runTest("direct orders collection (identity gate not role gate, remainder derived, approved-only, and recording cash never moves the sales month)", runDirectOrderCollectionTests);
+await runTest("direct order marketing offset (a request settled against an order's debt: value less cash less offsets, settles once and never overshoots, a collection edit keeps it, no cash column is written, the function is service-role only)", runDirectOrderMarketingOffsetTests);
 await runTest("direct orders RLS coverage (every direct_order_* table has RLS; a public table without it is reachable with the anon key)", runDirectOrderRlsCoverageTests);
 await runTest("direct orders unresolved manager rung (a directory gap makes a rung that says it is broken, not one that looks healthy and blocks forever)", runDirectOrderUnresolvedManagerRungTests);
 await runTest("direct orders approval exceptions (a stuck rung can be re-addressed, a healthy one cannot — the difference between a repair and an override)", runDirectOrderApprovalExceptionTests);

@@ -52,6 +52,8 @@ import {
 } from "@/lib/venues/venue-type";
 import { resolveSubmittedCampaignId } from "@/lib/direct-orders/campaign-link";
 import { pingDirectOrderSheet } from "@/lib/direct-orders/sheet-webhook";
+import { loadOffsetTotalForOrder } from "@/lib/direct-orders/marketing-offset-service";
+import { deriveRemainingWhenCollectionCleared } from "@/lib/direct-orders/offset-rules";
 import { summarizeDirectOrderBasket } from "@/lib/direct-orders/basket-label";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
 import {
@@ -7646,6 +7648,11 @@ export async function recordDirectOrderCollection(
   // check (pharmacy-probation.ts) treat an unpaid order as proof the pharmacy is real.
   const clearing = input.paidAmount == null;
 
+  // Debt already paid off by settling marketing requests against this order (offset-rules.ts). It is
+  // not cash, so `paid_amount` never carries it, but the remainder is net of it - otherwise recording
+  // or clearing a collection would silently put a settled amount back on the order.
+  const offsetTotal = await loadOffsetTotalForOrder(input.requestId);
+
   let patch: Record<string, string | number | null>;
   let summary: string;
   let eventType: string;
@@ -7653,7 +7660,11 @@ export async function recordDirectOrderCollection(
 
   if (clearing) {
     if (before.paidAmount == null && before.paymentDate == null) return before;
-    patch = { payment_date: null, paid_amount: null, remaining_amount: null };
+    patch = {
+      payment_date: null,
+      paid_amount: null,
+      remaining_amount: deriveRemainingWhenCollectionCleared({ offsetTotal, salesValue: before.salesValue }),
+    };
     summary = `Direct order collection cleared by ${access.hrId ?? "unknown"}.`;
     eventType = "collection_cleared";
     eventMessage = "Collection cleared — nothing is recorded as paid against this order.";
@@ -7665,6 +7676,7 @@ export async function recordDirectOrderCollection(
       paidAmount: input.paidAmount,
       paymentDate: input.paymentDate,
       todayCairo: todayInCairo(),
+      offsetTotal,
     });
     if (!outcome.ok) badRequest(outcome.message);
 
