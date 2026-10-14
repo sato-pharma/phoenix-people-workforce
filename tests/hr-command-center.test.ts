@@ -36,14 +36,14 @@ import {
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
 import { deductionsCategories } from "../src/lib/deductions/types.ts";
-import {
-  applicationStages,
-  terminalApplicationStages,
-} from "../src/lib/recruitment/types.ts";
+import { candidateStatuses } from "../src/lib/recruitment/candidate-status.ts";
 import {
   buildHrCommandGroups,
   DEDUCTION_CATEGORY_LABELS,
-  RECRUITING_PIPELINE_GROUPS,
+  CANDIDATE_FUNNEL_BARS,
+  CANDIDATE_FUNNEL_FINISHED,
+  buildRecruitingCharts,
+  buildRecruitingTiles,
   hrBundleForRole,
   sourcesFor,
   type HrCommandSources,
@@ -186,6 +186,7 @@ function emptySources(): HrCommandSources {
       requisitions: [],
       summary: {
         activeApplications: 0,
+        candidatePool: { backup: 0, hired: 0, new: 0, rejected: 0, sent_to_manager: 0, shortlisted: 0 },
         hiredWindow: { fromIso: "2026-09-01", toIso: "2026-09-30" },
         hires: 0,
         hiresInWindow: 0,
@@ -551,52 +552,35 @@ export async function runHrCommandCenterTests() {
     );
   }
 
-  // ── The recruiting funnel can see every stage there is ────────────────────────────────────────
-  // Same class of guard as the deduction axis below, and the same reason: `RECRUITING_PIPELINE_
-  // GROUPS` is typed against `ApplicationStage`, and that type is NOT the guard — this repo builds
-  // with `ignoreBuildErrors`, so a stage added to `applicationStages` and put in no group compiles,
-  // builds and DEPLOYS. What ships then is worse than a wrong label: candidates in that stage
-  // simply do not appear in the funnel, the columns still add up to a plausible number, and
-  // nothing anywhere reports the loss. `applicationStages` has grown three times already: the four
-  // screening states, the two interview-completion states and the five-stage offer pipeline were
-  // each appended after the original seventeen, and types.ts marks all three blocks with their own
-  // comment. There is no reason to think it has finished growing.
-  const groupedStages = RECRUITING_PIPELINE_GROUPS.flatMap((group) => group.stages);
-  const seenTwice = groupedStages.filter(
-    (stage, index) => groupedStages.indexOf(stage) !== index,
+  // ── The recruiting funnel can see every candidate pile there is ──────────────────────────────
+  // The funnel counts the CANDIDATE POOL (owner, 2026-10-14: "extremely wrong data" — it used to plot
+  // the 30 live applications while the pool held 898 live candidates). `CANDIDATE_FUNNEL_BARS` is typed
+  // against `CandidateStatus`, and that type is NOT the guard: this repo builds with
+  // `ignoreBuildErrors`, so a status added to `candidateStatuses` and put on no bar compiles, builds and
+  // DEPLOYS with its candidates invisible on the chart and the columns still adding up to a plausible
+  // number. So the vocabulary is asserted at runtime.
+  const barStatuses = CANDIDATE_FUNNEL_BARS.map((bar) => bar.status as string);
+  const barsSeenTwice = barStatuses.filter((status, index) => barStatuses.indexOf(status) !== index);
+  assert.deepEqual(
+    barsSeenTwice,
+    [],
+    `recruiting funnel: ${barsSeenTwice.join(", ")} is on more than one bar, so those candidates are counted twice and the bars sum above the Active Candidates tile`,
+  );
+  const finished = CANDIDATE_FUNNEL_FINISHED as readonly string[];
+  const unplaced = candidateStatuses.filter((status) => !barStatuses.includes(status) && !finished.includes(status));
+  assert.deepEqual(
+    unplaced,
+    [],
+    `recruiting funnel: ${unplaced.join(", ")} is neither a bar nor a finished pile, so a live candidate there is INVISIBLE on the chart — no error, just a smaller number`,
   );
   assert.deepEqual(
-    seenTwice,
+    barStatuses.filter((status) => finished.includes(status)),
     [],
-    `recruiting funnel: ${seenTwice.join(", ")} appears in more than one group, so those ` +
-      "candidates are counted once per group and the columns sum above the Active Candidates tile",
+    "recruiting funnel: a finished pile (rejected, hired) is on a bar, so the chart would count history as workload",
   );
-  for (const group of RECRUITING_PIPELINE_GROUPS) {
-    assert.ok(
-      group.stages.length > 0,
-      `recruiting funnel: group "${group.label}" holds no stage, so it is a permanently empty ` +
-        "column — the dead ink the whole grouping exists to remove",
-    );
+  for (const bar of CANDIDATE_FUNNEL_BARS) {
+    assert.ok(bar.label.length > 0, `recruiting funnel: the bar for ${bar.status} has no label`);
   }
-  const covered = new Set<string>([...groupedStages, ...terminalApplicationStages]);
-  const uncovered = applicationStages.filter((stage) => !covered.has(stage));
-  assert.deepEqual(
-    uncovered,
-    [],
-    `recruiting funnel: ${uncovered.join(", ")} belongs to no pipeline group and is not terminal, ` +
-      "so a live candidate sitting there is INVISIBLE on the chart — no error, no gap in the " +
-      "axis, just a smaller number. Put the stage in a group in RECRUITING_PIPELINE_GROUPS",
-  );
-  const strayGroupings = groupedStages.filter((stage) =>
-    (terminalApplicationStages as readonly string[]).includes(stage),
-  );
-  assert.deepEqual(
-    strayGroupings,
-    [],
-    `recruiting funnel: ${strayGroupings.join(", ")} is a terminal stage inside a live group. ` +
-      "The funnel is the work in front of the seat; counting finished applications in it makes " +
-      "the chart disagree with the Active Candidates tile beside it",
-  );
 
   // ── The deduction axis can label every category ───────────────────────────────────────────────
   // `DEDUCTION_CATEGORY_LABELS` is typed as an exhaustive Record, and that type is NOT the guard:
@@ -655,5 +639,108 @@ export async function runHrCommandCenterTests() {
       "MetricTile must PREFER valueLabel over the raw figure — a label the data carries and the " +
         "component ignores renders the exact code this pin exists to remove",
     );
+  }
+
+  // ── The Hired tile counts the EMPLOYEE MASTER, and is ABSENT rather than wrong without it ─────
+  //
+  // Owner, 2026-10-14 ("extremely wrong data"): the tile used to count applications that reached the
+  // hired stage. That half of the ATS is nearly unused, so it read 0 for October while 20 people had
+  // been hired. The window is a past October so the answer cannot move with today's date.
+  {
+    const base = emptySources();
+    const october = { fromIso: "2020-10-01", toIso: "2020-10-31" };
+    const people = [
+      { employmentStatus: "active", hireDate: "2020-10-01" },
+      { employmentStatus: "active", hireDate: "2020-10-31" },
+      { employmentStatus: "declined_offer", hireDate: "2020-10-05" },
+      { employmentStatus: "active", hireDate: "2020-09-30" },
+    ];
+    const withPeople = {
+      ...base,
+      directory: { ...base.directory, employees: people },
+      recruitment: {
+        ...base.recruitment,
+        summary: { ...base.recruitment?.summary, hiredWindow: october, hires: 0, hiresInWindow: 0 },
+      },
+    } as unknown as HrCommandSources;
+    const hiredTile = buildHrCommandGroups("HR Resourcing", withPeople)
+      .flatMap((group) => group.tiles)
+      .find((tile) => tile.key === "hired");
+    assert.ok(hiredTile, "the recruiting group must still draw a Hired tile");
+    assert.equal(
+      hiredTile.value,
+      2,
+      "RED the tile must read two — the pipeline says 0, the Master has two October hires; the declined offer and the September hire are not October's",
+    );
+    assert.equal(hiredTile.sub, "hired in October", "the caption names the window; nobody is still to start in a past month");
+
+    const withoutDirectory = { ...withPeople, directory: undefined } as unknown as HrCommandSources;
+    const absent = buildHrCommandGroups("HR Resourcing", withoutDirectory)
+      .flatMap((group) => group.tiles)
+      .find((tile) => tile.key === "hired");
+    assert.equal(
+      absent,
+      undefined,
+      "RED an unreadable directory drops the tile — it is never drawn as 0 hired, and never replaced by the pipeline's figure",
+    );
+  }
+
+  // ── The candidate tiles and the funnel count the CANDIDATE POOL, and agree with each other ──────
+  //
+  // Owner, 2026-10-14 ("extremely wrong data"): "Active Candidates" read the 30 live applications while
+  // the pool held 898 live candidates. The fixture gives the applications a number that would be wrong
+  // everywhere (3) so reading them again fails loudly.
+  {
+    const base = emptySources();
+    const pooled = {
+      ...base,
+      directory: {
+        ...base.directory,
+        employees: [
+          { employmentStatus: "active", hireDate: "2999-01-01" },
+          { employmentStatus: "declined_offer", hireDate: "2999-01-02" },
+          { employmentStatus: "active", hireDate: "2020-01-01" },
+        ],
+      },
+      recruitment: {
+        ...base.recruitment,
+        summary: {
+          ...base.recruitment?.summary,
+          activeApplications: 3,
+          candidatePool: { backup: 2, hired: 40, new: 700, rejected: 500, sent_to_manager: 30, shortlisted: 100 },
+          stageCounts: { hr_interview: 3 },
+        },
+      },
+    } as unknown as HrCommandSources;
+
+    const tiles = buildRecruitingTiles(pooled) ?? [];
+    const tileValue = (key: string) => tiles.find((tile) => tile.key === key)?.value;
+    assert.equal(tileValue("active-candidates"), 832, "RED Active Candidates is new + shortlisted + backup + with a manager (700 + 100 + 2 + 30), never the 3 live applications");
+    assert.equal(tileValue("awaiting-review"), 700, "Awaiting Review is the undecided pile of the pool");
+    assert.equal(tileValue("with-managers"), 30, "With Hiring Managers is the sent-to-manager pile of the pool");
+
+    const funnel = buildRecruitingCharts(pooled).find((chart) => chart.key === "recruiting-pipeline");
+    assert.ok(funnel, "the recruiting funnel must still be drawn");
+    const counts = funnel.rows.map((row) => Number((row as Record<string, unknown>).candidates));
+    assert.deepEqual(
+      funnel.rows.map((row) => (row as Record<string, unknown>).label),
+      ["Awaiting review", "Shortlisted", "Backup", "With a manager", "Hired, not started"],
+      "the title the owner likes stays, over one bar per pile and the hand-off bar",
+    );
+    assert.deepEqual(
+      counts,
+      [700, 100, 2, 30, 1],
+      "RED bars read the pool; the one person hired for a future day counts, the declined offer and the long-ago hire do not",
+    );
+    assert.equal(
+      counts.slice(0, 4).reduce((total, count) => total + count, 0),
+      tileValue("active-candidates"),
+      "the first four bars add up to the Active Candidates tile beside the chart",
+    );
+
+    const noDirectory = buildRecruitingCharts({ ...pooled, directory: undefined } as unknown as HrCommandSources).find(
+      (chart) => chart.key === "recruiting-pipeline",
+    );
+    assert.equal(noDirectory?.rows.length, 4, "RED without the directory the hand-off bar is ABSENT, never drawn as 0 not started");
   }
 }

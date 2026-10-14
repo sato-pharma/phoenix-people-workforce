@@ -355,7 +355,7 @@ export async function loadJoiningForm(token: string): Promise<JoiningFormView> {
 }
 
 export type JoiningFormSubmitResult =
-  | { ok: true; hrId: string; satoEmail: string | null; satoEmailReason: string | null }
+  | { ok: true; hrId: string; offerId: string; satoEmail: string | null; satoEmailReason: string | null }
   | { errors: Partial<Record<JoiningFormField | JoiningFormUploadField, string>>; ok: false; status: 400 }
   | { message: string; ok: false; status: 404 | 409 | 500 };
 
@@ -715,5 +715,5 @@ export async function submitJoiningForm(
     labels: { event: "offer_joining_form_submitted" },
   });
 
-  return { hrId, ok: true, satoEmail, satoEmailReason: satoEmail ? null : satoEmailReason };
+  return { hrId, offerId: offer.id, ok: true, satoEmail, satoEmailReason: satoEmail ? null : satoEmailReason };
 }

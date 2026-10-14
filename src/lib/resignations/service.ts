@@ -21,6 +21,7 @@ import { computeResignationSettlement } from "@/lib/payroll/copilot/proration";
 // normalisation. This module never modifies policy.ts.
 import { calculateBasicSalary, normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import type { PayrollResignationCandidate } from "@/lib/payroll/salary-import";
+import { recordOfferDeclinedAfterHire } from "@/lib/recruitment/offer-outcome-sync";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { generateShortVacancyCode } from "@/lib/workforce/vacancy-code";
 
@@ -1893,6 +1894,15 @@ export async function declineOfferAndOpenVacancy(
       payrollEligible: employee.payrollEligible,
     },
     summary: "Employee declined the offer / did not join shortly after hiring; vacancy was opened.",
+  });
+
+  // The letter this person accepted stops saying accepted, and the candidate behind it moves with it.
+  // Before this, the Employee Master said "declined offer" while the Offers screen and the candidate
+  // pool still counted a hire — four people on production on 2026-10-14. Keyed on the employee the
+  // letter points at, best effort, and after the audit row so a failure here cannot hide the decline.
+  await recordOfferDeclinedAfterHire({
+    actorHrId: access?.hrId ?? null,
+    employeeHrId: employee.hrId,
   });
 
   await notifyResignationWorkflow(
