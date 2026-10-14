@@ -64,13 +64,18 @@ function testAllThreeKeysMustIntersect() {
 
 function testInertRequestsCannotContest() {
   const subject = candidate({ requestId: "a" });
-  for (const status of ["draft", "rejected"]) {
+  // `cancelled` is in the list because a cancelled request's money is never committed (cancel.ts):
+  // warning a new request that it "overlaps" one the owner already called off is a false alarm that
+  // nobody can clear.
+  for (const status of ["draft", "rejected", "cancelled"]) {
     assert.equal(
       findRequestOverlaps(subject, [candidate({ requestId: "b", status })]).length,
       0,
       `${status} money is not committed, so it cannot contest a sale`,
     );
   }
+  // A live request still contests: the exclusion must not swallow the real thing.
+  assert.equal(findRequestOverlaps(subject, [candidate({ requestId: "b", status: "approved" })]).length, 1);
 }
 
 function testIncompleteSubjectNeverWarns() {

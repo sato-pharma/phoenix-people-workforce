@@ -1,6 +1,9 @@
+import { randomBytes } from "node:crypto";
+
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { licenseVerdictColumns } from "@/lib/venues/pharmacy-license-verdict-columns";
 import {
   parsePharmacyLicenseDataUrl,
   PHARMACY_LICENSE_BUCKET,
@@ -199,13 +202,17 @@ export async function storeMarketingPharmacyLicense(params: {
     throw new Error("Cannot store a pharmacy licence without the venue it belongs to.");
   }
 
-  const path = `pharmacy/${entityId}-license.${parsed.extension}`;
+  // A path of its own for EVERY file. It used to be `pharmacy/<id>-license.<ext>` with `upsert`, so a
+  // second licence of the same type overwrote the first in storage - and when that submission then
+  // failed and was rolled back, the rollback removed the path, deleting the licence that had been on
+  // file BEFORE the submission. Unique paths make a rollback delete only what this run created.
+  const path = `pharmacy/${entityId}-license-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}.${parsed.extension}`;
   const supabase = params.supabase ?? getSupabaseAdmin();
 
   const upload = await supabase.storage.from(PHARMACY_LICENSE_BUCKET).upload(path, parsed.bytes, {
     cacheControl: "31536000",
     contentType: parsed.contentType,
-    upsert: true,
+    upsert: false,
   });
   if (upload.error) {
     throw new Error(`Unable to store the pharmacy licence: ${upload.error.message}`);
@@ -229,6 +236,20 @@ export async function storeMarketingPharmacyLicense(params: {
   if (indexed.error) {
     await supabase.storage.from(PHARMACY_LICENSE_BUCKET).remove([path]);
     throw new Error(`Unable to record the pharmacy licence: ${indexed.error.message}`);
+  }
+
+  // A verdict is about ONE document. When a different file replaces the licence, the old answer
+  // ("confirmed to match") would stand beside a licence nobody has compared - so it goes back to
+  // "not checked yet". Only a row that actually holds a verdict is touched.
+  const verdictCleared = await supabase
+    .from("marketing_pharmacies")
+    .update(licenseVerdictColumns({ actorHrId: null, matchesSign: null, now: new Date().toISOString() }))
+    .eq("id", params.pharmacyId)
+    .not("license_name_matches_sign", "is", null);
+  if (verdictCleared.error) {
+    // The file is stored and indexed; only the stale verdict could not be cleared. Say so rather than
+    // leave an old "matches" standing silently beside a new document.
+    throw new Error(`Unable to reset the licence check for the new file: ${verdictCleared.error.message}`);
   }
 
   return path;

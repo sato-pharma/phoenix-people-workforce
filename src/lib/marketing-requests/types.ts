@@ -864,11 +864,17 @@ export type MarketingCustomerDatabaseRow = {
   /** The licence file's type, so a PDF is offered as a link rather than drawn as a broken image. */
   licenseContentType: string | null;
   /**
-   * True for a pharmacy saved on its licence alone (no distributor code) — held as not usable in
-   * requests until a code is added or a Super Admin / the CEO releases it. See
+   * True for a pharmacy saved on its licence alone (no distributor code) and STILL WAITING: held on
+   * `pending`, not usable in requests until a Super Admin or the CEO releases it. False once it is
+   * released - the marker stays in the notes for good, so this is read from the status as well. See
    * `LICENSE_ONLY_PHARMACY_NOTE` in `src/lib/venues/pharmacy-license.ts`.
    */
   licenseOnly: boolean;
+  /**
+   * True for a licence-only pharmacy a person has RELEASED (`admin_approved`): usable as a request
+   * target, with no sales channel until a distributor code is added.
+   */
+  licenseReleased: boolean;
   /** Short-lived signed link to the licence, or null when none was attached. */
   licenseUrl: string | null;
   pharmacyAddress: string | null;

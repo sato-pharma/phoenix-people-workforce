@@ -6,11 +6,14 @@
 // `updated_at` / `updated_by_hr_id` audit columns. No delete, no bulk actions, no merge logic,
 // no automatic matching — every call targets a single `linkId` supplied by the caller.
 
+import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { conflictError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { canonicalHrIdKey, resolveStoredHrId, type StoredHrIdDirectoryEntry } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { isLicenseOnlyPharmacyNote } from "@/lib/venues/pharmacy-license";
+import { licenseVerdictColumns } from "@/lib/venues/pharmacy-license-verdict-columns";
 import { WHOLESALER_VENUE_REFUSED_MESSAGE, isCertainWholesalerVenue } from "@/lib/venues/wholesaler-venue-guard";
 
 import {
@@ -123,6 +126,10 @@ function toDecisionResult(row: LinkDecisionRow): CustomerPharmacyLinkDecisionRes
  */
 export const CUSTOMER_PHARMACY_APPROVED_STATUS: CustomerPharmacyValidationStatus = "admin_approved";
 
+/** Appended to the notes of a licence-only link when a person releases it. */
+const LICENSE_RELEASE_NOTE =
+  "Released on its licence: the trade name was read against the shop sign and matches. Usable in requests with no sales channel until a distributor code is added.";
+
 /**
  * The row patch an Approve writes, built without IO so the status it carries is under test and not
  * only under a source pattern.
@@ -147,6 +154,18 @@ export function buildCustomerPharmacyApprovalPatch(input: {
   };
 }
 
+export type CustomerPharmacyApprovalInput = {
+  linkId: string;
+  /**
+   * For a pharmacy saved on its licence alone: the reviewer's answer to "does the trade name on the
+   * licence match the shop sign?". Approving such a link REQUIRES an explicit `true` - releasing a
+   * pharmacy as a request target without anyone having compared the two names is the one thing this
+   * screen must not do. A name that does not match is a Reject.
+   */
+  licenseMatchesSign?: boolean | null;
+  notes?: string | null;
+};
+
 /**
  * pending → admin_approved. Requires the link to currently be pending and active; the update is
  * conditioned on that same status in the `WHERE` clause (not just pre-checked) so a concurrent
@@ -154,7 +173,7 @@ export function buildCustomerPharmacyApprovalPatch(input: {
  */
 export async function approveCustomerPharmacyLink(
   access: AccessContext,
-  input: { linkId: string; notes?: string | null },
+  input: CustomerPharmacyApprovalInput,
 ): Promise<CustomerPharmacyLinkDecisionResult> {
   assertCustomerPharmacyMappingAccess(access);
 
@@ -171,11 +190,49 @@ export async function approveCustomerPharmacyLink(
   // wholesaler / makhzan is refused here — the one place a person turns a pending link into
   // `admin_approved`. Name-only (a marketing pharmacy code is a different code space from the SoS
   // override codes); the two-tier detector still protects owner pharmacy-overrides by name.
-  if (isCertainWholesalerVenue(await fetchLinkedPharmacyName(existing.pharmacy_id))) {
+  const pharmacyName = await fetchLinkedPharmacyName(existing.pharmacy_id);
+  if (isCertainWholesalerVenue(pharmacyName)) {
     throw validationError(WHOLESALER_VENUE_REFUSED_MESSAGE);
   }
 
   const actorHrId = await resolveActorStoredHrId(access);
+
+  // A pharmacy saved on its licence alone (owner, 2026-10-14) is released on the strength of the
+  // licence, so the release records the comparison: the verdict is written onto the pharmacy, where
+  // the Customer Database register and the request approvers read it back. It is written BEFORE the
+  // link moves - a lost race on the link then leaves a true statement behind (this person did read
+  // the licence), whereas the other order could release a pharmacy with no recorded comparison.
+  const releasedOnLicence = isLicenseOnlyPharmacyNote(existing.validation_notes);
+  if (releasedOnLicence) {
+    if (!existing.pharmacy_id) throw validationError("This link has no pharmacy, so there is no licence to read.");
+    if (input.licenseMatchesSign !== true) {
+      throw validationError(
+        "Read the pharmacy licence and confirm its trade name matches the shop sign before approving. If it does not match, reject the link.",
+        "license_check_required",
+      );
+    }
+    const { data: licenseRow, error: licenseError } = await getSupabaseAdmin()
+      .from("marketing_evidence_files")
+      .select("id")
+      .eq("entity_id", existing.pharmacy_id)
+      .eq("evidence_type", "pharmacy_license")
+      .limit(1)
+      .maybeSingle();
+    if (licenseError) throw licenseError;
+    if (!licenseRow) {
+      throw validationError("There is no licence on file for this pharmacy, so it cannot be released on its licence.");
+    }
+    const verdictNow = new Date().toISOString();
+    const { error: verdictError } = await getSupabaseAdmin()
+      .from("marketing_pharmacies")
+      .update({
+        ...licenseVerdictColumns({ actorHrId: access.hrId ?? null, matchesSign: true, now: verdictNow }),
+        updated_at: verdictNow,
+        updated_by_hr_id: actorHrId,
+      })
+      .eq("id", existing.pharmacy_id);
+    if (verdictError) throw verdictError;
+  }
 
   const { data, error } = await getSupabaseAdmin()
     .from("marketing_customer_pharmacies")
@@ -184,7 +241,7 @@ export async function approveCustomerPharmacyLink(
         accessHrId: access.hrId,
         actorHrId,
         existingNotes: existing.validation_notes,
-        notes: input.notes,
+        notes: releasedOnLicence ? [input.notes, LICENSE_RELEASE_NOTE].filter(Boolean).join(" ") : input.notes,
         now: new Date(),
       }),
     )
@@ -194,6 +251,19 @@ export async function approveCustomerPharmacyLink(
     .maybeSingle();
   if (error) throw error;
   if (!data) throw conflictError("This link was just changed by someone else. Reload and try again.");
+
+  // The decision that makes a venue a request target is a ruling about money, so it is audited and
+  // the audit is REQUIRED: a link approved with no record of who approved it is the failure.
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityId: existing.pharmacy_id,
+    entityType: "marketing_pharmacy",
+    newValues: { linkId, licenseMatchesSign: releasedOnLicence ? true : null, validationStatus: CUSTOMER_PHARMACY_APPROVED_STATUS },
+    oldValues: { validationStatus: existing.validation_status },
+    summary: releasedOnLicence
+      ? `Customer pharmacy link for "${pharmacyName ?? "a pharmacy"}" released on its licence by ${actorHrId ?? access.hrId ?? "unknown"}: trade name confirmed to match the shop sign.`
+      : `Customer pharmacy link for "${pharmacyName ?? "a pharmacy"}" approved by ${actorHrId ?? access.hrId ?? "unknown"}.`,
+  });
 
   return toDecisionResult(data as LinkDecisionRow);
 }
@@ -237,6 +307,15 @@ export async function rejectCustomerPharmacyLink(
     .maybeSingle();
   if (error) throw error;
   if (!data) throw conflictError("This link was just changed by someone else. Reload and try again.");
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityId: existing.pharmacy_id,
+    entityType: "marketing_pharmacy",
+    newValues: { linkId, reason: trimmedReason, validationStatus: "rejected" },
+    oldValues: { validationStatus: existing.validation_status },
+    summary: `Customer pharmacy link rejected by ${actorHrId ?? access.hrId ?? "unknown"}: ${trimmedReason}`,
+  });
 
   return toDecisionResult(data as LinkDecisionRow);
 }

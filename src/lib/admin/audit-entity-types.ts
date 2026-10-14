@@ -115,6 +115,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   manageengine_device_profile: true,
   manageengine_enrollment_template: true,
   manageengine_profile: true,
+  marketing_control: true,
   marketing_customer: true,
   marketing_pharmacy: true,
   marketing_request: true,

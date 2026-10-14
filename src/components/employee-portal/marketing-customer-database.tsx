@@ -179,11 +179,18 @@ function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
           {row.customerAddress || row.pharmacyAddress}
         </p>
       ) : null}
-      {/* The licence, BIG, for whoever reviews this venue (SFE, admin, marketing, CEO). A pharmacy
-          saved on its licence alone has nothing else to identify it, so it is said in words too. */}
+      {/* The licence, BIG, for whoever opens this register (Super Admin and SFE Manager - the CEO and
+          marketing read it on the request approval screens). A pharmacy saved on its licence alone
+          has nothing else to identify it, so it is said in words too - and only while it is still
+          waiting: the marker stays in the notes for good, the banner follows the status. */}
       {row.licenseOnly ? (
         <p className="mt-2 border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs font-black leading-5 text-amber-900">
           Licence only — no distributor code. Not usable in requests yet.
+        </p>
+      ) : null}
+      {row.licenseReleased ? (
+        <p className={`mt-2 border border-slate-300 bg-slate-50 px-2.5 py-2 text-xs font-black leading-5 text-slate-800 ${adminSoftDepthClassName}`}>
+          Released on its licence — usable in requests, with no sales channel until a distributor code is added.
         </p>
       ) : null}
       <PharmacyLicenseEvidence
@@ -592,6 +599,9 @@ export function MarketingCustomerDatabase() {
                     {row.pharmacyName}
                     {row.licenseOnly ? (
                       <span className="mt-1 block text-xs font-black text-amber-800">Licence only — not usable yet</span>
+                    ) : null}
+                    {row.licenseReleased ? (
+                      <span className="mt-1 block text-xs font-black text-slate-700">Released on licence — no sales channel</span>
                     ) : null}
                     {/* A thumbnail in a narrow column — tap it to open the full-screen zoom. */}
                     <PharmacyLicenseEvidence

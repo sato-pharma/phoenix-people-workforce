@@ -18,10 +18,12 @@
  * Statuses whose money is not committed, so they cannot contest anything.
  *
  * Exported because it is also the right exclusion set for any "what have we already spent on this
- * customer" figure: an abandoned draft and a refused request are not spend, and counting them
- * inflates the number an approver weighs the next request against.
+ * customer" figure: an abandoned draft, a refused request and a CANCELLED one are not spend, and
+ * counting them inflates the number an approver weighs the next request against. A cancelled
+ * request's money is never committed (`cancel.ts`), so warning a new request that it "overlaps" one
+ * the owner has already called off is a false alarm, and one an approver cannot clear.
  */
-export const INERT_MARKETING_REQUEST_STATUSES: ReadonlySet<string> = new Set(["draft", "rejected"]);
+export const INERT_MARKETING_REQUEST_STATUSES: ReadonlySet<string> = new Set(["draft", "rejected", "cancelled"]);
 
 export type OverlapCandidate = {
   requestId: string;

@@ -556,9 +556,15 @@ function statusVariant(status: MarketingValidationStatus): "success" | "warning"
   return "neutral";
 }
 
-/** Whether any row on this customer is a pharmacy saved on its licence alone, held without a code. */
+/**
+ * Whether any row on this customer is a pharmacy saved on its licence alone and STILL held without a
+ * code. The marker stays in the notes after a release, so the status is read too - a released link is
+ * not a hold.
+ */
 function hasLicenseOnlyHold(rows: MarketingValidationReportRow[]): boolean {
-  return rows.some((row) => isLicenseOnlyPharmacyNote(row.validationNotes));
+  return rows.some(
+    (row) => isLicenseOnlyPharmacyNote(row.validationNotes) && row.validationStatus === "pending",
+  );
 }
 
 /** Whether any row on this customer is held because its capture contradicts the code's region. */
@@ -588,7 +594,7 @@ function pendingBlockReason(rows: MarketingValidationReportRow[]): string {
   if (customerShort) return "The customer's live photo and location are incomplete.";
   if (pharmacyShort) return "The venue's live photo and location are incomplete.";
   if (hasLicenseOnlyHold(rows)) {
-    return "This pharmacy has no distributor code and was saved on its licence, so it is not usable in requests yet. Add its code, or ask a Super Admin or the CEO to read the licence and release it.";
+    return "This pharmacy has no distributor code and was saved on its licence, so it is not usable in requests yet. A Super Admin or the CEO reads the licence and releases it from Customer Pharmacy Mapping.";
   }
   return "Waiting for a Super Admin or the CEO to release it.";
 }

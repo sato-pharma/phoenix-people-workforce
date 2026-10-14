@@ -23,7 +23,14 @@ import {
   resolveLineCcRecipients,
   resolveMarketingRequestUuid,
 } from "@/lib/marketing-requests/service";
+import {
+  planRestartedApprovalSteps,
+  resubmitBasisChanges,
+  resubmitRestartsApprovals,
+  type ResubmitBasis,
+} from "@/lib/marketing-requests/resubmit-rule";
 import type { MarketingRequest, MarketingRequestCreateDraft } from "@/lib/marketing-requests/types";
+import { LICENSE_ONLY_PHARMACY_NOTE } from "@/lib/venues/pharmacy-license";
 import { customerFieldEvidenceGap } from "@/lib/marketing-requests/validation-report";
 
 const baseInput: MarketingRequestCreateDraft = {
@@ -429,8 +436,20 @@ export async function runMarketingRequestServiceTests() {
   assert.equal(normalized.products[0].productId, 1);
   assert.equal(normalized.products[0].quantity, 500);
 
+  // The customer's own validated link to the code the draft targets. Every target must come from
+  // here since 2026-10-14 (`target_not_linked_to_customer`), so the fixtures name it explicitly.
+  const targetLinks = [
+    {
+      distributorCodeId: "22222222-2222-2222-2222-222222222222",
+      notes: null,
+      pharmacyId: "33333333-3333-3333-3333-333333333333",
+      status: "system_validated",
+    },
+  ];
+
   const prepared = prepareMarketingRequestDraft({
     customer,
+    customerLinks: targetLinks,
     input: baseInput,
     pharmacyCodes: [
       {
@@ -487,6 +506,7 @@ export async function runMarketingRequestServiceTests() {
     () =>
       prepareMarketingRequestDraft({
         customer,
+        customerLinks: targetLinks,
         input: {
           ...baseInput,
           otherRequestType: "",
@@ -515,6 +535,100 @@ export async function runMarketingRequestServiceTests() {
         requester,
       }),
     /other request type description/i,
+  );
+
+  // -- Every target must be one of THIS customer's validated venues (owner audit, 2026-10-14) ---
+  // `fetchPharmacyCodes` looks a code up by id alone, so before the guard a requester could name
+  // any code in the database. The server now asks the customer's own links.
+  const draftProducts = [
+    { active: true, factory_price: 6, id: 1, line: "Anti infective", product_name: "Saginko" },
+    { active: true, factory_price: 14, id: 2, line: "Anti infective", product_name: "Royafloxacin" },
+  ];
+  const targetCode = { active: true, id: "22222222-2222-2222-2222-222222222222", pharmacy_id: "33333333-3333-3333-3333-333333333333" };
+  assert.throws(
+    () =>
+      prepareMarketingRequestDraft({
+        customer,
+        customerLinks: [],
+        input: baseInput,
+        pharmacyCodes: [targetCode],
+        products: draftProducts,
+        requestType,
+        requester,
+      }),
+    /not one of this customer's validated venues/i,
+    "a code the customer has no link to must be refused, not accepted because some other link is validated",
+  );
+  assert.throws(
+    () =>
+      prepareMarketingRequestDraft({
+        customer,
+        customerLinks: [{ ...targetLinks[0], status: "pending" }],
+        input: baseInput,
+        pharmacyCodes: [targetCode],
+        products: draftProducts,
+        requestType,
+        requester,
+      }),
+    /not one of this customer's validated venues/i,
+    "a link that is not validated is not a target",
+  );
+
+  // A pharmacy saved on its licence: refused while it waits, accepted once a person released it.
+  const licencePharmacyInput = {
+    ...baseInput,
+    pharmacies: [{ notes: null, targetId: "venue:44444444-4444-4444-4444-444444444444" }],
+  } as unknown as MarketingRequestCreateDraft;
+  const licenceVenue = { active: true, display_name: "Al Noor Pharmacy", id: "44444444-4444-4444-4444-444444444444", venue_type: "pharmacy" };
+  const licenceLink = (status: string) => ({
+    distributorCodeId: null,
+    notes: LICENSE_ONLY_PHARMACY_NOTE,
+    pharmacyId: licenceVenue.id,
+    status,
+  });
+  assert.throws(
+    () =>
+      prepareMarketingRequestDraft({
+        customer,
+        customerLinks: [licenceLink("pending")],
+        input: licencePharmacyInput,
+        products: draftProducts,
+        requestType,
+        requester,
+        venuePharmacies: [licenceVenue],
+      }),
+    /not usable in requests yet/i,
+    "a licence-only pharmacy that nobody has released must be refused, with the reason it is waiting",
+  );
+  const releasedDraft = prepareMarketingRequestDraft({
+    customer,
+    customerLinks: [licenceLink("admin_approved")],
+    input: licencePharmacyInput,
+    products: draftProducts,
+    requestType,
+    requester,
+    venuePharmacies: [licenceVenue],
+  });
+  assert.equal(releasedDraft.pharmacyRows[0].distributor_code_id, null);
+  assert.equal(releasedDraft.pharmacyRows[0].pharmacy_id, licenceVenue.id);
+  assert.match(
+    String(releasedDraft.pharmacyRows[0].notes),
+    /sales cannot be matched/i,
+    "the target row says it has no sales channel, so the ROI panel never prints a misleading zero",
+  );
+  assert.throws(
+    () =>
+      prepareMarketingRequestDraft({
+        customer,
+        customerLinks: [{ ...licenceLink("admin_approved"), notes: null }],
+        input: licencePharmacyInput,
+        products: draftProducts,
+        requestType,
+        requester,
+        venuePharmacies: [licenceVenue],
+      }),
+    /must target one of its distributor codes/i,
+    "an ordinary codeless pharmacy (no licence marker) stays refused - the capture gate is not bypassable",
   );
 
   assert.equal(createAccessContext({ hrId: "MR001", role: "Medical Rep" }).scope, "self");
@@ -966,6 +1080,220 @@ export async function runMarketingRequestServiceTests() {
 
   // Service exposes resubmit, approver inbox, and request detail/tracking.
   assert.match(serviceSource, /resubmitReturnedMarketingRequest/, "service must support returned -> resubmit");
+
+  // A resubmit that changes the cost, the customer or the targets restarts the chain at the first
+  // approver (owner, 2026-10-14); one that changes none of them resumes where it was returned.
+  const approvedBasis: ResubmitBasis = {
+    customerId: "cust-1",
+    estimatedCost: 5000,
+    targets: [
+      { distributorCodeId: "code-a", pharmacyId: "ph-1" },
+      { distributorCodeId: null, pharmacyId: "ph-2" },
+    ],
+  };
+  assert.deepEqual(resubmitBasisChanges(approvedBasis, { ...approvedBasis }), [], "nothing moved: no restart");
+  assert.equal(resubmitRestartsApprovals(approvedBasis, { ...approvedBasis }), false);
+  assert.deepEqual(
+    resubmitBasisChanges(approvedBasis, { ...approvedBasis, estimatedCost: 50000 }),
+    ["cost"],
+    "ten times the money was never what the District Manager approved",
+  );
+  assert.deepEqual(
+    resubmitBasisChanges(approvedBasis, { ...approvedBasis, estimatedCost: 5000.004 }),
+    [],
+    "float noise below half a piastre is not a change",
+  );
+  assert.deepEqual(resubmitBasisChanges(approvedBasis, { ...approvedBasis, customerId: "CUST-2" }), ["customer"]);
+  assert.deepEqual(
+    resubmitBasisChanges(approvedBasis, { ...approvedBasis, customerId: " CUST-1 " }),
+    [],
+    "casing and padding of the same customer id is not a different customer",
+  );
+  assert.deepEqual(
+    resubmitBasisChanges(approvedBasis, { ...approvedBasis, targets: [...approvedBasis.targets].reverse() }),
+    [],
+    "the same targets in a different order are not a change",
+  );
+  assert.deepEqual(
+    resubmitBasisChanges(approvedBasis, {
+      ...approvedBasis,
+      targets: [...approvedBasis.targets, { distributorCodeId: "code-b", pharmacyId: "ph-3" }],
+    }),
+    ["targets"],
+    "an added target is a change",
+  );
+  assert.deepEqual(
+    resubmitBasisChanges(approvedBasis, {
+      ...approvedBasis,
+      targets: [{ distributorCodeId: "code-a", pharmacyId: "ph-1" }],
+    }),
+    ["targets"],
+    "a removed target is a change",
+  );
+  assert.deepEqual(
+    resubmitBasisChanges(approvedBasis, {
+      ...approvedBasis,
+      targets: [
+        { distributorCodeId: "code-z", pharmacyId: "ph-1" },
+        { distributorCodeId: null, pharmacyId: "ph-2" },
+      ],
+    }),
+    ["targets"],
+    "the same pharmacy through a different distributor code is a different target",
+  );
+  assert.deepEqual(
+    resubmitBasisChanges(approvedBasis, {
+      customerId: "cust-9",
+      estimatedCost: 1,
+      targets: [],
+    }),
+    ["customer", "cost", "targets"],
+    "all three at once names all three",
+  );
+
+  const gate = (id: string, sequence: number, status: string, extra: Record<string, unknown> = {}) => ({
+    decisionAt: null,
+    decisionByHrId: null,
+    decisionNote: null,
+    id,
+    isCc: false,
+    sequence,
+    status,
+    ...extra,
+  });
+  const decided = { decisionAt: "2026-10-01T08:00:00Z", decisionByHrId: "B-1", decisionNote: "ok" };
+  const chain = [
+    gate("dm", 1, "approved", decided),
+    gate("rm", 2, "returned", { ...decided, decisionNote: "cost looks high" }),
+    gate("ceo", 3, "pending"),
+    gate("cc-pm", 4, "skipped", { isCc: true }),
+    gate("self", 5, "skipped", { decisionNote: "Skipped automatically: the assigned approver raised this request." }),
+  ] as Parameters<typeof planRestartedApprovalSteps>[0];
+  assert.deepEqual(
+    planRestartedApprovalSteps(chain),
+    [
+      { status: "current", stepId: "dm" },
+      { status: "pending", stepId: "rm" },
+    ],
+    "the first gate reopens, the rung that returned it waits again with its decision cleared, and a gate that was already pending with no decision needs no write",
+  );
+  assert.ok(
+    !planRestartedApprovalSteps(chain).some((entry) => entry.stepId === "self" || entry.stepId === "cc-pm"),
+    "a CC row and a skipped self-approval rung are not gates: reopening the self-approval rung would park the request on a rung its own assignee may not decide",
+  );
+  assert.deepEqual(
+    planRestartedApprovalSteps([gate("only", 1, "returned", decided), gate("next", 2, "pending")] as Parameters<typeof planRestartedApprovalSteps>[0]),
+    [{ status: "current", stepId: "only" }],
+    "when the returning rung IS the first gate, only it changes",
+  );
+  assert.deepEqual(planRestartedApprovalSteps([]), []);
+
+  // Every control write is on the record: who changed the routing of marketing money, and what it
+  // held before. Setting, request type and approval step each write a required audit row.
+  for (const fn of [
+    "updateMarketingControlSetting",
+    "updateMarketingControlRequestType",
+    "updateMarketingControlWorkflowStep",
+  ]) {
+    const start = serviceSource.indexOf(`export async function ${fn}(`);
+    assert.ok(start > 0, `${fn} must exist`);
+    const nextExport = serviceSource.indexOf("\nexport ", start + 10);
+    const body = serviceSource.slice(start, nextExport);
+    assert.match(body, /await writeRequiredAuditLog\(/, `${fn} must write a REQUIRED audit row - a control change with no record is how nobody can say who re-pointed an approval`);
+    assert.match(body, /entityType: "marketing_control"/, `${fn} must use the marketing_control entity type`);
+    assert.match(body, /oldValues:/, `${fn} must record what the value was BEFORE`);
+  }
+
+  // The resubmit is ONE database transaction. A client-side claim-and-rollback was tried and rejected
+  // in review (the rollback could not re-insert the GENERATED expected_value, a second resubmit could
+  // claim on top of the first, and a write that committed but errored to the client was rolled back
+  // around), so the service decides WHAT to write and the function makes it all-or-nothing.
+  const resubmitBody = serviceSource.slice(
+    serviceSource.indexOf("export async function resubmitReturnedMarketingRequest("),
+    serviceSource.indexOf("export async function reopenRejectedMarketingRequest("),
+  );
+  assert.match(resubmitBody, /resubmitBasisChanges\(/, "the restart decision comes from the shared pure rule");
+  assert.match(resubmitBody, /planRestartedApprovalSteps\(steps\)/, "the restart plan comes from the shared pure rule");
+  assert.match(
+    resubmitBody,
+    /supabase\.rpc\("phx_resubmit_marketing_request"/,
+    "the resubmit writes through the one-transaction function",
+  );
+  assert.doesNotMatch(
+    resubmitBody,
+    /\.from\("marketing_request(?:s|_products|_pharmacies|_approval_steps)"\)\s*\.(?:delete|insert|update)\(/,
+    "the resubmit must not write these tables a call at a time any more - that is the half-applied state the function exists to prevent",
+  );
+  for (const code of [
+    "marketing_request_not_found",
+    "marketing_request_not_returned",
+    "marketing_resubmit_not_requester",
+    "marketing_resubmit_no_products",
+    "marketing_resubmit_no_targets",
+    "marketing_resubmit_invalid_steps",
+    "marketing_resubmit_no_single_current_step",
+  ]) {
+    assert.ok(
+      resubmitBody.includes(`message.includes("${code}")`),
+      `the resubmit must map the function's ${code} refusal to a clean error, not a raw Postgres message`,
+    );
+  }
+  assert.match(resubmitBody, /marketing_resubmit_conflict/, "a lost race says so with a stable code");
+  // The notice follows the rung's recorded reopening - the key the decision path and the daily
+  // backfill compute - or the approver is told once now and again at the next sweep.
+  assert.match(
+    resubmitBody,
+    /await resolveMarketingStepReopenEpoch\(supabase, requestId, openedStep\.sequence\)\) \?\? now/,
+    "the resubmit notice must key on the rung's reopen epoch, falling back to the call's own instant only when the rung opened once",
+  );
+  assert.match(resubmitBody, /idempotencyEpoch: reopenEpoch/, "the resubmit notice must carry that epoch");
+
+  // The function itself, pinned by its text: the stored procedure is the only thing that can hold
+  // these invariants, and a source test is the only thing that can hold the procedure.
+  const resubmitSql = source("supabase/migrations/20261014140000_marketing_resubmit_atomic.sql");
+  assert.ok(
+    resubmitSql.indexOf("for update") > -1
+      && resubmitSql.indexOf("for update") < resubmitSql.indexOf("raise exception 'marketing_request_not_returned"),
+    "the request row is locked BEFORE its status is read, or two resubmits both see `returned`",
+  );
+  assert.match(resubmitSql, /security definer/, "it runs with the owner's rights, not the caller's");
+  assert.match(
+    resubmitSql,
+    /revoke execute on function public\.phx_resubmit_marketing_request\([^)]*\)\s+from public, anon, authenticated;/,
+    "browser roles must not be able to call it",
+  );
+  assert.match(
+    resubmitSql,
+    /grant execute on function public\.phx_resubmit_marketing_request\([^)]*\)\s+to service_role;/,
+    "only the service role may call it",
+  );
+  const productInsert = /insert into marketing_request_products\s*\(([^)]*)\)/.exec(resubmitSql);
+  assert.ok(productInsert, "the products are re-inserted");
+  assert.ok(
+    !productInsert![1].includes("expected_value"),
+    "expected_value is GENERATED ALWAYS - naming it in the insert is refused and loses the products",
+  );
+  const pharmacyInsert = /insert into marketing_request_pharmacies\s*\(([^)]*)\)/.exec(resubmitSql);
+  assert.ok(pharmacyInsert, "the targets are re-inserted");
+  assert.ok(
+    !pharmacyInsert![1].includes("tracking_status"),
+    "a re-inserted target takes the column default for tracking_status, so an old validation never carries over to a new row",
+  );
+  assert.match(
+    resubmitSql,
+    /s\.request_id\s*=\s*p_request_id\s+and s\.is_cc\s*=\s*false/,
+    "only gating rungs of THIS request may be rewritten",
+  );
+  assert.match(
+    resubmitSql,
+    /v_current <> 1 then\s+raise exception 'marketing_resubmit_no_single_current_step/,
+    "it must refuse to commit unless exactly one gating rung is current - zero strands the request, two lets two people decide one step",
+  );
+  assert.match(
+    resubmitSql,
+    /v_written <> v_planned then\s+raise exception 'marketing_resubmit_invalid_steps/,
+    "a rung that does not belong to this request must refuse the whole plan",
+  );
   assert.match(serviceSource, /getApproverPendingRequests/, "service must expose the approver inbox");
   assert.match(serviceSource, /getMarketingRequestDetail/, "service must expose request detail for tracking");
   assert.match(serviceSource, /stepProgressByRequestId/, "workspace must expose step progress for tracking");
@@ -1087,6 +1415,26 @@ export async function runMarketingRequestServiceTests() {
     dispatcherBody,
     /idempotencyEpoch: reopenEpoch/,
     "the dispatcher must pass the reopen epoch through, or a reopened rung re-uses its spent key",
+  );
+  /**
+   * The SAME epoch must ride the notice the decision path sends when an approval advances the chain.
+   * A resubmit that restarts the chain reopens rungs that already told their approver once, and the
+   * delivery key is unique per rung - so a decision that advances onto one of them without the epoch
+   * notifies nobody, and the request sits unseen until the daily backfill (which does pass it).
+   */
+  const decideStart = serviceSource.indexOf("export async function decideMarketingRequestWorkflow(");
+  const decideEnd = serviceSource.indexOf("function mapCustomer(", decideStart);
+  assert.ok(decideStart > -1 && decideEnd > decideStart, "decideMarketingRequestWorkflow must be declared before mapCustomer");
+  const decideBody = serviceSource.slice(decideStart, decideEnd);
+  assert.match(
+    decideBody,
+    /await resolveMarketingStepReopenEpoch\(supabase, request\.id, currentNextStep\.sequence\)/,
+    "advancing an approval must resolve the next rung's reopen epoch, or a restarted chain's later approvers are never told",
+  );
+  assert.match(
+    decideBody,
+    /idempotencyEpoch: nextStepEpoch/,
+    "advancing an approval must pass the reopen epoch to the notice, or the rung's spent key swallows it",
   );
   // It must refuse to invent a recipient when nobody is holding the request.
   for (const guard of ["request_not_pending", "no_current_step", "already_notified"]) {
@@ -1695,6 +2043,7 @@ export async function runMarketingRequestServiceTests() {
   // tagged with the PRODUCT's line (9) — not the requester line (7) or the customer line (8).
   const overrideSubmit = prepareMarketingRequestDraft({
     customer,
+    customerLinks: targetLinks,
     input: { ...baseInput, products: [{ productId: 3, quantity: 500 }] },
     pharmacyCodes: [
       { active: true, id: "22222222-2222-2222-2222-222222222222", pharmacy_id: "33333333-3333-3333-3333-333333333333" },
@@ -1714,6 +2063,7 @@ export async function runMarketingRequestServiceTests() {
     () =>
       prepareMarketingRequestDraft({
         customer,
+        customerLinks: targetLinks,
         input: { ...baseInput, products: [{ productId: 3, quantity: 500 }] },
         pharmacyCodes: [
           { active: true, id: "22222222-2222-2222-2222-222222222222", pharmacy_id: "33333333-3333-3333-3333-333333333333" },
@@ -1761,6 +2111,7 @@ export async function runMarketingRequestServiceTests() {
     () =>
       prepareMarketingRequestDraft({
         customer,
+        customerLinks: targetLinks,
         input: { ...baseInput, products: [{ productId: 10, quantity: 500 }] },
         pharmacyCodes: [
           { active: true, id: "22222222-2222-2222-2222-222222222222", pharmacy_id: "33333333-3333-3333-3333-333333333333" },
@@ -1776,6 +2127,7 @@ export async function runMarketingRequestServiceTests() {
 
   const b155Submit = prepareMarketingRequestDraft({
     customer,
+    customerLinks: targetLinks,
     input: { ...baseInput, products: [{ productId: 12, quantity: 500 }] },
     pharmacyCodes: [
       { active: true, id: "22222222-2222-2222-2222-222222222222", pharmacy_id: "33333333-3333-3333-3333-333333333333" },

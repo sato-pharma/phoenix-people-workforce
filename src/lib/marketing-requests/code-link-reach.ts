@@ -28,6 +28,9 @@
  * that kept 24 of 81 new links deliberately invisible.
  */
 
+import { isLicenseOnlyPharmacyNote } from "@/lib/venues/pharmacy-license";
+import { venueRequiresDistributorCode, type VenueType } from "@/lib/venues/venue-type";
+
 /**
  * Link validation statuses that make a venue selectable, strongest first.
  *
@@ -48,6 +51,63 @@
 export const LINK_STATUS_PRECEDENCE = ["admin_approved", "sfe_validated", "system_validated"] as const;
 
 export type LinkValidationStatus = (typeof LINK_STATUS_PRECEDENCE)[number];
+
+/**
+ * The link statuses that can make a LICENCE-ONLY pharmacy a request target: only a person's ruling.
+ *
+ * A pharmacy saved on its licence alone (owner, 2026-10-14) sits on `pending` until a Super Admin
+ * or the CEO has read the licence and pressed Approve, which writes `admin_approved`. The two
+ * machine and desk statuses are not enough here: `system_validated` means no human looked, and
+ * `sfe_validated` is a desk entry — neither is a person reading a trade licence against a shop sign.
+ */
+export const LICENSE_ONLY_RELEASE_STATUS = "admin_approved" as const;
+
+/** What a customer's link has to say for the request form and the server to judge it as a target. */
+export type CustomerTargetLink = {
+  distributorCodeId: string | null;
+  /** The link's `validation_notes` — where the licence-only marker lives. */
+  notes: string | null;
+  pharmacyId: string;
+  status: string | null;
+};
+
+/**
+ * - `coded` — a link to a distributor code: sales attribute through it.
+ * - `no_distributor_account` — a nursery or clinic: spend allowed, sales can never be matched.
+ * - `licence_released` — a pharmacy with no code, released by a person on its licence (owner,
+ *   2026-10-14): spend allowed like a nursery, sales cannot be matched until a code is added.
+ */
+export type RequestTargetKind = "coded" | "no_distributor_account" | "licence_released";
+
+/**
+ * Whether a customer's link can be a request target, and as what kind — or null when it cannot.
+ *
+ * THE ONE TEST. The request form's picker (`getMarketingRequestDraftWorkspace`) and the server's
+ * draft guard (`prepareMarketingRequestDraft`) both call this, because they used to carry two
+ * hand-written copies of "which links count" and the copies disagreed in the case that mattered: a
+ * codeless pharmacy the picker skipped and the server refused, while a link that no longer
+ * belonged to the customer at all was accepted by the server because it only asked whether the
+ * customer had SOME validated venue.
+ */
+export function requestTargetKind(link: Pick<CustomerTargetLink, "distributorCodeId" | "notes" | "status">, venueType: VenueType): RequestTargetKind | null {
+  if (!linkStatusIsSelectable(link.status)) return null;
+  if (link.distributorCodeId) return "coded";
+  if (!venueRequiresDistributorCode(venueType)) return "no_distributor_account";
+  if (link.status === LICENSE_ONLY_RELEASE_STATUS && isLicenseOnlyPharmacyNote(link.notes)) return "licence_released";
+  return null;
+}
+
+/** The customer's own link for a chosen target, or undefined when the target is not theirs. */
+export function findCustomerTargetLink(
+  links: readonly CustomerTargetLink[],
+  target: { distributorCodeId: string | null; pharmacyId: string },
+): CustomerTargetLink | undefined {
+  return links.find(
+    (link) =>
+      link.pharmacyId === target.pharmacyId
+      && (link.distributorCodeId ?? null) === (target.distributorCodeId ?? null),
+  );
+}
 
 /**
  * The status a new link should carry, given every status this customer already holds on the venue.

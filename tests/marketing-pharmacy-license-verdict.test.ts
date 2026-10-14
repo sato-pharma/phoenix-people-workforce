@@ -77,9 +77,15 @@ export function runMarketingPharmacyLicenseVerdictTests() {
     );
     // The reason above is only true while resubmission really does delete those rows. If that ever
     // stops being true this assert fails, and whoever changed it gets to re-read the choice.
+    // Resubmission is one database function now (phx_resubmit_marketing_request), so the delete
+    // is read from its text rather than from the service.
+    const resubmitFunction = readFileSync(
+      new URL("../supabase/migrations/20261014140000_marketing_resubmit_atomic.sql", import.meta.url),
+      "utf8",
+    );
     assert.match(
-      marketingServiceSource,
-      /from\("marketing_request_pharmacies"\)\.delete\(\)\.eq\("request_id", requestId\)/,
+      resubmitFunction,
+      /delete from marketing_request_pharmacies where request_id = p_request_id;/,
       "resubmission still deletes every link row — the premise of storing the verdict elsewhere",
     );
   }

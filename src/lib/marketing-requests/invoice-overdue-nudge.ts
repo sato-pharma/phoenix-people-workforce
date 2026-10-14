@@ -204,6 +204,32 @@ export function financeOverdueInvoiceDigest(invoices: readonly OverdueMarketingI
 }
 
 /**
+ * The request statuses whose invoice is still somebody's job to chase.
+ *
+ * A request that never reached approval (`draft`, `pending_*`, `returned`) owes nothing, and one that
+ * was refused or CALLED OFF (`rejected`, `cancelled`) owes nothing any more - telling its requester
+ * and finance every morning that an invoice is "18 days late" for a request the owner cancelled is
+ * the nagging this job exists to avoid. The finance-requirements row survives a cancel (cancelling
+ * flips the request's status and nothing else), so the invoice obligation alone cannot say so.
+ *
+ * `archived` stays IN, unlike the dashboard's approved-request counts, which leave it out so the
+ * totals do not inflate: an approved request filed away after its ROI window still owes its invoice.
+ * A set of the allowed states rather than a negation, so a future status is not silently chased.
+ */
+export const INVOICE_CHASEABLE_REQUEST_STATUSES: ReadonlySet<string> = new Set([
+  "approved",
+  "active",
+  "roi_tracking",
+  "closed",
+  "finance_hold",
+  "archived",
+]);
+
+export function isInvoiceChaseableRequestStatus(status: string | null | undefined): boolean {
+  return INVOICE_CHASEABLE_REQUEST_STATUSES.has(String(status ?? "").trim().toLowerCase());
+}
+
+/**
  * Every marketing invoice obligation that is overdue as of today in Cairo.
  *
  * The `pending` filter is applied in SQL only as a narrowing — the ACTUAL verdict comes from
@@ -252,15 +278,22 @@ export async function loadOverdueMarketingInvoices(
     id: string;
     request_code: string | null;
     requester_hr_id: string | null;
+    status: string | null;
   }> = [];
   for (let index = 0; index < requestIds.length; index += 50) {
     const chunk = requestIds.slice(index, index + 50);
     const result = await supabase
       .from("marketing_requests")
-      .select("id,request_code,requester_hr_id,customer_id,estimated_cost")
+      .select("id,request_code,requester_hr_id,customer_id,estimated_cost,status")
       .in("id", chunk);
     if (result.error) throw result.error;
-    requests.push(...((result.data ?? []) as typeof requests));
+    // A cancelled or refused request keeps its finance row; only the request's own status says the
+    // invoice is no longer owed.
+    requests.push(
+      ...((result.data ?? []) as typeof requests).filter((request) =>
+        isInvoiceChaseableRequestStatus(request.status),
+      ),
+    );
   }
 
   const customerIds = Array.from(

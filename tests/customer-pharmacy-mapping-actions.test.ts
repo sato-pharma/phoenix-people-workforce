@@ -128,6 +128,27 @@ function testActionsServiceSourceGuards() {
   );
   assert.ok(raceGuardOccurrences && raceGuardOccurrences.length === 2, "both approve and reject must throw a conflict error when the compare-and-swap loses the race");
 
+  // A pharmacy saved on its licence alone is released ONLY on an explicit "the trade name matches the
+  // shop sign" (owner, 2026-10-14), and the answer is recorded on the pharmacy through the shared
+  // three-column writer so the register and the request approvers read it back.
+  assert.match(
+    source,
+    /input\.licenseMatchesSign !== true[\s\S]{0,200}"license_check_required"/,
+    "approving a licence-only link must require an explicit true verdict",
+  );
+  assert.match(source, /licenseVerdictColumns\(\{[^}]*matchesSign: true/, "the release must record the verdict it was given");
+  assert.match(
+    source,
+    /\.eq\("evidence_type", "pharmacy_license"\)/,
+    "a licence-only link cannot be released when no licence file is on file",
+  );
+
+  // Both decisions are REQUIRED-audited: a link approved or rejected with no record of who did it is
+  // the failure (the screen decides which venues a request may spend on).
+  const auditCalls = source.match(/await writeRequiredAuditLog\(/g) ?? [];
+  assert.equal(auditCalls.length, 2, "approve and reject must each write a required audit row");
+  assert.match(source, /validationStatus: "rejected"/, "the reject audit row records the new status");
+
   // No delete, no bulk actions: every mutation targets exactly one linkId via .eq("id", linkId).
   assert.doesNotMatch(source, /\.delete\(/, "actions.ts must never delete a customer-pharmacy link");
   assert.doesNotMatch(source, /\.in\("id"/, "actions.ts must not support bulk (multi-id) mutation");
