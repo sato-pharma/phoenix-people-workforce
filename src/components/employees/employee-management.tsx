@@ -66,7 +66,9 @@ import {
   missingEmployeeRecordSummary,
 } from "@/lib/employees/employee-record-health";
 import type { SeatTransferOptions } from "@/lib/employees/seat-transfer";
+import { employeeMasterArrivalKey, readEmployeeMasterArrival } from "@/lib/employees/employee-master-link";
 import { readVacancyHireSeat, vacancyHireSeatKey } from "@/lib/employees/vacancy-hire-link";
+import { hrIdsMatch } from "@/lib/hr-id";
 import type { SeatHireCandidate } from "@/lib/recruitment/seat-hire-candidates";
 import { formatVacancyOptionLabel } from "@/lib/employees/vacancy-option-label";
 import { deriveSalaryFromNet } from "@/lib/payroll/salary-autofill";
@@ -1757,6 +1759,56 @@ export function EmployeeManagement({
     // form that was just closed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vacancySeatDraft]);
+
+  /**
+   * Arriving here from a PERSON's tile on the organogram (?edit=<hr id> or ?resign=<hr id>): open
+   * that employee's edit form, or their resignation dialog, on the real screens below — the chart
+   * holds neither form.
+   *
+   * Only the HR id travels. The person is looked up in the directory this page already loaded for
+   * the viewer, so somebody outside the viewer's scope finds no row and is told so, rather than
+   * the id opening anything. A viewer without `employees:update` gets a sentence instead of a form
+   * the Save and Resign endpoints would refuse anyway.
+   */
+  const masterArrival = React.useMemo(
+    () => readEmployeeMasterArrival((key) => searchParams.get(key)),
+    [searchParams],
+  );
+  const appliedMasterArrivalRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!masterArrival) return;
+    const arrivalKey = employeeMasterArrivalKey(masterArrival);
+    if (appliedMasterArrivalRef.current === arrivalKey) return;
+    appliedMasterArrivalRef.current = arrivalKey;
+
+    // Scheduled rather than run inline: react-hooks/set-state-in-effect is an ERROR in this repo.
+    const timer = setTimeout(() => {
+      if (!canEdit) {
+        setError("You can view the employee master but not change it, so Edit and Resign are not available to you.");
+        return;
+      }
+      const person = employees.find((employee) => hrIdsMatch(employee.hrId, masterArrival.hrId));
+      if (!person) {
+        setError(
+          `${masterArrival.hrId} is not in the employee directory you can open, so there is nothing to ${
+            masterArrival.action === "edit" ? "edit" : "resign"
+          }.`,
+        );
+        return;
+      }
+      if (masterArrival.action === "edit") {
+        startEdit(person);
+      } else {
+        startResignation(person);
+      }
+    }, 0);
+
+    return () => clearTimeout(timer);
+    // startEdit and startResignation are function declarations in this component body, and the ref
+    // guard above already makes this apply once per arrival — depending on more would reopen a
+    // form that was just closed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [masterArrival]);
 
   function clearSeatCandidatePicker() {
     setSeatHireCandidates([]);

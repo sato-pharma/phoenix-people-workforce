@@ -27,19 +27,25 @@ import {
   MapPin,
   Minus,
   Network,
+  Pencil,
   Plus,
   Printer,
+  UserMinus,
   UserRound,
   Users,
   UsersRound,
 } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import * as React from "react";
 
 import { OrganogramAudienceDialog } from "@/components/organogram/organogram-audience-dialog";
+import { OrganogramAsOfBanner } from "@/components/organogram/organogram-as-of";
 import { OrganogramNodeDetailModal } from "@/components/organogram/organogram-node-detail-modal";
 import { OrganogramWhatsAppButton } from "@/components/organogram/whatsapp-button";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { formatDateOnly } from "@/lib/date-only";
+import { buildEmployeeMasterHref, employeeMasterBasePath } from "@/lib/employees/employee-master-link";
 import {
   ORGANOGRAM_EXPORT_COLUMNS,
   buildOrganogramExportRows,
@@ -97,12 +103,28 @@ type OrgChartTreeProps = {
   theme?: OrgChartTheme;
   kpiLabels?: OrgChartKpiLabels;
   /**
-   * Whether this viewer may create an employee (`employees:update`). Only used to decide
-   * whether a vacancy popup offers "Add employee to this seat"; resolved server-side on the
-   * page, never inferred here.
+   * Whether this viewer may change employee records (`employees:update`). Decides whether a
+   * vacancy popup offers "Add employee to this seat" and whether each person's tile carries the
+   * Edit and Resign buttons into Employee Master; resolved server-side on the page, never
+   * inferred here.
    */
   canAddEmployee?: boolean;
+  /**
+   * `YYYY-MM` of a finished month when `rows` are a past picture of the structure (the screen
+   * fetched `?asOf=`); null or absent for the live chart. A past picture is read-only: it drops
+   * Edit, Resign, "Add employee to this seat", the spreadsheet export and the email picker, because
+   * each acts on people and seats as they are TODAY and would read as acting on the date shown.
+   */
+  asOfMonth?: string | null;
 };
+
+/**
+ * Where a tile's Edit and Resign buttons lead. Provided once by OrgChartTree and read by every
+ * tile that can hold a person, so the permission and the shell's Employee Master route are
+ * decided in one place instead of threaded through the spine, the manager lanes and the member
+ * trees. `null` (no provider, or a viewer who may not change employees) renders no buttons.
+ */
+const EmployeeActionsContext = React.createContext<{ basePath: string } | null>(null);
 
 /* ------------------------------------------------------------------ */
 /*  Small helpers                                                      */
@@ -165,6 +187,76 @@ function childLaneKey(parentKey: string, lane: ManagerLane, index: number) {
 // them all on one row.
 function laneGridColumnCount(count: number) {
   return count > 4 ? Math.ceil(count / 2) : Math.max(count, 1);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Edit / Resign buttons on a person's tile                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The two ways out of a person's tile into Employee Master: Edit opens that employee's edit form,
+ * Resign opens their resignation dialog. Plain links, so the chart holds neither form and the
+ * resignation still goes through the one endpoint that checks the viewer's scope and opens the
+ * vacancy. Rendered ONLY for an employee row (a vacancy has nobody to edit — its popup offers
+ * "Add employee to this seat") and only when the chart's viewer may change employees.
+ *
+ * Always a DOM sibling of the tile's own press target, never inside it: an anchor within a button
+ * resolves unpredictably. Left out of print and of the PNG export (`data-organogram-action`), where
+ * a row of buttons on every box would only be clutter.
+ */
+function EmployeeTileActions({
+  row,
+  tone = "light",
+  className,
+}: {
+  row: OrganogramRow | null | undefined;
+  tone?: "light" | "dark";
+  className?: string;
+}) {
+  const actions = React.useContext(EmployeeActionsContext);
+  if (!actions || !row || row.type !== "employee" || !row.hrId) return null;
+
+  const name = formatEmployeeDisplayName(row.displayName);
+  const buttonClass =
+    "inline-flex h-6 items-center gap-1 rounded-md border px-2 text-phx-2xs font-bold transition focus-visible:outline-none focus-visible:ring-2";
+
+  return (
+    <div
+      className={cn("flex flex-wrap items-center gap-1.5 print:hidden", className)}
+      data-organogram-action=""
+    >
+      <Link
+        aria-label={`Edit ${name} in Employee Master`}
+        className={cn(
+          buttonClass,
+          "focus-visible:ring-orange-400/50",
+          tone === "dark"
+            ? "border-white/20 bg-white/10 text-white hover:bg-white/20"
+            : "border-slate-200 bg-white text-slate-600 shadow-sm hover:border-orange-300 hover:text-orange-600",
+        )}
+        href={buildEmployeeMasterHref(actions.basePath, "edit", row.hrId)}
+        title={`Open ${name}'s record in Employee Master`}
+      >
+        <Pencil className="h-3 w-3" />
+        Edit
+      </Link>
+      <Link
+        aria-label={`Resign ${name} in Employee Master`}
+        className={cn(
+          buttonClass,
+          "focus-visible:ring-rose-400/50",
+          tone === "dark"
+            ? "border-rose-300/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/30"
+            : "border-rose-200 bg-white text-rose-600 shadow-sm hover:border-rose-300 hover:bg-rose-50",
+        )}
+        href={buildEmployeeMasterHref(actions.basePath, "resign", row.hrId)}
+        title={`Start ${name}'s resignation in Employee Master`}
+      >
+        <UserMinus className="h-3 w-3" />
+        Resign
+      </Link>
+    </div>
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -292,7 +384,7 @@ function PersonNode({
   return (
     <div
       className={cn(
-        "group relative flex items-start gap-2.5 overflow-hidden rounded-xl border px-3 py-2.5 shadow-[0_2px_10px_rgba(15,23,42,0.05)] transition-all duration-150 hover:-translate-y-px hover:shadow-md",
+        "group relative overflow-hidden rounded-xl border px-3 py-2.5 shadow-[0_2px_10px_rgba(15,23,42,0.05)] transition-all duration-150 hover:-translate-y-px hover:shadow-md",
         isVacancy
           ? "border-orange-300 bg-orange-50/70 [border-style:dashed]"
           : "border-slate-200 bg-white hover:border-slate-300",
@@ -305,42 +397,49 @@ function PersonNode({
           isVacancy ? "bg-orange-400" : "bg-slate-300",
         )}
       />
-      {onSelect ? (
-        <button
-          aria-label={`View details for ${isVacancy ? "this open vacancy" : formatEmployeeDisplayName(row.displayName)}`}
-          className="flex min-w-0 flex-1 items-start gap-2.5 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-400/50"
-          onClick={() => onSelect(row)}
-          type="button"
-        >
-          {identity}
-        </button>
-      ) : (
-        <div className="flex min-w-0 flex-1 items-start gap-2.5">{identity}</div>
-      )}
-      {/* Sibling of the press target, never nested inside it — an anchor within a button
-          resolves unpredictably. Hidden for vacancies (nobody to message) and for anyone
-          whose stored number cannot be dialled, which hasWhatsApp already answers. */}
-      {!isVacancy && row.hasWhatsApp ? (
-        <OrganogramWhatsAppButton hrId={row.hrId} name={formatEmployeeDisplayName(row.displayName)} />
-      ) : null}
-      {onToggle ? (
-        <button
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? "Expand reports" : "Collapse reports"}
-          className="ml-1 inline-flex shrink-0 items-center gap-1 self-center rounded-md border border-slate-200 bg-white px-1.5 py-1 text-phx-2xs font-bold text-slate-500 shadow-sm transition hover:border-orange-300 hover:text-orange-600"
-          onClick={onToggle}
-          type="button"
-        >
-          {collapsed ? (
-            <>
-              <ChevronRight className="h-3 w-3" />
-              {hiddenCount ? <span>{hiddenCount}</span> : null}
-            </>
-          ) : (
-            <ChevronDown className="h-3 w-3" />
-          )}
-        </button>
-      ) : null}
+      <div className="flex items-start gap-2.5">
+        {onSelect ? (
+          <button
+            aria-label={`View details for ${isVacancy ? "this open vacancy" : formatEmployeeDisplayName(row.displayName)}`}
+            className="flex min-w-0 flex-1 items-start gap-2.5 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-400/50"
+            onClick={() => onSelect(row)}
+            type="button"
+          >
+            {identity}
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-start gap-2.5">{identity}</div>
+        )}
+        {/* Sibling of the press target, never nested inside it — an anchor within a button
+            resolves unpredictably. Hidden for vacancies (nobody to message) and for anyone
+            whose stored number cannot be dialled, which hasWhatsApp already answers. */}
+        {!isVacancy && row.hasWhatsApp ? (
+          <OrganogramWhatsAppButton hrId={row.hrId} name={formatEmployeeDisplayName(row.displayName)} />
+        ) : null}
+        {onToggle ? (
+          <button
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand reports" : "Collapse reports"}
+            className="ml-1 inline-flex shrink-0 items-center gap-1 self-center rounded-md border border-slate-200 bg-white px-1.5 py-1 text-phx-2xs font-bold text-slate-500 shadow-sm transition hover:border-orange-300 hover:text-orange-600"
+            onClick={onToggle}
+            type="button"
+          >
+            {collapsed ? (
+              <>
+                <ChevronRight className="h-3 w-3" />
+                {hiddenCount ? <span>{hiddenCount}</span> : null}
+              </>
+            ) : (
+              <ChevronDown className="h-3 w-3" />
+            )}
+          </button>
+        ) : null}
+      </div>
+      {/* Under the identity block, lined up with the name (avatar 32px + 10px gap). */}
+      <EmployeeTileActions
+        className="mt-2 border-t border-slate-100 pt-2 pl-[42px]"
+        row={row}
+      />
     </div>
   );
 }
@@ -435,18 +534,16 @@ function ManagerLane({
   const dsmFacts = isVacantManagerSeat ? "" : personFactsLine(dsmRow);
   const canOpenManager = Boolean(onSelect && dsmRow);
   const memberTree = React.useMemo(() => buildMemberTree(group.members), [group.members]);
+  // Filled seats are dark slate, vacant seats warm orange — shared by the header row and the
+  // Edit/Resign strip under it.
+  const headerSurface = isVacantManagerSeat
+    ? "bg-gradient-to-r from-orange-50 to-orange-100/60 text-slate-800"
+    : "bg-gradient-to-br from-slate-800 to-slate-950 text-white";
 
   return (
     <div className="min-w-[240px] overflow-hidden border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)] transition-shadow duration-300 hover:shadow-[0_10px_28px_rgba(15,23,42,0.1)]">
       {/* Manager header — filled seats are dark slate, vacant seats warm orange */}
-      <div
-        className={cn(
-          "flex items-start gap-2.5 px-3 py-2.5",
-          isVacantManagerSeat
-            ? "bg-gradient-to-r from-orange-50 to-orange-100/60 text-slate-800"
-            : "bg-gradient-to-br from-slate-800 to-slate-950 text-white",
-        )}
-      >
+      <div className={cn("flex items-start gap-2.5 px-3 py-2.5", headerSurface)}>
         {(() => {
           const headerInner = (
             <>
@@ -544,6 +641,14 @@ function ManagerLane({
           ) : null}
         </div>
       </div>
+      {/* Under the header row, lined up with the name (avatar 32px + 10px gap) and wearing the
+          header's own surface so the two read as one block. A vacant manager seat has no row of
+          its own to act on, so nothing renders for it. */}
+      <EmployeeTileActions
+        className={cn("border-t border-white/10 px-3 pb-2.5 pl-[54px] pt-2", headerSurface)}
+        row={isVacantManagerSeat ? null : dsmRow}
+        tone="dark"
+      />
 
       {/* Team summary */}
       <div className="flex items-center justify-between border-y border-slate-100 bg-slate-50/70 px-3 py-1.5 text-phx-2xs">
@@ -673,6 +778,9 @@ function SpineNode({
             />
           </span>
         ) : null}
+        {/* Below the card, on the page's own ground, so it stays the light variant whatever the
+            card's tone is. */}
+        <EmployeeTileActions className="mt-1.5 justify-center" row={row} />
       </div>
     );
   }
@@ -898,12 +1006,31 @@ function TierLabel({
 /*  Main tree                                                          */
 /* ------------------------------------------------------------------ */
 
-export function OrgChartTree({
+export function OrgChartTree(props: OrgChartTreeProps) {
+  const pathname = usePathname();
+  const { asOfMonth = null, canAddEmployee = false } = props;
+  // Decided once, here, for every consumer below: the tile buttons AND the seat popup. A past
+  // picture never offers a way to change somebody's record.
+  const mayChangeEmployees = canAddEmployee && !asOfMonth;
+  const employeeActions = React.useMemo(
+    () => (mayChangeEmployees ? { basePath: employeeMasterBasePath(pathname) } : null),
+    [mayChangeEmployees, pathname],
+  );
+
+  return (
+    <EmployeeActionsContext.Provider value={employeeActions}>
+      <OrgChartTreeBody {...props} canAddEmployee={mayChangeEmployees} />
+    </EmployeeActionsContext.Provider>
+  );
+}
+
+function OrgChartTreeBody({
   rows,
   lineName,
   theme = "admin",
   kpiLabels = DEFAULT_ORG_KPI_LABELS,
   canAddEmployee = false,
+  asOfMonth = null,
 }: OrgChartTreeProps) {
   // Change #2 — the pressed node's row; non-null opens the employee-master popup.
   const [selectedRow, setSelectedRow] = React.useState<OrganogramRow | null>(null);
@@ -1029,12 +1156,14 @@ export function OrgChartTree({
       const { toPng } = await import("html-to-image");
       const dataUrl = await toPng(chartCanvasRef.current, {
         backgroundColor: "#ffffff",
+        // The Edit and Resign buttons are controls, not part of the structure being exported.
+        filter: (node) => !(node instanceof HTMLElement && "organogramAction" in node.dataset),
         pixelRatio: 2,
       });
 
       const link = document.createElement("a");
       const safeLineName = resolvedLineName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      link.download = `organogram-${safeLineName || "structure"}.png`;
+      link.download = `organogram-${safeLineName || "structure"}${asOfMonth ? `-${asOfMonth}` : ""}.png`;
       link.href = dataUrl;
       link.click();
     } catch (error) {
@@ -1043,7 +1172,7 @@ export function OrgChartTree({
       setCollapsedKeys(previousCollapsedKeys);
       setIsExportingPng(false);
     }
-  }, [isExportingPng, resolvedLineName]);
+  }, [asOfMonth, isExportingPng, resolvedLineName]);
 
   // Every collapsible top-level lane key — mirrors the keys the tiers below use —
   // so "Collapse all" can fold every lane in one click.
@@ -1080,6 +1209,8 @@ export function OrgChartTree({
 
   return (
     <div className="space-y-5" dir="auto">
+      {asOfMonth ? <OrganogramAsOfBanner month={asOfMonth} /> : null}
+
       {/* Whole-tree controls + structure export */}
       {hasContent ? (
         <div className="flex flex-wrap items-center justify-end gap-2 print:hidden">
@@ -1146,26 +1277,32 @@ export function OrgChartTree({
             )}
             PNG
           </button>
-          <ExportXlsxButton
-            columns={ORGANOGRAM_EXPORT_COLUMNS}
-            resolveRows={resolveExportRows}
-            rows={exportRows}
-            sheetName="Organogram"
-            subtitle={`${resolvedLineName} · ${employeeCount} employees`}
-            title={`Organogram — ${resolvedLineName}`}
-          />
-          <button
-            className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap border border-phx-accent bg-phx-accent px-3 text-xs font-bold text-white shadow-sm transition hover:bg-phx-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40"
-            onClick={() => setAudienceOpen(true)}
-            type="button"
-          >
-            <Users className="h-3.5 w-3.5" />
-            Select &amp; email
-          </button>
+          {/* The spreadsheet and the email picker read people's CURRENT records and work emails,
+              so on a past picture they would pair today's contact details with a past month's seat. */}
+          {asOfMonth ? null : (
+            <>
+              <ExportXlsxButton
+                columns={ORGANOGRAM_EXPORT_COLUMNS}
+                resolveRows={resolveExportRows}
+                rows={exportRows}
+                sheetName="Organogram"
+                subtitle={`${resolvedLineName} · ${employeeCount} employees`}
+                title={`Organogram — ${resolvedLineName}`}
+              />
+              <button
+                className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap border border-phx-accent bg-phx-accent px-3 text-xs font-bold text-white shadow-sm transition hover:bg-phx-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40"
+                onClick={() => setAudienceOpen(true)}
+                type="button"
+              >
+                <Users className="h-3.5 w-3.5" />
+                Select &amp; email
+              </button>
+            </>
+          )}
         </div>
       ) : null}
 
-      {audienceOpen ? (
+      {audienceOpen && !asOfMonth ? (
         <OrganogramAudienceDialog
           onClose={() => setAudienceOpen(false)}
           rows={rows}
@@ -1362,6 +1499,7 @@ export function OrgChartTree({
                           <div className="flex items-center gap-2.5">{rsmInner}</div>
                         );
                       })()}
+                      <EmployeeTileActions row={rsmRow} />
                       <div className="flex items-center gap-1.5 text-phx-2xs">
                         <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-1 font-bold text-slate-600 ring-1 ring-orange-200">
                           <Layers className="h-3 w-3 text-orange-500" />

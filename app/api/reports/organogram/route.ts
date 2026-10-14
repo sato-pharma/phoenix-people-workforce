@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { parseOrganogramAsOfParam } from "@/lib/reports/organogram-as-of";
 import {
   canAccessCompanyOrganogram,
   getOrganogramReport,
@@ -51,8 +52,17 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "organogram", "read");
 
+    // `?asOf=YYYY-MM` draws the chart as it stood on the last day of that finished month. Refused
+    // outright when it is not a choosable month — never quietly answered with today's chart. The
+    // access checks below are identical for both: a past picture shows no more than today's would.
+    const asOf = parseOrganogramAsOfParam(new URL(request.url).searchParams.get("asOf"));
+    if (!asOf.ok) {
+      return NextResponse.json({ error: "organogram_as_of_invalid", message: asOf.message }, { status: 400 });
+    }
+    const asOfMonth = asOf.month;
+
     if (canAccessCompanyOrganogram(access)) {
-      return NextResponse.json(await getOrganogramReport(access, { mode: "company" }));
+      return NextResponse.json(await getOrganogramReport(access, { asOfMonth, mode: "company" }));
     }
 
     if (!isLineScopedOrganogramRole(access)) {
@@ -70,7 +80,7 @@ export async function GET(request: Request) {
       );
     }
 
-    return NextResponse.json(await getOrganogramReport(access, { lineNames, mode: "line" }));
+    return NextResponse.json(await getOrganogramReport(access, { asOfMonth, lineNames, mode: "line" }));
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(

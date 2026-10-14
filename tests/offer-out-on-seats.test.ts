@@ -129,10 +129,17 @@ export function runOfferOutOnSeatsTests() {
     /pendingOffer: occupied \? null : \(offerOutBySeat\.get\(s\.seat_id\) \?\? null\)/,
     "an occupied seat never carries a pending offer",
   );
+  // The live chart reads the map; a past month's picture (`asOfMonth`) starts from an empty one, as
+  // an offer is a fact about today's empty chair. Either way it is ONE read for the whole chart.
   assert.match(
     auSource,
-    /const offerOutBySeat = await loadOfferOutBySeat\(\)/,
+    /const offerOutBySeat\b[^;]*await loadOfferOutBySeat\(\)/,
     "the map is read once for the whole chart, not per node",
+  );
+  assert.equal(
+    (auSource.match(/loadOfferOutBySeat\(\)/g) ?? []).length,
+    1,
+    "and there is exactly one call, so it cannot drift into a per-node read",
   );
 
   // ── 6 · It sits BESIDE "Vacant", never instead of it ────────────────────────────────────────
