@@ -35,6 +35,7 @@ const CONVERTED: ReadonlyArray<{
   { file: "src/lib/recruitment/inbound/cv-intake-digest-6h.ts", key: "cv_intake_digest", idempotencyPrefix: "cv-intake-digest-6h:" },
   { file: "src/lib/notifications/telegram-onboarding.ts", key: "telegram_connect", idempotencyPrefix: "telegram-onboard:" },
   { file: "src/lib/sales/weekly/upload-notification.ts", key: "weekly_sales_uploaded", idempotencyPrefix: "weekly-upload:" },
+  { file: "src/lib/sales/targets-uploaded-notification.ts", key: "targets_uploaded", idempotencyPrefix: "targets-uploaded:" },
 ];
 
 function templateDefaultBlock(source: string, key: string) {
