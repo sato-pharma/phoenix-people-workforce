@@ -24,7 +24,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { CalendarClock } from "lucide-react";
 
-import { AdministratorDecline } from "@/components/phoenix-crm/administrator-decline";
+import { AdministratorStepNote } from "@/components/phoenix-crm/administrator-decline";
 import { crmPost, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { cairoStamp, countText, dayLabelLong } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
@@ -198,8 +198,10 @@ function OffPlanVisitRow({
         </div>
       </div>
 
-      {visit.canDecide ? (
+      {visit.canDecide || (visit.canOverride && (visit.status === "manager_pending" || visit.status === "sfe_pending")) ? (
         <div className="grid min-w-0 gap-2">
+          {/* The Administrator takes the step the visit is AT, with the same buttons (owner, 2026-10-14). */}
+          {!visit.canDecide ? <AdministratorStepNote holder={visit.status === "sfe_pending" ? "SFE" : "the district manager"} /> : null}
           <CrmField hint="Needed to refuse. The rep reads it." htmlFor={noteId} label="Note for the rep">
             <textarea
               className={crmTextareaClassName}
@@ -230,16 +232,6 @@ function OffPlanVisitRow({
         </div>
       ) : null}
 
-      {visit.canOverride ? (
-        <AdministratorDecline
-          hint="The rep reads it."
-          onSubmit={async (comment) => {
-            await postOffPlanDecision(visit, "refuse", comment);
-            onChanged(`Declined by the Administrator: off-plan visit to ${visit.customerName}.`);
-          }}
-          verb="Decline"
-        />
-      ) : null}
     </div>
   );
 }

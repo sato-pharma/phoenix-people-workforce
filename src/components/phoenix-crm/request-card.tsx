@@ -22,7 +22,7 @@ import { useId, useState } from "react";
 import { crmPost, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { cairoStamp } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
-import { AdministratorDecline } from "@/components/phoenix-crm/administrator-decline";
+import { AdministratorDecline, AdministratorStepNote } from "@/components/phoenix-crm/administrator-decline";
 import { CrmButton, CrmCard, CrmCheck, CrmChoice, CrmField, CrmNote, CrmPill, crmTextareaClassName, type PillTone } from "@/components/phoenix-crm/ui";
 import { DROP_REASON_MAX, POTENTIAL_GRADES, type PotentialGrade } from "@/lib/phoenix-crm/entry-rules";
 import {
@@ -157,13 +157,17 @@ export function RequestCard({
   const pill = statusPill(request);
   const pending = request.status === "pending";
   const decides = pending && canDecide && request.canDecide;
+  // The Administrator takes the step the request is AT, in place of whoever holds it (owner, 2026-10-14),
+  // with the same buttons. A request with the rep waits for the rep's comment, so there is nothing to approve.
+  const administratorDecides = pending && canOverride && !decides && !request.withRep && request.stage !== null;
+  const deciding = decides || administratorDecides;
   // Who grades an add: the district manager at his step, and SFE where the territory has no manager at
   // all (one pure rule, `setsAdmissionGrades`, so the card can never differ from what the server takes).
   const admitting =
-    decides &&
+    deciding &&
     setsAdmissionGrades({ kind: request.kind, stage: request.stage, managerDecidedAt: request.managerDecision?.at ?? null });
   // Said plainly on the card, because SFE is doing somebody else's job here and should know why.
-  const admittingForVacantSeat = admitting && request.stage === "sfe";
+  const admittingForVacantSeat = decides && admitting && request.stage === "sfe";
   const decided = decisionLine(request);
   const managerStep = managerStepLine(request);
   const admission = admissionLine(request);
@@ -337,8 +341,9 @@ export function RequestCard({
         ) : null}
       </div>
 
-      {decides ? (
+      {deciding ? (
         <div className="mt-3 grid min-w-0 gap-3 border-t border-slate-100 pt-3">
+          {administratorDecides ? <AdministratorStepNote holder={request.stage === "sfe" ? "SFE" : "the district manager"} /> : null}
           {admitting ? (
             <>
               {admittingForVacantSeat ? (
@@ -437,7 +442,7 @@ export function RequestCard({
         </div>
       ) : null}
 
-      {pending && canOverride ? (
+      {pending && canOverride && !deciding ? (
         <AdministratorDecline
           hint="The rep reads it."
           onSubmit={async (comment) => {

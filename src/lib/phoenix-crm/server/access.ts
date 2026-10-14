@@ -14,8 +14,8 @@
  *     now irrelevant, u can fully retire it"*), so he READS the field force's own entries everywhere
  *     and WRITES through the three real-data gates he always had and nothing else: moving a validated
  *     place (`canMovePlaces`), entering a record a rep MISSED, for that rep
- *     (`territoryForMissedRecord`), and, as the Administrator, DECLINING or RETURNING a manager's or
- *     SFE's decision (`canAdminister` — never approving one, and never a step anything waits at). The `test` flag a screen sends is read and dropped on a READ and
+ *     (`territoryForMissedRecord`), and, as the Administrator, APPROVING, DECLINING or RETURNING a
+ *     manager's or SFE's decision (`canAdminister` — never a step anything waits at). The `test` flag a screen sends is read and dropped on a READ and
  *     the write is refused by name (`superAdminHasNoFieldWrite`) — the earlier rule, that his every
  *     entry was a test entry (owner, 2026-09-16), is history and not guidance;
  *   - a TEST ACCOUNT (owner, 2026-09-27; src/lib/auth/test-persona.ts) is the employee it mirrors, with
@@ -514,18 +514,19 @@ export function assertUnplannedVisitApprover(
  * PERSON, never as a raw id: he also signs in as the system console, which is the same human
  * (identity-aliases.ts).
  *
- * 🔴 HE IS NEVER A STEP. Nothing in Phoenix CRM waits for his approval, no count of "waiting for you"
- * includes him, and he never APPROVES a field decision. What he has is the right to DECLINE, or RETURN
- * with a comment, any decision a manager or SFE took (`canOverrideDecision` on every approval kind), and
- * the rep, the district manager and SFE are told it was the Administrator. One of the Super Admin's
- * REAL-DATA acts in Phoenix CRM, beside `canMovePlaces` and `territoryForMissedRecord` — everywhere else
- * his entries are test entries (owner, 2026-09-16).
+ * 🔴 HE IS NEVER A STEP. Nothing in Phoenix CRM waits for his approval and no count of "waiting for you"
+ * includes him. What he has is the right to APPROVE, DECLINE or RETURN, on any approval, in place of
+ * whoever holds the step it waits at (owner, 2026-10-14: "in an urgent situation he can approve instead
+ * of anyone, any title" — it replaced the earlier decline-only ruling of 2026-10-08). He takes the step
+ * the row is AT, never skips one, and the rep, the district manager and SFE are told it was the
+ * Administrator. One of the Super Admin's REAL-DATA acts in Phoenix CRM, beside `canMovePlaces` and
+ * `territoryForMissedRecord` — everywhere else his entries are test entries (owner, 2026-09-16).
  */
 export function canAdminister(viewer: PhoenixCrmViewer): boolean {
   return !viewer.isTestPersona && viewer.isSuperAdmin && viewer.canApprove && isSamePerson(viewer.hrId, PHOENIX_CRM_ADMINISTRATOR_HR_ID);
 }
 
-/** Whether the Administrator may decline or return a REAL decision. Never on a test entry, never as an approval. */
+/** Whether the Administrator may approve, decline or return a REAL decision. Never on a test entry, and never counted as a step. */
 export function canOverrideDecision(viewer: PhoenixCrmViewer, isTest: boolean): boolean {
   return !isTest && canAdminister(viewer);
 }

@@ -20,6 +20,15 @@ import { CrmButton, CrmField, CrmNote, crmTextareaClassName } from "@/components
 
 export const ADMINISTRATOR_NOTE_MAX = 500;
 
+/**
+ * Said above a card's own Approve and Refuse when the Administrator is using them (owner, 2026-10-14: in an
+ * urgent case he approves instead of anyone, any title). The card's buttons are the step holder's own, so
+ * this line is what says whose step he is taking; it never counts him as waiting.
+ */
+export function AdministratorStepNote({ holder }: { holder: string }) {
+  return <CrmNote tone="info">{`You are deciding as the Administrator, in place of ${holder}.`}</CrmNote>;
+}
+
 export function AdministratorDecline({
   verb,
   hint,

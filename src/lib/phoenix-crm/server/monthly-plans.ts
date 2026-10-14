@@ -80,6 +80,7 @@ import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
   assertCanReturnPlan,
   assertReviewer,
+  canOverrideDecision,
   canReturnTerritoryPlan,
   canReviewTerritory,
   canWriteAsRep,
@@ -585,7 +586,7 @@ export async function loadMonthlyPlanner(
       canSubmit: canEdit && weekStatus !== null && isPlanEditable(weekStatus) && weekItems.length > 0 && !staleOpen,
       canAskToEdit: repState === "sent" && weekPlan !== null,
       editRequest,
-      canApprove: reviewerForWeeks && weekStatus === "submitted",
+      canApprove: (reviewerForWeeks || canOverrideDecision(viewer, isTest)) && weekStatus === "submitted",
       canReturn: open && returnerForWeeks && (weekStatus === "submitted" || weekStatus === "approved"),
       returnedDay,
       sentChanges: decidesWeeks && weekStatus === "submitted" && planRow ? sentChangesOf(sends.get(String(planRow.id)) ?? []) : null,
@@ -663,7 +664,7 @@ export async function loadMonthlyPlanner(
     canEdit: false,
     canSubmit: false,
     canReopen: false,
-    canApprove: viewerIsReviewer && status === "submitted",
+    canApprove: (viewerIsReviewer || canOverrideDecision(viewer, isTest)) && status === "submitted",
     canReturn: monthOpen && canReturnTerritoryPlan(viewer, seat, isTest) && (status === "submitted" || status === "approved"),
     blockedReason,
   };
@@ -715,8 +716,11 @@ export async function decideMonthlyPlan(viewer: PhoenixCrmViewer, raw: unknown):
   let actorRole: "reviewer" | "sfe_manager" | "administrator";
   let decidedAs: "reviewer" | "sfe" | "administrator" = "reviewer";
   if (action === "approve") {
-    assertReviewer(viewer, seat, isTest);
-    actorRole = "reviewer";
+    // The Administrator may approve a month in the reviewer's place; he is no step (owner, 2026-10-14).
+    const asAdministrator = canOverrideDecision(viewer, isTest);
+    if (!asAdministrator) assertReviewer(viewer, seat, isTest);
+    decidedAs = asAdministrator ? "administrator" : "reviewer";
+    actorRole = asAdministrator ? "administrator" : "reviewer";
   } else {
     decidedAs = assertCanReturnPlan(viewer, seat, isTest);
     actorRole = decidedAs === "sfe" ? "sfe_manager" : decidedAs === "administrator" ? "administrator" : "reviewer";

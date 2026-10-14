@@ -329,8 +329,9 @@ export async function raisePlanEdit(viewer: PhoenixCrmViewer, raw: unknown): Pro
 
 /**
  * The district manager approves or refuses, then SFE does — and SFE's approval reopens the week. The
- * STEP is read from the row, never from the request. The Administrator is no step: he may only DECLINE
- * a request waiting at either one, with a note the rep reads (owner, 2026-10-08).
+ * STEP is read from the row, never from the request. The Administrator is no step: he may APPROVE or
+ * DECLINE a request waiting at either one, in the holder's place (owner, 2026-10-14; before that he could
+ * only decline, with a note the rep reads, 2026-10-08).
  */
 export async function decidePlanEdit(viewer: PhoenixCrmViewer, raw: unknown): Promise<PlanEditResult> {
   const body = record(raw);
@@ -358,12 +359,11 @@ export async function decidePlanEdit(viewer: PhoenixCrmViewer, raw: unknown): Pr
   const status: PlanEditStatus = isPlanEditStatus(row.status) ? row.status : "refused";
   const stage = planEditStageOf(status);
   if (stage === null) throw conflictError("This request was already decided. Reload the page.");
-  // The Administrator declines at whichever step it waits at; he never approves, and the database
-  // records the act as his own stage rather than as the manager's or SFE's.
+  // The Administrator approves or declines at whichever step it waits at (owner, 2026-10-14). His decline
+  // is recorded as his own stage; his approval takes the step the row is AT, exactly as that step's
+  // holder would, and the database writes it as his act.
   const asAdministrator = canOverrideDecision(viewer, isTest);
-  if (asAdministrator) {
-    if (decision !== "refuse") throw validationError("The Administrator can only decline a request.");
-  } else {
+  if (!asAdministrator) {
     assertPlanEditApprover(viewer, seat, isTest, stage);
     if (!planEditDecisionsFor(stage).includes(decision)) throw validationError("Approve or refuse this step.");
   }
@@ -371,7 +371,7 @@ export async function decidePlanEdit(viewer: PhoenixCrmViewer, raw: unknown): Pr
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_plan_edit_request", {
     p: {
       request_id: requestId,
-      stage: asAdministrator ? "administrator" : stage,
+      stage: asAdministrator && decision === "refuse" ? "administrator" : stage,
       decision,
       actor_hr_id: viewer.hrId,
       actor_role: asAdministrator ? "administrator" : viewer.role,

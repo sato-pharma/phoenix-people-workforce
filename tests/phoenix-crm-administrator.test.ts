@@ -14,8 +14,10 @@ import {
  *
  * "Exclude HR from the approvals … make him able to decline, or return with a comment, any decision —
  * but the plan never stops for his approval." And: "call it the Administrator", never HR, never an
- * override. What this file pins, from the emitted source of every approval kind:
- *   1. every approval engine lets him DECLINE and nothing else — the approve path refuses him;
+ * override. Then, on 2026-10-14: in an urgent situation he approves instead of anyone, any title, on
+ * any Phoenix CRM approval — still never a step. What this file pins, from the emitted source of every
+ * approval kind:
+ *   1. every approval engine lets him APPROVE or DECLINE at the step a row is at — he skips none;
  *   2. nothing is COUNTED as waiting for him, and no screen names him HR or an override;
  *   3. his decline tells the rep, the district manager and SFE, naming him by his title;
  *   4. the database: no `hr_pending`, SFE's yes reopens the week, and a decline needs a comment;
@@ -28,20 +30,39 @@ function source(path: string): string {
 }
 
 export function runPhoenixCrmAdministratorTests(): void {
-  // ── 1. Decline only ─────────────────────────────────────────────────────────────────────────────
+  // ── 1. He approves or declines, at the step the row is at ───────────────────────────────────────
   {
     const list = source("src/lib/phoenix-crm/server/list.ts");
-    assert.match(list, /canOverrideDecision\(viewer, isTest\)\) \{\s+if \(decision !== "refuse"\) throw validationError\(/, "a list request: he declines, never approves");
+    assert.match(list, /if \(!canOverrideDecision\(viewer, isTest\)\) assertListRequestApprover\(viewer, seat, isTest, rowStage\);/, "a list request: the approver check is skipped for him, and only for him");
+    assert.doesNotMatch(list, /can only decline/, "a list request: nothing refuses his approval");
+    assert.match(list, /This request is waiting for the rep's comment/, "but a request that is with the rep is approved by nobody, him included");
 
     const unplanned = source("src/lib/phoenix-crm/server/unplanned.ts");
-    assert.match(unplanned, /if \(decision !== "refuse"\) throw validationError\(/, "an off-plan visit: he declines, never approves");
+    assert.match(unplanned, /const asAdministrator = canOverrideDecision\(viewer, isTest\);\s+if \(!asAdministrator\) \{\s+assertUnplannedVisitApprover/, "an off-plan visit: the approver check is skipped for him");
+    assert.doesNotMatch(unplanned, /can only decline/, "an off-plan visit: nothing refuses his approval");
     assert.match(unplanned, /actor_role: asAdministrator \? "administrator" : viewer\.role/, "and the database records him as the Administrator");
 
     const edits = source("src/lib/phoenix-crm/server/plan-edits.ts");
-    assert.match(edits, /"administrator"/, "a plan edit has the Administrator's own stage");
+    assert.match(edits, /stage: asAdministrator && decision === "refuse" \? "administrator" : stage,/, "a plan edit: his decline is his own stage, his approval takes the step the row is at");
+    assert.doesNotMatch(edits, /can only decline/, "a plan edit: nothing refuses his approval");
+
+    for (const file of ["src/lib/phoenix-crm/server/plans.ts", "src/lib/phoenix-crm/server/monthly-plans.ts"]) {
+      const text = source(file);
+      assert.match(
+        text,
+        /const asAdministrator = canOverrideDecision\(viewer, isTest\);\s+if \(!asAdministrator\) assertReviewer\(viewer, seat, isTest\);\s+decidedAs = asAdministrator \? "administrator" : "reviewer";/,
+        `${file}: he approves a plan in the reviewer's place, and is recorded as the Administrator`,
+      );
+    }
 
     const access = source("src/lib/phoenix-crm/server/access.ts");
     assert.match(access, /export function canOverrideDecision\(viewer: PhoenixCrmViewer, isTest: boolean\): boolean \{\s+return !isTest && canAdminister\(viewer\);/, "never on a test entry");
+    // He is never a step: none of the functions that answer "does this wait for you" learns about him.
+    for (const name of ["canDecideUnplannedVisit", "canDecidePlanEdit", "canDecideListRequest", "canReviewTerritory"]) {
+      const body = access.match(new RegExp(`export function ${name}\\([\\s\\S]*?\\n}\\n`))?.[0] ?? "";
+      assert.ok(body.length > 0, `${name} is found`);
+      assert.doesNotMatch(body, /canAdminister|canOverrideDecision/, `${name} does not count the Administrator as the holder of a step`);
+    }
   }
 
   // ── 2. Nothing waits for him ────────────────────────────────────────────────────────────────────
