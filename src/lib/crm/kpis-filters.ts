@@ -555,6 +555,12 @@ export function buildKpisQuery(input: {
    */
   trend?: string | null;
   measure?: string | null;
+  /**
+   * The call-rate report's view (`total`, `am`, `pm`). Written ONLY on the Call Rate tab and only when
+   * not the default, like `rep` on Coverage. Spelled out here rather than imported, as `trend` is;
+   * tests/kpis-reports-split.test.ts pins that the names and the default agree with crm/kpis-tabs.ts.
+   */
+  view?: string | null;
 }): string {
   const query = new URLSearchParams();
   const weekly = input.tab === "weekly";
@@ -563,7 +569,9 @@ export function buildKpisQuery(input: {
   // it is left out, and moving to another tab from there opens that tab on the whole month.
   if (!weekly && input.period && input.period !== "month") query.set("period", input.period);
   if (input.tab && input.tab !== "summary") query.set("tab", input.tab);
-  if (input.rep && input.tab === "coverage") query.set("rep", input.rep);
+  // One rep's doctors open on the Coverage tab AND on the Frequency tab: the same list, read two ways.
+  if (input.rep && (input.tab === "coverage" || input.tab === "frequency")) query.set("rep", input.rep);
+  if (input.tab === "call-rate" && input.view && input.view !== "total") query.set("view", input.view);
   // The names and defaults are crm/kpis-trend-options.ts's KPI_TREND_PARAMS, spelled out rather than
   // imported so this file keeps importing nothing; tests/kpis-trend.test.ts pins that they agree.
   if (weekly && input.trend && input.trend !== "month") query.set("trend", input.trend);

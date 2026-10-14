@@ -35,7 +35,16 @@ import {
 } from "@/components/crm/kpi-reports-tables";
 import { awaitingValidationNote } from "@/lib/crm/call-rate";
 import { kpiCallRateRepKey, kpiCallRateRepPath } from "@/lib/crm/kpis-call-rate-route";
-import { KPI_TABS, KPI_TAB_HINT, KPI_TAB_HINT_PHOENIX, KPI_TAB_LABEL, type KpiTab } from "@/lib/crm/kpis-tabs";
+import {
+  KPI_CALL_RATE_VIEWS,
+  KPI_CALL_RATE_VIEW_LABEL,
+  KPI_TABS,
+  KPI_TAB_HINT,
+  KPI_TAB_HINT_PHOENIX,
+  KPI_TAB_LABEL,
+  type KpiCallRateView,
+  type KpiTab,
+} from "@/lib/crm/kpis-tabs";
 import {
   buildKpisQuery,
   amBandOf,
@@ -59,6 +68,7 @@ import {
 import { kpiIndexOf, type KpiIndex } from "@/lib/crm/kpi-index";
 import { ACTIVITY_LABEL } from "@/lib/crm/reps-list-activity";
 import type { KpiCoverageDetail, KpiCoverageDoctor, KpiRepRow, KpisBoard } from "@/lib/crm/kpis-board";
+import type { DoctorFrequencyStatus } from "@/lib/crm/phoenix-kpi-rules";
 import type { KpiTrend } from "@/lib/crm/kpis-trend";
 import { KPI_TREND_METRICS, KPI_TREND_SCALES, type KpiTrendMetric, type KpiTrendScale } from "@/lib/crm/kpis-trend-options";
 
@@ -245,6 +255,12 @@ type ViewContext = {
   basePath: string;
   board: KpisBoard;
   tab: KpiTab;
+  /** The tabs the strip offers — all seven in the admin shell, the four consolidated ones on the portal's KPIs page, none on a report page. */
+  tabs: readonly KpiTab[];
+  /** The portal KPIs page's own address, which the per-rep call-rate drill-down hangs under whichever report page is open. */
+  rootPath: string;
+  /** The call-rate report's Total / AM / PM view. Meaningless off that tab. */
+  callRateView: KpiCallRateView;
   /** True when the current sort is a measure, so a rank disc actually means something. */
   showRank: boolean;
   /**
@@ -273,6 +289,7 @@ function hrefWith(
     rep?: string | null;
     trend?: KpiTrendScale;
     measure?: KpiTrendMetric;
+    view?: KpiCallRateView;
   },
 ): string {
   const { basePath, board } = context;
@@ -286,6 +303,7 @@ function hrefWith(
     rep: overrides.rep !== undefined ? overrides.rep : context.openRep,
     trend: overrides.trend ?? context.trendScale,
     measure: overrides.measure ?? context.trendMetric,
+    view: overrides.view ?? context.callRateView,
   })}`;
 }
 
@@ -630,9 +648,11 @@ function listCoverage(board: KpisBoard, list: "am" | "pm" | "pharmacy"): string 
  */
 function KpiTabStrip({ context }: { context: ViewContext }) {
   const { board, tab: active } = context;
+  // A report page (Coverage, Frequency, Call Rate in the portal) is one measure, not a set of tabs.
+  if (context.tabs.length === 0) return null;
   return (
     <div className="grid grid-cols-2 border border-b-0 border-slate-200 bg-white sm:grid-cols-4">
-      {KPI_TABS.map((tab, index) => {
+      {context.tabs.map((tab, index) => {
         const current = tab === active;
         // SEVEN tabs since 2026-09-22, on a grid built for four. The hairline between rows is a border
         // rather than a gap so the strip stays one block, and it is set PER BREAKPOINT from the tab's
@@ -641,6 +661,9 @@ function KpiTabStrip({ context }: { context: ViewContext }) {
         // rule dropped the line for EVERY tab from `sm`, so rows two and one ran together.)
         const rowLine =
           index >= 4 ? " border-t border-t-slate-200" : index >= 2 ? " border-t border-t-slate-200 sm:border-t-0" : "";
+        // An odd count leaves one cell out, and it spans both columns to close the gap. An even count
+        // (the portal's four consolidated tabs) leaves none, and a span there would orphan the last cell.
+        const spanLast = context.tabs.length % 2 === 1 ? " last:col-span-2" : "";
         // `last:col-span-2`: seven cells leave an odd one out at both widths — the last cell of four
         // rows of two on a phone, and three in the second row of four from `sm`. Spanning two
         // columns closes the gap instead of leaving an empty half-cell or an empty eighth slot.
@@ -649,8 +672,8 @@ function KpiTabStrip({ context }: { context: ViewContext }) {
             aria-current={current ? "page" : undefined}
             className={
               current
-                ? `relative min-w-0 overflow-hidden border-b-2 border-b-orange-500 bg-gradient-to-b from-orange-50 to-orange-50/30 px-3 py-2.5 last:col-span-2 sm:px-5${rowLine}`
-                : `relative min-w-0 border-b-2 border-b-transparent px-3 py-2.5 transition-colors last:col-span-2 hover:bg-slate-50 sm:px-5${rowLine}`
+                ? `relative min-w-0 overflow-hidden border-b-2 border-b-orange-500 bg-gradient-to-b from-orange-50 to-orange-50/30 px-3 py-2.5 sm:px-5${spanLast}${rowLine}`
+                : `relative min-w-0 border-b-2 border-b-transparent px-3 py-2.5 transition-colors hover:bg-slate-50 sm:px-5${spanLast}${rowLine}`
             }
             href={hrefWith(context, { tab })}
             key={tab}
@@ -1247,7 +1270,7 @@ function callRateVisitsLink(context: ViewContext, row: KpiRepRow): React.ReactNo
   return (
     <Link
       className="inline-flex items-center gap-1 border border-slate-300 bg-white px-2 py-1 text-phx-2xs font-bold text-slate-600 transition-colors hover:border-slate-500 hover:text-slate-900"
-      href={`${kpiCallRateRepPath(context.basePath, key)}?${query.toString()}`}
+      href={`${kpiCallRateRepPath(context.rootPath, key)}?${query.toString()}`}
     >
       <span>Open visits</span>
       <span aria-hidden>→</span>
@@ -1457,6 +1480,7 @@ function CoverageDoctors({
 
   return (
     <div className="space-y-3">
+      <CoverageSummary context={context} detail={detail} />
       <div className="min-w-0">
         <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900">
           Doctors planned in {period}
@@ -1580,7 +1604,7 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
 }
 
 function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepRow[] }) {
-  const { filters } = context.board;
+  const { coverageDetail: detail, filters } = context.board;
   const phoenix = isPhoenix(context.board);
   return (
     <table className="hidden w-full table-fixed md:table">
@@ -1668,8 +1692,17 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
       </thead>
       <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-slate-50/70">
         {rows.map((row, index) => (
-          <tr key={row.agentCrmId ?? `${row.repName}-${index}`}>
-            <RepCell rank={context.showRank ? index + 1 : undefined} row={row} rules={context.board.kpiRules} />
+          <Fragment key={row.agentCrmId ?? `${row.repName}-${index}`}>
+          <tr
+            className="scroll-mt-20"
+            id={row.coverageRepKey ? coverageAnchor("desktop", row.coverageRepKey) : undefined}
+          >
+            <RepCell
+              action={coverageDoctorsToggle(context, row, "desktop")}
+              rank={context.showRank ? index + 1 : undefined}
+              row={row}
+              rules={context.board.kpiRules}
+            />
             <td className={NUM}>{row.onPlanDoctors}</td>
             <td className={NUM}>{row.underDoctors}</td>
             <td className={NUM}>{row.phoenix ? row.phoenix.frequency.ungraded : row.overDoctors}</td>
@@ -1686,6 +1719,14 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
               value={planPct(row, row.frequencyPct)}
             />
           </tr>
+          {detail && row.coverageRepKey === detail.repKey ? (
+            <tr>
+              <td className="bg-slate-50/60 px-4 py-4 sm:px-5" colSpan={5}>
+                <FrequencyDoctors context={context} detail={detail} surface="desktop" />
+              </td>
+            </tr>
+          ) : null}
+          </Fragment>
         ))}
       </tbody>
     </table>
@@ -1836,6 +1877,840 @@ function RepCard({
   );
 }
 
+// ── Coverage: the summary above one rep's two lists ───────────────────────────────────────────
+
+/** A grade letter's group, with everything else (blank, unscored, "D"…) filed under one honest label. */
+function gradeGroupOf(grade: string | null): string {
+  const letter = (grade ?? "").trim().toUpperCase().charAt(0);
+  return letter === "A" || letter === "B" || letter === "C" ? `Grade ${letter}` : "No grade";
+}
+
+type CoverageGroupRow = { label: string; planned: number; covered: number };
+
+/** Planned and covered doctors per group, biggest group first. A tie keeps the groups' alphabetical order. */
+function coverageGroups(doctors: readonly KpiCoverageDoctor[], keyOf: (doctor: KpiCoverageDoctor) => string): CoverageGroupRow[] {
+  const groups = new Map<string, CoverageGroupRow>();
+  for (const doctor of doctors) {
+    const label = keyOf(doctor);
+    const row = groups.get(label) ?? { label, planned: 0, covered: 0 };
+    row.planned += 1;
+    if (doctor.visits > 0) row.covered += 1;
+    groups.set(label, row);
+  }
+  return [...groups.values()].sort((left, right) => right.planned - left.planned || left.label.localeCompare(right.label));
+}
+
+/**
+ * One breakdown of the open rep's doctors — by grade or by speciality. A table from `md`, and plain
+ * rows on a phone: four columns do not fit 311px without a head wider than its cell, and the rule is
+ * to merge on a phone, never to shrink the type.
+ */
+function CoverageBreakdown({ rows, title }: { rows: readonly CoverageGroupRow[]; title: string }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="min-w-0 border border-slate-200 bg-white">
+      <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
+        <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">{title}</p>
+      </div>
+      <table className="hidden w-full table-fixed md:table">
+        <colgroup>
+          <col style={{ width: "40%" }} />
+          <col style={{ width: "20%" }} />
+          <col style={{ width: "20%" }} />
+          <col style={{ width: "20%" }} />
+        </colgroup>
+        <thead className="border-b border-slate-100">
+          <tr>
+            <th className={TH} scope="col">
+              Group
+            </th>
+            <th className={TH} scope="col">
+              Planned
+            </th>
+            <th className={TH} scope="col">
+              Covered
+            </th>
+            <th className={TH} scope="col">
+              Rate
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.map((row) => {
+            const pct = Math.round((row.covered / row.planned) * 100);
+            return (
+              <tr key={row.label}>
+                <td className={TD} dir="auto">
+                  {row.label}
+                </td>
+                <td className={NUM}>{row.planned}</td>
+                <td className={NUM}>{row.covered}</td>
+                <td className={NUM}>
+                  {pct}%
+                  <KpiMeter band={coverageBandOfPct(pct)} value={pct} />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <ul className="divide-y divide-slate-100 md:hidden">
+        {rows.map((row) => {
+          const pct = Math.round((row.covered / row.planned) * 100);
+          return (
+            <li className="px-3 py-2.5" key={row.label}>
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0 text-sm font-semibold text-slate-900" dir="auto">
+                  {row.label}
+                </span>
+                <span className={`text-sm font-black tabular-nums ${toneOf(coverageBandOfPct(pct)).text}`}>{pct}%</span>
+              </div>
+              <KpiMeter band={coverageBandOfPct(pct)} value={pct} />
+              <span className="mt-1 block text-phx-3xs leading-4 text-slate-500">
+                {row.covered} of {row.planned} planned doctors seen
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** The coverage percentage's band — the same cut-offs the rep rows use, applied to a group's own percentage. */
+function coverageBandOfPct(pct: number): KpiBand {
+  return kpiBandOf(pct);
+}
+
+/**
+ * THE COVERAGE REPORT'S HEADER FOR ONE REP — the four counts the two lists below add up to, the
+ * distance to the 95% floor, and the same doctors cut by grade and by speciality.
+ *
+ * Everything here is arithmetic over the two lists the server already built for this rep, so nothing
+ * on it can disagree with the Covered and Not reached numbers on his row.
+ */
+function CoverageSummary({ context, detail }: { context: ViewContext; detail: KpiCoverageDetail }) {
+  const { board } = context;
+  const all = [...detail.covered, ...detail.notCovered];
+  const planned = all.length;
+  if (planned === 0) return null;
+  const covered = detail.covered.length;
+  const notDue = detail.notCovered.filter((doctor) => !doctor.due).length;
+  const late = detail.notCovered.length - notDue;
+  const pct = Math.round((covered / planned) * 100);
+  const floor = board.coverageFloorPct;
+  // The fewest extra doctors that bring the rep to the floor, counted against the whole list.
+  const needed = Math.max(0, Math.ceil((planned * floor) / 100) - covered);
+  const visits = detail.covered.reduce((sum, doctor) => sum + doctor.visits, 0);
+  const repeat = detail.covered.filter((doctor) => doctor.visits > 1).length;
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiTile
+          band={kpiBandOf(pct)}
+          caption={`${covered} of ${planned} planned doctors seen at least once`}
+          label="Coverage"
+          progress={pct}
+          value={`${pct}%`}
+        />
+        <KpiTile
+          caption={`${visits} visit${visits === 1 ? "" : "s"} in all · ${repeat} doctor${repeat === 1 ? "" : "s"} seen more than once`}
+          label="Covered"
+          value={String(covered)}
+        />
+        <KpiTile
+          band={late > 0 ? "behind" : "elite"}
+          caption={late > 0 ? "Planned day has passed with no visit" : "Nobody is overdue"}
+          label="Late"
+          value={String(late)}
+        />
+        <KpiTile
+          caption="Planned day is still ahead"
+          label="Not due yet"
+          value={String(notDue)}
+        />
+      </div>
+      <p className={`leading-4 ${CAPTION}`}>
+        {needed === 0
+          ? `Clears the ${floor}% floor with ${covered} of ${planned} doctors covered.`
+          : `${needed} more doctor${needed === 1 ? "" : "s"} to cover to clear the ${floor}% floor (${Math.ceil((planned * floor) / 100)} of ${planned}).`}{" "}
+        {board.isCurrentMonth ? "The period is still running, so doctors planned for later days are counted as not covered yet." : ""}
+      </p>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <CoverageBreakdown rows={coverageGroups(all, (doctor) => gradeGroupOf(doctor.grade)).sort((l, r) => l.label.localeCompare(r.label))} title="By grade" />
+        <CoverageBreakdown
+          rows={coverageGroups(all, (doctor) => doctor.speciality?.trim() || "No speciality on the plan")}
+          title="By speciality"
+        />
+      </div>
+    </div>
+  );
+}
+
+// ── The Frequency report: one rep's doctors, each against what he should get ─────────────────
+
+/**
+ * The words on a verdict. The first three are the owner's own (ACTIVITY_LABEL, "change vocab to below
+ * exact above"); the rest are the Phoenix grade-norm words and the two states a count cannot judge.
+ */
+const FREQUENCY_STATUS_LABEL: Record<DoctorFrequencyStatus, string> = {
+  exact: ACTIVITY_LABEL.on_plan,
+  below: ACTIVITY_LABEL.under,
+  above: ACTIVITY_LABEL.over,
+  "not-visited": "Not visited",
+  "not-due": ACTIVITY_LABEL.not_due,
+  "at-norm": "At norm",
+  ungraded: "Ungraded",
+};
+
+/** Which of the board's five tones each verdict wears, so a chip here reads like every other chip. */
+const FREQUENCY_STATUS_BAND: Record<DoctorFrequencyStatus, KpiBand> = {
+  exact: "elite",
+  "at-norm": "elite",
+  above: "steady",
+  below: "behind",
+  "not-visited": "behind",
+  "not-due": "noplan",
+  ungraded: "noplan",
+};
+
+/** Worst first: a doctor who has not been seen leads, and the ones on target sit last. */
+const FREQUENCY_STATUS_ORDER: Record<DoctorFrequencyStatus, number> = {
+  "not-visited": 0,
+  below: 1,
+  above: 2,
+  "not-due": 3,
+  ungraded: 4,
+  exact: 5,
+  "at-norm": 5,
+};
+
+function FrequencyStatusChip({ status }: { status: DoctorFrequencyStatus }) {
+  const tone = toneOf(FREQUENCY_STATUS_BAND[status]);
+  return (
+    <span
+      className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.1em] ${tone.chip}`}
+    >
+      <span aria-hidden className={`h-1.5 w-1.5 ${tone.dot}`} />
+      {FREQUENCY_STATUS_LABEL[status]}
+    </span>
+  );
+}
+
+type FrequencyDoctorRow = { doctor: KpiCoverageDoctor; frequency: NonNullable<KpiCoverageDoctor["frequency"]> };
+
+/**
+ * How far one doctor is from where the plan or the norm puts them: negative is short, positive is extra, zero is on
+ * target, null where there is nothing to compare (not graded, or not due yet).
+ *
+ * On the plan basis the shortfall is measured against the calls that have COME DUE and the excess
+ * against the WHOLE period's calls, for the reason `frequencyStatusOf` gives: a rep who is behind
+ * today's schedule can still catch up, one who has gone past the month's total cannot undo it.
+ */
+function frequencyGap(frequency: FrequencyDoctorRow["frequency"]): number | null {
+  if (frequency.required == null || frequency.status === "not-due" || frequency.status === "ungraded") return null;
+  if (frequency.basis === "plan" && frequency.actual > frequency.required) return frequency.actual - frequency.required;
+  return frequency.actual - (frequency.dueSoFar ?? frequency.required);
+}
+
+function frequencyGapText(frequency: FrequencyDoctorRow["frequency"]): string {
+  const gap = frequencyGap(frequency);
+  if (gap == null) return "—";
+  if (gap === 0) return "On target";
+  if (gap < 0) return `${Math.abs(gap)} short`;
+  // Ahead of the schedule but inside the month's total: still exact, so it is not "extra".
+  if (frequency.basis === "plan" && frequency.required != null && frequency.actual <= frequency.required) return `${gap} ahead`;
+  return `${gap} extra`;
+}
+
+function frequencyRows(detail: KpiCoverageDetail): FrequencyDoctorRow[] {
+  return [...detail.covered, ...detail.notCovered]
+    .flatMap((doctor) => (doctor.frequency ? [{ doctor, frequency: doctor.frequency }] : []))
+    .sort((left, right) => {
+      const byStatus = FREQUENCY_STATUS_ORDER[left.frequency.status] - FREQUENCY_STATUS_ORDER[right.frequency.status];
+      if (byStatus !== 0) return byStatus;
+      // Inside a verdict the biggest shortfall leads.
+      const byGap = (frequencyGap(left.frequency) ?? 0) - (frequencyGap(right.frequency) ?? 0);
+      if (byGap !== 0) return byGap;
+      return (left.doctor.name ?? "~").localeCompare(right.doctor.name ?? "~");
+    });
+}
+
+/** The doctor's name, his speciality and grade, and the days the plan booked him — never his id. */
+function FrequencyDoctorName({ doctor }: { doctor: KpiCoverageDoctor }) {
+  return (
+    <span className="block min-w-0">
+      <CoverageDoctorName doctor={doctor} />
+      <span className="mt-0.5 block text-phx-3xs leading-4 text-slate-400">
+        Planned {doctor.planDates.length > 0 ? planDaysLabel(doctor) : "on no day"}
+      </span>
+    </span>
+  );
+}
+
+/** The visits asked for, with what has come due beside it where the plan spreads them over the month. */
+function requiredText(frequency: FrequencyDoctorRow["frequency"]): string {
+  return frequency.required == null ? "—" : String(frequency.required);
+}
+
+function requiredCaption(frequency: FrequencyDoctorRow["frequency"], phoenix: boolean): string {
+  if (frequency.required == null) return "No grade, so no norm";
+  if (phoenix || frequency.basis === "grade") return "The grade's norm";
+  return frequency.dueSoFar === frequency.required
+    ? "All due"
+    : `${frequency.dueSoFar ?? 0} due so far`;
+}
+
+function FrequencyDoctors({
+  context,
+  detail,
+  surface,
+}: {
+  context: ViewContext;
+  detail: KpiCoverageDetail;
+  surface: "desktop" | "mobile";
+}) {
+  const { board } = context;
+  const phoenix = isPhoenix(board);
+  const period = board.range.isWholeMonth ? board.monthLabel : board.range.periodLabel;
+  const rows = frequencyRows(detail);
+
+  if (rows.length === 0) {
+    return (
+      <div className="min-w-0">
+        <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900">Doctors planned in {period}</p>
+        <p className={`mt-0.5 leading-4 ${CAPTION}`}>No doctor was planned for {detail.repName} in this period.</p>
+      </div>
+    );
+  }
+
+  let asked = 0;
+  let due = 0;
+  let made = 0;
+  let owed = 0;
+  const byStatus = new Map<DoctorFrequencyStatus, number>();
+  for (const { frequency } of rows) {
+    byStatus.set(frequency.status, (byStatus.get(frequency.status) ?? 0) + 1);
+    if (frequency.required == null) continue;
+    asked += frequency.required;
+    due += frequency.dueSoFar ?? frequency.required;
+    made += frequency.actual;
+    owed += Math.max(0, (frequency.dueSoFar ?? frequency.required) - frequency.actual);
+  }
+  const judged = rows.filter(({ frequency }) => frequency.status !== "ungraded" && frequency.status !== "not-due");
+  const passing = judged.filter(({ frequency }) => frequency.status === "exact" || frequency.status === "at-norm").length;
+  const pct = judged.length > 0 ? Math.round((passing / judged.length) * 100) : null;
+  const gradeGroups = coverageGroups(
+    rows.map((row) => row.doctor),
+    (doctor) => gradeGroupOf(doctor.grade),
+  ).sort((left, right) => left.label.localeCompare(right.label));
+  const gradeAsked = new Map<string, { asked: number; made: number; passing: number; judged: number }>();
+  for (const { doctor, frequency } of rows) {
+    const key = gradeGroupOf(doctor.grade);
+    const slot = gradeAsked.get(key) ?? { asked: 0, made: 0, passing: 0, judged: 0 };
+    if (frequency.required != null) {
+      slot.asked += frequency.required;
+      slot.made += frequency.actual;
+    }
+    if (frequency.status !== "ungraded" && frequency.status !== "not-due") {
+      slot.judged += 1;
+      if (frequency.status === "exact" || frequency.status === "at-norm") slot.passing += 1;
+    }
+    gradeAsked.set(key, slot);
+  }
+
+  const statusOrder = (Object.keys(FREQUENCY_STATUS_ORDER) as DoctorFrequencyStatus[])
+    .filter((status) => (byStatus.get(status) ?? 0) > 0)
+    .sort((left, right) => FREQUENCY_STATUS_ORDER[left] - FREQUENCY_STATUS_ORDER[right]);
+
+  const table =
+    surface === "desktop" ? (
+      <table className="hidden w-full table-fixed md:table">
+        <colgroup>
+          <col style={{ width: "34%" }} />
+          <col style={{ width: "16%" }} />
+          <col style={{ width: "16%" }} />
+          <col style={{ width: "14%" }} />
+          <col style={{ width: "20%" }} />
+        </colgroup>
+        <thead className="border-b border-slate-100">
+          <tr>
+            <th className={TH} scope="col">
+              Doctor
+            </th>
+            <th className={TH} scope="col">
+              Should visit
+            </th>
+            <th className={TH} scope="col">
+              Visited
+            </th>
+            <th className={TH} scope="col">
+              Gap
+            </th>
+            <th className={TH} scope="col">
+              Status
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-slate-50/70">
+          {rows.map(({ doctor, frequency }) => (
+            <tr key={doctor.contactCrmId}>
+              <td className={TD}>
+                <FrequencyDoctorName doctor={doctor} />
+              </td>
+              <td className={NUM}>
+                {requiredText(frequency)}
+                <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
+                  {requiredCaption(frequency, phoenix)}
+                </span>
+              </td>
+              <td className={NUM}>
+                {frequency.actual}
+                <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
+                  {doctor.lastVisitDate ? `Last ${dayLabel(doctor.lastVisitDate, false)}` : "Never this period"}
+                </span>
+              </td>
+              <td className={NUM}>{frequencyGapText(frequency)}</td>
+              <td className={TD}>
+                <FrequencyStatusChip status={frequency.status} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    ) : (
+      <ul className="divide-y divide-slate-100">
+        {rows.map(({ doctor, frequency }) => (
+          <li className="px-3 py-2.5 text-sm" key={doctor.contactCrmId}>
+            <div className="flex items-start justify-between gap-2">
+              <FrequencyDoctorName doctor={doctor} />
+              <FrequencyStatusChip status={frequency.status} />
+            </div>
+            <dl className="mt-2 grid grid-cols-3 gap-2">
+              <div className="min-w-0">
+                <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">Should visit</dt>
+                <dd className="mt-0.5 text-sm font-black tabular-nums text-slate-900">{requiredText(frequency)}</dd>
+                <dd className="text-phx-2xs leading-4 text-slate-500">{requiredCaption(frequency, phoenix)}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">Visited</dt>
+                <dd className="mt-0.5 text-sm font-black tabular-nums text-slate-900">{frequency.actual}</dd>
+                <dd className="text-phx-2xs leading-4 text-slate-500">
+                  {doctor.lastVisitDate ? `Last ${dayLabel(doctor.lastVisitDate, false)}` : "Never this period"}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">Gap</dt>
+                <dd className="mt-0.5 text-sm font-black tabular-nums text-slate-900">{frequencyGapText(frequency)}</dd>
+              </div>
+            </dl>
+          </li>
+        ))}
+      </ul>
+    );
+
+  return (
+    <div className="space-y-3">
+      <div className="min-w-0">
+        <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900">
+          How often each doctor was visited in {period}
+        </p>
+        <p className={`mt-0.5 leading-4 ${CAPTION}`}>
+          {phoenix
+            ? `${detail.repName}: each graded doctor should get the visits the doctor's grade asks for in the month — A 3, B 2, C 1. Extra visits are fine; a doctor with no grade is left out.`
+            : `${detail.repName}: each doctor should be visited exactly as many times as the plan booked. Fewer is a deviation and so is more. A doctor whose booked days are all still ahead is not late.`}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiTile
+          band={pct == null ? "noplan" : kpiBandOf(pct)}
+          caption={
+            pct == null
+              ? "Nothing to judge yet"
+              : `${passing} of ${judged.length} judged doctors ${phoenix ? "at their norm" : "visited exactly as planned"}`
+          }
+          label="Frequency"
+          progress={pct}
+          value={pct == null ? "—" : `${pct}%`}
+        />
+        <KpiTile
+          caption={
+            due === asked ? `Across ${rows.length} planned doctors` : `${due} have come due so far, of ${asked} in the period`
+          }
+          label="Visits asked for"
+          value={String(asked)}
+        />
+        <KpiTile caption="Visits made to those doctors" label="Visits made" value={String(made)} />
+        <KpiTile
+          band={owed > 0 ? "behind" : "elite"}
+          caption={owed > 0 ? "Due so far and not yet made" : "Nothing is owed"}
+          label="Visits owed"
+          value={String(owed)}
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        {statusOrder.map((status) => (
+          <span className="inline-flex items-center gap-1.5" key={status}>
+            <FrequencyStatusChip status={status} />
+            <span className="text-phx-2xs font-black tabular-nums text-slate-700">{byStatus.get(status)}</span>
+          </span>
+        ))}
+      </div>
+
+      {gradeGroups.length > 1 || (gradeGroups[0] && gradeGroups[0].label !== "No grade") ? (
+        <div className="min-w-0 border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
+            <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">By grade</p>
+          </div>
+          <ul className="divide-y divide-slate-100">
+            {gradeGroups.map((group) => {
+              const slot = gradeAsked.get(group.label) ?? { asked: 0, made: 0, passing: 0, judged: 0 };
+              return (
+                <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-3 py-2" key={group.label}>
+                  <span className="text-sm font-semibold text-slate-900">
+                    {group.label} <span className="text-phx-2xs font-bold text-slate-500">· {group.planned} doctors</span>
+                  </span>
+                  <span className="text-phx-2xs font-semibold tabular-nums text-slate-600">
+                    {slot.made} visits made of {slot.asked} asked for
+                    {slot.judged > 0 ? ` · ${slot.passing} of ${slot.judged} ${phoenix ? "at norm" : "exact"}` : ""}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="min-w-0 border border-slate-200 bg-white">
+        <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
+          <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">
+            Every planned doctor · <span className="tabular-nums">{rows.length}</span>
+          </p>
+          <p className="mt-0.5 text-phx-3xs leading-4 text-slate-400">Furthest from target first</p>
+        </div>
+        {table}
+      </div>
+    </div>
+  );
+}
+
+// ── The Call Rate report: Total, AM and PM ────────────────────────────────────────────────────
+
+/** The line each view prints under its name. TOTAL never forms one rate — see KPI_CALL_RATE_VIEWS. */
+function callRateViewHeadline(board: KpisBoard, view: KpiCallRateView): string {
+  const { totals } = board;
+  if (view === "total") return `${rate(totals.amRate)}${NBSP}AM · ${rate(totals.pmRate)}${NBSP}PM`;
+  if (view === "am") return `${rate(totals.amRate)}${NBSP}of${NBSP}${board.amTarget}`;
+  return `${rate(totals.pmRate)}${NBSP}of${NBSP}${board.pmTarget}`;
+}
+
+function callRateViewHint(board: KpisBoard, view: KpiCallRateView): string {
+  if (view === "total")
+    return "The morning and the afternoon side by side, each against its own target, with the pharmacy and campaign calls beside them. They are never blended into one rate.";
+  if (view === "am") return `Morning visits only, against the target of ${board.amTarget} a day.`;
+  return `Afternoon visits only, against the target of ${board.pmTarget} a day.`;
+}
+
+/** Total · AM · PM — the call-rate report's three views, as links so each one re-runs the scope gate. */
+function CallRateViewSwitch({ context }: { context: ViewContext }) {
+  const { board, callRateView: active } = context;
+  return (
+    <div className="border-t border-slate-100">
+      <div className="grid grid-cols-3">
+        {KPI_CALL_RATE_VIEWS.map((view) => {
+          const current = view === active;
+          return (
+            <Link
+              aria-current={current ? "page" : undefined}
+              className={
+                current
+                  ? "relative min-w-0 border-b-2 border-b-orange-500 bg-gradient-to-b from-orange-50 to-orange-50/30 px-3 py-2.5 sm:px-5"
+                  : "relative min-w-0 border-b-2 border-b-transparent px-3 py-2.5 transition-colors hover:bg-slate-50 sm:px-5"
+              }
+              href={hrefWith(context, { view })}
+              key={view}
+            >
+              <span
+                className={
+                  current
+                    ? "block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-900"
+                    : "block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400"
+                }
+              >
+                {KPI_CALL_RATE_VIEW_LABEL[view]}
+              </span>
+              <span
+                className={
+                  current
+                    ? "mt-0.5 block text-sm font-black tabular-nums text-orange-700"
+                    : "mt-0.5 block text-sm font-black tabular-nums text-slate-400"
+                }
+              >
+                {callRateViewHeadline(board, view)}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+      <p className={`border-t border-slate-100 px-4 py-2.5 leading-4 sm:px-5 ${CAPTION}`}>
+        {callRateViewHint(board, active)}
+      </p>
+    </div>
+  );
+}
+
+/** What one session's columns read off a rep's row — one place, so the table, the card and the tiles agree. */
+function sessionFigures(row: KpiRepRow, board: KpisBoard, session: "am" | "pm") {
+  const am = session === "am";
+  const target = am ? board.amTarget : board.pmTarget;
+  const verified = am ? row.amVerified : row.pmVerified;
+  const asked = row.workingDays * target;
+  return {
+    target,
+    verified,
+    reported: am ? row.amReported : row.pmReported,
+    perDay: am ? row.amRate : row.pmRate,
+    pct: am ? amPct(row) : pmPct(row),
+    band: am ? amBandOf(row) : pmBandOf(row),
+    fill: am ? amFill(row) : pmFill(row),
+    asked,
+    // A rep with no GPS feed has no proved calls, so there is no shortfall to state for him.
+    short: row.noGpsFeed ? null : Math.max(0, asked - verified),
+  };
+}
+
+/** The four tiles that replace the six on an AM or PM view: the session's own rate, ask, shortfall and head count at target. */
+function CallRateSessionTiles({ board, partial, session }: { board: KpisBoard; partial: boolean; session: "am" | "pm" }) {
+  const am = session === "am";
+  const { totals } = board;
+  const callWord = isPhoenix(board) ? "visits" : "verified";
+  const scored = board.reps.filter((row) => !row.noGpsFeed);
+  const target = am ? board.amTarget : board.pmTarget;
+  const askedFor = scored.reduce((sum, row) => sum + sessionFigures(row, board, session).asked, 0);
+  const short = scored.reduce((sum, row) => sum + (sessionFigures(row, board, session).short ?? 0), 0);
+  const atTarget = scored.filter((row) => row.hasCallRate && (sessionFigures(row, board, session).perDay ?? 0) >= target).length;
+  const attainment = am ? totals.amAttainmentPct : totals.pmAttainmentPct;
+  const verified = am ? totals.amVerified : totals.pmVerified;
+  const reported = am ? totals.amReported : totals.pmReported;
+  return (
+    <div className="grid grid-cols-2 gap-3 border-t border-slate-100 px-4 py-4 sm:px-5 lg:grid-cols-4">
+      <KpiTile
+        band={kpiBandOf(attainment)}
+        caption={`${verified} ${callWord} over ${board.workingDays} working days${partial ? " · the period is still running" : ""}`}
+        label={`${am ? "AM" : "PM"} call rate`}
+        progress={attainment}
+        value={`${rate(am ? totals.amRate : totals.pmRate)} of ${target}`}
+      />
+      <KpiTile
+        caption={
+          reported !== verified
+            ? `${target} a day for each rep's working days · ${reported} reported`
+            : `${target} a day for each rep's working days`
+        }
+        label="Calls asked for"
+        value={String(askedFor)}
+      />
+      <KpiTile
+        band={short > 0 ? "behind" : "elite"}
+        caption={short > 0 ? "Summed over the reps who are below target" : "Nobody is below target"}
+        label="Calls short"
+        value={String(short)}
+      />
+      <KpiTile
+        band={scored.length > 0 ? kpiBandOf(Math.round((atTarget / scored.length) * 100)) : "noplan"}
+        caption={`At or above ${target} a day`}
+        label="Reps at target"
+        value={`${atTarget} of ${scored.length}`}
+      />
+    </div>
+  );
+}
+
+/** The Total view's one line of counts — calls are counted, so they may be added; rates may not. */
+function CallRateTotalCounts({ board }: { board: KpisBoard }) {
+  const { totals } = board;
+  const callWord = isPhoenix(board) ? "visits" : "verified calls";
+  return (
+    <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
+      <p className={`leading-4 ${CAPTION}`}>
+        <span className="font-black uppercase tracking-[0.1em] text-slate-400">Calls logged</span>{" "}
+        <span className="font-bold tabular-nums text-slate-900">{totals.totalCalls}</span> — of which{" "}
+        <span className="tabular-nums">{totals.amVerified}</span> AM {callWord},{" "}
+        <span className="tabular-nums">{totals.pmVerified}</span> PM {callWord},{" "}
+        <span className="tabular-nums">{totals.pharmacyVerified}</span> pharmacy and{" "}
+        <span className="tabular-nums">{totals.campaignCalls}</span> campaign. Counts add up; the two rates above never do.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The AM or PM view of the Call Rate report: one session, one table, six columns — days, calls,
+ * per day, score and what is still owed. Fits 619px the way the Call Rate table does: heads of at
+ * most five letters in their own cell, the rep column merged with the line and area.
+ */
+function CallRateSessionTable({
+  context,
+  rows,
+  session,
+}: {
+  context: ViewContext;
+  rows: KpiRepRow[];
+  session: "am" | "pm";
+}) {
+  const { board } = context;
+  const { filters } = board;
+  const phoenix = isPhoenix(board);
+  const am = session === "am";
+  return (
+    <table className="hidden w-full table-fixed md:table">
+      <colgroup>
+        <col style={{ width: "22%" }} />
+        <col style={{ width: "12%" }} />
+        <col style={{ width: "18%" }} />
+        <col style={{ width: "20%" }} />
+        <col style={{ width: "14%" }} />
+        <col style={{ width: "14%" }} />
+      </colgroup>
+      <thead className="border-y border-slate-200 bg-gradient-to-b from-slate-50 to-white">
+        <tr>
+          <RepNameTh context={context} />
+          <KpiSortableTh
+            active={filters.sort === "workingdays"}
+            direction={filters.direction}
+            href={sortHref(context, "workingdays")}
+            label="Days"
+            sub="Sat–Wed"
+          />
+          <th className={TH} scope="col">
+            Calls
+            <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+              {phoenix ? "Visits made" : "Verified"}
+            </span>
+          </th>
+          <KpiSortableTh
+            active={filters.sort === session}
+            direction={filters.direction}
+            href={sortHref(context, session)}
+            label="Per day"
+            sub={`Target ${am ? board.amTarget : board.pmTarget}`}
+          />
+          <th className={TH} scope="col">
+            Score
+            <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+              Of target
+            </span>
+          </th>
+          <th className={TH} scope="col">
+            Short
+            <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+              Calls owed
+            </span>
+          </th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-slate-50/70">
+        {rows.map((row, index) => {
+          const figures = sessionFigures(row, board, session);
+          return (
+            <tr key={row.agentCrmId ?? `${row.repName}-${index}`}>
+              <RepCell
+                action={callRateVisitsLink(context, row)}
+                rank={context.showRank ? index + 1 : undefined}
+                row={row}
+                rules={board.kpiRules}
+              />
+              <td className={NUM}>{row.workingDays}</td>
+              <td className={NUM}>
+                {row.noGpsFeed ? "—" : figures.verified}
+                <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
+                  {row.noGpsFeed
+                    ? `${figures.reported} reported, none provable`
+                    : `of ${figures.asked} asked for${figures.reported !== figures.verified ? ` · ${figures.reported} reported` : ""}`}
+                </span>
+              </td>
+              <MeasureCell
+                band={figures.band}
+                caption={
+                  sessionCaption(row, session, figures.target, "No calls") + followUpText(row, session)
+                }
+                fill={figures.fill}
+                value={rate(figures.perDay)}
+              />
+              <td className={`${NUM} ${toneOf(figures.band).text}`}>{figures.pct}</td>
+              <td className={NUM}>
+                {figures.short == null ? "—" : figures.short}
+                <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
+                  {figures.short == null ? "No GPS feed" : figures.short === 0 ? "At or above target" : "to reach the target"}
+                </span>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+/** One rep on a phone, AM or PM view: the session's rate on top, its three supporting figures under it. */
+function SessionCard({
+  action,
+  rank,
+  row,
+  board,
+  session,
+}: {
+  action?: React.ReactNode;
+  rank?: number;
+  row: KpiRepRow;
+  board: KpisBoard;
+  session: "am" | "pm";
+}) {
+  const figures = sessionFigures(row, board, session);
+  return (
+    <div className="px-4 py-3">
+      <KpiRepName areaName={row.areaName} jobTitle={row.jobTitle} lineName={row.lineName} name={row.repName} rank={rank} />
+      <div className="mt-2.5">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className={`text-lg font-black tabular-nums ${toneOf(figures.band).text}`}>{rate(figures.perDay)}</span>
+          <span className="text-phx-2xs font-black tabular-nums text-slate-500">
+            of {figures.target} a day · {figures.pct}
+          </span>
+        </div>
+        <KpiMeter band={figures.band} value={figures.fill} />
+        <p className="mt-1 text-phx-2xs leading-4 text-slate-500">
+          {sessionCaption(row, session, figures.target, "No calls")}
+          {followUpText(row, session)}
+        </p>
+      </div>
+      <dl className="mt-2.5 grid grid-cols-3 gap-2">
+        <div className="min-w-0">
+          <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">Days</dt>
+          <dd className="mt-0.5 text-sm font-black tabular-nums text-slate-900">{row.workingDays}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">Calls</dt>
+          <dd className="mt-0.5 text-sm font-black tabular-nums text-slate-900">
+            {row.noGpsFeed ? "—" : figures.verified}
+          </dd>
+          <dd className="text-phx-2xs leading-4 text-slate-500">
+            {row.noGpsFeed ? `${figures.reported} reported` : `of ${figures.asked} asked for`}
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">Short</dt>
+          <dd className="mt-0.5 text-sm font-black tabular-nums text-slate-900">
+            {figures.short == null ? "—" : figures.short}
+          </dd>
+        </div>
+      </dl>
+      {action ? <div className="mt-2.5">{action}</div> : null}
+    </div>
+  );
+}
+
 // ── The board ─────────────────────────────────────────────────────────────────────────────────
 
 export function KpisBoardView({
@@ -1845,6 +2720,9 @@ export function KpisBoardView({
   monthOptions,
   periodOptions,
   tab,
+  tabs = KPI_TABS,
+  rootPath,
+  callRateView = "total",
   trend = null,
   trendMetric = "am",
   trendScale = "month",
@@ -1862,6 +2740,16 @@ export function KpisBoardView({
   monthOptions: readonly KpiPickerOption[];
   periodOptions: readonly KpiPickerOption[];
   tab: KpiTab;
+  /**
+   * The tabs the strip offers. Omitted, all seven (the admin shell). The portal's KPIs page passes its
+   * four consolidated ones, and a portal REPORT page (Coverage, Frequency, Call Rate) passes none: it
+   * is one measure on a page of its own, so it draws no strip and a leaner set of tiles.
+   */
+  tabs?: readonly KpiTab[];
+  /** The portal KPIs address the per-rep call-rate drill-down hangs under. Defaults to `basePath`. */
+  rootPath?: string;
+  /** The Call Rate report's Total / AM / PM view. Ignored on every other tab. */
+  callRateView?: KpiCallRateView;
   /**
    * The Weekly tab's weeks and totals (crm/kpis-trend.ts). Built by the page ONLY on that tab, where
    * `board` is the trend's own anchor; every other tab leaves it null and renders exactly as before.
@@ -1895,6 +2783,9 @@ export function KpisBoardView({
     // `rep` in the URL, so there is nothing to carry for him.
     openRep: board.reps.length > 1 ? (board.coverageDetail?.repKey ?? null) : null,
     tab,
+    tabs,
+    rootPath: rootPath ?? basePath,
+    callRateView,
     // A rank disc beside a name means nothing when the list is alphabetical, so it only appears
     // once a MEASURE is what the order is expressing.
     showRank:
@@ -1903,6 +2794,20 @@ export function KpisBoardView({
     trendMetric,
   };
   const weekly = tab === "weekly";
+  // A portal report page: one measure on its own page, so no consolidated panel, no tab strip and only
+  // the tiles that belong to it. The summary page and the admin shell keep everything.
+  const reportPage = tabs.length === 0;
+  const showTile = (tile: "am" | "pm" | "pharmacy" | "coverage" | "frequency"): boolean =>
+    !reportPage ||
+    (tab === "coverage"
+      ? tile === "coverage"
+      : tab === "frequency"
+        ? tile === "frequency"
+        : tab === "call-rate"
+          ? tile === "am" || tile === "pm" || tile === "pharmacy"
+          : true);
+  // AM or PM view of the Call Rate report; null for Total and for every other tab.
+  const sessionView: "am" | "pm" | null = tab === "call-rate" && callRateView !== "total" ? callRateView : null;
 
   // Lowercased for "Whole month" ONLY, which is a common noun sitting mid-sentence. A week's label is
   // "Week 1 · 1–7 Sep" — a proper name carrying a month abbreviation — so lowercasing it printed
@@ -1945,6 +2850,8 @@ export function KpisBoardView({
             </p>
           </div>
 
+          {tab === "call-rate" ? <CallRateViewSwitch context={context} /> : null}
+
           <div className="border-t border-slate-100 px-4 py-4 sm:px-5">
             <KpisPeriodPicker
               basePath={basePath}
@@ -1962,6 +2869,7 @@ export function KpisBoardView({
               tab={tab}
               trend={trendScale}
               measure={trendMetric}
+              view={callRateView}
             />
           </div>
 
@@ -1979,6 +2887,7 @@ export function KpisBoardView({
               tab={tab}
               trend={trendScale}
               measure={trendMetric}
+              view={callRateView}
               total={board.scopedReps}
               visible={board.reps.length}
             />
@@ -2049,7 +2958,7 @@ export function KpisBoardView({
             <>
           {/* THE ONE NUMBER, above the six it comes from. Added 2026-09-17 on the owner's
               instruction; the tiles below are exactly as they were. */}
-          <KpiOverallPanel board={board} partial={partial} />
+          {reportPage ? null : <KpiOverallPanel board={board} partial={partial} />}
 
           {/* Six tiles since 2026-09-06, when pharmacy joined as its own tile — never averaged into
               AM/PM, never blended with them. See PHARMACY_CALL_RATE_TARGET in crm/call-rate.ts for
@@ -2060,6 +2969,9 @@ export function KpisBoardView({
           {/* Three across from `lg`, six only from `2xl`. At `lg` the portal's sidebar opens and the
               content drops to about 636px, so six tiles were ~89px each: a 27px "100%" was clipped by
               the tile's own overflow-hidden and "1.63 of 2" split over two lines. */}
+          {sessionView ? (
+            <CallRateSessionTiles board={board} partial={partial} session={sessionView} />
+          ) : (
           <div className="grid gap-3 border-t border-slate-100 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-3 2xl:grid-cols-6">
             {solo ? (
               // A rep's own board: a head count of one is not a figure. The tile states the working
@@ -2086,6 +2998,7 @@ export function KpisBoardView({
                 value={filtered ? `${totals.reps} of ${board.scopedReps}` : String(totals.reps)}
               />
             )}
+            {showTile("am") ? (
             <KpiTile
               band={kpiBandOf(totals.amAttainmentPct)}
               caption={`${totals.amVerified} ${callWord} · target ${board.amTarget} a day`}
@@ -2093,6 +3006,8 @@ export function KpisBoardView({
               progress={totals.amAttainmentPct}
               value={`${rate(totals.amRate)} of ${board.amTarget}`}
             />
+            ) : null}
+            {showTile("pm") ? (
             <KpiTile
               band={kpiBandOf(totals.pmAttainmentPct)}
               caption={`${totals.pmVerified} ${callWord} · target ${board.pmTarget} a day`}
@@ -2100,13 +3015,17 @@ export function KpisBoardView({
               progress={totals.pmAttainmentPct}
               value={`${rate(totals.pmRate)} of ${board.pmTarget}`}
             />
+            ) : null}
             {/* No target yet (see PHARMACY_CALL_RATE_TARGET) — the raw rate, no percentage, no
                 progress bar to fill against a number that does not exist. */}
+            {showTile("pharmacy") ? (
             <KpiTile
               caption={`${totals.pharmacyVerified} ${callWord} · no target set yet`}
               label="Pharmacy call rate"
               value={rate(totals.pharmacyRate)}
             />
+            ) : null}
+            {showTile("coverage") ? (
             <KpiTile
               band={kpiBandOf(totals.coveragePct)}
               caption={`${totals.visitedDoctors} of ${totals.plannedDoctors} planned doctors${
@@ -2122,6 +3041,8 @@ export function KpisBoardView({
               progress={totals.coveragePct}
               value={`${totals.coveragePct}%`}
             />
+            ) : null}
+            {showTile("frequency") ? (
             <KpiTile
               band={kpiBandOf(totals.frequencyPct)}
               caption={
@@ -2133,7 +3054,9 @@ export function KpisBoardView({
               progress={totals.frequencyPct}
               value={`${totals.frequencyPct}%`}
             />
+            ) : null}
           </div>
+          )}
 
           {/* Rules 2, 7 and 8 — the lines that sit OUTSIDE the three KPIs, said once for the team. */}
           {board.phoenixTotals ? (
@@ -2149,6 +3072,10 @@ export function KpisBoardView({
           ) : null}
             </>
           )}
+
+          {!weekly && tab === "call-rate" && callRateView === "total" && board.reps.length > 0 ? (
+            <CallRateTotalCounts board={board} />
+          ) : null}
 
           {board.reps.length === 0 ? (
             <div className="border-t border-slate-100">
@@ -2225,14 +3152,14 @@ export function KpisBoardView({
                         title="Frequency"
                       />
                     ) : null}
-                    {tab === "summary" || tab === "call-rate" ? (
+                    {tab === "summary" || (tab === "call-rate" && callRateView !== "pm") ? (
                       <KpiPodiumCard
                         entries={podium.amCallRate}
                         hint={`Closest to ${board.amTarget} ${phoenix ? "AM visits" : "verified AM calls"} a day`}
                         title="AM call rate"
                       />
                     ) : null}
-                    {tab === "summary" || tab === "call-rate" ? (
+                    {tab === "summary" || (tab === "call-rate" && callRateView !== "am") ? (
                       <KpiPodiumCard
                         entries={podium.pmCallRate}
                         hint={`Closest to ${board.pmTarget} ${phoenix ? "PM visits" : "verified PM calls"} a day`}
@@ -2243,7 +3170,7 @@ export function KpisBoardView({
                         PHARMACY_CALL_RATE_TARGET), and a rep with zero pharmacy calls is excluded
                         from this board entirely rather than shown at 0, same as coverage/frequency
                         exclude a rep with no measurable plan. */}
-                    {tab === "summary" || tab === "call-rate" ? (
+                    {tab === "summary" || (tab === "call-rate" && callRateView === "total") ? (
                       <KpiPodiumCard
                         entries={podium.pharmacyCallRate}
                         hint={`Most ${phoenix ? "pharmacy visits" : "verified pharmacy calls"} a day — no target set yet`}
@@ -2259,7 +3186,8 @@ export function KpisBoardView({
               <div className="border-t border-slate-100">
                 <div className="divide-y divide-slate-100 md:hidden">
                   {board.reps.map((row, index) => {
-                    const coverageKey = tab === "coverage" ? row.coverageRepKey : null;
+                    const doctorsTab = tab === "coverage" || tab === "frequency";
+                    const coverageKey = doctorsTab ? row.coverageRepKey : null;
                     const detail =
                       coverageKey && board.coverageDetail?.repKey === coverageKey ? board.coverageDetail : null;
                     return (
@@ -2268,23 +3196,37 @@ export function KpisBoardView({
                         id={coverageKey ? coverageAnchor("mobile", coverageKey) : undefined}
                         key={String(row.agentCrmId ?? `${row.repName}-${index}`)}
                       >
-                        <RepCard
-                          action={
-                            tab === "coverage"
-                              ? coverageDoctorsToggle(context, row, "mobile")
-                              : tab === "call-rate"
-                                ? callRateVisitsLink(context, row)
-                                : undefined
-                          }
-                          amTarget={board.amTarget}
-                          pmTarget={board.pmTarget}
-                          rank={context.showRank ? index + 1 : undefined}
-                          row={row}
-                          rules={board.kpiRules}
-                        />
+                        {sessionView ? (
+                          <SessionCard
+                            action={callRateVisitsLink(context, row)}
+                            board={board}
+                            rank={context.showRank ? index + 1 : undefined}
+                            row={row}
+                            session={sessionView}
+                          />
+                        ) : (
+                          <RepCard
+                            action={
+                              doctorsTab
+                                ? coverageDoctorsToggle(context, row, "mobile")
+                                : tab === "call-rate"
+                                  ? callRateVisitsLink(context, row)
+                                  : undefined
+                            }
+                            amTarget={board.amTarget}
+                            pmTarget={board.pmTarget}
+                            rank={context.showRank ? index + 1 : undefined}
+                            row={row}
+                            rules={board.kpiRules}
+                          />
+                        )}
                         {detail ? (
                           <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-4">
-                            <CoverageDoctors context={context} detail={detail} surface="mobile" />
+                            {tab === "frequency" ? (
+                              <FrequencyDoctors context={context} detail={detail} surface="mobile" />
+                            ) : (
+                              <CoverageDoctors context={context} detail={detail} surface="mobile" />
+                            )}
                           </div>
                         ) : null}
                       </div>
@@ -2293,7 +3235,13 @@ export function KpisBoardView({
                 </div>
                 <div className="hidden md:block">
                   {tab === "summary" ? <SummaryTable context={context} rows={board.reps} /> : null}
-                  {tab === "call-rate" ? <CallRateTable context={context} rows={board.reps} /> : null}
+                  {tab === "call-rate" ? (
+                    sessionView ? (
+                      <CallRateSessionTable context={context} rows={board.reps} session={sessionView} />
+                    ) : (
+                      <CallRateTable context={context} rows={board.reps} />
+                    )
+                  ) : null}
                   {tab === "coverage" ? <CoverageTable context={context} rows={board.reps} /> : null}
                   {tab === "frequency" ? <FrequencyTable context={context} rows={board.reps} /> : null}
                 </div>

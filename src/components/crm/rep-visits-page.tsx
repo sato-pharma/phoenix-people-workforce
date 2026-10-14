@@ -26,7 +26,7 @@ import { loadCallRateReport, loadJobTitlesByHrId, loadRepNamesByHrId } from "@/l
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
-import { KPIS_CALL_RATE_TAB } from "@/lib/crm/kpis-call-rate-route";
+import { KPIS_CALL_RATE_TAB, PORTAL_CALL_RATE_PATH, PORTAL_KPIS_PATH } from "@/lib/crm/kpis-call-rate-route";
 import { buildKpisQuery, parseKpiFilters } from "@/lib/crm/kpis-filters";
 import { loadOrgPlacementTree } from "@/lib/crm/org-placement-data";
 import { loadCrmMappingCoverage, loadRepVisits } from "@/lib/crm/rep-visits-data";
@@ -87,10 +87,13 @@ export async function RepVisitsPageBody({
   }
   // Built by the KPIs board's ONE query builder from the filters the reader came in with, so Back
   // returns to the board they were reading — same month, window and filters, on the Call Rate tab.
-  const backHref = `${basePath}?${buildKpisQuery({
+  // In the portal the call rate is a page of its own (owner, 2026-10-14), so Back returns to it rather
+  // than to a `?tab=` the KPIs page would only redirect from; the admin shell still reads the tab.
+  const portalCallRate = basePath === PORTAL_KPIS_PATH;
+  const backHref = `${portalCallRate ? PORTAL_CALL_RATE_PATH : basePath}?${buildKpisQuery({
     month,
     period: range.periodKey,
-    tab: KPIS_CALL_RATE_TAB,
+    tab: portalCallRate ? "summary" : KPIS_CALL_RATE_TAB,
     filters: parseKpiFilters(query ?? {}),
   })}`;
 

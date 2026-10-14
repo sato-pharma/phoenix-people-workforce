@@ -172,6 +172,8 @@ export function runKpiCoverageLegacyListTests() {
       visits: 2,
       lastVisitDate: "2026-09-10",
       planDates: ["2026-09-02", "2026-09-09"],
+      // Before a team goes live the doctor is judged against the PLAN: three calls booked, all due, two made.
+      frequency: { basis: "plan", required: 3, dueSoFar: 3, actual: 2, status: "below" },
       due: true,
     },
     "the covered doctor carries his latest visit, his visit count and each planned day once",
@@ -248,7 +250,16 @@ export function runKpiCoverageRepSelectionTests() {
   );
   assert.equal(onCoverage.get("rep"), "hr:phx-900", "the Coverage tab carries the open rep");
   assert.equal(onCoverage.get("period"), "w2", "beside the period");
-  for (const tab of ["summary", "call-rate", "frequency", "am-pm", "pharmacies"]) {
+  // Frequency carries it too since the 2026-10-14 portal split: the same doctor list, read as visits asked for
+  // against visits made.
+  assert.equal(
+    new URLSearchParams(
+      buildKpisQuery({ month: "2026-09", period: "month", tab: "frequency", filters: EMPTY_KPI_FILTERS, rep: "501" }),
+    ).get("rep"),
+    "501",
+    "the Frequency tab carries the open rep",
+  );
+  for (const tab of ["summary", "call-rate", "am-pm", "pharmacies"]) {
     const query = new URLSearchParams(
       buildKpisQuery({ month: "2026-09", period: "month", tab, filters: EMPTY_KPI_FILTERS, rep: "501" }),
     );
@@ -268,14 +279,24 @@ export function runKpiCoverageRepSelectionTests() {
     "getKpisBoard chooses the open rep from the filtered, in-scope rows",
   );
 
-  // Both pages ask for the lists on the Coverage tab alone, so no other tab ships a doctor list.
-  for (const page of ["app/employee-portals/kpis/page.tsx", "app/(admin)/admin/kpis/page.tsx"]) {
-    assert.match(
-      read(page),
-      /coverageDoctors: tab === "coverage" \? \{ rep: one\(params\?\.rep\) \?\? null \} : null/,
-      `${page} asks for the doctor lists on the Coverage tab`,
-    );
-  }
+  // The admin page asks for the lists on the Coverage tab alone, so no other tab ships a doctor list.
+  assert.match(
+    read("app/(admin)/admin/kpis/page.tsx"),
+    /coverageDoctors: tab === "coverage" \? \{ rep: one\(params\?\.rep\) \?\? null \} : null/,
+    "the admin KPIs page asks for the doctor lists on the Coverage tab",
+  );
+  // The portal split the board on 2026-10-14: the doctor lists went with the Coverage and Frequency
+  // reports (one list, read two ways), and the consolidated KPIs page ships none at all.
+  assert.match(
+    read("src/components/crm/portal-kpi-report-page.tsx"),
+    /coverageDoctors: report === "call-rate" \? null : \{ rep: one\(params\?\.rep\) \?\? null \}/,
+    "the portal Coverage and Frequency reports ask for the doctor lists, and Call Rate does not",
+  );
+  assert.match(
+    read("app/employee-portals/kpis/page.tsx"),
+    /coverageDoctors: null/,
+    "the portal's consolidated KPIs page ships no doctor list",
+  );
   const view = read("src/components/crm/kpis-board-view.tsx");
   assert.match(view, /<CoverageDoctors context=\{context\} detail=\{detail\} surface="desktop" \/>/, "the desktop table shows the open list");
   assert.match(view, /<CoverageDoctors context=\{context\} detail=\{detail\} surface="mobile" \/>/, "and so do the phone cards");
@@ -401,11 +422,26 @@ export function runKpiCoveragePhoenixListTests() {
       visits: 2,
       lastVisitDate: "2026-09-09",
       planDates: ["2026-09-05", "2026-09-12"],
+      // Grade A asks for three visits in the month and he has had two: the Frequency report's reading.
+      frequency: { basis: "grade", required: 3, dueSoFar: 3, actual: 2, status: "below" },
     },
-    "the covered doctor carries his name from the plan, his last visit and both planned days",
+    "the covered doctor carries the name from the plan, the last visit, both planned days and the frequency verdict",
   );
   assert.equal(doctors.find((row) => row.contactCrmId === 3)?.name, null, "no name on the plan stays null, never an id");
   assert.equal(doctors.find((row) => row.contactCrmId === 3)?.grade, "C", "the plan's grade stands in when the list has none");
+
+  // 3b. THE FREQUENCY REPORT READS THE SAME DOCTORS. Its verdicts add up to the Frequency count on the
+  //     row: at norm is `met`, and below or not visited is `below`, because the list and the percentage
+  //     come out of the one norm function.
+  const verdicts = (status: string) => doctors.filter((row) => row.frequency.status === status).length;
+  assert.equal(verdicts("at-norm"), kpis.frequency.met, "the doctors at norm are the Frequency count's met");
+  assert.equal(
+    verdicts("below") + verdicts("not-visited"),
+    kpis.frequency.below,
+    "the doctors below norm, seen or not, are the Frequency count's below",
+  );
+  assert.equal(doctors.find((row) => row.contactCrmId === 2)?.frequency.status, "not-visited", "grade B asks for two and he had none");
+  assert.equal(doctors.find((row) => row.contactCrmId === 3)?.frequency.status, "ungraded", "an AM doctor graded C has no norm");
 
   // 4. A NARROWER PERIOD NARROWS THE LIST. Week 6-12: doctor 1's visit on the 5th is outside it, and
   //    so is his plan day on the 5th.

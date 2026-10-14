@@ -171,8 +171,8 @@ export function runPortalRepKpiMonthTests() {
   // The tab is the owner's own instruction (2026-10-01): the row counts doctors he has not reached,
   // and Coverage is the ONE tab that lists them by name — Summary answers with three percentages.
   assert.ok(
-    /href=\{`\/employee-portals\/kpis\?month=\$\{kpiMonth\}&tab=coverage`\}/.test(center),
-    `${CENTER}: the missed-doctors row must open the KPIs board on the month it just named, on the Coverage tab`,
+    /href=\{`\/employee-portals\/kpis\/coverage\?month=\$\{kpiMonth\}`\}/.test(center),
+    `${CENTER}: the missed-doctors row must open the Coverage report on the month it just named (a page of its own since the 2026-10-14 split)`,
   );
   // Both halves of that URL must be ones the page honours, so the link cannot rot into a silent
   // no-op: an unrecognised tab WIDENS to Summary rather than erroring, which is exactly the screen

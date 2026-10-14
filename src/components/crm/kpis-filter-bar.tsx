@@ -104,6 +104,7 @@ export function KpisFilterBar({
   tab,
   trend,
   measure,
+  view,
   total,
   visible,
 }: {
@@ -123,6 +124,8 @@ export function KpisFilterBar({
   /** The Weekly tab's two switches, carried so a filter change keeps the view it was made on. */
   trend?: string | null;
   measure?: string | null;
+  /** The call-rate report's Total / AM / PM view, carried so a filter change keeps it. */
+  view?: string | null;
   /** Reps in the viewer's scope, before filtering. */
   total: number;
   /** Reps left after filtering. */
@@ -138,7 +141,7 @@ export function KpisFilterBar({
 
   const push = (next: KpiFilterState) => {
     startTransition(() =>
-      router.push(`${basePath}?${buildKpisQuery({ month, period, rep, tab, filters: next, trend, measure })}`),
+      router.push(`${basePath}?${buildKpisQuery({ month, period, rep, tab, filters: next, trend, measure, view })}`),
     );
   };
 

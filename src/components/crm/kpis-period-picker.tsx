@@ -63,6 +63,7 @@ export function KpisPeriodPicker({
   tab,
   trend,
   measure,
+  view,
 }: {
   basePath: string;
   /** Carried through every change — see the note on losing them below. */
@@ -93,6 +94,8 @@ export function KpisPeriodPicker({
   /** The Weekly tab's two switches, carried through a month change so the view stays as it was. */
   trend?: string | null;
   measure?: string | null;
+  /** The call-rate report's Total / AM / PM view, carried through a month or period change. */
+  view?: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -112,7 +115,7 @@ export function KpisPeriodPicker({
     // said a filter was on would be the worst of the two possible bugs.
     startTransition(() =>
       router.push(
-        `${basePath}?${buildKpisQuery({ month: nextMonth, period: nextPeriod, rep, tab, filters, trend, measure })}`,
+        `${basePath}?${buildKpisQuery({ month: nextMonth, period: nextPeriod, rep, tab, filters, trend, measure, view })}`,
       ),
     );
   };

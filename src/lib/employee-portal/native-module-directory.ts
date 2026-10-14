@@ -49,6 +49,7 @@ export const NATIVE_MODULE_SECTION_ORDER = [
   "Forecast & Target",
   "Recruitment",
   "iReports 360",
+  "KPIs",
   "Marketing & ROI",
   "Payroll",
   "Outstation Expenses",
@@ -128,13 +129,18 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/ranks": { icon: "star-outline", section: "iReports 360" },
   "/employee-portals/crm": { icon: "server-outline", section: "iReports 360" },
   "/employee-portals/reps-list": { icon: "people-outline", section: "iReports 360" },
-  "/employee-portals/kpis": { icon: "pulse-outline", section: "iReports 360" },
   "/employee-portals/dv-planner": { icon: "duplicate-outline", section: "iReports 360" },
   "/employee-portals/double-visit-report": { icon: "document-attach-outline", section: "iReports 360" },
   // Field Activity arrived on main (#4700) after the owner filled in his placement sheet, so the
   // sheet has no answer for it and it keeps the seat main gave it — under the DV rows, here.
   "/employee-portals/field-activity": { icon: "map-outline", section: "iReports 360" },
   "/employee-portals/team-calendar": { icon: "people-circle-outline", section: "iReports 360" },
+  // ── KPIs ──────────────────────────────────────────────────────────────────────────────────────
+  // A heading of its own on the sidebar since 2026-10-14; the Summary keeps the pulse glyph it had.
+  "/employee-portals/kpis": { icon: "pulse-outline", section: "KPIs" },
+  "/employee-portals/kpis/frequency": { icon: "repeat-outline", section: "KPIs" },
+  "/employee-portals/kpis/coverage": { icon: "radio-outline", section: "KPIs" },
+  "/employee-portals/kpis/call-rate": { icon: "call-outline", section: "KPIs" },
   // ── Marketing & ROI ───────────────────────────────────────────────────────────────────────────
   "/employee-portals/market-awareness": { icon: "megaphone-outline", section: "Marketing & ROI" },
   "/employee-portals/marketing-requests/validation": { icon: "shield-checkmark-outline", section: "Marketing & ROI" },
