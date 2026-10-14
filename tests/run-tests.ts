@@ -463,6 +463,12 @@ import {
 import { runKpisBoardTablesFitTests } from "./kpis-board-tables-fit.test.ts";
 import { runKpisReportsSplitTests } from "./kpis-reports-split.test.ts";
 import {
+  runKpiDoctorFilterTests,
+  runKpiRangeFilterTests,
+  runKpiReportFilterUrlTests,
+  runKpiReportFilterWiringTests,
+} from "./kpis-report-filters.test.ts";
+import {
   runTwoKpiReportsApplicabilityTests,
   runTwoKpiReportsConfigurableTests,
   runTwoKpiReportsGradeAndBandTests,
@@ -3658,6 +3664,10 @@ await runTest("KPIs coverage doctor lists (newest visit first; late doctors befo
 await runTest("KPIs coverage doctor lists (Phoenix: the lists add up to coverage.visited and coverage.missed, and follow the period)", runKpiCoveragePhoenixListTests);
 await runTest("KPIs board tables fit the screen (every column holds the width its head measured at the portal's 619px table at 1024px; Coverage's 12% columns had pushed Planned, Covered and Not reached past their cells, and Frequency had six columns for five cells)", runKpisBoardTablesFitTests);
 await runTest("the portal KPIs split: a summary page and a Frequency, Coverage and Call Rate report each (the tabs partition with none lost or on both, view and rep ride only where they mean something, a retired ?tab= forwards, every report keeps the KPIs gates, the sidebar heading and its catalog and registry rows agree, and the call rate is never averaged)", runKpisReportsSplitTests);
+await runTest("KPI report filters: a range on any column never swallows an absence and reads the figure as printed", runKpiRangeFilterTests);
+await runTest("KPI report filters: every filter rides the URL, doctor filters only where a doctor list prints, an unreadable value is dropped", runKpiReportFilterUrlTests);
+await runTest("KPI report filters: the doctor filters narrow rows by name, speciality, grade, verdict, covered, timing, visits and last visit, and park a blank last", runKpiDoctorFilterTests);
+await runTest("KPI report filters: the tiles stay on the whole list, another rep opens unfiltered, and the client bars stay dependency-free", runKpiReportFilterWiringTests);
 await runTest("two KPI reports (coverage is visited-at-least-once; frequency is the graded norm — different numbers)", runTwoKpiReportsVocabularyTests);
 await runTest("two KPI reports (the split is list_type, never speciality, and every list type lands in a report)", runTwoKpiReportsSplitTests);
 await runTest("two KPI reports (AM and PM are never averaged, and the pair never prints with a slash)", runTwoKpiReportsNeverAveragedTests);

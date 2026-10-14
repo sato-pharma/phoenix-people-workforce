@@ -9,6 +9,7 @@ import {
   pageHeaderTitleClassName,
 } from "@/components/admin/admin-design-tokens";
 
+import { KpisDoctorFilterBar } from "@/components/crm/kpis-doctor-filter-bar";
 import { KpisFilterBar } from "@/components/crm/kpis-filter-bar";
 import { KpisPeriodPicker, type KpiPickerOption } from "@/components/crm/kpis-period-picker";
 import { KpiTrendView } from "@/components/crm/kpis-trend-view";
@@ -56,15 +57,26 @@ import {
   kpiBandOf,
   kpiFlagsOf,
   KPI_BAND_LABEL,
+  KPI_RANGE_FIELDS,
+  KPI_RANGE_LABEL,
+  KPI_RANGE_UNIT,
   kpiFlagLabel,
   nextKpiSort,
   UNASSIGNED_FACET_KEY,
   UNASSIGNED_FACET_LABEL,
   type KpiBand,
   type KpiFilterState,
+  type KpiRangeFilters,
   type KpiSortField,
   isTooEarlyToScore,
 } from "@/lib/crm/kpis-filters";
+import {
+  buildKpiDoctorFacets,
+  EMPTY_KPI_DOCTOR_FILTER,
+  filterKpiDoctors,
+  hasActiveKpiDoctorFilter,
+  KPI_DOCTOR_SORT_LABEL,
+} from "@/lib/crm/kpis-doctor-filters";
 import { kpiIndexOf, type KpiIndex } from "@/lib/crm/kpi-index";
 import { ACTIVITY_LABEL } from "@/lib/crm/reps-list-activity";
 import type { KpiCoverageDetail, KpiCoverageDoctor, KpiRepRow, KpisBoard } from "@/lib/crm/kpis-board";
@@ -293,14 +305,19 @@ function hrefWith(
   },
 ): string {
   const { basePath, board } = context;
+  const rep = overrides.rep !== undefined ? overrides.rep : context.openRep;
+  // Opening a DIFFERENT rep starts his list unfiltered: another person's doctors share no speciality
+  // list or visit count with this one, and a leftover filter would open him on an empty table.
+  const filters =
+    overrides.filters ?? (rep !== context.openRep ? { ...board.filters, doctor: EMPTY_KPI_DOCTOR_FILTER } : board.filters);
   return `${basePath}?${buildKpisQuery({
     month: board.month,
     // The Weekly tab's board is the span its weeks cover ("1–28 Sep"), not a period anybody picked,
     // so leaving that tab opens the next one on the whole month rather than on that span.
     period: context.tab === "weekly" ? "month" : board.range.periodKey,
     tab: overrides.tab ?? context.tab,
-    filters: overrides.filters ?? board.filters,
-    rep: overrides.rep !== undefined ? overrides.rep : context.openRep,
+    filters,
+    rep,
     trend: overrides.trend ?? context.trendScale,
     measure: overrides.measure ?? context.trendMetric,
     view: overrides.view ?? context.callRateView,
@@ -762,6 +779,19 @@ function ActiveFilterChips({ context }: { context: ViewContext }) {
       label: kpiFlagLabel(flag, context.board.kpiRules),
       next: { ...filters, flags: filters.flags.filter((entry) => entry !== flag) },
     });
+  }
+  for (const field of KPI_RANGE_FIELDS) {
+    const range = filters.ranges[field];
+    if (!range || (range.min == null && range.max == null)) continue;
+    const unit = KPI_RANGE_UNIT[field] === "%" ? "%" : ` ${KPI_RANGE_UNIT[field]}`;
+    const bounds =
+      range.min != null && range.max != null
+        ? `${range.min}–${range.max}${unit}`
+        : range.min != null
+          ? `${range.min}${unit} or more`
+          : `${range.max}${unit} or less`;
+    const kept = Object.fromEntries(Object.entries(filters.ranges).filter(([key]) => key !== field)) as KpiRangeFilters;
+    chips.push({ key: `range:${field}`, label: `${KPI_RANGE_LABEL[field]}: ${bounds}`, next: { ...filters, ranges: kept } });
   }
   if (filters.query.trim()) {
     chips.push({ key: "query", label: `Search: ${filters.query.trim()}`, next: { ...filters, query: "" } });
@@ -1341,12 +1371,62 @@ function CoverageListCard({
 }
 
 /**
+ * The doctor filter bar for the open rep, fed the rep's WHOLE list so its options and counts do not
+ * collapse onto whatever is already selected. The tiles and breakdowns above the list stay on the
+ * whole list too — they add up to the numbers on his row — and only the rows printed are narrowed.
+ */
+function DoctorFilters({
+  context,
+  doctors,
+  shown,
+}: {
+  context: ViewContext;
+  doctors: readonly KpiCoverageDoctor[];
+  shown: number;
+}) {
+  const { board } = context;
+  return (
+    <KpisDoctorFilterBar
+      basePath={context.basePath}
+      facets={buildKpiDoctorFacets(doctors)}
+      filters={board.filters}
+      month={board.month}
+      period={board.range.periodKey}
+      rep={context.openRep}
+      shown={shown}
+      tab={context.tab}
+      total={doctors.length}
+      view={context.callRateView}
+    />
+  );
+}
+
+/** One line saying the doctors are in the order asked for, or null while the report's own order stands. */
+function doctorSortNote(filters: KpiFilterState): string | null {
+  const { sort, direction } = filters.doctor;
+  if (sort === "default") return null;
+  const asc = direction === "asc";
+  const way =
+    sort === "visits" ? (asc ? "fewest first" : "most first") : sort === "last" ? (asc ? "oldest first" : "newest first") : asc ? "A to Z" : "Z to A";
+  return `Ordered by ${KPI_DOCTOR_SORT_LABEL[sort].toLowerCase()}, ${way}`;
+}
+
+/** The open rep's two lists with the doctor filters applied. `default` order keeps each list's own. */
+function narrowDetail(detail: KpiCoverageDetail, filters: KpiFilterState): KpiCoverageDetail {
+  return {
+    ...detail,
+    covered: filterKpiDoctors(detail.covered, filters.doctor),
+    notCovered: filterKpiDoctors(detail.notCovered, filters.doctor),
+  };
+}
+
+/**
  * Both lists for the open rep. `surface` decides the shape only: two fixed-layout tables side by side
  * from `lg` inside the desktop row, stacked cards under the phone card.
  */
 function CoverageDoctors({
   context,
-  detail,
+  detail: full,
   surface,
 }: {
   context: ViewContext;
@@ -1355,15 +1435,19 @@ function CoverageDoctors({
 }) {
   const { board } = context;
   const period = board.range.isWholeMonth ? board.monthLabel : board.range.periodLabel;
-  const planned = detail.covered.length + detail.notCovered.length;
+  const planned = full.covered.length + full.notCovered.length;
+  // The lists below print the narrowed rows; the caption and the summary stay on the whole list.
+  const narrowing = hasActiveKpiDoctorFilter(board.filters.doctor);
+  const sortNote = doctorSortNote(board.filters);
+  const detail = narrowDetail(full, board.filters);
   const notDue = detail.notCovered.filter((doctor) => !doctor.due).length;
   const due = detail.notCovered.length - notDue;
 
   const covered = (
     <CoverageListCard
       count={detail.covered.length}
-      empty="No planned doctor has been visited in this period yet."
-      hint="Seen at least once · latest visit first"
+      empty={narrowing ? "No covered doctor matches these filters." : "No planned doctor has been visited in this period yet."}
+      hint={sortNote ?? "Seen at least once · latest visit first"}
       title="Covered"
     >
       {surface === "desktop" ? (
@@ -1420,8 +1504,11 @@ function CoverageDoctors({
   const notCovered = (
     <CoverageListCard
       count={detail.notCovered.length}
-      empty="Every planned doctor has been visited at least once."
-      hint={notDue > 0 ? `${due} due · ${notDue} not due yet · oldest planned day first` : "Oldest planned day first"}
+      empty={narrowing ? "No uncovered doctor matches these filters." : "Every planned doctor has been visited at least once."}
+      hint={
+        sortNote ??
+        (notDue > 0 ? `${due} due · ${notDue} not due yet · oldest planned day first` : "Oldest planned day first")
+      }
       title="Not covered"
     >
       {surface === "desktop" ? (
@@ -1480,17 +1567,24 @@ function CoverageDoctors({
 
   return (
     <div className="space-y-3">
-      <CoverageSummary context={context} detail={detail} />
+      <CoverageSummary context={context} detail={full} />
       <div className="min-w-0">
         <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900">
           Doctors planned in {period}
         </p>
         <p className={`mt-0.5 leading-4 ${CAPTION}`}>
           {planned === 0
-            ? `No doctor was planned for ${detail.repName} in this period.`
-            : `${detail.repName}: ${detail.covered.length} of ${planned} seen at least once. Not covered means no visit in the period yet — a doctor whose planned day is still ahead is marked Not due yet.`}
+            ? `No doctor was planned for ${full.repName} in this period.`
+            : `${full.repName}: ${full.covered.length} of ${planned} seen at least once. Not covered means no visit in the period yet — a doctor whose planned day is still ahead is marked Not due yet.`}
         </p>
       </div>
+      {planned === 0 ? null : (
+        <DoctorFilters
+          context={context}
+          doctors={[...full.covered, ...full.notCovered]}
+          shown={detail.covered.length + detail.notCovered.length}
+        />
+      )}
       {planned === 0 ? null : surface === "desktop" ? (
         <div className="grid gap-3 lg:grid-cols-2">
           {covered}
@@ -2123,6 +2217,17 @@ function frequencyGapText(frequency: FrequencyDoctorRow["frequency"]): string {
   return `${gap} extra`;
 }
 
+/**
+ * The visits made as a share of the visits the plan or the norm asks for, for the meter under the
+ * Visited figure. Capped by the meter itself at a full bar, so extra visits never read as more than
+ * done; null where nothing is asked, so a doctor with no grade carries no bar rather than an empty one.
+ */
+function visitFill(frequency: FrequencyDoctorRow["frequency"]): number | null {
+  return frequency.required != null && frequency.required > 0
+    ? Math.round((frequency.actual / frequency.required) * 100)
+    : null;
+}
+
 function frequencyRows(detail: KpiCoverageDetail): FrequencyDoctorRow[] {
   return [...detail.covered, ...detail.notCovered]
     .flatMap((doctor) => (doctor.frequency ? [{ doctor, frequency: doctor.frequency }] : []))
@@ -2183,6 +2288,19 @@ function FrequencyDoctors({
       </div>
     );
   }
+
+  // The tiles, the breakdown and the verdict counts below describe the rep's WHOLE list and add up to
+  // his row; only the doctors printed in the table are narrowed by the filters.
+  const rowOf = new Map(rows.map((row) => [row.doctor, row] as const));
+  const visible = filterKpiDoctors(
+    rows.map((row) => row.doctor),
+    board.filters.doctor,
+  ).flatMap((doctor) => {
+    const row = rowOf.get(doctor);
+    return row ? [row] : [];
+  });
+  const narrowing = hasActiveKpiDoctorFilter(board.filters.doctor);
+  const sortNote = doctorSortNote(board.filters);
 
   let asked = 0;
   let due = 0;
@@ -2253,7 +2371,7 @@ function FrequencyDoctors({
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-slate-50/70">
-          {rows.map(({ doctor, frequency }) => (
+          {visible.map(({ doctor, frequency }) => (
             <tr key={doctor.contactCrmId}>
               <td className={TD}>
                 <FrequencyDoctorName doctor={doctor} />
@@ -2269,6 +2387,9 @@ function FrequencyDoctors({
                 <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
                   {doctor.lastVisitDate ? `Last ${dayLabel(doctor.lastVisitDate, false)}` : "Never this period"}
                 </span>
+                {visitFill(frequency) == null ? null : (
+                  <KpiMeter band={FREQUENCY_STATUS_BAND[frequency.status]} value={visitFill(frequency)} />
+                )}
               </td>
               <td className={NUM}>{frequencyGapText(frequency)}</td>
               <td className={TD}>
@@ -2280,7 +2401,7 @@ function FrequencyDoctors({
       </table>
     ) : (
       <ul className="divide-y divide-slate-100">
-        {rows.map(({ doctor, frequency }) => (
+        {visible.map(({ doctor, frequency }) => (
           <li className="px-3 py-2.5 text-sm" key={doctor.contactCrmId}>
             <div className="flex items-start justify-between gap-2">
               <FrequencyDoctorName doctor={doctor} />
@@ -2298,6 +2419,11 @@ function FrequencyDoctors({
                 <dd className="text-phx-2xs leading-4 text-slate-500">
                   {doctor.lastVisitDate ? `Last ${dayLabel(doctor.lastVisitDate, false)}` : "Never this period"}
                 </dd>
+                {visitFill(frequency) == null ? null : (
+                  <dd>
+                    <KpiMeter band={FREQUENCY_STATUS_BAND[frequency.status]} value={visitFill(frequency)} />
+                  </dd>
+                )}
               </div>
               <div className="min-w-0">
                 <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">Gap</dt>
@@ -2351,12 +2477,23 @@ function FrequencyDoctors({
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
-        {statusOrder.map((status) => (
-          <span className="inline-flex items-center gap-1.5" key={status}>
-            <FrequencyStatusChip status={status} />
-            <span className="text-phx-2xs font-black tabular-nums text-slate-700">{byStatus.get(status)}</span>
-          </span>
-        ))}
+        {statusOrder.map((status) => {
+          const chosen = board.filters.doctor.statuses.includes(status);
+          const statuses = chosen
+            ? board.filters.doctor.statuses.filter((entry) => entry !== status)
+            : [...board.filters.doctor.statuses, status];
+          return (
+            // Each count is a link that filters the list to that verdict (and back off again).
+            <Link
+              className={`inline-flex items-center gap-1.5 border px-1.5 py-1 transition-colors ${chosen ? "border-orange-500 bg-orange-50" : "border-transparent hover:border-slate-300"}`}
+              href={hrefWith(context, { filters: { ...board.filters, doctor: { ...board.filters.doctor, statuses } } })}
+              key={status}
+            >
+              <FrequencyStatusChip status={status} />
+              <span className="text-phx-2xs font-black tabular-nums text-slate-700">{byStatus.get(status)}</span>
+            </Link>
+          );
+        })}
       </div>
 
       {gradeGroups.length > 1 || (gradeGroups[0] && gradeGroups[0].label !== "No grade") ? (
@@ -2383,14 +2520,22 @@ function FrequencyDoctors({
         </div>
       ) : null}
 
+      <DoctorFilters context={context} doctors={rows.map((row) => row.doctor)} shown={visible.length} />
+
       <div className="min-w-0 border border-slate-200 bg-white">
         <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
           <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">
-            Every planned doctor · <span className="tabular-nums">{rows.length}</span>
+            {narrowing ? "Matching doctors" : "Every planned doctor"} ·{" "}
+            <span className="tabular-nums">{visible.length}</span>
+            {narrowing ? <span className="tabular-nums"> of {rows.length}</span> : null}
           </p>
-          <p className="mt-0.5 text-phx-3xs leading-4 text-slate-400">Furthest from target first</p>
+          <p className="mt-0.5 text-phx-3xs leading-4 text-slate-400">{sortNote ?? "Furthest from target first"}</p>
         </div>
-        {table}
+        {visible.length === 0 ? (
+          <p className={`px-3 py-4 leading-4 ${CAPTION}`}>No doctor matches these filters. Clear a filter above to see more.</p>
+        ) : (
+          table
+        )}
       </div>
     </div>
   );

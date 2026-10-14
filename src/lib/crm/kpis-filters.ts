@@ -8,7 +8,8 @@
  * `UnhandledSchemeError: Reading from "node:crypto"` — a failure `tsc` cannot see, which is what
  * happened to the Reps Weekly Plans status filter on 2026-09-01.
  *
- * So this file imports NOTHING. The row it filters is described structurally (`KpiFilterableRow`)
+ * So this file imports NOTHING but its sibling kpis-doctor-filters.ts, itself dependency-free (the
+ * doctor filters ride in the same URL, so the one builder below has to know their names). The row it filters is described structurally (`KpiFilterableRow`)
  * rather than imported from the board, which also means the whole engine is fixture-testable with
  * no database anywhere near it.
  *
@@ -27,6 +28,14 @@
  * filter can only ever NARROW what the gate already allowed; it can never widen it. The filtering
  * runs after `joinKpiRows` has already dropped every rep outside the viewer's reach.
  */
+
+import {
+  EMPTY_KPI_DOCTOR_FILTER,
+  KPI_DOCTOR_PARAM_KEYS,
+  kpiDoctorFilterToParams,
+  parseKpiDoctorFilter,
+  type KpiDoctorFilter,
+} from "@/lib/crm/kpis-doctor-filters";
 
 /** A rep row as the filter engine reads it. `KpiRepRow` satisfies this structurally. */
 export type KpiFilterableRow = {
@@ -365,6 +374,163 @@ function sortKey(row: KpiFilterableRow, field: KpiSortField): number | string | 
   }
 }
 
+// ── Ranges ────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The columns a manager can bound with a minimum and a maximum — every number the rep tables print.
+ *
+ * Bounds are on the figure as the table SHOWS it (to one decimal), so a rep printed as "90%" is never
+ * filtered out of "90 and over" by a hidden 89.6. A rep with NOTHING to measure on the column (no
+ * plan, no call-rate row) never passes a bound on it: an absence is not a zero, and a "coverage under
+ * 50%" filter must not swallow the people who were simply never given a plan. Pharmacy rate is not
+ * offered — it has no target and is always blank.
+ */
+export const KPI_RANGE_FIELDS = [
+  "coverage",
+  "frequency",
+  "am",
+  "pm",
+  "planned",
+  "visited",
+  "missed",
+  "exact",
+  "below",
+  "above",
+  "calls",
+  "campaign",
+  "workingdays",
+] as const;
+
+export type KpiRangeField = (typeof KPI_RANGE_FIELDS)[number];
+
+export const KPI_RANGE_LABEL: Record<KpiRangeField, string> = {
+  coverage: "Coverage",
+  frequency: "Frequency",
+  am: "AM calls a day",
+  pm: "PM calls a day",
+  planned: "Planned doctors",
+  visited: "Covered doctors",
+  missed: "Not reached",
+  exact: "Doctors exact",
+  below: "Doctors below",
+  above: "Doctors above",
+  calls: "Total calls",
+  campaign: "Campaign share",
+  workingdays: "Working days",
+};
+
+/** The unit a field's bound is typed in, shown beside the input. */
+export const KPI_RANGE_UNIT: Record<KpiRangeField, string> = {
+  coverage: "%",
+  frequency: "%",
+  am: "a day",
+  pm: "a day",
+  planned: "doctors",
+  visited: "doctors",
+  missed: "doctors",
+  exact: "doctors",
+  below: "doctors",
+  above: "doctors",
+  calls: "calls",
+  campaign: "%",
+  workingdays: "days",
+};
+
+export type KpiRange = { min: number | null; max: number | null };
+export type KpiRangeFilters = Partial<Record<KpiRangeField, KpiRange>>;
+
+/** The figure a range is tested against, or null when the row has nothing honest on that column. */
+function rangeValue(row: KpiFilterableRow, field: KpiRangeField): number | null {
+  switch (field) {
+    case "coverage":
+      return row.hasMeasurablePlan ? row.coveragePct : null;
+    case "frequency":
+      return row.hasMeasurablePlan ? row.frequencyPct : null;
+    case "am":
+      return row.amRate;
+    case "pm":
+      return row.pmRate;
+    case "planned":
+      return row.plannedDoctors;
+    case "visited":
+      return row.visitedDoctors;
+    case "missed":
+      return row.plannedDoctors - row.visitedDoctors;
+    case "exact":
+      return row.onPlanDoctors;
+    case "below":
+      return row.underDoctors;
+    case "above":
+      return row.overDoctors;
+    case "calls":
+      return row.totalCalls;
+    case "campaign":
+      return row.totalCalls > 0 ? row.campaignShare * 100 : null;
+    case "workingdays":
+      return row.workingDays;
+    default:
+      return null;
+  }
+}
+
+function roundForRange(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/** Whether the row sits inside every bound. A bound that names no number is not a bound. */
+export function matchesKpiRanges(row: KpiFilterableRow, ranges: KpiRangeFilters): boolean {
+  for (const field of KPI_RANGE_FIELDS) {
+    const range = ranges[field];
+    if (!range || (range.min == null && range.max == null)) continue;
+    const raw = rangeValue(row, field);
+    if (raw == null) return false;
+    const value = roundForRange(raw);
+    if (range.min != null && value < range.min) return false;
+    if (range.max != null && value > range.max) return false;
+  }
+  return true;
+}
+
+/** How many columns carry a bound — one filter each, whichever of min and max (or both) is set. */
+export function countKpiRanges(ranges: KpiRangeFilters): number {
+  return KPI_RANGE_FIELDS.filter((field) => {
+    const range = ranges[field];
+    return range != null && (range.min != null || range.max != null);
+  }).length;
+}
+
+/** The URL parameter a range rides in: `r_coverage=50..90`, either end blank for open. */
+export const KPI_RANGE_PARAM_PREFIX = "r_";
+
+function rangeNumber(raw: string): number | null {
+  const text = raw.trim();
+  if (text === "") return null;
+  const value = Number(text);
+  return Number.isFinite(value) && value >= 0 && value <= 1000000 ? roundForRange(value) : null;
+}
+
+/**
+ * A range from the two boxes a manager typed in. Blank or unreadable is an open end, both open is no
+ * range at all, and a minimum typed above the maximum is swapped rather than matching nobody.
+ */
+export function kpiRangeFromInputs(low: string, high: string): KpiRange | null {
+  let min = rangeNumber(low);
+  let max = rangeNumber(high);
+  if (min == null && max == null) return null;
+  if (min != null && max != null && min > max) [min, max] = [max, min];
+  return { min, max };
+}
+
+function parseRange(raw: string | undefined): KpiRange | null {
+  if (!raw || !raw.includes("..")) return null;
+  const [low = "", high = ""] = raw.split("..");
+  return kpiRangeFromInputs(low, high);
+}
+
+function rangeParam(range: KpiRange): string {
+  return `${range.min ?? ""}..${range.max ?? ""}`;
+}
+
 // ── Filter state ──────────────────────────────────────────────────────────────────────────────
 
 export type KpiFilterState = {
@@ -378,10 +544,18 @@ export type KpiFilterState = {
   amRate: KpiBand[];
   pmRate: KpiBand[];
   flags: KpiFlag[];
+  /** Minimum and maximum on any number column — see {@link KPI_RANGE_FIELDS}. No entry, no bound. */
+  ranges: KpiRangeFilters;
   /** Free text matched against the rep's name, area, line and manager. */
   query: string;
   sort: KpiSortField;
   direction: KpiSortDirection;
+  /**
+   * The filters on the OPEN rep's doctor list (Frequency and Coverage). They change nothing about
+   * which reps are on the board — `applyKpiFilters` never reads them — and live in this state so the
+   * one URL builder carries them through every link, as it does everything else.
+   */
+  doctor: KpiDoctorFilter;
 };
 
 /** The URL parameter each facet rides in. Short, because they stack up in one address bar. */
@@ -412,9 +586,11 @@ export const EMPTY_KPI_FILTERS: KpiFilterState = {
   amRate: [],
   pmRate: [],
   flags: [],
+  ranges: {},
   query: "",
   sort: "rep",
   direction: "asc",
+  doctor: EMPTY_KPI_DOCTOR_FILTER,
 };
 
 /** Whether anything is actually filtering. Sort order alone is not a filter. */
@@ -430,6 +606,7 @@ export function hasActiveKpiFilters(filters: KpiFilterState): boolean {
     filters.amRate.length > 0 ||
     filters.pmRate.length > 0 ||
     filters.flags.length > 0 ||
+    countKpiRanges(filters.ranges) > 0 ||
     filters.query.trim().length > 0
   );
 }
@@ -447,6 +624,7 @@ export function countActiveKpiFilters(filters: KpiFilterState): number {
     filters.amRate.length +
     filters.pmRate.length +
     filters.flags.length +
+    countKpiRanges(filters.ranges) +
     (filters.query.trim() ? 1 : 0)
   );
 }
@@ -497,10 +675,21 @@ export function parseKpiFilters(params: Record<string, string | string[] | undef
     amRate: keepKnown(splitParam(read(KPI_FILTER_PARAMS.amRate)), KPI_BANDS),
     pmRate: keepKnown(splitParam(read(KPI_FILTER_PARAMS.pmRate)), KPI_BANDS),
     flags: keepKnown(splitParam(read(KPI_FILTER_PARAMS.flags)), KPI_FLAGS),
+    ranges: parseRanges(read),
     query: (read(KPI_FILTER_PARAMS.query) ?? "").trim().slice(0, 120),
     sort: (KPI_SORT_FIELDS as readonly string[]).includes(sortRaw) ? (sortRaw as KpiSortField) : "rep",
     direction: directionRaw === "desc" ? "desc" : "asc",
+    doctor: parseKpiDoctorFilter(params),
   };
+}
+
+function parseRanges(read: (key: string) => string | undefined): KpiRangeFilters {
+  const ranges: KpiRangeFilters = {};
+  for (const field of KPI_RANGE_FIELDS) {
+    const range = parseRange(read(`${KPI_RANGE_PARAM_PREFIX}${field}`));
+    if (range) ranges[field] = range;
+  }
+  return ranges;
 }
 
 /** Serialises the state back into query parameters, omitting everything at its default. */
@@ -519,9 +708,14 @@ export function kpiFiltersToParams(filters: KpiFilterState): Record<string, stri
   put(KPI_FILTER_PARAMS.amRate, filters.amRate);
   put(KPI_FILTER_PARAMS.pmRate, filters.pmRate);
   put(KPI_FILTER_PARAMS.flags, filters.flags);
+  for (const field of KPI_RANGE_FIELDS) {
+    const range = filters.ranges[field];
+    if (range && (range.min != null || range.max != null)) out[`${KPI_RANGE_PARAM_PREFIX}${field}`] = rangeParam(range);
+  }
   if (filters.query.trim()) out[KPI_FILTER_PARAMS.query] = filters.query.trim();
   if (filters.sort !== "rep") out[KPI_FILTER_PARAMS.sort] = filters.sort;
   if (filters.direction !== "asc") out[KPI_FILTER_PARAMS.direction] = filters.direction;
+  Object.assign(out, kpiDoctorFilterToParams(filters.doctor));
   return out;
 }
 
@@ -576,7 +770,14 @@ export function buildKpisQuery(input: {
   // imported so this file keeps importing nothing; tests/kpis-trend.test.ts pins that they agree.
   if (weekly && input.trend && input.trend !== "month") query.set("trend", input.trend);
   if (weekly && input.measure && input.measure !== "am") query.set("measure", input.measure);
-  for (const [key, value] of Object.entries(kpiFiltersToParams(input.filters))) query.set(key, value);
+  // The doctor filters narrow ONE rep's list, so they travel only on the two tabs that print it —
+  // anywhere else they would sit in the address bar describing nothing. Not conditional on `rep`: a
+  // board holding a single rep opens his list unasked, with no `rep` in the URL at all.
+  const doctorListOpen = input.tab === "coverage" || input.tab === "frequency";
+  for (const [key, value] of Object.entries(kpiFiltersToParams(input.filters))) {
+    if (!doctorListOpen && KPI_DOCTOR_PARAM_KEYS.includes(key)) continue;
+    query.set(key, value);
+  }
   return query.toString();
 }
 
@@ -671,6 +872,7 @@ export function applyKpiFilters<T extends KpiFilterableRow>(rows: readonly T[], 
       const rowFlags = kpiFlagsOf(row);
       if (!filters.flags.some((flag) => rowFlags.includes(flag))) return false;
     }
+    if (!matchesKpiRanges(row, filters.ranges)) return false;
     if (!matchesQuery(row, filters.query)) return false;
     return true;
   });
