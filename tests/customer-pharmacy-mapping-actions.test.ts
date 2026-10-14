@@ -7,7 +7,7 @@ import {
   canAccessCustomerPharmacyMapping,
   INFERRED_HISTORY_MARKER,
 } from "@/lib/customer-pharmacy-mapping/readiness.ts";
-import { composeValidationNotes } from "@/lib/customer-pharmacy-mapping/actions.ts";
+import { assertRecordedVerdictAllowsRelease, composeValidationNotes } from "@/lib/customer-pharmacy-mapping/actions.ts";
 
 function access(overrides: Partial<AccessContext>): AccessContext {
   return {
@@ -69,6 +69,16 @@ function testComposeValidationNotes() {
 
   const afterRejection = composeValidationNotes(inferredExisting, "Rejected: distributor code mismatch.");
   assert.match(afterRejection, new RegExp(INFERRED_HISTORY_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+}
+
+function testRecordedVerdictGuard() {
+  assert.throws(
+    () => assertRecordedVerdictAllowsRelease(false),
+    /does not match the shop sign/,
+    "a recorded mismatch must block the release",
+  );
+  assert.doesNotThrow(() => assertRecordedVerdictAllowsRelease(null), "nobody was asked yet: the release may record its own answer");
+  assert.doesNotThrow(() => assertRecordedVerdictAllowsRelease(true), "a recorded match does not block the release");
 }
 
 function testActionsServiceSourceGuards() {
@@ -143,6 +153,13 @@ function testActionsServiceSourceGuards() {
     "a licence-only link cannot be released when no licence file is on file",
   );
 
+  // A recorded "does NOT match" is never silently replaced by the release: the guard reads the
+  // pharmacy's verdict and runs BEFORE the three verdict columns are written.
+  const guardAt = source.indexOf("assertRecordedVerdictAllowsRelease((verdictRow");
+  const writeAt = source.indexOf("...licenseVerdictColumns({");
+  assert.ok(guardAt > 0 && writeAt > guardAt, "the recorded-verdict guard must run before the release writes its verdict");
+  assert.ok(source.includes('.select("license_name_matches_sign")'), "the guard must read the verdict already on the pharmacy");
+
   // Both decisions are REQUIRED-audited: a link approved or rejected with no record of who did it is
   // the failure (the screen decides which venues a request may spend on).
   const auditCalls = source.match(/await writeRequiredAuditLog\(/g) ?? [];
@@ -175,6 +192,7 @@ function testDecisionRouteSourceGuards() {
 export async function runCustomerPharmacyMappingActionsTests() {
   testAccessGate();
   testComposeValidationNotes();
+  testRecordedVerdictGuard();
   testActionsServiceSourceGuards();
   testDecisionRouteSourceGuards();
 }

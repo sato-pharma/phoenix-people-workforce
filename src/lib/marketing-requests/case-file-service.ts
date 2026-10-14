@@ -1236,6 +1236,11 @@ export function marketingHistoryHeadline(
       // the refusal ended the chain above it. Caught on staging by reading the events a reject
       // actually writes, not by reading the trigger.
       if (row.to_status === "skipped") return `Closed out without a decision${step}`;
+      // A RESTART on resubmit does the same thing the other way: `phx_resubmit_marketing_request`
+      // puts every earlier approval back to 'pending' and clears decision_by_hr_id in the same
+      // update, so the trigger names the rung's assignee as the actor of a "decision" to wait.
+      // Nobody decided anything; the requester's edit sent the chain back to its start.
+      if (row.to_status === "pending") return `Back to waiting${step}`;
       return `${who} ${row.to_status ? row.to_status.replace(/_/g, " ") : "decided"}${step}`;
     case "step_commented":
       return `${who} commented${step}`;

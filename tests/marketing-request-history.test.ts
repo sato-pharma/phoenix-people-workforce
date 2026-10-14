@@ -95,6 +95,20 @@ export async function runMarketingRequestHistoryTests() {
   );
   assert.match(closedOut, /Finance Execution/, "the rung that was closed out must still be named");
 
+  // A resubmit that restarts the chain puts earlier approvals back to 'pending' and clears the
+  // decider in the same update, so the trigger falls back to the assignee as actor. Nobody decided
+  // "pending"; the requester's edit sent the chain back to its start.
+  const restarted = marketingHistoryHeadline(
+    { from_status: "approved", kind: "step_decided", step_name: "Regional Manager Approval", to_status: "pending" },
+    "Mona Adel",
+  );
+  assert.ok(
+    !/Mona Adel/.test(restarted),
+    "a rung a restart put back to waiting must NOT name its assignee as having decided anything",
+  );
+  assert.match(restarted, /back to waiting/i, "a restarted rung must say it went back to waiting");
+  assert.match(restarted, /Regional Manager Approval/, "the rung that went back to waiting must still be named");
+
   // The DB's status vocabulary is snake_case; underscores are not for reading.
   const statusChanged = marketingHistoryHeadline(
     { from_status: "pending_approval", kind: "request_status_changed", step_name: null, to_status: "rejected" },

@@ -154,6 +154,21 @@ export function buildCustomerPharmacyApprovalPatch(input: {
   };
 }
 
+/**
+ * A licence verdict is permanent with no correction path, and the Approve below writes `true` onto the
+ * pharmacy. If a request approver already recorded that the trade name does NOT match the shop sign,
+ * this release must not silently replace that answer: the link is rejected instead, or the licence
+ * file is replaced (which resets the check to "not checked yet").
+ */
+export function assertRecordedVerdictAllowsRelease(recorded: boolean | null): void {
+  if (recorded === false) {
+    throw validationError(
+      "A reviewer already recorded that the trade name on this licence does not match the shop sign, so it cannot be released on its licence. Reject the link, or replace the licence file to reset the check.",
+      "license_mismatch_recorded",
+    );
+  }
+}
+
 export type CustomerPharmacyApprovalInput = {
   linkId: string;
   /**
@@ -222,6 +237,13 @@ export async function approveCustomerPharmacyLink(
     if (!licenseRow) {
       throw validationError("There is no licence on file for this pharmacy, so it cannot be released on its licence.");
     }
+    const { data: verdictRow, error: verdictReadError } = await getSupabaseAdmin()
+      .from("marketing_pharmacies")
+      .select("license_name_matches_sign")
+      .eq("id", existing.pharmacy_id)
+      .maybeSingle();
+    if (verdictReadError) throw verdictReadError;
+    assertRecordedVerdictAllowsRelease((verdictRow as { license_name_matches_sign?: boolean | null } | null)?.license_name_matches_sign ?? null);
     const verdictNow = new Date().toISOString();
     const { error: verdictError } = await getSupabaseAdmin()
       .from("marketing_pharmacies")
