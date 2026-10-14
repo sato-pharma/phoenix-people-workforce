@@ -17,7 +17,7 @@ import { ArrowLeft, ChevronDown, CircleDashed, LoaderCircle, Search } from "luci
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { countText, type Tone } from "@/components/phoenix-crm/format";
-import { useInsideCrmStepForm } from "@/components/phoenix-crm/step-form";
+import { useInsideCrmStepForm, useUntitledCrmBlocks } from "@/components/phoenix-crm/step-form";
 import { useCrmComboBoxes } from "@/components/phoenix-crm/surface";
 import {
   phxFieldClassName,
@@ -81,11 +81,13 @@ export function CrmBlock({
   className?: string;
   title?: ReactNode;
 }) {
+  const untitled = useUntitledCrmBlocks();
+  const shownTitle = untitled ? undefined : title;
   return (
     <div className={cn("min-w-0 px-4 py-4 sm:px-5", className)}>
-      {title || actions ? (
+      {shownTitle || actions ? (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          {title ? <h3 className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{title}</h3> : <span />}
+          {shownTitle ? <h3 className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{shownTitle}</h3> : <span />}
           {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
         </div>
       ) : null}
