@@ -286,11 +286,10 @@ export async function decideUnplannedVisit(viewer: PhoenixCrmViewer, raw: unknow
   const status: UnplannedVisitStatus = isUnplannedVisitStatus(row.status) ? row.status : "approved";
   if (!isUnplannedVisitWaiting(status)) throw forbiddenError("This visit was already decided. Reload the page.");
   const stage = unplannedVisitStageOf(status) as UnplannedVisitStage;
-  // The Administrator declines at whichever step it waits at; he never approves (owner, 2026-10-08).
+  // The Administrator approves or declines at whichever step it waits at, in place of its holder, and
+  // is no step himself (owner, 2026-10-14; before that he could only decline, 2026-10-08).
   const asAdministrator = canOverrideDecision(viewer, isTest);
-  if (asAdministrator) {
-    if (decision !== "refuse") throw validationError("The Administrator can only decline a visit.");
-  } else {
+  if (!asAdministrator) {
     assertUnplannedVisitApprover(viewer, seat, isTest, stage);
     // 🔴 THE THIRD FENCE ON THE OWNER'S 2026-10-12 RULING, and the only one that reads the person
     // actually clicking rather than the organogram. `unplannedFirstStatus` sends a visit whose

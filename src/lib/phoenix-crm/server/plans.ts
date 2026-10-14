@@ -72,6 +72,7 @@ import { sharedPlanCapRefusal } from "@/lib/phoenix-crm/shared-place-rules";
 import {
   assertCanReturnPlan,
   assertReviewer,
+  canOverrideDecision,
   canReturnTerritoryPlan,
   canReviewTerritory,
   canWriteAsRep,
@@ -622,7 +623,9 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     canSubmit: viewerIsRep && blockedReason === null && repState === "plan" && status !== null && isPlanEditable(status) && itemCount > 0 && !staleOnOpenDays,
     // A sent week is changed through "Ask to edit this week" now, never taken back by the rep.
     canReopen: false,
-    canApprove: viewerIsReviewer && status === "submitted",
+    // The Administrator may approve in the reviewer's place; this flag opens the decision block only,
+    // and the review list's own `canApprove` (what is counted as waiting) still leaves him out.
+    canApprove: (viewerIsReviewer || canOverrideDecision(viewer, isTest)) && status === "submitted",
     canReturn: weekOpen && canReturnTerritoryPlan(viewer, seat, isTest) && (status === "submitted" || status === "approved"),
     blockedReason,
     returnedDay,
@@ -890,8 +893,11 @@ export async function transitionPlan(
       if (overVenue) throw conflictError(overVenue);
     }
   } else if (action === "approve") {
-    assertReviewer(viewer, seat, isTest);
-    actorRole = "reviewer";
+    // The Administrator may approve a week in the reviewer's place; he is no step (owner, 2026-10-14).
+    const asAdministrator = canOverrideDecision(viewer, isTest);
+    if (!asAdministrator) assertReviewer(viewer, seat, isTest);
+    decidedAs = asAdministrator ? "administrator" : "reviewer";
+    actorRole = asAdministrator ? "administrator" : "reviewer";
   } else {
     decidedAs = assertCanReturnPlan(viewer, seat, isTest);
     actorRole = decidedAs === "sfe" ? "sfe_manager" : decidedAs === "administrator" ? "administrator" : "reviewer";

@@ -6,7 +6,8 @@
  * Owner, 2026-10-01: a sent week is no longer taken back by the rep. He asks — one button, no reason —
  * and the request runs: his district manager APPROVES, then SFE APPROVES, and SFE's approval opens the
  * week again. A refusal at the manager's step or SFE's ends it and needs a note, because the rep reads
- * why. The Administrator (owner, 2026-10-08) is no step: he may only decline, with a comment.
+ * why. The Administrator is no step, but may approve or refuse a waiting request in the place of whoever
+ * holds its step (owner, 2026-10-14; before that he could only decline, 2026-10-08).
  *
  * "Open the week" shows the plan as it was sent, so a step is never taken without looking at it.
  */
@@ -14,7 +15,7 @@
 import { useId, useState } from "react";
 
 import { crmPost, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
-import { AdministratorDecline } from "@/components/phoenix-crm/administrator-decline";
+import { AdministratorStepNote } from "@/components/phoenix-crm/administrator-decline";
 import { cairoStamp } from "@/components/phoenix-crm/format";
 import { CrmButton, CrmCard, CrmField, CrmNote, CrmPill, crmTextareaClassName, type PillTone } from "@/components/phoenix-crm/ui";
 import { PLAN_EDIT_NOTE_MAX, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
@@ -52,9 +53,12 @@ export function PlanEditCard({
 
   const status = STATUS[edit.status];
   const noteId = `${fieldId}-note`;
+  // The Administrator takes the step the request is AT, with the same buttons (owner, 2026-10-14).
+  const administratorDecides = !edit.canDecide && edit.canOverride && (edit.status === "manager_pending" || edit.status === "sfe_pending");
+  const decides = edit.canDecide || administratorDecides;
 
-  async function decide(decision: "approve" | "refuse", override?: string) {
-    const trimmed = (override ?? note).trim();
+  async function decide(decision: "approve" | "refuse") {
+    const trimmed = note.trim();
     if (decision === "refuse" && !trimmed) {
       setProblem("Write a note for the rep explaining why.");
       return;
@@ -120,7 +124,8 @@ export function PlanEditCard({
       </div>
 
       <div className="mt-3 grid min-w-0 gap-2">
-        {edit.canDecide ? (
+        {administratorDecides ? <AdministratorStepNote holder={edit.status === "sfe_pending" ? "SFE" : "the district manager"} /> : null}
+        {decides ? (
           <CrmField hint="Needed to refuse. The rep reads it." htmlFor={noteId} label="Note for the rep">
             <textarea
               className={crmTextareaClassName}
@@ -137,12 +142,12 @@ export function PlanEditCard({
           </CrmField>
         ) : null}
         <div className="flex flex-wrap gap-2">
-          {edit.canDecide ? (
+          {decides ? (
             <CrmButton disabled={busy !== null} onClick={() => void decide("approve")} variant="primary">
               {busy === "approve" ? "Saving…" : approveLabel(edit.status)}
             </CrmButton>
           ) : null}
-          {edit.canDecide ? (
+          {decides ? (
             <CrmButton disabled={busy !== null} onClick={() => void decide("refuse")}>
               {busy === "refuse" ? "Refusing…" : "Refuse"}
             </CrmButton>
@@ -151,13 +156,6 @@ export function PlanEditCard({
             Open the week
           </CrmButton>
         </div>
-        {edit.canOverride ? (
-          <AdministratorDecline
-            hint="The rep reads it."
-            onSubmit={(comment) => decide("refuse", comment)}
-            verb="Decline"
-          />
-        ) : null}
         {problem ? (
           <CrmNote tone="bad" title="The decision was not saved">
             {problem}

@@ -2772,12 +2772,9 @@ export async function decideListRequest(
     throw validationError("This request is waiting for the rep's comment. It can be approved once the rep has answered.");
   }
   const rowStage = isRequestStage(request.stage) ? request.stage : withRep ? stageAfterReply(kind) : null;
-  // The Administrator declines at whichever step it waits at; he never approves (owner, 2026-10-08).
-  if (canOverrideDecision(viewer, isTest)) {
-    if (decision !== "refuse") throw validationError("The Administrator can only decline a request.");
-  } else {
-    assertListRequestApprover(viewer, seat, isTest, rowStage);
-  }
+  // The Administrator approves or declines at whichever step it waits at, in place of its holder, and is
+  // no step himself (owner, 2026-10-14; before that he could only decline, 2026-10-08).
+  if (!canOverrideDecision(viewer, isTest)) assertListRequestApprover(viewer, seat, isTest, rowStage);
 
   const approvedGrade = kind === "add" ? parseGrade(body.approvedGrade) : null;
   const potentialGrade = kind === "add" ? parsePotentialGrade(body.potentialGrade) : null;

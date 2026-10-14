@@ -156,20 +156,21 @@ export function runPhoenixCrmPlanEditRequestTests(): void {
     assert.deepEqual(stagesFor(testDm, true), ["manager"], "a test account takes the manager's step as the person it mirrors");
     assert.deepEqual(stagesFor(testDm, false), [], "and never on a real request");
 
-    // The Administrator may DECLINE any real decision — never approve, and never on a test entry.
+    // The Administrator may APPROVE or DECLINE any real decision (owner, 2026-10-14), never on a test entry,
+    // and through the service's own branch: the step helpers below still answer him "no" because he is no step.
     assert.equal(canAdminister(owner), true);
     assert.equal(canAdminister(ownerConsole), true, "his console login is the same person (identity-aliases.ts)");
     assert.equal(canAdminister(otherAdmin), false, "another Super Admin is not the Administrator");
     assert.equal(canAdminister(viewerFor("B-10", "Super Admin", { superAdmin: true, canApprove: false })), false, "it needs the approve grant");
     assert.equal(canAdminister(viewerFor("B-10", "Super Admin", { superAdmin: true, testPersona: true })), false, "a test login is never the Administrator");
-    assert.equal(canOverrideDecision(owner, false), true, "he may decline a real decision");
-    assert.equal(canOverrideDecision(owner, true), false, "but a test entry is not his to decline");
+    assert.equal(canOverrideDecision(owner, false), true, "he may decide a real decision");
+    assert.equal(canOverrideDecision(owner, true), false, "but a test entry is not his to decide");
     assert.equal(canOverrideDecision(dm, false), false, "a district manager is not the Administrator");
 
     const refused = (run: () => void, pattern: RegExp, message: string) =>
       assert.throws(run, (error: unknown) => error instanceof ApiError && error.status === 403 && pattern.test(error.message), message);
     refused(() => assertPlanEditApprover(owner, REP, false, "manager"), /manager chain/, "the Administrator is not the manager's step");
-    refused(() => assertPlanEditApprover(owner, REP, false, "sfe"), /manager chain/, "and not SFE's: he declines, he does not approve");
+    refused(() => assertPlanEditApprover(owner, REP, false, "sfe"), /manager chain/, "and not SFE's: he acts through the Administrator branch, never as a step");
     refused(() => assertPlanEditApprover(dm, REP, false, "sfe"), /SFE/, "the district manager cannot take SFE's step");
     refused(() => assertPlanEditApprover(testDm, REP, false, "manager"), /test login/, "a test login never touches a real request");
   }
@@ -241,7 +242,8 @@ export function runPhoenixCrmPlanEditRequestTests(): void {
     const card = source("src/components/phoenix-crm/plan-edit-card.tsx");
     assert.match(card, /"\/api\/phoenix-crm\/plans\/edit-requests\/decide"/, "the card posts each step");
     assert.doesNotMatch(card, /Acknowledge/, "there is no acknowledge button any more");
-    assert.match(card, /AdministratorDecline/, "the Administrator declines from the card, with a comment");
+    assert.match(card, /AdministratorStepNote/, "the Administrator decides from the card, and the card says whose step he is taking");
+    assert.match(card, /const administratorDecides = !edit\.canDecide && edit\.canOverride/, "and he never appears in the card's own canDecide");
     assert.doesNotMatch(card, /\bHR\b/, "and the card never calls him HR");
 
     // 5. The migration that took HR's step out.
