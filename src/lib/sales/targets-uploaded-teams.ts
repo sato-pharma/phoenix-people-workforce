@@ -1,19 +1,16 @@
 // Who is told what when a targets workbook is committed (owner request, 2026-10-14) — the PURE half.
 //
 // This file groups the uploaded rows into TEAMS, resolves each team's recipients from plain
-// organogram rows, and shapes the table as data. It reads nothing and sends nothing, so the whole
+// organogram rows, and words the months. It reads nothing and sends nothing, so the whole
 // "who is told what" decision is testable without a database; targets-uploaded-notification.ts
-// loads the organogram, renders the zebra table and sends. The split is also what keeps this
-// testable at all: the test runner substitutes a stub for the email layout (a .tsx it cannot
-// import), and a module that rendered the table itself could not be loaded there.
+// loads the organogram and sends.
 //
-// A TEAM is the reps who share a District Manager seat (the area map's `dm_seat_id`). That is the
-// audience his example describes — "Omar 500 Lacto, Esraa 600 Lacto, and so on" — and the narrowest
-// one that still lets a rep see the people he works beside: a whole-line table would show a rep in
-// Alexandria the targets of every rep in Aswan, which no screen in the portal does.
+// A TEAM is the reps who share a District Manager seat (the area map's `dm_seat_id`) — the
+// narrowest audience that still reaches a rep's own manager chain with one email.
 //
-// UNITS OF DIFFERENT PRODUCTS ARE NEVER ADDED (owner rule 2026-08-27). The grid carries one row per
-// rep, area and product with its own units, and the only total is the team's target VALUE.
+// THE EMAIL SHOWS NO FIGURE (owner, 2026-10-15: "make it show no number examples — your target for
+// Oct, Nov, Dec 2026 is now on Phoenix"). The rows still carry each target's units and value, but
+// only so that `teamFingerprint` can tell a corrected file from the same file uploaded twice.
 
 import { createHash } from "node:crypto";
 
@@ -58,7 +55,7 @@ export type TargetDirectory = {
   productNames: Map<string, string>;
 };
 
-/** One line of a team's table. */
+/** One target of a team: a rep, an area, a product and a month. */
 export type TargetTeamRow = {
   period: string;
   repName: string;
@@ -246,66 +243,25 @@ export function buildTargetTeams(input: {
   return { teams, unplaced };
 }
 
-// ── The table, as data ──────────────────────────────────────────────────────────
-
-const numberFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
-
-export function formatTargetNumber(value: number | null): string {
-  return value == null || !Number.isFinite(value) ? "" : numberFormat.format(value);
-}
-
-function periodLabel(period: string): string {
-  const match = /^(\d{4})-(\d{2})$/.exec(period);
-  if (!match) return period;
-  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1)).toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
-
-export function periodsLabel(periods: string[]): string {
-  const sorted = [...periods].sort();
-  if (sorted.length === 0) return "";
-  if (sorted.length === 1) return periodLabel(sorted[0]!);
-  return `${periodLabel(sorted[0]!)} – ${periodLabel(sorted[sorted.length - 1]!)}`;
-}
-
-/** The team's target VALUE — the only figure that may span products. Null when no row carries one. */
-export function teamTotalValue(team: TargetTeam): number | null {
-  const values = team.rows.map((row) => row.value).filter((value): value is number => value != null && Number.isFinite(value));
-  return values.length === 0 ? null : values.reduce((sum, value) => sum + value, 0);
-}
-
-export type TargetsGrid = {
-  columns: Array<{ label: string; align?: "left" | "right" }>;
-  rows: string[][];
-};
+// ── The months, in words ────────────────────────────────────────────────────────
 
 /**
- * The columns and cells of the zebra table: one row per rep, area and product, each with its own
- * units and value. A Month column appears only when the file spans more than one month.
+ * The months a file sets, the way the owner wrote them: "Oct, Nov, Dec 2026". Months of one year
+ * share its year; a file crossing a year reads "Nov, Dec 2026, Jan 2027". The email carries no
+ * figure, so this label is the only thing it says about the file.
  */
-export function buildTargetsGrid(team: TargetTeam): TargetsGrid {
-  const withMonth = team.periods.length > 1;
-  return {
-    columns: [
-      ...(withMonth ? [{ label: "Month" }] : []),
-      { label: "Medical Rep" },
-      { label: "Area" },
-      { label: "Product" },
-      { label: "Target units", align: "right" as const },
-      { label: "Target value (EGP)", align: "right" as const },
-    ],
-    rows: team.rows.map((row) => [
-      ...(withMonth ? [periodLabel(row.period)] : []),
-      row.repName,
-      row.areaName,
-      row.productName,
-      formatTargetNumber(row.units),
-      formatTargetNumber(row.value),
-    ]),
-  };
+export function periodsLabel(periods: string[]): string {
+  const byYear = new Map<string, string[]>();
+  for (const period of [...new Set(periods)].sort()) {
+    const match = /^(\d{4})-(\d{2})$/.exec(period);
+    if (!match) continue;
+    const month = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1)).toLocaleDateString("en-US", {
+      month: "short",
+      timeZone: "UTC",
+    });
+    byYear.set(match[1]!, [...(byYear.get(match[1]!) ?? []), month]);
+  }
+  return [...byYear.entries()].map(([year, months]) => `${months.join(", ")} ${year}`).join(", ");
 }
 
 /** Stable fingerprint of what a team is told, so the same file uploaded twice is one email. */
