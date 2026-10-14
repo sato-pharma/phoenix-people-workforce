@@ -1457,8 +1457,10 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
                       // button show October; it reads `?tab=coverage` too, and without it the board
                       // opened on Summary — three KPIs and no list of the doctors this row counted.
                       // Coverage is the one tab that names them (it loads `coverageDoctors`), so the
-                      // owner asked for the button to land there (2026-10-01).
-                      href={`/employee-portals/kpis?month=${kpiMonth}&tab=coverage`}
+                      // owner asked for the button to land there (2026-10-01). It is a page of its own
+                      // since 2026-10-14, so the link goes straight to it instead of through the KPIs
+                      // page's redirect.
+                      href={`/employee-portals/kpis/coverage?month=${kpiMonth}`}
                       rail="bg-orange-500"
                     />
                   )}

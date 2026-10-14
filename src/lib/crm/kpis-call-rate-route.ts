@@ -22,6 +22,13 @@ export const ADMIN_KPIS_PATH = "/admin/kpis";
 export const PORTAL_KPIS_PATH = "/employee-portals/kpis";
 
 /**
+ * The portal's own Call Rate page. The portal split the KPIs board on 2026-10-14 (owner: "a report called
+ * call rate"), so there the call rate is a page and not a `?tab=`; the admin shell keeps the tab. The rep
+ * drill-down stays where it always was, under the KPIs root (`/employee-portals/kpis/call-rate/[rep]`).
+ */
+export const PORTAL_CALL_RATE_PATH = "/employee-portals/kpis/call-rate";
+
+/**
  * The key a KPIs row opens its visits page with — the SAME identity the call-rate board keys its
  * rows by (`repKeyOf` in crm/reps-plans.ts): the CRM account when there is one, else the hr id. The
  * visits page resolves an `hr:` key to that person's busiest account inside the viewer's own reach,
@@ -64,8 +71,14 @@ export function kpisCallRateHref(input: {
   const query = new URLSearchParams();
   if (input.query?.month) query.set("month", input.query.month);
   if (input.query?.period && input.query.period !== "month") query.set("period", input.query.period);
-  if (!input.rep) query.set("tab", KPIS_CALL_RATE_TAB);
-  const path = input.rep ? kpiCallRateRepPath(input.basePath, input.rep) : input.basePath;
+  // The portal has a page for it; the admin shell still reads the tab.
+  const portalPage = !input.rep && input.basePath === PORTAL_KPIS_PATH;
+  if (!input.rep && !portalPage) query.set("tab", KPIS_CALL_RATE_TAB);
+  const path = input.rep
+    ? kpiCallRateRepPath(input.basePath, input.rep)
+    : portalPage
+      ? PORTAL_CALL_RATE_PATH
+      : input.basePath;
   const search = query.toString();
   return search ? `${path}?${search}` : path;
 }

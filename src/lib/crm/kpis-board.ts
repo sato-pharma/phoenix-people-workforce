@@ -100,7 +100,14 @@ import {
 } from "@/lib/crm/call-rate";
 import { getCrmCutoverSetting, NO_CRM_CUTOVER } from "@/lib/crm/cutover";
 import { loadPhoenixRepKpis } from "@/lib/crm/phoenix-kpi-data";
-import { kpiRulesFor, phoenixRuleRepKeys, type KpiRules, type PhoenixRepKpis } from "@/lib/crm/phoenix-kpi-rules";
+import {
+  kpiRulesFor,
+  phoenixRuleRepKeys,
+  type DoctorFrequency,
+  type DoctorFrequencyStatus,
+  type KpiRules,
+  type PhoenixRepKpis,
+} from "@/lib/crm/phoenix-kpi-rules";
 import { loadStartedRepWindows } from "@/lib/crm/phoenix-started-reps";
 import type { AccessContext } from "@/lib/auth/permissions";
 
@@ -332,6 +339,12 @@ export type KpiCoverageDoctor = {
   /** Every day the plan booked him inside the window, earliest first. */
   planDates: string[];
   /**
+   * The Frequency report's reading of the same doctor — what he should get, what he has had, the
+   * verdict (see {@link DoctorFrequency}). Optional so a list built without it still types; every
+   * builder in this module fills it, and the Coverage tab never reads it.
+   */
+  frequency?: DoctorFrequency;
+  /**
    * False when every day the plan booked him is still ahead. He counts as not covered all the same —
    * the whole window's list is the denominator (see the header) — but he is not late, and the list
    * says so rather than letting next Tuesday's doctor read like last Tuesday's.
@@ -399,7 +412,32 @@ export function legacyKpiCoverageDoctors(
       visits: doctor.status === "seen" ? doctor.visits : 0,
       lastVisitDate: doctor.status === "seen" ? doctor.lastVisitDate : null,
       planDates: doctor.planDates,
+      frequency: planFrequency(doctor),
     }));
+}
+
+/** The owner's plan-basis words for one doctor, from the status `rep-doctor-lists` already computed. */
+const PLAN_FREQUENCY_STATUS: Partial<Record<RepDoctorListDoctorRow["frequencyStatus"], DoctorFrequencyStatus>> = {
+  on_plan: "exact",
+  under: "below",
+  over: "above",
+  missed: "not-visited",
+  not_due: "not-due",
+};
+
+/**
+ * Before a team goes live a doctor is judged against the PLAN: how many calls it booked him for, how
+ * many of those had come due, and how many he got. Read straight off the doctor row so the report's
+ * verdict is the very status the Frequency percentage was counted from.
+ */
+function planFrequency(doctor: RepDoctorListDoctorRow): DoctorFrequency {
+  return {
+    basis: "plan",
+    required: doctor.plannedCalls,
+    dueSoFar: doctor.plannedCallsToDate,
+    actual: doctor.visits,
+    status: PLAN_FREQUENCY_STATUS[doctor.frequencyStatus] ?? "not-visited",
+  };
 }
 
 /** Plain code-unit order. YYYY-MM-DD sorts correctly as text, and `localeCompare` may skip the hyphens. */
@@ -1249,9 +1287,12 @@ export async function getKpisBoard(input: {
       ? buildKpiCoverageDetail({
           repKey: coverageRepKey,
           repName: coverageRep.repName,
-          doctors: phoenix
-            ? phoenix.coverageDoctorsFor(coverageRep.agentHrId)
-            : legacyKpiCoverageDoctors(docList.doctors, coverageRepKey),
+          // Read from whichever rules scored THIS rep's row — a board can hold both at once, and a
+          // rep still on the vendor's rules must get the plan-basis list that adds up to his row.
+          doctors:
+            phoenix && coverageRep.phoenix
+              ? phoenix.coverageDoctorsFor(coverageRep.agentHrId)
+              : legacyKpiCoverageDoctors(docList.doctors, coverageRepKey),
           todayIso: input.todayIso,
         })
       : null;

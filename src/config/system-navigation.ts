@@ -60,10 +60,12 @@ import {
   MessageSquareWarning,
   Network,
   PenLine,
+  PhoneCall,
   PlusCircle,
   Presentation,
   Radar,
   ReceiptText,
+  Repeat2,
   Scale,
   ScrollText,
   Search,
@@ -1830,6 +1832,12 @@ const employeePortalNavigationSectionSeeds = [
       // and land on /admin/kpis instead. Widening this list here grants nothing: getDoctorCoverageScope
       // inside getKpisBoard decides whose reps each viewer sees, and it is asked on every load.
       { href: "/employee-portals/kpis", icon: TrendingUp, label: "KPIs", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
+      // The three measures that left the KPIs page for a page each (owner, 2026-10-14). The role list and
+      // the permission are the KPIs row's own, verbatim — the pages are that board sliced by measure, and
+      // getDoctorCoverageScope inside getKpisBoard still decides whose reps each viewer sees.
+      { href: "/employee-portals/kpis/frequency", icon: Repeat2, label: "Frequency", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
+      { href: "/employee-portals/kpis/coverage", icon: Radar, label: "Coverage", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
+      { href: "/employee-portals/kpis/call-rate", icon: PhoneCall, label: "Call Rate", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
       // Reps Plans stood here until 2026-09-21, when the owner merged it into Reps List ("merge the 2
       // modules into 1 module WHICH REPS LIST"). Its board is the Call rate tab on the Reps List row
       // above, behind the same REPS_PLANS_PORTAL_ROLES gate, and /employee-portals/reps-plans forwards

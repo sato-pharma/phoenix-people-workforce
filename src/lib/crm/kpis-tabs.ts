@@ -75,6 +75,57 @@ export const KPI_TAB_HINT_PHOENIX: Partial<Record<KpiTab, string>> = {
 };
 
 /**
+ * THE PORTAL SPLIT (owner, 2026-10-14: "KPIs to be a title in the sidebar and under it a report called
+ * frequency, another called coverage, and another called call rate … leave the KPIs report only for
+ * the summaries and consolidations"). In the employee portal the three measures each have a page of
+ * their own and the KPIs page keeps only the consolidated tabs. The admin shell is untouched and still
+ * carries all seven tabs.
+ */
+export const PORTAL_KPI_SUMMARY_TABS = ["summary", "am-pm", "pharmacies", "weekly"] as const satisfies readonly KpiTab[];
+
+/** The three tabs that left the portal's KPIs page for a page each, in the sidebar's order. */
+export const KPI_REPORT_TABS = ["frequency", "coverage", "call-rate"] as const satisfies readonly KpiTab[];
+
+export type KpiReportTab = (typeof KPI_REPORT_TABS)[number];
+
+export function isKpiReportTab(tab: KpiTab): tab is KpiReportTab {
+  return (KPI_REPORT_TABS as readonly string[]).includes(tab);
+}
+
+/** Where each report lives in the employee portal. */
+export const PORTAL_KPI_REPORT_PATH: Record<KpiReportTab, string> = {
+  frequency: "/employee-portals/kpis/frequency",
+  coverage: "/employee-portals/kpis/coverage",
+  "call-rate": "/employee-portals/kpis/call-rate",
+};
+
+/** The portal KPIs page's own address — the summary, and the root the call-rate drill-down hangs under. */
+export const PORTAL_KPIS_ROOT_PATH = "/employee-portals/kpis";
+
+/**
+ * The call-rate report's three views: the whole picture, the morning, the afternoon.
+ *
+ * TOTAL IS NOT A BLENDED RATE. The owner's rule of 2026-09-04 ("this two and this ten. Don't never
+ * get average") still holds, so the total view lays AM and PM side by side — each against its own
+ * target — beside the count of calls logged, and never forms one percentage out of the two.
+ */
+export const KPI_CALL_RATE_VIEWS = ["total", "am", "pm"] as const;
+
+export type KpiCallRateView = (typeof KPI_CALL_RATE_VIEWS)[number];
+
+export const KPI_CALL_RATE_VIEW_LABEL: Record<KpiCallRateView, string> = {
+  total: "Total",
+  am: "AM",
+  pm: "PM",
+};
+
+/** `?view=`, falling back to Total — an unknown value widens to the default, never a blank board. */
+export function resolveKpiCallRateView(raw: string | null | undefined): KpiCallRateView {
+  const value = raw?.trim().toLowerCase() ?? "";
+  return (KPI_CALL_RATE_VIEWS as readonly string[]).includes(value) ? (value as KpiCallRateView) : "total";
+}
+
+/**
  * Resolves the `?tab=` parameter, falling back to Summary.
  *
  * An unrecognised value WIDENS to the default rather than rendering an empty shell — the same rule

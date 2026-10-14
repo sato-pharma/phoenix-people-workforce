@@ -71,6 +71,9 @@ import {
   Waypoints,
   BookUser,
   TrendingUp,
+  Repeat2,
+  Radar,
+  PhoneCall,
   Package,
   PackageCheck,
   PackageSearch,
@@ -319,6 +322,7 @@ function sectionRailIcon(title: string): typeof Activity {
   if (title === "Forecast & Target") return Target;
   if (title === "Recruitment") return BriefcaseBusiness;
   if (title === "iReports 360") return MapPinned;
+  if (title === "KPIs") return TrendingUp;
   if (title === "Marketing & ROI") return Megaphone;
   if (title === "Payroll") return WalletCards;
   if (title === "Outstation Expenses") return ReceiptText;
@@ -408,7 +412,7 @@ function buildEmployeePortalSections({
 }: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
   // THE OWNER'S ARRANGEMENT (2026-09-29, his sheet "emp sidebar.xlsx" plus the follow-up placement
   // sheet). Headers, in his order: My Workspace · Approvals Hub · Sales Data · Performance ·
-  // Forecast & Target · Recruitment · iReports 360 · Marketing & ROI · Payroll · Outstation Expenses
+  // Forecast & Target · Recruitment · iReports 360 · KPIs · Marketing & ROI · Payroll · Outstation Expenses
   // · Leaves Management · Other. Training Manager keeps its own section, ahead of the rest, for TMs
   // only. Five rows he moved to "Remove from sidebar" — My Coaching Reports, Team Coaching Reports
   // (both /coaching), Double-Visit Analytics, Coaching Analytics and Visual Aids — are GONE from the
@@ -579,7 +583,6 @@ function buildEmployeePortalSections({
         // Full scoped CRM Master — self for a Medical Rep, the team's rows for DSM/RM/NSM.
         ...(showCrmMasterTab ? [{ href: "/employee-portals/crm", label: "CRM", icon: Database }] : []),
         ...(showRepsListTab ? [{ href: "/employee-portals/reps-list", label: "Reps List", icon: BookUser }] : []),
-        ...(showKpisTab ? [{ href: "/employee-portals/kpis", label: "KPIs", icon: TrendingUp }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/dv-planner", label: "DV Planner", icon: CalendarCheck2 }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/double-visit-report", label: "Double Visit Report", icon: FileSpreadsheet }] : []),
         // Field Activity sits under the DV rows because it answers the next question about the same
@@ -595,6 +598,20 @@ function buildEmployeePortalSections({
         // Coaching Analytics is NOT restored here: this branch took it off the sidebar on the
         // owner's own sheet, and main's ruling the same day set its flag to false anyway.
         ...(showTeamCalendarTab ? [{ href: "/employee-portals/team-calendar", label: "Team Calendar", icon: CalendarRange }] : []),
+      ],
+    },
+    {
+      // KPIs is a heading of its own since 2026-10-14 (owner: "KPIs to be a title in the sidebar and
+      // under it a report called frequency, another called coverage, and another called call rate").
+      // The row that used to sit in iReports 360 is the Summary here — the consolidated page — and the
+      // three measures each have a page of their own beneath it. One flag gates all four, the same
+      // `showKpisTab` the single row carried, so no seat gains or loses a door.
+      title: "KPIs",
+      items: [
+        ...(showKpisTab ? [{ href: "/employee-portals/kpis", label: "Summary", icon: TrendingUp }] : []),
+        ...(showKpisTab ? [{ href: "/employee-portals/kpis/frequency", label: "Frequency", icon: Repeat2 }] : []),
+        ...(showKpisTab ? [{ href: "/employee-portals/kpis/coverage", label: "Coverage", icon: Radar }] : []),
+        ...(showKpisTab ? [{ href: "/employee-portals/kpis/call-rate", label: "Call Rate", icon: PhoneCall }] : []),
       ],
     },
     {

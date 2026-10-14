@@ -29,7 +29,10 @@ import {
   Package,
   PackageCheck,
   PackageSearch,
+  PhoneCall,
+  Radar,
   ReceiptText,
+  Repeat2,
   Scale,
   Send,
   Settings2,
@@ -167,6 +170,13 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // KPIs carries the same role list and the same permission as Reps List — one gate, two doors.
   // "KPIs" is already short enough for the bottom nav, so label and fullLabel are the same word.
   { label: "KPIs", fullLabel: "KPIs", href: "/employee-portals/kpis", icon: TrendingUp, flags: ["showKpisTab"], permission: { resource: "crm_visits", action: "read" } },
+  // The three measures that left the KPIs page for a page each (owner, 2026-10-14). Same gate as the
+  // KPIs row above — `showKpisTab` and crm_visits:read — because the pages are the same board sliced
+  // by measure, so no seat sees one door without the others. No `permission` copy here: the gate lives in the
+  // shared report page, not in the route file, and the nav-permission guard (B6) mirrors only a page's own gate.
+  { label: "Frequency", fullLabel: "Frequency", href: "/employee-portals/kpis/frequency", icon: Repeat2, flags: ["showKpisTab"] },
+  { label: "Coverage", fullLabel: "Coverage", href: "/employee-portals/kpis/coverage", icon: Radar, flags: ["showKpisTab"] },
+  { label: "Call Rate", fullLabel: "Call Rate", href: "/employee-portals/kpis/call-rate", icon: PhoneCall, flags: ["showKpisTab"] },
   // Early Birds — the one board in this registry a rep opens BEFORE the working day rather than
   // after it, which is exactly the case for a phone tab. No `permission`: the page has no single
   // machine-readable gate (resolveEarlyBirdsScope decides what it shows from the reporting chain),

@@ -195,6 +195,34 @@ export type PhoenixCoverageDoctor = {
   lastVisitDate: string | null;
   /** Every day the plan booked him inside the period, earliest first. */
   planDates: string[];
+  /**
+   * Rule 7's reading of the same doctor, for the Frequency report: the visits his grade asks for in
+   * the month and the regular visits he has had in the MONTH so far — the count the norm is judged
+   * against, which can exceed `visits` when the period is a single week.
+   */
+  frequency: DoctorFrequency;
+};
+
+/**
+ * The words the Frequency report puts on one doctor. The first four belong to the owner's plan basis
+ * (before a team goes live: exact is the only pass, below and above are both deviations), the next two
+ * to rule 7's grade basis (at norm passes, extra visits are fine), and `not-due` to a planned call that
+ * has not come due yet.
+ */
+export type DoctorFrequencyStatus = "exact" | "below" | "above" | "not-visited" | "not-due" | "at-norm" | "ungraded";
+
+/**
+ * One doctor's frequency, in the shape both rule sets fill: what he should get, what he has had, and
+ * the verdict. `required` is the plan's calls on the plan basis and the grade norm on the grade basis;
+ * null means the grade is blank, so rule 7 leaves him out rather than scoring him against nothing.
+ */
+export type DoctorFrequency = {
+  basis: "plan" | "grade";
+  required: number | null;
+  /** Of `required`, how many have come due by today. The grade norm is monthly, so it equals `required` there. */
+  dueSoFar: number | null;
+  actual: number;
+  status: DoctorFrequencyStatus;
 };
 
 export type PhoenixVisit = {
@@ -330,10 +358,15 @@ export function computePhoenixRepKpis(input: PhoenixRepInput): PhoenixRepKpis {
  * always adds up to the numbers printed beside it.
  */
 export function computePhoenixCoverageDoctors(input: PhoenixRepInput): PhoenixCoverageDoctor[] {
-  const { plannedInWindow, windowVisitsByContact, windowLastVisitByContact, panelGrade } = scorePhoenixRep(input);
+  const { plannedInWindow, plannedInMonth, windowVisitsByContact, windowLastVisitByContact, monthVisitsByContact, normFor, panelGrade } =
+    scorePhoenixRep(input);
   return [...plannedInWindow].map(([contactCrmId, doctor]) => {
     const visits = windowVisitsByContact.get(contactCrmId) ?? 0;
     return {
+      frequency: gradeFrequency(
+        normFor(contactCrmId, plannedInMonth.get(contactCrmId) ?? doctor.grade),
+        monthVisitsByContact.get(contactCrmId) ?? 0,
+      ),
       contactCrmId,
       name: doctor.name,
       speciality: doctor.speciality,
@@ -345,14 +378,26 @@ export function computePhoenixCoverageDoctors(input: PhoenixRepInput): PhoenixCo
   });
 }
 
+/** Rule 7 for one doctor: at least the norm passes, an ungraded doctor is left out. */
+function gradeFrequency(required: number | null, actual: number): DoctorFrequency {
+  const status: DoctorFrequencyStatus =
+    required == null ? "ungraded" : actual >= required ? "at-norm" : actual === 0 ? "not-visited" : "below";
+  return { basis: "grade", required, dueSoFar: required, actual, status };
+}
+
 /** A doctor planned in the period, while the plan entries are being read. */
 type PlannedDoctor = { name: string | null; speciality: string | null; grade: string | null; planDates: Set<string> };
 
 function scorePhoenixRep(input: PhoenixRepInput): {
   kpis: PhoenixRepKpis;
   plannedInWindow: ReadonlyMap<number, PlannedDoctor>;
+  /** Every doctor planned in the MONTH, with the first grade a plan entry carried — rule 7's population. */
+  plannedInMonth: ReadonlyMap<number, string | null>;
   windowVisitsByContact: ReadonlyMap<number, number>;
   windowLastVisitByContact: ReadonlyMap<number, string>;
+  monthVisitsByContact: ReadonlyMap<number, number>;
+  /** Rule 7's norm for one doctor, or null when he is ungraded (and so left out). */
+  normFor: (contact: number, planGrade: string | null) => number | null;
   panelGrade: ReadonlyMap<number, string | null>;
 } {
   const { window, month, holidays } = input;
@@ -446,16 +491,21 @@ function scorePhoenixRep(input: PhoenixRepInput): {
     if (!listsByContact.has(contact)) plannedOffList += 1;
   }
 
-  // Frequency (rule 7) — the month's planned doctors against their grade norm.
-  let met = 0;
-  let below = 0;
-  let ungraded = 0;
-  for (const [contact, planGrade] of plannedInMonth) {
+  // Frequency (rule 7) — the month's planned doctors against their grade norm. ONE function decides a
+  // doctor's norm for the KPI count below and for the Frequency report's per-doctor list, so the list
+  // can never disagree with the percentage beside it.
+  const normFor = (contact: number, planGrade: string | null): number | null => {
     const lists = listsByContact.get(contact);
     const standard = lists?.has("AM") && !lists.has("PM") ? standards.AM : standards.PM;
     const tier = kpiGradeTierOf(panelGrade.get(contact) ?? planGrade);
     const rawNorm = tier ? standard.frequencyNorms[tier] : null;
-    const norm = rawNorm != null && rawNorm > 0 ? rawNorm : null;
+    return rawNorm != null && rawNorm > 0 ? rawNorm : null;
+  };
+  let met = 0;
+  let below = 0;
+  let ungraded = 0;
+  for (const [contact, planGrade] of plannedInMonth) {
+    const norm = normFor(contact, planGrade);
     if (norm == null) {
       ungraded += 1;
       continue;
@@ -496,5 +546,14 @@ function scorePhoenixRep(input: PhoenixRepInput): {
     frequency: { judged, met, below, ungraded, pct: judged > 0 ? Math.round((met / judged) * 100) : null },
     followUp,
   };
-  return { kpis, plannedInWindow, windowVisitsByContact, windowLastVisitByContact, panelGrade };
+  return {
+    kpis,
+    plannedInWindow,
+    plannedInMonth,
+    windowVisitsByContact,
+    windowLastVisitByContact,
+    monthVisitsByContact,
+    normFor,
+    panelGrade,
+  };
 }

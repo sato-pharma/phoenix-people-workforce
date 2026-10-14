@@ -42,7 +42,7 @@ import { cairoTodayIso } from "@/lib/crm/dates";
 import { canSeeDoctorCoverage } from "@/lib/crm/doctor-coverage-roles";
 import { getKpisBoard, kpiMonthOptions, kpiPeriodOptions } from "@/lib/crm/kpis-board";
 import { parseKpiFilters } from "@/lib/crm/kpis-filters";
-import { resolveKpiTab } from "@/lib/crm/kpis-tabs";
+import { PORTAL_KPI_REPORT_PATH, PORTAL_KPI_SUMMARY_TABS, isKpiReportTab, resolveKpiTab } from "@/lib/crm/kpis-tabs";
 import { getKpisTrend, type KpiTrend } from "@/lib/crm/kpis-trend";
 import { KPI_TREND_PARAMS, resolveKpiTrendMetric, resolveKpiTrendScale } from "@/lib/crm/kpis-trend-options";
 import { resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
@@ -88,6 +88,19 @@ export default async function PortalKpisPage({ searchParams }: PageProps) {
   const today = cairoTodayIso();
   const month = resolveRepsPlansMonth(one(params?.month), today);
   const tab = resolveKpiTab(one(params?.tab));
+  // Frequency, Coverage and Call Rate left this page for a page each (owner, 2026-10-14), and this page
+  // keeps the consolidated tabs. An old bookmark, a shared link or a drill-down's "back" still names one
+  // of them, so it is FORWARDED with everything else it carried — month, period, filters, open rep —
+  // rather than answered with a summary the link never asked for.
+  if (isKpiReportTab(tab)) {
+    const forwarded = new URLSearchParams();
+    for (const [key, value] of Object.entries(params ?? {})) {
+      if (key === "tab") continue;
+      for (const item of Array.isArray(value) ? value : [value]) if (item != null) forwarded.append(key, item);
+    }
+    const query = forwarded.toString();
+    redirect(`${PORTAL_KPI_REPORT_PATH[tab]}${query ? `?${query}` : ""}`);
+  }
   const filters = parseKpiFilters(params ?? {});
   // The Weekly tab's two switches. Resolved on every tab and ignored off it, so a stray value can only
   // ever fall back to its default.
@@ -112,9 +125,8 @@ export default async function PortalKpisPage({ searchParams }: PageProps) {
         period: one(params?.period),
         todayIso: today,
         filters,
-        // The Coverage tab's doctor lists. `rep` is only a request: getKpisBoard honours it for a rep
-        // already on this viewer's board, and ignores it otherwise.
-        coverageDoctors: tab === "coverage" ? { rep: one(params?.rep) ?? null } : null,
+        // The doctor lists moved with the Coverage and Frequency reports; nothing on this page opens one.
+        coverageDoctors: null,
       });
     }
   } catch (error) {
@@ -145,6 +157,7 @@ export default async function PortalKpisPage({ searchParams }: PageProps) {
         monthOptions={kpiMonthOptions(today)}
         periodOptions={kpiPeriodOptions(month, today)}
         tab={tab}
+        tabs={PORTAL_KPI_SUMMARY_TABS}
         trend={trend}
         trendMetric={trendMetric}
         trendScale={trendScale}
