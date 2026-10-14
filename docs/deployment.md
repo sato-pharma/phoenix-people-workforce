@@ -91,9 +91,11 @@ Same commit, same run, opposite behaviours — so propagation lag, toggle timing
 green" are all excluded in a single reading, which two separate anecdotes could not do. **Railway's
 Wait for CI is honoured on the production environment and NOT on staging, whatever the staging toggle
 reads in the dashboard.** The intended remedy was to give staging a branch of its own that only ever
-carries CI-green commits (`staging-branch-sync.yml`, #4552) — **that branch exists and works, and
-Railway did not follow it either: see the next subsection before describing staging as gated by
-anything.** Measured by one session and re-verified independently against the deployment `statuses`
+carries CI-green commits (`staging-branch-sync.yml`, #4552) — **that branch worked, and Railway did
+not follow it either: see the next subsection before describing staging as gated by anything.**
+🔴 **RETIRED 2026-10-14 (owner, cost cuts): the sync workflow and its guard test are deleted** — the
+`staging` branch had no consumer (staging tracks `main`, `STAGING_TRACKS_BRANCH` is unset) and the
+workflow billed 57 minutes on 13 Oct for nothing. The remote `staging` branch is left as it is. Measured by one session and re-verified independently against the deployment `statuses`
 endpoint by another before being written here — states, never timestamps alone (§2.3).
 
 ### The repoint was made, and Railway did not apply it — 2026-09-27, 19:21Z
@@ -149,7 +151,7 @@ cosmetic defect — which is the reason the ticket is open rather than filed and
 consistent with staging following the branch. The only readings that distinguish the two are taken
 while a commit's CI is still in flight. **A converged snapshot is not evidence either way.**
 
-**The branch itself is healthy and is not the problem.** `staging-branch-sync.yml` has run five times,
+**The branch itself was healthy and was not the problem (history — the workflow is deleted, see above).** `staging-branch-sync.yml` ran five times,
 all `success`, and correctly withheld an unverified commit while staging served it from `main` anyway.
 Two SHAs produced two runs each — a CI rerun on one commit fires a second `workflow_run` — and the
 duplicates were harmless no-ops, which exercises the `[ "$CUR_SHA" = "$NEW_SHA" ]` short-circuit in the

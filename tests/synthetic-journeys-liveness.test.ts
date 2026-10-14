@@ -26,10 +26,12 @@ const SLUG = "phoenix-run-synthetic-journeys";
 const OBSERVABILITY_DOC = "docs/observability.md";
 
 /**
- * Measured, not copied. 177 `workflow_dispatch` events on synthetic-journeys.yml between
- * 2026-08-15 and 2026-08-23, every one 4-12s past the top of the hour, all 24 UTC hours present.
+ * Was MEASURED hourly: 177 `workflow_dispatch` events on synthetic-journeys.yml between 2026-08-15 and
+ * 2026-08-23, every one 4-12s past the top of the hour. Cut by the owner on 2026-10-14 to every 3 hours,
+ * 05:00-20:00 Africa/Cairo (6 runs/day, cost cuts), so this is now a DECLARED cadence that cron-job.org
+ * job 8220577 is patched to match, not a measured one.
  */
-const DOCUMENTED_CRON = "0 * * * *";
+const DOCUMENTED_CRON = "17 5,8,11,14,17,20 * * *";
 
 /**
  * Cron routes that nothing in cron-job.org calls. Wiring one to a check produces a permanently red

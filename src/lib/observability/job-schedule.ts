@@ -171,7 +171,7 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   { slug: "phoenix-background-jobs", kind: "cron", schedule: "0 3 * * 5", graceSeconds: 2 * HOUR },
   { slug: "phoenix-inbound-intake", kind: "cron", schedule: "*/2 * * * *", graceSeconds: 10 * MINUTE },
   { slug: "phoenix-recruitment-email-intake", kind: "cron", schedule: "4-59/10 * * * *", graceSeconds: 10 * MINUTE },
-  { slug: "phoenix-run-synthetic-journeys", kind: "cron", schedule: "0 * * * *", graceSeconds: 1 * HOUR },
+  { slug: "phoenix-run-synthetic-journeys", kind: "cron", schedule: "17 5,8,11,14,17,20 * * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-direct-orders-rotate-sheet-token", kind: "cron", schedule: "23 3 * * 5", graceSeconds: 2 * HOUR },
   { slug: "phoenix-marketing-requests-rotate-sheet-token", kind: "cron", schedule: "43 3 * * 5", graceSeconds: 2 * HOUR },
   { slug: "phoenix-cv-lifecycle-rotate-sheet-token", kind: "cron", schedule: "3 4 * * 5", graceSeconds: 2 * HOUR },

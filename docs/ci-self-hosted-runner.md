@@ -1896,3 +1896,33 @@ is truncated data wearing the shape of a complete month; count the rows and disb
 Account for all three — the measured arc, why the run COUNT lies, and why 54 billable minutes went on
 one 5-file PR: `docs/ci-self-hosted-runner.md`, "Why the volume is what it is", "Where the money
 actually is" and "A feature arriving in instalments is still ONE feature".
+
+## The same-module hold — a second PR for one module is refused at `gh pr create` (owner, 2026-10-14)
+
+Asked for in the cost-cuts session (*"halve the merge count"*) and chosen over a roll-up-only fix
+because **a roll-up does not save a merge's cost — the roll-up PR pays its own CI run — so the lever is
+upstream, in fewer PRs.** Measured 13 Oct 2026 at billable-minutes-per-job: 1,646 minutes in the day,
+820 of them PR runs and 648 the 55 pushes to `main` (the production deploy gate, not reclaimable);
+23 red and 16 cancelled PR runs cost 221 minutes; 62 PR branches took 122 runs, 1.97 each. Merges ran
+64 a day over the last 30 days. At his invoice rate (about $0.00424 a minute, September $300.88) a PR
+that merges costs roughly $0.11, so halving 55 merges a day is worth up to ~$90 a month — an upper
+bound, to be re-measured as the 7-day mean of first-parent merges per day on `main`, never promised.
+
+**How it works.** `bash-guard.mjs` clause **C18** reads the conventional-commit scope out of the
+`--title` of a `gh pr create` (`feat(sales-closing-exports): …` → `sales-closing-exports`) and asks
+`gh pr list` for an OPEN PR with a shared scope or one MERGED in the last 6 hours. Found → **deny**,
+naming the PR: widen that PR (commit onto its branch) or hold the work. The decision is the pure
+`scripts/pr-same-module-hold.mjs`, pinned by `tests/pr-same-module-hold-guard.test.ts` — which drives
+the hook as a subprocess against a fake `gh`, the way `.claude/settings.json` runs it.
+
+**What it never does.** It **fails open in every direction**: no readable title (`--fill`, a title in a
+variable), a title with no scope, the `deps`, `deps-dev`, `memory` and `rollup` plumbing scopes, `gh`
+missing or offline — all allow. A hold that blocks a real PR on its own blind spot costs more than the
+runs it saves. `PHX_PR_HOLD_OK=1 <cmd>` (`$env:PHX_PR_HOLD_OK=1; <cmd>` in PowerShell) stands it down
+for an urgent fix, a locked file or a migration that needs its own approval. A comma list of scopes
+shares a module when ONE token matches.
+
+**Honest limits.** The scope is the author's word, so a mis-scoped title slips through, and two
+sessions legitimately working one module at once will meet the hold — that is the point, and the
+stand-down is the way past it. The six-hour window after a MERGE cannot be answered by widening (the
+branch has shipped), so the message there says to batch the work with the module's next change.

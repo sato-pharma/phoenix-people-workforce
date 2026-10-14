@@ -1490,7 +1490,6 @@ import { runSelectCensusTests } from "./select-census.test.ts";
 import { runCiTypecheckLockTests } from "./ci-typecheck-lock.test.ts";
 import { runCiPrSkipsBuildAndSmokeTests } from "./ci-pr-skips-build-and-smoke.test.ts";
 import { runCiBuildRiskTests } from "./ci-build-risk.test.ts";
-import { runStagingBranchSyncGuardTests } from "./staging-branch-sync-guard.test.ts";
 import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-resolution.test.ts";
 import { runPasswordResetCodeEmailCarriesTheCodeTests } from "./password-reset-code-email-carries-the-code.test.ts";
 import { runDeductionsApprovedNotPushedFeedbackTests } from "./deductions-approved-not-pushed-feedback.test.ts";
@@ -2437,6 +2436,7 @@ import { runTerritoryTreeDesktopFitsTheScreenTests } from "./territory-tree-desk
 import { runRequiredCheckNamesTests } from "./required-check-names.test.ts";
 import { runDependabotAlertsTests } from "./dependabot-alerts.test.ts";
 import { runWorkflowDispatchGuardTests } from "./workflow-dispatch-guard.test.ts";
+import { runPrSameModuleHoldGuardTests } from "./pr-same-module-hold-guard.test.ts";
 import { runNextBuildCpuCapTests } from "./next-build-cpu-cap.test.ts";
 import { runAttributionFreezesPublishedMonthsTests } from "./attribution-freezes-published-months.test.ts";
 import { runTestAccountTests } from "./test-accounts.test.ts";
@@ -5471,10 +5471,6 @@ await runTest(
 await runTest(
   "the select census finds every PostgREST read and write of a table and the columns each names: an embedded relation does not swallow the columns after it, aliases/casts/JSON paths reduce to the real column, a constant select is resolved in the same file or one import away, a template with ${CONST} is resolved, .or()/.eq()/.order() filters and write keys are listed, a run-time select is UNRESOLVED rather than clean, another table or schema is not counted, and on the real tree it finds every .from(\"employees\") a raw count finds",
   runSelectCensusTests,
-);
-await runTest(
-  "staging-branch-sync's ordering guard refuses an out-of-order CI completion that would rewind what staging serves - the real `merge-base --is-ancestor` line is lifted from the live YAML and executed, so swapping its operands (which inverts the guard silently) fails here",
-  runStagingBranchSyncGuardTests,
 );
 await runTest("CI docs-only classifier (AGENTS.md/CLAUDE.md/docs/agents-* must NOT skip the suite that polices them)", runCiDocsOnlyClassifierTests);
 await runTest("password setup email resolution (work_email fallback, never the synthetic auth address)", runPasswordSetupEmailResolutionTests);
@@ -9585,6 +9581,10 @@ await runTest(
 await runTest(
   "bash-guard C9 refuses the THIRD workflow_dispatch of one workflow+ref in a session and explains itself with the measurement, the rollup and gh run rerun, while main stays exempt with no counter (it is the outage recovery and the production deploy gate), gh run rerun and every read verb stay uncounted, the display name / .github path / gh api /dispatches / curl spellings all collapse to one target, and every degraded state - no session id, corrupt, wrong version, another session file, unwritable - ALLOWS",
   runWorkflowDispatchGuardTests,
+);
+await runTest(
+  "bash-guard C18 holds a second `gh pr create` for one module: the module is the conventional-commit scope of the title, an OPEN PR with a shared scope holds, a MERGED one holds for six hours and not a minute longer, a different scope / a title with no scope / chore(deps) and chore(memory) plumbing never hold, PHX_PR_HOLD_OK=1 lets one through, and every degraded state - gh failing, no readable title - ALLOWS; driven as a subprocess against a fake gh",
+  runPrSameModuleHoldGuardTests,
 );
 await runTest(
   "the next build page-data worker cap is INERT unless a self-hosted runner asks for it: the config's own PHX_BUILD_CPUS predicate is lifted out of next.config.ts and executed, leaving experimental.cpus ABSENT for unset, empty, 0, negative and non-numeric (every GitHub-hosted run, every local build and production take that path) and capping at the NUMBER 4 only when asked, while ci.yml passes it solely under runner.environment == 'self-hosted' and neither file sets the dead NEXT_CPUS, which next@16.3.3 never reads",

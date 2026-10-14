@@ -110,7 +110,8 @@ export default defineRailway(() => {
     domains: ["mdm-console.satopharma.com", "mdm.satopharma.com"],
     // From infra/headwind-phoenix-actions/railway.toml - applied at deploy time, never stored.
     deploy: { restartPolicyType: "ON_FAILURE", restartPolicyMaxRetries: 10 },
-    env: { ADMIN_EMAIL: preserve(), BASE_DOMAIN: preserve(), HEADWIND_IMAGE_TAG: preserve(), PROTOCOL: preserve(), SQL_BASE: preserve(), SQL_HOST: preserve(), SQL_PASS: preserve(), SQL_PORT: preserve(), SQL_USER: preserve() },
+    // JAVA_TOOL_OPTIONS caps the Tomcat JVM heap (-Xmx768m, owner cost cuts 2026-10-14: the service held 60.6% of the project's memory-minutes at ~0 vCPU). preserve() keeps it, because dropping a name here deletes the variable on the next apply.
+    env: { ADMIN_EMAIL: preserve(), BASE_DOMAIN: preserve(), HEADWIND_IMAGE_TAG: preserve(), JAVA_TOOL_OPTIONS: preserve(), PROTOCOL: preserve(), SQL_BASE: preserve(), SQL_HOST: preserve(), SQL_PASS: preserve(), SQL_PORT: preserve(), SQL_USER: preserve() },
   });
   const headwindDbEu = service("headwind-db-eu", {
     source: image("ghcr.io/railwayapp-templates/postgres-ssl:18"),

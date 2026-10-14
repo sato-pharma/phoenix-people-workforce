@@ -499,7 +499,7 @@ workflows:
 | `deploy-drift-check.yml` | `9,39 * * * *` | active |
 | `migration-drift-check.yml` | `0 7 * * *` | active |
 | `security-scan.yml` | `17 5 * * *` | active |
-| **`synthetic-journeys.yml`** | `17 2-18/3 * * *` | **active — 1,032 runs, and §3 never listed it** |
+| **`synthetic-journeys.yml`** | `17 2-18/3 * * *` | **active — 1,032 runs, and §3 never listed it** (its `schedule:` leg was REMOVED 2026-10-14; see below) |
 
 A fifth, `security.yml`, reads `disabled_manually` and is correctly absent. The `cron:` lines in
 `deploy-cloud-run.yml` and `deploy-cloud-run-staging.yml` are commented out with restore
@@ -509,7 +509,7 @@ adding a fourth"* — was therefore already stale: the fourth existed and was un
 ### The two schedulers are chained, not separate
 
 `synthetic-journeys.yml` is not driven by its own `schedule:` trigger. The cron-job.org job
-`phoenix-run-synthetic-journeys` (`0 * * * *`, registered in `src/lib/observability/job-schedule.ts`)
+`phoenix-run-synthetic-journeys` (`0 * * * *` until 2026-10-14, then cut to `17 5,8,11,14,17,20 * * *` — 6 runs a day — by the owner for cost; registered in `src/lib/observability/job-schedule.ts`)
 calls `/api/cron/run-synthetic-journeys`, which `workflow_dispatch`es the workflow via
 `src/lib/observability/dispatch-synthetic-journeys.ts`.
 
