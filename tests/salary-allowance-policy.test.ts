@@ -69,6 +69,27 @@ export function runSalaryAllowancePolicyTests() {
   assert.equal(a14Allowances.extraCostOfLiving, 0);
   assert.equal(calculateNetSalary({ baseSalary: 10000, ...a14Allowances }), 10000);
 
+  // Owner, 2026-10-14: Norhan Samir (PD-0021) and Shahd Mohamed (PD-0026) get no extra cost of living
+  // and no fuel allowance, in any spelling of the HR id and in any month.
+  for (const [hrId, base] of [["PD-0021", 18500], ["PD-0026", 15500]] as const) {
+    for (const spelling of [hrId, hrId.toLowerCase(), hrId.replace("-", ""), hrId.replace("-", " ")]) {
+      const none = resolveStandardSalaryAllowances({
+        employeeHrId: spelling,
+        jobTitle: "Medical Representative",
+        month: 10,
+        year: 2026,
+      });
+      assert.equal(none.fuelAllowance, 0, `${spelling} gets no fuel allowance`);
+      assert.equal(none.extraCostOfLiving, 0, `${spelling} gets no extra cost of living`);
+      assert.equal(calculateNetSalary({ baseSalary: base, ...none }), base, `${spelling} is paid the base alone`);
+    }
+  }
+  assert.equal(
+    resolveStandardSalaryAllowances({ employeeHrId: "PD-0022", jobTitle: "Medical Representative", month: 10, year: 2026 }).extraCostOfLiving,
+    2000,
+    "a neighbouring hire keeps the standard allowances",
+  );
+
   // A personal fuel allowance (owner, 2026-09-15): a Medical Representative paid the standard 500
   // plus a 1,500 car allowance inside Fuel Allowance. Before it, uploads normalized it to 500 and
   // payroll paid 500.
