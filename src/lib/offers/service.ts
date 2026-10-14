@@ -9,6 +9,7 @@ import { OFFER_DEFAULT_FONT, OFFER_DEFAULT_FONT_SIZE_PT, OFFER_DEFAULT_THEME } f
 import { parseLetterDate } from "@/lib/offers/dates";
 import { OFFER_REFERENCE_PREFIX, nextOfferReference, offerTitleCode } from "@/lib/offers/reference";
 import { announceAcceptedOffer } from "@/lib/offers/accepted-offer-alert";
+import { hrIdLookupKeys } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   OfferBlock,
@@ -917,6 +918,60 @@ export async function stampOfferAcceptedByJoiningForm(
   const offer = toOffer(data as OfferRow);
   await announceAcceptedOffer(offer, hire);
   return offer;
+}
+
+/**
+ * HR's own Add Employee, started from an ACCEPTED letter: point the letter at the record that was
+ * made from it.
+ *
+ * WHY THIS EXISTS. The joining form stamps `employee_hr_id` (above); HR's door never did. Of the 26
+ * accepted letters on production on 2026-10-14, 24 had been hand-recorded and only 2 pointed at an
+ * employee, so "Offer to join" read 2 of 26 while 21 of those people were already on the Employee
+ * Master. The Talent Acquisition dashboard then reported the offers and the hires as two unrelated
+ * stories (owner, 2026-10-14: "extremely wrong data").
+ *
+ * CONDITIONAL, NEVER AN OVERWRITE. It writes only to a letter that is accepted and not yet linked,
+ * so a second save, a stale tab, or a form opened from the wrong letter cannot repoint a letter that
+ * already names somebody. Returns null when nothing matched — the hire is already written by the
+ * time this runs, so "no letter to link" is an answer, not an error.
+ */
+export async function stampOfferHiredByHr(id: string, hrId: string): Promise<OfferRecord | null> {
+  const employeeHrId = String(hrId ?? "").trim();
+  if (!employeeHrId) return null;
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from("offers")
+    .update({ employee_hr_id: employeeHrId })
+    .eq("id", id)
+    .eq("status", "accepted")
+    .is("employee_hr_id", null)
+    .select("*")
+    .maybeSingle();
+  assertReadable(error, "offers");
+  return data ? toOffer(data as OfferRow) : null;
+}
+
+/**
+ * The person who accepted this letter backed out after being hired ("declined offer"): the letter
+ * stops saying accepted.
+ *
+ * Keyed on the EMPLOYEE the letter points at, never on a name or an address — the same rule that
+ * keeps every offer-to-person link in this module an explicit pointer. A letter that was
+ * hand-recorded before the pointer existed is not found here, which is why
+ * `stampOfferHiredByHr` and the joining form's stamp matter. Returns the letters it changed.
+ */
+export async function declineAcceptedOffersForEmployee(hrId: string): Promise<OfferRecord[]> {
+  const keys = hrIdLookupKeys(hrId);
+  if (keys.length === 0) return [];
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from("offers")
+    .update({ status: "declined" })
+    .in("employee_hr_id", keys)
+    .eq("status", "accepted")
+    .select("*");
+  assertReadable(error, "offers");
+  return ((data ?? []) as OfferRow[]).map(toOffer);
 }
 
 export function offerErrorMessage(error: unknown): string {

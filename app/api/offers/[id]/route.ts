@@ -6,6 +6,7 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { getOffer, setOfferStatus, updateOffer } from "@/lib/offers/service";
 import { offerJsonError } from "@/lib/offers/http";
 import { readOfferVacancyId } from "@/lib/offers/hire-draft";
+import { recordOfferDeclinedByCandidate } from "@/lib/recruitment/offer-outcome-sync";
 import type { OfferFields, OfferStatus } from "@/lib/offers/types";
 
 export const runtime = "nodejs";
@@ -55,7 +56,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           { status: 400 },
         );
       }
-      return NextResponse.json({ offer: await setOfferStatus(id, body.status as OfferStatus), success: true });
+      const offer = await setOfferStatus(id, body.status as OfferStatus);
+      // A candidate who says no is no longer a live candidate. The offers module knows nothing about
+      // candidates, so this route is where the two meet; it never throws and sends no notice.
+      if (offer.status === "declined") {
+        await recordOfferDeclinedByCandidate({ actorHrId: access.hrId ?? null, offer });
+      }
+      return NextResponse.json({ offer, success: true });
     }
 
     // Only keys the caller actually sent are forwarded. Building a full object here would write a

@@ -3,6 +3,8 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import { listApplications, type ApplicationWithContext } from "@/lib/recruitment/applications";
+import { type CandidateStatus } from "@/lib/recruitment/candidate-status";
+import { recruitmentDb } from "@/lib/recruitment/db";
 import { listRequisitions } from "@/lib/recruitment/requisitions";
 import {
   applicationStages,
@@ -31,10 +33,55 @@ export type HiredWindow = {
   toIso: string;
 };
 
+/**
+ * How many candidates sit in each pile of the candidate pool (`ats_candidates.status`).
+ *
+ * THE POOL IS THE RECRUITMENT PIPELINE THAT PEOPLE ACTUALLY WORK. On production on 2026-10-14 it held
+ * 1,417 candidates — 741 undecided, 124 shortlisted, 32 with a hiring manager — while the applications
+ * half of the ATS held 38 rows, all of whom are also in the pool. The overview used to count the 38 and
+ * call them "Active Candidates", so it understated the live pipeline thirty-fold.
+ */
+export type CandidatePoolCounts = Record<CandidateStatus, number>;
+
+/**
+ * Counts only — no candidate row leaves this function, so it is safe on any seat's overview.
+ *
+ * `new` is the remainder after the five other piles are taken off the total, not a count of its own:
+ * the decision tabs file a status nothing can read under "not decided yet", and counting the same way
+ * keeps this figure equal to the pile the recruiter sees.
+ */
+export async function getCandidatePoolCounts(): Promise<CandidatePoolCounts> {
+  const db = recruitmentDb();
+  const countOf = async (status?: CandidateStatus): Promise<number> => {
+    const base = db.from("ats_candidates").select("id", { count: "exact", head: true });
+    const { count, error } = status ? await base.eq("status", status) : await base;
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  };
+  const [total, shortlisted, backup, sentToManager, rejected, hired] = await Promise.all([
+    countOf(),
+    countOf("shortlisted"),
+    countOf("backup"),
+    countOf("sent_to_manager"),
+    countOf("rejected"),
+    countOf("hired"),
+  ]);
+  return {
+    backup,
+    hired,
+    new: Math.max(0, total - shortlisted - backup - sentToManager - rejected - hired),
+    rejected,
+    sent_to_manager: sentToManager,
+    shortlisted,
+  };
+}
+
 export type RecruitmentDashboard = {
   requisitions: Requisition[];
   applications: ApplicationWithContext[];
   summary: {
+    /** The candidate pool by status — what the overview's candidate tiles and funnel count. */
+    candidatePool: CandidatePoolCounts;
     totalRequisitions: number;
     openRequisitions: number;
     totalApplications: number;
@@ -111,9 +158,10 @@ export async function getRecruitmentDashboard(
   access: AccessContext,
   options: { hiredWindow?: HiredWindow } = {},
 ): Promise<RecruitmentDashboard> {
-  const [requisitions, applications] = await Promise.all([
+  const [requisitions, applications, candidatePool] = await Promise.all([
     listRequisitions(access),
     listApplications(access),
+    getCandidatePoolCounts(),
   ]);
 
   const stageCounts: Record<string, number> = {};
@@ -139,6 +187,7 @@ export async function getRecruitmentDashboard(
     requisitions,
     applications,
     summary: {
+      candidatePool,
       totalRequisitions: requisitions.length,
       openRequisitions,
       totalApplications: applications.length,

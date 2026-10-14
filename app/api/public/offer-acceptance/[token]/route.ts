@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { logError } from "@/lib/observability/log";
 import type { JoiningFormUploadField } from "@/lib/offers/joining-form";
 import { submitJoiningForm, type JoiningFormPhoto } from "@/lib/offers/joining-form-service";
+import { recordHireFromOfferLetter } from "@/lib/recruitment/offer-outcome-sync";
 import { ApiRateLimitError, assertApiRateLimit, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
@@ -74,7 +75,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
       ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip")?.trim() || null,
       userAgent: request.headers.get("user-agent"),
     });
-    if (result.ok) return json(result);
+    if (result.ok) {
+      // The candidate behind this letter, if there is one, joined. The recruitment module is reached
+      // from HERE and not from the service because the offers module never imports recruitment
+      // (tests/candidate-offer-pointer.test.ts). Best effort: the employee is already written. The
+      // offer id stays on the server; the candidate is shown only what the form always returned.
+      const { offerId, ...visible } = result;
+      await recordHireFromOfferLetter({ actorHrId: null, hrId: result.hrId, offerId });
+      return json(visible);
+    }
     if ("errors" in result) {
       return json({ errors: result.errors, message: "Please check the highlighted fields and try again.", ok: false }, result.status);
     }

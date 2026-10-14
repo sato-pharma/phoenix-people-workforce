@@ -52,6 +52,7 @@ import {
   isActiveDirectoryEmployee,
 } from "@/lib/employees/employee-directory";
 import { hasMissingEmployeeRecordData } from "@/lib/employees/employee-record-health";
+import { countHiresInWindow, countStartingAfter } from "@/lib/employees/hires-in-window";
 import { getExcuseWorkspace } from "@/lib/excuses/service";
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import { hrefOutsideSeatFence } from "@/lib/auth/seat-page-fences";
@@ -69,7 +70,7 @@ import {
   resolveHiredWindow,
   type HiredWindow,
 } from "@/lib/recruitment/dashboard";
-import type { ApplicationStage } from "@/lib/recruitment/types";
+import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { getRetentionDashboardData } from "@/lib/retention/service";
 import { listAllSupportRequests } from "@/lib/support-requests/service";
@@ -421,6 +422,25 @@ function hiredWindowCaption(window: HiredWindow): string {
   return `hired ${day(window.fromIso)} – ${day(window.toIso)}`;
 }
 
+/**
+ * The Hired tile, as a list of zero or one: people the Employee Master says were hired inside the
+ * window. Zero when the directory did not load (the page already names it as unavailable) — a
+ * missing source is never drawn as "0 hired".
+ *
+ * Someone hired in the window who has not started yet is still a hire, and the caption says how many
+ * start later, because "hired in October 20" read on the 14th otherwise claims 20 people at work.
+ */
+function hiredTile(loaded: HrCommandSources, window: HiredWindow): HrCommandTile[] {
+  if (!loaded.directory) return [];
+  const { hired, startLater } = countHiresInWindow(
+    loaded.directory.employees,
+    window,
+    currentCairoDateOnlyIso(),
+  );
+  const caption = `${hiredWindowCaption(window)}${startLater > 0 ? ` · ${startLater} start later` : ""}`;
+  return [tile("hired", "Hired", hired, caption, "/hr/recruitment", hired > 0 ? "emerald" : "slate")];
+}
+
 /** `YYYY-MM` for the running month in Cairo — the owner reports every time in Cairo, never UTC. */
 function currentCairoMonthKey(): string {
   const { year, month } = currentCairoDateParts();
@@ -488,7 +508,7 @@ export const OFFERS_BY_STATUS_CHART_KEY = "offers-by-status";
 export function offersByStatusChart(offers: NonNullable<HrCommandSources["offers"]>): HrCommandChart {
   return {
     caption:
-      "Every offer on record, by where it stands. An offer still awaiting a reply is a candidate still deciding; a long Declined column is a package worth looking at.",
+      "Every offer letter on record, by where it stands — letters, not people, so a letter re-issued to the same person counts again. A letter still awaiting a reply is a candidate still deciding; a long Declined column is a package worth looking at.",
     emptyLabel: "No job offer has been drafted yet.",
     href: "/hr/offers",
     hrefLabel: "Open Job Offers",
@@ -528,13 +548,12 @@ const TILES_BY_FUNCTION: Record<
   recruiting: (loaded) => {
     const dashboard = loaded.recruitment;
     if (!dashboard) return null;
-    const stage = dashboard.summary.stageCounts;
-    const screening =
-      (stage.cv_screening ?? 0) + (stage.phone_screening ?? 0) + (stage.application_received ?? 0);
-    const interviewing =
-      (stage.interview_scheduling ?? 0) +
-      (stage.hr_interview ?? 0) +
-      (stage.hiring_manager_interview ?? 0);
+    // 🔴 THE CANDIDATE TILES COUNT THE CANDIDATE POOL, NOT THE APPLICATIONS (owner, 2026-10-14:
+    // "extremely wrong data"). The pool is where recruiters work — 1,417 candidates on 2026-10-14,
+    // 898 of them live — while the applications half held 38 rows, every one of them also in the
+    // pool. "Active Candidates" read 30 against a pipeline of 898.
+    const pool = dashboard.summary.candidatePool;
+    const live = pool.new + pool.shortlisted + pool.backup + pool.sent_to_manager;
     // "Open Vacancies" until 2026-09-01, when the owner asked how it could possibly read 3. It
     // was counting ATS REQUISITIONS, which is a true number and the wrong word: production held
     // exactly 5 requisitions ever, and all 3 in an open status pointed at seats already FILLED,
@@ -544,16 +563,22 @@ const TILES_BY_FUNCTION: Record<
     // that the task list also calls, so the two cannot drift apart again.
     const tiles = [
       tile("open-requisitions", "Open Requisitions", dashboard.summary.openRequisitions, "raised in the ATS", "/hr/recruitment", dashboard.summary.openRequisitions > 0 ? "amber" : "slate"),
-      tile("in-screening", "In Screening", screening, "awaiting your review", "/hr/recruitment", screening > 0 ? "amber" : "slate"),
-      tile("interviewing", "Interviewing", interviewing, "scheduled or in progress", "/hr/recruitment"),
-      tile("active-applications", "Active Candidates", dashboard.summary.activeApplications, "still in the pipeline", "/hr/cv-database"),
-      // A PERIOD, not a lifetime. `summary.hires` is every application that ever reached the
-      // hired stage, and printing that beside "In Screening", "Interviewing" and "Active
-      // Candidates" — all counts of the pipeline as it stands — reads as "we hired this many
-      // recently". It would still read 47 when the last hire was two years ago. The caption names
+      tile("awaiting-review", "Awaiting Review", pool.new, "CVs with no decision yet", "/hr/recruitment", pool.new > 0 ? "amber" : "slate"),
+      tile("with-managers", "With Hiring Managers", pool.sent_to_manager, "CVs a manager is reviewing", "/hr/recruitment"),
+      tile("active-candidates", "Active Candidates", live, "still in the pipeline", "/hr/cv-database"),
+      // A PERIOD, not a lifetime. A lifetime hired total printed beside "Awaiting Review", "With
+      // Hiring Managers" and "Active Candidates" — all counts of the pipeline as it stands — reads
+      // as "we hired this many recently". It would still read 47 when the last hire was two years ago. The caption names
       // the window so the figure cannot be read as anything else, and the picker above the group
       // changes it. Default is the running Cairo month (owner, 2026-09-22).
-      tile("hired", "Hired", dashboard.summary.hiresInWindow, hiredWindowCaption(dashboard.summary.hiredWindow), "/hr/recruitment", dashboard.summary.hiresInWindow > 0 ? "emerald" : "slate"),
+      //
+      // 🔴 COUNTED ON THE EMPLOYEE MASTER, NOT ON THE APPLICATIONS (owner, 2026-10-14: "extremely wrong
+      // data"). `summary.hiresInWindow` counts applications that reached the hired stage, and that
+      // half of the ATS is nearly unused — it read 0 for October while 20 people had been hired. A
+      // hire becomes a fact when an employee row carries a hire date, so that is what is counted;
+      // `summary.hiresInWindow` stays on the dashboard for the funnel that wants the pipeline's
+      // own number. With no directory the tile is ABSENT, never a pipeline figure standing in for it.
+      ...hiredTile(loaded, dashboard.summary.hiredWindow),
     ];
     // The seat side of the same question. Absent rather than zero when the directory did not
     // load: printing 0 there would say "every empty seat is being recruited", which is the exact
@@ -831,62 +856,30 @@ function recentCairoMonths(count: number): { key: string; label: string }[] {
 }
 
 /**
- * The live recruiting pipeline, grouped into the stages a person actually thinks in.
+ * The live candidate pipeline, one bar per pile of the candidate pool, in the order a CV moves through
+ * them — the chart "Live candidates, by pipeline stage" and the "Active Candidates" tile beside it
+ * both count THESE piles, so the columns add up to the tile.
  *
- * WHY GROUPED AT ALL. `applicationStages` holds 28 stages, 23 of them live, and eight of those 23
- * are offer states — the offer pipeline alone is a third of the vocabulary. Plotting it raw would
- * put a 23-column axis on somebody's landing page with most columns permanently at zero, the same
- * dead ink the deductions chart below filters out, except structural rather than seasonal. These
- * seven groups are the ATS board's own order, so a bar's POSITION on the axis is how far along the
- * candidates in it have got.
+ * WHY THE CANDIDATE POOL AND NOT THE APPLICATIONS (owner, 2026-10-14: "extremely wrong data"). The
+ * applications half of the ATS holds a few dozen rows, every one of which is also in the pool; the
+ * pool is where recruiters decide, and it held 898 live candidates against 30 live applications. The
+ * chart used to plot the 30.
  *
- * TERMINAL STAGES ARE ABSENT BY DESIGN, not by omission. `terminalApplicationStages` — hired,
- * rejected, withdrawn, offer declined, offer expired — are finished applications, and a funnel that
- * counts them measures history rather than workload. The "Active Candidates" tile beside this chart
- * excludes exactly the same five (`isTerminalApplicationStage`), so the chart's columns add up to
- * that tile rather than to a larger number one click away.
- *
- * EXHAUSTIVE, AND CHECKED AT RUNTIME. Every stage in the vocabulary appears exactly once, here or
- * in `terminalApplicationStages` — asserted in tests/hr-command-center.test.ts. A `Record` keyed on
- * the union would NOT have caught a gap: `ignoreBuildErrors` is on in next.config, so a missing key
- * compiles, builds and DEPLOYS (AGENTS.md §2.1), and a stage absent from every group is a live
- * candidate this chart cannot see, with nothing anywhere reporting the loss.
+ * REJECTED AND HIRED ARE ABSENT BY DESIGN: they are finished, and a funnel that counted them would
+ * measure history rather than workload. EXHAUSTIVE, AND CHECKED AT RUNTIME — every status in
+ * `candidateStatuses` appears here or in `CANDIDATE_FUNNEL_FINISHED`, asserted in
+ * tests/hr-command-center.test.ts, because `ignoreBuildErrors` is on in next.config and a status added
+ * to the vocabulary and put nowhere would compile, build and DEPLOY with its candidates invisible.
  */
-export const RECRUITING_PIPELINE_GROUPS: readonly {
-  label: string;
-  stages: readonly ApplicationStage[];
-}[] = [
-  { label: "Applied", stages: ["application_received", "in_candidate_pool"] },
-  { label: "Screening", stages: ["cv_screening", "phone_screening", "shortlisted"] },
-  {
-    label: "Interview",
-    stages: [
-      "interview_scheduling",
-      "hr_interview",
-      "hiring_manager_interview",
-      "manager_interview_completed",
-    ],
-  },
-  { label: "Selection", stages: ["final_selection", "backup_candidate"] },
-  {
-    label: "Offer",
-    stages: [
-      "offer_initiated",
-      "offer_draft",
-      "offer_pending_approval",
-      "offer_approved",
-      "offer_generated",
-      "offer_sent",
-      "offer_negotiation",
-      "offer_accepted",
-    ],
-  },
-  { label: "Joining", stages: ["pre_boarding"] },
-  // NOT a pipeline position. A candidate parked here has stopped moving, which is the one thing a
-  // funnel of live stages would otherwise hide completely — they would simply be missing. Kept
-  // LAST so the six columns before it still read left-to-right as progress.
-  { label: "Parked", stages: ["on_hold", "call_back", "no_response"] },
+export const CANDIDATE_FUNNEL_BARS: readonly { label: string; status: CandidateStatus }[] = [
+  { label: "Awaiting review", status: "new" },
+  { label: "Shortlisted", status: "shortlisted" },
+  { label: "Backup", status: "backup" },
+  { label: "With a manager", status: "sent_to_manager" },
 ];
+
+/** The piles a candidate leaves the funnel for. */
+export const CANDIDATE_FUNNEL_FINISHED: readonly CandidateStatus[] = ["rejected", "hired"];
 
 /**
  * The charts each function contributes. Same contract as TILES_BY_FUNCTION: keyed by function,
@@ -1149,13 +1142,19 @@ const CHARTS_BY_FUNCTION: Record<
    * in CV screening, one at HR interview. That is a pool nobody is working, and through the tile
    * "Active Candidates 14" it reads exactly like a healthy funnel.
    *
-   * ONE BAR PER GROUP, IN PIPELINE ORDER — see RECRUITING_PIPELINE_GROUPS for why the 28-stage
-   * vocabulary is collapsed into seven and why the terminal stages are absent from all of them.
+   * ONE BAR PER PILE OF THE CANDIDATE POOL, IN THE ORDER A CV MOVES — see CANDIDATE_FUNNEL_BARS for
+   * why the pool and not the applications, and why rejected and hired are absent.
+   *
+   * THE LAST BAR IS THE HAND-OFF, AND IT IS NOT A CANDIDATE PILE. "Hired, not started" counts people
+   * the Employee Master already holds whose first working day is still ahead — the stretch between
+   * an accepted offer and a person at work, which the pool cannot see because its piles stop at
+   * "hired". It is drawn only when the directory loaded (absent, never zero, otherwise) and the
+   * caption says so, so the first four bars still add up to the Active Candidates tile.
    *
    * A SINGLE SERIES, deliberately. The obvious second one is "how long they have been there", and
-   * `stageCounts` carries no age at all — deriving one from the application's `created_at` would
-   * measure the CANDIDATE's age rather than the STAGE's, so somebody who moved forward yesterday
-   * would plot as three weeks stale. That is a worse answer than no answer.
+   * the pool counts carry no age at all — deriving one from a candidate's created date would measure
+   * the CANDIDATE's age rather than the pile's, so somebody who moved forward yesterday would plot
+   * as three weeks stale. That is a worse answer than no answer.
    */
   recruiting: (loaded) => {
     const dashboard = loaded.recruitment;
@@ -1163,19 +1162,23 @@ const CHARTS_BY_FUNCTION: Record<
     const series: HrCommandChartSeries[] = [
       { color: CHART_COLORS.primary, key: "candidates", name: "Live candidates" },
     ];
-    // `?? 0` per stage rather than per group: `stageCounts` is initialised for the whole
-    // vocabulary by getRecruitmentDashboard, but the empty fixture in the test passes `{}`, and a
-    // builder that only works against a fully-populated record is a builder the test cannot read.
-    const counts = dashboard.summary.stageCounts;
-    const rows = RECRUITING_PIPELINE_GROUPS.map((group) => ({
-      candidates: group.stages.reduce((total, stage) => total + (counts[stage] ?? 0), 0),
-      label: group.label,
-    }));
+    const pool = dashboard.summary.candidatePool;
+    const rows = [
+      ...CANDIDATE_FUNNEL_BARS.map((bar) => ({ candidates: pool[bar.status] ?? 0, label: bar.label })),
+      ...(loaded.directory
+        ? [
+            {
+              candidates: countStartingAfter(loaded.directory.employees, currentCairoDateOnlyIso()),
+              label: "Hired, not started",
+            },
+          ]
+        : []),
+    ];
     return [
       {
         caption:
-          "Every application that has not finished, by how far it has got. Hired, rejected and withdrawn are not counted here — this is the work in front of you, not the history behind it.",
-        emptyLabel: "No application is live at any stage of the pipeline.",
+          "Every candidate still being worked, by how far along: CVs awaiting a decision, shortlisted, held as backup, with a hiring manager. The last bar is people already hired whose first day is still ahead. Rejected and hired are history, not counted in the first four.",
+        emptyLabel: "No candidate is live at any stage of the pipeline.",
         href: "/hr/recruitment",
         hrefLabel: "Open Recruitment",
         key: "recruiting-pipeline",

@@ -12,6 +12,7 @@ import { attachEmployeeCvOnCreate } from "@/lib/employees/employee-cv";
 import { openAndAnnounceCrmAccountSetup } from "@/lib/crm/account-setup-notify";
 import { openAndAnnounceNewHireMailboxes } from "@/lib/new-hire-mailbox/notify";
 import { hrIdsMatch } from "@/lib/hr-id";
+import { recordHireFromOfferLetter } from "@/lib/recruitment/offer-outcome-sync";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   employeeDirectoryErrorMessage,
@@ -129,6 +130,9 @@ export async function POST(request: Request) {
       // Set when the hire was started from a recruitment application. Used only to find the CV
       // the candidate themselves sent, and only when no file was chosen on the form.
       fromApplicationId?: string;
+      // Set when the hire was started from an ACCEPTED job offer letter (?fromOffer=). Used only to
+      // point that letter, and the candidate behind it, at the employee this save creates.
+      offerId?: string;
     };
 
     if (!payload.employee) {
@@ -174,6 +178,17 @@ export async function POST(request: Request) {
     // the same one access provisioning has always keyed on.
     const isNewEmployee = !payload.employee.originalHrId?.trim();
     const newEmployeeHrId = savedRows[0]?.hr_id ?? payload.employee.hrId;
+    // The record EXISTS from here, so the letter it was made from is pointed at it first — before the
+    // follow-ups below, any of which can throw. Without this write the letter stays unlinked for good:
+    // 24 of 26 accepted letters were in that state on 2026-10-14 and the Talent Acquisition
+    // dashboard read "Offer to join" as 2 of 26. Best effort: it never fails the save.
+    if (isNewEmployee && payload.offerId?.trim()) {
+      await recordHireFromOfferLetter({
+        actorHrId: access.hrId ?? null,
+        hrId: newEmployeeHrId,
+        offerId: payload.offerId,
+      });
+    }
     const accessProvisioning = isNewEmployee
       ? await provisionNewHireAccess({
         actor: { loginId: access.loginId ?? null, role: access.role },

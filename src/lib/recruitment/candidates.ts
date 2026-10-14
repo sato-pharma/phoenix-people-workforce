@@ -1462,7 +1462,7 @@ export async function returnCandidateToPool(id: string): Promise<Candidate> {
  * invite them to click it again. A missing history line is a gap; a status the screen says failed
  * but which actually applied is a lie.
  */
-async function recordCandidateStatusEvent(input: {
+export async function recordCandidateStatusEvent(input: {
   actorHrId: string | null;
   candidateId: string;
   fromStatus: string | null;

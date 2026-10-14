@@ -6,6 +6,8 @@ import {
   isHiredInsideWindow,
   resolveHiredWindow,
 } from "../src/lib/recruitment/dashboard.ts";
+import { countHiresInWindow, countStartingAfter } from "../src/lib/employees/hires-in-window.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The HR command centre's "Hired" tile counted every application that ever reached the hired
@@ -153,29 +155,86 @@ export function runHiredTilePeriodTests() {
   );
   assert.match(dashboard, /hiresInWindow/, "the windowed count must exist");
 
-  // ── The tile must read the windowed figure, not the lifetime one ──────────
-  const commandCenter = readFileSync(
-    new URL("../src/lib/hr/command-center.ts", import.meta.url),
-    "utf8",
+  // ── The tile counts the EMPLOYEE MASTER inside the window, never the lifetime pipeline total ──
+  //
+  // Until 2026-10-14 the tile read `dashboard.summary.hiresInWindow` — applications that reached the
+  // hired stage. That half of the ATS is nearly unused (2 hired applications ever), so the tile read 0
+  // for October while 20 people had been hired. The window is unchanged; the SOURCE is the master.
+  const commandCenter = stripComments(
+    readFileSync(new URL("../src/lib/hr/command-center.ts", import.meta.url), "utf8"),
   );
   const hiredTile = commandCenter
     .split("\n")
     .find((line) => line.includes('tile("hired"'));
   assert.ok(hiredTile, "the Hired tile must exist");
-  assert.match(
-    hiredTile,
-    /dashboard\.summary\.hiresInWindow/,
-    "RED the Hired tile must count the WINDOW — reading summary.hires puts a lifetime total beside four current-state figures",
-  );
   assert.doesNotMatch(
     hiredTile,
-    /summary\.hires\b(?!InWindow)/,
-    "no part of the tile may fall back to the lifetime total",
+    /summary\.hires/,
+    "RED the Hired tile must not read the applications' hired stage in any form — lifetime or windowed",
   );
   assert.doesNotMatch(
     hiredTile,
     /"converted to employees"/,
     "the caption must NAME the window; 'converted to employees' is what let it read as a lifetime figure",
+  );
+  const hiredBuilder = commandCenter.slice(
+    commandCenter.indexOf("function hiredTile("),
+    commandCenter.indexOf("function currentCairoMonthKey("),
+  );
+  assert.match(hiredBuilder, /countHiresInWindow\(/, "RED the tile must count the Employee Master's hire dates");
+  assert.match(hiredBuilder, /loaded\.directory/, "from the directory the page already loads for the recruiting function");
+  assert.match(
+    hiredBuilder,
+    /if \(!loaded\.directory\) return \[\];/,
+    "no directory means NO tile — a pipeline figure standing in for the master would be the original defect again",
+  );
+  assert.match(
+    hiredBuilder,
+    /hiredWindowCaption\(window\)/,
+    "and the caption still names the window the picker chose",
+  );
+  assert.match(
+    commandCenter,
+    /\.\.\.hiredTile\(loaded, dashboard\.summary\.hiredWindow\)/,
+    "the recruiting group places the tile in the same slot as before, in the window the picker chose",
+  );
+
+  // ── The count itself ──────────────────────────────────────────────────────
+  const october = { fromIso: "2026-10-01", toIso: "2026-10-31" };
+  const people = [
+    { employmentStatus: "active", hireDate: "2026-10-01" },
+    { employmentStatus: "active", hireDate: "2026-10-17" },
+    { employmentStatus: "active", hireDate: "2026-10-31T10:00:00+00:00" },
+    { employmentStatus: "declined_offer", hireDate: "2026-10-04" },
+    { employmentStatus: "active", hireDate: "2026-09-30" },
+    { employmentStatus: "active", hireDate: "2026-11-01" },
+    { employmentStatus: "active", hireDate: null },
+    { employmentStatus: "active", hireDate: "not-a-date" },
+  ];
+  assert.deepEqual(
+    countHiresInWindow(people, october, "2026-10-14"),
+    { hired: 3, startLater: 2 },
+    "RED three hires fall in October (both ends inclusive, a timestamp read as its day); the declined offer, the neighbours, the missing and the unreadable dates do not; two of the three start after the 14th",
+  );
+  assert.deepEqual(
+    countHiresInWindow(people, october, "2026-10-31"),
+    { hired: 3, startLater: 0 },
+    "once the month is over nobody is still to start",
+  );
+  assert.equal(
+    countStartingAfter(people, "2026-10-14"),
+    3,
+    "RED the hand-off bar counts everybody hired for a day still ahead, in ANY month (the 17th, the 31st and 1 November), and not the declined offer, the missing or the unreadable dates",
+  );
+  assert.equal(
+    countStartingAfter([{ employmentStatus: "declined_offer", hireDate: "2026-12-01" }], "2026-10-14"),
+    0,
+    "a declined offer is never somebody joining",
+  );
+  assert.deepEqual(
+    countHiresInWindow([], october, "2026-10-14"),
+    { hired: 0, startLater: 0 },
+    "an empty directory counts nothing",
   );
   assert.match(
     commandCenter,

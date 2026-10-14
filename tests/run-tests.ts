@@ -2071,6 +2071,7 @@ import { runAttendanceAgentBrowserTokenSplitTests } from "./attendance-agent-bro
 import { runAttendanceAgentSelfRepublishTests } from "./attendance-agent-self-republish.test.ts";
 import { runCandidateBackgroundEligibilityTests } from "./candidate-background-eligibility.test.ts";
 import { runCandidateOfferPointerTests } from "./candidate-offer-pointer.test.ts";
+import { runOfferHireSyncTests } from "./offer-hire-sync.test.ts";
 import { runHrProvisioningGuardTests } from "./hr-provisioning-guard.test.ts";
 import { runHrNavNoEmptyInboxRowsTests } from "./hr-nav-no-empty-inbox-rows.test.ts";
 
@@ -7970,6 +7971,10 @@ await runTest(
 await runTest(
   "a standalone offer points at its candidate from the recruitment side, and offers learns nothing",
   runCandidateOfferPointerTests,
+);
+await runTest(
+  "an offer letter, its candidate and the Employee Master tell one story: both write-back doors are closed",
+  runOfferHireSyncTests,
 );
 await runTest(
   "new-hire login provisioning admits HR Operations, the one seat that can reach it",
