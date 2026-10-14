@@ -390,7 +390,8 @@ export function runKpiTrendWiringAndLookTests() {
   // A band filter is a verdict on the consolidated span: applied per week it would blank a rep's good
   // weeks out of the very row that shows he recovered.
   assert.ok(
-    trend.includes("return { ...filters, coverage: [], frequency: [], amRate: [], pmRate: [], flags: [] };"),
+    // A range on a column is the same kind of verdict as a band, so it is cleared with them.
+    trend.includes("return { ...filters, coverage: [], frequency: [], amRate: [], pmRate: [], flags: [], ranges: {} };"),
     "the week and month boards are built with the identity filters only",
   );
 

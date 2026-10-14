@@ -452,7 +452,7 @@ export type KpiTrend = {
 
 /** The facet filters alone — who a rep is. The band and flag filters describe a PERIOD's score. */
 function identityFilters(filters: KpiFilterState): KpiFilterState {
-  return { ...filters, coverage: [], frequency: [], amRate: [], pmRate: [], flags: [] };
+  return { ...filters, coverage: [], frequency: [], amRate: [], pmRate: [], flags: [], ranges: {} };
 }
 
 /**
