@@ -143,4 +143,16 @@ export async function runOrganogramAsOfMonthTests() {
   assert.match(modal, /!isVacancy && canAddEmployee && row\.hrId \? \(/, "people only, and only for a viewer who may change employees");
   assert.match(modal, /buildEmployeeMasterHref\(masterBasePath, "edit", row\.hrId\)/);
   assert.match(modal, /buildEmployeeMasterHref\(masterBasePath, "resign", row\.hrId\)/);
+
+  // ── Layout (measured at 375, 768, 1024 and 1280 on the real markup, 14 Oct 2026) ───────────
+  // As a third column the status box was squeezed to 91px (and 186px tall) between 768 and about
+  // 1100px. Two columns at tablet width, three only from xl, and the box takes its own row below.
+  const adminScreen = readFileSync("src/components/reports/organogram-report.tsx", "utf8");
+  assert.match(
+    adminScreen,
+    /md:grid-cols-\[minmax\(240px,360px\)_minmax\(200px,260px\)\] xl:grid-cols-\[minmax\(240px,360px\)_minmax\(200px,260px\)_1fr\]/,
+    "search and the month picker are two columns at tablet width; the third column waits for xl",
+  );
+  assert.match(adminScreen, /flex items-end md:col-span-2 xl:col-span-1/, "below xl the status box spans both columns instead of being squeezed into a third");
+  assert.match(adminScreen, /labelClassName="text-xs font-medium text-text-secondary"/, "the picker's label matches the Search label beside it");
 }

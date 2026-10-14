@@ -20,10 +20,13 @@ import {
  */
 export function OrganogramAsOfPicker({
   disabled = false,
+  labelClassName = phxLabelTextClassName,
   onChange,
   value,
 }: {
   disabled?: boolean;
+  /** Typography of the label only. A screen whose neighbouring fields carry their own label style passes it, so the row reads as one. */
+  labelClassName?: string;
   onChange: (month: string | null) => void;
   value: string | null;
 }) {
@@ -34,7 +37,7 @@ export function OrganogramAsOfPicker({
 
   return (
     <div className="min-w-0">
-      <label className={`mb-1.5 block ${phxLabelTextClassName}`} htmlFor={id}>
+      <label className={`mb-1.5 block ${labelClassName}`} htmlFor={id}>
         View as of
       </label>
       <select

@@ -356,7 +356,9 @@ export function OrganogramReport({
                   value={lineFilter}
                 />
               ) : null}
-              <div className="grid gap-3 md:grid-cols-[minmax(240px,360px)_minmax(200px,260px)_1fr]">
+              {/* Two columns at tablet width, three only from xl: with the status box as a third column it was
+                  squeezed to 91px (186px tall) between 768 and about 1100px. Below xl it drops to its own row. */}
+              <div className="grid gap-3 md:grid-cols-[minmax(240px,360px)_minmax(200px,260px)] xl:grid-cols-[minmax(240px,360px)_minmax(200px,260px)_1fr]">
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-medium text-text-secondary">
                     Search
@@ -367,8 +369,13 @@ export function OrganogramReport({
                     value={organogramSearch}
                   />
                 </label>
-                <OrganogramAsOfPicker disabled={isLoading} onChange={handleAsOfChange} value={asOfMonth} />
-                <div className="flex items-end">
+                <OrganogramAsOfPicker
+                  disabled={isLoading}
+                  labelClassName="text-xs font-medium text-text-secondary"
+                  onChange={handleAsOfChange}
+                  value={asOfMonth}
+                />
+                <div className="flex items-end md:col-span-2 xl:col-span-1">
                   <div className="rounded-2xl border border-phx-line bg-white/80 px-4 py-3 text-sm text-text-secondary shadow-[0_12px_36px_rgba(15,23,42,0.06)]">
                     {normalizedOrganogramSearch
                       ? `Showing ${filteredRows.length} matching rows.`
