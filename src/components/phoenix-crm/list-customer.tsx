@@ -156,6 +156,10 @@ export function CustomerScreen({
   // for a photo of his own door: offering Validate would capture a second place and undo the move.
   const seatedPending = pending && !checking && !notConfirmed && customer.places.some((place) => place.sharedPlaceId);
   const seatedBoardOnFile = customer.places.some((place) => place.sharedPlaceId && place.venueTimetableOnFile);
+  // 🔴 THE BUILDING ITSELF IS NOT CONFIRMED YET (owner, 2026-10-14): the customer is saved and visited like
+  // any other and joins the KPIs when it is. There is no timetable to photograph — his own seating already
+  // brought the building's board — so the button below is not offered, and the words are about the building.
+  const seatedVenueHeld = customer.places.some((place) => place.sharedPlaceId && place.venueHeld);
   const canValidateThis = pending && !checking && customer.referenceContactCrmId !== null && view.canValidateReference;
   const offerValidate = canValidateThis && !seatedPending;
   const requests = sortRequests(
@@ -294,14 +298,19 @@ export function CustomerScreen({
             <span className="mt-0.5 block text-xs font-semibold text-slate-500">{note.writtenAtText}</span>
           </CrmNote>
         ))}
-        {seatedPending ? (
+        {seatedPending && seatedVenueHeld ? (
+          <CrmNote className="mt-3" title="Waiting for this polyclinic to be confirmed" tone="info">
+            This customer is in a polyclinic that is not confirmed yet. Their visits are saved, and they join the KPIs once the polyclinic is confirmed.
+          </CrmNote>
+        ) : null}
+        {seatedPending && !seatedVenueHeld ? (
           <CrmNote className="mt-3" title="Waiting for this building's timetable" tone="info">
             {seatedBoardOnFile
               ? "This customer is in a polyclinic whose timetable does not name them yet. Their visits are counted, and they join the KPIs once the timetable names them."
               : "This customer is in a polyclinic with no timetable photo yet. Their visits are counted, and they join the KPIs once the timetable is photographed and names them."}
           </CrmNote>
         ) : null}
-        {seatedPending && (view.canEdit || view.canValidateReference) ? (
+        {seatedPending && !seatedVenueHeld && (view.canEdit || view.canValidateReference) ? (
           <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
             <CrmButton
               onClick={() => {

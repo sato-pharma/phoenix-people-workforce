@@ -252,6 +252,13 @@ export type ListPlace = {
    * told WHICH of the two he is waiting for. Undefined on a place that stands alone.
    */
   venueTimetableOnFile?: boolean;
+  /**
+   * Whether the building this place is seated in is still waiting for the Super Admin (owner, 2026-10-14).
+   * Not a measurement and not a verdict on the rep: a customer seated there is saved, planned and visited
+   * like any other, and joins the KPIs when the building is approved. The rep keeps it so his customer page
+   * can say which of the two things the customer is waiting for. Undefined on a place that stands alone.
+   */
+  venueHeld?: boolean;
   /** The two raw readings, kept beside the fixed point for good. Null where one was not measured. */
   pinReading?: PlaceReading | null;
   photoReading?: PlaceReading | null;
@@ -774,10 +781,14 @@ export async function loadTerritoryCustomers(
   // Which of the buildings these places are seated in already have their timetable on file.
   const venueIds = [...new Set(places.map((row) => text(row.shared_place_id)).filter((id): id is string => id !== null))];
   const boardOnFile = new Map<string, boolean>();
+  const venueHeld = new Map<string, boolean>();
   if (venueIds.length > 0) {
-    const venues = await supabase.from("phoenix_crm_shared_places").select("id, schedule_photo_path").in("id", venueIds);
+    const venues = await supabase.from("phoenix_crm_shared_places").select("id, schedule_photo_path, status").in("id", venueIds);
     throwIfError(venues.error);
-    for (const venue of (venues.data ?? []) as Row[]) boardOnFile.set(String(venue.id), text(venue.schedule_photo_path) !== null);
+    for (const venue of (venues.data ?? []) as Row[]) {
+      boardOnFile.set(String(venue.id), text(venue.schedule_photo_path) !== null);
+      venueHeld.set(String(venue.id), venue.status === "held");
+    }
   }
   const placesByCustomer = new Map<string, ListPlace[]>();
   for (const row of places) {
@@ -785,7 +796,10 @@ export async function loadTerritoryCustomers(
     const list = placesByCustomer.get(customerId) ?? [];
     const mapped = mapPlaceRow(row);
     const venueId = text(row.shared_place_id);
-    if (venueId) mapped.venueTimetableOnFile = boardOnFile.get(venueId) === true;
+    if (venueId) {
+      mapped.venueTimetableOnFile = boardOnFile.get(venueId) === true;
+      mapped.venueHeld = venueHeld.get(venueId) === true;
+    }
     list.push(mapped);
     placesByCustomer.set(customerId, list);
   }

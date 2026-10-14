@@ -171,7 +171,7 @@ function SeatInVenueForm({
             options={list.map((venue) => ({
               value: venue.sharedPlaceId,
               label: venue.name,
-              note: `${venue.kindLabel} · ${venueWhere(venue)} · ${seatedNote(venue)}`,
+              note: `${venue.kindLabel} · ${venueWhere(venue)} · ${seatedNote(venue, "admin")}`,
               disabled: saving || venue.status !== "active",
             }))}
             value={venueId}

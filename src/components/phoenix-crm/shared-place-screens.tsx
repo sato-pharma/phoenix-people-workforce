@@ -184,9 +184,17 @@ export function venueWhere(venue: SharedPlaceChoice): string {
   return [venue.address, venue.brickName, venue.areaName].filter(Boolean).join(" · ") || "No address on record";
 }
 
-export function seatedNote(venue: SharedPlaceChoice): string {
+/**
+ * What a venue's row says about its customers.
+ *
+ * 🔴 THE REP'S ROW NEVER SAYS THE BUILDING IS BEING CHECKED (owner, 2026-10-14: "remove the grey" — and
+ * golden rule #1, the rep's app never lets him feel he is being checked). A held venue reads exactly like
+ * any other to him. The Super Admin's own move screen passes "admin" and is told which buildings still
+ * wait for his approval, because that is the one screen where a held venue is refused.
+ */
+export function seatedNote(venue: SharedPlaceChoice, audience: "rep" | "admin" = "rep"): string {
   const customers = venue.seated === 0 ? "No customer in it yet" : venue.seated === 1 ? "1 customer in it" : `${venue.seated} customers in it`;
-  return venue.status === "held" ? `The system is still checking this one · ${customers}` : customers;
+  return audience === "admin" && venue.status === "held" ? `Not approved yet · ${customers}` : customers;
 }
 
 /**
@@ -440,8 +448,8 @@ export function SharedPlaceEditor({
               </CrmNote>
             ) : null}
             {justAdded ? (
-              <CrmNote className="mb-3" title="Saved. The system is checking it" tone="info">
-                The building is saved and the system is checking its photo. You can add customers in it now.
+              <CrmNote className="mb-3" title="Saved" tone="info">
+                The building is saved. You can add customers in it now.
               </CrmNote>
             ) : null}
             {list.length === 0 ? (

@@ -146,8 +146,12 @@ export type ListNotice = { tone: NoteTone; title: string; message?: string | nul
  * outside it for the district manager and SFE, or another clinic added to a customer.
  */
 export type SavedPlace = {
-  /** `checking`: saved, and the system is checking the place against Google Maps (2026-10-03). */
-  kind: "validated" | "waiting" | "added" | "checking";
+  /**
+   * `checking`: saved, and the system is checking the place against Google Maps (2026-10-03).
+   * `venue_pending`: seated in a polyclinic that is not confirmed yet (2026-10-14) — on his list and
+   * visited like any other, counted in the KPIs once the polyclinic is confirmed.
+   */
+  kind: "validated" | "waiting" | "added" | "checking" | "venue_pending";
   customerId: string;
   customerName: string;
   listType: PhoenixCrmListType;
@@ -491,7 +495,16 @@ function validateGone(view: TerritoryListView, subject: ValidateSubject, state: 
 /** What a validation answered, as the saved screen reads it. */
 function savedFromResult(result: ValidateResult): SavedPlace {
   return {
-    kind: result.status === "outside" ? "waiting" : result.held ? "checking" : "validated",
+    // 🔴 PENDING AND NOT HELD IS ONE THING ONLY: a seating in a polyclinic still waiting for the Super Admin
+    // (phoenix_crm_validate_customer). A Google or signboard hold is `held`, and a normal validation is active.
+    kind:
+      result.status === "outside"
+        ? "waiting"
+        : result.held
+          ? "checking"
+          : result.status === "pending"
+            ? "venue_pending"
+            : "validated",
     customerId: result.customerId,
     customerName: result.customerName,
     listType: result.listType,
@@ -985,7 +998,7 @@ export function SavedScreen({
   const heading =
     saved.kind === "added"
       ? `Clinic added: ${saved.customerName}`
-      : saved.kind === "waiting" || saved.kind === "checking"
+      : saved.kind === "waiting" || saved.kind === "checking" || saved.kind === "venue_pending"
         ? `Saved: ${saved.customerName}`
         : `Validated: ${saved.customerName}`;
   return (
@@ -1004,6 +1017,11 @@ export function SavedScreen({
         {saved.kind === "validated" ? (
           <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
             The customer is on your list, and the visits already saved here count from now on.
+          </p>
+        ) : null}
+        {saved.kind === "venue_pending" ? (
+          <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
+            The customer is on your list. The visits you save here show as pending, and they count in your KPIs once the polyclinic is confirmed.
           </p>
         ) : null}
         {/* The Google check could not confirm the place: saved, not validated yet — the system's doing. */}
