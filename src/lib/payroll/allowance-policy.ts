@@ -35,8 +35,13 @@ function normalizeHrId(value: string | null | undefined) {
   return String(value ?? "").trim().toUpperCase();
 }
 
+// Employees paid no extra cost of living and no fuel allowance at all, keyed by the HR id's letters
+// and digits. A-14 is the original; PD-0021 and PD-0026 (Medical Representatives hired October 2026)
+// were added on the owner's word, 2026-10-14. Neither was paid a month yet, so it holds for every period.
+const NO_ALLOWANCE_EMPLOYEES = new Set<string>(["A14", "PD0021", "PD0026"]);
+
 function isNoAllowanceEmployee(input: SalaryAllowanceInput) {
-  return normalizeHrId(input.employeeHrId) === "A-14";
+  return NO_ALLOWANCE_EMPLOYEES.has(normalizeHrId(input.employeeHrId).replace(/[^A-Z0-9]/g, ""));
 }
 
 // Personal fuel allowances the owner approved one employee at a time, keyed by the HR id's letters
