@@ -1926,3 +1926,31 @@ shares a module when ONE token matches.
 sessions legitimately working one module at once will meet the hold — that is the point, and the
 stand-down is the way past it. The six-hour window after a MERGE cannot be answered by widening (the
 branch has shipped), so the message there says to batch the work with the module's next change.
+
+## The tree-reuse DRY RUN — measuring whether a push to `main` repeats its PR's checks (owner, 2026-10-14)
+
+Asked as *"build step 3 as a dry run"* after the lighter-main-CI plan. Measured 2026-10-14 over 12 push
+runs: a push to `main` bills **12.3 minutes** (`validate` 6.2, `checks` 5.1, one more job 1.0), and `checks`
+(lint, typecheck, the unit suite) repeats work the PR's run already did on its merge commit. If the commit
+that lands has the **same tree** as that merge commit, the repeat proves nothing new. `main` moves about
+every 26 minutes, so a PR is often tested against an older `main` and lands with a different tree — how
+often is the open question, and the first, rough count (24 of 42 recent merges with an unchanged PR base)
+is NOT trusted. **This ships only the measuring.**
+
+**How it works.** In `checks`, a PR run writes the tree it tests into the NAME of a step (`Tested tree
+<sha>`), because a step name is readable from the jobs API with `actions: read` alone. A push run finds
+its PR from the `(#N)` in the squash subject, takes that PR's final head, finds the green PR run, reads the
+name back and compares it with `git rev-parse HEAD^{tree}`; it says the verdict as the NAME of the next
+step (`Tree reuse dry run MATCH|DIFFER|UNKNOWN`). **Read the result with `node scripts/ci-tree-reuse.mjs
+--report 40`** — it counts verdicts from step names alone, so it needs no log download. Runs from before
+this change read `no dry run`, and a PR run from before it reads UNKNOWN, so the first days under-count.
+
+**What it must never become without the owner's word.** It changes nothing about what runs: both steps are
+`continue-on-error`, push- or PR-only, the last two steps of `checks`, and `tests/ci-tree-reuse-dryrun.test.ts`
+fails if ANY condition in `ci.yml` reads the verdict. The permissions it adds to `checks` are read-only
+(`actions`, `pull-requests`). Skipping `checks` on a MATCH would be a separate decision: equal trees are the
+same bytes, so it is not a diff classifier, but `tests/ci-gate-parity.test.ts` exists because skipping
+required work on a guess has broken `main` twice. **Not done, and why:** the plan's build step. Skipping `main`'s build when the
+narrowed build-risk classifier says no would drop the only build that sees a `src/**` break (the PR build
+was narrowed on 2026-10-08 on exactly that understanding), and the strict "only docs, `.claude`, tests,
+xlsx, markdown" version covers 2 of the last 80 merges — so it saves nothing.
