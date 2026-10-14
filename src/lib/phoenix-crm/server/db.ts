@@ -66,7 +66,9 @@ const REFUSALS: Record<string, Refusal> = {
   shared_place_retired: { status: 409, message: "This polyclinic or centre was removed. Reload the page." },
   shared_place_held: {
     status: 409,
-    message: "The system is still checking this polyclinic or centre. It confirms it automatically, and then customers can be added in it.",
+    // Only the Super Admin's MOVE reaches this now (a rep's seating in a held venue is allowed since
+    // 2026-10-14), so the sentence tells the person who can actually clear it.
+    message: "This polyclinic or centre is still waiting for your decision. Approve it on the Place checks board, then move customers into it.",
   },
   // 🔴 THIS IS WHAT MAKES A SEATING IDEMPOTENT NOW (owner, 2026-10-10 — one timetable for the whole
   // building). Until that day every seating consumed a single-use photo slot, so a second Save

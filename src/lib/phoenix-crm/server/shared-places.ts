@@ -210,7 +210,7 @@ async function seatedCounts(sharedPlaceIds: readonly string[]): Promise<Map<stri
  * The venues a rep may seat somebody in, in one territory.
  *
  * HELD ones are returned too, marked: the rep who captured it must be able to see that it is being
- * checked rather than believe his capture was lost. Seating in one is refused by the database.
+ * checked rather than believe his capture was lost. A rep may seat customers in one (2026-10-14).
  *
  * 🔴 `territoryForRead`, NOT `territoryForValidation`. The write gate refuses the Super Admin outright
  * (`superAdminHasNoFieldWrite`) and anybody without `canCreate` — correct for CAPTURING a venue, and
@@ -374,8 +374,16 @@ export type SeatingVenue = {
 /**
  * The venue, checked against this territory before anything is written.
  *
- * Refused in three states, each with its own sentence: gone, removed, or still being checked. The
- * database repeats all three under its own lock, so a phone cannot get round them.
+ * Refused in two states, each with its own sentence: gone, or removed. The database repeats both under
+ * its own lock, so a phone cannot get round them.
+ *
+ * 🔴 A HELD VENUE IS SEATABLE (owner, 2026-10-14: "make him able to choose him even if the system is
+ * still checking"). Holding it used to refuse every seating until the Super Admin decided, and nothing
+ * released it by itself, so a rep who captured a building could not add a single customer to it and
+ * read "Choose the polyclinic or centre this customer receives in." on Save. If the Super Admin
+ * REJECTS the venue, `phoenix_crm_decide_shared_place` still retires every place seated in it and sends
+ * each customer back to To validate, so nothing seated meanwhile is stranded. The Super Admin's own
+ * MOVE of a standalone customer (`phoenix_crm_seat_places_in_venue`) still waits for his approval.
  */
 export async function sharedPlaceForSeating(input: {
   seatId: string;
@@ -394,11 +402,6 @@ export async function sharedPlaceForSeating(input: {
   const row = (data ?? null) as Row | null;
   if (!row) throw notFoundError("This polyclinic or centre is no longer there. Reload the page.");
   if (row.status === "retired") throw validationError("This polyclinic or centre was removed. Reload the page.");
-  if (row.status === "held") {
-    throw validationError(
-      "The system is still checking this polyclinic or centre. It confirms it automatically, and then customers can be added in it.",
-    );
-  }
   return {
     sharedPlaceId: String(row.id),
     name: String(row.name),
