@@ -46,6 +46,12 @@ export type SaveGateVendorCode = {
 export type SaveGatePharmacy = {
   capture: SaveGateCapture;
   existingPharmacyId: string;
+  /**
+   * The pharmacy licence the rep attached, if any. Only its presence is read: with no distributor
+   * code a pharmacy may still be saved when the licence is on file (owner, 2026-10-14), parked as
+   * not usable in requests yet.
+   */
+  license?: unknown;
   name: string;
   source: "new" | "existing";
   vendorCodes: readonly SaveGateVendorCode[];
@@ -58,6 +64,19 @@ export type SaveGateCustomer = {
   name: string;
   pharmacies: readonly SaveGatePharmacy[];
 };
+
+/**
+ * The pharmacy's code rows as they will be SAVED: all of them, except that once the licence is
+ * attached a row with no code typed is dropped. Without a licence nothing is dropped, so a blank
+ * row still reads "Enter the distributor code" exactly as before.
+ */
+export function withoutBlankCodeRows<T extends SaveGateVendorCode>(pharmacy: {
+  license?: unknown;
+  vendorCodes: readonly T[];
+}): readonly T[] {
+  if (!pharmacy.license) return pharmacy.vendorCodes;
+  return pharmacy.vendorCodes.filter((line) => line.distributorCode.trim() !== "");
+}
 
 function hasPin(capture: SaveGateCapture): boolean {
   return capture.latitude !== null && capture.longitude !== null;
@@ -141,9 +160,18 @@ export function describeMissingSaveRequirement(
       // A venue with no distributor account has nothing to check here, and the codes block is not
       // even rendered for it. Asking for a code would be asking the rep to make one up again.
       if (!venueRequiresDistributorCode(pharmacy.venueType)) continue;
-      if (pharmacy.vendorCodes.length === 0) return `${pharmacyLabel} needs at least one distributor code.`;
+      // With the licence attached, a code row the rep left blank is simply not a code — the form
+      // opens with one empty row, and refusing it would make the licence route unreachable. The
+      // submit drops the same rows (`withoutBlankCodeRows`), so the gate and the payload agree.
+      const codeLines = withoutBlankCodeRows(pharmacy);
+      if (codeLines.length === 0) {
+        // A licence stands in for the code (owner, 2026-10-14) — the pharmacy is saved, held as not
+        // usable in requests yet. With neither, say both routes so the rep is never told only half.
+        if (pharmacy.license) continue;
+        return `${pharmacyLabel} needs at least one distributor code, or attach its pharmacy licence if it has none.`;
+      }
 
-      for (const [codeIndex, line] of pharmacy.vendorCodes.entries()) {
+      for (const [codeIndex, line] of codeLines.entries()) {
         const codeSuffix = pharmacy.vendorCodes.length > 1 ? ` (row ${codeIndex + 1})` : "";
         if (!line.distributorId) return `Pick a distributor for ${pharmacyLabel}${codeSuffix}.`;
         if (!line.distributorCode.trim()) return `Enter the distributor code for ${pharmacyLabel}${codeSuffix}.`;

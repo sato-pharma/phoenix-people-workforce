@@ -29,6 +29,8 @@ import { isDeskValidated, isInferredFromHistory, isSecondCodeBackfill } from "@/
 import {
   deleteMarketingEvidencePhotos,
   loadMarketingEvidencePhoto,
+  loadMarketingPharmacyLicensesByPharmacyIds,
+  type MarketingPharmacyLicenseFile,
   parseMarketingEvidencePhotoDataUrl,
   storeMarketingEvidencePhoto,
   storeMarketingPharmacyLicense,
@@ -137,7 +139,12 @@ import {
   venueTypeLabel,
   type VenueType,
 } from "@/lib/venues/venue-type";
-import { parsePharmacyLicenseDataUrl } from "@/lib/venues/pharmacy-license";
+import {
+  isLicenseOnlyPharmacyNote,
+  LICENSE_ONLY_PHARMACY_NOTE,
+  parsePharmacyLicenseDataUrl,
+  pharmacyRegistersOnLicenseAlone,
+} from "@/lib/venues/pharmacy-license";
 import {
   WHOLESALER_VENUE_REFUSED_MESSAGE,
   isCertainWholesalerVenue,
@@ -972,8 +979,11 @@ type NormalizedMarketingValidationPharmacy = {
  * codes silently produced NO customer link at all — the customer would be created, the shop would
  * be created, and nothing would join them. That is the failure this returns `[null]` to prevent.
  */
-function venueCodeSlots<T>(venueType: VenueType, codes: T[]): Array<T | null> {
+function venueCodeSlots<T>(venueType: VenueType, codes: T[], licenseOnly = false): Array<T | null> {
   if (codes.length > 0) return codes;
+  // A pharmacy saved on its licence alone gets ONE codeless pass, so it has a link to be held and
+  // released — without it the licence would be stored against a shop nothing joins to the customer.
+  if (licenseOnly) return [null];
   return venueRequiresDistributorCode(venueType) ? [] : [null];
 }
 
@@ -2189,6 +2199,7 @@ function normalizeValidationPharmacy(
   }
   const venueType = venueTypeChoice;
   const vendorCodeInputs = Array.isArray(inputPharmacy.vendorCodes) ? inputPharmacy.vendorCodes : [];
+  const licenseFileDataUrl = normalizePharmacyLicenseDataUrl(inputPharmacy.licenseFileDataUrl, label);
   // A pharmacy still must name a code — a shop nobody can invoice attributes nothing, and that has
   // been refused since the module shipped. What changed on 2026-08-23 is that "must name a code" is
   // no longer the same statement as "is a venue": a nursery has no distributor account, and this
@@ -2197,8 +2208,15 @@ function normalizeValidationPharmacy(
   // Asked through the predicate, never as `venueType === "pharmacy"`: that inline re-derivation is
   // exactly what the venue-type module warns lets the next type be added in one place and missed in
   // five.
-  if (venueRequiresDistributorCode(venueType) && vendorCodeInputs.length === 0) {
-    throw validationError(`${label} needs at least one vendor code.`);
+  //
+  // The licence is the second route (owner, 2026-10-14): a pharmacy with no code may be saved when
+  // its licence is attached, and is held as not usable in requests until a code is added or a Super
+  // Admin releases it. With neither, both routes are named.
+  if (venueRequiresDistributorCode(venueType) && vendorCodeInputs.length === 0 && !licenseFileDataUrl) {
+    throw validationError(
+      `${label} needs at least one vendor code, or attach its pharmacy licence if it has none.`,
+      "pharmacy_code_or_license_required",
+    );
   }
   // The mirror image, and the reason this is a check and not just a relaxation: a code typed onto a
   // nursery is a code that will resolve against somebody else's shop. Refuse it at the door rather
@@ -2241,7 +2259,7 @@ function normalizeValidationPharmacy(
     evidencePhotoName: pharmacyPhotoName,
     extractedAreaName: cleanText(inputPharmacy.extractedAreaName),
     extractedGovernorateName: cleanText(inputPharmacy.extractedGovernorateName),
-    licenseFileDataUrl: normalizePharmacyLicenseDataUrl(inputPharmacy.licenseFileDataUrl, label),
+    licenseFileDataUrl,
     licenseFileName: cleanText(inputPharmacy.licenseFileName),
     normalizedName: normalizeLookupKey(displayName),
     regionName: cleanText(inputPharmacy.regionName),
@@ -6113,6 +6131,13 @@ export async function getMarketingCustomerDatabaseWorkspace(
   const mappedCustomers = new Map(customerRows.map((row) => [row.id, mapCustomer(row)]));
   const mappedPharmacies = new Map(pharmacyRows.map((row) => [row.id, mapMarketingPharmacy(row)]));
   const mappedCodes = new Map(codeRows.map((row) => [row.id, mapDistributorCode(row)]));
+  // The licence photo, signed, for every venue in this register — the reviewers (SFE, admin,
+  // marketing, CEO) read it BIG beside the verdict. Same posture as the approver screens: a licence
+  // that will not resolve renders as "none attached", never as a page that will not open.
+  const licenseByPharmacyId = await loadMarketingPharmacyLicensesByPharmacyIds({
+    pharmacyIds,
+    supabase,
+  }).catch(() => new Map<string, MarketingPharmacyLicenseFile>());
   const distributors = new Map(
     ((distributorsResult.data ?? []) as MarketingDistributorDbRow[]).map((row) => [
       Number(row.id),
@@ -6133,7 +6158,14 @@ export async function getMarketingCustomerDatabaseWorkspace(
     if (!customer || !pharmacy) return [];
     // A missing code is a broken row for a pharmacy and the normal state for a nursery. Dropping
     // the second kind would hide a validated venue from the screen whose whole job is to list them.
-    if (!distributorCode && venueRequiresDistributorCode(pharmacy.venueType)) return [];
+    // ...except a pharmacy saved on its licence alone, which is codeless ON PURPOSE and carries the
+    // marker in its notes: it must stay in the list so the validation queue can show it and a
+    // Super Admin or the CEO can read its licence and release it.
+    if (
+      !distributorCode
+      && venueRequiresDistributorCode(pharmacy.venueType)
+      && !isLicenseOnlyPharmacyNote(link.validation_notes)
+    ) return [];
 
     const distributor = distributorCode ? distributors.get(distributorCode.distributorId) : undefined;
     const contact = contactsByCustomer.get(customer.id);
@@ -6158,7 +6190,10 @@ export async function getMarketingCustomerDatabaseWorkspace(
       distributorId: distributorCode?.distributorId ?? null,
       distributorName: distributorCode ? distributor?.displayName ?? "Unknown distributor" : null,
       inferredFromHistory: isInferredFromHistory(link.validation_notes),
+      licenseContentType: licenseByPharmacyId.get(pharmacy.id)?.contentType ?? null,
       licenseNameMatchesSign: pharmacy.licenseNameMatchesSign,
+      licenseOnly: isLicenseOnlyPharmacyNote(link.validation_notes),
+      licenseUrl: licenseByPharmacyId.get(pharmacy.id)?.signedUrl ?? null,
       pharmacyAddress: pharmacy.capturedAddress,
       pharmacyArea: pharmacy.extractedAreaName,
       pharmacyCode: pharmacy.pharmacyCode,
@@ -7144,7 +7179,16 @@ export async function createMarketingValidationRecord(
       // `venueCodeSlots`, not `vendorCodes`: everything below — including the customer↔pharmacy
       // link itself — used to live inside a loop over the codes, so a venue with none produced a
       // customer and a shop with nothing joining them. A nursery gets exactly one codeless pass.
-      for (const vendorCode of venueCodeSlots(normalizedPharmacy.venueType, normalizedPharmacy.vendorCodes)) {
+      const savedOnLicenseAlone = pharmacyRegistersOnLicenseAlone({
+        codeCount: normalizedPharmacy.vendorCodes.length,
+        hasLicense: Boolean(normalizedPharmacy.licenseFileDataUrl),
+        venueType: normalizedPharmacy.venueType,
+      });
+      for (const vendorCode of venueCodeSlots(
+        normalizedPharmacy.venueType,
+        normalizedPharmacy.vendorCodes,
+        savedOnLicenseAlone,
+      )) {
         const reference = vendorCode
           ? await resolvePharmacyCodeReference({
             distributorId: vendorCode.distributorId,
@@ -7162,14 +7206,21 @@ export async function createMarketingValidationRecord(
           registeredAddress: reference?.registeredAddress,
           registeredRegion: reference?.registeredRegion,
         });
-        const linkValidationStatus = resolveMarketingValidationRecordStatus({
-          isOnBehalf,
-          systemStatus: resolveMarketingSystemValidationStatus({
-            customerEvidenceStatus,
-            governorateVerdict: governorateCheck.verdict,
-            pharmacyEvidenceStatus: normalizedPharmacy.evidenceStatus,
-          }),
-        });
+        // A pharmacy saved on its licence alone is ALWAYS held on `pending`, desk and field alike:
+        // a request target needs a code, so it cannot be used yet, and a person (Super Admin or CEO)
+        // releases it after reading the licence. The desk's usual shortcut to `sfe_validated` does
+        // not apply — that status would make the customer selectable on the strength of a document
+        // nobody has compared against the shop sign.
+        const linkValidationStatus: MarketingValidationStatus = savedOnLicenseAlone
+          ? "pending"
+          : resolveMarketingValidationRecordStatus({
+            isOnBehalf,
+            systemStatus: resolveMarketingSystemValidationStatus({
+              customerEvidenceStatus,
+              governorateVerdict: governorateCheck.verdict,
+              pharmacyEvidenceStatus: normalizedPharmacy.evidenceStatus,
+            }),
+          });
         // The reference lookup still runs and is still stored truthfully, because an unmatched code
         // means sales can never be attributed to this pharmacy — the row is usable, but its ROI
         // would read zero forever. Say so on the row rather than letting it look fully healthy.
@@ -7198,6 +7249,7 @@ export async function createMarketingValidationRecord(
           // Stated on the row rather than left to be inferred from an empty code column: spend on
           // this venue is real, and its return can never be measured through sales.
           vendorCode ? null : venueNonAttributableReason(normalizedPharmacy.venueType),
+          savedOnLicenseAlone ? LICENSE_ONLY_PHARMACY_NOTE : null,
         ].filter(Boolean).join(" ") || null;
         // Narrowed in one place: a venue with no distributor account writes no code row at all,
         // so everything below this point can talk about a real code without optional chaining —

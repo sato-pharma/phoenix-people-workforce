@@ -337,9 +337,9 @@ export function MarketingRequestDecisionConfirmation({
                   {/* And the trade licence, when one was attached — the same two documents the
                       validation desk compares, in front of the person about to decide. */}
                   <PharmacyLicenseEvidence
-                    className="h-40"
                     contentType={pharmacy.licenseContentType}
                     label={pharmacy.pharmacyName}
+                    prominent
                     url={pharmacy.licenseUrl}
                   />
                   {/* Read-back, never a control: this is the last screen before the decision, and

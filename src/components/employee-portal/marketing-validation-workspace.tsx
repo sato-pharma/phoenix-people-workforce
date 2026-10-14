@@ -80,6 +80,7 @@ import {
 } from "@/lib/marketing-requests/validation-report";
 import {
   canSaveMarketingValidation,
+  withoutBlankCodeRows,
   describeMissingSaveRequirement,
   hasCompleteCapture,
 } from "@/lib/marketing-requests/validation-save-gate";
@@ -96,6 +97,7 @@ import {
   PHARMACY_LICENSE_ACCEPT_ATTRIBUTE,
   PHARMACY_LICENSE_MAX_BYTES,
   isPharmacyLicenseContentType,
+  isLicenseOnlyPharmacyNote,
   pharmacyLicenseFillsTheIdentityGap,
   pharmacyLicensePrompt,
 } from "@/lib/venues/pharmacy-license";
@@ -554,6 +556,11 @@ function statusVariant(status: MarketingValidationStatus): "success" | "warning"
   return "neutral";
 }
 
+/** Whether any row on this customer is a pharmacy saved on its licence alone, held without a code. */
+function hasLicenseOnlyHold(rows: MarketingValidationReportRow[]): boolean {
+  return rows.some((row) => isLicenseOnlyPharmacyNote(row.validationNotes));
+}
+
 /** Whether any row on this customer is held because its capture contradicts the code's region. */
 function hasGovernorateHold(rows: MarketingValidationReportRow[]): boolean {
   return rows.some((row) => (row.validationNotes ?? "").includes(MARKETING_GOVERNORATE_HOLD_PREFIX));
@@ -580,6 +587,9 @@ function pendingBlockReason(rows: MarketingValidationReportRow[]): string {
   }
   if (customerShort) return "The customer's live photo and location are incomplete.";
   if (pharmacyShort) return "The venue's live photo and location are incomplete.";
+  if (hasLicenseOnlyHold(rows)) {
+    return "This pharmacy has no distributor code and was saved on its licence, so it is not usable in requests yet. Add its code, or ask a Super Admin or the CEO to read the licence and release it.";
+  }
   return "Waiting for a Super Admin or the CEO to release it.";
 }
 
@@ -599,6 +609,7 @@ function pendingBlockLabel(rows: MarketingValidationReportRow[]): string {
   if (customerShort && pharmacyShort) return "Both captures incomplete";
   if (customerShort) return "Customer capture incomplete";
   if (pharmacyShort) return "Venue capture incomplete";
+  if (hasLicenseOnlyHold(rows)) return "Licence only, no code";
   return "Awaiting release";
 }
 
@@ -2624,7 +2635,7 @@ export function MarketingValidationWorkspace() {
               // half-typed rows that were on screen before the rep switched type would 400. Also
               // empty while the type is unanswered; the submit gate refuses that case outright.
               vendorCodes: choiceRequiresDistributorCode(pharmacy.venueType)
-                ? pharmacy.vendorCodes.map((line) => ({
+                ? withoutBlankCodeRows(pharmacy).map((line) => ({
                   distributorId: Number(line.distributorId),
                   distributorPharmacyCode: line.distributorCode,
                 }))
