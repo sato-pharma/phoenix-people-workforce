@@ -2162,6 +2162,7 @@ import { runRepoDoctorSessionHoldTests } from "./repo-doctor-session-hold.test.t
 import { runRepoDoctorGitMaintenanceTests } from "./repo-doctor-git-maintenance.test.ts";
 import { runRepoDoctorLoadBearingTests } from "./repo-doctor-load-bearing.test.ts";
 import { runWorktreeLivenessTests } from "./worktree-liveness.test.ts";
+import { runWorktreeReferencesTests } from "./worktree-references.test.ts";
 import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
 import { runOutstationMobileWizardStaleCalculationTests } from "./outstation-mobile-wizard-stale-calculation.test.ts";
 import { runOutstationPayrollPayableTotalAgreementTests } from "./outstation-payroll-payable-total-agreement.test.ts";
@@ -8134,6 +8135,11 @@ await runTest("repo-doctor counts a node_modules junction as one path entry, not
 await runTest(
   "repo-doctor never offers a worktree a live session is standing in",
   runRepoDoctorSessionHoldTests,
+);
+await runTest(
+  "repo-doctor --strip-idle and its retirable list leave a worktree a PARKED job is queued on (a waiter chain naming the folder in a command line or in the script's source, matched on a name boundary), "
+    + "an unreadable process list holds rather than frees, the node_modules LINK is never stripped, and a nested worktree has a restore path",
+  runWorktreeReferencesTests,
 );
 await runTest(
   "repo-doctor reports a stale git maintenance lock (every maintenance run then does nothing and exits 0), an unpinned "
