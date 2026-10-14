@@ -41,6 +41,13 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  */
 export const INVOICE_OVERDUE_CHANNELS = ["in_app", "telegram", "push"] as const;
 
+/**
+ * SWITCHED OFF (owner, 2026-10-14: "stop notifications asking for invoices in marketing requests").
+ * The overdue invoice still shows on the Approved Requests tab and in the export; only the daily
+ * message to the requester and finance is stopped. Turning it back on needs his word.
+ */
+export const INVOICE_OVERDUE_NUDGE_ENABLED = false;
+
 /** Its own event type: `overdue_reminder` already means "approval is late", a different thing. */
 export const INVOICE_OVERDUE_EVENT_TYPE = "invoice_overdue";
 
@@ -317,6 +324,9 @@ export type MarketingInvoiceOverdueNudgeResult = {
 export async function runMarketingInvoiceOverdueNudge(
   today: string = currentCairoDateOnlyIso(),
 ): Promise<MarketingInvoiceOverdueNudgeResult> {
+  if (!INVOICE_OVERDUE_NUDGE_ENABLED) {
+    return { financeNotified: 0, financeWarnings: [], overdueInvoices: 0, requestersNotified: 0, skipped: 0 };
+  }
   const invoices = await loadOverdueMarketingInvoices(today);
   let requestersNotified = 0;
   let financeNotified = 0;
