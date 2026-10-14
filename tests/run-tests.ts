@@ -1839,6 +1839,7 @@ import { runPhoenixCrmSignboardCheckTests } from "./phoenix-crm-signboard-check.
 import { runPhoenixCrmCaptureTrustPlaceTests } from "./phoenix-crm-capture-trust-place.test.ts";
 import { runPhoenixCrmValidationFeedbackTests } from "./phoenix-crm-validation-feedback.test.ts";
 import { runPhoenixCrmSharedPlaceTests } from "./phoenix-crm-shared-place.test.ts";
+import { runPhoenixCrmValidateStepsTests } from "./phoenix-crm-validate-steps.test.ts";
 import { runPhoenixCrmOffplanCapTests } from "./phoenix-crm-offplan-cap.test.ts";
 import { runPhoenixCrmPlaceBrickLookupTests } from "./phoenix-crm-place-brick-lookup.test.ts";
 import { runPhoenixCrmDuplicateMergeTests } from "./phoenix-crm-duplicate-merge.test.ts";
@@ -6896,6 +6897,11 @@ await runTest(
 await runTest(
   "Phoenix CRM shared places (owner, 2026-10-09): a polyclinic is validated ONCE at its own door — live sign photo and both readings inside 250 m, and no Google check, because a building has no list name — then each customer is seated in it with a timetable photo and his hours and NO location of his own; three visits a day per venue at the plan, at the send and at the door, with the cap read from settings; rejecting a venue retires everybody seated in it and sends each back to To validate",
   runPhoenixCrmSharedPlaceTests,
+);
+
+await runTest(
+  "Phoenix CRM validate steps (owner, 2026-10-14): validating a customer is a form of six steps in the order the rep does them — customer, where they receive, the signboard photo and the location (or the polyclinic and its timetable), the days and hours, then check and save — Next is held until the step is answered, the rail never opens an unanswered step, a tap on the door moves on, and the shared editors draw one numbered-free piece at a time",
+  runPhoenixCrmValidateStepsTests,
 );
 
 await runTest(

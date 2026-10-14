@@ -51,6 +51,21 @@ export function useInsideCrmStepForm(): boolean {
   return useContext(CrmStepFrameContext);
 }
 
+/**
+ * Inside a step of the validation form the step's own heading says what the step is, so the numbered
+ * titles the shared editors print over their blocks ("3 · Signboard photo") would be a second heading
+ * with a number that no longer matches the rail. Blocks read this and leave their title off.
+ */
+const CrmUntitledBlocksContext = createContext(false);
+
+export function CrmUntitledBlocks({ children }: { children: ReactNode }) {
+  return <CrmUntitledBlocksContext.Provider value={true}>{children}</CrmUntitledBlocksContext.Provider>;
+}
+
+export function useUntitledCrmBlocks(): boolean {
+  return useContext(CrmUntitledBlocksContext);
+}
+
 // The same three buttons as Report It's form.
 export const crmStepBackClassName =
   "inline-flex min-h-11 items-center gap-1.5 rounded-none border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-40";

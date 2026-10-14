@@ -190,6 +190,12 @@ function useResolvedAddress(
   return found && found.key === key ? { address: found.address, zone: found.zone } : { address: null, zone: null };
 }
 
+/**
+ * One piece of the editor, for the validation form that shows a step at a time. Left out, the editor
+ * draws every block, numbered from `firstStep`, exactly as every other screen has always had it.
+ */
+export type PlaceEditorPart = "photo" | "pin" | "timings" | "details";
+
 export function PlaceEditor({
   capture,
   customerName,
@@ -198,6 +204,7 @@ export function PlaceEditor({
   idPrefix,
   location = null,
   onChange,
+  part,
   photoBlockedReason = null,
   ramadanNote,
   seatId,
@@ -214,6 +221,8 @@ export function PlaceEditor({
   firstStep: number;
   idPrefix: string;
   onChange: PlaceDraftUpdate;
+  /** Draw only this piece (the validation form's steps). */
+  part?: PlaceEditorPart;
   /** Why the camera cannot open yet (the customer's name, printed on the photo, is not written). */
   photoBlockedReason?: string | null;
   ramadanNote: string | null;
@@ -230,6 +239,7 @@ export function PlaceEditor({
   const pinStep = firstStep + 1;
   const timingsStep = firstStep + (capture ? 2 : 0);
   const detailsStep = timingsStep + 1;
+  const shows = (piece: PlaceEditorPart) => part === undefined || part === piece;
 
   function takePhoto(photo: CapturedPhoto | null) {
     onChange((current) => ({ ...current, photo }));
@@ -265,7 +275,7 @@ export function PlaceEditor({
 
   return (
     <>
-      {capture ? (
+      {capture && shows("photo") ? (
         <CrmBlock className="border-t border-slate-100" title={`${firstStep} · Signboard photo`}>
           {/* The owner's rule, told before he starts (2026-10-03) — the rule only, never his reading. */}
           <CrmNote className="mb-3" tone="info">
@@ -289,41 +299,47 @@ export function PlaceEditor({
         </CrmBlock>
       ) : null}
 
-      {capture ? (
+      {capture && shows("pin") ? (
         <CrmBlock className="border-t border-slate-100" title={`${pinStep} · Capture location`}>
           <CaptureLocation disabled={disabled} onChange={capturePin} value={value.pin} />
         </CrmBlock>
       ) : null}
 
-      <CrmBlock className="border-t border-slate-100" title={`${timingsStep} · Days and hours`}>
-        <TimingsEditor
-          disabled={disabled}
-          idPrefix={`${idPrefix}-timings`}
-          onChange={(timings) => onChange((current) => ({ ...current, timings }))}
-          ramadanNote={ramadanNote}
-          value={value.timings}
-        />
-      </CrmBlock>
-
-      <CrmBlock className="border-t border-slate-100" title={`${detailsStep} · Place name`}>
-        <CrmField hint="Optional. For example: Evening clinic, or Al Salam Hospital." htmlFor={`${idPrefix}-label`} label="Place name">
-          <input
-            className={crmInputClassName}
+      {shows("timings") ? (
+        <CrmBlock className="border-t border-slate-100" title={`${timingsStep} · Days and hours`}>
+          <TimingsEditor
             disabled={disabled}
-            id={`${idPrefix}-label`}
-            maxLength={PLACE_TEXT_MAX}
-            onChange={(event) => {
-              const label = event.target.value;
-              onChange((current) => ({ ...current, label }));
-            }}
-            value={value.label}
+            idPrefix={`${idPrefix}-timings`}
+            onChange={(timings) => onChange((current) => ({ ...current, timings }))}
+            ramadanNote={ramadanNote}
+            value={value.timings}
           />
-        </CrmField>
-      </CrmBlock>
+        </CrmBlock>
+      ) : null}
 
-      <CrmBlock className="border-t border-slate-100" title={`${detailsStep + 1} · Location`}>
-        <CapturedLocationBlock capture={capture} location={shown} />
-      </CrmBlock>
+      {shows("details") ? (
+        <CrmBlock className="border-t border-slate-100" title={`${detailsStep} · Place name`}>
+          <CrmField hint="Optional. For example: Evening clinic, or Al Salam Hospital." htmlFor={`${idPrefix}-label`} label="Place name">
+            <input
+              className={crmInputClassName}
+              disabled={disabled}
+              id={`${idPrefix}-label`}
+              maxLength={PLACE_TEXT_MAX}
+              onChange={(event) => {
+                const label = event.target.value;
+                onChange((current) => ({ ...current, label }));
+              }}
+              value={value.label}
+            />
+          </CrmField>
+        </CrmBlock>
+      ) : null}
+
+      {shows("pin") ? (
+        <CrmBlock className="border-t border-slate-100" title={`${detailsStep + 1} · Location`}>
+          <CapturedLocationBlock capture={capture} location={shown} />
+        </CrmBlock>
+      ) : null}
     </>
   );
 }

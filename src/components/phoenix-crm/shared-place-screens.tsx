@@ -38,7 +38,7 @@
  */
 
 import { Building2, CalendarClock } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { crmPost, crmUrl, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
@@ -379,11 +379,19 @@ function CaptureVenue({
  * as functions of the latest draft — so the two are swapped for each other on one line in
  * `ValidateScreen` and `AddPlaceScreen`.
  */
+/**
+ * One piece of the editor, for the validation form that shows a step at a time. Left out, the editor
+ * draws every block, numbered from `firstStep`, exactly as the other screens have always had it.
+ */
+export type SharedPlaceEditorPart = "venue" | "photo" | "timings" | "details";
+
 export function SharedPlaceEditor({
   disabled = false,
   firstStep,
   idPrefix,
+  onAddingChange,
   onChange,
+  part,
   ramadanNote,
   seatId,
   test,
@@ -393,13 +401,23 @@ export function SharedPlaceEditor({
   /** The number of this editor's first step on the screen ("2 · Polyclinic or centre"). */
   firstStep: number;
   idPrefix: string;
+  /** Told when the "add the building" capture opens or closes, so a step form can hold its Next until it is done. */
+  onAddingChange?: (adding: boolean) => void;
   onChange: (update: (current: SeatedDraftState) => SeatedDraftState) => void;
+  /** Draw only this piece (the validation form's steps). */
+  part?: SharedPlaceEditorPart;
   ramadanNote: string | null;
   seatId: string;
   test: boolean;
   value: SeatedDraftState;
 }) {
   const [adding, setAdding] = useState(false);
+  useEffect(() => {
+    onAddingChange?.(adding);
+    // Only a change of `adding` is news; the callback is the parent's setter and may be a new function each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adding]);
+  const shows = (piece: SharedPlaceEditorPart) => part === undefined || part === piece;
   const [justAdded, setJustAdded] = useState<string | null>(null);
   // 🔴 THE VALUE, NEVER THE ENVELOPE. `crmGet(url, key)` returns `body[key]`, so the answer here IS
   // the array: typing it `{ sharedPlaces: … }` and reading `data?.sharedPlaces` asks an array for a
@@ -414,7 +432,7 @@ export function SharedPlaceEditor({
   const timingsStep = firstStep + 2;
   const detailsStep = firstStep + 3;
 
-  if (adding) {
+  if (adding && shows("venue")) {
     return (
       <CaptureVenue
         busy={disabled}
@@ -437,168 +455,178 @@ export function SharedPlaceEditor({
 
   return (
     <>
-      <CrmBlock className="border-t border-slate-100" title={`${firstStep} · ${SHARED_PLACE_TITLE}`}>
-        {venues.loading && list.length === 0 ? (
-          <CrmLoading label="Loading the polyclinics and centres" />
-        ) : (
-          <>
-            {venues.error ? (
-              <CrmNote className="mb-3" tone="bad">
-                {venues.error}
-              </CrmNote>
-            ) : null}
-            {justAdded ? (
-              <CrmNote className="mb-3" title="Saved" tone="info">
-                The building is saved. You can add customers in it now.
-              </CrmNote>
-            ) : null}
-            {list.length === 0 ? (
-              <p className="text-sm font-medium leading-6 text-slate-600">
-                No polyclinic or centre is on this territory yet. Add the one you are standing at, then add the customer in it.
-              </p>
-            ) : (
-              <CrmChoice
-                columns={2}
-                label={SHARED_PLACE_TITLE}
-                onChange={(sharedPlaceId: string) =>
-                  onChange((current) => ({
-                    ...current,
-                    sharedPlaceId,
-                    // Whether this building's board is already on file travels with the choice, so
-                    // `seatedDraftProblem` can ask for a photo without reading the picker's rows.
-                    timetableOnFile: Boolean(list.find((venue) => venue.sharedPlaceId === sharedPlaceId)?.schedulePhotoPath),
-                    replacingTimetable: false,
-                  }))
-                }
-                options={list.map((venue) => ({
-                  value: venue.sharedPlaceId,
-                  label: venue.name,
-                  note: `${venue.kindLabel} · ${venueWhere(venue)} · ${seatedNote(venue)}`,
-                  disabled,
-                }))}
-                value={value.sharedPlaceId}
-              />
-            )}
-            <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
-              <CrmButton disabled={disabled} onClick={() => setAdding(true)} size="sm" variant="secondary">
-                <Building2 aria-hidden className="h-4 w-4" />
-                It is not here — add the building
-              </CrmButton>
-            </div>
-            {chosen ? (
-              <div className="mt-3">
+      {shows("venue") ? (
+        <CrmBlock className="border-t border-slate-100" title={`${firstStep} · ${SHARED_PLACE_TITLE}`}>
+          {venues.loading && list.length === 0 ? (
+            <CrmLoading label="Loading the polyclinics and centres" />
+          ) : (
+            <>
+              {venues.error ? (
+                <CrmNote className="mb-3" tone="bad">
+                  {venues.error}
+                </CrmNote>
+              ) : null}
+              {justAdded ? (
+                <CrmNote className="mb-3" title="Saved" tone="info">
+                  The building is saved. You can add customers in it now.
+                </CrmNote>
+              ) : null}
+              {list.length === 0 ? (
+                <p className="text-sm font-medium leading-6 text-slate-600">
+                  No polyclinic or centre is on this territory yet. Add the one you are standing at, then add the customer in it.
+                </p>
+              ) : (
                 <CrmChoice
                   columns={2}
-                  label="Does this customer receive here in the AM or the PM?"
-                  onChange={(session: "AM" | "PM") => onChange((current) => ({ ...current, session }))}
-                  options={[
-                    { value: "AM", label: "AM", note: "Morning", disabled },
-                    { value: "PM", label: "PM", note: "Afternoon and evening", disabled },
-                  ]}
-                  value={value.session}
+                  label={SHARED_PLACE_TITLE}
+                  onChange={(sharedPlaceId: string) =>
+                    onChange((current) => ({
+                      ...current,
+                      sharedPlaceId,
+                      // Whether this building's board is already on file travels with the choice, so
+                      // `seatedDraftProblem` can ask for a photo without reading the picker's rows.
+                      timetableOnFile: Boolean(list.find((venue) => venue.sharedPlaceId === sharedPlaceId)?.schedulePhotoPath),
+                      replacingTimetable: false,
+                    }))
+                  }
+                  options={list.map((venue) => ({
+                    value: venue.sharedPlaceId,
+                    label: venue.name,
+                    note: `${venue.kindLabel} · ${venueWhere(venue)} · ${seatedNote(venue)}`,
+                    disabled,
+                  }))}
+                  value={value.sharedPlaceId}
                 />
-                <p className="mt-1.5 break-words text-xs font-semibold text-slate-500">
-                  On the plan, choosing AM shows this building&rsquo;s AM customers and choosing PM shows its PM customers. A building takes three visits a
-                  day, AM and PM together.
-                </p>
+              )}
+              <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+                <CrmButton disabled={disabled} onClick={() => setAdding(true)} size="sm" variant="secondary">
+                  <Building2 aria-hidden className="h-4 w-4" />
+                  It is not here — add the building
+                </CrmButton>
               </div>
-            ) : null}
-            {chosen ? (
-              <div className="mt-3 border border-slate-200 bg-slate-50/70 px-3 py-2.5">
-                <p className="flex min-w-0 items-start gap-2 text-sm font-black text-slate-950">
-                  <Building2 aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
-                  <span className="min-w-0 break-words">{chosen.name}</span>
-                </p>
-                <p className="mt-0.5 break-words text-xs font-semibold text-slate-600">
-                  {chosen.kindLabel} · {venueWhere(chosen)}
-                </p>
-                {/* The owner's own design, said plainly: the location is the building's, captured once
-                    at its door, so this customer is not asked for one (2026-10-09). */}
-                <p className="mt-1 break-words text-xs font-semibold text-slate-500">
-                  This building&rsquo;s location was captured at its door on {chosen.capturedAtText}. The customer takes it, so you do not capture a
-                  location here.
-                </p>
-              </div>
-            ) : null}
-          </>
-        )}
-      </CrmBlock>
+              {chosen ? (
+                <div className="mt-3">
+                  <CrmChoice
+                    columns={2}
+                    label="Does this customer receive here in the AM or the PM?"
+                    onChange={(session: "AM" | "PM") => onChange((current) => ({ ...current, session }))}
+                    options={[
+                      { value: "AM", label: "AM", note: "Morning", disabled },
+                      { value: "PM", label: "PM", note: "Afternoon and evening", disabled },
+                    ]}
+                    value={value.session}
+                  />
+                  <p className="mt-1.5 break-words text-xs font-semibold text-slate-500">
+                    On the plan, choosing AM shows this building&rsquo;s AM customers and choosing PM shows its PM customers. A building takes three visits a
+                    day, AM and PM together.
+                  </p>
+                </div>
+              ) : null}
+              {chosen ? (
+                <div className="mt-3 border border-slate-200 bg-slate-50/70 px-3 py-2.5">
+                  <p className="flex min-w-0 items-start gap-2 text-sm font-black text-slate-950">
+                    <Building2 aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                    <span className="min-w-0 break-words">{chosen.name}</span>
+                  </p>
+                  <p className="mt-0.5 break-words text-xs font-semibold text-slate-600">
+                    {chosen.kindLabel} · {venueWhere(chosen)}
+                  </p>
+                  {/* The owner's own design, said plainly: the location is the building's, captured once
+                      at its door, so this customer is not asked for one (2026-10-09). */}
+                  <p className="mt-1 break-words text-xs font-semibold text-slate-500">
+                    This building&rsquo;s location was captured at its door on {chosen.capturedAtText}. The customer takes it, so you do not capture a
+                    location here.
+                  </p>
+                </div>
+              ) : null}
+            </>
+          )}
+        </CrmBlock>
+      ) : null}
 
-      <CrmBlock className="border-t border-slate-100" title={`${photoStep} · Timetable photo`}>
-        {!chosen ? (
-          // The stamp burned into the photo is the BUILDING's name, so the venue has to be chosen
-          // before the camera can open. It replaces the old "write the customer's name first" gate.
-          <p className="text-sm font-semibold text-slate-500">Choose the polyclinic or centre first. Its name is printed on the photo.</p>
-        ) : timetableOnFile && !value.replacingTimetable && !value.photo ? (
-          // 🔴 ONE TIMETABLE PER BUILDING (owner, 2026-10-10). The board is already photographed, so
-          // this customer is seated against it and the rep is not asked again.
-          <>
-            <CrmNote title={SEATED_PLACE_PHOTO_ON_FILE} tone="info">
-              It was photographed on {chosen.schedulePhotoCapturedAtText ?? chosen.capturedAtText}, and it covers everybody who receives here. This
-              customer is saved against it — enter the hours below.
-            </CrmNote>
-            <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
-              <CrmButton
-                disabled={disabled}
-                onClick={() => onChange((current) => ({ ...current, replacingTimetable: true }))}
-                size="sm"
-                variant="secondary"
-              >
-                <CalendarClock aria-hidden className="h-4 w-4" />
-                {SEATED_PLACE_PHOTO_REPLACE}
-              </CrmButton>
-            </div>
-          </>
-        ) : (
-          <>
-            {value.replacingTimetable || timetableOnFile ? (
-              <CrmNote className="mb-3" title="This replaces the timetable on file" tone="info">
-                The photo you take now becomes this building&rsquo;s timetable, for this customer and for everybody seated here afterwards.
+      {shows("photo") ? (
+        <CrmBlock className="border-t border-slate-100" title={`${photoStep} · Timetable photo`}>
+          {!chosen && venues.loading && list.length === 0 ? (
+            <CrmLoading label="Loading the polyclinics and centres" />
+          ) : !chosen ? (
+            // The stamp burned into the photo is the BUILDING's name, so the venue has to be chosen
+            // before the camera can open. It replaces the old "write the customer's name first" gate.
+            <p className="text-sm font-semibold text-slate-500">Choose the polyclinic or centre first. Its name is printed on the photo.</p>
+          ) : timetableOnFile && !value.replacingTimetable && !value.photo ? (
+            // 🔴 ONE TIMETABLE PER BUILDING (owner, 2026-10-10). The board is already photographed, so
+            // this customer is seated against it and the rep is not asked again.
+            <>
+              <CrmNote title={SEATED_PLACE_PHOTO_ON_FILE} tone="info">
+                It was photographed on {chosen.schedulePhotoCapturedAtText ?? chosen.capturedAtText}, and it covers everybody who receives here. This
+                customer is saved against it — enter the hours below.
               </CrmNote>
-            ) : null}
-            <LivePhotoCapture
-              disabled={disabled}
-              hint={SEATED_PLACE_PHOTO_HINT}
-              onChange={(photo) => onChange((current) => ({ ...current, photo }))}
-              purpose="place"
-              seatId={seatId}
-              test={test}
-              title={`Phoenix CRM ${SHARED_PLACE_TITLE.toLowerCase()}: ${chosen.name}`}
-              value={value.photo}
-            />
-          </>
-        )}
-      </CrmBlock>
+              <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+                <CrmButton
+                  disabled={disabled}
+                  onClick={() => onChange((current) => ({ ...current, replacingTimetable: true }))}
+                  size="sm"
+                  variant="secondary"
+                >
+                  <CalendarClock aria-hidden className="h-4 w-4" />
+                  {SEATED_PLACE_PHOTO_REPLACE}
+                </CrmButton>
+              </div>
+            </>
+          ) : (
+            <>
+              {value.replacingTimetable || timetableOnFile ? (
+                <CrmNote className="mb-3" title="This replaces the timetable on file" tone="info">
+                  The photo you take now becomes this building&rsquo;s timetable, for this customer and for everybody seated here afterwards.
+                </CrmNote>
+              ) : null}
+              <LivePhotoCapture
+                disabled={disabled}
+                hint={SEATED_PLACE_PHOTO_HINT}
+                onChange={(photo) => onChange((current) => ({ ...current, photo }))}
+                purpose="place"
+                seatId={seatId}
+                test={test}
+                title={`Phoenix CRM ${SHARED_PLACE_TITLE.toLowerCase()}: ${chosen.name}`}
+                value={value.photo}
+              />
+            </>
+          )}
+        </CrmBlock>
+      ) : null}
 
-      <CrmBlock className="border-t border-slate-100" title={`${timingsStep} · Days and hours`}>
-        <p className="mb-3 flex min-w-0 items-start gap-2 text-sm font-medium leading-6 text-slate-600">
-          <CalendarClock aria-hidden className="mt-1 h-4 w-4 shrink-0 text-slate-500" />
-          <span className="min-w-0 break-words">Enter the hours this customer receives in this building, as the timetable shows them.</span>
-        </p>
-        <TimingsEditor
-          disabled={disabled}
-          idPrefix={`${idPrefix}-timings`}
-          onChange={(timings) => onChange((current) => ({ ...current, timings }))}
-          ramadanNote={ramadanNote}
-          value={value.timings}
-        />
-      </CrmBlock>
-
-      <CrmBlock className="border-t border-slate-100" title={`${detailsStep} · Room or clinic name`}>
-        <CrmField hint="Optional. For example: Clinic 4, or Second floor." htmlFor={`${idPrefix}-label`} label="Room or clinic name">
-          <input
-            className={crmInputClassName}
+      {shows("timings") ? (
+        <CrmBlock className="border-t border-slate-100" title={`${timingsStep} · Days and hours`}>
+          <p className="mb-3 flex min-w-0 items-start gap-2 text-sm font-medium leading-6 text-slate-600">
+            <CalendarClock aria-hidden className="mt-1 h-4 w-4 shrink-0 text-slate-500" />
+            <span className="min-w-0 break-words">Enter the hours this customer receives in this building, as the timetable shows them.</span>
+          </p>
+          <TimingsEditor
             disabled={disabled}
-            id={`${idPrefix}-label`}
-            maxLength={PLACE_TEXT_MAX}
-            onChange={(event) => {
-              const label = event.target.value;
-              onChange((current) => ({ ...current, label }));
-            }}
-            value={value.label}
+            idPrefix={`${idPrefix}-timings`}
+            onChange={(timings) => onChange((current) => ({ ...current, timings }))}
+            ramadanNote={ramadanNote}
+            value={value.timings}
           />
-        </CrmField>
-      </CrmBlock>
+        </CrmBlock>
+      ) : null}
+
+      {shows("details") ? (
+        <CrmBlock className="border-t border-slate-100" title={`${detailsStep} · Room or clinic name`}>
+          <CrmField hint="Optional. For example: Clinic 4, or Second floor." htmlFor={`${idPrefix}-label`} label="Room or clinic name">
+            <input
+              className={crmInputClassName}
+              disabled={disabled}
+              id={`${idPrefix}-label`}
+              maxLength={PLACE_TEXT_MAX}
+              onChange={(event) => {
+                const label = event.target.value;
+                onChange((current) => ({ ...current, label }));
+              }}
+              value={value.label}
+            />
+          </CrmField>
+        </CrmBlock>
+      ) : null}
     </>
   );
 }

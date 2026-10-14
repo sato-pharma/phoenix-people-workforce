@@ -28,7 +28,7 @@
  */
 
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { crmGet, crmPost, crmUrl, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { CustomerPhoneField } from "@/components/phoenix-crm/customer-phone";
@@ -54,6 +54,7 @@ import {
   placePayload,
   ramadanHoursNote,
   type PlaceDraftState,
+  type PlaceEditorPart,
 } from "@/components/phoenix-crm/place-editor";
 import {
   emptySeatedDraft,
@@ -62,7 +63,16 @@ import {
   SharedPlaceEditor,
   seatedDraftProblem,
   seatedPayload,
+  type SharedPlaceEditorPart,
 } from "@/components/phoenix-crm/shared-place-screens";
+import {
+  CrmStepForm,
+  CrmStepFooter,
+  CrmStepNext,
+  CrmUntitledBlocks,
+  crmStepFinishClassName,
+  type CrmStep,
+} from "@/components/phoenix-crm/step-form";
 import { timingsToDrafts } from "@/components/phoenix-crm/timings-editor";
 import {
   CrmBackBar,
@@ -82,7 +92,7 @@ import type { ReferenceState } from "@/lib/phoenix-crm/coverage";
 import { CUSTOMER_NAME_MAX, DROP_COMMENT_REQUIRED, DROP_REASON_MAX, DROP_REASONS, parseCustomerPhone, type DropReason } from "@/lib/phoenix-crm/entry-rules";
 import { LOCATION_CHECKING_TEXT, LOCATION_CHECKING_TITLE } from "@/lib/phoenix-crm/google-place-rules";
 import { awaitsValidation, listMovesFor, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
-import { SHARED_PLACE_TITLE } from "@/lib/phoenix-crm/shared-place-rules";
+import { SEATED_PLACE_NO_SESSION, SEATED_PLACE_NO_VENUE, SHARED_PLACE_TITLE } from "@/lib/phoenix-crm/shared-place-rules";
 import { receivingDaysLabel, weekTimingsText } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
 import type { ListCustomer, ListPlace, TerritoryListView, ValidateResult } from "@/lib/phoenix-crm/view-types";
@@ -564,6 +574,11 @@ export function ValidateScreen({
   const [sameName, setSameName] = useState<ListCustomer[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // Owner, 2026-10-14: validating is a form of steps, one at a time, in the order the rep does them.
+  const [step, setStep] = useState(1);
+  // The "add the building" capture is open inside the polyclinic step; leaving then would lose its photo.
+  const [venueAdding, setVenueAdding] = useState(false);
+  const topRef = useRef<HTMLDivElement>(null);
 
   const reference = subject.mode === "reference" ? (view.reference.find((entry) => entry.contactCrmId === subject.contactCrmId) ?? null) : null;
   // The carried-over customer this entry was minted as, whatever became of him since. Read whatever his
@@ -702,11 +717,14 @@ export function ValidateScreen({
         releaseCapturedPhoto(photo);
         if (door === "shared") setSeated(withoutSeatedPhoto(photo));
         else setDraft(withoutPhoto(photo));
+        // The photo is retaken on its own step, not found by scrolling a screen that no longer exists.
+        goStep(door === "shared" ? 4 : 3);
       } else if (code === "phoenix_crm_shared_place_not_found" || code === "phoenix_crm_shared_place_retired") {
         // The venue went while he was filling this in. The timetable photo and the hours stay; only
         // the choice is cleared, so he picks again instead of pressing Save against a venue that is
         // no longer there. Whether the next building has a board on file is unknown until he picks.
         setSeated((current) => ({ ...current, sharedPlaceId: null, timetableOnFile: false, replacingTimetable: false }));
+        goStep(3);
       } else if (code === "phoenix_crm_not_on_reference_list" || code === "phoenix_crm_customer_not_found" || code === "phoenix_crm_archived") {
         reload();
       }
@@ -716,253 +734,382 @@ export function ValidateScreen({
 
   const referenceAddress = referenceAddressText(subjectReference);
 
+  const isNew = subject.mode === "new";
+  const shared = door === "shared";
+  const summaryCustomer: Pick<ListCustomer, "name" | "listType" | "grade" | "speciality"> | null =
+    subjectFacts ?? (listType && grade ? { name: cleanName, listType, grade, speciality: normalizedName(speciality) || null } : null);
+
+  // The same six steps for every customer; what changes is what steps 3 and 4 ask for, by the door he chose.
+  const steps: ReadonlyArray<CrmStep> = [
+    { label: "Customer", description: isNew ? "Who they are" : "Who you validate", title: isNew ? "Who is the customer?" : "Confirm the customer" },
+    { label: "Where", description: "Where they receive", title: "Where does this customer receive?" },
+    shared
+      ? { label: "Building", description: `${SHARED_PLACE_TITLE} they are in`, title: `Choose the ${SHARED_PLACE_TITLE.toLowerCase()}` }
+      : { label: "Signboard", description: "A live photo", title: "Photograph the signboard" },
+    shared
+      ? { label: "Timetable", description: "The board on the wall", title: "Photograph the timetable" }
+      : { label: "Location", description: "Where you stand", title: "Capture the location" },
+    { label: "Hours", description: "Days and hours", title: "Days and hours" },
+    { label: "Save", description: "Check and save", title: isNew ? "Check and save the customer" : "Check and validate the customer" },
+  ];
+
+  /** What stands between him and the next step, in the words the save itself would use; null when he may go on. */
+  function stepGap(at: number): string | null {
+    if (at === 1) {
+      if (isNew) {
+        if (!listType) return "Choose AM or PM.";
+        if (cleanName.length < 3) return "Write the customer's full name.";
+        if (!grade) return "Propose a grade (A, B or C).";
+      }
+      const phoneCheck = parseCustomerPhone(phone);
+      return phoneCheck.ok ? null : phoneCheck.error;
+    }
+    if (at === 2 || at > 5) return null;
+    // The two doors' own validators ask in the order of the steps (photo, then pin, then hours), and a
+    // gap belongs to the step whose answer is missing, so a later gap never holds an earlier step.
+    if (shared) {
+      const asked = seatedDraftProblem(seated);
+      if (!asked) return null;
+      const owner =
+        asked === SEATED_PLACE_NO_VENUE || asked === SEATED_PLACE_NO_SESSION
+          ? 3
+          : !seated.photo && (seated.replacingTimetable || !seated.timetableOnFile)
+            ? 4
+            : 5;
+      return owner === at ? asked : null;
+    }
+    const asked = placeDraftProblem(draft, { needsPhoto: true });
+    if (!asked) return null;
+    const owner = !draft.photo ? 3 : !draft.pin ? 4 : 5;
+    return owner === at ? asked : null;
+  }
+  /** The furthest step the rail may open: the first one still unanswered, or the last. */
+  const reach = [1, 2, 3, 4, 5].find((at) => stepGap(at) !== null) ?? 6;
+
+  /** A step of the form, its top brought into view when he has scrolled past it. */
+  function goStep(next: number) {
+    setStep(next);
+    setProblem(null);
+    window.requestAnimationFrame(() => {
+      const top = topRef.current;
+      if (top && top.getBoundingClientRect().top < 0) top.scrollIntoView({ block: "start" });
+    });
+  }
+
+  /** A tap on the door IS the step's answer, so it moves him on (the visit form's rule). */
+  function chooseDoor(next: PlaceDoor) {
+    setDoor(next);
+    setSameName(null);
+    goStep(3);
+  }
+
+  const gap = stepGap(step);
+  const finishLabel = isNew ? "Save the customer" : "Validate the customer";
+  const footer =
+    step === 6 ? (
+      <CrmStepFooter back={saving ? null : () => goStep(5)}>
+        <button className={crmStepFinishClassName} disabled={saving} onClick={() => void save(false)} type="button">
+          {saving ? "Saving" : finishLabel}
+        </button>
+      </CrmStepFooter>
+    ) : (
+      <CrmStepFooter back={step === 1 || venueAdding ? null : () => goStep(step - 1)}>
+        {step === 2 ? null : <CrmStepNext disabled={gap !== null || venueAdding} onClick={() => goStep(step + 1)} />}
+      </CrmStepFooter>
+    );
+
+  const ownPart: PlaceEditorPart = step === 3 ? "photo" : step === 4 ? "pin" : step === 5 ? "timings" : "details";
+  const sharedPart: SharedPlaceEditorPart = step === 3 ? "venue" : step === 4 ? "photo" : step === 5 ? "timings" : "details";
+
+  const body = (
+    <>
+      {step === 1 ? (
+        <>
+          {subjectFacts ? (
+            <CrmBlock>
+              <CustomerHeading customer={subjectFacts}>
+                <div className="mt-2">
+                  {referenceAddress ? <Detail label="Address in iReports360">{referenceAddress}</Detail> : null}
+                  {subjectReference ? <Detail label="Last visit in iReports360">{referenceLastVisitText(subjectReference)}</Detail> : null}
+                  {/* What the SFE wrote for him when the list was loaded. The place is still captured here;
+                      this is how he knows which door to stand at. */}
+                  {intake?.where ? <Detail label="Where to find them">{intake.where}</Detail> : null}
+                  {intake?.note ? <Detail label="Note">{intake.note}</Detail> : null}
+                  {intake?.timings?.length ? (
+                    <Detail label="Days and hours from the sheet">{weekTimingsText(intake.timings, false)} — ticked below. Change them if they are wrong.</Detail>
+                  ) : null}
+                </div>
+              </CustomerHeading>
+              {/* His assignment in iReports360 ended; his row on this list did not, and the rule is that he
+                  leaves it only by being validated or dropped. Said plainly and with no blame: nothing he
+                  did caused it, and both doors below still work. */}
+              {carriedOverOnly ? (
+                <CrmNote className="mt-3" tone="info">
+                  iReports360 no longer has this customer on your list. They are still on yours: validate them here, or ask to drop them below.
+                </CrmNote>
+              ) : null}
+              {subjectState === "drop_pending" ? (
+                <CrmNote className="mt-3" tone="info">
+                  You asked for this customer to leave the list. Validating withdraws that request.
+                </CrmNote>
+              ) : null}
+              {/* Owner, 2026-09-22, kept 2026-09-29: validating is the captures and nothing else, once and for
+                  good. The name and the grade are changed later, from the customer's own page. A loaded
+                  customer's grade is the SFE's, not iReports360's, so the sentence says whose it is. */}
+              <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
+                {subject.mode === "listed"
+                  ? "The name and grade were set when this list was loaded — the name is yours to correct later from the customer’s page. "
+                  : "The name and grade are iReports360’s for now — you can change them later from the customer’s page. "}
+                You validate a customer once.
+              </p>
+              {/* Owner, 2026-09-30: the phone is asked for here, optional, and saved with the validation. */}
+              <CustomerPhoneField
+                className="mt-3 sm:max-w-sm"
+                disabled={saving}
+                hint="Optional. You can add or change it later from the customer's page."
+                id="phoenix-crm-validate-phone"
+                onChange={(next) => {
+                  setPhone(next);
+                  setProblem(null);
+                }}
+                value={phone}
+              />
+            </CrmBlock>
+          ) : null}
+          {subject.mode === "new" ? (
+            <CrmBlock>
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                <CrmField className="sm:col-span-2" label="AM or PM">
+                  <CrmChoice
+                    columns={2}
+                    label="AM or PM"
+                    onChange={(next) => {
+                      setListType(next);
+                      setSameName(null);
+                      setProblem(null);
+                    }}
+                    options={[
+                      { value: "PM", label: listText("PM"), note: "In a clinic", disabled: saving },
+                      { value: "AM", label: listText("AM"), note: "A hospital or a center", disabled: saving },
+                    ]}
+                    value={listType}
+                  />
+                </CrmField>
+                <CrmField className="sm:col-span-2" hint="As written on the sign." htmlFor="phoenix-crm-new-name" label="Full name">
+                  <input
+                    autoComplete="off"
+                    className={crmInputClassName}
+                    disabled={saving}
+                    id="phoenix-crm-new-name"
+                    maxLength={CUSTOMER_NAME_MAX}
+                    onChange={(event) => {
+                      setName(event.target.value);
+                      setSameName(null);
+                      setProblem(null);
+                    }}
+                    value={name}
+                  />
+                </CrmField>
+                <CrmField hint="Optional. Pick one from the list or write it." htmlFor="phoenix-crm-new-speciality" label="Speciality">
+                  <input
+                    autoComplete="off"
+                    className={crmInputClassName}
+                    disabled={saving}
+                    id="phoenix-crm-new-speciality"
+                    list="phoenix-crm-new-specialities"
+                    maxLength={SPECIALITY_TEXT_MAX}
+                    onChange={(event) => setSpeciality(event.target.value)}
+                    value={speciality}
+                  />
+                  <datalist id="phoenix-crm-new-specialities">
+                    {specialityOptions.map((option) => (
+                      <option key={option} value={option} />
+                    ))}
+                  </datalist>
+                </CrmField>
+                <CustomerPhoneField
+                  disabled={saving}
+                  id="phoenix-crm-new-phone"
+                  onChange={(next) => {
+                    setPhone(next);
+                    setProblem(null);
+                  }}
+                  value={phone}
+                />
+                <CrmField
+                  className="sm:col-span-2"
+                  hint="Your district manager confirms it or changes it, then SFE approves adding the customer to your list."
+                  label="Proposed grade"
+                >
+                  <CrmChoice
+                    columns={3}
+                    label="Proposed grade"
+                    onChange={(next) => {
+                      setGrade(next);
+                      setProblem(null);
+                    }}
+                    options={GRADES.map((option) => ({ value: option, label: `Grade ${option}`, disabled: saving }))}
+                    value={grade}
+                  />
+                </CrmField>
+              </div>
+            </CrmBlock>
+          ) : null}
+          {canAskToDrop && pendingCustomer && onAskToDrop ? (
+            <CrmBlock className="border-t border-slate-100" title="Not your customer any more?">
+              <p className="text-sm font-medium leading-6 text-slate-600">
+                A customer who moved, retired or closed is not validated. Ask to drop the customer from your list instead.
+              </p>
+              <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+                <CrmButton disabled={saving} onClick={() => onAskToDrop(pendingCustomer.customerId)} variant="danger">
+                  Ask to drop
+                </CrmButton>
+              </div>
+            </CrmBlock>
+          ) : null}
+        </>
+      ) : null}
+
+      {step === 2 ? <PlaceDoorChoice disabled={saving} onChange={chooseDoor} value={door} /> : null}
+
+      {step >= 3 ? (
+        shared ? (
+          <SharedPlaceEditor
+            disabled={saving}
+            firstStep={1}
+            idPrefix="phoenix-crm-validate-seated"
+            onAddingChange={setVenueAdding}
+            onChange={setSeated}
+            part={sharedPart}
+            ramadanNote={ramadanHoursNote(view.ramadan, cairoToday)}
+            seatId={seatId}
+            test={test}
+            value={seated}
+          />
+        ) : (
+          <PlaceEditor
+            capture
+            customerName={customerName}
+            disabled={saving}
+            firstStep={1}
+            idPrefix="phoenix-crm-validate"
+            onChange={setDraft}
+            part={ownPart}
+            photoBlockedReason={isNew && !cleanName ? "Write the customer's full name first. It is printed on the photo." : null}
+            ramadanNote={ramadanHoursNote(view.ramadan, cairoToday)}
+            seatId={seatId}
+            test={test}
+            value={draft}
+          />
+        )
+      ) : null}
+
+      {step === 6 ? (
+        <CrmBlock className="border-t border-slate-100">
+          {summaryCustomer ? (
+            <CustomerHeading customer={summaryCustomer}>
+              <div className="mt-2">
+                <Detail label="Receives">{shared ? `In a ${SHARED_PLACE_TITLE.toLowerCase()}` : "In their own clinic"}</Detail>
+                <Detail label="Days and hours">{weekTimingsText(shared ? seated.timings : draft.timings, false)}</Detail>
+              </div>
+            </CustomerHeading>
+          ) : null}
+          <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
+            {shared
+              ? "The timetable photo and the days and hours become this customer’s real record, at the location captured for the building, and its visits start counting."
+              : "The signboard photo, the location and the days and hours become this customer’s real record, and its visits start counting."}
+          </p>
+          {isNew ? (
+            <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
+              {twoStepText(view, "add them to your list")} Until then the customer waits under Outside the list, and the visits you
+              save count once the customer is on your list.
+            </p>
+          ) : null}
+        </CrmBlock>
+      ) : null}
+
+      {gap || problem || (step === 6 && sameName) ? (
+        <CrmBlock className="border-t border-slate-100">
+          {problem ? (
+            <CrmNote className="mb-3" tone="bad">
+              {problem}
+            </CrmNote>
+          ) : gap ? (
+            <p className="text-sm font-semibold text-slate-500">{gap}</p>
+          ) : null}
+          {step === 6 && sameName ? (
+            <CrmNote className="mb-3" title="A customer with this name is already on the list" tone="warn">
+              {sameName.length > 0 ? (
+                <ul className="mt-2 grid gap-2">
+                  {sameName.map((match) => {
+                    const full = match.places.length >= view.rules.placesMax;
+                    // Another clinic goes to a customer who has a place already: on the list, or waiting outside it.
+                    const takesPlace = match.status === "active" || match.status === "outside";
+                    return (
+                      <li className="grid min-w-0 gap-2 border border-amber-200 bg-white px-3 py-2.5 text-slate-700" key={match.customerId}>
+                        <span className="min-w-0">
+                          <span className="block break-words font-black text-slate-950">{match.name}</span>
+                          <span className="block break-words text-xs font-semibold text-slate-500">{customerMetaText(match)}</span>
+                          <span className="block break-words text-xs font-semibold text-slate-600">{placesDaysText(match)}</span>
+                        </span>
+                        {takesPlace ? (
+                          <span className="flex flex-wrap gap-2">
+                            <CrmButton
+                              disabled={saving || full || (door === "shared" && !onSeatInstead)}
+                              onClick={() =>
+                                door === "shared" ? onSeatInstead?.(match.customerId, seated) : onAddPlaceInstead(match.customerId, draft)
+                              }
+                              size="sm"
+                              variant="primary"
+                            >
+                              {full
+                                ? `Has ${view.rules.placesMax} clinics already`
+                                : door === "shared"
+                                  ? "Add this customer in the polyclinic instead"
+                                  : "Add this clinic to this customer"}
+                            </CrmButton>
+                          </span>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+              <p className="mt-2">
+                The same customer at another clinic: add this clinic to that customer, and the photo and the days and hours you entered go with it. A
+                different person with the same name: save as a different person.
+              </p>
+              <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+                <CrmButton busy={saving} onClick={() => void save(true)}>
+                  Save as a different person
+                </CrmButton>
+              </div>
+            </CrmNote>
+          ) : null}
+        </CrmBlock>
+      ) : null}
+    </>
+  );
+
   return (
     <CrmPanel>
       <CrmBackBar backLabel={backLabel} onBack={close} title={title} />
       <CrmBlock>
         <p className="break-words text-sm font-semibold text-slate-600">{territoryLine(view.territory)}</p>
       </CrmBlock>
-
-      {subjectFacts ? (
-        <CrmBlock className="border-t border-slate-100" title="Customer">
-          <CustomerHeading customer={subjectFacts}>
-            <div className="mt-2">
-              {referenceAddress ? <Detail label="Address in iReports360">{referenceAddress}</Detail> : null}
-              {subjectReference ? <Detail label="Last visit in iReports360">{referenceLastVisitText(subjectReference)}</Detail> : null}
-              {/* What the SFE wrote for him when the list was loaded. The place is still captured here;
-                  this is how he knows which door to stand at. */}
-              {intake?.where ? <Detail label="Where to find them">{intake.where}</Detail> : null}
-              {intake?.note ? <Detail label="Note">{intake.note}</Detail> : null}
-              {intake?.timings?.length ? (
-                <Detail label="Days and hours from the sheet">{weekTimingsText(intake.timings, false)} — ticked below. Change them if they are wrong.</Detail>
-              ) : null}
-            </div>
-          </CustomerHeading>
-          {/* His assignment in iReports360 ended; his row on this list did not, and the rule is that he
-              leaves it only by being validated or dropped. Said plainly and with no blame: nothing he
-              did caused it, and both doors below still work. */}
-          {carriedOverOnly ? (
-            <CrmNote className="mt-3" tone="info">
-              iReports360 no longer has this customer on your list. They are still on yours: validate them here, or ask to drop them below.
-            </CrmNote>
-          ) : null}
-          {subjectState === "drop_pending" ? (
-            <CrmNote className="mt-3" tone="info">
-              You asked for this customer to leave the list. Validating withdraws that request.
-            </CrmNote>
-          ) : null}
-          {/* Owner, 2026-09-22, kept 2026-09-29: validating is the captures and nothing else, once and for
-              good. The name and the grade are changed later, from the customer's own page. A loaded
-              customer's grade is the SFE's, not iReports360's, so the sentence says whose it is. */}
-          <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
-            {subject.mode === "listed"
-              ? "The name and grade were set when this list was loaded — the name is yours to correct later from the customer’s page. "
-              : "The name and grade are iReports360’s for now — you can change them later from the customer’s page. "}
-            {door === "shared"
-              ? "The timetable photo and the days and hours become this customer’s real record, at the location captured for the building, and its visits start counting."
-              : "The signboard photo, the location and the days and hours become this customer’s real record, and its visits start counting."}{" "}
-            You validate a customer once.
-          </p>
-          {/* Owner, 2026-09-30: the phone is asked for here, optional, and saved with the validation. */}
-          <CustomerPhoneField
-            className="mt-3 sm:max-w-sm"
-            disabled={saving}
-            hint="Optional. You can add or change it later from the customer's page."
-            id="phoenix-crm-validate-phone"
-            onChange={(next) => {
-              setPhone(next);
-              setProblem(null);
-            }}
-            value={phone}
-          />
-        </CrmBlock>
-      ) : null}
-
-      {subject.mode === "new" ? (
-        <CrmBlock className="border-t border-slate-100" title="1 · Customer">
-          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-            <CrmField className="sm:col-span-2" label="AM or PM">
-              <CrmChoice
-                columns={2}
-                label="AM or PM"
-                onChange={(next) => {
-                  setListType(next);
-                  setSameName(null);
-                  setProblem(null);
-                }}
-                options={[
-                  { value: "PM", label: listText("PM"), note: "In a clinic", disabled: saving },
-                  { value: "AM", label: listText("AM"), note: "A hospital or a center", disabled: saving },
-                ]}
-                value={listType}
-              />
-            </CrmField>
-            <CrmField className="sm:col-span-2" hint="As written on the sign." htmlFor="phoenix-crm-new-name" label="Full name">
-              <input
-                autoComplete="off"
-                className={crmInputClassName}
-                disabled={saving}
-                id="phoenix-crm-new-name"
-                maxLength={CUSTOMER_NAME_MAX}
-                onChange={(event) => {
-                  setName(event.target.value);
-                  setSameName(null);
-                  setProblem(null);
-                }}
-                value={name}
-              />
-            </CrmField>
-            <CrmField hint="Optional. Pick one from the list or write it." htmlFor="phoenix-crm-new-speciality" label="Speciality">
-              <input
-                autoComplete="off"
-                className={crmInputClassName}
-                disabled={saving}
-                id="phoenix-crm-new-speciality"
-                list="phoenix-crm-new-specialities"
-                maxLength={SPECIALITY_TEXT_MAX}
-                onChange={(event) => setSpeciality(event.target.value)}
-                value={speciality}
-              />
-              <datalist id="phoenix-crm-new-specialities">
-                {specialityOptions.map((option) => (
-                  <option key={option} value={option} />
-                ))}
-              </datalist>
-            </CrmField>
-            <CustomerPhoneField
-              disabled={saving}
-              id="phoenix-crm-new-phone"
-              onChange={(next) => {
-                setPhone(next);
-                setProblem(null);
-              }}
-              value={phone}
-            />
-            <CrmField
-              className="sm:col-span-2"
-              hint="Your district manager confirms it or changes it, then SFE approves adding the customer to your list."
-              label="Proposed grade"
-            >
-              <CrmChoice
-                columns={3}
-                label="Proposed grade"
-                onChange={(next) => {
-                  setGrade(next);
-                  setProblem(null);
-                }}
-                options={GRADES.map((option) => ({ value: option, label: `Grade ${option}`, disabled: saving }))}
-                value={grade}
-              />
-            </CrmField>
-          </div>
-        </CrmBlock>
-      ) : null}
-
-      <PlaceDoorChoice disabled={saving} onChange={setDoor} value={door} />
-
-      {door === "shared" ? (
-        <SharedPlaceEditor
-          disabled={saving}
-          firstStep={subject.mode === "new" ? 2 : 1}
-          idPrefix="phoenix-crm-validate-seated"
-          onChange={setSeated}
-          ramadanNote={ramadanHoursNote(view.ramadan, cairoToday)}
-          seatId={seatId}
-          test={test}
-          value={seated}
-        />
-      ) : (
-        <PlaceEditor
-          capture
-          customerName={customerName}
-          disabled={saving}
-          firstStep={subject.mode === "new" ? 2 : 1}
-          idPrefix="phoenix-crm-validate"
-          onChange={setDraft}
-          photoBlockedReason={subject.mode === "new" && !cleanName ? "Write the customer's full name first. It is printed on the photo." : null}
-          ramadanNote={ramadanHoursNote(view.ramadan, cairoToday)}
-          seatId={seatId}
-          test={test}
-          value={draft}
-        />
-      )}
-
-      <SaveBar
-        busy={saving}
-        label={subject.mode === "new" ? "Save the customer" : "Validate the customer"}
-        onCancel={close}
-        onSave={() => void save(false)}
-        problem={problem}
-      >
-        {subject.mode === "new" ? (
-          <p className="mb-3 text-sm font-medium leading-6 text-slate-600">
-            {twoStepText(view, "add them to your list")} Until then the customer waits under Outside the list, and the visits you
-            save count once the customer is on your list.
-          </p>
-        ) : null}
-        {sameName ? (
-          <CrmNote className="mb-3" title="A customer with this name is already on the list" tone="warn">
-            {sameName.length > 0 ? (
-              <ul className="mt-2 grid gap-2">
-                {sameName.map((match) => {
-                  const full = match.places.length >= view.rules.placesMax;
-                  // Another clinic goes to a customer who has a place already: on the list, or waiting outside it.
-                  const takesPlace = match.status === "active" || match.status === "outside";
-                  return (
-                    <li className="grid min-w-0 gap-2 border border-amber-200 bg-white px-3 py-2.5 text-slate-700" key={match.customerId}>
-                      <span className="min-w-0">
-                        <span className="block break-words font-black text-slate-950">{match.name}</span>
-                        <span className="block break-words text-xs font-semibold text-slate-500">{customerMetaText(match)}</span>
-                        <span className="block break-words text-xs font-semibold text-slate-600">{placesDaysText(match)}</span>
-                      </span>
-                      {takesPlace ? (
-                        <span className="flex flex-wrap gap-2">
-                          <CrmButton
-                            disabled={saving || full || (door === "shared" && !onSeatInstead)}
-                            onClick={() =>
-                              door === "shared" ? onSeatInstead?.(match.customerId, seated) : onAddPlaceInstead(match.customerId, draft)
-                            }
-                            size="sm"
-                            variant="primary"
-                          >
-                            {full
-                              ? `Has ${view.rules.placesMax} clinics already`
-                              : door === "shared"
-                                ? "Add this customer in the polyclinic instead"
-                                : "Add this clinic to this customer"}
-                          </CrmButton>
-                        </span>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
-            <p className="mt-2">
-              The same customer at another clinic: add this clinic to that customer, and the photo and the days and hours you entered go with it. A
-              different person with the same name: save as a different person.
-            </p>
-            <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
-              <CrmButton busy={saving} onClick={() => void save(true)}>
-                Save as a different person
-              </CrmButton>
-            </div>
-          </CrmNote>
-        ) : null}
-      </SaveBar>
-
-      {canAskToDrop && pendingCustomer && onAskToDrop ? (
-        <CrmBlock className="border-t border-slate-100" title="Not your customer any more?">
-          <p className="text-sm font-medium leading-6 text-slate-600">
-            A customer who moved, retired or closed is not validated. Ask to drop the customer from your list instead.
-          </p>
-          <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
-            <CrmButton disabled={saving} onClick={() => onAskToDrop(pendingCustomer.customerId)} variant="danger">
-              Ask to drop
-            </CrmButton>
-          </div>
-        </CrmBlock>
-      ) : null}
+      <div className="min-w-0 scroll-mt-24 border-t border-slate-100" ref={topRef}>
+        <CrmStepForm
+          aside={`Nothing is saved until you press ${finishLabel}.`}
+          canJump={(at) => !venueAdding && !saving && at <= reach}
+          chip={isNew ? "New customer" : "Validation"}
+          footer={footer}
+          onJump={goStep}
+          step={step}
+          steps={steps}
+        >
+          <CrmUntitledBlocks>{body}</CrmUntitledBlocks>
+        </CrmStepForm>
+      </div>
     </CrmPanel>
   );
 }
