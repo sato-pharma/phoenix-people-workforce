@@ -206,4 +206,13 @@ export function runKpisReportsSplitTests() {
   assert.ok(summaryLinks.includes("callRateVisitsLink"), "Call Rate reuses the existing visits drill-down");
   assert.ok(view.includes("action={summaryReportLinks(context, row)}"), "the desktop Summary rows carry them");
   assert.ok(view.includes("? summaryReportLinks(context, row)"), "and so do the phone cards");
+
+  // ── 8. AM · PM and Pharmacies follow the board and count, never average ───────────────────────
+  const tables = code("src/components/crm/kpi-reports-tables.tsx");
+  assert.ok(tables.includes("function Tally("), "each table carries a Met / Below tally");
+  assert.ok(tables.includes("no verdict"), "a rep with no list is 'no verdict', never Below");
+  assert.ok(!/\.reduce\([^)]*\/ ?rows\.length|average|mean\(/i.test(tables), "the tally forms no team rate");
+  assert.ok(tables.includes("rank(a.report) - rank(b.report)"), "rows follow the board's own order");
+  assert.ok(view.includes("<AmPmKpiReportTables reports={board.kpiReports} reps={board.reps} />"), "AM · PM gets the board's reps");
+  assert.ok(view.includes("<PharmacyKpiReportTables reports={board.kpiReports} reps={board.reps} />"), "Pharmacies too");
 }

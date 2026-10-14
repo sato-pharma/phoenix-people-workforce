@@ -3318,8 +3318,8 @@ export function KpisBoardView({
                plan-based measures, and a "best on pharmacies" board would rank reps against a
                standard the owner has not set yet. The tables carry mobile cards of their own. */
             <div className="border-t border-slate-100">
-              {tab === "am-pm" ? <AmPmKpiReportTables reports={board.kpiReports} /> : null}
-              {tab === "pharmacies" ? <PharmacyKpiReportTables reports={board.kpiReports} /> : null}
+              {tab === "am-pm" ? <AmPmKpiReportTables reports={board.kpiReports} reps={board.reps} /> : null}
+              {tab === "pharmacies" ? <PharmacyKpiReportTables reports={board.kpiReports} reps={board.reps} /> : null}
               <div className="border-t border-slate-100">
                 <OffListNote reports={board.kpiReports} />
               </div>

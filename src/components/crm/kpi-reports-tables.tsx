@@ -33,7 +33,8 @@
  * browser can see that it did. Every class string here is a plain template literal.
  */
 
-import { CAPTION, NUM, TD, TH } from "@/components/crm/kpis-chrome";
+import { CAPTION, KpiRepName, NUM, TD, TH } from "@/components/crm/kpis-chrome";
+import type { KpiRepRow } from "@/lib/crm/kpis-board";
 import {
   unscoredLabel,
   type ListKpiBlock,
@@ -83,10 +84,95 @@ function MeasureCell({ block, kind, text }: { block: ListKpiBlock; kind: "callRa
   );
 }
 
-type ReportRow = { repKey: string | null; repName: string; block: ListKpiBlock };
+type ReportRow = {
+  repKey: string | null;
+  repName: string;
+  block: ListKpiBlock;
+  areaName: string | null;
+  lineName: string | null;
+  jobTitle: string | null;
+};
 
-function rowsFor(reports: readonly RepKpiReports[], pick: (report: RepKpiReports) => ListKpiBlock): ReportRow[] {
-  return reports.map((report) => ({ repKey: report.repKey, repName: report.repName, block: pick(report) }));
+/**
+ * One row per rep, in the BOARD's order and carrying the board's area, line and title.
+ *
+ * The reports come back in the order the data layer built them, which ignores the sort the manager
+ * picked on the board, so without this the rows of these two tabs would sit in an order no control on
+ * the page explains. A report with no matching board row keeps its place after the matched ones.
+ */
+function rowsFor(
+  reports: readonly RepKpiReports[],
+  pick: (report: RepKpiReports) => ListKpiBlock,
+  reps: readonly KpiRepRow[] = [],
+): ReportRow[] {
+  const position = new Map<string, number>();
+  const rowOf = new Map<string, KpiRepRow>();
+  reps.forEach((rep, index) => {
+    if (rep.coverageRepKey == null) return;
+    position.set(rep.coverageRepKey, index);
+    rowOf.set(rep.coverageRepKey, rep);
+  });
+  const rank = (report: RepKpiReports) =>
+    (report.repKey != null ? position.get(report.repKey) : undefined) ?? Number.MAX_SAFE_INTEGER;
+  return reports
+    .map((report, index) => ({ report, index }))
+    .sort((a, b) => rank(a.report) - rank(b.report) || a.index - b.index)
+    .map(({ report }) => {
+      const rep = report.repKey != null ? rowOf.get(report.repKey) : undefined;
+      return {
+        repKey: report.repKey,
+        repName: report.repName,
+        block: pick(report),
+        areaName: rep?.areaName ?? null,
+        lineName: rep?.lineName ?? null,
+        jobTitle: rep?.jobTitle ?? null,
+      };
+    });
+}
+
+const MEASURES = [
+  { kind: "callRate", label: "Call rate" },
+  { kind: "coverage", label: "Coverage" },
+  { kind: "frequency", label: "Frequency" },
+] as const;
+
+/**
+ * How many reps are Met, Below and without a verdict on each measure, said once under a table.
+ *
+ * COUNTS, NEVER A MEAN. The call rate is not averaged (owner, 2026-09-04) and a team percentage made
+ * from reps with different list sizes would be the same mistake one level up, so the tally says how
+ * many reps cleared the standard and leaves the figures in the rows. A rep with no such list lands in
+ * "no verdict", which is not Below.
+ */
+function Tally({ rows }: { rows: ReportRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <dl className="grid grid-cols-1 gap-3 border-t border-slate-100 px-4 py-3 sm:grid-cols-3 sm:px-5">
+      {MEASURES.map(({ kind, label }) => {
+        let met = 0;
+        let below = 0;
+        let none = 0;
+        for (const row of rows) {
+          const score = row.block[kind].score;
+          if (!score.scored) none += 1;
+          else if (score.meets) met += 1;
+          else below += 1;
+        }
+        return (
+          <div key={kind}>
+            <dt className={CAPTION}>{label}</dt>
+            <dd className="text-sm font-semibold text-slate-900">
+              <span className="text-emerald-700">{met} met</span>
+              <span className="text-slate-300"> · </span>
+              <span className="text-rose-700">{below} below</span>
+              <span className="text-slate-300"> · </span>
+              <span className="text-slate-500">{none} no verdict</span>
+            </dd>
+          </div>
+        );
+      })}
+    </dl>
+  );
 }
 
 /**
@@ -137,7 +223,7 @@ function ListTable({ caption, rateHeading, rows }: { caption: string; rateHeadin
         {rows.map((row, index) => (
           <tr key={row.repKey ?? `${row.repName}-${index}`}>
             <td className={TD}>
-              <span className="block break-words font-semibold text-slate-900">{row.repName}</span>
+              <KpiRepName areaName={row.areaName} jobTitle={row.jobTitle} lineName={row.lineName} name={row.repName} />
               <span className={`mt-0.5 block ${CAPTION}`}>
                 {row.block.applicable
                   ? `${row.block.coverage.panel} on their list`
@@ -162,7 +248,7 @@ function ListCards({ caption, rows }: { caption: string; rows: ReportRow[] }) {
       <div className="divide-y divide-slate-100 border-t border-slate-100">
         {rows.map((row, index) => (
           <div className="px-4 py-3" key={row.repKey ?? `${row.repName}-${index}`}>
-            <p className="break-words text-sm font-semibold text-slate-900">{row.repName}</p>
+            <KpiRepName areaName={row.areaName} jobTitle={row.jobTitle} lineName={row.lineName} name={row.repName} />
             <p className={`mt-0.5 ${CAPTION}`}>
               {row.block.applicable ? `${row.block.coverage.panel} on their list` : "No list of this kind"}
             </p>
@@ -198,16 +284,24 @@ function ListCards({ caption, rows }: { caption: string; rows: ReportRow[] }) {
  * Both tables render even when one list is empty for everyone, because an empty AM table is itself
  * the finding: every rep is expected to carry AM/PM, and a blank one says the lists never synced.
  */
-export function AmPmKpiReportTables({ reports }: { reports: readonly RepKpiReports[] }) {
-  const amRows = rowsFor(reports, (report) => report.ampm.am);
-  const pmRows = rowsFor(reports, (report) => report.ampm.pm);
+export function AmPmKpiReportTables({
+  reports,
+  reps,
+}: {
+  reports: readonly RepKpiReports[];
+  reps?: readonly KpiRepRow[];
+}) {
+  const amRows = rowsFor(reports, (report) => report.ampm.am, reps);
+  const pmRows = rowsFor(reports, (report) => report.ampm.pm, reps);
   return (
     <div>
       <ListCards caption="AM — accounts" rows={amRows} />
       <ListTable caption="AM — accounts" rateHeading="Accounts a working day" rows={amRows} />
+      <Tally rows={amRows} />
       <div className="mt-4 border-t border-slate-100">
         <ListCards caption="PM — clinics" rows={pmRows} />
         <ListTable caption="PM — clinics" rateHeading="Clinics a working day" rows={pmRows} />
+        <Tally rows={pmRows} />
       </div>
     </div>
   );
@@ -220,12 +314,19 @@ export function AmPmKpiReportTables({ reports }: { reports: readonly RepKpiRepor
  * hidden and NOT zeroed: 25 of 69 reps carry no pharmacies, and dropping them would make this tab
  * quietly shorter than the five beside it with nothing saying why.
  */
-export function PharmacyKpiReportTables({ reports }: { reports: readonly RepKpiReports[] }) {
-  const rows = rowsFor(reports, (report) => report.pharmacies.pharmacies);
+export function PharmacyKpiReportTables({
+  reports,
+  reps,
+}: {
+  reports: readonly RepKpiReports[];
+  reps?: readonly KpiRepRow[];
+}) {
+  const rows = rowsFor(reports, (report) => report.pharmacies.pharmacies, reps);
   return (
     <div>
       <ListCards caption="Pharmacies" rows={rows} />
       <ListTable caption="Pharmacies" rateHeading="Pharmacies a working day" rows={rows} />
+      <Tally rows={rows} />
     </div>
   );
 }
