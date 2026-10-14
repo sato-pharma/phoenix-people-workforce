@@ -185,9 +185,8 @@ export function venueWhere(venue: SharedPlaceChoice): string {
 }
 
 export function seatedNote(venue: SharedPlaceChoice): string {
-  if (venue.status === "held") return "The system is still checking this one";
-  if (venue.seated === 0) return "No customer in it yet";
-  return venue.seated === 1 ? "1 customer in it" : `${venue.seated} customers in it`;
+  const customers = venue.seated === 0 ? "No customer in it yet" : venue.seated === 1 ? "1 customer in it" : `${venue.seated} customers in it`;
+  return venue.status === "held" ? `The system is still checking this one · ${customers}` : customers;
 }
 
 /**
@@ -415,10 +414,11 @@ export function SharedPlaceEditor({
         onSaved={(sharedPlaceId, held) => {
           setAdding(false);
           setJustAdded(held ? sharedPlaceId : null);
-          // A venue still being checked cannot be seated in — the server refuses it under its own
-          // lock — so it is read back into the picker rather than chosen here.
+          // A venue still being checked is chosen like any other (owner, 2026-10-14: "make him able to
+          // choose him even if the system is still checking"): leaving it unchosen is what sent the rep
+          // to "Choose the polyclinic or centre this customer receives in." on Save.
           // A building nobody has been seated in yet has no timetable on file, so the camera opens.
-          if (!held) onChange((current) => ({ ...current, sharedPlaceId, timetableOnFile: false, replacingTimetable: false }));
+          onChange((current) => ({ ...current, sharedPlaceId, timetableOnFile: false, replacingTimetable: false }));
           venues.reload();
         }}
         seatId={seatId}
@@ -441,7 +441,7 @@ export function SharedPlaceEditor({
             ) : null}
             {justAdded ? (
               <CrmNote className="mb-3" title="Saved. The system is checking it" tone="info">
-                The building is saved and the system is checking its photo. It confirms it automatically, and then you can add customers in it.
+                The building is saved and the system is checking its photo. You can add customers in it now.
               </CrmNote>
             ) : null}
             {list.length === 0 ? (
@@ -466,7 +466,7 @@ export function SharedPlaceEditor({
                   value: venue.sharedPlaceId,
                   label: venue.name,
                   note: `${venue.kindLabel} · ${venueWhere(venue)} · ${seatedNote(venue)}`,
-                  disabled: disabled || venue.status !== "active",
+                  disabled,
                 }))}
                 value={value.sharedPlaceId}
               />

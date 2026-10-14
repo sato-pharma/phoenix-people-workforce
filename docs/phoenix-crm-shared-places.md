@@ -386,3 +386,33 @@ envelope"; restored → exit 0.
 2026-10-12 14:36:37, 15:25:16, 15:30:46 and 15:34:39 — all `active`, all with `schedule_photo_path`
 NULL. They will every one appear in his picker once this ships. Retiring the extras is a bulk
 production data change and waits for his word.
+
+## A held venue can be chosen — owner, 2026-10-14
+
+A venue is **held** when its signboard photo did not confirm its own name (`other_name` or `no_name`,
+`signboardHoldsForReview`). Until 2026-10-14 a held venue was greyed out in the rep's picker and
+`phoenix_crm_insert_place` raised `shared_place_held`, and the rep's capture screen promised that the system
+"confirms it automatically". **Nothing did**: the only release is the Super Admin's Approve on the shared-places
+board. Measured on production that morning: 7 venues held, 0 ever decided, the oldest captured 13 Oct at 14:15
+Cairo. A rep who had just captured a building could not seat one customer in it, and Save answered
+"Choose the polyclinic or centre this customer receives in." because the screen also left a held building
+unchosen.
+
+His words: *"make him able to choose him even if the system is still checking"*.
+
+| Piece | Now |
+| --- | --- |
+| The picker | A held venue is selectable and is chosen automatically right after the rep captures it; its note reads "The system is still checking this one · N customers in it" |
+| `sharedPlaceForSeating` | Refuses a gone or removed venue only |
+| `phoenix_crm_insert_place` | Migration `20261014151354` removes the `shared_place_held` raise; every other line is byte-identical to `20261010190001` (comment-stripped md5 `5ef27c3f9802e24f1ca94245847c38ad` read off production before the change, `6d9f6e9de8e145977e66166c1dfd1801` after) |
+| Rejecting the venue | Unchanged and still the safety net: `phoenix_crm_decide_shared_place` retires every place seated in it and sends each customer back to To validate |
+| The Super Admin's move | **Unchanged**: `phoenix_crm_seat_places_in_venue` still refuses a held venue, and its refusal now tells him to approve the venue first |
+
+Stated, not fixed: a customer seated in a held venue is validated at once and counts in the KPIs until the venue is
+decided; a rejection reverses it. Holding such a customer out of the KPIs would need a validation-review row per
+customer and a cascade from the venue's approval, and was not asked for.
+
+Applied 2026-10-14 to staging (`cifwmndunmlxjhyjugxa`) and production (`ozucdzovmcqvepbozvqf`) through
+`apply_migration`; read back from `pg_proc` on both (`prosecdef` true, grantees `{postgres,service_role}`, digest equal
+to the file). On production a transaction that always rolls back called the function against a real held venue and got
+past the old refusal as far as the insert, then failed on the test row's own empty timings; nothing was written.

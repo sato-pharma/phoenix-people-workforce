@@ -328,6 +328,27 @@ export function runPhoenixCrmSharedPlaceTests(): void {
     "and that sentence is about the BUILDING's board now, not about this customer's own hours",
   );
 
+  // ── A HELD VENUE IS CHOOSABLE (owner, 2026-10-14: "make him able to choose him even if the system is
+  // still checking") — it used to be greyed out for good, because nothing released a held venue by
+  // itself, and the rep's Save answered "Choose the polyclinic or centre this customer receives in." ──
+  const heldSeating = stripComments(readFileSync("src/lib/phoenix-crm/server/shared-places.ts", "utf8"));
+  const forSeating = heldSeating.slice(
+    heldSeating.indexOf("export async function sharedPlaceForSeating("),
+    heldSeating.indexOf("export type EffectiveSeatedPhoto"),
+  );
+  assert.ok(forSeating.includes('row.status === "retired"'), "a removed venue is still refused");
+  assert.ok(!forSeating.includes('"held"'), "🔴 and a HELD one is not: the server no longer refuses a seating in a venue being checked");
+  const heldInsertPlace = readFileSync("supabase/migrations/20261014151354_phoenix_crm_insert_place_seats_in_a_held_venue.sql", "utf8")
+    .replace(/--[^\n]*/g, "");
+  assert.ok(heldInsertPlace.includes("phoenix_crm:shared_place_retired"), "the database still refuses a removed venue under its lock");
+  assert.ok(heldInsertPlace.includes("phoenix_crm:already_seated"), "and keeps one customer in one building once");
+  assert.ok(!heldInsertPlace.includes("shared_place_held"), "🔴 but no longer raises shared_place_held on a seating");
+  assert.ok(!seatedScreen.includes('venue.status !== "active"'), "🔴 the picker does not grey a venue out for being held");
+  assert.ok(
+    !seatedScreen.includes("if (!held) onChange("),
+    "🔴 and a building the rep has just captured is CHOSEN even while held, or Save asks him to choose one",
+  );
+
   // ── THREE A DAY, and the cap is a SETTING read live on every path ─────────────────────────────
   assert.equal(SHARED_PLACE_DAILY_CAP_DEFAULT, 3, "his number — and only the default");
   assert.ok(migration.includes("shared_place_daily_cap integer not null default 3"), "the settings column");
