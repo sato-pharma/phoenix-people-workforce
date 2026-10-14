@@ -298,6 +298,13 @@ reusing the inventory taken seconds earlier:
 - skips a worktree with **any uncommitted file** — that work exists only on this disk;
 - skips one with **any commit found nowhere upstream** — not backed up;
 - skips one **touched within 120 minutes** (`--strip-idle=<minutes>` raises the bar);
+- skips one **a live process holds** — a cwd inside it (PEB sweep), a Claude transcript written
+  inside the hold window, **or a running process whose command line, or the script it runs, names
+  the folder** (`scripts/worktree-references.mjs`). That last one is the parked job: on 2026-09-17
+  `cd "<wt>" && node wait-for-dev-window.mjs && next dev` sat queued with its waiter's cwd in the
+  primary, so no file in the worktree moved for 120 minutes and the strip emptied it. Files
+  untouched for two hours cannot tell a finished session from one parked behind a waiter. An
+  unreadable process list refuses, like every unknown in this family;
 - verifies `git status` **after** the strip, and reports a strip it could not verify.
 
 The one real risk the census did cover — two repo-doctors stripping at once — is a mutual-exclusion
@@ -308,7 +315,11 @@ same file.
 junction their `node_modules` into the primary checkout, so `fs.rmSync(…, {recursive: true})`
 looks alarming. Verified 2026-09-01 on a real Windows junction: `lstat` reports it as a symlink,
 Node unlinks the link, and **the target survives**. Restore a stripped worktree with
-`node scripts/new-session.mjs --repair <task>` — **never `pnpm install` there**, which is what 5
+`node scripts/new-session.mjs --repair <task>` (`--repair --nested` for a `.claude/worktrees/*`
+folder: it re-links a missing `node_modules` and writes nothing else). **Since 2026-10-14 the strip
+does not touch a `node_modules` that is a link at all** — it frees nothing, and losing it stops
+`next` resolving in a folder a session may still be using — so only `.next` and a *real*
+`node_modules` folder are payload. And **never `pnpm install` there**, which is what 5
 forbids: it would install a real tree over the junction point and duplicate ~1.9M path entries,
 the exact cost this flag exists to reclaim.
 
@@ -889,7 +900,7 @@ what left is measurement, narrative, and what §5 already states. Search this se
 
 - **`--fix` needs exactly ONE live session; `--strip-idle` does NOT** — it gates per worktree on dirty/unpushed/120-min-idle behind a lock, so RUN it with sessions open; the old census meant it never once ran. **`--fix` clears a husk only if it holds ZERO files, and can still FAIL on a locked one** — then use `rmdir /s /q` from PowerShell, not Bash.
 
-- **`--repair` SKIPS every `.claude/worktrees/` path, and `ready()` counts a REAL `node_modules` as fine** — so a stray `pnpm install` in one is invisible to BOTH tools: `--repair` never looks, `linkModules` answers "already present" instead of replacing the directory, and `--remove` refuses the path too. Nothing reports it as a defect — the only tell is repo-doctor's file count against its siblings. Fix it BY HAND: `rmdir` the real directory, then `mklink /J` to the primary's.
+- **`--repair` SKIPS every `.claude/worktrees/` path, and `ready()` counts a REAL `node_modules` as fine** (`--repair --nested` re-links a MISSING one, nothing else) — so a stray `pnpm install` in one is invisible to BOTH tools: `--repair` never looks, `linkModules` answers "already present" instead of replacing the directory, and `--remove` refuses the path too. Nothing reports it as a defect — the only tell is repo-doctor's file count against its siblings. Fix it BY HAND: `rmdir` the real directory, then `mklink /J` to the primary's.
 
 - **Closing the session does NOT release its worktree, and the release is not INSTANT.** `git worktree remove` then fails *Permission denied*, deregisters anyway, and leaves the husk. **No OS tool points at the holder** — a `Win32_Process` sweep, a `ParentProcessId` sweep and the Restart Manager API all report NOTHING, because a working-directory reference is not a file handle — **but `list_sessions` DOES: match the husk's path against every session's `cwd`.** **Quiet time frees it only once NO session is pinned there — and IDLE is not CLOSED**: `isRunning: false` means only that the session is not mid-turn, so its `cwd` reference survives and waiting stays futile until the process exits. Three husks survived 330s of untouched quiet; a retry 20 minutes later, after one holder went idle, still cleared none. `git fsmonitor--daemon` — spawned by ANY `git -C <worktree>`, **your own read-only gate scans included** — outlives the session, but is NOT the mechanism: the lock held with ZERO git processes running, then cleared on the FIRST `rmdir /s /q` after 300s of **not touching the folder**. Look the holder up FIRST and close that session; a session can NEVER clear its own husk, since every command it runs resets its working directory back inside the folder. **NEVER kill git machine-wide on a loop** — `Get-Process git | Stop-Process` hits every session, and a parallel one is usually live.
 

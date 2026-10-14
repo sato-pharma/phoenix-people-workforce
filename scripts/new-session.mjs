@@ -27,6 +27,7 @@
 //   node scripts/new-session.mjs <task-slug>           # create ../_wt-<task-slug>
 //   node scripts/new-session.mjs --status              # headroom + folder occupancy
 //   node scripts/new-session.mjs --repair              # fix worktrees that cannot run
+//   node scripts/new-session.mjs --repair --nested     # ...and re-link node_modules (only) in .claude/worktrees/*
 //   node scripts/new-session.mjs --remove <slug>       # retire one, leaving no husk
 //   node scripts/new-session.mjs <slug> --from <ref>   # branch off <ref>, not origin/main
 import { execFileSync } from "node:child_process";
@@ -307,8 +308,28 @@ if (args.includes("--repair")) {
     if (path.resolve(w.dir) === primaryRoot) continue;
     // Worktrees under .claude/worktrees/ belong to other LIVE sessions. Leave
     // them alone entirely — that folder is not ours to write into.
+    //
+    // ONE EXCEPTION, ASKED FOR BY NAME: `--nested` re-links a MISSING node_modules in them and does
+    // nothing else (no env files, no claim, no git). It exists because `repo-doctor --strip-idle`
+    // tells whoever lost a node_modules to run this, and a live session never fires SessionStart
+    // again, so sync-worktree-env's self-heal cannot reach it. A link is the whole repair: the
+    // junction is written beside the tree's files, never into them, and is exactly what the
+    // session had before.
     if (path.resolve(w.dir).includes(path.join(".claude", "worktrees"))) {
-      console.log("  " + path.basename(w.dir) + "  skipped — belongs to another live session");
+      if (!args.includes("--nested")) {
+        console.log(
+          "  " + path.basename(w.dir) + "  skipped — belongs to another live session (--nested re-links its node_modules)",
+        );
+        continue;
+      }
+      const nested = ready(w.dir);
+      if (nested.hasMods) {
+        console.log("  " + path.basename(w.dir).padEnd(34) + "node_modules present");
+        continue;
+      }
+      console.log("  " + path.basename(w.dir));
+      console.log("     node_modules: " + linkModules(w.dir));
+      if (ready(w.dir).hasMods) fixed += 1;
       continue;
     }
     const before = ready(w.dir);

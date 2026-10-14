@@ -168,6 +168,9 @@ import {
 } from "./repo-doctor-load-bearing.mjs";
 import { sessionHoldReason } from "./repo-doctor-session-hold.mjs";
 import { buildCacheIdleMinutes, livenessVerdict, readHolderProbe } from "./worktree-liveness.mjs";
+// The queued-job half of "is somebody using this": a process that has NOT YET entered a worktree
+// (a `cd <wt> && node waiter.mjs && next dev` chain) has no cwd in it for the PEB sweep to read.
+import { readProcessProbe, referenceHoldReason } from "./worktree-references.mjs";
 import {
   classifyOrphanedFolder,
   orphanedFolderLines,
@@ -320,6 +323,33 @@ function cacheEntries(dir) {
 }
 
 /**
+ * What --strip-idle can actually give back: `cacheEntries` WITHOUT a node_modules that is a link.
+ *
+ * A worktree's node_modules is a junction to the primary's tree (AGENTS.md 5). The junction holds
+ * no disk — removing it frees nothing — and it is what lets the next `next dev` or test run in that
+ * folder resolve a single package. On 2026-09-17 the strip took that junction out of five worktrees
+ * (three still in use) to reclaim one path entry each, and the "restore" it printed does not even
+ * reach a `.claude/worktrees/*` folder. So the link is never the payload: only `.next`, and a
+ * node_modules that is a REAL directory (an install somebody ran by mistake), are.
+ */
+function reclaimableEntries(dir) {
+  let n = 0;
+  for (const name of ["node_modules", ".next"]) {
+    const p = path.join(dir, name);
+    let st;
+    try {
+      st = fs.lstatSync(p);
+    } catch {
+      continue;
+    }
+    if (st.isSymbolicLink()) continue;
+    const w = walk(p);
+    n += w.files + w.dirs + w.links;
+  }
+  return n;
+}
+
+/**
  * Minutes since the newest SOURCE write. node_modules/.next/.git are excluded deliberately:
  * they churn on every build and every git command, so including them makes a worktree that
  * nobody has touched in days look active.
@@ -445,7 +475,15 @@ function stripIdleVerdict(dir, thresholdMin, probe) {
   // holder read out of the PEB is direct evidence, an mtime is an inference, so when both would
   // fire the reader gets the specific one. A broken probe answers `live`, so not knowing still
   // reads as NOT eligible.
-  const heldBy = sessionHoldReason(dir) ?? stripLivenessReason(dir, probe);
+  //
+  // A JOB QUEUED ON THE FOLDER IS A HOLD TOO, and it has no process inside the folder yet.
+  // 2026-09-17: two worktrees whose sessions had parked `cd <wt> && node wait-for-dev-window.mjs
+  // && next dev` chains were stripped as "idle 120+ min", and the dev server would have died with
+  // MODULE_NOT_FOUND the moment memory freed up. See worktree-references.mjs.
+  const heldBy =
+    sessionHoldReason(dir) ??
+    stripLivenessReason(dir, probe) ??
+    referenceHoldReason(dir, referenceProbe, { baseDirs: [primaryRoot] });
   if (heldBy) return { ok: false, reason: heldBy, idleMin: null };
 
   // FIFTH GATE — THE SAME DEFECT AS --fix's, ONE LAYER DOWN. --strip-idle deletes a worktree's
@@ -840,6 +878,8 @@ const heldByLiveSession = [];
 // system. Null when it could not run at all, which livenessVerdict answers as "cannot rule out a
 // live session" rather than as "nobody is there".
 const holderProbe = readHolderProbe();
+// Same discipline, for the same reason: once for the machine, null when it could not run.
+const referenceProbe = readProcessProbe();
 for (const r of live) {
   const branch = git(["-C", r.dir, "rev-parse", "--abbrev-ref", "HEAD"]);
   if (!branch || branch === "HEAD" || branch === "main" || branch === "master") continue;
@@ -879,7 +919,10 @@ for (const r of live) {
     probe: holderProbe,
     sourceIdleMin: idleMinutes(r.dir),
   });
-  const heldBy = sessionHoldReason(r.dir) ?? (liveness.live ? liveness.reason : null);
+  const heldBy =
+    sessionHoldReason(r.dir) ??
+    (liveness.live ? liveness.reason : null) ??
+    referenceHoldReason(r.dir, referenceProbe, { baseDirs: [primaryRoot] });
   if (heldBy) {
     heldByLiveSession.push(`${rel(r.dir)} (${branch}) — ${heldBy}`);
     continue;
@@ -1099,8 +1142,8 @@ if (!fix && !stripIdle) {
   let heldEntries = 0;
   const heldBack = [];
   for (const r of live) {
-    const cached = cacheEntries(r.dir);
-    if (cached === 0) continue; // already stripped, or never installed
+    const cached = reclaimableEntries(r.dir);
+    if (cached === 0) continue; // already stripped, or never installed, or only a link
     const verdict = stripIdleVerdict(r.dir, idleThresholdMin, holderProbe);
     if (verdict.ok) {
       eligible++;
@@ -2255,11 +2298,12 @@ if (stripIdle) {
   let stripped = 0;
   let reclaimed = 0;
   let unverified = 0;
+  const modulesRemoved = []; // worktrees whose node_modules was a real folder and is now gone
   for (const r of live) {
     const label = rel(r.dir);
-    const cached = cacheEntries(r.dir);
+    const cached = reclaimableEntries(r.dir);
     if (cached === 0) {
-      continue; // already stripped, or never installed
+      continue; // already stripped, never installed, or only the node_modules link, which stays
     }
     // Every check is re-run here rather than reused from the inventory above: that data is
     // seconds to minutes old, and this is the moment where being wrong deletes something.
@@ -2277,8 +2321,13 @@ if (stripIdle) {
     try {
       for (const name of ["node_modules", ".next"]) {
         const p = path.join(r.dir, name);
-        // lstat, not existsSync: a dangling link is counted by cacheEntries and must be removed too.
-        if (fs.lstatSync(p, { throwIfNoEntry: false })) fs.rmSync(p, { recursive: true, force: true });
+        const entry = fs.lstatSync(p, { throwIfNoEntry: false });
+        if (!entry) continue;
+        // THE node_modules LINK IS NEVER REMOVED, dangling or not: it frees nothing, and a folder
+        // that loses it cannot resolve `next` until somebody re-links it by hand.
+        if (entry.isSymbolicLink()) continue;
+        if (name === "node_modules") modulesRemoved.push(r.dir);
+        fs.rmSync(p, { recursive: true, force: true });
       }
       // Prove the source survived. A cache strip that changed the working tree is a bug.
       //
@@ -2326,8 +2375,12 @@ if (stripIdle) {
       // the opposite of what a zero means. The NEVER-pnpm warning travels with it deliberately:
       // it is a caveat about running --repair, not a standalone rule that needs saying here.
       (stripped > 0
-        ? " Restore any of them with `node scripts/new-session.mjs --repair <task>` before working" +
-          " there again — NEVER `pnpm install` inside a worktree (AGENTS.md 5)."
+        ? modulesRemoved.length > 0
+          ? " Restore any of them with `node scripts/new-session.mjs --repair <task>` (a" +
+            " .claude/worktrees folder: `node scripts/new-session.mjs --repair --nested`) before" +
+            ` working there again — only the ${modulesRemoved.length} that lost a REAL node_modules` +
+            " folder need it. NEVER `pnpm install` inside a worktree (AGENTS.md 5)."
+          : " Every node_modules link was left in place; .next rebuilds itself on the next dev run or build."
         : ""),
   );
 }
