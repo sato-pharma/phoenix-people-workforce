@@ -56,6 +56,7 @@ export const emailTemplateKeys = [
   "cv_intake_digest",
   "telegram_connect",
   "weekly_sales_uploaded",
+  "targets_uploaded",
   "production_planning_reorder",
   "production_planning_expiry",
 ] as const;

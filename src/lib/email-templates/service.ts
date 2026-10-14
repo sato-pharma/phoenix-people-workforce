@@ -79,6 +79,7 @@ export const EMAIL_TEMPLATE_KEYS = {
   CV_INTAKE_DIGEST: "cv_intake_digest",
   TELEGRAM_CONNECT: "telegram_connect",
   WEEKLY_SALES_UPLOADED: "weekly_sales_uploaded",
+  TARGETS_UPLOADED: "targets_uploaded",
   PRODUCTION_PLANNING_REORDER: "production_planning_reorder",
   PRODUCTION_PLANNING_EXPIRY: "production_planning_expiry",
 } as const satisfies Record<string, EmailTemplateKey>;
@@ -183,6 +184,13 @@ export type EmailTemplateContext = {
   productList?: string | null;
   /** Plain-text projection used wherever {{productList}} appears in text fields. */
   productListText?: string | null;
+  /**
+   * The team's targets, pre-rendered as a zebra table — one row per rep, area and product, each
+   * with its own units and value. Units of different products are never added in it.
+   */
+  targetsTable?: string | null;
+  /** Plain-text projection used wherever {{targetsTable}} appears in text fields. */
+  targetsTableText?: string | null;
   /** The distributor whose sheet this is about. */
   distributorName?: string | null;
   /** Human count of the products on this line, e.g. "4 Pedia products". */
@@ -472,6 +480,7 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   cv_intake_digest: emptyRules(["hiring_manager"], ["recruiter"]),
   telegram_connect: emptyRules(["employee"], []),
   weekly_sales_uploaded: emptyRules(["district_manager"], ["regional_sales_manager"]),
+  targets_uploaded: emptyRules(["employee"], ["direct_manager", "manager_of_manager"]),
   // The ONLY routing in this file written as explicit ADDRESSES rather than roles (owner,
   // 2026-10-05, naming each person): the Ivyronc reorder alarm goes to Dr. Sahar Khalil, who runs
   // the module, with the CEO and the Finance and Admin Manager copied and the owner blind-copied.
@@ -775,6 +784,18 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     subject: "{{subject}}",
     templateKey: "weekly_sales_uploaded",
     templateName: "Weekly Sales Uploaded",
+  },
+  targets_uploaded: {
+    bodyHtml: "<p>Your {{line}} sales targets for <strong>{{periodLabel}}</strong> have been uploaded to Phoenix Workforce. Here are the targets for your team:</p>{{targetsTable}}<p>{{summary}}</p>",
+    bodyText: "Your {{line}} sales targets for {{periodLabel}} have been uploaded to Phoenix Workforce. Here are the targets for your team:\n\n{{targetsTable}}\n\n{{summary}}",
+    closingText: "Please open Targets in Phoenix Workforce to follow your own progress against them.",
+    description: "Tells a team's medical reps their targets after a targets file is saved, in one table. The reps' District Manager, the Regional Sales Manager and the line's National Sales Manager are copied.",
+    greeting: "Dear {{line}} Colleagues,",
+    isActive: true,
+    previewText: "{{line}} targets for {{periodLabel}} are now in Phoenix Workforce.",
+    subject: "{{subject}}",
+    templateKey: "targets_uploaded",
+    templateName: "Targets Uploaded",
   },
   // 🔴 ENGLISH, AND NEVER ARABIC AGAIN (owner, 2026-10-09, reading the Arabic alarm in his inbox:
   // "never never never use arabic in it again all english everything"). Both production-planning
@@ -1235,6 +1256,7 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   cv_intake_digest: "Recruitment",
   telegram_connect: "Account Access",
   weekly_sales_uploaded: "Sales",
+  targets_uploaded: "Sales",
   production_planning_reorder: "Production",
   production_planning_expiry: "Production",
 };

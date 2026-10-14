@@ -2298,6 +2298,7 @@ import { runWorkflowFilesParseTests } from "./workflow-files-parse.test.ts";
 import { runAttributionRefreshSerializedTests } from "./attribution-refresh-serialized.test.ts";
 import { runMigrationPreimageGuardedTests } from "./migration-preimage-guarded.test.ts";
 import { runWeeklyUploadLineNotificationTests } from "./weekly-upload-line-notification.test.ts";
+import { runTargetsUploadedNotificationTests } from "./targets-uploaded-notification.test.ts";
 import { runSalesNotificationExclusionsTests } from "./sales-notification-exclusions.test.ts";
 import { runVacationAdminOverrideTests } from "./vacation-admin-override.test.ts";
 
@@ -8758,6 +8759,11 @@ await runTest(
 await runTest(
   "a weekly upload mails only the lines whose products are in the sheet (Head Office never), with no figures in the body",
   runWeeklyUploadLineNotificationTests,
+);
+
+await runTest(
+  "a committed targets upload emails each team its targets in one zebra table, copied to its DM, RSM and NSM, and a dry run or grid edit mails nobody",
+  runTargetsUploadedNotificationTests,
 );
 
 await runTest(

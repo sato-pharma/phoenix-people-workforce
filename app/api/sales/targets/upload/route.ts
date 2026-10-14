@@ -9,8 +9,10 @@ import {
   validateTargetRows,
 } from "@/lib/sales/monthly-targets";
 import { parseTargetsWorkbook } from "@/lib/sales/targets-template";
+import { notifyTargetsUploaded } from "@/lib/sales/targets-uploaded-notification";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { logError } from "@/lib/observability/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -136,6 +138,25 @@ export async function POST(request: Request) {
       actorHrId: access.hrId ?? access.loginId ?? null,
       source: "upload",
     });
+
+    // Tell each team its targets (owner request, 2026-10-14): the reps in the file get one zebra
+    // table, copied to their District Manager, the Regional Sales Manager and the line's NSM.
+    // Sited HERE and only on a committed save — a preview, a refused confirmation and a grid edit
+    // (the save route) all reach this file as ordinary calls and must not mail anyone.
+    //
+    // Best-effort and un-awaited: the rows are already stored, so an email failure must never turn
+    // a successful upload into an error for the person who uploaded it. `valid` is exactly the
+    // set upsertMonthlyTargets just wrote.
+    if (upserted > 0 && valid.length > 0) {
+      notifyTargetsUploaded({ rows: valid }).catch((notifyError) => {
+        logError("targets_uploaded_notification_failed", {
+          error: notifyError,
+          labels: { event: "targets_uploaded_notification_failed" },
+          context: { periods: periodKeys },
+        });
+      });
+    }
+
     return NextResponse.json({
       success: true,
       mode: "commit",
