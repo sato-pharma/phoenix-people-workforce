@@ -17,10 +17,17 @@ import {
   type VacancyReportRow,
 } from "@/lib/reports/vacancies";
 import { buildOrganogramSeatReport, scopeAuOrganogramRows } from "@/lib/reports/organogram-au-source";
+import { isValidOrganogramAsOfMonth } from "@/lib/reports/organogram-as-of";
 
 export type OrganogramScopeMode = "company" | "line";
 
 export type OrganogramReportOptions = {
+  /**
+   * `YYYY-MM` of a FINISHED month: draw the seat tree as it stood on that month's last day instead
+   * of today. Absent is the live chart. The same access checks and scoping apply either way — a
+   * past picture never shows a viewer more of the company than today's does.
+   */
+  asOfMonth?: string | null;
   lineName?: string | null;
   /** Multi-line override: when set, all named lines are shown instead of a single lineName. */
   lineNames?: string[] | null;
@@ -508,7 +515,15 @@ export async function getOrganogramReport(
   // still applied where it IS needed — the flat Vacancy Report in vacancies.ts. The
   // scopeOrganogramReportData() helper below is the OLD (pre-seat-model) scoping path
   // and no longer sits on any live route; see its note.
-  const seatReport = await buildOrganogramSeatReport();
+  //
+  // A month that is not finished (or not in the seat model's history) is refused rather than drawn
+  // as today: a caller that asked for September must never be handed a chart of another date. The
+  // API route has already answered a 400 for this; reaching here means a caller skipped it.
+  const asOfMonth = options.asOfMonth ?? null;
+  if (asOfMonth !== null && !isValidOrganogramAsOfMonth(asOfMonth)) {
+    throw new Error(`organogram as-of month "${asOfMonth}" is not a finished month in the seat history`);
+  }
+  const seatReport = await buildOrganogramSeatReport({ asOfMonth });
   let scopedRows = scopeAuOrganogramRows(seatReport.organogramRows, options);
 
   // UNREACHABLE AS OF 2026-09-03, and deliberately kept. `mode: "company"` is only ever passed

@@ -18,6 +18,7 @@ import {
   adminSoftPanelClassName,
 } from "@/components/admin/admin-design-system";
 import { OrgChartTree } from "@/components/organogram/org-chart";
+import { OrganogramAsOfPicker } from "@/components/organogram/organogram-as-of";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -89,10 +90,12 @@ function LineButtons({
 }
 
 function OrganogramView({
+  asOfMonth = null,
   canAddEmployee = false,
   rows,
   selectedLine,
 }: {
+  asOfMonth?: string | null;
   canAddEmployee?: boolean;
   rows: OrganogramRow[];
   selectedLine: string | null;
@@ -122,7 +125,13 @@ function OrganogramView({
             choose another line to reveal the structure.
           </div>
         ) : (
-          <OrgChartTree canAddEmployee={canAddEmployee} lineName={selectedLine} rows={rows} theme="admin" />
+          <OrgChartTree
+            asOfMonth={asOfMonth}
+            canAddEmployee={canAddEmployee}
+            lineName={selectedLine}
+            rows={rows}
+            theme="admin"
+          />
         )}
       </div>
     </AdminTableShell>
@@ -141,6 +150,15 @@ export function OrganogramReport({
   );
   const [error, setError] = React.useState<string | null>(initialError);
   const [isLoading, setIsLoading] = React.useState(false);
+  // "View as of": `asOfMonth` is what the picker says, `reportAsOf` is the date the report we
+  // are HOLDING was drawn for. They differ only while a fetch is in flight or after it failed, and
+  // the chart is always labelled with `reportAsOf` — so a failed pick can never leave a chart of
+  // one date under a picker that claims another.
+  const [asOfMonth, setAsOfMonth] = React.useState<string | null>(null);
+  const [reportAsOf, setReportAsOf] = React.useState<string | null>(null);
+  const latestRequest = React.useRef(0);
+  // The same date as `reportAsOf`, readable from inside the fetch callback without re-creating it.
+  const reportAsOfRef = React.useRef<string | null>(null);
   const searchParams = useSearchParams();
   // Deep-link bootstrap: read once at mount via a lazy initializer, matching
   // how initialReport/initialError are seeded from props. The previous
@@ -159,28 +177,43 @@ export function OrganogramReport({
   const effectiveLineFilter = fixedLine ?? lineFilter;
   const normalizedOrganogramSearch = normalizeSearchValue(organogramSearch);
 
-  const loadReport = React.useCallback(async () => {
+  const loadReport = React.useCallback(async (month: string | null) => {
+    const request = ++latestRequest.current;
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await fetch("/api/reports/organogram", {
-        cache: "no-store",
-      });
+      const response = await fetch(
+        month ? `/api/reports/organogram?asOf=${encodeURIComponent(month)}` : "/api/reports/organogram",
+        { cache: "no-store" },
+      );
       const payload = await response.json();
+      // A newer pick has already gone out: this answer is for a date nobody is looking at.
+      if (request !== latestRequest.current) return;
 
       if (!response.ok) {
         setError(payload.message ?? payload.error ?? "organogram_failed");
+        // Put the picker back on the date the chart still shows.
+        setAsOfMonth(reportAsOfRef.current);
         return;
       }
 
       setReport(payload);
+      reportAsOfRef.current = month;
+      setReportAsOf(month);
     } catch {
+      if (request !== latestRequest.current) return;
       setError("Unable to load organogram.");
+      setAsOfMonth(reportAsOfRef.current);
     } finally {
-      setIsLoading(false);
+      if (request === latestRequest.current) setIsLoading(false);
     }
   }, []);
+
+  function handleAsOfChange(month: string | null) {
+    setAsOfMonth(month);
+    void loadReport(month);
+  }
 
   const rows = React.useMemo(
     () =>
@@ -233,7 +266,7 @@ export function OrganogramReport({
             <Button
               className="h-11 rounded-2xl px-4 text-xs"
               disabled={isLoading}
-              onClick={() => void loadReport()}
+              onClick={() => void loadReport(asOfMonth)}
               variant="secondary"
             >
               {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-3.5 w-3.5" />}
@@ -268,7 +301,7 @@ export function OrganogramReport({
           <Button
             className="h-11 rounded-2xl px-4 text-xs"
             disabled={isLoading}
-            onClick={() => void loadReport()}
+            onClick={() => void loadReport(asOfMonth)}
             variant="secondary"
           >
             {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-3.5 w-3.5" />}
@@ -323,7 +356,7 @@ export function OrganogramReport({
                   value={lineFilter}
                 />
               ) : null}
-              <div className="grid gap-3 md:grid-cols-[minmax(240px,360px)_1fr]">
+              <div className="grid gap-3 md:grid-cols-[minmax(240px,360px)_minmax(200px,260px)_1fr]">
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-medium text-text-secondary">
                     Search
@@ -334,6 +367,7 @@ export function OrganogramReport({
                     value={organogramSearch}
                   />
                 </label>
+                <OrganogramAsOfPicker disabled={isLoading} onChange={handleAsOfChange} value={asOfMonth} />
                 <div className="flex items-end">
                   <div className="rounded-2xl border border-phx-line bg-white/80 px-4 py-3 text-sm text-text-secondary shadow-[0_12px_36px_rgba(15,23,42,0.06)]">
                     {normalizedOrganogramSearch
@@ -348,6 +382,7 @@ export function OrganogramReport({
           </AdminTableShell>
 
           <OrganogramView
+            asOfMonth={reportAsOf}
             canAddEmployee={canAddEmployee}
             rows={canShowChart ? filteredRows : []}
             selectedLine={effectiveLineFilter || (normalizedOrganogramSearch ? "Search results" : null)}

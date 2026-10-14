@@ -7,6 +7,7 @@ import {
   buildHeadOfficeOrganogramRows,
   HEAD_OFFICE_LINE_ID,
 } from "@/lib/reports/organogram-head-office";
+import { organogramAsOfMonthEnd } from "@/lib/reports/organogram-as-of";
 import { hasWhatsAppNumber } from "@/lib/reports/organogram-whatsapp";
 import { getMergedAreaName } from "@/lib/sales/closing-area-merges";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -106,23 +107,38 @@ function nodeKeyOf(row: Pick<AuTreeRow, "occupant_hr_id" | "seat_id">): string {
   return row.occupant_hr_id && row.occupant_hr_id.trim() ? row.occupant_hr_id.trim() : row.seat_id;
 }
 
-/** Reads the seat model and returns a full organogram report (all lines). */
-export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
+/**
+ * Reads the seat model and returns a full organogram report (all lines).
+ *
+ * `asOfMonth` (`YYYY-MM`, a finished month) draws the tree as it stood on that month's last day,
+ * read from the seat model's own dated history. That is a picture of the STRUCTURE, so it leaves
+ * out what only means something today: open offers on empty chairs, and the Head Office branch
+ * (assembled from the employee master, which carries no seat dates).
+ */
+export async function buildOrganogramSeatReport(
+  options: { asOfMonth?: string | null } = {},
+): Promise<VacancyReportData> {
+  const asOfMonth = options.asOfMonth ?? null;
   const supabase = getSupabaseAdmin();
 
-  const { data: treeData, error } = await supabase
-    .from("au_v_org_tree")
-    .select(
-      "seat_id,parent_seat_id,seat_tier,line_code,region_code,area_code,is_other_pseudo_dm,occupant_hr_id,is_vacant,area_name,region_name,line_name,line_id",
-    );
+  const { data: treeData, error } = asOfMonth
+    ? await supabase.rpc("au_f_org_tree_as_of", { p_date: organogramAsOfMonthEnd(asOfMonth) })
+    : await supabase
+        .from("au_v_org_tree")
+        .select(
+          "seat_id,parent_seat_id,seat_tier,line_code,region_code,area_code,is_other_pseudo_dm,occupant_hr_id,is_vacant,area_name,region_name,line_name,line_id",
+        );
   if (error) throw new Error(`organogram seat source failed: ${error.message}`);
   const tree = (treeData ?? []) as AuTreeRow[];
 
   // Which empty chairs already have a letter out against them (owner, 2026-09-29). A third round
   // trip, and the cheapest of the three: it reads only offers that name a seat. It swallows its own
   // failures into an empty map, so a vacant seat simply loses its label rather than the chart
-  // failing to draw — this decorates the organogram, it never decides what is on it.
-  const offerOutBySeat = await loadOfferOutBySeat();
+  // failing to draw — this decorates the organogram, it never decides what is on it. A past month
+  // has no letters out: an offer is a fact about today's empty chair.
+  const offerOutBySeat: Awaited<ReturnType<typeof loadOfferOutBySeat>> = asOfMonth
+    ? new Map()
+    : await loadOfferOutBySeat();
 
   // Resolve occupant display names, hire dates and the WORK-ONLY employee fields from
   // the employee master (best-effort). The seat model itself carries no tenure or
@@ -309,8 +325,10 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
       // this only renames that node. Anti Infective folds Ismailia (OT9) + Suez (OT2) into ONE area
       // "Ismailia and Suez" from 2026-09 (owner, 2026-09-19): the Delta (3) rep seat sits on OT2, so
       // it reads "Ismailia and Suez" here. On that line Fayoum / Beni Suef stay separate. No period
-      // is passed here on purpose: the organogram shows the org as it stands NOW, not as of any month.
-      areaName: getMergedAreaName(s.line_code, s.area_code ?? "") ?? s.area_name,
+      // is passed for the LIVE chart on purpose: it shows the org as it stands NOW. An as-of view
+      // passes its month, so August reads "Fayoum" and September reads "Ismailia and Suez" exactly
+      // as the closings of those months do (a null period means "now" to the rule table).
+      areaName: getMergedAreaName(s.line_code, s.area_code ?? "", asOfMonth) ?? s.area_name,
       departmentId: null,
       // Stays null, as it always has. The employee master's department reaches the
       // export through `employeeDepartmentName` instead — see OrganogramWorkFields.
@@ -341,6 +359,14 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
       type: occupied ? "employee" : "vacancy",
       vacancyCode: null,
     });
+  }
+
+  // A past month stops here: the Head Office branch below is built from the employee master and
+  // `position_vacancies`, neither of which carries the dates to say who held a Head Office role in
+  // that month, so including it would draw TODAY's Head Office under a past month's name. The
+  // screen says so; the chart never claims what the data cannot back.
+  if (asOfMonth) {
+    return { organogramRows: rows, rows: [], summary: { ...emptySummary } };
   }
 
   // The Head Office branch. The AU seat model covers the sales force only — it has no

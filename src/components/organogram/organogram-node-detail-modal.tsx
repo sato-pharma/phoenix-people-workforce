@@ -1,6 +1,7 @@
 "use client";
 
-import { Building2, Download, FileText, Loader2, Lock, UserPlus, UserRound, X } from "lucide-react";
+import { Building2, Download, FileText, Loader2, Lock, Pencil, UserMinus, UserPlus, UserRound, X } from "lucide-react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
 import { createPortal } from "react-dom";
@@ -15,6 +16,7 @@ import {
   employeeCvHref,
   resolveCvNoticeState,
 } from "@/lib/employees/employee-cv-limits";
+import { buildEmployeeMasterHref, employeeMasterBasePath } from "@/lib/employees/employee-master-link";
 import { buildSeatHireHref } from "@/lib/employees/vacancy-hire-link";
 import type {
   OrganogramDetailSection,
@@ -31,6 +33,10 @@ type Props = {
    * /api/employees asserts and that the Add Employee form's Save needs. Resolved
    * server-side on the page and threaded down: offering the button to a viewer the API
    * would refuse is a dead end, and the organogram is readable by roles that cannot hire.
+   *
+   * It also decides the Edit and Resign buttons on a PERSON's popup — the same two the tile
+   * carries — since changing a record is that same `employees:update`. The chart passes false for
+   * a past-month picture, which takes all three away at once.
    */
   canAddEmployee?: boolean;
 };
@@ -125,11 +131,8 @@ export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false
   // the vacancy body shows), the hire routes to that offer's prefill so the candidate's name,
   // salary and Employee ID arrive filled — rather than the seat-only prefill, which left those
   // blank and made the form refuse to save.
-  const hireHref = buildSeatHireHref(
-    pathname?.startsWith("/employee-portals") ? "/employee-portals/employees" : "/employees",
-    row,
-    row.pendingOffer,
-  );
+  const masterBasePath = employeeMasterBasePath(pathname);
+  const hireHref = buildSeatHireHref(masterBasePath, row, row.pendingOffer);
 
   const [detail, setDetail] = React.useState<OrganogramEmployeeDetail | null>(null);
   const [loading, setLoading] = React.useState(!isVacancy);
@@ -385,6 +388,30 @@ export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false
             </>
           )}
         </div>
+
+        {/* The same two ways into Employee Master as the buttons on the person's tile, kept outside
+            the scrolling body so they stay reachable however long the profile runs. Plain links:
+            Employee Master owns both forms, and the resignation still goes through the one
+            endpoint that checks this viewer's scope and opens the vacancy. No radius class — this
+            modal portals to document.body, outside the shell's square-edge sweep. */}
+        {!isVacancy && canAddEmployee && row.hrId ? (
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-phx-line bg-slate-50 px-5 py-3">
+            <Link
+              className="inline-flex items-center gap-2 border border-orange-500 bg-orange-500 px-4 py-2 text-phx-sm font-bold text-white transition hover:bg-orange-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600"
+              href={buildEmployeeMasterHref(masterBasePath, "edit", row.hrId)}
+            >
+              <Pencil className="h-4 w-4" />
+              Edit in Employee Master
+            </Link>
+            <Link
+              className="inline-flex items-center gap-2 border border-rose-300 bg-white px-4 py-2 text-phx-sm font-bold text-rose-600 transition hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-600"
+              href={buildEmployeeMasterHref(masterBasePath, "resign", row.hrId)}
+            >
+              <UserMinus className="h-4 w-4" />
+              Resign
+            </Link>
+          </div>
+        ) : null}
       </div>
     </div>
   );

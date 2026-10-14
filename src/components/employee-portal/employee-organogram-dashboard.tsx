@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { OrgChartTree, type OrgChartKpiLabels } from "@/components/organogram/org-chart";
+import { OrganogramAsOfPicker } from "@/components/organogram/organogram-as-of";
 import { Card } from "@/components/ui/card";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import {
@@ -66,26 +67,53 @@ export function EmployeeOrganogramDashboard({
   const [report, setReport] = useState<VacancyReportData | null>(initialReport);
   const [error, setError] = useState<string | null>(initialError);
   const [isLoading, setIsLoading] = useState(false);
+  // "View as of": `asOfMonth` is what the picker says, `reportAsOf` the date of the report we are
+  // HOLDING. They differ only while a fetch is in flight or after it failed; the chart is always
+  // labelled with `reportAsOf`, so a failed pick never leaves one date's chart under another's picker.
+  const [asOfMonth, setAsOfMonth] = useState<string | null>(null);
+  const [reportAsOf, setReportAsOf] = useState<string | null>(null);
+  const latestRequest = useRef(0);
+  const reportAsOfRef = useRef<string | null>(null);
   const [selectedMmLine, setSelectedMmLine] = useState<string | null>(null);
   const effectiveLineFilter = showLinePicker ? (selectedMmLine ?? "") : (fixedLine ?? "");
 
-  const loadReport = useCallback(async () => {
+  const loadReport = useCallback(async (month: string | null) => {
+    const request = ++latestRequest.current;
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/reports/organogram", { cache: "no-store" });
+      const response = await fetch(
+        month ? `/api/reports/organogram?asOf=${encodeURIComponent(month)}` : "/api/reports/organogram",
+        { cache: "no-store" },
+      );
       const payload = await response.json();
+      // A newer pick has already gone out: this answer is for a date nobody is looking at.
+      if (request !== latestRequest.current) return;
       if (!response.ok) {
         setError(payload.message ?? payload.error ?? "organogram_failed");
+        // Put the picker back on the date the chart still shows.
+        setAsOfMonth(reportAsOfRef.current);
         return;
       }
       setReport(payload);
+      reportAsOfRef.current = month;
+      setReportAsOf(month);
     } catch {
+      if (request !== latestRequest.current) return;
       setError("Unable to load organogram.");
+      setAsOfMonth(reportAsOfRef.current);
     } finally {
-      setIsLoading(false);
+      if (request === latestRequest.current) setIsLoading(false);
     }
   }, []);
+
+  const handleAsOfChange = useCallback(
+    (month: string | null) => {
+      setAsOfMonth(month);
+      void loadReport(month);
+    },
+    [loadReport],
+  );
 
   const rows = useMemo(
     () => (report?.organogramRows ?? []).filter((r) => isOrganogramVisibleRow(r)),
@@ -205,15 +233,18 @@ export function EmployeeOrganogramDashboard({
                 {filteredRows.length} of {rows.length} positions shown
               </span>
             </div>
-            <button
-              aria-label="Refresh organogram data"
-              className="inline-flex h-10 items-center rounded bg-orange-500 px-4 text-phx-sm font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:opacity-50"
-              disabled={isLoading}
-              onClick={() => void loadReport()}
-              type="button"
-            >
-              {isLoading ? "Loading..." : "Refresh"}
-            </button>
+            <div className="flex flex-wrap items-end gap-3">
+              <OrganogramAsOfPicker disabled={isLoading} onChange={handleAsOfChange} value={asOfMonth} />
+              <button
+                aria-label="Refresh organogram data"
+                className="inline-flex h-10 items-center rounded bg-orange-500 px-4 text-phx-sm font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:opacity-50"
+                disabled={isLoading}
+                onClick={() => void loadReport(asOfMonth)}
+                type="button"
+              >
+                {isLoading ? "Loading..." : "Refresh"}
+              </button>
+            </div>
           </div>
         </Card>
       )}
@@ -255,6 +286,7 @@ export function EmployeeOrganogramDashboard({
             {/* Bold chart */}
             <div className="px-3 py-4 sm:px-5">
               <OrgChartTree
+                asOfMonth={reportAsOf}
                 canAddEmployee={canAddEmployee}
                 kpiLabels={PORTAL_KPI_LABELS}
                 lineName={effectiveLineFilter || lineName}

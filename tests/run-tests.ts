@@ -2276,6 +2276,8 @@ import { runDirectOrderVenueGapsTests } from "./direct-order-venue-gaps.test.ts"
 import { runVacancyOptionLabelTests } from "./vacancy-option-label.test.ts";
 import { runEmployeeAreaLineOptionsTests } from "./employee-area-line-options.test.ts";
 import { runOrganogramVacancyHireLinkTests } from "./organogram-vacancy-hire-link.test.ts";
+import { runOrganogramTileEmployeeActionsTests } from "./organogram-tile-employee-actions.test.ts";
+import { runOrganogramAsOfMonthTests } from "./organogram-as-of-month.test.ts";
 import { runOrganogramSeatCvNoticeTests } from "./organogram-seat-cv-notice.test.ts";
 import { runEmployeeCvCarryFromRecruitmentTests } from "./employee-cv-carry-from-recruitment.test.ts";
 import { runEmployeeDirectoryCvFilterTests } from "./employee-directory-cv-filter.test.ts";
@@ -8645,6 +8647,16 @@ await runTest(
 await runTest(
   "organogram open seat -> Add Employee pre-filled (line, area, position and manager travel; gated on employees:update)",
   runOrganogramVacancyHireLinkTests,
+);
+
+await runTest(
+  "organogram person tile -> Edit and Resign open that employee's form in Employee Master (HR id round-trips; gated on employees:update; never on a vacancy)",
+  runOrganogramTileEmployeeActionsTests,
+);
+
+await runTest(
+  "organogram view-as-of-a-month -> finished months only (July 2026 on), read from the dated seat history, read-only past picture, refused when malformed; Edit/Resign also in the person popup",
+  runOrganogramAsOfMonthTests,
 );
 
 await runTest(
