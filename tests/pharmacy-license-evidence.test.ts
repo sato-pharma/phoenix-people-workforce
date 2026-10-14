@@ -56,7 +56,8 @@ function fakeSupabase(options: { failInsert?: boolean; rows?: Array<Record<strin
     inserted: [] as Array<Record<string, unknown>>,
     removed: [] as Array<{ bucket: string; paths: string[] }>,
     signedBatches: [] as Array<{ bucket: string; paths: string[] }>,
-    uploaded: [] as Array<{ bucket: string; contentType: string; path: string; size: number }>,
+    uploaded: [] as Array<{ bucket: string; contentType: string; path: string; size: number; upsert: boolean | undefined }>,
+    verdictCleared: [] as Array<Record<string, unknown>>,
   };
 
   const client = {
@@ -64,6 +65,12 @@ function fakeSupabase(options: { failInsert?: boolean; rows?: Array<Record<strin
       const builder: Record<string, unknown> = {
         eq: () => builder,
         in: () => builder,
+        // A new file replacing the licence resets the old verdict: `.update(...).eq(...).not(...)`.
+        not: () => builder,
+        update: (patch: Record<string, unknown>) => {
+          calls.verdictCleared.push(patch);
+          return builder;
+        },
         insert: async (row: Record<string, unknown>) => {
           calls.inserted.push(row);
           return { error: options.failInsert ? { message: "index write refused" } : null };
@@ -89,8 +96,8 @@ function fakeSupabase(options: { failInsert?: boolean; rows?: Array<Record<strin
             calls.removed.push({ bucket, paths });
             return { error: null };
           },
-          async upload(path: string, bytes: Buffer, opts: { contentType: string }) {
-            calls.uploaded.push({ bucket, contentType: opts.contentType, path, size: bytes.length });
+          async upload(path: string, bytes: Buffer, opts: { contentType: string; upsert?: boolean }) {
+            calls.uploaded.push({ bucket, contentType: opts.contentType, path, size: bytes.length, upsert: opts.upsert });
             return { error: null };
           },
         };
@@ -459,6 +466,25 @@ export async function runPharmacyLicenseEvidenceTests() {
     );
     assert.equal(calls.uploaded[0]!.contentType, "application/pdf");
     assert.match(path, /\.pdf$/, "the path must carry the real extension — a PDF served from a .jpg path downloads instead of opening");
+
+    // A path of its own for every file, never overwritten (2026-10-14): the old fixed path let a
+    // failed submission's rollback delete the licence that was on file BEFORE it.
+    assert.equal(calls.uploaded[0]!.upsert, false, "a licence upload must never overwrite an existing file");
+    const second = await storeMarketingPharmacyLicense({
+      fileDataUrl: pdfDataUrl,
+      originalFileName: "hazem-licence-2.pdf",
+      pharmacyId: "11111111-2222-3333-4444-555555555555",
+      supabase: client as never,
+      uploadedByHrId: "HR-001",
+    });
+    assert.notEqual(second, path, "the same pharmacy, the same type: the second licence must land on a different path");
+    // ...and the stale verdict is reset, because it described a different document.
+    assert.deepEqual(
+      calls.verdictCleared[0],
+      { license_name_checked_at: null, license_name_checked_by_hr_id: null, license_name_matches_sign: null },
+      "replacing the licence file must send the check back to 'not checked yet'",
+    );
+    calls.inserted.pop();
 
     const indexed = calls.inserted[0]!;
     assert.equal(indexed.evidence_type, MARKETING_PHARMACY_LICENSE_EVIDENCE_TYPE);

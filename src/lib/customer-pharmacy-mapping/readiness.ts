@@ -1,7 +1,8 @@
 // Customer Pharmacy Mapping — standalone master-data readiness module.
 //
-// This module is deliberately independent from `src/lib/marketing-requests`. It reads the
-// customer / pharmacy / distributor master tables directly and computes a READ-ONLY readiness
+// This module is deliberately independent from `src/lib/marketing-requests`'s business rules. It reads
+// the customer / pharmacy / distributor master tables directly (the one shared piece is the signer
+// for a venue's stored licence file) and computes a READ-ONLY readiness
 // view of every customer's pharmacy links. It performs no writes, no manual matching, no merge
 // logic, and no bulk validation.
 //
@@ -12,7 +13,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
+import { loadMarketingPharmacyLicensesByPharmacyIds } from "@/lib/marketing-requests/evidence-photo-storage";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { isLicenseOnlyPharmacyNote } from "@/lib/venues/pharmacy-license";
 
 // ── Public value types ────────────────────────────────────────────────────────
 
@@ -49,6 +52,17 @@ export type CustomerPharmacyLinkSummary = {
   validationStatus: CustomerPharmacyValidationStatus;
   validationNotes: string | null;
   inferredFromHistory: boolean;
+  /**
+   * A pharmacy saved on its licence alone (no distributor code): the marker is in the notes, and it
+   * STAYS there after a release. Whether it is still waiting is the status - the screen shows the
+   * "not usable yet" banner only while this is true AND `validationStatus` is `pending`.
+   */
+  licenseOnly: boolean;
+  /** The venue's licence, signed for this sitting - present for licence-only links only. */
+  licenseUrl: string | null;
+  licenseContentType: string | null;
+  /** The recorded answer to "does the trade name match the shop sign?" - null = not checked yet. */
+  licenseNameMatchesSign: boolean | null;
 };
 
 export type CustomerPharmacyReadinessRow = {
@@ -104,7 +118,11 @@ export type ReadinessPharmacyInput = {
   id: string;
   pharmacyCode: string | null;
   pharmacyName: string;
+  licenseNameMatchesSign?: boolean | null;
 };
+
+/** A stored licence, signed - keyed by pharmacy id. Optional: the builder works without any. */
+export type ReadinessLicenseInput = { contentType: string; url: string };
 
 export type ReadinessDistributorCodeInput = {
   id: string;
@@ -123,6 +141,7 @@ export type BuildCustomerPharmacyReadinessInput = {
   pharmacies: ReadinessPharmacyInput[];
   distributorCodes: ReadinessDistributorCodeInput[];
   distributors: ReadinessDistributorInput[];
+  licenses?: Record<string, ReadinessLicenseInput>;
 };
 
 // ── Shared constants / helpers ──────────────────────────────────────────────────
@@ -145,6 +164,13 @@ export const UNKNOWN_DISTRIBUTOR_LABEL = "Unknown distributor";
  * label must not read like a failed lookup that someone should go and repair.
  */
 export const NO_DISTRIBUTOR_ACCOUNT_LABEL = "No distributor account";
+
+/**
+ * A pharmacy saved on its licence alone. NOT "No distributor account": a pharmacy normally HAS one,
+ * this one simply has no code on file yet - saying it has no account would settle a question that is
+ * still open.
+ */
+export const NO_DISTRIBUTOR_CODE_LICENSE_LABEL = "No distributor code yet (licence only)";
 
 /**
  * Every link status that makes a customer "ready". Must hold exactly the statuses in
@@ -254,12 +280,13 @@ export function buildCustomerPharmacyReadiness(
       const pharmacy = pharmacyById.get(link.pharmacyId);
       const distributorCode =
         link.distributorCodeId == null ? undefined : distributorCodeById.get(link.distributorCodeId);
+      const licenseOnly = isLicenseOnlyPharmacyNote(link.validationNotes);
       const distributorId = distributorCode?.distributorId ?? null;
       const distributorName =
         distributorId != null
           ? distributorNameById.get(distributorId) ?? UNKNOWN_DISTRIBUTOR_LABEL
           : link.distributorCodeId == null
-            ? NO_DISTRIBUTOR_ACCOUNT_LABEL
+            ? licenseOnly ? NO_DISTRIBUTOR_CODE_LICENSE_LABEL : NO_DISTRIBUTOR_ACCOUNT_LABEL
             : UNKNOWN_DISTRIBUTOR_LABEL;
 
       return {
@@ -274,6 +301,10 @@ export function buildCustomerPharmacyReadiness(
         validationStatus: link.validationStatus,
         validationNotes: link.validationNotes,
         inferredFromHistory: isInferredFromHistory(link.validationNotes),
+        licenseOnly,
+        licenseUrl: licenseOnly ? input.licenses?.[link.pharmacyId]?.url ?? null : null,
+        licenseContentType: licenseOnly ? input.licenses?.[link.pharmacyId]?.contentType ?? null : null,
+        licenseNameMatchesSign: licenseOnly ? pharmacy?.licenseNameMatchesSign ?? null : null,
       };
     });
 
@@ -377,6 +408,7 @@ type MarketingPharmacyRow = {
   id: string;
   pharmacy_code: string | null;
   display_name: string | null;
+  license_name_matches_sign: boolean | null;
 };
 
 type MarketingPharmacyDistributorCodeRow = {
@@ -517,7 +549,12 @@ export async function getCustomerPharmacyReadiness(
   const distributorCodeIds = visibleLinks.map((row) => row.distributor_code_id);
 
   const [pharmacyRows, distributorCodeRows] = await Promise.all([
-    fetchRowsByIds<MarketingPharmacyRow>(supabase, "marketing_pharmacies", "id, pharmacy_code, display_name", pharmacyIds),
+    fetchRowsByIds<MarketingPharmacyRow>(
+      supabase,
+      "marketing_pharmacies",
+      "id, pharmacy_code, display_name, license_name_matches_sign",
+      pharmacyIds,
+    ),
     fetchRowsByIds<MarketingPharmacyDistributorCodeRow>(
       supabase,
       "marketing_pharmacy_distributor_codes",
@@ -535,6 +572,22 @@ export async function getCustomerPharmacyReadiness(
     "id, display_name",
     distributorIds,
   );
+
+  // The licence file of every pharmacy saved on its licence alone, so the reviewer reads it BIG on
+  // this screen - a Super Admin or the CEO releases the link on the strength of that document. A
+  // licence that will not resolve renders as "none attached", never as a page that will not open.
+  const licenseOnlyPharmacyIds = Array.from(
+    new Set(visibleLinks.filter((row) => isLicenseOnlyPharmacyNote(row.validation_notes)).map((row) => row.pharmacy_id)),
+  );
+  const licenseFiles = licenseOnlyPharmacyIds.length > 0
+    ? await loadMarketingPharmacyLicensesByPharmacyIds({ pharmacyIds: licenseOnlyPharmacyIds, supabase }).catch(
+      () => new Map<string, { contentType: string; signedUrl: string }>(),
+    )
+    : new Map<string, { contentType: string; signedUrl: string }>();
+  const licenses: Record<string, ReadinessLicenseInput> = {};
+  for (const [pharmacyId, file] of licenseFiles) {
+    licenses[pharmacyId] = { contentType: file.contentType, url: file.signedUrl };
+  }
 
   return buildCustomerPharmacyReadiness({
     customers: customerRows.map((row) => ({
@@ -557,7 +610,9 @@ export async function getCustomerPharmacyReadiness(
       id: row.id,
       pharmacyCode: row.pharmacy_code,
       pharmacyName: row.display_name ?? "Unnamed pharmacy",
+      licenseNameMatchesSign: row.license_name_matches_sign ?? null,
     })),
+    licenses,
     distributorCodes: distributorCodeRows.map((row) => ({
       id: row.id,
       distributorId: toNumericId(row.distributor_id),

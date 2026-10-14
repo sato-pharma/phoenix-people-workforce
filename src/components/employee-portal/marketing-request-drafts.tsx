@@ -1738,7 +1738,11 @@ function MarketingRequestDraftWorkspaceInner() {
                                   */}
                                   {option.distributorName ? null : (
                                     <span className="text-slate-500">
-                                      — no distributor account, so sales cannot be attributed
+                                      {option.venueType === "pharmacy"
+                                        // A pharmacy a person released on its licence: it HAS an account
+                                        // somewhere, it just has no code on file yet.
+                                        ? "— released on its licence, no distributor code yet, so sales cannot be matched until one is added"
+                                        : "— no distributor account, so sales cannot be attributed"}
                                     </span>
                                   )}
                                   {unverified ? (

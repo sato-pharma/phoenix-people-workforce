@@ -5,6 +5,11 @@ import { MARKETING_PHARMACY_LICENSE_EVIDENCE_TYPE } from "@/lib/marketing-reques
 import { getMarketingRequestDecisionSummary } from "@/lib/marketing-requests/service";
 import { hrIdForStorage } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { licenseVerdictColumns, parseLicenseVerdict } from "@/lib/venues/pharmacy-license-verdict-columns";
+
+// Re-exported so the existing import paths keep working; the definitions moved to the venues module
+// when Customer Pharmacy Mapping began writing the same three columns.
+export { licenseVerdictColumns, parseLicenseVerdict };
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // "Does the trade name on the licence match the name on the shop sign?" — recorded, on the
@@ -40,48 +45,6 @@ export type MarketingPharmacyLicenseVerdictResult = {
   matchesSign: boolean | null;
   pharmacyId: string;
 };
-
-/**
- * Normalise whatever arrived over the wire into the three-valued answer.
- *
- * ONLY an explicit `true` or `false` is an answer. Everything else — undefined, a missing key, a
- * string "true", a number — clears back to "nobody was asked". A verdict accuses a real pharmacy of
- * carrying a name that does not match its licence, so it must never be arrived at by coercion.
- */
-export function parseLicenseVerdict(value: unknown): boolean | null {
-  return value === true ? true : value === false ? false : null;
-}
-
-/**
- * The three columns, always moving together.
- *
- * `marketing_pharmacies_license_verdict_check` refuses any other shape: a verdict with no author,
- * or an author and a timestamp stranded beside a cleared verdict. Building the patch in one place
- * means the constraint can only ever be hit by a bug in this function, rather than by any of the
- * call sites forgetting one field.
- */
-export function licenseVerdictColumns(input: {
-  actorHrId: string | null;
-  matchesSign: boolean | null;
-  now: string;
-}): {
-  license_name_checked_at: string | null;
-  license_name_checked_by_hr_id: string | null;
-  license_name_matches_sign: boolean | null;
-} {
-  if (input.matchesSign === null) {
-    return {
-      license_name_checked_at: null,
-      license_name_checked_by_hr_id: null,
-      license_name_matches_sign: null,
-    };
-  }
-  return {
-    license_name_checked_at: input.now,
-    license_name_checked_by_hr_id: hrIdForStorage(input.actorHrId),
-    license_name_matches_sign: input.matchesSign,
-  };
-}
 
 /**
  * Record (or clear) one approver's verdict on one pharmacy's trade licence.

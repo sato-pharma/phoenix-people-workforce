@@ -8197,3 +8197,47 @@ as well and reads their captions back out of the emitted zip — **out of the wo
 check passed a build whose every sheet still footed "July to September 2026" over one month of data.
 Proven by breaking all three: restoring `TREND[2]` with the unguarded helper reproduced his exact
 error inside the test, and the two caption breaks each fired their own assertion.
+
+## A pharmacy with no distributor code is validated on its licence and released by a person — owner, 2026-10-14
+
+**The incident.** A District Sales Manager on the Anti Infective line was validating a customer for a marketing request. The pharmacy had no distributor code, he attached its licence, and the form blocked him on the code check — while the licence box itself told him to attach the licence when no code existed. Both the client gate and the server required at least one code, and the licence was never read.
+
+**His two rulings (chat, multiple choice).**
+- *Release rule — "Usable target, no sales channel".* A licence-only pharmacy that a Super Admin or the CEO has read and released can be picked as a request target like a nursery. Spend is allowed; sales cannot be matched until a code is added.
+- *Resubmit rule — "Restart at the first approver".* A returned request that is resubmitted with a changed cost, customer or target venue restarts the approval chain at the first approver. (Built 2026-10-14, in the same PR as the release rule: see the next section.)
+
+**How it works.**
+- The licence stands in for the code: the pharmacy saves with a codeless link held on `pending` (desk and field alike) carrying `LICENSE_ONLY_PHARMACY_NOTE`. It is not usable in requests.
+- Approve on that link in Customer Pharmacy Mapping (Super Admin or CEO) writes `admin_approved`. It needs an explicit "the trade name on the licence matches the shop sign" tick and records the licence verdict on the pharmacy. A name that does not match is a Reject.
+- `requestTargetKind` in `src/lib/marketing-requests/code-link-reach.ts` is the one test the request picker and the server's draft guard share. Only an `admin_approved` link carrying the marker qualifies as `licence_released`; a nursery stays `no_distributor_account`; a coded link stays `coded`.
+- The server now also requires every chosen target to be one of THIS customer's own validated links (`target_not_linked_to_customer`), on create and on resubmit. Before, the code was looked up by id alone and the gate only asked whether the customer had some validated venue. Production showed no live violation (all 88 live targets sat on valid links), so nothing needed repairing.
+- The marker stays in the link's notes for good, so every banner reads the STATUS as well: "not usable yet" shows only while the link is `pending`.
+- Every reviewer screen draws the licence large (`PharmacyLicenseEvidence prominent`): the request approver detail, the decision confirmation, the Customer Database register and Customer Pharmacy Mapping.
+- A new licence file gets its own storage path (a failed save used to delete the licence that was already on file) and resets the verdict to "not checked yet", because the old answer described a different document.
+
+**Still open, owner decision.** The licence verdict stays write-once apart from replacing the file. `a-licence-verdict-is-permanent-and-has-no-correction-path` asks that the owner be asked before the first one is recorded. The first one is recorded by a Super Admin or CEO ticking the box in the Approve dialog.
+
+## A resubmit that changes the money, the customer or the venues restarts the approval chain — owner, 2026-10-14
+
+**The gap.** A returned request used to resume at the rung that returned it with every earlier approval kept, whatever the requester had changed. A request the District Manager approved at one cost, returned by a later approver, could be edited to a larger cost or another customer and resumed one rung up, so his earlier yes now covered something he never saw.
+
+**His ruling (chat, multiple choice).** *"Restart at the first approver."* when a returned request is resubmitted with a changed cost, customer or targets.
+
+**How it works.**
+- `src/lib/marketing-requests/resubmit-rule.ts` holds the rule as pure functions. `resubmitBasisChanges` compares what was approved against what is resubmitted on exactly three facts: the customer, the estimated cost (anything under half a piastre is float noise) and the SET of targets (order does not matter; the same venue through a different distributor code is a different target). `planRestartedApprovalSteps` returns only the rungs that must change: the first real gate opens as `current`, every later gate goes back to `pending`, every earlier decision is cleared.
+- A resubmit that changes none of the three still resumes at the rung that returned it, earlier approvals kept.
+- CC rows and a skipped self-approval rung are never reopened. The self-approval rung is `skipped` with a note saying why; reopening it would park the request on a rung its own assignee is forbidden to decide.
+- A restart writes an audit row (`marketing_request`) naming what changed, where the chain restarted, and which earlier approvals were cleared and by whom. The per-step history stays on the request timeline.
+- The first approver is told again: the notification key carries the rung's recorded reopening (the same epoch the decision path and the daily backfill compute, `resolveMarketingStepReopenEpoch`), so the earlier "assigned" message does not suppress it and the next sweep does not send it a second time, and its text says the request restarts because the cost, customer or targets changed.
+- **A decision that advances onto a rung that has opened before carries the same epoch.** A restarted chain reopens rungs that already told their approver once, and the delivery key is unique per rung, so without it the second and later approvers of a restarted chain heard nothing until the next daily sweep. A failed epoch read never fails a decision that already committed; it degrades to the ordinary key and the sweep catches the approver up.
+
+**One transaction: `phx_resubmit_marketing_request`.** The service decides WHAT to write (the restart rule, the plan of rungs, the customer-scope and requester checks) and the function makes it all-or-nothing: it locks the request row, requires `returned` and the requester, replaces the products and targets, rewrites the rungs the plan names (gating rungs of this request only), and **refuses to commit unless exactly one gating rung is `current`**. Granted to `service_role` only. A second tab or a double tap waits on the row lock, finds the request no longer `returned` and is refused with `marketing_resubmit_conflict`.
+
+**Why not a client-side claim and rollback.** That was built first and rejected in review. Its rollback could not re-insert the products (`marketing_request_products.expected_value` is `GENERATED ALWAYS AS (forecast_quantity * factory_price_snapshot)`, so naming it in an insert is refused and the old products were lost exactly when they were needed), a second resubmit could claim on top of the first, and a final write that committed but errored to the client was rolled back around. Six sequential client writes cannot be made safe; one transaction can. The function inserts the products without `expected_value` and the targets without `tracking_status` (a new row starts as `pending_validation`, as a new request's does). Pinned by text in `tests/marketing-request-service.test.ts` (row lock before the status read, the single-current guard, the generated column left out, the REVOKE/GRANT).
+
+**Three smaller fixes in the same pass.**
+- The overdue-invoice nudge (`invoice-overdue-nudge.ts`) now ignores a request whose own status is not one that still owes an invoice. A cancel flips the request's status and nothing else, so the finance row survived and the requester and finance were told every morning that a cancelled request's invoice was "18 days late". The list is an allow-list (`approved`, `active`, `roi_tracking`, `closed`, `finance_hold`, `archived`); `archived` stays in on purpose.
+- A cancelled request no longer raises an overlap warning on a new one (`INERT_MARKETING_REQUEST_STATUSES` gains `cancelled`). Its money is never committed, so there is nothing to double-count, and the warning was one an approver could not clear.
+- Changing a marketing control setting, a request type or an approval step now writes a required audit row (entity type `marketing_control`) with the before and after of the columns touched. Before, who re-pointed an approval step left no trace.
+
+**Deliberately not done.** Cancelling does not close the request's open approval step. Everything that lists work for an approver already filters on the request's status (the badge, the inbox, the orphan board), and flipping a step to `skipped` would write a timeline entry attributed to the person it was assigned to, as though they had decided it.

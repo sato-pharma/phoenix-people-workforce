@@ -30,6 +30,7 @@ import {
   deleteMarketingEvidencePhotos,
   loadMarketingEvidencePhoto,
   loadMarketingPharmacyLicensesByPharmacyIds,
+  MARKETING_PHARMACY_LICENSE_EVIDENCE_TYPE,
   type MarketingPharmacyLicenseFile,
   parseMarketingEvidencePhotoDataUrl,
   storeMarketingEvidencePhoto,
@@ -62,7 +63,13 @@ import {
 import { cairoDateTime } from "@/lib/marketing-requests/request-report-columns";
 // The one list of link statuses that count as validated. Imported, never re-typed: the draft guard
 // and the request picker below must agree with each other and with the backfill's precedence.
-import { LINK_STATUS_PRECEDENCE } from "@/lib/marketing-requests/code-link-reach";
+import {
+  findCustomerTargetLink,
+  LINK_STATUS_PRECEDENCE,
+  linkStatusIsSelectable,
+  requestTargetKind,
+  type CustomerTargetLink,
+} from "@/lib/marketing-requests/code-link-reach";
 import { calculateMarketingRoiPreview } from "@/lib/marketing-requests/roi";
 import {
   assertMarketingWorkflowTransition,
@@ -71,6 +78,11 @@ import {
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { resolveNotificationRoleEnabled } from "@/lib/notifications/role-recipients";
 import { logError, logWarning } from "@/lib/observability/log";
+import {
+  planRestartedApprovalSteps,
+  resubmitBasisChanges,
+  type ResubmitBasisChange,
+} from "@/lib/marketing-requests/resubmit-rule";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import {
   MARKETING_CUSTOMER_SPECIALITIES,
@@ -142,6 +154,7 @@ import {
 import {
   isLicenseOnlyPharmacyNote,
   LICENSE_ONLY_PHARMACY_NOTE,
+  LICENSE_RELEASED_TARGET_NOTE,
   parsePharmacyLicenseDataUrl,
   pharmacyRegistersOnLicenseAlone,
 } from "@/lib/venues/pharmacy-license";
@@ -2467,6 +2480,13 @@ export function normalizeMarketingValidationInput(
 
 export function prepareMarketingRequestDraft(params: {
   customer: MarketingCustomerDbRow;
+  /**
+   * This customer's own active, validated venue links (`fetchCustomerTargetLinks`). Every chosen
+   * target must be one of them: the draft carries a raw target id from the portal, so without this
+   * a request could name another customer's pharmacy code, or a link since unlinked or rejected.
+   * Required, not optional, so a caller cannot forget it and quietly lose the guard.
+   */
+  customerLinks: CustomerTargetLink[];
   input: MarketingRequestCreateDraft;
   pharmacyCodes?: MarketingPharmacyDistributorCodeDbRow[];
   products: MarketingProductDbRow[];
@@ -2561,12 +2581,32 @@ export function prepareMarketingRequestDraft(params: {
         throw notFoundError("That venue was not found or is inactive.", "pharmacy_not_found");
       }
       const venueType = normalizeVenueType(venue.venue_type);
-      // Refuses the one way this could be abused: pointing a codeless target at an ordinary
-      // pharmacy to slip past the capture gate that guards its code.
-      if (venueRequiresDistributorCode(venueType)) {
+      const venueLabel = venue.display_name ?? "That venue";
+      const codelessLink = findCustomerTargetLink(params.customerLinks, {
+        distributorCodeId: null,
+        pharmacyId: venue.id,
+      });
+      const targetKind = codelessLink ? requestTargetKind(codelessLink, venueType) : null;
+      if (!targetKind) {
+        // Three different ways to land here, and a requester can fix only one of them, so each
+        // says its own thing. A pharmacy saved on its licence is waiting for a person to release
+        // it; any other codeless pharmacy is the one way this could be abused — pointing a target
+        // at an ordinary pharmacy to slip past the capture gate that guards its code.
+        if (codelessLink && venueRequiresDistributorCode(venueType) && isLicenseOnlyPharmacyNote(codelessLink.notes)) {
+          throw validationError(
+            `"${venueLabel}" was saved on its licence and is not usable in requests yet. A Super Admin or the CEO must release it, or a distributor code must be added.`,
+            "pharmacy_license_not_released",
+          );
+        }
+        if (venueRequiresDistributorCode(venueType)) {
+          throw validationError(
+            `"${venueLabel}" is a pharmacy, so a request must target one of its distributor codes.`,
+            "pharmacy_code_required",
+          );
+        }
         throw validationError(
-          `"${venue.display_name ?? "That venue"}" is a pharmacy, so a request must target one of its distributor codes.`,
-          "pharmacy_code_required",
+          `"${venueLabel}" is not one of this customer's validated venues.`,
+          "target_not_linked_to_customer",
         );
       }
       // Owner rule 2026-09-22 ("never never never"): a wholesaler / makhzan is never a request
@@ -2580,7 +2620,7 @@ export function prepareMarketingRequestDraft(params: {
         distributor_code_id: null,
         notes: [
           pharmacy.notes,
-          venueNonAttributableReason(venueType),
+          targetKind === "licence_released" ? LICENSE_RELEASED_TARGET_NOTE : venueNonAttributableReason(venueType),
         ].filter(Boolean).join(" | ") || null,
         pharmacy_id: venue.id,
       };
@@ -2589,6 +2629,19 @@ export function prepareMarketingRequestDraft(params: {
     const code = pharmacyCodesById.get(pharmacy.distributorCodeId);
     if (!code || code.active === false) {
       throw notFoundError("Distributor pharmacy code was not found or is inactive.", "pharmacy_code_not_found");
+    }
+    // The code must hang off a venue THIS customer is validated at. `fetchPharmacyCodes` looks a
+    // code up by id alone, so before this check any code in the database was a valid target for any
+    // customer the requester could see.
+    const codedLink = findCustomerTargetLink(params.customerLinks, {
+      distributorCodeId: code.id,
+      pharmacyId: code.pharmacy_id,
+    });
+    if (!codedLink || requestTargetKind(codedLink, DEFAULT_VENUE_TYPE) !== "coded") {
+      throw validationError(
+        `Pharmacy code "${code.distributor_pharmacy_code ?? code.normalized_pharmacy_code ?? code.id}" is not one of this customer's validated venues.`,
+        "target_not_linked_to_customer",
+      );
     }
 
     // CAPTURE GATE — a pharmacy code the reference database cannot find must not enter a request.
@@ -3306,6 +3359,30 @@ export function marketingReopenEpoch(openings: ReadonlyArray<string | null | und
     .sort((left, right) => Date.parse(left) - Date.parse(right));
   if (sorted.length < 2) return null;
   return sorted[sorted.length - 1];
+}
+
+/**
+ * The reopen epoch for a rung, read AFTER the write that opened it has committed.
+ *
+ * A failed read must never fail a decision or a resubmit that already committed - the person would be
+ * told it failed, retry, and be refused. So it degrades to `null`: the rung's ordinary step-id key,
+ * which at worst swallows the notice, and the daily backfill (which computes the same epoch from the
+ * same events) catches the approver up.
+ */
+async function resolveMarketingStepReopenEpoch(
+  supabase: SupabaseClient,
+  requestId: string,
+  sequence: number,
+): Promise<string | null> {
+  try {
+    return marketingReopenEpoch(await loadMarketingStepOpenings(supabase, requestId, sequence));
+  } catch (error) {
+    logError("Marketing reopen epoch read failed", {
+      error,
+      labels: { event: "marketing_reopen_epoch_read_failed", requestId },
+    });
+    return null;
+  }
 }
 
 /** Every instant this rung became the live decision, in no particular order — `marketingReopenEpoch` sorts. */
@@ -4460,6 +4537,12 @@ export async function decideMarketingRequestWorkflow(
       step: decidedStep,
       summary: `Marketing request ${request.requestCode} approved at ${decidedStep.stepName}; moved to ${currentNextStep.stepName}.`,
     });
+    // A rung that opens for the second time - a chain restarted by a resubmit, or a request reopened
+    // after a reject - must key its notice on that reopening, or the approver is never told again
+    // (the delivery key is unique per rung). Read AFTER the decision committed: the step_opened event
+    // is written by the trigger inside the RPC's own transaction. Same epoch the daily backfill
+    // computes, so the two paths can never both send for one opening.
+    const nextStepEpoch = await resolveMarketingStepReopenEpoch(supabase, request.id, currentNextStep.sequence);
     await notifyMarketingWorkflow({
       actorHrId,
       ccHrIds,
@@ -4469,6 +4552,7 @@ export async function decideMarketingRequestWorkflow(
         assignedApproverHrId: currentNextStep.assignedHrId,
         currentStepId: currentNextStep.id,
         currentStepName: currentNextStep.stepName,
+        ...(nextStepEpoch ? { idempotencyEpoch: nextStepEpoch } : {}),
         workflowApproverHrId: currentNextStep.assignedHrId,
         ...marketingNotificationVariables({ currentStep: currentNextStep, employeeRows, request, requestTypeName }),
       },
@@ -4941,6 +5025,38 @@ async function fetchPharmacyCodes(supabase: SupabaseClient, distributorCodeIds: 
 }
 
 /**
+ * The customer's own active, validated venue links — the set a request target must come from.
+ *
+ * Same status list and same `active` rule as the request picker and the validated-venue gate below,
+ * so the three can never disagree about which links count. One batched read per draft; a customer
+ * holds 1-8 of them in production.
+ */
+async function fetchCustomerTargetLinks(
+  supabase: SupabaseClient,
+  customerId: string | null,
+): Promise<CustomerTargetLink[]> {
+  if (!customerId) return [];
+  const { data, error } = await supabase
+    .from("marketing_customer_pharmacies")
+    .select("distributor_code_id, pharmacy_id, validation_status, validation_notes")
+    .eq("customer_id", customerId)
+    .or("active.is.null,active.eq.true")
+    .in("validation_status", [...LINK_STATUS_PRECEDENCE]);
+  if (error) throw error;
+  return ((data ?? []) as Array<{
+    distributor_code_id: string | null;
+    pharmacy_id: string;
+    validation_notes: string | null;
+    validation_status: string | null;
+  }>).map((row) => ({
+    distributorCodeId: row.distributor_code_id ?? null,
+    notes: row.validation_notes ?? null,
+    pharmacyId: row.pharmacy_id,
+    status: row.validation_status ?? null,
+  }));
+}
+
+/**
  * Every marketing request draft must point at a customer that still holds a validated venue link,
  * and must itself name at least one target venue. Shared by the create and the resubmit paths
  * because they are the same decision: a resubmit deletes and re-inserts the products and the
@@ -4988,6 +5104,27 @@ function assertMarketingRequestNamesAVenue(pharmacyRowCount: number): void {
     "Select at least one target pharmacy — a request with no target can never be credited a sale.",
     "marketing_request_has_no_venue",
   );
+}
+
+/**
+ * Which of these venues already hold a trade licence on file. Chunked at 50 for the same reason as
+ * the licence loader: a long `.in()` list comes back empty, which would read as "no licence".
+ */
+async function fetchPharmacyIdsWithLicense(supabase: SupabaseClient, pharmacyIds: string[]): Promise<Set<string>> {
+  const found = new Set<string>();
+  for (let index = 0; index < pharmacyIds.length; index += 50) {
+    const { data, error } = await supabase
+      .from("marketing_evidence_files")
+      .select("entity_id")
+      .eq("entity_type", "pharmacy")
+      .eq("evidence_type", MARKETING_PHARMACY_LICENSE_EVIDENCE_TYPE)
+      .in("entity_id", pharmacyIds.slice(index, index + 50));
+    if (error) throw error;
+    for (const row of (data ?? []) as Array<{ entity_id: string | null }>) {
+      if (row.entity_id) found.add(String(row.entity_id));
+    }
+  }
+  return found;
 }
 
 /**
@@ -6192,7 +6329,10 @@ export async function getMarketingCustomerDatabaseWorkspace(
       inferredFromHistory: isInferredFromHistory(link.validation_notes),
       licenseContentType: licenseByPharmacyId.get(pharmacy.id)?.contentType ?? null,
       licenseNameMatchesSign: pharmacy.licenseNameMatchesSign,
-      licenseOnly: isLicenseOnlyPharmacyNote(link.validation_notes),
+      // The marker stays in the notes for good, so the banner is read from the STATUS too: once a
+      // person has released the link it is no longer "not usable yet", and saying so would be wrong.
+      licenseOnly: isLicenseOnlyPharmacyNote(link.validation_notes) && link.validation_status === "pending",
+      licenseReleased: isLicenseOnlyPharmacyNote(link.validation_notes) && link.validation_status === "admin_approved",
       licenseUrl: licenseByPharmacyId.get(pharmacy.id)?.signedUrl ?? null,
       pharmacyAddress: pharmacy.capturedAddress,
       pharmacyArea: pharmacy.extractedAreaName,
@@ -6278,6 +6418,21 @@ function parseRequiredTextPatch(value: unknown, label: string) {
   return normalized;
 }
 
+/**
+ * The before/after of ONLY the columns a control write touched, for its audit row. `before` is the
+ * raw row read just ahead of the write; a column the row did not carry reads as null.
+ */
+function controlChangeValues(before: Record<string, unknown>, update: Record<string, unknown>) {
+  const oldValues: Record<string, unknown> = {};
+  const newValues: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(update)) {
+    if (key === "updated_at") continue;
+    oldValues[key] = before[key] ?? null;
+    newValues[key] = value;
+  }
+  return { newValues, oldValues };
+}
+
 export async function updateMarketingControlSetting(
   input: {
     settingKey: unknown;
@@ -6318,6 +6473,16 @@ export async function updateMarketingControlSetting(
     .select("*")
     .single();
   if (updateResult.error) throw updateResult.error;
+  // Required: a setting steers how every request is routed and what finance expects, and it was
+  // changeable with no record of who did it or what it held before.
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityId: settingKey,
+    entityType: "marketing_control",
+    newValues: { setting: settingKey, value },
+    oldValues: { setting: settingKey, value: existing.value },
+    summary: `Marketing control setting "${existing.label}" (${settingKey}) was changed.`,
+  });
   return mapControlSetting(updateResult.data as MarketingControlSettingDbRow);
 }
 
@@ -6349,6 +6514,9 @@ export async function updateMarketingControlRequestType(
   if (Object.keys(update).length === 0) throw validationError("No request type changes were provided.");
 
   const supabase = getSupabaseAdmin();
+  const beforeResult = await supabase.from("marketing_request_types").select("*").eq("id", id).maybeSingle();
+  if (beforeResult.error) throw beforeResult.error;
+  if (!beforeResult.data) throw notFoundError("Request type was not found.", "request_type_not_found");
   const result = await supabase
     .from("marketing_request_types")
     .update({ ...update, updated_at: new Date().toISOString() })
@@ -6356,6 +6524,17 @@ export async function updateMarketingControlRequestType(
     .select("*")
     .single();
   if (result.error) throw result.error;
+  const changed = controlChangeValues(beforeResult.data as Record<string, unknown>, update);
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityId: String(id),
+    entityType: "marketing_control",
+    newValues: { requestTypeId: id, ...changed.newValues },
+    oldValues: { requestTypeId: id, ...changed.oldValues },
+    summary:
+      `Marketing request type "${(beforeResult.data as { name?: string | null }).name ?? id}" was changed: `
+      + `${Object.keys(changed.newValues).join(", ")}.`,
+  });
   return mapRequestType(result.data as MarketingRequestTypeDbRow);
 }
 
@@ -6408,6 +6587,9 @@ export async function updateMarketingControlWorkflowStep(
   });
 
   const supabase = getSupabaseAdmin();
+  const beforeResult = await supabase.from("marketing_workflow_steps").select("*").eq("id", id).maybeSingle();
+  if (beforeResult.error) throw beforeResult.error;
+  if (!beforeResult.data) throw notFoundError("Workflow step was not found.", "workflow_step_not_found");
   const result = await supabase
     .from("marketing_workflow_steps")
     .update({ ...update, updated_at: new Date().toISOString() })
@@ -6415,6 +6597,19 @@ export async function updateMarketingControlWorkflowStep(
     .select("*")
     .single();
   if (result.error) throw result.error;
+  // Required: this decides WHO approves marketing spend, from the next request on - a step turned
+  // off or re-pointed at another role changes the chain with nothing else on record.
+  const changed = controlChangeValues(beforeResult.data as Record<string, unknown>, update);
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityId: String(id),
+    entityType: "marketing_control",
+    newValues: { workflowStepId: id, ...changed.newValues },
+    oldValues: { workflowStepId: id, ...changed.oldValues },
+    summary:
+      `Marketing approval step "${(beforeResult.data as { step_name?: string | null }).step_name ?? id}" was changed: `
+      + `${Object.keys(changed.newValues).join(", ")}.`,
+  });
   return mapWorkflowStep(result.data as MarketingWorkflowStepDbRow);
 }
 
@@ -6478,6 +6673,8 @@ export async function createMarketingValidationRecord(
   );
   const reusedPharmacyRows = new Map<string, MarketingPharmacyDbRow>();
   const reusedCodesByPharmacyId = new Map<string, MarketingPharmacyDistributorCodeDbRow[]>();
+  // Reused pharmacies with no code that are accepted on their licence alone (see the refusal below).
+  const reusedLicenseOnlyPharmacyIds = new Set<string>();
   const reusedReferencesById = new Map<number, MarketingPharmacyCodeReferenceDbRow>();
   if (reusedPharmacyIds.length > 0) {
     const rows = await fetchRowsByIds<MarketingPharmacyDbRow>(
@@ -6512,14 +6709,35 @@ export async function createMarketingValidationRecord(
       bucket.push(code);
       reusedCodesByPharmacyId.set(code.pharmacy_id, bucket);
     }
-    for (const pharmacyId of reusedPharmacyIds) {
-      if ((reusedCodesByPharmacyId.get(pharmacyId) ?? []).length === 0) {
-        const row = reusedPharmacyRows.get(pharmacyId);
-        throw validationError(
-          `Pharmacy "${row?.display_name ?? pharmacyId}" has no distributor code, so nothing can be attributed to it.`,
-          "pharmacy_has_no_distributor_code",
-        );
+    // A reused venue with no distributor code. Only a venue that NORMALLY carries one is a problem:
+    // a nursery has none by design (and `venueCodeSlots` already gives it its one codeless pass), so
+    // refusing it here made every nursery un-attachable to a second customer. A pharmacy with no code
+    // is accepted only on its licence - attached in this submission or already on file - and is then
+    // held as not usable in requests yet, exactly like a freshly captured licence-only pharmacy.
+    const licenseInThisSubmission = new Set(
+      normalized.customers.flatMap((entry) =>
+        entry.pharmacies
+          .filter((pharmacy) => pharmacy.existingPharmacyId && pharmacy.licenseFileDataUrl)
+          .map((pharmacy) => String(pharmacy.existingPharmacyId)),
+      ),
+    );
+    const codelessReuseIds = reusedPharmacyIds.filter((id) => {
+      if ((reusedCodesByPharmacyId.get(id) ?? []).length > 0) return false;
+      return venueRequiresDistributorCode(normalizeVenueType(reusedPharmacyRows.get(id)?.venue_type));
+    });
+    const licenseOnFile = codelessReuseIds.some((id) => !licenseInThisSubmission.has(id))
+      ? await fetchPharmacyIdsWithLicense(supabase, codelessReuseIds)
+      : new Set<string>();
+    for (const pharmacyId of codelessReuseIds) {
+      if (licenseInThisSubmission.has(pharmacyId) || licenseOnFile.has(pharmacyId)) {
+        reusedLicenseOnlyPharmacyIds.add(pharmacyId);
+        continue;
       }
+      const row = reusedPharmacyRows.get(pharmacyId);
+      throw validationError(
+        `Pharmacy "${row?.display_name ?? pharmacyId}" has no distributor code. Attach its licence to save it as not usable in requests yet, or add its code.`,
+        "pharmacy_has_no_distributor_code",
+      );
     }
 
     // The registered address behind each reused code, so attaching an existing shop faces the same
@@ -6962,8 +7180,14 @@ export async function createMarketingValidationRecord(
         const pharmacy = mapMarketingPharmacy(reusedRow);
         // NOT pushed onto `pharmacyIds`: it predates this submission and must survive a rollback.
 
-        for (const codeRow of venueCodeSlots(pharmacy.venueType, reusedCodesByPharmacyId.get(reusedRow.id) ?? [])) {
+        for (const codeRow of venueCodeSlots(
+          pharmacy.venueType,
+          reusedCodesByPharmacyId.get(reusedRow.id) ?? [],
+          reusedLicenseOnlyPharmacyIds.has(reusedRow.id),
+        )) {
           const distributorCode = codeRow ? mapDistributorCode(codeRow) : null;
+          // This pass is the licence-only one: a pharmacy with no code, accepted on its licence.
+          const reusedOnLicenseAlone = !codeRow && reusedLicenseOnlyPharmacyIds.has(reusedRow.id);
           // Compared against the SHOP'S OWN capture, not this customer's: the reuse path
           // deliberately re-captures nothing, so the only GPS fix that ever described this shop is
           // the one taken when it was first created. A shop whose capture contradicts its code is
@@ -6974,14 +7198,18 @@ export async function createMarketingValidationRecord(
             registeredAddress: reusedReference?.raw_pharmacy_address,
             registeredRegion: reusedReference?.raw_region,
           });
-          const linkValidationStatus = resolveMarketingValidationRecordStatus({
-            isOnBehalf,
-            systemStatus: resolveMarketingSystemValidationStatus({
-              customerEvidenceStatus,
-              governorateVerdict: governorateCheck.verdict,
-              pharmacyEvidenceStatus: pharmacy.evidenceStatus,
-            }),
-          });
+          // Always held on `pending`, desk and field alike - the same rule as a freshly captured
+          // licence-only pharmacy: nobody has compared the licence with the shop sign yet.
+          const linkValidationStatus: MarketingValidationStatus = reusedOnLicenseAlone
+            ? "pending"
+            : resolveMarketingValidationRecordStatus({
+              isOnBehalf,
+              systemStatus: resolveMarketingSystemValidationStatus({
+                customerEvidenceStatus,
+                governorateVerdict: governorateCheck.verdict,
+                pharmacyEvidenceStatus: pharmacy.evidenceStatus,
+              }),
+            });
           const linkValidationNotes = [
             isOnBehalf
               ? adminValidationNote
@@ -6992,6 +7220,7 @@ export async function createMarketingValidationRecord(
             distributorCode ? buildUntrackedDistributorCodeNote(distributorCode.referenceStatus) : null,
             buildGovernorateMismatchNote(governorateCheck),
             distributorCode ? null : venueNonAttributableReason(pharmacy.venueType),
+            reusedOnLicenseAlone ? LICENSE_ONLY_PHARMACY_NOTE : null,
             // Says on the row itself that this shop was not re-captured for this customer, so an
             // evidence photo dated before the customer is explainable rather than suspicious.
             `Linked from an existing validated pharmacy (${pharmacy.pharmacyCode || pharmacy.displayName}).`,
@@ -7026,15 +7255,28 @@ export async function createMarketingValidationRecord(
             );
           }
 
+          // A link a person has ALREADY released (or any validated link) is never pulled back to
+          // `pending` by a re-save: attaching the same licence-only pharmacy again must not undo the
+          // Super Admin's or the CEO's ruling, or quietly un-validate the customer.
+          const keepValidatedLink = Boolean(
+            reusedOnLicenseAlone
+            && existingLinkRow
+            && linkStatusIsSelectable(existingLinkRow.validation_status),
+          );
           const reusedLinkInsert = existingLinkRow
             ? await supabase
               .from("marketing_customer_pharmacies")
-              .update({
-                updated_at: new Date().toISOString(),
-                updated_by_hr_id: hrIdForStorage(actorHrId),
-                validation_notes: linkValidationNotes,
-                validation_status: linkValidationStatus,
-              })
+              .update(keepValidatedLink
+                ? {
+                  updated_at: new Date().toISOString(),
+                  updated_by_hr_id: hrIdForStorage(actorHrId),
+                }
+                : {
+                  updated_at: new Date().toISOString(),
+                  updated_by_hr_id: hrIdForStorage(actorHrId),
+                  validation_notes: linkValidationNotes,
+                  validation_status: linkValidationStatus,
+                })
               .eq("id", existingLinkRow.id)
               .neq("validation_status", "rejected")
               .select("*")
@@ -7642,7 +7884,7 @@ const loadMarketingDraftReferenceDataCached = unstable_cache(
       // pharmacies in production (median 1-3), so this is a handful of extra rows, not a second set.
       supabase
         .from("marketing_customer_pharmacies")
-        .select("customer_id, distributor_code_id, pharmacy_id")
+        .select("customer_id, distributor_code_id, pharmacy_id, validation_status, validation_notes")
         .or("active.is.null,active.eq.true")
         .in("validation_status", [...LINK_STATUS_PRECEDENCE]),
       // Display data for the target-pharmacy picker. Both tables are small reference sets.
@@ -7909,12 +8151,21 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   const pharmaciesByCustomer: Record<string, MarketingRequestPharmacyOption[]> = {};
   for (const link of (validatedLinksResult.data ?? []) as Array<{
     customer_id: string; distributor_code_id: string | null; pharmacy_id: string;
+    validation_notes?: string | null; validation_status?: string | null;
   }>) {
     const pharmacy = pharmacyNameById.get(link.pharmacy_id);
     const code = link.distributor_code_id ? codeById.get(link.distributor_code_id) : null;
-    // A link with no code is offerable only when its venue is genuinely codeless. Anything else is
-    // a broken row, and offering it would put a target in the picker the server would then refuse.
-    if (!code && (!pharmacy || venueRequiresDistributorCode(pharmacy.venueType))) continue;
+    // A link with a code that is not in the active-code list is a retired code: not offered.
+    if (link.distributor_code_id && !code) continue;
+    // A link with no code is offerable only through the SAME test the server applies to the draft
+    // (`requestTargetKind`): a genuinely codeless venue, or a pharmacy a person released on its
+    // licence. Anything else is a broken row or a licence still waiting, and offering it would put a
+    // target in the picker the server would then refuse.
+    if (!code && (!pharmacy || !requestTargetKind({
+      distributorCodeId: null,
+      notes: link.validation_notes ?? null,
+      status: link.validation_status ?? null,
+    }, pharmacy.venueType))) continue;
     // Owner rule 2026-09-22 ("never never never"): a wholesaler / makhzan is never offered as a
     // target venue, even if one slipped past validation before this guard existed. Name-only — the
     // marketing pharmacy code is a different code space (see buildReusableMarketingPharmacies).
@@ -8044,7 +8295,7 @@ export async function createMarketingRequestDraft(
   const allowedProductCodes = toProductCodeSet(await getUserProductScopeOverride(access.loginId ?? ""));
   const normalized = normalizeMarketingRequestDraftInput(input);
 
-  const [customerResult, requestTypeResult, contactResult, productRows, pharmacyCodes, venuePharmacies] = await Promise.all([
+  const [customerResult, requestTypeResult, contactResult, productRows, pharmacyCodes, venuePharmacies, customerLinks] = await Promise.all([
     supabase
       .from("marketing_customers")
       .select("id, owner_hr_id, manager_hr_id, line_id, area_id, active")
@@ -8071,6 +8322,7 @@ export async function createMarketingRequestDraft(
       supabase,
       normalized.pharmacies.map((pharmacy) => pharmacy.pharmacyId).filter((id): id is string => Boolean(id)),
     ),
+    fetchCustomerTargetLinks(supabase, normalized.customerId),
   ]);
 
   if (customerResult.error) throw customerResult.error;
@@ -8092,6 +8344,7 @@ export async function createMarketingRequestDraft(
 
   const prepared = prepareMarketingRequestDraft({
     customer: customerResult.data as MarketingCustomerDbRow,
+    customerLinks,
     input,
     pharmacyCodes,
     products: productRows,
@@ -8207,8 +8460,22 @@ export async function createMarketingRequestDraft(
 }
 
 /**
- * Edit a returned marketing request and resubmit it. Resumes at the step that returned
- * it (earlier approvals preserved), replacing the products/pharmacies with the edited set.
+ * Edit a returned marketing request and resubmit it, replacing the products/pharmacies with the
+ * edited set.
+ *
+ * Where it resumes depends on what the requester changed (owner, 2026-10-14). A resubmit that moves
+ * the COST, the CUSTOMER or the TARGETS restarts the chain at the first approver - an earlier "yes"
+ * was given on the old money, customer and venues, and must not carry over to new ones. A resubmit
+ * that changes none of the three resumes at the rung that returned it, earlier approvals kept.
+ * `resubmit-rule.ts` holds both decisions as pure functions.
+ *
+ * Everything it writes is ONE database transaction, `phx_resubmit_marketing_request`: the products and
+ * targets are replaced, the planned rungs are rewritten, and the function refuses to commit unless
+ * exactly one gating rung is `current`. A client-side claim-and-rollback was tried first and rejected
+ * in review: its rollback could not re-insert products (`expected_value` is GENERATED ALWAYS), a
+ * second resubmit could claim on top of the first, and a final write that committed but errored to
+ * the client was rolled back around. The service decides WHAT to write (the restart rule, the plan,
+ * the customer-scope check); the function decides nothing, it makes the writes all-or-nothing.
  */
 export async function resubmitReturnedMarketingRequest(
   input: MarketingRequestCreateDraft & { requestId: string },
@@ -8232,7 +8499,7 @@ export async function resubmitReturnedMarketingRequest(
   }
 
   const normalized = normalizeMarketingRequestDraftInput(input);
-  const [customerResult, requestTypeResult, contactResult, productRows, pharmacyCodes, venuePharmacies] = await Promise.all([
+  const [customerResult, requestTypeResult, contactResult, productRows, pharmacyCodes, venuePharmacies, customerLinks] = await Promise.all([
     supabase.from("marketing_customers").select("id, owner_hr_id, manager_hr_id, line_id, area_id, active").eq("id", normalized.customerId).maybeSingle(),
     supabase.from("marketing_request_types").select("id, code, name, description, requires_description, sort_order, active").eq("id", normalized.requestTypeId).maybeSingle(),
     normalized.customerContactId
@@ -8247,6 +8514,7 @@ export async function resubmitReturnedMarketingRequest(
       supabase,
       normalized.pharmacies.map((pharmacy) => pharmacy.pharmacyId).filter((id): id is string => Boolean(id)),
     ),
+    fetchCustomerTargetLinks(supabase, normalized.customerId),
   ]);
   if (customerResult.error) throw customerResult.error;
   if (requestTypeResult.error) throw requestTypeResult.error;
@@ -8269,6 +8537,7 @@ export async function resubmitReturnedMarketingRequest(
 
   const prepared = prepareMarketingRequestDraft({
     customer: customerResult.data as MarketingCustomerDbRow,
+    customerLinks,
     input,
     pharmacyCodes,
     products: productRows,
@@ -8291,38 +8560,55 @@ export async function resubmitReturnedMarketingRequest(
     ?? null;
   if (!resumeStep) throw conflictError("This marketing request has no approval step to resume.");
 
-  const now = new Date().toISOString();
+  // What the earlier approvals were given ON, read BEFORE anything is replaced. Only the targets are
+  // needed: cost and customer are on `existing`, and the products decide nothing about a restart.
+  const previousPharmaciesResult = await supabase
+    .from("marketing_request_pharmacies")
+    .select("distributor_code_id, pharmacy_id")
+    .eq("request_id", requestId);
+  if (previousPharmaciesResult.error) throw previousPharmaciesResult.error;
+  const previousPharmacyRows = (previousPharmaciesResult.data ?? []) as Array<
+    Pick<MarketingRequestPharmacyDbRow, "distributor_code_id" | "pharmacy_id">
+  >;
 
-  const deleteProducts = await supabase.from("marketing_request_products").delete().eq("request_id", requestId);
-  if (deleteProducts.error) throw deleteProducts.error;
-  const productsInsert = await supabase
-    .from("marketing_request_products")
-    .insert(prepared.productRows.map((row) => ({ ...row, request_id: requestId })))
-    .select("*");
-  if (productsInsert.error) throw productsInsert.error;
+  const basisChanges: ResubmitBasisChange[] = resubmitBasisChanges(
+    {
+      customerId: existing.customerId,
+      estimatedCost: existing.estimatedCost,
+      targets: previousPharmacyRows.map((row) => ({
+        distributorCodeId: row.distributor_code_id ?? null,
+        pharmacyId: row.pharmacy_id,
+      })),
+    },
+    {
+      customerId: prepared.requestRow.customer_id,
+      estimatedCost: prepared.requestRow.estimated_cost,
+      targets: prepared.pharmacyRows.map((row) => ({
+        distributorCodeId: row.distributor_code_id,
+        pharmacyId: row.pharmacy_id,
+      })),
+    },
+  );
+  const restartApprovals = basisChanges.length > 0;
+  const restartPlan = restartApprovals ? planRestartedApprovalSteps(steps) : [];
+  const stepsById = new Map(steps.map((step) => [step.id, step] as const));
 
-  const deletePharmacies = await supabase.from("marketing_request_pharmacies").delete().eq("request_id", requestId);
-  if (deletePharmacies.error) throw deletePharmacies.error;
-  let pharmacies: MarketingRequestPharmacy[] = [];
-  const pharmacyInsertRows = prepared.pharmacyRows.map((row) => ({ ...row, request_id: requestId }));
-  if (pharmacyInsertRows.length > 0) {
-    const pharmaciesInsert = await supabase.from("marketing_request_pharmacies").insert(pharmacyInsertRows).select("*");
-    if (pharmaciesInsert.error) throw pharmaciesInsert.error;
-    pharmacies = ((pharmaciesInsert.data ?? []) as MarketingRequestPharmacyDbRow[]).map(mapPharmacy);
+  // The rungs the function rewrites. A restart puts the whole chain back to its start (first gate
+  // `current`, the rest `pending`, every earlier decision cleared); a plain resume reopens only the
+  // rung that returned it. The function applies this list blindly but refuses to commit unless
+  // exactly one gating rung is `current` afterwards, so a bad plan strands nothing.
+  const stepWrites: Array<{ status: "current" | "pending"; stepId: string }> = restartApprovals
+    ? restartPlan
+    : [{ status: "current", stepId: resumeStep.id }];
+  if (stepWrites.length === 0) {
+    throw conflictError("This marketing request has no approval step to restart from.");
   }
 
-  const reopen = await supabase
-    .from("marketing_request_approval_steps")
-    .update({ decision_at: null, decision_by_hr_id: null, decision_note: null, status: "current", updated_at: now })
-    .eq("id", resumeStep.id)
-    .select("*")
-    .single();
-  if (reopen.error) throw reopen.error;
-  const currentStep = mapApprovalStep(reopen.data as MarketingRequestApprovalStepDbRow);
-
-  const requestUpdate = await supabase
-    .from("marketing_requests")
-    .update({
+  const now = new Date().toISOString();
+  const { data: rpcData, error: rpcError } = await supabase.rpc("phx_resubmit_marketing_request", {
+    p_pharmacies: prepared.pharmacyRows,
+    p_products: prepared.productRows,
+    p_request: {
       area_id: prepared.requestRow.area_id,
       customer_contact_id: prepared.requestRow.customer_contact_id,
       customer_id: prepared.requestRow.customer_id,
@@ -8333,38 +8619,96 @@ export async function resubmitReturnedMarketingRequest(
       other_request_type: prepared.requestRow.other_request_type,
       pay_date: prepared.requestRow.pay_date,
       request_type_id: prepared.requestRow.request_type_id,
-      returned_at: null,
-      returned_step_sequence: null,
       roi_duration_months: prepared.requestRow.roi_duration_months,
       roi_status: prepared.requestRow.roi_status,
-      status: "pending_approval",
-      submitted_at: now,
-      updated_at: now,
-      updated_by_hr_id: requester.hrId,
-    })
-    .eq("id", requestId)
-    .select("*")
-    .single();
-  if (requestUpdate.error) throw requestUpdate.error;
-  const request = mapRequest(requestUpdate.data as MarketingRequestDbRow);
+    },
+    p_request_id: requestId,
+    p_resubmitted_at: now,
+    p_resubmitted_by: requester.hrId,
+    p_steps: stepWrites.map(({ status, stepId }) => ({ status, stepId })),
+  });
+  if (rpcError) {
+    const message = rpcError.message ?? "";
+    if (message.includes("marketing_request_not_found")) {
+      throw notFoundError("Marketing request was not found.", "marketing_request_not_found");
+    }
+    // A second tab or a double tap lands here: the first resubmit already took the request off
+    // `returned`, and the row lock made this one wait and then find that out.
+    if (message.includes("marketing_request_not_returned")) {
+      throw conflictError(
+        "This marketing request is no longer returned - it may already have been resubmitted. Reload to see where it stands.",
+        "marketing_resubmit_conflict",
+      );
+    }
+    if (message.includes("marketing_resubmit_not_requester")) {
+      throw forbiddenError("Forbidden: only the requester can resubmit this marketing request.");
+    }
+    if (message.includes("marketing_resubmit_no_products")) {
+      throw validationError("A resubmitted marketing request needs at least one product.", "marketing_resubmit_no_products");
+    }
+    if (message.includes("marketing_resubmit_no_targets")) {
+      throw validationError("A resubmitted marketing request needs at least one target venue.", "marketing_resubmit_no_targets");
+    }
+    if (message.includes("marketing_resubmit_invalid_steps") || message.includes("marketing_resubmit_no_single_current_step")) {
+      throw conflictError(
+        "This marketing request's approval chain changed while it was being resubmitted. Reload and try again.",
+        "marketing_resubmit_conflict",
+      );
+    }
+    throw rpcError;
+  }
+  const resubmitResult = rpcData as {
+    currentStep: MarketingRequestApprovalStepDbRow;
+    pharmacies: MarketingRequestPharmacyDbRow[];
+    products: MarketingRequestProductDbRow[];
+    request: MarketingRequestDbRow;
+  };
+  const request: MarketingRequest = mapRequest(resubmitResult.request);
+  const openedStep: MarketingRequestApprovalStep = mapApprovalStep(resubmitResult.currentStep);
+  const pharmacies: MarketingRequestPharmacy[] = (resubmitResult.pharmacies ?? []).map(mapPharmacy);
+  const products = (resubmitResult.products ?? []).map(mapProduct);
+
+  if (restartApprovals) {
+    const cleared = restartPlan
+      .map((entry) => stepsById.get(entry.stepId))
+      .filter((step): step is MarketingRequestApprovalStep => Boolean(step?.decisionByHrId && step.status === "approved"))
+      .map((step) => `${step.stepName} (${employeeNameByHrId(employeeRows, step.decisionByHrId) || "unknown"})`);
+    await writeAuditLog({
+      actorLoginId: access.loginId ?? access.hrId,
+      entityId: requestId,
+      entityType: "marketing_request",
+      newValues: { approvalsRestartedAt: openedStep.stepName, changed: basisChanges },
+      oldValues: { approvalsCleared: cleared },
+      summary:
+        `Marketing request ${request.requestCode} was resubmitted with a changed ${basisChanges.join(", ")}; `
+        + `the approval chain restarted at "${openedStep.stepName}".`
+        + (cleared.length > 0 ? ` Earlier approvals cleared: ${cleared.join("; ")}.` : ""),
+    });
+  }
 
   const requestTypeName = (requestTypeResult.data as MarketingRequestTypeDbRow).name;
   const ccHrIds = steps
-    .filter((step) => step.isCc && step.stepCode === currentStep.stepCode)
+    .filter((step) => step.isCc && step.stepCode === openedStep.stepCode)
     .map((step) => step.assignedHrId)
     .filter((hrId): hrId is string => Boolean(hrId));
+  // The same epoch the decision path and the daily backfill compute from the rung's recorded
+  // openings - a clock instant of this call's own would never match theirs, and the approver would
+  // be told twice. `now` only stands in when the rung has opened just once.
+  const reopenEpoch = (await resolveMarketingStepReopenEpoch(supabase, requestId, openedStep.sequence)) ?? now;
   await notifyMarketingWorkflow({
     actorHrId: requester.hrId,
     ccHrIds,
     eventType: "request_assigned",
-    message: `${request.requestCode} was resubmitted and is waiting for ${currentStep.stepName}.`,
+    message: restartApprovals
+      ? `${request.requestCode} was resubmitted with a changed ${basisChanges.join(", ")} and restarts at ${openedStep.stepName}.`
+      : `${request.requestCode} was resubmitted and is waiting for ${openedStep.stepName}.`,
     metadata: {
-      assignedApproverHrId: currentStep.assignedHrId,
-      currentStepId: currentStep.id,
-      currentStepName: currentStep.stepName,
-      idempotencyEpoch: now,
-      workflowApproverHrId: currentStep.assignedHrId,
-      ...marketingNotificationVariables({ currentStep, employeeRows, request, requestTypeName }),
+      assignedApproverHrId: openedStep.assignedHrId,
+      currentStepId: openedStep.id,
+      currentStepName: openedStep.stepName,
+      idempotencyEpoch: reopenEpoch,
+      workflowApproverHrId: openedStep.assignedHrId,
+      ...marketingNotificationVariables({ currentStep: openedStep, employeeRows, request, requestTypeName }),
     },
     priority: "high",
     request,
@@ -8374,7 +8718,7 @@ export async function resubmitReturnedMarketingRequest(
   const resubmitted = {
     ...request,
     pharmacies,
-    products: ((productsInsert.data ?? []) as MarketingRequestProductDbRow[]).map(mapProduct),
+    products,
   };
   pingMarketingRequestSheet("request_resubmitted");
   return resubmitted;

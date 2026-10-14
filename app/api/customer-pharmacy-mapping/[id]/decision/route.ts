@@ -7,6 +7,7 @@ import {
   rejectCustomerPharmacyLink,
 } from "@/lib/customer-pharmacy-mapping/actions";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { parseLicenseVerdict } from "@/lib/venues/pharmacy-license-verdict-columns";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,8 @@ export async function POST(
     if (body?.decision === "approve") {
       const result = await approveCustomerPharmacyLink(access, {
         linkId: id,
+        // Only an explicit `true` counts as "the trade name matches the shop sign".
+        licenseMatchesSign: parseLicenseVerdict(body.licenseMatchesSign),
         notes: typeof body.notes === "string" ? body.notes : null,
       });
       return NextResponse.json({ result, success: true });

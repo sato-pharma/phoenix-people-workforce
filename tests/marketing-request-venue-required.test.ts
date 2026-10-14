@@ -112,11 +112,16 @@ export function runMarketingRequestVenueRequiredTests() {
 
   // The resubmit refusal has to precede the delete, or an empty edited set strips the targets off
   // a request that already had them and leaves it worse than it started.
+  // The write is one database function now, and the function refuses an empty target list itself
+  // (marketing_resubmit_no_targets) - but the service must still refuse first, with the portal's
+  // stable error code, rather than let the database's message reach the person.
   const resubmit = exportedFunctionBody(service, "resubmitReturnedMarketingRequest");
+  const venueRefusalAt = resubmit.indexOf("assertMarketingRequestNamesAVenue");
+  const resubmitWriteAt = resubmit.indexOf('supabase.rpc("phx_resubmit_marketing_request"');
+  assert.ok(venueRefusalAt > -1 && resubmitWriteAt > -1, "resubmit must name a venue check and make its one write");
   assert.ok(
-    resubmit.indexOf("assertMarketingRequestNamesAVenue")
-      < resubmit.indexOf('.from("marketing_request_pharmacies").delete()'),
-    "resubmit must refuse an empty target list BEFORE deleting the existing targets, never after",
+    venueRefusalAt < resubmitWriteAt,
+    "resubmit must refuse an empty target list BEFORE it replaces the existing targets, never after",
   );
 
   assert.match(

@@ -4,6 +4,7 @@ import {
   DESK_VALIDATION_MARKER,
   INFERRED_HISTORY_MARKER,
   NO_DISTRIBUTOR_ACCOUNT_LABEL,
+  NO_DISTRIBUTOR_CODE_LICENSE_LABEL,
   UNKNOWN_DISTRIBUTOR_LABEL,
   buildCustomerPharmacyReadiness,
   idFilterChunks,
@@ -17,6 +18,7 @@ import {
   type ReadinessCustomerInput,
   type ReadinessLinkInput,
 } from "@/lib/customer-pharmacy-mapping/readiness.ts";
+import { LICENSE_ONLY_PHARMACY_NOTE } from "@/lib/venues/pharmacy-license.ts";
 
 function customer(
   id: string,
@@ -257,4 +259,39 @@ export async function runCustomerPharmacyMappingReadinessTests() {
     distributors: [],
   }).summary;
   assert.equal(inferredSummary.inferredCustomers, 1, "exactly one customer has inferred links");
+  // ── A pharmacy saved on its licence alone (owner, 2026-10-14) ─────────────────────────────
+  // The reviewer who releases it reads the licence ON THIS SCREEN, so the link summary carries the
+  // signed file and the recorded verdict - for licence-only links and for no other link.
+  const licenceResult = buildCustomerPharmacyReadiness({
+    customers: [customer("c-lic", "Licence Customer")],
+    links: [
+      link("l1", "c-lic", "pending", { distributorCodeId: null, pharmacyId: "ph-lic", validationNotes: LICENSE_ONLY_PHARMACY_NOTE }),
+      link("l2", "c-lic", "system_validated", { distributorCodeId: null, pharmacyId: "ph-nursery" }),
+    ],
+    pharmacies: [
+      { id: "ph-lic", licenseNameMatchesSign: true, pharmacyCode: null, pharmacyName: "Licence Pharmacy" },
+      { id: "ph-nursery", licenseNameMatchesSign: true, pharmacyCode: null, pharmacyName: "Nursery" },
+    ],
+    distributorCodes: [],
+    distributors: [],
+    licenses: {
+      "ph-lic": { contentType: "application/pdf", url: "https://signed.example/lic.pdf" },
+      "ph-nursery": { contentType: "image/png", url: "https://signed.example/nursery.png" },
+    },
+  });
+  const licenceLinks = rowById(licenceResult.rows, "c-lic").links;
+  const licenceOnlyLink = licenceLinks.find((entry) => entry.linkId === "l1");
+  const licenceNurseryLink = licenceLinks.find((entry) => entry.linkId === "l2");
+  assert.equal(licenceOnlyLink?.licenseOnly, true, "the marker in the notes makes it a licence-only link");
+  assert.equal(licenceOnlyLink?.licenseUrl, "https://signed.example/lic.pdf", "the reviewer gets the licence file on this screen");
+  assert.equal(licenceOnlyLink?.licenseContentType, "application/pdf");
+  assert.equal(licenceOnlyLink?.licenseNameMatchesSign, true);
+  assert.equal(
+    licenceOnlyLink?.distributorName,
+    NO_DISTRIBUTOR_CODE_LICENSE_LABEL,
+    "a licence-only pharmacy is not 'No distributor account' - that question is still open",
+  );
+  assert.equal(licenceNurseryLink?.licenseOnly, false, "an ordinary codeless link is not licence-only");
+  assert.equal(licenceNurseryLink?.licenseUrl, null, "and carries no licence, even if one is signed for the same id");
+  assert.equal(licenceNurseryLink?.distributorName, NO_DISTRIBUTOR_ACCOUNT_LABEL);
 }

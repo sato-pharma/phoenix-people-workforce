@@ -378,15 +378,33 @@ export async function runHrIdStorageCasingTests() {
 
   // --- the write NO PATTERN IN THIS FILE CAN SEE ---
   //
-  // pharmacy-license-verdict.ts persists the actor from a PARAMETER (`input.actorHrId`), which is
-  // neither the inline `access.hrId` expression nor a tainted local, so the sweep above is blind to
-  // it and always was. It is pinned by source because that is the only thing that can hold it: a
-  // future edit that drops the wrapper would restore a silent lower-cased write with nothing red.
-  const licenseVerdict = readFileSync("src/lib/marketing-requests/pharmacy-license-verdict.ts", "utf8");
+  // The licence verdict persists the actor from a PARAMETER (`input.actorHrId`), which is neither
+  // the inline `access.hrId` expression nor a tainted local, so the sweep above is blind to it and
+  // always was. It is pinned by source because that is the only thing that can hold it: a future
+  // edit that drops the wrapper would restore a silent lower-cased write with nothing red.
+  //
+  // The columns are built in ONE place, `licenseVerdictColumns`, shared by the request approver's
+  // step and the licence-only Approve in Customer Pharmacy Mapping - so the wrapper is pinned
+  // THERE, and both writers are pinned to go through it rather than to name the column themselves.
+  const licenseVerdictColumns = readFileSync("src/lib/venues/pharmacy-license-verdict-columns.ts", "utf8");
   assert.ok(
-    licenseVerdict.includes("license_name_checked_by_hr_id: hrIdForStorage(input.actorHrId),"),
+    licenseVerdictColumns.includes("license_name_checked_by_hr_id: hrIdForStorage(input.actorHrId),"),
     "the licence verdict must store the canonical actor id - this write arrives as a parameter, so the repo-wide sweep in this file cannot catch it and nothing else will",
   );
+  for (const writer of [
+    "src/lib/marketing-requests/pharmacy-license-verdict.ts",
+    "src/lib/customer-pharmacy-mapping/actions.ts",
+  ]) {
+    const text = readFileSync(writer, "utf8");
+    assert.ok(
+      text.includes("...licenseVerdictColumns("),
+      `${writer} must write the verdict through licenseVerdictColumns, the one place the actor id is canonicalised`,
+    );
+    assert.ok(
+      !/license_name_checked_by_hr_id\s*:/.test(text),
+      `${writer} must not name the checked-by column itself - a second spelling of it would skip the canonical wrapper`,
+    );
+  }
 
   // --- the reads repaired ALONGSIDE their writes stay casing-blind ---
   //

@@ -212,6 +212,14 @@ export function pharmacyLicenseFillsTheIdentityGap(input: {
 export const LICENSE_ONLY_PHARMACY_NOTE =
   "Licence only — this pharmacy has no distributor code, so it is held as not usable in requests until a code is added or a Super Admin releases it. Read the attached licence against the shop sign.";
 
+/**
+ * Written on a request's target row when the target is a pharmacy released on its licence (owner,
+ * 2026-10-14): spend there is allowed, like a nursery, and no sale can be matched to it until a
+ * distributor code is added. The ROI panel reads this instead of printing a misleading zero.
+ */
+export const LICENSE_RELEASED_TARGET_NOTE =
+  "Pharmacy released on its licence — no distributor code yet, so sales cannot be matched to this target until one is added.";
+
 export function isLicenseOnlyPharmacyNote(notes: string | null | undefined): boolean {
   return String(notes ?? "").includes(LICENSE_ONLY_PHARMACY_NOTE);
 }

@@ -309,6 +309,10 @@ export type AuditEntityType =
   // (verified against production 2026-08-23), so this needs no migration of its own.
   | "marketing_pharmacy"
   | "marketing_request"
+  // A change to how marketing requests are ROUTED: a control setting, a request type, or a step of
+  // the approval chain. Its own type because it answers "who changed who approves what", which is
+  // not a change to any one request. `audit_logs.entity_type` is plain `text`, so no migration.
+  | "marketing_control"
   | "notification"
   | "outstation_expense_access"
   | "outstation_request"

@@ -6,8 +6,10 @@ import { X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CheckTile } from "@/components/ui/form-kit";
 import { Input } from "@/components/ui/input";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
+import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 import type {
   CustomerPharmacyCustomerType,
   CustomerPharmacyLinkSummary,
@@ -96,6 +98,10 @@ type DecisionTarget = {
   customerName: string;
   pharmacyName: string;
   decision: LinkDecision;
+  /** A pharmacy saved on its licence alone: approving it RELEASES it, and the licence is what is read. */
+  licenseOnly: boolean;
+  licenseUrl: string | null;
+  licenseContentType: string | null;
 };
 
 type SummaryCardProps = {
@@ -330,6 +336,9 @@ export function CustomerPharmacyMappingWorkspace() {
                       customerName: row.customerName,
                       pharmacyName: link.pharmacyName,
                       decision,
+                      licenseOnly: link.licenseOnly,
+                      licenseUrl: link.licenseUrl,
+                      licenseContentType: link.licenseContentType,
                     })
                   }
                 />
@@ -407,10 +416,8 @@ function CustomerRow({ row, expanded, onToggle, onRequestDecision }: CustomerRow
           <td colSpan={10} className="px-3 py-3">
             <div className="space-y-2">
               {row.links.map((link) => (
-                <div
-                  key={link.linkId}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-sm border border-slate-200 bg-white px-3 py-2"
-                >
+                <div key={link.linkId} className="rounded-sm border border-slate-200 bg-white px-3 py-2">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <span className="whitespace-nowrap text-sm font-semibold text-slate-900">{link.pharmacyName}</span>
                   {link.pharmacyCode ? (
                     <span className="whitespace-nowrap text-xs font-medium text-slate-500">({link.pharmacyCode})</span>
@@ -453,6 +460,34 @@ function CustomerRow({ row, expanded, onToggle, onRequestDecision }: CustomerRow
                     ) : null}
                   </span>
                 </div>
+                {/* A pharmacy saved on its licence alone: the banner follows the STATUS (the marker
+                    stays in the notes for good), and the licence is drawn big for whoever decides. */}
+                {link.licenseOnly && link.validationStatus === "pending" ? (
+                  <p className="mt-2 border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs font-black leading-5 text-amber-900">
+                    Licence only — no distributor code. Not usable in requests yet. Read the licence below
+                    against the shop sign, then approve to release it.
+                  </p>
+                ) : null}
+                {link.licenseOnly && link.validationStatus === "admin_approved" ? (
+                  <p className="mt-2 border border-slate-300 bg-slate-50 px-2.5 py-2 text-xs font-black leading-5 text-slate-800">
+                    Released on its licence — usable in requests, with no sales channel until a distributor
+                    code is added.
+                  </p>
+                ) : null}
+                {link.licenseOnly && !link.licenseUrl ? (
+                  <p className="mt-2 text-xs font-bold text-rose-700">
+                    No licence file could be loaded for this pharmacy.
+                  </p>
+                ) : null}
+                {link.licenseOnly ? (
+                  <PharmacyLicenseEvidence
+                    contentType={link.licenseContentType}
+                    label={link.pharmacyName}
+                    prominent={link.validationStatus === "pending"}
+                    url={link.licenseUrl}
+                  />
+                ) : null}
+                </div>
               ))}
             </div>
           </td>
@@ -470,12 +505,18 @@ type LinkDecisionDialogProps = {
 
 function LinkDecisionDialog({ target, onClose, onDecided }: LinkDecisionDialogProps) {
   const [note, setNote] = useState("");
+  // The reviewer's answer to "does the trade name on the licence match the shop sign?". Releasing a
+  // licence-only pharmacy is impossible without it - and a name that does not match is a Reject.
+  const [licenseMatches, setLicenseMatches] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
   const dialogRef = useDialogA11y({ open: true, onClose });
 
   const isApprove = target.decision === "approve";
-  const title = isApprove ? "Approve Customer Pharmacy Link" : "Reject Customer Pharmacy Link";
+  const releasesOnLicense = isApprove && target.licenseOnly;
+  const title = releasesOnLicense
+    ? "Release Pharmacy On Its Licence"
+    : isApprove ? "Approve Customer Pharmacy Link" : "Reject Customer Pharmacy Link";
   const noteLabel = isApprove ? "Validation notes (optional)" : "Rejection reason (required)";
   const confirmLabel = isApprove ? "Approve link" : "Reject link";
 
@@ -483,6 +524,10 @@ function LinkDecisionDialog({ target, onClose, onDecided }: LinkDecisionDialogPr
     const trimmed = note.trim();
     if (!isApprove && trimmed.length === 0) {
       setRequestError("A rejection reason is required.");
+      return;
+    }
+    if (releasesOnLicense && !licenseMatches) {
+      setRequestError("Confirm that the trade name on the licence matches the shop sign, or reject the link.");
       return;
     }
 
@@ -495,7 +540,13 @@ function LinkDecisionDialog({ target, onClose, onDecided }: LinkDecisionDialogPr
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(
-            isApprove ? { decision: "approve", notes: trimmed } : { decision: "reject", reason: trimmed },
+            isApprove
+              ? {
+                decision: "approve",
+                notes: trimmed,
+                ...(releasesOnLicense ? { licenseMatchesSign: true } : {}),
+              }
+              : { decision: "reject", reason: trimmed },
           ),
         },
       );
@@ -520,7 +571,10 @@ function LinkDecisionDialog({ target, onClose, onDecided }: LinkDecisionDialogPr
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full max-w-md overflow-hidden bg-white shadow-2xl sm:rounded-none"
+        className={cn(
+          "max-h-[92vh] w-full overflow-y-auto bg-white shadow-2xl sm:rounded-none",
+          target.licenseOnly ? "max-w-2xl" : "max-w-md",
+        )}
       >
         <div className="flex items-center justify-between bg-slate-900 px-4 py-3">
           <h2 className="text-sm font-black uppercase tracking-wide text-white">{title}</h2>
@@ -535,11 +589,41 @@ function LinkDecisionDialog({ target, onClose, onDecided }: LinkDecisionDialogPr
             <p className="text-slate-600">{target.pharmacyName}</p>
           </div>
 
+          {/* "Admin approved", never "System validated": a person pressed this button, and the two
+              labels must not share a meaning (AGENTS.md 4.1). */}
           <p className="text-sm text-slate-600">
             This link will move from <span className="font-semibold">Pending</span> to{" "}
-            <span className="font-semibold">{isApprove ? "System validated" : "Rejected"}</span>.
+            <span className="font-semibold">{isApprove ? "Admin approved" : "Rejected"}</span>.
             {!isApprove ? " It will not be deleted." : ""}
           </p>
+
+          {target.licenseOnly ? (
+            <div>
+              <p className="border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs font-black leading-5 text-amber-900">
+                Licence only — this pharmacy has no distributor code.{" "}
+                {isApprove
+                  ? "Approving releases it as a request target with no sales channel, until a distributor code is added."
+                  : "Rejecting keeps it unusable in requests."}
+              </p>
+              {target.licenseUrl ? null : (
+                <p className="mt-2 text-xs font-bold text-rose-700">No licence file could be loaded for this pharmacy.</p>
+              )}
+              <PharmacyLicenseEvidence
+                contentType={target.licenseContentType}
+                label={target.pharmacyName}
+                prominent
+                url={target.licenseUrl}
+              />
+            </div>
+          ) : null}
+
+          {releasesOnLicense ? (
+            <CheckTile checked={licenseMatches} onChange={setLicenseMatches}>
+              <span className="text-sm font-bold text-slate-800">
+                I read the licence: the trade name on it matches the name on the shop sign.
+              </span>
+            </CheckTile>
+          ) : null}
 
           <div>
             <label
@@ -575,7 +659,7 @@ function LinkDecisionDialog({ target, onClose, onDecided }: LinkDecisionDialogPr
           <Button
             type="button"
             variant={isApprove ? "default" : "destructive"}
-            disabled={submitting}
+            disabled={submitting || (releasesOnLicense && !licenseMatches)}
             onClick={handleConfirm}
           >
             {submitting ? "Submitting…" : confirmLabel}

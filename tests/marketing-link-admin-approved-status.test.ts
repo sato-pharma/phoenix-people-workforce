@@ -123,8 +123,8 @@ function testAdminApprovedCountsAsValidatedEverywhere() {
   const constantFilters = service.match(/\.in\("validation_status", \[\.\.\.LINK_STATUS_PRECEDENCE\]\)/g) ?? [];
   assert.equal(
     constantFilters.length,
-    2,
-    "both the draft guard (assertMarketingCustomerHasValidatedVenue) and the request picker must filter on LINK_STATUS_PRECEDENCE",
+    3,
+    "the draft guard (assertMarketingCustomerHasValidatedVenue), the request picker AND the customer's own target links (fetchCustomerTargetLinks) must all filter on LINK_STATUS_PRECEDENCE",
   );
 
   const script = readFileSync("scripts/marketing-pharmacy-code-questions.ts", "utf8");

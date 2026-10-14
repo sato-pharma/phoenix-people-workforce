@@ -9,10 +9,12 @@ import {
   INVOICE_OVERDUE_FINANCE_URL,
   INVOICE_OVERDUE_NUDGE_ENABLED,
   INVOICE_OVERDUE_REQUESTER_URL,
+  INVOICE_CHASEABLE_REQUEST_STATUSES,
   runMarketingInvoiceOverdueNudge,
   describeOverdueInvoice,
   financeOverdueInvoiceDigest,
   groupOverdueInvoicesByRequester,
+  isInvoiceChaseableRequestStatus,
   requesterOverdueInvoiceMessage,
   type OverdueMarketingInvoice,
 } from "../src/lib/marketing-requests/invoice-overdue-nudge.ts";
@@ -249,6 +251,26 @@ export async function runMarketingInvoiceOverdueNudgeTests() {
   assert.ok(
     !nudgeSource.includes('"hold"'),
     "the SQL narrowing must never widen to include 'hold': it would hand held rows to the resolver, which drops them anyway — but the next person to 'fix' the resolver would then start nagging about deliberate pauses",
+  );
+
+  // A CANCELLED or refused request keeps its finance-requirements row (cancel flips the request's
+  // status and nothing else), so the invoice obligation alone cannot tell the nudge to stay quiet:
+  // the request's own status has to. Without this the requester and finance were told every morning
+  // that a request the owner had called off was "18 days late".
+  for (const status of ["approved", "active", "roi_tracking", "closed", "finance_hold", "archived", " Approved "]) {
+    assert.equal(isInvoiceChaseableRequestStatus(status), true, `${status.trim()} still owes its invoice`);
+  }
+  for (const status of ["cancelled", "rejected", "draft", "pending_validation", "pending_approval", "returned", "some_future_status", "", null, undefined]) {
+    assert.equal(isInvoiceChaseableRequestStatus(status), false, `${String(status)} must not be chased for an invoice`);
+  }
+  assert.ok(!INVOICE_CHASEABLE_REQUEST_STATUSES.has("cancelled"), "the allow-list never names cancelled");
+  assert.ok(
+    /select\("id,request_code,requester_hr_id,customer_id,estimated_cost,status"\)/.test(nudgeSource),
+    "the loader must READ the request's status - without it nothing can drop a cancelled request",
+  );
+  assert.ok(
+    /isInvoiceChaseableRequestStatus\(request\.status\)/.test(nudgeSource),
+    "the loader must DROP requests whose status is not chaseable, before they reach the requester message or the finance digest",
   );
 
   const routeSource = readFileSync(join(ROOT, "app/api/cron/marketing-invoice-overdue-nudge/route.ts"), "utf8");
