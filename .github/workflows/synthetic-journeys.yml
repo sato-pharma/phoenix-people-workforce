@@ -22,27 +22,18 @@ name: Synthetic Journeys (production smoke)
 # for little extra signal.
 
 on:
-  schedule:
-    # Every 3h at :17 past, 02:00-17:00 UTC = 05:00-20:00 Africa/Cairo (6 runs/day). Overnight is
-    # deliberately skipped: nobody is using the app, and a failure at 03:00 Cairo is not actionable
-    # until morning anyway. The :17 offset keeps it off the shared firing minute of the other jobs.
-    #
-    # CADENCE (2026-08-29). Was hourly, "17 2-18 * * *" = 17 runs/day. Measured that week: Actions
-    # billed ~32,600 min/month on a private repo, and this workflow ran 217 times in 7 days. Going
-    # three-hourly cuts it to ~6/day and cuts the production auth_login_attempts noise noted above
-    # by the same factor. TRADE-OFF, stated plainly because it is not free: this suite is the only
-    # automated "is production actually up?" signal since GCP alerting died, so worst-case
-    # detection latency goes from ~1h to ~3h. If that proves too slow, the middle setting is
-    # "17 2-18/2 * * *" (2-hourly, 9 runs/day) rather than a return to hourly.
-    #
-    # CORRECTION (2026-09-04). The paragraph above is a dated record and is left as written, but its
-    # arithmetic covers the SCHEDULE leg only. cron-job.org's `phoenix-run-synthetic-journeys`
-    # ("0 * * * *") dispatches this workflow through /api/cron/run-synthetic-journeys, and has done
-    # so 24x/day continuously since at least 2026-08-24 — unchanged by the cut above. Counted over
-    # 2026-09-01..09-04: ~24 dispatch runs/day against ~3 scheduled. The real rate is therefore
-    # ~27/day, not ~6, and editing THIS cron line moves only the ~3. Cadence lives in
-    # src/lib/observability/job-schedule.ts and at cron-job.org. See docs/agents-incident-history.md.
-    - cron: "17 2-18/3 * * *"
+  # ONE CLOCK, AND IT IS NOT THIS FILE (owner, 2026-10-14, cost cuts). cron-job.org's
+  # `phoenix-run-synthetic-journeys` calls /api/cron/run-synthetic-journeys, which dispatches this
+  # workflow every 3 hours at :17 past, 05:00-20:00 Africa/Cairo (6 runs/day). Cadence lives in
+  # src/lib/observability/job-schedule.ts and at cron-job.org, never in a `schedule:` block here.
+  #
+  # 🔴 DO NOT ADD A `schedule:` BLOCK BACK. Until 2026-10-14 this file carried one too, so the suite ran
+  # ~26 times a day (24 hourly dispatches + ~3 scheduled) while every comment said 6. Measured 13 Oct:
+  # 79 billable minutes a day for a smoke test, plus a Super Admin login per run written to production
+  # auth_login_attempts. tests/scheduled-alarms-never-withhold.test.ts (DISPATCH_ONLY) fails a
+  # schedule: block here. TRADE-OFF, stated plainly: this is the only automated "is production actually
+  # up?" signal, and worst-case detection of an outage is now ~3h instead of ~1h. The middle setting
+  # is every 2 hours (9 runs/day), changed at cron-job.org and in job-schedule.ts together.
   workflow_dispatch:
     inputs:
       base_url:

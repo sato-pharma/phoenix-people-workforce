@@ -440,7 +440,7 @@ policy):
    | `phoenix-background-jobs` | `0 3 * * 5` | 2h | cron-job.org job `8200915` |
    | `phoenix-inbound-intake` | `*/2 * * * *` | 10m | cron-job.org job `8200920` |
    | `phoenix-recruitment-email-intake` | `4-59/10 * * * *` | 10m | cron-job.org job `8200919` |
-   | `phoenix-run-synthetic-journeys` | `0 * * * *` | 1h | cron-job.org job `8220577` |
+   | `phoenix-run-synthetic-journeys` | `17 5,8,11,14,17,20 * * *` | 2h | cron-job.org job `8220577` |
    | `phoenix-direct-orders-rotate-sheet-token` | `23 3 * * 5` | 2h | cron-job.org job `8313169` |
    | `phoenix-marketing-requests-rotate-sheet-token` | `43 3 * * 5` | 2h | cron-job.org job `8313171` |
    | `phoenix-cv-lifecycle-rotate-sheet-token` | `3 4 * * 5` | 2h | cron-job.org job `8387636` |
@@ -595,14 +595,16 @@ that admits a gap, so this paragraph exists instead of a green dashboard.
    shows **177 `workflow_dispatch` events between 2026-08-15 and 2026-08-23, every one 4-12 seconds
    past the top of the hour, all 24 UTC hours represented, one single missed hour in eight days**.
    Railway's HTTP log names the caller (`@path:/api/cron/run-synthetic-journeys` → `clientUa`
-   `cron-job.org`, GET, 200). Hence `0 * * * *`. The 1h grace deliberately tolerates exactly one
+   `cron-job.org`, GET, 200). That was hourly (`0 * * * *`, 1h grace) until 2026-10-14, when the owner cut it to every 3 hours,
+   05:00-20:00 Cairo (6 runs/day) to stop paying for 24 smoke tests a day. The 2h grace tolerates one
+   late fire inside a 3h gap; the old hourly grace deliberately tolerated exactly one
    missed hour — that has already happened once (2026-08-17 18:00 UTC) without anything being wrong,
    and a check that pages on a single blip is a check people learn to ignore.
 
-   Ignore the `schedule:` block inside `synthetic-journeys.yml` when tuning this: GitHub's own
-   scheduler fires it at effectively random minutes (visible as the `schedule` events in the same
-   run list), which is the entire reason the cron-job.org trigger exists. Only the
-   `workflow_dispatch` events are this job's real clock.
+   `synthetic-journeys.yml` has NO `schedule:` block any more (removed 2026-10-14; it used to fire
+   ~3 extra runs a day at effectively random minutes, which is why the suite ran ~27 times a day and
+   not the 6 its comments claimed). `tests/scheduled-alarms-never-withhold.test.ts` fails if one comes
+   back. The `workflow_dispatch` events are this job's only clock.
 
    The two `*-rotate-sheet-token` rows are **not copied from anywhere either** — those jobs did not
    exist until 2026-08-23, when they were created to fix the second half of the same problem: those

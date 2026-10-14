@@ -245,11 +245,12 @@ jobs:
       #   gh variable set STAGING_TRACKS_BRANCH --body staging
       # Unset it again if staging is ever pointed back at `main`.
       #
-      # WHY IT MATTERS. Staging's source branch is written by staging-branch-sync.yml, so a broken or
-      # never-triggered sync leaves staging serving an ever-older commit with nothing red anywhere —
-      # exactly the 2026-08-13 shape described in this file's header, which is the incident that
-      # created this workflow. Production's check above cannot see it, because staging drifts against
-      # its own branch rather than against `main`.
+      # 🔴 RETIRED 2026-10-14 (owner, cost cuts): staging-branch-sync.yml is DELETED and the Railway staging
+      # app is stopped, so nothing writes a `staging` branch and this leg has no source. It stays dormant
+      # on purpose; do NOT set STAGING_TRACKS_BRANCH. If staging is ever brought back with a branch of
+      # its own, the sync workflow has to come back first (git history: staging-branch-sync.yml, #4552).
+      # Original reason, kept for that day: a staging source branch nobody advances drifts silently,
+      # the 2026-08-13 shape in this file's header, and production's check above cannot see it.
       # `continue-on-error` here for the same reason as the production step above, and it also
       # restores something the old `exit 1` took away: with production failing the job outright, this
       # step never ran when production drifted, so a simultaneous staging drift stayed invisible until
@@ -319,7 +320,7 @@ jobs:
           fi
 
           echo "DRIFT_SCOPE=STAGING" >> "$GITHUB_ENV"
-          echo "::error::Staging is NOT serving a ${BRANCH} commit that is already ${SETTLE_MINUTES} minutes old. settled_ref=$REF_SHA ${BRANCH}=$HEAD_SHA staging=${LIVE_SHA:-<unreachable>}. Most likely the staging-branch-sync workflow has stopped advancing the branch, or Railway staging source was changed. Read: gh run list --workflow=staging-branch-sync.yml --limit 5, and git ls-remote origin refs/heads/${BRANCH}."
+          echo "::error::Staging is NOT serving a ${BRANCH} commit that is already ${SETTLE_MINUTES} minutes old. settled_ref=$REF_SHA ${BRANCH}=$HEAD_SHA staging=${LIVE_SHA:-<unreachable>}. The staging-branch-sync workflow was retired 2026-10-14, so this leg should be dormant: check why STAGING_TRACKS_BRANCH is set, then git ls-remote origin refs/heads/${BRANCH}."
           exit 1
 
       # The durable record, written OUTSIDE the check suite — a job summary a human can read on the
@@ -483,7 +484,7 @@ jobs:
             # the staging step never runs and DRIFT_SCOPE stays PRODUCTION. That ordering is
             # deliberate: production is the one that pays salaries.
             if [ "${DRIFT_SCOPE:-PRODUCTION}" = "STAGING" ]; then
-              TEXT=$(printf '%s\n\nStaging is not serving its source branch HEAD, 3 minutes after first noticing.\n\nCHECK THIS FIRST: staging deploys from the staging branch, which is published ONLY from CI-green main commits by staging-branch-sync.yml. A sync that stopped firing leaves staging serving an ever-older commit with nothing red anywhere. Read: gh run list --workflow=staging-branch-sync.yml --limit 5, then git ls-remote origin refs/heads/staging\n\nIf that branch IS current, then the Railway staging source was changed - check the staging service settings.\n\nPRODUCTION IS NOT IMPLICATED: this check compares staging against its OWN branch, and production has a separate check in the same workflow.\n\nAccount: docs/deployment.md, "The deploy gate".\n\n%s' "$HEADER" "$RUN_URL")
+              TEXT=$(printf '%s\n\nStaging is not serving its source branch HEAD, 3 minutes after first noticing.\n\nCHECK THIS FIRST: staging deploys from the staging branch, whose publisher (staging-branch-sync.yml) was retired 2026-10-14, so this leg should be dormant. Read git ls-remote origin refs/heads/staging\n\nIf that branch IS current, then the Railway staging source was changed - check the staging service settings.\n\nPRODUCTION IS NOT IMPLICATED: this check compares staging against its OWN branch, and production has a separate check in the same workflow.\n\nAccount: docs/deployment.md, "The deploy gate".\n\n%s' "$HEADER" "$RUN_URL")
             else
               # 🔴 THE ANSWER LEADS, NOT THE COMMAND TO FIND IT. This body used to say "read every
               # suite, not the CI run: gh api …/check-suites" — correct, and still a manual step for

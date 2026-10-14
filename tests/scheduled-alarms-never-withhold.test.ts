@@ -57,6 +57,17 @@ const ALARMS = [
 ];
 
 /**
+ * Alarms with NO `schedule:` of their own, because a clock outside GitHub dispatches them.
+ *
+ * synthetic-journeys.yml is fired by cron-job.org through /api/cron/run-synthetic-journeys. It used to
+ * carry a `schedule:` leg as well, so it ran ~26 times a day instead of the 6 it was meant to (owner,
+ * 2026-10-14, cost cuts: one clock). A DISPATCHED run attaches its suite to main HEAD exactly like a
+ * scheduled one, so every other assertion below still applies to it. Only step 1 changes, and it
+ * changes to pin the single clock: the `schedule:` leg must not come back.
+ */
+const DISPATCH_ONLY = new Set(["synthetic-journeys.yml"]);
+
+/**
  * The one scheduled workflow that MUST still be able to fail red, and why.
  *
  * attendance-weekly-digest.yml settles unanswered attendance days to salary and applies them to
@@ -95,13 +106,28 @@ export function runScheduledAlarmsNeverWithholdTests() {
     // 1. It is only in scope while it is actually scheduled. If a `schedule:` is ever removed the
     //    workflow stops attaching suites to main HEAD and this whole class evaporates for it — but
     //    then the list above is stale, and a stale list is how a real alarm quietly loses its cover.
-    assert.match(
-      source,
-      /^\s*schedule:\s*$/m,
-      `🔴 ${file} is listed here as a scheduled alarm but no longer has a schedule: trigger. Either ` +
-        "remove it from ALARMS, or restore the trigger — a list that names workflows which are no " +
-        "longer scheduled stops describing the actual risk surface.",
-    );
+    //    A DISPATCH_ONLY alarm inverts the question: its single clock is outside GitHub.
+    if (DISPATCH_ONLY.has(file)) {
+      assert.doesNotMatch(
+        source,
+        /^\s*schedule:\s*$/m,
+        `🔴 ${file} has a schedule: trigger again. cron-job.org is its ONE clock; a second leg on ` +
+          "GitHub's schedule is what made it fire ~26 times a day instead of 6. Remove the schedule: block.",
+      );
+      assert.match(
+        source,
+        /^\s*workflow_dispatch:/m,
+        `🔴 ${file} lost workflow_dispatch:, so the cron-job.org dispatch has nothing to start.`,
+      );
+    } else {
+      assert.match(
+        source,
+        /^\s*schedule:\s*$/m,
+        `🔴 ${file} is listed here as a scheduled alarm but no longer has a schedule: trigger. Either ` +
+          "remove it from ALARMS, or restore the trigger — a list that names workflows which are no " +
+          "longer scheduled stops describing the actual risk surface.",
+      );
+    }
 
     // 2. At least one step must be unable to fail the job. This single property is what stops the
     //    alarm withholding the deploy it is reporting on.

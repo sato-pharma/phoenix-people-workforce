@@ -87,7 +87,7 @@ export function runCiBuildRiskTests(): void {
   const skip = [
     "src/lib/payroll/run.ts", "src/components/ui/form-kit.tsx", "src/config/system-settings.ts",
     "app/(admin)/payroll/payroll-table.tsx", "docs/testing.md", "README.md", "tests/ci-build-risk.test.ts",
-    ".claude/rules/engineering.md", ".github/workflows/staging-branch-sync.yml", "mobile/app/index.tsx",
+    ".claude/rules/engineering.md", ".github/workflows/deploy-drift-check.yml", "mobile/app/index.tsx",
     "supabase/migrations/20261008000000_x.sql", "xlsx/sheet.xlsx", "scripts/remote-check.mjs",
     "public/brand/sato-pharma-logo.png", ".env.example",
   ];
