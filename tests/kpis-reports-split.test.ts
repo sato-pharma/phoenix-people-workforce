@@ -196,4 +196,14 @@ export function runKpisReportsSplitTests() {
     "the Total view counts calls and forms no rate out of AM and PM",
   );
   assert.ok(totalCounts.includes("Counts add up; the two rates above never do."), "and says so on the page");
+
+  // ── 7. The Summary rows open the reports ──────────────────────────────────────────────────────
+  const summaryLinks = /function summaryReportLinks\([\s\S]*?\r?\n}\r?\n/.exec(view)?.[0] ?? "";
+  assert.ok(summaryLinks.length > 200, "summaryReportLinks must still be findable");
+  assert.ok(summaryLinks.includes("PORTAL_KPIS_ROOT_PATH"), "the links exist on the portal's KPIs page only");
+  assert.ok(summaryLinks.includes("PORTAL_KPI_REPORT_PATH[tab]"), "Coverage and Frequency go to their own pages");
+  assert.ok(summaryLinks.includes("EMPTY_KPI_DOCTOR_FILTER"), "another report starts with the doctor filters clear");
+  assert.ok(summaryLinks.includes("callRateVisitsLink"), "Call Rate reuses the existing visits drill-down");
+  assert.ok(view.includes("action={summaryReportLinks(context, row)}"), "the desktop Summary rows carry them");
+  assert.ok(view.includes("? summaryReportLinks(context, row)"), "and so do the phone cards");
 }
