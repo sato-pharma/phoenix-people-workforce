@@ -232,7 +232,7 @@ jobs:
         run: corepack enable
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: ${{ env.CI_NODE_VERSION }}
           # Caches the pnpm store (keyed on pnpm-lock.yaml), NOT node_modules —
@@ -703,7 +703,7 @@ jobs:
         run: corepack enable
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: ${{ env.CI_NODE_VERSION }}
           cache: pnpm
@@ -903,7 +903,7 @@ jobs:
       # that lockfile, not the root pnpm-lock.yaml.
       - name: Set up Node.js
         if: steps.detect.outputs.mobile_changed == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: ${{ env.CI_NODE_VERSION }}
           cache: npm
@@ -945,7 +945,7 @@ jobs:
         run: corepack enable
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: ${{ env.CI_NODE_VERSION }}
           # Caches the pnpm store (keyed on pnpm-lock.yaml), NOT node_modules —
