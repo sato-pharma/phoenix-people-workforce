@@ -43,6 +43,8 @@ import {
   KPI_TAB_HINT,
   KPI_TAB_HINT_PHOENIX,
   KPI_TAB_LABEL,
+  PORTAL_KPIS_ROOT_PATH,
+  PORTAL_KPI_REPORT_PATH,
   type KpiCallRateView,
   type KpiTab,
 } from "@/lib/crm/kpis-tabs";
@@ -1029,7 +1031,12 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
       <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-slate-50/70">
         {rows.map((row, index) => (
           <tr key={row.agentCrmId ?? `${row.repName}-${index}`}>
-            <RepCell rank={context.showRank ? index + 1 : undefined} row={row} rules={context.board.kpiRules} />
+            <RepCell
+              action={summaryReportLinks(context, row)}
+              rank={context.showRank ? index + 1 : undefined}
+              row={row}
+              rules={context.board.kpiRules}
+            />
             <MeasureCell
               band={coverageBandOf(row)}
               caption={
@@ -1305,6 +1312,50 @@ function callRateVisitsLink(context: ViewContext, row: KpiRepRow): React.ReactNo
       <span>Open visits</span>
       <span aria-hidden>→</span>
     </Link>
+  );
+}
+
+/**
+ * The Summary row's way into the three reports for ONE rep: Coverage and Frequency open that rep's
+ * doctor list, Call Rate opens the visits behind the rate. Portal only — the admin shell keeps its
+ * tab strip, and the report pages exist only under the portal's root.
+ *
+ * Every one is a LINK, so each report re-runs the server-side scope gate. The doctor filters are reset
+ * (another report, another person's doctors) and the month and period ride along. Null when the rep
+ * has nothing to open.
+ */
+function summaryReportLinks(context: ViewContext, row: KpiRepRow): React.ReactNode {
+  if (context.basePath !== PORTAL_KPIS_ROOT_PATH) return null;
+  const key = row.coverageRepKey;
+  const plan = key && row.hasMeasurablePlan;
+  const visits = callRateVisitsLink(context, row);
+  if (!plan && !visits) return null;
+  const className =
+    "inline-flex items-center gap-1 border border-slate-300 bg-white px-2 py-1 text-phx-2xs font-bold text-slate-600 transition-colors hover:border-slate-500 hover:text-slate-900";
+  const reportHref = (tab: "coverage" | "frequency") =>
+    `${PORTAL_KPI_REPORT_PATH[tab]}?${buildKpisQuery({
+      month: context.board.month,
+      period: context.board.range.periodKey,
+      tab,
+      filters: { ...context.board.filters, doctor: EMPTY_KPI_DOCTOR_FILTER },
+      rep: key,
+    })}`;
+  return (
+    <span className="flex flex-wrap gap-1">
+      {plan ? (
+        <>
+          <Link className={className} href={reportHref("coverage")}>
+            <span>Coverage</span>
+            <span aria-hidden>→</span>
+          </Link>
+          <Link className={className} href={reportHref("frequency")}>
+            <span>Frequency</span>
+            <span aria-hidden>→</span>
+          </Link>
+        </>
+      ) : null}
+      {visits}
+    </span>
   );
 }
 
@@ -3356,7 +3407,9 @@ export function KpisBoardView({
                                 ? coverageDoctorsToggle(context, row, "mobile")
                                 : tab === "call-rate"
                                   ? callRateVisitsLink(context, row)
-                                  : undefined
+                                  : tab === "summary"
+                                    ? summaryReportLinks(context, row)
+                                    : undefined
                             }
                             amTarget={board.amTarget}
                             pmTarget={board.pmTarget}
