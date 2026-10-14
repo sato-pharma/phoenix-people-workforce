@@ -89,6 +89,55 @@ export function validateOffset(input: {
   return { ok: true, amount: rounded };
 }
 
+/**
+ * The request types a service fee can be recorded under — a subset of the module's own types, by
+ * code. "Special request" is the default: a one-off fee owed to a hospital's own doctor.
+ */
+export const SERVICE_FEE_REQUEST_TYPES = [
+  { code: "special_request", label: "Special request" },
+  { code: "deal", label: "Deal" },
+  { code: "other", label: "Other" },
+] as const;
+
+export type ServiceFeeRequestTypeCode = (typeof SERVICE_FEE_REQUEST_TYPES)[number]["code"];
+
+/**
+ * May the Administrator record a service fee against this order? The database function repeats
+ * every check under a row lock; this copy gives the screen its words before the click and lets the
+ * tests prove the rules without a database.
+ */
+export function validateServiceFeeSettlement(input: {
+  orderStatus: string;
+  outstanding: number;
+  amount: number | null | undefined;
+  beneficiaryName: string | null | undefined;
+  requestTypeCode: string | null | undefined;
+  note: string | null | undefined;
+}): OffsetOutcome {
+  if (String(input.orderStatus ?? "").toLowerCase() !== "approved") {
+    return { ok: false, message: "Only an approved direct order can be settled against." };
+  }
+  if (!String(input.beneficiaryName ?? "").trim()) {
+    return { ok: false, message: "Enter who the fee is owed to." };
+  }
+  if (!SERVICE_FEE_REQUEST_TYPES.some((type) => type.code === input.requestTypeCode)) {
+    return { ok: false, message: "Pick the request type." };
+  }
+  if (input.requestTypeCode === "other" && !String(input.note ?? "").trim()) {
+    return { ok: false, message: "The Other type needs a description in the note." };
+  }
+  const amount = Number(input.amount);
+  if (input.amount == null || !Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, message: "Enter the amount as a number greater than zero." };
+  }
+  const rounded = round2(amount);
+  const outstanding = round2(Number(input.outstanding) || 0);
+  if (rounded > outstanding) {
+    return { ok: false, message: `The order only has ${egp(outstanding)} still outstanding.` };
+  }
+  return { ok: true, amount: rounded };
+}
+
 /** The exception text `phx_record_direct_order_offset` / `phx_remove_direct_order_offset` raise, in words. */
 const OFFSET_ERROR_MESSAGES: Record<string, string> = {
   offset_actor_required: "Sign in again — the action could not be attributed to anyone.",
@@ -101,6 +150,14 @@ const OFFSET_ERROR_MESSAGES: Record<string, string> = {
   offset_exceeds_request_cost: "The amount cannot exceed the request's value.",
   offset_exceeds_outstanding: "The order does not have that much still outstanding.",
   offset_not_found: "This request is not settled against any direct order.",
+  service_fee_amount_invalid: "Enter the amount as a number greater than zero.",
+  service_fee_beneficiary_required: "Enter who the fee is owed to.",
+  service_fee_admin_unknown: "Sign in again — the action could not be attributed to anyone.",
+  service_fee_requester_unknown: "That requester was not found.",
+  service_fee_type_unknown: "That request type is not available.",
+  service_fee_description_required: "The Other type needs a description in the note.",
+  service_fee_duplicate: "This exact settlement was just recorded. Refresh the order before trying again.",
+  service_fee_chain_template_missing: "No executed marketing request exists to copy the approval chain from.",
 };
 
 /** Maps a database error to a message a Finance user can act on; null when it is not one of ours. */

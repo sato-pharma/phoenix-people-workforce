@@ -106,6 +106,7 @@ import {
 } from "@/lib/direct-orders/collection-rules";
 import {
   canAssignDirectOrderSalesMonth,
+  canSettleServiceFeeAsAdministrator,
   deriveDirectOrderSalesMonthChange,
 } from "@/lib/direct-orders/finance-authority";
 import {
@@ -6504,6 +6505,13 @@ export async function getDirectOrderApprovalDetail(
     missingManagementLine,
     canSetSalesMonth: canSetDirectOrderSalesMonth(access),
     canRecordCollection: canRecordDirectOrderCollection(access),
+    canSettleServiceFee: canSettleServiceFeeAsAdministrator(access),
+    serviceFeeDefaults: canSettleServiceFeeAsAdministrator(access)
+      ? {
+          beneficiaryName: pharmacy?.doctorName?.trim() ?? "",
+          requesterName: nameOf(request.requesterHrId) ?? request.requesterHrId,
+        }
+      : null,
     // Correcting a return is the requester's own action, so this is an OWNERSHIP flag, not a role
     // one. Mirrors reviseDirectOrder's guard exactly — if these ever disagree, the button appears
     // for someone the server will refuse.

@@ -909,6 +909,13 @@ export type DirectOrderApprovalDetail = {
    */
   canRecordCollection: boolean;
   /**
+   * Whether THIS viewer is the Administrator, who may record a service fee owed to the pharmacy's
+   * doctor as a request raised and executed in one click, settled against this order.
+   */
+  canSettleServiceFee: boolean;
+  /** The order's requester and the pharmacy's doctor, in words, for the service-fee control. */
+  serviceFeeDefaults: { beneficiaryName: string; requesterName: string } | null;
+  /**
    * Whether THIS viewer may correct and resubmit the order — true only when it is `returned` AND
    * the viewer raised it (or is a System Admin acting for them). See `reviseDirectOrder`.
    */

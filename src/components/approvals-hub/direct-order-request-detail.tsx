@@ -13,6 +13,7 @@ import {
   PricingBreakdownFact,
 } from "@/components/approvals-hub/direct-order-detail-primitives";
 import { DirectOrderCollectionControl } from "@/components/direct-orders/direct-order-collection-control";
+import { DirectOrderServiceFeeControl } from "@/components/direct-orders/direct-order-service-fee-control";
 import { DirectOrderCorrectResubmit } from "@/components/direct-orders/direct-order-correct-resubmit";
 import { DirectOrderSalesMonthControl } from "@/components/direct-orders/direct-order-sales-month-control";
 import { DirectOrderStatusPill } from "@/components/direct-orders/direct-order-status-pill";
@@ -156,6 +157,8 @@ export function DirectOrderRequestDetail({
     pharmacyStanding,
     canSetSalesMonth,
     canRecordCollection,
+    canSettleServiceFee,
+    serviceFeeDefaults,
     canCorrectAndResubmit,
     returnComment,
     steps,
@@ -498,6 +501,16 @@ export function DirectOrderRequestDetail({
           canEdit={canRecordCollection}
           status={request.status}
         />
+
+        {canSettleServiceFee && serviceFeeDefaults ? (
+          <DirectOrderServiceFeeControl
+            beneficiaryName={serviceFeeDefaults.beneficiaryName}
+            outstanding={request.remainingAmount ?? request.salesValue}
+            requestId={request.id}
+            requesterName={serviceFeeDefaults.requesterName}
+            status={request.status}
+          />
+        ) : null}
 
         {request.bonusOverrideReason ? (
           <p className="mt-3 border-t border-[#eef1f3] pt-2 text-xs text-slate-500">
