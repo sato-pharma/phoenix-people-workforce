@@ -8,6 +8,7 @@ import type { StuckApprovalManagerOption } from "@/lib/approvals-hub/service";
 import type { WeeklyPlanManagerGapRecord } from "@/lib/weekly-planning/drift-check";
 import type { ExcuseManagerGapRecord } from "@/lib/excuses/drift-check";
 import type { StrandedDirectOrderRow } from "@/lib/direct-orders/service";
+import type { StrandedVacationRow } from "@/lib/vacation/service";
 import {
   phxButtonDangerClassName,
   phxFieldClassName,
@@ -30,6 +31,7 @@ type StuckApprovalsPanelProps = {
   excuses: ExcuseManagerGapRecord[];
   strandedDirectOrders: StrandedDirectOrderRow[];
   canCloseStrandedDirectOrders: boolean;
+  strandedVacations: StrandedVacationRow[];
   managerOptions: StuckApprovalManagerOption[];
 };
 
@@ -212,6 +214,94 @@ function CloseStrandedOrderRow(props: { order: StrandedDirectOrderRow }) {
   );
 }
 
+/**
+ * One stranded vacation request: who, which dates, the approver's own words, a reason box and a
+ * close button. Like the direct-order row this DECIDES the request (it ends it), so it asks for a
+ * written reason and wears the destructive button — unlike ReassignRow, which only changes who owns
+ * a pending step. Nothing is deleted and nothing is rejected: the request stays on record as Closed.
+ */
+function CloseStrandedVacationRow(props: { vacation: StrandedVacationRow }) {
+  const router = useRouter();
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const { vacation } = props;
+
+  async function close() {
+    if (!reason.trim()) {
+      setError("Say why this request is being closed — it is the only record of the decision.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/vacations/requests/${encodeURIComponent(vacation.id)}/close-orphaned`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
+      if (!res.ok || !data.success) {
+        setError(data.message || "Could not close this request. It may have already moved on.");
+        setBusy(false);
+        return;
+      }
+      setDone(true);
+      router.refresh();
+    } catch {
+      setError("Network error. Please try again.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={`${adminSoftPanelClassName} px-4 py-3`}>
+      <div className="min-w-0">
+        <p className="break-words text-sm font-bold text-slate-900">
+          {vacation.employeeName} ({vacation.employeeHrId})
+        </p>
+        <p className="break-words text-xs text-slate-500">
+          {vacation.vacationType} · {vacation.startDate} to {vacation.endDate} · {vacation.requestCode}
+        </p>
+        <p className="mt-0.5 break-words text-xs text-rose-600">
+          {vacation.employeeName} is {(vacation.employeeEmploymentStatus ?? "no longer active").replace(/_/g, " ")}
+          {" — "}nobody can resubmit it
+        </p>
+        <p className="mt-0.5 break-words text-xs text-slate-500">
+          {vacation.returnedAt ? `Sent back ${cairoDate(vacation.returnedAt)}` : "Sent back on a date the request does not record"}
+          {/* The approver's own words, NEVER truncated — it is the question that went unanswered. */}
+          {vacation.returnReason ? `: “${vacation.returnReason}”` : " with no reason recorded"}
+        </p>
+      </div>
+      {done ? (
+        <p className="mt-2 text-sm font-bold text-slate-900">Closed ✓</p>
+      ) : (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            disabled={busy}
+            placeholder="Why is this being closed?"
+            aria-label={`Reason for closing ${vacation.employeeName}'s vacation request`}
+            className={cn(phxFieldClassName, "w-full sm:w-auto sm:min-w-[260px] sm:flex-1")}
+          />
+          <button
+            type="button"
+            onClick={close}
+            disabled={busy}
+            className={cn(phxButtonDangerClassName, "w-full justify-center sm:w-auto")}
+          >
+            {busy ? "Closing…" : "Close request"}
+          </button>
+        </div>
+      )}
+      {error ? <p className="mt-2 text-sm font-semibold text-rose-600">{error}</p> : null}
+    </div>
+  );
+}
+
 function Section(props: { title: string; count: number; children: ReactNode }) {
   return (
     <section className={adminPanelClassName}>
@@ -229,9 +319,14 @@ export function StuckApprovalsPanel({
   excuses,
   strandedDirectOrders,
   canCloseStrandedDirectOrders,
+  strandedVacations,
   managerOptions,
 }: StuckApprovalsPanelProps) {
-  const empty = weeklyPlans.length === 0 && excuses.length === 0 && strandedDirectOrders.length === 0;
+  const empty =
+    weeklyPlans.length === 0 &&
+    excuses.length === 0 &&
+    strandedDirectOrders.length === 0 &&
+    strandedVacations.length === 0;
   if (empty) {
     return (
       <section className={`${adminSoftPanelClassName} px-4 py-8 text-center`}>
@@ -243,8 +338,8 @@ export function StuckApprovalsPanel({
         </p>
         {canCloseStrandedDirectOrders ? null : (
           <p className="mt-2 text-xs text-slate-400">
-            Stranded direct orders are listed for a Super Admin only, because closing one decides
-            the request rather than re-routing it.
+            Stranded direct orders and vacation requests are listed for a Super Admin only, because
+            closing one decides the request rather than re-routing it.
           </p>
         )}
       </section>
@@ -304,6 +399,28 @@ export function StuckApprovalsPanel({
               </p>
               {strandedDirectOrders.map((order) => (
                 <CloseStrandedOrderRow key={order.id} order={order} />
+              ))}
+            </>
+          )}
+        </Section>
+      ) : null}
+
+      {/* Super Admin only, for the same reason: closing decides the request. */}
+      {canCloseStrandedDirectOrders ? (
+        <Section title="Vacation requests — nobody can resubmit" count={strandedVacations.length}>
+          {strandedVacations.length === 0 ? (
+            <p className="px-1 py-2 text-xs text-slate-500">No stranded vacation requests.</p>
+          ) : (
+            <>
+              <p className="px-1 pb-1 text-xs leading-relaxed text-slate-500">
+                These were sent back to the employee for editing, and the employee has since left.
+                Only the employee who submitted a request can resubmit it, so none of them can move.
+                Closing one retires it and keeps it on record as Closed; it is not a rejection, no
+                approver is counted as having turned it down, and no leave balance changes because
+                nothing here was ever approved.
+              </p>
+              {strandedVacations.map((vacation) => (
+                <CloseStrandedVacationRow key={vacation.id} vacation={vacation} />
               ))}
             </>
           )}

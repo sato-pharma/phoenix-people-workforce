@@ -26,6 +26,9 @@ export const VACATION_STATUSES = [
   { label: "Approved", value: "approved" },
   { label: "Rejected", value: "rejected" },
   { label: "Returned to Employee", value: "returned" },
+  // Added 2026-10-15: a returned request whose employee left the company, closed by a Super Admin
+  // (closeOrphanedVacationRequest). Never a rejection: no approver turned it down.
+  { label: "Closed", value: "cancelled" },
 ] as const;
 
 export const VACATION_PAYMENT_STATUSES = [
@@ -203,7 +206,7 @@ export type VacationSlaStatus = {
   isOverdue: boolean;
   lastEscalatedAt: string | null;
   lastRemindedAt: string | null;
-  stage: "approved" | "manager" | "hr" | "rejected" | "returned";
+  stage: "approved" | "manager" | "hr" | "rejected" | "returned" | "cancelled";
 };
 
 export type VacationTimelineEvent = {

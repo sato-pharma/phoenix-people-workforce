@@ -160,6 +160,7 @@ function statusBadgeVariant(status: VacationRequestStatus) {
   if (status === "approved") return "success";
   if (status === "rejected") return "danger";
   if (status === "returned") return "warning";
+  if (status === "cancelled") return "neutral";
   return "warning";
 }
 
@@ -168,6 +169,7 @@ function statusLabel(status: VacationRequestStatus) {
   if (status === "pending_manager") return "Pending Manager";
   if (status === "pending_hr") return "Pending HR";
   if (status === "approved") return "Approved";
+  if (status === "cancelled") return "Closed";
   return "Rejected";
 }
 

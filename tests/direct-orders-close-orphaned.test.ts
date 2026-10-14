@@ -334,6 +334,16 @@ export function runDirectOrderCloseOrphanedTests() {
       source: stripComments(service),
       verb: "close",
     },
+    vacation: {
+      acceptsReturned: () =>
+        bodyOf(stripComments(read(VACATION_SERVICE)), "export async function closeOrphanedVacationRequest").includes(
+          'request.status !== "returned"',
+        ),
+      file: VACATION_SERVICE,
+      fn: "export async function closeOrphanedVacationRequest",
+      source: stripComments(read(VACATION_SERVICE)),
+      verb: "close",
+    },
     marketing: {
       acceptsReturned: () => marketingCancellableStatuses.has("returned"),
       file: MARKETING_CANCEL,
@@ -428,29 +438,30 @@ export function runDirectOrderCloseOrphanedTests() {
     'A MEDICAL REP CANNOT RAISE A DIRECT ORDER AT ALL (DIRECT_ORDER_REQUESTER_ROLES starts at District Manager) — the five found were raised by two District Sales Managers, so the copy says "the person who raised"',
   );
 
-  // ── Vacation: handed back to the employee, and NO control can clear it ─────────────────
+  // ── Vacation: handed back to the employee, and (since 2026-10-15) closable ───────────────
   //
   // A vacation IS returned to the employee (`manager_return`, "Waiting for the employee to
   // resubmit"), so its lane must carry `returned` — while it was empty, a returned vacation of a
   // resigned employee went down the approver branch, found no pending rung and was silently dropped.
-  // And nothing in Phoenix can clear one for them: there is no cancel, close or withdraw for a
-  // vacation at all, and the registry's `admin_delete` refuses `returned`. So the honest remedy is
-  // NULL, and the board must say "no screen can clear it yet" rather than print a verb.
+  // Until 2026-10-15 nothing in Phoenix could clear one, so the remedy was NULL and the board said
+  // "no screen can clear it yet"; closeOrphanedVacationRequest now exists and its verb is "close".
   assert.match(
     lanes,
     /vacation:\s*\[\s*"returned"\s*\]/,
     "a RETURNED vacation waits on the EMPLOYEE, not an approver — without it in BACK_WITH_REQUESTER the reader looks for a pending rung, finds none and drops a resigned employee's returned vacation without a trace",
   );
+  // 2026-10-15: the control now exists (closeOrphanedVacationRequest, pinned in
+  // tests/vacation-close-orphaned.test.ts), so the board offers its verb — and the generic loop above
+  // has already checked that verb against the exported function.
   assert.equal(
     orphanedRequestModuleScreens.vacation.requesterRemedy,
-    null,
-    'NO CONTROL CLEARS A RETURNED VACATION, so the board must offer no verb for one. The previous value "reassign" named a control that does not exist — the 2026-10-08 defect in the vacation lane. Build the control first, then name it in requesterRemedyControls and set the verb here.',
+    "close",
+    "a returned vacation of a resigned employee is CLOSED on Stuck Approvals — never reassigned (only the employee may resubmit) and never deleted",
   );
-  const vacationService = stripComments(read(VACATION_SERVICE));
-  assert.doesNotMatch(
-    vacationService,
-    /export async function (?:cancel|withdraw|close|void)\w*Vacation/i,
-    "A CONTROL THAT CAN CLEAR A VACATION NOW EXISTS, but the board still says no screen can. If it accepts `returned`, add it to requesterRemedyControls and set orphanedRequestModuleScreens.vacation.requesterRemedy to its verb.",
+  assert.match(
+    stripComments(read(VACATION_SERVICE)),
+    /export async function closeOrphanedVacationRequest/,
+    "the board names a close verb for vacations, so the function behind it must exist",
   );
   assert.match(
     sources,

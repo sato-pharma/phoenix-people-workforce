@@ -14,6 +14,7 @@ export type LeaveWorkflowActionKey =
   | "admin_create"
   | "admin_delete"
   | "admin_update"
+  | "close_orphaned"
   | "hr_approve"
   | "hr_reject"
   | "hr_return"
