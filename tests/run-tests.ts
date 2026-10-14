@@ -2436,6 +2436,7 @@ import { runTerritoryTreeDesktopFitsTheScreenTests } from "./territory-tree-desk
 import { runRequiredCheckNamesTests } from "./required-check-names.test.ts";
 import { runDependabotAlertsTests } from "./dependabot-alerts.test.ts";
 import { runWorkflowDispatchGuardTests } from "./workflow-dispatch-guard.test.ts";
+import { runCiTreeReuseDryrunTests } from "./ci-tree-reuse-dryrun.test.ts";
 import { runPrSameModuleHoldGuardTests } from "./pr-same-module-hold-guard.test.ts";
 import { runNextBuildCpuCapTests } from "./next-build-cpu-cap.test.ts";
 import { runAttributionFreezesPublishedMonthsTests } from "./attribution-freezes-published-months.test.ts";
@@ -9581,6 +9582,10 @@ await runTest(
 await runTest(
   "bash-guard C9 refuses the THIRD workflow_dispatch of one workflow+ref in a session and explains itself with the measurement, the rollup and gh run rerun, while main stays exempt with no counter (it is the outage recovery and the production deploy gate), gh run rerun and every read verb stay uncounted, the display name / .github path / gh api /dispatches / curl spellings all collapse to one target, and every degraded state - no session id, corrupt, wrong version, another session file, unwritable - ALLOWS",
   runWorkflowDispatchGuardTests,
+);
+await runTest(
+  "the tree-reuse DRY RUN only measures: judge() is a pure comparison of two 40-hex tree ids where anything unreadable is UNKNOWN and never a MATCH, the PR is found from the squash subject's (#N) and its FINAL head's green run is read back from step names, every failed read becomes UNKNOWN with a one-line reason and nothing throws, --report counts verdicts from step names alone, and in ci.yml the recording steps are pull_request-only, the dry-run pair is push-only, continue-on-error and the LAST two steps of checks, the added permissions are read-only, and no condition anywhere reads the verdict to skip or gate real work",
+  runCiTreeReuseDryrunTests,
 );
 await runTest(
   "bash-guard C18 holds a second `gh pr create` for one module: the module is the conventional-commit scope of the title, an OPEN PR with a shared scope holds, a MERGED one holds for six hours and not a minute longer, a different scope / a title with no scope / chore(deps) and chore(memory) plumbing never hold, PHX_PR_HOLD_OK=1 lets one through, and every degraded state - gh failing, no readable title - ALLOWS; driven as a subprocess against a fake gh",

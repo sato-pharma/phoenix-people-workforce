@@ -653,6 +653,13 @@ jobs:
   checks:
     runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 30
+    # READ-ONLY additions for the tree-reuse DRY RUN (owner, 2026-10-14): `actions: read` lets the push
+    # run read a PR run's step names, `pull-requests: read` lets it find the PR's final head. Nothing
+    # here can write. Account: scripts/ci-tree-reuse.mjs, docs/ci-self-hosted-runner.md.
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
 
     steps:
       - name: Check out repository
@@ -676,6 +683,20 @@ jobs:
           fetch-depth: 2
 
       # Answered inline, per job — see the note on this step in `validate`.
+
+      # TREE-REUSE DRY RUN, half one (owner, 2026-10-14, cost cuts). A PR run writes down the tree it is
+      # about to test, in the NAME of the next step: a step name is readable from the jobs API with
+      # `actions: read` alone. Nothing reads it for any decision; see scripts/ci-tree-reuse.mjs.
+      - name: Compute the tree this run tests
+        id: tree
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: echo "sha=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+
+      - name: Tested tree ${{ steps.tree.outputs.sha }}
+        if: github.event_name == 'pull_request' && steps.tree.outputs.sha != ''
+        continue-on-error: true
+        run: echo "recorded"
 
       # corepack must be enabled BEFORE setup-node runs — see the note in `validate`.
       - name: Enable Corepack (pnpm)
@@ -785,6 +806,24 @@ jobs:
       - name: Test
         if: github.event_name != 'pull_request'
         run: pnpm run test:sharded
+
+      # TREE-REUSE DRY RUN, half two. On a push, ask whether the tree that just landed is the very tree
+      # the PR's green run tested, and say the answer in the NEXT step's name so it can be counted later
+      # (`node scripts/ci-tree-reuse.mjs --report`). 🔴 LOG ONLY: it never skips, shortens or gates
+      # anything, it cannot fail the job, and no `if:` in this file may read its output. Turning it
+      # into a skip is a separate decision that is the owner's alone.
+      - name: Tree reuse dry run (log only)
+        id: reuse
+        if: github.event_name == 'push'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci-tree-reuse.mjs --dry-run
+
+      - name: Tree reuse dry run ${{ steps.reuse.outputs.verdict }}
+        if: github.event_name == 'push' && steps.reuse.outputs.verdict != ''
+        continue-on-error: true
+        run: echo "recorded"
 
 
   # THE ONE JOB THAT LOOKS AT mobile/ (added 2026-09-18). Nothing else in this file does, and that
