@@ -7,7 +7,9 @@ import {
   INVOICE_OVERDUE_EVENT_TYPE,
   INVOICE_OVERDUE_FINANCE_AUDIENCE,
   INVOICE_OVERDUE_FINANCE_URL,
+  INVOICE_OVERDUE_NUDGE_ENABLED,
   INVOICE_OVERDUE_REQUESTER_URL,
+  runMarketingInvoiceOverdueNudge,
   describeOverdueInvoice,
   financeOverdueInvoiceDigest,
   groupOverdueInvoicesByRequester,
@@ -42,7 +44,15 @@ function invoice(overrides: Partial<OverdueMarketingInvoice>): OverdueMarketingI
   return { ...realOverdueInvoice(), ...overrides };
 }
 
-export function runMarketingInvoiceOverdueNudgeTests() {
+export async function runMarketingInvoiceOverdueNudgeTests() {
+  // Owner, 2026-10-14: the invoice reminders are stopped. The run sends nothing and reads nothing.
+  assert.equal(INVOICE_OVERDUE_NUDGE_ENABLED, false, "the invoice overdue reminder stays switched off");
+  assert.deepEqual(
+    await runMarketingInvoiceOverdueNudge("2026-10-14"),
+    { financeNotified: 0, financeWarnings: [], overdueInvoices: 0, requestersNotified: 0, skipped: 0 },
+    "a switched-off run notifies nobody",
+  );
+
   // ── Channels: the owner's 2026-07-25 rule, asserted out loud ────────────────────────────────
   assert.ok(
     !(INVOICE_OVERDUE_CHANNELS as readonly string[]).includes("email"),
