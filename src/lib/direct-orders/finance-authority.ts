@@ -66,6 +66,17 @@ export function canRecordDirectOrderCollection(access: DirectOrderFinanceAccess)
   return isSystemAdmin(access) || isDirectOrderFinanceOfficer(access);
 }
 
+/**
+ * Who may raise AND execute a service-fee marketing request against an order in one click.
+ *
+ * The Administrator alone (owner, 2026-10-15: the only Super Admin, recording the whole chain as
+ * his own decisions). Deliberately NOT Finance: Finance settles a request someone else raised and
+ * the chain approved; this path writes the chain itself, so it must never be inherited with a title.
+ */
+export function canSettleServiceFeeAsAdministrator(access: DirectOrderFinanceAccess): boolean {
+  return isSystemAdmin(access);
+}
+
 export type DirectOrderSalesMonthOutcome =
   | { ok: true; nextMonth: string | null }
   | { ok: false; message: string };

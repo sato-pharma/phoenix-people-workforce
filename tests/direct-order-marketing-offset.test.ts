@@ -2,14 +2,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { deriveDirectOrderCollection } from "../src/lib/direct-orders/collection-rules.ts";
+import { canSettleServiceFeeAsAdministrator } from "../src/lib/direct-orders/finance-authority.ts";
 import {
   deriveOutstandingAmount,
   deriveRemainingWhenCollectionCleared,
   isMissingOffsetTableError,
   offsetErrorMessage,
+  SERVICE_FEE_REQUEST_TYPES,
   validateOffset,
+  validateServiceFeeSettlement,
 } from "../src/lib/direct-orders/offset-rules.ts";
-import { stripComments } from "./support/comment-strip.ts";
+import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 /**
  * Settling a marketing request against a direct order's debt (Zamzam Hospital, October 2026).
@@ -138,4 +141,53 @@ export async function runDirectOrderMarketingOffsetTests() {
 
   const registry = read("../src/lib/security/access-registry.ts");
   assert.ok(registry.includes('pattern: "/api/marketing-requests/direct-order-offset"'), "the route is declared in the access registry");
+
+  // ── 6. The Administrator's one-click service fee ─────────────────────────
+  const fee = {
+    amount: 25000,
+    beneficiaryName: "Dr. Walid El Raees",
+    note: "",
+    orderStatus: "approved",
+    outstanding: 25000,
+    requestTypeCode: "special_request",
+  };
+  assert.deepEqual(validateServiceFeeSettlement(fee), { ok: true, amount: 25000 }, "the Zamzam case is accepted");
+  assert.equal(validateServiceFeeSettlement({ ...fee, orderStatus: "pending_approval" }).ok, false, "only an approved order has a debt");
+  assert.equal(validateServiceFeeSettlement({ ...fee, beneficiaryName: "  " }).ok, false, "a fee is owed to someone");
+  assert.equal(validateServiceFeeSettlement({ ...fee, requestTypeCode: "conference" }).ok, false, "only the listed types");
+  assert.equal(validateServiceFeeSettlement({ ...fee, requestTypeCode: "other" }).ok, false, "Other needs a description");
+  assert.equal(validateServiceFeeSettlement({ ...fee, requestTypeCode: "other", note: "Fee kept by the hospital" }).ok, true);
+  assert.equal(validateServiceFeeSettlement({ ...fee, amount: 25000.01 }).ok, false, "never more than the order still owes");
+  assert.equal(validateServiceFeeSettlement({ ...fee, amount: 0 }).ok, false, "zero is not a settlement");
+  assert.deepEqual(
+    SERVICE_FEE_REQUEST_TYPES.map((type) => type.code),
+    ["special_request", "deal", "other"],
+    "the three types the owner was offered",
+  );
+  assert.equal(offsetErrorMessage(new Error("service_fee_duplicate"))?.includes("just recorded"), true, "a double click is explained");
+
+  // Authority: the Administrator only. Finance settles a request somebody else raised and the chain
+  // approved; this path writes the chain itself, so the Finance officer must not inherit it.
+  assert.equal(canSettleServiceFeeAsAdministrator({ hrId: "B-10", role: "Super Admin", scope: "system" }), true);
+  assert.equal(canSettleServiceFeeAsAdministrator({ hrId: "B-185", role: "Finance Manager", scope: "company" }), false, "Finance is not the Administrator");
+  assert.equal(canSettleServiceFeeAsAdministrator({ hrId: "PD-0012", role: "District Manager", scope: "team" }), false);
+
+  const feeMigration = read("../supabase/migrations/20261015020803_admin_settle_service_fee_request.sql");
+  const feeFn = "phx_admin_settle_service_fee(uuid, text, text, text, numeric, text, text)";
+  assert.ok(feeMigration.includes(`revoke execute on function public.${feeFn} from public, anon, authenticated;`), "closed to the browser roles");
+  assert.ok(feeMigration.includes(`grant execute on function public.${feeFn} to service_role;`), "open to the service role only");
+  assert.ok(feeMigration.includes("from public.direct_order_requests where id = p_order_id for update"), "the order is locked before the balance is read");
+  assert.ok(feeMigration.includes("service_fee_duplicate"), "a double click is refused inside the transaction");
+  const feeSql = stripSqlComments(readFileSync(new URL("../supabase/migrations/20261015020803_admin_settle_service_fee_request.sql", import.meta.url), "utf8"));
+  assert.ok(!/paid_amount\s*=/.test(feeSql), "a service fee never writes the cash column");
+  assert.ok(!/payment_date\s*=/.test(feeSql), "nor the payment date");
+  assert.ok(feeMigration.includes("v_admin_id, now(),"), "every rung is recorded as decided by the Administrator, never under another name");
+
+  const feeService = read("../src/lib/direct-orders/service-fee-settlement-service.ts");
+  assert.ok(feeService.includes("canSettleServiceFeeAsAdministrator(access)"), "the service checks the Administrator's authority");
+  assert.ok(!feeService.includes(".update("), "the order's remainder is written by the locked function, never from here");
+  const feeRoute = read("../app/api/direct-orders/[id]/service-fee/route.ts");
+  assert.equal((feeRoute.match(/assertSameOriginMutation\(request\)/g) ?? []).length, 1, "the route checks the origin");
+  assert.ok(!feeRoute.includes("requesterHrId"), "the requester comes from the order, never from the body");
+  assert.ok(registry.includes('pattern: "/api/direct-orders/:id/service-fee"'), "the route is declared in the access registry");
 }
