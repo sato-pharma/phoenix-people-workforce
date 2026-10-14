@@ -1412,6 +1412,7 @@ import { runDirectOrdersExtraAreaGrantTests } from "./direct-orders-extra-area-g
 import { runDirectOrdersShareLinkControlsTests } from "./direct-orders-share-link-controls.test.ts";
 import { runDirectOrderCancelHeldTests } from "./direct-orders-cancel-held.test.ts";
 import { runDirectOrderCloseOrphanedTests } from "./direct-orders-close-orphaned.test.ts";
+import { runVacationCloseOrphanedTests } from "./vacation-close-orphaned.test.ts";
 import { runDirectOrderInvoicePrefillTests } from "./direct-orders-invoice-prefill.test.ts";
 import { runDirectOrderInvoiceValidationTests } from "./direct-orders-invoice-validation.test.ts";
 import { runDirectOrderOrderInvoiceTests } from "./direct-orders-order-invoice.test.ts";
@@ -9706,6 +9707,10 @@ await runTest(
 await runTest(
   "a returned direct order whose requester has left can be CLOSED, and the board's remedy verb names a control that exists: the reader keys the requester canonically and judges \"left\" only by isActiveLifecycleStatus (active + on_leave, a blank reading active) over the includeInactive directory, skipping an HR_ID the master does not hold at all; the closer is Super Admin only, demands a written reason, takes `returned` and nothing else, REFUSES while the requester can still log in and refuses a missing employee record as a directory problem rather than a departure, passes the row's real status to the registry gate under close_orphaned, guards the update on `returned` and treats a lost race as an error, writes `cancelled` and never `rejected`, touches no approval step and no sales month, and tells the SFE Manager in-app and on Telegram but never by email; the registry triple (TS union, migration row, call site) all name close_orphaned with from `returned`, to `cancelled`, requiresReason and Super Admin, adding no status and never setting version by hand; and every requesterRemedy verb on the Needs You board resolves to a real exported function that accepts `returned` — the pin that stops the copy promising a button nobody built",
   runDirectOrderCloseOrphanedTests,
+);
+await runTest(
+  "a returned vacation request whose employee has left can be CLOSED: the status vocabulary and the database check carry cancelled, the closer is Super Admin only, demands a written reason, takes returned and nothing else, refuses while the employee can still log in or is missing from the master, runs every refusal before the write, ends in cancelled and never rejected, deletes nothing and touches no approval step, decision or balance, writes an audit and a closed_stranded event, and the board plus Stuck Approvals point at the control",
+  runVacationCloseOrphanedTests,
 );
 await runTest(
   "the Needs You page links and never decides: no server action, form, HTTP method, click handler, form-state hook, revalidate or action prop anywhere under the route, and no fetch at all (an HTTP hop back into this app would inherit /api/approvals/badge-counts' deliberate {count: 0} fallback, the one shape this page must never have), with the route force-dynamic and its gate a server-side redirect on canAccessSystemAdministratorWorkspace rather than a hidden nav row",

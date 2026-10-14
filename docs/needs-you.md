@@ -101,9 +101,9 @@ read so an unread chain is amber, never calm. It sits in `worth-knowing`, each i
 screen that owns the cleanup, and — like the payroll row — it never states the money a direct order
 carries.
 
-A returned VACATION is the employee's case too (fixed 2026-10-08), but no control in Phoenix can
-clear one — there is no cancel, close or withdraw for a vacation, and the registry refuses an admin
-delete of a `returned` one — so that item says no screen can clear it yet instead of naming a verb.
+A returned VACATION is the employee's case too (fixed 2026-10-08). Until 2026-10-15 no control could
+clear one, so that item said no screen could clear it yet instead of naming a verb. It now says to
+close it on Stuck Approvals (`closeOrphanedVacationRequest`, Super Admin only, result `cancelled`).
 
 `phoenix-crm-decisions` joined on 2026-10-03: Phoenix CRM's list requests and off-plan visits at the
 viewer's own step, plus the carried-over customers still waiting to be validated. **The sent weekly

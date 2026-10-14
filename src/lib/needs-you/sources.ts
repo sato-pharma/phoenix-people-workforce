@@ -811,12 +811,15 @@ const orphanedRequests: NeedsYouAdapter = {
       // only one person may answer a return, so a reassignment is not on offer, and until
       // 2026-10-08 this line promised both verbs on a screen that had neither (see
       // `orphanedRequestModuleScreens`). A NULL remedy means no control exists for that module
-      // (vacation, today), and the note then says so plainly instead of naming a verb.
+      // (none today), and the note then says so plainly instead of naming a verb. A module may name
+      // a different screen for the requester case (vacation: close it on Stuck Approvals).
+      const requesterScreen = screen.requesterScreen ?? screen.screen;
+      const itemHref = group.actorRole === "requester" ? (screen.requesterHref ?? screen.href) : screen.href;
       const note = group.actorRole === "approver"
         ? `The approver named on the current rung has left, so ${them} cannot advance — reassign the rung on the ${screen.screen} screen.`
         : screen.requesterRemedy === null
           ? `Handed back to edit, but the person who raised ${them} has left and a return can only be answered by them — no screen in Phoenix can close or withdraw a returned ${orphanedRequestModuleLabels[group.module]} yet, so ${them} will stay open.`
-          : `Handed back to edit, but the person who raised ${them} has left and a return can only be answered by them — ${screen.requesterRemedy} ${them} on the ${screen.screen} screen.`;
+          : `Handed back to edit, but the person who raised ${them} has left and a return can only be answered by them — ${screen.requesterRemedy} ${them} on the ${requesterScreen} screen.`;
       return {
         key: `orphaned-requests:${group.module}:${group.actorRole}`,
         sourceId: "orphaned-requests" as const,
@@ -825,7 +828,7 @@ const orphanedRequests: NeedsYouAdapter = {
         label,
         count: group.count,
         people: group.people,
-        href: screen.href,
+        href: itemHref,
         externalUrl: null,
         oldestAt: group.oldestAt,
         ageDays: ageDaysSince(group.oldestAt, now),

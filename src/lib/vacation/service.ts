@@ -26,6 +26,7 @@ import { invalidateExecutiveDashboardCache, VACATION_REPORT_ROWS_CACHE_TAG } fro
 import {
   getEmployeeDirectory,
   getEmployeeDirectoryRows,
+  isActiveLifecycleStatus,
   type EmployeeDirectoryData,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
@@ -1255,7 +1256,7 @@ export function buildVacationSlaStatus(input: {
 }): VacationSlaStatus {
   const status = input.request.status;
   // A returned request waits on the employee, not an approver, so no approver's clock runs on it.
-  if (status === "approved" || status === "rejected" || status === "returned") {
+  if (status === "approved" || status === "rejected" || status === "returned" || status === "cancelled") {
     return {
       businessDaysPending: 0,
       dueAt: null,
@@ -4008,6 +4009,185 @@ export async function deleteVacationRequestAsAdmin(access: AccessContext, reques
 
   invalidateExecutiveDashboardCache("leave request deleted by admin", ["leave"]);
   return existing;
+}
+
+// ── Stranded returned vacations — the employee has left, so nobody can resubmit ─────────────
+//
+// WHY THIS EXISTS (2026-10-15). `returned` is answerable by exactly one person:
+// `resubmitVacationRequest` refuses anyone who is not the employee who submitted the request. When
+// that employee resigns their login is disabled, nothing expires a `returned` request and it is in
+// nobody's queue. The Needs You board (`src/lib/approvals/orphaned-requests.ts`) finds these; until
+// now it could only say "no screen in Phoenix can clear it yet". The direct-order twin is
+// `closeOrphanedDirectOrder`, written after five orders had to be cleared by hand-written SQL.
+//
+// CLOSED, NEVER DELETED AND NEVER REJECTED. `admin_delete` would erase the request, its events and
+// who approved what; `rejected` would count against an approver who turned nothing down. The result
+// is `cancelled`. No balance moves — a returned request was never approved — and the approval steps
+// are left exactly as they are, because an approver can only act on `pending_manager` / `pending_hr`.
+
+/** A returned vacation request whose employee the employee master reports as no longer active. */
+export type StrandedVacationRow = {
+  id: string;
+  requestCode: string;
+  employeeHrId: string;
+  employeeName: string;
+  employeeEmploymentStatus: string | null;
+  vacationType: string;
+  startDate: string;
+  endDate: string;
+  /** The approver's own words, never shortened — it is the question that went unanswered. */
+  returnReason: string | null;
+  returnedAt: string | null;
+};
+
+function assertStrandedVacationAccess(access: AccessContext) {
+  if (!isAllVacationVisibility(access)) {
+    throw new Error("Forbidden: only a Super Admin can list or close stranded vacation requests.");
+  }
+}
+
+/**
+ * Every returned vacation request whose employee has left the company, oldest first. Super Admin /
+ * system only. "Left" is `isActiveLifecycleStatus` — `active` and `on_leave` only, a blank reading
+ * active — over the includeInactive directory, and an HR id the master does not hold at all is left
+ * alone (a directory problem, not a departure), matching `selectOrphanedRequests`.
+ */
+export async function listStrandedVacationRequests(access: AccessContext): Promise<StrandedVacationRow[]> {
+  await assertPermission(access, "leave", "read");
+  assertStrandedVacationAccess(access);
+  const { data, error } = await getSupabaseAdmin()
+    .from(vacationRequestsTable)
+    .select("*")
+    .eq("status", "returned")
+    .order("updated_at", { ascending: true });
+  if (error) throwVacationDatabaseError(error);
+  // An arrow, never `.map(mapVacationRow)`: map hands the index to mapVacationRow's second
+  // parameter, which is `canDecide`.
+  const requests = ((data ?? []) as VacationRequestDbRow[]).map((row) => mapVacationRow(row));
+  if (requests.length === 0) return [];
+
+  const directory = await getEmployeeDirectoryRows({ includeInactive: true });
+  const byKey = new Map<string, EmployeeDirectoryRow>();
+  for (const employee of directory) {
+    const key = canonicalHrIdKey(employee.hrId);
+    if (key) byKey.set(key, employee);
+  }
+
+  const stranded: StrandedVacationRow[] = [];
+  for (const request of requests) {
+    const employee = byKey.get(canonicalHrIdKey(request.employeeHrId) ?? "");
+    if (!employee) continue;
+    if (isActiveLifecycleStatus(employee.employmentStatus)) continue;
+    stranded.push({
+      employeeEmploymentStatus: employee.employmentStatus ?? null,
+      employeeHrId: request.employeeHrId,
+      employeeName: employee.fullName.trim() || request.employeeName || request.employeeHrId,
+      endDate: request.endDate,
+      id: request.id,
+      requestCode: request.requestCode,
+      returnReason: request.managerDecisionComment?.trim() || null,
+      returnedAt: request.managerDecisionAt ?? null,
+      startDate: request.startDate,
+      vacationType: vacationTypeLabel(request.vacationType),
+    });
+  }
+  return stranded;
+}
+
+/**
+ * Close one returned vacation request whose employee has left — the way out that did not exist.
+ * Result `cancelled`, a written reason is mandatory, and it REFUSES while the employee can still
+ * log in: that guard is the difference between clearing a dead end and deleting a live request.
+ */
+export async function closeOrphanedVacationRequest(
+  access: AccessContext,
+  input: { requestId: string; reason: string },
+): Promise<{ requestId: string; status: "cancelled" }> {
+  await assertPermission(access, "leave", "read");
+  assertStrandedVacationAccess(access);
+
+  const reason = input.reason?.trim();
+  if (!reason) {
+    throw new Error("Say why this request is being closed — it is the only record of the decision.");
+  }
+
+  const request = await fetchVacationRequestById(input.requestId);
+  if (!request) throw new Error("Vacation request was not found.");
+  if (request.status !== "returned") {
+    throw new Error(
+      `Only a request an approver sent back can be closed this way — this one is ${request.status.replace(/_/g, " ")}. ` +
+        "A request still in the approval chain is decided by its approver.",
+    );
+  }
+
+  const directory = await getEmployeeDirectoryRows({ includeInactive: true });
+  const employeeKey = canonicalHrIdKey(request.employeeHrId);
+  const employee = directory.find((row) => canonicalHrIdKey(row.hrId) === employeeKey) ?? null;
+  const employeeLabel = employee?.fullName.trim() || request.employeeName || request.employeeHrId;
+  if (!employee) {
+    throw new Error(
+      `${request.employeeHrId} is not in the employee master at all, so this is a directory problem rather ` +
+        "than a departure. Fix the employee record first; this action only clears a request whose employee " +
+        "the master reports as having left.",
+    );
+  }
+  if (isActiveLifecycleStatus(employee.employmentStatus)) {
+    throw new Error(
+      `${employeeLabel} is still employed, so this return is theirs to answer — they can correct and ` +
+        "resubmit it themselves. This action only clears a request whose employee has left the company.",
+    );
+  }
+
+  await assertLeaveWorkflowTransition({
+    access,
+    actionKey: "close_orphaned",
+    expectedNextStatus: "cancelled",
+    status: request.status,
+  });
+
+  const actorHrId = resolveEmployeeIdentityId(access);
+  const { data: updated, error } = await getSupabaseAdmin()
+    .from(vacationRequestsTable)
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("id", request.id)
+    .eq("status", "returned")
+    .select("id");
+  if (error) throwVacationDatabaseError(error);
+  // A lost race is an error, never a success: the request may have been edited and resubmitted a
+  // moment ago, which moves it to pending and makes this update match nothing.
+  if (!updated || updated.length === 0) {
+    throw new Error("This request is no longer in the returned lane. Reload the list and check its current state.");
+  }
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? actorHrId ?? "system",
+    entityId: request.id,
+    entityType: "vacation_request",
+    newValues: { status: "cancelled" },
+    oldValues: { employeeHrId: request.employeeHrId, status: "returned" },
+    summary:
+      `Vacation request closed as stranded by ${actorHrId ?? "system"} — its employee ${employeeLabel} ` +
+      `(${employee.employmentStatus ?? "not active"}) can no longer answer the return — ${reason}`,
+  });
+  await insertVacationEvent({
+    actorHrId,
+    actorLoginId: access.loginId,
+    eventType: "closed_stranded",
+    message:
+      `Closed as stranded: ${reason} The request was sent back for editing, and ${employeeLabel}, who ` +
+      "submitted it, has left the company — only the employee can resubmit a returned request. It was " +
+      "not rejected by any approver.",
+    metadata: {
+      closedReason: "employee_left_cannot_resubmit",
+      employeeEmploymentStatus: employee.employmentStatus ?? null,
+      previousStatus: "returned",
+      strandedEmployeeHrId: request.employeeHrId,
+    },
+    requestId: request.id,
+  });
+
+  invalidateExecutiveDashboardCache("stranded vacation request closed", ["leave"]);
+  return { requestId: request.id, status: "cancelled" };
 }
 
 async function fetchVacationRequestById(id: string) {

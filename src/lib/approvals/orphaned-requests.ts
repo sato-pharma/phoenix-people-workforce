@@ -67,18 +67,26 @@ export const orphanedRequestModuleLabels: Record<OrphanedRequestModule, string> 
  * without building the control is that bug again.
  *
  * 🔴 `requesterRemedy: null` MEANS NO CONTROL EXISTS, and the board then says so in plain words
- * instead of printing a verb. That is `vacation` today. A vacation IS handed back to the employee
- * (`manager_return` → `returned`, "Waiting for the employee to resubmit"), and only that employee may
- * resubmit it — but nothing in Phoenix can clear a returned vacation for them: there is no cancel,
- * close or withdraw for a vacation request at all, and the one admin removal,
- * `deleteVacationRequestAsAdmin`, is refused for `returned` by the workflow registry (`leave_requests`
- * `admin_delete` lists draft, pending_manager, pending_hr, approved, rejected and cancelled — read
- * live 2026-10-08). Until a real control exists the honest answer is "no screen can clear it yet",
- * never a verb.
+ * instead of printing a verb. No module is null today. `vacation` WAS: a returned vacation is handed
+ * back to the employee (`manager_return` → `returned`) and only that employee may resubmit it, and
+ * until 2026-10-15 nothing could clear one for a resigned employee (`admin_delete` would destroy it
+ * and the `v2_vacation_requests` status check had no `cancelled`). `closeOrphanedVacationRequest`
+ * now does, on Stuck Approvals. If a module ever loses its control, set the verb back to null rather
+ * than leave the board naming a button nobody can click.
+ *
+ * `requesterHref` / `requesterScreen` are optional: a module whose APPROVER-case screen differs from
+ * its REQUESTER-case screen names the second one here. Vacation's approver case is solved on Leave
+ * Approvals (reassign the rung), its requester case on Stuck Approvals (close the request).
  */
 export const orphanedRequestModuleScreens: Record<
   OrphanedRequestModule,
-  { href: `/${string}`; screen: string; requesterRemedy: string | null }
+  {
+    href: `/${string}`;
+    screen: string;
+    requesterRemedy: string | null;
+    requesterHref?: `/${string}`;
+    requesterScreen?: string;
+  }
 > = {
   // CLOSED, never reassigned: a resubmit reprices the basket on today's basis and resumes at the
   // rung that returned it, so re-addressing one hands a live manager a money edit rather than an
@@ -88,8 +96,16 @@ export const orphanedRequestModuleScreens: Record<
   // `cancelMarketingRequest` accepts `returned`, Super Admin only, from the request's own Case File
   // — which is reached from the inbox.
   marketing: { href: "/admin/marketing-requests/inbox", requesterRemedy: "cancel", screen: "Marketing Inbox" },
-  // NO requester remedy — see above. The approver case still links here.
-  vacation: { href: "/admin/approvals/vacation", requesterRemedy: null, screen: "Leave Approvals" },
+  // CLOSED, never reassigned and never deleted: `closeOrphanedVacationRequest` — Super Admin only,
+  // takes `returned` only, and refuses while the employee can still log in. The approver case still
+  // links to Leave Approvals, where the rung is reassigned.
+  vacation: {
+    href: "/admin/approvals/vacation",
+    requesterHref: "/admin/approvals/stuck",
+    requesterRemedy: "close",
+    requesterScreen: "Stuck Approvals",
+    screen: "Leave Approvals",
+  },
 };
 
 /**

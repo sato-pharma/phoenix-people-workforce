@@ -24,7 +24,7 @@ export default async function AdminStuckApprovalsPage() {
       <AdminPageHero
         eyebrow="Approvals Hub"
         title="Stuck Approvals"
-        description="Requests nobody can move, because the one person who had to act next has left. Plans and excuses are reassigned to an active manager — that changes who owns the pending step and never decides the request. A returned direct order cannot be reassigned at all, because only the person who raised it may answer a return, so that one is closed instead."
+        description="Requests nobody can move, because the one person who had to act next has left. Plans and excuses are reassigned to an active manager — that changes who owns the pending step and never decides the request. A returned direct order cannot be reassigned at all, because only the person who raised it may answer a return, so that one is closed instead. A returned vacation request whose employee has left is closed the same way."
         icon={<AlertTriangle className="h-3.5 w-3.5" />}
       />
       <StuckApprovalsPanel
@@ -32,6 +32,7 @@ export default async function AdminStuckApprovalsPage() {
         excuses={data.excuses}
         strandedDirectOrders={data.strandedDirectOrders}
         canCloseStrandedDirectOrders={data.canCloseStrandedDirectOrders}
+        strandedVacations={data.strandedVacations}
         managerOptions={data.managerOptions}
       />
     </div>

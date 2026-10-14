@@ -13,6 +13,8 @@ import {
   getVacationAwaitingBadgeSource,
   getVacationReportData,
   isAllVacationVisibility,
+  listStrandedVacationRequests,
+  type StrandedVacationRow,
 } from "@/lib/vacation/service";
 import { vacationTypeLabel } from "@/lib/vacation/calculations";
 import {
@@ -627,6 +629,7 @@ function readOnlyReasonForStatus(status: VacationRequestStatus): string {
   if (status === "approved") return "This request is already approved — read-only.";
   if (status === "rejected") return "This request was rejected — read-only.";
   if (status === "returned") return "Returned to the employee — waiting for them to resubmit.";
+  if (status === "cancelled") return "This request was closed because the employee left — read-only.";
   return "Not yet your turn — waiting for an earlier approver.";
 }
 
@@ -903,6 +906,8 @@ export type StuckApprovalsData = {
    * rather than rendering a button that is certain to be refused.
    */
   canCloseStrandedDirectOrders: boolean;
+  /** Returned vacation requests whose employee has left. Empty for a viewer who cannot close one. */
+  strandedVacations: StrandedVacationRow[];
   managerOptions: StuckApprovalManagerOption[];
 };
 
@@ -914,12 +919,17 @@ export async function getStuckApprovalsForReassignment(access: AccessContext): P
   // catching its throw: a swallowed Forbidden is indistinguishable from "nothing is stranded", and
   // this surface exists precisely because a stranded request that shows as nothing ages for ever.
   const canCloseStrandedDirectOrders = access.scope === "system" || access.role === "Super Admin";
-  const [weeklyPlans, excuses, strandedDirectOrders, directoryRows] = await Promise.all([
+  const [weeklyPlans, excuses, strandedDirectOrders, strandedVacations, directoryRows] = await Promise.all([
     listWeeklyPlanManagerGapRecords().catch(() => [] as WeeklyPlanManagerGapRecord[]),
     listExcuseManagerGapRecords().catch(() => [] as ExcuseManagerGapRecord[]),
     canCloseStrandedDirectOrders
       ? listStrandedDirectOrders(access).catch(() => [] as StrandedDirectOrderRow[])
       : Promise.resolve([] as StrandedDirectOrderRow[]),
+    // Same gate as the direct orders above (isAllVacationVisibility is Super Admin / system), so
+    // the one flag tells the panel "none stranded" from "not yours to close".
+    canCloseStrandedDirectOrders
+      ? listStrandedVacationRequests(access).catch(() => [] as StrandedVacationRow[])
+      : Promise.resolve([] as StrandedVacationRow[]),
     getEmployeeDirectoryRows().catch(() => [] as EmployeeDirectoryRow[]),
   ]);
   // Active employees only (getEmployeeDirectoryRows default) — the picker must never offer an
@@ -928,7 +938,7 @@ export async function getStuckApprovalsForReassignment(access: AccessContext): P
     .map((row) => ({ hrId: row.hrId, name: row.displayName || row.fullName || row.hrId }))
     .filter((option) => Boolean(option.hrId))
     .sort((a, b) => a.name.localeCompare(b.name));
-  return { weeklyPlans, excuses, strandedDirectOrders, canCloseStrandedDirectOrders, managerOptions };
+  return { weeklyPlans, excuses, strandedDirectOrders, canCloseStrandedDirectOrders, strandedVacations, managerOptions };
 }
 
 // ── Company-wide "All Decisions" (Super Admin / system-scope oversight only) ──
