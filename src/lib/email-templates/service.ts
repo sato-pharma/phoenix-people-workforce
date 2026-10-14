@@ -184,13 +184,6 @@ export type EmailTemplateContext = {
   productList?: string | null;
   /** Plain-text projection used wherever {{productList}} appears in text fields. */
   productListText?: string | null;
-  /**
-   * The team's targets, pre-rendered as a zebra table — one row per rep, area and product, each
-   * with its own units and value. Units of different products are never added in it.
-   */
-  targetsTable?: string | null;
-  /** Plain-text projection used wherever {{targetsTable}} appears in text fields. */
-  targetsTableText?: string | null;
   /** The distributor whose sheet this is about. */
   distributorName?: string | null;
   /** Human count of the products on this line, e.g. "4 Pedia products". */
@@ -786,13 +779,13 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Weekly Sales Uploaded",
   },
   targets_uploaded: {
-    bodyHtml: "<p>Your {{line}} sales targets for <strong>{{periodLabel}}</strong> have been uploaded to Phoenix Workforce. Here are the targets for your team:</p>{{targetsTable}}<p>{{summary}}</p>",
-    bodyText: "Your {{line}} sales targets for {{periodLabel}} have been uploaded to Phoenix Workforce. Here are the targets for your team:\n\n{{targetsTable}}\n\n{{summary}}",
-    closingText: "Please open Targets in Phoenix Workforce to follow your own progress against them.",
-    description: "Tells a team's medical reps their targets after a targets file is saved, in one table. The reps' District Manager, the Regional Sales Manager and the line's National Sales Manager are copied.",
+    bodyHtml: "<p>Your target for <strong>{{periodLabel}}</strong> is now on Phoenix Workforce.</p>",
+    bodyText: "Your target for {{periodLabel}} is now on Phoenix Workforce.",
+    closingText: "Please open Targets in Phoenix Workforce to see your own target and follow your progress against it.",
+    description: "Tells a team's medical reps that their targets are on Phoenix after a targets file is saved. It carries no figures. The reps' District Manager, the Regional Sales Manager, the line's National Sales Manager and Omar Anwar are copied.",
     greeting: "Dear {{line}} Colleagues,",
     isActive: true,
-    previewText: "{{line}} targets for {{periodLabel}} are now in Phoenix Workforce.",
+    previewText: "Your {{line}} target for {{periodLabel}} is now on Phoenix Workforce.",
     subject: "{{subject}}",
     templateKey: "targets_uploaded",
     templateName: "Targets Uploaded",

@@ -1,38 +1,33 @@
 // The "Targets uploaded" email (owner request, 2026-10-14).
 //
-// When a targets workbook is COMMITTED, every rep who received a target is told, in one zebra
-// table, what their team's targets are for the month — his own example: "oct target — Omar 500
-// Lacto, Esraa 600 Lacto, and so on". The rep's manager (District Manager), the Regional Sales
-// Manager where the line has one, and the line's National Sales Manager are copied.
+// When a targets workbook is COMMITTED, every rep who received a target is told it is on Phoenix —
+// "your target for Oct, Nov, Dec 2026 is now on Phoenix", with NO figure in the email (owner,
+// 2026-10-15). The rep's manager (District Manager), the Regional Sales Manager where the line has
+// one, the line's National Sales Manager and Omar Anwar are copied.
 //
 // ONE EMAIL PER TEAM, NOT ONE PER REP AND NOT ONE PER LINE, and a file that sets a whole quarter is
-// still ONE email per team (a Month column appears), never three. The grouping, the recipients and
-// the table's cells are decided in targets-uploaded-teams.ts, which is pure and tested; this file
-// loads the organogram, renders the zebra grid and sends.
+// still ONE email per team, never three. The grouping and the recipients are decided in
+// targets-uploaded-teams.ts, which is pure and tested; this file loads the organogram and sends.
 //
 // Nobody's address is written here. Everything resolves LIVE against the organogram
 // (au_v_org_tree + au_v_line_area_map) and the HR record, so a seat change or a leaver updates the
 // audience with no code change.
 //
-// The wording lives in /admin/email-templates under "Targets Uploaded"; only the live values and
-// the table are supplied here. Routing stays ours (replaceRecipients) — who is told about a targets
+// The wording lives in /admin/email-templates under "Targets Uploaded"; only the line and the
+// months are supplied here. Routing stays ours (replaceRecipients) — who is told about a targets
 // file is decided by the organogram, not by recipient rules.
 
-import { renderPhoenixDataGrid, renderPhoenixDataGridText } from "@/emails/phoenix-email-layout";
 import { sendTemplatedEmail } from "@/lib/email-templates/service";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { lineName, loadProductNameMap, type ResolvedTargetRow } from "@/lib/sales/monthly-targets";
 import {
-  buildTargetsGrid,
   buildTargetTeams,
   dateOnly,
-  formatTargetNumber,
   NAMED_CC_HR_IDS,
   periodsLabel,
   resolveTeamRecipients,
   teamFingerprint,
-  teamTotalValue,
   type TargetAreaMapRow,
   type TargetDirectory,
   type TargetPerson,
@@ -125,10 +120,7 @@ async function sendOneTeam(team: TargetTeam, people: TargetPerson[]): Promise<Ta
   }
 
   const label = periodsLabel(team.periods);
-  const subject = `${line} — ${label} targets uploaded`;
-  const grid = buildTargetsGrid(team);
-  const total = teamTotalValue(team);
-  const summary = total == null ? "" : `Team target value across all products: ${formatTargetNumber(total)} EGP.`;
+  const subject = `${line} — your target for ${label} is now on Phoenix`;
   const action = { href: appUrl("/employee-portals/targets"), label: "Open Targets" };
 
   const result = await sendTemplatedEmail({
@@ -138,9 +130,6 @@ async function sendOneTeam(team: TargetTeam, people: TargetPerson[]): Promise<Ta
       line,
       periodLabel: label,
       subject,
-      summary,
-      targetsTable: renderPhoenixDataGrid(grid.columns, grid.rows),
-      targetsTableText: renderPhoenixDataGridText(grid.columns, grid.rows),
     },
     fallbackTo: to.map((recipient) => recipient.email),
     idempotencyKey: `targets-uploaded:${team.lineCode}:${team.managerSeatId ?? "none"}:${team.periods.join("+")}:${teamFingerprint(team)}`,

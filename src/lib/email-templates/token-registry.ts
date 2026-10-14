@@ -79,7 +79,6 @@ export const TOKEN_REGISTRY: readonly TokenDefinition[] = [
   { category: "Company", label: "Detail Sections", sampleValue: "(grouped detail sections, each with its own heading)", token: "detailsSections", allowedTemplateTypes: [], isHtmlBlock: true },
   { category: "Company", label: "Numbered Steps", sampleValue: "(the numbered how-to steps block)", token: "stepsBlock", allowedTemplateTypes: ["telegram_connect"], isHtmlBlock: true },
   { category: "Company", label: "Product List", sampleValue: "(the product names on this line, as a list)", token: "productList", allowedTemplateTypes: ["weekly_sales_uploaded"], isHtmlBlock: true },
-  { category: "Company", label: "Targets Table", sampleValue: "(the team's targets as a zebra table: rep, area, product, units, value)", token: "targetsTable", allowedTemplateTypes: ["targets_uploaded"], isHtmlBlock: true },
   { category: "Company", label: "Digest Table", sampleValue: "(a weekly digest summary table)", token: "digestTable", allowedTemplateTypes: ["probation_weekly_digest"], isHtmlBlock: true },
   { category: "Company", label: "Period Label", sampleValue: "August 2026", token: "periodLabel", allowedTemplateTypes: [] },
   { category: "Company", label: "Distributor Name", sampleValue: "Ibn Sina", token: "distributorName", allowedTemplateTypes: [] },

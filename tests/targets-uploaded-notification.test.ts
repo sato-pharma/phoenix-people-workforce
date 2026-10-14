@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import { TOKEN_REGISTRY } from "../src/lib/email-templates/token-registry.ts";
 import type { ResolvedTargetRow } from "../src/lib/sales/monthly-targets.ts";
 import {
-  buildTargetsGrid,
   buildTargetTeams,
   managersAbove,
   periodEndDate,
@@ -13,7 +12,6 @@ import {
   pickAreaMapRow,
   resolveTeamRecipients,
   teamFingerprint,
-  teamTotalValue,
   type TargetAreaMapRow,
   type TargetDirectory,
   type TargetPerson,
@@ -22,11 +20,11 @@ import {
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
- * A TARGETS UPLOAD TELLS EACH TEAM ITS OWN TARGETS, IN ONE ZEBRA TABLE, COPIED UP ITS CHAIN.
+ * A TARGETS UPLOAD TELLS EACH TEAM ITS TARGET IS ON PHOENIX, COPIED UP ITS CHAIN, WITH NO FIGURE.
  *
- * Owner, 2026-10-14: when the team targets are uploaded, every rep receives an email in a zebra
- * table — "oct target, Omar 500 Lacto, Esraa 600 Lacto, and so on" — with their manager, their NSM
- * and their RSM (where there is one) copied.
+ * Owner, 2026-10-14: when the team targets are uploaded, every rep receives an email, with their
+ * manager, their NSM and their RSM (where there is one) copied. Owner, 2026-10-15: it shows no
+ * number — "your target for Oct, Nov, Dec 2026 is now on Phoenix".
  *
  * THREE THINGS CARRY THE FEATURE AND ALL OF THEM FAIL QUIETLY.
  *
@@ -205,25 +203,7 @@ export function runTargetsUploadedNotificationTests() {
   assert.equal(stray.teams.length, 0);
   assert.equal(stray.unplaced.length, 1);
 
-  // ── 6. The table: per-product units, a Month column only for a multi-month file ──────────────
-  // The grid is DATA here; the zebra markup is renderPhoenixDataGrid's, pinned by
-  // tests/email-zebra-survives-sanitizer.test.ts (this runner substitutes a stub for the layout).
-  const single = buildTargetsGrid(cairo);
-  assert.deepEqual(
-    single.columns.map((column) => column.label),
-    ["Medical Rep", "Area", "Product", "Target units", "Target value (EGP)"],
-    "a one-month file has no Month column",
-  );
-  assert.deepEqual(single.rows, [
-    ["Esraa", "Heliopolis", "Lacto Advanced", "600", "60,000"],
-    ["Omar", "Nasr City", "Lacto Advanced", "500", "50,000"],
-  ]);
-  assert.ok(
-    !single.rows.flat().includes("1,100"),
-    "units of different reps are never summed into a figure nobody asked for",
-  );
-  assert.equal(single.columns[3]!.align, "right", "numbers sit right-aligned so they compare down the column");
-
+  // ── 6. The months are worded the way the owner wrote them, and a quarter is ONE email ───────
   const quarter = buildTargetTeams({
     rows: [
       target("2026-10", "cns", "ZZ1", "LA001", 500, 50000),
@@ -234,15 +214,22 @@ export function runTargetsUploadedNotificationTests() {
   });
   assert.equal(quarter.teams.length, 1, "a quarter file is ONE email per team, never three");
   assert.deepEqual(quarter.teams[0]!.periods, ["2026-10", "2026-11", "2026-12"]);
-  const quarterGrid = buildTargetsGrid(quarter.teams[0]!);
-  assert.equal(quarterGrid.columns[0]!.label, "Month", "a multi-month file gets a Month column");
-  assert.deepEqual(quarterGrid.rows.map((row) => row[0]), ["October 2026", "November 2026", "December 2026"]);
-  assert.equal(periodsLabel(quarter.teams[0]!.periods), "October 2026 – December 2026");
-  assert.equal(periodsLabel(["2026-10"]), "October 2026");
+  assert.equal(periodsLabel(quarter.teams[0]!.periods), "Oct, Nov, Dec 2026");
+  assert.equal(periodsLabel(["2026-10"]), "Oct 2026");
+  assert.equal(periodsLabel(["2026-12", "2026-11", "2027-01"]), "Nov, Dec 2026, Jan 2027", "a file crossing a year names each year once");
+  assert.equal(periodsLabel(["2026-10", "2026-10"]), "Oct 2026", "a month named twice is said once");
+  assert.equal(periodsLabel([]), "");
 
-  // ── 7. The one figure that may span products is VALUE ────────────────────────────────────────
-  assert.equal(teamTotalValue(cairo), 110000);
-  assert.equal(teamTotalValue({ ...cairo, rows: cairo.rows.map((row) => ({ ...row, value: null })) }), null);
+  // ── 7. The email shows NO figure — not a table, not a total (owner, 2026-10-15) ──────────────
+  assert.ok(!SERVICE_SOURCE.includes("{{targetsTable}}"), "the template must carry no targets table");
+  assert.ok(!TOKEN_REGISTRY.some((entry) => String(entry.token) === "targetsTable"), "the table token is gone");
+  assert.ok(!/targetsTable/.test(RENDER_CORE_SOURCE), "the table's text projection is gone");
+  const template = SERVICE_SOURCE.slice(SERVICE_SOURCE.indexOf("  targets_uploaded: {\n    bodyHtml"));
+  const templateBlock = template.slice(0, template.indexOf("\n  },"));
+  assert.ok(templateBlock.length > 100, "the targets_uploaded template default must be found");
+  assert.match(templateBlock, /Your target for <strong>\{\{periodLabel\}\}<\/strong> is now on Phoenix Workforce\./);
+  assert.ok(!/\{\{summary\}\}/.test(templateBlock), "no team total either");
+  assert.ok(!/\d/.test(templateBlock), "the template wording holds no digit at all");
 
   // ── 8. The same file uploaded twice is one email; a changed number is a new one ──────────────
   const again = buildTargetTeams({ rows: october, directory }).teams.find((team) => team.managerSeatId === "DM-CAIRO")!;
@@ -278,19 +265,14 @@ export function runTargetsUploadedNotificationTests() {
 
   // ── 11. The sender is template-driven, routed by us, and deduped ─────────────────────────────
   const notifier = code(NOTIFIER_SOURCE);
-  assert.match(notifier, /renderPhoenixDataGrid\(grid\.columns, grid\.rows\)/, "the table is the shared zebra grid, not hand-written markup");
-  assert.match(notifier, /renderPhoenixDataGridText\(grid\.columns, grid\.rows\)/, "the text part carries the table too");
+  assert.ok(!/renderPhoenixDataGrid|targetsTable|summary/.test(notifier), "the sender supplies no table, no total and no summary");
+  assert.match(notifier, /subject = `\$\{line\} — your target for \$\{label\} is now on Phoenix`/, "the subject says what the owner asked and holds no figure");
   assert.match(notifier, /templateKey: "targets_uploaded"/);
   assert.match(notifier, /replaceRecipients: true/, "routing is decided by the organogram, not by recipient rules");
   assert.match(notifier, /idempotencyKey: `targets-uploaded:/);
   assert.ok(!/\bsendPhoenixEmail\s*\(/.test(notifier));
 
   // ── 12. The template is registered end to end ────────────────────────────────────────────────
-  const token = TOKEN_REGISTRY.find((entry) => entry.token === "targetsTable");
-  assert.ok(token, "targetsTable must be a registered token");
-  assert.equal(token.isHtmlBlock, true, "the table is pre-rendered HTML, not text to be escaped");
-  assert.ok(token.allowedTemplateTypes.includes("targets_uploaded"));
-  assert.match(RENDER_CORE_SOURCE, /targetsTableText: text\(input\.targetsTableText\)/, "the plain-text projection must be resolved or the text part is empty");
   assert.match(SERVICE_SOURCE, /TARGETS_UPLOADED: "targets_uploaded"/);
-  assert.match(SERVICE_SOURCE, /targetsTable\?: string \| null;/);
+  assert.ok(!/targetsTable/.test(SERVICE_SOURCE), "no table context field is left in the template service");
 }

@@ -74,7 +74,6 @@ export function contextVariables(input: Partial<EmailTemplateContext>, recipient
     detailsSectionsText: text(input.detailsSectionsText),
     stepsBlockText: text(input.stepsBlockText),
     productListText: text(input.productListText),
-    targetsTableText: text(input.targetsTableText),
     planTableText: text(input.planTableText),
     digestTableText: text(input.digestTableText),
     scoreTableText: text(input.scoreTableText),
