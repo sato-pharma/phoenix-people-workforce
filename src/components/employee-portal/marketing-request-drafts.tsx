@@ -87,6 +87,7 @@ import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthCla
 type DraftWorkspacePayload = {
   approvedRequests: MarketingApprovedRequestRow[];
   canCreateDraft: boolean;
+  canSettleAgainstDirectOrder: boolean;
   customers: MarketingCustomer[];
   drafts: MarketingRequest[];
   contactsByCustomer: Record<string, MarketingRequestContactOption[]>;
@@ -277,6 +278,7 @@ function emptyPayload(): DraftWorkspacePayload {
     // Default to true so the create form stays visible during the initial load; the
     // server's explicit value applies once the workspace is fetched.
     canCreateDraft: true,
+    canSettleAgainstDirectOrder: false,
     customers: [],
     contactsByCustomer: {},
     pharmaciesByCustomer: {},
@@ -522,6 +524,206 @@ function ReadOnlyValue({ label, value }: { label: string; value: string }) {
         {label}
       </span>
       <span className="text-phx-md font-black text-slate-800">{value}</span>
+    </div>
+  );
+}
+
+type DirectOrderOffsetOption = {
+  id: string;
+  label: string;
+  outstanding: number;
+  salesMonth: string | null;
+};
+
+/**
+ * Settle an approved request against a direct order's debt instead of paying it out — for the case
+ * where a hospital paid its order net of a sum it owes someone on the company's behalf. No cash
+ * moves: the order's outstanding amount falls by the sum and the request needs no transfer proof.
+ * Only Finance sees the button (the server enforces it again); everyone else sees the result.
+ */
+function DirectOrderSettleControl({
+  canSettle,
+  onChanged,
+  onMessage,
+  row,
+}: {
+  canSettle: boolean;
+  onChanged: (requestId: string, offset: MarketingApprovedRequestRow["directOrderOffset"]) => void;
+  onMessage: (text: string, tone: "success" | "error") => void;
+  row: MarketingApprovedRequestRow;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [options, setOptions] = useState<DirectOrderOffsetOption[] | null>(null);
+  const [orderId, setOrderId] = useState("");
+  const [amount, setAmount] = useState(String(row.sumOfAmount));
+  const [note, setNote] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
+
+  async function open() {
+    setIsOpen(true);
+    if (options) return;
+    try {
+      const response = await fetch("/api/marketing-requests/direct-order-offset");
+      const payload = await response.json();
+      if (!response.ok) {
+        onMessage(payload.message ?? "Unable to load the direct orders.", "error");
+        setIsOpen(false);
+        return;
+      }
+      setOptions(payload.orders as DirectOrderOffsetOption[]);
+    } catch {
+      onMessage("Unable to load the direct orders.", "error");
+      setIsOpen(false);
+    }
+  }
+
+  async function settle() {
+    const chosen = options?.find((option) => option.id === orderId);
+    if (!chosen) {
+      onMessage("Pick the direct order first.", "error");
+      return;
+    }
+    setIsBusy(true);
+    try {
+      const response = await fetch("/api/marketing-requests/direct-order-offset", {
+        body: JSON.stringify({ amount: Number(amount), directOrderId: chosen.id, note, requestId: row.id }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        onMessage(payload.message ?? "Unable to settle against the direct order.", "error");
+        return;
+      }
+      onChanged(row.id, { amount: Number(payload.amount), note: note.trim() || null, orderLabel: chosen.label });
+      setIsOpen(false);
+      setOptions(null);
+      onMessage("Settled against the direct order — no cash moved.", "success");
+    } catch {
+      onMessage("Unable to settle against the direct order.", "error");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function remove() {
+    setIsBusy(true);
+    try {
+      const response = await fetch("/api/marketing-requests/direct-order-offset", {
+        body: JSON.stringify({ requestId: row.id }),
+        headers: { "Content-Type": "application/json" },
+        method: "DELETE",
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        onMessage(payload.message ?? "Unable to remove the settlement.", "error");
+        return;
+      }
+      onChanged(row.id, null);
+      onMessage("Settlement removed — the amount is owed on the order again.", "success");
+    } catch {
+      onMessage("Unable to remove the settlement.", "error");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  if (row.directOrderOffset) {
+    return (
+      <div className="mt-1.5 min-w-0 border border-emerald-200 bg-emerald-50 px-2.5 py-2">
+        <p className="text-phx-xs font-bold text-emerald-800">
+          Settled against a direct order — no transfer
+        </p>
+        <p className="mt-0.5 break-words text-phx-2xs font-medium text-emerald-900">
+          {row.directOrderOffset.orderLabel} · {egp(row.directOrderOffset.amount)}
+        </p>
+        {row.directOrderOffset.note ? (
+          <p className="mt-0.5 break-words text-phx-2xs font-medium text-slate-600">{row.directOrderOffset.note}</p>
+        ) : null}
+        {canSettle ? (
+          <button
+            className="mt-1 text-phx-2xs font-bold text-rose-700 underline disabled:opacity-50"
+            disabled={isBusy}
+            onClick={() => void remove()}
+            type="button"
+          >
+            {isBusy ? "Removing..." : "Remove settlement"}
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (!canSettle) return null;
+
+  if (!isOpen) {
+    return (
+      <button
+        className={`mt-1.5 w-full border border-slate-200 bg-white px-2.5 py-2 text-left text-phx-xs font-bold text-slate-700 transition hover:border-orange-200 hover:bg-orange-50 ${adminControlDepthClassName}`}
+        onClick={() => void open()}
+        type="button"
+      >
+        Settle against a direct order
+      </button>
+    );
+  }
+
+  return (
+    <div className={`mt-1.5 min-w-0 space-y-1.5 border border-slate-200 bg-white p-2.5 ${adminSoftDepthClassName}`}>
+      <p className="text-phx-2xs font-medium text-slate-500">
+        No cash moves. The order&apos;s outstanding amount falls by this sum and no transfer proof is needed.
+      </p>
+      {options === null ? (
+        <p className="text-phx-xs font-medium text-slate-500">Loading direct orders...</p>
+      ) : (
+        <>
+          <SearchableSelect
+            className="w-full px-3 text-phx-md"
+            onChange={(event) => setOrderId(event.target.value)}
+            placeholder="Search the direct order"
+            value={orderId}
+          >
+            <option value="">Select a direct order</option>
+            {options.map((option) => (
+              <option key={option.id} value={option.id}>
+                {`${option.label} · ${option.salesMonth ?? "month not booked"} · ${egp(option.outstanding)} outstanding`}
+              </option>
+            ))}
+          </SearchableSelect>
+          <input
+            aria-label="Amount settled"
+            className={phxFieldClassName}
+            inputMode="decimal"
+            onChange={(event) => setAmount(event.target.value)}
+            value={amount}
+          />
+          <input
+            aria-label="Note"
+            className={phxFieldClassName}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Note (optional)"
+            value={note}
+          />
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              className={cn(phxButtonAccentClassName, "shrink-0")}
+              disabled={isBusy || !orderId}
+              onClick={() => void settle()}
+              type="button"
+            >
+              {isBusy ? "Settling..." : "Settle"}
+            </button>
+            <button
+              className={`border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-600 ${adminControlDepthClassName}`}
+              disabled={isBusy}
+              onClick={() => setIsOpen(false)}
+              type="button"
+            >
+              Cancel
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -786,6 +988,7 @@ function MarketingRequestDraftWorkspaceInner() {
       setWorkspace({
         approvedRequests: payload.approvedRequests ?? [],
         canCreateDraft: payload.canCreateDraft ?? true,
+        canSettleAgainstDirectOrder: payload.canSettleAgainstDirectOrder ?? false,
         customers: payload.customers ?? [],
         contactsByCustomer: payload.contactsByCustomer ?? {},
         pharmaciesByCustomer: payload.pharmaciesByCustomer ?? {},
@@ -1366,6 +1569,18 @@ function MarketingRequestDraftWorkspaceInner() {
     } finally {
       setUploadingEvidenceKey(null);
     }
+  }
+
+  function applyDirectOrderOffset(
+    requestId: string,
+    offset: MarketingApprovedRequestRow["directOrderOffset"],
+  ) {
+    setWorkspace((current) => ({
+      ...current,
+      approvedRequests: current.approvedRequests.map((row) =>
+        row.id === requestId ? { ...row, directOrderOffset: offset } : row,
+      ),
+    }));
   }
 
   /* ------ Derived metrics --------------------------------------------------------------------------------------------------------------------------------------------- */
@@ -2587,6 +2802,12 @@ function MarketingRequestDraftWorkspaceInner() {
                               )
                             }
                           />
+                          <DirectOrderSettleControl
+                            canSettle={workspace.canSettleAgainstDirectOrder}
+                            onChanged={applyDirectOrderOffset}
+                            onMessage={showMessage}
+                            row={row}
+                          />
                         </td>
                         <td className="px-3 py-2">
                           <EvidenceUpload
@@ -2719,6 +2940,12 @@ function MarketingRequestDraftWorkspaceInner() {
                           }
                         />
                       </div>
+                      <DirectOrderSettleControl
+                        canSettle={workspace.canSettleAgainstDirectOrder}
+                        onChanged={applyDirectOrderOffset}
+                        onMessage={showMessage}
+                        row={row}
+                      />
                     </div>
                   ))
                 )}

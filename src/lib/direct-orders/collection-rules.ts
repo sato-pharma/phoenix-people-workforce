@@ -55,6 +55,12 @@ export function deriveDirectOrderCollection(input: {
   paymentDate: string | null | undefined;
   /** Today in Africa/Cairo as YYYY-MM-DD. Injected so the future-date guard is testable. */
   todayCairo: string;
+  /**
+   * Marketing requests already settled against this order (offset-rules.ts). They are debt that
+   * has been paid off without any cash arriving, so cash plus offsets may never pass the order's
+   * value, and the stored remainder is net of them. Absent means none.
+   */
+  offsetTotal?: number | null;
 }): DirectOrderCollectionOutcome {
   // A draft, rejected, held or reversed order has no agreed debt, so money recorded against one
   // would be a receivable for stock the company never committed to supply.
@@ -78,6 +84,15 @@ export function deriveDirectOrderCollection(input: {
   if (paidRounded > orderValue) {
     return { ok: false, message: `Collected cannot exceed the order value of ${egp(orderValue)}.` };
   }
+  const offsetTotal = round2(Number(input.offsetTotal) || 0);
+  if (offsetTotal > 0 && round2(paidRounded + offsetTotal) > orderValue) {
+    return {
+      ok: false,
+      message:
+        `Collected cannot exceed ${egp(round2(orderValue - offsetTotal))}: ${egp(offsetTotal)} of this order ` +
+        "is already settled against marketing requests.",
+    };
+  }
 
   const paymentDate = String(input.paymentDate ?? "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)) {
@@ -92,7 +107,7 @@ export function deriveDirectOrderCollection(input: {
   return {
     ok: true,
     paidAmount: paidRounded,
-    remainingAmount: round2(orderValue - paidRounded),
+    remainingAmount: round2(orderValue - paidRounded - offsetTotal),
     paymentDate,
   };
 }
