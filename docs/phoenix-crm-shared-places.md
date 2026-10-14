@@ -402,15 +402,40 @@ His words: *"make him able to choose him even if the system is still checking"*.
 
 | Piece | Now |
 | --- | --- |
-| The picker | A held venue is selectable and is chosen automatically right after the rep captures it; its note reads "The system is still checking this one · N customers in it" |
+| The picker | A held venue is selectable and is chosen automatically right after the rep captures it. The rep's row shows only the customer count; the words "Not approved yet" are the Super Admin's board alone (golden rule #1: the rep is never made to feel checked) |
 | `sharedPlaceForSeating` | Refuses a gone or removed venue only |
 | `phoenix_crm_insert_place` | Migration `20261014151354` removes the `shared_place_held` raise; every other line is byte-identical to `20261010190001` (comment-stripped md5 `5ef27c3f9802e24f1ca94245847c38ad` read off production before the change, `6d9f6e9de8e145977e66166c1dfd1801` after) |
 | Rejecting the venue | Unchanged and still the safety net: `phoenix_crm_decide_shared_place` retires every place seated in it and sends each customer back to To validate |
 | The Super Admin's move | **Unchanged**: `phoenix_crm_seat_places_in_venue` still refuses a held venue, and its refusal now tells him to approve the venue first |
 
-Stated, not fixed: a customer seated in a held venue is validated at once and counts in the KPIs until the venue is
-decided; a rejection reverses it. Holding such a customer out of the KPIs would need a validation-review row per
-customer and a cascade from the venue's approval, and was not asked for.
+### Second half — customers in a held venue wait for its approval (owner, 2026-10-14)
+
+His words: *"The visits are also pended, appearing, but they are not counted in KPIs until the admin confirm the polyclinic and the doctors in it."*
+
+Every KPI reads `customer_validated`, so a customer left `pending` counts in no KPI but can still be planned and visited.
+
+| Piece | Now |
+| --- | --- |
+| `phoenix_crm_validate_customer` | Reads the venue status under the seat's advisory lock. A seated customer in a held venue stays `pending` (event `customer_pending`, why `venue_held`) |
+| `phoenix_crm_decide_shared_place` | **Approve** validates the pending customers seated in the venue (event why `shared_place_approved`) and returns `validated`. Reject is unchanged |
+| `phoenix_crm_settle_venue_timetable` | A matching board releases a customer only when the venue is `active` |
+| The customer's screen | A held building shows "Waiting for this polyclinic to be confirmed"; the "Photograph the timetable" button is hidden for it |
+| The Saved screen | "Saved: name — the visits you save here show as pending, and they count in your KPIs once the polyclinic is confirmed" |
+
+Migration `20261014200147`. On Approve a seated customer is confirmed except when the building has no timetable on file, its
+timetable verdict is `other_name` or `no_schedule`, or a pending validation review exists for him (`unjudged` never holds).
+
+Stated, not fixed:
+
+- An `outside` customer from the "new" door is not validated at seating and still joins through his add request; if that
+  request is approved while the venue is held he would become active (`decide_request` was not changed).
+- `phoenix_crm_add_place` for an already-validated customer keeps his validation.
+- The Super Admin's own move into a held venue still refuses it, and `phoenix_crm_set_venue_timetable` still refuses held venues.
+
+Applied 2026-10-14 to staging and production through `apply_migration`; the three bodies were proven equal to production by
+digest before editing, and read back after (`validate_customer` 32d1dd0f…, `decide_shared_place` 5798d729…,
+`settle_venue_timetable` ade01082…; `prosecdef` true, grantees `{postgres,service_role}`). On production 9 venues are held
+and the one customer seated in a held venue is `outside`, so nothing needed backfilling.
 
 Applied 2026-10-14 to staging (`cifwmndunmlxjhyjugxa`) and production (`ozucdzovmcqvepbozvqf`) through
 `apply_migration`; read back from `pg_proc` on both (`prosecdef` true, grantees `{postgres,service_role}`, digest equal

@@ -349,6 +349,77 @@ export function runPhoenixCrmSharedPlaceTests(): void {
     "🔴 and a building the rep has just captured is CHOSEN even while held, or Save asks him to choose one",
   );
 
+  // ── A CUSTOMER SEATED IN A HELD VENUE WAITS FOR ITS APPROVAL (owner, 2026-10-14: the visits appear, but
+  // "are not counted in KPIs until the admin confirm the polyclinic and the doctors in it") ──
+  // Every KPI reads customer_validated, so the whole mechanism is: leave him PENDING when the venue is held,
+  // and let ONLY the venue's approval (or the Super Admin's own click) make him active.
+  const waitSql = stripSqlComments(
+    readFileSync("supabase/migrations/20261014200147_phoenix_crm_held_venue_customers_wait_for_approval.sql", "utf8"),
+  );
+  const functionBody = (name: string): string => {
+    const start = waitSql.indexOf(`create or replace function public.${name}(`);
+    assert.ok(start >= 0, `${name} is recreated by the migration`);
+    return waitSql.slice(start, waitSql.indexOf("$$;", waitSql.indexOf("$$", start) + 2));
+  };
+  const validateFn = functionBody("phoenix_crm_validate_customer");
+  assert.ok(
+    validateFn.includes("select (s.status = 'held') into v_venue_held"),
+    "🔴 the seating door asks whether the building is HELD, under the seat's lock that the venue's decision also takes",
+  );
+  assert.ok(
+    validateFn.includes("v_validate_now := v_hold is null and not v_venue_held;"),
+    "and a held venue stops the customer being validated exactly as a Google or signboard hold does",
+  );
+  assert.equal(validateFn.split("v_validate_now").length - 1 >= 7, true, "every status write of the three modes reads that one flag");
+  assert.ok(
+    !validateFn.includes("if v_hold is null then") && !validateFn.includes("when v_hold is null then"),
+    "🔴 and none of them still reads v_hold alone, which would validate a customer a held venue is holding out",
+  );
+  assert.ok(
+    validateFn.includes("v_event := 'customer_pending'") && validateFn.includes("'why', 'venue_held'"),
+    "the event says pending and why, never customer_validated for a customer no KPI counts",
+  );
+
+  const decideFn = functionBody("phoenix_crm_decide_shared_place");
+  // Single-line anchors only — a `\n` here is red on a CRLF working tree and green on CI.
+  const approveBranch = decideFn.slice(decideFn.indexOf("if v_decision = 'approve' then"), decideFn.indexOf("set status = 'retired', decided_at"));
+  assert.ok(approveBranch.length > 400, "the approve branch was found, so the assertions below read it and not an empty string");
+  assert.ok(approveBranch.includes("c.status = 'pending'") && approveBranch.includes("'shared_place_approved'"), "🔴 APPROVING the building confirms the pending customers seated in it");
+  assert.ok(approveBranch.includes("v_venue.schedule_photo_path is null"), "except a building with no timetable on file");
+  assert.ok(approveBranch.includes("'other_name', 'no_schedule'"), "or a timetable that was read as another name or no schedule");
+  assert.ok(
+    approveBranch.includes("r.customer_id = v_seated.customer_id and r.status = 'pending'"),
+    "or a customer whose own location is waiting on a validation review — that row is the Super Admin's own click",
+  );
+  assert.ok(!approveBranch.includes("'unjudged'"), "🔴 and `unjudged` never holds: it is not among the reasons to stay pending");
+  assert.ok(decideFn.includes("'shared_place_rejected'"), "a REJECTION still retires the venue and reopens every customer in it");
+
+  const settleFn = functionBody("phoenix_crm_settle_venue_timetable");
+  assert.ok(
+    settleFn.includes("v_verdict = 'match' and v_row.customer_status = 'pending' and v_venue.status = 'active'"),
+    "🔴 a board that names a customer does NOT release him while his building is still held",
+  );
+
+  // The rep's screens: no grey, no "being checked" wording, and a pending seated customer is never "Validated".
+  const noteFn = seatedScreen.slice(seatedScreen.indexOf("export function seatedNote("), seatedScreen.indexOf("function CaptureVenue("));
+  assert.ok(!/checking/i.test(noteFn.replace(/audience/g, "")), "🔴 the rep's venue row never says the building is being checked (golden rule #1)");
+  assert.ok(noteFn.includes('audience === "admin" && venue.status === "held"'), "only the Super Admin's own move screen is told which buildings wait for him");
+  assert.ok(!seatedScreen.includes("Saved. The system is checking it"), "and neither does the note after a rep captures a building");
+  const listScreensSrc = stripComments(readFileSync("src/components/phoenix-crm/list-screens.tsx", "utf8"));
+  assert.ok(
+    listScreensSrc.includes('result.status === "pending"') && listScreensSrc.includes('"venue_pending"'),
+    "🔴 a seated customer left pending by a held venue is told 'Saved', never 'Validated'",
+  );
+  const listPlaceSrc = stripComments(readFileSync("src/lib/phoenix-crm/server/list.ts", "utf8"));
+  assert.ok(listPlaceSrc.includes('mapped.venueHeld = venueHeld.get(venueId) === true'), "the customer page is told whether the building is held");
+  const blindSrc = stripComments(readFileSync("src/lib/phoenix-crm/server/blind-payloads.ts", "utf8"));
+  assert.ok(blindSrc.includes("venueHeld: place.venueHeld"), "and the rep keeps that flag — it measures nothing about him");
+  const customerSrc = stripComments(readFileSync("src/components/phoenix-crm/list-customer.tsx", "utf8"));
+  assert.ok(
+    customerSrc.includes("seatedPending && !seatedVenueHeld && (view.canEdit || view.canValidateReference)"),
+    "🔴 no 'Photograph the timetable' button for a held building: set_venue_timetable refuses it and he already brought the board",
+  );
+
   // ── THREE A DAY, and the cap is a SETTING read live on every path ─────────────────────────────
   assert.equal(SHARED_PLACE_DAILY_CAP_DEFAULT, 3, "his number — and only the default");
   assert.ok(migration.includes("shared_place_daily_cap integer not null default 3"), "the settings column");

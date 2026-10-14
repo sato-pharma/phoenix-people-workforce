@@ -127,6 +127,7 @@ export function placeWithoutMeasurements(place: ListPlace): ListPlace {
     // Which session he receives in at that building: his own choice at the door, measuring nothing.
     session: place.session ?? null,
     ...(place.venueTimetableOnFile === undefined ? {} : { venueTimetableOnFile: place.venueTimetableOnFile }),
+    ...(place.venueHeld === undefined ? {} : { venueHeld: place.venueHeld }),
   };
 }
 
