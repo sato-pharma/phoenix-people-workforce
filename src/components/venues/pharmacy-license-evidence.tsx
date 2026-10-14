@@ -23,6 +23,7 @@ export function PharmacyLicenseEvidence({
   className,
   contentType,
   label,
+  prominent = false,
   url,
 }: {
   /** Thumbnail sizing for the host screen. The PDF link ignores it — a link has no thumbnail. */
@@ -31,10 +32,48 @@ export function PharmacyLicenseEvidence({
   contentType: string | null;
   /** Whose licence this is, for the alt text and the caption. */
   label: string;
+  /**
+   * The reviewers' look (owner, 2026-10-14): when a request or a validation goes to SFE, admin,
+   * marketing or the CEO, the licence photo must be CLEAR AND OBVIOUS — a framed panel with its
+   * own heading, drawn large, never a thumbnail beside other thumbnails. Tapping it still opens the
+   * zoomable viewer, which is where the trade name is actually read against the shop sign.
+   */
+  prominent?: boolean;
   /** Short-lived signed URL, or null when no licence was attached. */
   url: string | null;
 }) {
   if (!url) return null;
+
+  if (prominent) {
+    return (
+      <div className="mt-3 border-2 border-amber-400 bg-amber-50/60 p-3">
+        <p className="text-phx-sm font-black uppercase tracking-wider text-amber-900">
+          Pharmacy licence · رخصة الصيدلية
+        </p>
+        <p className="mt-0.5 text-phx-xs font-semibold text-amber-900" dir="auto">
+          Read the trade name on this licence and compare it with the name on the shop sign.
+        </p>
+        {contentType === "application/pdf" ? (
+          <a
+            className="mt-2 inline-block border-2 border-slate-700 bg-white px-4 py-2.5 text-phx-md font-black text-slate-900 hover:bg-slate-50"
+            href={url}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Open the licence (PDF)
+          </a>
+        ) : (
+          <ZoomablePhoto
+            alt={`Pharmacy licence for ${label}`}
+            caption={`Pharmacy licence · ${label}`}
+            className={cn("mt-2 h-72 w-full border border-slate-300 bg-white object-contain sm:h-96", className)}
+            src={url}
+          />
+        )}
+        <p className="mt-1 text-phx-2xs font-bold text-slate-600">Tap the image to zoom.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="mt-2">

@@ -861,6 +861,16 @@ export type MarketingCustomerDatabaseRow = {
    * decided, this register is the only place the answer can still be read.
    */
   licenseNameMatchesSign: boolean | null;
+  /** The licence file's type, so a PDF is offered as a link rather than drawn as a broken image. */
+  licenseContentType: string | null;
+  /**
+   * True for a pharmacy saved on its licence alone (no distributor code) — held as not usable in
+   * requests until a code is added or a Super Admin / the CEO releases it. See
+   * `LICENSE_ONLY_PHARMACY_NOTE` in `src/lib/venues/pharmacy-license.ts`.
+   */
+  licenseOnly: boolean;
+  /** Short-lived signed link to the licence, or null when none was attached. */
+  licenseUrl: string | null;
   pharmacyAddress: string | null;
   pharmacyArea: string | null;
   pharmacyCode: string;

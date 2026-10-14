@@ -15,7 +15,10 @@ import {
 } from "../src/lib/marketing-requests/service.ts";
 import type { MarketingValidationInput } from "../src/lib/marketing-requests/types.ts";
 import {
+  isLicenseOnlyPharmacyNote,
+  LICENSE_ONLY_PHARMACY_NOTE,
   parsePharmacyLicenseDataUrl,
+  pharmacyRegistersOnLicenseAlone,
   PHARMACY_LICENSE_ACCEPT_ATTRIBUTE,
   PHARMACY_LICENSE_BUCKET,
   PHARMACY_LICENSE_MAX_BYTES,
@@ -148,6 +151,41 @@ function licenceOnlyInput(): MarketingValidationInput {
 }
 
 export async function runPharmacyLicenseEvidenceTests() {
+  // ── 0. A pharmacy saved on its licence alone is recognisable from its notes ──────────────────
+  {
+    assert.equal(
+      pharmacyRegistersOnLicenseAlone({ codeCount: 0, hasLicense: true, venueType: "pharmacy" }),
+      true,
+      "a pharmacy with no code and a licence is the licence-only route",
+    );
+    assert.equal(
+      pharmacyRegistersOnLicenseAlone({ codeCount: 1, hasLicense: true, venueType: "pharmacy" }),
+      false,
+      "one WITH a code is identified by the code — the licence is not the route",
+    );
+    assert.equal(
+      pharmacyRegistersOnLicenseAlone({ codeCount: 0, hasLicense: false, venueType: "pharmacy" }),
+      false,
+      "no licence: nothing to register on",
+    );
+    assert.equal(
+      pharmacyRegistersOnLicenseAlone({ codeCount: 0, hasLicense: true, venueType: "nursery" }),
+      false,
+      "a nursery is never on this route — it has its own (location, photo, admin)",
+    );
+    assert.equal(
+      isLicenseOnlyPharmacyNote(`Evidence pending. ${LICENSE_ONLY_PHARMACY_NOTE}`),
+      true,
+      "the marker is found inside a longer note, which is how it is stored",
+    );
+    assert.equal(isLicenseOnlyPharmacyNote(null), false, "no notes is not a licence-only row");
+    assert.match(
+      LICENSE_ONLY_PHARMACY_NOTE,
+      /not usable in requests/i,
+      "the row itself says it cannot be used in a request yet",
+    );
+  }
+
   // ── 1. THE HEADLINE: a licence can never stand in for a visit ────────────────────────────────
   {
     const normalized = normalizeMarketingValidationInput(licenceOnlyInput());

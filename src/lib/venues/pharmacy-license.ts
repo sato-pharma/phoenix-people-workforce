@@ -201,6 +201,31 @@ export function pharmacyLicenseFillsTheIdentityGap(input: {
 }
 
 /**
+ * A PHARMACY SAVED ON ITS LICENCE ALONE (owner, 2026-10-14): a pharmacy with no distributor code
+ * may still be validated when its licence is attached, and it is saved as NOT USABLE IN REQUESTS
+ * YET. A request target needs a code, so this link is held on `pending` for a Super Admin or the
+ * CEO to release — and the licence is what they read, big, to decide.
+ *
+ * The marker is written into the link's validation notes, the way the desk and history markers are,
+ * so the register, the validation queue and the reviewers' screens all recognise it from the row.
+ */
+export const LICENSE_ONLY_PHARMACY_NOTE =
+  "Licence only — this pharmacy has no distributor code, so it is held as not usable in requests until a code is added or a Super Admin releases it. Read the attached licence against the shop sign.";
+
+export function isLicenseOnlyPharmacyNote(notes: string | null | undefined): boolean {
+  return String(notes ?? "").includes(LICENSE_ONLY_PHARMACY_NOTE);
+}
+
+/** Whether a pharmacy is being registered with a licence standing in for its distributor code. */
+export function pharmacyRegistersOnLicenseAlone(input: {
+  codeCount: number;
+  hasLicense: boolean;
+  venueType: VenueType;
+}): boolean {
+  return venueRequiresDistributorCode(input.venueType) && input.codeCount === 0 && input.hasLicense;
+}
+
+/**
  * One sentence naming what the reviewer is being asked to compare, or null when nothing is missing.
  *
  * Written once here so the rep's form and the approver's desk say the same thing — they are two
@@ -220,7 +245,7 @@ export function pharmacyLicensePrompt(input: {
 
   return input.hasLicenseOnFile
     ? "No distributor code — check the trade name on the licence against the name on the shop sign."
-    : "No distributor code in any distributor. Attach the pharmacy licence (رخصة الصيدلية) so the trade name can be checked against the shop sign.";
+    : "No distributor code in any distributor. Attach the pharmacy licence (رخصة الصيدلية) so the trade name can be checked against the shop sign. It saves this pharmacy as not usable in requests yet, until a code is added or a Super Admin releases it.";
 }
 
 /**

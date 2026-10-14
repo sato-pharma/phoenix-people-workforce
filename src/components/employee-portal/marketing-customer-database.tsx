@@ -17,6 +17,7 @@ import {
   PortalSection,
 } from "@/components/employee-portal/portal-primitives";
 import { LinkFieldEvidenceBadge, NotFieldValidatedBadge } from "@/components/marketing-requests/not-field-validated-badge";
+import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type {
@@ -178,6 +179,19 @@ function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
           {row.customerAddress || row.pharmacyAddress}
         </p>
       ) : null}
+      {/* The licence, BIG, for whoever reviews this venue (SFE, admin, marketing, CEO). A pharmacy
+          saved on its licence alone has nothing else to identify it, so it is said in words too. */}
+      {row.licenseOnly ? (
+        <p className="mt-2 border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs font-black leading-5 text-amber-900">
+          Licence only — no distributor code. Not usable in requests yet.
+        </p>
+      ) : null}
+      <PharmacyLicenseEvidence
+        contentType={row.licenseContentType}
+        label={row.pharmacyName || "this venue"}
+        prominent
+        url={row.licenseUrl}
+      />
     </PortalRecordCard>
   );
 }
@@ -574,7 +588,19 @@ export function MarketingCustomerDatabase() {
                   <td className="max-w-[280px] px-4 py-3 leading-5"><TextCell value={row.customerAddress} /></td>
                   <td className="px-4 py-3"><PhotoCell value={row.customerValidationPhoto} /></td>
                   <td className="px-4 py-3"><CodeCell value={row.pharmacyCode} /></td>
-                  <td className="px-4 py-3 font-black text-slate-950">{row.pharmacyName}</td>
+                  <td className="px-4 py-3 font-black text-slate-950">
+                    {row.pharmacyName}
+                    {row.licenseOnly ? (
+                      <span className="mt-1 block text-xs font-black text-amber-800">Licence only — not usable yet</span>
+                    ) : null}
+                    {/* A thumbnail in a narrow column — tap it to open the full-screen zoom. */}
+                    <PharmacyLicenseEvidence
+                      className="h-20"
+                      contentType={row.licenseContentType}
+                      label={row.pharmacyName || "this venue"}
+                      url={row.licenseUrl}
+                    />
+                  </td>
                   <td className="px-4 py-3"><TextCell value={row.pharmacyArea} /></td>
                   <td className="px-4 py-3"><TextCell value={row.pharmacyGovernorate} /></td>
                   <td className="max-w-[280px] px-4 py-3 leading-5"><TextCell value={row.pharmacyAddress} /></td>

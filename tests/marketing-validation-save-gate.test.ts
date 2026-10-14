@@ -6,6 +6,7 @@ import {
   type SaveGateCapture,
   type SaveGateCustomer,
   type SaveGatePharmacy,
+  withoutBlankCodeRows,
 } from "../src/lib/marketing-requests/validation-save-gate.ts";
 import { VENUE_TYPE_UNANSWERED_MESSAGE } from "../src/lib/venues/venue-type.ts";
 
@@ -88,6 +89,57 @@ export async function runMarketingValidationSaveGateTests() {
     canSaveMarketingValidation([customer({ pharmacies: [pharmacy({ venueType: "nursery", vendorCodes: [] })] })], false),
     true,
     "a nursery with no code row at all saves too",
+  );
+
+  // ------------------------------------------- a PHARMACY with no code can be saved on its LICENCE
+
+  /*
+   * Owner, 2026-10-14: a pharmacy with no distributor code may still be validated when its licence
+   * is attached; it is saved as NOT USABLE IN REQUESTS YET. The form opens with ONE blank code row,
+   * so the licence route has to treat that untouched row as "no code" — otherwise the rep who did
+   * exactly what the screen asked (attached the licence) is still told to enter a code.
+   */
+  const licence = { dataUrl: "data:application/pdf;base64,AAAA", fileName: "licence.pdf", isPdf: true };
+  const blankRow = [{ distributorCode: "", distributorId: "dist-pos" }];
+  const licenceOnly = [customer({ pharmacies: [pharmacy({ license: licence, vendorCodes: blankRow })] })];
+  assert.equal(
+    describeMissingSaveRequirement(licenceOnly, false),
+    null,
+    "a codeless pharmacy with its licence attached is savable — the untouched code row is not a code",
+  );
+  assert.equal(canSaveMarketingValidation(licenceOnly, false), true, "and Save is enabled for it");
+  assert.equal(
+    canSaveMarketingValidation([customer({ pharmacies: [pharmacy({ license: licence, vendorCodes: [] })] })], false),
+    true,
+    "also with the code rows removed outright",
+  );
+  assert.match(
+    describeMissingSaveRequirement([customer({ pharmacies: [pharmacy({ vendorCodes: blankRow })] })], false) ?? "",
+    /Enter the distributor code for/,
+    "WITHOUT a licence a blank code row is still refused, exactly as before",
+  );
+  assert.match(
+    describeMissingSaveRequirement([customer({ pharmacies: [pharmacy({ vendorCodes: [] })] })], false) ?? "",
+    /needs at least one distributor code, or attach its pharmacy licence/,
+    "with neither route, BOTH are named so the rep is never told only half",
+  );
+  assert.match(
+    describeMissingSaveRequirement(
+      [customer({ pharmacies: [pharmacy({ license: licence, vendorCodes: [{ distributorCode: "0010453", distributorId: "" }] })] })],
+      false,
+    ) ?? "",
+    /Pick a distributor for/,
+    "a code the rep DID type is still checked even with a licence — the licence replaces a missing code, not a half-typed one",
+  );
+  assert.deepEqual(
+    withoutBlankCodeRows({ license: licence, vendorCodes: [...blankRow, { distributorCode: "0010453", distributorId: "dist-pos" }] }),
+    [{ distributorCode: "0010453", distributorId: "dist-pos" }],
+    "the submit drops blank code rows once the licence is on file, so the payload matches the gate",
+  );
+  assert.equal(
+    withoutBlankCodeRows({ license: null, vendorCodes: blankRow }).length,
+    1,
+    "and drops nothing when there is no licence",
   );
 
   // ------------------------------------------------------- the button and the sentence never disagree

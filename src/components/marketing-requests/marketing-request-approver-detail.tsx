@@ -477,9 +477,9 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
                     front: the whole point of holding both is to read the name on the sign in the
                     photo and the name on the licence without leaving the row. */}
                 <PharmacyLicenseEvidence
-                  className="h-36"
                   contentType={pharmacy.licenseContentType}
                   label={pharmacy.pharmacyName}
+                  prominent
                   url={pharmacy.licenseUrl}
                 />
                 {/* The answer, immediately under the two documents it compares. Only offered when
