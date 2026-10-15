@@ -2353,6 +2353,7 @@ import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runPushTypecheckGuardTests } from "./push-typecheck-guard.test.ts";
 import { runRemoteCheckPollGuardTests } from "./remote-check-poll-guard.test.ts";
 import { runBackgroundCatGuardTests } from "./background-cat-guard.test.ts";
+import { runPythonReplGuardTests } from "./python-repl-guard.test.ts";
 import { runBatchNudgeTests } from "./batch-nudge.test.ts";
 import { runHookDispatchTests } from "./hook-dispatch.test.ts";
 import { runSlowAuditTests } from "./slow-audit.test.ts";
@@ -9171,6 +9172,11 @@ await runTest(
 await runTest(
   "bash-guard C17 refuses a BACKGROUND cat with nothing feeding it — no file, no heredoc, no <, no pipe — because a background command's input is a pipe nothing ever closes, so it waits for ever (8 Oct 2026: one hung for over an hour, held its worktree and kept its session from being archived), quoting the idle cat back and showing the heredoc on the cat itself with its stand-down; the 8 Oct command, a bare write, an append, a bare cat, an explicit -, a command substitution, one behind || and one behind a variable assignment are all refused, while a heredoc on the cat, a file, <, <<<, a pipe, |&, --help, the commit-message $(cat <<EOF) idiom, a mention inside quotes, process substitution, the FOREGROUND, the PowerShell tool and PHX_STDIN_OK=1 all pass",
   runBackgroundCatGuardTests,
+);
+
+await runTest(
+  "bash-guard C19 refuses a command that would land in Python's INTERACTIVE REPL — a bare python/python3/py with no script, no -c, no -m and nothing piped or redirected in, and a `python - <<DELIM` whose closing delimiter is missing or indented — because with no console attached 3.13/3.14 _pyrepl dies in windows_console getheightwidth (OSError WinError 123) and reprints that traceback for ever: 1,774,873 bytes in 3 seconds, and three background tasks left 12.5 GB, 5.4 GB and 2.4 GB in their task logs on 9, 10 and 15 Oct 2026, which filled C:; it quotes the python back, carries the measured rate, names -c and PYTHON_BASIC_REPL=1 as the ways out and hands back a stand-down in the dialect that asked, while python script.py, -c, -m, --version, a well-formed heredoc, <, <<<, a pipe, a quoted full path, a timeout-bounded run, mentions in quotes, commit messages, heredoc bodies, here-strings and both stand-downs all pass",
+  runPythonReplGuardTests,
 );
 
 await runTest(

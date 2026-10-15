@@ -55,6 +55,14 @@
 //   C18 a `gh pr create` whose title scope matches a PR that is OPEN or MERGED in the last 6 hours —
 //       every merge costs two full CI runs, so a second PR for one module is held (widen the first
 //       one instead). Fails open on no scope / deps / memory / a gh error. PHX_PR_HOLD_OK=1 stands it down.
+//   C19 a command that would land in Python's INTERACTIVE REPL — a bare `python`/`python3`/`py` with
+//       no script, no `-c` and nothing feeding it, or a `python - <<DELIM` whose closing delimiter is
+//       missing. With no console attached, 3.13/3.14's _pyrepl dies in windows_console.getheightwidth
+//       (`OSError: [WinError 123]`) and reprints that traceback for ever: measured 2026-10-15,
+//       1,774,873 bytes in 3 s — about 2.2 GB an hour. Three background tasks did it into their
+//       `tasks/<id>.output` on 9, 10 and 15 Oct 2026 and left 12.5 GB, 5.4 GB and 2.4 GB on C:.
+//       `PYTHON_BASIC_REPL=1` in the command is accepted (176 bytes, then it exits);
+//       PHX_PYTHON_REPL_OK=1 stands the clause down.
 //
 // And triggers one NON-blocking side effect:
 //   C5  worktree removal — hands the command to worktree-exit-guard.mjs --pre-removal so the
@@ -296,6 +304,115 @@ function unwrapped(segment) {
     if (text === before) break;
   }
   return text;
+}
+
+/** A Python interpreter, however the path to it was spelled: `python`, `python3`, `python3.13`, `py`. */
+const PYTHON_BASENAME = /^(?:python(?:\d(?:\.\d+)?)?|py)(?:\.exe)?$/i;
+
+/** Python flags that print and exit, reading nothing at all — there is no REPL to fall into. */
+const PYTHON_EXITS = /^(?:-V|-VV|--version|-h|-\?|--help|--help-env|--help-xoptions|--help-all)$/;
+
+/** Python flags that take the NEXT token as their value, so that token is not a script path. */
+const PYTHON_FLAG_TAKES_VALUE = /^(?:-X|-W|--check-hash-based-pycs)$/;
+
+/**
+ * Every WELL-FORMED heredoc body swapped for a single ` <<HEREDOC ` token, with the `<<DELIM` of one
+ * that never closes left standing — which is what C19 reads as the mangled-delimiter shape.
+ *
+ * Line-based rather than the one regex `withoutHeredocBodies` uses, because bash's rule is about the
+ * LINE: `<<DELIM` needs the delimiter alone at column 0, and only `<<-DELIM` allows leading TABS (not
+ * spaces). That older regex accepts any indentation, so it reads an indented `  PY` as closing a
+ * heredoc bash would have left open — exactly the shape that put a session at the REPL.
+ */
+function markHeredocs(text) {
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const open = /<<(-?)\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2/.exec(line);
+    if (!open) {
+      out.push(line);
+      continue;
+    }
+    const dash = open[1];
+    const delim = open[3];
+    let close = -1;
+    for (let j = i + 1; j < lines.length; j++) {
+      const candidate = dash ? lines[j].replace(/^\t+/, '') : lines[j];
+      if (candidate.replace(/[ \t]+$/, '') === delim) {
+        close = j;
+        break;
+      }
+    }
+    if (close < 0) {
+      out.push(line); // never closed — the `<<DELIM` stays, and it is the evidence
+      continue;
+    }
+    out.push(line.replace(open[0], ' <<HEREDOC '));
+    i = close; // skip the body AND the delimiter line
+  }
+  return out.join('\n');
+}
+
+/**
+ * The first python in a command that would land in the INTERACTIVE REPL, or null. Two shapes, both
+ * measured on 2026-10-15 (`docs/agents-session-traps.md`): `bare` — nothing to run and nothing to
+ * read, so python starts its REPL; and `heredoc` — a `<<DELIM` on the python segment whose closing
+ * delimiter never appears, which is how one of the three started (bash passes an unterminated body,
+ * or nothing at all, and python falls into the REPL anyway).
+ *
+ * A well-formed heredoc is replaced by a single `<<HEREDOC` token rather than stripped, exactly as
+ * `idleCat` does it: here the `<<` is the evidence that python IS fed, and what survives the
+ * substitution as `<<WORD` is by definition a heredoc with no closing delimiter.
+ *
+ * NOT matched, deliberately: a `timeout N python …`, because that bounds the flood to N seconds and
+ * is how the 640 KB/s rate was measured in the first place.
+ */
+function interactivePython(command) {
+  const text = markHeredocs(withoutHereStringBodies(command));
+  for (const segment of pipedSegments(text)) {
+    let body = segment.text.trim();
+    for (let pass = 0; pass < 8 && SEGMENT_LEAD.test(body); pass++) body = body.replace(SEGMENT_LEAD, '');
+    // The quoted path FIRST: every python on this machine lives under a folder with a space in its
+    // name, and `unwrapped` strips the opening quote, after which `"C:\Program Files\…\python.exe"`
+    // tokenizes as `C:\Program` and the interpreter is invisible. Unwrapping is the second attempt,
+    // for the `bash -c "python"` and `VAR=x python` shapes where the quote is the wrapper's own.
+    let tokens = null;
+    for (const candidate of [body, unwrapped(body)]) {
+      const argv = argvTokens(candidate);
+      if (PYTHON_BASENAME.test(binName(argv[0]))) {
+        tokens = argv;
+        body = candidate;
+        break;
+      }
+    }
+    if (!tokens) continue;
+    let fed = segment.piped;
+    let runs = false;
+    let exits = false;
+    let unterminated = null;
+    for (let i = 1; i < tokens.length; i++) {
+      const token = tokens[i];
+      if (token === '<<HEREDOC' || /^<<</.test(token)) fed = true;
+      else if (/^<</.test(token)) unterminated = token.replace(/^<<-?/, '') || '(unnamed)';
+      else if (/^\d*</.test(token)) fed = true;
+      // `>` / `2>` / `&>>` alone take the NEXT token as their target; `>f` and `2>&1` carry their own.
+      else if (/^(?:\d*|&)>>?$/.test(token)) i++;
+      else if (/^(?:\d*|&)>/.test(token)) continue;
+      // `-c`, `-m` and a positional script all mean python RUNS something — but the scan carries on
+      // rather than breaking, because an unterminated heredoc later in the same segment lands at the
+      // REPL anyway: bash takes the `<<` for itself and python is handed nothing.
+      else if (token === '-c' || token === '-m') runs = true;
+      else if (PYTHON_EXITS.test(token)) exits = true;
+      else if (PYTHON_FLAG_TAKES_VALUE.test(token)) i++;
+      else if (token === '-') continue; // standard input, not a script
+      else if (/^-/.test(token)) continue; // -u, -I, -E, -B, -q, py's -3 …
+      else runs = true; // a positional: the script path
+    }
+    if (unterminated) return { kind: 'heredoc', segment: body, delimiter: unterminated };
+    if (!runs && !exits && !fed) return { kind: 'bare', segment: body, delimiter: null };
+  }
+  return null;
 }
 
 /**
@@ -693,6 +810,54 @@ try {
           "  cat > file <<'EOF'\n  …\n  EOF\n" +
           "or `cat source > file`, `printf '%s\\n' \"…\" > file`, or `: > file` for an empty file.\n\n" +
           'If the owner asked for this, stand it down for one command: PHX_STDIN_OK=1 <the same command>',
+      );
+    }
+  }
+
+  // C19 — a command that would land in Python's INTERACTIVE REPL (2026-10-15). Nothing in this
+  // harness can type into one, and on this machine it does not wait quietly: with no console
+  // attached, 3.13/3.14's _pyrepl raises `OSError: [WinError 123]` inside
+  // Lib/_pyrepl/windows_console.py getheightwidth and reprints that traceback for ever. Measured
+  // that day, both interpreters on this box: 1,774,873 bytes in 3 s and 3,948,442 in 6 s — about
+  // 640 KB/s, 2.2 GB an hour. Three background Bash tasks ran a bare `python` (one of them a
+  // `python - <<'PY'` whose delimiter never closed) and the harness wrote that loop into their own
+  // `tasks/<id>.output`: 12.5 GB, 5.4 GB and 2.4 GB on 9, 10 and 15 Oct 2026, which took C: down to
+  // 12 GB free. A FOREGROUND call is refused too — the flood is the same, only the ceiling differs.
+  // `PYTHON_BASIC_REPL=1` is accepted because it is the fix, not a bypass: it turns _pyrepl off, and
+  // the same command then writes 176 bytes and exits.
+  const PYTHON_REPL_STAND_DOWN =
+    /(?:^|[\s;&|(])\s*(?:\$env:)?(?:PHX_PYTHON_REPL_OK|PYTHON_BASIC_REPL)\s*=\s*['"]?1['"]?(?![\w.])/i;
+  if (
+    !PYTHON_REPL_STAND_DOWN.test(cmd) &&
+    process.env.PHX_PYTHON_REPL_OK !== '1' &&
+    process.env.PYTHON_BASIC_REPL !== '1'
+  ) {
+    const repl = interactivePython(cmd);
+    if (repl) {
+      const standDown =
+        input.tool_name === 'PowerShell'
+          ? '$env:PHX_PYTHON_REPL_OK=1; <the same command>'
+          : 'PHX_PYTHON_REPL_OK=1 <the same command>';
+      deny(
+        (repl.kind === 'heredoc'
+          ? `C19 — this python heredoc never closes its \`${repl.delimiter}\` delimiter, so python gets no script ` +
+            'and lands in the INTERACTIVE REPL, which no session here can type into:\n'
+          : 'C19 — this would land in Python\'s INTERACTIVE REPL — no script, no `-c`, no `-m` and nothing ' +
+            'piped or redirected into it — and no session here can type into one:\n') +
+          `  ${repl.segment.length > 160 ? repl.segment.slice(0, 160) + ' …' : repl.segment}\n` +
+          'With no console attached it does not wait quietly. 3.13/3.14 _pyrepl dies in ' +
+          'windows_console.py getheightwidth (`OSError: [WinError 123]`) and reprints that traceback for ' +
+          'ever: measured 2026-10-15, 1,774,873 bytes in 3 seconds — about 2.2 GB an hour. Three ' +
+          'background tasks did exactly this into their own tasks/<id>.output on 9, 10 and 15 Oct 2026 and ' +
+          'left 12.5 GB, 5.4 GB and 2.4 GB behind, which filled C:.\n\n' +
+          'Give python something to run:\n' +
+          '  python script.py                 (write the file first, then run it)\n' +
+          '  python -c "print(1)"\n' +
+          '  python -m <module> …\n' +
+          "  python - <<'PY'   …   PY         (the closing PY on a line of its own)\n" +
+          'or, if the REPL itself is what you want, PYTHON_BASIC_REPL=1 turns _pyrepl off — the same ' +
+          'command then writes 176 bytes and exits.\n\n' +
+          `If the owner asked for this, stand it down for one command: ${standDown}`,
       );
     }
   }
