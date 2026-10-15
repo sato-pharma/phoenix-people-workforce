@@ -1194,6 +1194,7 @@
   "supabase-staging-mcp-server-sees-zero-projects": "database",
   "supabase-staging-named-server-broken-2026-08-10": "database",
   "switching-max-accounts-never-loses-the-transcript": "engineering",
+  "sync-cloud-context-reads-no-flags-and-always-writes": "sessions",
   "system-flags-expenses-never-rejects": "expenses",
   "system-issues-dashboard-gcp-supabase": "platform",
   "tailwind-merge-strips-custom-named-font-sizes": "platform",

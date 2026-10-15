@@ -694,8 +694,11 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // 2026-10-15, and the plainest entry in this list because the session that caused it wrote it.
   // The fix was applied to production with `node scripts/apply-sql-file.mjs <file> production` at
   // 16:55:40 Cairo — a plain pooler connection, which runs the SQL and writes NO ledger row at all,
-  // so the absence here is the apply route and not a missed migration. The production ledger holds
-  // nothing at or after 20261015133143.
+  // so the absence here is the apply route and not a missed migration. 🔴 The ledger does NOT stop
+  // at this file's version, and a high-water-mark claim about it rots within the hour: "nothing at
+  // or after 20261015133143" was true when written and false by that evening. Re-read 15 Oct 21:27
+  // Cairo — the newest row is 20261015155642, and what matters is unchanged: ZERO rows carry THIS
+  // file's version. Ask for the version, never for the end of the ledger.
   // Verified by digest, not by presence: `md5(pg_proc.prosrc)` for
   // public.phx_resubmit_marketing_request on ozucdzovmcqvepbozvqf reads
   // eb27af44e76d8cb90328858775cbb183 over 6,689 chars, and md5 of this file's own dollar-quoted
