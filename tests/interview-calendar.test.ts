@@ -761,19 +761,30 @@ function booking(overrides: Partial<InterviewBooking> & Pick<InterviewBooking, "
 }
 
 async function runExportTests() {
-  const early = booking({ candidateName: "Mona Ali", dateKey: "2026-09-20", id: "00000000-0000-4000-8000-000000000001", startMinutes: 9 * 60 });
+  // Mona's round is for the job her own record already names, so the export must not print it twice.
+  const early = booking({
+    candidateJobTitle: "Medical Rep",
+    candidateName: "Mona Ali",
+    dateKey: "2026-09-20",
+    id: "00000000-0000-4000-8000-000000000001",
+    jobTitle: "Medical Rep",
+    startMinutes: 9 * 60,
+  });
   const second = booking({
     candidateName: `Karim <b>"Adel"</b> & Sons`,
     dateKey: "2026-09-20",
     id: "00000000-0000-4000-8000-000000000002",
     startMinutes: 9 * 60 + 15,
   });
+  // Sara applied as a Medical Rep and is being interviewed for a District Manager seat — two
+  // different facts, and the export must say both.
   const zoom = booking({
     candidateJobTitle: "Medical Rep",
     candidateName: "Sara Hassan",
     dateKey: "2026-09-21",
     durationMinutes: 45,
     id: "00000000-0000-4000-8000-000000000003",
+    jobTitle: "District Manager",
     outcome: "prioritized",
     platform: "zoom",
     startMinutes: 10 * 60,
@@ -825,6 +836,38 @@ async function runExportTests() {
   assert.ok(html.includes("Outcome: Prioritized"), "the grid tile says how the interview went");
   assert.ok(html.includes("<th>Outcome</th>") && html.includes("<td>Prioritized</td>"), "and the list has an Outcome column");
   assert.equal(html.split("Outcome: ").length - 1, 1, "an interview with no outcome recorded prints none");
+
+  // THE ROLE THE INTERVIEW IS FOR (owner, 2026-10-15): on the grid tile beside the area and the line,
+  // and in its own column in the list under it. Blank where nobody named one — never a dash.
+  assert.ok(html.includes("Role: District Manager"), "the grid tile names the role the interview is for");
+  assert.equal(html.split("Role: ").length - 1, 2, "and only the two interviews that name one print it — the rest print nothing at all");
+  const listTable = html.slice(html.indexOf(`<table class="list">`), html.indexOf("</table>", html.indexOf(`<table class="list">`)));
+  const listTableRows = [...listTable.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map((row) =>
+    [...row[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g)].map((cell) => cell[1].trim()),
+  );
+  const roleColumn = listTableRows[0].indexOf("Role");
+  assert.equal(roleColumn, 3, "the list's Role column sits straight after the candidate whose interview it is");
+  const listRowFor = (entry: InterviewBooking) => {
+    const cells = listTableRows.find((row) => row.join(" ").includes(entry.id));
+    assert.ok(cells, `${entry.candidateName} has a row in the PDF list`);
+    return cells as string[];
+  };
+  assert.equal(listRowFor(zoom)[roleColumn], "District Manager", "the list prints the role that interview is for");
+  assert.equal(listRowFor(second)[roleColumn], "", "and leaves the cell empty when nobody named one — no dash, nothing a reader could take for an answer");
+  assert.equal(listRowFor(late)[roleColumn], "", "including the interview that sits outside the grid");
+  assert.ok(listRowFor(zoom)[2].includes("Applied for Medical Rep"), "what the candidate's own record says is kept beside the role when the two differ");
+  assert.ok(!listRowFor(early)[2].includes("Applied for"), "and is not said twice when the role is the job they applied for");
+  {
+    // THE FITS-THE-SCREEN RULE: the column was fitted by re-weighting the others, never by widening
+    // the paper, adding a sideways scroll or shrinking the type.
+    const widths = [...(/<colgroup>([\s\S]*?)<\/colgroup>/.exec(listTable)?.[1] ?? "").matchAll(/width:(\d+(?:\.\d+)?)%/g)].map((match) =>
+      Number(match[1]),
+    );
+    assert.equal(widths.length, listTableRows[0].length, "every list column is weighted, the new one included");
+    assert.equal(widths.reduce((sum, width) => sum + width, 0), 100, "and the weights still add up to the width of the page");
+    assert.ok(html.includes("font-size: 8pt"), "the body type is the size it always was — no column is paid for by shrinking it");
+    assert.ok(!/overflow-x/.test(html) && !/min-width:\s*[1-9]/.test(html), "and nothing on the sheet scrolls sideways");
+  }
   assert.ok(html.includes("border-radius: 0 !important"), "square edges, the house rule");
   assert.doesNotMatch(html, /border-radius:\s*[1-9]/, "and no corner is rounded anywhere");
 
@@ -901,6 +944,33 @@ async function runExportTests() {
   listSheet?.eachRow((row) => row.eachCell((cell) => listCells.push(String(cell.value ?? ""))));
   assert.ok(listCells.includes("Outcome") && listCells.includes("Prioritized"), "the workbook's list has an Outcome column carrying the word");
   assert.ok(gridLinks.some((cell) => cell.text.includes("Outcome: Prioritized")), "and the week grid's tile says it too");
+
+  // THE ROLE, in the workbook: on the week tile beside the area and the line, and in the list in its
+  // own column next to what the candidate's own record says they applied for.
+  assert.ok(gridLinks.some((cell) => cell.text.includes("Role: District Manager")), "the workbook's week tile names the role the interview is for");
+  {
+    const cellText = (value: ExcelJS.CellValue): string =>
+      value && typeof value === "object" && "text" in value ? String((value as { text?: unknown }).text ?? "") : String(value ?? "");
+    let headerRow = 0;
+    listSheet?.eachRow((row, number) => {
+      if (cellText(row.getCell(1).value) === "Day") headerRow = number;
+    });
+    assert.ok(headerRow > 0, "the list sheet's header row is there to read");
+    const headers = Array.from({ length: 12 }, (_, index) => cellText(listSheet?.getRow(headerRow).getCell(index + 1).value));
+    const roleAt = headers.indexOf("Role") + 1;
+    assert.ok(roleAt > 0, "the list sheet has a Role column");
+    assert.equal(headers.indexOf("Applied for"), roleAt, "and it sits beside Applied for — the role of this round, then the job the candidate's own record names");
+    const rowFor = (entry: InterviewBooking) => {
+      for (let number = headerRow + 1; number <= (listSheet?.rowCount ?? 0); number += 1) {
+        const candidate = listSheet?.getRow(number).getCell(3).value as { hyperlink?: string } | null;
+        if (candidate && typeof candidate === "object" && candidate.hyperlink === bookingLink(model, entry)) return listSheet?.getRow(number);
+      }
+      return assert.fail(`${entry.candidateName} has a row in the workbook's list`);
+    };
+    assert.equal(cellText(rowFor(zoom)?.getCell(roleAt).value), "District Manager", "the workbook prints the role that interview is for");
+    assert.equal(cellText(rowFor(zoom)?.getCell(roleAt + 1).value), "Medical Rep", "and what the candidate applied for, unchanged, beside it");
+    assert.equal(cellText(rowFor(second)?.getCell(roleAt).value), "", "an interview nobody named a role for leaves the cell empty — never a dash that reads as data");
+  }
   const listLinks = linksIn("Interviews");
   for (const entry of [early, second, zoom, late]) {
     assert.ok(

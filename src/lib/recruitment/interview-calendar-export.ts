@@ -152,6 +152,10 @@ function cellLine(booking: InterviewBooking): string {
   if (booking.interviewerName) bits.push(booking.interviewerName);
   if (booking.line) bits.push(booking.line);
   if (booking.area) bits.push(booking.area);
+  // The role THIS interview is for (owner, 2026-10-15) — beside the area and the line, and named so
+  // it can never be read as either of them. Nobody named one: the words are simply absent — no dash,
+  // no "—", nothing a reader could take for an answer.
+  if (booking.jobTitle) bits.push(`Role: ${booking.jobTitle}`);
   // A slot in a session says so: its candidates share the session's one meeting.
   if (booking.sessionTitle) bits.push(booking.sessionTitle);
   // How it went, once the interviewer has said (owner, 2026-09-20). Ink only — no fill, per the house identity.
@@ -239,15 +243,19 @@ export async function buildInterviewCalendarWorkbook(model: InterviewCalendarExp
     properties: { defaultRowHeight: 18 },
   });
   list.views = [{ showGridLines: false, state: "frozen", ySplit: 4 }];
+  // "Role" is the job THIS interview is for; "Applied for" is what the candidate's own record says.
+  // Two different facts, so two columns — and the widths are re-weighted to make room for the new one
+  // rather than letting `fitToPage` shrink the printed type.
   const listColumns: Array<{ label: string; width: number }> = [
-    { label: "Day", width: 26 },
-    { label: "Time", width: 22 },
+    { label: "Day", width: 22 },
+    { label: "Time", width: 20 },
     { label: "Candidate", width: 28 },
-    { label: "Applied for", width: 26 },
+    { label: "Role", width: 24 },
+    { label: "Applied for", width: 22 },
     { label: "Where", width: 11 },
-    { label: "Zoom link", width: 34 },
+    { label: "Zoom link", width: 30 },
     { label: "Outcome", width: 16 },
-    { label: "Notes", width: 44 },
+    { label: "Notes", width: 34 },
   ];
   listColumns.forEach((column, index) => {
     list.getColumn(index + 1).width = column.width;
@@ -273,6 +281,8 @@ export async function buildInterviewCalendarWorkbook(model: InterviewCalendarExp
       formatDayLong(booking.dateKey),
       formatTimeRange(booking.startMinutes, booking.durationMinutes),
       { hyperlink: bookingLink(model, booking), text: booking.candidateName, tooltip: `Open ${booking.candidateName}'s CV in Phoenix` },
+      // Blank when nobody named a role — an empty cell, never a placeholder that reads as data.
+      booking.jobTitle ?? "",
       booking.candidateJobTitle ?? "",
       PLATFORM_LABEL[booking.platform],
       booking.zoomJoinUrl ? { hyperlink: booking.zoomJoinUrl, text: booking.zoomJoinUrl } : booking.platform === "zoom" ? "No link yet" : "",
@@ -376,7 +386,15 @@ export function buildInterviewCalendarPdfHtml(model: InterviewCalendarExportMode
       (booking) => `<tr>
         <td>${escapeHtml(formatDayLong(booking.dateKey))}</td>
         <td>${escapeHtml(formatTimeRange(booking.startMinutes, booking.durationMinutes))}</td>
-        <td>${name(booking)}${booking.candidateJobTitle ? `<br><span class="muted">${escapeHtml(booking.candidateJobTitle)}</span>` : ""}</td>
+        <td>${name(booking)}${
+          // What the candidate's own record says they applied for — printed only when it is NOT the
+          // role this interview is for, exactly as the calendar's own panel does it, so the same
+          // words never appear twice on one row.
+          booking.candidateJobTitle && booking.candidateJobTitle !== booking.jobTitle
+            ? `<br><span class="muted">Applied for ${escapeHtml(booking.candidateJobTitle)}</span>`
+            : ""
+        }</td>
+        <td>${booking.jobTitle ? escapeHtml(booking.jobTitle) : ""}</td>
         <td>${escapeHtml(PLATFORM_LABEL[booking.platform])}${
           booking.zoomJoinUrl
             ? `<br><a class="muted" href="${escapeHtml(booking.zoomJoinUrl)}">Zoom link</a>`
@@ -417,8 +435,8 @@ ${
   model.bookings.length === 0
     ? `<p class="empty">No interviews are booked this week.</p>`
     : `<table class="list">
-  <colgroup><col style="width:16%"><col style="width:14%"><col style="width:22%"><col style="width:12%"><col style="width:14%"><col style="width:22%"></colgroup>
-  <thead><tr><th>Day</th><th>Time</th><th>Candidate</th><th>Where</th><th>Outcome</th><th>Notes</th></tr></thead>
+  <colgroup><col style="width:14%"><col style="width:13%"><col style="width:20%"><col style="width:15%"><col style="width:11%"><col style="width:11%"><col style="width:16%"></colgroup>
+  <thead><tr><th>Day</th><th>Time</th><th>Candidate</th><th>Role</th><th>Where</th><th>Outcome</th><th>Notes</th></tr></thead>
   <tbody>${listRows}</tbody>
 </table>`
 }
