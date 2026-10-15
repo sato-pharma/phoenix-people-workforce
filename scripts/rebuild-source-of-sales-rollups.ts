@@ -24,6 +24,15 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { rebuildSourceOfSalesRollupsForBatch } from "@/lib/sales/source-of-sales-rollup-rebuild";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "rebuild-source-of-sales-rollups",
+  entry: import.meta.url,
+  known: ["--apply"],
+});
+
 type BatchRow = { id: string; period: string | null; distributor_code: string | null };
 type LockRow = { line: string | null; period: string | null };
 

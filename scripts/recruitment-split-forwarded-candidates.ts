@@ -10,6 +10,15 @@ import { candidateIdentityFromCvFields } from "@/lib/recruitment/cv-extraction";
 import { defaultCvPositionKey } from "@/lib/recruitment/cv-field-schemas";
 import { selectAutoApplyFields, type AutoApplyExtractedFields } from "@/lib/recruitment/cv-auto-apply";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "recruitment-split-forwarded-candidates",
+  entry: import.meta.url,
+  known: ["--dry-run"],
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Split the forwarded CVs into their own candidates.
 //

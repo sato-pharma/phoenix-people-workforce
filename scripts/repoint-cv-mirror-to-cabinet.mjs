@@ -32,6 +32,15 @@ import process from "node:process";
 
 import { CABINET_ROOT_NAME } from "@/lib/recruitment/drive-cabinet-folders";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "repoint-cv-mirror-to-cabinet",
+  entry: import.meta.url,
+  known: ["--dry-run"],
+});
+
 function loadEnvFile(file) {
   if (!fs.existsSync(file)) return;
   for (const rawLine of fs.readFileSync(file, "utf8").split(/\r?\n/)) {

@@ -18,6 +18,15 @@
 import { describeSurfaceResult, type SalesTruthReport } from "@/lib/sales/sales-truth-reconciliation";
 import { loadSalesTruthReport, loadSalesTruthReports } from "@/lib/sales/sales-truth-report";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "check-sales-truth",
+  entry: import.meta.url,
+  known: ["--verbose"],
+});
+
 const money = (value: number) =>
   value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 

@@ -22,7 +22,7 @@
 // ---------------------------------------------------------------------------
 
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 /**
  * @param {object} spec
@@ -78,9 +78,16 @@ export function refuseUnknownFlags(spec) {
   // running it: the body never executes in any branch. A script that fails to detect that it is the
   // entry point exits 3 instead of returning into its body — the one failure a probe must not be able
   // to turn into a real run of `backup-source-of-sales.mjs --zzz`, whose argv[2] is a file it writes.
-  const probe = process.env.PHX_FLAG_GATE_PROBE === "1";
+  //
+  // PHX_FLAG_GATE_PROBE=1 is strict for EVERY gate it meets. PHX_FLAG_GATE_PROBE=<absolute path of the probed
+  // script> is strict only for THAT file: a gated script that imports another gated script (validate-railway-
+  // production-secrets imports sync-railway-production-secrets) must let the imported one pass quietly, while
+  // the probed script's own gate still exits 3 if it cannot recognise itself.
+  const probeEnv = process.env.PHX_FLAG_GATE_PROBE;
+  const probe = probeEnv !== undefined && probeEnv !== "" && probeEnv !== "0";
+  const probeTarget = probe && probeEnv !== "1" ? path.resolve(probeEnv).toLowerCase() : null;
   if (entry && !isEntryPoint(entry)) {
-    if (probe) {
+    if (probe && (probeTarget === null || path.resolve(fileURLToPath(entry)).toLowerCase() === probeTarget)) {
       console.error(`${name}: PROBE — the gate did not recognise this module as the entry point`);
       process.exit(3);
     }
@@ -94,7 +101,11 @@ export function refuseUnknownFlags(spec) {
     for (const hint of hints) console.log(`  ${hint}`);
     process.exit(0);
   }
-  const unknown = argv.filter((a) => a.startsWith('-') && !known.includes(a.split('=')[0]));
+  // A bare `--` is the end-of-options marker (`pnpm run x -- --flag` can hand it through): it is not a
+  // flag, and POSIX says everything after it is positional, so it is never judged.
+  const endOfOptions = argv.indexOf('--');
+  const judged = endOfOptions === -1 ? argv : argv.slice(0, endOfOptions);
+  const unknown = judged.filter((a) => a.startsWith('-') && !known.includes(a.split('=')[0]));
   if (unknown.length === 0) {
     if (probe) {
       console.log(`GATE-OK ${name}`);

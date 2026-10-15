@@ -8,6 +8,15 @@ import { getOperationalMonitoringStats, getOperationalRecentActivity } from "@/l
 import { deleteSalaryBatch } from "@/lib/payroll/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "phase19-fixture-cleanup-smoke",
+  entry: import.meta.url,
+  known: ["--execute"],
+});
+
 loadLocalEnv();
 
 const executeCleanup = process.argv.includes("--execute");

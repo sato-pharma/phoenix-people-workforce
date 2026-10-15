@@ -58,6 +58,15 @@ import {
   type RemoteLedger,
 } from "./lib/migration-inventory.ts";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "apply-migrations-to-staging",
+  entry: import.meta.url,
+  known: ["--dry-run"],
+});
+
 /**
  * The ONLY project this script may write to. Hard-coded on purpose: an allowlist can be too strict
  * but never too permissive, and "which database am I about to write to" is the one question that

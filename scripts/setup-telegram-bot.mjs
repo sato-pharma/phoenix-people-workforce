@@ -17,6 +17,15 @@
 
 import { createHash } from "node:crypto";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "setup-telegram-bot",
+  entry: import.meta.url,
+  known: ["--status"],
+});
+
 const TIMEOUT_MS = Number.parseInt(process.env.TELEGRAM_SEND_TIMEOUT_MS ?? "8000", 10) || 8000;
 
 // Mirror telegramWebhookSecretToken() in src/lib/notifications/telegram.ts: Telegram's

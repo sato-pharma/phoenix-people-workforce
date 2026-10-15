@@ -7,6 +7,15 @@ import {
 import { rebuildDirectOrderApprovalChain } from "@/lib/direct-orders/service";
 import { systemAccessContext } from "@/lib/auth/permissions";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "direct-orders-rebuild-approval-chains",
+  entry: import.meta.url,
+  known: ["--apply"],
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Re-seed approval chains for orders submitted BEFORE a rung existed.
 //

@@ -5,6 +5,15 @@ import { pathToFileURL } from "node:url";
 
 import { RAILWAY_CLI_PACKAGE } from "./secret-policy.mjs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "sync-railway-production-secrets",
+  entry: import.meta.url,
+  known: ["--dry-run"],
+});
+
 function resolveValue(names) {
   for (const name of names) {
     const value = process.env[name]?.trim();

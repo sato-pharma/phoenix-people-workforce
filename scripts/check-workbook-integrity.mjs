@@ -27,6 +27,15 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import JSZip from "jszip";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "check-workbook-integrity",
+  entry: import.meta.url,
+  known: [],
+});
+
 const require = createRequire(import.meta.url);
 
 // sax is present in the pnpm store but not hoisted to the top level; resolve it directly rather

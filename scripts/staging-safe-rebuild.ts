@@ -5,6 +5,15 @@ import path from "node:path";
 
 import postgres from "postgres";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "staging-safe-rebuild",
+  entry: import.meta.url,
+  known: ["--archive-current-staging", "--backup-current-staging", "--dry-run-new-staging", "--apply-new-staging", "--post-apply-verify-new", "--verify-new-staging"],
+});
+
 type TargetKind = "current" | "new";
 
 type DbTarget = {

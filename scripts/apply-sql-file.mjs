@@ -6,6 +6,15 @@ import { existsSync, readFileSync } from "node:fs";
 
 import postgres from "postgres";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "apply-sql-file",
+  entry: import.meta.url,
+  known: [],
+});
+
 const ENV_FILES = [".env.staging.rls.local", ".env.production.rls.local", ".env.local"];
 
 function envVar(name) {

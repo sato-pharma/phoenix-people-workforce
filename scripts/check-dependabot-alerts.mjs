@@ -46,6 +46,15 @@ import path from 'node:path';
 
 import { DECISIONS_DOC, alertsEnabled, judgeAlerts, readOpenAlerts, readRecordedDecisions } from './dependabot-alerts.mjs';
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "check-dependabot-alerts",
+  entry: import.meta.url,
+  known: ["--json"],
+});
+
 const asJson = process.argv.includes('--json');
 const read = readOpenAlerts();
 const enabled = read.skipped ? { unknown: 'not read — the alerts themselves could not be read' } : alertsEnabled();

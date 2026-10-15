@@ -24,6 +24,15 @@ import {
 import { cvRereadOpsMarker } from "@/lib/recruitment/ops-marker";
 import type { UpdateCandidateInput } from "@/lib/recruitment/types";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "recruitment-cv-fact-corrections",
+  entry: import.meta.url,
+  known: ["--reread", "--confirm-spend", "--apply", "--allow-clearing-graduation-year", "--only-stale", "--decisions", "--limit", "--out"],
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Re-extract the four CV facts the extractor used to get wrong, and propose corrections.
 //

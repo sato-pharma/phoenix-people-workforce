@@ -7,6 +7,15 @@ import { selectAutoApplyFields, type AutoApplyExtractedFields } from "@/lib/recr
 import { getCandidate, updateCandidate } from "@/lib/recruitment/candidates";
 import { isCvRereadMarker } from "@/lib/recruitment/ops-marker";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "recruitment-apply-reread-fields",
+  entry: import.meta.url,
+  known: ["--dry-run"],
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Apply the high-confidence fields from the CV re-read onto the candidates.
 //

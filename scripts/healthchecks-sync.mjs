@@ -77,6 +77,15 @@ import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "healthchecks-sync",
+  entry: import.meta.url,
+  known: ["--apply"],
+});
+
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DOC = join(REPO_ROOT, "docs", "observability.md");
 const API = "https://healthchecks.io/api/v3";

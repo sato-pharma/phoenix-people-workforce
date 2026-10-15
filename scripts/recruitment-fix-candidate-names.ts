@@ -5,6 +5,15 @@ import { createClient } from "@supabase/supabase-js";
 
 import { getCandidate, updateCandidate } from "@/lib/recruitment/candidates";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "recruitment-fix-candidate-names",
+  entry: import.meta.url,
+  known: ["--dry-run"],
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Name the candidate after the person on the CV, not the person who emailed it.
 //

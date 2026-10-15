@@ -61,6 +61,15 @@ import {
 } from "@/lib/sales/published-month-guard";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "reconcile-month-customer-map",
+  entry: import.meta.url,
+  known: ["--apply", "--period", "--line", "--actor", "--preimage"],
+});
+
 type ImportRow = {
   id: number;
   batch_id: string;

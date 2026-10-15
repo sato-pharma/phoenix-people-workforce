@@ -28,6 +28,15 @@ import { loadClosingStoreSplit } from "@/lib/sales/closing-store-split-net";
 import { loadClosingPerformanceReview } from "@/lib/sales/closing-performance-review";
 import { isOfficeRespreadPair } from "@/lib/sales/office-distributor";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "dm-line-achievement",
+  entry: import.meta.url,
+  known: ["--period", "--lines"],
+});
+
 function flag(name: string, fallback: string): string {
   const hit = process.argv.find((arg) => arg.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : fallback;

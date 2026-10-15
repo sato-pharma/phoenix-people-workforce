@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -64,39 +64,118 @@ const LOADER = [
 
 /** Pinned BY NAME, so deleting a gate to quiet a failure shows up as a missing name and not a smaller list. */
 const PINNED = [
+  "scripts/analyze-distributor-file.ts",
+  "scripts/apply-migrations-to-staging.ts",
+  "scripts/apply-sql-file.mjs",
   "scripts/apps-script-authorize.mjs",
+  "scripts/audit-notification-email-identity.ts",
+  "scripts/backfill-attribution-store-split.ts",
+  "scripts/backfill-checkin-addresses.ts",
+  "scripts/backfill-cvs-to-drive.mjs",
+  "scripts/backfill-missing-access-profiles.ts",
+  "scripts/backfill-whatsapp-classify-gaps.ts",
   "scripts/backup-source-of-sales.mjs",
   "scripts/build-closing-engine-template.mjs",
+  "scripts/build-crm-vacation-target-rows.ts",
   "scripts/build-cv-cabinet.mjs",
+  "scripts/check-dependabot-alerts.mjs",
+  "scripts/check-dockerfile.mjs",
+  "scripts/check-required-checks.mjs",
+  "scripts/check-sales-truth.ts",
+  "scripts/check-schema-shape.ts",
+  "scripts/check-sos-source-files.ts",
+  "scripts/check-tests-parse.mjs",
+  "scripts/check-unbacked-branches.ts",
+  "scripts/check-workbook-integrity.mjs",
   "scripts/ci-tree-reuse.mjs",
+  "scripts/cloud-mirror-drift-refresh.mjs",
   "scripts/codemod-badge-tones.mjs",
   "scripts/codemod-hex-to-tokens.mjs",
   "scripts/codemod-type-scale.mjs",
+  "scripts/correct-a7-vacation-records.ts",
+  "scripts/correct-excuse-days-orgwide.ts",
+  "scripts/cronjob-sync.mjs",
+  "scripts/customer-pharmacy-pending-questions.ts",
+  "scripts/customer-territory-questions.ts",
   "scripts/cv-area-questions.mjs",
+  "scripts/cv-rule-extraction-report.ts",
   "scripts/cv-triage-questions.mjs",
+  "scripts/dictation-corrector-eval.ts",
+  "scripts/direct-orders-pharmacy-price-backfill.ts",
+  "scripts/direct-orders-rebuild-approval-chains.ts",
+  "scripts/dm-line-achievement.ts",
+  "scripts/dry-run-dsm-no-record.ts",
+  "scripts/dry-run-holiday-bridge.ts",
   "scripts/field-day/print-day.mjs",
   "scripts/field-day/run-nightly.mjs",
+  "scripts/fwc-pull.ts",
+  "scripts/headwind-bootstrap.mjs",
+  "scripts/headwind-push-apk.ts",
+  "scripts/healthchecks-sync.mjs",
+  "scripts/import-crm-vacation-backfill.ts",
+  "scripts/import-marketing-roi-sheet.ts",
+  "scripts/import-pharmacy-code-references.ts",
+  "scripts/learn-from-cleaned-dry-run.ts",
+  "scripts/market-awareness-refire-pending-notices.ts",
+  "scripts/marketing-pharmacy-code-questions.ts",
+  "scripts/master-map-preview.ts",
   "scripts/measure-production-planning-fit.mjs",
+  "scripts/memory-index-reachability.mjs",
+  "scripts/merge-duplicate-cv-candidates.ts",
   "scripts/module-memory/build.mjs",
   "scripts/module-memory/fold.mjs",
   "scripts/module-memory/proof.mjs",
   "scripts/needs-you.mjs",
   "scripts/new-session.mjs",
+  "scripts/phase19-fixture-cleanup-smoke.ts",
   "scripts/pin-coverage-report.mjs",
+  "scripts/probe-weekly-xlsx.ts",
+  "scripts/provision-missing-employee-accounts.ts",
+  "scripts/push-apps-script.mjs",
+  "scripts/rebuild-a9-marketing-manager-account.ts",
+  "scripts/rebuild-source-of-sales-rollups.ts",
+  "scripts/reconcile-month-customer-map.ts",
+  "scripts/reconcile-payroll-deductions.ts",
+  "scripts/record-a10-vacation-2025-10-29.ts",
+  "scripts/recruitment-apply-reread-fields.ts",
+  "scripts/recruitment-cv-fact-corrections.ts",
+  "scripts/recruitment-fix-candidate-names.ts",
+  "scripts/recruitment-reread-legacy-schema-cvs.ts",
+  "scripts/recruitment-reread-never-read-cvs.ts",
+  "scripts/recruitment-split-forwarded-candidates.ts",
   "scripts/refresh-local-env.mjs",
+  "scripts/rep-seat-vacancies.ts",
   "scripts/repo-cleanup.mjs",
   "scripts/repo-doctor.mjs",
+  "scripts/repoint-cv-mirror-to-cabinet.mjs",
   "scripts/resolve-brick-pins.mjs",
   "scripts/resolve-gap-bricks.mjs",
+  "scripts/respread-swing-table.ts",
+  "scripts/restate-area-month.ts",
+  "scripts/restore-source-of-sales.mjs",
+  "scripts/run-holiday-bridge-collection.ts",
+  "scripts/seed-vlookup-master.mjs",
+  "scripts/select-census.mjs",
+  "scripts/setup-telegram-bot.mjs",
   "scripts/slow-audit.mjs",
+  "scripts/source-of-sales-direct-import-cleanup.ts",
+  "scripts/source-of-sales-warning-cleanup.ts",
+  "scripts/staging-executive-dashboard-migration-reconciliation.ts",
+  "scripts/staging-safe-rebuild.ts",
+  "scripts/sync-railway-production-secrets.mjs",
   "scripts/sync-worktree-env.mjs",
+  "scripts/synthetic-save-report.ts",
+  "scripts/vacation-retention-purge.ts",
+  "scripts/validate-railway-production-secrets.mjs",
+  "scripts/verify-sofico-upload.ts",
+  "scripts/wait-pr.mjs",
 ];
 
 const WRITES =
   /\b(writeFileSync|appendFileSync|mkdirSync|rmSync|cpSync|copyFileSync|renameSync|unlinkSync|writeFile|mkdir)\s*\(/;
 const SIDE_EFFECT =
   /\b(writeFileSync|appendFileSync|mkdirSync|rmSync|cpSync|copyFileSync|renameSync|unlinkSync|writeFile|createClient|chromium|postgres)\s*\(/;
-const ALREADY_REFUSES = /(unknown (flag|argument|option)|unrecogni[sz]|refuseUnknownFlags|refuseArguments)/i;
+const ALREADY_REFUSES = /(unknown (flag|argument|option)|unrecogni[sz]|refuseUnknownFlags|refuseArguments|parseDriftCheckFlags)/i;
 
 const knownOf = (source: string): string[] => {
   const m = source.match(/refuseUnknownFlags\(\{[\s\S]*?known:\s*\[([^\]]*)\]/);
@@ -104,7 +183,7 @@ const knownOf = (source: string): string[] => {
   return [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
 };
 
-export function runUnknownFlagGatesTests() {
+export async function runUnknownFlagGatesTests() {
   const dir = mkdtempSync(join(tmpdir(), "phx-unknown-flags-"));
   try {
     const helperUrl = pathToFileURL(resolve(HELPER)).href;
@@ -184,6 +263,21 @@ export function runUnknownFlagGatesTests() {
       assert.equal(ran(), true, "the gate must not steal a script's own --help");
     }
 
+    // A bare "--" is the end-of-options marker: `pnpm run x -- --apply` can hand it through, and it must
+    // not be read as an unknown flag. Everything AFTER it is positional and is never judged either.
+    for (const args of [["--", "--apply"], ["--apply", "--", "--not-a-flag"], ["--", "file.xlsx"]]) {
+      fresh();
+      const r = run(standalone, args);
+      assert.equal(r.status, 0, `args [${args}] must pass: a bare -- is not a flag and what follows is positional, got ${r.status}: ${r.stderr}`);
+      assert.equal(ran(), true, `args [${args}] must reach the body`);
+    }
+    {
+      fresh();
+      const r = run(standalone, ["--aply", "--", "--apply"]);
+      assert.equal(r.status, 2, "an unknown flag BEFORE the -- is still refused");
+      assert.equal(ran(), false);
+    }
+
     // ── 2. An imported module never judges its parent's arguments ────────────────────────────
     fresh();
     const imported = run(parent, ["--parent-flag", "--another"]);
@@ -207,6 +301,18 @@ export function runUnknownFlagGatesTests() {
       const lost = run(parent, [], { PHX_FLAG_GATE_PROBE: "1" });
       assert.equal(lost.status, 3, "a module that is NOT the entry point must exit 3 under the probe, not return into its body");
       assert.equal(ran(), false, "and the body must not have run");
+
+      // The probe can also name its TARGET: a gated module imported by the probed script stays passive, and
+      // only the probed file's own gate is strict. (validate-railway-production-secrets imports the gated
+      // sync-railway-production-secrets; the all-strict form made that import look like a lost entry point.)
+      fresh();
+      const nested = run(parent, [], { PHX_FLAG_GATE_PROBE: parent });
+      assert.equal(nested.status, 0, `a gated module IMPORTED by the probed script must pass quietly: ${nested.stderr}`);
+      assert.equal(ran(), true, "the probed script's own body runs when it carries no gate of its own — the probe only guards a gate that exists");
+      fresh();
+      const targeted = run(parent, [], { PHX_FLAG_GATE_PROBE: child });
+      assert.equal(targeted.status, 3, "a gate whose own file IS the probe target must exit 3 when it is not the entry point");
+      assert.equal(ran(), false);
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -216,7 +322,7 @@ export function runUnknownFlagGatesTests() {
   const gated: string[] = [];
   const tracked = execFileSync("git", ["ls-files", "scripts"], { encoding: "utf8" })
     .split("\n")
-    .filter((f) => /\.mjs$/.test(f) && !f.startsWith("scripts/lib/"));
+    .filter((f) => /\.(mjs|ts)$/.test(f) && !f.startsWith("scripts/lib/"));
   assert.ok(tracked.length > 100, `expected the scripts tree, listed ${tracked.length}`);
   for (const file of tracked) {
     if (/refuseUnknownFlags\(/.test(stripComments(readFileSync(file, "utf8")))) gated.push(file);
@@ -231,6 +337,7 @@ export function runUnknownFlagGatesTests() {
   );
 
   const knownByScript = new Map<string, string[]>();
+  const probeFiles: string[] = [];
   for (const file of PINNED) {
     const source = stripComments(readFileSync(file, "utf8"));
     const importPath = file.split("/").length === 2 ? "./lib/refuse-arguments.mjs" : "../lib/refuse-arguments.mjs";
@@ -247,13 +354,40 @@ export function runUnknownFlagGatesTests() {
       assert.ok(call < effect, `${file}: refuseUnknownFlags must be called BEFORE the first side effect`);
     }
 
-    const env = { ...process.env, PHX_FLAG_GATE_PROBE: "1" };
-    const bare = spawnSync(process.execPath, [...LOADER, file], { encoding: "utf8", env });
-    assert.equal(bare.status, 0, `${file}: a bare probe must pass its own gate, got ${bare.status}: ${bare.stderr.split("\n").slice(0, 3).join(" | ")}`);
-    assert.match(bare.stdout, /GATE-OK/, `${file}: a bare probe must report GATE-OK`);
-    const bogus = spawnSync(process.execPath, [...LOADER, file, "--zzz-not-a-flag"], { encoding: "utf8", env });
-    assert.equal(bogus.status, 2, `${file}: an unknown flag must be refused with exit 2, got ${bogus.status}`);
-    assert.match(bogus.stderr, /REFUSED/, `${file}: the refusal must say so`);
+    probeFiles.push(file);
+  }
+
+  // The probes run in parallel batches: 105 scripts × 2 spawns is minutes if serial, and each one only loads
+  // its imports and answers at the gate. The environment is MINIMAL on purpose — CI has no .env.local and no
+  // production credentials, so a script that cannot even be imported without them must fail HERE, on the
+  // laptop, and not first on the runner.
+  const probeEnv: Record<string, string> = { PHX_FLAG_GATE_PROBE: "1" };
+  for (const key of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "HOME", "USERPROFILE", "ComSpec", "PATHEXT"]) {
+    const value = process.env[key];
+    if (value !== undefined) probeEnv[key] = value;
+  }
+  const spawnAsync = (args: string[], target: string) =>
+    new Promise<{ status: number; stdout: string; stderr: string }>((done) => {
+      execFile(process.execPath, args, { encoding: "utf8", env: { ...probeEnv, PHX_FLAG_GATE_PROBE: resolve(target) } as unknown as NodeJS.ProcessEnv, timeout: 120_000, maxBuffer: 1 << 24 }, (error: Error | null, stdout: string, stderr: string) => {
+        const code = error ? (error as NodeJS.ErrnoException & { code?: unknown }).code : 0;
+        done({ status: typeof code === "number" ? code : 1, stdout, stderr });
+      });
+    });
+  for (let at = 0; at < probeFiles.length; at += 8) {
+    const batch = probeFiles.slice(at, at + 8);
+    const results = await Promise.all(
+      batch.map(async (file) => ({
+        file,
+        bare: await spawnAsync([...LOADER, file], file),
+        bogus: await spawnAsync([...LOADER, file, "--zzz-not-a-flag"], file),
+      })),
+    );
+    for (const { file, bare, bogus } of results) {
+      assert.equal(bare.status, 0, `${file}: a bare probe must pass its own gate, got ${bare.status}: ${bare.stderr.split("\n").slice(0, 3).join(" | ")}`);
+      assert.match(bare.stdout, /GATE-OK/, `${file}: a bare probe must report GATE-OK`);
+      assert.equal(bogus.status, 2, `${file}: an unknown flag must be refused with exit 2, got ${bogus.status}`);
+      assert.match(bogus.stderr, /REFUSED/, `${file}: the refusal must say so`);
+    }
   }
 
   // ── 4. The caller ratchet — a flag a CALLER passes must be in the script's vocabulary ───────
@@ -293,21 +427,73 @@ export function runUnknownFlagGatesTests() {
     );
   }
 
-  // ── 5. The ratchet over writers ──────────────────────────────────────────────────────────────
+  // ── 4b. Every flag a script TESTS FOR in its own code is in its known list ───────────────────
+  // The caller ratchet above sees what a caller passes; nothing yet saw a flag the script itself reads. Dropping
+  // `--apply` from `known` would leave every caller scan green and make the script refuse its own mutating flag.
+  // Read straight from each pinned script's comment-stripped source: argv.includes("--x"), indexOf, startsWith,
+  // has("--x"), and the helper style flag("x") / has("x") / argValue("x") of the scripts that build `--${name}`.
   {
+    const DASHED = /\b(?:includes|indexOf|startsWith|has)\(\s*["'`](--?[A-Za-z][\w-]*)=?["'`]/g;
+    const NAMED = /\b(?:flag|arg|argValue|readArg|value|has)\(\s*["'`]([A-Za-z][\w-]*)["'`]/g;
+    let seen = 0;
+    for (const file of PINNED) {
+      const source = stripComments(readFileSync(file, "utf8"));
+      const known = knownByScript.get(file) ?? [];
+      const own = new Set<string>();
+      for (const m of source.matchAll(DASHED)) own.add(m[1]);
+      if (/`--\$\{(?:name|flag|key)\}/.test(source) || /["'`]--["'`]\s*\+/.test(source)) {
+        for (const m of source.matchAll(NAMED)) own.add(`--${m[1]}`);
+      }
+      for (const flag of own) {
+        if (flag === "--help" || flag === "-h") continue;
+        seen += 1;
+        assert.ok(known.includes(flag), `${file} tests for ${flag} itself, but its known list (${known.join(" ") || "none"}) lacks it — the script would refuse its own flag`);
+      }
+    }
+    assert.ok(seen > 60, `the own-flag scan must see the scripts' flags (saw ${seen}); if it sees almost none it is blind`);
+  }
+
+  // A caller that passes flags through an ARRAY — execFileSync("node", [SYNC_SCRIPT, "--job", key, "--apply"]) —
+  // is invisible to the line scan above, and it is the production cron arming path: cron-autoarm.yml runs it on
+  // every deploy that adds a job. So the two flags it passes are pinned by name, read from its own source.
+  {
+    const autoarm = stripComments(readFileSync("scripts/cron-autoarm.mjs", "utf8"));
+    const known = knownByScript.get("scripts/cronjob-sync.mjs") ?? [];
+    for (const flag of ["--job", "--apply"]) {
+      assert.ok(autoarm.includes(`"${flag}"`), `scripts/cron-autoarm.mjs no longer passes ${flag} to cronjob-sync — drop this check with it`);
+      assert.ok(known.includes(flag), `cron-autoarm passes ${flag} to cronjob-sync, which would refuse it and leave a new cron unarmed`);
+    }
+  }
+
+  // ── 5. The ratchet over every script that takes arguments ────────────────────────────────────
+  // It started as "parses argv AND writes files" and that left the whole .ts tree and every read-only report
+  // outside it — `rep-seat-vacancies.ts --perod=2026-10` read the DEFAULT month and printed a confident answer.
+  // So: any tracked non-library script that PARSES arguments (a flag, a positional, or a parser) must refuse
+  // an unknown one, or be listed here with the reason it must not.
+  const EXEMPT: Record<string, string> = {
+    "scripts/dev-server.mjs": "forwards every flag it does not own to `next dev`, so refusing one would break the passthrough",
+    "scripts/office-rule-unlock.ts": "its own mode switch prints usage and exits 1 on anything but --set-password or --unlock",
+    "scripts/weekly-export-design-unlock.ts": "its own mode switch prints usage and exits 1 on anything but --set-password or --unlock",
+  };
+  {
+    const PARSES_ARGS =
+      /process\.argv\.(includes|indexOf|find|some|filter|slice\(\s*[2-9])|process\.argv\[[2-9]\]|parseArgs\(/;
     const unguarded: string[] = [];
     for (const file of tracked) {
-      const raw = readFileSync(file, "utf8");
-      if (!/process\.argv/.test(raw)) continue;
-      if (!WRITES.test(raw)) continue;
-      if (ALREADY_REFUSES.test(raw)) continue;
-      unguarded.push(file);
+      if (file in EXEMPT) continue;
+      const code = stripComments(readFileSync(file, "utf8"));
+      if (ALREADY_REFUSES.test(code)) continue;
+      if (PARSES_ARGS.test(code) || (/process\.argv/.test(code) && WRITES.test(code))) unguarded.push(file);
     }
     assert.deepEqual(
       unguarded,
       [],
-      `these scripts parse arguments and write files but ignore an unknown flag — add refuseUnknownFlags (${HELPER}) with a vetted known list: ${unguarded.join(", ")}`,
+      `these scripts take arguments but ignore an unknown one — add refuseUnknownFlags (${HELPER}) with a vetted known list, or EXEMPT with a reason: ${unguarded.join(", ")}`,
     );
+    for (const file of Object.keys(EXEMPT)) {
+      assert.ok(tracked.includes(file), `EXEMPT lists ${file}, which is not a tracked script any more — remove the entry`);
+      assert.equal(gated.includes(file), false, `${file} is gated now — drop its EXEMPT entry so the reason cannot go stale`);
+    }
   }
 
   // ── 6. run-fold is gated INLINE, on builtins only, before anything runs ──────────────────────
@@ -368,6 +554,33 @@ export function runUnknownFlagGatesTests() {
         assert.doesNotMatch(r.stderr, /REFUSED/, `${file} [${args}] must not be refused`);
         assert.match(r.stdout, /primary checkout is not at/, `${file} [${args}] must reach the checkout check`);
       }
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true });
+    }
+  }
+  // ── 7. The hourly backup refuses an unknown flag — INLINE, because it runs as a lone extracted file ──
+  // `xlsx-snapshot.cmd` runs `git show origin/main:scripts/repo-doctor-xlsx-snapshot.mjs` into a temp file and
+  // executes that file alone, so the shared helper cannot be imported here. The destination is pointed at a
+  // folder that does not exist, so even a gate that failed would stop at its next statement and copy nothing.
+  {
+    const file = "scripts/repo-doctor-xlsx-snapshot.mjs";
+    const source = stripComments(readFileSync(file, "utf8"));
+    assert.doesNotMatch(source, /from\s+["']\.{1,2}\//, `${file}: must stay on node builtins — it is extracted ALONE by xlsx-snapshot.cmd`);
+    const sandbox = mkdtempSync(join(tmpdir(), "phx-xlsx-snap-"));
+    try {
+      const env = { ...process.env, PHOENIX_XLSX_SNAPSHOT_ROOT: join(sandbox, "no-destination-here") };
+      const go = (...args: string[]) => spawnSync(process.execPath, [file, ...args], { encoding: "utf8", env });
+      const typo = go("--repo", sandbox, "--rot", "x");
+      assert.equal(typo.status, 2, `${file}: an unknown flag must exit 2, got ${typo.status}: ${typo.stderr}`);
+      assert.match(typo.stderr, /REFUSED — unknown flag --rot/, `${file}: the refusal must name the typo`);
+      const equalsForm = go(`--repo=${sandbox}`);
+      assert.match(equalsForm.stderr, /unknown flag --repo=/, `${file}: --repo=x is refused, because the parser reads only the separate-value form and would ignore it`);
+      // The positive control: the flag the wrapper really passes gets PAST the gate and stops at the missing
+      // destination — a different message, so a gate that refused everything cannot satisfy the cases above.
+      const known = go("--repo", sandbox);
+      assert.equal(known.status, 2);
+      assert.doesNotMatch(known.stderr, /unknown flag/, `${file}: --repo <path> is what xlsx-snapshot.cmd passes and must not be refused`);
+      assert.match(known.stderr, /does not exist\. Nothing was copied/, `${file}: it must reach the destination check`);
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }

@@ -50,6 +50,15 @@ import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "cronjob-sync",
+  entry: import.meta.url,
+  known: ["--apply", "--hold", "--job"],
+});
+
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const API = "https://api.cron-job.org";
 const TZ = "Africa/Cairo";

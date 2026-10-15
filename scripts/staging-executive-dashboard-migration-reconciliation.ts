@@ -5,6 +5,15 @@ import path from "node:path";
 
 import postgres from "postgres";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "staging-executive-dashboard-migration-reconciliation",
+  entry: import.meta.url,
+  known: ["--skip-cli-dry-run", "--post-apply-verify", "--repair-verified-history", "--apply-executive-migration", "--verbose"],
+});
+
 type Migration = {
   fileName: string;
   name: string;

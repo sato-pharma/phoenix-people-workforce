@@ -36,6 +36,15 @@ import { loadMonthlyClosingPartsWithStoreSplit } from "@/lib/sales/monthly-closi
 import { OFFICE_RESPREAD_START_PERIOD, isOfficeRespreadPair } from "@/lib/sales/office-distributor";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "respread-swing-table",
+  entry: import.meta.url,
+  known: ["--line", "--period", "--sort"],
+});
+
 function flag(name: string, fallback: string): string {
   const hit = process.argv.find((arg) => arg.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : fallback;

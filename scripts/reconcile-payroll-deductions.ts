@@ -51,6 +51,15 @@ import type { MonthlySalaryRun } from "@/lib/automated-payroll/types";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { compactHrKey } from "@/lib/payroll/copilot/feeders";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "reconcile-payroll-deductions",
+  entry: import.meta.url,
+  known: ["--verbose", "--all", "--gate"],
+});
+
 const money = (value: number) =>
   value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 

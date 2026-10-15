@@ -18,6 +18,15 @@
 
 import { createClient } from "@supabase/supabase-js";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "check-schema-shape",
+  entry: import.meta.url,
+  known: ["--json"],
+});
+
 // Tables legitimately without a primary key. Add here ONLY after confirming the table
 // is a transient backup/scratch artifact -- a real domain table without a primary key
 // is a defect, not an exception.

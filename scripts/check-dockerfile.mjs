@@ -27,6 +27,15 @@
 
 import { readFileSync, existsSync } from "node:fs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "check-dockerfile",
+  entry: import.meta.url,
+  known: [],
+});
+
 /** Every Dockerfile that ships. Both are real: the app image, and the Headwind bridge's. */
 const DOCKERFILES = ["Dockerfile", "infra/headwind-phoenix-actions/Dockerfile"];
 

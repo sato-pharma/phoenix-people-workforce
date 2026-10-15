@@ -14,6 +14,15 @@ import {
   checkForbiddenVariables,
 } from "./secret-policy.mjs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "validate-railway-production-secrets",
+  entry: import.meta.url,
+  known: ["--dry-run"],
+});
+
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
 const railEnv = process.env.RAILWAY_ENVIRONMENT || "production";

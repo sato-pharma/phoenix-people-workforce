@@ -16,6 +16,15 @@ import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "learn-from-cleaned-dry-run",
+  entry: import.meta.url,
+  known: [],
+});
+
 function loadEnvLocal() {
   const path = resolve(process.cwd(), ".env.local");
   if (!existsSync(path)) return;

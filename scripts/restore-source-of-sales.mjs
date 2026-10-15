@@ -27,6 +27,15 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { LATE_COLUMNS, REBUILT_TABLES, RESTORED_TABLES } from "./lib/source-of-sales-tables.mjs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "restore-source-of-sales",
+  entry: import.meta.url,
+  known: ["--commit", "--force"],
+});
+
 function loadEnvLocal() {
   const path = resolve(process.cwd(), ".env.local");
   if (!existsSync(path)) return;

@@ -10,6 +10,15 @@
 
 import { collectOneConnectorForMonth } from "../src/lib/deductions/collect.ts";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "run-holiday-bridge-collection",
+  entry: import.meta.url,
+  known: [],
+});
+
 async function main() {
   const monthKey = process.argv[2] ?? "";
   if (!/^\d{4}-\d{2}$/.test(monthKey)) {

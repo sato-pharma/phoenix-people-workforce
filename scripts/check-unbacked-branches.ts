@@ -30,6 +30,15 @@
 
 import { execFileSync } from "node:child_process";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "check-unbacked-branches",
+  entry: import.meta.url,
+  known: ["--no-fetch"],
+});
+
 const args = new Set(process.argv.slice(2));
 const skipFetch = args.has("--no-fetch");
 

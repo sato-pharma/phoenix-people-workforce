@@ -6,6 +6,15 @@ import { pathToFileURL } from "node:url";
 
 import { MEMORY_INDEX_READ_CEILING } from "./memory-index-budget.mjs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "memory-index-reachability",
+  entry: import.meta.url,
+  known: ["--all"],
+});
+
 // A MEMORY FILE NAMED IN `AGENTS.md` IS REACHABLE. THE DOCTOR USED TO CALL IT AN ORPHAN.
 //
 // WHY THIS EXISTS. The orphan check asks one question — is this file pointed at from `MEMORY.md` or

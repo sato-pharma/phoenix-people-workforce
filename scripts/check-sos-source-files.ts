@@ -34,6 +34,15 @@ import { normalizeAliasKey, resolveProduct } from "@/lib/sales/normalizer/resolv
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import type { Crosswalks, DistributorProfile } from "@/lib/sales/normalizer/types";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "check-sos-source-files",
+  entry: import.meta.url,
+  known: [],
+});
+
 type Finding = {
   distributorCode: string;
   fallback: string;

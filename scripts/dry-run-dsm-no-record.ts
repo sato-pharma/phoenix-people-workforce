@@ -8,6 +8,15 @@
 
 import { collectDsmNoRecordCandidates } from "../src/lib/deductions/connectors/dsm-no-record.ts";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "dry-run-dsm-no-record",
+  entry: import.meta.url,
+  known: [],
+});
+
 function money(value: number | null | undefined): string {
   if (value == null) return "requires review";
   return new Intl.NumberFormat("en", { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(value);

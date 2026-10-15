@@ -21,6 +21,15 @@ import {
 } from "@/lib/auth/supabase-identity";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "rebuild-a9-marketing-manager-account",
+  entry: import.meta.url,
+  known: ["--apply", "--dry-run", "--confirm-production-hard-delete", "--backup"],
+});
+
 const targetHrId = "A-9";
 const targetRole = "Marketing Manager";
 const productionSupabaseRef = "ozucdzovmcqvepbozvqf";

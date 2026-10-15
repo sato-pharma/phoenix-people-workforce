@@ -3334,3 +3334,46 @@ every source assertion green, because the REFUSED text was still in the file. Th
 the script with `PHX_FOLD_PRIMARY` at an empty directory and the home directory redirected, so a
 working gate answers exit 2 and a dead one answers exit 1 at the missing-checkout line, before any
 fetch, worktree or pull request — "must be REFUSED (exit 2), got 1".
+
+## The same gate, across every script that takes arguments — 2026-10-15
+
+The first sweep gated the `.mjs` scripts that wrote files, and its ratchet was built on "parses argv AND
+writes files", so the whole `.ts` tree and every read-only report sat outside it. Measured when this
+one started: 79 more scripts took a flag or a positional and ignored a stranger. The ones that matter
+most are not the writers. `rep-seat-vacancies.ts`, `respread-swing-table.ts`, `restate-area-month.ts`
+and `dm-line-achievement.ts` read `--period=YYYY-MM` and fall back to September when the flag is
+misspelled, so `--perod=2026-10` printed a confident September answer. Every one of the production
+mutators behind `--apply` or `--execute` (backfills, provisioning, the vacation corrections, the
+source-of-sales cleanups) took the same silent fall-through.
+
+What was wired: 79 scripts through `refuseUnknownFlags`, each vocabulary read from the script's own
+code and checked against every caller (workflows, package.json, hooks, `~/.claude`, the scheduled
+tasks). 17 of them take positionals only and carry `known: []`: a flag-shaped typo there is read as the
+file to write (`customer-pharmacy-pending-questions.ts` resolves `argv[2]` as its output path) or the
+month to read. The ratchet is now "any tracked script that parses arguments", over `.mjs` and `.ts`,
+with an `EXEMPT` map that must give a reason and goes red when a listed script gets gated.
+
+Three traps the work hit, each caught by the test and not by looking:
+
+- **A gate cannot import from `lib/` in a file that runs alone.** `xlsx-snapshot.cmd` extracts
+  `repo-doctor-xlsx-snapshot.mjs` alone from `origin/main`, so the hourly backup is gated inline on node
+  builtins, with exact-token matching because its own parser reads only the separate-value form (`--repo
+  x`) and would have ignored `--repo=x`. The wrapper passes `--repo "<path>"` and nothing else.
+- **A strict probe fails on a nested import.** `validate-railway-production-secrets.mjs` imports the
+  gated `sync-railway-production-secrets.mjs`; under `PHX_FLAG_GATE_PROBE=1` the imported gate exited 3
+  ("not the entry point") before the probed script's own gate ran. `PHX_FLAG_GATE_PROBE=<script path>`
+  now makes only that file strict; `=1` stays strict everywhere.
+- **A survey by eye missed a flag.** `headwind-bootstrap.mjs` reads `flag("role")` as well as the five it
+  declares. The own-flag assertion (every flag a script tests for must be in its `known`) caught it before
+  the script could refuse its own option, and it fires on a dropped `--apply` too.
+
+Also handled: `pnpm run x -- --flag` can hand a bare `--` to a script, so the helper stops judging at it.
+Probes run in parallel batches with a MINIMAL environment, because CI has no `.env.local`: a script that
+cannot even be imported without credentials must fail on the laptop first.
+
+Verified by breaking it, each restored from a copy: a `.ts` script losing its call → "a pinned script
+lost its gate"; the helper judging past `--` → "a bare -- is not a flag"; the backup's inline gate
+turned to `if (false)` → "the refusal must name the typo"; `cronjob-sync` dropping `--apply` → "tests for
+--apply itself"; a wrong `entry` → "must pass entry: import.meta.url"; a strict probe → "a gated module
+IMPORTED by the probed script must pass quietly"; `restate-area-month` dropping `--area` → the same
+own-flag message.
