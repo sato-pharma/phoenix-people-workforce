@@ -60,6 +60,18 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "slow-audit",
+  entry: import.meta.url,
+  known: ["--check", "--history", "--json", "--quick", "--since", "--transcripts", "--until"],
+  hints: [
+    "--since <day> and --until <day> bound the transcripts; --check exits non-zero on a regression",
+  ],
+});
+
 const ARGS = new Set(process.argv.slice(2));
 const QUICK = ARGS.has('--quick');
 const AS_JSON = ARGS.has('--json');

@@ -13,6 +13,18 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import postgres from "postgres";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "resolve-gap-bricks",
+  entry: import.meta.url,
+  known: [],
+  hints: [
+    "its one argument is the output file: node scripts/resolve-gap-bricks.mjs [gap-pins.sql]",
+  ],
+});
+
 const ENV_FILES = [".env.staging.rls.local", ".env.production.rls.local", ".env.local"];
 
 function envVar(name) {

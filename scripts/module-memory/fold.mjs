@@ -27,6 +27,18 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { refuseUnknownFlags } from "../lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "module-memory/fold",
+  entry: import.meta.url,
+  known: ["--apply"],
+  hints: [
+    "a bare run is a dry run — --apply files the inbox and opens the PR",
+  ],
+});
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..", "..");
 const MEMORY_DIR = process.env.PHX_MEMORY_DIR

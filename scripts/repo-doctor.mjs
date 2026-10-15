@@ -185,6 +185,18 @@ import {
   xlsxSnapshotLines,
 } from "./repo-doctor-xlsx-snapshot.mjs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "repo-doctor",
+  entry: import.meta.url,
+  known: ["--deep", "--fix", "--force", "--no-auth", "--snapshot-xlsx", "--strip-idle"],
+  hints: [
+    "a bare run only reads; --fix repairs husks, --snapshot-xlsx backs up xlsx/, --no-auth skips the production alerts read",
+  ],
+});
+
 const args = process.argv.slice(2);
 const deep = args.includes("--deep");
 const fix = args.includes("--fix");

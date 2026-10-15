@@ -26,6 +26,18 @@ import { appendFileSync, existsSync, mkdirSync, rmSync, copyFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { refuseUnknownFlags } from "../lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "field-day/run-nightly",
+  entry: import.meta.url,
+  known: [],
+  hints: [
+    "its one argument is the day: node scripts/field-day/run-nightly.mjs [YYYY-MM-DD]",
+  ],
+});
+
 const PRIMARY = process.env.FIELD_DAY_PRIMARY || "F:/Phoenix Workforce/phoenix-workforce";
 
 /**

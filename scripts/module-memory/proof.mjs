@@ -21,6 +21,18 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { MODULES, globToRegExp } from "./modules.mjs";
 
+import { refuseUnknownFlags } from "../lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "module-memory/proof",
+  entry: import.meta.url,
+  known: ["--model", "--only", "--save"],
+  hints: [
+    "--only <id> narrows the run; --save writes the result",
+  ],
+});
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(name);

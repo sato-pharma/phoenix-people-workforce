@@ -36,6 +36,18 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "codemod-type-scale",
+  entry: import.meta.url,
+  known: ["--apply"],
+  hints: [
+    "it is a dry run by default — pass --apply to write",
+  ],
+});
+
 // px -> utility suffix. Contiguous 8-15px: the whole range this admin's dense
 // tables, labels and badges actually live in. The names are the ladder that was
 // already in src/styles/tokens.css, not a new one invented beside it.
