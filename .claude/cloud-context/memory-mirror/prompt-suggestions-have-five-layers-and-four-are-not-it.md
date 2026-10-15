@@ -1,51 +1,73 @@
 ---
 name: prompt-suggestions-have-five-layers-and-four-are-not-it
-description: "\"Suggestions not appearing\" has FIVE independent layers, and the four a session reaches first are almost always already correct — the one that is usually the answer is the APP's own `prompt_suggestions`, which the app says applies only from a session's next start or resume. Holds the measured ladder, the commands for each rung, and the two things that are NOT the cause (the status bar and the Stop hook)."
+description: "The suggestion gate is DECOMPILED, so it is never guessed again: Claude Code 2.1.293's chain is unfocused -> early_conversation (<2 assistant turns) -> last_response_error -> elicitation_active -> plan_mode -> rate_limit -> cache_cold (10,000 tokens) -> unused_streak (20) -> empty. USAGE DOES NOT STOP THEM BELOW A HARD `rejected`, because CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION exempts the `allowed_warning` band - that is why both copies of the variable must stay. The two that actually bite here are UNFOCUSED and EARLY_CONVERSATION, and neither has a setting."
 metadata:
   node_type: memory
   type: project
   originSessionId: 0e88bd89-241a-48ce-8073-3ee1d7f63569
-  modified: 2026-10-02T17:30:15.852Z
+  modified: 2026-10-15T12:40:00.000Z
 ---
 
-Measured end to end on 2026-10-02, after the owner reported *"suggwstions again not appearing"*. Every
-one of the first four rungs was already correct, so a session that stops at any of them concludes
-"it should be working" and has nothing to offer him.
+Read out of `claude.exe` 2.1.293 on **2026-10-15** (`grep -aoE` over the 256 MB binary, the technique
+in [[effort-multiplier-is-the-biggest-usage-lever]]), after the owner asked why the box was empty and
+then ruled: *"never stop suggestions from appearing in the text box even if the usuage is 99.99%"*.
 
-**The ladder, in the order worth checking — cheapest and most-often-wrong LAST, deliberately:**
+🔴 **EVERY SWITCH BEING ON PROVES NOTHING — the generation chain has NINE other ways to return early,
+and each one is SILENT: no log line, no telemetry file, no transcript entry.** (Searched: no
+`suggest*` field exists in any session JSONL; `atis-latch` is always `""`; the app's own `Logs/`
+folder never mentions it.) **Measure the chain, do not re-measure the switches.**
 
-1. **CLI env var, both copies** (his standing rule — never remove either):
-   `node -e "const s=require('C:/Users/satoh/.claude/settings.json');console.log(s.env?.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION, s.promptSuggestionEnabled)"`
-   and `powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable('CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION','User')"`.
-   Both read `true` on 10-02. `Machine` being empty is CORRECT — the rule asks for the User variable.
-2. **Usage throttle.** The global rule says the variable is what keeps suggestions on *near the usage
-   limit*, so a session reaches for this early. `get_usage` read **47%** of the 5-hour window and
-   **13%** weekly — nowhere near, so it was not the cause. Measure it rather than assuming it.
-3. **Context size.** 37% of 800k, auto-compact at 96%. Not it.
-4. 🔴 **THE STATUS BAR IS A DIFFERENT FEATURE AND IS NOT THE ANSWER — do not spend the turn there.**
-   `next-step-capture.mjs` (Stop hook) writes `~/.claude/.next-step/<sessionId>.txt` and
-   `statusline.mjs` prints it as a row. Both worked perfectly: the file was written within a second of
-   the reply, holding the line **with the curly quotes intact** (verify with `od -c`: `342 200 234` is
-   U+201C, `342 200 235` is U+201D), and running the statusline script with the app's own stdin JSON
-   printed the `> Next step:` row, exit 0. **The owner distinguishes the two** — asked whether the bar
-   or the in-box ghost text was missing, he answered *"non this nor this"*.
-5. 🔴 **THE APP'S OWN `prompt_suggestions` — the rung only `mcp__ccd_settings__get_settings` can see,
-   and the one that carries the real constraint.** It is a *separate* setting from the two in
-   `~/.claude/settings.json`, and its own text is the finding:
-   **"Show a suggested next prompt in the message box after each reply. Each suggestion is one more
-   model request. _Applies from a session's next start or resume._"**
-   So the switch reading `On` does **not** mean this session has it — a session that was running when
-   it changed, or that had its model switched mid-session (`/model` was used here), carries whatever
-   it started with. **The lever is a fresh session, which is HIS click**, and it goes in the prose,
-   never in the Next step box ([[never-put-his-physical-actions-in-the-next-step-box]]).
+**The chain, in the order the binary runs it** — `DIo()` at turn end, then `nIr()`:
 
-**How to answer him:** report the four rungs as measured-and-ruled-out with their numbers, then rung 5
-as the live one, and put the fresh session in the prose. Never tell him to reinstall, never restart
-the app ([[claude-app-slow-is-a-stale-worktree-watch]] — and his rule is that the app is never yours to
-restart), and never remove either env copy to "reset" it: an audit removed one on 2026-09-15 and he
-ordered it back.
+1. 🔴 **`unfocused` / `bg_unattached` — the session must be THE FOCUSED ONE at the moment its turn
+   ends, or no suggestion is ever generated for that turn.** `if (o ? t !== "focused" && !s : t === "blurred") return`,
+   where `t = w8()` is live `terminalFocus` (`"focused"` / `"blurred"`). **With ten sessions open this
+   is the normal case, and NO setting overrides it** — it is a hard return. A reply that lands while he
+   is reading another session has an empty box for ever; the next reply he watches has one.
+2. 🔴 **`early_conversation` — fewer than TWO assistant messages means no suggestion, so a brand-new
+   session's FIRST reply never has one.** `if (U(n, h => h.type === "assistant") < 2) return`.
+3. `last_response_error` — the previous reply was an API error.
+4. `elicitation_active` — an MCP elicitation is pending.
+5. `plan_mode` — `toolPermissionContext.mode === "plan"` kills it outright.
+6. 🔴 **`rate_limit` — and this is the one his standing rule is about.** The gate reads the
+   `anthropic-ratelimit-unified-status` header, which has exactly three bands: **`allowed`**,
+   **`allowed_warning`** (approaching the weekly limit) and **`rejected`** (reached).
+   `let t = n === "allowed_warning" && a.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION === true; if (n !== "allowed" && !t) return "rate_limit"`.
+   **So the variable exempts `allowed_warning` and ONLY that band** — which is the proof of why both
+   copies must stay, and the answer to "even at 99.99%": at 99.99% the header still reads
+   `allowed_warning`, the variable covers it, and suggestions keep coming. They stop for usage only at
+   a hard `rejected`, which no setting can override and where the turn itself would not run either.
+   🔴 **Never report a percentage as the cause.** On 2026-10-15 weekly read **87%** with
+   `extraUsage.enabled: false` and `cachedExtraUsageDisabledReason: "out_of_credits"`, and that was
+   NOT the cause — rungs 1 and 2 were.
+7. **`cache_cold` — the gate is `C = 1e4`**: `input_tokens + output_tokens > 10,000`, or that sum plus
+   `cache_creation_input_tokens` over 10,000 unless the `tengu_chomp_thaw` flag is on. Measured across
+   the ten live sessions on 10-15: **340-4,044 per turn**, so it was not firing. Hook injections are
+   what push a turn toward it.
+8. **`unused_streak` — `i = 20`, sentinel `u = 21`, and after the latch only ONE turn in `MBo = 10`
+   generates.** `promptSuggestionUnusedStreak` lives in `.claude.json` and read **undefined (= 0)** on
+   10-15, so it had never fired. The variable exempts this too (`n5n()` returns false when it is true),
+   and accounts younger than `m = 14 days` are exempt. The notice is *"Showing fewer prompt suggestions
+   · use one to bring them back"*, and using one, or toggling the config, resets it.
+9. **`empty` and the `q()` text filter** — a generated suggestion that reads as `done`, `nothing
+   found`, `nothing to suggest`, `no suggestion`, or matches `silence is` / `stay(s|ing) silent` is
+   **thrown away and the box stays blank.** This is the mechanical half of his 2026-09-18 rule: a
+   `Next step:` line that ends in a closing word produces no box at all.
+10. `timing` / `aborted` — the suggestion arrived after the composer had moved on.
 
-**Collateral, confirmed the same day:** ports 3000 and 3001 were both **`ssh.exe` Railway tunnels** at
-11 MB and 10 MB, not dev servers — exactly [[a-listener-on-port-3000-may-be-the-preview-tunnel]]. So a
-RAM recommendation built on "stop the dev server to get 3.5 GB back" would have been fiction; there was
-no dev server at all, and the pressure was the 8 open sessions.
+**Runtime control, not a cause:** `set_prompt_suggestions_paused` is an internal host command that
+pauses a session's suggestions ("for a host whose composer is not on screen"). It only pauses; there is
+nothing that forces generation.
+
+🔴 **NOT the cause, do not spend the turn there** (measured 2026-10-02 and again 2026-10-15): the five
+switches (app `prompt_suggestions`, `promptSuggestionEnabled`, the `env` copy, the Windows User
+variable, the `tengu_prompt_suggestion` flag — all ON both days), the **status bar**, which is a
+different feature he distinguishes himself (*"non this nor this"*), and the **Stop hook**, which writes
+`~/.claude/.next-step/<sessionId>.txt` within a second of every reply, curly quotes intact.
+
+**How to answer him:** name the rung, not the switches. On 2026-10-02 the live rung was the app's own
+`prompt_suggestions` ("applies only from a session's next start or resume" — the lever is a fresh
+session, HIS click, and it goes in the prose, never in the box:
+[[never-put-his-physical-actions-in-the-next-step-box]]). On 2026-10-15 it was rungs 1 and 2. Never tell
+him to reinstall, never restart the app, and never remove either copy of the variable to "reset" it —
+an audit removed one on 2026-09-15 and he ordered it back.

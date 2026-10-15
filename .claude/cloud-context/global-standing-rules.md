@@ -165,7 +165,15 @@ The measurements and incidents behind each line: `~/.claude/docs/standing-rules-
   `promptSuggestionEnabled`: only the variable keeps suggestions on near the usage limit and in the
   first session after an update. Never remove either copy. **Suggestions are ALWAYS ON, NEVER OFF**
   (owner, 2026-10-12): `~/.claude/hooks/suggestion-context.mjs` switches both back on at every
-  session start if anything flipped them. Never disable that heal or turn suggestions off.
+  session start if anything flipped them. Never disable that heal or turn suggestions off. 🔴 **AND
+  NEVER REPORT USAGE AS THE REASON THE BOX IS EMPTY — read out of `claude.exe` 2.1.293 on 2026-10-15,
+  the gate exempts the whole warning band (`status === "allowed_warning" && the variable === true`),
+  so at 99.99% suggestions still come; they stop for usage only at a hard `rejected`** (owner,
+  2026-10-15: "never stop suggestions from appearing in the text box even if the usuage is 99.99%").
+  The two that really bite have NO setting: a session must be **the focused one when its turn ends**,
+  and a session's **first reply never gets one** (fewer than two assistant turns). The full nine-rung
+  chain, every silent skip reason and the 10,000-token gate: memory note
+  `prompt-suggestions-have-five-layers-and-four-are-not-it`.
 
 ## Compact Instructions
 
