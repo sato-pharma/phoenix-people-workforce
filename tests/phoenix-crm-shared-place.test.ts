@@ -793,7 +793,9 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   // the heaviest decision on the page, retiring the building, its seated places and sending every
   // doctor in it back to To validate. Production held 35 retired venues with no way back the day
   // this was written, and the board could not even draw one.
-  const restoreSql = readFileSync("supabase/migrations/20261015220318_phoenix_crm_restore_shared_place.sql", "utf8");
+  const restoreSql = stripSqlComments(
+    readFileSync("supabase/migrations/20261015220318_phoenix_crm_restore_shared_place.sql", "utf8"),
+  );
   assert.match(
     restoreSql,
     /create or replace function public\.phoenix_crm_restore_shared_place\(p jsonb\)/,
@@ -827,7 +829,7 @@ export function runPhoenixCrmSharedPlaceTests(): void {
     assert.ok(restoreSql.includes(event), `the history is written, not inferred: ${event}`);
   }
   assert.doesNotMatch(
-    restoreSql.replace(/^\s*--.*$/gm, ""),
+    restoreSql,
     /insert\s+into\s+supabase_migrations/i,
     "🔴 and it writes NO ledger row — `assertMigrationHygiene` refuses one, and the row is written only after `pg_proc` proves the function landed",
   );
