@@ -183,6 +183,8 @@ const ROUTE_GATES: RouteGate[] = [
   // and `canDecideSharedPlaces` in the service, which is the identical predicate — and a rejection
   // retires every place seated in the venue.
   post("validation-reviews/shared-place", "update"),
+  // Approving a venue AFTER rejecting it (owner, 2026-10-15) — its own route, its own rules.
+  post("validation-reviews/shared-place/restore", "update"),
   // The venues themselves: the list a rep standing in one picks from, and the capture at its door.
   // `read` and `create`, the same pair a place has, and `territoryForValidation` narrows the capture
   // in the service exactly as it narrows `list/places`.
@@ -821,6 +823,10 @@ const LATER_MIGRATIONS = [
   // phoenix_crm_save_visit — the door form does not change at all, so it appends safely at the end and
   // cannot disturb the replacement ordering above.
   "supabase/migrations/20261015110300_phoenix_crm_visit_detail_edit.sql",
+  // The undo of a venue rejection (owner, 2026-10-15). ONE brand-new function and NOTHING else — no
+  // table, no column, and it replaces nothing, so its position cannot disturb the replacement
+  // ordering above and it appends safely at the end.
+  "supabase/migrations/20261015220318_phoenix_crm_restore_shared_place.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

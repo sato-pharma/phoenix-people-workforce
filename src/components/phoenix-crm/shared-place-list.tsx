@@ -158,6 +158,66 @@ function Cost({ row }: { row: SharedPlaceBoardRow }) {
   );
 }
 
+/**
+ * Approving a venue after rejecting it (owner, 2026-10-15: "make me able to approve validation after
+ * rejection"). The mirror of the rejected place's `Approve it after all`, and until this existed it
+ * was the one decision on this page with no undo anywhere: 35 buildings on production were retired
+ * with every doctor behind each one sent back to To validate, and the row was not even drawn.
+ *
+ * What comes back is the DATABASE's rule, not this screen's: the venue, the places that rejection
+ * retired, and each of those customers confirmed only under the three holds approving a held venue
+ * already keeps. So the sentence under the button states what will happen and promises nothing the
+ * server might not do — a customer whose timetable still cannot answer for him stays under To
+ * validate, and the answer says so by name.
+ */
+function RestoreVenue({ row }: { row: SharedPlaceBoardRow }) {
+  const router = useRouter();
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  async function restore() {
+    if (saving) return;
+    setSaving(true);
+    setProblem(null);
+    try {
+      await crmPost<unknown>("/api/phoenix-crm/validation-reviews/shared-place/restore", { sharedPlaceId: row.sharedPlaceId, note }, "restored");
+      router.refresh();
+    } catch (error) {
+      setProblem(messageOf(error));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="min-w-0 space-y-2">
+      <CrmPill tone="bad">Rejected</CrmPill>
+      <p className="break-words text-xs text-slate-500">{[row.decidedByName, row.decidedAtText].filter(Boolean).join(" · ")}</p>
+      {row.decisionNote ? <p className="break-words text-xs text-slate-600">{row.decisionNote}</p> : null}
+      <p className="break-words text-xs text-slate-600">
+        Bringing it back makes the building live again and gives every customer it retired their place back. One whose timetable still cannot
+        answer for them stays under To validate.
+      </p>
+      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`restore-venue-note-${row.sharedPlaceId}`}>
+        {VALIDATION_NOTE_LABEL}
+      </label>
+      <textarea
+        className={crmTextareaClassName}
+        disabled={saving}
+        id={`restore-venue-note-${row.sharedPlaceId}`}
+        maxLength={500}
+        onChange={(event) => setNote(event.target.value)}
+        rows={2}
+        value={note}
+      />
+      <CrmButton busy={saving} disabled={saving} onClick={() => void restore()} variant="primary">
+        {saving ? "Bringing it back" : "Approve it after all"}
+      </CrmButton>
+      {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
+    </div>
+  );
+}
+
 function Decision({ row }: { row: SharedPlaceBoardRow }) {
   const router = useRouter();
   const [note, setNote] = useState("");
@@ -180,6 +240,14 @@ function Decision({ row }: { row: SharedPlaceBoardRow }) {
       setProblem(messageOf(error));
       setSaving(null);
     }
+  }
+
+  // 🔴 A REJECTED VENUE IS DECIDED, NOT GONE (owner, 2026-10-15: "make me able to approve validation
+  // after rejection"). Its row shows what was said about it and ONE control — the undo — never the
+  // approve/reject pair again: rejecting a retired venue is what the database refuses, and the Cost
+  // lines below describe a cost that has already been paid.
+  if (row.restorable) {
+    return <RestoreVenue row={row} />;
   }
 
   return (
@@ -262,7 +330,7 @@ const VENUE_ACTIONS: ReadonlyArray<BulkAction<SharedPlaceBoardRow>> = [
     busyLabel: "Approving",
     variant: "primary",
     needsReason: false,
-    takes: () => true,
+    takes: (row) => !row.restorable,
     run: (row, answer) =>
       crmPost<unknown>("/api/phoenix-crm/validation-reviews/shared-place", { sharedPlaceId: row.sharedPlaceId, decision: "approve", note: answer.note }, "decided"),
   },
@@ -274,13 +342,23 @@ const VENUE_ACTIONS: ReadonlyArray<BulkAction<SharedPlaceBoardRow>> = [
     needsReason: true,
     warning: (count) =>
       `This retires ${count === 1 ? "that building" : `those ${count} buildings`} and everybody seated in ${count === 1 ? "it" : "them"}; each of those customers goes back to To validate and must capture the building again at its door.`,
-    takes: () => true,
+    takes: (row) => !row.restorable,
     run: (row, answer) =>
       crmPost<unknown>(
         "/api/phoenix-crm/validation-reviews/shared-place",
         { sharedPlaceId: row.sharedPlaceId, decision: "reject", note: answer.note, refusalReason: answer.reason },
         "decided",
       ),
+  },
+  {
+    key: "restore",
+    label: "Approve after all",
+    busyLabel: "Bringing back",
+    variant: "primary",
+    needsReason: false,
+    takes: (row) => row.restorable,
+    run: (row, answer) =>
+      crmPost<unknown>("/api/phoenix-crm/validation-reviews/shared-place/restore", { sharedPlaceId: row.sharedPlaceId, note: answer.note }, "restored"),
   },
 ];
 

@@ -49,6 +49,18 @@ export const VALIDATION_REVIEWS_PATH = "/admin/field-crm/validation-reviews";
 const DECIDED_SHOWN_DAYS = 14;
 
 /**
+ * How long a REJECTED review stays, which is longer — because it still carries an action.
+ *
+ * 🔴 THE 14-DAY WINDOW WAS ABOUT TO TAKE THE UNDO WITH IT. `Approve it after all` lives on the
+ * rejected row, so a rejection that scrolls off the page cannot be taken back by anybody: measured
+ * 2026-10-15, all 49 of production's rejected reviews were inside 14 days, and the oldest (5 October)
+ * would have lost its undo on the 19th — silently, with nothing going red. 90 days covers "I rejected
+ * that last month by mistake"; a rejection whose place is no longer retired has nothing left to undo
+ * and falls back under the ordinary window.
+ */
+const REJECTED_SHOWN_DAYS = 90;
+
+/**
  * The decider, and the seat scope of a Place checks read — BOTH declared in `server/access.ts` and
  * re-exported here under the names every caller already imports. The reason they cannot live in this
  * file is written out where they are: one of the four section reads is the venue board in
@@ -348,6 +360,8 @@ export type ValidationReviewRow = {
   listings: Array<GoogleListing & { distanceMeters: number }>;
   decidedByName: string | null;
   decidedAtText: string | null;
+  /** The raw instant, for the reads and filters that compare it. `decidedAtText` is for the screen. */
+  decidedAt: string | null;
   decisionNote: string | null;
   /**
    * Whether this rejection can still be taken back (owner, 2026-10-03: "add the option to approve
@@ -401,6 +415,7 @@ export type ValidationBoardRead<T> = { rows: T[]; capped: boolean };
 export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<ValidationBoardRead<ValidationReviewRow>> {
   const seats = placeChecksSeatScope(viewer);
   const since = new Date(Date.now() - DECIDED_SHOWN_DAYS * 86_400_000).toISOString();
+  const rejectedSince = new Date(Date.now() - REJECTED_SHOWN_DAYS * 86_400_000).toISOString();
   const read = await readEveryPage<Row>(
     () => {
       const query = getSupabaseAdmin()
@@ -408,7 +423,10 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
         .select(
           "id, seat_id, customer_id, place_id, is_test, kind, status, google, created_by_hr_id, created_at, decided_by_hr_id, decided_at, decision_note, refusal_reason",
         )
-        .or(`status.eq.pending,decided_at.gte.${since}`);
+        // A rejection keeps its undo for longer than an ordinary decided row keeps its place on the
+        // page — see REJECTED_SHOWN_DAYS. The place's own status is not on this table, so a rejection
+        // with nothing left to undo is dropped after the read, below.
+        .or(`status.eq.pending,decided_at.gte.${since},and(status.eq.rejected,decided_at.gte.${rejectedSince})`);
       return seatScoped(query, seats)
         .order("created_at", { ascending: false })
         .order("id", { ascending: false });
@@ -517,6 +535,7 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
       listings: listingsOf(google, point),
       decidedByName: text(row.decided_by_hr_id) ? nameOf(names, text(row.decided_by_hr_id), "") || null : null,
       decidedAtText: text(row.decided_at) ? formatPhoenixDateTime(String(row.decided_at)) : null,
+      decidedAt: text(row.decided_at),
       decisionNote: text(row.decision_note),
       // One review row per place (the UNIQUE index), so this row IS the place's whole story: a
       // rejection can be taken back while the place it retired is still retired, and since
@@ -525,7 +544,13 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
       refusable: status === "approved" && place.status === "active",
     };
   });
-  return { rows, capped: read.capped };
+  // 🔴 THE LONGER WINDOW IS FOR THE UNDO, NOT FOR THE HISTORY. A rejection older than the ordinary
+  // 14 days is kept only while it can still be taken back — its place still retired. One whose place
+  // is active again, or gone, has nothing left to reverse, so it drops back under the ordinary window
+  // rather than sitting on a working screen for three months. The history is in
+  // `phoenix_crm_list_events`, as it always was.
+  const keep = rows.filter((row) => row.status !== "rejected" || row.restorable || row.decidedAt === null || row.decidedAt >= since);
+  return { rows: keep, capped: read.capped };
 }
 
 // ── The decision ────────────────────────────────────────────────────────────────────────────────
