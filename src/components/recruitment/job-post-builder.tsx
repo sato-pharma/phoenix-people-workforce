@@ -113,11 +113,13 @@ function PostFrame({ html, label }: { html: string; label: string }) {
   return (
     <div ref={box} className="relative w-full overflow-hidden bg-slate-100" style={{ aspectRatio: `${JOB_POST_WIDTH} / ${JOB_POST_HEIGHT}` }}>
       {width > 0 ? (
+        // maxWidth/maxHeight none: the admin shell clamps every iframe to max-width 100%, which would
+        // squeeze this 1080px page into the box BEFORE the scale shrinks it — cutting the right half off.
         <iframe
           className="pointer-events-none absolute left-0 top-0 border-0"
           sandbox="allow-scripts"
           srcDoc={html}
-          style={{ height: JOB_POST_HEIGHT, transform: `scale(${scale})`, transformOrigin: "0 0", width: JOB_POST_WIDTH }}
+          style={{ height: JOB_POST_HEIGHT, maxHeight: "none", maxWidth: "none", transform: `scale(${scale})`, transformOrigin: "0 0", width: JOB_POST_WIDTH }}
           tabIndex={-1}
           title={label}
         />

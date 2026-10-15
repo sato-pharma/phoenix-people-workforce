@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   JOB_POST_MAX_AREAS,
@@ -167,4 +168,13 @@ export function runRecruitmentJobPostsTests() {
   assert.equal(content.whatsapp, "01159888247", "a request cannot print another WhatsApp number");
   assert.equal(content.careers, "satopharma.com/careers", "a request cannot print another careers address");
   assert.equal(content.menuName, "Rep", "the WhatsApp choice defaults to the job title");
+
+  // ── The preview frame must not be clamped by the admin shell ──────────────────────────────────
+  // app/globals.css gives every iframe in .admin-shell max-width: 100%. The preview draws the post at
+  // its true 1080px and scales it with a transform, so that clamp squeezes the page into the column
+  // first and the scale shrinks it again — the right half of the post was cut off on 2026-10-15.
+  const builder = readFileSync(new URL("../src/components/recruitment/job-post-builder.tsx", import.meta.url), "utf8");
+  const frame = /<iframe[\s\S]*?\/>/.exec(builder)?.[0] ?? "";
+  assert.ok(frame.includes('maxWidth: "none"'), "the preview iframe opts out of the admin shell's max-width: 100% clamp");
+  assert.ok(frame.includes('maxHeight: "none"'), "the preview iframe opts out of any max-height clamp too");
 }
