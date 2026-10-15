@@ -61,7 +61,7 @@ import { getCrmCutoverSetting } from "@/lib/crm/cutover";
 import { addDaysIso, cairoTodayIso } from "@/lib/crm/dates";
 import { isAgentInScope, type DoctorCoverageScope } from "@/lib/crm/doctor-coverage-roles";
 import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
-import { loadStartedRepWindows } from "@/lib/crm/phoenix-started-reps";
+import { loadDoctorListRepWindows } from "@/lib/crm/phoenix-started-reps";
 import {
   chunk,
   employeeName,
@@ -175,11 +175,18 @@ export async function assertContactListAccess(access: AccessContext): Promise<Vi
 }
 
 /**
- * Who owns a doctor list today: every started team's window, plus the global cutover setting. Read
+ * Who owns a doctor list today: the DOCTOR-LIST door's windows, plus the global cutover setting. Read
  * together, once, because every caller needs both halves of the rule.
+ *
+ * `loadDoctorListRepWindows` is every started team's people PLUS every rep who holds a Phoenix CRM list
+ * and has no iReports360 account at all — nothing would otherwise write that rep a list, on any screen
+ * (the owner's ruling of 2026-10-15, migration 20261015215500). It is the same door the hourly refresh's
+ * fifth pass and `crm_contact_list_change_apply` ask in SQL, so this page, the request, the approval and
+ * the row that lands can never disagree. Everything that counts WORK still asks
+ * `loadStartedRepWindows` — a team's counting source moves only on the owner's own Start click.
  */
 async function listOwnership(): Promise<Omit<DoctorListOwnership, "rep">> {
-  const [windows, cutover] = await Promise.all([loadStartedRepWindows(), getCrmCutoverSetting()]);
+  const [windows, cutover] = await Promise.all([loadDoctorListRepWindows(), getCrmCutoverSetting()]);
   return { cairoToday: cairoTodayIso(), cutover, windows };
 }
 

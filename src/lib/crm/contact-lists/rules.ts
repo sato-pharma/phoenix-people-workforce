@@ -10,6 +10,12 @@
  * global CRM cutover date if one is ever set. Before that, iReports360 still owns that rep's list and
  * the hourly contact refresh would undo a change the next morning — so the rule is not a formality.
  *
+ * The windows handed in are the DOCTOR-LIST door's (`loadDoctorListRepWindows`), which since 2026-10-15
+ * also covers a rep who holds a Phoenix CRM list and has no iReports360 account at all: no vendor pass
+ * can reach him, so nothing would ever write his list and his droplist stayed empty. That is the mirror
+ * of the rule below — a rep with no Phoenix list keeps his vendor list — and it moves nothing about who
+ * is COUNTED from Phoenix CRM.
+ *
  * Pure: no database, no clock. The service is contact-lists/service.ts.
  */
 

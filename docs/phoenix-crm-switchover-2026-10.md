@@ -356,3 +356,61 @@ so the first run on the new body — `last_detail` `in-process slice 4/12: 7 age
 The last success before the apply was **20:12:28**, on the old body. `last_fail_at` is still **15 Oct 12:59:21 Cairo**,
 the `23503` abort this section opens with. That row carries ONE failure stamp and rewrites it on every failure, so an
 unmoved `last_fail_at` means no failure since the apply at all — not a failure that a later success papered over.
+
+## A rep with no vendor list
+
+Shahd Mohamed Elsayed Ghoneim (`PD-0026`, seat `SEAT-PED-REP-AB4`, Pedia Behira 1) had an **empty doctor droplist**,
+reported by the owner on 15 October 2026. Read on production `ozucdzovmcqvepbozvqf` the same evening:
+
+| Fact | Reading |
+| --- | --- |
+| `crm_contact_assignments` for `PD-0026` | **0 rows, ever** — the table every list screen reads |
+| `phoenix_crm_customers` on her seat | **112** real rows, built 11 Oct 2026, all `pending` |
+| `employees` | `crm_id` NULL, `crm_username` NULL — **no iReports360 account at all** |
+| `phoenix_crm_team_starts` | no row for `SEAT-PED-DM-AB` — **her team has not started** |
+| Her two peers on that same unstarted team | `B-177` 183 open rows, `PD-0005` 180 — both from `ireports360` |
+| Her seat's predecessor (Mahmoud Eltanany, resigned 10 Aug) | 0 assignments — **no vendor list to inherit** |
+
+So **both** sources wrote her nothing. The four vendor passes can only key on an iReports360 account, which she does
+not have; the fifth pass covers a rep whose own team has started, which hers has not. Her peers see a list only
+because each carries a vendor account. Nine more October hires were in exactly that state — `AI-0026/27/28`,
+`CN-0010`, `PD-0021/24/25/27` and her — **1,223 built list rows between them, reaching no screen**: Rep Doctor Lists,
+the Reps List doctor column, the rep KPI coverage and frequency denominators, Employee 360's doctor list and the
+direct-order venue picker all read `crm_contact_assignments`. `CN-0009` looked identical and was not in the hole: her
+team HAS started, so the fifth pass already covered her.
+
+**The owner's ruling, 15 October 2026**, asked as the choice between extending the hand-over rule, starting her team,
+and a one-off write for her alone: *"Everyone in Pedia that logged yesterday and in, tried in, in, in, in validation
+in Makram Abed, those were new hired and we were in training. So all those should be opened for them, the Phoenix
+now."* The rule, for every rep in that state, on every line.
+
+**The rule.** The hand-over is driven by the LIST, in both directions: a rep with no Phoenix list keeps his vendor list
+(§1), and a rep with no VENDOR list gets his Phoenix list without waiting for his team. A rep who has **both** still
+waits for his team's start — that is what keeps a team's counting source the owner's own Start click.
+
+**The shape — `20261015215500_a_vendorless_reps_phoenix_list_opens.sql`.** One new door, `phoenix_crm_doctor_list_reps()`
+= `phoenix_crm_started_team_reps()` ∪ `phoenix_crm_list_only_reps()`, and the three readers of the list rule ask it:
+the refresh's fifth pass (and the freeze set that keeps the vendor off those rows), `crm_contact_list_change_apply`'s
+`v_phoenix_owns`, and the service's `listOwnership` through `loadDoctorListRepWindows`. `phoenix_crm_list_only_reps()`
+requires all four: a real non-test Phoenix list on the seat, no numeric `crm_id` and no `crm_username`, no open
+`source = 'ireports360'` row, and **no window in the started set** — returning a started rep there too would offer the
+fifth pass a second, earlier window and backdate his periods to the day his list was built (`CN-0009`'s list predates
+her team's start by five days). `counted_from` is the later of his occupancy day and the list's Cairo build day.
+
+🔴 **The visits door is untouched, and that is the point.** `phoenix_crm_started_team_reps()` is unchanged, so
+everything that decides whether somebody *worked* — the four unified views, field-work compliance and its
+payroll-deduction recommendation, the CRM no-activity / DSM no-record / holiday-bridge connectors, the attendance day
+maps, the KPI boards, Early Birds — counts exactly whom it counted before. This moved the doctor list and nothing else.
+
+**Applied and measured on production, 15 October 2026 22:07 Cairo**, through the standing route
+(`PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com node scripts/apply-sql-file.mjs … production`, because
+both MCP doors refuse a `create or replace function` whose body merely contains a `delete` or a `drop table pg_temp.…`).
+All four function bodies read back md5-equal to the file: `phoenix_crm_list_only_reps`
+`ce348bea5b05175d6298dc7f79417820`, `phoenix_crm_doctor_list_reps` `6d63cbefda825947e76dccfe6dd7a5d8`,
+`crm_contact_master_refresh` `f099c54bdeed10ee8b8756968a972c73` (pre-image `7194a3929cef15051f541d5bab6ee875`) and
+`crm_contact_list_change_apply` `40d256cff9fb976d6ba1799f02bedade` (pre-image `b5a5a2ab9ec3a9ef14f6bff322c0f445`). The
+door then returned exactly the nine reps, and one `select public.crm_contact_master_refresh()` answered
+**`phoenixAssignmentsOpened` 1223**, with `assignmentsClosed` 0, `assignmentsDiscarded` 0 and
+`phoenixVendorHandedOver` 0 — nine lists opened, nobody else's row touched. Shahd's own list is **104 PM + 8 AM**,
+`source = 'phoenix_crm'`, open from **11 October 2026**. It writes no ledger row, so the file is carried in
+`ACKNOWLEDGED_EXCEPTIONS` with those digests as its evidence.

@@ -33,12 +33,37 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export const PHOENIX_CRM_STARTED_TEAM_REPS_RPC = "phoenix_crm_started_team_reps";
 
 /**
+ * The DOCTOR-LIST door, and only that: every started team's people PLUS every rep who holds a Phoenix
+ * CRM list and has no iReports360 account at all, whose list nothing would otherwise write
+ * (20261015215500, the owner's ruling of 2026-10-15). It is deliberately a SECOND function rather than
+ * a widening of the one above: everything that counts WORK — the four unified views, field-work
+ * compliance and its deduction recommendation, the KPI boards, Early Birds, `rep-day.ts` — keeps asking
+ * `phoenix_crm_started_team_reps`, so a team's counting source still moves only on the owner's own
+ * Start click. The two database readers of the list rule (`crm_contact_master_refresh`'s fifth pass and
+ * `crm_contact_list_change_apply`) ask this same door in SQL.
+ */
+export const PHOENIX_CRM_DOCTOR_LIST_REPS_RPC = "phoenix_crm_doctor_list_reps";
+
+/**
  * Every person's days within a started Phoenix CRM team's start. An unreadable answer — or the function
  * not there yet — reads as NO started team: the caller keeps the behaviour it had before starts existed.
  */
 export async function loadStartedRepWindows(): Promise<StartedRepWindow[]> {
+  return loadRepWindows(PHOENIX_CRM_STARTED_TEAM_REPS_RPC);
+}
+
+/**
+ * Whose DOCTOR LIST is Phoenix's today — the started windows plus the vendor-less reps'. Only the
+ * doctor-list surfaces may read this; a reader about visits, plans, attendance or money wants
+ * {@link loadStartedRepWindows}. Fails the same way: an unreadable answer is no window at all.
+ */
+export async function loadDoctorListRepWindows(): Promise<StartedRepWindow[]> {
+  return loadRepWindows(PHOENIX_CRM_DOCTOR_LIST_REPS_RPC);
+}
+
+async function loadRepWindows(rpc: string): Promise<StartedRepWindow[]> {
   try {
-    const { data, error } = await getSupabaseAdmin().rpc(PHOENIX_CRM_STARTED_TEAM_REPS_RPC);
+    const { data, error } = await getSupabaseAdmin().rpc(rpc);
     if (error) throw error;
     return ((data ?? []) as Array<Record<string, unknown>>).flatMap((row) => {
       const from = typeof row.counted_from === "string" ? row.counted_from.slice(0, 10) : null;
