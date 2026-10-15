@@ -795,6 +795,20 @@ function premiumSkinTests(
  * longer says "Leadership Appointment" either), and the executive letter's welcome band now fits
  * under the foot instead of orphaning onto a third page. SATO IS UNCHANGED, which is the proof the
  * edit reached the words it was aimed at and nothing else — its sentence never said leadership.
+ *
+ * Re-pinned again the same evening, on his word: "drop the welcome sentence from the Executive
+ * closing paragraph". The executive letter said "we look forward to welcoming you onboard" twice —
+ * once to close the body and again, word for word, in the welcome band under the signature and the
+ * foot. The band keeps it; the paragraph now ends at "a strong addition to our organisation".
+ * EXECUTIVE WAS THE ONLY DIGEST THAT MOVED on that edit — classic, sato and house were the proof it
+ * reached the one letter he named.
+ *
+ * Re-pinned a third time minutes later, on his word: "drop the welcome sentence from the Corporate
+ * closing paragraph too". Corporate welcomed three times over — "we look forward to welcoming you to
+ * Sato Pharma" to close the body, then the band heading "Welcome to Sato Pharma" and its sentence.
+ * The band keeps both; the paragraph now ends at "returning a copy of this letter", so it instructs
+ * and the band welcomes. CLASSIC AND HOUSE ARE UNCHANGED THROUGH ALL THREE RE-PINS — they carry no
+ * welcome band at all, which is why neither needed touching.
  */
 function frozenDesignTests(): void {
   const fixture: OfferFields = {
@@ -821,9 +835,9 @@ function frozenDesignTests(): void {
   };
   const frozen: Record<string, string> = {
     classic: "6904dc4bbad6bbf4cf50b67c044da4624bba253c8fe8804c2338fd426c78017c",
-    executive: "0f37ee07dc014f09f77e319a1eb015e6379b7cd1e0e47523d1c93d36cc742bef",
+    executive: "400b377c88dd198c347f60e25152a638d588ac1578c80b7d78727f960c481c7c",
     house: "32a225cbdb295ebb1812115339215c230b35399417cfd56dabeab8a2a6243b29",
-    sato: "0e2613161bd24a73ed50fc3d6efe67b4454e1c080b29cb4ee71e9b1a6e5aa014",
+    sato: "0af8b78761f6a0c2dafc8b33481374b43716f91aad11a23f3cf3be0632fd7790",
   };
   for (const [key, digest] of Object.entries(frozen)) {
     const design = OFFER_BUILTIN_TEMPLATES.find((entry) => entry.key === key);

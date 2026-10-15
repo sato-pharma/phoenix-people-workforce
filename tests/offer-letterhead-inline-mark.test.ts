@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
-import { SATO_LOGO_CID_SRC, SATO_LOGO_CONTENT_ID, satoLogoAttachment } from "../src/lib/offers/brand.ts";
+import { SATO_LOGO_CID_SRC, SATO_LOGO_CONTENT_ID, satoLogoAttachment, satoLogoReverseDataUri } from "../src/lib/offers/brand.ts";
+import { OFFER_SATO_THEME } from "../src/lib/offers/sato-template.ts";
 import { brevoInlineFallback, brevoProvider, resendProvider, type PreparedEmail } from "../src/lib/email/email-providers.ts";
 import { renderOfferBlock } from "../src/lib/offers/render.ts";
 import { renderOfferEmail } from "../src/lib/offers/render-email.ts";
@@ -200,5 +203,69 @@ export async function runOfferLetterheadInlineMarkTests() {
       "the classic document letterhead must draw the mark the renderer supplies",
     );
     assert.ok(!html.includes("logo-gap"), "the reserved gap must not survive beside the mark");
+  }
+
+  // 8) THE CORPORATE MASTHEAD'S MARK — a third defect in the same place, fixed on the owner's
+  //    instruction on 15 Oct 2026: "fix the PHARMA contrast on the Corporate letter's masthead".
+  //
+  //    The shared on-dark mark was made by recolouring ONE path — SATO, to white. The word PHARMA
+  //    kept its paper blue #0A6BA6, which on this design's navy #17304d measures 2.34:1: under the
+  //    3:1 floor a graphic has to clear, and visibly dim at the 30px the masthead draws it. The
+  //    repair is a separate file, because `sato-pharma-logo.png` is also drawn by the CEO and
+  //    Finance command centres, the joining form, the business-review pack and the contract.
+  {
+    const contrast = (a: string, b: string): number => {
+      const lum = (hex: string): number => {
+        const channels = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255);
+        const [r, g, bl] = channels.map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+        return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+      };
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+
+    const fills = (file: string): string[] =>
+      [...readFileSync(`public/brand/${file}`, "utf8").matchAll(/fill="(#[0-9A-Fa-f]{6})"/g)].map((m) => m[1].toUpperCase());
+
+    const onNavy = fills("sato-pharma-logo-on-navy.svg");
+    assert.equal(onNavy.length, 4, "the lockup is four paths — SATO, PHARMA and the two waves");
+    assert.ok(!onNavy.includes("#0A6BA6"), "the paper blue that made PHARMA dim must not survive in the on-navy mark");
+
+    // Every key of an OfferTheme is optional, so the band's own colour is read once and checked —
+    // an absent `ink` would otherwise measure as NaN and read as a contrast failure here.
+    const navy = OFFER_SATO_THEME.ink ?? "";
+    assert.match(navy, /^#[0-9A-Fa-f]{6}$/, "the Corporate design must define the navy its masthead is drawn on");
+
+    // The two WORDS are what a reader has to read, and both clear the floor. The lower wave stays
+    // #0A527D at 1.61:1 on purpose — it is the lockup's own shading, not a word, and the owner's
+    // instruction was about PHARMA; a design he hands over is fixed where it is broken, not redrawn.
+    for (const word of ["#FFFFFF", "#1482C2"]) {
+      assert.ok(onNavy.includes(word), `the masthead wordmark must carry ${word}`);
+      assert.ok(
+        contrast(word, navy) >= 3,
+        `the masthead wordmark must clear 3:1 on the navy band — ${word} is ${contrast(word, navy).toFixed(2)}:1`,
+      );
+    }
+
+    // The geometry is the shared artwork's, untouched: same file, one fill different.
+    const shared = readFileSync("public/brand/sato-pharma-logo.svg", "utf8");
+    const lifted = readFileSync("public/brand/sato-pharma-logo-on-navy.svg", "utf8");
+    assert.equal(
+      shared.replace('fill="#0A6BA6"', 'fill="#1482C2"'),
+      lifted,
+      "the on-navy mark must be the shared artwork with PHARMA alone lifted — never a redrawn logo",
+    );
+
+    // And the letter actually draws it: the reader the sato variant is given returns these bytes.
+    //    Compared as digests, not as base64: a mismatch here used to print two 19,000-character
+    //    strings, which tells a reader nothing about which file was served.
+    const uri = satoLogoReverseDataUri();
+    assert.ok(uri?.startsWith("data:image/png;base64,"), "the reverse mark must inline as a PNG data URI");
+    const digest = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex").slice(0, 16);
+    assert.equal(
+      digest(Buffer.from(uri?.slice("data:image/png;base64,".length) ?? "", "base64")),
+      digest(readFileSync("public/brand/sato-pharma-logo-on-navy.png")),
+      "the Corporate masthead must read the on-navy mark, not the shared on-dark one",
+    );
   }
 }
