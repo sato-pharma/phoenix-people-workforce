@@ -89,7 +89,7 @@ the identical 14 / 9 / 1 lanes.
 `resignations` · `contract-renewals` · `probation-decisions` · `coaching-red-zone` · `salary-flags` ·
 `phoenix-crm-decisions` · `orphaned-requests` ·
 `uncollected-leaver-deductions` · `calendar-review-requests` · `closing-publication-drift` ·
-`office-allocation-drift`
+`office-allocation-drift` · `organogram-seat-drift`
 
 `orphaned-requests` joined on 2026-10-04: a request in ANY chain (marketing, direct orders, vacation)
 stranded because the one person who must act next has resigned — a `returned` request whose requester
@@ -186,6 +186,53 @@ correct when it was written.
 
 Pinned by `tests/needs-you-office-allocation-drift.test.ts`. The script it names is itself guarded
 by `scripts/lib/tree-is-current.ts`, because it recomputes the rule from its own checkout.
+
+### `organogram-seat-drift` — joined 2026-10-15
+
+**A detector that already worked, read by nobody.** `public.au_v_employee_seat_drift` compares
+`employees.area_id`, `region_code` and `manager_hr_id` against the seat each active person holds in
+the EU organogram — the source of truth for every employee's distribution since the owner's
+2026-10-12 ruling ([eu-organogram-is-the-distribution-truth.md](eu-organogram-is-the-distribution-truth.md)).
+It has four callers and **all four use it as a lookup table**: `weekly-planning/planning-areas.ts`,
+the two CRM coverage loaders and `employee-360/brick-coverage.ts` take its seat columns and never
+touch `area_id_drifted`, `region_code_drifted` or `manager_drifted`.
+
+🔴 **SO THE FLAG SAT LIT FOR TWO DAYS AND A HUMAN FOUND THE PROBLEM INSTEAD.** A medical rep hired
+into the Behira 1 rep seat on 8 October had her `area_id` edited on the 13th to Behira 2, another
+rep's area. The weekly and monthly plan has **no rep picker at all** — it auto-assigns the rep from
+the picked area, matching by area NAME, and `medicalRepOptionsForEmployee` takes that area from the
+EMPLOYEE record, letting the seat fill only a blank. She vanished from her own area, which then
+showed no rep, and in the area she had been moved into she lost to the alphabetically earlier rep
+already there. Nothing ambered: the "needs an assigned Medical Rep" warning only fires for an area
+that already has one. Her district manager noticed a missing name on the 15th, and one row of
+production data fixed it — no code was wrong.
+
+**One item per PERSON, never one per disagreeing fact**, because a record edited to the wrong area
+usually carries the region with it: one typing mistake, one correction. The row names the person,
+the seat, which of the three facts disagree, and **both values side by side** — with an absent value
+reading as "the record holds no area" rather than as a blank, because that state is the worse one
+(four of the six rows corrected on 2026-10-12 had no area on file, and those reps were being shown
+"We don't have your area on file yet" on every territory screen).
+
+**It proposes no repair, and that is the ruling.** Which side is right is a human judgement: on
+2026-10-15 the SEAT was right and the record had been mis-typed; after a real transfer it is the
+other way round and the seat is what has to move. The row links to that person's own record —
+`/employees?edit=<hr id>`, the same arrival the organogram tile uses — and stops there. It is the
+**Super Admin's lane alone**: this is HR data integrity, not a manager's queue.
+
+🔴 **A PERSON WITH NO SEAT IS NOT DRIFT, AND THE VIEW IS RIGHT TO OMIT THEM.** Sixteen people sit in
+the directory with no seat in the EU organogram — Admins, Finance, Human Resources, Marketing,
+QPPV, R&D and SFE, the owner among them — because the seat model is the field force. The view starts
+from the seated and joins outward. Widening this source to "has no seat" would put all sixteen on
+the board on every load, for ever. `stale_marker` is left out for a different reason: it reports an
+uncleared `pending_manager_replacement_for_hr_id`, which is a leftover marker rather than a
+disagreement between the record and the seat.
+
+**`cost` is light, measured.** Against production on 2026-10-15 the whole view is 97 seated actives
+in one pass — `Execution Time: 3.228 ms`, planning 6.134 ms, 0 drifted rows — three orders of
+magnitude inside the 8-second budget, so it joins the light lane. The three name lookups behind it
+(the employee's area, the region names, the two managers) run only when something has drifted.
+Pinned by `tests/needs-you-seat-drift.test.ts`, which is also one of the offline contract gates.
 
 ## Who produces what
 
@@ -306,6 +353,7 @@ file that is not registered never runs.
 | `orphaned-requests` | flagging an active rep's returned request, a role rung, or an unknown actor; and the source not wired into the board |
 | `orphaned-requests-reader` | dropping a resigned employee's returned vacation; reporting a reversed, expired or draft direct order as stuck on a leftover rung; missing an actor whose HR_ID casing differs from the master; a calm empty board on a failed read |
 | `phoenix-crm-needs-you-source` | a second copy of the Phoenix CRM counts; a rep handed a row; an integrity signal reaching the board; the held-place row linked to a screen that cannot decide it, gated past the Super Admin, or counted in one world only |
+| `needs-you-seat-drift` | a drifted person producing no row; a row per fact instead of per person; an HR id printed where a name belongs; one side of the comparison dropped; a clean view answered with anything but a true zero; the gate, the light lane or the registry line lost; the read widened to people with no seat |
 
 **A fixture has to be able to reach the limit it tests.** The budget assertion first used a 12-item
 board, which renders 889 characters when broken — *under* the 900 ceiling — so it passed with and

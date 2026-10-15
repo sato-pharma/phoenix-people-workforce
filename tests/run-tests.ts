@@ -2466,6 +2466,7 @@ import { runNeedsYouBoardTests } from "./needs-you-board.test.ts";
 import { runNeedsYouSourceHealthTests } from "./needs-you-source-health.test.ts";
 import { runNeedsYouNeverUnderReportsTests } from "./needs-you-never-under-reports.test.ts";
 import { runNeedsYouOfficeAllocationDriftTests } from "./needs-you-office-allocation-drift.test.ts";
+import { runNeedsYouSeatDriftTests } from "./needs-you-seat-drift.test.ts";
 import { runNeedsYouUncollectedLeaverDeductionsTests } from "./needs-you-uncollected-leaver-deductions.test.ts";
 import { runOrphanedRequestsTests } from "./orphaned-requests.test.ts";
 import { runOrphanedRequestsReaderTests } from "./orphaned-requests-reader.test.ts";
@@ -9729,6 +9730,10 @@ await runTest(
 await runTest(
   "the Office-allocation board row reports a month whose COMMITTED Office spread no longer matches the golden rule — the shares are frozen at the Office commit and nothing re-runs them, so a distributor book written afterwards moves the base underneath them (August 2026 CNS: 3,698 of 109,719 units, 3.37%, across 43 areas, measured on production 2026-10-09) — and because today's side applies today's shares to the line's OWN stored total, both sides hold identical units per line and the published-closing drift check is structurally blind to all of it; the row names its cause in NAMES never codes, ages from the FIRST base move rather than the commit, carries no EGP, drops to worth-knowing once the month is published because re-committing would restate an announced figure, and links to /sales/import where the Office book is actually re-committed",
   runNeedsYouOfficeAllocationDriftTests,
+);
+await runTest(
+  "the organogram seat-drift board row reports an active person whose employees record disagrees with the seat they occupy — the area, the region or the manager — which au_v_employee_seat_drift had been flagging for two days on 2026-10-15 with nothing reading it as an alarm while a new rep was silently missing from her own area's weekly plan; one row per PERSON however many facts disagree, both values side by side with an absent one reading as \"holds no area\" rather than a blank, the person NAMED and no HR id anywhere a reader sees one, no automatic repair because which side is right is a judgement, a clean view producing no row at all, the Super Admin's lane alone, the light lane (3.228 ms over 97 rows on production), and the read selecting on the three drift booleans only — a person with NO seat is not drift and all 16 Head Office people would be on the board for ever if it were widened to that",
+  runNeedsYouSeatDriftTests,
 );
 await runTest(
   "the orphaned-request detector flags a request stranded because its next actor has left: a resigned actor is caught even through a casing difference (assigned_hr_id keeps the master's casing), while an ACTIVE actor, a role rung with no named person, and an actor the master does not hold are each left alone (it detects a KNOWN departure, never guesses one from a missing row); grouping is by (module, reason), dedupes the people and keeps the OLDEST timestamp; and the source is wired into the Needs You board in all four places (id, label, destination, adapter) so it reaches the morning digest rather than only existing",

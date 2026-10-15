@@ -123,6 +123,26 @@ export const needsYouSourceIds = [
   // 2,735 ms for this whole adapter against the board's 8-second budget; all nine would be ~18 s.
   // Every other month is the script's question, and the row names it.
   "office-allocation-drift",
+  // Added 2026-10-15. An active person whose own `employees` record disagrees with the seat they
+  // occupy in the EU organogram — the area, the region or the manager. `au_v_employee_seat_drift`
+  // has reported it all along and NOTHING read it as an alarm: its four callers
+  // (`weekly-planning/planning-areas.ts`, the two CRM coverage loaders,
+  // `employee-360/brick-coverage.ts`) take the seat columns off it and ignore the drift booleans.
+  // Produced by `src/lib/org/employee-seat-drift.ts`.
+  //
+  // 🔴 THE COST OF THE SILENCE, MEASURED ONCE IN A LIVE INCIDENT. A medical rep hired into the
+  // Behira 1 rep seat on 2026-10-08 had her `area_id` edited on the 13th to Behira 2 — another
+  // rep's area. The weekly and monthly plan has no rep picker: it auto-assigns from the area, and
+  // `medicalRepOptionsForEmployee` takes that area from the EMPLOYEE record, so she disappeared
+  // from her own area (which then showed no rep at all) and lost the one she had been moved into
+  // to the alphabetically earlier rep already there. No amber fired — the "needs an assigned
+  // Medical Rep" warning only shows for an area that already has one — and it surfaced two days
+  // later because her district manager noticed a name missing.
+  //
+  // 🔴 NO SEAT AT ALL IS NOT DRIFT. Sixteen Head Office people hold no seat by design, and the
+  // view omits them because it starts from the seated and joins outward. Widening this to "has no
+  // seat" would put all sixteen on the board on every load, for ever.
+  "organogram-seat-drift",
 ] as const;
 
 export type NeedsYouSourceId = (typeof needsYouSourceIds)[number];
@@ -157,6 +177,7 @@ export const needsYouSourceLabels: Record<NeedsYouSourceId, string> = {
   "calendar-review-requests": "Calendar review requests",
   "closing-publication-drift": "Published closings that have moved",
   "office-allocation-drift": "Office allocation that no longer matches the rule",
+  "organogram-seat-drift": "Employee records that disagree with the organogram",
 };
 
 /**
@@ -211,6 +232,12 @@ export const needsYouDestinations: Record<NeedsYouSourceId, { href: `/${string}`
   // action anywhere that recomputes those shares (`app/api/sales/monthly-sales/office/commit`), and
   // the closing screen cannot do it. The board links there and never re-commits anything itself.
   "office-allocation-drift": { href: "/sales/import", screen: "Sales Import" },
+  // Employee Master, where the record half of the disagreement is corrected. Each ITEM appends
+  // `?edit=<hr id>` and opens that one person's form (`employees/employee-master-link.ts`); this
+  // bare path is the fallback for the amber row and the every-source band. The other half — moving
+  // the SEAT — is an organogram change, which is the owner's alone to initiate, so the board never
+  // offers it: which side is wrong is a human judgement, and on 2026-10-15 it was the record.
+  "organogram-seat-drift": { href: "/employees", screen: "Employee Master" },
 };
 
 /**

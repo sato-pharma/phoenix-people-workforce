@@ -67,6 +67,7 @@ import { loadPhoenixCrmDecisionCounts, phoenixCrmReadsDecisions } from "@/lib/ph
 import { listPendingPrivateCalendarDataDisputes } from "@/lib/private-calendar/disputes";
 import { VALIDATION_REVIEWS_PATH } from "@/lib/phoenix-crm/server/validation-reviews";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
+import { loadEmployeeSeatDrift } from "@/lib/org/employee-seat-drift";
 import { countDirectOrderPendingValidations } from "@/lib/direct-orders/pharmacy-validation";
 import { countDirectOrderAwaitingFast, getDirectOrderUnbookedBadge } from "@/lib/direct-orders/service";
 import { getMarketAwarenessDecisionBadge } from "@/lib/market-awareness/service";
@@ -78,6 +79,7 @@ import { ACTION_HUB_MODULE_LABELS, type ActionHubItem } from "@/components/actio
 
 import { ageDaysSince, plural } from "./item-fields";
 import { officeAllocationDriftItems } from "./office-allocation-drift-items";
+import { employeeSeatDriftItems } from "./seat-drift-items";
 import {
   needsYouDestinations,
   type NeedsYouItem,
@@ -1266,6 +1268,44 @@ const officeAllocationDrift: NeedsYouAdapter = {
   },
 };
 
+// ── Employee records that disagree with the organogram ──────────────────────────────────────────
+
+/**
+ * An active person whose `employees` record disagrees with the seat they hold (added 2026-10-15).
+ *
+ * 🔴 WHY A SOURCE AND NOT A SCRIPT, AND WHY NOW. `public.au_v_employee_seat_drift` has answered this
+ * question all along — it is the measure the owner's 2026-10-12 ruling names — and NOTHING read it
+ * as an alarm. All four callers use it as a lookup table and never touch its drift booleans. So on
+ * 2026-10-15 a new rep's mis-edited `area_id` sat flagged in the view for two days while she was
+ * silently missing from her own area's weekly plan, and it took her district manager noticing a
+ * name that was not there. The board is the first thing that reads the flag.
+ *
+ * 🔴 IT PROPOSES NO REPAIR. Which side is right is a judgement: that day the SEAT was right and the
+ * record had been mis-typed, and after a real transfer it is the other way round. The row links to
+ * that person's record on Employee Master and stops, like every other row here.
+ *
+ * NO `cost`. Measured against production on 2026-10-15: the view is 97 seated actives, one pass,
+ * `Execution Time: 3.228 ms` with 0 drifted rows — three orders of magnitude inside the 8-second
+ * budget, so it belongs in the light lane. The three name lookups behind it run only when something
+ * has drifted.
+ */
+const organogramSeatDrift: NeedsYouAdapter = {
+  id: "organogram-seat-drift",
+  load: async (access) => {
+    const notYours = ownerOnlyQueue(
+      access,
+      "Correcting an employee record against the organogram is the Super Admin's decision",
+    );
+    if (notYours) return notYours;
+
+    // THROWS on a failed read, by design — an empty array here would claim every seated person's
+    // record matches their seat, which is the one thing a failed read must never be able to say.
+    const drifts = await loadEmployeeSeatDrift();
+    if (drifts.length === 0) return EMPTY;
+    return ok(employeeSeatDriftItems(drifts));
+  },
+};
+
 /**
  * THE REGISTRY. `service.ts` fans out over exactly this array, and
  * `tests/needs-you-never-under-reports.test.ts` holds its ids against `needsYouSourceIds` — so an
@@ -1295,6 +1335,7 @@ export const needsYouAdapters: readonly NeedsYouAdapter[] = [
   calendarReviewRequests,
   closingPublicationDrift,
   officeAllocationDrift,
+  organogramSeatDrift,
 ];
 
 /**
