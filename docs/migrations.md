@@ -173,7 +173,10 @@ in `.claude/rules/database.md`, "The migration ledger".
 
 The daily check ignores anything merged inside `GRACE_WINDOW_MS` (48 hours), which is right for a
 nightly job — a PR's own migration is *supposed* to read unapplied at review time — and wrong for a
-sweep. A second pass calling `selectMissingMigrations` with a far-future `nowMs` named **four more
+sweep. A second pass — then a hand-written one, now **`pnpm run check:migrations-swept`**, which is
+this script with `--no-grace`, added at the owner's instruction the same evening ("add a --no-grace
+flag to check-migrations-applied so a sweep is one command"); an unknown flag is refused before any
+connection opens, so a typo can never report the narrow run as the wide one — named **four more
 production files**, as many again as the check itself reported:
 
 | file | what production actually held |

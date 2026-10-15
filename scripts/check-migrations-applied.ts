@@ -27,6 +27,17 @@
 // Known, honest limitation: this only proves "unknown as of the last scheduled
 // run", not a real-time guarantee — see the grace window below.
 //
+// 🔴 `--no-grace` MAKES THIS A SWEEP, AND A SWEEP IS NOT THIS CHECK. The 48h grace window below is
+// right for a nightly job and wrong for the question "has anything merged never been applied?" —
+// it shelters exactly the newest files, which is where an unapplied migration is likeliest to be.
+// Measured 2026-10-15, answering the owner's "sweep production for merged migrations never
+// applied": the default run named four production files, and `--no-grace` named four MORE, three of
+// them money migrations merged that morning. One command:
+//   pnpm run check:migrations-swept        (or add --no-grace to this script)
+// All eight turned out to be applied, with no ledger row, because the standing apply route writes
+// none — see the remedy text at the bottom of this file and docs/migrations.md, "The 15 October
+// production sweep". An unknown flag is refused, never ignored (parseDriftCheckFlags).
+//
 // The inventory itself — which files exist, which are acknowledged exceptions, and what counts as
 // "recorded" — lives in scripts/lib/migration-inventory.ts, shared with the staging applier so the
 // two can never disagree about the answer. See that file's header.
@@ -35,6 +46,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   GRACE_WINDOW_MS,
   loadLocalMigrations,
+  parseDriftCheckFlags,
   projectRefFromUrl,
   selectMissingMigrations,
 } from "./lib/migration-inventory.ts";
@@ -95,28 +107,40 @@ async function loadRemoteMigrations(): Promise<{ versions: Set<string>; names: S
 }
 
 async function main() {
+  // Parsed before anything opens a connection, so an unknown flag costs nothing — and it is
+  // REFUSED rather than ignored, because a dropped flag would answer the narrow question in the
+  // wide question's words. See parseDriftCheckFlags.
+  const { ignoreGraceWindow } = parseDriftCheckFlags(process.argv.slice(2));
   const local = loadLocalMigrations();
   const remote = await loadRemoteMigrations();
   const now = Date.now();
 
-  // The grace window stays ON here, and is off in the applier — see selectMissingMigrations for
-  // why each is right. This check runs nightly: a migration merged an hour ago is not news.
-  const missing = selectMissingMigrations(local, remote, { nowMs: now });
+  // The grace window stays ON by default here, and is off in the applier — see
+  // selectMissingMigrations for why each is right. This check runs nightly: a migration merged an
+  // hour ago is not news. 🔴 `--no-grace` is what a SWEEP wants, and the difference is not
+  // cosmetic: on 2026-10-15 the window sheltered four of the eight production files with missing
+  // ledger rows, three of them money migrations merged that morning.
+  const missing = selectMissingMigrations(local, remote, { nowMs: now, ignoreGraceWindow });
+  // One noun phrase, used in all three sentences below, so the report can never describe the
+  // nightly question while having answered the sweep's.
+  const scope = ignoreGraceWindow
+    ? `every migration including the newest (--no-grace: the ${GRACE_WINDOW_MS / 3_600_000}h grace window is stood down)`
+    : `every migration outside the ${GRACE_WINDOW_MS / 3_600_000}h grace window`;
 
   console.log(
-    `[migration-drift-check] ${local.length} local migrations, ${remote.versions.size} recorded on ${remote.projectRef}.`,
+    `[migration-drift-check] ${local.length} local migrations, ${remote.versions.size} recorded on ${remote.projectRef}; judging ${scope}.`,
   );
 
   if (missing.length === 0) {
     console.log(
-      `[migration-drift-check] OK — every migration outside the grace window is accounted for on ${remote.projectRef}.`,
+      `[migration-drift-check] OK — ${scope} is accounted for on ${remote.projectRef}.`,
     );
     process.exit(0);
   }
 
   console.error(
     `[migration-drift-check] ${missing.length} migration(s) merged to main but not found (by version or name) ` +
-      `in ${remote.projectRef}'s schema_migrations, and older than the ${GRACE_WINDOW_MS / 3_600_000}h grace window:`,
+      `in ${remote.projectRef}'s schema_migrations, judging ${scope}:`,
   );
   for (const m of missing) {
     const age = m.commitTimeMs ? `${Math.round((now - m.commitTimeMs) / 3_600_000)}h old` : "age unknown";

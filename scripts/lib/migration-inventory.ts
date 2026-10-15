@@ -993,6 +993,36 @@ export function isWithinGraceWindow(migration: LocalMigration, nowMs: number): b
 }
 
 /**
+ * `check-migrations-applied.ts`'s only command line, parsed HERE so a test can assert it without
+ * importing that script — its `main()` runs on import and would open a database connection.
+ *
+ * 🔴 AN UNKNOWN FLAG IS REFUSED, NEVER IGNORED. A dropped flag makes the narrow run read as the
+ * wide one, which is the exact shape of the `sync-cloud-context.mjs --check` trap, and here it
+ * would answer "production is clean" about a set the run never looked at.
+ *
+ * `--no-grace` exists because the grace window is right for the nightly job and wrong for a sweep:
+ * on 2026-10-15 it sheltered FOUR of the eight production files whose ledger rows were missing,
+ * three of them money migrations merged that morning (see docs/migrations.md, "The 15 October
+ * production sweep"). The owner's question — "sweep production for merged migrations never
+ * applied" — is this flag.
+ */
+export function parseDriftCheckFlags(argv: string[]): { ignoreGraceWindow: boolean } {
+  let ignoreGraceWindow = false;
+  for (const arg of argv) {
+    if (arg === "--no-grace") {
+      ignoreGraceWindow = true;
+      continue;
+    }
+    throw new Error(
+      `unknown flag ${JSON.stringify(arg)} — the only flag is --no-grace, which judges the newest `
+        + `migrations too (what a sweep wants). Refusing rather than ignoring it: a silently dropped `
+        + `flag makes a narrower run read as the wider one.`,
+    );
+  }
+  return { ignoreGraceWindow };
+}
+
+/**
  * The migrations genuinely missing from a project, OLDEST FIRST.
  *
  * Order is part of the answer, not presentation: the applier runs them in exactly this order, and
