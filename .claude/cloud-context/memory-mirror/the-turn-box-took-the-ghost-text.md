@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 0e88bd89-241a-48ce-8073-3ee1d7f63569
-  modified: 2026-10-15T17:12:19.851Z
+  modified: 2026-10-15T18:07:18.585Z
 ---
 
 Read out of `claude.exe` 2.1.293 on **2026-10-15** (`grep -aoE` over the 256 MB binary, the technique
@@ -158,6 +158,13 @@ switches (app `prompt_suggestions`, `promptSuggestionEnabled`, the `env` copy, t
 variable, the `tengu_prompt_suggestion` flag — all ON both days), the **status bar**, which is a
 different feature he distinguishes himself (*"non this nor this"*), and the **Stop hook**, which writes
 `~/.claude/.next-step/<sessionId>.txt` within a second of every reply, curly quotes intact.
+
+**Measured on the OLD build, 2026-10-15 21:05 Cairo** (session 8e4ace51, resumed 20:09 under 2.31226.1,
+`ccd_turn` tools gone): he asked "suggestions?" after a reply that ended 20:17 with a correct, captured
+`Next step:` line. Every rung a session can read was clear — 1,097 tokens (gate 10,000), `turnOrigin`
+human, Stop hook warned nothing, no resume in between. What was left is `host_paused`: he came back 49
+minutes later, so the session's composer was not on screen when the turn ended. The app writes no log
+line for it (`logs\` held no `*.log` at all), so it is inferred by elimination, never proved.
 
 **How to answer him:** name the rung, not the switches. On 2026-10-02 the live rung was the app's own
 `prompt_suggestions` ("applies only from a session's next start or resume" — the lever is a fresh
