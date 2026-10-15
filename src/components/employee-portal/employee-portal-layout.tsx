@@ -464,6 +464,11 @@ function buildEmployeePortalSections({
         // Phoenix CRM row reads as this band's own heading, which is why a second row can sit under it
         // without a header appearing.
         ...(showTeamPlaceChecksTab ? [{ href: "/employee-portals/place-checks", label: "Place checks", icon: MapPinCheck }] : []),
+        // Visit report — the district manager's own team's visits, any fields, as a dashboard, a map and a
+        // workbook (owner, 2026-10-15). It rides the Place checks flag on purpose: the audience is the same
+        // two seat tiers (`readsTeamVisitReport` is `readsTeamPlaceChecks`'s twin), so no fourth argument has
+        // to be threaded through every caller of the sidebar. The page gates again (`canReadVisitReport`).
+        ...(showTeamPlaceChecksTab ? [{ href: "/employee-portals/visit-report", label: "Visit report", icon: ClipboardList }] : []),
       ],
     },
     {

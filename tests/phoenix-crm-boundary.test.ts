@@ -286,6 +286,11 @@ const ROUTE_GATES: RouteGate[] = [
   // SHEETS the file holds is the access control, and a section the viewer may not read is never
   // loaded and writes none — so the export can never be a way round a refusal on the tab.
   exportGet("reports/export"),
+  // The Visit report generator (owner, 2026-10-15). A READ sent as a POST — the chosen fields do not belong
+  // in a URL — audited as a read, and narrowed in the service to the Super Admin and the SFE Manager. Its
+  // workbook is an export for the reason the pack's is: a file naming employees leaves the building.
+  { route: "visit-report", method: "POST", action: "read", audit: "access-read", auditRequired: true },
+  exportGet("visit-report/export"),
   // The one-page start guide, English or Arabic. A plain `read` and no audit: it is a help page whose
   // content is identical for everyone who can open the module, holding no rep, no customer and no
   // figure — there is nothing here for an organogram scope to narrow or for an export log to record.

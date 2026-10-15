@@ -1512,3 +1512,101 @@ export async function loadPlaceCheckIntegrity(
   }
   return index;
 }
+
+// ── The evidence a visit report carries, for the generator that reports on a rep's visits ───────
+
+export type VisitReportCaseFacts = {
+  /** "Position: …; Photo: …" — every detector's name and its reasons in words, newest case first. */
+  detectorsText: string | null;
+  /** "Strong" or "Not strong" once any case is filed on the visit; null when none is. */
+  strengthText: string | null;
+  /** The phone's own mock answer. Read ONLY for the Super Admin (`readsPositionCases`); always null otherwise. */
+  deviceMocked: boolean | null;
+  settledText: string | null;
+};
+
+export type VisitReportEvidence = {
+  byVisit: Map<string, VisitReportCaseFacts>;
+  /** `seatId|YYYY-MM` → the behaviour flags in words, for a month the pass judged and flagged. */
+  behaviourByMonth: Map<string, string>;
+};
+
+/**
+ * The integrity cases FILED ON A VISIT and the behaviour months of the rep's seats, for the Visit report
+ * generator (owner, 2026-10-15).
+ *
+ * 🔴 IT LIVES IN THIS FILE FOR THE SAME REASON `loadPlaceCheckIntegrity` DOES: a read that selects the
+ * flags, the settlement or `device_mocked` of this table belongs behind this file's audience check. The
+ * audience is the board's (`canReadIntegrityBoard`) and the tiers are the board's — the SFE Manager asks
+ * for `SFE_SOURCES` only, so a position case, mock-location included, is never QUERIED for him, and the
+ * `device_mocked` column is not even in his select. A 404, never a 403, for anybody else.
+ *
+ * Only cases whose SUBJECT is the visit are read (position, visit-against-the-photograph, roster): a
+ * case about the place or the customer is not a fact about this call. No coordinate and no signal
+ * leaves this function — the report carries words.
+ */
+export async function loadVisitReportEvidence(
+  viewer: PhoenixCrmViewer,
+  input: { visitIds: ReadonlyArray<string>; seatIds: ReadonlyArray<string>; months: ReadonlyArray<string>; wantsBehaviour: boolean },
+): Promise<VisitReportEvidence> {
+  if (!canReadIntegrityBoard(viewer)) throw notFoundError("Not found.");
+  const positions = readsPositionCases(viewer);
+  const includeTest = viewer.isTestPersona;
+  const evidence: VisitReportEvidence = { byVisit: new Map(), behaviourByMonth: new Map() };
+
+  const visitIds = [...new Set(input.visitIds.filter((id) => isUuid(id)))];
+  if (visitIds.length > 0) {
+    const columns = `id, subject_id, source, flags, strong, created_at, settled_at, settled_by, settled_note, settled_flags${positions ? ", device_mocked" : ""}`;
+    const rows = await selectByIds<Row>("phoenix_crm_location_integrity", columns, "subject_id", visitIds, (query) => {
+      // A visit report is per VISIT, so it names the one kind it reports on — as a list, because the weekly
+      // scan's own read must never be written as an equality on this column (tests/crm-integrity-signboard-cases).
+      let tuned = query.in("subject_kind", ["visit"]);
+      if (!includeTest) tuned = tuned.eq("is_test", false);
+      if (!positions) tuned = tuned.in("source", SFE_SOURCES);
+      return tuned;
+    });
+    const people = await loadPeopleNames(rows.map((row) => (typeof row.settled_by === "string" ? row.settled_by : null)));
+    const grouped = new Map<string, Row[]>();
+    for (const row of rows) {
+      const subjectId = typeof row.subject_id === "string" ? row.subject_id : null;
+      if (!subjectId) continue;
+      // Belt and braces: the query already narrowed by source, and the answer is narrowed again, so a
+      // later change to either cannot widen the SFE Manager's sight on its own.
+      if (!positions && !SFE_SOURCES.includes(isIntegritySource(row.source) ? row.source : "gps")) continue;
+      grouped.set(subjectId, [...(grouped.get(subjectId) ?? []), row]);
+    }
+    for (const [visitId, cases] of grouped) {
+      cases.sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)));
+      const detectors = cases.map((row) => {
+        const source = isIntegritySource(row.source) ? row.source : "gps";
+        const reasons = (Array.isArray(row.flags) ? row.flags : []).map((flag) => FLAG_LABELS[String(flag)] ?? String(flag));
+        return reasons.length > 0 ? `${integritySourceLabel(source)}: ${reasons.join("; ")}` : integritySourceLabel(source);
+      });
+      const settled = cases.map((row) => settlementOf(row, people)).find((entry): entry is IntegritySettlement => entry !== null);
+      const mockAnswers = positions ? cases.map((row) => row.device_mocked).filter((answer): answer is boolean => typeof answer === "boolean") : [];
+      evidence.byVisit.set(visitId, {
+        detectorsText: detectors.join(" | "),
+        deviceMocked: mockAnswers.length === 0 ? null : mockAnswers.some(Boolean),
+        settledText: settled ? `Settled by ${settled.byName} · ${formatPhoenixDateTime(settled.at)} · ${settled.note}` : null,
+        strengthText: cases.some((row) => row.strong === true) ? "Strong" : "Not strong",
+      });
+    }
+  }
+
+  const seatIds = [...new Set(input.seatIds)];
+  const months = [...new Set(input.months)];
+  if (input.wantsBehaviour && seatIds.length > 0 && months.length > 0) {
+    const rows = await selectByIds<Row>("phoenix_crm_behaviour_integrity", "id, seat_id, month, flags, measured", "seat_id", seatIds, (query) => {
+      let tuned = query.in("month", months);
+      if (!includeTest) tuned = tuned.eq("is_test", false);
+      return tuned;
+    });
+    for (const row of rows) {
+      const flags = (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag));
+      if (flags.length === 0) continue;
+      const words = flags.map((flag) => PHOENIX_CRM_BEHAVIOUR_LABELS[flag as PhoenixCrmBehaviourFlag] ?? flag);
+      evidence.behaviourByMonth.set(`${String(row.seat_id)}|${String(row.month)}`, words.join("; "));
+    }
+  }
+  return evidence;
+}

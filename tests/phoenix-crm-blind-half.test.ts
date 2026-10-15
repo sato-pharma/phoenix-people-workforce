@@ -63,6 +63,12 @@ const REP_FACING_PURE_EXCLUDED = new Set([
   // only safe because "fraud-scan" is on SILENT_MODULES below: check 2 refuses the import from every
   // rep-facing file, so the exclusion is a statement about WHO reads the words, not a hole.
   "fraud-scan-rules.ts",
+  // The Visit report generator's two pure halves (2026-10-15): its field catalogue and its dashboard name
+  // the evidence fields ("Far from the place", the position flag) for the Super Admin and the SFE Manager
+  // who build the report. Neither is imported by a rep-facing file — check 2 refuses that — so the
+  // exclusion is a statement about WHO reads the words.
+  "visit-report-dashboard.ts",
+  "visit-report-fields.ts",
 ]);
 
 /**
@@ -168,6 +174,11 @@ const BLIND_READERS: ReadonlyArray<string> = [
   // held to check 6's audience rules, which are specific to the board: this file answers nobody at
   // all, which is a stronger position than gating a read.
   "src/lib/phoenix-crm/server/capture-provenance.ts",
+  // The Visit report loader (2026-10-15). It reads capture provenance for the "how was it saved" field,
+  // but only inside a loader the Super Admin and the SFE Manager alone can reach (`canReadVisitReport`,
+  // page and both routes, pinned in tests/phoenix-crm-visit-report.test.ts), and the mock-location
+  // evidence is shaped out of the payload for the SFE Manager before it leaves the server.
+  "src/lib/phoenix-crm/server/visit-report.ts",
 ];
 
 /**

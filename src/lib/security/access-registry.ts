@@ -1000,6 +1000,12 @@ export const accessRegistry = [
   // way round a refusal, because the sections a viewer may not read are never loaded and write no
   // sheet. Audited as an export: a workbook naming individual employees leaves the building.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/phoenix-crm/reports/export", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  // The Visit report generator (owner, 2026-10-15): the module's "read" gate, narrowed in the service to the
+  // Super Admin and the SFE Manager (a 404 for anybody else). The data answer is a read sent as a POST — the
+  // chosen fields do not belong in a URL — audited as a read; the workbook is an export, because a file
+  // naming employees and where their phones were leaves the building.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visit-report", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/phoenix-crm/visit-report/export", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // The one-page start guide a District Manager sends a rep, English or Arabic. NOT audited and not
   // scoped: it names no rep, no customer and no figure, so there is nothing in it to disclose and
   // nothing for an organogram scope to narrow. It is served as HTML because the browser is what

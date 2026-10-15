@@ -48,7 +48,7 @@ import {
 } from "@/lib/phoenix-crm/double-visit-plan-rules";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { superAdminHasNoFieldWrite, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { callPhoenixCrm, chunk, textOrNull } from "@/lib/phoenix-crm/server/db";
+import { callPhoenixCrm, chunk, seatScoped, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -373,6 +373,28 @@ async function buildPlanView(viewer: PhoenixCrmViewer, isTest: boolean, reader: 
     summary,
     summaryText: doubleVisitSummaryText(summary),
   };
+}
+
+/**
+ * The plans between two days for these seats, for the Visit report generator (2026-10-15). That screen
+ * is the Super Admin's and the SFE Manager's alone — never a rep's, never a digest — and it reads the
+ * table HERE so this service stays the one place that touches it.
+ */
+export async function readDoubleVisitPlansForReport(
+  seatIds: readonly string[],
+  window: { from: string; to: string },
+  includeTest: boolean,
+): Promise<Row[]> {
+  return fetchAllRowsKeyset<Row>(
+    () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let query: any = getSupabaseAdmin().from("phoenix_crm_double_visit_plans").select("id, seat_id, plan_date, half, manager_hr_id");
+      query = seatScoped(query, seatIds).gte("plan_date", window.from).lte("plan_date", window.to);
+      if (!includeTest) query = query.eq("is_test", false);
+      return query;
+    },
+    { cursorColumn: "id", cursorOf: (row) => (row.id == null ? null : String(row.id)) },
+  );
 }
 
 /** GET: one week of a district manager's double-visit plan, with how each planned half-day went. */

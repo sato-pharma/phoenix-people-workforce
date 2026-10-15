@@ -1901,6 +1901,7 @@ import { runPhoenixCrmCallPrepTests } from "./phoenix-crm-call-prep.test.ts";
 import { runPhoenixCrmNeedsYouSourceTests } from "./phoenix-crm-needs-you-source.test.ts";
 import { runPhoenixCrmVendorLeftoverTests } from "./phoenix-crm-vendor-leftovers.test.ts";
 import { runPhoenixCrmBlindPayloadTests } from "./phoenix-crm-blind-payloads.test.ts";
+import { runPhoenixCrmVisitReportTests } from "./phoenix-crm-visit-report.test.ts";
 import { runPhoenixCrmVisitProductManagerTests } from "./phoenix-crm-visit-product-manager.test.ts";
 import { runPhoenixCrmVisitCompanyTests } from "./phoenix-crm-visit-company.test.ts";
 import { runPhoenixCrmManagerValidatesTests } from "./phoenix-crm-manager-validates.test.ts";
@@ -6849,6 +6850,11 @@ await runTest(
 await runTest(
   "PHOENIX CRM: who receives a measurement, enforced where the answer LEAVES THE SERVER (audit and owner rulings, 2026-10-02 — a JSON field a browser receives counts as shown even when React hides it, the precedent being team.ts clearing locationFlag that morning. GOLDEN RULE #1: on his own seat the rep receives no farVisits in any row, day or total, no place measurement — the phone-clock verdict, accuracy, both raw readings, the point source, the mover's written reason, the brick distance — and no threshold, each ABSENT rather than zero, through an ALLOW-LIST so a measurement added later is withheld by default, and each loader returns through its shaper; an ACTING District Manager is blind on his own rep seat in the team sections too, and the far total is his team's alone so his own cannot be had by subtraction. THE OWNER'S THREE RULINGS: the mock-location position cases and device_mocked are the Super Admin's alone, never queried for SFE, who keeps the photo cases and the behaviour months, while the duplicates list keeps its own two readers; everyone below the Super Admin and SFE reads the DISTANCE only — a weak reading reads as its plain distance, with no accuracy, no weak-signal wording, no phone-clock warning and no raw readings, on the visit rows, the saved visit, the off-plan cards, the List and the place-vs-actual rows; and the place-vs-actual report, with every far-visit count, is the DM's, the NSM's, SFE's and the Super Admin's, never the CEO's or an RSM's, by its own predicate. And the day page asks gate one before the organogram, so a per-account module lock closes it, as it does the integrity and duplicates pages)",
   runPhoenixCrmBlindPayloadTests,
+);
+
+await runTest(
+  "PHOENIX CRM: the Visit report generator (owner, 2026-10-15) — 113 fields in ten categories with no word the module never prints and ONLY the mock-location answer above the SFE Manager's sight, so his selection drops it and the evidence loader never queries a position case or selects device_mocked for him; one visit yields a value or an explicit null for every catalogue key, a blank is null and never zero; the day's order, gap and distance are save-order facts and the speed is worked out ONLY from the phone's own reading times; the dashboard says recorded on X of Y visits for a sparse field and draws nothing for a field that was not chosen; the workbook is read back out of the real .xlsx bytes — ONE tab, only the chosen headings, only the filtered visits, Cairo wall-clock dates, real numbers, the house masthead; and the page, the POST and the export hold their gates in order, with the rate limit before the heavy read)",
+  runPhoenixCrmVisitReportTests,
 );
 
 await runTest(

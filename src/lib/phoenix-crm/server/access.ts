@@ -953,3 +953,32 @@ export function territoryForVisitEdit(viewer: PhoenixCrmViewer, seatId: unknown,
   if (!canEnterMissedRecords(viewer)) throw forbiddenError("Only the Super Admin corrects a rep's visit.");
   return { seat: territory(viewer, seatId), isTest: test };
 }
+
+// ── The Visit report generator (owner, 2026-10-15) ──────────────────────────────────────────────
+
+/**
+ * Who reads the Visit report generator for his OWN TEAM: the district manager and the acting district
+ * manager, the same two seat tiers as the Place checks tab and for the same reason (owner, 2026-10-15:
+ * "start building same module for DSMs only their scope"). Seat-based, never a role name, so an acting
+ * district manager is admitted and the report is never offered to anyone who merely holds a similar
+ * title. WHICH territories it covers is `scopeTerritories` less the seats he is blind on — the loader's
+ * own `readableSeats` — never a filter applied after a wider read.
+ */
+export function readsTeamVisitReport(viewer: PhoenixCrmViewer): boolean {
+  return viewer.managerSeats.some((seat) => TEAM_PLACE_CHECKS_TIERS.has(seat.tier));
+}
+
+/**
+ * Who opens the Visit report generator: the Super Admin and the SFE Manager across the company, and the
+ * district manager across his own team. Nobody else.
+ *
+ * 🔴 ITS OWN PREDICATE, THE SAME TWO READERS AS `readsLocationDetail` AND THE INTEGRITY BOARD, because a
+ * report that prints where a phone was, how far from the place and which detectors fired is location
+ * evidence about named people (Golden Rule #1). The SFE Manager and the district manager read everything
+ * but the mock-location evidence, which stays the Super Admin's (`readsPositionCases`); that narrowing is
+ * applied where the evidence is READ, not on the screen. The district manager's reach is his own team and
+ * is applied where the SEATS are chosen (`readableSeats` in the loader).
+ */
+export function canReadVisitReport(viewer: PhoenixCrmViewer): boolean {
+  return viewer.isSuperAdmin || viewer.isSfeManager || readsTeamVisitReport(viewer);
+}
