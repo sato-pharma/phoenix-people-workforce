@@ -17,6 +17,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
@@ -169,7 +170,7 @@ function Evidence({ row }: { row: ValidationReviewRow }) {
 /**
  * Taking a rejection back (owner, 2026-10-03: "add the option to approve after reject"). Offered only
  * while the place is still retired and nothing newer has been said about it — the same test the
- * database makes. The reason is required, as it is for the decision this reverses.
+ * database makes. The note is OPTIONAL since 2026-10-15, as it is everywhere on this page.
  */
 function Restore({ row }: { row: ValidationReviewRow }) {
   const router = useRouter();
@@ -193,7 +194,7 @@ function Restore({ row }: { row: ValidationReviewRow }) {
   return (
     <div className="space-y-2 border-t border-slate-100 pt-2">
       <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`restore-note-${row.reviewId}`}>
-        Why it is accepted after all (kept on the record, never shown to the rep)
+        Why it is accepted after all — optional (kept on the record, never shown to the rep)
       </label>
       <textarea
         className={crmTextareaClassName}
@@ -204,12 +205,82 @@ function Restore({ row }: { row: ValidationReviewRow }) {
         rows={2}
         value={note}
       />
-      <CrmButton disabled={saving || note.trim().length === 0} onClick={() => void restore()} variant="primary">
+      <CrmButton disabled={saving} onClick={() => void restore()} variant="primary">
         {saving ? "Bringing it back…" : "Approve it after all"}
       </CrmButton>
       <p className="break-words text-xs text-slate-500">
         The place comes back and the customer is validated again in {row.repName}&rsquo;s own name. Their visits are measured against it again.
       </p>
+      {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
+    </div>
+  );
+}
+
+/**
+ * Taking an APPROVAL back (owner, 2026-10-15: "make admin able to reject validation even if approved
+ * before"). The mirror of `Restore` above, offered only while the place that approval let stand is
+ * still active — the same test the database makes.
+ *
+ * 🔴 IT POSTS THE SAME DECISION THE PENDING ROW POSTS, to the same route: the database lets a REJECT
+ * through on an approved review since migration 20261015212903, so this is one reject path and one
+ * audit shape, and the review row KEEPS the evidence the system originally held it on. The other way
+ * round — refusing the same place from "Validations the system did not question" — overwrites that
+ * evidence with `refused_by_admin`, which is exactly why this control exists here.
+ */
+function RejectAfterApproval({ row }: { row: ValidationReviewRow }) {
+  const router = useRouter();
+  const [note, setNote] = useState("");
+  const [reason, setReason] = useState<ValidationRefusalReason | "">("");
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  async function reject() {
+    if (saving || reason === "") return;
+    setSaving(true);
+    setProblem(null);
+    try {
+      await crmPost<unknown>(
+        "/api/phoenix-crm/validation-reviews",
+        { reviewId: row.reviewId, decision: "reject", note, refusalReason: reason },
+        "decided",
+      );
+      router.refresh();
+    } catch (error) {
+      setProblem(messageOf(error));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2 border-t border-slate-100 pt-2">
+      <RefusalReasonField
+        disabled={saving}
+        id={`reject-again-reason-${row.reviewId}`}
+        kind={row.photoKind}
+        onChange={setReason}
+        value={reason}
+      />
+      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`reject-again-note-${row.reviewId}`}>
+        {VALIDATION_NOTE_LABEL}
+      </label>
+      <textarea
+        className={crmTextareaClassName}
+        disabled={saving}
+        id={`reject-again-note-${row.reviewId}`}
+        maxLength={500}
+        onChange={(event) => setNote(event.target.value)}
+        rows={2}
+        value={note}
+      />
+      <RefusalNoteHint />
+      <CrmButton disabled={saving || reason === ""} onClick={() => void reject()} variant="danger">
+        {saving ? "Rejecting…" : "Reject it after all"}
+      </CrmButton>
+      <p className="break-words text-xs text-slate-500">
+        This retires the place the approval let stand; when it is the customer&rsquo;s only one, they go back to To validate and{" "}
+        {row.repName} is told what is wrong with the photo — never that anybody looked.
+      </p>
+      {reason === "" ? <p className="break-words text-xs text-slate-500">{VALIDATION_REASON_REQUIRED}</p> : null}
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
   );
@@ -250,6 +321,7 @@ function Decision({ row }: { row: ValidationReviewRow }) {
         {row.refusalLabel ? <p className="break-words text-xs font-semibold text-slate-700">The rep was told: {row.refusalLabel}</p> : null}
         {row.decisionNote ? <p className="break-words text-xs text-slate-600">{row.decisionNote}</p> : null}
         {row.restorable ? <Restore row={row} /> : null}
+        {row.refusable ? <RejectAfterApproval row={row} /> : null}
       </div>
     );
   }
@@ -330,20 +402,101 @@ function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteI
   );
 }
 
+/**
+ * Answering several rows at once (owner, 2026-10-15: "also make me able to multiple select and
+ * response"). Each action is the request the row's own buttons make, so there is no second decision
+ * path — see `place-check-bulk.tsx`.
+ *
+ * 🔴 WHICH ACTIONS A SECTION OFFERS IS WHAT THE SECTION HOLDS: `waiting` answers pending rows, and
+ * `decided` takes a settled decision BACK — each action filtered to the rows the server says it can
+ * still reach (`refusable` / `restorable`), with the count it will answer in the button.
+ */
+const bulkDecide = (row: ValidationReviewRow, decision: "approve" | "reject", note: string, reason: string) =>
+  crmPost<unknown>(
+    "/api/phoenix-crm/validation-reviews",
+    { reviewId: row.reviewId, decision, note, ...(decision === "reject" ? { refusalReason: reason } : {}) },
+    "decided",
+  );
+
+const WAITING_ACTIONS: ReadonlyArray<BulkAction<ValidationReviewRow>> = [
+  {
+    key: "approve",
+    label: "Approve",
+    busyLabel: "Approving",
+    variant: "primary",
+    needsReason: false,
+    takes: (row) => row.status === "pending",
+    run: (row, answer) => bulkDecide(row, "approve", answer.note, ""),
+  },
+  {
+    key: "reject",
+    label: "Reject",
+    busyLabel: "Rejecting",
+    variant: "danger",
+    needsReason: true,
+    warning: (count) =>
+      `This retires ${count === 1 ? "that place" : `those ${count} places`}; each customer left without one goes back to To validate, told what is wrong with the photo and nothing else.`,
+    takes: (row) => row.status === "pending",
+    run: (row, answer) => bulkDecide(row, "reject", answer.note, answer.reason),
+  },
+];
+
+const DECIDED_ACTIONS: ReadonlyArray<BulkAction<ValidationReviewRow>> = [
+  {
+    key: "reject-after-all",
+    label: "Reject after all",
+    busyLabel: "Rejecting",
+    variant: "danger",
+    needsReason: true,
+    warning: (count) =>
+      `This takes back ${count === 1 ? "an approval" : `${count} approvals`} and retires the place each one let stand; a customer left without one goes back to To validate.`,
+    takes: (row) => row.refusable,
+    run: (row, answer) => bulkDecide(row, "reject", answer.note, answer.reason),
+  },
+  {
+    key: "approve-after-all",
+    label: "Approve after all",
+    busyLabel: "Bringing back",
+    variant: "primary",
+    needsReason: false,
+    takes: (row) => row.restorable,
+    run: (row, answer) => crmPost<unknown>("/api/phoenix-crm/validation-reviews/restore", { reviewId: row.reviewId, note: answer.note }, "restored"),
+  },
+];
+
 export function ValidationReviewQueue({
   mode,
   noteIndex,
   rows,
+  section,
 }: {
   mode: PlaceCheckNotesMode;
   noteIndex: PlaceNoteIndex;
   rows: ValidationReviewRow[];
+  /** Which set this is drawing — it decides what a bulk answer can be. */
+  section: "waiting" | "decided";
 }) {
+  const bulk = mode === "company";
+  const canPick = (row: ValidationReviewRow) => (section === "waiting" ? row.status === "pending" : row.refusable || row.restorable);
+  const picks = useRowPicks<ValidationReviewRow>(bulk ? rows : [], (row) => row.reviewId, canPick);
+  // 🔴 THE PICK-LIST FOLLOWS THE PHOTOGRAPHS IN THE PICK. All timetables → the timetable reasons; a
+  // mixed pick takes the signboard list, whose reasons are all sayable about a building's sign.
+  const kind = picks.picked.length > 0 && picks.picked.every((row) => row.photoKind === "schedule") ? "schedule" : "signboard";
+
   return (
     <>
+      {bulk ? (
+        <BulkDecideBar
+          actions={section === "waiting" ? WAITING_ACTIONS : DECIDED_ACTIONS}
+          kind={kind}
+          nameOf={(row) => row.customerName}
+          picks={picks}
+        />
+      ) : null}
       <CrmCardsOnPhone>
         {rows.map((row) => (
           <div key={row.reviewId} className="space-y-3 px-4 py-4">
+            {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
             <div className="flex min-w-0 gap-3">
               <CrmPhotoThumb alt={photoAlt(row)} path={row.photoPath} />
               <Who row={row} />
@@ -366,7 +519,10 @@ export function ValidationReviewQueue({
           {rows.map((row) => (
             <tr key={row.reviewId} className="even:bg-slate-50/60">
               <td className={crmTdClassName}>
-                <CrmPhotoThumb alt={photoAlt(row)} path={row.photoPath} />
+                <div className="min-w-0 space-y-2">
+                  <CrmPhotoThumb alt={photoAlt(row)} path={row.photoPath} />
+                  {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
+                </div>
               </td>
               <td className={crmTdClassName}>
                 <Who row={row} />

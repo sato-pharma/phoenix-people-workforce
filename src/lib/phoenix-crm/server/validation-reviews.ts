@@ -354,6 +354,12 @@ export type ValidationReviewRow = {
    * after reject"): the place is still retired, and nothing newer has been said about it.
    */
   restorable: boolean;
+  /**
+   * Whether this APPROVAL can still be taken back (owner, 2026-10-15: "make admin able to reject
+   * validation even if approved before"): the place it approved is still active, so rejecting it now
+   * has something to retire. The mirror image of `restorable`, and the same test the database makes.
+   */
+  refusable: boolean;
 };
 
 function reading(lat: unknown, lon: unknown, accuracy: unknown): ValidationReviewReading | null {
@@ -513,8 +519,10 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
       decidedAtText: text(row.decided_at) ? formatPhoenixDateTime(String(row.decided_at)) : null,
       decisionNote: text(row.decision_note),
       // One review row per place (the UNIQUE index), so this row IS the place's whole story: a
-      // rejection can be taken back while the place it retired is still retired.
+      // rejection can be taken back while the place it retired is still retired, and since
+      // 2026-10-15 an APPROVAL can be taken back while the place it approved is still active.
       restorable: status === "rejected" && place.status === "retired",
+      refusable: status === "approved" && place.status === "active",
     };
   });
   return { rows, capped: read.capped };
@@ -528,8 +536,17 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
  *
  * 🔴 A REJECTION NOW CARRIES WHAT IS WRONG WITH THE PHOTO, AND THE REP IS TOLD IT (owner, 2026-10-08:
  * "tell the rep why"). The reason is REQUIRED on a reject and never asked on an approve; it is one of
- * the six in validation-feedback.ts, and the rep reads only its sentence about his own picture — never
- * the free-text note, never who decided, never that anybody did.
+ * the eight in validation-feedback.ts, and the rep reads only its sentence about his own picture —
+ * never the free-text note, never who decided, never that anybody did. The note is OPTIONAL and always
+ * was on this path.
+ *
+ * 🔴 AND A REJECT IS ACCEPTED ON A REVIEW THIS PAGE ALREADY APPROVED (owner, 2026-10-15: "make admin
+ * able to reject validation even if approved before"). `phoenix_crm_decide_validation_review` lets
+ * that one case through its `review_decided` guard since migration 20261015212903, so the undo of an
+ * approval runs the SAME reject as a held place's — same events, same restamp, same one sentence to
+ * the rep — and the review row KEEPS the evidence the system held it on. Approving an approved review,
+ * and anything at all on a rejected one, still raise `review_decided`; taking a REJECTION back is
+ * `restoreValidation` below.
  */
 export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ reviewId: string; status: "approved" | "rejected" }> {
   if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
@@ -571,15 +588,17 @@ export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unkn
  * rejected it and why in its `google` payload, beside the four events the list keeps. The rep's list
  * simply stops saying "Validate again", with no word about a person (golden rule #1).
  *
- * A reason is required, exactly as the refusal it undoes: a decision reversed in silence is the one a
- * reader cannot understand months later.
+ * 🔴 THE NOTE IS OPTIONAL SINCE 2026-10-15 (owner: "admin comment is optional"). It was required here
+ * and on the refusal below, on the reasoning that a decision reversed in silence cannot be understood
+ * months later — and what that produced was a dash: 22 of the module's first 24 refusals carried the
+ * single character `-`. Who reversed it, when, and what the rejection had said are all on the record
+ * either way (`decided_by_hr_id`, `decided_at`, and the `google` payload the function carries over).
  */
 export async function restoreValidation(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ reviewId: string; validated: boolean }> {
   if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   if (!isUuid(body.reviewId)) throw validationError("Choose the rejection to take back.");
   const note = cleanText(body.note, 500);
-  if (!note) throw validationError("Write why this place is accepted after all — it stays on the record.");
 
   // `review_not_found`, `review_not_rejected` and `place_not_retired` come back worded by the
   // module's refusal table (db.ts).
@@ -805,20 +824,22 @@ function signboardOf(value: unknown): ValidatedPlaceRow["signboard"] {
 }
 
 /**
- * Refuse one validation the system never questioned. A note is REQUIRED — the automatic holds carry
- * Google's own evidence, and a hand refusal carries nothing unless the person who pressed it says why,
- * which is what the record is read back for months later.
+ * Refuse one validation the system never questioned.
+ *
+ * 🔴 THE NOTE IS OPTIONAL SINCE 2026-10-15 (owner: "admin comment is optional"); the REASON — the one
+ * sentence the rep is told — is still required. The note was mandatory because a hand refusal carries
+ * no Google evidence of its own, and the answer to a mandatory field nobody reads was a dash in 22 of
+ * the first 24 refusals.
  */
 export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ placeId: string; reopened: boolean }> {
   if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   if (!isUuid(body.placeId)) throw validationError("Choose the place to refuse.");
-  // What is wrong with the photo FIRST, because it is the one thing the rep is told (2026-10-08); the
-  // note is still required too — it is the record a reader comes back to, and the rep never sees it.
+  // What is wrong with the photo, because it is the one thing the rep is told (2026-10-08). The note
+  // beside it is the record a reader comes back to, the rep never sees it, and it is his to leave empty.
   const refusalReason = parseValidationRefusalReason(body.refusalReason);
   if (!refusalReason) throw validationError(VALIDATION_REASON_REQUIRED);
   const note = cleanText(body.note, 500);
-  if (!note) throw validationError("Write why this validation is refused — it stays on the record.");
   const placeId = String(body.placeId).toLowerCase();
 
   const { data, error } = await getSupabaseAdmin()

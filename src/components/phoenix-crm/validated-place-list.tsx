@@ -10,8 +10,13 @@
  * Refusing writes the same review the automatic check would have written and runs the same reject, so
  * the rep reads the system's own wording ("The system could not confirm this place") and never that
  * a person looked at him. Since 2026-10-08 the Super Admin also picks WHAT IS WRONG WITH THE PHOTO from
- * a closed list, and that one sentence is the only thing the rep is told; the note is still required
- * and is still kept on the record, never shown to him.
+ * a closed list, and that one sentence is the only thing the rep is told; the note beside it is kept on
+ * the record, never shown to him, and OPTIONAL since 2026-10-15 ("admin comment is optional").
+ *
+ * 🔴 REFUSING A PLACE THAT WAS APPROVED IN THE QUEUE ABOVE IS BETTER DONE THERE. This path upserts the
+ * review row's `google` column wholesale to `refused_by_admin`, so the evidence the system held it on
+ * is lost; the queue's own "Reject it after all" keeps it. This control is for the places that never
+ * reached the queue at all, which is what it was built for.
  *
  * Desktop draws the module's `CrmTable` (`table-fixed` with a colgroup, never a min-width in a
  * scroller); a phone draws the same rows as cards. Square corners throughout.
@@ -21,6 +26,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
@@ -275,13 +281,11 @@ function Refuse({ row }: { row: ValidatedPlaceRow }) {
           </div>
         </div>
       ) : (
-        <CrmButton disabled={reason === "" || note.trim().length === 0} onClick={() => setArmed(true)} variant="danger">
+        <CrmButton disabled={reason === ""} onClick={() => setArmed(true)} variant="danger">
           Refuse this validation
         </CrmButton>
       )}
-      {(reason === "" || note.trim().length === 0) && !armed ? (
-        <p className="text-xs text-slate-500">Choose what is wrong with the photo and write the note first.</p>
-      ) : null}
+      {reason === "" && !armed ? <p className="text-xs text-slate-500">Choose what is wrong with the photo first.</p> : null}
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
   );
@@ -317,6 +321,26 @@ function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteI
   );
 }
 
+/**
+ * Refusing several at once (owner, 2026-10-15: "also make me able to multiple select and response").
+ * It runs the row's OWN request per place — same route, same reason, same note — so there is no second
+ * refusal path; see `place-check-bulk.tsx`.
+ */
+const REFUSE_ACTIONS: ReadonlyArray<BulkAction<ValidatedPlaceRow>> = [
+  {
+    key: "refuse",
+    label: "Refuse",
+    busyLabel: "Refusing",
+    variant: "danger",
+    needsReason: true,
+    warning: (count) =>
+      `This retires ${count === 1 ? "that place" : `those ${count} places`} and cannot be undone here; each customer left without one validates again from their own list.`,
+    takes: () => true,
+    run: (row, answer) =>
+      crmPost<unknown>("/api/phoenix-crm/validation-reviews/refuse", { placeId: row.placeId, note: answer.note, refusalReason: answer.reason }, "refused"),
+  },
+];
+
 export function ValidatedPlaceList({
   mode = "company",
   noteIndex = EMPTY_INDEX,
@@ -330,6 +354,7 @@ export function ValidatedPlaceList({
 }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
+  const bulk = mode === "company";
 
   const found = useMemo(() => {
     const wanted = query.trim().toLowerCase();
@@ -341,6 +366,10 @@ export function ValidatedPlaceList({
     );
   }, [query, rows]);
   const shown = found.slice(0, page * PAGE);
+  // The PAGE is what can be picked, never the whole filtered set: a tick box is only honest about a
+  // row on screen, and "Pick all" that reached 600 places behind a Show more would be a trap.
+  const picks = useRowPicks<ValidatedPlaceRow>(bulk ? shown : [], (row) => row.placeId);
+  const kind = picks.picked.length > 0 && picks.picked.every((row) => row.photoKind === "schedule") ? "schedule" : "signboard";
 
   return (
     <div className="min-w-0 space-y-3">
@@ -365,9 +394,11 @@ export function ValidatedPlaceList({
         </div>
       ) : (
         <>
+          {bulk ? <BulkDecideBar actions={REFUSE_ACTIONS} kind={kind} nameOf={(row) => row.customerName} picks={picks} /> : null}
           <CrmCardsOnPhone>
             {shown.map((row) => (
               <div key={row.placeId} className="space-y-3 px-4 py-4">
+                {bulk ? <BulkPick picks={picks} row={row} /> : null}
                 <div className="flex min-w-0 gap-3">
                   <CrmPhotoThumb alt={photoAlt(row)} path={row.photoPath} />
                   <Who row={row} />
@@ -390,7 +421,10 @@ export function ValidatedPlaceList({
               {shown.map((row) => (
                 <tr key={row.placeId} className="even:bg-slate-50/60">
                   <td className={crmTdClassName}>
-                    <CrmPhotoThumb alt={photoAlt(row)} path={row.photoPath} />
+                    <div className="min-w-0 space-y-2">
+                      <CrmPhotoThumb alt={photoAlt(row)} path={row.photoPath} />
+                      {bulk ? <BulkPick picks={picks} row={row} /> : null}
+                    </div>
                   </td>
                   <td className={crmTdClassName}>
                     <Who row={row} />

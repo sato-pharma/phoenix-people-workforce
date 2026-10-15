@@ -16,11 +16,16 @@ import { stripComments } from "./support/comment-strip.ts";
  * show the rep that a person is accepting or rejecting"). Every layer is pinned by source, because the
  * service reads the database and cannot be imported here:
  *
- *   1. the service checks WHO first, demands a written reason, refuses a place that is not active,
- *      goes through the shared RPC, and measures the customer's visits again;
+ *   1. the service checks WHO first, demands the reason the rep is told, refuses a place that is not
+ *      active, goes through the shared RPC, and measures the customer's visits again;
  *   2. the route is the Super Admin's, behind the same permission and CSRF gates as the queue;
  *   3. the page offers the list, and the screen asks for the reason before the button arms;
  *   4. nothing in what the rep reads names a person.
+ *
+ * Two owner changes of 2026-10-15 are pinned here too ("make admin able to reject validation even if
+ * approved before and admin comment is optional"): the free-text note is optional on every path on
+ * this page, and an APPROVED review can be rejected on its own row — through the same decision the
+ * pending row makes, so the review keeps the evidence the system held it on.
  */
 
 const ROOT = new URL("../", import.meta.url);
@@ -48,9 +53,12 @@ function checkService(): void {
   assert.ok(gate < firstRead, "and it asks BEFORE it reads — the Super Admin alone, as the queue beside it");
   assert.match(refuse, /throw forbiddenError\("Only the Super Admin decides these\."\)/, "with the queue's own refusal");
 
-  // A hand refusal carries no Google evidence, so the reason is the record.
-  assert.match(refuse, /if \(!note\) throw validationError\(/, "a refusal with no written reason is refused");
-  assert.match(refuse, /cleanText\(body\.note, 500\)/, "the reason is trimmed to the column's 500 characters");
+  // A hand refusal carries no Google evidence, so the one sentence the REP is told is the record.
+  assert.match(refuse, /if \(!refusalReason\) throw validationError\(VALIDATION_REASON_REQUIRED\)/, "a refusal with no chosen reason is refused");
+  assert.match(refuse, /cleanText\(body\.note, 500\)/, "the note is trimmed to the column's 500 characters");
+  // 🔴 AND THE NOTE IS OPTIONAL (owner, 2026-10-15: "admin comment is optional"). It was required,
+  // and 22 of the module's first 24 refusals answered with the single character `-`.
+  assert.doesNotMatch(refuse, /if \(!note\) throw/, "and the free-text note is NOT required — only the reason is");
 
   // An already-retired place must not be refused twice.
   assert.match(refuse, /if \(place\.status !== "active"\)/, "a place that is already retired cannot be refused again");
@@ -90,13 +98,22 @@ function checkService(): void {
  * database is the authority on what may be reversed, so it is pinned first.
  */
 function checkRestoreDatabase(): void {
-  const migration = readFileSync(new URL("supabase/migrations/20261003184147_phoenix_crm_restore_validation.sql", ROOT), "utf8").replace(/\r\n/g, "\n");
+  // 🔴 THE LIVE BODY IS THE ONE 20261015212903 INSTALLED, not the 2026-10-03 original: that migration
+  // replaced the function to stop requiring the note. Reading the older file would pin a rule the
+  // database no longer has.
+  const migration = readFileSync(
+    new URL("supabase/migrations/20261015212903_phoenix_crm_reject_after_approve_and_optional_note.sql", ROOT),
+    "utf8",
+  ).replace(/\r\n/g, "\n");
   const fn = /create or replace function public\.phoenix_crm_restore_validation\(p jsonb\)([\s\S]*?)\n\$\$;/.exec(migration);
-  assert.ok(fn, "phoenix_crm_restore_validation is in its own migration");
+  assert.ok(fn, "phoenix_crm_restore_validation is restated whole by the migration that changed it");
 
   assert.match(fn[1], /if v_review\.status <> 'rejected' then\n\s*raise exception 'phoenix_crm:review_not_rejected';/, "only a REJECTED review can be taken back");
   assert.match(fn[1], /if v_place\.status <> 'retired' then\n\s*raise exception 'phoenix_crm:place_not_retired';/, "a place that is not retired any more is left alone");
-  assert.match(fn[1], /v_note is null/, "a reversal with no written reason is refused, like the refusal it undoes");
+  // The note is OPTIONAL since 2026-10-15 (owner: "admin comment is optional") — it is still length-
+  // capped, and who reversed it and when are on the row either way.
+  assert.doesNotMatch(fn[1], /v_note is null or/, "a reversal with no written reason is accepted");
+  assert.match(fn[1], /\(v_note is not null and char_length\(v_note\) > 500\)/, "and a note that is written is still capped at the column's 500 characters");
 
   assert.match(fn[1], /set status = 'active', retired_at = null, retired_by_hr_id = null/, "the place comes back");
   assert.match(fn[1], /validated_by_hr_id = v_review\.created_by_hr_id/, "and the customer is validated in the REP's own name, never the admin's");
@@ -125,7 +142,8 @@ function checkRestoreService(): void {
   const restore = functionBody(service, "restoreValidation");
 
   assert.ok(restore.indexOf("canDecideValidationReviews(viewer)") < restore.indexOf("callPhoenixCrm"), "restoreValidation asks who before it calls anything");
-  assert.match(restore, /if \(!note\) throw validationError\(/, "a reversal needs its reason here too");
+  assert.doesNotMatch(restore, /if \(!note\) throw/, "the reversal's note is optional here too (owner, 2026-10-15)");
+  assert.match(restore, /cleanText\(body\.note, 500\)/, "and is still trimmed to the column's 500 characters");
   assert.match(restore, /callPhoenixCrm<Row>\("phoenix_crm_restore_validation"/, "it goes through the database function, which owns the rules");
   const restamp = restore.indexOf("restampVisitLocationsQuietly");
   assert.ok(restamp > restore.indexOf("callPhoenixCrm"), "and measures the customer's visits again AFTER the place is back");
@@ -134,6 +152,7 @@ function checkRestoreService(): void {
   // Only the latest rejection is offered, and only while the place is still retired.
   const load = functionBody(service, "loadValidationReviews");
   assert.match(load, /restorable: status === "rejected" && place\.status === "retired"/, "the row says whether its rejection can still be taken back — the same test the database makes");
+  assert.match(load, /refusable: status === "approved" && place\.status === "active"/, "and whether its APPROVAL can still be taken back — the mirror of it (owner, 2026-10-15)");
 
   const db = read("src/lib/phoenix-crm/server/db.ts");
   for (const code of ["review_not_rejected", "place_not_retired"]) {
@@ -146,8 +165,135 @@ function checkRestoreScreen(): void {
   assert.match(queue, /"\/api\/phoenix-crm\/validation-reviews\/restore"/, "the rejected row posts to the restore route");
   assert.match(queue, /\{ reviewId: row\.reviewId, note \}/, "with the review and the written reason");
   assert.match(queue, /\{row\.restorable \? <Restore row=\{row\} \/> : null\}/, "and the option appears only where the server says it still can");
-  assert.match(queue, /disabled=\{saving \|\| note\.trim\(\)\.length === 0\}/, "the button cannot be pressed before the reason is written");
+  assert.doesNotMatch(queue, /disabled=\{saving \|\| note\.trim\(\)\.length === 0\}/, "the button no longer waits for a written note (owner, 2026-10-15)");
   assert.match(queue, /Approve it after all/, "worded as what it does");
+}
+
+/**
+ * Rejecting a place this page APPROVED before (owner, 2026-10-15: "make admin able to reject
+ * validation even if approved before").
+ *
+ * 🔴 THE DATABASE IS THE AUTHORITY ON WHAT MAY BE RE-DECIDED, so its guard is pinned first: the one
+ * widening is a REJECT on an APPROVED review. Approving an approved one, and anything at all on a
+ * rejected one, must still raise `review_decided` — the second of those is what stops this control
+ * colliding with `phoenix_crm_restore_validation`, which has its own rules about the retired place.
+ */
+function checkRejectAfterApproval(): void {
+  const migration = readFileSync(
+    new URL("supabase/migrations/20261015212903_phoenix_crm_reject_after_approve_and_optional_note.sql", ROOT),
+    "utf8",
+  ).replace(/\r\n/g, "\n");
+  const fn = /create or replace function public\.phoenix_crm_decide_validation_review\(p jsonb\)([\s\S]*?)\n\$function\$;/.exec(migration);
+  assert.ok(fn, "phoenix_crm_decide_validation_review is restated whole by the migration that changed it");
+
+  assert.match(
+    fn[1],
+    /if not \(v_review\.status = 'approved' and v_decision = 'reject'\) and v_review\.status <> 'pending' then\n\s*raise exception 'phoenix_crm:review_decided';/,
+    "a reject of an approved review is let through, and every other re-decision still raises review_decided",
+  );
+  // The reject branch is what runs, unchanged: the place is retired, the customer goes back to To
+  // validate when it was his only one, and reopened_at is stamped.
+  assert.match(fn[1], /set status = 'rejected', decided_by_hr_id = v_actor, decided_at = now\(\), decision_note = v_note,/, "it writes the rejection on the same row");
+  assert.match(fn[1], /set reopened_at = now\(\), updated_at = now\(\)/, "and stamps the wait, as a held place's rejection does");
+
+  const grants = migration.slice(fn.index + fn[0].length);
+  assert.match(
+    grants,
+    /revoke execute on function public\.phoenix_crm_decide_validation_review\(jsonb\) from public, anon, authenticated;/,
+    "execute is revoked from PUBLIC, which is what anon and authenticated inherit it through",
+  );
+  assert.match(
+    grants,
+    /grant execute on function public\.phoenix_crm_decide_validation_review\(jsonb\) to service_role;/,
+    "and re-granted to the service role alone",
+  );
+
+  // The screen: the SAME route and the SAME decision the pending row posts, so there is one reject
+  // path — and the review row keeps the evidence the system held it on.
+  const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
+  assert.match(queue, /\{row\.refusable \? <RejectAfterApproval row=\{row\} \/> : null\}/, "the approved row offers it, only where the server says it still can");
+  assert.match(
+    queue,
+    /\{ reviewId: row\.reviewId, decision: "reject", note, refusalReason: reason \}/,
+    "with the review, the chosen reason and the optional note",
+  );
+  assert.match(queue, /Reject it after all/, "worded as what it does");
+  assert.match(queue, /disabled=\{saving \|\| reason === ""\}/, "and it cannot be pressed before the reason the rep is told is chosen");
+}
+
+/**
+ * Answering several rows at once (owner, 2026-10-15: "also make me able to multiple select and
+ * response").
+ *
+ * 🔴 THE WHOLE POINT IS THAT IT IS NOT A SECOND DECISION PATH. The bar runs each section's OWN row
+ * request, once per picked row, with one reason and one note typed for all of them — so the rep reads
+ * exactly what a one-row refusal tells him, the audit rows are the same rows, and no route, RPC or
+ * wording is added anywhere. These assertions pin that, the selection's own safety (what is ticked is
+ * intersected with what is on screen), and that a district manager's board draws none of it.
+ */
+function checkBulkDecide(): void {
+  const bulk = read("src/components/phoenix-crm/place-check-bulk.tsx");
+
+  // No route of its own, and no decision of its own: each action is handed in by the screen.
+  assert.doesNotMatch(bulk, /\/api\//, "the bulk bar names no route — each action is the screen's own request");
+  assert.match(bulk, /run: \(row: Row, answer: BulkAnswer\) => Promise<unknown>/, "an action IS the one row request the page already makes — `crmPost` hands back a value, and the bar reads only whether it threw");
+
+  // One answer, N times, in order.
+  assert.match(bulk, /for \(const row of targets\) \{[\s\S]*?await action\.run\(row, \{ note, reason \}\);/, "it runs them one at a time, each with the reason and note typed once");
+  assert.match(bulk, /const targets = picked\.filter\(action\.takes\)/, "and only on the picked rows that action can answer");
+
+  // 🔴 A ROW THAT FALLS OUT OF THE LIST FALLS OUT OF THE SELECTION — ids in state, rows the authority.
+  assert.match(bulk, /ticked\.map\(\(id\) => onScreen\.get\(id\)\)\.filter\(\(row\): row is Row => row !== undefined\)/, "what is ticked is intersected with what is on screen at every render");
+  assert.match(bulk, /if \(picks\.selectable === 0\) return null;/, "and a section with nothing to pick draws no bar at all");
+
+  // A destructive action says what it costs and arms before it runs; the count is in the button.
+  assert.match(bulk, /if \(action\.warning && armed !== action\.key\) \{[\s\S]*?setArmed\(action\.key\);[\s\S]*?return;/, "a warning action is armed by the first press and runs on the second");
+  assert.match(bulk, /\$\{action\.label\} \(\$\{targets\.length\}\)/, "each button carries the number it will answer");
+  assert.match(bulk, /const held = action\.needsReason && reason === ""/, "a refusal is held until the reason the rep is told is chosen");
+  assert.doesNotMatch(bulk, /note\.trim\(\)\.length === 0/, "and never on the free-text note, which is optional everywhere on this page");
+
+  // What failed is named by the customer, not by an id — and the page is re-read either way.
+  assert.match(bulk, /failed\.push\(\{ name: nameOf\(row\), problem: messageOf\(error\) \}\)/, "a row that would not answer is named by the person it is about");
+  assert.match(bulk, /router\.refresh\(\)/, "and the board is re-read when the run ends");
+
+  // Fits the screen, like every other control in the module.
+  assert.doesNotMatch(bulk, /overflow-x-auto|min-w-\[/, "never a horizontal scroller");
+  assert.doesNotMatch(bulk, /rounded-(?!none)/, "square corners only");
+
+  // ── The three sections that wire it, each to its own request ───────────────────────────────────
+  const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
+  assert.match(queue, /section: "waiting" \| "decided"/, "the queue is told which set it is drawing");
+  assert.match(queue, /actions=\{section === "waiting" \? WAITING_ACTIONS : DECIDED_ACTIONS\}/, "and that decides what a bulk answer can be");
+  assert.match(queue, /takes: \(row\) => row\.status === "pending"/, "the waiting actions reach pending rows");
+  assert.match(queue, /takes: \(row\) => row\.refusable/, "a bulk reject-after-all reaches only the approvals the server says can still be taken back");
+  assert.match(queue, /takes: \(row\) => row\.restorable/, "and a bulk approve-after-all only the rejections it says can");
+  // 🔴 THE PICK-LIST FOLLOWS THE PHOTOGRAPHS: a timetable refusal is never offered `photo_of_paper`.
+  assert.match(queue, /picks\.picked\.every\(\(row\) => row\.photoKind === "schedule"\) \? "schedule" : "signboard"/, "the reasons offered follow what the picked photographs are");
+
+  const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  for (const prop of ['section="waiting"', 'section="decided"']) {
+    assert.ok(board.includes(prop), `the board names its sets: ${prop}`);
+  }
+
+  const list = read("src/components/phoenix-crm/validated-place-list.tsx");
+  assert.match(list, /actions=\{REFUSE_ACTIONS\}/, "the validated list refuses in bulk through its own refuse route");
+  assert.match(list, /crmPost<unknown>\("\/api\/phoenix-crm\/validation-reviews\/refuse", \{ placeId: row\.placeId, note: answer\.note, refusalReason: answer\.reason \}/, "with exactly the body one row posts");
+  // 🔴 THE PAGE IS WHAT CAN BE PICKED — "Pick all" must never reach rows behind a Show more.
+  assert.match(list, /useRowPicks<ValidatedPlaceRow>\(bulk \? shown : \[\]/, "and only the rows actually on screen can be ticked");
+
+  const venues = read("src/components/phoenix-crm/shared-place-list.tsx");
+  assert.match(venues, /actions=\{VENUE_ACTIONS\}/, "the polyclinics decide in bulk too");
+  assert.match(venues, /\{ sharedPlaceId: row\.sharedPlaceId, decision: "reject", note: answer\.note, refusalReason: answer\.reason \}/, "through the venue's own decision route, body for body");
+
+  // 🔴 AND IT IS THE SUPER ADMIN'S ALONE — a district manager's board decides nothing (owner, 2026-10-13).
+  for (const [file, source] of [
+    ["validation-review-queue.tsx", queue],
+    ["validated-place-list.tsx", list],
+    ["shared-place-list.tsx", venues],
+  ] as const) {
+    assert.match(source, /const bulk = mode === "company";/, `${file}: the bar is drawn only on the Super Admin's own board`);
+    assert.match(source, /bulk \?/, `${file}: and every pick box is behind that same test`);
+  }
 }
 
 function checkRoute(): void {
@@ -195,7 +341,9 @@ function checkScreens(): void {
   // Since 2026-10-08 the refusal carries one of six closed reasons the rep is told, beside the note
   // kept for the record (owner: "tell the rep why, from a fixed pick-list, never naming a person").
   assert.match(list, /\{ placeId: row\.placeId, note, refusalReason: reason \}/, "with the place, the note and the chosen reason");
-  assert.match(list, /disabled=\{reason === "" \|\| note\.trim\(\)\.length === 0\}/, "and cannot be armed before both are given");
+  // The REASON gates the button; the note is optional since 2026-10-15 ("admin comment is optional").
+  assert.match(list, /disabled=\{reason === ""\}/, "and cannot be armed before the reason the rep is told is chosen");
+  assert.doesNotMatch(list, /note\.trim\(\)\.length === 0/, "never gated on the free-text note");
   assert.match(list, /armed \?/, "a refusal is confirmed before it is sent — it retires a place and cannot be undone");
 
   // Fits the screen: the module's fixed table on desktop, the same rows as cards on a phone.
@@ -211,7 +359,7 @@ function checkTheRepReadsNothingAboutAPerson(): void {
   // The note is still the record's: its label says the rep reads only the chosen reason.
   assert.match(list, /\{VALIDATION_NOTE_LABEL\}/, "the note is labelled as the record's, not the rep's");
   const feedback = read("src/lib/phoenix-crm/validation-feedback.ts");
-  assert.match(feedback, /VALIDATION_NOTE_LABEL = "Note for the record \(the rep reads only the reason above\)"/);
+  assert.match(feedback, /VALIDATION_NOTE_LABEL = "Note for the record — optional \(the rep reads only the reason above\)"/);
 
   // What the rep's own list says after a refusal is still the SYSTEM's sentence ("this place" since
   // 2026-10-08), with the chosen reason about his photo in place of it when there is one.
@@ -231,6 +379,8 @@ export function runPhoenixCrmRefuseValidationTests(): void {
   checkRestoreDatabase();
   checkRestoreService();
   checkRestoreScreen();
+  checkRejectAfterApproval();
+  checkBulkDecide();
   checkRoute();
   checkScreens();
   checkTheRepReadsNothingAboutAPerson();
