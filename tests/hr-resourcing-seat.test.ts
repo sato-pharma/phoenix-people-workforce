@@ -342,6 +342,21 @@ export async function runHrResourcingSeatTests() {
     "My Workspace",
     "her own workspace opens her own section",
   );
+  assert.deepEqual(
+    rail.map((section) => section.label),
+    ["Overview", "People", "Recruitment", "WhatsApp & Posts", "Employee Requests", "Calendars", "Probation", "Performance", "My Requests"],
+    "four People rows, then her job, and every heading names what she finds under it",
+  );
+  assert.deepEqual(
+    rail.find((section) => section.id === "hr-people")?.items.map((row) => row.label),
+    ["Employee 360", "Organogram", "Vacancies Report", "CV Lookup"],
+    "People holds the people pages only — the request desks have their own heading",
+  );
+  assert.equal(
+    railFor("HR Operations").find((section) => section.id === "hr-attendance")?.label,
+    "Attendance & Calendars",
+    "the Calendars heading is hers alone — HR Operations works attendance under that band",
+  );
   assert.equal(
     railFor("HR Operations").some((section) => section.id === "hr-outreach"),
     false,

@@ -158,6 +158,12 @@ export type NavigationSection = {
   items: readonly NavigationSectionItem[];
   label: string;
   /**
+   * Per-role HEADING override, resolved in `getSections` beside the item `labelByRole`. `label`
+   * stays the canonical heading for every role without an entry. For a band whose rows a role sees
+   * only part of, so the heading names what that role actually finds under it.
+   */
+  labelByRole?: Partial<Record<PhoenixRole, string>>;
+  /**
    * Gates on the whole band, ALL of which must pass, ANDed with each row's own by `getSections`.
    *
    * It exists because an item gate cannot express AND: `permissionAllowed` ORs the entries of a
@@ -2222,6 +2228,9 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/employees", icon: UsersRound, label: "Employee Directory", permissions: [{ resource: "employees", action: "read" }] },
       { href: "/hr/employee-360", icon: Contact, label: "Employee 360", permissions: [{ resource: "employee_profile", action: "read" }] },
       { href: "/hr/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
+      // Beside the Organogram since 2026-10-16: it is the same seat model read as a list of the empty
+      // chairs, and the two answer one question — who sits where, and where nobody does.
+      { href: "/hr/reports/vacancies", icon: UserRoundSearch, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
       // Owner instruction 2026-09-07: "territory management is not appearing in hr business partner
       // account make it appear to her." It sits next to the Organogram because that is what it is —
       // the same seat model seen as geography rather than as a chart.
@@ -2301,22 +2310,17 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/devices", icon: Laptop, label: "Device Custody", permissions: [{ resource: "company_devices" }] },
       // The Retention Register row left the HR rail on 2026-10-08 with the HR Business Partner seat:
       // retention is the Super Admin's now (read by the CEO), and no HR seat holds it.
-      { href: "/hr/reports/vacancies", icon: UserRoundSearch, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
-      { href: "/hr/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }] },
-      { href: "/hr/admin/business-card-requests", icon: ClipboardList, label: "Business Card Requests", permissions: [{ resource: "business_card_requests" }] },
-      // ── The Talent Acquisition seat's own rows (HR Resourcing, 2026-10-08) ──────────────────────
-      // Every row gated `roles: ["HR Resourcing"]` in this catalogue is a page the owner ticked for
-      // her on the access blueprint that no other HR seat is offered here. `excludedRoles` keeps the
-      // Super Admin's HR rail exactly as it was (navigationItemVisible waives `roles` for him, never
-      // `excludedRoles`). Business Cards opens for her on the request desk she works, not on
-      // employee_documents, which she does not hold — src/lib/business-cards/access.ts.
-      { href: "/hr/business-cards", icon: IdCard, label: "Business Cards", permissions: [{ resource: "business_card_requests", action: "update" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       // NO Distribution Lists and NO Sato Email Composer row here since 2026-10-08. Both rows existed
       // for the HR Business Partner alone, and the owner retired that seat ("Leave it for system
       // administrator now"); the Super Admin keeps both on the admin rail.
     ],
     label: "People",
   },
+  // Recruitment and its WhatsApp & Posts band (2026-10-16) — the Talent Acquisition seat's whole
+  // job, straight after the four People rows. They cannot go above People: HR Operations' copies of
+  // the paperwork rows must be met before Recruitment's, or she would be shown a Recruitment
+  // heading (tests/cv-database-recruiting-boundary.test.ts). No other HR seat holds
+  // `recruitment`, so for HR Operations nothing here renders.
   {
     id: "hr-recruitment",
     // ORDERED AS THE WORK RUNS (premium sweep of the Talent Acquisition rail, 2026-10-16): the
@@ -2325,7 +2329,7 @@ const hrNavigationSectionSeeds = [
     // held 13 rows, and the owner has said more than once that a crowded rail IS the defect.
     items: [
       { href: "/hr/recruitment", icon: BriefcaseBusiness, label: "Recruitment", permissions: [{ resource: "recruitment" }] },
-      // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under People.
+      // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under Employee Requests.
       { href: "/hr/recruitment/screening", icon: ListChecks, label: "Screening Queue", permissions: [{ resource: "recruitment", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       { href: "/hr/recruitment/candidates", icon: Inbox, label: "My Candidates", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       // The HR shell's own row for /recruitment/interview-calendar (2026-09-18). Whether the calendar
@@ -2416,6 +2420,28 @@ const hrNavigationSectionSeeds = [
     label: "WhatsApp & Posts",
   },
   {
+    id: "hr-requests",
+    // The request desks, out of People since 2026-10-16 (premium sweep of the Talent Acquisition
+    // rail): People is who works here, and these are what employees ASK for — a support ticket, a
+    // business card, and the print run that answers it. Both seats that work a desk keep every row
+    // and every gate they had; only the heading is new.
+    items: [
+      { href: "/hr/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }] },
+      { href: "/hr/admin/business-card-requests", icon: ClipboardList, label: "Business Card Requests", permissions: [{ resource: "business_card_requests" }] },
+      // Business Cards — the Talent Acquisition seat's copy. HR Operations prints from People, on
+      // employee_documents, and the Super Admin from Recruitment; getSections keeps the first href
+      // it meets, and each seat is offered exactly one.
+      // ── The Talent Acquisition seat's own rows (HR Resourcing, 2026-10-08) ──────────────────────
+      // Every row gated `roles: ["HR Resourcing"]` in this catalogue is a page the owner ticked for
+      // her on the access blueprint that no other HR seat is offered here. `excludedRoles` keeps the
+      // Super Admin's HR rail exactly as it was (navigationItemVisible waives `roles` for him, never
+      // `excludedRoles`). Business Cards opens for her on the request desk she works, not on
+      // employee_documents, which she does not hold — src/lib/business-cards/access.ts.
+      { href: "/hr/business-cards", icon: IdCard, label: "Business Cards", permissions: [{ resource: "business_card_requests", action: "update" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+    ],
+    label: "Employee Requests",
+  },
+  {
     id: "hr-attendance",
     items: [
       // ── 2026-09-05: this was ONE row, "Attendance", pointing at /attendance — the hub PAGE ─────
@@ -2444,7 +2470,7 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/attendance/policies", icon: CalendarClock, label: "Attendance Policies", permissions: [{ resource: "employees", action: "update" }] },
       { href: "/hr/hr-calendar", icon: CalendarDays, label: "Company Calendar", permissions: [{ resource: "hr_calendar" }] },
       // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under
-      // People. "Events Calendar" because "Company Calendar" above is already /hr/hr-calendar; this
+      // Employee Requests. "Events Calendar" because "Company Calendar" above is already /hr/hr-calendar; this
       // is the admin host of the portal events calendar (events, holidays, leave and birthdays).
       { href: "/hr/admin/company-calendar", icon: CalendarHeart, label: "Events Calendar", permissions: [{ resource: "attendance", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       { href: "/hr/admin/private-calendars", icon: CalendarFold, label: "Private Calendars", permissions: [{ resource: "attendance", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
@@ -2469,6 +2495,9 @@ const hrNavigationSectionSeeds = [
     // Renamed from "Attendance" on 2026-09-01: with the Company Calendar visible to both seats and
     // the Planning Calendar added, two of the rows in here are calendars rather than attendance.
     label: "Attendance & Calendars",
+    // Every row the Talent Acquisition seat sees here is a calendar and none is attendance, so the
+    // heading says so for her (2026-10-16).
+    labelByRole: { "HR Resourcing": "Calendars" },
   },
   {
     id: "hr-leave",
@@ -2589,7 +2618,7 @@ const hrNavigationSectionSeeds = [
       // like Returned CVs this page admitted them all along and simply had no row.
       { href: "/hr/probation/dashboard", icon: LayoutDashboard, label: "Probation Dashboard", permissions: [{ resource: "probation" }] },
       // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under
-      // People. The tracker row above is fenced for her (src/lib/auth/seat-page-fences.ts), so the hub
+      // Employee Requests. The tracker row above is fenced for her (src/lib/auth/seat-page-fences.ts), so the hub
       // takes the label "Probation" it carries in the admin catalogue without two rows reading alike.
       { href: "/hr/probation/analytics", icon: Activity, label: "Probation Analytics", permissions: [{ resource: "probation", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       { href: "/hr/admin/ceo-probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
@@ -2608,13 +2637,14 @@ const hrNavigationSectionSeeds = [
       // it. The grant was always hers (coaching:read, via performance_probation) and the page's own
       // gate admits her; only the link was missing.
       { href: "/hr/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }] },
-      // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under
-      // People. Read only: confirming a fortnight stays with each District Manager.
-      { href: "/hr/admin/early-birds", icon: Sunrise, label: "Early Birds", permissions: [{ resource: "early_birds", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
-      { href: "/hr/admin/ranks", icon: Medal, label: "Phoenix Ranks", permissions: [{ resource: "early_birds", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       // The Talent Acquisition seat (2026-10-08) — the owner's answers in chat on 2026-10-08: KPIs on the CRM visit read, Spotlight
       // and Milestones on the recognition function (src/lib/auth/hr-functions.ts).
       { href: "/hr/admin/kpis", icon: TrendingUp, label: "KPIs", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      // KPIs lead her rows (2026-10-16): the performance read first, then the recognition boards.
+      // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under
+      // Employee Requests. Read only: confirming a fortnight stays with each District Manager.
+      { href: "/hr/admin/early-birds", icon: Sunrise, label: "Early Birds", permissions: [{ resource: "early_birds", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      { href: "/hr/admin/ranks", icon: Medal, label: "Phoenix Ranks", permissions: [{ resource: "early_birds", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       { href: "/hr/spotlight", icon: Trophy, label: "Spotlight", permissions: [{ resource: "spotlight", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       { href: "/hr/milestones", icon: Award, label: "Milestones", permissions: [{ resource: "milestones", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       // NO "Workforce Compliance" (/hr/admin/field-workforce-compliance) row, for EITHER HR seat.
@@ -2635,7 +2665,7 @@ const hrNavigationSectionSeeds = [
     id: "hr-self",
     items: [
       // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under
-      // People. Her OWN workspace and punches; the company Fingerprint Report row is fenced for her,
+      // Employee Requests. Her OWN workspace and punches; the company Fingerprint Report row is fenced for her,
       // so this one reads "Fingerprint Report" as it does for the Finance Manager.
       { href: "/hr/workspace", icon: Briefcase, label: "My Workspace", permissions: [{ resource: "employee_profile" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       { href: "/hr/workspace/leave-management/vacation-request", icon: CalendarCheck, label: "Request Vacation", permissions: [{ resource: "leave", action: "create" }] },
