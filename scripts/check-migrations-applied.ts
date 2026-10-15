@@ -136,8 +136,17 @@ async function main() {
           "every merge to main that touches supabase/migrations/**. A miss here means that workflow failed, was " +
           "skipped for a missing PHOENIX_STAGING_DATABASE_URL secret, or never triggered — check its runs first, " +
           "then re-run it (workflow_dispatch) rather than applying by hand."
-      : "[migration-drift-check] PRODUCTION is deliberately NOT automated: applying a migration there needs the " +
-          "owner's explicit approval, one at a time (AGENTS.md §6). Take these to him rather than applying them.",
+      : "[migration-drift-check] PRODUCTION is not automated, but it no longer waits on the owner either: since " +
+          "2026-10-15 AGENTS.md §8 pre-authorizes `scripts/apply-sql-file.mjs` as the STANDING route for a " +
+          "migration the Supabase MCP refuses, with no per-migration word (announce a destructive or bulk change " +
+          "first). 🔴 FIRST ESTABLISH WHICH OF THE TWO THINGS THIS IS, because that route writes NO ledger row and " +
+          "so produces this very finding for migrations that ARE applied: on 2026-10-15 a sweep of all four files " +
+          "listed here found all four live on production and none unapplied. Verify by DIGEST against the catalog, " +
+          "never by object presence (`create or replace` means an older generation satisfies a presence probe just " +
+          "as well) — and compare md5 of the file's dollar-quoted body in FOUR shapes, as-is LF, as-is CRLF, " +
+          "comment-stripped LF and comment-stripped CRLF, because some apply routes normalise line endings and " +
+          "strip full-line comments. Already applied: record an evidenced entry in ACKNOWLEDGED_EXCEPTIONS " +
+          "(scripts/lib/migration-inventory.ts), never a ledger write. Genuinely missing: apply it by that route.",
   );
   process.exit(1);
 }

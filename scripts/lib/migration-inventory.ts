@@ -731,6 +731,88 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // unchanged, and prosrc now reads `from public.phoenix_crm_customers` exactly ONCE — the snapshot
   // build — which is the whole rule this migration exists to establish.
   "20261015132445_contact_refresh_reads_the_customer_table_once.sql",
+  // ── Added 2026-10-15 21:4x Cairo by a PRODUCTION sweep the owner asked for in those words
+  // ("sweep production for merged migrations never applied"). All FOUR files the daily check had
+  // been reporting since 14 Oct were verified live on production (ozucdzovmcqvepbozvqf) and all
+  // four are APPLIED — the sweep found NOTHING unapplied. Each is here because its apply route
+  // wrote no ledger row: `supabase_migrations.schema_migrations` holds ZERO rows carrying any of
+  // the four versions or names, read in the same session.
+  //
+  // 🔴 TWO OF THE FOUR WOULD HAVE READ AS DRIFT TO A RAW md5 COMPARISON, AND DID NOT DRIFT AT ALL.
+  // The route that applied them normalised the text: production's `prosrc` carries CRLF line
+  // endings, and for two functions the full-line `--` comments were stripped before the SQL was
+  // sent. So compare md5 of the file's dollar-quoted body in FOUR shapes — as-is LF, as-is CRLF,
+  // comment-stripped LF, comment-stripped CRLF — before calling a hand-applied body a different
+  // generation. A length delta of a few dozen characters is the tell, and the same shape is already
+  // recorded for 20261010214440 above.
+  //
+  // Verified: `phoenix_crm_rename_customer` md5-equal at 19cc502e3707fe5d5ebdb094ae760fe9 (3,385
+  // chars, as-is LF) with this file as its LAST definer, so the file ran.
+  // 🔴 Its OTHER function, phoenix_crm_validate_customer, is SUPERSEDED by
+  // 20261014200147_phoenix_crm_held_venue_customers_wait_for_approval.sql, whose own body digests
+  // 32d1dd0f968ffaca89210e2731819aa2 (15,639 chars) — which is exactly what production carries. A
+  // re-apply would REVERT the held-venue change. proacl on both reads
+  // {postgres=X/postgres,service_role=X/postgres}, so the REVOKE landed.
+  "20261012090000_phoenix_crm_door_name_fold_and_place_cap.sql",
+  // Verified on the ALTER and on all three functions, and this is the pair that needed the
+  // CRLF/comment-strip shapes above. public.daily_deductions_lines carries all four columns the
+  // file adds (released_at, released_by, range_start, range_end). phx_publish_daily_deductions is
+  // CRLF-equal at 847ae99213985ad1c85f129b47009107 (3,182 chars against the file's 3,101 LF);
+  // phx_release_daily_deduction_lines is comment-stripped-CRLF-equal at
+  // 3152908611c67d7d20d709e52deedb81 (4,102 against 4,191) and phx_withdraw_daily_deduction_line at
+  // 18e818eef0829a98d3735a1f5d1b39df (2,462 against 2,508). This file is the ONLY definer of
+  // release and withdraw — so their mere existence already proves it ran — and the LAST definer of
+  // publish, superseding 20260922103738_daily_deductions_module.sql. All three read `prosecdef`
+  // true with `proconfig` {search_path=public, pg_temp} and proacl
+  // {postgres=X/postgres,service_role=X/postgres}, exactly as written. Payroll money: a re-apply is
+  // a no-op on the live bodies but would restore the two stripped comments, nothing more.
+  "20261012132430_daily_deductions_per_line_release.sql",
+  // The cleanest of the four: all three of its functions md5-equal as-is (LF, comments intact) with
+  // this file as the LAST definer of each — phoenix_crm_seat_reference at
+  // aff0d5a1110b32d61f050cbb93e79008 (4,717 chars), phoenix_crm_ensure_reference_customers at
+  // a263a7a883ec47435bdcbf43ccb9c2d2 (2,264) and phoenix_crm_customers_no_double_add at
+  // 95f5e87958a026df409acefc9c0d5634 (555). Its trigger phoenix_crm_customers_no_double_add is
+  // present and enabled (tgenabled 'O') on public.phoenix_crm_customers, which is the guard the
+  // file exists to install. Nothing here is superseded.
+  "20261012200000_phoenix_crm_a_doctor_is_on_a_seat_once.sql",
+  // A pure DROP, so the end state is the evidence and there is nothing to digest: ZERO relations
+  // named v_active_organogram exist in production's pg_class at ANY relkind, which is this file's
+  // whole effect (`drop view if exists public.v_active_organogram`). Its own header records the
+  // pre-drop production measurement — zero dependent views, matviews or rules, and no anon grant —
+  // and quotes the owner's 2026-10-12 instruction to depend only on the EU organogram. Re-applying
+  // it is a harmless no-op; the restore SQL, if the view is ever wanted back, is in that header.
+  "20261013010000_drop_v_active_organogram.sql",
+  // ── The SECOND pass of the same 2026-10-15 sweep, with the 48h GRACE WINDOW STOOD DOWN. The four
+  // above are what the daily check reports; these four were hidden behind the window and would have
+  // started being reported over the following hours. 🔴 A SWEEP IS NOT THE DAILY CHECK: run
+  // selectMissingMigrations with a far-future `nowMs` so the newest files are judged too, or a sweep
+  // reports "clean" about a set it never looked at. All four are APPLIED on production, verified by
+  // digest; STAGING carries real ledger rows for all four under their own versions, so none of these
+  // entries masks anything on that project (checked explicitly — this list is project-agnostic, and
+  // an entry justified on production silences the same file on staging).
+  //
+  // 🔴 SUPERSEDED, and the clearest proof in this list that CRLF is a real apply shape and not a
+  // theory: this file's body digests ed5ab6fe6a089faf6281f4817ee5ad77 in its CRLF shape (6,681
+  // chars), which is EXACTLY the pre-image the 20261015164459 entry above records for
+  // phx_resubmit_marketing_request — so this file did run, in CRLF, and was then superseded that
+  // evening. Production carries eb27af44e76d8cb90328858775cbb183 (6,689), which is 20261015164459's
+  // body. Re-applying this file would REVERT the stored-requester fix.
+  "20261014140000_marketing_resubmit_atomic.sql",
+  // Verified: public.direct_order_marketing_offsets exists with relrowsecurity TRUE and all three
+  // indexes this file creates (_pkey, _request_key, _order_idx), and BOTH its functions are
+  // md5-equal as-is (LF, comments intact) — phx_record_direct_order_offset at
+  // 3481db501d9c623d7df38dbd2586de1b (2,909 chars) and phx_remove_direct_order_offset at
+  // d857a1be5786468f19c9695d70a4adce (1,741). This file is the only definer of either. Money path
+  // (#5918, settling a marketing request against a direct order's debt), so the table and the RLS
+  // flag were read rather than inferred from the functions.
+  "20261015012551_direct_order_marketing_offsets.sql",
+  // Verified: public.phx_finance_command_center md5-equal as-is at
+  // 537f0489e812b2cd2ad3808556b060ea (15,028 chars), with this file as its last definer.
+  "20261015012552_finance_command_center_offset_requests_need_no_proof.sql",
+  // Verified: public.phx_admin_settle_service_fee md5-equal as-is at
+  // 1e43480404794f268e228f85126f9c16 (7,679 chars), this file its only definer — so its existence
+  // already proves the file ran, and the digest proves it ran in THIS generation (#5921).
+  "20261015020803_admin_settle_service_fee_request.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
