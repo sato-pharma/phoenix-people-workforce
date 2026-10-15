@@ -35,22 +35,35 @@
  * channels configured, channel enforcement is skipped entirely rather than writing an empty list -
  * see readChannels below.
  *
- * IN-HOUSE ONLY. A row whose last column carries `in-house only` is declared for the in-house
- * register (src/lib/observability/job-schedule.ts + public.job_heartbeats) and is deliberately NOT
- * pushed here. The Healthchecks project is at its check limit: creating one more answers HTTP 403
- * with an empty body, and the owner has ruled out raising the plan (2026-09-08). Without this
- * marker every future run of this script reports two permanent CREATE ... FAILED lines for jobs
- * that are working exactly as intended - which is the same "always red, so ignored" failure the WHY
- * THIS EXISTS note above describes, reintroduced by the tool meant to prevent it.
+ * IN-HOUSE ONLY WITHHOLDS THE *CREATE*, NOT THE TUNING. A row whose last column carries
+ * `in-house only` is declared for the in-house register (src/lib/observability/job-schedule.ts +
+ * public.job_heartbeats) and this script never CREATES a check for it: the project has a ceiling,
+ * creating one past it answers HTTP 403 with an empty body, and the owner has ruled out raising the
+ * plan (2026-09-08). A marker that withheld the create spared the run two permanent
+ * CREATE ... FAILED lines for jobs that are working exactly as intended.
  *
- * The marker withholds the PUSH, never the WATCH. Both jobs stay declared in JOB_SCHEDULES, so the
- * heartbeat sweep still alerts in-app + Telegram + push when one stops reporting, and the sweep
- * itself is externally watched by `phoenix-job-heartbeat-sweep`. What is given up is only the
- * outside observer for that one job - already covered for "is Phoenix alive?" by the three
- * minute-level checks, which is why the two daily/monthly jobs are the right ones to leave off.
+ * 🔴 BUT IT USED TO WITHHOLD THE WHOLE WRITE, WHICH RE-CREATED THE EXACT FAILURE THE WHY THIS
+ * EXISTS NOTE ABOVE DESCRIBES - inside the tool meant to prevent it. Those jobs ping with
+ * `?create=1`, so Healthchecks auto-provisioned a check for nearly every one of them anyway, each
+ * born on the Healthchecks DEFAULTS (1-day period, 1-hour grace). Nothing then tuned them, because
+ * the marker made this script skip them entirely - so it printed "Everything already matches" while
+ * 13 of the project's 40 live checks were wrong (measured 2026-10-15, on the owner's audit):
+ * `phoenix-retention-risk-pre-payroll` (monthly, day 25) had been RED for 20 days against a job the
+ * register reported healthy, `private-calendar-gap-notice` and `phoenix-crm-fraud-scan` (both
+ * weekly) were red six days in seven, and `phoenix-crm-visit-rollup` (hourly) and
+ * `phoenix-interview-reminders` (every 10 minutes) were judged once a DAY - 24x and 144x too loose
+ * to notice a stop.
  *
- * TO GIVE ONE ITS SLOT BACK: free a check in the Healthchecks project (or raise the plan), drop the
- * marker from its row, and re-run with --apply.
+ * So the rule is existence, not the marker: a declared check that EXISTS is tuned in place (an
+ * update costs no slot), and the marker only stops this script asking for a new one. A marked row
+ * with no check is listed as withheld on every run - never silently dropped.
+ *
+ * The marker never withholds the WATCH. Every row stays declared in JOB_SCHEDULES, so the heartbeat
+ * sweep alerts in-app + Telegram + push when one stops reporting, and the sweep itself is externally
+ * watched by `phoenix-job-heartbeat-sweep`.
+ *
+ * TO GIVE A WITHHELD ROW ITS OWN CHECK: free a check in the Healthchecks project (or raise the
+ * plan), drop the marker from its row, and re-run with --apply.
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -189,13 +202,50 @@ export function diffCheck(desired, actual, desiredChannels) {
   return { action: changes.length ? "update" : "ok", changes };
 }
 
-export function payload(desired, desiredChannels) {
+/**
+ * Split the declared rows into the ones this run may write and the ones it must withhold.
+ *
+ * THE RULE IS EXISTENCE, NOT THE MARKER. `in-house only` withholds a CREATE, because the project
+ * has a ceiling and asking past it answers HTTP 403 with an empty body. It must NOT withhold an
+ * UPDATE: those jobs ping with `?create=1`, so Healthchecks auto-provisioned most of their checks
+ * anyway - on its own defaults - and an update costs no slot. Skipping them is what let 13 of the
+ * project's 40 live checks sit wrong for weeks while this script printed "Everything already
+ * matches" (see IN-HOUSE ONLY in this file's header).
+ *
+ * `withheld` is returned rather than dropped: a marked row with no check is the one case where the
+ * external watch really is absent, and every run says so by name.
+ */
+export function selectSyncTargets(desired, bySlug) {
+  const tuneInPlace = [];
+  const withheld = [];
+  const syncable = [];
+  for (const d of desired) {
+    if (d.externalSync) {
+      syncable.push(d);
+    } else if (bySlug.has(d.slug)) {
+      tuneInPlace.push(d);
+      syncable.push(d);
+    } else {
+      withheld.push(d);
+    }
+  }
+  return { syncable, tuneInPlace, withheld };
+}
+
+/**
+ * `update` picks the endpoint's shape, not the fields. A create goes to `/checks/` and carries
+ * `unique` so a re-run matches the check it made last time instead of making a second one; an
+ * update goes to `/checks/<uuid>`, which identifies the check outright, so `unique` is meaningless
+ * there and is left off rather than sent and ignored.
+ */
+export function payload(desired, desiredChannels, { update = false } = {}) {
   // `slug` MUST be sent. A check created through this API is stored with an EMPTY slug unless it is
   // given one explicitly - and the app pings by slug (`hc-ping.com/<ping-key>/<slug>?create=1`), not
   // by name. A slugless check therefore never receives the ping it is watching for: it goes red on
   // its own schedule while the job runs perfectly, and the next real ping auto-provisions a SECOND
   // check beside it. Found on the first live run, by the read-back below.
-  const base = { name: desired.slug, slug: desired.slug, grace: desired.grace, unique: ["name"] };
+  const base = { name: desired.slug, slug: desired.slug, grace: desired.grace };
+  if (!update) base.unique = ["name"];
   if (desiredChannels !== undefined) base.channels = desiredChannels;
   return desired.kind === "cron"
     ? { ...base, schedule: desired.schedule, tz: desired.tz }
@@ -248,23 +298,15 @@ async function main() {
     console.error(`No check rows parsed out of ${DOC}. Has the table format changed?`);
     process.exit(1);
   }
-  // Declared-and-pushed vs declared-and-watched-in-house. Both halves are printed: a skipped row
-  // that vanished from the output silently would be worse than the FAILED line this replaces.
-  const syncable = desired.filter((d) => d.externalSync);
-  const inHouseOnly = desired.filter((d) => !d.externalSync);
-
   console.log(`healthchecks-sync — ${desired.length} checks declared in docs/observability.md`);
   console.log(`mode: ${APPLY ? "APPLY" : "dry run (pass --apply to push)"}\n`);
-  if (inHouseOnly.length) {
-    console.log(`${inHouseOnly.length} declared in-house only — watched by the heartbeat register, not pushed here:`);
-    for (const d of inHouseOnly) console.log(`  skip     ${d.slug}`);
-    console.log("");
-  }
 
   const key = readApiKey();
   if (!key) {
+    // Which marked rows have a check cannot be known without reading the project, so this offline
+    // listing shows the rows that would be pushed outright and nothing about the marked ones.
     console.log("Planned state (no HEALTHCHECKS_API_KEY, so nothing was read or written):\n");
-    for (const d of syncable) {
+    for (const d of desired.filter((c) => c.externalSync)) {
       const sched = d.kind === "cron" ? `${d.schedule}  ${d.tz}` : `simple, period ${d.timeout}s`;
       console.log(`  ${d.slug.padEnd(46)} ${sched.padEnd(28)} grace ${d.grace}s`);
     }
@@ -277,6 +319,20 @@ async function main() {
 
   const existing = await api("/checks/", key);
   const bySlug = new Map((existing.checks || []).map((c) => [c.slug, c]));
+
+  // Both halves are printed. A row that vanished from the output silently would be worse than the
+  // FAILED line the marker replaced.
+  const { syncable, tuneInPlace, withheld } = selectSyncTargets(desired, bySlug);
+  if (tuneInPlace.length) {
+    console.log(`${tuneInPlace.length} declared in-house only but already present — tuned in place (an update costs no slot):`);
+    for (const d of tuneInPlace) console.log(`  in place ${d.slug}`);
+    console.log("");
+  }
+  if (withheld.length) {
+    console.log(`${withheld.length} declared in-house only with no check here — NOT created, so NOTHING outside Phoenix watches it:`);
+    for (const d of withheld) console.log(`  withheld ${d.slug}`);
+    console.log("");
+  }
 
   const channelsCsv = await readChannels(key);
   const desiredChannels = channelsCsv || undefined;
@@ -302,7 +358,13 @@ async function main() {
     for (const c of changes) console.log(`             ${c}`);
     if (!APPLY) continue;
     try {
-      await api("/checks/", key, { method: "POST", body: JSON.stringify(payload(d, desiredChannels)) });
+      // An existing check is written BY UUID. `unique: ["name"]` would also match it — every check
+      // in this project is named after its slug — but only by coincidence of that convention: a
+      // check whose name had drifted would be answered with a SECOND check beside it, which is the
+      // duplicate this script already learned about once (see payload's slug note).
+      const update = Boolean(actual?.uuid);
+      const path = update ? `/checks/${actual.uuid}` : "/checks/";
+      await api(path, key, { method: "POST", body: JSON.stringify(payload(d, desiredChannels, { update })) });
       if (action === "create") created += 1;
       else updated += 1;
     } catch (err) {

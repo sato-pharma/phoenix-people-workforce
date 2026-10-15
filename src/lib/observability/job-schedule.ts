@@ -3,7 +3,7 @@
  * silence means something.
  *
  * WHY THIS IS DUPLICATED FROM THE DOC TABLE, AND WHY THAT IS SAFE.
- * `docs/observability.md` holds the same 24 rows and is the source of truth for
+ * `docs/observability.md` holds the same 41 rows and is the source of truth for
  * `scripts/healthchecks-sync.mjs`, which pushes schedules to Healthchecks.io. That table cannot be
  * the runtime source as well: this module runs inside the deployed Next.js server, and a Next
  * standalone build traces imported FILES — it does not copy `docs/`. Reading the markdown at
