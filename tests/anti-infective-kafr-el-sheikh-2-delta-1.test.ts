@@ -20,6 +20,10 @@ import {
  *   "doinot count kafr el sheikh 2 store splitting to ragaa the rep count it to din a fadel the
  *    manager only"
  *
+ * and, the same day, after reading the October shape:
+ *
+ *   "i want this change to be starting from july 2026 counted to her"
+ *
  * Kafr El-Sheikh is ONE city with two areas in the split map, so every wholesaler there divides
  * 50/50 between Kafr El-Sheikh 1 (D16) and Kafr El-Sheikh 2 (D17). D16 is Dina Fadel's
  * (SEAT-AIF-DM-D1) and her rep there is Ragaa Mosaad (B-107, SEAT-AIF-REP-D16). D17 sat in the
@@ -29,51 +33,68 @@ import {
  * 🔴 THIS FILE EXISTS BECAUSE THE FIRST ANSWER WAS THE WRONG SHAPE. #5926 refused D17 a share of the
  * split, which put the WHOLE city on D16 — and therefore all of it on Ragaa's rep number, the exact
  * opposite of the ruling. The fix is the ORGANOGRAM, not the split: D17 joins Delta (1) under
- * SEAT-AIF-DM-D1 from 2026-10-01 with no rep seat and no target, so her district reads both halves
- * while no rep is credited with the second one. See
- * 20261015145000_anti_infective_kafr_el_sheikh_2_to_delta_1_from_october.sql.
+ * SEAT-AIF-DM-D1 with no rep seat and no target, so her district reads both halves while no rep is
+ * credited with the second one. See
+ * 20261015153000_anti_infective_kafr_el_sheikh_2_to_delta_1_from_july.sql, which re-dated the
+ * boundary written by 20261015145000_…_from_october.sql.
  *
  * 🔴 SO THE MONEY ASSERTION IS AN EQUALITY, AND IT IS THE POINT OF THE FILE: the Kafr El-Sheikh
  * split must stay 50/50 before and after the move. A future session that "tidies" the ruling back
  * into a split exclusion — any named-area set, any Others carve-out on this line — takes D17's half
  * and hands it to Ragaa, and that is what the shares below catch.
  *
- * Dates are the second half. July, August and September 2026 are PUBLISHED on all three lines and a
- * published month is never changed (owner, 2026-10-09), so the move is written as a dated pair and
- * September must still answer Others however late it is recomputed.
+ * 🔴 THE BOUNDARY IS 2026-07-01 AND THE OTHERS ROW IS DATED BACK TO 2026-01-01 ON PURPOSE. Region is
+ * resolved as of the END of the month being closed, and `au.f_line_area_map_asof` prefers the row
+ * whose interval contains that date but otherwise FALLS BACK to the row with the smallest
+ * `effective_from`. Leave the Others row on the map's own 2026-07-13 floor and the Delta (1) row
+ * becomes the earliest row for this area — so January to June 2026, which match no interval, fall
+ * back to IT and count to her as well. Those six months carry real sales (EGP 788.30 to 1,788.65 a
+ * month) and carry NO publication row, so the nightly sweep would restate every one of them. The
+ * January assertion below is that trap, not decoration.
  */
 
 /** The area that moves, the bucket it leaves, the district it joins, and the day it happens. */
 const MOVER = "D17";
 const LEAVES = "OT";
 const JOINS = "D1";
-const MOVE_DATE = "2026-10-01";
+const MOVE_DATE = "2026-07-01";
+
+/** The two months either side of the boundary, each resolved at its own last day. */
+const BEFORE = "2026-06-30";
+const AFTER = "2026-07-31";
 
 /** Ragaa's own area — the one that must not gain a pound of this. */
 const RAGAAS_AREA = "D16";
 
 /**
- * Anti Infective's organogram across the boundary, as production holds it at 2026-10-31:
- * `[area, September, October]`. Read from au.f_line_area_map_asof, not invented.
+ * How far back the mover's Others row reaches. Production holds 2026-01-01, early enough to stay the
+ * EARLIEST row for this area and so to keep every pre-July month in Others.
  */
-const ORGANOGRAM: ReadonlyArray<readonly [area: string, september: string, october: string]> = [
-  ["AB1", "AB", "AB"], ["AB2", "AB", "AB"], ["AB3", "AB", "AB"], ["AB4", "AB", "AB"], ["AB5", "AB", "AB"],
-  ["CA1", "CA", "CA"], ["CA2", "CA", "CA"], ["CA3", "CA", "CA"], ["CA4", "CA", "CA"], ["CA6", "CA", "CA"],
-  // Delta (1) is Dina Fadel's: Menoufia 1-2, Gharbia 1-2 and Kafr El-Sheikh 1 — five today, six from October.
-  ["D12", "D1", "D1"], ["D13", "D1", "D1"], ["D14", "D1", "D1"], ["D15", "D1", "D1"],
-  [RAGAAS_AREA, "D1", "D1"],
-  [MOVER, LEAVES, JOINS], // ← Kafr El-Sheikh 2, the move under test
-  ["D21", "D2", "D2"], ["D22", "D2", "D2"], ["D23", "D2", "D2"], ["D26", "D2", "D2"],
+const PRE_MOVE_FROM = "2026-01-01";
+
+/**
+ * Anti Infective's organogram as production holds it at 2026-10-31, read from
+ * au.f_line_area_map_asof and not invented. Nothing else on the line moves across this boundary, so
+ * one column says it: the fixture dates every row from `PRE_MOVE_FROM` so both sides of the
+ * boundary resolve, and only Kafr El-Sheikh 2 carries a dated pair.
+ */
+const ORGANOGRAM: ReadonlyArray<readonly [area: string, region: string]> = [
+  ["AB1", "AB"], ["AB2", "AB"], ["AB3", "AB"], ["AB4", "AB"], ["AB5", "AB"],
+  ["CA1", "CA"], ["CA2", "CA"], ["CA3", "CA"], ["CA4", "CA"], ["CA6", "CA"],
+  // Delta (1) is Dina Fadel's: Menoufia 1-2, Gharbia 1-2 and Kafr El-Sheikh 1 — five, six from July.
+  ["D12", "D1"], ["D13", "D1"], ["D14", "D1"], ["D15", "D1"],
+  [RAGAAS_AREA, "D1"],
+  ["D21", "D2"], ["D22", "D2"], ["D23", "D2"], ["D26", "D2"],
   // Delta (3), Anti Infective only, live since 2026-09-01.
-  ["D11", "D3", "D3"], ["D24", "D3", "D3"], ["D25", "D3", "D3"], ["OT2", "D3", "D3"], ["OT9", "D3", "D3"],
-  ["GZ1", "GZ", "GZ"], ["GZ2", "GZ", "GZ"], ["GZ3", "GZ", "GZ"], ["GZ4", "GZ", "GZ"], ["GZ5", "GZ", "GZ"],
-  ["GZ6", "GZ", "GZ"],
-  ["UE1", "UE-1", "UE-1"], ["UE2", "UE-1", "UE-1"], ["UE9", "UE-1", "UE-1"],
-  ["UE3", "UE-2", "UE-2"], ["UE4", "UE-2", "UE-2"], ["UE5", "UE-2", "UE-2"], ["UE6", "UE-2", "UE-2"],
-  ["UE7", "UE-2", "UE-2"], ["UE8", "UE-2", "UE-2"],
+  ["D11", "D3"], ["D24", "D3"], ["D25", "D3"], ["OT2", "D3"], ["OT9", "D3"],
+  ["GZ1", "GZ"], ["GZ2", "GZ"], ["GZ3", "GZ"], ["GZ4", "GZ"], ["GZ5", "GZ"],
+  ["GZ6", "GZ"],
+  ["UE1", "UE-1"], ["UE2", "UE-1"], ["UE9", "UE-1"],
+  ["UE3", "UE-2"], ["UE4", "UE-2"], ["UE5", "UE-2"], ["UE6", "UE-2"],
+  ["UE7", "UE-2"], ["UE8", "UE-2"],
   // Others keeps everything else, Kafr El-Sheikh 2 aside.
-  ["CA5", "OT", "OT"], ["GZ7", "OT", "OT"], ["OT1", "OT", "OT"], ["OT4", "OT", "OT"], ["OT5", "OT", "OT"],
-  ["OT6", "OT", "OT"], ["OT7", "OT", "OT"], ["OT8", "OT", "OT"], ["OT10", "OT", "OT"],
+  ["CA5", "OT"], ["GZ7", "OT"], ["OT1", "OT"], ["OT4", "OT"], ["OT5", "OT"],
+  ["OT6", "OT"], ["OT7", "OT"], ["OT8", "OT"], ["OT10", "OT"],
 ];
 
 /**
@@ -84,7 +105,7 @@ const ORGANOGRAM: ReadonlyArray<readonly [area: string, september: string, octob
 const RETIRED_AREA = {
   area_code: "OT3",
   operational_region_code: "OT",
-  effective_from: "2026-07-13",
+  effective_from: PRE_MOVE_FROM,
   effective_to: "2026-07-27",
 };
 
@@ -101,31 +122,29 @@ const regionNames = () =>
     ["UE-2", "Upper Egypt 2"],
   ]);
 
-/** Every row except Kafr El-Sheikh 2's pair — the organogram with this move NOT yet written. */
+/** The organogram with this move NOT yet written — Kafr El-Sheikh 2 still open on Others. */
 const withoutTheMove = () => [
   RETIRED_AREA,
-  ...ORGANOGRAM.map(([area, september, october]) => ({
+  ...ORGANOGRAM.map(([area, region]) => ({
     area_code: area,
-    operational_region_code: area === MOVER ? LEAVES : september,
-    effective_from: "2026-07-13",
+    operational_region_code: area === MOVER ? LEAVES : region,
+    effective_from: PRE_MOVE_FROM,
     effective_to: null as string | null,
-  })).filter(() => true),
-  ...ORGANOGRAM.flatMap(([area, september, october]) =>
-    area !== MOVER && september !== october
-      ? [{ area_code: area, operational_region_code: october, effective_from: MOVE_DATE, effective_to: null }]
-      : []),
+  })),
+  { area_code: MOVER, operational_region_code: LEAVES, effective_from: PRE_MOVE_FROM, effective_to: null },
 ];
 
-/** The same organogram after the migration: Kafr El-Sheikh 2 written as a dated pair. */
+/** The same organogram after the migration: Kafr El-Sheikh 2 written as a dated pair at 1 July. */
 const withTheMove = () => [
   RETIRED_AREA,
-  ...ORGANOGRAM.flatMap(([area, september, october]) =>
-    september === october
-      ? [{ area_code: area, operational_region_code: september, effective_from: "2026-07-13", effective_to: null }]
-      : [
-        { area_code: area, operational_region_code: september, effective_from: "2026-07-13", effective_to: MOVE_DATE },
-        { area_code: area, operational_region_code: october, effective_from: MOVE_DATE, effective_to: null },
-      ]),
+  ...ORGANOGRAM.map(([area, region]) => ({
+    area_code: area,
+    operational_region_code: region,
+    effective_from: PRE_MOVE_FROM,
+    effective_to: null as string | null,
+  })),
+  { area_code: MOVER, operational_region_code: LEAVES, effective_from: PRE_MOVE_FROM, effective_to: MOVE_DATE },
+  { area_code: MOVER, operational_region_code: JOINS, effective_from: MOVE_DATE, effective_to: null },
 ];
 
 /**
@@ -160,51 +179,72 @@ const planFor = (map: Parameters<typeof splitRegionsFrom>[0]) =>
 
 export function runAntiInfectiveKafrElSheikh2Delta1Tests() {
   // ── The dates the two months resolve at ───────────────────────────────────────────────────────
-  // effective_to is EXCLUSIVE, so a row closed on 2026-10-01 still covers 2026-09-30 and does not
-  // cover 2026-10-01. Getting this one day wrong reaches a PUBLISHED month.
-  assert.equal(closingRegionsAsOfDate("2026-09"), "2026-09-30", "September resolves at its own last day");
-  assert.equal(closingRegionsAsOfDate("2026-10"), "2026-10-31", "October resolves at its own last day");
+  // effective_to is EXCLUSIVE, so a row closed on 2026-07-01 still covers 2026-06-30 and does not
+  // cover 2026-07-01. Getting this one day wrong moves a month the owner did not name.
+  assert.equal(closingRegionsAsOfDate("2026-06"), BEFORE, "June resolves at its own last day");
+  assert.equal(closingRegionsAsOfDate("2026-07"), AFTER, "July resolves at its own last day");
 
-  const september = buildOperationalRegionMap(withTheMove(), "2026-09-30", regionNames());
-  const october = buildOperationalRegionMap(withTheMove(), "2026-10-31", regionNames());
+  const june = buildOperationalRegionMap(withTheMove(), BEFORE, regionNames());
+  const july = buildOperationalRegionMap(withTheMove(), AFTER, regionNames());
 
   // ── The move itself ───────────────────────────────────────────────────────────────────────────
   assert.equal(
-    september?.regionByArea.get(MOVER)?.regionCode,
+    june?.regionByArea.get(MOVER)?.regionCode,
     LEAVES,
-    "September 2026 must still file Kafr El-Sheikh 2 in Others — it is PUBLISHED and the move is dated to spare it",
+    "June 2026 must still file Kafr El-Sheikh 2 in Others — the ruling starts in July",
   );
   assert.equal(
-    october?.regionByArea.get(MOVER)?.regionCode,
+    july?.regionByArea.get(MOVER)?.regionCode,
     JOINS,
-    "October 2026 files Kafr El-Sheikh 2 under Delta (1) — Dina Fadel's district",
+    "July 2026 files Kafr El-Sheikh 2 under Delta (1) — Dina Fadel's district",
   );
   assert.equal(
-    october?.regionByArea.get(MOVER)?.regionName,
+    july?.regionByArea.get(MOVER)?.regionName,
     "Delta (1)",
     "the district reaches the screen by NAME, never as a raw code",
   );
 
+  // Every month from the boundary on is hers, including the three the owner must unpublish himself.
+  ["2026-07-31", "2026-08-31", "2026-09-30", "2026-10-31", "2026-11-30"].forEach((asOf) => {
+    assert.equal(
+      buildOperationalRegionMap(withTheMove(), asOf, regionNames())?.regionByArea.get(MOVER)?.regionCode,
+      JOINS,
+      `${asOf}: Kafr El-Sheikh 2 counts to Delta (1) — the boundary opens once and never closes`,
+    );
+  });
+
+  // ── 🔴 THE FALLBACK TRAP: January to June must NOT reach her ──────────────────────────────────
+  // `au.f_line_area_map_asof` falls back to the row with the smallest effective_from, so the Others
+  // row has to stay earlier than the Delta (1) one. These two assertions fail the moment it does
+  // not — and they cover six UNPUBLISHED months the nightly sweep would restate on its own.
+  ["2026-01-31", "2026-02-28", "2026-03-31", "2026-04-30", "2026-05-31", BEFORE].forEach((asOf) => {
+    assert.equal(
+      buildOperationalRegionMap(withTheMove(), asOf, regionNames())?.regionByArea.get(MOVER)?.regionCode,
+      LEAVES,
+      `${asOf}: Kafr El-Sheikh 2 is still in Others — the July ruling must not leak backwards`,
+    );
+  });
+
   // ── Her district's membership, stated in full ─────────────────────────────────────────────────
   assert.deepEqual(
-    membership(september, "D1"),
+    membership(june, "D1"),
     ["D12", "D13", "D14", "D15", "D16"],
-    "September's Delta (1) is Menoufia 1 and 2, Gharbia 1 and 2, and Kafr El-Sheikh 1",
+    "June's Delta (1) is Menoufia 1 and 2, Gharbia 1 and 2, and Kafr El-Sheikh 1",
   );
   assert.deepEqual(
-    membership(october, "D1"),
+    membership(july, "D1"),
     ["D12", "D13", "D14", "D15", "D16", "D17"],
-    "October's Delta (1) is those five plus Kafr El-Sheikh 2",
+    "July's Delta (1) is those five plus Kafr El-Sheikh 2",
   );
   assert.equal(
-    othersAreasFrom(september).has(MOVER),
+    othersAreasFrom(june).has(MOVER),
     true,
-    "September: Kafr El-Sheikh 2 is still in the Others bucket",
+    "June: Kafr El-Sheikh 2 is still in the Others bucket",
   );
   assert.equal(
-    othersAreasFrom(october).has(MOVER),
+    othersAreasFrom(july).has(MOVER),
     false,
-    "October: it has left Others, which is what lets her district total read it",
+    "July: it has left Others, which is what lets her district total read it",
   );
 
   // ── 🔒 THE MONEY: the split stays 50/50, before and after ─────────────────────────────────────
@@ -216,7 +256,7 @@ export function runAntiInfectiveKafrElSheikh2Delta1Tests() {
     "Kafr El-Sheikh is one city holding both areas — the split map is untouched by the move",
   );
 
-  ([["September", september], ["October", october]] as const).forEach(([label, map]) => {
+  ([["June", june], ["July", july]] as const).forEach(([label, map]) => {
     const plan = planFor(map);
     assert.ok(plan, `${label}: the Kafr El-Sheikh wholesaler resolves a split plan`);
     assert.deepEqual(
@@ -232,7 +272,7 @@ export function runAntiInfectiveKafrElSheikh2Delta1Tests() {
   });
 
   // The equality, said as an equality: writing the pair changes no share in either month.
-  ([["September", "2026-09-30"], ["October", "2026-10-31"]] as const).forEach(([label, asOf]) => {
+  ([["June", BEFORE], ["July", AFTER]] as const).forEach(([label, asOf]) => {
     const before = buildOperationalRegionMap(withoutTheMove(), asOf, regionNames());
     const after = buildOperationalRegionMap(withTheMove(), asOf, regionNames());
     assert.deepEqual(
@@ -264,28 +304,28 @@ export function runAntiInfectiveKafrElSheikh2Delta1Tests() {
 
   // ── The boundary day, from both sides ─────────────────────────────────────────────────────────
   assert.equal(
-    buildOperationalRegionMap(withTheMove(), "2026-09-30", regionNames())?.regionByArea.get(MOVER)?.regionCode,
+    buildOperationalRegionMap(withTheMove(), BEFORE, regionNames())?.regionByArea.get(MOVER)?.regionCode,
     LEAVES,
-    "30 September: Kafr El-Sheikh 2 is still in Others",
+    "30 June: Kafr El-Sheikh 2 is still in Others",
   );
   assert.equal(
     buildOperationalRegionMap(withTheMove(), MOVE_DATE, regionNames())?.regionByArea.get(MOVER)?.regionCode,
     JOINS,
-    "1 October: Kafr El-Sheikh 2 is Delta (1)",
+    "1 July: Kafr El-Sheikh 2 is Delta (1)",
   );
 
-  // ── September's answer cannot depend on October's rows existing ───────────────────────────────
+  // ── June's answer cannot depend on July's rows existing ───────────────────────────────────────
   // The assertion that would have caught the Delta (3) defect of 2026-08-29, where a dated pair
   // written correctly was still invisible to the closing and silently re-filed the month.
   assert.equal(
-    buildOperationalRegionMap(withTheMove(), "2026-09-30", regionNames())?.regionByArea.get(MOVER)?.regionCode,
-    buildOperationalRegionMap(withoutTheMove(), "2026-09-30", regionNames())?.regionByArea.get(MOVER)?.regionCode,
-    "Kafr El-Sheikh 2 answers the same for September with the move written as without it",
+    buildOperationalRegionMap(withTheMove(), BEFORE, regionNames())?.regionByArea.get(MOVER)?.regionCode,
+    buildOperationalRegionMap(withoutTheMove(), BEFORE, regionNames())?.regionByArea.get(MOVER)?.regionCode,
+    "Kafr El-Sheikh 2 answers the same for June with the move written as without it",
   );
 
   // ── Row order cannot decide any of it ─────────────────────────────────────────────────────────
   // PostgREST returns these unordered, and the moved area now has two rows.
-  ["2026-09-30", "2026-10-31"].forEach((asOf) => {
+  [BEFORE, AFTER].forEach((asOf) => {
     const forward = buildOperationalRegionMap(withTheMove(), asOf, regionNames());
     const reversed = buildOperationalRegionMap([...withTheMove()].reverse(), asOf, regionNames());
     assert.equal(
@@ -296,7 +336,7 @@ export function runAntiInfectiveKafrElSheikh2Delta1Tests() {
   });
 
   // ── Ragaa's own area never moves ──────────────────────────────────────────────────────────────
-  ([["September", september], ["October", october]] as const).forEach(([label, map]) => {
+  ([["June", june], ["July", july]] as const).forEach(([label, map]) => {
     assert.equal(
       map?.regionByArea.get(RAGAAS_AREA)?.regionCode,
       "D1",
