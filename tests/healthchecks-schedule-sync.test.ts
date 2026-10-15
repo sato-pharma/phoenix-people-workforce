@@ -7,6 +7,7 @@ import {
   parseDesiredChecks,
   parseDuration,
   payload,
+  selectSyncTargets,
   verifyAfterApply,
 } from "../scripts/healthchecks-sync.mjs";
 
@@ -41,8 +42,8 @@ export async function runHealthchecksScheduleSyncTests() {
   const checks = parseDesiredChecks(readFileSync(DOC, "utf8")) as DesiredCheck[];
 
   assert.ok(
-    checks.length >= 14,
-    `${DOC} must yield at least the 14 known checks, got ${checks.length} — the table format ` +
+    checks.length >= 40,
+    `${DOC} must yield at least the 40 known checks, got ${checks.length} — the table format ` +
       "probably changed and the sync would silently do nothing",
   );
 
@@ -67,11 +68,12 @@ export async function runHealthchecksScheduleSyncTests() {
     externalSync: true,
   });
 
-  // IN-HOUSE ONLY. The Healthchecks project is at its check limit and the plan is not being raised,
-  // so these two are watched by the heartbeat register and never pushed. The marker must withhold
-  // the PUSH without hiding the ROW: job-heartbeat-register.test.ts asserts this table and
-  // JOB_SCHEDULES declare exactly the same slugs, so a parser that dropped them would turn that
-  // check red — and a sync that pushed them would report CREATE ... FAILED (HTTP 403) forever.
+  // IN-HOUSE ONLY. The project has a check ceiling and the plan is not being raised, so the marker
+  // withholds the CREATE: a sync that asked for one of these would report CREATE ... FAILED
+  // (HTTP 403) forever. It must withhold that without hiding the ROW — job-heartbeat-register.test.ts
+  // asserts this table and JOB_SCHEDULES declare exactly the same slugs, so a parser that dropped
+  // them would turn that check red. What the marker must NOT withhold is tuning an existing check:
+  // see the selectSyncTargets block below.
   for (const slug of ["phoenix-retention-risk-sweep", "phoenix-retention-risk-pre-payroll"]) {
     const check = bySlug.get(slug);
     assert.ok(check, `${slug} must still be PARSED out of ${DOC}, not dropped`);
@@ -162,6 +164,67 @@ export async function runHealthchecksScheduleSyncTests() {
   assert.equal(simpleBody.slug, "phoenix-y", "a period check must be created with its slug too");
   assert.equal(simpleBody.timeout, 300);
   assert.equal(simpleBody.schedule, undefined, "a period check must not carry a cron expression");
+
+  // 🔴 THE MARKER WITHHOLDS THE CREATE, NOT THE TUNING. Until 2026-10-15 it withheld the whole
+  // write, and because these jobs ping with ?create=1 Healthchecks had auto-provisioned a check for
+  // nearly all of them anyway — each on its own defaults (1-day period, 1-hour grace) — which this
+  // script then refused to look at. 13 of the project's 40 live checks were wrong while a dry run
+  // printed "Everything already matches": one monthly job had been red for 20 days, two weekly jobs
+  // were red six days in seven, and an hourly and a 10-minute job were judged once a DAY.
+  {
+    const declared = [
+      { slug: "pushed", kind: "cron", schedule: "1 2 * * *", tz: "Africa/Cairo", grace: 3600, externalSync: true },
+      { slug: "marked-and-present", kind: "cron", schedule: "3 4 * * *", tz: "Africa/Cairo", grace: 3600, externalSync: false },
+      { slug: "marked-and-absent", kind: "cron", schedule: "5 6 * * *", tz: "Africa/Cairo", grace: 3600, externalSync: false },
+    ];
+    const live = new Map([
+      ["pushed", { slug: "pushed", uuid: "u1" }],
+      ["marked-and-present", { slug: "marked-and-present", uuid: "u2" }],
+    ]);
+    const { syncable, tuneInPlace, withheld } = selectSyncTargets(declared, live);
+    assert.deepEqual(
+      syncable.map((d: { slug: string }) => d.slug),
+      ["pushed", "marked-and-present"],
+      "a marked row whose check EXISTS must be written — an update costs no slot, and skipping it is " +
+        "what left 13 checks on the Healthchecks defaults for weeks",
+    );
+    assert.deepEqual(
+      tuneInPlace.map((d: { slug: string }) => d.slug),
+      ["marked-and-present"],
+      "the tuned-in-place half must be named, not folded silently into the pushed rows",
+    );
+    assert.deepEqual(
+      withheld.map((d: { slug: string }) => d.slug),
+      ["marked-and-absent"],
+      "a marked row with NO check is the one real coverage gap and must be reported by name, never dropped",
+    );
+    assert.ok(
+      !syncable.some((d: { slug: string }) => d.slug === "marked-and-absent"),
+      "a marked row with no check must never be sent as a create — that is the HTTP 403 the marker exists to avoid",
+    );
+  }
+
+  // An existing check is written BY UUID, where `unique` means nothing. On a create it must stay,
+  // or a re-run makes a second check beside the one it made last time.
+  {
+    const desiredOne = { slug: "phoenix-x", kind: "cron", schedule: "17 2 * * *", tz: "Africa/Cairo", grace: 7200 };
+    const createBody: Record<string, unknown> = payload(desiredOne, undefined, { update: false });
+    assert.deepEqual(createBody.unique, ["name"], "a create must carry unique:[name]");
+    const updateBody: Record<string, unknown> = payload(desiredOne, undefined, { update: true });
+    assert.equal("unique" in updateBody, false, "an update by uuid must not send unique at all");
+    assert.equal(updateBody.slug, "phoenix-x", "an update must still carry the slug the app pings");
+    assert.equal(updateBody.schedule, "17 2 * * *");
+    // Annotated like the two above: `payload` is plain .mjs, so its inferred return is a union of
+    // the cron and period shapes and neither declares the conditional `unique` — reading it off the
+    // call directly is TS2339, which the suite cannot see (node --experimental-strip-types deletes
+    // types without checking them) and `checks/Typecheck` catches after the push.
+    const defaultBody: Record<string, unknown> = payload(desiredOne);
+    assert.deepEqual(
+      defaultBody.unique,
+      ["name"],
+      "the default must stay CREATE — a caller that forgets the flag must not silently drop unique",
+    );
+  }
 
   // Channels: every check must carry every channel the project has configured. Found 2026-08-27 —
   // two checks had sat with zero channels since creation, silently, because nothing ever compared

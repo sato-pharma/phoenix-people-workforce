@@ -48,11 +48,24 @@ async function pingHealthchecks(jobSlug: string, outcome: DeadMansSwitchOutcome,
   const url = `${pingHost()}/${key}/${encodeURIComponent(jobSlug)}${suffix}?create=1`;
 
   try {
-    await fetch(url, {
+    const response = await fetch(url, {
       body: detail ? detail.slice(0, MAX_DETAIL_BYTES) : undefined,
       method: "POST",
       signal: AbortSignal.timeout(PING_TIMEOUT_MS),
     });
+    // 🔴 A REFUSED PING IS A RESOLVED PROMISE, AND THIS RESPONSE WENT UNREAD FOR MONTHS. `fetch`
+    // throws on a network failure only, so a 403 (the project is at its check ceiling and will not
+    // auto-provision another) or a 404 came back as success and logged NOTHING — which is exactly
+    // how `phoenix-brick-move-drain` came to ping every 20 minutes from 2026-10-13 with no check
+    // behind it and nothing anywhere saying so (found 2026-10-15, on the owner's audit). Still a
+    // WARNING, never an error: the contract below is unchanged, and a monitoring refusal must not
+    // page anyone. It only has to be SAYABLE.
+    if (!response.ok) {
+      logWarning("Dead-man's-switch ping was refused by Healthchecks (non-fatal — the cron job's own result is unaffected)", {
+        context: { status: response.status },
+        labels: { event: "deadmans_switch_ping_refused", job: jobSlug, outcome, status: response.status },
+      });
+    }
   } catch (error) {
     // logWarning, not logError: a failed monitoring ping is not an application failure and must
     // never itself page anyone — that would defeat the whole "stays quiet unless something is
@@ -73,9 +86,11 @@ async function pingHealthchecks(jobSlug: string, outcome: DeadMansSwitchOutcome,
  * TWO BACKENDS, ON PURPOSE, AND NEITHER CAN BLOCK THE OTHER.
  *
  *  - Healthchecks.io, external. Its value is being OUTSIDE this system: it still alerts when
- *    Phoenix itself is the thing that is down. Its free tier holds exactly 20 checks and on
- *    2026-08-30 it was full — `POST /checks/` answered HTTP 403 for the 21st — so a job with no
- *    slot got no coverage at all. Unset key or missing slot, this half simply does nothing.
+ *    Phoenix itself is the thing that is down. It has a CEILING, and a job past it gets no external
+ *    coverage at all: `POST /checks/` answered HTTP 403 for the 21st on 2026-08-30, and the project
+ *    held 40 checks on 2026-10-15 with `phoenix-brick-move-drain` unable to auto-provision a 41st —
+ *    so treat the number as something to MEASURE (`GET /api/v3/checks/`), never as 20. Unset key or
+ *    no slot, this half does nothing; since 2026-10-15 a refusal at least logs a warning.
  *  - `public.job_heartbeats`, in-house. No cap, so every declared job is covered, and it records
  *    the one thing the external switch only ever showed on a dashboard: that a run happened and
  *    REPORTED FAILURE. Swept by /api/cron/job-heartbeat-sweep, which alerts in-app + Telegram.

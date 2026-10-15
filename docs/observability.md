@@ -401,19 +401,32 @@ policy):
 
    Several rows are marked **in-house only**. They are declared here and in `JOB_SCHEDULES` like every
    other job — the heartbeat register watches them and alerts in-app, Telegram and push when one
-   stops reporting — but `scripts/healthchecks-sync.mjs` deliberately does not push them to
-   Healthchecks. The project is at its check limit, creating a further check answers HTTP 403 with
-   an empty body, and the owner has ruled out raising the plan (2026-09-08). Without the marker the
-   sync reports a permanent `CREATE … FAILED` line for each of them although they are working
-   perfectly, which is
+   stops reporting — and the marker tells `scripts/healthchecks-sync.mjs` not to **create** a check
+   for them. The project has a ceiling, asking past it answers HTTP 403 with an empty body, and the
+   owner has ruled out raising the plan (2026-09-08). Without the marker the sync reports a permanent
+   `CREATE … FAILED` line for each of them although they are working perfectly, which is
    the "always red, so ignored" failure this whole page exists to prevent.
 
-   The marker withholds the external push, never the watch. What is given up is the outside observer
-   for those two jobs specifically — and "is Phoenix alive?" is already answered within minutes by
-   `phoenix-inbound-intake` (2m), `phoenix-process-notifications` (5m) and
-   `phoenix-ireports360-live-poll` (5m), which is why a daily and a monthly job are the right two to
-   leave off. **To give one its slot back:** free a check in the Healthchecks project or raise the
-   plan, delete `· **in-house only**` from its row, and re-run the sync with `--apply`.
+   🔴 **THE MARKER WITHHOLDS THE CREATE, NOT THE TUNING — AND IT USED TO WITHHOLD THE WHOLE WRITE,
+   WHICH IS HOW 13 OF THE 40 LIVE CHECKS CAME TO BE WRONG.** These jobs ping with `?create=1`, so
+   Healthchecks auto-provisioned a check for nearly every one of them anyway, each born on the
+   Healthchecks **defaults** — a 1-day period and a 1-hour grace — and the old marker made the sync
+   skip them, so nothing ever corrected that. Measured on the owner's audit, 15 Oct 2026, while the
+   sync was reporting *"Everything already matches"*: `phoenix-retention-risk-pre-payroll` (monthly,
+   day 25) had been **red for 20 days** against a job the register reported healthy,
+   `private-calendar-gap-notice` and `phoenix-crm-fraud-scan` (both weekly) were red six days in
+   seven, and `phoenix-crm-visit-rollup` (hourly) and `phoenix-interview-reminders` (every ten
+   minutes) were judged once a **day** — 24× and 144× too loose to notice a stop. All 13 were tuned
+   in place the same day (0 created, 13 updated, read-back verified). **So the rule is existence, not
+   the marker:** a declared check that exists is tuned in place, because an update costs no slot, and
+   the marker only stops the sync asking for a new one. Every run now lists both halves by name —
+   `in place` and `withheld`.
+
+   What a withheld row gives up is the outside observer for that one job — and "is Phoenix alive?" is
+   already answered within minutes by `phoenix-inbound-intake` (2m),
+   `phoenix-process-notifications` (5m) and `phoenix-ireports360-live-poll` (5m). **To give a withheld
+   row its own check:** free a check in the Healthchecks project or raise the plan, delete
+   `· **in-house only**` from its row, and re-run the sync with `--apply`.
 
    | Check slug | Cron expression | Suggested grace | What actually pings it |
    |---|---|---|---|
@@ -481,16 +494,20 @@ policy):
    future value is reported as `misdeclared` rather than obeyed. Pinned by
    `tests/job-heartbeat-register.test.ts`.
 
-   🔴 **THE HEALTHCHECKS ACCOUNT IS FULL AT 20 CHECKS — WHICH IS WHY THERE IS NOW A SECOND,
-   IN-HOUSE BACKEND.** Measured 2026-08-30: `GET /api/v3/checks/` returns exactly **20**, every one
-   of them declared here and legitimate, and `POST /checks/` for a 21st returns **HTTP 403 with an
-   empty body** — the free tier's ceiling. So `phoenix-crm-contact-lists`,
+   🔴 **THE HEALTHCHECKS ACCOUNT HAS A CEILING AND IT HAS MOVED — MEASURE IT, NEVER QUOTE A NUMBER
+   FROM THIS PAGE.** Measured 2026-08-30: `GET /api/v3/checks/` returned exactly **20** and a 21st
+   answered **HTTP 403 with an empty body**, which is why there is a second, in-house backend and why
+   the owner declined a paid plan that day (`$20/month` for 100 checks) and asked for a free path.
+   🔴 **Measured again 2026-10-15: the same call returns 40** — the in-house-only jobs
+   auto-provisioned their own checks through `?create=1` in between, so `phoenix-crm-contact-lists`,
    `phoenix-expense-claims-refresh`, `phoenix-recruitment-cv-digest` and
-   `phoenix-job-heartbeat-sweep` are declared above but have no external check, and the sync reports
-   them `FAILED: HTTP 403` on every run. **That is the honest state, not a bug to re-diagnose** — do
-   not spend time on the 403, and do not delete a row to make the sync go green, which would only
-   hide unwatched jobs again. The owner declined a paid plan on 2026-08-30 (`$20/month` for 100
-   checks) and asked for a free path; the register below is that path.
+   `phoenix-job-heartbeat-sweep` all have an external check now and the sync reports them `ok`. The
+   ceiling has NOT vanished, only moved: `phoenix-brick-move-drain` has pinged every 20 minutes since
+   2026-10-13 and still has no check, so its auto-provision is being refused. **Do not read a number
+   here as current, and do not delete a row to make the sync go green** — that only hides an
+   unwatched job again. Since 2026-10-15 a refused ping logs `deadmans_switch_ping_refused`; before
+   that the response was never read, which is exactly why the drain's silence had to be found by
+   hand.
 
    ⚠️ **A ping to an uncreated slug is best-effort and silent, which is the trap here.**
    `pingDeadMansSwitch` never throws and swallows its own failure into a `logWarning`, so these
@@ -502,12 +519,12 @@ policy):
 
 `pingDeadMansSwitch` now writes to **two** backends on every call, and neither can block the other
 (`Promise.allSettled`; both halves already swallow their own errors). No route changed to gain
-this — the function is the single seam every one of the 24 declared jobs already went through.
+this — the function is the single seam every one of the 41 declared jobs already went through.
 
 | | Healthchecks.io | `public.job_heartbeats` |
 |---|---|---|
 | Where it lives | outside Phoenix | inside Phoenix |
-| Capacity | **20, full** | unlimited |
+| Capacity | **capped, and the cap moves — 20 full on 2026-08-30, 40 full on 2026-10-15; measure it** | unlimited |
 | Survives Phoenix being down | **yes — this is its whole value** | no |
 | Detects "ran and reported FAILURE" | on a dashboard only | **yes, and it alerts** |
 | Alerts via | whatever the project has configured | in-app + Telegram, never email |
@@ -532,13 +549,16 @@ Three design points worth not re-deriving:
   question — "is the sweeper running?" — and turning it red for another job's fault is how a
   watchdog stops being trusted.
 
-🔴 **THE ONE HOLE, STATED RATHER THAN HIDDEN: the sweeper is not externally watched.** A sweeper
-that stops entirely cannot report its own silence, and `phoenix-job-heartbeat-sweep` has no
-Healthchecks slot because the account is full. **Every other job is now covered internally, which
-is exactly what makes retiring an external check safe for the first time** — freeing one slot for
-this slug is the single action that closes the loop, and it costs nothing that is not already
-covered twice. Until then: a monitoring layer that overstates its own coverage is worse than one
-that admits a gap, so this paragraph exists instead of a green dashboard.
+✅ **THE ONE HOLE IS CLOSED: the sweeper IS externally watched.** A sweeper that stops entirely
+cannot report its own silence, and `phoenix-job-heartbeat-sweep` had no Healthchecks slot while the
+account was full. It has one now — read live 2026-10-15: status `up`, 4,454 pings, `*/15 * * * *` on
+Africa/Cairo with a 30-minute grace and both channels attached.
+
+🔴 **THE HOLE THAT REPLACED IT: `phoenix-brick-move-drain` has no external check.** It is declared,
+it is firing (the register recorded a success at 13:19 Cairo on 2026-10-15), and its `?create=1` is
+being refused because the project is at its ceiling — so the drain is watched inside Phoenix only. A
+monitoring layer that overstates its own coverage is worse than one that admits a gap, so this
+paragraph exists instead of a green dashboard.
 
    🔴 **A check created through the management API is stored with an EMPTY slug unless one is sent
    explicitly** — and the app pings by slug (`hc-ping.com/<ping-key>/<slug>?create=1`), never by name.

@@ -4,15 +4,26 @@ import { pingDeadMansSwitch, withDeadMansSwitch } from "../src/lib/observability
 
 type FetchCall = { url: string; init: RequestInit | undefined };
 
-function stubFetch(behavior: "resolve" | "reject") {
+function stubFetch(behavior: "resolve" | "reject" | "refuse") {
   const calls: FetchCall[] = [];
   const original = globalThis.fetch;
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     calls.push({ init, url: String(url) });
     if (behavior === "reject") throw new Error("simulated network failure");
-    return new Response(null, { status: 200 });
+    // "refuse" is what Healthchecks answers when the project is at its check ceiling and will not
+    // auto-provision another: a RESOLVED response carrying 403. It is not a network failure, so it
+    // never reaches the catch block — which is why it went unlogged for months.
+    return new Response(null, { status: behavior === "refuse" ? 403 : 200 });
   }) as typeof fetch;
   return { calls, restore: () => { globalThis.fetch = original; } };
+}
+
+/** Capture the logger's own stdout — a WARNING is one JSON line on console.log. */
+function captureLogLines() {
+  const lines: string[] = [];
+  const original = console.log;
+  console.log = (...args: unknown[]) => { lines.push(args.map(String).join(" ")); };
+  return { lines, restore: () => { console.log = original; } };
 }
 
 export async function runDeadMansSwitchTests() {
@@ -124,6 +135,53 @@ export async function runDeadMansSwitchTests() {
       } finally {
         restore();
       }
+    }
+
+    // 🔴 A REFUSED PING MUST BE SAYABLE. `fetch` resolves on a 403, so the response went unread and
+    // nothing was logged — which is how `phoenix-brick-move-drain` pinged every 20 minutes from
+    // 2026-10-13 with no check behind it and no trace anywhere (found 2026-10-15). It must still
+    // never throw: a monitoring refusal is not an application failure.
+    {
+      const { calls, restore } = stubFetch("refuse");
+      const log = captureLogLines();
+      try {
+        await assert.doesNotReject(
+          () => pingDeadMansSwitch("phoenix-brick-move-drain", "success"),
+          "a refused ping must never throw",
+        );
+      } finally {
+        log.restore();
+        restore();
+      }
+      assert.equal(calls.length, 1, "the ping must still be attempted");
+      const refusal = log.lines.find((l) => l.includes("deadmans_switch_ping_refused"));
+      assert.ok(
+        refusal,
+        "a non-2xx answer must be LOGGED — an unread response is exactly the silence this closes",
+      );
+      assert.ok(refusal.includes("phoenix-brick-move-drain"), "the refusal must name the job");
+      assert.ok(refusal.includes("403"), "the refusal must carry the status that was refused");
+      assert.ok(
+        !log.lines.some((l) => l.includes("deadmans_switch_ping_failed")),
+        "a refusal is not a network failure and must not be reported as one",
+      );
+    }
+
+    // A 2xx must stay silent — a warning on every healthy ping would bury the refusal above.
+    {
+      const { restore } = stubFetch("resolve");
+      const log = captureLogLines();
+      try {
+        await pingDeadMansSwitch("phoenix-notify-daily", "success");
+      } finally {
+        log.restore();
+        restore();
+      }
+      assert.equal(
+        log.lines.filter((l) => l.includes("deadmans_switch_ping")).length,
+        0,
+        "a successful ping must log nothing about itself",
+      );
     }
 
     // withDeadMansSwitch: happy path — returns run()'s value unchanged and pings success.
