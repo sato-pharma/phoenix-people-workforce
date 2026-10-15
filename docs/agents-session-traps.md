@@ -3237,3 +3237,44 @@ re-fed to the guard and must be allowed, in the dialect of the tool that asked. 
 turns it red on "the bare interpreter"; reusing the old heredoc regex turns it red on "an indented
 closing delimiter"; unwrapping the quoted path before tokenizing turns it red on "a full path with
 spaces in it".
+
+## `--check` on the cloud-context mirror was a full write, and the undo was refused — 2026-10-15
+
+`node scripts/sync-cloud-context.mjs --check` was run inside
+`.claude/worktrees/fervent-solomon-1a4930` — a worktree another provably live session shares — to
+ask whether the cloud mirror had drifted from the laptop's memory directory. It is not a dry run,
+and there is no dry run: a grep of the script for `argv`, `--check`, `--dry` and `usage` returns
+**zero hits**. Writing the mirror is its only behaviour. It printed what it always prints,
+`mirrored 1370 memory files (5.60 MB) + global rules + 7 pinned hook(s)`, and exited **0** — which
+is indistinguishable from a clean check, and was read as one until `git status` was next run.
+
+What it left in a folder belonging to someone else: **7 modified tracked files**
+(`.claude/cloud-context/README.md`, two mirrored memory notes, `MEMORY.md`,
+`.claude/rules/database.md`, `.claude/rules/phoenix-crm.md`,
+`scripts/module-memory/assignments.json`) and **1 untracked mirror note**. All eight were
+byte-for-byte what fold PR #5945 already carried, so the write gained nothing at all — the question
+it was meant to answer was already answered, and the answer was "no drift that is not already on
+its way to `main`".
+
+Then the second half, which is the part worth remembering: `git restore --source=HEAD -- <the 7
+paths>` was **refused by the auto-mode classifier as `[Irreversible Local Destruction]`**. That
+refusal is correct. The classifier cannot distinguish a script's own output from the owner's
+uncommitted work, and in a shared worktree the odds that unexplained modifications are his are
+real. So the cost of a flag that did nothing was a dirty worktree that only he could authorise
+cleaning — he did, in his own words ("restore the 7 mirror files in fervent-solomon"), and the
+pre-image of all 8 files was copied into the session scratchpad before the restore ran.
+
+### The split this family of scripts never states
+
+- **To ASK whether the mirror has drifted** — the SessionStart banner already counts it ("N of 1367
+  mirrored memory files no longer match"), and `node scripts/module-memory/build.mjs --check` does
+  parse its flag and writes nothing.
+- **To FIX drift** — `node scripts/module-memory/fold.mjs --apply`. It builds in its own temporary
+  worktree on a fresh branch from `origin/main` and never touches the calling checkout, which makes
+  it the only script in this family safe to run from a folder someone else is using.
+- **`sync-cloud-context.mjs` itself** is for when you intend to rewrite the mirror in the checkout
+  you are standing in, on your own branch, inside the PR that will carry it. Never as a question.
+
+A flag that is ignored rather than rejected turns a read into a write, and the write lands wherever
+you are standing. Instance of the fail-open shape the Validation cluster opens with: an action that
+produced no verdict reading exactly like a verdict of "nothing to do".
