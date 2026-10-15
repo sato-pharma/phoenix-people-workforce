@@ -101,10 +101,12 @@ export function runDoctorListsFollowTeamStartsTests() {
   const refresh = liveFunctionBody("crm_contact_master_refresh");
 
   // ── 2. The apply half no longer refuses on an unset global date ───────────────────────────────
+  // The door it asks is the DOCTOR-LIST door (20261015215500), which is the started teams plus the
+  // vendor-less reps — section 9 pins what that door is and that the visits door is untouched.
   assert.match(
     apply,
-    /from public\.phoenix_crm_started_team_reps\(\) s/,
-    "the apply function asks who is counted from Phoenix CRM, not only the global cutover date",
+    /from public\.phoenix_crm_doctor_list_reps\(\) s/,
+    "the apply function asks whose doctor list Phoenix owns, not only the global cutover date",
   );
   assert.doesNotMatch(
     apply,
@@ -341,4 +343,106 @@ export function runDoctorListsFollowTeamStartsTests() {
     /option\.listOpen \? null :/,
     "the picker marks a rep whose list is not open yet",
   );
+
+  // ── 9. A REP WITH NO IREPORTS360 ACCOUNT GETS HIS PHOENIX LIST (owner, 2026-10-15) ────────────
+  // Shahd Mohamed Elsayed Ghoneim (PD-0026) had an EMPTY droplist: 112 real Phoenix customers on her
+  // seat since 11 October, no iReports360 account at all, and a team that has not started — so the four
+  // vendor passes could not key on her and the fifth pass did not cover her. Nine more October hires
+  // were in the same state, 1,223 built list rows between them, invisible on every list screen. The
+  // hand-over is driven by the LIST: a rep with no Phoenix list keeps his vendor list (section 1), and a
+  // rep with no VENDOR list gets his Phoenix list without waiting for his team.
+  const listOnly = liveFunctionBody("phoenix_crm_list_only_reps");
+  const door = liveFunctionBody("phoenix_crm_doctor_list_reps");
+
+  // The door is the UNION of the two, in that order — a started rep's own TEAM date must win, because
+  // his list was usually built before his team started and the earlier date would backdate his periods.
+  assert.match(
+    door,
+    /from public\.phoenix_crm_started_team_reps\(\) s\s*\n\s*union all\s*\n[\s\S]*from public\.phoenix_crm_list_only_reps\(\) l/,
+    "the doctor-list door is every started team's people plus the vendor-less reps",
+  );
+  // Both halves return the SAME six columns in the same order, which is the only reason the union is
+  // legal at all — and the only reason every reader of the door can keep its one row shape.
+  const SHAPE = "returns table (seat_id text, hr_id text, hr_key text, agent_crm_id bigint, counted_from date, counted_until date)";
+  for (const [body, label] of [[listOnly, "phoenix_crm_list_only_reps"], [door, "phoenix_crm_doctor_list_reps"]] as Array<[string, string]>) {
+    assert.ok(body.includes(SHAPE), `${label} returns the started door's own six columns, in its order`);
+  }
+
+  // All four conditions, or the rule reaches someone it must not. The last one is the subtle one:
+  // returning a started rep here too would offer the fifth pass a second, EARLIER window.
+  for (const [pattern, why] of [
+    [/e\.crm_id is null or e\.crm_id !~ '\^\[0-9\]\+\$'/, "no numeric iReports360 account id"],
+    [/nullif\(btrim\(e\.crm_username\), ''\) is null/, "no iReports360 username either"],
+    [/a\.source = 'ireports360'/, "and no open vendor assignment row, whatever the identity columns say"],
+    [/from public\.phoenix_crm_started_team_reps\(\) s\s*\n\s*where s\.hr_key = lower\(btrim\(o\.occupant_hr_id\)\)/, "a started rep is excluded — he is in the other half, with his team's date"],
+  ] as Array<[RegExp, string]>) {
+    assert.match(listOnly, pattern, `the list-only set requires: ${why}`);
+  }
+  // Never before the list existed, and never before he took the seat.
+  assert.match(
+    listOnly,
+    /greatest\(o\.effective_from, l\.list_built_on\)/,
+    "his Phoenix periods open on the later of the day he took the seat and the day his list was built",
+  );
+  assert.match(
+    listOnly,
+    /min\(\(c\.created_at at time zone 'Africa\/Cairo'\)::date\)/,
+    "the list's build day is read in Cairo, like every other day in this machinery",
+  );
+  assert.match(listOnly, /where not c\.is_test/, "test customers are not a list");
+
+  // Both new functions are SECURITY DEFINER, so the anon key must not reach them.
+  const doorMigration = lastDefinerRaw(
+    /create or replace function public\.phoenix_crm_doctor_list_reps\(/,
+    "phoenix_crm_doctor_list_reps",
+  );
+  for (const fn of ["phoenix_crm_list_only_reps", "phoenix_crm_doctor_list_reps"]) {
+    assert.ok(
+      doorMigration.includes(`revoke execute on function public.${fn}() from public, anon, authenticated;`),
+      `${fn} revokes EXECUTE from PUBLIC — anon and authenticated inherit it otherwise`,
+    );
+    assert.ok(
+      doorMigration.includes(`grant execute on function public.${fn}() to service_role;`),
+      `${fn} re-grants service_role, which the revoke above strips from a default ACL`,
+    );
+  }
+
+  // 🔴 THE VISITS DOOR IS UNTOUCHED, AND THAT IS THE POINT. Everything that decides whether somebody
+  // WORKED — the four unified views, field-work compliance and its payroll-deduction recommendation, the
+  // CRM no-activity / DSM no-record / holiday-bridge connectors, the attendance day maps, the KPI
+  // boards, Early Birds — still asks `phoenix_crm_started_team_reps`, so a team's counting source moves
+  // only on the owner's own Start click. This migration moves the DOCTOR LIST and nothing else.
+  assert.doesNotMatch(
+    stripSqlComments(doorMigration),
+    /create or replace (function public\.phoenix_crm_started_team_(reps|seats)|view public\.crm_(visits|plan_entries|checkins)_unified)\b/,
+    "the door migration redefines neither the started-team functions nor any unified view",
+  );
+  const startedReps = read("src/lib/crm/phoenix-started-reps.ts");
+  assert.match(
+    startedReps,
+    /export const PHOENIX_CRM_DOCTOR_LIST_REPS_RPC = "phoenix_crm_doctor_list_reps"/,
+    "the TypeScript side names the doctor-list RPC",
+  );
+  assert.match(
+    read("src/lib/crm/contact-lists/service.ts"),
+    /loadDoctorListRepWindows\(\), getCrmCutoverSetting\(\)/,
+    "the doctor-list service reads the doctor-list door, so the screen and the database agree",
+  );
+  for (const reader of [
+    "src/lib/crm/rep-day.ts",
+    "src/lib/early-birds/collect.ts",
+    "src/lib/crm/kpis-board.ts",
+    "src/lib/crm/call-rate-service.ts",
+  ]) {
+    assert.match(
+      read(reader),
+      /loadStartedRepWindows\(\)/,
+      `${reader} still reads the STARTED windows — the doctor-list door must never reach a reader about work`,
+    );
+    assert.doesNotMatch(
+      read(reader),
+      /loadDoctorListRepWindows/,
+      `${reader} must not read the doctor-list door — it would count a vendor-less rep's days as Phoenix's`,
+    );
+  }
 }

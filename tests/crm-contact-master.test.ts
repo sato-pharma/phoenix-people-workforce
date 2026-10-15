@@ -327,7 +327,17 @@ export function runCrmContactMasterTests() {
       "no migration defines public.crm_contact_master_refresh — the whole doctor-list refresh is gone",
     );
     const newest = definitions[definitions.length - 1]!;
-    const refresh = stripSqlComments(read(`supabase/migrations/${newest}`)).replace(/\r\n/g, "\n");
+    const file = stripSqlComments(read(`supabase/migrations/${newest}`)).replace(/\r\n/g, "\n");
+    // Counted inside the FUNCTION, not across the file. The rule is about this one body's snapshots, and
+    // a migration may legitimately carry siblings that read the same table — 20261015215500 defines
+    // `phoenix_crm_list_only_reps`, whose whole job is to find the seats that hold a list, and re-emits
+    // `crm_contact_list_change_apply`, which mirrors an approved decision into it. A file-wide count read
+    // those as a second snapshot of the refresh and failed with the message below, which names a defect
+    // that was not there.
+    const open = file.lastIndexOf("create or replace function public.crm_contact_master_refresh(");
+    const close = file.indexOf("$function$;", open);
+    assert.ok(open >= 0 && close > open, `${newest}: the refresh must be closed with $function$;`);
+    const refresh = file.slice(open, close + "$function$;".length);
 
     assert.equal(
       refresh.split("public.phoenix_crm_customers").length - 1,
