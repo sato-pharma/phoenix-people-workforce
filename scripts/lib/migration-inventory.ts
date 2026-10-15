@@ -813,6 +813,23 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // 1e43480404794f268e228f85126f9c16 (7,679 chars), this file its only definer — so its existence
   // already proves the file ran, and the digest proves it ran in THIS generation (#5921).
   "20261015020803_admin_settle_service_fee_request.sql",
+  // Applied by hand to production on 2026-10-15 at 22:07 Cairo through
+  // `PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com node scripts/apply-sql-file.mjs … production`
+  // (the standing route — both MCP doors refuse a `create or replace function` whose body merely
+  // CONTAINS a `delete` or a `drop table pg_temp.…`), which writes NO ledger row. All four of its
+  // functions were read back on production, md5-equal to the file's own bodies: the two it creates,
+  // phoenix_crm_list_only_reps at ce348bea5b05175d6298dc7f79417820 and
+  // phoenix_crm_doctor_list_reps at 6d63cbefda825947e76dccfe6dd7a5d8 (both `prosecdef` true,
+  // `proconfig` {search_path=public}, proacl {postgres=X/postgres,service_role=X/postgres} — the
+  // revoke-from-PUBLIC shape the file writes), and the two it re-emits with one call site each
+  // changed, crm_contact_master_refresh at f099c54bdeed10ee8b8756968a972c73 and
+  // crm_contact_list_change_apply at 40d256cff9fb976d6ba1799f02bedade, against pre-images
+  // 7194a3929cef15051f541d5bab6ee875 and b5a5a2ab9ec3a9ef14f6bff322c0f445. Its effect was then
+  // measured rather than assumed: one `select public.crm_contact_master_refresh()` returned
+  // phoenixAssignmentsOpened 1223 with assignmentsClosed 0, assignmentsDiscarded 0 and
+  // phoenixVendorHandedOver 0 — the nine October hires' lists opened, nobody else's touched.
+  // Re-applying it is a no-op on all four live bodies.
+  "20261015215500_a_vendorless_reps_phoenix_list_opens.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
