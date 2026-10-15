@@ -1,6 +1,6 @@
 ---
 name: a-declined-supabase-mcp-apply-is-not-a-no
-description: "The Supabase MCP apply_migration can come back {status: declined} three times running even with the owner's typed authorization, and that decline is the TOOL LAYER, not his answer - so do not read it as a standing block and do not hammer the tool. BUT THE FALLBACK IS NOT PRE-AUTHORIZED: `scripts/apply-sql-file.mjs` opens a DIRECT Postgres connection, which is neither of the two paths AGENTS.md section 8 excepts from the production-migration gate (the Supabase MCP servers and the `supabase` CLI) - AGENTS.md does not name the script anywhere - so a PRODUCTION run through it needs his explicit word for that migration first, as the measured run had. It works, and it does NOT write the ledger, so put the ledger insert INSIDE the SQL file (one `sql.unsafe` runs the whole file, which is how `withLedgerInsert` keeps the staging path atomic) with the FILE's own version, because that is what the staging workflow records."
+description: "The Supabase MCP apply_migration can come back {status: declined} three times running even with the owner's typed authorization, and that decline is the TOOL LAYER, not his answer - so do not read it as a standing block and do not hammer the tool. SUPERSEDED 2026-10-15 - `scripts/apply-sql-file.mjs` IS NOW THE STANDING ROUTE, with no per-migration word ("make apply-sql-file.mjs the standing route when the MCP refuses a migration"), which reverses this note's own 2026-10-08 correction; the rule and its mechanics live in `.claude/rules/database.md`, "The migration ledger". It works, and it does NOT write the ledger, so put the ledger insert INSIDE the SQL file (one `sql.unsafe` runs the whole file, which is how `withLedgerInsert` keeps the staging path atomic) with the FILE's own version, because that is what the staging workflow records."
 metadata:
   node_type: memory
   type: project
@@ -14,10 +14,21 @@ immediately after the owner typed `apply the search_path hardening to production
 was the tool layer, not his answer, and §6's "a classifier denial is stale authorization, the fix is
 a fresh word from him" did **not** clear it.
 
-**Do not read that as a standing block, and do not hammer the MCP tool.** But the way past it is a
-fresh word from him, NOT a different pipe.
+**Do not read that as a standing block, and do not hammer the MCP tool.** The way past it is the
+fallback route below.
 
-🔴 **CORRECTED 2026-10-08 - THE FALLBACK BELOW IS NOT PRE-AUTHORIZED, AND THIS NOTE SAID IT WAS.**
+🔴 **SUPERSEDED 2026-10-15 — THE FALLBACK IS THE STANDING ROUTE NOW, AND NEEDS NO PER-MIGRATION
+WORD.** The owner's own words, after two sessions had escalated the same question on one day:
+*"make apply-sql-file.mjs the standing route when the MCP refuses a migration"*. The live rule, with
+the pooler host, the no-ledger-row consequence and the evidenced `ACKNOWLEDGED_EXCEPTIONS` entry it
+must end in, is `.claude/rules/database.md`, "The migration ledger". Everything from here to the end
+of this note stays because the MECHANICS are still exactly right; only the authorization sentence in
+the 2026-10-08 correction below is dead. What refuses, measured twice on 2026-10-15: both
+pre-authorized doors decline a `create or replace function` whose BODY merely CONTAINS a `delete` or
+a `drop table if exists pg_temp.…` — the classifier reads it as the statement being run — so #5923
+merged with its fix live only in code while production kept the old body.
+
+🔴 **The 2026-10-08 correction, now historical — IT NO LONGER BINDS.**
 AGENTS.md §8 pre-authorizes the `supabase-staging` and `supabase-production` MCP servers and the
 `supabase` CLI (incl. `db push`), and §6's protected action 2 excepts exactly those two.
 `scripts/apply-sql-file.mjs` is neither: it opens a DIRECT Postgres connection over the pooler with
