@@ -96,6 +96,13 @@ export function runOfferRoleSummaryTests(): void {
     "district plan",
     "field team",
     "market expansion",
+    // Added 15 Oct 2026. The 2026-10-07 sweep above moved the SALES paragraph out of the designs and
+    // missed this, because it is not in that paragraph: the closing sentence of four designs read
+    // "We believe your leadership will be a strong addition to our organisation", and the executive
+    // design wore a "Leadership Appointment" badge in its title block. Both printed on every letter,
+    // so an Office Coordinator offer was congratulated on leadership nobody had offered them. One
+    // word catches both, and it catches a badge as well as a paragraph.
+    "leadership",
   ];
   for (const [name, blocks] of designs) {
     const text = blockText(blocks);

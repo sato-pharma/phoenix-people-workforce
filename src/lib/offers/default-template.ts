@@ -241,7 +241,7 @@ export function defaultOfferBlocks(): OfferBlock[] {
       props: {
         html:
           "<p style='margin-top:12px'>Please confirm your acceptance of this offer by signing below and " +
-          "returning a copy of this letter. We believe your leadership will be a strong addition to our " +
+          "returning a copy of this letter. We believe you will be a strong addition to our " +
           "organisation, and we look forward to welcoming you onboard.</p>",
       },
       type: "text",

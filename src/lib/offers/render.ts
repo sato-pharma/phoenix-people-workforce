@@ -718,7 +718,11 @@ h1{font-size:26pt;letter-spacing:-.9px;margin-top:14pt;text-transform:uppercase}
 .foot{margin-top:9pt;padding-top:0;border-top:0}
 .foot p{font-size:6.5pt;max-width:100%;line-height:1.35}
 .foot .pg{display:none}
-.welcome{border:0;margin-top:16pt}
+/* 8pt, not the 16pt this skin shipped with: the band is the LAST element on the letter and at
+   16pt it did not fit under the foot, so every executive offer printed a third page holding
+   nothing but this band. Measured on a Letter page — the threshold sits between 14 and 16pt,
+   and 8pt clears it for the longest role paragraph in the catalogue as well as the blank one. */
+.welcome{border:0;margin-top:8pt}
 .welcome-b{background:var(--ink);padding:14pt 16pt}
 .welcome .k{font-size:7pt;color:#8ed4ef;color:color-mix(in srgb,var(--brand) 40%,#ffffff)}
 .welcome .t{color:#fff;font-size:11pt;margin-top:7pt}
