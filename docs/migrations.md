@@ -209,6 +209,29 @@ the same file on staging. Each of the eight was therefore checked against stagin
 before being added, and removing all eight again leaves staging green — proven by re-running that
 leg with the entries stripped.
 
+#### The daily workflow now runs the staging sweep too
+
+At the owner's instruction ("add the staging ledger-gap sweep to the daily drift-check workflow")
+`.github/workflows/migration-drift-check.yml` has a second staging migrations leg,
+`migrations_staging_sweep`, running `check:migrations-swept` against staging with the grace window
+down. It sits beside the existing grace-window leg rather than replacing it, because the pair says
+something neither says alone: the old leg failing means a gap **older than 48 hours**, the new one
+failing while the old one passes means a gap **younger than 48 hours** — and on staging, which
+`staging-migrate.yml` applies automatically on every merge, any gap at all is a broken automation.
+
+It is **staging only, deliberately.** Production has no automation, and a hand-apply through the
+standing route writes no ledger row, so a no-grace production leg would raise a finding for every one
+of those inside the hour it was applied. `tests/migration-drift-check-flags.test.ts` pins that the
+leg points at staging and never at production.
+
+🔴 **It can lie in exactly one way, a race.** A cron run that fires in the minutes between a merge and
+`staging-migrate.yml` recording it reads that migration as a gap. The schedule is 07:00 UTC, ten in
+the morning in Cairo, so it needs a merge just before; re-run the workflow before acting on a lone
+sweep failure on a database that proves clean. And 🔴 **a new leg must join BOTH outcome gates** —
+the job-summary report and the Telegram alert — because every leg is `continue-on-error`, so those
+two conditions are the only thing that turns a finding into a message. The same test pins that for
+every leg, which is the 2026-08-06 incident (three days, 412 exposed customer names) one edit away.
+
 ## Migration Pipeline
 
 **Reconciled 2026-08-04.** There is currently **no scripted gate** for taking a new
