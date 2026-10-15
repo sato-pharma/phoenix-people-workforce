@@ -470,8 +470,15 @@ export function runPhoenixCrmDoubleVisitPlanTests(): void {
     );
     assert.deepEqual(
       holding("@/lib/phoenix-crm/server/double-visit-plans"),
-      ["app/api/phoenix-crm/double-visit-plans/route.ts", "src/lib/phoenix-crm/server/team.ts", "src/lib/phoenix-crm/view-types.ts"],
-      "the service is reached by its route, the Team tab's flag and the screens' type names only",
+      [
+        "app/api/phoenix-crm/double-visit-plans/route.ts",
+        "src/lib/phoenix-crm/server/team.ts",
+        // The Visit report generator's loader (2026-10-15) reads the plans through the service's own
+        // `readDoubleVisitPlansForReport`; the screen is the Super Admin's and the SFE Manager's alone.
+        "src/lib/phoenix-crm/server/visit-report.ts",
+        "src/lib/phoenix-crm/view-types.ts",
+      ],
+      "the service is reached by its route, the Team tab's flag, the Super Admin's visit report and the screens' type names only",
     );
     assert.deepEqual(
       holding("@/components/phoenix-crm/double-visit-plan-section"),

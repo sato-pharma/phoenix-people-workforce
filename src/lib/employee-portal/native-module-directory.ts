@@ -79,6 +79,8 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   // the section is not a choice, it is whichever one `buildEmployeePortalSections` puts the href in,
   // and the drift test re-derives it from that builder rather than trusting this line.
   "/employee-portals/place-checks": { icon: "location-outline", section: "Phoenix CRM" },
+  // The district manager's Visit report rides the same flag and band as Place checks.
+  "/employee-portals/visit-report": { icon: "clipboard-outline", section: "Phoenix CRM" },
   // ── My Workspace ──────────────────────────────────────────────────────────────────────────────
   "/employee-portals/interview-calendar": { icon: "videocam-outline", section: "My Workspace" },
   "/employee-portals/organogram": { icon: "business-outline", section: "My Workspace" },

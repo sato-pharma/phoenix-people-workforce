@@ -264,8 +264,15 @@ export const MODULES = [
       "app/api/cron/phoenix-crm-integrity-sweep/**",
       "tests/phoenix-crm-{behaviour-integrity,blind,duplicate,location-integrity,refused-readings-board,touch-trail}*",
       "tests/crm-integrity-*",
+      // The Visit report generator (2026-10-15) reads the integrity evidence and shares its audience, so its
+      // files load this module's rules too.
+      "src/lib/phoenix-crm/{visit-report-*,server/visit-report*}.ts",
+      "src/components/phoenix-crm/visit-report/**",
+      "app/**/phoenix-crm/visit-report/**",
+      "app/employee-portals/visit-report/**",
+      "tests/phoenix-crm-visit-report*",
     ],
-    keywords: ["integrity board", "behaviour integrity", "photo sweep", "duplicate customers", "touch trail", "refused readings", "mock-location", "mock location detection"],
+    keywords: ["visit report", "integrity board", "behaviour integrity", "photo sweep", "duplicate customers", "touch trail", "refused readings", "mock-location", "mock location detection"],
     tables: ["phoenix_crm_location_integrity", "phoenix_crm_behaviour_integrity", "phoenix_crm_photo_fingerprints", "phoenix_crm_touch_trail"],
   },
   // 🔴 SPLIT AGAIN, 2026-10-13, ONE BYTE OVER: `phoenix-crm-boards` reached 33 rules and its injected

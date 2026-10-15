@@ -2115,6 +2115,10 @@ const employeePortalNavigationSectionSeeds = [
       // `tests/nav-roles-name-only-permission-holders.test.ts`. The permission keeps the palette
       // honest and the page's own gate is the boundary.
       { href: "/employee-portals/place-checks", icon: MapPinCheck, label: "Place checks", permissions: [{ resource: "phoenix_crm", action: "read" }] },
+      // Visit report — a district manager's own team (owner, 2026-10-15), listed for the palette and the tab
+      // name exactly as the row above is, with NO `roles:` list for the same reason: an acting district
+      // manager holds the seat without the role name. The page's own gate (`canReadVisitReport`) is the boundary.
+      { href: "/employee-portals/visit-report", icon: ClipboardList, label: "Visit report", permissions: [{ resource: "phoenix_crm", action: "read" }] },
     ],
     label: "Leave Management",
   },
@@ -4470,6 +4474,20 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager"],
   },
   {
+    // The Visit report generator (owner, 2026-10-15): pick a rep or a district and a period, choose the
+    // fields, and read a dashboard, a map and every visit — or download the same choice as one workbook
+    // tab. The Super Admin's and the SFE Manager's; the enforcing gate is `canReadVisitReport` inside the
+    // page AND the loader, and this card only draws the link. It shows where named people's phones were,
+    // so it is a page of its own under /admin that a rep cannot open, never a tab the field app renders.
+    // The SFE Manager is offered every field except the mock-location evidence.
+    href: "/admin/phoenix-crm/visit-report",
+    icon: ClipboardList,
+    label: "Visit Report",
+    description: "Pick a rep or a district and a period, choose the visit fields you want, and get a dashboard, a map and an Excel file built from exactly that choice. Shown to no rep.",
+    permissions: [{ resource: "phoenix_crm", action: "read" }],
+    roles: ["Super Admin", "SFE Manager"],
+  },
+  {
     // Captures Phoenix CRM turned away on their LOCATION, and whether the rep got through afterwards
     // (owner, 2026-10-03: "build the refused readings view for the SFE").
     //
@@ -5116,6 +5134,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/plan-verification",
           "/admin/doctor-list-changes",
           "/admin/field-crm",
+          // A report he builds from the visits rather than a check on them — a board, not data quality.
+          "/admin/phoenix-crm/visit-report",
         ],
       },
       {

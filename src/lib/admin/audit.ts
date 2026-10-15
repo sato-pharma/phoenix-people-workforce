@@ -324,6 +324,9 @@ export type AuditEntityType =
   // access story, and a file naming individual reps and their own work leaves the building. No
   // migration — audit_logs has no CHECK on entity_type.
   | "phoenix_crm_reports_export"
+  // Who downloaded a Visit report workbook (2026-10-15), over which rep or district and period. The Super
+  // Admin and the SFE Manager only; no migration — audit_logs has no CHECK on entity_type.
+  | "phoenix_crm_visit_report_export"
   // Who downloaded the location-integrity board, and how much of it (2026-10-13). ITS OWN TYPE and
   // not folded into the reports pack above, because what leaves the building here is different in
   // kind: the evidence a named rep's capture was questioned, which Phoenix CRM never shows that rep.

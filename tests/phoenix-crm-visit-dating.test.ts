@@ -201,7 +201,8 @@ export function runPhoenixCrmVisitDatingTests(): void {
     assert.ok(route.includes("await issueTimeAnchor(viewer, body, captureClientOf(request.headers))"), "the route reads the client from the request's own headers");
 
     // No web screen asks for an anchor, and none may start to: the queue it feeds does not exist there.
-    for (const file of readdirSync(new URL("src/components/phoenix-crm/", ROOT))) {
+    // Recursive since the Visit report's own folder joined the web screens (2026-10-15): a folder is not a file.
+    for (const file of readdirSync(new URL("src/components/phoenix-crm/", ROOT), { recursive: true }).map(String).filter((name) => /\.tsx?$/.test(name))) {
       const text = readFileSync(new URL(`src/components/phoenix-crm/${file}`, ROOT), "utf8");
       assert.equal(text.includes("time-anchor"), false, `${file} asks for a time anchor — the web app has no offline queue to date from one`);
       assert.equal(/\boffline:\s*\{/.test(text), false, `${file} sends an offline claim — the web app has no queue to make one from`);
