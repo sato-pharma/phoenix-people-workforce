@@ -136,6 +136,12 @@ const sentInAppMustBeBellRenderable: ReconciliationCheck = {
  * condition ruled permanent is one nobody reads within a week — including on the night it is
  * telling the truth.
  *
+ * That is not hypothetical. The allowance named `admin-HR` alone, so the 17 TEST ACCOUNTS — which
+ * hold no HR_ID BY DESIGN — breached every morning at 04:40 from 30 Aug to 15 Oct 2026: 43
+ * consecutive Telegram alerts to the owner for the design working as intended, each one the only
+ * failing check out of 18. Widening the allowance to that named class is the fix; it is a class and
+ * not a blanket, so a login outside both classes still pages, which is the whole point.
+ *
  * The probe uses a real production event shape (attendance's ingestion-stalled alert, whose
  * strategy is permission_based and therefore walks the full active-account list). It reads only.
  */
@@ -148,10 +154,14 @@ const fanoutHasNoDuplicateHuman: ReconciliationCheck = {
   async run(): Promise<ReconciliationOutcome> {
     const { data, error } = await getSupabaseAdmin()
       .from("app_auth_users")
-      .select("login_id,hr_id")
+      .select("login_id,hr_id,is_test_persona")
       .eq("is_active", true);
     if (error) throw new Error(`Active login read failed: ${error.message}`);
-    const accounts = (data ?? []) as Array<{ login_id: string | null; hr_id: string | null }>;
+    const accounts = (data ?? []) as Array<{
+      login_id: string | null;
+      hr_id: string | null;
+      is_test_persona: boolean | null;
+    }>;
 
     const byHuman = new Map<string, string[]>();
     for (const account of accounts) {
@@ -162,8 +172,11 @@ const fanoutHasNoDuplicateHuman: ReconciliationCheck = {
     const sharedHrIds = [...byHuman.entries()].filter(([, logins]) => logins.length > 1);
     const loginsWithoutHuman = accounts
       .filter((account) => !String(account.hr_id ?? "").trim())
-      .map((account) => String(account.login_id ?? "").trim())
-      .filter(Boolean);
+      .map((account) => ({
+        login: String(account.login_id ?? "").trim(),
+        isTestPersona: account.is_test_persona,
+      }))
+      .filter((account) => Boolean(account.login));
     const { explained: explainedWithoutHuman, unexplained: unexplainedWithoutHuman } =
       partitionLoginsWithoutEmployeeRow(loginsWithoutHuman);
 
@@ -202,11 +215,25 @@ const fanoutHasNoDuplicateHuman: ReconciliationCheck = {
 
     // Named even when everything holds: an exception nobody can see stops being an exception and
     // becomes a silent hole, and the next reader has no way to tell the two apart.
+    //
+    // Grouped by reason rather than one line per login. The test-account class is 17 logins on
+    // production, and repeating its sentence once per login put ~1,500 characters of identical
+    // prose into a Telegram alert — which buries the breach it is standing next to. Every login is
+    // still named in full: this collapses the REASONS, never the names (no ellipsis, §4).
+    const reasonsInOrder: string[] = [];
+    const loginsByReason = new Map<string, string[]>();
+    for (const { login, reason } of explainedWithoutHuman) {
+      if (!loginsByReason.has(reason)) {
+        loginsByReason.set(reason, []);
+        reasonsInOrder.push(reason);
+      }
+      loginsByReason.get(reason)?.push(login);
+    }
     const explained =
       explainedWithoutHuman.length === 0
         ? ""
-        : ` Carrying no HR_ID by design, and excluded: ${explainedWithoutHuman
-            .map(({ login, reason }) => `${login} — ${reason}`)
+        : ` Carrying no HR_ID by design, and excluded: ${reasonsInOrder
+            .map((reason) => `${(loginsByReason.get(reason) ?? []).join(", ")} — ${reason}`)
             .join("; ")}.`;
 
     return {

@@ -398,7 +398,11 @@ export async function notifyIReports360SyncResult(input: IReports360SyncNotifyIn
         await createSystemNotification({
           actionUrl: "/admin/crm",
           actorId: "ireports360-sync-cron",
-          channels: ["in_app", "telegram", "push"],
+          // A FAILURE takes every channel. A routine success does not reach Telegram (owner rule
+          // 2026-10-15) — it stays on record in-app. The real enforcement is the post-filter in
+          // basePolicyChannels, which the policy fallback cannot bypass; this line is here so the
+          // rule is visible where the digest is composed. See ops-success-digest-channel-guard.ts.
+          channels: input.status === "failed" ? ["in_app", "telegram", "push"] : ["in_app", "push"],
           eventType: `ireports360_sync_${input.status}`,
           message,
           metadata: {
