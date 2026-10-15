@@ -691,19 +691,6 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // (1..20 and 1..100) as written, the BEFORE INSERT trigger phoenix_crm_visits_offplan_cap present
   // on phoenix_crm_visits, and the settings row reading 2/8 — the owner's own numbers (2026-10-10).
   "20261010214440_phoenix_crm_offplan_visit_caps.sql",
-  // 2026-10-15. The contact-master refresh that reads the customer table once, applied to production with
-  // `node scripts/apply-sql-file.mjs <file> production` at 20:14 Cairo — the plain pooler path, which runs the
-  // SQL and writes NO ledger row, so the absence here is the apply route and not a missed migration.
-  // Production's ledger holds 20261015133143 and 20261015155642 and nothing for 20261015132445.
-  // Verified by digest, not by presence: `md5(pg_proc.prosrc)` for public.crm_contact_master_refresh on
-  // ozucdzovmcqvepbozvqf reads 7194a3929cef15051f541d5bab6ee875 over 29,236 chars, equal to md5 of this file's
-  // own dollar-quoted body, with prosecdef false and proconfig {search_path=public}. This file is the function's
-  // LAST definer — it supersedes 20261012184500_contact_refresh_survives_a_doctor_added_twice.sql, whose body
-  // digested 34220e8603660375d75fb06bb58d116e before the apply — so a catalog probe could not have told the two
-  // generations apart. The hourly job ran clean on it afterwards: job_heartbeats 'phoenix-crm-contact-lists'
-  // last_success_at 20:18:14 Cairo, last_fail_at still 12:59:21 Cairo, the 23503 foreign-key abort on
-  // crm_contact_assignments this migration exists to prevent. Account: docs/phoenix-crm-switchover-2026-10.md.
-  "20261015132445_contact_refresh_reads_the_customer_table_once.sql",
   // 2026-10-15, and the plainest entry in this list because the session that caused it wrote it.
   // The fix was applied to production with `node scripts/apply-sql-file.mjs <file> production` at
   // 16:55:40 Cairo — a plain pooler connection, which runs the SQL and writes NO ledger row at all,
