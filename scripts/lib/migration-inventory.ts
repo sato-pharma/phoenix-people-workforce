@@ -691,6 +691,20 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // (1..20 and 1..100) as written, the BEFORE INSERT trigger phoenix_crm_visits_offplan_cap present
   // on phoenix_crm_visits, and the settings row reading 2/8 — the owner's own numbers (2026-10-10).
   "20261010214440_phoenix_crm_offplan_visit_caps.sql",
+  // 2026-10-15, and the plainest entry in this list because the session that caused it wrote it.
+  // The fix was applied to production with `node scripts/apply-sql-file.mjs <file> production` at
+  // 16:55:40 Cairo — a plain pooler connection, which runs the SQL and writes NO ledger row at all,
+  // so the absence here is the apply route and not a missed migration. The production ledger holds
+  // nothing at or after 20261015133143.
+  // Verified by digest, not by presence: `md5(pg_proc.prosrc)` for
+  // public.phx_resubmit_marketing_request on ozucdzovmcqvepbozvqf reads
+  // eb27af44e76d8cb90328858775cbb183 over 6,689 chars, and md5 of this file's own dollar-quoted
+  // body is the same hash at the same length. This file is the function's LAST definer — it
+  // supersedes 20261014140000_marketing_resubmit_atomic.sql, whose body digested
+  // ed5ab6fe6a089faf6281f4817ee5ad77 before the apply — so existence could not have answered it:
+  // the older generation satisfies any catalog probe. `prosecdef` true and proacl
+  // {postgres=X/postgres,service_role=X/postgres} were read in the same query, so the REVOKE landed.
+  "20261015164459_marketing_resubmit_audit_id_uses_stored_requester.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
