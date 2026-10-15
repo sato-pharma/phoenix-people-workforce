@@ -202,6 +202,24 @@ export function runOfferBuiltinTemplateTests() {
   assert.ok(executiveDoc.css.includes("--brand:#0b86be"), "the executive blue must reach the stylesheet");
   assert.ok(classicDoc.css.includes("--brand:#0879b8"), "the classic design keeps the SATO brand blue");
 
+  // ── The welcome band must not orphan onto a page of its own ────────────────────────────────
+  // It is the LAST element of the executive letter, and the letter is US Letter rather than A4, so
+  // it has less room than every other design. At the 16pt this skin shipped with, it did not fit
+  // under the foot: EVERY executive offer printed a third page carrying the band and nothing else
+  // (measured 15 Oct 2026 on the live template, for a blank role paragraph and for the longest one
+  // in the catalogue alike). The threshold sits between 14pt and 16pt, so the margin is pinned at or
+  // under 14pt rather than at one value — a smaller gap is a judgement, a bigger one is the defect.
+  const welcomeMarginPt = Number(/\.welcome\{border:0;margin-top:(\d+(?:\.\d+)?)pt\}/.exec(executiveDoc.css)?.[1] ?? NaN);
+  assert.ok(
+    Number.isFinite(welcomeMarginPt),
+    "the executive skin must still set its own top margin on the welcome band — the rule was renamed or lost",
+  );
+  assert.ok(
+    welcomeMarginPt <= 14,
+    `the executive welcome band's top margin is ${welcomeMarginPt}pt; over 14pt it does not fit under the foot `
+      + "and every executive offer prints an empty third page holding only that band",
+  );
+
   // ── The Sato corporate design ──────────────────────────────────────────────────────────────
   // A third skin appended to the base, added beside the two frozen letters and changing neither.
   assert.ok(satoDoc.css.length > classicDoc.css.length, "the Sato skin is an override sheet appended to the base");
@@ -770,6 +788,13 @@ function premiumSkinTests(
  * A red here means a change reached classic, executive, sato or house. If it was meant to, the owner
  * has to have said so, and the digest below is the thing to update with his word in the commit; if
  * it was not meant to, the change belongs behind `variant === "premium"` where it cannot reach them.
+ *
+ * Re-pinned once, on 15 Oct 2026, on his word: "fix the leadership wording and the executive
+ * design's empty third page". Classic, executive and house moved because the closing sentence no
+ * longer tells every candidate their LEADERSHIP is a strong addition (the executive title badge no
+ * longer says "Leadership Appointment" either), and the executive letter's welcome band now fits
+ * under the foot instead of orphaning onto a third page. SATO IS UNCHANGED, which is the proof the
+ * edit reached the words it was aimed at and nothing else — its sentence never said leadership.
  */
 function frozenDesignTests(): void {
   const fixture: OfferFields = {
@@ -795,9 +820,9 @@ function frozenDesignTests(): void {
     signatureUrl: "data:image/png;base64,BBBB",
   };
   const frozen: Record<string, string> = {
-    classic: "9b59b7b4efa20da29ce79f2fb96644438fa3f0901df706250b789593701574db",
-    executive: "17da5f733a4bd1d0d5b355be8f697c8ffd299b21f45dbe0f1a34acf782888325",
-    house: "71e00e67a41e5b8e4796a4ab60b50780207d9eaab69c07c19efcb63b6c6508a1",
+    classic: "6904dc4bbad6bbf4cf50b67c044da4624bba253c8fe8804c2338fd426c78017c",
+    executive: "0f37ee07dc014f09f77e319a1eb015e6379b7cd1e0e47523d1c93d36cc742bef",
+    house: "32a225cbdb295ebb1812115339215c230b35399417cfd56dabeab8a2a6243b29",
     sato: "0e2613161bd24a73ed50fc3d6efe67b4454e1c080b29cb4ee71e9b1a6e5aa014",
   };
   for (const [key, digest] of Object.entries(frozen)) {
