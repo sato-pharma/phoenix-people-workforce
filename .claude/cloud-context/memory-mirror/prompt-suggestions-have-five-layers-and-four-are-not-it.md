@@ -1,11 +1,11 @@
 ---
 name: prompt-suggestions-have-five-layers-and-four-are-not-it
-description: "The suggestion gate is DECOMPILED, so it is never guessed again: Claude Code 2.1.293's chain is unfocused -> early_conversation (<2 assistant turns) -> last_response_error -> elicitation_active -> plan_mode -> rate_limit -> cache_cold (10,000 tokens) -> unused_streak (20) -> empty. USAGE DOES NOT STOP THEM BELOW A HARD `rejected`, because CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION exempts the `allowed_warning` band - that is why both copies of the variable must stay. The two that actually bite here are UNFOCUSED and EARLY_CONVERSATION, and neither has a setting."
+description: "The suggestion gate is DECOMPILED. THE DESKTOP APP USES THE AGENT-SDK GATE, NOT THE CLI CHAIN: it skips on `host_paused` or on a turnOrigin in {scheduled, task_notification, auto_continuation, host_synthetic, system} — so a turn after a BLOCKED STOP HOOK (auto_continuation) or a side-session task_notification gets NO suggestion, by design — which is why next-step-capture.mjs WARNS and never blocks since 2026-10-15. USAGE NEVER STOPS THEM below a hard `rejected`, because CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION exempts the `allowed_warning` band. Also holds the CLI chain (unfocused, early_conversation, the 10,000-token gate, the 20-unused back-off) and the four things that are NOT the cause."
 metadata:
   node_type: memory
   type: project
   originSessionId: 0e88bd89-241a-48ce-8073-3ee1d7f63569
-  modified: 2026-10-15T12:40:00.000Z
+  modified: 2026-10-15T13:23:53.891Z
 ---
 
 Read out of `claude.exe` 2.1.293 on **2026-10-15** (`grep -aoE` over the 256 MB binary, the technique
@@ -16,6 +16,42 @@ then ruled: *"never stop suggestions from appearing in the text box even if the 
 and each one is SILENT: no log line, no telemetry file, no transcript entry.** (Searched: no
 `suggest*` field exists in any session JSONL; `atis-latch` is always `""`; the app's own `Logs/`
 folder never mentions it.) **Measure the chain, do not re-measure the switches.**
+
+🔴 **THE DESKTOP APP DOES NOT USE THE CLI CHAIN BELOW — IT RUNS THE AGENT SDK, AND THE SDK GATE IS
+`afterResult` -> `N_({paused, turnOrigin})`, WHICH HAS EXACTLY TWO SKIP REASONS** (read out of
+`claude.exe` 2.1.293, 2026-10-15; this session had `CLAUDE_AGENT_SDK_VERSION=0.3.295`):
+
+```
+if (paused)                          -> "host_paused"
+else if (sM.has(turnOrigin()))       -> "not_user_started"
+else                                 -> null   (generate)
+sM = new Set(["scheduled","task_notification","auto_continuation","host_synthetic","system"])
+```
+
+- 🔴 **`auto_continuation` IS WHAT A BLOCKED STOP HOOK PRODUCES, SO `next-step-capture.mjs` REFUSING A
+  REPLY COSTS HIM THAT TURN'S SUGGESTION.** It fired twice on 2026-10-15 over a missing `Next step:`
+  line, and each re-emitted turn was an auto-continuation — excluded by name. **Getting the opening
+  line right in the FIRST emission is the one half of this a session controls.**
+- ✅ **FIXED THE SAME DAY, at his instruction ("soften next-step-capture so it warns instead of
+  blocking"): the hook now emits `{nextStepVerdict:"warn", reason, systemMessage}` and NEVER
+  `{decision:"block"}`,** so the turn ends normally and keeps its suggestion while the model reads
+  the verdict and fixes the line in its NEXT reply. A warned line is deliberately NOT captured — the
+  status bar keeps its last good line rather than handing him a placeholder to send. Both halves are
+  pinned by `node ~/.claude/hooks/next-step-capture.mjs selftest` (33 cases, 0 failed), including one
+  case that goes red the moment `decision: 'block'` comes back. 🔴 **Never restore the block to "make
+  the rule stick" — it spends the thing it is protecting.** The auto-mode classifier also refuses the
+  edit as self-modification, so a session cannot quietly undo it.
+- 🔴 **A TURN A SIDE SESSION'S `task_notification` STARTED IS EXCLUDED TOO**, as are a `scheduled` run
+  and anything `system` or `host_synthetic`. So a box that is empty after a cron, a subagent report or
+  a hook block is the product working as designed — never a switch, never usage.
+- **`host_paused`** is the app's own `set_prompt_suggestions_paused`, which it sends "for a host whose
+  composer is not on screen". Nothing a session can read or set; it clears when the app un-pauses.
+- 🔴 **`CLAUDE_CODE_SESSION_KIND` IS UNSET IN A DESKTOP SESSION, SO `Nt()` IS FALSE** and the CLI
+  focus branch, if it ran, would be the LENIENT one (`terminalFocus` starts `"unknown"`, and only a
+  real `"blurred"` skips). Do not blame focus without reading that variable.
+
+The CLI chain below still applies to a terminal session, and its size and rate-limit constants are
+the same in both.
 
 **The chain, in the order the binary runs it** — `DIo()` at turn end, then `nIr()`:
 

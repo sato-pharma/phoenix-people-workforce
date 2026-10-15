@@ -31,10 +31,17 @@ The dates, his words and the incidents behind each line: `~/.claude/docs/standin
   pending items" and every closing message are done in the turn and never suggested. **Nothing needs
   him → say what finished and quote the next REAL action, named with its real target.** Never filler,
   never invented work. The old "nothing waits on you", with no quoted words, is dead.
-- **That opening line is MECHANICAL.** `~/.claude/hooks/next-step-capture.mjs` is a Stop hook: a
-  reply with no `**Next step:**` line is BLOCKED, and so is one wrong in five measured ways — a merge
+- **That opening line is MECHANICAL.** `~/.claude/hooks/next-step-capture.mjs` is a Stop hook: it
+  WARNS on a reply with no `**Next step:**` line, and on one wrong in five measured ways — a merge
   YOU will do, a placeholder inside the quoted words, a closing word or a re-check, a bare "merge it"
-  while the reply names the PR number, or a money move in the quoted words. It nudges at most once
+  while the reply names the PR number, or a money move in the quoted words. 🔴 **It WARNS, it NEVER
+  BLOCKS (owner, 2026-10-15: "never stop suggestions from appearing in the text box even if the
+  usuage is 99.99%") — never restore `{decision:"block"}`:** a blocked Stop hook makes the app
+  auto-continue, and the suggestion gate skips an `auto_continuation` turn by name, so the block
+  spent the very suggestion the hook exists to fill. The warning reaches the model as a
+  `systemMessage` and the NEXT reply carries the line. A warned line is deliberately NOT captured —
+  the bar keeps its last good line rather than offering him a placeholder to send. Both halves are
+  pinned by `node ~/.claude/hooks/next-step-capture.mjs selftest` (33 cases). It nudges at most once
   per turn and fails open on any error. Never remove it.
 - **Track the work visibly.** Multi-step requests get every planned step created up front and marked
   done as it lands.
@@ -170,9 +177,16 @@ The measurements and incidents behind each line: `~/.claude/docs/standing-rules-
   the gate exempts the whole warning band (`status === "allowed_warning" && the variable === true`),
   so at 99.99% suggestions still come; they stop for usage only at a hard `rejected`** (owner,
   2026-10-15: "never stop suggestions from appearing in the text box even if the usuage is 99.99%").
-  The two that really bite have NO setting: a session must be **the focused one when its turn ends**,
-  and a session's **first reply never gets one** (fewer than two assistant turns). The full nine-rung
-  chain, every silent skip reason and the 10,000-token gate: memory note
+  🔴 **The one that actually emptied his box was a HOOK, not a setting: the desktop app runs the
+  Agent-SDK gate, whose only two skip reasons are `host_paused` and a `turnOrigin` in
+  {`scheduled`, `task_notification`, `auto_continuation`, `host_synthetic`, `system`} — and a BLOCKED
+  Stop hook makes the app auto-continue, so the turn it produces is `auto_continuation` and gets no
+  suggestion.** `next-step-capture.mjs` blocked twice on 2026-10-15 and ate its own box both times;
+  it warns instead since that day and must never block again (line 34). A turn a side session's
+  `task_notification` starts is skipped the same way, and nothing can change that. Two more have NO
+  setting: a session must be **the focused one when its turn ends**, and a session's **first reply
+  never gets one** (fewer than two assistant turns). The full nine-rung chain, every silent skip
+  reason and the 10,000-token gate: memory note
   `prompt-suggestions-have-five-layers-and-four-are-not-it`.
 
 ## Compact Instructions

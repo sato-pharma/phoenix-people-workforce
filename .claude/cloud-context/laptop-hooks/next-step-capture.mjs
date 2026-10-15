@@ -159,12 +159,18 @@ function prune() {
  * the miss was INVISIBLE and nothing corrected it. The owner asked for it back on 2026-09-17:
  * "after each message ... any type any model any effort he show me a suggested next step".
  *
- * A Stop hook answering {decision:"block"} hands `reason` to the model and makes it keep
- * going. That is the one lever that does not care which model is answering.
+ * IT WARNS, IT NEVER BLOCKS (owner, 2026-10-15: "never stop suggestions from appearing in the
+ * text box even if the usuage is 99.99%"). It used to answer {decision:"block"}, which hands
+ * `reason` to the model and makes it keep going. That lever cost the very thing it protected:
+ * a blocked Stop hook makes the desktop app auto-continue, and the app's Agent-SDK suggestion
+ * gate skips any turn whose origin is "auto_continuation" BY NAME - so every block silently
+ * spent the suggestion this hook exists to fill. It blocked twice on 2026-10-15 and he watched
+ * the box come up empty both times. It now emits a `systemMessage`: the model reads the verdict
+ * and the NEXT reply carries the line, while the reply already on screen stands and the turn ENDS
+ * normally - which is the only state in which the app offers a suggestion at all.
  *
- * IT FIRES AT MOST ONCE PER TURN. `stop_hook_active` is true on the continuation this very
- * block caused; blocking again there is an infinite loop, so the second pass only captures and
- * a reply that STILL has no line is left alone rather than spun on.
+ * IT STILL FIRES AT MOST ONCE PER TURN. `stop_hook_active` stays honoured, so a continuation
+ * started for any other reason is not warned at a second time.
  *
  * It FAILS OPEN everywhere else — no transcript, no text, a throw, a tool-only turn: the turn
  * ends. A hook that can strand a reply is worse than a missing line.
@@ -610,7 +616,16 @@ if (process.argv[2] === 'selftest') {
     const captured = fs.existsSync(capFile) ? fs.readFileSync(capFile, 'utf8') : null;
     if (!out.trim()) return { blocked: false, reason: '', captured };
     const parsed = JSON.parse(out);
-    return { blocked: parsed.decision === 'block', reason: String(parsed.reason || ''), captured };
+    // `blocked` here means "the hook objected", which since 2026-10-15 it does by WARNING
+    // (nextStepVerdict: 'warn') rather than {decision:"block"}. Every case below asserts on the
+    // VERDICT, not on its force, so the table is unchanged.
+    return {
+      blocked: parsed.nextStepVerdict === 'warn' || parsed.decision === 'block',
+      reason: String(parsed.reason || ''),
+      captured,
+      decision: parsed.decision,
+      systemMessage: parsed.systemMessage,
+    };
   };
 
   const check = (label, ok, detail) => {
@@ -702,6 +717,22 @@ if (process.argv[2] === 'selftest') {
     'captured ' + JSON.stringify(capLink.captured),
   );
 
+  // THE 2026-10-15 CHANGE, pinned both ways. A wrong line must still be answered — and it must
+  // NEVER be answered with {decision:"block"}, because a block makes the app auto-continue and the
+  // suggestion gate skips an "auto_continuation" turn by name. Restoring the block to "make it
+  // stick" is precisely what these two catch.
+  const warned = decide('**Next step:** ready — “merge <PR> when green”', { sessionId: 'warned' });
+  check(
+    'a wrong line is answered by a WARNING, never a block',
+    warned.blocked && warned.decision === undefined && !!warned.systemMessage,
+    'decision ' + JSON.stringify(warned.decision) + ', systemMessage ' + JSON.stringify(!!warned.systemMessage),
+  );
+  check(
+    'a warned line is NOT captured, so a placeholder never becomes his ghost text',
+    warned.captured === null,
+    'captured ' + JSON.stringify(warned.captured),
+  );
+
   // stop_hook_active is the infinite-loop guard: the continuation pass must never block again,
   // however wrong the reply still is.
   const cont = decide('no line here at all', { sessionId: 'cont', stopHookActive: true });
@@ -749,7 +780,6 @@ if (process.argv[2] === 'selftest') {
   process.exit(failed ? 1 : 0);
 }
 
-let blocked = false;
 try {
   const input = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^﻿/, ''));
   const sessionId = input?.session_id;
@@ -776,16 +806,26 @@ try {
     } else {
       reason = contentViolation(step, text);
     }
+    // WARN, NEVER BLOCK - see the head of this file. `systemMessage` reaches the model without
+    // forcing a continuation, so the suggestion on the reply already shown survives.
+    // `nextStepVerdict` is inert to Claude Code (an unknown key is ignored) and is the field
+    // the selftest reads to tell a warned verdict from a clean one.
+    let warned = false;
     if (reason && text && input?.stop_hook_active !== true) {
-      process.stdout.write(JSON.stringify({ decision: 'block', reason }));
-      blocked = true;
+      process.stdout.write(JSON.stringify({ nextStepVerdict: 'warn', reason, systemMessage: reason }));
+      warned = true;
     }
 
-    // Skipped while blocking: the continuation runs this hook again a moment later and
-    // writes the real value, so there is no point flickering the bar to empty in between.
-    if (!blocked) {
-      // An empty file is meaningful and different from a missing one: it means the reply
-      // carried no next step even after the nudge, and the bar prints nothing.
+    // A WARNED line is NEVER captured, and that is deliberate - it is the box's last guard, not a
+    // leftover of the blocking era. Every content check exists to keep one specific string out of
+    // his input box: a placeholder he would send unfilled (he did, 2026-09-17), a money move, a
+    // bare "merge it" that reaches the wrong session, a closing word, a re-check. Writing the bad
+    // line anyway would hand him exactly that as ghost text. So the file is left untouched and the
+    // bar keeps its last GOOD line, which is never one of those strings.
+    //
+    // An empty file is meaningful and different from a missing one: it means the reply carried no
+    // next step, and the bar prints nothing.
+    if (!warned) {
       fs.mkdirSync(DIR, { recursive: true });
       fs.writeFileSync(path.join(DIR, `${sessionId}.txt`), step, 'utf8');
       try {
