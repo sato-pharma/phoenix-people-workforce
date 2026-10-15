@@ -59,6 +59,78 @@ annotated migration will not warn. That is survivable only because an **applied 
 gains statements** — a new change is a new file — so never add one to an annotated migration to
 "keep it together".
 
+### The standing route when the MCP refuses a migration
+
+**The account of the owner's decision of 15 October 2026.** The rule itself is
+`.claude/rules/database.md`, "The migration ledger", and the grant it widened is AGENTS.md §8. This
+section is the evidence behind both.
+
+**His words, in session:** *"make apply-sql-file.mjs the standing route when the MCP refuses a
+migration"*, then *"edit AGENTS.md §8 to add apply-sql-file.mjs and commit the rule"*. It reverses
+the correction made on 2026-10-08, which had required his explicit word for each individual
+migration, and it settles a question two sessions had escalated to him on the same day.
+
+#### What the refusal actually is
+
+Both doors §8 pre-authorizes — `mcp__supabase-production__apply_migration` and the account connector
+`mcp__b345e47e-…` — put the file's whole text through a destructive-SQL classifier that reads the
+string, not the statements it would execute. So a plain `create or replace function` is refused
+whenever the function **body** happens to contain a `delete from …` or a `drop table if exists
+pg_temp.…`, which a refresh function legitimately does. The refusal is therefore about the shape of
+the text, not about the change being dangerous, and it recurs for a whole class of migration.
+
+Measured twice on 15 October 2026:
+
+| migration | what the doors answered |
+| --- | --- |
+| `20261015132445_contact_refresh_reads_the_customer_table_once.sql` | `{"status":"declined"}` from the production MCP; `MCP error -32600: You do not have permission to perform this action` from the connector that had just applied the same SQL to staging |
+| `20261015164459_marketing_resubmit_audit_id_uses_stored_requester.sql` | the same, used by another session hours earlier and already recorded in `ACKNOWLEDGED_EXCEPTIONS` |
+
+**The cost of the old per-migration rule, measured.** PR #5923 merged while its migration was still
+unapplied, because the session that wrote it correctly read the route as needing his word and stopped
+there. For roughly four hours production served `main`'s code — which documents a one-read fix — over
+the **old two-read body**, so the hourly doctor-list refresh stayed able to abort for the whole
+company whenever a rep added a doctor mid-run (`23503` on `crm_contact_assignments`, eight
+`scheduled_job_stranded` alerts since 25 September). The gap closed only when the file was applied by
+hand at 20:14 Cairo.
+
+#### The route
+
+Production is on aws-1, and the script's default aws-0 answers `Tenant or user not found`, which
+reads like a bad password rather than a wrong region:
+
+```
+PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com node scripts/apply-sql-file.mjs <file.sql> production
+```
+
+#### It writes no ledger row, so the apply is not finished until it is proven and recorded
+
+`apply-sql-file.mjs` prints `{"applied":true}` and never touches
+`supabase_migrations.schema_migrations`. Finish with a digest and an evidenced entry in
+`ACKNOWLEDGED_EXCEPTIONS` (`scripts/lib/migration-inventory.ts`), carrying `md5(pg_proc.prosrc)` read
+off the target project against md5 of the file's own dollar-quoted body, plus the pre-image digest —
+because `create or replace` means object **presence** proves nothing: an older generation satisfies a
+catalog probe exactly as well as the current one. **Never answer the missing row with a ledger
+write,** and never with a presence probe. `tests/migration-exception-staleness.test.ts` holds the
+list in the required `validate` job.
+
+Worked example, the 15 October apply:
+
+| | reading on `ozucdzovmcqvepbozvqf` |
+| --- | --- |
+| `md5(pg_proc.prosrc)` for `public.crm_contact_master_refresh` after the apply | `7194a3929cef15051f541d5bab6ee875` |
+| md5 of that migration file's own body | `7194a3929cef15051f541d5bab6ee875` |
+| pre-image, equal to `20261012184500`'s own body — hence the one-command rollback | `34220e8603660375d75fb06bb58d116e` |
+| `prosecdef` / `proconfig` | `false` / `{search_path=public}`, unchanged |
+| ledger rows carrying that version or name | 0 |
+
+#### What the decision does not change
+
+§8's one standing condition stands: **announce a destructive or bulk production change in plain words
+first and give the owner a chance to stop it.** Staging was always pre-approved. Creating or deleting
+a project, and reading secrets, remain outside the grant. And the route is for a migration the MCP
+**refuses** — the MCP remains the first door, because a row it records is itself evidence the SQL ran.
+
 ## Migration Pipeline
 
 **Reconciled 2026-08-04.** There is currently **no scripted gate** for taking a new

@@ -705,6 +705,29 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // the older generation satisfies any catalog probe. `prosecdef` true and proacl
   // {postgres=X/postgres,service_role=X/postgres} were read in the same query, so the REVOKE landed.
   "20261015164459_marketing_resubmit_audit_id_uses_stored_requester.sql",
+  // 2026-10-15, and written by the session that applied it, like the entry above. #5923 merged with
+  // its migration NOT on production: both doors AGENTS.md §8 pre-authorizes refuse this file's SQL,
+  // because the function BODY contains `delete from public.crm_contact_assignments` and three
+  // `drop table if exists pg_temp.…` lines, which the destructive-SQL classifier reads as the
+  // statement being run rather than as text inside a `create or replace function`. So production
+  // served main's code with the old two-read body still live and the hourly doctor-list job still
+  // able to strand. Applied with `node scripts/apply-sql-file.mjs <file> production` at 20:14 Cairo
+  // (PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com — production is aws-1, and the
+  // script's default aws-0 answers "Tenant or user not found"), a plain pooler connection that
+  // writes NO ledger row: the absence here is the apply route, not a missed migration. Read in the
+  // same minute: the ledger's newest row is 20261015155642, and ZERO rows carry version
+  // 20261015132445 or this file's name.
+  // Verified by digest, not by presence: `md5(pg_proc.prosrc)` for
+  // public.crm_contact_master_refresh on ozucdzovmcqvepbozvqf reads
+  // 7194a3929cef15051f541d5bab6ee875, and md5 of this file's own dollar-quoted body is the same
+  // hash. Existence could not have answered it — the function has existed since July. This file is
+  // its LAST definer, superseding 20261012184500_contact_refresh_survives_a_doctor_added_twice.sql,
+  // whose body digests 34220e8603660375d75fb06bb58d116e, which is exactly what production carried
+  // before the apply; that file is therefore also the one-command rollback. `prosecdef` false and
+  // `proconfig` {search_path=public} were read in the same query, so the security shape is
+  // unchanged, and prosrc now reads `from public.phoenix_crm_customers` exactly ONCE — the snapshot
+  // build — which is the whole rule this migration exists to establish.
+  "20261015132445_contact_refresh_reads_the_customer_table_once.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
