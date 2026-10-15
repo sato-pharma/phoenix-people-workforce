@@ -3298,3 +3298,39 @@ Verified by breaking it: disarming the gate (`if (false && argv.length > 0)`) wi
 `PHX_MEMORY_DIR` pointed at a path that does not exist turns the headline case red —
 `--check must exit 2 (refused), got 1: memory source not found` — and the fix was restored from a
 copy, never with `git checkout --`.
+
+## A flag the script has never heard of was read as absent — 2026-10-15
+
+`args.includes("--apply")` answers false for `--aply`, `--apply-all` and `--dryrun`, and the script
+then does the OTHER thing while the caller believes the flag took effect. The sibling account above
+covers the scripts that take no arguments; this is the same defect one layer up, in the scripts that
+DO take some. Measured that day: 63 non-library `scripts/**/*.mjs` parse argv, 32 of those write
+files, and only 5 (`check-contracts`, `remote-check`, `repo-doctor-xlsx-snapshot`, `rollup-prs`,
+`rotate-production-db-password`) already refused an unknown flag. The sharpest case was
+`module-memory/run-fold.mjs`: its one flag is `--dry-run`, and its bare run opens a real pull
+request, so `--dryrun` used to be ignored and file the inbox for real.
+
+The gate is `refuseUnknownFlags({name, entry: import.meta.url, known, hints})` in
+`scripts/lib/refuse-arguments.mjs`. Only a token starting with `-` that is outside `known` is
+refused (exit 2, naming just that token); `--flag=value` compares on the part before the `=`;
+positionals and a flag's separate value pass; `--help`/`-h` prints the vocabulary at exit 0 unless
+the script defines its own. `entry` is the guard against the parent-flags trap: `build.mjs` is
+imported by `fold.mjs`, so a gate that judged `process.argv` on import would refuse `--apply` on the
+child's vocabulary. `PHX_FLAG_GATE_PROBE=1` lets the test run any wired script to its gate and stop
+(`GATE-OK <name>`, exit 0; a refusal exit 2; a non-entry module exit 3) without ever starting the
+body. `run-fold.mjs` carries an inline copy instead, because its header keeps it on node builtins.
+
+🔴 **`known` has to hold every flag a CALLER passes, not just the ones the code names.**
+`.github/workflows/ci.yml` passes `--dry-run` to `ci-tree-reuse.mjs`, which never appears as a
+literal in the script. Gated with only `--report`, that CI step would have exited 2 on the next
+push. The test reads the workflows, `package.json` and the hooks for every call into a gated script.
+
+Verified by breaking it, each restored from a copy: the helper that never refuses → "args [--aply]
+must be refused with exit 2, got 0"; `slow-audit` losing its call → "a pinned script lost its gate";
+`ci-tree-reuse` dropping `--dry-run` → the ci.yml line it would refuse; the helper judging argv on
+import → "an imported gated module must not refuse its parent's flags". 🔴 **The fifth break caught
+a hole in the test itself:** turning run-fold's `if (FOLD_UNKNOWN.length > 0)` into `if (false)` left
+every source assertion green, because the REFUSED text was still in the file. The case now SPAWNS
+the script with `PHX_FOLD_PRIMARY` at an empty directory and the home directory redirected, so a
+working gate answers exit 2 and a dead one answers exit 1 at the missing-checkout line, before any
+fetch, worktree or pull request — "must be REFUSED (exit 2), got 1".

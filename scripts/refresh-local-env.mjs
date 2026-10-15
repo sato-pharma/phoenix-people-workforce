@@ -17,6 +17,18 @@ import process from "node:process";
 
 import { RAILWAY_CLI_PACKAGE } from "./secret-policy.mjs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "refresh-local-env",
+  entry: import.meta.url,
+  known: ["--dry-run"],
+  hints: [
+    "--dry-run prints what would happen and changes nothing",
+  ],
+});
+
 // Deliberately a small exclude-list + small override-map, NOT an exhaustive per-variable
 // bucket list — an exhaustive list needs updating every time Railway gains a variable, which
 // is exactly the maintenance gap that let 27 variables go unsynced elsewhere in this repo.

@@ -5,6 +5,18 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import postgres from "postgres";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "pin-coverage-report",
+  entry: import.meta.url,
+  known: ["--csv"],
+  hints: [
+    "usage: node scripts/pin-coverage-report.mjs <pins.sql> [--csv <out.csv>]",
+  ],
+});
+
 const ENV_FILES = [".env.staging.rls.local", ".env.production.rls.local", ".env.local"];
 
 function envVar(name) {

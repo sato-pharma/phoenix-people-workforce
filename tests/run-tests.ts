@@ -2161,6 +2161,7 @@ import { runRepoDoctorWorktreeRestoreAdviceTests } from "./repo-doctor-worktree-
 import { runCloudMirrorDriftTests } from "./cloud-mirror-drift.test.ts";
 import { runSyncCloudContextArgsTests } from "./sync-cloud-context-args.test.ts";
 import { runGeneratorArgGatesTests } from "./generator-arg-gates.test.ts";
+import { runUnknownFlagGatesTests } from "./unknown-flag-gates.test.ts";
 import { runWorktreeRemoveHeadShaGateTests } from "./worktree-remove-head-sha-gate.test.ts";
 import { runWorktreeRemoveRemoteContainmentTests } from "./worktree-remove-remote-containment.test.ts";
 import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
@@ -8180,6 +8181,10 @@ await runTest(
 await runTest(
   "every argument-free GENERATOR in scripts/ refuses a flag instead of ignoring it, through one shared gate (scripts/lib/refuse-arguments.mjs): the gate is proved behaviourally against a fixture - exit 2 and nothing after it runs for --check, --dry-run, -n and a bare word, exit 0 and the usage for --help, and the POSITIVE CONTROL that a bare run still reaches the body and writes - then every listed generator is read from its comment-stripped source for the call BEFORE its first side effect, and a ratchet over every tracked non-library scripts/**/*.mjs refuses a NEW script that writes files while parsing no arguments unless it is gated or listed EXEMPT with a reason (a library like delta-landed.mjs must never read process.argv: its caller new-session.mjs takes one)",
   runGeneratorArgGatesTests,
+);
+await runTest(
+  "every script that PARSES arguments refuses the one it has never heard of (exit 2, naming only the unknown token) through scripts/lib/refuse-arguments.mjs refuseUnknownFlags: --aply, --dryrun and -x used to be read as absent, so the script did the OTHER thing while the caller believed the flag took effect (measured 2026-10-15: 32 scripts parse argv and write files, 5 refused). The gate is proved behaviourally against a fixture (known flag, --flag=value, positional and a separate flag value pass; an imported module never refuses its parent flags; --help answers at exit 0), every wired script is probed through PHX_FLAG_GATE_PROBE, ci.yml and package.json are checked so no caller passes a flag its script now refuses, and run-fold.mjs - whose bare run opens a real pull request - is SPAWNED against an empty checkout so a gate turned into dead code still fails the test",
+  runUnknownFlagGatesTests,
 );
 await runTest(
   "worktree removal frees a tip that is on origin under ANOTHER branch's name (confirmed against the remote, fails closed)",

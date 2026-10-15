@@ -34,6 +34,18 @@ import ExcelJS from "exceljs";
 import { egyptRegionFromFreeText } from "@/lib/recruitment/candidate-region-freetext";
 import { driveFolderPathFor, regionFolderFromTypedArea } from "@/lib/recruitment/drive-cv-folders";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "cv-area-questions",
+  entry: import.meta.url,
+  known: ["--apply", "--dry-run", "--unplaceable"],
+  hints: [
+    "--apply <file> files the answers; add --dry-run to show the writes and make none",
+  ],
+});
+
 // ── env ──────────────────────────────────────────────────────────────────────────────────────────
 // Loaded by hand rather than via a dependency: this has to run from a bare worktree, where
 // `pnpm exec` is banned (it purges the node_modules junction) and dotenv may not resolve.

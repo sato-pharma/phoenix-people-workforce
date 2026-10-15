@@ -44,6 +44,18 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "repo-cleanup",
+  entry: import.meta.url,
+  known: ["--apply", "--no-gc"],
+  hints: [
+    "it is a dry run by default — --apply deletes; --no-gc skips the garbage collection",
+  ],
+});
+
 const APPLY = process.argv.includes('--apply');
 const NO_GC = process.argv.includes('--no-gc');
 const TAG = '[repo-cleanup]';

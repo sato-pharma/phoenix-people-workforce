@@ -53,6 +53,18 @@ import { cairoDayKey } from "@/lib/recruitment/candidate-stats";
 import { statusChangeRefusal } from "@/lib/recruitment/candidate-status";
 import { loadScreeningWorkspace } from "@/lib/recruitment/screening-workspace";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "cv-triage-questions",
+  entry: import.meta.url,
+  known: ["--all", "--apply", "--band", "--dry-run", "--exclude-from", "--rest"],
+  hints: [
+    "--apply <file> decides the answered workbook; add --dry-run to show the writes and make none",
+  ],
+});
+
 function loadEnvFile(file) {
   if (!fs.existsSync(file)) return;
   for (const rawLine of fs.readFileSync(file, "utf8").split(/\r?\n/)) {

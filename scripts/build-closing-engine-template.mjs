@@ -21,6 +21,18 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "build-closing-engine-template",
+  entry: import.meta.url,
+  known: [],
+  hints: [
+    "its one argument is the source workbook: node scripts/build-closing-engine-template.mjs <source>",
+  ],
+});
+
 const XLNS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 
 // ── Per-sheet emptying rules ──────────────────────────────────────────────────

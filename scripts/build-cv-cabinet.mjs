@@ -43,6 +43,18 @@ import { driveFileNameFor, sanitizeDriveSegment } from "@/lib/recruitment/drive-
 
 import { cabinetInputFor, loadCabinetFacts, requireImportSenders } from "./cv-cabinet-context.mjs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "build-cv-cabinet",
+  entry: import.meta.url,
+  known: ["--dry-run", "--limit"],
+  hints: [
+    "--dry-run prints the tree it would build and writes nothing; --limit <n> makes a small first batch",
+  ],
+});
+
 // ── env ──────────────────────────────────────────────────────────────────────────────────────────
 function loadEnvFile(file) {
   if (!fs.existsSync(file)) return;

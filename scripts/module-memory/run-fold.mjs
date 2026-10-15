@@ -35,6 +35,20 @@ import path from "node:path";
 
 const PRIMARY = process.env.PHX_FOLD_PRIMARY || "F:/Phoenix Workforce/phoenix-workforce";
 const DRY_RUN = process.argv.includes("--dry-run");
+// A flag this launcher does not know is refused, never ignored. INLINE, not `scripts/lib/refuse-arguments.mjs`,
+// because this file stays on node builtins only (see the header): it is the one script that has to
+// survive an unattended run three times a day. A bare run files the inbox and opens the PR; `--dry-run` is
+// the only flag, so a typo like `--dryrun` used to be ignored and OPEN A REAL PR.
+const FOLD_ARGS = process.argv.slice(2);
+if (FOLD_ARGS.includes("--help") || FOLD_ARGS.includes("-h")) {
+  console.log("run-fold: accepts --dry-run (print what the fold would file, write nothing); a bare run files the inbox and opens the PR");
+  process.exit(0);
+}
+const FOLD_UNKNOWN = FOLD_ARGS.filter((a) => a.startsWith("-") && a !== "--dry-run");
+if (FOLD_UNKNOWN.length > 0) {
+  console.error(`run-fold: REFUSED — unknown flag ${FOLD_UNKNOWN.join(" ")}; it accepts --dry-run only. A bare run opens a real PR.`);
+  process.exit(2);
+}
 
 /**
  * 🔴 THE LAUNCHER WRITES ITS OWN LOG, AND THE TASK RUNS NODE DIRECTLY — never
