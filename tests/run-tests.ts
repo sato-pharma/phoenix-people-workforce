@@ -86,6 +86,7 @@ import { runActiveRosterOnlyTests } from "./active-roster-only.test.ts";
 import { runLeaverNameHideTests } from "./leaver-name-hide.test.ts";
 import { runActingDmLandingExcludesSelfTests } from "./acting-dm-landing-excludes-self.test.ts";
 import { runEarlyBirdsEmailBlockTests } from "./early-birds-email-block.test.ts";
+import { runOpsSuccessTelegramBlockTests } from "./ops-success-telegram-block.test.ts";
 import { runMarketingSlaEmailBlockTests } from "./marketing-sla-email-block.test.ts";
 import { runMarketingReopenedRungRenotifyTests } from "./marketing-reopened-rung-renotify.test.ts";
 import { runMarketingReopenRejectedRequestTests } from "./marketing-reopen-rejected-request.test.ts";
@@ -2786,6 +2787,10 @@ await runTest("marketing cancelled status (terminal, never committed, human labe
 await runTest("marketing cancel request (Super Admin only; only live non-terminal statuses)", runMarketingCancelRequestTests);
 await runTest("marketing inbox cancel (oversight-only affordance, gated two ways)", runMarketingInboxCancelTests);
 await runTest("Early Birds email block (in-app + Telegram only)", runEarlyBirdsEmailBlockTests);
+await runTest(
+  "routine ops success confirmations do not reach his Telegram, and the failures still do",
+  runOpsSuccessTelegramBlockTests,
+);
 await runTest("recruitment attachment filename never becomes an envelope name", runRecruitmentAttachmentFilenameNameTests);
 await runTest("recruitment CV-received notice never emails (in-app + Telegram only)", runRecruitmentCvNoEmailTests);
 await runTest("candidate pushed to a hiring manager never emails (in-app + Telegram + push)", runCandidateAssignedEmailBlockTests);

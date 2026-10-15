@@ -34,6 +34,7 @@ import {
 import { closingPublishBlocksTelegramFallback } from "@/lib/notifications/closing-publish-channel-guard";
 import { enforceNeedsYouOwnerOnlyEmail } from "@/lib/notifications/needs-you-recipient-guard";
 import { enforceMarketingSlaEmailBlock } from "@/lib/notifications/marketing-sla-channel-guard";
+import { enforceOpsSuccessTelegramBlock } from "@/lib/notifications/ops-success-digest-channel-guard";
 import { enforceRecruitmentCvEmailBlock } from "@/lib/notifications/recruitment-cv-channel-guard";
 import { enforceCandidateAssignedEmailBlock } from "@/lib/notifications/recruitment-candidate-assigned-channel-guard";
 import { enforceOutstationRejectionEmailBlock } from "@/lib/notifications/outstation-rejection-channel-guard";
@@ -422,11 +423,19 @@ function basePolicyChannels(input: CreateSystemNotificationInput, preferred: Sys
   // Placed BEFORE the Phoenix CRM block for the reason stated two comments up — that block is pinned
   // as the chain's last line, and these two guard disjoint modules, so the order changes nothing.
   const needsYouOwnerOnly = enforceNeedsYouOwnerOnlyEmail(withoutOutstationRejectionEmail, input.module, input.recipientHrId);
+  // The TELEGRAM axis on the two routine "it worked" ops confirmations (owner rule 2026-10-15:
+  // "stop the routine sync-success alerts reaching my Telegram"). Keyed on the SUCCESS event types
+  // alone, so `ireports360_sync_failed` and `background_jobs_run_failed` keep every channel they
+  // had — a guard on the module or on the job would have silenced the failures along with the
+  // noise, which is the one outcome worse than the noise. Placed BEFORE the Phoenix CRM blocks for
+  // the reason stated two comments up: that push block is pinned as the chain's last line, and
+  // these guard disjoint sets, so the order changes nothing. See ops-success-digest-channel-guard.ts.
+  const withoutOpsSuccessTelegram = enforceOpsSuccessTelegramBlock(needsYouOwnerOnly, input.eventType);
   // Same hard guarantee for Phoenix CRM (owner rule 2026-09-16): in-app and Telegram only, never
   // email — see phoenix-crm-channel-guard.ts. Keyed on its own module string; chained, never
   // replacing a block above, because each guards a disjoint set. The event type rides along for the
   // one exception the owner ordered on 2026-10-01: the five steps of a request to edit a sent week.
-  const withoutPhoenixCrmEmail = enforcePhoenixCrmEmailBlock(needsYouOwnerOnly, input.module, input.eventType);
+  const withoutPhoenixCrmEmail = enforcePhoenixCrmEmailBlock(withoutOpsSuccessTelegram, input.module, input.eventType);
   // And the same for the PUSH axis on the Phoenix CRM 06:55 digest (owner rule 2026-09-28: "in app or
   // telegram only"). It has to be here rather than at the call site, which already asks for exactly
   // in-app and Telegram: the Telegram-failure fallback re-sends as ["email", "in_app", "push"], the

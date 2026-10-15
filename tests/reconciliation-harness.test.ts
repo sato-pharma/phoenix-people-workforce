@@ -494,7 +494,7 @@ export async function runReconciliationHarnessTests() {
   // no employees row for it, and the standing rule is that one must never be created — so without
   // this allowance the job alarms every night on a condition ruled permanent, which is how a job
   // becomes one nobody reads.
-  const liveShape = partitionLoginsWithoutEmployeeRow(["admin-HR"]);
+  const liveShape = partitionLoginsWithoutEmployeeRow([{ login: "admin-HR" }]);
   assert.deepEqual(
     liveShape.unexplained,
     [],
@@ -507,10 +507,47 @@ export async function runReconciliationHarnessTests() {
     "the exception has to carry its reason into the report — an allowance nobody can see becomes folklore",
   );
 
-  const withAStranger = partitionLoginsWithoutEmployeeRow(["admin-HR", "ZZ-TOUR"]);
+  const withAStranger = partitionLoginsWithoutEmployeeRow([{ login: "admin-HR" }, { login: "ZZ-TOUR" }]);
   assert.deepEqual(
     withAStranger.unexplained,
     ["ZZ-TOUR"],
     "a SECOND account with no HR_ID is the thing worth paging on — allowlisting the class instead of the one login would hide exactly that",
+  );
+
+  // ── Test accounts carry no HR_ID BY DESIGN, and used to breach every night ────────────────────
+  // 43 consecutive 04:40 Telegram alerts, 30 Aug – 15 Oct 2026, every one of them the design
+  // working as intended: a test account has its own TEST-… login and no hr_id of its own, with
+  // test_persona_of_hr_id naming the employee it mirrors (src/lib/auth/test-persona.ts).
+  const withTestAccounts = partitionLoginsWithoutEmployeeRow([
+    { login: "admin-HR" },
+    { login: "TEST-AYA", isTestPersona: true },
+    { login: "TEST-RAGAA", isTestPersona: true },
+  ]);
+  assert.deepEqual(
+    withTestAccounts.unexplained,
+    [],
+    "a test account holds no HR_ID by design — leaving the class out of the allowance is what paged the owner 43 mornings running",
+  );
+  assert.equal(
+    withTestAccounts.explained.length,
+    3,
+    "every excluded login is still named in the report, test accounts included — the reasons collapse, the names never do",
+  );
+  assert.match(
+    withTestAccounts.explained[1].reason,
+    /test account/,
+    "a test account's exclusion has to say what it is, or the next reader cannot tell it from a silent hole",
+  );
+
+  // Fail-CLOSED, and this is the half worth pinning: the flag alone must not buy silence.
+  const flagOnARealLogin = partitionLoginsWithoutEmployeeRow([
+    { login: "AYA-IBRAHIM", isTestPersona: true },
+    { login: "TEST-AYA", isTestPersona: false },
+    { login: "TEST-AYA", isTestPersona: null },
+  ]);
+  assert.deepEqual(
+    flagOnARealLogin.unexplained,
+    ["AYA-IBRAHIM", "TEST-AYA", "TEST-AYA"],
+    "is_test_persona on a login that is not a valid TEST-… id, or a TEST-… login without the flag, stays a breach — flipping one column must never silence this check for a real person's account",
   );
 }
