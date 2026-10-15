@@ -864,6 +864,8 @@ export const accessRegistry = [
   // A rep's visit CORRECTED by the Super Admin — who was on it, its products, its comment (owner,
   // 2026-10-06). The same footing as the entry above: `update`, narrowed to the Super Admin alone in
   // the service (`territoryForVisitEdit`).
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visit-detail", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visit-detail", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visit-edit", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visit-edit", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/list", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),

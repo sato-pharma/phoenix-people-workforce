@@ -173,6 +173,8 @@ const VISIT_COLUMNS = [
   "device_skew_minutes, pharmacy_name, product_availability, voice_note_path, voice_note_seconds, is_unplanned, next_step",
   "next_step_on, objection, objection_note, samples_given, dwell_seconds, form_open_seconds, capture_source, offline_seconds",
   "synced_at, photo_lat, photo_lon, photo_accuracy_meters, photo_captured_at, unplanned_kind",
+  // The rep's own write-up, added after the door, and when he last changed it (owner, 2026-10-15).
+  "detail_comment, detail_edited_at",
 ].join(", ");
 
 /** Every row of `table` for these seats between two dates, keyset-paged on `cursorColumn`. */

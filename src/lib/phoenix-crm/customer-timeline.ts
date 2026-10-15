@@ -32,6 +32,9 @@ export type TimelineVisit = {
   objection: string | null;
   objectionNote: string | null;
   comment: string | null;
+  /** The rep's own longer write-up, added afterwards, and when he last changed it (owner, 2026-10-15). */
+  detailComment: string | null;
+  detailEditedAt: string | null;
   nextStep: string | null;
   nextStepOn: string | null;
   /** Entered for the rep by the Super Admin, who was not on the visit (missed-records.ts). */
@@ -49,6 +52,10 @@ export type TimelineEntry = {
   objectionLabel: string | null;
   objectionNote: string | null;
   comment: string | null;
+  /** What the rep came back and wrote up, beside the door comment above — never instead of it. */
+  detailComment: string | null;
+  /** When he last changed the detail, for the "Edited · <date and time>" line. */
+  detailEditedAt: string | null;
   nextStepLabel: string | null;
   nextStepOn: string | null;
   enteredByAdmin: boolean;
@@ -73,6 +80,8 @@ export function timelineEntry(visit: TimelineVisit): TimelineEntry {
     // A note only ever sits beside a real objection (parseVisitOutcome clears it otherwise).
     objectionNote: objection && objection !== "none" ? text(visit.objectionNote) : null,
     comment: text(visit.comment),
+    detailComment: text(visit.detailComment),
+    detailEditedAt: text(visit.detailEditedAt),
     nextStepLabel: nextStep ? visitNextStepLabel(nextStep) : null,
     nextStepOn: nextStep && nextStep !== "none" ? text(visit.nextStepOn) : null,
     enteredByAdmin: visit.enteredByAdmin,

@@ -127,6 +127,11 @@ export const VISIT_REPORT_FIELDS: ReadonlyArray<VisitReportField> = [
   F("when", "enteredBy", "Entered by", "text", 22),
   F("when", "entryRoute", "Entry route", "text", 18),
   F("when", "editedBySuperAdmin", "Edited by Super Admin", "text", 24),
+  // The rep writing up his OWN visit afterwards — a different act from the correction above, and told
+  // in the open (owner, 2026-10-15: "anything edited, it should appear that this is edited in the date
+  // and time"). Kept apart from that field deliberately: the Super Admin's correction is told to
+  // nobody, so one shared column would say which visits he had been through.
+  F("when", "detailEdited", "Detail written up by the rep", "text", 26),
   F("when", "clockOffsetMinutes", "Phone clock offset (min)", "integer", 14, { sight: "sfe" }),
   F("when", "dwellSeconds", "Time at the door (sec)", "seconds", 14),
   F("when", "formOpenSeconds", "Form open time (sec)", "seconds", 14),
@@ -188,6 +193,9 @@ export const VISIT_REPORT_FIELDS: ReadonlyArray<VisitReportField> = [
   F("content", "nextStep", "Next step", "text", 18, { sparse: true }),
   F("content", "nextStepDate", "Next-step date", "date", 13, { sparse: true }),
   F("content", "comment", "Comment", "text", 44),
+  F("content", "detailComment", "Detailed comment", "text", 44, {
+    hint: "The longer write-up the rep added after the visit. The comment above it was written at the door and is never changed.",
+  }),
   F("content", "voiceNote", "Voice note", "yesno", 10),
   F("content", "voiceNoteSeconds", "Voice note length (sec)", "seconds", 12, { sparse: true }),
   F("content", "visitPhoto", "Visit photo", "yesno", 10),

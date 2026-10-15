@@ -242,6 +242,14 @@ const ROUTE_GATES: RouteGate[] = [
   // (`territoryForVisitEdit`).
   get("visit-edit", "update"),
   post("visit-edit", "update"),
+  // The detail of HIS OWN visit, filled in afterwards by the REP (owner, 2026-10-15): the detailed
+  // comment, the objection, the next step, what he left, the pharmacy stock, and a pharmacy name the
+  // visit does not yet carry. `read`/`create` — the rep's own permissions, he holds no `update` — and
+  // narrowed again in the service to the territory's own rep (`territoryForRepWrite`, which refuses the
+  // Super Admin by name) and in SQL to `rep_hr_id = actor`. A SECOND door beside visit-edit above, never
+  // a widening of it.
+  get("visit-detail", "read"),
+  post("visit-detail", "create"),
   get("team"),
   // The district manager's double-visit plan (owner, 2026-10-02): which of his reps he joins on which
   // day, AM or PM. The rep never sees it. `read`, narrowed in the service to that district manager, the
@@ -808,6 +816,11 @@ const LATER_MIGRATIONS = [
   // replaces nothing, so it appends safely at the end. Both are RLS-enabled and service-role only,
   // like every other table here, and each has a real FK to the place or the polyclinic it is about.
   "supabase/migrations/20261013163000_phoenix_crm_place_notes.sql",
+  // The rep writes up his own saved visit afterwards (owner, 2026-10-15). ONE brand-new function and
+  // three columns on `phoenix_crm_visits`; no table, and deliberately no replacement of
+  // phoenix_crm_save_visit — the door form does not change at all, so it appends safely at the end and
+  // cannot disturb the replacement ordering above.
+  "supabase/migrations/20261015110300_phoenix_crm_visit_detail_edit.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

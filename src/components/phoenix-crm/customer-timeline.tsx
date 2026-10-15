@@ -17,6 +17,7 @@ import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
 import { dayLabel, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
 import { CrmBlock, CrmButton, CrmLoadError, CrmLoading, CrmPill } from "@/components/phoenix-crm/ui";
+import { visitDetailEditedText } from "@/components/phoenix-crm/visit-detail-panel";
 import type { TimelineEntry } from "@/lib/phoenix-crm/customer-timeline";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import type { CustomerTimelineView } from "@/lib/phoenix-crm/view-types";
@@ -40,6 +41,7 @@ function TimelineItem({ entry }: { entry: TimelineEntry }) {
       : entry.objectionLabel
     : null;
   const nextStep = entry.nextStepLabel ? (entry.nextStepOn ? `${entry.nextStepLabel} · by ${dayLabel(entry.nextStepOn)}` : entry.nextStepLabel) : null;
+  const edited = visitDetailEditedText(entry.detailEditedAt);
   return (
     <li className="grid min-w-0 gap-1 px-3 py-2.5 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)] sm:gap-3">
       <div className="min-w-0">
@@ -53,7 +55,9 @@ function TimelineItem({ entry }: { entry: TimelineEntry }) {
         <TimelineFact label="Products">{entry.products.length > 0 ? entry.products.join(" · ") : "None recorded"}</TimelineFact>
         {objection ? <TimelineFact label="Objection">{objection}</TimelineFact> : null}
         {entry.comment ? <TimelineFact label="Comment">{entry.comment}</TimelineFact> : null}
+        {entry.detailComment ? <TimelineFact label="The visit in full">{entry.detailComment}</TimelineFact> : null}
         {nextStep ? <TimelineFact label="Next step">{nextStep}</TimelineFact> : null}
+        {edited ? <p className="break-words text-xs font-semibold text-slate-500">{edited}</p> : null}
         {entry.enteredByAdmin ? <p className="break-words text-xs font-semibold text-slate-500">{MISSED_RECORD_MARK}</p> : null}
       </div>
     </li>

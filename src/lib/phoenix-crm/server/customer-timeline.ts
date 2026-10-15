@@ -35,6 +35,7 @@ export const TIMELINE_VISITS_MAX = 100;
  */
 export const TIMELINE_VISIT_COLUMNS =
   "id, visit_date, captured_at, list_type, products, objection, objection_note, comment, next_step, next_step_on, " +
+  "detail_comment, detail_edited_at, " +
   "rep_hr_id, manager_hr_id, senior_hr_id, entered_by_hr_id, is_unplanned, unplanned_kind";
 
 export type CustomerTimelineView = {
@@ -87,6 +88,8 @@ export async function loadCustomerTimeline(
       objection: textOrNull(row.objection),
       objectionNote: textOrNull(row.objection_note),
       comment: textOrNull(row.comment),
+      detailComment: textOrNull(row.detail_comment),
+      detailEditedAt: textOrNull(row.detail_edited_at),
       nextStep: textOrNull(row.next_step),
       nextStepOn: textOrNull(row.next_step_on),
       enteredByAdmin: isEnteredForRep({ enteredBy: row.entered_by_hr_id, rep: row.rep_hr_id, manager: row.manager_hr_id, senior: row.senior_hr_id }),

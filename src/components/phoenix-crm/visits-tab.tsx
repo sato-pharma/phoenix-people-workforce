@@ -55,6 +55,7 @@ import {
   crmThClassName,
   type PillTone,
 } from "@/components/phoenix-crm/ui";
+import { VisitDetailEdit, visitDetailEditedText } from "@/components/phoenix-crm/visit-detail-panel";
 import { customersFor, OutOfPlanReason, VisitCustomerPicker } from "@/components/phoenix-crm/visit-customer-picker";
 import { CrmStepFooter, CrmStepForm, CrmStepFrame, type CrmStep } from "@/components/phoenix-crm/step-form";
 import { decidersText, logVisitTypeLabel, VisitLogForm, type LogVisitType, type VisitFormPart } from "@/components/phoenix-crm/visit-log-form";
@@ -281,6 +282,32 @@ function OffPlanLines({ visit }: { visit: VisitRow }) {
   return null;
 }
 
+/**
+ * The write-up he came back and added, and the marker that says when (owner, 2026-10-15: *"anything
+ * edited, it should appear that this is edited in the date and time"*).
+ *
+ * The door comment stays above it, unchanged — they are two different things said at two different
+ * moments, and the card prints both rather than replacing one with the other.
+ */
+function DetailLines({ visit }: { visit: VisitRow }) {
+  const edited = visitDetailEditedText(visit.detailEditedAt);
+  if (!visit.detailComment && !edited) return null;
+  return (
+    <>
+      {visit.detailComment ? (
+        <p className="whitespace-pre-line break-words">
+          <span className="font-black text-slate-800">The visit in full: </span>
+          <span dir="auto">{visit.detailComment}</span>
+        </p>
+      ) : null}
+      {edited ? <p className="break-words text-slate-500">{edited}</p> : null}
+    </>
+  );
+}
+
+/** Whose seat and which world, for the rep's own write-up door. Null for every other reader. */
+type DetailDoor = { seatId: string; isTest: boolean } | null;
+
 function VisitDetails({ visit }: { visit: VisitRow }) {
   const people = visitPeople(visit);
   return (
@@ -306,6 +333,7 @@ function VisitDetails({ visit }: { visit: VisitRow }) {
       {/* The note sits beside the comment because that is what it is — the same thing said rather than
           typed. A recording can be made in a car afterwards and proves nothing about anybody's day. */}
       {visit.voiceNotePath ? <CrmVoiceNotePlayer path={visit.voiceNotePath} seconds={visit.voiceNoteSeconds} /> : null}
+      <DetailLines visit={visit} />
       <SampleLine visit={visit} />
       <OutcomeLines visit={visit} />
       <OffPlanLines visit={visit} />
@@ -314,7 +342,7 @@ function VisitDetails({ visit }: { visit: VisitRow }) {
   );
 }
 
-function VisitCard({ visit }: { visit: VisitRow }) {
+function VisitCard({ detail, visit }: { detail: DetailDoor; visit: VisitRow }) {
   return (
     <CrmCard
       accent="border-l-orange-500"
@@ -323,12 +351,17 @@ function VisitCard({ visit }: { visit: VisitRow }) {
       title={visit.customerName}
     >
       <VisitDetails visit={visit} />
+      {detail && visit.detailEditable ? (
+        <div className="mt-2">
+          <VisitDetailEdit hasDetail={visit.detailComment !== null} isTest={detail.isTest} seatId={detail.seatId} visitId={visit.visitId} />
+        </div>
+      ) : null}
     </CrmCard>
   );
 }
 
 /** Five columns totalling 100%. No location column: nobody reads a distance on this tab. */
-function VisitTable({ visits }: { visits: ReadonlyArray<VisitRow> }) {
+function VisitTable({ detail, visits }: { detail: DetailDoor; visits: ReadonlyArray<VisitRow> }) {
   return (
     <CrmTable columns={["12%", "22%", "20%", "30%", "16%"]}>
       <thead>
@@ -407,6 +440,20 @@ function VisitTable({ visits }: { visits: ReadonlyArray<VisitRow> }) {
                   <span className="mt-1 block text-xs text-slate-600">
                     Next: {visit.outcome.nextStepLabel}
                     {visit.outcome.nextStepOn ? ` · by ${dayLabel(visit.outcome.nextStepOn)}` : ""}
+                  </span>
+                ) : null}
+                {/* The write-up and its marker, the same two facts the phone card prints. */}
+                {visit.detailComment ? (
+                  <span className="mt-1 block whitespace-pre-line text-xs text-slate-600" dir="auto">
+                    The visit in full: {visit.detailComment}
+                  </span>
+                ) : null}
+                {visitDetailEditedText(visit.detailEditedAt) ? (
+                  <span className="mt-1 block text-xs text-slate-500">{visitDetailEditedText(visit.detailEditedAt)}</span>
+                ) : null}
+                {detail && visit.detailEditable ? (
+                  <span className="mt-1.5 block">
+                    <VisitDetailEdit hasDetail={visit.detailComment !== null} isTest={detail.isTest} seatId={detail.seatId} visitId={visit.visitId} />
                   </span>
                 ) : null}
               </td>
@@ -1084,6 +1131,11 @@ export function VisitsTab({
   // day draws neither either — both are about now and next.
   const ownDay = isToday && view?.canSetDayActivity === true;
 
+  // 🔴 THE WRITE-UP DOOR CARRIES NO DAY CONDITION, unlike `ownDay` above: the owner was asked and
+  // answered "any time", so a visit he logged last week is still his to write up. Which visits offer
+  // it is the row's own `detailEditable` — his own visit, and not the pharmacy visit another filed.
+  const detailDoor = view?.canAddVisitDetail === true ? { seatId: view.territory.seatId, isTest: view.isTest } : null;
+
   return (
     <div className="grid min-w-0 gap-4">
       <CrmPanel
@@ -1176,10 +1228,10 @@ export function VisitsTab({
               <div className="border-t border-slate-100">
                 <CrmCardsOnPhone>
                   {visits.map((visit) => (
-                    <VisitCard key={visit.visitId} visit={visit} />
+                    <VisitCard detail={detailDoor} key={visit.visitId} visit={visit} />
                   ))}
                 </CrmCardsOnPhone>
-                <VisitTable visits={visits} />
+                <VisitTable detail={detailDoor} visits={visits} />
               </div>
             )}
           </>
