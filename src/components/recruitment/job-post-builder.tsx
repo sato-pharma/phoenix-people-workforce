@@ -2,29 +2,44 @@
 
 // Recruitment — the Job Posts builder (app/(admin)/recruitment/job-posts).
 //
-// Left: the job title and its words — saved with the title. Right: the five designs, the live
-// preview and the downloads. The preview is the SAME HTML the server draws (renderJobPostHtml), in a
-// sandboxed frame, so what downloads is what was on screen.
+// Six numbered steps down the left — the job title, what you will do, what you need, the areas and
+// line, then the design and the preview with its downloads on the right. The preview is the SAME HTML
+// the server draws (renderJobPostHtml), in a sandboxed frame, so what downloads is what was on screen.
+//
+// 🔴 CHOOSING A JOB TITLE FILLS BOTH LISTS AT ONCE. The picker loads that title's saved duties and
+// requirements the moment it changes; typing the name of a saved title into a NEW one loads it too
+// (only while the new draft is still empty, so nothing typed is ever thrown away). The words belong to
+// the title, never to a design.
 //
 // 🔴 THE AREAS AND THE LINE BELONG TO THIS POST, NOT TO THE TITLE. One area is one rep (owner,
 // 2026-10-15) — so an area is picked, never counted — and "Download all" gives the all-areas picture
 // plus one per area. The line prints only when "Show the line" is ticked.
 //
-// 🔒 One form design (form-kit), square corners, no horizontal scroll at any width.
+// 🔒 One form design (form-kit), square corners, the shared admin depth tokens, and no horizontal
+// scroll at any width. Every panel wears the dark header band (adminPanelHeaderClassName).
 
-import { ArrowDown, ArrowUp, Download, FileArchive, Plus, Save, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, ArrowUp, Check, Download, FileArchive, Plus, Save, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { adminPanelDepthClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
-import { getJson, patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
+import {
+  adminChipDepthClassName,
+  adminPanelDepthClassName,
+  adminPanelHeaderClassName,
+  adminRecessedDepthClassName,
+  adminSoftDepthClassName,
+} from "@/components/admin/admin-design-tokens";
+import { patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { CheckTile, FormError, FormField } from "@/components/ui/form-kit";
 import {
+  phxButtonAccentClassName,
   phxButtonGhostClassName,
   phxButtonPrimaryClassName,
   phxFieldClassName,
+  phxFieldInvalidClassName,
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 import {
   JOB_POST_HEIGHT,
   JOB_POST_MAX_AREAS,
@@ -53,18 +68,28 @@ type Props = {
 
 const NEW = "__new__";
 
-const EMPTY_DRAFT: JobPostTitleDraft = {
-  department: "Human Resources",
-  duties: [{ lead: "", rest: "" }],
-  employment: "Full-time",
-  headline: null,
-  isActive: true,
-  location: "Sheraton, Cairo",
-  menuName: null,
-  needs: [{ lead: "", rest: "" }],
-  reportsTo: null,
-  title: "",
-};
+/** Suggestions for the Department field; the saved titles' own departments are added to these. */
+const DEPARTMENT_SUGGESTIONS = ["Sales", "Marketing", "Human Resources"];
+
+const panelClassName = `border border-slate-200 bg-white ${adminPanelDepthClassName}`;
+const chipClassName = `inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700 ${adminChipDepthClassName}`;
+const noticeClassName = `flex items-start gap-2 border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-semibold text-slate-800 ${adminChipDepthClassName}`;
+
+/** A fresh, empty title. Department is left blank on purpose: a post must name it, never inherit one. */
+function emptyDraft(): JobPostTitleDraft {
+  return {
+    department: "",
+    duties: [{ lead: "", rest: "" }],
+    employment: "Full-time",
+    headline: null,
+    isActive: true,
+    location: "Sheraton, Cairo",
+    menuName: null,
+    needs: [{ lead: "", rest: "" }],
+    reportsTo: null,
+    title: "",
+  };
+}
 
 function draftOf(title: JobPostTitle): JobPostTitleDraft {
   const { id: _id, updatedAt: _updatedAt, ...draft } = title;
@@ -75,7 +100,11 @@ function draftOf(title: JobPostTitle): JobPostTitleDraft {
 function cleaned(draft: JobPostTitleDraft): JobPostTitleDraft {
   const keep = (lines: JobPostLine[]) =>
     lines.map((l) => ({ lead: l.lead.trim(), rest: l.rest.trim() })).filter((l) => l.lead || l.rest);
-  return { ...draft, duties: keep(draft.duties), needs: keep(draft.needs), title: draft.title.trim() };
+  return { ...draft, department: draft.department.trim(), duties: keep(draft.duties), needs: keep(draft.needs), title: draft.title.trim() };
+}
+
+function isBlank(lines: JobPostLine[]): boolean {
+  return lines.every((l) => !l.lead.trim() && !l.rest.trim());
 }
 
 async function toDataUri(url: string): Promise<string> {
@@ -96,6 +125,23 @@ function useSettled<T>(value: T, delay: number): T {
     return () => clearTimeout(timer);
   }, [value, delay]);
   return settled;
+}
+
+/** The dark band every panel opens with: its step number, its name, and a short status on the right. */
+function PanelHeader({ step, title, aside }: { step?: number; title: string; aside?: ReactNode }) {
+  return (
+    <header className={`${adminPanelHeaderClassName} flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2.5`}>
+      <div className="flex min-w-0 items-center gap-3">
+        {step ? (
+          <span aria-hidden className="flex h-6 w-6 shrink-0 items-center justify-center bg-orange-500 text-phx-xs font-black text-white">
+            {step}
+          </span>
+        ) : null}
+        <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">{title}</h2>
+      </div>
+      {aside ? <div className="text-phx-xs font-semibold text-slate-300">{aside}</div> : null}
+    </header>
+  );
 }
 
 /** One post, drawn at its true 1080×1350 and scaled to the width it is given. */
@@ -129,10 +175,12 @@ function PostFrame({ html, label }: { html: string; label: string }) {
 }
 
 function LinesEditor({
+  step,
   label,
   lines,
   onChange,
 }: {
+  step: number;
   label: string;
   lines: JobPostLine[];
   onChange: (next: JobPostLine[]) => void;
@@ -144,53 +192,56 @@ function LinesEditor({
     next.splice(index + by, 0, row!);
     onChange(next);
   };
+  const filled = lines.filter((l) => l.lead.trim() || l.rest.trim()).length;
   return (
-    <section className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
-      <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-        <h3 className="text-sm font-black uppercase tracking-wide text-slate-700">{label}</h3>
-        <span className="text-xs font-semibold text-slate-500">
-          {lines.length} of {JOB_POST_MAX_LINES}
-        </span>
-      </div>
+    <section className={panelClassName}>
+      <PanelHeader aside={`${filled} of ${JOB_POST_MAX_LINES} lines`} step={step} title={label} />
       <div className="space-y-3 p-4">
         <p className="text-xs leading-relaxed text-slate-500">
-          Each line has a bold opening and the rest in plain type, the way every approved post reads.
+          Each line has a bold opening and the rest in plain type, the way every approved post reads. The words are saved with the job title.
         </p>
-        {lines.map((line, index) => (
-          <div key={index} className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto] sm:items-start">
-            <input
-              aria-label={`${label} line ${index + 1}, bold part`}
-              className={phxFieldClassName}
-              onChange={(event) => set(index, { lead: event.target.value })}
-              placeholder="Bold part"
-              value={line.lead}
-            />
-            <input
-              aria-label={`${label} line ${index + 1}, the rest`}
-              className={phxFieldClassName}
-              onChange={(event) => set(index, { rest: event.target.value })}
-              placeholder="The rest of the line"
-              value={line.rest}
-            />
-            <div className="flex gap-1">
-              <button aria-label="Move up" className={phxButtonGhostClassName} disabled={index === 0} onClick={() => move(index, -1)} type="button">
-                <ArrowUp aria-hidden className="h-4 w-4" />
-              </button>
-              <button
-                aria-label="Move down"
-                className={phxButtonGhostClassName}
-                disabled={index === lines.length - 1}
-                onClick={() => move(index, 1)}
-                type="button"
-              >
-                <ArrowDown aria-hidden className="h-4 w-4" />
-              </button>
-              <button aria-label="Remove line" className={phxButtonGhostClassName} onClick={() => onChange(lines.filter((_, i) => i !== index))} type="button">
-                <Trash2 aria-hidden className="h-4 w-4" />
-              </button>
+        {lines.map((line, index) => {
+          const missingLead = !line.lead.trim() && Boolean(line.rest.trim());
+          return (
+            <div key={index} className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 sm:grid-cols-[auto_minmax(0,2fr)_minmax(0,3fr)_auto] sm:items-start">
+              <span aria-hidden className="flex h-10 w-7 items-center justify-center bg-slate-100 text-xs font-black text-slate-500">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <input
+                aria-invalid={missingLead}
+                aria-label={`${label} line ${index + 1}, bold part`}
+                className={cn(phxFieldClassName, missingLead && phxFieldInvalidClassName)}
+                onChange={(event) => set(index, { lead: event.target.value })}
+                placeholder="Bold part"
+                value={line.lead}
+              />
+              <input
+                aria-label={`${label} line ${index + 1}, the rest`}
+                className={cn(phxFieldClassName, "col-start-2 sm:col-start-auto")}
+                onChange={(event) => set(index, { rest: event.target.value })}
+                placeholder="The rest of the line"
+                value={line.rest}
+              />
+              <div className="col-start-2 flex gap-1 sm:col-start-auto">
+                <button aria-label="Move up" className={phxButtonGhostClassName} disabled={index === 0} onClick={() => move(index, -1)} type="button">
+                  <ArrowUp aria-hidden className="h-4 w-4" />
+                </button>
+                <button
+                  aria-label="Move down"
+                  className={phxButtonGhostClassName}
+                  disabled={index === lines.length - 1}
+                  onClick={() => move(index, 1)}
+                  type="button"
+                >
+                  <ArrowDown aria-hidden className="h-4 w-4" />
+                </button>
+                <button aria-label="Remove line" className={phxButtonGhostClassName} onClick={() => onChange(lines.filter((_, i) => i !== index))} type="button">
+                  <Trash2 aria-hidden className="h-4 w-4" />
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         <button
           className={phxButtonGhostClassName}
           disabled={lines.length >= JOB_POST_MAX_LINES}
@@ -199,6 +250,11 @@ function LinesEditor({
         >
           <Plus aria-hidden className="h-4 w-4" /> Add a line
         </button>
+        {lines.length >= JOB_POST_MAX_LINES ? (
+          <p className="text-xs font-semibold text-amber-700">
+            {JOB_POST_MAX_LINES} lines is what one picture holds at a readable size. Remove one to add another.
+          </p>
+        ) : null}
       </div>
     </section>
   );
@@ -207,7 +263,7 @@ function LinesEditor({
 export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Props) {
   const [titles, setTitles] = useState(initialTitles);
   const [selectedId, setSelectedId] = useState<string>(initialTitles[0]?.id ?? NEW);
-  const [draft, setDraft] = useState<JobPostTitleDraft>(initialTitles[0] ? draftOf(initialTitles[0]) : EMPTY_DRAFT);
+  const [draft, setDraft] = useState<JobPostTitleDraft>(initialTitles[0] ? draftOf(initialTitles[0]) : emptyDraft());
   const [dirty, setDirty] = useState(false);
   const [areas, setAreas] = useState<string[]>([]);
   const [areaFilter, setAreaFilter] = useState("");
@@ -218,7 +274,7 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
   const [assets, setAssets] = useState<JobPostAssets | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(initialTitles[0] ? `Ready: the saved wording for “${initialTitles[0].title}” is loaded.` : null);
 
   useEffect(() => {
     let live = true;
@@ -234,6 +290,16 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
     };
   }, []);
 
+  // Leaving the page with unsaved wording asks first.
+  useEffect(() => {
+    if (!dirty) return;
+    const guard = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [dirty]);
+
   // A per-area preview of an area that was since removed falls back to the all-areas picture —
   // derived, never synced through an effect.
   const variant = pickedArea && areas.includes(pickedArea) ? pickedArea : null;
@@ -244,19 +310,53 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
     setNotice(null);
   };
 
-  const pick = (id: string) => {
-    if (dirty && !window.confirm("Your changes to this title are not saved. Leave them?")) return;
-    setSelectedId(id);
-    const found = titles.find((t) => t.id === id);
-    setDraft(found ? draftOf(found) : { ...EMPTY_DRAFT, duties: [{ lead: "", rest: "" }], needs: [{ lead: "", rest: "" }] });
+  /** Load a saved title — both lists, the facts and the headline arrive together. */
+  const load = (found: JobPostTitle) => {
+    setSelectedId(found.id);
+    setDraft(draftOf(found));
     setDirty(false);
     setError(null);
-    setNotice(null);
+    setNotice(`Ready: the saved wording for “${found.title}” is loaded.`);
+  };
+
+  const pick = (id: string) => {
+    if (id === selectedId) return;
+    if (dirty && !window.confirm("Your changes to this title are not saved. Leave them?")) return;
+    const found = titles.find((t) => t.id === id);
+    if (found) {
+      load(found);
+      return;
+    }
+    setSelectedId(NEW);
+    setDraft(emptyDraft());
+    setDirty(false);
+    setError(null);
+    setNotice("A new job title: name it, then write what the job does and what it needs.");
+  };
+
+  // Typing the name of a SAVED title into a new one loads that title — but only while the new draft
+  // has no words yet, so nothing the person wrote is ever replaced.
+  const typeTitleName = (value: string) => {
+    if (selectedId === NEW && isBlank(draft.duties) && isBlank(draft.needs)) {
+      const match = titles.find((t) => t.title.trim().toLowerCase() === value.trim().toLowerCase());
+      if (match) {
+        load(match);
+        return;
+      }
+    }
+    edit({ title: value });
   };
 
   const saveDraft = cleaned(draft);
-  const problems = titleDraftViolations(saveDraft);
+  const problems = [...titleDraftViolations(saveDraft), ...(saveDraft.department ? [] : ["Choose the department."])];
   const postLine = showLine && line ? line : null;
+  const duplicateOfSaved =
+    selectedId === NEW && saveDraft.title ? titles.find((t) => t.title.trim().toLowerCase() === saveDraft.title.toLowerCase()) : undefined;
+
+  const departments = useMemo(
+    () => [...new Set([...DEPARTMENT_SUGGESTIONS, ...titles.map((t) => t.department)])].filter(Boolean),
+    [titles],
+  );
 
   const content = useMemo(
     () => contentFromDraft(saveDraft, { areas, line: postLine }, apply),
@@ -286,12 +386,17 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
           ? await postJson("/api/recruitment/job-posts/titles", saveDraft)
           : await patchJson(`/api/recruitment/job-posts/titles/${selectedId}`, saveDraft);
       const saved = data.title as JobPostTitle;
-      const list = (await getJson("/api/recruitment/job-posts/titles")).titles as JobPostTitle[];
-      setTitles(list);
+      // The saved row is put into the list directly: a failed refresh after a successful save must
+      // never read as "could not be saved" and invite a second save.
+      setTitles((current) =>
+        [...current.filter((t) => t.id !== saved.id), saved].sort(
+          (a, b) => Number(b.isActive) - Number(a.isActive) || a.title.localeCompare(b.title),
+        ),
+      );
       setSelectedId(saved.id);
       setDraft(draftOf(saved));
       setDirty(false);
-      setNotice(`Saved "${saved.title}".`);
+      setNotice(`Saved “${saved.title}”. Its wording is ready next time you choose it.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The title could not be saved.");
     } finally {
@@ -333,36 +438,87 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
     }
   }
 
+  const atAreaLimit = areas.length >= JOB_POST_MAX_AREAS;
   const toggleArea = (area: string, on: boolean) => {
     setAreas((current) => (on ? (current.length >= JOB_POST_MAX_AREAS ? current : [...current, area]) : current.filter((a) => a !== area)));
   };
   const filter = areaFilter.trim().toLowerCase();
+  const dutiesReady = saveDraft.duties.length;
+  const needsReady = saveDraft.needs.length;
+  const templateName = JOB_POST_TEMPLATES.find((t) => t.key === template);
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
       {/* ── The words ── */}
       <div className="min-w-0 space-y-5">
-        <section className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
-          <div className="border-b border-slate-200 px-4 py-3">
-            <h2 className="text-sm font-black uppercase tracking-wide text-slate-700">Job title</h2>
-          </div>
+        <section className={panelClassName}>
+          <PanelHeader
+            aside={dirty ? <span className="text-amber-300">Unsaved changes</span> : selectedId === NEW ? "New title" : "Saved"}
+            step={1}
+            title="Job title"
+          />
           <div className="space-y-4 p-4">
-            <FormField htmlFor="job-post-pick" label="Build from">
+            <FormField
+              hint="Choosing a title loads its saved “What you will do” and “What you need” straight away."
+              htmlFor="job-post-pick"
+              label="Job title"
+            >
               <select className={phxSelectClassName} id="job-post-pick" onChange={(event) => pick(event.target.value)} value={selectedId}>
                 {titles.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.title}
+                    {t.isActive ? t.title : `${t.title} (switched off)`}
                   </option>
                 ))}
                 <option value={NEW}>+ Add a new job title</option>
               </select>
             </FormField>
+
+            <div aria-live="polite" className="space-y-2" role="status">
+              {notice ? (
+                <p className={noticeClassName}>
+                  <Check aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
+                  <span className="min-w-0">{notice}</span>
+                </p>
+              ) : null}
+              {duplicateOfSaved ? (
+                <p className="text-xs font-semibold text-amber-700">
+                  A job title called “{duplicateOfSaved.title}” already exists. Choose it from the list above instead of adding it again.
+                </p>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                <span className={chipClassName}>{dutiesReady} {dutiesReady === 1 ? "duty" : "duties"}</span>
+                <span className={chipClassName}>{needsReady} {needsReady === 1 ? "requirement" : "requirements"}</span>
+                {saveDraft.reportsTo ? <span className={chipClassName}>Reports to {saveDraft.reportsTo}</span> : null}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormField htmlFor="job-post-title" label="Job title" required>
-                <input className={phxFieldClassName} id="job-post-title" onChange={(e) => edit({ title: e.target.value })} value={draft.title} />
+              <FormField
+                hint={selectedId === NEW ? undefined : "Renaming changes it for every future post."}
+                htmlFor="job-post-title"
+                label={selectedId === NEW ? "New job title" : "Title printed on the post"}
+                required
+              >
+                <input
+                  className={phxFieldClassName}
+                  id="job-post-title"
+                  onChange={(e) => typeTitleName(e.target.value)}
+                  value={draft.title}
+                />
               </FormField>
-              <FormField htmlFor="job-post-department" label="Department">
-                <input className={phxFieldClassName} id="job-post-department" onChange={(e) => edit({ department: e.target.value })} value={draft.department} />
+              <FormField htmlFor="job-post-department" label="Department" required>
+                <input
+                  className={phxFieldClassName}
+                  id="job-post-department"
+                  list="job-post-departments"
+                  onChange={(e) => edit({ department: e.target.value })}
+                  value={draft.department}
+                />
+                <datalist id="job-post-departments">
+                  {departments.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
               </FormField>
               <FormField htmlFor="job-post-reports" label="Reports to">
                 <input
@@ -399,28 +555,28 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
           </div>
         </section>
 
-        <LinesEditor label="What you will do" lines={draft.duties} onChange={(duties) => edit({ duties })} />
-        <LinesEditor label="What you need" lines={draft.needs} onChange={(needs) => edit({ needs })} />
+        <LinesEditor label="What you will do" lines={draft.duties} onChange={(duties) => edit({ duties })} step={2} />
+        <LinesEditor label="What you need" lines={draft.needs} onChange={(needs) => edit({ needs })} step={3} />
 
         <div className="flex flex-wrap items-center gap-3">
           <button className={phxButtonPrimaryClassName} disabled={busy !== null || !dirty} onClick={save} type="button">
-            <Save aria-hidden className="h-4 w-4" /> {selectedId === NEW ? "Add job title" : "Save to title"}
+            <Save aria-hidden className="h-4 w-4" /> {busy === "save" ? "Saving…" : selectedId === NEW ? "Add job title" : "Save to title"}
           </button>
           {dirty ? <span className="text-xs font-semibold text-amber-700">Unsaved changes — the preview already shows them.</span> : null}
-          {notice ? <span className="text-xs font-semibold text-emerald-700">{notice}</span> : null}
         </div>
 
-        <section className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-            <h2 className="text-sm font-black uppercase tracking-wide text-slate-700">Areas and line</h2>
-            <span className="text-xs font-semibold text-slate-500">For this post only</span>
-          </div>
+        <section className={panelClassName}>
+          <PanelHeader
+            aside={areas.length ? `${areas.length} of ${JOB_POST_MAX_AREAS} areas · for this post only` : "For this post only"}
+            step={4}
+            title="Areas and line"
+          />
           <div className="space-y-4 p-4">
             <p className="text-xs leading-relaxed text-slate-500">
               Optional. One area is one rep. With two or more areas, Download all gives the all-areas post and one post for each area.
             </p>
             {areas.length ? (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {areas.map((area) => (
                   <button
                     aria-label={`Remove ${area}`}
@@ -429,10 +585,18 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
                     onClick={() => toggleArea(area, false)}
                     type="button"
                   >
-                    {area} <Trash2 aria-hidden className="h-3.5 w-3.5" />
+                    {area} <X aria-hidden className="h-3.5 w-3.5" />
                   </button>
                 ))}
+                <button className="px-2 py-2 text-xs font-bold text-slate-500 hover:text-slate-800" onClick={() => setAreas([])} type="button">
+                  Clear all
+                </button>
               </div>
+            ) : null}
+            {atAreaLimit ? (
+              <p className="text-xs font-semibold text-amber-700">
+                A post lists at most {JOB_POST_MAX_AREAS} areas. Remove one to add another.
+              </p>
             ) : null}
             <FormField htmlFor="job-post-area-filter" label="Find an area">
               <input
@@ -453,7 +617,7 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       {shownAreas.map((area) => (
                         <CheckTile checked={areas.includes(area)} key={area} onChange={(on) => toggleArea(area, on)}>
-                          <span className="text-sm font-semibold text-slate-800">{area}</span>
+                          <span className="min-w-0 text-sm font-semibold text-slate-800">{area}</span>
                         </CheckTile>
                       ))}
                     </div>
@@ -483,15 +647,13 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
 
       {/* ── The picture ── */}
       <div className="min-w-0 space-y-5 xl:sticky xl:top-4 xl:self-start">
-        <section className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
-          <div className="border-b border-slate-200 px-4 py-3">
-            <h2 className="text-sm font-black uppercase tracking-wide text-slate-700">Design</h2>
-          </div>
+        <section className={panelClassName}>
+          <PanelHeader aside={templateName?.name} step={5} title="Design" />
           <div className="grid grid-cols-3 gap-2 p-3 sm:grid-cols-5">
             {JOB_POST_TEMPLATES.map((t, index) => (
               <CheckTile checked={template === t.key} key={t.key} name="job-post-template" onChange={() => setTemplate(t.key)} type="radio">
                 <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  {thumbHtml[index] ? <PostFrame html={thumbHtml[index]!} label={`${t.name} design`} /> : <span className="block aspect-[4/5] bg-slate-100" />}
+                  {thumbHtml[index] ? <PostFrame html={thumbHtml[index]!} label={`${t.name} design`} /> : <span className="block aspect-[4/5] animate-pulse bg-slate-100" />}
                   <span className="text-xs font-bold text-slate-800">{t.name}</span>
                 </span>
               </CheckTile>
@@ -499,12 +661,10 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
           </div>
         </section>
 
-        <section className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
-            <h2 className="text-sm font-black uppercase tracking-wide text-slate-700">Preview</h2>
-            <span className="text-xs font-semibold text-slate-500">{JOB_POST_TEMPLATES.find((t) => t.key === template)?.description}</span>
-          </div>
+        <section className={panelClassName}>
+          <PanelHeader aside={`${JOB_POST_WIDTH} × ${JOB_POST_HEIGHT} px · 4:5`} step={6} title="Preview and download" />
           <div className="space-y-3 p-4">
+            <p className="text-xs font-semibold text-slate-500">{templateName?.description}</p>
             {areas.length > 1 ? (
               <div className="flex flex-wrap gap-2" role="tablist">
                 {[null, ...areas].map((area) => (
@@ -521,10 +681,17 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
                 ))}
               </div>
             ) : null}
-            {mainHtml ? <PostFrame html={mainHtml} label="Job post preview" /> : <div className="aspect-[4/5] w-full bg-slate-100" />}
+            {mainHtml ? (
+              <div className={`border border-slate-200 bg-white p-2 ${adminSoftDepthClassName}`}>
+                <PostFrame html={mainHtml} label="Job post preview" />
+              </div>
+            ) : (
+              <div className="aspect-[4/5] w-full animate-pulse bg-slate-100" />
+            )}
             <FormError>{error}</FormError>
+            {problems.length && !error ? <p className="text-xs font-semibold text-amber-700">{problems[0]}</p> : null}
             <div className="flex flex-wrap gap-2">
-              <button className={phxButtonPrimaryClassName} disabled={busy !== null} onClick={() => download("png")} type="button">
+              <button className={phxButtonAccentClassName} disabled={busy !== null} onClick={() => download("png")} type="button">
                 <Download aria-hidden className="h-4 w-4" /> {busy === "png" ? "Drawing…" : "Download picture"}
               </button>
               <button className={phxButtonGhostClassName} disabled={busy !== null} onClick={() => download("pdf")} type="button">

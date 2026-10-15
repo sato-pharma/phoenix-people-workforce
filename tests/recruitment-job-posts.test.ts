@@ -169,6 +169,44 @@ export function runRecruitmentJobPostsTests() {
   assert.equal(content.careers, "satopharma.com/careers", "a request cannot print another careers address");
   assert.equal(content.menuName, "Rep", "the WhatsApp choice defaults to the job title");
 
+  // ── The field-force titles are seeded with their wording READY (owner, 2026-10-16) ─────────────
+  // Choosing a title fills both lists from its row, so a title that is not in the database has no
+  // wording to load. Each seeded block is parsed back out of the migration and must save as written.
+  const seed = readFileSync(new URL("../supabase/migrations/20261016005009_ats_job_post_titles_field_force_seed.sql", import.meta.url), "utf8");
+  const blocks = seed.split("insert into public.ats_job_post_titles").slice(1);
+  assert.equal(blocks.length, 3, "the migration seeds exactly the three field-force titles");
+  const seeded = new Map<string, { duties: number; needs: number; menu: string }>();
+  for (const block of blocks) {
+    const title = /values \(\s*'([^']+)'/.exec(block)?.[1] ?? "";
+    const [duties, needs] = [...block.matchAll(/'(\[[\s\S]*?\])'::jsonb/g)].map((m) => JSON.parse(m[1]!.replace(/''/g, "'")) as unknown);
+    const menu = /,\s*'([^']+)'\s*\)\s*on conflict/.exec(block)?.[1] ?? "";
+    const parsed = coerceTitleDraft({ title, department: "Sales", duties, needs, menuName: menu });
+    assert.deepEqual(titleDraftViolations(parsed), [], `${title}: the seeded wording saves as written`);
+    assert.equal(parsed.duties.length, (duties as unknown[]).length, `${title}: no seeded duty is dropped on the way in`);
+    assert.equal(parsed.needs.length, (needs as unknown[]).length, `${title}: no seeded requirement is dropped on the way in`);
+    seeded.set(title, { duties: parsed.duties.length, needs: parsed.needs.length, menu });
+  }
+  assert.deepEqual([...seeded.keys()].sort(), ["District Sales Manager", "Medical Representative", "Product Manager"], "the three titles the owner asked for");
+  assert.equal(seeded.get("District Sales Manager")?.menu, "District Manager", "the WhatsApp choice is the menu's own label, not the longer post title");
+  for (const owners of [
+    "Plan and complete weekly visits to doctors and pharmacies in your assigned area.",
+    "Achieve monthly sales targets for each assigned product.",
+    "Bachelor''s degree in Pharmacy, Vet, or Science.",
+    "6 months to 2 years of experience in pharmaceutical sales.",
+    "Ability to use CRM systems, mobile applications, and sales reports.",
+    "Responsible, self-motivated, and committed to achieving targets.",
+  ]) {
+    assert.ok(seed.includes(owners), `Medical Representative keeps the owner's own wording (pasted 2026-10-16): ${owners}`);
+  }
+
+  // ── The builder: choosing a title loads its words, and the page wears the shared premium look ──
+  const page = readFileSync(new URL("../src/components/recruitment/job-post-builder.tsx", import.meta.url), "utf8");
+  assert.ok(/const pick = [\s\S]*?load\(found\)/.test(page), "picking a saved title loads its duties and requirements at once");
+  assert.ok(/const typeTitleName = [\s\S]*?isBlank\(draft\.duties\)[\s\S]*?load\(match\)/.test(page), "typing a saved title's name into an EMPTY new title loads it, and never replaces typed words");
+  assert.ok(page.includes("adminPanelHeaderClassName"), "every panel opens with the shared dark header band");
+  assert.ok(!/rounded-(full|lg|xl|2xl|3xl)/.test(page), "no rounded corners (square-edge rule)");
+  assert.ok(page.includes('"Choose the department."'), "a post cannot silently inherit a department");
+
   // ── The preview frame must not be clamped by the admin shell ──────────────────────────────────
   // app/globals.css gives every iframe in .admin-shell max-width: 100%. The preview draws the post at
   // its true 1080px and scales it with a transform, so that clamp squeezes the page into the column
