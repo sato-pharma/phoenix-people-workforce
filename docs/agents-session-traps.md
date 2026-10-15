@@ -3278,3 +3278,23 @@ pre-image of all 8 files was copied into the session scratchpad before the resto
 A flag that is ignored rather than rejected turns a read into a write, and the write lands wherever
 you are standing. Instance of the fail-open shape the Validation cluster opens with: an action that
 produced no verdict reading exactly like a verdict of "nothing to do".
+
+### Fixed the same day
+
+`scripts/sync-cloud-context.mjs` now reads `process.argv` for the first time: `--help`/`-h` print a
+usage that carries both routes, every other argument prints `REFUSED`, quotes back what it was
+given, names `module-memory/build.mjs --check` (ASK) and `fold.mjs --apply` (FIX), and exits **2**
+having written nothing. Exit 1 stays what it always was — a real failure.
+
+The gate deliberately runs **before** the memory-source existence check, which is the only reason a
+repo test can pin it: a CI runner has no `~/.claude`, so with the checks in the other order a
+refused flag would exit 1 with *memory source not found* there and 2 on the laptop, and every case
+would pass locally and fail on the box. `tests/sync-cloud-context-args.test.ts` runs the script for
+each flag, asserts exit 2, asserts `.claude/cloud-context/README.md` has not changed size or mtime
+(the one thing a source read cannot prove), and pins that ordering from the comment-stripped source.
+It never runs the script bare — running it IS the write.
+
+Verified by breaking it: disarming the gate (`if (false && argv.length > 0)`) with
+`PHX_MEMORY_DIR` pointed at a path that does not exist turns the headline case red —
+`--check must exit 2 (refused), got 1: memory source not found` — and the fix was restored from a
+copy, never with `git checkout --`.

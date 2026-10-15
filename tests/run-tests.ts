@@ -2158,6 +2158,7 @@ import { runRecruitmentFolderCvPopupTests } from "./recruitment-folder-cv-popup.
 
 import { runRepoDoctorWorktreeRestoreAdviceTests } from "./repo-doctor-worktree-restore-advice.test.ts";
 import { runCloudMirrorDriftTests } from "./cloud-mirror-drift.test.ts";
+import { runSyncCloudContextArgsTests } from "./sync-cloud-context-args.test.ts";
 import { runWorktreeRemoveHeadShaGateTests } from "./worktree-remove-head-sha-gate.test.ts";
 import { runWorktreeRemoveRemoteContainmentTests } from "./worktree-remove-remote-containment.test.ts";
 import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
@@ -8164,6 +8165,10 @@ await runTest("repo-doctor never advises pnpm install in a worktree (restore is 
 await runTest(
   "repo-doctor measures cloud-mirror drift instead of assuming it current: stale, missing-from-the-mirror and present-with-no-live-memory are reported APART because they have different fixes, CRLF against LF is git normalisation and not drift (a raw byte compare fires on every file on a Windows checkout and a check that always fires gets switched off) while a real difference behind mixed endings is still caught, the report NAMES the files and the command that fixes them, a clean mirror does not advertise a fix it does not need, and an absent memory directory or missing mirror reads as CANNOT MEASURE rather than as zero drift — a cloud session running repo-doctor has no local memory at all",
   runCloudMirrorDriftTests,
+);
+await runTest(
+  "sync-cloud-context.mjs REFUSES an argument instead of ignoring it: it parsed none at all until 2026-10-15, so --check - the flag a session reaches for to ASK whether the cloud mirror has drifted - was silently ignored and the script did its one job, rewriting the whole mirror into whatever checkout the caller was standing in and exiting 0 like a clean check (measured that day: 7 modified tracked files and 1 untracked note in a worktree another live session shared, and the git restore to undo them is refused by the auto-mode classifier as irreversible local destruction). Every flag now exits 2 having written nothing, the refusal names the commands that DO ask (module-memory/build.mjs --check) and fix (fold.mjs --apply, in its own temporary worktree), --help is the one allowed argument, and the gate runs BEFORE the memory-source check so a runner with no ~/.claude refuses with the same exit code",
+  runSyncCloudContextArgsTests,
 );
 await runTest(
   "worktree removal frees a tip that is on origin under ANOTHER branch's name (confirmed against the remote, fails closed)",
