@@ -1294,6 +1294,15 @@ export async function runMarketingRequestServiceTests() {
     /v_written <> v_planned then\s+raise exception 'marketing_resubmit_invalid_steps/,
     "a rung that does not belong to this request must refuse the whole plan",
   );
+  // The live definition is the LAST migration that replaces the function, not the first one above.
+  const resubmitAuditSql = source(
+    "supabase/migrations/20261015164459_marketing_resubmit_audit_id_uses_stored_requester.sql",
+  );
+  assert.match(
+    resubmitAuditSql,
+    /updated_by_hr_id\s+=\s+v_request\.requester_hr_id/,
+    "the audit column takes the STORED requester id: the requester match ignores letter case but the employee foreign key does not",
+  );
   assert.match(serviceSource, /getApproverPendingRequests/, "service must expose the approver inbox");
   assert.match(serviceSource, /getMarketingRequestDetail/, "service must expose request detail for tracking");
   assert.match(serviceSource, /stepProgressByRequestId/, "workspace must expose step progress for tracking");
