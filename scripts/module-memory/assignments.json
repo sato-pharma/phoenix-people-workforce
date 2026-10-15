@@ -101,6 +101,7 @@
   "a-pharmacy-check-in-counts-as-the-pharmacy-visit": "crm",
   "a-pharmacy-is-not-a-contact": "crm",
   "a-phoenix-crm-validation-is-checked-against-google-maps-never-ireports360": "phoenix-crm",
+  "a-piped-run-watch-exit-code-is-tails-not-ghs": "engineering-deploys",
   "a-pm-validation-can-never-be-held-so-rejecting-one-is-by-hand": "phoenix-crm",
   "a-post-to-any-api-path-returns-403-even-if-it-does-not-exist": "platform",
   "a-pr-check-grades-the-merge-so-it-can-fail-on-a-commit-you-never-wrote": "engineering",
