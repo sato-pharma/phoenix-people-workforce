@@ -131,6 +131,43 @@ first and give the owner a chance to stop it.** Staging was always pre-approved.
 a project, and reading secrets, remain outside the grant. And the route is for a migration the MCP
 **refuses** — the MCP remains the first door, because a row it records is itself evidence the SQL ran.
 
+### The 15 October production sweep — four findings, zero unapplied
+
+**The owner's words, in session:** *"sweep production for merged migrations never applied"*, sent the
+same evening he made `apply-sql-file.mjs` the standing route.
+
+The repository already implements the sweep —
+`node --experimental-strip-types scripts/check-migrations-applied.ts`, pointed at whichever project
+`NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` name, which is what
+`.github/workflows/migration-drift-check.yml` drives daily at 07:00 UTC against both databases. Run
+against production (`ozucdzovmcqvepbozvqf`) it read **884 local migrations, 1,334 ledger rows** and
+named four files merged to `main` and absent from `supabase_migrations.schema_migrations` by both
+version and name:
+
+| file | what the catalog actually held |
+| --- | --- |
+| `20261012090000_phoenix_crm_door_name_fold_and_place_cap.sql` | applied — `phoenix_crm_rename_customer` md5-equal, this file its last definer |
+| `20261012132430_daily_deductions_per_line_release.sql` | applied — four new columns present, three functions equal once CRLF and stripped comments are allowed for |
+| `20261012200000_phoenix_crm_a_doctor_is_on_a_seat_once.sql` | applied — three functions md5-equal as-is, trigger present and enabled |
+| `20261013010000_drop_v_active_organogram.sql` | applied — zero relations named `v_active_organogram` at any relkind |
+
+**All four were already live. Nothing on production is unapplied**, and the four entries now in
+`ACKNOWLEDGED_EXCEPTIONS` carry that evidence. The daily check had been reporting them since 14
+October, concluding `success` each time because every leg carries `continue-on-error` — so the
+report sat unread rather than red.
+
+🔴 **The finding class is the one the standing route above creates.** A hand-apply runs the SQL and
+writes no ledger row, so this check cannot distinguish *applied by hand* from *never applied*, and
+after 15 October the first is the likelier of the two. The check's own closing advice now says so
+instead of telling the reader to take the files to the owner.
+
+🔴 **Two of the four would have read as drift to a raw digest comparison.** Production's `prosrc` for
+the deduction functions carries **CRLF** line endings, and two of the three arrived with every
+full-line `--` comment removed. Compare the file's dollar-quoted body in four shapes — as-is LF,
+as-is CRLF, comment-stripped LF, comment-stripped CRLF — and read the length delta first: 4,102
+against 4,191 characters is a normalisation, not a different generation of the logic. The rule lives
+in `.claude/rules/database.md`, "The migration ledger".
+
 ## Migration Pipeline
 
 **Reconciled 2026-08-04.** There is currently **no scripted gate** for taking a new
