@@ -787,5 +787,103 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   const venuesRoute = stripComments(readFileSync("app/api/phoenix-crm/shared-places/route.ts", "utf8"));
   assert.ok(venuesRoute.includes("NextResponse.json({ sharedPlaces, success: true })"), "the GET answers { sharedPlaces, success }");
 
+
+  // ── Approving a polyclinic AFTER rejecting it (owner, 2026-10-15) ─────────────────────────────
+  // A rejected PLACE could always be taken back; a rejected VENUE could not, by anybody — and it is
+  // the heaviest decision on the page, retiring the building, its seated places and sending every
+  // doctor in it back to To validate. Production held 35 retired venues with no way back the day
+  // this was written, and the board could not even draw one.
+  const restoreSql = stripSqlComments(
+    readFileSync("supabase/migrations/20261015220318_phoenix_crm_restore_shared_place.sql", "utf8"),
+  );
+  assert.match(
+    restoreSql,
+    /create or replace function public\.phoenix_crm_restore_shared_place\(p jsonb\)/,
+    "the undo of a venue rejection is one function of its own",
+  );
+  assert.ok(
+    restoreSql.includes("if v_venue.status <> 'retired' or v_venue.retired_at is null then")
+      && restoreSql.includes("raise exception 'phoenix_crm:shared_place_not_retired';"),
+    "🔴 only a REJECTED venue comes back, and only while it is still in the state the rejection left it in",
+  );
+  assert.ok(
+    restoreSql.includes("and pl.retired_at = v_retired_at"),
+    "🔴 WHICH places come back is decided by `retired_at`, not by the seating — a bare shared_place_id + retired would "
+      + "also resurrect a place retired earlier for its own reason",
+  );
+  for (const hold of [
+    "if v_venue.schedule_photo_path is null",
+    "(v_seated.schedule_check ->> 'verdict') in ('other_name', 'no_schedule')",
+    "where r.customer_id = v_seated.customer_id and r.status = 'pending'",
+  ]) {
+    assert.ok(
+      restoreSql.includes(hold),
+      `the restore keeps the approve branch's hold verbatim, never widened: ${hold}`,
+    );
+  }
+  assert.ok(
+    restoreSql.includes("set reopened_at = null") && restoreSql.includes("where c.status = 'active'"),
+    "the capture-again stamp is cleared for whoever is back in use and KEPT for whoever is still pending",
+  );
+  for (const event of ["'shared_place_restored'", "'place_restored'", "'customer_validated'"]) {
+    assert.ok(restoreSql.includes(event), `the history is written, not inferred: ${event}`);
+  }
+  assert.doesNotMatch(
+    restoreSql,
+    /insert\s+into\s+supabase_migrations/i,
+    "🔴 and it writes NO ledger row — `assertMigrationHygiene` refuses one, and the row is written only after `pg_proc` proves the function landed",
+  );
+
+  // The service, the route and the registry.
+  assert.ok(
+    venueServer.includes('callPhoenixCrm<Row>("phoenix_crm_restore_shared_place"'),
+    "the service calls the function and never writes the venue row itself",
+  );
+  const restoreGate = venueServer.slice(venueServer.indexOf("export async function restoreSharedPlace"));
+  assert.ok(
+    restoreGate.includes("if (!canDecideSharedPlaces(viewer)) throw forbiddenError("),
+    "🔴 the Super Admin ALONE brings a venue back — the same gate that rejected it",
+  );
+  const restoreRoute = stripComments(readFileSync("app/api/phoenix-crm/validation-reviews/shared-place/restore/route.ts", "utf8"));
+  assert.ok(restoreRoute.includes("export async function POST(request: Request)"), "the route answers POST");
+  assert.ok(!/export async function (GET|PUT|PATCH|DELETE)\b/.test(restoreRoute), "and nothing else");
+  assert.ok(restoreRoute.includes("assertSameOriginMutation(request)"), "a mutation is same-origin only");
+  assert.ok(
+    restoreRoute.includes('await assertPermission(access, "phoenix_crm", "update")'),
+    "and the server-side permission is the security boundary, never the screen",
+  );
+  const registry = readFileSync("src/lib/security/access-registry.ts", "utf8");
+  assert.ok(
+    registry.includes('pattern: "/api/phoenix-crm/validation-reviews/shared-place/restore"'),
+    "the route is declared in the access registry — an undeclared one fails its own guard",
+  );
+
+  // The board has to SHOW a rejected venue before anybody can take the rejection back.
+  assert.ok(
+    venueServer.includes("`status.in.(active,held),and(status.eq.retired,retired_at.gte.${restorableSince()})`"),
+    "🔴 the board reads rejected venues too, bounded to the ones still reversible — `status.in.(active,held)` alone is "
+      + "why a rejection had no undo on the screen at all",
+  );
+  assert.ok(
+    venueServer.includes('restorable: row.status === "retired" && text(row.retired_at) !== null'),
+    "and each row says whether it can be brought back, the mirror of a review row's own flag",
+  );
+  assert.ok(
+    venueList.includes("function RestoreVenue(") && venueList.includes("if (row.restorable) {"),
+    "a rejected venue's row offers the one control it can take — never approve or reject beside it",
+  );
+  assert.equal(
+    (venueList.match(/takes: \(row\) => !row\.restorable/g) ?? []).length,
+    2,
+    "approve and reject take only the rows they can still decide",
+  );
+  assert.ok(
+    venueList.includes('key: "restore"') && venueList.includes("takes: (row) => row.restorable"),
+    "and several rejections are taken back together, through the same bulk bar as every other answer",
+  );
+  assert.ok(
+    dbRefusals.includes("shared_place_not_retired:"),
+    "the refusal has words an admin can act on, not a code",
+  );
   console.log("phoenix-crm shared places: OK");
 }

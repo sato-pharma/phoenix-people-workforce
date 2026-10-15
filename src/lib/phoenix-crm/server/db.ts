@@ -64,6 +64,9 @@ const REFUSALS: Record<string, Refusal> = {
   offplan_week_full: { status: 409, message: OFFPLAN_WEEK_FULL_TEXT },
   shared_place_not_found: { status: 404, message: "This polyclinic or centre is no longer there. Reload the page." },
   shared_place_retired: { status: 409, message: "This polyclinic or centre was removed. Reload the page." },
+  // The mirror of `place_not_retired`: the rejection this would take back is not the state the venue
+  // is in any more — somebody has already brought it back, or it was never rejected.
+  shared_place_not_retired: { status: 409, message: "This polyclinic or centre is not waiting to be brought back. Reload the page." },
   shared_place_held: {
     status: 409,
     // Only the Super Admin's MOVE reaches this now (a rep's seating in a held venue is allowed since
