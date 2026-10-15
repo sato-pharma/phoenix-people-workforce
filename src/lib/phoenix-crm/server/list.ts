@@ -2200,6 +2200,12 @@ export async function addPharmacy(
       is_test: isTest,
       name,
       from: body.from === "visit" ? "visit" : "list",
+      // The row THIS match already found, Arabic-aware — so the database trusts it instead of
+      // re-deriving "already on his list" from a weaker, case-only compare that reads "طاهر رمضان"
+      // and "صيدلية طاهر رمضان" as two different pharmacies and would otherwise add one twice the
+      // moment he also captures a pin or phone (the only path that still calls this function on an
+      // "existing" match). Omitted when match.kind is "new", so the function's own name search runs.
+      ...(match.kind === "existing" ? { existing_customer_id: match.customerId } : {}),
       // Omitted entirely when he captured nothing, so the function's own "a body with no phone and no
       // pin key does exactly what it did" path is the one that runs.
       ...(phone.value === null ? {} : { phone: phone.value }),
