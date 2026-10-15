@@ -212,7 +212,7 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
   const [showLine, setShowLine] = useState(false);
   const [line, setLine] = useState(lines[0] ?? "");
   const [template, setTemplate] = useState<JobPostTemplateKey>("executive");
-  const [variant, setVariant] = useState<string | null>(null);
+  const [pickedArea, setPickedArea] = useState<string | null>(null);
   const [assets, setAssets] = useState<JobPostAssets | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -232,10 +232,9 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
     };
   }, []);
 
-  // A per-area preview of an area that was since removed falls back to the all-areas picture.
-  useEffect(() => {
-    if (variant && !areas.includes(variant)) setVariant(null);
-  }, [areas, variant]);
+  // A per-area preview of an area that was since removed falls back to the all-areas picture —
+  // derived, never synced through an effect.
+  const variant = pickedArea && areas.includes(pickedArea) ? pickedArea : null;
 
   const edit = (patch: Partial<JobPostTitleDraft>) => {
     setDraft((current) => ({ ...current, ...patch }));
@@ -511,7 +510,7 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
                     aria-selected={variant === area}
                     className={variant === area ? phxButtonPrimaryClassName : phxButtonGhostClassName}
                     key={area ?? "all"}
-                    onClick={() => setVariant(area)}
+                    onClick={() => setPickedArea(area)}
                     role="tab"
                     type="button"
                   >
