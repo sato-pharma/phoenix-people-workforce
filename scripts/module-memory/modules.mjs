@@ -120,6 +120,34 @@ export const MODULES = [
     keywords: ["closing export", "premium closing", "performance review", "rankings tab", "no office matrix", "consolidated closing", "national total", "filtered total", "workbook"],
     tables: [],
   },
+  // 🔴 SPLIT 2026-10-15, FOR THE SAME REASON AND BY THE SAME TEST AS `sales-closing-exports` ABOVE:
+  // the Kafr El-Sheikh 2 rule took `sales-closing` from 35 rules to 36 and its pointer from 3,960 to
+  // 4,149, over the 4,000 margin. 🔴 THE MODULE WAS ALREADY AT THE MARGIN WITH 35 — 40 bytes under —
+  // so no new rule of any length would have fitted, and shortening the incoming one could not have
+  // helped: at 95 bytes of headline instead of 184 the pointer still read 4,060. That is what makes
+  // this a split and not a trim.
+  //
+  // The half moved is the one that decides NO number: the Monthly Closing's screens and deep links,
+  // and the detectors that REPORT on a closing without ever repairing one. Every money and golden
+  // rule stays in `sales-closing`, which keeps every glob it had, so touching a screen or a drift
+  // script loads the pair and a session cannot reach a detector without the rules it detects
+  // against. Splitting the broad glob instead would silently drop a money rule from the sessions
+  // that most need it — see the note above `sales-closing`. Account: `docs/module-memory.md`,
+  // "Limits".
+  {
+    id: "sales-closing-screens",
+    title: "Monthly Closing — the screens, the deep links and the drift detectors",
+    scope: "The surfaces a closing is READ on and the checks that report on it, none of which decides a number: the matrix screen's head, filter and Details tab, the publish email's one link and the stale-deep-link notice, the publication-drift and Office-allocation-drift detectors, the month-completeness gate and the coverage banner, and the SoS dashboard cache. What a number IS stays in `sales-closing`.",
+    globs: [
+      "src/lib/sales/{closing-deep-link,closing-details-span,closing-filter-narrowing,closing-publication-drift,closing-publish-destination,office-allocation-drift,source-coverage,source-quiet-periods,sos-month-complete,sos-dashboard,portal-sos-dashboard}.ts",
+      "src/components/sales/{closing-details-panel,closing-details-standalone,closing-matrix-table,monthly-closing-workspace}.tsx",
+      "scripts/check-{closing-publication-drift,office-allocation-drift,sos-month-complete}.ts",
+      "tests/closing-{deep-link-silent-substitution,details-span-notice,matrix-head-never-ellipsises,office-respread,publication-drift,publish-email-destination,refresh-keeps-the-filter}*",
+      "tests/{needs-you-board,sos-dashboard-packed-cache,sos-month-complete,source-coverage}*",
+    ],
+    keywords: ["closing screen", "closing matrix head", "closing details tab", "publication drift", "office allocation drift", "month completeness", "coverage banner", "deep link", "publish email link"],
+    tables: [],
+  },
   {
     id: "sales-imports",
     title: "Source of Sales — distributor imports, customer mapping and rollups",
