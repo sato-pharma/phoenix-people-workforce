@@ -1010,6 +1010,85 @@ export function isWithinGraceWindow(migration: LocalMigration, nowMs: number): b
 }
 
 /**
+ * `check-migrations-applied.ts`'s only command line, parsed HERE so a test can assert it without
+ * importing that script — its `main()` runs on import and would open a database connection.
+ *
+ * 🔴 AN UNKNOWN FLAG IS REFUSED, NEVER IGNORED. A dropped flag makes the narrow run read as the
+ * wide one, which is the exact shape of the `sync-cloud-context.mjs --check` trap, and here it
+ * would answer "production is clean" about a set the run never looked at.
+ *
+ * `--no-grace` exists because the grace window is right for the nightly job and wrong for a sweep:
+ * on 2026-10-15 it sheltered FOUR of the eight production files whose ledger rows were missing,
+ * three of them money migrations merged that morning (see docs/migrations.md, "The 15 October
+ * production sweep"). The owner's question — "sweep production for merged migrations never
+ * applied" — is this flag.
+ */
+export function parseDriftCheckFlags(argv: string[]): { ignoreGraceWindow: boolean; staging: boolean } {
+  let ignoreGraceWindow = false;
+  let staging = false;
+  for (const arg of argv) {
+    if (arg === "--no-grace") {
+      ignoreGraceWindow = true;
+      continue;
+    }
+    if (arg === "--staging") {
+      staging = true;
+      continue;
+    }
+    throw new Error(
+      `unknown flag ${JSON.stringify(arg)} — the flags are --no-grace (judge the newest migrations `
+        + `too, what a sweep wants) and --staging (read the staging project's credentials instead of `
+        + `production's). Refusing rather than ignoring it: a silently dropped flag makes a narrower `
+        + `run read as the wider one, or points a run at the wrong database.`,
+    );
+  }
+  return { ignoreGraceWindow, staging };
+}
+
+/**
+ * The same env files, in the same order, that `scripts/apply-sql-file.mjs` reads — so one command
+ * works in a shell and not only in CI.
+ *
+ * 🔴 THE PROCESS ENVIRONMENT ALWAYS WINS. The drift-check workflow passes each project's URL and
+ * service key explicitly, once per leg, and a file must never be able to redirect a CI run at the
+ * other database. This is a FALLBACK for a human, nothing more.
+ *
+ * `.env.local` points at PRODUCTION (AGENTS.md §3), which is what a sweep wants by default;
+ * `.env.staging.rls.local` holds the staging pair under `PHOENIX_STAGING_*` names, which is why
+ * `--staging` asks for different keys rather than a different file.
+ */
+export const DRIFT_CHECK_ENV_FILES = [
+  ".env.staging.rls.local",
+  ".env.production.rls.local",
+  ".env.local",
+] as const;
+
+/**
+ * `name` from the process environment, else from the first of DRIFT_CHECK_ENV_FILES that sets it.
+ * Returns the source alongside the value so the run can SAY where its credentials came from —
+ * never the value itself, which is a service-role key.
+ */
+export function resolveEnvValue(
+  name: string,
+  files: readonly string[] = DRIFT_CHECK_ENV_FILES,
+): { value: string; source: string } | null {
+  const fromProcess = process.env[name];
+  if (fromProcess) return { value: fromProcess, source: "the process environment" };
+  for (const file of files) {
+    if (!fs.existsSync(file)) continue;
+    for (const raw of fs.readFileSync(file, "utf8").replace(/^﻿/, "").split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith("#")) continue;
+      const eq = line.indexOf("=");
+      if (eq < 0 || line.slice(0, eq).trim() !== name) continue;
+      const value = line.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+      if (value) return { value, source: file };
+    }
+  }
+  return null;
+}
+
+/**
  * The migrations genuinely missing from a project, OLDEST FIRST.
  *
  * Order is part of the answer, not presentation: the applier runs them in exactly this order, and
