@@ -11,15 +11,19 @@ import {
   CalendarCheck,
   CalendarClock,
   CalendarDays,
+  CalendarFold,
+  CalendarHeart,
   CalendarRange,
   ChartColumnBig,
   ChartNoAxesColumnIncreasing,
   ClipboardCheck,
   ClipboardList,
+  CircleQuestionMark,
   Clock,
   CopyCheck,
   Download,
   Columns3,
+  Contact,
   Database,
   FileCheck2,
   FileClock,
@@ -49,6 +53,7 @@ import {
   MailCheck,
   MailPlus,
   MailX,
+  Medal,
   MousePointerClick,
   MapPinCheck,
   MapPinOff,
@@ -66,6 +71,7 @@ import {
   Radar,
   ReceiptText,
   Repeat2,
+  Reply,
   Scale,
   ScrollText,
   Search,
@@ -89,6 +95,8 @@ import {
   Undo2,
   Unlink,
   UserCog,
+  UserRoundPlus,
+  UserRoundSearch,
   Users,
   UsersRound,
   Waypoints,
@@ -2212,7 +2220,7 @@ const hrNavigationSectionSeeds = [
       // could fail. This is what let the owner's instruction ("make Employee Directory appear in
       // her account") be honoured without handing her a write surface.
       { href: "/hr/employees", icon: UsersRound, label: "Employee Directory", permissions: [{ resource: "employees", action: "read" }] },
-      { href: "/hr/employee-360", icon: IdCard, label: "Employee 360", permissions: [{ resource: "employee_profile", action: "read" }] },
+      { href: "/hr/employee-360", icon: Contact, label: "Employee 360", permissions: [{ resource: "employee_profile", action: "read" }] },
       { href: "/hr/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
       // Owner instruction 2026-09-07: "territory management is not appearing in hr business partner
       // account make it appear to her." It sits next to the Organogram because that is what it is —
@@ -2293,9 +2301,9 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/devices", icon: Laptop, label: "Device Custody", permissions: [{ resource: "company_devices" }] },
       // The Retention Register row left the HR rail on 2026-10-08 with the HR Business Partner seat:
       // retention is the Super Admin's now (read by the CEO), and no HR seat holds it.
-      { href: "/hr/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
+      { href: "/hr/reports/vacancies", icon: UserRoundSearch, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
       { href: "/hr/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }] },
-      { href: "/hr/admin/business-card-requests", icon: IdCard, label: "Business Card Requests", permissions: [{ resource: "business_card_requests" }] },
+      { href: "/hr/admin/business-card-requests", icon: ClipboardList, label: "Business Card Requests", permissions: [{ resource: "business_card_requests" }] },
       // ── The Talent Acquisition seat's own rows (HR Resourcing, 2026-10-08) ──────────────────────
       // Every row gated `roles: ["HR Resourcing"]` in this catalogue is a page the owner ticked for
       // her on the access blueprint that no other HR seat is offered here. `excludedRoles` keeps the
@@ -2311,22 +2319,19 @@ const hrNavigationSectionSeeds = [
   },
   {
     id: "hr-recruitment",
+    // ORDERED AS THE WORK RUNS (premium sweep of the Talent Acquisition rail, 2026-10-16): the
+    // pipeline, the queue she screens, the candidates she owns, the interview, the offer, then the
+    // numbers about all of it. The WhatsApp and posting tools are their own section below — this one
+    // held 13 rows, and the owner has said more than once that a crowded rail IS the defect.
     items: [
       { href: "/hr/recruitment", icon: BriefcaseBusiness, label: "Recruitment", permissions: [{ resource: "recruitment" }] },
-      // NO Returned CVs and NO CV Sheet Links row here since 2026-10-08. Both were the HR Business
-      // Partner's, and recruiting moved off her seat that day; the Talent Acquisition seat holds the
-      // key but the owner fenced both pages off it (src/lib/auth/seat-page-fences.ts). No HR seat can
-      // open either, so a row would only offer a redirect. They stay on the admin rail for the Super
-      // Admin.
-      // The HR shell's own row for /recruitment/whatsapp-applicants, added with the page on
-      // 2026-09-18. The admin row alone would leave the HR Business Partner, who works in this shell,
-      // able to reach it only by typing the address (see WhatsApp Templates below). Same gate as
-      // Returned CVs above, and only that seat holds `recruitment`, so HR Operations is never offered it.
-      { href: "/hr/recruitment/whatsapp-applicants", icon: MessageSquareText, label: "WhatsApp Applicants", permissions: [{ resource: "recruitment" }] },
-      // The HR shell's row for /recruitment/interview-calendar (2026-09-18), for the same reason as
-      // WhatsApp Applicants above. Whether the calendar opens is its own sharing, not this clause.
-      // HR Operations reaches it from "People" instead (see the copy there): she is its admin, but she
-      // holds no recruitment grant and is never shown a Recruitment heading.
+      // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under People.
+      { href: "/hr/recruitment/screening", icon: ListChecks, label: "Screening Queue", permissions: [{ resource: "recruitment", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      { href: "/hr/recruitment/candidates", icon: Inbox, label: "My Candidates", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      // The HR shell's own row for /recruitment/interview-calendar (2026-09-18). Whether the calendar
+      // opens is its own sharing, not this clause. HR Operations reaches it from "People" instead (see
+      // the copy there): she is its admin, but she holds no recruitment grant and is never shown a
+      // Recruitment heading.
       { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", permissions: [{ resource: "recruitment" }] },
       // `recruitment`, matching the page's own gate — NOT `vacancies`. Owner instruction
       // 2026-09-01, "block the cv database for her too": HR Operations was granted
@@ -2336,46 +2341,7 @@ const hrNavigationSectionSeeds = [
       // tests/cv-database-recruiting-boundary.test.ts is what catches that.
       { href: "/hr/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "recruitment" }] },
       { href: "/hr/offers", icon: MailCheck, label: "Job Offers", permissions: [{ resource: "offers" }] },
-      { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }] },
-      { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }] },
-      { href: "/hr/business-cards", icon: IdCard, label: "Business Cards", permissions: [{ resource: "employee_documents" }] },
-      // NO "Missing Contact Details" (/hr/recruitment/contact-review) and NO "Inbound Intake
-      // Health" (/hr/recruitment/intake-health) row. Both sat here until 2026-09-01, when the
-      // owner cut them: "I think there are irrelevant modules... I don't want any crowd... remove
-      // them from this sidebar." They are intake PLUMBING — one lists candidate records missing a
-      // phone or an email, the other counts what the WhatsApp and mailbox importers ingested —
-      // and neither is work an HR Business Partner is measured on. `recruitment` is HER grant
-      // alone (HR Operations holds none of it), so these two rendered for exactly one seat and
-      // deleting the lines takes nothing from anybody else. Both PAGES stay live and gated as they
-      // were — it is the rail that is quieter. Do not re-add them "for completeness": the
-      // crowding IS the defect he named.
-      { href: "/hr/recruitment/whatsapp-replies", icon: MessageSquareText, label: "WhatsApp Replies", permissions: [{ resource: "recruitment" }] },
-      // WhatsApp Templates — the HR shell's own row for /recruitment/whatsapp-templates.
-      //
-      // THE ADMIN ROW IS NOT ENOUGH, and that is the whole reason this exists. The HR Business
-      // Partner works in the `/hr` shell, which renders from THIS catalogue, so the admin-shell row
-      // added with the feature was invisible to the one person who uses it most: she could reach
-      // the page only by typing the URL. Measured 2026-09-08 by signing in as the seat and watching
-      // the redirect land on /hr/recruitment/whatsapp-templates with no row to click.
-      //
-      // `roles: ["HR Resourcing"]` matches Manager CV Engagement two rows down, and it is required
-      // rather than cosmetic: the other HR seats also render this shell, and `canSendWhatsAppTemplate`
-      // redirects them — an offered link that redirects is what every-offered-link-opens.test.ts
-      // exists to catch. It named "HR Advisory" until the owner moved recruiting off the HR Business
-      // Partner on 2026-10-08. "HR Resourcing" is the permission key; "Talent Acquisition" is the
-      // title shown for it (displayTitleForRole), never a role in its own right.
-      { href: "/hr/recruitment/whatsapp-templates", icon: MessageCircle, label: "WhatsApp Templates", permissions: [{ resource: "recruitment", action: "update" }], roles: ["HR Resourcing"] },
-      // The Talent Acquisition seat (2026-10-08) — the owner's answers in chat on 2026-10-08. Both company numbers, every chat;
-      // canUseWhatsAppInbox (src/lib/whatsapp-inbox/access.ts) is the gate this row mirrors.
-      { href: "/hr/recruitment/whatsapp-inbox", icon: MessageCircle, label: "WhatsApp Inbox", permissions: [{ resource: "recruitment", action: "update" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
-      // Job Posts (owner, 2026-10-15) — the HR shell's own row, for the same reason WhatsApp
-      // Templates has one: the Talent Acquisition seat works in this shell. canBuildJobPosts is the gate.
-      { href: "/hr/recruitment/job-posts", icon: Megaphone, label: "Job Posts", permissions: [{ resource: "recruitment", action: "update" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
-      // Added 2026-09-01. The page was `admin:update` — Super Admin alone — and was re-gated to
-      // `recruitment:update` rather than the resource being widened, because `admin:update` also
-      // opens module locks, scope visibility, salary flags and a notification TEST-SEND endpoint.
-      // See assertScreeningQuestionsAccess in whatsapp-screening-questions-admin.ts.
-      { href: "/hr/admin/screening-questions", icon: ListChecks, label: "Screening Questions", permissions: [{ resource: "recruitment", action: "update" }] },
+      { href: "/hr/recruitment/hiring-analytics", icon: ChartNoAxesColumnIncreasing, label: "Hiring Analytics", permissions: [{ resource: "candidates", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       // Added 2026-09-01. The audience is a ROLE SET, not a permission — canViewManagerCvEngagement
       // — so this row carries `roles` rather than a grant, and the two must be read together: the
       // owner amended that list the same day to add HR Advisory and nobody else in HR.
@@ -2386,12 +2352,68 @@ const hrNavigationSectionSeeds = [
       // sidebar-label-width stopped charging it the reason for the short name went away. The full
       // name measures 153px against this rail's 157px budget, so it fits and the drift is closed.
       { href: "/hr/recruitment/manager-engagement", icon: Radar, label: "Manager CV Engagement", permissions: [{ resource: "recruitment" }], roles: ["HR Resourcing"] },
-      // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under People.
-      { href: "/hr/recruitment/screening", icon: ListChecks, label: "Screening Queue", permissions: [{ resource: "recruitment", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
-      { href: "/hr/recruitment/candidates", icon: Inbox, label: "My Candidates", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
-      { href: "/hr/recruitment/hiring-analytics", icon: ChartNoAxesColumnIncreasing, label: "Hiring Analytics", permissions: [{ resource: "candidates", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }] },
+      { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }] },
+      { href: "/hr/business-cards", icon: IdCard, label: "Business Cards", permissions: [{ resource: "employee_documents" }] },
+      // NO Returned CVs and NO CV Sheet Links row here since 2026-10-08. Both were the HR Business
+      // Partner's, and recruiting moved off her seat that day; the Talent Acquisition seat holds the
+      // key but the owner fenced both pages off it (src/lib/auth/seat-page-fences.ts). No HR seat can
+      // open either, so a row would only offer a redirect. They stay on the admin rail for the Super
+      // Admin.
+      // NO "Missing Contact Details" (/hr/recruitment/contact-review) and NO "Inbound Intake
+      // Health" (/hr/recruitment/intake-health) row. Both sat here until 2026-09-01, when the
+      // owner cut them: "I think there are irrelevant modules... I don't want any crowd... remove
+      // them from this sidebar." They are intake PLUMBING — one lists candidate records missing a
+      // phone or an email, the other counts what the WhatsApp and mailbox importers ingested —
+      // and neither is work an HR Business Partner is measured on. `recruitment` is HER grant
+      // alone (HR Operations holds none of it), so these two rendered for exactly one seat and
+      // deleting the lines takes nothing from anybody else. Both PAGES stay live and gated as they
+      // were — it is the rail that is quieter. Do not re-add them "for completeness": the
+      // crowding IS the defect he named.
     ],
     label: "Recruitment",
+  },
+  {
+    id: "hr-outreach",
+    // The Talent Acquisition seat's WhatsApp and posting tools, split out of Recruitment on
+    // 2026-10-16 so neither section is a 13-row wall. Every row keeps the gate it always had; only
+    // the heading moved. HR Operations holds no `recruitment` grant, so this heading never renders
+    // for her (tests/cv-database-recruiting-boundary.test.ts).
+    items: [
+      // The HR shell's own row for /recruitment/whatsapp-applicants, added with the page on
+      // 2026-09-18. The admin row alone would leave the seat that works in this shell able to reach
+      // it only by typing the address (see WhatsApp Templates below). Only a `recruitment` holder is
+      // offered it, so HR Operations never is.
+      { href: "/hr/recruitment/whatsapp-applicants", icon: UserRoundPlus, label: "WhatsApp Applicants", permissions: [{ resource: "recruitment" }] },
+      { href: "/hr/recruitment/whatsapp-replies", icon: Reply, label: "WhatsApp Replies", permissions: [{ resource: "recruitment" }] },
+      // The Talent Acquisition seat (2026-10-08) — the owner's answers in chat on 2026-10-08. Both company numbers, every chat;
+      // canUseWhatsAppInbox (src/lib/whatsapp-inbox/access.ts) is the gate this row mirrors.
+      { href: "/hr/recruitment/whatsapp-inbox", icon: MessageCircle, label: "WhatsApp Inbox", permissions: [{ resource: "recruitment", action: "update" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      // WhatsApp Templates — the HR shell's own row for /recruitment/whatsapp-templates.
+      //
+      // THE ADMIN ROW IS NOT ENOUGH, and that is the whole reason this exists. The Talent
+      // Acquisition seat works in the `/hr` shell, which renders from THIS catalogue, so the
+      // admin-shell row added with the feature was invisible to the one person who uses it most: she
+      // could reach the page only by typing the URL. Measured 2026-09-08 by signing in as the seat
+      // and watching the redirect land on /hr/recruitment/whatsapp-templates with no row to click.
+      //
+      // `roles: ["HR Resourcing"]` matches Manager CV Engagement, and it is required rather than
+      // cosmetic: the other HR seats also render this shell, and `canSendWhatsAppTemplate` redirects
+      // them — an offered link that redirects is what every-offered-link-opens.test.ts exists to
+      // catch. It named "HR Advisory" until the owner moved recruiting off the HR Business Partner on
+      // 2026-10-08. "HR Resourcing" is the permission key; "Talent Acquisition" is the title shown
+      // for it (displayTitleForRole), never a role in its own right.
+      { href: "/hr/recruitment/whatsapp-templates", icon: MessageSquareText, label: "WhatsApp Templates", permissions: [{ resource: "recruitment", action: "update" }], roles: ["HR Resourcing"] },
+      // Job Posts (owner, 2026-10-15) — the HR shell's own row, for the same reason WhatsApp
+      // Templates has one: the Talent Acquisition seat works in this shell. canBuildJobPosts is the gate.
+      { href: "/hr/recruitment/job-posts", icon: Megaphone, label: "Job Posts", permissions: [{ resource: "recruitment", action: "update" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      // Added 2026-09-01. The page was `admin:update` — Super Admin alone — and was re-gated to
+      // `recruitment:update` rather than the resource being widened, because `admin:update` also
+      // opens module locks, scope visibility, salary flags and a notification TEST-SEND endpoint.
+      // See assertScreeningQuestionsAccess in whatsapp-screening-questions-admin.ts.
+      { href: "/hr/admin/screening-questions", icon: CircleQuestionMark, label: "Screening Questions", permissions: [{ resource: "recruitment", action: "update" }] },
+    ],
+    label: "WhatsApp & Posts",
   },
   {
     id: "hr-attendance",
@@ -2421,13 +2443,20 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", permissions: [{ resource: "employees", action: "update" }] },
       { href: "/hr/attendance/policies", icon: CalendarClock, label: "Attendance Policies", permissions: [{ resource: "employees", action: "update" }] },
       { href: "/hr/hr-calendar", icon: CalendarDays, label: "Company Calendar", permissions: [{ resource: "hr_calendar" }] },
+      // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under
+      // People. "Events Calendar" because "Company Calendar" above is already /hr/hr-calendar; this
+      // is the admin host of the portal events calendar (events, holidays, leave and birthdays).
+      { href: "/hr/admin/company-calendar", icon: CalendarHeart, label: "Events Calendar", permissions: [{ resource: "attendance", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      { href: "/hr/admin/private-calendars", icon: CalendarFold, label: "Private Calendars", permissions: [{ resource: "attendance", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      // Last of the calendars on purpose (2026-10-16): the three above are the company's own — official,
+      // events, private — and this one is the field force's submitted plans, a different thing.
       // Owner instruction 2026-09-01 for HR Operations, and independently added for HR Advisory
       // the same day — so the row carries NO roles gate and both seats get it on the
       // weekly_plans:read grant alone. HR Advisory has held that through workforce_insight all
       // along; HR Operations was granted it in the same change (src/lib/auth/hr-functions.ts).
       //
       // Labelled "Planning Calendar", NOT "Company Planning Calendar" as the admin module
-      // registry spells it, and deliberately: the row directly above is the OFFICIAL company
+      // registry spells it, and deliberately: the Company Calendar row is the OFFICIAL company
       // calendar (holidays, HR events) and this one is the field force's submitted weekly and
       // monthly plans. Two adjacent rows both beginning "Company Calendar" is a pair nobody can
       // tell apart from the rail, and the rail is where the choice is made.
@@ -2436,11 +2465,6 @@ const hrNavigationSectionSeeds = [
       // row: it is the plan APPROVAL workspace, which belongs to the sales ladder, and neither
       // HR seat holds a weekly_plans write action.
       { href: "/hr/admin/weekly-plans/calendar", icon: CalendarRange, label: "Planning Calendar", permissions: [{ resource: "weekly_plans", action: "read" }] },
-      // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under
-      // People. "Events Calendar" because "Company Calendar" above is already /hr/hr-calendar; this
-      // is the admin host of the portal events calendar (events, holidays, leave and birthdays).
-      { href: "/hr/admin/company-calendar", icon: CalendarDays, label: "Events Calendar", permissions: [{ resource: "attendance", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
-      { href: "/hr/admin/private-calendars", icon: CalendarDays, label: "Private Calendars", permissions: [{ resource: "attendance", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
     ],
     // Renamed from "Attendance" on 2026-09-01: with the Company Calendar visible to both seats and
     // the Planning Calendar added, two of the rows in here are calendars rather than attendance.
@@ -2587,7 +2611,7 @@ const hrNavigationSectionSeeds = [
       // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under
       // People. Read only: confirming a fortnight stays with each District Manager.
       { href: "/hr/admin/early-birds", icon: Sunrise, label: "Early Birds", permissions: [{ resource: "early_birds", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
-      { href: "/hr/admin/ranks", icon: Award, label: "Phoenix Ranks", permissions: [{ resource: "early_birds", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      { href: "/hr/admin/ranks", icon: Medal, label: "Phoenix Ranks", permissions: [{ resource: "early_birds", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       // The Talent Acquisition seat (2026-10-08) — the owner's answers in chat on 2026-10-08: KPIs on the CRM visit read, Spotlight
       // and Milestones on the recognition function (src/lib/auth/hr-functions.ts).
       { href: "/hr/admin/kpis", icon: TrendingUp, label: "KPIs", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
@@ -2610,14 +2634,14 @@ const hrNavigationSectionSeeds = [
   {
     id: "hr-self",
     items: [
-      { href: "/hr/workspace/leave-management/vacation-request", icon: CalendarCheck, label: "Request Vacation", permissions: [{ resource: "leave", action: "create" }] },
-      { href: "/hr/workspace/excuses", icon: CalendarClock, label: "Submit Excuse" },
-      { href: "/hr/admin/report-it/new", icon: ShieldAlert, label: "Report It" },
       // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under
       // People. Her OWN workspace and punches; the company Fingerprint Report row is fenced for her,
       // so this one reads "Fingerprint Report" as it does for the Finance Manager.
       { href: "/hr/workspace", icon: Briefcase, label: "My Workspace", permissions: [{ resource: "employee_profile" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      { href: "/hr/workspace/leave-management/vacation-request", icon: CalendarCheck, label: "Request Vacation", permissions: [{ resource: "leave", action: "create" }] },
+      { href: "/hr/workspace/excuses", icon: Clock, label: "Submit Excuse" },
       { href: "/hr/workspace/fingerprint-report", icon: Fingerprint, label: "Fingerprint Report", permissions: [{ resource: "attendance", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      { href: "/hr/admin/report-it/new", icon: ShieldAlert, label: "Report It" },
     ],
     label: "My Requests",
   },

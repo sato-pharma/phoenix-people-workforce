@@ -11,8 +11,10 @@ import {
 } from "../src/lib/auth/hr-functions.ts";
 import { resolveLandingPathForRole } from "../src/lib/auth/landing.ts";
 import {
+  buildPermissionLookup,
   hrAuthorityRoles,
   hrNamespaceRoles,
+  permissionMatrix,
   phoenixRoles,
   scopeForRole,
   type AccessContext,
@@ -25,7 +27,8 @@ import {
   SEAT_PAGE_FENCES,
 } from "../src/lib/auth/seat-page-fences.ts";
 import { canPrintBusinessCards } from "../src/lib/business-cards/access.ts";
-import { navigationItemVisible, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
+import { getNavigationSections } from "../src/config/system-navigation.ts";
+import { getSections, navigationItemVisible, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
 import {
   canExportProbation,
   canReadAllProbation,
@@ -299,5 +302,49 @@ export async function runHrResourcingSeatTests() {
     migration,
     /update\s+public\.notification_role_policies|insert\s+into\s+public\.notification_role_policies/i,
     "no notification audience is changed",
+  );
+
+  // ── 5. Her rail, as it renders (premium sweep, 2026-10-16) ────────────────────────────────
+  // The rail is the one thing she looks at all day, so what is pinned is its SHAPE rather than a
+  // row list (the other suites pin every row's gate): no two rows share an icon — in the collapsed
+  // rail the icon is all there is — no section is a wall, and the two places a reader looks first
+  // are right: her own workspace opens its section, and the pipeline opens Recruitment.
+  const railFor = (role: PhoenixRole) =>
+    getSections(getNavigationSections("hr"), "hr", buildPermissionLookup(permissionMatrix, role), role);
+  const rail = railFor(SEAT);
+  const byIcon = new Map<unknown, string[]>();
+  for (const row of rail.flatMap((section) => section.items)) {
+    byIcon.set(row.icon, [...(byIcon.get(row.icon) ?? []), row.label]);
+  }
+  assert.deepEqual(
+    [...byIcon.values()].filter((labels) => labels.length > 1),
+    [],
+    "no two rows on her rail share an icon",
+  );
+  for (const section of rail) {
+    assert.ok(
+      section.items.length <= 8,
+      `"${section.label}" holds ${section.items.length} rows on her rail — split it, a crowded rail is the defect`,
+    );
+  }
+  assert.deepEqual(
+    rail.find((section) => section.id === "hr-recruitment")?.items.map((row) => row.label),
+    ["Recruitment", "Screening Queue", "My Candidates", "Interview Calendar", "Job Offers", "Hiring Analytics", "Manager CV Engagement"],
+    "Recruitment reads in the order the work runs",
+  );
+  assert.deepEqual(
+    rail.find((section) => section.id === "hr-outreach")?.items.map((row) => row.label),
+    ["WhatsApp Applicants", "WhatsApp Replies", "WhatsApp Inbox", "WhatsApp Templates", "Job Posts", "Screening Questions"],
+    "the WhatsApp and posting tools are their own section",
+  );
+  assert.equal(
+    rail.find((section) => section.id === "hr-self")?.items[0]?.label,
+    "My Workspace",
+    "her own workspace opens her own section",
+  );
+  assert.equal(
+    railFor("HR Operations").some((section) => section.id === "hr-outreach"),
+    false,
+    "HR Operations is never shown the WhatsApp & Posts heading — it holds no recruitment grant",
   );
 }
