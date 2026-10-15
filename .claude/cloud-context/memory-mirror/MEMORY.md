@@ -31,6 +31,7 @@
 ## Inbox — new notes land here
 
 - [A piped `run watch` exit code is `tail`'s, not `gh`'s](a-piped-run-watch-exit-code-is-tails-not-ghs.md) - exit 0 on a RED run; read the conclusion live.
+- [The plan auto-assigns the rep from the EMPLOYEE area, not the seat](the-plan-auto-assigns-the-rep-from-the-employee-area-not-the-seat.md) - no rep dropdown exists; a wrong `area_id` hides a rep SILENTLY, and `au_v_employee_seat_drift` catches it but alarms nobody.
 
 
 
