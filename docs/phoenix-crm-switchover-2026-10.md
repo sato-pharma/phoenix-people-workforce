@@ -333,11 +333,26 @@ name rows → assignments. Break-tested: reverting the two reads to `public.` fa
 `prosecdef = false`, `proconfig = {search_path=public}`, ledger row `20261015103443`, and a real
 `crm_contact_master_refresh(false)` returned clean — 409 Phoenix periods opened, 462 vendor handovers, 18,617 contacts.
 
-🔴 **Production was NOT applied.** Both doors AGENTS.md §8 pre-authorizes refused it: `supabase-production`
-`apply_migration` answered `{"status":"declined"}` and the account connector `mcp__b345e47e-…` answered
-`MCP error -32600: You do not have permission to perform this action` (it had just applied the same SQL to staging).
-Production still carries the old body, confirmed by `md5(prosrc) = 34220e86…`. The remaining route is
-`scripts/apply-sql-file.mjs`, a direct Postgres connection, which §8 does **not** except — so it needs the owner's word
-for this migration first. The three previous versions of this function all reached production that way: their ledger
-rows carry the FILE's own 14-digit version with `statements` NULL, which is the direct-connection path with the ledger
-insert inside the SQL.
+**Production, applied and verified** (`ozucdzovmcqvepbozvqf`, 15 Oct, **20:14 Cairo**). Both doors AGENTS.md §8
+pre-authorizes had refused it — `supabase-production` `apply_migration` answered `{"status":"declined"}` and the
+account connector `mcp__b345e47e-…` answered `MCP error -32600: You do not have permission to perform this action`
+(it had just applied the same SQL to staging) — so it went the remaining route,
+`node scripts/apply-sql-file.mjs <file> production`, a direct Postgres connection. The three previous versions of this
+function reached production the same way, and like them this one wrote **no ledger row**: production's ledger holds
+`20261015133143` and `20261015155642` but nothing for `20261015132445`, so the file is carried in
+`ACKNOWLEDGED_EXCEPTIONS` (`scripts/lib/migration-inventory.ts`) with the digest below as its evidence — a missing row
+is answered by a digest and an evidenced entry, never by a ledger write.
+
+**Verified by digest, not by presence** (read 15 Oct 20:22:49 Cairo): `md5(pg_proc.prosrc)` for
+`public.crm_contact_master_refresh` is `7194a3929cef15051f541d5bab6ee875` over 29,236 chars — equal to md5 of this
+file's own dollar-quoted body, where the superseded `20261012184500` body digested `34220e8603660375d75fb06bb58d116e`.
+`prosecdef = false` and `proconfig = {search_path=public}`, matching staging. This file is the function's LAST definer,
+so presence could not have answered it: `create or replace` means an older generation satisfies any catalog probe, and
+another session re-applying an earlier migration would revert the body while leaving the object exactly as present.
+
+**The hourly job then ran clean on the new body.** `public.job_heartbeats` for `phoenix-crm-contact-lists`, read
+15 Oct 20:22:49 Cairo: `last_outcome = success`, `last_success_at` **20:18:14 Cairo** — four minutes after the apply,
+so the first run on the new body — `last_detail` `in-process slice 4/12: 7 agent(s) attempted, 697 row(s) upserted`.
+The last success before the apply was **20:12:28**, on the old body. `last_fail_at` is still **15 Oct 12:59:21 Cairo**,
+the `23503` abort this section opens with. That row carries ONE failure stamp and rewrites it on every failure, so an
+unmoved `last_fail_at` means no failure since the apply at all — not a failure that a later success papered over.

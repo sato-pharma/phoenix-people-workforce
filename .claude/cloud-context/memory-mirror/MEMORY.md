@@ -31,6 +31,7 @@
 ## Inbox — new notes land here
 
 - [A CRM photo reading is only as good as its accuracy](a-photo-reading-is-only-as-good-as-its-accuracy.md) - Afaf's was ±2,000 m; moving her pin there would have cleared a real `far` flag. Read `photo_accuracy_meters` before calling a pin wrong.
+- [`sync-cloud-context.mjs` reads NO flags and always WRITES](sync-cloud-context-reads-no-flags-and-always-writes.md) - `--check` is ignored, it mirrors into the calling checkout, and the `git restore` to undo it is refused as irreversible; ask with the SessionStart banner, fix with the fold.
 
 
 
