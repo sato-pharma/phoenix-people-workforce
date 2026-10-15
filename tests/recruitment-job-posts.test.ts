@@ -225,4 +225,31 @@ export function runRecruitmentJobPostsTests() {
   const frame = /<iframe[\s\S]*?\/>/.exec(builder)?.[0] ?? "";
   assert.ok(frame.includes('maxWidth: "none"'), "the preview iframe opts out of the admin shell's max-width: 100% clamp");
   assert.ok(frame.includes('maxHeight: "none"'), "the preview iframe opts out of any max-height clamp too");
+
+  // ── A post that could not be fitted is refused, never drawn clipped (owner-approved 2026-10-16) ──
+  // The layout pass reports whether it ran out of room; the server refuses such a post (422), and the
+  // preview shows the same verdict, so the person sees it before pressing download.
+  const drawn = renderJobPostHtml(post(), "executive", ASSETS);
+  const occurrences = (haystack: string, needle: string) => haystack.split(needle).length - 1;
+  assert.ok(drawn.includes("const report = { titles: 0, k: 1, limited: false }"), "the layout report starts as not limited");
+  assert.ok(drawn.includes("report.limited = true") && drawn.includes("if (k <= 0.6 || overflowing()) report.limited = true"), "running out of room (a title or the text at its floor, or anything still overflowing) marks the report limited");
+  assert.ok(drawn.includes("window.parent.postMessage({ jobPostFit: report }"), "the sandboxed preview posts its fit to the page, the only way out of the frame");
+
+  const render = readFileSync(new URL("../src/lib/recruitment/job-posts/render.ts", import.meta.url), "utf8");
+  assert.ok(render.includes("if (report.limited !== false) throw new JobPostTooLongError"), "a limited layout is refused, not printed — and a report without the flag counts as limited");
+  assert.equal(occurrences(render, "await load(page,"), 1, "a picture's page is loaded ONCE; the PNG and the PDF both come from that one fitted page");
+  const shot = render.indexOf('emulateMediaType("screen")');
+  assert.ok(shot > 0 && shot < render.indexOf("page.screenshot") && render.indexOf("page.screenshot") < render.indexOf('emulateMediaType("print")') && render.indexOf('emulateMediaType("print")') < render.indexOf("page.pdf("), "screen picture first, then print media for the PDF, on the same page");
+
+  const route = readFileSync(new URL("../app/api/recruitment/job-posts/render/route.ts", import.meta.url), "utf8");
+  assert.ok(route.includes("instanceof JobPostTooLongError) return recruitmentProblem(error.message, 422)"), "the route answers a post that cannot fit with a 422 and the plain message");
+  assert.ok(route.includes('entityType: "job_post_download"'), "every download leaves an audit row");
+  assert.equal(occurrences(route, "await record("), 2, "the picture/PDF and the full set each record once the file exists");
+  assert.ok(route.indexOf("renderJobPostBundle(content, template)") < route.indexOf("await record(null)") && route.indexOf("const drawn =") < route.indexOf("await record(area"), "a row is written only AFTER the file was drawn, so a refused post is never logged as downloaded");
+  const audit = readFileSync(new URL("../src/lib/admin/audit.ts", import.meta.url), "utf8");
+  assert.ok(audit.includes('"job_post_download"'), "the audit union names the download entity type");
+
+  assert.ok(page.includes("<FitBadge") && page.includes('"Fits at full size"') && page.includes("Text ${Math.round(fit.k * 100)}%"), "each design and the preview show how much the text shrank");
+  assert.ok(page.includes("event.source !== frame.current.contentWindow"), "only a message from the preview's own frame is believed");
+  assert.equal(occurrences(page, "mainFit?.limited === true"), 2, "the picture and PDF buttons switch off for a post that is too long");
 }

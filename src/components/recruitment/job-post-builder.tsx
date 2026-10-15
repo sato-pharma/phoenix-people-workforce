@@ -144,10 +144,42 @@ function PanelHeader({ step, title, aside }: { step?: number; title: string; asi
   );
 }
 
+/** What the page's layout pass reports: the text size as a share of normal, and whether it ran out of room. */
+type PostFit = { k: number; limited: boolean };
+
+const TOO_LONG_MESSAGE = "This post is too long to print at a readable size. Shorten a line, remove a line, or remove an area.";
+
+/** The verdict of the layout pass, in words: "Fits at full size", "Text 85%", or "Too long". */
+function FitBadge({ fit }: { fit: PostFit | undefined }) {
+  if (!fit) return null;
+  const tone = fit.limited ? "bg-red-50 text-red-800 ring-red-300" : fit.k < 1 ? "bg-amber-50 text-amber-800 ring-amber-300" : "bg-emerald-50 text-emerald-800 ring-emerald-300";
+  return (
+    <span className={cn("inline-block px-1.5 py-0.5 text-[11px] font-bold ring-1 ring-inset", tone)}>
+      {fit.limited ? "Too long" : fit.k < 1 ? `Text ${Math.round(fit.k * 100)}%` : "Fits at full size"}
+    </span>
+  );
+}
+
 /** One post, drawn at its true 1080×1350 and scaled to the width it is given. */
-function PostFrame({ html, label }: { html: string; label: string }) {
+function PostFrame({ html, label, onFit }: { html: string; label: string; onFit?: (fit: PostFit) => void }) {
   const box = useRef<HTMLDivElement>(null);
+  const frame = useRef<HTMLIFrameElement>(null);
+  const report = useRef(onFit);
   const [width, setWidth] = useState(0);
+  // The frame is sandboxed without same-origin, so its layout pass cannot be read — it posts its
+  // report to the parent instead. Only a message from THIS frame, with the two expected fields, counts.
+  useEffect(() => {
+    report.current = onFit;
+  }, [onFit]);
+  useEffect(() => {
+    const listen = (event: MessageEvent) => {
+      if (!frame.current || event.source !== frame.current.contentWindow) return;
+      const fit = (event.data as { jobPostFit?: { k?: unknown; limited?: unknown } } | null)?.jobPostFit;
+      if (fit && typeof fit.k === "number" && typeof fit.limited === "boolean") report.current?.({ k: fit.k, limited: fit.limited });
+    };
+    window.addEventListener("message", listen);
+    return () => window.removeEventListener("message", listen);
+  }, []);
   useEffect(() => {
     const node = box.current;
     if (!node) return;
@@ -163,6 +195,7 @@ function PostFrame({ html, label }: { html: string; label: string }) {
         // squeeze this 1080px page into the box BEFORE the scale shrinks it — cutting the right half off.
         <iframe
           className="pointer-events-none absolute left-0 top-0 border-0"
+          ref={frame}
           sandbox="allow-scripts"
           srcDoc={html}
           style={{ height: JOB_POST_HEIGHT, maxHeight: "none", maxWidth: "none", transform: `scale(${scale})`, transformOrigin: "0 0", width: JOB_POST_WIDTH }}
@@ -273,6 +306,8 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
   const [pickedArea, setPickedArea] = useState<string | null>(null);
   const [assets, setAssets] = useState<JobPostAssets | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [fits, setFits] = useState<Partial<Record<JobPostTemplateKey, PostFit>>>({});
+  const [mainFit, setMainFit] = useState<PostFit | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(initialTitles[0] ? `Ready: the saved wording for “${initialTitles[0].title}” is loaded.` : null);
 
@@ -653,8 +688,13 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
             {JOB_POST_TEMPLATES.map((t, index) => (
               <CheckTile checked={template === t.key} key={t.key} name="job-post-template" onChange={() => setTemplate(t.key)} type="radio">
                 <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  {thumbHtml[index] ? <PostFrame html={thumbHtml[index]!} label={`${t.name} design`} /> : <span className="block aspect-[4/5] animate-pulse bg-slate-100" />}
+                  {thumbHtml[index] ? (
+                    <PostFrame html={thumbHtml[index]!} label={`${t.name} design`} onFit={(fit) => setFits((current) => ({ ...current, [t.key]: fit }))} />
+                  ) : (
+                    <span className="block aspect-[4/5] animate-pulse bg-slate-100" />
+                  )}
                   <span className="text-xs font-bold text-slate-800">{t.name}</span>
+                  <FitBadge fit={fits[t.key]} />
                 </span>
               </CheckTile>
             ))}
@@ -683,18 +723,22 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
             ) : null}
             {mainHtml ? (
               <div className={`border border-slate-200 bg-white p-2 ${adminSoftDepthClassName}`}>
-                <PostFrame html={mainHtml} label="Job post preview" />
+                <PostFrame html={mainHtml} label="Job post preview" onFit={setMainFit} />
               </div>
             ) : (
               <div className="aspect-[4/5] w-full animate-pulse bg-slate-100" />
             )}
+            <div className="flex flex-wrap items-center gap-2">
+              <FitBadge fit={mainFit} />
+              {mainFit?.limited ? <span className="text-xs font-semibold text-red-700">{TOO_LONG_MESSAGE}</span> : null}
+            </div>
             <FormError>{error}</FormError>
             {problems.length && !error ? <p className="text-xs font-semibold text-amber-700">{problems[0]}</p> : null}
             <div className="flex flex-wrap gap-2">
-              <button className={phxButtonAccentClassName} disabled={busy !== null} onClick={() => download("png")} type="button">
+              <button className={phxButtonAccentClassName} disabled={busy !== null || mainFit?.limited === true} onClick={() => download("png")} type="button">
                 <Download aria-hidden className="h-4 w-4" /> {busy === "png" ? "Drawing…" : "Download picture"}
               </button>
-              <button className={phxButtonGhostClassName} disabled={busy !== null} onClick={() => download("pdf")} type="button">
+              <button className={phxButtonGhostClassName} disabled={busy !== null || mainFit?.limited === true} onClick={() => download("pdf")} type="button">
                 <Download aria-hidden className="h-4 w-4" /> {busy === "pdf" ? "Drawing…" : "Download PDF"}
               </button>
               {areas.length > 1 ? (

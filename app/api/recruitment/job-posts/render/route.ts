@@ -5,11 +5,12 @@ import {
   recruitmentProblem,
   requireRecruitmentAccess,
 } from "@/app/api/recruitment/_lib/http";
+import { writeAuditLog } from "@/lib/admin/audit";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { ChromiumUnavailableError } from "@/lib/pdf/chromium";
 import { canBuildJobPosts } from "@/lib/recruitment/access";
-import { renderJobPostBundle, renderJobPostPdf, renderJobPostPng } from "@/lib/recruitment/job-posts/render";
-import { JOB_POST_CAREERS, jobPostFileStem, jobPostForArea } from "@/lib/recruitment/job-posts/templates";
+import { JobPostTooLongError, renderJobPostBundle, renderJobPostPdf, renderJobPostPng } from "@/lib/recruitment/job-posts/render";
+import { JOB_POST_CAREERS, JOB_POST_TEMPLATES, jobPostFileStem, jobPostForArea } from "@/lib/recruitment/job-posts/templates";
 import { coerceAreas, coerceTitleDraft, contentFromDraft, postRequestViolations } from "@/lib/recruitment/job-posts/titles";
 import { NEW_CHANNEL_APPLY_WHATSAPP_NUMBER } from "@/lib/recruitment/outreach/job-post-channels";
 
@@ -27,6 +28,11 @@ export const dynamic = "force-dynamic";
  *
  * `area` narrows a PNG or PDF to one area — the per-area picture, which names that area and no other.
  * `zip` returns the full set: the all-areas picture, one per area, and one PDF of every page.
+ *
+ * A POST THE LAYOUT PASS COULD NOT FIT IS REFUSED (422), never drawn clipped — see JobPostTooLongError.
+ * EVERY DOWNLOAD LEAVES AN AUDIT ROW (entity type `job_post_download`), written once the file exists:
+ * who, which title, which design, which format, which area. Best-effort — a log that fails must not
+ * take a finished picture away — and the only record of whether a post for an area has gone out.
  */
 export async function POST(request: Request) {
   try {
@@ -50,8 +56,20 @@ export async function POST(request: Request) {
 
     const content = contentFromDraft(draft, { areas, line }, { careers: JOB_POST_CAREERS, whatsapp: NEW_CHANNEL_APPLY_WHATSAPP_NUMBER });
 
+    const record = (area: string | null) =>
+      writeAuditLog({
+        actorLoginId: access.loginId ?? null,
+        entityId: null,
+        entityType: "job_post_download",
+        newValues: { areas, area, department: content.department, design: template, format, line, title: content.title },
+        summary: `Downloaded the “${content.title}” job post (${JOB_POST_TEMPLATES.find((t) => t.key === template)?.name ?? template} design, ${
+          format === "zip" ? "the full set" : format.toUpperCase()
+        }${area ? `, ${area}` : areas.length ? `, ${areas.join(", ")}` : ""})`,
+      });
+
     if (format === "zip") {
       const zip = await renderJobPostBundle(content, template);
+      await record(null);
       return file(zip, `${jobPostFileStem(content)}.zip`, "application/zip");
     }
 
@@ -61,9 +79,11 @@ export async function POST(request: Request) {
     }
     const one = area ? jobPostForArea(content, areas.find((name) => name.toLowerCase() === area.toLowerCase())!) : content;
     const stem = jobPostFileStem(one, area || null);
-    if (format === "pdf") return file(await renderJobPostPdf(one, template), `${stem}.pdf`, "application/pdf");
-    return file(await renderJobPostPng(one, template), `${stem}.png`, "image/png");
+    const drawn = format === "pdf" ? await renderJobPostPdf(one, template) : await renderJobPostPng(one, template);
+    await record(area ? areas.find((name) => name.toLowerCase() === area.toLowerCase())! : null);
+    return file(drawn, `${stem}.${format}`, format === "pdf" ? "application/pdf" : "image/png");
   } catch (error) {
+    if (error instanceof JobPostTooLongError) return recruitmentProblem(error.message, 422);
     if (error instanceof ChromiumUnavailableError) {
       return recruitmentProblem("This server cannot draw the post right now. Try again in a minute.", 503);
     }
