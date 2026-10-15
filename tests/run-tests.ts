@@ -2554,6 +2554,7 @@ import { runMcpSourceTests } from "./mcp-source.test.ts";
 import { runAccessHelperExecuteGrantLockTests } from "./access-helper-execute-grant-lock.test.ts";
 import { runClosingRepRankingTests } from "./closing-rep-ranking.test.ts";
 import { runClosingRowsSheetTests } from "./closing-rows-sheet.test.ts";
+import { runPhoenixCrmAddPharmacyMatchesByResolvedIdTests } from "./phoenix-crm-add-pharmacy-matches-by-resolved-id.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -10095,6 +10096,10 @@ await runTest(
 await runTest(
   "the eleven SECURITY DEFINER access helpers keep their `authenticated` EXECUTE — the advisor WARN on them is an accepted, audited baseline and the migration it tempts has now been drafted twice off a `pg_policy` scan that read 0 callers: no migration in the whole history revokes EXECUTE or ALL on any of the eleven from `anon` or `authenticated` (a bare `FROM PUBLIC` is deliberately not a match, since the schema baseline does that to every function), the baseline still ACCEPTS all eleven as a warn rather than a target and still records why the six with no live policy are not spare, the written audit names every one of them, and the evidence it cites is still in place — phase24 calls five of them BY RPC as a signed-in user through its `rpcValue(client, name)` helper, which is exactly why a grep for `rpc(\"current_…\")` finds nothing, and phase25/26 still reach `can_see_employee` through the policies they create",
   runAccessHelperExecuteGrantLockTests,
+);
+await runTest(
+  "Add a pharmacy sends the TypeScript-resolved customer id to phoenix_crm_add_pharmacy, so a pin or phone captured on a match already on the rep's list never inserts a duplicate when the database's own weaker name search would have missed it",
+  runPhoenixCrmAddPharmacyMatchesByResolvedIdTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
