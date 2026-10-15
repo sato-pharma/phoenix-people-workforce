@@ -131,6 +131,73 @@ first and give the owner a chance to stop it.** Staging was always pre-approved.
 a project, and reading secrets, remain outside the grant. And the route is for a migration the MCP
 **refuses** — the MCP remains the first door, because a row it records is itself evidence the SQL ran.
 
+### The 15 October production sweep — eight findings, zero unapplied
+
+**The owner's words, in session:** *"sweep production for merged migrations never applied"*, sent the
+same evening he made `apply-sql-file.mjs` the standing route, then *"sweep staging too and widen the
+held branch"*.
+
+The repository already implements the sweep —
+`node --experimental-strip-types scripts/check-migrations-applied.ts`, pointed at whichever project
+`NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` name, which is what
+`.github/workflows/migration-drift-check.yml` drives daily at 07:00 UTC against both databases. Run
+against production (`ozucdzovmcqvepbozvqf`) it read **884 local migrations, 1,334 ledger rows** and
+named four files merged to `main` and absent from `supabase_migrations.schema_migrations` by both
+version and name:
+
+| file | what the catalog actually held |
+| --- | --- |
+| `20261012090000_phoenix_crm_door_name_fold_and_place_cap.sql` | applied — `phoenix_crm_rename_customer` md5-equal, this file its last definer |
+| `20261012132430_daily_deductions_per_line_release.sql` | applied — four new columns present, three functions equal once CRLF and stripped comments are allowed for |
+| `20261012200000_phoenix_crm_a_doctor_is_on_a_seat_once.sql` | applied — three functions md5-equal as-is, trigger present and enabled |
+| `20261013010000_drop_v_active_organogram.sql` | applied — zero relations named `v_active_organogram` at any relkind |
+
+**All four were already live. Nothing on production is unapplied**, and the four entries now in
+`ACKNOWLEDGED_EXCEPTIONS` carry that evidence. The daily check had been reporting them since 14
+October, concluding `success` each time because every leg carries `continue-on-error` — so the
+report sat unread rather than red.
+
+🔴 **The finding class is the one the standing route above creates.** A hand-apply runs the SQL and
+writes no ledger row, so this check cannot distinguish *applied by hand* from *never applied*, and
+after 15 October the first is the likelier of the two. The check's own closing advice now says so
+instead of telling the reader to take the files to the owner.
+
+🔴 **Two of the four would have read as drift to a raw digest comparison.** Production's `prosrc` for
+the deduction functions carries **CRLF** line endings, and two of the three arrived with every
+full-line `--` comment removed. Compare the file's dollar-quoted body in four shapes — as-is LF,
+as-is CRLF, comment-stripped LF, comment-stripped CRLF — and read the length delta first: 4,102
+against 4,191 characters is a normalisation, not a different generation of the logic. The rule lives
+in `.claude/rules/database.md`, "The migration ledger".
+
+#### The grace window hid four more, and a sweep has to stand it down
+
+The daily check ignores anything merged inside `GRACE_WINDOW_MS` (48 hours), which is right for a
+nightly job — a PR's own migration is *supposed* to read unapplied at review time — and wrong for a
+sweep. A second pass calling `selectMissingMigrations` with a far-future `nowMs` named **four more
+production files**, as many again as the check itself reported:
+
+| file | what production actually held |
+| --- | --- |
+| `20261014140000_marketing_resubmit_atomic.sql` | **superseded.** Its body digests `ed5ab6fe…` in its **CRLF** shape — exactly the pre-image recorded for `phx_resubmit_marketing_request` before the 20261015164459 apply, so it ran, in CRLF, and was replaced that evening. Re-applying it would revert the stored-requester fix. |
+| `20261015012551_direct_order_marketing_offsets.sql` | `direct_order_marketing_offsets` present with RLS on and all three indexes; both functions md5-equal as-is |
+| `20261015012552_finance_command_center_offset_requests_need_no_proof.sql` | `phx_finance_command_center` md5-equal as-is at 15,028 chars |
+| `20261015020803_admin_settle_service_fee_request.sql` | `phx_admin_settle_service_fee` md5-equal as-is at 7,679 chars |
+
+Three of those four are the money path from #5918 and #5921, merged around 02:00 Cairo that morning.
+All four are live. **Eight files, zero unapplied.**
+
+#### Staging
+
+`cifwmndunmlxjhyjugxa`: **884 local migrations, 1,350 ledger rows, nothing unaccounted** — with the
+grace window on and with it off. Staging is applied automatically by
+`.github/workflows/staging-migrate.yml`, and it carries real rows under each file's own version for
+all eight files above.
+
+🔴 **`ACKNOWLEDGED_EXCEPTIONS` is project-agnostic**, so an entry justified on production silences
+the same file on staging. Each of the eight was therefore checked against staging's own ledger
+before being added, and removing all eight again leaves staging green — proven by re-running that
+leg with the entries stripped.
+
 ## Migration Pipeline
 
 **Reconciled 2026-08-04.** There is currently **no scripted gate** for taking a new
