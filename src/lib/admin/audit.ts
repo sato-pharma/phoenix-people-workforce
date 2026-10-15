@@ -286,6 +286,11 @@ export type AuditEntityType =
   // employee table afterwards. audit_logs has no CHECK on entity_type (verified against production
   // 2026-08-23, same as the note below), so this needs no migration of its own.
   | "job_offer"
+  // A recruitment job post (the picture or PDF, or the full set) leaving the Job Posts page. One row per
+  // download: who, the title, the design, the format and the area — the only trace of whether a post for
+  // an area has already gone out. Best-effort (`writeAuditLog`): it observes a finished file and must
+  // never be able to take it away. audit_logs has no CHECK on entity_type, so no migration.
+  | "job_post_download"
   // A step in shutting a leaver's Turbify mailbox. Turbify publishes no email API, so Phoenix
   // cannot observe the mailbox — an audit row is the only record that a named admin claimed a
   // step was done. Written BEFORE the state changes, carrying the old values, so a later
