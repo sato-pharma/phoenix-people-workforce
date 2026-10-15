@@ -157,16 +157,36 @@ function grid(cells: string[], perRow: number): string {
 }
 
 /**
- * With the Accept button, the email asks for ONE way to accept (owner, 2026-10-08, "button only").
- * The built-in letters close with "confirm your acceptance by signing below and returning a copy";
- * in the EMAIL that sentence becomes the button's, while the attached PDF keeps its signature page
- * untouched. A closing HR rewrote in a template does not match and is left exactly as written.
+ * With the Accept button, the email asks for ONE way to accept (owner, 2026-10-08 "button only",
+ * and 2026-10-15: "drop the sign-and-return wording from the offer email, button only").
+ *
+ * Two sentences in the letters send a candidate to a printer: the closing "confirm your acceptance
+ * by signing below and returning a copy", and the first of the next steps, "Sign the acceptance
+ * below and return a scanned copy … before the validity date shown on page 1". Both are right on
+ * the attached PDF, which keeps its signature page untouched — but in the EMAIL the acceptance IS
+ * the button, and a page number means nothing in a scrolling message.
+ *
+ * The closing sentence is DROPPED rather than rewritten. Until now it became "To accept this offer,
+ * press the Accept button below.", which then landed directly above the answer panel's own lead and
+ * told the candidate the same thing twice in a row (measured on the live Corporate letter,
+ * 15 Oct 2026). The step is the one place that still has to say something, so it becomes the
+ * button's step and keeps the deadline — the half of it that was never about signing.
+ *
+ * A closing or a step HR rewrote in a template matches neither pattern and is left as written.
  */
-const SIGN_AND_RETURN_SENTENCE = /Please confirm your acceptance of this offer by signing below and\s+returning a copy of this letter\./i;
-export const OFFER_ACCEPT_BY_BUTTON_SENTENCE = "To accept this offer, press the Accept button below.";
+const SIGN_AND_RETURN_SENTENCE = /Please confirm your acceptance of this offer by signing below and\s+returning a copy of this letter\.\s*/i;
+const SIGN_AND_RETURN_STEP = /^\s*Sign the acceptance below and return a scanned copy\b/i;
+export const OFFER_ACCEPT_STEP_HEADING = "Accept online";
+export const OFFER_ACCEPT_STEP_TEXT = "Use the Accept button below before the validity date shown in this email.";
 
-function acceptByButton(text: string, acceptUrl: string | undefined): string {
-  return acceptUrl ? text.replace(SIGN_AND_RETURN_SENTENCE, OFFER_ACCEPT_BY_BUTTON_SENTENCE) : text;
+function dropSignAndReturn(text: string, acceptUrl: string | undefined): string {
+  return acceptUrl ? text.replace(SIGN_AND_RETURN_SENTENCE, "") : text;
+}
+
+/** A step that is only a sign-and-return instruction becomes the button's step. */
+function acceptStep(item: Record<string, unknown>, acceptUrl: string | undefined): Record<string, unknown> {
+  if (!acceptUrl || !SIGN_AND_RETURN_STEP.test(textOf(String(item.t ?? "")))) return item;
+  return { ...item, h: OFFER_ACCEPT_STEP_HEADING, t: OFFER_ACCEPT_STEP_TEXT };
 }
 
 function renderEmailBlock(
@@ -227,7 +247,7 @@ function renderEmailBlock(
     }
 
     case "text": {
-      const paragraphs = safeRichText(acceptByButton(f(p.html), options.acceptUrl), theme);
+      const paragraphs = safeRichText(dropSignAndReturn(f(p.html), options.acceptUrl), theme);
       const avatar = f(p.avatar);
       if (!avatar) return paragraphs;
       // A two-cell table rather than a flex row: the initials disc has to sit beside the greeting
@@ -334,7 +354,7 @@ function renderEmailBlock(
 
     case "steps":
       return grid(
-        items.map((i) =>
+        items.map((raw) => acceptStep(raw, options.acceptUrl)).map((i) =>
           cell(
             `<div style="font-size:10px;letter-spacing:1.2px;text-transform:uppercase;font-weight:bold;color:${theme.brand}">${f(i.n)}</div>` +
               `<div style="margin-top:5px;font-size:13px;font-weight:bold;color:${theme.ink}">${f(i.h)}</div>` +
@@ -491,7 +511,7 @@ function buildPlainText(blocks: OfferBlock[], tokens: Record<string, string>, ac
         lines.push("", f(p.text).toUpperCase(), "");
         break;
       case "text":
-        lines.push(acceptByButton(f(p.html), acceptUrl), "");
+        lines.push(dropSignAndReturn(f(p.html), acceptUrl), "");
         break;
       case "control":
       case "scope":
@@ -517,7 +537,10 @@ function buildPlainText(blocks: OfferBlock[], tokens: Record<string, string>, ac
         lines.push("");
         break;
       case "steps":
-        for (const i of items) lines.push(`${f(i.n)} — ${f(i.h)}: ${f(i.t)}`);
+        for (const raw of items) {
+          const i = acceptStep(raw, acceptUrl);
+          lines.push(`${f(i.n)} — ${f(i.h)}: ${f(i.t)}`);
+        }
         lines.push("");
         break;
       case "footer":
