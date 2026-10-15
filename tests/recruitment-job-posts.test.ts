@@ -198,6 +198,16 @@ export function runRecruitmentJobPostsTests() {
   ]) {
     assert.ok(seed.includes(owners), `Medical Representative keeps the owner's own wording (pasted 2026-10-16): ${owners}`);
   }
+  for (const owners of [
+    "Lead, motivate, and manage medical representatives across your region.",
+    "Track individual results, identify gaps, and take corrective actions.",
+    "Must be a resident of the district you will manage.",
+    "Must own a car.",
+    "Strong leadership, decision-making, and commitment to achieving targets.",
+  ]) {
+    assert.ok(seed.includes(owners), `District Sales Manager keeps the owner's own wording (pasted 2026-10-16): ${owners}`);
+  }
+  assert.equal(seeded.get("District Sales Manager")?.duties, 6, "all six District Sales Manager duties are kept");
 
   // ── The builder: choosing a title loads its words, and the page wears the shared premium look ──
   const page = readFileSync(new URL("../src/components/recruitment/job-post-builder.tsx", import.meta.url), "utf8");

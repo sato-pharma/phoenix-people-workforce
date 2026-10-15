@@ -8,9 +8,10 @@
 --   * Medical Representative — the wording is the owner's OWN, pasted in chat 2026-10-16 (five duties,
 --     five requirements), replacing the draft this file first carried; production and staging were
 --     corrected by a guarded update (only while the row still held the draft) before merge.
---   * District Sales Manager — the title the offer catalogue and the Employee Master use, with the
---     owner-approved wording of the 2026-10-02 Delta 2 listing, made district-neutral (the governorates
---     are named by the post's own areas). WhatsApp choice stays "District Manager", the menu's label.
+--   * District Sales Manager — the wording is the owner's OWN, pasted in chat 2026-10-16 (six duties, six
+--     requirements), replacing the adapted 2026-10-02 listing this file first carried; corrected on both
+--     projects by a guarded update (only while the row still held that wording) before merge. The title is
+--     the one the offer catalogue and the Employee Master use; WhatsApp choice stays "District Manager", the menu's label.
 --   * Product Manager — DRAFT wording, reports to the Marketing Manager (as the Employee Master has it).
 -- Idempotent: on conflict do nothing, so a title the owner already edited by hand is never overwritten.
 -- ROLLBACK: delete from public.ats_job_post_titles where lower(btrim(title)) in
@@ -55,18 +56,20 @@ values (
   'National Sales Manager',
   'Field-based, Egypt',
   '[
-    {"lead": "Lead your district team", "rest": "of medical representatives"},
-    {"lead": "Deliver the district target", "rest": "— by area, by product, every month"},
-    {"lead": "Build and develop your team", "rest": "through joint field visits and structured coaching"},
-    {"lead": "Own the territory plan", "rest": ": coverage, frequency and call rate"}
+    {"lead": "Team Leadership:", "rest": "Lead, motivate, and manage medical representatives across your region."},
+    {"lead": "Sales Achievement:", "rest": "Achieve monthly sales targets for each area and product."},
+    {"lead": "Team Development:", "rest": "Improve team performance through regular field coaching and joint visits."},
+    {"lead": "Territory Management:", "rest": "Plan and monitor customer coverage, visit frequency, and field activities."},
+    {"lead": "Performance Management:", "rest": "Track individual results, identify gaps, and take corrective actions."},
+    {"lead": "Reporting:", "rest": "Monitor team activities and sales performance using the company''s CRM system."}
   ]'::jsonb,
   '[
-    {"lead": "Bachelor''s degree in Pharmacy, Veterinary Medicine or Science", "rest": ""},
-    {"lead": "Proven ability to build and develop a sales team", "rest": ""},
-    {"lead": "Resident in the district", "rest": "you will lead"},
-    {"lead": "Owns a car", "rest": ""},
-    {"lead": "Excellent command of English", "rest": ""},
-    {"lead": "Confident user of CRM reporting systems", "rest": ""}
+    {"lead": "Education:", "rest": "Bachelor''s degree in Pharmacy, Vet, or Science."},
+    {"lead": "Sales Experience:", "rest": "Strong background in pharmaceutical sales and territory management."},
+    {"lead": "Location:", "rest": "Must be a resident of the district you will manage."},
+    {"lead": "Transportation:", "rest": "Must own a car."},
+    {"lead": "Digital Skills:", "rest": "Good knowledge of CRM systems, sales reporting, and performance analysis."},
+    {"lead": "Accountability:", "rest": "Strong leadership, decision-making, and commitment to achieving targets."}
   ]'::jsonb,
   'District Manager'
 )
