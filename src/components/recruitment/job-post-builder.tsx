@@ -15,7 +15,7 @@
 import { ArrowDown, ArrowUp, Download, FileArchive, Plus, Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminPanelDepthClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 import { getJson, patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { CheckTile, FormError, FormField } from "@/components/ui/form-kit";
 import {
@@ -442,7 +442,7 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
                 value={areaFilter}
               />
             </FormField>
-            <div className={`max-h-72 space-y-4 overflow-y-auto border border-slate-200 bg-slate-50 p-3 ${adminSoftDepthClassName}`}>
+            <div className={`max-h-72 space-y-4 overflow-y-auto border border-slate-200 bg-slate-50 p-3 ${adminRecessedDepthClassName}`}>
               {areaGroups.map((group) => {
                 const shownAreas = group.areas.filter((area) => !filter || area.toLowerCase().includes(filter));
                 if (!shownAreas.length) return null;
