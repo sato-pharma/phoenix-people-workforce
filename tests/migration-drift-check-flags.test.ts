@@ -179,8 +179,44 @@ function wiringTests(): void {
   );
 }
 
+// A check leg that is not in the report gate AND the Telegram gate fails SILENTLY: every leg carries
+// continue-on-error, so the job is green whatever it finds, and those two conditions are the only
+// things that turn a finding into a message. That is the 2026-08-06 incident (three days, 412
+// exposed customer names) in a new coat, and it is exactly what adding a leg invites.
+function workflowGateTests(): void {
+  const source = readFileSync(".github/workflows/migration-drift-check.yml", "utf8").replace(/\r\n/g, "\n");
+  const steps = source.split(/\n {6}- name: /).slice(1);
+  const legIds = steps
+    .filter((s) => /continue-on-error:\s*true/.test(s) && /\n {8}id:\s*[a-z_]+/.test(s))
+    .map((s) => /\n {8}id:\s*([a-z_]+)/.exec(s)![1])
+    // the Telegram step is the alarm itself, not a leg it reports on
+    .filter((id) => !/telegram/i.test(id));
+  assert.ok(legIds.length >= 6, `expected the check legs to be found, parsed ${legIds.length}: ${legIds.join(", ")}`);
+  assert.ok(legIds.includes("migrations_staging_sweep"), "the staging sweep leg must exist in the daily workflow");
+
+  const gates = steps.filter((s) => /\n {8}if:\s*\$\{\{ always\(\) && \(steps\./.test(s));
+  assert.equal(gates.length, 2, "expected exactly two outcome-gated steps: the report and the Telegram alert");
+  for (const id of legIds) {
+    for (const gate of gates) {
+      assert.ok(
+        gate.includes(`steps.${id}.outcome == 'failure'`),
+        `leg ${id} is missing from the outcome gate of "${gate.split("\n")[0]}" — its finding would reach nobody`,
+      );
+    }
+  }
+
+  // The sweep leg stands the grace window down and must NOT touch production: a no-grace
+  // production leg raises a finding for every hand-applied migration inside the hour.
+  const sweep = steps.find((s) => s.includes("id: migrations_staging_sweep"))!;
+  assert.match(sweep, /run:\s*pnpm run check:migrations-swept\s*\n/, "the sweep leg must run check:migrations-swept");
+  assert.ok(sweep.includes("cifwmndunmlxjhyjugxa"), "the sweep leg must point at STAGING");
+  assert.ok(!sweep.includes("ozucdzovmcqvepbozvqf"), "the sweep leg must never point at production");
+  assert.match(sweep, /timeout-minutes:\s*\d+/, "the sweep leg needs its own step budget or it can cancel the job");
+}
+
 export function runMigrationDriftCheckFlagsTests(): void {
   flagTests();
   credentialResolutionTests();
   wiringTests();
+  workflowGateTests();
 }

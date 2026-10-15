@@ -66,9 +66,9 @@ jobs:
     # ONE process and 605 ms.
     #
     # A STEP that hits its own ceiling fails only that step, and `continue-on-error` turns that into
-    # a reported finding with the job still green. So the sum of the six step budgets below (15
+    # a reported finding with the job still green. So the sum of the seven step budgets below (18
     # minutes) staying under this ceiling is what makes `cancelled` unreachable, and that margin —
-    # 10 minutes against a measured setup of ~40s — is the thing to preserve when editing either
+    # 7 minutes against a measured setup of ~40s — is the thing to preserve when editing either
     # number. The four setup steps are deliberately left unbudgeted, for the same reason they are
     # deliberately left able to fail the job: a hung `pnpm install` is a BROKEN check, not a finding,
     # and it must never conclude success. Pinned by tests/github-workflow-validity.test.ts.
@@ -144,6 +144,41 @@ jobs:
         continue-on-error: true
         timeout-minutes: 3
         run: pnpm run check:migrations-applied
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "https://cifwmndunmlxjhyjugxa.supabase.co"
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+
+      # THE STAGING SWEEP (added 2026-10-15): the same check with the 48h grace window STOOD DOWN.
+      # The leg above deliberately ignores anything merged in the last 48 hours, which is right for
+      # a nightly report and wrong for the one project where a fresh gap means something specific:
+      # staging is applied AUTOMATICALLY by staging-migrate.yml on every merge, so a migration that
+      # is merged and still absent here is a BROKEN AUTOMATION, not a forgotten chore, and waiting
+      # two days to say so is two days of staging not matching main. That is also why this leg is
+      # staging only: production has no automation, a hand-apply through the standing route writes
+      # no ledger row, and a no-grace production leg would raise a finding for every one of those
+      # inside the hour it was applied.
+      #
+      # TWO LEGS, NOT ONE REPLACEMENT, because the pair carries a fact neither carries alone. The
+      # grace-window leg failing means a gap OLDER than 48 hours; this one failing while that one
+      # passes means a gap YOUNGER than 48 hours. The run page shows which.
+      #
+      # 🔴 THE ONE WAY THIS LEG LIES IS A RACE, and it is bounded rather than removed: a cron run
+      # that fires in the minutes between a merge and staging-migrate.yml recording it reads that
+      # migration as a gap. The schedule (07:00 UTC, ten in the morning Cairo-side) needs a merge in
+      # the few minutes before it; if this leg ever fires on a database that is in fact clean,
+      # re-run the workflow before acting. It is a finding, never a lost deploy: continue-on-error
+      # as on every leg.
+      #
+      # It runs `check:migrations-swept` with STAGING's pair in the environment rather than
+      # `check:migrations-swept-staging`: that variant reads the PHOENIX_STAGING_* names for a person
+      # at a shell, and this runner passes NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY like
+      # every other leg. The process environment always wins over an env file (resolveEnvValue).
+      - name: Sweep migrations with the grace window down (staging)
+        id: migrations_staging_sweep
+        continue-on-error: true
+        timeout-minutes: 3
+        if: ${{ always() }}
+        run: pnpm run check:migrations-swept
         env:
           NEXT_PUBLIC_SUPABASE_URL: "https://cifwmndunmlxjhyjugxa.supabase.co"
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
@@ -262,9 +297,10 @@ jobs:
       # It also owns the exit code: this step must ALWAYS exit 0. It emits `::error::` so the run
       # page carries an annotation, which is a UI signal and not a conclusion.
       - name: Report the database posture finding without withholding the deploy
-        if: ${{ always() && (steps.migrations_staging.outcome == 'failure' || steps.migrations_production.outcome == 'failure' || steps.schema_shape_staging.outcome == 'failure' || steps.schema_shape_production.outcome == 'failure' || steps.advisor_baseline_production.outcome == 'failure') }}
+        if: ${{ always() && (steps.migrations_staging.outcome == 'failure' || steps.migrations_staging_sweep.outcome == 'failure' || steps.migrations_production.outcome == 'failure' || steps.schema_shape_staging.outcome == 'failure' || steps.schema_shape_production.outcome == 'failure' || steps.advisor_baseline_production.outcome == 'failure') }}
         env:
           MIGRATIONS_STAGING: ${{ steps.migrations_staging.outcome }}
+          MIGRATIONS_STAGING_SWEEP: ${{ steps.migrations_staging_sweep.outcome }}
           MIGRATIONS_PRODUCTION: ${{ steps.migrations_production.outcome }}
           SCHEMA_SHAPE_STAGING: ${{ steps.schema_shape_staging.outcome }}
           SCHEMA_SHAPE_PRODUCTION: ${{ steps.schema_shape_production.outcome }}
@@ -276,6 +312,7 @@ jobs:
             printf '## Database posture finding\n\n'
             printf '| leg | outcome |\n| --- | --- |\n'
             printf '| migrations applied (staging) | `%s` |\n' "$MIGRATIONS_STAGING"
+            printf '| migrations swept, grace window down (staging) | `%s` |\n' "$MIGRATIONS_STAGING_SWEEP"
             printf '| migrations applied (production) | `%s` |\n' "$MIGRATIONS_PRODUCTION"
             printf '| schema shape (staging) | `%s` |\n' "$SCHEMA_SHAPE_STAGING"
             printf '| schema shape (production) | `%s` |\n' "$SCHEMA_SHAPE_PRODUCTION"
@@ -326,7 +363,7 @@ jobs:
       # names on 2026-08-06, which is the incident the block above records. A lost deploy is
       # recoverable by the next merge; a detector that stopped detecting is not.
       - name: Notify Telegram on failure
-        if: ${{ always() && (steps.migrations_staging.outcome == 'failure' || steps.migrations_production.outcome == 'failure' || steps.schema_shape_staging.outcome == 'failure' || steps.schema_shape_production.outcome == 'failure' || steps.advisor_baseline_production.outcome == 'failure' || inputs.test_alert) }}
+        if: ${{ always() && (steps.migrations_staging.outcome == 'failure' || steps.migrations_staging_sweep.outcome == 'failure' || steps.migrations_production.outcome == 'failure' || steps.schema_shape_staging.outcome == 'failure' || steps.schema_shape_production.outcome == 'failure' || steps.advisor_baseline_production.outcome == 'failure' || inputs.test_alert) }}
         continue-on-error: true
         timeout-minutes: 3
         env:
