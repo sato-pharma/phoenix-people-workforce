@@ -40,12 +40,15 @@ function publicDataUri(relativePath: string, mime: string): string {
   return uri;
 }
 
-/** The two Montserrat faces and the on-light logo, the same files the builder previews with. */
+/** The two Montserrat faces, the mark in both variants and the Arabic wordmark, the same files the builder previews with. */
 export function jobPostServerAssets(): JobPostAssets {
   return {
     fontBold: publicDataUri("fonts/montserrat-bold.ttf", "font/ttf"),
     fontRegular: publicDataUri("fonts/montserrat-regular.ttf", "font/ttf"),
     logo: publicDataUri("brand/sato-pharma-logo-on-light.png", "image/png"),
+    logoOnDark: publicDataUri("brand/sato-pharma-logo-on-navy-reverse.svg", "image/svg+xml"),
+    logoOnBlue: publicDataUri("brand/sato-pharma-logo-on-blue.svg", "image/svg+xml"),
+    arabic: publicDataUri("brand/sato-pharma-arabic-on-light.png", "image/png"),
   };
 }
 

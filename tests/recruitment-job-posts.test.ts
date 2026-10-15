@@ -28,7 +28,7 @@ import {
  * when it was chosen.
  */
 
-const ASSETS: JobPostAssets = { fontRegular: "data:font/ttf;base64,AA==", fontBold: "data:font/ttf;base64,AA==", logo: "data:image/png;base64,AA==" };
+const ASSETS: JobPostAssets = { fontRegular: "data:font/ttf;base64,AA==", fontBold: "data:font/ttf;base64,AA==", logo: "data:image/png;base64,LIGHT", logoOnDark: "data:image/svg+xml;base64,DARK", logoOnBlue: "data:image/svg+xml;base64,BLUE", arabic: "data:image/png;base64,ARABIC" };
 
 const AREAS = ["Heliopolis", "Nasr City", "Cairo East 1"];
 
@@ -252,4 +252,21 @@ export function runRecruitmentJobPostsTests() {
   assert.ok(page.includes("<FitBadge") && page.includes('"Fits at full size"') && page.includes("Text ${Math.round(fit.k * 100)}%"), "each design and the preview show how much the text shrank");
   assert.ok(page.includes("event.source !== frame.current.contentWindow"), "only a message from the preview's own frame is believed");
   assert.equal(occurrences(page, "mainFit?.limited === true"), 2, "the picture and PDF buttons switch off for a post that is too long");
+
+  // ── The mark never sits on a white box, and the Arabic wordmark is a faint watermark (owner 2026-10-16) ──
+  // Every design takes the logo variant its ground needs: on-light on white paper, on-dark on the two
+  // dark grounds. The white "plate" behind the mark is gone, and the Arabic wordmark is one flat ink
+  // through a mask — never a masthead, and only on Executive and Split.
+  for (const { key } of JOB_POST_TEMPLATES) {
+    const html = renderJobPostHtml(post({ areas: AREAS }), key, ASSETS);
+    assert.ok(!html.includes('class="plate"') && !html.includes(".plate {"), `${key}: no white plate behind the logo`);
+    assert.equal(occurrences(html, `<img src="${ASSETS.logoOnDark}"`), key === "night-blueprint" ? 1 : 0, `${key}: the on-dark mark is used on the navy ground only`);
+    assert.equal(occurrences(html, `<img src="${ASSETS.logoOnBlue}"`), key === "bold-blue" ? 1 : 0, `${key}: the reverse mark is used on the brand-blue ground only`);
+    assert.equal(occurrences(html, `<img src="${ASSETS.logo}"`), key === "bold-blue" || key === "night-blueprint" ? 0 : 1, `${key}: the on-light mark is used on white paper only`);
+    assert.equal(occurrences(html, 'class="wm"'), key === "executive" || key === "split" ? 1 : 0, `${key}: the Arabic watermark is drawn once on Executive and Split only`);
+    assert.ok(html.includes(`mask-image: url("${ASSETS.arabic}")`), `${key}: the Arabic wordmark is a mask, so it prints in one flat ink`);
+  }
+  assert.ok(!renderJobPostHtml(post(), "bold-blue", ASSETS).includes("<img src=\"" + ASSETS.arabic), "the Arabic wordmark is never an <img> — never a masthead");
+  assert.ok(render.includes('"brand/sato-pharma-logo-on-navy-reverse.svg"') && render.includes('"brand/sato-pharma-logo-on-blue.svg"') && render.includes('"brand/sato-pharma-arabic-on-light.png"'), "the server draws with the on-dark mark and the Arabic wordmark");
+  assert.ok(builder.includes("/brand/sato-pharma-logo-on-navy-reverse.svg") && builder.includes("/brand/sato-pharma-logo-on-blue.svg") && builder.includes("/brand/sato-pharma-arabic-on-light.png"), "the preview loads the same two files, so it matches the download");
 }

@@ -317,8 +317,11 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
       toDataUri("/fonts/montserrat-regular.ttf"),
       toDataUri("/fonts/montserrat-bold.ttf"),
       toDataUri("/brand/sato-pharma-logo-on-light.png"),
+      toDataUri("/brand/sato-pharma-logo-on-navy-reverse.svg"),
+      toDataUri("/brand/sato-pharma-logo-on-blue.svg"),
+      toDataUri("/brand/sato-pharma-arabic-on-light.png"),
     ])
-      .then(([fontRegular, fontBold, logo]) => live && setAssets({ fontBold, fontRegular, logo }))
+      .then(([fontRegular, fontBold, logo, logoOnDark, logoOnBlue, arabic]) => live && setAssets({ fontBold, fontRegular, logo, logoOnDark, logoOnBlue, arabic }))
       .catch(() => live && setError("The preview could not load its fonts. Downloads still work."));
     return () => {
       live = false;
