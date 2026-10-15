@@ -89,13 +89,24 @@ export function satoLogoDataUri(): string | null {
  * classic and executive letters keep the on-light mark, and this reader is passed to the renderer
  * only when the template's variant is `sato`.
  *
+ * IT READS `sato-pharma-logo-on-navy.png`, NOT `sato-pharma-logo.png`, and the extra file earns its
+ * place: the shared on-dark mark only ever had SATO recoloured, so the word PHARMA kept its paper
+ * blue #0A6BA6 and sat at 2.34:1 on this design's navy #17304d — under the 3:1 floor a graphic has
+ * to clear, and legibly dim at the 30px the masthead draws it. The on-navy file is that same
+ * artwork with PHARMA alone lifted to #1482C2, the house palette's own lightest blue (3.19:1); SATO
+ * stays white and both waves keep their blues. 🔴 Do NOT "tidy" this back onto the shared file:
+ * `sato-pharma-logo.png` is drawn by the CEO and Finance command centres, the joining form, the
+ * business-review pack and the contract, and recolouring it would move every one of them.
+ *
  * The literal `join(process.cwd(), …)` is load-bearing exactly as in the readers above: a variadic
  * helper here once made ONE route trace 6,034 files. Keep every segment a string literal, inline.
  */
 export function satoLogoReverseDataUri(): string | null {
   if (reverseLogoCache === undefined) {
     try {
-      reverseLogoCache = pngDataUri(readFileSync(join(process.cwd(), "public", "brand", "sato-pharma-logo.png")));
+      reverseLogoCache = pngDataUri(
+        readFileSync(join(process.cwd(), "public", "brand", "sato-pharma-logo-on-navy.png")),
+      );
     } catch {
       reverseLogoCache = null;
     }

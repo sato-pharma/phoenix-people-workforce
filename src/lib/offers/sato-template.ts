@@ -239,7 +239,11 @@ export function satoOfferBlocks(): OfferBlock[] {
       props: {
         html:
           "<p style='margin-top:12px'>Please confirm your acceptance of this offer by signing below and " +
-          "returning a copy of this letter. We look forward to welcoming you to Sato Pharma.</p>",
+          // The welcome belongs to the band at the foot of the page (the last block below), which
+          // greets the candidate by name of company and then says the sentence. The paragraph said
+          // "we look forward to welcoming you to Sato Pharma" on top of both until the owner
+          // dropped it on 15 Oct 2026 — three welcomes in a row, no two of them identical.
+          "returning a copy of this letter.</p>",
       },
       type: "text",
     },

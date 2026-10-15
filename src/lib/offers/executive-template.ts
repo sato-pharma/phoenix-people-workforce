@@ -226,9 +226,12 @@ export function executiveOfferBlocks(): OfferBlock[] {
       id: id("text"),
       props: {
         html:
+          // The welcome is the band at the foot of the page (the last block below), so the closing
+          // paragraph does not repeat it — it said "we look forward to welcoming you onboard" word
+          // for word until the owner dropped it on 15 Oct 2026.
           "<p style='margin-top:12px'>Please confirm your acceptance of this offer by signing below and " +
           "returning a copy of this letter. We believe you will be a strong addition to our " +
-          "organisation, and we look forward to welcoming you onboard.</p>",
+          "organisation.</p>",
       },
       type: "text",
     },
