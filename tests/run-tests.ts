@@ -268,6 +268,7 @@ import { runHiringDocumentsLabelTests } from "./hiring-documents-labels.test.ts"
 import { runSearchableSelectNoEllipsisTests } from "./searchable-select-no-ellipsis.test.ts";
 import { runMultiSelectFilterFitsTests } from "./multi-select-filter-fits.test.ts";
 import { runRecruitmentAppliedForTests } from "./recruitment-applied-for.test.ts";
+import { runRecruitmentJobPostsTests } from "./recruitment-job-posts.test.ts";
 import { runRecruitmentManagerGroupingTests } from "./recruitment-manager-grouping.test.ts";
 import { runRecruitmentBulkDecisionTests } from "./recruitment-bulk-decision.test.ts";
 import { runRecruitmentThroughputTrendTests } from "./recruitment-throughput-trend.test.ts";
@@ -3198,6 +3199,10 @@ await runTest(
 await runTest(
   "recruitment \"Applying for\" (the evidence ladder that lifts the column from 15 answered rows to 394, on verbatim production strings)",
   runRecruitmentAppliedForTests,
+);
+await runTest(
+  "recruitment job posts (five templates carry every typed word, escape every typed string, an area picture names only its own area, the line prints only when chosen, the apply details are the server's)",
+  runRecruitmentJobPostsTests,
 );
 await runTest(
   "recruitment manager grouping (CVs pile up under the seat they were SENT to, and b-10 is not a second manager from B-10)",

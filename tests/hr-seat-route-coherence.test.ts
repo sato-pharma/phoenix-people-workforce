@@ -214,6 +214,13 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "(Advisory is scope=self and not the Super Admin), and the editor is hidden from her rather " +
     "than merely failing server-side, so no row her sidebar offers 403s her halfway" +
     ". HR Resourcing (2026-10-08) reads the same as Advisory: send=true/manage=false, called rather than read",
+  // Added 2026-10-15 with the Job Posts page. Verified by CALLING the predicate for each seat, not
+  // by reading it: the gate is canBuildJobPosts (system scope, or a role in recruitmentWorkRoles =
+  // Super Admin + HR Resourcing), and the page carries an entry redirect this file cannot parse.
+  "/hr/recruitment/job-posts":
+    "canBuildJobPosts(access) — TRUE for HR Resourcing, the only seat offered the row (roles: " +
+    "[\"HR Resourcing\"]), FALSE for Advisory and Operations. The API routes re-check the same " +
+    "predicate, so no row her sidebar offers 403s her",
   // Added 2026-09-18 with the Interview Calendar row. The owner's own ruling that day: "Only you +
   // people you share with" — so the gate is the calendar's own sharing, not a permission, and that
   // is why it cannot be parsed.
