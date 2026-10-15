@@ -192,6 +192,17 @@ const REFUSALS: Record<string, Refusal> = {
     status: 409,
     message: "A manager entered this visit, so who was on it stays as they recorded. The products and the comment can still be corrected.",
   },
+  // The REP fills in his own visit's detail (owner, 2026-10-15). The service refuses all three before
+  // it calls, so these answer a stale page rather than a wrong screen.
+  visit_not_yours: { status: 409, message: "This visit is not yours, so its detail stays as it was recorded. Reload the page." },
+  visit_is_linked: {
+    status: 409,
+    message: "This pharmacy visit came from the visit that named it. Add the detail on that visit.",
+  },
+  pharmacy_name_fixed: {
+    status: 409,
+    message: "The pharmacy you named stays as you recorded it. You can still change what it has. Reload the page.",
+  },
   // The district manager's double-visit plan (owner, 2026-10-02): one half-day at a time.
   double_visit_not_field_time: {
     status: 400,

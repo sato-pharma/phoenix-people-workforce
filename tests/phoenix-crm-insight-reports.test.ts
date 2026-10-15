@@ -757,6 +757,10 @@ function runTimelineTests(): void {
     objection: "price",
     objectionNote: " Too expensive ",
     comment: " Will try a sample ",
+    // The write-up he came back and added, and when he last changed it (owner, 2026-10-15). The door
+    // comment above stays exactly as he wrote it at the door.
+    detailComment: null,
+    detailEditedAt: null,
     nextStep: "pharmacy_stock",
     nextStepOn: "2026-10-08",
     enteredByAdmin: false,
@@ -765,7 +769,7 @@ function runTimelineTests(): void {
     ...patch,
   });
   const entries = buildCustomerTimeline([
-    visit({}),
+    visit({ detailComment: "  Shelf was empty; he asked for the trial data  ", detailEditedAt: "2026-10-06T16:30:00.000Z" }),
     visit({
       visitId: "v-2",
       visitDate: "2026-10-05",
@@ -801,6 +805,8 @@ function runTimelineTests(): void {
       objectionLabel: null,
       objectionNote: null,
       comment: null,
+      detailComment: null,
+      detailEditedAt: null,
       nextStepLabel: null,
       nextStepOn: null,
       enteredByAdmin: false,
@@ -814,6 +820,8 @@ function runTimelineTests(): void {
       objectionLabel: "No objection",
       objectionNote: null,
       comment: "Will try a sample",
+      detailComment: null,
+      detailEditedAt: null,
       nextStepLabel: "Nothing to follow",
       nextStepOn: null,
       enteredByAdmin: true,
@@ -827,6 +835,10 @@ function runTimelineTests(): void {
       objectionLabel: "Price",
       objectionNote: "Too expensive",
       comment: "Will try a sample",
+      // The write-up he added afterwards travels beside the door comment, trimmed, and the stamp
+      // behind the "Edited · <date and time>" line comes with it (owner, 2026-10-15).
+      detailComment: "Shelf was empty; he asked for the trial data",
+      detailEditedAt: "2026-10-06T16:30:00.000Z",
       nextStepLabel: "Chase the pharmacy stock",
       nextStepOn: "2026-10-08",
       enteredByAdmin: false,

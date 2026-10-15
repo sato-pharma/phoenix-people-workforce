@@ -1904,6 +1904,7 @@ import { runPhoenixCrmNeedsYouSourceTests } from "./phoenix-crm-needs-you-source
 import { runPhoenixCrmVendorLeftoverTests } from "./phoenix-crm-vendor-leftovers.test.ts";
 import { runPhoenixCrmBlindPayloadTests } from "./phoenix-crm-blind-payloads.test.ts";
 import { runPhoenixCrmVisitReportTests } from "./phoenix-crm-visit-report.test.ts";
+import { runPhoenixCrmVisitDetailEditTests } from "./phoenix-crm-visit-detail-edit.test.ts";
 import { runPhoenixCrmVisitProductManagerTests } from "./phoenix-crm-visit-product-manager.test.ts";
 import { runPhoenixCrmVisitCompanyTests } from "./phoenix-crm-visit-company.test.ts";
 import { runPhoenixCrmManagerValidatesTests } from "./phoenix-crm-manager-validates.test.ts";
@@ -6867,6 +6868,11 @@ await runTest(
 await runTest(
   "PHOENIX CRM: the Visit report generator (owner, 2026-10-15) — 113 fields in ten categories with no word the module never prints and ONLY the mock-location answer above the SFE Manager's sight, so his selection drops it and the evidence loader never queries a position case or selects device_mocked for him; one visit yields a value or an explicit null for every catalogue key, a blank is null and never zero; the day's order, gap and distance are save-order facts and the speed is worked out ONLY from the phone's own reading times; the dashboard says recorded on X of Y visits for a sparse field and draws nothing for a field that was not chosen; the workbook is read back out of the real .xlsx bytes — ONE tab, only the chosen headings, only the filtered visits, Cairo wall-clock dates, real numbers, the house masthead; and the page, the POST and the export hold their gates in order, with the rate limit before the heavy read)",
   runPhoenixCrmVisitReportTests,
+);
+
+await runTest(
+  "PHOENIX CRM: the rep writes up his OWN saved visit afterwards (owner, 2026-10-15 — a rep walks from door to door with no time between two of them for the company's full report, so logging stays one tap, the location and the time, and the soft detail is written later; his three answers that day: ANY TIME with no deadline, the pharmacy name ADD-ONLY, and only the rep). Six things move — the detailed comment, the objection and its note, the next step and the day he means to do it, what he left, the pharmacy stock — and an unknown chip value is DROPPED with its dependants rather than costing him the paragraph he just typed; the door comment is read back above the box and never edited, because that is his own wording; the SQL update is read column by column so the customer, the day, the time, the location, the photo, the voice note, AM/PM, who was on the visit and the products cannot move, those three staying the Super Admin's separate door; the gate is the territory's own rep in TypeScript and `rep_hr_id = actor` again in SQL, under the same per-seat lock the save takes, with the linked pharmacy visit sent back to the visit that filed it; the before-image is written BEFORE the update and a no-op writes no row at all; the read names no measurement, the card and the table print the same write-up and the same \"Edited · <Cairo date and time>\" marker, the door carries no day condition, and nothing notifies anybody in either direction",
+  runPhoenixCrmVisitDetailEditTests,
 );
 
 await runTest(

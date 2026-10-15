@@ -53,7 +53,7 @@ function viewer(flags: Partial<PhoenixCrmViewer>): PhoenixCrmViewer {
 // ── 1 · the catalogue ───────────────────────────────────────────────────────────────────────────
 
 function checkCatalogue(): void {
-  assert.equal(VISIT_REPORT_FIELDS.length, 113, "the owner's list is 113 fields");
+  assert.equal(VISIT_REPORT_FIELDS.length, 115, "the owner's list is 115 fields");
   assert.equal(VISIT_REPORT_CATEGORIES.length, 10, "in ten categories");
   const keys = VISIT_REPORT_FIELDS.map((field) => field.key);
   assert.equal(new Set(keys).size, keys.length, "no field key is used twice");
@@ -97,9 +97,9 @@ function checkSelection(): void {
     resolveVisitReportSelection(asked, "superAdmin").some((field) => field.key === "mockDevice"),
     "the Super Admin keeps it",
   );
-  assert.equal(visitReportFieldsFor("sfe").length, 112, "the SFE Manager is offered 112 of the 113");
-  assert.equal(visitReportFieldsFor("superAdmin").length, 113, "the Super Admin all of them");
-  assert.equal(visitReportFieldsFor("manager").length, 95, "a district manager is offered 95 of the 113");
+  assert.equal(visitReportFieldsFor("sfe").length, 114, "the SFE Manager is offered 114 of the 115");
+  assert.equal(visitReportFieldsFor("superAdmin").length, 115, "the Super Admin all of them");
+  assert.equal(visitReportFieldsFor("manager").length, 97, "a district manager is offered 97 of the 115");
 
   // The district manager's sight: no measurement behind a distance, no integrity case, no device
   // telemetry, no mock-location evidence (owner, 2026-10-02 "District Managers see the distance only";
@@ -120,7 +120,7 @@ function checkSelection(): void {
   }
   assert.equal(
     visitReportFieldsFor("manager").length + beyondTheDistrictManager.length,
-    113,
+    115,
     "the hidden list is exactly the difference — a field added without a sight is a manager's by default, so add it here when it is not",
   );
   for (const key of ["distanceFromPlace", "locationFlag", "visitLat", "visitLon", "placeLat", "placeLon"]) {

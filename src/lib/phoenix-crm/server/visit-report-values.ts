@@ -225,6 +225,9 @@ export function buildVisitReportValues(context: VisitReportContext): Record<stri
     enteredBy: person(names, visit.entered_by_hr_id),
     entryRoute: entryRoute(visit),
     editedBySuperAdmin: context.editedAt ? `Yes · ${formatPhoenixDateTime(context.editedAt)}` : "No",
+    // The rep's own write-up, read from the VISIT's own stamp rather than the audit table above: only
+    // he writes it, and it is told in the open (owner, 2026-10-15).
+    detailEdited: text(visit.detail_edited_at) ? `Yes · ${formatPhoenixDateTime(String(visit.detail_edited_at))}` : "No",
     clockOffsetMinutes: num(visit.device_skew_minutes),
     dwellSeconds: num(visit.dwell_seconds),
     formOpenSeconds: num(visit.form_open_seconds),
@@ -286,6 +289,7 @@ export function buildVisitReportValues(context: VisitReportContext): Record<stri
     nextStep: humanise(visit.next_step),
     nextStepDate: text(visit.next_step_on),
     comment: text(visit.comment),
+    detailComment: text(visit.detail_comment),
     voiceNote: Boolean(text(visit.voice_note_path)),
     voiceNoteSeconds: num(visit.voice_note_seconds),
     visitPhoto: Boolean(text(visit.photo_path)),

@@ -51,6 +51,7 @@ export type { RepCommitmentsView } from "@/lib/phoenix-crm/server/commitments";
 export type { CallPrepView } from "@/lib/phoenix-crm/server/call-prep";
 export type { EnteredMissedVisit, MissedRecordCustomer, MissedRecordForm } from "@/lib/phoenix-crm/server/missed-records";
 export type { SavedVisitEdit, VisitEditForm, VisitEditPerson } from "@/lib/phoenix-crm/server/visit-edit";
+export type { SavedVisitDetail, VisitDetailForm } from "@/lib/phoenix-crm/server/visit-detail-edit";
 export type { DoctorDirectoryRow, DoctorDirectoryView } from "@/lib/phoenix-crm/server/doctors";
 export type { TodayView } from "@/lib/phoenix-crm/server/today";
 export type { TeamPlanEdit, TeamRequest, TeamTerritoryRow, TeamUnplannedVisit, TeamView } from "@/lib/phoenix-crm/server/team";

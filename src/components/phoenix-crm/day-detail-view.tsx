@@ -13,6 +13,7 @@ import {
   CrmStat,
   CrmStatGrid,
 } from "@/components/phoenix-crm/ui";
+import { visitDetailEditedText } from "@/components/phoenix-crm/visit-detail-panel";
 import { EditVisit } from "@/components/phoenix-crm/visit-edit-panel";
 import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
 import { awaitingValidationNote } from "@/lib/crm/call-rate";
@@ -217,6 +218,17 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
                     ) : null}
                     {visit.voiceNotePath ? (
                       <CrmVoiceNotePlayer path={visit.voiceNotePath} seconds={visit.voiceNoteSeconds} />
+                    ) : null}
+                    {/* What the rep came back and wrote up afterwards, and when (owner, 2026-10-15).
+                        It sits BESIDE the door comment above, never instead of it. */}
+                    {visit.detailComment ? (
+                      <p className="whitespace-pre-line break-words">
+                        <span className="font-black text-slate-800">The visit in full: </span>
+                        <span dir="auto">{visit.detailComment}</span>
+                      </p>
+                    ) : null}
+                    {visitDetailEditedText(visit.detailEditedAt) ? (
+                      <p className="break-words text-slate-500">{visitDetailEditedText(visit.detailEditedAt)}</p>
                     ) : null}
                     {visit.outcome?.objectionLabel ? (
                       <p className="break-words">

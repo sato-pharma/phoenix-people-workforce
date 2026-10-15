@@ -74,6 +74,7 @@ import {
   type LastNextStep,
 } from "@/lib/phoenix-crm/visit-outcome";
 import { raisesVisitAsk } from "@/lib/phoenix-crm/visit-ask-rules";
+import { visitDetailEditable } from "@/lib/phoenix-crm/visit-detail-edit-rules";
 import { PHOENIX_VISIT_KIND_LABELS } from "@/lib/phoenix-crm/visit-kind-labels";
 import { describeDayWindows, isPlanSentForReview, isUuid, planDayStatus } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, personKey, resolveVisitParticipants, territoryReviewer, type OrgIndex } from "@/lib/phoenix-crm/scope";
@@ -243,6 +244,19 @@ export type VisitRow = {
    * fixed order. Empty on a visit that left nothing, which is every visit saved before this existed.
    */
   samples: Array<{ key: string; label: string; quantity: number }>;
+  /**
+   * The rep's SECOND, longer account of the call, written afterwards (owner, 2026-10-15). The door
+   * comment above stays exactly as he left it and is not editable by him.
+   */
+  detailComment: string | null;
+  /** When he last changed the detail, for the "Edited · <Cairo date and time>" line. */
+  detailEditedAt: string | null;
+  /**
+   * Whether this visit's detail is the READER's own to fill in — his own visit, and not the pharmacy
+   * visit another visit filed. False for every reader but the rep who made it, and false whenever the
+   * caller names no actor, so a screen that never asks offers nothing.
+   */
+  detailEditable: boolean;
 };
 
 export type VisitOutcomeView = {
@@ -255,6 +269,10 @@ export type VisitOutcomeView = {
 const VISIT_COLUMNS =
   "id, visit_date, captured_at, customer_id, list_type, kind, rep_hr_id, manager_hr_id, senior_hr_id, product_manager_hr_id, entered_by_hr_id, products, " +
   "comment, pharmacy_name, product_availability, photo_path, voice_note_path, voice_note_seconds, " +
+  // The rep's own second account, written afterwards, and when he last changed the detail (owner,
+  // 2026-10-15). `linked_from_visit_id` is read for one reason only: the pharmacy visit a doctor's
+  // visit filed has no detail of its own to fill in, so its card offers nothing.
+  "detail_comment, detail_edited_at, linked_from_visit_id, " +
   "accuracy_meters, distance_meters, location_flag, device_skew_minutes, is_unplanned, unplanned_kind, " +
   "next_step, next_step_on, objection, objection_note, samples_given, " +
   // `validated_at` is the other half of "does this count" (`visitCountsInKpi`): the approval half is
@@ -348,7 +366,7 @@ async function productManagerRolesFor(org: OrgIndex, seatId: string): Promise<Re
 function mapVisitRow(
   row: Row,
   names: PeopleNames,
-  options: { sight: LocationSight; org: OrgIndex; productManagerRoles?: ReadonlyMap<string, string> },
+  options: { sight: LocationSight; org: OrgIndex; productManagerRoles?: ReadonlyMap<string, string>; actorHrId?: string },
 ): VisitRow {
   const kind = visitKind(row.kind);
   const flag = locationFlag(row.location_flag);
@@ -413,6 +431,18 @@ function mapVisitRow(
     outOfList: unplannedKind === "out_of_list" ? outOfListVisitNote(textOrNull(record(row.customer).status)) : null,
     outcome: visitOutcome(row),
     samples: describeSamples(parseSamplesGiven(row.samples_given)),
+    detailComment: textOrNull(row.detail_comment),
+    detailEditedAt: textOrNull(row.detail_edited_at),
+    // The pure rule, asked with the reader as the actor. No actor — a manager's board, a report, the
+    // customer's timeline — answers false, which is the right direction: the button appears only where
+    // the screen deliberately said who is looking.
+    detailEditable:
+      options.actorHrId !== undefined &&
+      visitDetailEditable({
+        repHrId: textOrNull(row.rep_hr_id),
+        linkedFromVisitId: textOrNull(row.linked_from_visit_id),
+        actorHrId: options.actorHrId,
+      }).editable,
   };
 }
 
@@ -452,6 +482,14 @@ export type VisitDayView = {
   /** The rep's own day to describe; a manager enters his visits but never how he spent his day. */
   canSetDayActivity: boolean;
   /**
+   * Whether the reader may fill in the detail of his own visits on this day (owner, 2026-10-15).
+   *
+   * 🔴 IT CARRIES NO DAY CONDITION, unlike `canSetDayActivity` above: he was asked directly and
+   * answered "any time", so a visit he logged last week is still his to write up. The per-visit half
+   * is `detailEditable` on the row.
+   */
+  canAddVisitDetail: boolean;
+  /**
    * When he confirmed he started working, if he has (owner, 2026-10-03). Null before the press, and
    * on every day he never pressed it — which is itself the answer his manager reads.
    */
@@ -476,10 +514,11 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
     territory: describeTerritory(viewer.org, seat, names),
     isTest,
     date,
-    visits: rows.map((row) => mapVisitRow(row, names, { sight, org: viewer.org, productManagerRoles })),
+    visits: rows.map((row) => mapVisitRow(row, names, { sight, org: viewer.org, productManagerRoles, actorHrId: viewer.hrId })),
     canAdd: date === today && canEnterVisits(viewer, seat.seatId, isTest),
     dayActivity: activity,
     canSetDayActivity: date === today && canWriteAsRep(viewer, seat, isTest),
+    canAddVisitDetail: canWriteAsRep(viewer, seat, isTest),
     dayStart,
   };
 }
@@ -661,7 +700,7 @@ export type VisitFormView = {
  * per pharmacy, keyed by `pharmacyNameKey`; he can always type a new one. A box he once filled with
  * two pharmacies is offered as the two it named (`splitNamedPharmacies`), never as one name.
  */
-async function loadSeatPharmacies(seatId: string, isTest: boolean): Promise<string[]> {
+export async function loadSeatPharmacies(seatId: string, isTest: boolean): Promise<string[]> {
   const [typed, listed] = await Promise.all([
     getSupabaseAdmin()
       .from("phoenix_crm_visits")
