@@ -173,7 +173,18 @@ in `.claude/rules/database.md`, "The migration ledger".
 
 The daily check ignores anything merged inside `GRACE_WINDOW_MS` (48 hours), which is right for a
 nightly job — a PR's own migration is *supposed* to read unapplied at review time — and wrong for a
-sweep. A second pass calling `selectMissingMigrations` with a far-future `nowMs` named **four more
+sweep. A second pass — then a hand-written one, now **`pnpm run check:migrations-swept`** (and
+`check:migrations-swept-staging` for the other database), which is this script with `--no-grace`
+and optionally `--staging`, added at the owner's instruction the same evening ("add a --no-grace
+flag to check-migrations-applied so a sweep is one command"). An unknown flag is refused before any
+connection opens, so a typo can never report the narrow run as the wide one or point it at the wrong
+project. It reads its credentials from the process environment first and then from
+`.env.staging.rls.local`, `.env.production.rls.local`, `.env.local` — the same order
+`apply-sql-file.mjs` uses — because the first shell run of it died on `NEXT_PUBLIC_SUPABASE_URL /
+SUPABASE_SERVICE_ROLE_KEY not set`: it had been written for CI, where the workflow passes each leg's
+pair explicitly. 🔴 **The environment always wins over a file**, or a file in the checkout could
+redirect a CI leg at the other project, and the run prints which name came from which source and
+never the value. That pass named **four more
 production files**, as many again as the check itself reported:
 
 | file | what production actually held |

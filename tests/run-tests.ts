@@ -1521,6 +1521,7 @@ import { runMigrationsCairoDateGuardTests } from "./migrations-cairo-date-guard.
 import { runMigrationExceptionStalenessTests } from "./migration-exception-staleness.test.ts";
 import { runMigrationGrandfatherStalenessTests } from "./migration-grandfather-staleness.test.ts";
 import { runStagingMigrationApplierTests } from "./staging-migration-applier.test.ts";
+import { runMigrationDriftCheckFlagsTests } from "./migration-drift-check-flags.test.ts";
 import { runAutomatedPayrollRejectedExpensesTests } from "./automated-payroll-rejected-expenses.test.ts";
 import { runAutomatedPayrollExpenseStepApprovedOnlyTests } from "./automated-payroll-expense-step-approved-only.test.ts";
 import { runDuplicateExpenseHoldTests } from "./duplicate-expense-hold.test.ts";
@@ -5553,6 +5554,11 @@ await runTest(
   "staging migration applier (it can never reach production, the ledger insert survives a file ending in a "
   + "comment, and it ignores the grace window the nightly check needs)",
   runStagingMigrationApplierTests,
+);
+await runTest(
+  "the drift check's --no-grace flag (a sweep is one command, the parsed flag actually reaches "
+  + "selectMissingMigrations, and an unknown flag is REFUSED rather than reporting the narrow run as the wide one)",
+  runMigrationDriftCheckFlagsTests,
 );
 await runTest("automated payroll rejected expenses (an HR rejection must not be reimbursed; pending still flows)", runAutomatedPayrollRejectedExpensesTests);
 await runTest("automated payroll expense step proposes only approved trips, and surfaces the undecided ones", runAutomatedPayrollExpenseStepApprovedOnlyTests);

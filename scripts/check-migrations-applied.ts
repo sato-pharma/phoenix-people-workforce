@@ -27,32 +27,66 @@
 // Known, honest limitation: this only proves "unknown as of the last scheduled
 // run", not a real-time guarantee — see the grace window below.
 //
+// 🔴 `--no-grace` MAKES THIS A SWEEP, AND A SWEEP IS NOT THIS CHECK. The 48h grace window below is
+// right for a nightly job and wrong for the question "has anything merged never been applied?" —
+// it shelters exactly the newest files, which is where an unapplied migration is likeliest to be.
+// Measured 2026-10-15, answering the owner's "sweep production for merged migrations never
+// applied": the default run named four production files, and `--no-grace` named four MORE, three of
+// them money migrations merged that morning. One command:
+//   pnpm run check:migrations-swept            production, grace window down
+//   pnpm run check:migrations-swept-staging    the other database (--no-grace --staging)
+// Credentials come from the process environment first and then from this repo's env files, so both
+// run in a shell as well as in CI — the environment always wins (resolveEnvValue).
+// All eight turned out to be applied, with no ledger row, because the standing apply route writes
+// none — see the remedy text at the bottom of this file and docs/migrations.md, "The 15 October
+// production sweep". An unknown flag is refused, never ignored (parseDriftCheckFlags).
+//
 // The inventory itself — which files exist, which are acknowledged exceptions, and what counts as
 // "recorded" — lives in scripts/lib/migration-inventory.ts, shared with the staging applier so the
 // two can never disagree about the answer. See that file's header.
 import { createClient } from "@supabase/supabase-js";
 
 import {
+  DRIFT_CHECK_ENV_FILES,
   GRACE_WINDOW_MS,
   loadLocalMigrations,
+  parseDriftCheckFlags,
   projectRefFromUrl,
+  resolveEnvValue,
   selectMissingMigrations,
 } from "./lib/migration-inventory.ts";
 
-async function loadRemoteMigrations(): Promise<{ versions: Set<string>; names: Set<string>; projectRef: string }> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+async function loadRemoteMigrations(
+  staging: boolean,
+): Promise<{ versions: Set<string>; names: Set<string>; projectRef: string }> {
+  // The process environment first, then the repo's own env files — so the one command works in a
+  // shell and not only in CI, where the workflow passes each leg's pair explicitly. See
+  // resolveEnvValue: a file can never override what CI set.
+  const urlName = staging ? "PHOENIX_STAGING_SUPABASE_URL" : "NEXT_PUBLIC_SUPABASE_URL";
+  const keyName = staging ? "PHOENIX_STAGING_SUPABASE_SERVICE_ROLE_KEY" : "SUPABASE_SERVICE_ROLE_KEY";
+  const url = resolveEnvValue(urlName);
+  const key = resolveEnvValue(keyName);
   if (!url || !key) {
+    const missing = [!url ? urlName : null, !key ? keyName : null].filter(Boolean).join(" / ");
     throw new Error(
-      "NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set — cannot reach the target Supabase project.",
+      `${missing} not set — cannot reach the target Supabase project. Looked in the process `
+        + `environment and then ${DRIFT_CHECK_ENV_FILES.join(", ")}. `
+        + (staging
+          ? "The staging pair lives in .env.staging.rls.local."
+          : "The production pair lives in .env.local (AGENTS.md §3); add --staging for the other project."),
     );
   }
-  const projectRef = projectRefFromUrl(url);
+  // Said out loud because the credentials decide WHICH DATABASE was answered, and two files in this
+  // repo can reach two different projects. The values are never printed — one is a service-role key.
+  console.log(
+    `[migration-drift-check] credentials: ${urlName} from ${url.source}, ${keyName} from ${key.source}.`,
+  );
+  const projectRef = projectRefFromUrl(url.value);
   // Printed BEFORE the query so a failure still tells you what was being checked. Both MCP
   // servers and both env files can reach either project; the ref is the only thing that
   // distinguishes staging from production (AGENTS.md).
   console.log(`[migration-drift-check] target project ref: ${projectRef}`);
-  const supabase = createClient(url, key);
+  const supabase = createClient(url.value, key.value);
 
   // PAGE THROUGH THE RPC — do not trust a single call to return every row. PostgREST caps an RPC
   // response at its `db-max-rows` setting, and that setting differs BETWEEN the two projects:
@@ -95,28 +129,40 @@ async function loadRemoteMigrations(): Promise<{ versions: Set<string>; names: S
 }
 
 async function main() {
+  // Parsed before anything opens a connection, so an unknown flag costs nothing — and it is
+  // REFUSED rather than ignored, because a dropped flag would answer the narrow question in the
+  // wide question's words. See parseDriftCheckFlags.
+  const { ignoreGraceWindow, staging } = parseDriftCheckFlags(process.argv.slice(2));
   const local = loadLocalMigrations();
-  const remote = await loadRemoteMigrations();
+  const remote = await loadRemoteMigrations(staging);
   const now = Date.now();
 
-  // The grace window stays ON here, and is off in the applier — see selectMissingMigrations for
-  // why each is right. This check runs nightly: a migration merged an hour ago is not news.
-  const missing = selectMissingMigrations(local, remote, { nowMs: now });
+  // The grace window stays ON by default here, and is off in the applier — see
+  // selectMissingMigrations for why each is right. This check runs nightly: a migration merged an
+  // hour ago is not news. 🔴 `--no-grace` is what a SWEEP wants, and the difference is not
+  // cosmetic: on 2026-10-15 the window sheltered four of the eight production files with missing
+  // ledger rows, three of them money migrations merged that morning.
+  const missing = selectMissingMigrations(local, remote, { nowMs: now, ignoreGraceWindow });
+  // One noun phrase, used in all three sentences below, so the report can never describe the
+  // nightly question while having answered the sweep's.
+  const scope = ignoreGraceWindow
+    ? `every migration including the newest (--no-grace: the ${GRACE_WINDOW_MS / 3_600_000}h grace window is stood down)`
+    : `every migration outside the ${GRACE_WINDOW_MS / 3_600_000}h grace window`;
 
   console.log(
-    `[migration-drift-check] ${local.length} local migrations, ${remote.versions.size} recorded on ${remote.projectRef}.`,
+    `[migration-drift-check] ${local.length} local migrations, ${remote.versions.size} recorded on ${remote.projectRef}; judging ${scope}.`,
   );
 
   if (missing.length === 0) {
     console.log(
-      `[migration-drift-check] OK — every migration outside the grace window is accounted for on ${remote.projectRef}.`,
+      `[migration-drift-check] OK — ${scope} is accounted for on ${remote.projectRef}.`,
     );
     process.exit(0);
   }
 
   console.error(
     `[migration-drift-check] ${missing.length} migration(s) merged to main but not found (by version or name) ` +
-      `in ${remote.projectRef}'s schema_migrations, and older than the ${GRACE_WINDOW_MS / 3_600_000}h grace window:`,
+      `in ${remote.projectRef}'s schema_migrations, judging ${scope}:`,
   );
   for (const m of missing) {
     const age = m.commitTimeMs ? `${Math.round((now - m.commitTimeMs) / 3_600_000)}h old` : "age unknown";

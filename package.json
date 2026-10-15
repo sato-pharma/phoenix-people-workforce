@@ -108,6 +108,8 @@
     "check:deductions-write-contract": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/check-deductions-write-contract.ts",
     "check:sql-backups": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-sql-backup-placement.ts",
     "check:migrations-applied": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-migrations-applied.ts",
+    "check:migrations-swept": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-migrations-applied.ts --no-grace",
+    "check:migrations-swept-staging": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-migrations-applied.ts --no-grace --staging",
     "check:schema-shape": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-schema-shape.ts",
     "migrate:staging": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/apply-migrations-to-staging.ts",
     "check:db-timezone": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-db-timezone.ts",
