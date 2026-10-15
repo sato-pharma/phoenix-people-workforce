@@ -205,6 +205,18 @@ export const CONTRACT_GATES = [
     redJobs: null,
     costMs: 120,
   },
+  {
+    // Same shape as the row above, and offline for the same reason: the function lives in
+    // src/lib/needs-you/seat-drift-items.ts, whose only runtime imports are ./types; the drift
+    // shape arrives as a type-only import that `--experimental-strip-types` erases, and the
+    // adapter in needs-you/sources.ts is read as TEXT.
+    slug: 'needs-you-seat-drift',
+    file: 'tests/needs-you-seat-drift.test.ts',
+    export: 'runNeedsYouSeatDriftTests',
+    namePrefix: 'the organogram seat-drift board row reports an active person whose employees record',
+    redJobs: null,
+    costMs: 120,
+  },
 ];
 
 /**
