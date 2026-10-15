@@ -24,6 +24,23 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import postgres from "postgres";
 
+import { refuseArguments } from "./lib/refuse-arguments.mjs";
+
+// This script takes no arguments, so it says so instead of ignoring one (scripts/lib/refuse-arguments.mjs).
+refuseArguments({
+  name: "analyze-checkin-brick-groundtruth",
+  usage: `analyze-checkin-brick-groundtruth: compare real field GPS against the stored brick pins.
+
+  node scripts/analyze-checkin-brick-groundtruth.mjs   run the analysis and write its report
+  node scripts/analyze-checkin-brick-groundtruth.mjs -h   this text
+
+It takes no arguments: the window, the thresholds and the output path are constants at the top of
+the file, and it reads the database named by .env.production.rls.local / .env.local.`,
+  hints: [
+    "the window and thresholds are constants in this file — edit them, do not pass them",
+  ],
+});
+
 const WINDOW_DAYS = 60;
 const MIN_CHECKINS_PER_BRICK = 20;
 const DIVERGENCE_PROPOSAL_KM = 3;

@@ -45,6 +45,7 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 import { crlfToLf } from './cloud-mirror-drift.mjs';
+import { refuseArguments } from './lib/refuse-arguments.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..');
@@ -108,17 +109,15 @@ function fail(msg) {
 // owner's uncommitted work — so the price of the ignored flag was a dirty shared worktree only the
 // owner could authorise cleaning.
 //
-// Reading drift and fixing drift are two different commands, and this one only ever writes:
-//   ASK -> the SessionStart banner's own count, or `node scripts/module-memory/build.mjs --check`
-//   FIX -> `node scripts/module-memory/fold.mjs --apply`, which builds in its own temporary
-//          worktree from origin/main and never touches the calling checkout
-//
-// The refusal deliberately runs BEFORE the memory-source check below, so it answers the same way on
-// a cloud runner that has no ~/.claude at all — which is what lets `tests/sync-cloud-context-args.test.ts`
-// pin it. Exit 2 means "refused, nothing written"; exit 1 stays what it was, a real failure.
+// The gate is `scripts/lib/refuse-arguments.mjs`, shared with every other generator here that takes
+// no arguments, and it runs BEFORE the memory-source check below on purpose: a cloud runner has no
+// ~/.claude, so in the other order a refused flag would exit 1 there and 2 here, and
+// `tests/sync-cloud-context-args.test.ts` would pass on the laptop and fail on the box.
 // Account: docs/agents-session-traps.md, "`--check` on the cloud-context mirror was a full write".
 // ---------------------------------------------------------------------------
-const USAGE = `sync-cloud-context: mirror the laptop knowledge layers into this checkout.
+refuseArguments({
+  name: 'sync-cloud-context',
+  usage: `sync-cloud-context: mirror the laptop knowledge layers into this checkout.
 
   node scripts/sync-cloud-context.mjs      refresh the mirror HERE, then commit it in a PR
   node scripts/sync-cloud-context.mjs -h   this text
@@ -126,30 +125,15 @@ const USAGE = `sync-cloud-context: mirror the laptop knowledge layers into this 
 It takes no other arguments, and it has NO dry run — running it IS the write.
   to ASK whether the mirror has drifted: the SessionStart banner, or
                                          node scripts/module-memory/build.mjs --check
-  to FIX drift:                          node scripts/module-memory/fold.mjs --apply`;
-
-const argv = process.argv.slice(2);
-if (argv.includes('--help') || argv.includes('-h')) {
-  console.log(USAGE);
-  process.exit(0);
-}
-if (argv.length > 0) {
-  const asked = argv.find((a) => /^--?(check|dry|dry-run|n|verify|status|validate)$/i.test(a));
-  console.error('sync-cloud-context: REFUSED — this script takes no arguments, and it has no dry run.');
-  console.error(`  you passed: ${argv.join(' ')}`);
-  if (asked) {
-    console.error(
-      `  ${asked} does not read anything: running this script at all REWRITES the whole mirror` +
-        ' into the checkout you are standing in.',
-    );
-  }
-  console.error('  to ASK whether the mirror has drifted: the SessionStart banner already counts it, or');
-  console.error('                                         node scripts/module-memory/build.mjs --check');
-  console.error('  to FIX drift:                          node scripts/module-memory/fold.mjs --apply');
-  console.error('                                         (its own temporary worktree — never yours)');
-  console.error('  to refresh the mirror HERE on purpose: node scripts/sync-cloud-context.mjs   (no flags)');
-  process.exit(2);
-}
+  to FIX drift:                          node scripts/module-memory/fold.mjs --apply`,
+  hints: [
+    'running this script at all REWRITES the whole mirror into the checkout you are standing in',
+    'to ASK whether the mirror has drifted: the SessionStart banner already counts it, or',
+    '                                       node scripts/module-memory/build.mjs --check',
+    'to FIX drift:                          node scripts/module-memory/fold.mjs --apply',
+    '                                       (its own temporary worktree — never yours)',
+  ],
+});
 
 if (!fs.existsSync(MEMORY_DIR)) {
   fail(

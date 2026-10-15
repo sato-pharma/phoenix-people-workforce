@@ -2159,6 +2159,7 @@ import { runRecruitmentFolderCvPopupTests } from "./recruitment-folder-cv-popup.
 import { runRepoDoctorWorktreeRestoreAdviceTests } from "./repo-doctor-worktree-restore-advice.test.ts";
 import { runCloudMirrorDriftTests } from "./cloud-mirror-drift.test.ts";
 import { runSyncCloudContextArgsTests } from "./sync-cloud-context-args.test.ts";
+import { runGeneratorArgGatesTests } from "./generator-arg-gates.test.ts";
 import { runWorktreeRemoveHeadShaGateTests } from "./worktree-remove-head-sha-gate.test.ts";
 import { runWorktreeRemoveRemoteContainmentTests } from "./worktree-remove-remote-containment.test.ts";
 import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
@@ -8169,6 +8170,10 @@ await runTest(
 await runTest(
   "sync-cloud-context.mjs REFUSES an argument instead of ignoring it: it parsed none at all until 2026-10-15, so --check - the flag a session reaches for to ASK whether the cloud mirror has drifted - was silently ignored and the script did its one job, rewriting the whole mirror into whatever checkout the caller was standing in and exiting 0 like a clean check (measured that day: 7 modified tracked files and 1 untracked note in a worktree another live session shared, and the git restore to undo them is refused by the auto-mode classifier as irreversible local destruction). Every flag now exits 2 having written nothing, the refusal names the commands that DO ask (module-memory/build.mjs --check) and fix (fold.mjs --apply, in its own temporary worktree), --help is the one allowed argument, and the gate runs BEFORE the memory-source check so a runner with no ~/.claude refuses with the same exit code",
   runSyncCloudContextArgsTests,
+);
+await runTest(
+  "every argument-free GENERATOR in scripts/ refuses a flag instead of ignoring it, through one shared gate (scripts/lib/refuse-arguments.mjs): the gate is proved behaviourally against a fixture - exit 2 and nothing after it runs for --check, --dry-run, -n and a bare word, exit 0 and the usage for --help, and the POSITIVE CONTROL that a bare run still reaches the body and writes - then every listed generator is read from its comment-stripped source for the call BEFORE its first side effect, and a ratchet over every tracked non-library scripts/**/*.mjs refuses a NEW script that writes files while parsing no arguments unless it is gated or listed EXEMPT with a reason (a library like delta-landed.mjs must never read process.argv: its caller new-session.mjs takes one)",
+  runGeneratorArgGatesTests,
 );
 await runTest(
   "worktree removal frees a tip that is on origin under ANOTHER branch's name (confirmed against the remote, fails closed)",

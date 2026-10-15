@@ -18,6 +18,23 @@ import path from "node:path";
 
 import sharp from "sharp";
 
+import { refuseArguments } from "./lib/refuse-arguments.mjs";
+
+// This script takes no arguments, so it says so instead of ignoring one (scripts/lib/refuse-arguments.mjs).
+refuseArguments({
+  name: "optimize-brand-assets",
+  usage: `optimize-brand-assets: downscale and recompress the oversized static assets, IN PLACE.
+
+  node scripts/optimize-brand-assets.mjs      rewrite the assets, then commit the diff
+  node scripts/optimize-brand-assets.mjs -h   this text
+
+It takes no arguments and it has NO dry run — it overwrites the files it names in public/ and src/.`,
+  hints: [
+    "it overwrites the assets in place: run it on a branch with a clean tree and read the diff",
+    "the file list and target sizes are constants in this file — edit them, do not pass them",
+  ],
+});
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const publicDir = path.join(root, "public");
 

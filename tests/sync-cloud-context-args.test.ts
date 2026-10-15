@@ -36,7 +36,7 @@ import { stripComments } from "./support/comment-strip.ts";
  *     exit 2 here — and every case below would pass on this laptop and fail on the box. That ordering
  *     is the only thing read from the source, after comments are stripped.
  *
- * THE BREAK DIRECTION: delete the `argv.length > 0` gate and case 1 fails on both machines — exit 2
+ * THE BREAK DIRECTION: delete the `refuseArguments` call and case 1 fails on both machines — exit 2
  * becomes exit 1 (no memory dir on CI) or a full mirror write (on the laptop), and case 2 catches the
  * second one by the README's own bytes.
  */
@@ -111,9 +111,9 @@ export function runSyncCloudContextArgsTests() {
   // ── 5. The ordering that makes all of the above true on a runner with no ~/.claude ───────────
   {
     const source = stripComments(readFileSync(SYNC, "utf8"));
-    const gate = source.indexOf("argv.length > 0");
+    const gate = source.indexOf("refuseArguments(");
     const memoryCheck = source.indexOf("existsSync(MEMORY_DIR)");
-    assert.ok(gate > 0, `${SYNC}: the argument gate must exist`);
+    assert.ok(gate > 0, `${SYNC}: the shared argument gate must be called`);
     assert.ok(memoryCheck > 0, `${SYNC}: the memory-source check must still exist`);
     assert.ok(
       gate < memoryCheck,
