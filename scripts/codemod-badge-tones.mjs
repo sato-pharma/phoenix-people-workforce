@@ -25,6 +25,18 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "codemod-badge-tones",
+  entry: import.meta.url,
+  known: ["--write"],
+  hints: [
+    "it is a dry run by default — pass --write to edit files",
+  ],
+});
+
 const ROOTS = ["app", "src"];
 
 /** Owner-protected files. Never rewritten, whatever they contain. */

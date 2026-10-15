@@ -28,6 +28,18 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "codemod-hex-to-tokens",
+  entry: import.meta.url,
+  known: ["--apply"],
+  hints: [
+    "it is a dry run by default — pass --apply to write",
+  ],
+});
+
 // hex (lowercase) -> --phx- token suffix. The comment on each line is the
 // Tailwind palette name it came from, so the intent behind the old value is
 // recoverable rather than lost in the rewrite.

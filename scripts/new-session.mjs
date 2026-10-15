@@ -43,6 +43,18 @@ import {
   linksThroughFolder,
 } from "./repo-doctor-load-bearing.mjs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "new-session",
+  entry: import.meta.url,
+  known: ["--from", "--nested", "--remove", "--repair", "--status"],
+  hints: [
+    "node scripts/new-session.mjs <task> creates a worktree; --remove <task> retires one; --status and --repair read and mend",
+  ],
+});
+
 // Commit charge, not RAM, is what freezes this machine — and a freeze leaves no
 // dump. Below the floor a new session is refused; below the warn line it is
 // allowed but called out. Sessions themselves are cheap (~0.5 GB each, measured

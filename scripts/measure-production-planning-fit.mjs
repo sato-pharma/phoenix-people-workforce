@@ -44,6 +44,18 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "measure-production-planning-fit",
+  entry: import.meta.url,
+  known: ["--capture", "--fixture", "--phx-display-scale"],
+  hints: [
+    "--capture <file> writes the fixture; --fixture <file> measures it",
+  ],
+});
+
 const require = createRequire(import.meta.url);
 const ROOT = process.cwd();
 

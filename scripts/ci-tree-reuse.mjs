@@ -32,6 +32,18 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "ci-tree-reuse",
+  entry: import.meta.url,
+  known: ["--dry-run", "--report"],
+  hints: [
+    "--dry-run is what ci.yml passes; --report [n] counts the verdicts of the last n push runs",
+  ],
+});
+
 export const TESTED_TREE_PREFIX = "Tested tree ";
 export const VERDICT_PREFIX = "Tree reuse dry run ";
 export const VERDICTS = ["MATCH", "DIFFER", "UNKNOWN"];

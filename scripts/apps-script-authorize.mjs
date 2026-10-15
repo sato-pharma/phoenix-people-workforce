@@ -41,6 +41,18 @@ import path from "node:path";
 
 import { APPS_SCRIPT_SCOPE, OAUTH_ENV } from "./apps-script-manifest.mjs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "apps-script-authorize",
+  entry: import.meta.url,
+  known: ["--client-file", "--reuse-consent", "--write-env-local"],
+  hints: [
+    "--client-file takes the OAuth client JSON path: --client-file <file>",
+  ],
+});
+
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 

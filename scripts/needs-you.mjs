@@ -64,6 +64,18 @@ import { promisify } from 'node:util';
 
 import { readProtectionContexts } from './required-check-names.mjs';
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "needs-you",
+  entry: import.meta.url,
+  known: ["--fresh", "--json", "--quiet"],
+  hints: [
+    "--json prints the board as data; --quiet prints only the count; --fresh skips the cache",
+  ],
+});
+
 const execFileAsync = promisify(execFile);
 
 const REPO = 'Gawish-1997/phoenix-people-workforce';

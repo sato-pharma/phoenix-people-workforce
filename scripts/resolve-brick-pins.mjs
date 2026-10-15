@@ -7,6 +7,18 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import postgres from "postgres";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "resolve-brick-pins",
+  entry: import.meta.url,
+  known: ["--apply"],
+  hints: [
+    "it is a dry run by default — pass --apply to write",
+  ],
+});
+
 const ENV_FILES = [".env.staging.rls.local", ".env.production.rls.local", ".env.local"];
 
 function envVar(name) {

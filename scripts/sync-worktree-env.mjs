@@ -65,6 +65,18 @@ import { gitLayout } from "./lib/git-layout.mjs";
 import { linkNodeModules } from "./lib/link-node-modules.mjs";
 import { sweepWorktrees, wasChanged, linkedNodeModules } from "./lib/provision-worktree.mjs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "sync-worktree-env",
+  entry: import.meta.url,
+  known: ["--all", "--dry-run", "--force", "--hook", "--sweep-only"],
+  hints: [
+    "--dry-run prints what it would copy; --all covers every worktree; --hook is what the session hook passes",
+  ],
+});
+
 // stderr is captured, not inherited (2026-10-09, hook speed fixes): a fail-open run must print ONE
 // line, and git's own "fatal: not a git repository" would be a second one ahead of ours.
 function git(args, opts = {}) {

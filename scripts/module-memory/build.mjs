@@ -27,6 +27,18 @@ import {
   MODULES, MODULE_IDS, GLOBAL, HISTORY, NOTES_DIR, MODULE_FILE_MAX_BYTES, rulesFileOf, globToRegExp,
 } from "./modules.mjs";
 
+import { refuseUnknownFlags } from "../lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "module-memory/build",
+  entry: import.meta.url,
+  known: ["--check", "--file-new", "--seed-rules"],
+  hints: [
+    "--check reads and writes nothing; a bare run rebuilds the module files",
+  ],
+});
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const ASSIGNMENTS_FILE = "scripts/module-memory/assignments.json";
 export const HISTORY_FILE = "docs/module-memory/history.md";

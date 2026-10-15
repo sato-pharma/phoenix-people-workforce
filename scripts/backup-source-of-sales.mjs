@@ -13,6 +13,18 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { BACKUP_TABLES, NOT_BACKED_UP } from "./lib/source-of-sales-tables.mjs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "backup-source-of-sales",
+  entry: import.meta.url,
+  known: [],
+  hints: [
+    "its one argument is the output path: node scripts/backup-source-of-sales.mjs <out>",
+  ],
+});
+
 function loadEnvLocal() {
   const path = resolve(process.cwd(), ".env.local");
   if (!existsSync(path)) return;

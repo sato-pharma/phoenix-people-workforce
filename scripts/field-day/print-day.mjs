@@ -30,6 +30,18 @@ import { pathToFileURL } from "node:url";
 
 import { REPO_ROOT, readDay } from "./read-day.mjs";
 
+import { refuseUnknownFlags } from "../lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "field-day/print-day",
+  entry: import.meta.url,
+  known: [],
+  hints: [
+    "its one argument is the day: node scripts/field-day/print-day.mjs [YYYY-MM-DD]",
+  ],
+});
+
 /**
  * The PRIMARY checkout's `xlsx/`, whichever checkout this script is run from.
  *
