@@ -658,6 +658,7 @@
   "ireports360-timestamps-cairo-local-mislabeled-utc": "crm",
   "ireports360-undocumented-visit-type-codes": "crm",
   "ivyronc-military-price-is-14-main-store-only": "sales-closing",
+  "job-post-module-spec-before-build": "recruitment",
   "job-title-casing-import-normalizes-form-only-suggests": "employees",
   "job-title-not-a-permission-source": "platform",
   "jq-not-installed-monitor-scripts-silently-do-nothing": "sessions",
