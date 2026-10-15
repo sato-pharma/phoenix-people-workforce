@@ -30,7 +30,7 @@
 
 ## Inbox — new notes land here
 
-- [A refused Healthchecks auto-provision answers 404](a-refused-healthchecks-autoprovision-answers-404.md) - the ping path answers 404, the management API 403; before 2026-10-15 the response was never read, so an unwatched job was silent.
+- [A piped `run watch` exit code is `tail`'s, not `gh`'s](a-piped-run-watch-exit-code-is-tails-not-ghs.md) - exit 0 on a RED run; read the conclusion live.
 
 
 
