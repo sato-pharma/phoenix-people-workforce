@@ -1,0 +1,41 @@
+---
+paths:
+  - "src/lib/crm/contact-lists/**"
+  - "src/lib/crm/contact-lists.ts"
+  - "src/lib/crm/contact-master.ts"
+  - "src/lib/crm/phoenix-team-starts.ts"
+  - "app/api/cron/crm-contact-lists/**"
+  - "app/**/{doctor-list,rep-doctor-lists,my-list}/**"
+  - "tests/*{contact-master,contact-list,doctor-list}*"
+  - "supabase/migrations/*contact_master*"
+  - "supabase/migrations/*contact_list*"
+  - "supabase/migrations/*contact_refresh*"
+---
+
+# Module memory — Doctor lists — the contact master, its refresh and the list changes
+
+**Scope:** crm_contacts and crm_contact_assignments: the hourly contact-master refresh and its five assignment passes, the per-team hand-over from the vendor list to the Phoenix CRM list, and the doctor-list change requests.
+
+This file is loaded because this session opened a file of this module (or the module-memory hook matched the work to it). **It binds exactly like AGENTS.md.** First the module's rules, then every memory note filed under it: each note line is the cue, and the whole note is `.claude/cloud-context/memory-mirror/<name>.md` (identical to the laptop memory folder). **Before acting on a line that bears on your change, open its note.**
+
+**Keeping it current:** a rule or fact you learn while working in this module goes into **Rules** below, in the same PR as the work. If a rule changed, EDIT its line — never add a second line that contradicts it. The notes block is generated (`node scripts/module-memory/build.mjs`); a new note reaches it through the fold, which runs three times a day — 09:00, 15:00 and 21:00 Cairo (docs/module-memory.md).
+
+🔴 **A RULE BULLET OVER 1,200 BYTES MUST NAME ITS `docs/` ACCOUNT, or the required `validate` job goes RED** — `tests/agents-long-hooks-cite-docs.test.ts` measures every line starting `- ` inside the Rules block below, and this module file can sit far under its size cap while one bullet is over this limit. **Relocate FIRST, trim second:** write the evidence into a `docs/` file, then cut the bullet to the cue plus that pointer. Trimming first destroys the account while reading as a tidy-up. 🔴 **AND CITING docs/ IS NOT ENOUGH — the same test caps HOW MANY bullets may be over 1,200 at a tenth of all of them, which has about ONE bullet of slack**, so a long bullet reddens `validate` with its pointer in place (2026-10-04: 26 of 263 against a limit of 26.3). The fix is to shorten YOUR OWN long bullet, never to delete anyone's rule.
+
+🔴 **PUT THE OPERATIVE CLAIM IN THE BULLET'S FIRST `**bold**` SPAN.** A session that never opens this file sees only that one span: `ruleHeadlines()` in `.claude/hooks/module-memory-injector.mjs` takes the FIRST `**…**` match per bullet (`/\*\*(.+?)\*\*/`) and nothing else, so a boundary, an exception or a date written in a later bold clause of the same bullet does not travel. A first span that states an absolute the rest of the bullet then qualifies is the worst case — it is read as the whole rule. 🔴 **Those spans are also the only thing that grows the pointer, which `tests/module-memory.test.ts` caps at 4,000 bytes (hard cliff 4,500) — a module that passes it is SPLIT, never trimmed** (`phoenix-crm` → `phoenix-crm-approvals`, 2026-10-03).
+
+<!-- module-memory:rules:begin — hand-written; add this module's rules here -->
+## Rules
+
+- 🔴 **THE DOCTOR LIST FOLLOWS ITS OWN TEAM'S START IN ALL THREE PLACES THAT ASK — the apply function, the hourly refresh and the SERVICE — and they fail in OPPOSITE directions, so they move together.** `crm_cutover.cutover_date` is NULL on production and a team start never sets it. One rule: `doctorListOwnedByPhoenix` = his team's start OR a global date, mirroring `v_phoenix_owns`, asked per REP by every write and read path; **all four vendor assignment passes skip a started rep, the INSERT above all.** 🔴 **A FIFTH PASS THEN WRITES HIS PHOENIX LIST INTO `crm_contact_assignments` AS A DATED PERIOD, so the SCREENS read it** — vendor period closed at `counted_from - 1`, Phoenix period opened at `counted_from`, **nothing deleted**, and still NO `crm_contact_assignments_unified`. **A rep with NO Phoenix list KEEPS his vendor list** — the hand-over is driven by the LIST, never by the started set. It owns only `source = 'phoenix_crm'` rows and never touches a `source = 'phoenix'` one, and `crm_contact_list_change_apply` mirrors an approved removal or regrade into `phoenix_crm_customers` or the next hourly run undoes it. `20261004120000` + `20261007200000`, pinned by `tests/doctor-lists-follow-team-starts.test.ts` and `tests/doctor-lists-everywhere.test.ts`. Account: `docs/phoenix-crm-switchover-2026-10.md`, §1.
+
+- 🔴 **THE HOURLY REFRESH'S FIFTH PASS HOLDS ONE ROW PER (REP, DOCTOR, LIST) — THE UNIQUE KEY UNDER `crm_contact_assignments` IS THE DOCTOR, NEVER THE CUSTOMER** (production, 2026-10-12). A rep who adds a doctor and re-adds him next day by reference leaves TWO `phoenix_crm_customers` rows; 5b inserted one key twice and the whole transaction rolled back every run for ~26 hours. A live row beats dropped, active beats pending, earliest start wins. 🔴 **Read a failing refresh by running it in a `DO` block that catches `unique_violation` and always re-raises** (`pg_exception_detail` names the key); `describeContactMasterError` now logs PostgREST's `details`. A call whose `timeoutMs` IS its deadline passes `maxRetries: 0` — the SDK retries with a fresh budget (signboard: 8 s became 16.4 s). Account: `docs/phoenix-crm-switchover-2026-10.md`, "A doctor added twice".
+
+- 🔴 **THE REFRESH READS `phoenix_crm_customers` IN EXACTLY ONE STATEMENT, AND BOTH PASSES READ THAT SNAPSHOT** (production, 2026-10-15). It is plpgsql at READ COMMITTED, where every statement takes a FRESH snapshot, and it read the customer table twice: the name-row pass that creates a Phoenix-born doctor's `crm_contacts` row, then the fifth pass that writes his assignment. A doctor a rep added BETWEEN them reached 5b without reaching the name pass, so the foreign key aborted the run for every rep in the company — eight `scheduled_job_stranded` alerts since 25 Sept. `pg_temp.crm_refresh_phoenix_customers` makes the fifth pass's set a subset of the name pass's BY CONSTRUCTION. 🔴 **Nothing on the add path writes `crm_contacts` — this function is its only writer.** `20261015132445`, pinned by `tests/crm-contact-master.test.ts` block 9. Account: `docs/phoenix-crm-switchover-2026-10.md`, "The customer table was read twice".
+<!-- module-memory:rules:end -->
+
+<!-- module-memory:notes:begin — generated by scripts/module-memory/build.mjs; do not edit -->
+## Memory notes (0)
+
+_No notes filed under this module yet._
+<!-- module-memory:notes:end -->

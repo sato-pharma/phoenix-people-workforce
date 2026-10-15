@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import {
   contactMasterRefreshIncludesActivity,
@@ -29,6 +29,10 @@ import { stripSqlComments } from "./support/comment-strip.ts";
 //   · THE PICKER READS THE MASTER, falls back to the mirror ONLY on a missing table, and is not widened.
 //   · THE ACTIVITY PASS RUNS ONCE PER DAILY SWEEP — a full visit/plan scan on all twelve slices
 //     would add seconds to every tick under a 30-second scheduler cap.
+//   · THE REFRESH READS `phoenix_crm_customers` IN EXACTLY ONE STATEMENT. Two reads are two
+//     READ COMMITTED snapshots, so a doctor a rep adds mid-run reaches the fifth pass without
+//     reaching the name-row pass that creates his `crm_contacts` row, and the foreign key takes the
+//     whole refresh down for every rep in the company.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function runCrmContactMasterTests() {
@@ -294,6 +298,76 @@ export function runCrmContactMasterTests() {
       "5b must also refuse a key an open row holds under another hr id — the unique index is on agent_crm_id, not the rep",
     );
     assert.doesNotMatch(dedupe, /security\s+definer/i, "the refresh keeps running as its caller");
+  }
+
+  // ── 9. THE REFRESH READS phoenix_crm_customers ONCE, FOR BOTH PASSES ──────
+  // A Phoenix-born doctor's `crm_contacts` row is created by the refresh's name-row pass, and his
+  // `crm_contact_assignments` row — which has a foreign key to it — by the fifth pass. The two used
+  // to read `public.phoenix_crm_customers` in separate statements, and the function is plpgsql at
+  // READ COMMITTED, where every statement takes a FRESH snapshot. A doctor a rep added between the
+  // two was therefore invisible to the name pass and visible to the fifth, so 5b referenced a
+  // contact that did not exist and the whole transaction rolled back — eight `scheduled_job_stranded`
+  // alerts between 25 Sept and 15 Oct 2026, the last of them proven on production: customer
+  // 1000040482 saved at 12:59:20.549 Cairo, the run failing at 12:59, its `crm_contacts` row created
+  // at 13:04:47.651 by the NEXT run.
+  //
+  // Read from the NEWEST migration that redefines the function, not a fixed filename: the defect
+  // comes back the moment a future definition reads the table twice again.
+  {
+    const definitions = readdirSync(new URL("../supabase/migrations/", import.meta.url))
+      .filter((name) => name.endsWith(".sql"))
+      .sort()
+      .filter((name) =>
+        stripSqlComments(read(`supabase/migrations/${name}`)).includes(
+          "create or replace function public.crm_contact_master_refresh",
+        ),
+      );
+    assert.ok(
+      definitions.length > 0,
+      "no migration defines public.crm_contact_master_refresh — the whole doctor-list refresh is gone",
+    );
+    const newest = definitions[definitions.length - 1]!;
+    const refresh = stripSqlComments(read(`supabase/migrations/${newest}`)).replace(/\r\n/g, "\n");
+
+    assert.equal(
+      refresh.split("public.phoenix_crm_customers").length - 1,
+      1,
+      `${newest}: the refresh must read public.phoenix_crm_customers in exactly ONE statement. A second ` +
+        "read takes a second READ COMMITTED snapshot, so a doctor a rep adds mid-run is seen by the " +
+        "fifth pass and not by the name-row pass that creates his crm_contacts row — and 5b then " +
+        "violates crm_contact_assignments_contact_crm_id_fkey and rolls the whole refresh back",
+    );
+
+    // `[^;]*` keeps each match inside one statement, so a read in a DIFFERENT statement cannot satisfy it.
+    assert.match(
+      refresh,
+      /create temporary table crm_refresh_phoenix_customers on commit drop as[^;]*from public\.phoenix_crm_customers c[^;]*where not c\.is_test[^;]*and c\.status in \('active', 'pending', 'dropped'\)/,
+      `${newest}: the one read must be the snapshot build, carrying the same filters both passes used`,
+    );
+    assert.match(
+      refresh,
+      /insert into public\.crm_contacts as c \([^;]*from pg_temp\.crm_refresh_phoenix_customers p[^;]*on conflict \(contact_crm_id\)/,
+      `${newest}: the name-row pass must read the snapshot — it is what creates the crm_contacts row the ` +
+        "assignment's foreign key needs",
+    );
+    assert.match(
+      refresh,
+      /create temporary table crm_refresh_phoenix_lists_all on commit drop as[^;]*join pg_temp\.crm_refresh_phoenix_customers c/,
+      `${newest}: the fifth pass must read the SAME snapshot, or its set is not a subset of the one the ` +
+        "name-row pass covered",
+    );
+
+    // The snapshot is built, then the names land, then the assignments reference them. Any other order
+    // reopens the hole even with one read.
+    const snapshotAt = refresh.indexOf("create temporary table crm_refresh_phoenix_customers");
+    const namesAt = refresh.indexOf("insert into public.crm_contacts as c (\n    contact_crm_id, name, speciality, phone, source, first_seen_on");
+    const assignmentsAt = refresh.indexOf("create temporary table crm_refresh_phoenix_lists_all");
+    assert.ok(snapshotAt > 0 && namesAt > 0 && assignmentsAt > 0, `${newest}: could not locate all three passes`);
+    assert.ok(
+      snapshotAt < namesAt && namesAt < assignmentsAt,
+      `${newest}: the order must be snapshot → name rows → assignments, so every contact the fifth pass ` +
+        "references already has its crm_contacts row",
+    );
   }
 
 }
