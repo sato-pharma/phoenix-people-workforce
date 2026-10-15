@@ -3176,3 +3176,64 @@ itself, and names `PHX_STDIN_OK=1` as the stand-down. Pinned by
 still pass — among them the commit-message `$(cat <<'EOF' … )` idiom, `|&`, process substitution,
 the foreground and the PowerShell tool. Breaking the rule turns that test red on the 8 Oct command;
 dropping the pipe check turns it red on "a pipe into it".
+
+## A bare python REPL wrote 20.3 GB into three task logs and filled C: — 9-15 Oct 2026
+
+Three background Bash tasks, in three different sessions, launched an **interactive** Python: a bare
+`python` / `python3` with no script and no `-c`, and one `python - <<'PY'` whose closing delimiter
+was mangled, so bash passed nothing and Python went to the prompt anyway.
+
+Nothing in this harness can type into that prompt — and on this machine it does not wait quietly for
+the input that will never come. With no console attached, Python 3.13/3.14's new REPL raises
+`OSError: [WinError 123]` inside `Lib/_pyrepl/windows_console.py` `getheightwidth` (the handle it
+asks for the console's width is not a console), prints the traceback, and re-enters the same path to
+print the next prompt — for ever. The harness writes a background command's output to
+`%LOCALAPPDATA%\Temp\claude\<project>\<session>\tasks\<id>.output`, so the loop went to disk.
+
+**Measured on this box on 2026-10-15**, with the Bash tool's own stdin:
+
+| command | output |
+| --- | --- |
+| `timeout 3 python` (3.13.13) | 1,774,873 bytes |
+| `timeout 6 python` (3.13.13) | 3,948,442 bytes |
+| `timeout 3 py` (3.14.4) | 1,732,643 bytes |
+| `PYTHON_BASIC_REPL=1 timeout 3 python` | **176 bytes**, then it exits |
+
+That is ~640 KB/s, about **2.2 GB an hour**, identical on both interpreters. The three logs reached
+**12.5 GB, 5.4 GB and 2.4 GB** (9, 10 and 15 October) and took C: down to **12 GB free**. A cleanup
+session deleted them and recovered 19 GB.
+
+**Why it ran for hours.** Each session had already ended its turn — a background task keeps running
+across turns, and nothing reads its output file until it exits, which this one never does. There is
+no error anywhere else: the task is "running", the disk quietly fills, and the first symptom is
+Windows complaining about free space. The foreground is no safer in kind, only in degree: the same
+flood arrives in the tool result and is capped by the 600 s ceiling.
+
+**What a mangled delimiter actually is.** `<<DELIM` ends only at a line holding the delimiter
+**alone, at column 0**; `<<-DELIM` additionally strips leading **tabs**, never spaces. So an
+indented `  PY`, or a `PY` with anything after it, leaves the heredoc open — bash warns about a
+here-document delimited by end-of-file (into a log nobody reads) and Python gets no script. The
+repo's older `withoutHeredocBodies` regex accepts any indentation on the closing line, which is why
+C19 does its own line-based scan (`markHeredocs`) rather than reusing it.
+
+**The guard.** `bash-guard.mjs` **C19** refuses a Bash or PowerShell command whose first python
+would reach the REPL: no positional script, no `-c`, no `-m`, no pipe into it, no `<`, `<<<` or
+well-formed heredoc, and nothing that makes python print and exit (`--version`, `-V`, `--help`); or,
+whatever else the segment carries, a `<<DELIM` on it with no closing delimiter. It quotes the python
+back, carries the measured rate and the three log sizes, names a script file, `-c`, `-m` and a
+well-formed heredoc as the ways out, and offers `PYTHON_BASIC_REPL=1` — which is the fix, not a
+bypass, so the clause accepts it on the command line as well as `PHX_PYTHON_REPL_OK=1`. A
+`timeout N python …` is deliberately not matched: it bounds the flood, and it is how the rate above
+was measured.
+
+Pinned by `tests/python-repl-guard.test.ts` — nineteen interactive shapes (the bare interpreter,
+`py -3`, a quoted `"C:\Program Files\Python313\python.exe" -u`, `python 2>&1`,
+`python > out.log 2>&1`, `python -`, flags-only, the 15 Oct unclosed heredoc, an indented delimiter,
+and one unclosed heredoc that also carries `-c`) and thirty that must keep passing
+(`python script.py`, `-c`, `-m`, `--version`, a well-formed heredoc, `<`, `<<<`, a pipe, a
+`timeout`-bounded run, mentions in quotes, a commit message, a heredoc body documenting the trap, a
+PowerShell here-string, and both stand-downs in both dialects). Each refusal's own stand-down is
+re-fed to the guard and must be allowed, in the dialect of the tool that asked. Breaking the clause
+turns it red on "the bare interpreter"; reusing the old heredoc regex turns it red on "an indented
+closing delimiter"; unwrapping the quoted path before tokenizing turns it red on "a full path with
+spaces in it".
