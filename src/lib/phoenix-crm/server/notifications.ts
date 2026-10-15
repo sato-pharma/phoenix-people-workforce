@@ -350,6 +350,18 @@ export type PhoenixCrmNotice =
        * seated customer has not got, so `sharedPlaceRefusalRepText` answers for a venue.
        */
       via?: "place" | "shared_place";
+      /**
+       * 🔴 WHICH REFUSAL THIS IS, AND WHY IT HAD TO EXIST (owner, 2026-10-15). The key below is
+       * `customer:review`, and a VENUE refusal puts the venue's own id in that second half — which
+       * was one key per refusal FOR EVER only while a rejected venue could never come back. Now that
+       * it can (`restoreSharedPlace`), the same building can be rejected, brought back and rejected
+       * again, and the second refusal would land on the first one's key and reach the rep in SILENCE
+       * — the exact failure `tellSeatedRepsValidateAgain` was written to end. So the caller passes
+       * the decision's own instant and it rides on the END of the key, leaving the
+       * `phoenix_crm:validation_not_confirmed:<customer>:` PREFIX that
+       * `withdrawValidationNotConfirmed` clears by untouched.
+       */
+      attempt?: string | null;
     };
 
 type Delivery = {
@@ -910,7 +922,7 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
       // 🔴 CUSTOMER FIRST, REVIEW SECOND, so one PREFIX withdrawal
       // (`withdrawValidationNotConfirmed`) clears every such notice for one customer the moment he
       // validates again — a rep must never be left with a bell asking for something he has done.
-      idempotencyKey: `phoenix_crm:validation_not_confirmed:${notice.customerId}:${notice.reviewId}`,
+      idempotencyKey: `phoenix_crm:validation_not_confirmed:${notice.customerId}:${notice.reviewId}${notice.attempt ? `:${notice.attempt}` : ""}`,
       subjectHrId: notice.repHrId,
     };
   }
@@ -1440,7 +1452,7 @@ function activityMirrorLine(notice: PhoenixCrmNotice, names: PeopleNames): Mirro
         tab: "team",
         recordId: notice.reviewId,
         subjectHrId: notice.repHrId,
-        keySuffix: `validation_not_confirmed:${notice.reviewId}`,
+        keySuffix: `validation_not_confirmed:${notice.reviewId}${notice.attempt ? `:${notice.attempt}` : ""}`,
       };
     }
   }

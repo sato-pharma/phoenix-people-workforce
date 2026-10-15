@@ -146,6 +146,20 @@ function mapSharedPlace(row: Row, seated: number): SharedPlaceRow {
  * WHOLE resolution onto the seated row: leaving them out would have seated every customer at
  * `could_not_look` while the venue beside him read `matched`.
  */
+/**
+ * How long a REJECTED venue keeps its row on the Place checks board, so its rejection can be taken
+ * back. It is a window rather than for ever because the board is a working screen, not an archive —
+ * and a window rather than nothing because a mis-rejected building costs every doctor behind it a
+ * fresh capture at the door. 90 days covers "I rejected that last month by mistake"; what the
+ * administrator said stays on the row either way, and the customers it sent back are still listed
+ * under "Waiting to be captured again".
+ */
+const RESTORABLE_SHOWN_DAYS = 90;
+
+function restorableSince(): string {
+  return new Date(Date.now() - RESTORABLE_SHOWN_DAYS * 86_400_000).toISOString();
+}
+
 const SHARED_PLACE_COLUMNS =
   "id, seat_id, line_code, name, kind, status, address, zone, brick_id, brick_name, brick_distance_km, brick_lookup, " +
   "area_code, area_name, region_code, region_name, lat, lon, accuracy_meters, photo_path, captured_at, " +
@@ -515,6 +529,13 @@ export type SharedPlaceBoardRow = SharedPlaceRow & {
   decidedAtText: string | null;
   decidedByName: string | null;
   decisionNote: string | null;
+  /**
+   * Whether this venue's REJECTION can still be taken back (owner, 2026-10-15: "make me able to
+   * approve validation after rejection") — the same pair of tests the database makes: still retired,
+   * and with the `retired_at` the rejection stamped, which is how the restore finds the places it
+   * retired. The mirror of a review row's `restorable`.
+   */
+  restorable: boolean;
 };
 
 function readingOf(lat: unknown, lon: unknown, accuracy: unknown): SharedPlaceReading | null {
@@ -550,13 +571,17 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
         .from("phoenix_crm_shared_places")
         .select(
           `${SHARED_PLACE_COLUMNS}, created_at, signboard_check, decided_at, decided_by_hr_id, decision_note, ` +
-            "pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters",
+            "retired_at, refusal_reason, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters",
         )
-        // A REJECTED venue is retired and deliberately absent: the rep was told what is wrong with the
-        // photo and captures it again, exactly as a refused place behaves. What the administrator said
-        // stays on the row for the record, and the customers it sent back show in "Waiting to be
-        // captured again" — so there is nothing for this section to draw about it.
-        .in("status", ["active", "held"]);
+        // 🔴 A REJECTED VENUE IS ON THIS BOARD AGAIN, AND ONLY BECAUSE THERE IS NOW SOMETHING TO DO
+        // ABOUT IT (owner, 2026-10-15: "make me able to approve validation after rejection"). Until
+        // then it was deliberately absent — the rep had been told what is wrong with the photo and
+        // captured it again — and that absence was the whole defect: a venue rejection retires the
+        // building, retires every customer seated in it and sends each back to To validate, and
+        // nothing on any screen could take it back. Measured the same day: 35 retired venues on
+        // production, no way back from any of them. A retired row is drawn only while it is still
+        // reversible and recent (`RESTORABLE_SHOWN_DAYS`), never for ever.
+        .or(`status.in.(active,held),and(status.eq.retired,retired_at.gte.${restorableSince()})`);
       return seatScoped(query, seats)
         .order("created_at", { ascending: false })
         .order("id", { ascending: false });
@@ -591,6 +616,8 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
         decidedAtText: text(row.decided_at) ? formatPhoenixDateTime(String(row.decided_at)) : null,
         decidedByName: text(row.decided_by_hr_id) ? nameOf(names, text(row.decided_by_hr_id), "The administrator") : null,
         decisionNote: text(row.decision_note),
+        // The same pair of tests the database makes, so the control appears exactly where it works.
+        restorable: row.status === "retired" && text(row.retired_at) !== null,
       };
     }),
   };
@@ -663,11 +690,23 @@ export async function decideSharedPlace(viewer: PhoenixCrmViewer, raw: unknown):
  * another active place of his own is absent, and no bell is raised about something he cannot act on.
  *
  * The venue's own id stands in for the review id — a venue carries its decision on its own row and has
- * no review row — and a rejected venue is retired for good, so that is one key per refusal, for ever.
+ * no review row. 🔴 IT IS NO LONGER ONE KEY PER REFUSAL FOR EVER: since 2026-10-15 a rejected venue
+ * can be brought back (`restoreSharedPlace`) and rejected again, so the DECISION'S OWN INSTANT rides
+ * on the key as `attempt` — without it the second refusal would land on the first one's key and reach
+ * nobody, which is the silence this function exists to end.
  * Never throws: the decision is already committed, and a notice that cannot be raised must not undo it.
  */
 async function tellSeatedRepsValidateAgain(viewer: PhoenixCrmViewer, result: Row, reopened: Row[]): Promise<void> {
   if (reopened.length === 0) return;
+  // 🔴 ONE STAMP FOR THIS REFUSAL, READ FROM THE CLOCK AND NOT FROM THE ROW — and read ONCE, outside
+  // the loop, so every customer of one refusal shares it. `phoenix_crm_decide_shared_place` does not
+  // return `decided_at`, and `text(result.decided_at)` would therefore be a silently dead branch:
+  // undefined, no suffix, and the second refusal of a restored venue reaching nobody — which is the
+  // whole thing this is for. Restating a 150-line RPC to return a string the caller already knows
+  // would be the worse trade; the only requirement is that two refusals of one venue differ, and a
+  // restore has to happen between them. A retried POST cannot double-send either: the RPC raises
+  // `shared_place_retired` on an already-retired venue and never reaches this function again.
+  const attempt = new Date().toISOString();
   const sharedPlaceId = text(result.shared_place_id);
   const seat = viewer.org.seats.get(String(result.seat_id));
   const reason = text(result.refusal_reason);
@@ -687,6 +726,7 @@ async function tellSeatedRepsValidateAgain(viewer: PhoenixCrmViewer, result: Row
           reviewId: sharedPlaceId,
           reason,
           via: "shared_place",
+          attempt,
         },
         row.is_test === true || result.is_test === true,
       );
@@ -756,4 +796,64 @@ export async function loadSharedPlaceRefusalsForCustomers(
     });
   }
   return byCustomer;
+}
+
+// ── Taking a venue rejection back ───────────────────────────────────────────────────────────────
+
+export type SharedPlaceRestore = {
+  sharedPlaceId: string;
+  name: string;
+  placesRestored: number;
+  /** Who is in use again, by name, so the screen can say what the undo actually did. */
+  validated: Array<{ customerId: string; customerName: string }>;
+  /** Who is STILL under To validate, and therefore still in no KPI — a fact, never a failure. */
+  stillWaiting: Array<{ customerId: string; customerName: string }>;
+};
+
+/**
+ * Approve a venue after rejecting it (owner, 2026-10-15: "make me able to approve validation after
+ * rejection").
+ *
+ * The mirror of `restoreValidation` for a BUILDING, and the one thing on this page that had no undo
+ * at all: a venue rejection retires the venue, retires every place seated in it and sends each of
+ * those customers back to To validate, and `loadSharedPlaceBoard` then hid the row completely.
+ *
+ * 🔴 EVERY RULE ABOUT WHAT COMES BACK IS THE DATABASE'S, NOT THIS FUNCTION'S. The RPC decides which
+ * places that rejection retired (by the `retired_at` it stamped on all of them in one transaction),
+ * and it confirms a seated customer only under the three holds approving a HELD venue already keeps —
+ * no timetable on file, a timetable read as another name or as no schedule, or his own location still
+ * waiting on a validation review. So a restore can never validate somebody an approval would not.
+ *
+ * 🔴 AND THE REP IS TOLD NOTHING BY IT, deliberately — the same silence `restoreValidation` keeps. He
+ * was told what was wrong with the photo and that the place was back under To validate; when it comes
+ * back he simply has it again, and his own screens never say that a person decided either way (golden
+ * rule #1). The notice he already has is withdrawn by the customer's own validation, by prefix.
+ */
+export async function restoreSharedPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<SharedPlaceRestore> {
+  if (!canDecideSharedPlaces(viewer)) throw forbiddenError("Only the Super Admin decides these.");
+  const body = record(raw);
+  if (!isUuid(body.sharedPlaceId)) throw validationError("Choose the polyclinic or centre to bring back.");
+
+  const result = await callPhoenixCrm<Row>("phoenix_crm_restore_shared_place", {
+    p: {
+      shared_place_id: String(body.sharedPlaceId).toLowerCase(),
+      actor_hr_id: viewer.hrId,
+      // Optional everywhere on this page since 2026-10-15 ("admin comment is optional").
+      note: typeof body.note === "string" ? body.note : null,
+    },
+  });
+
+  const people = (value: unknown): Array<{ customerId: string; customerName: string }> =>
+    (Array.isArray(value) ? (value as Row[]) : []).map((row) => ({
+      customerId: String(row.customer_id),
+      customerName: String(row.customer_name ?? "This customer"),
+    }));
+
+  return {
+    sharedPlaceId: String(result.shared_place_id),
+    name: String(result.name),
+    placesRestored: numberOrNull(result.places_restored) ?? 0,
+    validated: people(result.validated),
+    stillWaiting: people(result.still_waiting),
+  };
 }
