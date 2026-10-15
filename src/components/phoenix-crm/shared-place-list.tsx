@@ -27,6 +27,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
@@ -249,6 +250,40 @@ function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteI
   );
 }
 
+/**
+ * Deciding several venues at once (owner, 2026-10-15: "also make me able to multiple select and
+ * response") — the row's own request per venue, nothing new; see `place-check-bulk.tsx`. The warning
+ * says what a bulk rejection costs, because here it reaches every customer seated behind each door.
+ */
+const VENUE_ACTIONS: ReadonlyArray<BulkAction<SharedPlaceBoardRow>> = [
+  {
+    key: "approve",
+    label: "Approve",
+    busyLabel: "Approving",
+    variant: "primary",
+    needsReason: false,
+    takes: () => true,
+    run: (row, answer) =>
+      crmPost<unknown>("/api/phoenix-crm/validation-reviews/shared-place", { sharedPlaceId: row.sharedPlaceId, decision: "approve", note: answer.note }, "decided"),
+  },
+  {
+    key: "reject",
+    label: "Reject",
+    busyLabel: "Rejecting",
+    variant: "danger",
+    needsReason: true,
+    warning: (count) =>
+      `This retires ${count === 1 ? "that building" : `those ${count} buildings`} and everybody seated in ${count === 1 ? "it" : "them"}; each of those customers goes back to To validate and must capture the building again at its door.`,
+    takes: () => true,
+    run: (row, answer) =>
+      crmPost<unknown>(
+        "/api/phoenix-crm/validation-reviews/shared-place",
+        { sharedPlaceId: row.sharedPlaceId, decision: "reject", note: answer.note, refusalReason: answer.reason },
+        "decided",
+      ),
+  },
+];
+
 export function SharedPlaceList({
   mode,
   noteIndex,
@@ -258,11 +293,15 @@ export function SharedPlaceList({
   noteIndex: PlaceNoteIndex;
   rows: SharedPlaceBoardRow[];
 }) {
+  const bulk = mode === "company";
+  const picks = useRowPicks<SharedPlaceBoardRow>(bulk ? rows : [], (row) => row.sharedPlaceId);
   return (
     <>
+      {bulk ? <BulkDecideBar actions={VENUE_ACTIONS} nameOf={(row) => row.name} picks={picks} /> : null}
       <CrmCardsOnPhone>
         {rows.map((row) => (
           <div key={row.sharedPlaceId} className="space-y-3 px-4 py-4">
+            {bulk ? <BulkPick picks={picks} row={row} /> : null}
             <div className="flex min-w-0 gap-3">
               <CrmPhotoThumb alt={`Sign photo for ${row.name}`} path={row.photoPath} />
               <Venue row={row} />
@@ -285,7 +324,10 @@ export function SharedPlaceList({
           {rows.map((row) => (
             <tr key={row.sharedPlaceId} className="even:bg-slate-50/60">
               <td className={crmTdClassName}>
-                <CrmPhotoThumb alt={`Sign photo for ${row.name}`} path={row.photoPath} />
+                <div className="min-w-0 space-y-2">
+                  <CrmPhotoThumb alt={`Sign photo for ${row.name}`} path={row.photoPath} />
+                  {bulk ? <BulkPick picks={picks} row={row} /> : null}
+                </div>
               </td>
               <td className={crmTdClassName}>
                 <Venue row={row} />

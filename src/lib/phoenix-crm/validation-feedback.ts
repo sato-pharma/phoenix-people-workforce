@@ -163,8 +163,15 @@ export const VALIDATION_REASON_PLACEHOLDER = "Choose what is wrong";
 /** The refusal when a rejection arrives without one. */
 export const VALIDATION_REASON_REQUIRED =
   "Choose what is wrong with the photo — the rep is told this.";
-/** On the note box, replacing the old "never shown to the rep". The promise it made is still kept. */
-export const VALIDATION_NOTE_LABEL = "Note for the record (the rep reads only the reason above)";
+/**
+ * On the note box, replacing the old "never shown to the rep". The promise it made is still kept.
+ *
+ * 🔴 IT SAYS OPTIONAL SINCE 2026-10-15 (owner: "admin comment is optional"). It was required, and of
+ * the 24 refusals in the module's first five days 22 carried the single character `-`: a field that is
+ * required and never read is a field that gets a dash. The REASON above it — the one sentence the rep
+ * is actually told — stays required.
+ */
+export const VALIDATION_NOTE_LABEL = "Note for the record — optional (the rep reads only the reason above)";
 
 // ── When the POLYCLINIC was refused, not his own capture of the customer ─────────────────────────
 

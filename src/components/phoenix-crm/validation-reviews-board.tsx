@@ -311,7 +311,7 @@ export function ValidationReviewsBoard({
                 </AdminCallout>
               </div>
             ) : (
-              <ValidationReviewQueue mode={mode} noteIndex={noteIndex} rows={filteredPending} />
+              <ValidationReviewQueue mode={mode} noteIndex={noteIndex} rows={filteredPending} section="waiting" />
             )}
           </AdminTableShell>
         ) : null}
@@ -357,7 +357,7 @@ export function ValidationReviewsBoard({
                 </AdminCallout>
               </div>
             ) : (
-              <ValidationReviewQueue mode={mode} noteIndex={noteIndex} rows={filteredDecided} />
+              <ValidationReviewQueue mode={mode} noteIndex={noteIndex} rows={filteredDecided} section="decided" />
             )}
           </AdminTableShell>
         ) : null}
