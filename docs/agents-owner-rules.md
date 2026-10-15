@@ -8249,9 +8249,12 @@ His words, across two messages the same afternoon:
 
 1. **"only stores split in kafr el sheikh 2 count her to dina fadel"**
 2. **"doinot count kafr el sheikh 2 store splitting to ragaa the rep count it to din a fadel the manager only"**
+3. **"i want this change to be starting from july 2026 counted to her"** — after reading the October
+   shape back, the same afternoon.
 
-The second message is the operative one. It is not a new ruling but a **correction of the first
-answer's shape**, and the two together are what this section exists to keep straight.
+The second message is the operative one on *who*; the third is the operative one on *when*. Neither
+is a new ruling: the second corrects the first answer's **shape** and the third corrects its **date**,
+and the three together are what this section exists to keep straight.
 
 **The defect he was pointing at.** `AREA_CITY` groups `D16` and `D17` as one city, Kafr El-Sheikh, so
 under the city rule every wholesaler there divides 50/50 between them. Dina Fadel holds
@@ -8292,8 +8295,9 @@ rollup function and every DM surface re-checked.
 
 ### What is built instead
 
-Kafr El-Sheikh 2 **joins Dina Fadel's Delta (1) district on Anti Infective from 2026-10-01**, as a
-dated pair in `au.line_area_map`: `operational_region_code` `D1`, `dm_seat_id` `SEAT-AIF-DM-D1`,
+Kafr El-Sheikh 2 **joins Dina Fadel's Delta (1) district on Anti Infective from 2026-07-01** (first
+built at `2026-10-01` by `20261015145000`, re-dated the same day by `20261015153000` on his third
+message), as a dated pair in `au.line_area_map`: `operational_region_code` `D1`, `dm_seat_id` `SEAT-AIF-DM-D1`,
 `rep_seat_id` **NULL**, `area_state` still `other_line_specific` so the generated `carries_target`
 stays **false**. The 50/50 split is untouched — only the district reading `D17`'s half changes. So
 her district total carries both halves, no rep is credited with the second one, and Ragaa keeps
@@ -8322,28 +8326,59 @@ lever.
   how every Others area behaves once it joins a real district, and it is his decision rather than a
   side effect.
 
-### The date gate is the publication freeze, and the move is dated to it
+### July is his date, and the publication freeze is what still stands in front of it
 
-Read live 2026-10-15: July, August and September 2026 are published on all three lines with no
-`unpublished_at`. Achievement and the Monthly Closing resolve region through
-`au.f_line_area_map_asof` at the **end of the month being closed**, so closing the Others row at
-`2026-10-01` (`effective_to` is exclusive) and opening the Delta (1) row on the same date is what
-makes those three months unreachable however late they are recomputed — a published month is never
-changed (owner, 2026-10-09). The rule reaches October 2026 onward.
+🔴 **The boundary is `2026-07-01`, and that does NOT by itself move July, August or September.** Read
+live 2026-10-15: all three are published on Anti Infective — 2026-08-08, 2026-09-07 and 2026-10-05,
+every one by B-10 — and `au.f_refresh_monthly_attribution` **refuses a published period**, raising
+*"leaving its attribution rollup frozen"*. The territory sync button and the nightly
+`/api/cron/territory-restamp` refuse the same months from the other side, reading
+`monthly_closing_publications` rather than the lock. So the map now resolves `D17` to Delta (1) from
+July on (verified live: June → `OT`, July/August/September/October → `D1`), while the three stored
+rollups still read Others — EGP 2,729.10, 3,630.15 and 27,261.38 — until **he** unlocks and
+unpublishes each month on the Monthly Closing screen himself. All three were locked on 2026-10-13.
+
+What each month moves when he does it, measured 2026-10-15 (Anti Infective, her district total):
+
+| Month | Delta (1) now | Kafr El-Sheikh 2 | Delta (1) after | Others after |
+| --- | --- | --- | --- | --- |
+| July 2026 | EGP 239,667.40 | **+2,729.10** | EGP 242,396.50 | −2,729.10 |
+| August 2026 | EGP 179,233.60 | **+3,630.15** | EGP 182,863.75 | −3,630.15 |
+| September 2026 | EGP 191,084.28 | **+27,261.38** | EGP 218,345.66 | −27,261.38 |
+
+**No rep loses a pound in any of them.** In the published months `D17` sits in Others, not with
+Ragaa, so the restatement moves money out of the Others bucket and into her district; Kafr El-Sheikh
+1 keeps its own half untouched and the national total does not change. Her percentage rises, because
+`D17` brings no target with it.
+
+🔴 **The Others row is dated back to `2026-01-01`, and that is load-bearing.**
+`au.f_line_area_map_asof` prefers the row covering the date and otherwise **falls back to the row
+with the smallest `effective_from`**. The Others row began on the map's own floor, `2026-07-13`, so
+once the Delta (1) row started `2026-07-01` it would have become the earliest row for this area —
+and January to June 2026, which match no interval at all, would have fallen back to it and counted to
+her as well. Those six months carry real sales in `D17` (EGP 788.30, 1,758.70, 1,505.65, 1,788.65,
+1,667.25, 1,031.10) and carry **no publication row**, so nothing would have refused them: the
+nightly stale-attribution sweep would have restated all six on its own. Re-dating the Others row
+keeps it earliest and keeps every pre-July month exactly where it is.
 
 **Nothing needs rebuilding after it is applied.** The stored net (`au.monthly_store_split_net`) is
 area-keyed and the split is unchanged, so the move takes effect on the next read; what moved is the
-area → DM resolution, and that is resolved live.
+area → DM resolution, and that is resolved live. After each unpublish,
+`select au.f_refresh_monthly_attribution('<period>')` rebuilds that month at once instead of waiting
+for the nightly sweep.
 
 ### Pinned by
 
-`tests/anti-infective-kafr-el-sheikh-2-delta-1.test.ts`. Three breaks were watched: re-adding
-`anti infective` to `OTHERS_EXCLUDED_LINES` (the #5926 shape) fires *"both Kafr El-Sheikh areas take
-a share"*, resolving the organogram at the run date instead of the month end fires *"September
-resolves at its own last day"*, and dropping `D17` out of the city map fires *"Kafr El-Sheikh is one
-city holding both areas"*. The migration asserts its own outcome too and rolls back if September
-stops answering Others, if October does not answer Delta (1) under `SEAT-AIF-DM-D1` with no rep and
-no target, if `D16` loses its rep seat, or if Pedia or CNS moved with it.
+`tests/anti-infective-kafr-el-sheikh-2-delta-1.test.ts`, re-dated to the July boundary with the
+pre-July months asserted month by month. Breaks watched: re-adding `anti infective` to
+`OTHERS_EXCLUDED_LINES` (the #5926 shape) fires *"both Kafr El-Sheikh areas take a share"*, dropping
+`D17` out of the city map fires *"Kafr El-Sheikh is one city holding both areas"*, and — the one the
+re-dating added — leaving the Others row on the `2026-07-13` floor fires *"June 2026 must still file
+Kafr El-Sheikh 2 in Others"* with `undefined !== 'OT'`, which is the earliest-row fallback trap
+reproduced in the resolver. The migration asserts its own outcome too and rolls back if any month
+before July 2026 stops answering Others, if July, September or October does not answer Delta (1)
+under `SEAT-AIF-DM-D1` with no rep and no target, if `D16` loses its rep seat, or if Pedia or CNS
+moved with it.
 
 **The trap the first build cost, kept because it will recur.** The line key is `lineKey` form —
 `"anti infective"`, with a **space**. `lineKey` collapses `_`, `-` and whitespace to one space, so
