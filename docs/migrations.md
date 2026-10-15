@@ -131,10 +131,11 @@ first and give the owner a chance to stop it.** Staging was always pre-approved.
 a project, and reading secrets, remain outside the grant. And the route is for a migration the MCP
 **refuses** — the MCP remains the first door, because a row it records is itself evidence the SQL ran.
 
-### The 15 October production sweep — four findings, zero unapplied
+### The 15 October production sweep — eight findings, zero unapplied
 
 **The owner's words, in session:** *"sweep production for merged migrations never applied"*, sent the
-same evening he made `apply-sql-file.mjs` the standing route.
+same evening he made `apply-sql-file.mjs` the standing route, then *"sweep staging too and widen the
+held branch"*.
 
 The repository already implements the sweep —
 `node --experimental-strip-types scripts/check-migrations-applied.ts`, pointed at whichever project
@@ -167,6 +168,35 @@ full-line `--` comment removed. Compare the file's dollar-quoted body in four sh
 as-is CRLF, comment-stripped LF, comment-stripped CRLF — and read the length delta first: 4,102
 against 4,191 characters is a normalisation, not a different generation of the logic. The rule lives
 in `.claude/rules/database.md`, "The migration ledger".
+
+#### The grace window hid four more, and a sweep has to stand it down
+
+The daily check ignores anything merged inside `GRACE_WINDOW_MS` (48 hours), which is right for a
+nightly job — a PR's own migration is *supposed* to read unapplied at review time — and wrong for a
+sweep. A second pass calling `selectMissingMigrations` with a far-future `nowMs` named **four more
+production files**, as many again as the check itself reported:
+
+| file | what production actually held |
+| --- | --- |
+| `20261014140000_marketing_resubmit_atomic.sql` | **superseded.** Its body digests `ed5ab6fe…` in its **CRLF** shape — exactly the pre-image recorded for `phx_resubmit_marketing_request` before the 20261015164459 apply, so it ran, in CRLF, and was replaced that evening. Re-applying it would revert the stored-requester fix. |
+| `20261015012551_direct_order_marketing_offsets.sql` | `direct_order_marketing_offsets` present with RLS on and all three indexes; both functions md5-equal as-is |
+| `20261015012552_finance_command_center_offset_requests_need_no_proof.sql` | `phx_finance_command_center` md5-equal as-is at 15,028 chars |
+| `20261015020803_admin_settle_service_fee_request.sql` | `phx_admin_settle_service_fee` md5-equal as-is at 7,679 chars |
+
+Three of those four are the money path from #5918 and #5921, merged around 02:00 Cairo that morning.
+All four are live. **Eight files, zero unapplied.**
+
+#### Staging
+
+`cifwmndunmlxjhyjugxa`: **884 local migrations, 1,350 ledger rows, nothing unaccounted** — with the
+grace window on and with it off. Staging is applied automatically by
+`.github/workflows/staging-migrate.yml`, and it carries real rows under each file's own version for
+all eight files above.
+
+🔴 **`ACKNOWLEDGED_EXCEPTIONS` is project-agnostic**, so an entry justified on production silences
+the same file on staging. Each of the eight was therefore checked against staging's own ledger
+before being added, and removing all eight again leaves staging green — proven by re-running that
+leg with the entries stripped.
 
 ## Migration Pipeline
 

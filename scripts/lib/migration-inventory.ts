@@ -782,6 +782,37 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // and quotes the owner's 2026-10-12 instruction to depend only on the EU organogram. Re-applying
   // it is a harmless no-op; the restore SQL, if the view is ever wanted back, is in that header.
   "20261013010000_drop_v_active_organogram.sql",
+  // ── The SECOND pass of the same 2026-10-15 sweep, with the 48h GRACE WINDOW STOOD DOWN. The four
+  // above are what the daily check reports; these four were hidden behind the window and would have
+  // started being reported over the following hours. 🔴 A SWEEP IS NOT THE DAILY CHECK: run
+  // selectMissingMigrations with a far-future `nowMs` so the newest files are judged too, or a sweep
+  // reports "clean" about a set it never looked at. All four are APPLIED on production, verified by
+  // digest; STAGING carries real ledger rows for all four under their own versions, so none of these
+  // entries masks anything on that project (checked explicitly — this list is project-agnostic, and
+  // an entry justified on production silences the same file on staging).
+  //
+  // 🔴 SUPERSEDED, and the clearest proof in this list that CRLF is a real apply shape and not a
+  // theory: this file's body digests ed5ab6fe6a089faf6281f4817ee5ad77 in its CRLF shape (6,681
+  // chars), which is EXACTLY the pre-image the 20261015164459 entry above records for
+  // phx_resubmit_marketing_request — so this file did run, in CRLF, and was then superseded that
+  // evening. Production carries eb27af44e76d8cb90328858775cbb183 (6,689), which is 20261015164459's
+  // body. Re-applying this file would REVERT the stored-requester fix.
+  "20261014140000_marketing_resubmit_atomic.sql",
+  // Verified: public.direct_order_marketing_offsets exists with relrowsecurity TRUE and all three
+  // indexes this file creates (_pkey, _request_key, _order_idx), and BOTH its functions are
+  // md5-equal as-is (LF, comments intact) — phx_record_direct_order_offset at
+  // 3481db501d9c623d7df38dbd2586de1b (2,909 chars) and phx_remove_direct_order_offset at
+  // d857a1be5786468f19c9695d70a4adce (1,741). This file is the only definer of either. Money path
+  // (#5918, settling a marketing request against a direct order's debt), so the table and the RLS
+  // flag were read rather than inferred from the functions.
+  "20261015012551_direct_order_marketing_offsets.sql",
+  // Verified: public.phx_finance_command_center md5-equal as-is at
+  // 537f0489e812b2cd2ad3808556b060ea (15,028 chars), with this file as its last definer.
+  "20261015012552_finance_command_center_offset_requests_need_no_proof.sql",
+  // Verified: public.phx_admin_settle_service_fee md5-equal as-is at
+  // 1e43480404794f268e228f85126f9c16 (7,679 chars), this file its only definer — so its existence
+  // already proves the file ran, and the digest proves it ran in THIS generation (#5921).
+  "20261015020803_admin_settle_service_fee_request.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
