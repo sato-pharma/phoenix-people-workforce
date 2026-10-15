@@ -108,6 +108,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   hiring_documents_export: true,
   hr_retention_conversation: true,
   job_offer: true,
+  job_post_download: true,
   mailbox_offboarding: true,
   manageengine_app_repository: true,
   manageengine_device_app: true,

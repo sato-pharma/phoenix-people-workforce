@@ -214,28 +214,41 @@ function blocks(blue: number[] = [3]): string {
   return `<div class="blocks" aria-hidden="true">${map.map((c, i) => `<u class="${blue.includes(i) ? "b" : c}"></u>`).join("")}</div>`;
 }
 
+/** The smallest the list text may shrink to (as a share of its normal size) before a post is too long. */
+export const JOB_POST_TEXT_FLOOR = 0.6;
+/** The smallest a title may shrink to, in px, before it is too long for its box. */
+export const JOB_POST_TITLE_FLOOR_PX = 24;
+
 /**
  * The layout pass, run in the page once Montserrat has loaded (an unloaded face measures at the
  * fallback's metrics). It exposes its promise as window.__jobPostFit so the server can wait for it
  * and refuse to print a picture it did not run on.
  *   1. Every title shrinks until it fits its box.
  *   2. While the page or any .fit region overflows, the list scale --k steps down.
+ * The report says what it cost: `k` is the text size as a share of normal, and `limited` is true
+ * when the shrinking ran out — a title at its floor and still too wide, the text at its floor, or
+ * anything still overflowing — so the picture is clipped or too small to read. The server refuses to
+ * draw a limited post; the preview shows the same verdict (posted to the parent page, the only way
+ * out of its sandboxed frame).
  */
 const FIT_SCRIPT = `<script>
 window.__jobPostFit = (async () => {
   if (document.fonts && document.fonts.ready) await document.fonts.ready;
-  const report = { titles: 0, k: 1 };
+  const report = { titles: 0, k: 1, limited: false };
   document.querySelectorAll("h1").forEach((el) => {
     let size = parseFloat(getComputedStyle(el).fontSize);
-    while (el.scrollWidth > el.clientWidth + 1 && size > 24) { size -= 1; el.style.fontSize = size + "px"; }
+    while (el.scrollWidth > el.clientWidth + 1 && size > ${JOB_POST_TITLE_FLOOR_PX}) { size -= 1; el.style.fontSize = size + "px"; }
+    if (el.scrollWidth > el.clientWidth + 1) report.limited = true;
     report.titles += 1;
   });
   const page = document.querySelector(".page");
   const regions = Array.from(document.querySelectorAll(".fit"));
   const overflowing = () => (page && page.scrollHeight > page.clientHeight + 1) || regions.some((el) => el.scrollHeight > el.clientHeight + 1);
   let k = 1;
-  while (overflowing() && k > 0.6) { k = Math.round((k - 0.03) * 100) / 100; document.documentElement.style.setProperty("--k", String(k)); }
+  while (overflowing() && k > ${JOB_POST_TEXT_FLOOR}) { k = Math.round((k - 0.03) * 100) / 100; document.documentElement.style.setProperty("--k", String(k)); }
   report.k = k;
+  if (k <= ${JOB_POST_TEXT_FLOOR} || overflowing()) report.limited = true;
+  try { if (window.parent !== window) window.parent.postMessage({ jobPostFit: report }, "*"); } catch (e) {}
   return report;
 })();
 </script>`;

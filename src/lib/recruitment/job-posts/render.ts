@@ -49,35 +49,61 @@ export function jobPostServerAssets(): JobPostAssets {
   };
 }
 
-async function load(page: ChromiumPage, html: string): Promise<void> {
-  await page.setViewport({ width: JOB_POST_WIDTH, height: JOB_POST_HEIGHT, deviceScaleFactor: 2 });
-  await page.setContent(html, { waitUntil: "networkidle0" });
-  const report = (await page.evaluate("window.__jobPostFit")) as { titles?: unknown } | null;
-  if (!report || typeof report.titles !== "number" || report.titles < 1) {
-    throw new Error("The job post's layout pass did not run, so its title was never fitted.");
+/**
+ * A post whose text could not be fitted: the shrinking ran out (a title at its floor and still too
+ * wide, the text at its floor, or something still overflowing), so the picture would be clipped or too
+ * small to read. Refused rather than drawn — the route answers it as a 422 with this message.
+ */
+export class JobPostTooLongError extends Error {
+  constructor(where?: string) {
+    super(
+      `This post is too long to print at a readable size${where ? ` (${where})` : ""}. Shorten a line, remove a line, or remove an area, then download again.`,
+    );
+    this.name = "JobPostTooLongError";
   }
 }
 
-async function png(page: ChromiumPage, html: string): Promise<Uint8Array> {
-  await load(page, html);
-  await page.emulateMediaType("screen");
-  return page.screenshot({ type: "png" });
+async function load(page: ChromiumPage, html: string, where?: string): Promise<void> {
+  await page.setViewport({ width: JOB_POST_WIDTH, height: JOB_POST_HEIGHT, deviceScaleFactor: 2 });
+  await page.setContent(html, { waitUntil: "networkidle0" });
+  const report = (await page.evaluate("window.__jobPostFit")) as { titles?: unknown; limited?: unknown } | null;
+  if (!report || typeof report.titles !== "number" || report.titles < 1) {
+    throw new Error("The job post's layout pass did not run, so its title was never fitted.");
+  }
+  // The pass ran — but did the text fit? A post past its floor is clipped, and a clipped picture
+  // must never leave the building looking finished.
+  if (report.limited !== false) throw new JobPostTooLongError(where);
 }
 
-async function pdf(page: ChromiumPage, html: string): Promise<Uint8Array> {
-  await load(page, html);
-  await page.emulateMediaType("print");
-  return page.pdf({ printBackground: true, preferCSSPageSize: true, margin: { top: "0", right: "0", bottom: "0", left: "0" } });
+/**
+ * ONE page load per picture, however many files come out of it: the layout pass runs once, the PNG is
+ * taken on screen media and the PDF on print media from that same fitted page (the page is a fixed
+ * 1080 x 1350 box, so print media changes nothing but the page size). Loading the same HTML twice —
+ * once per file — doubled the time of every Download all.
+ */
+async function draw(page: ChromiumPage, html: string, want: { png: boolean; pdf: boolean }, where?: string) {
+  await load(page, html, where);
+  let image: Uint8Array | null = null;
+  let document: Uint8Array | null = null;
+  if (want.png) {
+    await page.emulateMediaType("screen");
+    image = await page.screenshot({ type: "png" });
+  }
+  if (want.pdf) {
+    await page.emulateMediaType("print");
+    document = await page.pdf({ printBackground: true, preferCSSPageSize: true, margin: { top: "0", right: "0", bottom: "0", left: "0" } });
+  }
+  return { pdf: document, png: image };
 }
 
 export async function renderJobPostPng(content: JobPostContent, template: JobPostTemplateKey): Promise<Uint8Array> {
   const html = renderJobPostHtml(content, template, jobPostServerAssets());
-  return withChromiumPage((page) => png(page, html));
+  return withChromiumPage(async (page) => (await draw(page, html, { pdf: false, png: true })).png!);
 }
 
 export async function renderJobPostPdf(content: JobPostContent, template: JobPostTemplateKey): Promise<Uint8Array> {
   const html = renderJobPostHtml(content, template, jobPostServerAssets());
-  return withChromiumPage((page) => pdf(page, html));
+  return withChromiumPage(async (page) => (await draw(page, html, { pdf: true, png: false })).pdf!);
 }
 
 /**
@@ -88,10 +114,10 @@ export async function renderJobPostPdf(content: JobPostContent, template: JobPos
 export async function renderJobPostBundle(content: JobPostContent, template: JobPostTemplateKey): Promise<Uint8Array> {
   const assets = jobPostServerAssets();
   const stem = jobPostFileStem(content);
-  const variants: Array<{ name: string; content: JobPostContent }> = [
-    { name: content.areas.length > 1 ? `${stem}-all-areas` : stem, content },
+  const variants: Array<{ name: string; where: string | undefined; content: JobPostContent }> = [
+    { name: content.areas.length > 1 ? `${stem}-all-areas` : stem, where: content.areas.length > 1 ? "the all-areas post" : undefined, content },
     ...(content.areas.length > 1
-      ? content.areas.map((area) => ({ name: jobPostFileStem(content, area), content: jobPostForArea(content, area) }))
+      ? content.areas.map((area) => ({ name: jobPostFileStem(content, area), where: `the ${area} post`, content: jobPostForArea(content, area) }))
       : []),
   ];
 
@@ -99,7 +125,8 @@ export async function renderJobPostBundle(content: JobPostContent, template: Job
     const out: Array<{ name: string; png: Uint8Array; pdf: Uint8Array }> = [];
     for (const variant of variants) {
       const html = renderJobPostHtml(variant.content, template, assets);
-      out.push({ name: variant.name, png: await png(page, html), pdf: await pdf(page, html) });
+      const drawn = await draw(page, html, { pdf: true, png: true }, variant.where);
+      out.push({ name: variant.name, png: drawn.png!, pdf: drawn.pdf! });
     }
     return out;
   });
