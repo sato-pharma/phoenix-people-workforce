@@ -147,12 +147,35 @@ async function run() {
     assert.equal(presentation, tables, `${builtin.name}: the answer block keeps every table role="presentation"`);
     assert.ok(!/\d\s*pt\b/i.test(withButton.html), `${builtin.name}: no pt units`);
 
-    //    ONE way to accept (owner, 2026-10-08, "button only"): the email no longer also asks him to
-    //    sign and return the letter. The PDF keeps its signature page — only the email changes.
+    //    ONE way to accept (owner, 2026-10-08, "button only"; again 2026-10-15, "drop the
+    //    sign-and-return wording from the offer email, button only"): the email no longer also asks
+    //    him to sign and return the letter. The PDF keeps its signature page — only the email
+    //    changes.
+    //
+    //    The first three patterns are the letters' own three sign-and-return instructions, and the
+    //    third is why this list is not just `signing below`: the closing sentence was caught from
+    //    the day the button shipped, while the FIRST of the next steps — "Sign the acceptance below
+    //    and return a scanned copy … shown on page 1" — went out in every offer email for a week,
+    //    unasserted, telling the candidate to print the letter two panels above the button that
+    //    replaced it (measured on the live Corporate letter, 15 Oct 2026). `page 1` goes with it:
+    //    a page number belongs to the attachment, never to a scrolling message.
     for (const part of [withButton.html, withButton.text]) {
       assert.ok(!/signing below/i.test(part), `${builtin.name}: the email no longer asks him to sign and return`);
       assert.ok(!/Print it, sign it/i.test(part), `${builtin.name}: nor to print and scan the signature page`);
+      assert.ok(!/sign the acceptance/i.test(part), `${builtin.name}: nor to sign the acceptance in the steps`);
+      assert.ok(!/scanned copy/i.test(part), `${builtin.name}: nor to return a scanned copy`);
+      assert.ok(!/page 1\b/i.test(part), `${builtin.name}: and no step points at a page of the PDF`);
+      assert.ok(part.includes(email.OFFER_ACCEPT_STEP_TEXT), `${builtin.name}: that step is the button's step instead`);
     }
+
+    //    And it is said ONCE. The closing sentence used to be rewritten into a second "press the
+    //    Accept button" line, which then sat directly above the answer panel's own lead.
+    const leadInHtml = withButton.html.split(email.OFFER_ACCEPT_LEAD).length - 1;
+    assert.equal(leadInHtml, 1, `${builtin.name}: the accept lead is in the email exactly once`);
+    assert.ok(
+      !/press the Accept button below/i.test(withButton.html),
+      `${builtin.name}: and the letter's own prose no longer repeats it`,
+    );
 
     const without = email.renderOfferEmail({ blocks: builtin.blocks(), theme: builtin.theme }, SAMPLE);
     assert.ok(!without.html.includes(email.OFFER_ACCEPT_BUTTON_LABEL), `${builtin.name}: no link, no button — a send that could not mint one still goes out`);
