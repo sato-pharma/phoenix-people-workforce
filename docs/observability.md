@@ -452,7 +452,7 @@ policy):
    | `phoenix-process-notifications` | `*/5 * * * *` | 10m | cron-job.org job `8200914` |
    | `phoenix-background-jobs` | `0 3 * * 5` | 2h | cron-job.org job `8200915` |
    | `phoenix-inbound-intake` | `*/2 * * * *` | 10m | cron-job.org job `8200920` |
-   | `phoenix-recruitment-email-intake` | `4-59/10 * * * *` | 10m | cron-job.org job `8200919` |
+   | `phoenix-recruitment-email-intake` | `4-59/10 * * * *` | 20m | cron-job.org job `8200919` |
    | `phoenix-run-synthetic-journeys` | `17 5,8,11,14,17,20 * * *` | 2h | cron-job.org job `8220577` |
    | `phoenix-direct-orders-rotate-sheet-token` | `23 3 * * 5` | 2h | cron-job.org job `8313169` |
    | `phoenix-marketing-requests-rotate-sheet-token` | `43 3 * * 5` | 2h | cron-job.org job `8313171` |
@@ -464,10 +464,10 @@ policy):
    | `phoenix-territory-restamp` | `20 3 * * *` | 2h | cron-job.org job `8350721` |
    | `phoenix-brick-move-drain` | `19,39,59 * * * *` | 1h | cron-job.org job `(set on first --apply)` · **in-house only** |
    | `phoenix-reconciliation-check` | `40 4 * * *` | 2h | cron-job.org job `8350984` |
-   | `phoenix-crm-contact-lists` | `*/5 5 * * *` | 10m | cron-job.org job `8344730` |
+   | `phoenix-crm-contact-lists` | `*/5 5 * * *` | 20m | cron-job.org job `8344730` |
    | `phoenix-expense-claims-refresh` | `51 * * * *` | 1h | cron-job.org job `8350207` |
    | `phoenix-recruitment-cv-digest` | `47 0,6,12,18 * * *` | 1h | cron-job.org job `8334658` |
-   | `phoenix-ireports360-live-poll` | **Simple**, period `5m` | 15m | the in-process poller, every tick |
+   | `phoenix-ireports360-live-poll` | **Simple**, period `5m` | 30m | the in-process poller, every tick |
    | `phoenix-ireports360-sync` | `0 6-21/3 * * *` | 2h | the in-process poller, when due |
    | `phoenix-reconcile-visits` | `0 4 * * 0` | 12h | the in-process poller, when due |
    | `phoenix-job-heartbeat-sweep` | `*/15 * * * *` | 30m | cron-job.org job `8351275` |
@@ -479,6 +479,87 @@ policy):
    cron-job.org clock.
    Reformat the table freely, but re-run `pnpm run test` — a parser that silently matches nothing
    turns the sync into a no-op that reports success.
+
+   🔴 **A GRACE EQUAL TO THE INTERVAL MAKES ONE SKIPPED FIRE A PAGE — ON A MINUTE-LEVEL JOB THE
+   GRACE IS AT LEAST TWO INTERVALS, AND NEVER TUNE ONE BACK DOWN TO LOOK TIGHTER.** Measured from
+   the live flip history on 15 Oct 2026: of the 61 down-flips in the preceding 30 days, **39 came
+   from three checks whose jobs never actually stopped** —
+   `phoenix-recruitment-email-intake` (24 outages in its whole history, **12 of them lasting
+   9.8–10.0 minutes** against a 10-minute grace, which is the signature of recovering on the very
+   next scheduled fire), `phoenix-crm-contact-lists` (12 outages, **six at 5.2–5.8 minutes**, one
+   five-minute slice of the twelve inside hour 5, and three at ~15.5) and
+   `phoenix-ireports360-live-poll` (33 outages, **26 recovering within 4.3 minutes of going down**,
+   i.e. a ~21-minute silence against a 20-minute threshold — the deploy restart of an in-process
+   poller, not a stall). The first two moved to **20m** and the poller to **30m**, which would have
+   silenced **31 of those 39 alerts and left 7, every one a genuine stall**. 🔴 **The fast liveness
+   signal is `phoenix-inbound-intake` — 2-minute period, 10-minute grace — and it is deliberately
+   NOT widened**; it is the one check that answers "is Phoenix alive?" within minutes, so widening
+   it is what would actually cost coverage. A tight grace that cries wolf is worse than a wide one:
+   the 13 checks above went 20 days unread for exactly that reason.
+
+   **Tags and descriptions — the second machine-read table.** Measured on the owner's audit,
+   15 Oct 2026: **0 of the 40 live checks carried a tag or a description.** So the dashboard was 40
+   undifferentiated slugs, and an alert at 4am said a slug and a status and nothing about what had
+   stopped or what it costs. `scripts/healthchecks-sync.mjs` reads the table below and pushes both,
+   and it **refuses to run if a declared slug has no row here or a row names a slug that is not
+   declared** — the two tables move together or not at all.
+
+   The tag vocabulary is closed and CI-checked (`tests/healthchecks-schedule-sync.test.ts`): exactly
+   one **module** tag — `hr` · `recruitment` · `sales` · `crm` · `marketing` · `direct-orders` ·
+   `production-planning` · `platform` — plus `in-house-only`, which must agree with the marker on
+   the schedule row above, and `silent-when-clean` where sending nothing is the job working.
+   🔴 **There is deliberately no cadence tag:** the Healthchecks dashboard already prints each
+   check's schedule beside it, and a hand-written `daily`/`hourly` would be one more thing to drift.
+   What the dashboard cannot show is which module a slug belongs to — that is what these are for.
+
+   🔴 **THE DESCRIPTION SAYS WHAT A RED MEANS, NOT WHAT THE JOB IS.** A description that only
+   restates the slug is worth nothing to whoever is reading it at 4am; what they need is the
+   consequence — who was not told, which figure is now stale, what is filling up — and, for the
+   eleven `silent-when-clean` rows, the fact that a quiet run is correct.
+
+   | Check slug | Tags | What a red means |
+   |---|---|---|
+   | `phoenix-notify-daily` | `hr` | The 06:36 daily bundle — birthdays, contract renewals, holiday reminders, the vacation, marketing and outstation SLA digests, and the notification-retention cleanup. A red means none of those notices went out that morning. |
+   | `phoenix-production-planning-fx` | `production-planning in-house-only` | The one dollar rate a day that keeps every dollar-typed material price deriving a current pound figure. A red means the planner is costing the buy list on a stale rate. |
+   | `phoenix-production-planning-reorder` | `production-planning in-house-only` | The Ivyronc reorder and expiry alarm, naming the materials whose cover has fallen to about one run. A red means nothing warned him, and the imported material takes about six months to arrive. |
+   | `phoenix-marketing-field-capture-nudge` | `marketing silent-when-clean` | Tells each rep which of his own validated marketing customers still have no field capture behind them, in-app, Telegram and push only. A red means that backlog went unnamed. |
+   | `phoenix-marketing-invoice-overdue-nudge` | `marketing silent-when-clean` | Tells the requester and finance that an approved marketing request's invoice has passed its deadline. A red means a late invoice was raised with nobody. |
+   | `phoenix-distributor-upload-overdue-nudge` | `sales silent-when-clean` | Tells the Super Admin and the SFE Manager which distributor files for the month just closed are later than they were last month. A red means a late file went unreported. |
+   | `phoenix-mapping-guard-notify` | `sales` | The attribution freshness clock — it refreshes the stale attribution periods four times an hour. A red means the attribution figures are drifting behind the sales data underneath them. |
+   | `phoenix-interview-reminders` | `recruitment in-house-only silent-when-clean` | Reminds each person chosen to conduct an interview, the evening before and an hour before, in-app, email and Telegram. A red means an interviewer may be given no reminder at all. |
+   | `phoenix-crm-daily-digest` | `crm in-house-only silent-when-clean` | Phoenix CRM's 06:55 digest to each district manager about the previous field day, in-app and Telegram. A clean manager is told nothing, so this check is the only proof it ran. |
+   | `phoenix-crm-integrity-sweep` | `crm in-house-only` | Phoenix CRM's 03:35 photo-duplicate and integrity sweep. It notifies nobody by design and only writes evidence for the board, so a red here is the only way anyone learns it stopped. |
+   | `phoenix-crm-plan-reminder` | `crm in-house-only silent-when-clean` | Phoenix CRM's 12:57 and 17:57 reminder that a rep's coming week is not sent, to him and to his district manager. It is silent outside the window the week is due in. |
+   | `phoenix-crm-approval-nudge` | `crm in-house-only silent-when-clean` | Phoenix CRM's 09:57 nudge to whoever has a list request, an off-plan visit or a week edit waiting at his step for more than a day. A morning with nothing overdue sends nothing. |
+   | `phoenix-crm-visit-rollup` | `crm in-house-only` | Phoenix CRM's hourly rollup of the routine planned visits submitted in the previous completed clock hour, one batched message per in-scope manager. A red means an hour of field work was never reported upward. |
+   | `phoenix-crm-fraud-scan` | `crm in-house-only` | Phoenix CRM's Thursday 07:00 visit-fraud summary for the completed Saturday-to-Wednesday week, to the Super Admin and the SFE Managers. It judges nothing itself — it summarises flags the detectors already wrote. |
+   | `private-calendar-gap-notice` | `hr in-house-only silent-when-clean` | The employee's own Saturday 08:09 notice that a day in their Private Calendar has nothing recorded on it, in-app and push. A red means a week of unexplained days went unasked. |
+   | `phoenix-rep-ranks` | `crm in-house-only` | Phoenix Ranks' nightly 04:17 scoring run over Phoenix CRM's own territories, visits, lists and plans. A red means the ranks every manager reads are a day or more stale. |
+   | `phoenix-retention-risk-sweep` | `hr in-house-only silent-when-clean` | The daily 07:40 sweep for five or more consecutive working days of recorded leave, and for a Medical Rep with five or more and no CRM entry at all. A red means HR was not warned before the money moves. |
+   | `phoenix-retention-risk-pre-payroll` | `hr in-house-only` | The "take care, HR" notice on the 25th, listing every employee currently flagged, several working days before Part 1 pays. It fires once a month, so a red is a whole month with nobody warned. |
+   | `phoenix-mailbox-offboarding-sweep` | `hr` | The daily 08:15 mailbox-offboarding sweep: it opens a revocation task for any leaver still holding a mailbox the exit workflow missed, and alerts on overdue, lapsed forwarding and the rest. A red means a leaver can still read company mail. |
+   | `phoenix-process-notifications` | `platform` | Drains and retries the email and notification outbox every five minutes. A red means queued mail and notifications are sitting undelivered. |
+   | `phoenix-background-jobs` | `platform` | Drains the durable background-job outbox — imports, exports and other async work — and recaps to the Super Admin. A red means queued imports and exports are not running. |
+   | `phoenix-inbound-intake` | `recruitment` | Drains the inbound-CV intake queue every two minutes: WhatsApp media, re-fetched emails, AI extraction and candidate creation. A red means CVs are arriving and not becoming candidates. |
+   | `phoenix-recruitment-email-intake` | `recruitment` | Polls the careers and HR mailboxes over IMAP every ten minutes, enqueues each new message for the intake worker, and health-checks the WhatsApp channel on the same tick. A red means applications are sitting unread in the mailbox. |
+   | `phoenix-run-synthetic-journeys` | `platform` | Dispatches the synthetic end-to-end journeys six times a day. A red means nothing is exercising the critical paths from outside, so a broken page stays unnoticed until a person finds it. |
+   | `phoenix-direct-orders-rotate-sheet-token` | `direct-orders` | Rotates the Direct Orders live-sheet share token every Friday 03:23. A red means the bearer token of an unauthenticated feed is still the one it was last week. |
+   | `phoenix-marketing-requests-rotate-sheet-token` | `marketing` | Rotates the Marketing Requests live-sheet share token every Friday 03:43, twenty minutes behind its direct-orders counterpart so the two never overlap. A red means that feed's bearer token was not rotated. |
+   | `phoenix-cv-lifecycle-rotate-sheet-token` | `recruitment` | Rotates the CV-lifecycle live-sheet share token every Friday 04:03. It also refuses rather than rotates when a second feed link is live, and that token sat unrotated for 3 days 22 hours in October 2026. |
+   | `phoenix-brevo-keepalive` | `platform` | Resets Brevo's 90-day inactivity expiry on the email failover key, on the 1st of each month, and doubles as a liveness check on that failover. A red means the backup sender may be dying quietly. |
+   | `phoenix-direct-orders-expire-held` | `direct-orders` | The held-order 14-day clock: it expires any direct order still held 14 days after it was parked and tells the requester. A red means the held lane is filling with orders nothing will drain. |
+   | `phoenix-direct-orders-probation` | `direct-orders` | The 90-day probation sweep: it promotes every provisional pharmacy that has earned a footprint and reports the ones whose window closed in silence, to the owner and the CEO. A red means neither happened. |
+   | `phoenix-db-health-snapshot` | `platform` | Takes the query-statistics snapshot every six hours. A red means there is no recent baseline to compare a slow page against. |
+   | `phoenix-territory-restamp` | `sales` | The nightly 03:20 territory restamp that keeps each customer's territory current against the master data. A red means sales rows are being attributed on a stale territory. |
+   | `phoenix-brick-move-drain` | `sales in-house-only` | Settles the net effect of brick moves three times an hour and alerts on what it could not settle. It is the one declared job with NO external check at all, so only the in-house register watches it. |
+   | `phoenix-reconciliation-check` | `sales silent-when-clean` | The nightly 04:40 reconciliation check that alerts on a breach between the sales sources. A red means a breach would not have been raised with anyone. |
+   | `phoenix-crm-contact-lists` | `crm` | Rebuilds the CRM doctor and pharmacy contact lists every five minutes through hour 5. It pings directly rather than through the wrapper, because this route answers 500 without throwing. |
+   | `phoenix-expense-claims-refresh` | `hr` | Rebuilds the expense-claims read mirror from the legacy outstation tables every hour. Production reads are live on that mirror, so a red means the claims people are reading go stale. |
+   | `phoenix-recruitment-cv-digest` | `recruitment silent-when-clean` | Emails each hiring manager who had candidates pushed to them in the last six hours a summary of what they received and from whom. Silent when no manager received any. |
+   | `phoenix-ireports360-live-poll` | `crm` | The in-process poller's own tick, every five minutes. A brief red is usually the production process restarting on a deploy, which is why its grace is 30 minutes; a sustained red means the poller is dead and CRM has stopped pulling iReports360. |
+   | `phoenix-ireports360-sync` | `crm` | The rolling iReports360 visits sync, every three hours between 06:00 and 21:00, run by the in-process poller. Its cron-job.org backstop is OFF by design while the poller runs. |
+   | `phoenix-reconcile-visits` | `crm` | The weekly full-window iReports360 reconciliation, Sunday 04:00, run by the in-process poller. Its cron-job.org backstop is OFF by design while the poller runs. |
+   | `phoenix-job-heartbeat-sweep` | `platform` | The sweeper for the in-house dead-man's switch: it judges every declared job against its schedule and pages a human when one stops reporting. A red here means the thing that watches everything else has stopped. |
 
    🔴 **STANDING A JOB DOWN AND BRINGING IT BACK NEEDS `watchingSince`, or the restore alarms about
    the gap.** A `job_heartbeats` row outlives its declaration: removing the slug stops it being
