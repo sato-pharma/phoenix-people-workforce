@@ -1,0 +1,7 @@
+montserrat-regular.ttf, montserrat-bold.ttf — Montserrat Version 7.200 (copied from
+assets/business-cards/, the same files the business card embeds). Used by the recruitment Job Posts
+pictures (src/lib/recruitment/job-posts/), in the browser preview and in the server render.
+
+Copyright 2011 The Montserrat Project Authors (https://github.com/JulietaUla/Montserrat).
+Licensed under the SIL Open Font License, Version 1.1 — http://scripts.sil.org/OFL.
+Embedding in documents is permitted (OS/2 fsType 0).

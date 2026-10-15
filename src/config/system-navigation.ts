@@ -1044,6 +1044,11 @@ export const adminNavigationSectionSeeds = [
       // The Talent Acquisition seat (HR Resourcing) joined on 2026-10-08 — the owner's answers in chat on 2026-10-08 — and
       // canUseWhatsAppInbox names her beside the Super Admin, so the two still agree.
       { href: "/recruitment/whatsapp-inbox", icon: MessageCircle, label: "WhatsApp Inbox", permissions: [{ resource: "recruitment", action: "update" }], roles: ["Super Admin", "HR Resourcing"] },
+      // Job Posts — pick a job title, write it, choose one of five designs, download the post
+      // (app/(admin)/recruitment/job-posts/page.tsx; owner, 2026-10-15). canBuildJobPosts admits the
+      // Super Admin and the Talent Acquisition seat, so the row names exactly those two — an offered
+      // link that redirects is what every-offered-link-opens.test.ts exists to catch.
+      { href: "/recruitment/job-posts", icon: Megaphone, label: "Job Posts", permissions: [{ resource: "recruitment", action: "update" }], roles: ["Super Admin", "HR Resourcing"] },
     ],
     // ── Renamed 2026-09-05, and the reason is the promotion, not the rows ───────────────────
     // The promoted "Recruitment & Hiring" band (hub-recruitment-hiring) holds the module's eight rows
@@ -2363,6 +2368,9 @@ const hrNavigationSectionSeeds = [
       // The Talent Acquisition seat (2026-10-08) — the owner's answers in chat on 2026-10-08. Both company numbers, every chat;
       // canUseWhatsAppInbox (src/lib/whatsapp-inbox/access.ts) is the gate this row mirrors.
       { href: "/hr/recruitment/whatsapp-inbox", icon: MessageCircle, label: "WhatsApp Inbox", permissions: [{ resource: "recruitment", action: "update" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      // Job Posts (owner, 2026-10-15) — the HR shell's own row, for the same reason WhatsApp
+      // Templates has one: the Talent Acquisition seat works in this shell. canBuildJobPosts is the gate.
+      { href: "/hr/recruitment/job-posts", icon: Megaphone, label: "Job Posts", permissions: [{ resource: "recruitment", action: "update" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       // Added 2026-09-01. The page was `admin:update` — Super Admin alone — and was re-gated to
       // `recruitment:update` rather than the resource being widened, because `admin:update` also
       // opens module locks, scope visibility, salary flags and a notification TEST-SEND endpoint.

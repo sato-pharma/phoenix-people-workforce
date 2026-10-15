@@ -94,6 +94,16 @@ export function canSendWhatsAppTemplate(access: Pick<AccessContext, "role" | "sc
   return access.scope === "system" || recruitmentWorkRoles.includes(access.role);
 }
 
+// Job Posts — building, saving and downloading the job-post pictures
+// (app/(admin)/recruitment/job-posts). The owner named the audience on 2026-10-15: the Super Admin
+// and the Talent Acquisition seat — exactly recruitmentWorkRoles. Its own helper rather than a caller
+// of canSendWhatsAppTemplate, which resolves identically today: one guards messaging a candidate, this
+// one guards the public advert, and widening either must not quietly widen the other. The nav rows
+// for the page name the same two roles, and the API re-checks this on every call.
+export function canBuildJobPosts(access: Pick<AccessContext, "role" | "scope">): boolean {
+  return access.scope === "system" || recruitmentWorkRoles.includes(access.role);
+}
+
 // WhatsApp message templates — WRITING, EDITING and DELETING them.
 //
 // Narrower than sending, on purpose, and narrower than any other gate in this file: the Super Admin
