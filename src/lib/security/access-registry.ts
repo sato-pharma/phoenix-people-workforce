@@ -1575,6 +1575,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/shares", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["DELETE"], pattern: "/api/recruitment/interview-calendar/shares/*", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/people", permission: null, guard: "domain-helper" }),
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/job-titles", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/interview-calendar/export", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/cv", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/bookings/*/insights", permission: null, guard: "domain-helper" }),

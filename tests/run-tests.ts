@@ -2326,6 +2326,7 @@ import { runScreeningDownloadApplicationTests } from "./screening-download-appli
 import { runInterviewReminderTests } from "./interview-reminders.test.ts";
 import { runInterviewTier3Tests } from "./interview-tier3.test.ts";
 import { runInterviewRequestTests } from "./interview-requests.test.ts";
+import { runInterviewRoleAndOutcomeTests } from "./interview-role-and-outcome.test.ts";
 import { runInterviewInvitationTests } from "./interview-invitation.test.ts";
 import { runInterviewCalendarIcsTests } from "./interview-calendar-ics.test.ts";
 import { runWhatsAppApplicationPrintTests } from "./whatsapp-application-print.test.ts";
@@ -8964,6 +8965,11 @@ await runTest(
 await runTest(
   "the interview calendar books Sunday to Thursday, 9 to 5 in Cairo across daylight saving; only its owner shares it, only editors book; Phoenix makes the Zoom meeting and sends the candidate nothing; the PDF and Excel week make every name a link to its CV; and Schedule interview sits on every CV screen",
   runInterviewCalendarTests,
+);
+
+await runTest(
+  "an interview booking names the role it is for — free text over the offer catalogue's titles, never a closed list — and a candidate the calendar creates is filed under it while a candidate already on file is never overwritten; an interview whose time has passed with no outcome is flagged on the week grid, on the phone's day cards and in a panel shown only to whoever may record that outcome, and nothing is sent to anybody",
+  runInterviewRoleAndOutcomeTests,
 );
 
 await runTest(

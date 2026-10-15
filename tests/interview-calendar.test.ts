@@ -234,7 +234,7 @@ function runInterviewerAccessTests() {
   // the gate alone would hand an interviewer the whole calendar and every candidate's CV. A NEW "view"
   // site fails the count until somebody decides how it guards the rows.
   const domain = stripComments(read("src/lib/recruitment/interview-calendar.ts"));
-  assert.equal(domain.split('requireCalendarAccess(caller, "view"').length - 1, 14, "fourteen view sites, each guarded below");
+  assert.equal(domain.split('requireCalendarAccess(caller, "view"').length - 1, 15, "fifteen view sites, each guarded below");
   const guarded: Array<[string, RegExp]> = [
     ["listInterviewCalendarWeek", /mayReadBooking\(caller, row\)[\s\S]*mayReadSessions\(/],
     ["listInterviewCalendarDay", /mayReadBooking\(caller, row\)[\s\S]*mayReadSessions\(/],
@@ -242,6 +242,9 @@ function runInterviewerAccessTests() {
     ["getInterviewBooking", /mayReadBooking\(caller, row\)/],
     ["getInterviewSession", /mayReadSessions\(/],
     ["setInterviewOutcome", /mayReadBooking\(caller, row\)/],
+    // The outcome prompt is narrower than "view": it lists only what this caller may ANSWER for, so a
+    // viewer gets nothing and a share-link guest gets nothing at all.
+    ["listInterviewsAwaitingOutcome", /mayReadBooking\(caller, row\)[\s\S]*canSetOutcome/],
     ["resolveInterviewMeeting", /mayReadSessions\([\s\S]*mayReadBooking\(caller, row\)/],
     ["getInterviewExternalCv", /mayReadBooking\(caller, row\)/],
     // A scorecard is filed only by someone ON the interview — the lead or a panel member.
@@ -728,6 +731,7 @@ function booking(overrides: Partial<InterviewBooking> & Pick<InterviewBooking, "
     hasMeeting: false,
     interviewerHrId: null,
     interviewerName: null,
+    jobTitle: null,
     panelists: [],
     area: null,
     line: null,
@@ -1003,6 +1007,11 @@ function runWiringTests() {
     "listDueZoomInterviews(caller",
     "setInterviewOutcome(caller",
     "saveInterviewScorecard(caller",
+    // The role an interview is for: the suggestion list holds the calendar's own "book" gate (never
+    // offers:read — the people who book interviews are not the people who write offer letters), and
+    // the outcome prompt's loader holds "view" and then narrows to who may record the outcome.
+    "listInterviewJobTitleOptions(caller",
+    "listInterviewsAwaitingOutcome(caller",
     // Tier 3: the lead confirms/declines the assignment; an outside candidate's CV is replaced after
     // booking. Each resolves the caller and checks a right before it touches the row.
     "setInterviewerConfirmation(caller",

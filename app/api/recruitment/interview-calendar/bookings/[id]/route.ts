@@ -45,6 +45,7 @@ export async function PATCH(request: Request, { params }: Context) {
       panelistHrIds: body.panelistHrIds,
       area: body.area,
       line: body.line,
+      jobTitle: body.jobTitle,
       notes: body.notes,
       platform: body.platform,
       sessionId: body.sessionId,

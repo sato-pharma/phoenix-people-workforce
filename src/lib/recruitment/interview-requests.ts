@@ -113,6 +113,8 @@ export type ScheduleInterviewRequestItemInput = {
   platform: unknown;
   sessionId?: unknown;
   notes?: unknown;
+  /** The job this interview is for — a request names a line, never a role, so HR names it here. */
+  jobTitle?: unknown;
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────────────────────
@@ -493,6 +495,7 @@ export async function scheduleInterviewRequestItem(
     dateKey: input.dateKey,
     durationMinutes: input.durationMinutes,
     interviewerHrId: request.interviewer_hr_id,
+    jobTitle: input.jobTitle,
     notes: input.notes,
     platform: input.platform,
     sessionId: input.sessionId,

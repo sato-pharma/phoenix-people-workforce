@@ -44,6 +44,7 @@ export function EditInterviewDetailsDialog({
   const [panel, setPanel] = useState<ChosenInterviewer[]>(booking.panelists.map((member) => ({ hrId: member.hrId, name: member.name })));
   const [area, setArea] = useState(booking.area ?? "");
   const [line, setLine] = useState(booking.line ?? "");
+  const [jobTitle, setJobTitle] = useState(booking.jobTitle ?? "");
   const [name, setName] = useState(isExternal ? booking.candidateName : "");
   const [phone, setPhone] = useState(booking.externalPhone ?? "");
   const [email, setEmail] = useState(booking.externalEmail ?? "");
@@ -71,6 +72,7 @@ export function EditInterviewDetailsDialog({
         panelistHrIds: panel.map((member) => member.hrId),
         area: area.trim() || null,
         line: line.trim() || null,
+        jobTitle: jobTitle.trim() || null,
       };
       if (isExternal) body.external = { email: email.trim(), name: name.trim(), phone: phone.trim() };
       const data = await api.patch(`/bookings/${encodeURIComponent(booking.id)}`, body);
@@ -154,7 +156,7 @@ export function EditInterviewDetailsDialog({
           <p className="mt-1 text-[11px] text-slate-500">Choosing the interviewer fills in the area & line below — you can change them.</p>
         </div>
 
-        <OrgFields area={area} line={line} onArea={setArea} onLine={setLine} />
+        <OrgFields api={api} area={area} jobTitle={jobTitle} line={line} onArea={setArea} onJobTitle={setJobTitle} onLine={setLine} />
 
         <div>
           <p className="mb-1 text-[12px] font-bold text-slate-700">Panel (optional)</p>

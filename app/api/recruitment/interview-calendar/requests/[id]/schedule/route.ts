@@ -23,6 +23,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       dateKey: body.dateKey,
       durationMinutes: body.durationMinutes,
       itemId: typeof body.itemId === "string" ? body.itemId : "",
+      jobTitle: body.jobTitle,
       notes: body.notes,
       platform: body.platform,
       requestId: id,

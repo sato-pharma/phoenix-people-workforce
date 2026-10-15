@@ -26,7 +26,9 @@ import { cn } from "@/lib/utils";
 
 import { type CalendarApi, reasonText } from "./calendar-api";
 import { CalendarDialog, ErrorLine, NoteLine, Segmented } from "./calendar-dialog";
+import { useInterviewJobTitles } from "./org-fields";
 import {
+  phxFieldClassName,
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
@@ -56,11 +58,15 @@ function BookTimeDialog({
   const [start, setStart] = useState<number | null>(null);
   const [duration, setDuration] = useState<number>(30);
   const [platform, setPlatform] = useState<InterviewBooking["platform"]>("in_office");
+  // A request names the line it is for but never the role, so HR names it as the time is given —
+  // otherwise this booking joins the ones with nothing saying what round they belong to.
+  const [jobTitle, setJobTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const starts = useMemo(() => slotStarts(), []);
+  const jobTitles = useInterviewJobTitles(api);
 
   async function book() {
     if (start === null || busy) return;
@@ -71,6 +77,7 @@ function BookTimeDialog({
         dateKey: request.requestedDay,
         durationMinutes: duration,
         itemId: item.id,
+        jobTitle: jobTitle.trim() || null,
         notes: notes.trim() || null,
         platform,
         startMinutes: start,
@@ -124,6 +131,24 @@ function BookTimeDialog({
               </option>
             ))}
           </select>
+        </div>
+        <div>
+          <p className="mb-1 text-[12px] font-bold uppercase tracking-[0.06em] text-slate-700">Role interviewed for (optional)</p>
+          <input
+            aria-label="Role interviewed for"
+            autoComplete="off"
+            className={`${phxFieldClassName} block`}
+            list="interview-request-job-title-options"
+            maxLength={120}
+            onChange={(event) => setJobTitle(event.target.value)}
+            placeholder="e.g. Medical Rep"
+            value={jobTitle}
+          />
+          <datalist id="interview-request-job-title-options">
+            {jobTitles.map((title) => (
+              <option key={title} value={title} />
+            ))}
+          </datalist>
         </div>
         <div>
           <p className="mb-1 text-[12px] font-bold uppercase tracking-[0.06em] text-slate-700">How long</p>
