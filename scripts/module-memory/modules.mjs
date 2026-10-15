@@ -436,6 +436,33 @@ export const MODULES = [
     keywords: ["phoenix ranks", "rep ranks", "integrity pillar", "pillar", "insignia", "rank certificate", "standings", "ladder", "field accuracy", "am start"],
     tables: ["rep_rank_standings"],
   },
+  // 🔴 SPLIT 2026-10-15, FOR THE REASON `rep-ranks` ABOVE RECORDS: `crm` reached 31 rules and its
+  // injected pointer measured 4,101 bytes against the 4,000-byte margin `tests/module-memory.test.ts`
+  // holds, the moment the one-read rule for `crm_contact_master_refresh` landed. The doctor list is the
+  // clean cut: `crm_contact_master_refresh` and the contact-list service are one mechanism with its own
+  // files, its own cron route and its own tests, and none of its rules are read while editing a call
+  // rate, a KPI board or a double visit. `crm` KEEPS EVERY GLOB IT HAD, so a doctor-list file loads the
+  // PAIR and nothing that used to arrive stops arriving. The FILE was at 70% of its 72,000-byte cap —
+  // two different limits, and this is the small one.
+  {
+    id: "crm-doctor-lists",
+    title: "Doctor lists — the contact master, its refresh and the list changes",
+    scope: "crm_contacts and crm_contact_assignments: the hourly contact-master refresh and its five assignment passes, the per-team hand-over from the vendor list to the Phoenix CRM list, and the doctor-list change requests.",
+    globs: [
+      "src/lib/crm/contact-lists/**",
+      "src/lib/crm/contact-lists.ts",
+      "src/lib/crm/contact-master.ts",
+      "src/lib/crm/phoenix-team-starts.ts",
+      "app/api/cron/crm-contact-lists/**",
+      "app/**/{doctor-list,rep-doctor-lists,my-list}/**",
+      "tests/*{contact-master,contact-list,doctor-list}*",
+      "supabase/migrations/*contact_master*",
+      "supabase/migrations/*contact_list*",
+      "supabase/migrations/*contact_refresh*",
+    ],
+    keywords: ["doctor list", "contact master", "contact list", "contact assignments", "contact-lists cron", "doctor list changes", "drop a doctor", "regrade", "hand the vendor list over", "fifth pass"],
+    tables: ["crm_contacts", "crm_contact_assignments"],
+  },
   {
     id: "marketing",
     title: "Marketing requests, venues, pharmacies and ROI",

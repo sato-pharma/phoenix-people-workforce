@@ -275,3 +275,69 @@ The trigger itself could not be probed on production or staging (the insert prob
 **Not done.** The 158 pairs already on production are untouched (no merge, no drop, no unique index over the doctor).
 Which row of a pair keeps the visits is the owner's decision. The rep's `new` door already refuses a same-name customer
 (`same_name`, 409) unless the rep confirms it is a different person; that confirmation was left as it is.
+
+## The customer table was read twice, and a doctor added between the reads aborted the run
+
+`phoenix-crm-contact-lists` raised eight `scheduled_job_stranded` alerts between 25 September and 15 October 2026 —
+a slice that died mid-run, and a later slice or run that succeeded. The 15 October 12:59 Cairo alert, in full:
+
+```
+in-process slice 5/12: 7 agent(s) attempted, 562 row(s) upserted, contact master refresh FAILED:
+insert or update on table "crm_contact_assignments" violates foreign key constraint
+"crm_contact_assignments_contact_crm_id_fkey" [code 23503]
+Key (contact_crm_id)=(1000040482) is not present in table "crm_contacts".
+```
+
+**The contact was never missing data,** which is what makes this one read as impossible. Read on production
+`ozucdzovmcqvepbozvqf` the same afternoon:
+
+| Table | Row | Created (Cairo) |
+| --- | --- | --- |
+| `phoenix_crm_customers` | `own_contact_crm_id` 1000040482, seat `SEAT-PED-REP-GZ7`, status `pending`, not test | **12:59:20.549** |
+| `crm_contacts` | `contact_crm_id` 1000040482, `source = 'phoenix'` | **13:04:47.651** |
+
+The rep saved the doctor at 12:59:20 — **while the 12:59 run was between its two reads of
+`public.phoenix_crm_customers`.** `crm_contact_master_refresh` is plpgsql, so the whole call is one transaction at
+READ COMMITTED, where **every statement takes its own fresh snapshot**. It read the customer table twice:
+
+1. the name-row pass, near the top, which creates a Phoenix-born doctor's `crm_contacts` row;
+2. the fifth pass's `create temporary table crm_refresh_phoenix_lists_all as select …`, near the bottom, which
+   feeds 5b's insert into `crm_contact_assignments`.
+
+The name pass had already run and could not see the new customer. The fifth pass, a later statement with a later
+snapshot, could. 5b then inserted an assignment for a contact with no row in `crm_contacts`, and the foreign key took
+the whole transaction down — every rep in the company, not just that one. The contact row landed five minutes later
+from the NEXT run's name pass, which is why a retry is always clean and why the row is present by the time anyone goes
+to look.
+
+**Every doctor a rep adds is exposed.** Nothing on the add path writes `crm_contacts` — this function is its only
+writer — and the window is the whole span between the two passes, with the activity pass, the four vendor passes and
+the brick and region passes inside it. Measured the same day, the four Phoenix-born doctors created on 15 October each
+waited a mean 312 s (max 327 s) for their contact row: the next run, never their own.
+
+**The fix** (migration `20261015132445`). One statement reads `public.phoenix_crm_customers` into
+`pg_temp.crm_refresh_phoenix_customers`, and both passes read that snapshot. Three textual edits, nothing else: no
+filter, no ordering and no written value changes, and the recreated body is `20261012184500`'s byte for byte otherwise
+(`md5(prosrc) = 34220e8603660375d75fb06bb58d116e` before, `7194a3929cef15051f541d5bab6ee875` after). The fifth pass's
+set is now a subset of the set the name pass covered, **by construction**, so the foreign key cannot fail on a contact
+the same run is about to create. A customer committed mid-run is in neither pass, and the next run five minutes later
+takes it whole — contact row and assignment in one transaction.
+
+**Pinned by** `tests/crm-contact-master.test.ts` block 9, which reads the NEWEST migration that redefines the function
+(not a fixed filename, because the defect returns the moment a future definition reads the table twice again) and
+asserts: exactly one read of `public.phoenix_crm_customers`, that the one read is the snapshot build with both filters,
+that each pass reads `pg_temp.crm_refresh_phoenix_customers` inside its own statement, and that the order is snapshot →
+name rows → assignments. Break-tested: reverting the two reads to `public.` fails the headline assertion with `3 !== 1`.
+
+**Staging, applied and verified** (`cifwmndunmlxjhyjugxa`, 15 Oct): `md5(prosrc) = 7194a3929cef15051f541d5bab6ee875`,
+`prosecdef = false`, `proconfig = {search_path=public}`, ledger row `20261015103443`, and a real
+`crm_contact_master_refresh(false)` returned clean — 409 Phoenix periods opened, 462 vendor handovers, 18,617 contacts.
+
+🔴 **Production was NOT applied.** Both doors AGENTS.md §8 pre-authorizes refused it: `supabase-production`
+`apply_migration` answered `{"status":"declined"}` and the account connector `mcp__b345e47e-…` answered
+`MCP error -32600: You do not have permission to perform this action` (it had just applied the same SQL to staging).
+Production still carries the old body, confirmed by `md5(prosrc) = 34220e86…`. The remaining route is
+`scripts/apply-sql-file.mjs`, a direct Postgres connection, which §8 does **not** except — so it needs the owner's word
+for this migration first. The three previous versions of this function all reached production that way: their ledger
+rows carry the FILE's own 14-digit version with `statements` NULL, which is the direct-connection path with the ledger
+insert inside the SQL.

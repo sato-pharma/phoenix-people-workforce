@@ -189,7 +189,13 @@ export function runDoctorListsEverywhereTests() {
   // not insert a row for a doctor who exists only in Phoenix CRM. It runs BEFORE the fifth pass for
   // exactly that reason. `source` is 'phoenix' because that is the only value crm_contacts_source allows
   // for one — 'phoenix_crm' would be rejected by the CHECK and the whole hourly run would fail.
-  const nameRow = REFRESH.indexOf("from public.phoenix_crm_customers p");
+  //
+  // It reads the SNAPSHOT, not `public.phoenix_crm_customers` (20261015132445). Running before the fifth
+  // pass was never enough on its own: both passes read the customer table in their own statement, and at
+  // READ COMMITTED each statement takes a fresh snapshot, so a doctor a rep added in between was absent
+  // here and present there — and the foreign key aborted the whole run. One read makes this pass's set a
+  // superset of the fifth's by construction. `tests/crm-contact-master.test.ts` block 9 pins the one read.
+  const nameRow = REFRESH.indexOf("from pg_temp.crm_refresh_phoenix_customers p");
   assert.ok(nameRow > 0, "the refresh gives a Phoenix-born doctor a crm_contacts row");
   assert.ok(
     nameRow < REFRESH.indexOf("create temporary table crm_refresh_phoenix_lists"),
