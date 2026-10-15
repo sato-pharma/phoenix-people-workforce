@@ -30,7 +30,7 @@
 
 ## Inbox — new notes land here
 
-- [A piped `run watch` exit code is `tail`'s, not `gh`'s](a-piped-run-watch-exit-code-is-tails-not-ghs.md) - exit 0 on a RED run; read the conclusion live.
+- [A CRM photo reading is only as good as its accuracy](a-photo-reading-is-only-as-good-as-its-accuracy.md) - Afaf's was ±2,000 m; moving her pin there would have cleared a real `far` flag. Read `photo_accuracy_meters` before calling a pin wrong.
 
 
 

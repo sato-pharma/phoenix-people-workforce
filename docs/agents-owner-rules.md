@@ -6115,6 +6115,73 @@ appending, the ownership gate).
 separate Capture-location pin — are within **250 m**; a visit is taken within 500 m. Rule:
 `.claude/rules/phoenix-crm-approvals.md`. Pinned by `tests/phoenix-crm-accuracy-gate.test.ts`.
 
+### 🔴 The words ship as a button, or as ghost text — whichever surface the app build gives
+
+**🔴 AND ON 2026-10-15 AT 20:03 CAIRO HE PUT THE OLD BUILD BACK, SO THE GHOST TEXT RETURNED.**
+`Get-AppxPackage` reads `Claude_2.31226.1.0_x64__pzs8sxrjxfjjc`, installed from his own kept
+`Claude-2.31226.1.msix` (294 MB); the install folder was created 20:03:07 and its `app.asar` 20:03:18.
+That build mounts no turn box, so `zt` is false, the app never zeroes `promptSuggestions`, and the
+CLI's own chain runs again — the `Next step:` line's quoted words appear in his input box and
+Tab+Enter sends them.
+
+**The discriminator is the session's own tool list, never the version string.** A transcript from the
+44.7.0 build carries `"name":"mcp__ccd_turn__update_plan"` and `…__wrap_up` inside its `tools[]`
+attachment — 4 matches in the 2026-10-15 worktree session — and one from 2.31226.1 carries none.
+`.claude`-external `next-step-capture.mjs` **clause 7** therefore stands down unless that marker is
+present, and it fails SILENT: a warned line is deliberately not captured, so on this build the clause
+written to fill his box would have emptied it on every turn that edits a file. Proved by breaking it:
+42 cases, 0 failed, and removing the one test made exactly the new case fail. The three live rule
+files (`task-rules.txt` rule 6, `suggestion-context.mjs`, `~/.claude/CLAUDE.md`) were rewritten the
+same evening to say "whichever surface this session has", and the memory note
+`the-turn-box-took-the-ghost-text` leads with the restored build.
+
+Measured 2026-10-15, after he reported it himself: *"I was receiving suggestions in the box where I
+typed to you the prompt, and then I press tab and then this ghost text become real text … since this
+update the suggestions are not appearing. I tried in a several sessions."*
+
+**It is not a switch and it is not usage.** All five were ON while his box was empty: the app's own
+`prompt_suggestions`, `promptSuggestionEnabled`, the `env` copy, the Windows user variable, and the
+flag read live out of the session's own environment.
+
+**What actually changed** — read out of `resources/app.asar` of `Claude_2.37337.1.0_x64` (app
+`version` = **44.7.0**, asar written **13/10/2026 20:46 Cairo**), in the session-spawn path:
+
+```js
+let Ot = n.bu() && i.turnBox === true && re?.turnBox !== !1;        // turn box wanted
+let { ..., turnBoxMounted: Rt } = await this.setupMcpAndPlugins(Q, r, d, { ..., turnBox: Ot, ... });
+let zt = Rt, Bt = zt || !(A||b||H) && re?.turnBox === !0;
+(zt || Bt && W) && (E += n.ao(G));     // append the turn-box system prompt
+zt && (Q.promptSuggestions = void 0);  // AND STOP ASKING FOR A SUGGESTION
+```
+
+`turnBoxMounted` is true whenever the `mcp__ccd_turn__*` pair is mounted, which is every Code session
+now. The CLI — the app runs its own bundled **2.1.295**, not the global 2.1.293 — then returns on the
+FIRST line of `DS.afterResult`, `if (!this.promptSuggestions() || … ) return`, before the
+`turnOrigin` check, before `cacheSafeParams()`, and before any `tengu_prompt_suggestion` event is
+emitted. **Nothing is suppressed and nothing is logged: it is never asked for**, which is why the
+nine-rung CLI chain in the memory note explains nothing about an app session any more.
+
+**No local lever.** `n.bu()` reads a server-side gate that defaults ON, `CLAUDE_DEV_FORCE_GATES` is
+ignored in a packaged build and can only force a gate ON, and there is no turn-box setting key.
+**Never tell him to reinstall, restart the app, or flip a switch for this.**
+
+**The replacement surface is the box's own buttons.** A `wrap_up` reply button's `message` is sent
+verbatim as his next message — one click where Tab + Enter used to be two keys. So the quoted words
+belong in `actions[0].message`, his pick first, and a second button only when it is a real
+alternative.
+
+**Dated against his own sessions:** the turn box first appears in a session started **14/10/2026
+19:55 Cairo** and in all **39** sessions since — every session he has run since the update, which is
+exactly the "several sessions" he tested.
+
+**What holds it:** `~/.claude/hooks/next-step-capture.mjs` **clause 7** (Stop hook, warns, never
+blocks) fires when a turn kept a task list or edited a file and never drew the box, when the recap
+carried no actions, and when no action sends the line's words; `selftest` is 40 cases and was proved
+by breaking it. The per-turn rules carry it too: `~/.claude/hooks/task-rules.txt` rule 6 ("THE BOX IS
+A BUTTON NOW", injected on every prompt) and `~/.claude/hooks/suggestion-context.mjs` at every
+session start. Those three files live outside this repository, so this section is their only account
+here.
+
 ### How the number moved, in his own words, inside one day
 
 | When | His words | The line |

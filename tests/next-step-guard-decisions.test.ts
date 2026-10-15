@@ -31,16 +31,19 @@
 
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { stripComments } from "./support/comment-strip.ts";
 
 const REPO_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const HOOK = join(REPO_ROOT, ".claude", "cloud-context", "laptop-hooks", "next-step-capture.mjs");
 
 // A ratchet, not an equality: cases may RISE freely and must never FALL. Raise this when you add
 // cases; never lower it to turn a red test green — lowering it is the move this exists to catch.
-const MIN_CASES = 31;
+const MIN_CASES = 42;
 
 // The cases that carry the clauses which took the most incidents to get right. Matched on a
 // distinctive fragment, so rewording a label does not fail the build but deleting the case does.
@@ -59,6 +62,10 @@ const LOAD_BEARING = [
   "a QUOTED merge claim in the body is not a claim",
   // 2026-09-18: the owner watched his box read "<no suggestion>" turn after turn.
   "no quoted words at all",
+  // 2026-10-15: he restored app build 2.31226.1, which mounts no turn box, so there is no wrap_up to
+  // call. Without this case the button clause warns every turn that edits a file — and a warned line
+  // is deliberately not captured, so the clause written to fill his box is the one emptying it.
+  "no turn box is never asked for a box",
 ];
 
 export function runNextStepGuardDecisionsTests() {
@@ -69,11 +76,75 @@ export function runNextStepGuardDecisionsTests() {
       "fix the sync rather than deleting this test, because a missing copy is exactly how CI comes to test nothing.",
   );
 
+  // 🔴 IT WARNS, AND IT MUST NEVER BLOCK AGAIN (owner, 2026-10-15: "never stop suggestions from
+  // appearing in the text box even if the usuage is 99.99%"). This assertion used to demand
+  // `decision: 'block'` — the shape the hook was built with — and that is now the defect, not the
+  // proof: a blocked Stop hook makes the desktop app auto-continue, and the suggestion gate skips an
+  // `auto_continuation` turn by name, so the block spent the very suggestion the hook exists to fill.
+  // It did exactly that twice on 2026-10-15 before the hook was changed to a warning. So the pair
+  // below is "this is really the Stop hook" (the warn plumbing) AND "it does not block" — read off
+  // the comment-free projection, because the hook's own comments quote `{decision:"block"}` while
+  // explaining why it is gone, and a raw-text check fails on that documentation.
   const source = readFileSync(HOOK, "utf8");
+  const code = stripComments(source);
   assert.ok(
-    source.includes("decision: 'block'"),
-    "the pinned copy must be the real Stop hook — it no longer contains the block decision it exists to emit, " +
-      "so either the mirror picked up the wrong file or the hook stopped blocking altogether.",
+    code.includes("systemMessage") && code.includes("nextStepVerdict"),
+    "the pinned copy must be the real Stop hook — its warning plumbing (systemMessage / nextStepVerdict) is " +
+      "gone, so either the mirror picked up the wrong file or the hook stopped reporting a bad line at all.",
+  );
+  // 🔴 THE "NEVER BLOCKS" HALF IS PINNED BY BEHAVIOUR, NOT BY TEXT. A text test for
+  // `decision: "block"` reads the hook's OWN COMMENTS, which quote that shape while explaining why it
+  // is gone — and `stripComments` cannot save it here: a backtick inside one of this file's regex
+  // literals opens a phantom template literal, so comments below it survive the projection
+  // (`a-backtick-in-a-regex-literal-blinds-a-comment-only-guard`). Measured: a comment-free read of
+  // the current, correct hook still matched. So drive it instead — one violating reply, and read what
+  // it actually emits.
+  const probeHome = mkdtempSync(join(tmpdir(), "phx-next-step-probe-"));
+  const probeTranscript = join(probeHome, "transcript.jsonl");
+  writeFileSync(
+    probeTranscript,
+    `${JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "**Next step:** I will merge 5941 as soon as CI is green." }] },
+    })}\n`,
+  );
+  const probe = spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({
+      session_id: "next-step-guard-probe",
+      transcript_path: probeTranscript,
+      cwd: REPO_ROOT,
+      hook_event_name: "Stop",
+      stop_hook_active: false,
+    }),
+    encoding: "utf8",
+    // Its capture directory and its prune follow HOME/USERPROFILE, so the probe never touches the
+    // owner's own `~/.claude/.next-step`.
+    env: { ...process.env, HOME: probeHome, USERPROFILE: probeHome, GH_TOKEN: "", GITHUB_TOKEN: "" },
+    timeout: 60_000,
+  });
+  let emitted: Record<string, unknown> = {};
+  try {
+    emitted = JSON.parse((probe.stdout || "").trim() || "{}");
+  } catch {
+    assert.fail(
+      `the hook must answer a violating reply with one JSON object; got:\n${probe.stdout}\n${probe.stderr}`,
+    );
+  }
+  assert.equal(
+    emitted.nextStepVerdict,
+    "warn",
+    `a reply whose opening line announces its OWN merge must be WARNED about. Got: ${JSON.stringify(emitted)}`,
+  );
+  assert.ok(
+    typeof emitted.systemMessage === "string" && (emitted.systemMessage as string).length > 0,
+    "the warning must reach the model as a systemMessage, or the next reply carries the same bad line.",
+  );
+  assert.ok(
+    !("decision" in emitted),
+    "the hook answered with a `decision` field, which is how it BLOCKS. The owner ruled on 2026-10-15 that " +
+      "it warns and never blocks: a blocked Stop hook makes the app auto-continue, and the suggestion gate " +
+      "skips an auto_continuation turn by name, so the block spends the very suggestion this hook exists to " +
+      `fill - it did exactly that twice that day. Got: ${JSON.stringify(emitted)}`,
   );
 
   const run = spawnSync(process.execPath, [HOOK, "selftest"], {
