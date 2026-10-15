@@ -50,6 +50,47 @@ function textOf(html: string): string {
 }
 
 /**
+ * Entities back to the characters they stand for — for the PLAIN-TEXT part only.
+ *
+ * The block props are stored as HTML (`Sign &amp; return`, `Medical Rep &middot; Alexandria North`),
+ * and `textOf` strips the tags but not the entities, so the text alternative printed them literally
+ * in any client that shows it (measured on the live Corporate letter, 15 Oct 2026: four lines).
+ * `&amp;` is decoded LAST so `&amp;lt;` reads as the text `&lt;`, never as a second decode.
+ * `textOf` itself is left alone: its HTML callers re-escape what it returns, and decoding there
+ * would turn an author's `&lt;` into live markup.
+ */
+const NAMED_ENTITIES: Record<string, string> = {
+  hellip: "…",
+  ldquo: "“",
+  lsquo: "‘",
+  middot: "·",
+  ndash: "–",
+  mdash: "—",
+  rdquo: "”",
+  rsquo: "’",
+  bull: "•",
+  apos: "'",
+  quot: '"',
+  nbsp: " ",
+  lt: "<",
+  gt: ">",
+};
+
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&#(\d{1,6});/g, (whole, code: string) => {
+      const point = Number(code);
+      return point > 0 && point <= 0x10ffff ? String.fromCodePoint(point) : whole;
+    })
+    .replace(/&#x([0-9a-f]{1,6});/gi, (whole, code: string) => {
+      const point = parseInt(code, 16);
+      return point > 0 && point <= 0x10ffff ? String.fromCodePoint(point) : whole;
+    })
+    .replace(/&([a-z]+);/gi, (whole, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? whole)
+    .replace(/&amp;/g, "&");
+}
+
+/**
  * Inline markup an email client can be trusted with.
  *
  * The set is the same one `src/lib/offers/rich-text.ts` lets the designer's prose canvas store, and
@@ -497,7 +538,7 @@ export function renderOfferEmail(
  */
 function buildPlainText(blocks: OfferBlock[], tokens: Record<string, string>, acceptUrl?: string): string {
   const lines: string[] = [];
-  const f = (value: unknown) => textOf(fillOfferTokens(value, tokens));
+  const f = (value: unknown) => decodeEntities(textOf(fillOfferTokens(value, tokens)));
 
   for (const block of blocks) {
     const p = block.props ?? {};
