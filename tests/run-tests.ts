@@ -1764,6 +1764,7 @@ import { runDirectOrdersPharmacyComboboxPlacementTests } from "./direct-orders-p
 import { runDirectOrdersPharmacyCodeCollisionTests } from "./direct-orders-pharmacy-code-collision.test.ts";
 import { runDirectOrderVenueCrmContactLinkTests } from "./direct-order-venue-crm-contact-link.test.ts";
 import { runCrmContactMasterTests } from "./crm-contact-master.test.ts";
+import { runPhoenixCrmAddPathNameRowTests } from "./phoenix-crm-add-path-name-row.test.ts";
 import { runPhoenixCrmCalendarTests } from "./phoenix-crm-calendar.test.ts";
 import { runPhoenixCrmRulesTests } from "./phoenix-crm-rules.test.ts";
 import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts";
@@ -6436,6 +6437,11 @@ await runTest(
 await runTest(
   "the CRM contact master keeps dated list periods (a removed contact closes on its last-seen day, never today; a same-day re-run leaves no overlapping periods; a rep's HR id resolving is not a handover; contact 100000 refused; the mirror is never written; the venue picker reads the master first; a failed refresh fails the dead-man ping)",
   runCrmContactMasterTests,
+);
+
+await runTest(
+  "the add path writes a Phoenix-born doctor's crm_contacts name row in the same transaction as his customer row (one trigger on phoenix_crm_customers, replaced in place; the refresh pass's own filter in its WHEN clause, so a test row and an `outside` customer still write nothing; the key, the source, first_seen_on and the blank-only conflict arm byte-identical to the refresh's name-row pass, so the next refresh changes nothing about him; a vendor name never renamed; the refresh itself untouched)",
+  runPhoenixCrmAddPathNameRowTests,
 );
 
 await runTest(
