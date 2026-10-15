@@ -30,6 +30,8 @@
 
 ## Inbox — new notes land here
 
+- [Job-post module spec, before build](job-post-module-spec-before-build.md) - title picker, saved duties/needs, 5 templates in `F:\Hiring Posts\2026-10-15 Job Post Templates\`; multi-area: one area = one rep (no counts), download = all-areas image AND one per area, line optional.
+
 - [The Premium letter's micro-text rails stay faint](the-premium-micro-text-rails-stay-faint.md) - owner ruling 2026-10-15, measured 1.82-2.59:1 on white; a security pattern, never an accessibility defect, never darkened.
 
 
