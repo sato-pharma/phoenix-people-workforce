@@ -166,6 +166,7 @@ export function CellDialog({
   const [panel, setPanel] = useState<ChosenInterviewer[]>([]);
   const [area, setArea] = useState("");
   const [line, setLine] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [title, setTitle] = useState("");
   const [end, setEnd] = useState(() => Math.min(firstStart + 4 * 60, WORKDAY_END_MINUTES));
@@ -250,6 +251,7 @@ export function CellDialog({
         panelistHrIds: panel.map((member) => member.hrId),
         area: area.trim() || null,
         line: line.trim() || null,
+        jobTitle: jobTitle.trim() || null,
         notes: notes.trim(),
         platform,
         startMinutes: start,
@@ -458,7 +460,7 @@ export function CellDialog({
                 <FieldLabel>Interviewer (optional)</FieldLabel>
                 <InterviewerPicker api={api} onChange={chooseInterviewer} value={interviewer} />
               </div>
-              <OrgFields area={area} line={line} onArea={setArea} onLine={setLine} />
+              <OrgFields api={api} area={area} jobTitle={jobTitle} line={line} onArea={setArea} onJobTitle={setJobTitle} onLine={setLine} />
               <div>
                 <FieldLabel>Panel (optional)</FieldLabel>
                 <PanelPicker api={api} excludeHrId={interviewer?.hrId ?? null} onChange={setPanel} value={panel} />

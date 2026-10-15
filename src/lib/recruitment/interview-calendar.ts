@@ -40,6 +40,7 @@ import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { isUuid } from "@/lib/http/uuid";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
+import { listOfferJobTitles } from "@/lib/offers/service";
 import { calendarCandidateNotice, resolveCalendarCandidate } from "@/lib/recruitment/calendar-candidate-resolve";
 import { candidateStatusLabels, normalizeCandidateStatus, statusChangeRefusal } from "@/lib/recruitment/candidate-status";
 import {
@@ -67,6 +68,7 @@ import {
   isInterviewCalendarAccessLevel,
   isInterviewCalendarOwner,
   isDistrictManagerOrAbove,
+  interviewAwaitsOutcome,
   interviewOutcomeCandidateEffect,
   interviewOutcomeLabels,
   isInterviewPlatform,
@@ -522,6 +524,7 @@ type BookingRow = {
   panelist_hr_ids: string[] | null;
   interview_area: string | null;
   interview_line: string | null;
+  interview_job_title: string | null;
   interviewer_confirmation: string | null;
   interviewer_confirmation_at: string | null;
   interviewer_confirmation_by_hr_id: string | null;
@@ -559,7 +562,7 @@ type CommentRow = { id: string; booking_id: string; author_hr_id: string; body: 
 type CandidateRow = { id: string; full_name: string | null; applied_for_job_title: string | null };
 
 const BOOKING_COLUMNS =
-  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,panelist_hr_ids,interview_area,interview_line,interviewer_confirmation,interviewer_confirmation_at,interviewer_confirmation_by_hr_id,decline_reason,outcome,outcome_set_by_hr_id,outcome_set_at,request_id,requested_by_hr_id,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
+  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,panelist_hr_ids,interview_area,interview_line,interview_job_title,interviewer_confirmation,interviewer_confirmation_at,interviewer_confirmation_by_hr_id,decline_reason,outcome,outcome_set_by_hr_id,outcome_set_at,request_id,requested_by_hr_id,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
 
 const SESSION_COLUMNS =
   "id,title,starts_at,duration_minutes,slot_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
@@ -955,6 +958,9 @@ async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCal
       // not-signed-in share-link guest, exactly like the interviewer's name.
       area: row.interview_area?.trim() || null,
       line: row.interview_line?.trim() || null,
+      // The job the interview is FOR — read by everyone the calendar reaches, like the area and the
+      // interviewer's name; `candidateJobTitle` above stays what the candidate's own record says.
+      jobTitle: row.interview_job_title?.trim() || null,
       notes: row.notes,
       canSetOutcome: canSetInterviewOutcome(caller, row.interviewer_hr_id),
       // Who may change the day/time/place: the booking tier as always, OR the District Manager who
@@ -1043,6 +1049,44 @@ export async function listInterviewCalendarDay(
     bookings: await hydrate(bookings.filter((row) => mayReadBooking(caller, row)), caller),
     sessions: mayReadSessions(caller, weekStartFor(dateKey)) ? await hydrateSessions(sessions) : [],
   };
+}
+
+/**
+ * How far back the calendar asks about a finished interview nobody has answered for.
+ *
+ * Sixty days rather than for ever: the point is to catch the round being worked on now, and a list
+ * that reaches back to the first interview ever booked is a list nobody reads. An older one is not
+ * lost — it is still on its own week, with its own flag on the chip.
+ */
+export const OUTCOME_PROMPT_LOOKBACK_DAYS = 60;
+/** At most this many are put in front of someone at once; the rest wait their turn. */
+export const OUTCOME_PROMPT_LIMIT = 25;
+
+/**
+ * The finished interviews waiting for this caller to say how they went — newest first.
+ *
+ * WHY THE CALENDAR ASKS AT ALL. The outcome already drives the candidate's status, and the reminder
+ * job has nagged the lead interviewer since 2026-09-23 — and 50 of the 68 interviews held from
+ * 1 September 2026 still carried no outcome when this was measured on 15 October. So the calendar
+ * itself asks, on the screen, where the person who can answer already is.
+ *
+ * It is SCOPED TO WHO CAN ANSWER: `canSetOutcome` is the lead interviewer or the calendar's owner,
+ * exactly the gate `setInterviewOutcome` enforces. Handing a viewer a list they cannot act on would
+ * be noise, and handing a link guest one would be a leak — `hydrate` has already decided both.
+ */
+export async function listInterviewsAwaitingOutcome(
+  caller: InterviewCalendarCaller,
+  now: Date = new Date(),
+): Promise<InterviewBooking[]> {
+  requireCalendarAccess(caller, "view", "any");
+  const from = new Date(now.getTime() - OUTCOME_PROMPT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  const rows = (await bookingsBetween(from, now)).filter((row) => !row.outcome && mayReadBooking(caller, row));
+  if (rows.length === 0) return [];
+  const bookings = await hydrate(rows, caller, now);
+  return bookings
+    .filter((booking) => interviewAwaitsOutcome(booking) && booking.canSetOutcome)
+    .sort((a, b) => b.startsAt.localeCompare(a.startsAt))
+    .slice(0, OUTCOME_PROMPT_LIMIT);
 }
 
 /** A candidate's interviews from today on — the schedule dialog shows them before booking another. */
@@ -1559,6 +1603,8 @@ export type InterviewBookingRequest = Parameters<typeof validateInterviewBooking
   /** The sales Area and Line the interview is for — optional, shown in the calendar and share link. */
   area?: unknown;
   line?: unknown;
+  /** The job the interview is for — optional, and carried onto a candidate this booking creates. */
+  jobTitle?: unknown;
 };
 
 export type InterviewBookingResult = { booking: InterviewBooking; notice: string | null };
@@ -1570,6 +1616,40 @@ function orgLabel(value: unknown): string | null {
   if (!text) return null;
   if (text.length > 80) throw new Error("That area or line name is too long.");
   return text;
+}
+
+/**
+ * The job the interview is for, as stored. Free text on purpose — the offer catalogue holds four
+ * active titles and the calendar interviews for roles that are not in it, so the catalogue is
+ * offered as suggestions (the datalist on the booking form) and never as the only answer. Blank is
+ * a real answer: it means nobody named the role, not that the booking is wrong.
+ */
+export const INTERVIEW_JOB_TITLE_LIMIT = 120;
+
+export function interviewJobTitleLabel(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.replace(/\s+/g, " ").trim();
+  if (!text) return null;
+  if (text.length > INTERVIEW_JOB_TITLE_LIMIT) throw new Error(`Keep the job title under ${INTERVIEW_JOB_TITLE_LIMIT} characters.`);
+  return text;
+}
+
+/**
+ * The job titles offered as suggestions on the booking form — the offer catalogue's active titles,
+ * names only.
+ *
+ * It goes through the CALENDAR's own gate rather than the offers permission, because the people who
+ * book interviews are not the people who write offer letters: an Editor the owner shared the
+ * calendar with holds no `offers:read`, and asking them for one to fill a suggestion list would
+ * hand them the letters as well. Only the titles leave — never a figure from that catalogue.
+ */
+export async function listInterviewJobTitleOptions(caller: InterviewCalendarCaller): Promise<string[]> {
+  requireCalendarAccess(caller, "book", "any");
+  const titles = await listOfferJobTitles();
+  return titles
+    .filter((title) => title.active)
+    .map((title) => title.title.trim())
+    .filter((title) => title.length > 0);
 }
 
 function slotIsFree(session: SessionRow, startMinutes: number, taken: readonly BookingRow[], ignoreBookingId: string | null): void {
@@ -1677,6 +1757,9 @@ export async function createInterviewBooking(
   const interviewerHrId = await resolveInterviewer(raw.interviewerHrId);
   const panelistHrIds = await resolvePanelists(raw.panelistHrIds, interviewerHrId);
   const cv = options.cv ? checkCvUpload(options.cv) : null;
+  // Checked before anything is written, so a job title that is too long refuses the booking rather
+  // than being silently dropped off a candidate that was already created.
+  const jobTitle = interviewJobTitleLabel(raw.jobTitle);
   const addToRecruitment = raw.addToRecruitment !== false && raw.addToRecruitment !== "false";
   if (input.external && addToRecruitment) await assertMayUseRecruitmentFromCalendar(caller.access, "create");
 
@@ -1695,7 +1778,7 @@ export async function createInterviewBooking(
     // `interview_calendar` record. See calendar-candidate-resolve.ts for the measurement, and for
     // why the shared phone number is reported to the booker instead of deciding anything.
     const resolution = await resolveCalendarCandidate(
-      { email: input.external.email, fullName: input.external.name, phone: input.external.phone },
+      { appliedForJobTitle: jobTitle, email: input.external.email, fullName: input.external.name, phone: input.external.phone },
       cv ? cv.bytes : null,
       {
         createCandidate: (identity) =>
@@ -1775,6 +1858,7 @@ export async function createInterviewBooking(
       panelist_hr_ids: panelistHrIds ?? [],
       interview_area: orgLabel(raw.area),
       interview_line: orgLabel(raw.line),
+      interview_job_title: jobTitle,
       notes: input.notes,
       platform: input.platform,
       request_id: options.requestLink?.requestId ?? null,
@@ -1831,6 +1915,9 @@ export async function updateInterviewBooking(
     /** The sales Area and Line the interview is for — set either to change it, null to clear. */
     area?: unknown;
     line?: unknown;
+    /** The job the interview is for — set to change it, null to clear. Never reaches the candidate:
+     * the candidate's own record is written once, when the booking creates it. */
+    jobTitle?: unknown;
     /** The outside person's own name, phone and e-mail — edited after booking, external only. */
     external?: unknown;
   },
@@ -1857,6 +1944,7 @@ export async function updateInterviewBooking(
       patch.panelistHrIds !== undefined ||
       patch.area !== undefined ||
       patch.line !== undefined ||
+      patch.jobTitle !== undefined ||
       patch.external !== undefined ||
       patch.sessionId !== undefined
     ) {
@@ -1885,6 +1973,7 @@ export async function updateInterviewBooking(
   const orgColumns: Record<string, unknown> = {};
   if (patch.area !== undefined) orgColumns.interview_area = orgLabel(patch.area);
   if (patch.line !== undefined) orgColumns.interview_line = orgLabel(patch.line);
+  if (patch.jobTitle !== undefined) orgColumns.interview_job_title = interviewJobTitleLabel(patch.jobTitle);
   let update: Record<string, unknown>;
 
   // The change-history line for this edit, recorded after whichever save path runs. Interviewer set

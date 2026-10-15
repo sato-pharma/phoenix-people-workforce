@@ -337,6 +337,29 @@ export function readInterviewOutcome(value: unknown): InterviewOutcome | null {
   return isInterviewOutcome(value) ? value : null;
 }
 
+/**
+ * An interview whose time has passed with nobody saying how it went.
+ *
+ * WHY IT IS ASKED ON THE SCREEN AND NOT ONLY BY THE REMINDER JOB. The outcome field has existed
+ * since 2026-09-20 and already moves the candidate (`interviewOutcomeCandidateEffect`), and the
+ * reminder job has nagged the lead interviewer since 2026-09-23 — and still, measured on production
+ * 2026-10-15, 50 of the 68 interviews held from 1 September on carry no outcome at all. A notice in
+ * a list somebody has to open is not the same as the calendar itself asking, so the calendar asks.
+ *
+ * `ended` is the booking's own Cairo-aware answer to "is its time over?" (hydrate computes it), so
+ * this stays pure and the screen and the server agree on the same rule.
+ */
+export function interviewAwaitsOutcome(booking: Pick<InterviewBooking, "ended" | "outcome">): boolean {
+  return booking.ended && booking.outcome === null;
+}
+
+/** The interviews waiting for someone to say how they went, soonest-finished first. */
+export function interviewsAwaitingOutcome<T extends Pick<InterviewBooking, "ended" | "outcome">>(
+  bookings: readonly T[],
+): T[] {
+  return bookings.filter((booking) => interviewAwaitsOutcome(booking));
+}
+
 export type InterviewOutcomeCandidateEffect = {
   status: "shortlisted" | "backup" | "rejected" | null;
   /** The 3-star "Top pick" rating, or null for none. */
@@ -436,6 +459,15 @@ export type InterviewBooking = {
   ended: boolean;
   /** The job the CV applied for, when it names one. */
   candidateJobTitle: string | null;
+  /**
+   * The job THIS interview is for — chosen when it is booked, free text with the offer catalogue's
+   * titles offered as suggestions, and null when nobody named one.
+   *
+   * Distinct from `candidateJobTitle` above on purpose: that is what the candidate's own record says
+   * they applied for, which for someone the calendar created used to be nothing at all. This is what
+   * the round is for, and it is what a candidate created from a booking is given.
+   */
+  jobTitle: string | null;
   /** The employee conducting it (HR id and name), when one was chosen — the lead of the panel. */
   interviewerHrId: string | null;
   interviewerName: string | null;

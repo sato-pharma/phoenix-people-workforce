@@ -136,6 +136,7 @@ export function ScheduleInterviewDialog({
   const [panel, setPanel] = useState<ChosenInterviewer[]>((existing?.panelists ?? []).map((member) => ({ hrId: member.hrId, name: member.name })));
   const [area, setArea] = useState(existing?.area ?? "");
   const [line, setLine] = useState(existing?.line ?? "");
+  const [jobTitle, setJobTitle] = useState(existing?.jobTitle ?? "");
 
   // Choosing the interviewer auto-fills the area & line from their own seat; both stay editable.
   function chooseInterviewer(person: ChosenInterviewer | null) {
@@ -216,7 +217,7 @@ export function ScheduleInterviewDialog({
       // HR's, and the server rejects a requester who sends them.
       const body = timeOnly
         ? { dateKey, durationMinutes, notes: notes.trim(), platform, startMinutes }
-        : { dateKey, durationMinutes, interviewerHrId: interviewer?.hrId ?? null, panelistHrIds: panel.map((member) => member.hrId), area: area.trim() || null, line: line.trim() || null, notes: notes.trim(), platform, startMinutes };
+        : { dateKey, durationMinutes, interviewerHrId: interviewer?.hrId ?? null, panelistHrIds: panel.map((member) => member.hrId), area: area.trim() || null, line: line.trim() || null, jobTitle: jobTitle.trim() || null, notes: notes.trim(), platform, startMinutes };
       const data = existing
         ? await api.patch(`/bookings/${encodeURIComponent(existing.id)}`, body)
         : await api.post(`/bookings`, { ...body, candidateId: candidate.id });
@@ -461,7 +462,7 @@ export function ScheduleInterviewDialog({
                       <InterviewerPicker api={api} onChange={chooseInterviewer} value={interviewer} />
                       <p className="mt-1 text-[11px] text-slate-500">Choosing the interviewer fills in the area & line below — you can change them.</p>
                       <div className="mt-3">
-                        <OrgFields area={area} line={line} onArea={setArea} onLine={setLine} />
+                        <OrgFields api={api} area={area} jobTitle={jobTitle} line={line} onArea={setArea} onJobTitle={setJobTitle} onLine={setLine} />
                       </div>
                       <div className="mt-3">
                         <p className="mb-1 text-[12px] font-bold text-slate-700">Panel (optional)</p>

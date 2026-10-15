@@ -48,7 +48,7 @@ function harness(overrides: Partial<CalendarCandidateDeps> = {}): { deps: Calend
   return { calls, deps };
 }
 
-const person = { email: null, fullName: "Booked Person", phone: null };
+const person = { appliedForJobTitle: null, email: null, fullName: "Booked Person", phone: null };
 
 export async function runCalendarCandidateDedupeTests() {
   // ---- 1. THE HEADLINE. A byte-identical CV belongs to whoever already holds it --------------

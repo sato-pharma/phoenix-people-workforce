@@ -58,6 +58,7 @@ import {
   canBookInterviews,
   canCommentOnInterviews,
   canShareInterviewCalendar,
+  interviewAwaitsOutcome,
   interviewOutcomeGroup,
   interviewOutcomeGroups,
   interviewOutcomeLabels,
@@ -100,6 +101,7 @@ import { EditInterviewDetailsDialog } from "./edit-details-dialog";
 import { MonthPicker, cursorFor, type MonthCursor } from "./month-picker";
 import { InterviewShareDialog } from "./interview-share-dialog";
 import { RequestInterviewDialog } from "./request-interview-dialog";
+import { OutcomePromptPanel } from "./outcome-prompt-panel";
 import { InterviewRequestPanels } from "./requests-inbox";
 import { ScheduleInterviewDialog } from "./schedule-interview-dialog";
 import { SessionDialog } from "./session-dialog";
@@ -234,6 +236,8 @@ export function InterviewCalendarView({
   // inbox and "your requests" panels re-read after a new request is sent.
   const [requesting, setRequesting] = useState(false);
   const [requestReload, setRequestReload] = useState(0);
+  // Bumped whenever a booking comes back changed, so the outcome prompt drops the one just answered.
+  const [bookingChanged, setBookingChanged] = useState(0);
 
   // The clock the "is this time already past?" answers read, moved on each minute.
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -338,6 +342,7 @@ export function InterviewCalendarView({
   }
 
   function replaceBooking(next: InterviewBooking) {
+    setBookingChanged((count) => count + 1);
     setBookings((current) => {
       const rest = current.filter((booking) => booking.id !== next.id);
       return weekStartFor(next.dateKey) === weekStart ? byTime([...rest, next]) : rest;
@@ -603,6 +608,8 @@ export function InterviewCalendarView({
         ) : null}
       </section>
 
+      {link ? null : <OutcomePromptPanel api={api} onOpenBooking={openInterview} reloadSignal={bookingChanged} />}
+
       {mayRequest || canBook ? (
         <InterviewRequestPanels
           api={api}
@@ -821,6 +828,7 @@ export function InterviewCalendarView({
                               {item.booking.sessionTitle ? <span className="break-words">in {item.booking.sessionTitle}</span> : null}
                               {item.booking.external ? <span>from outside</span> : null}
                               {item.booking.outcome ? <span className="font-bold text-slate-900">{interviewOutcomeLabels[item.booking.outcome]}</span> : null}
+                              {interviewAwaitsOutcome(item.booking) ? <span className="font-bold text-amber-700">Outcome?</span> : null}
                               {item.booking.candidateJobTitle ? <span className="break-words">{item.booking.candidateJobTitle}</span> : null}
                             </span>
                           </span>
@@ -999,6 +1007,9 @@ function BookingChip({ booking, onOpen }: { booking: InterviewBooking; onOpen: (
         {booking.candidateName}
         {booking.area ? <span className="font-semibold text-slate-600"> / {booking.area}</span> : null}
       </span>
+      {booking.jobTitle ? (
+        <span className="mt-0.5 block break-words text-[10.5px] leading-tight text-slate-600">{booking.jobTitle}</span>
+      ) : null}
       {booking.interviewerName || booking.line ? (
         <span className="mt-0.5 block break-words text-[10.5px] font-semibold leading-tight text-slate-700">
           {[booking.interviewerName, booking.line].filter(Boolean).join(" · ")}
@@ -1011,6 +1022,7 @@ function BookingChip({ booking, onOpen }: { booking: InterviewBooking; onOpen: (
         </span>
         {booking.external ? <span className="font-semibold text-slate-500">outside</span> : null}
         {booking.outcome ? <span className="font-bold text-slate-900">{interviewOutcomeLabels[booking.outcome]}</span> : null}
+        {interviewAwaitsOutcome(booking) ? <span className="font-bold text-amber-700">Outcome?</span> : null}
         {trouble ? (
           <span className="inline-flex items-center gap-0.5 font-semibold text-amber-700">
             <AlertTriangle className="h-3 w-3" /> No link yet
@@ -1252,7 +1264,10 @@ function InterviewPanel({
       <div>
         <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-orange-700">Interview</p>
         <p className="mt-0.5 break-words text-[17px] font-bold text-slate-900">{booking.candidateName}</p>
-        {booking.candidateJobTitle ? <p className="break-words text-[12px] text-slate-500">Applied for {booking.candidateJobTitle}</p> : null}
+        {booking.jobTitle ? <p className="break-words text-[12px] font-semibold text-slate-700">Interviewed for {booking.jobTitle}</p> : null}
+        {booking.candidateJobTitle && booking.candidateJobTitle !== booking.jobTitle ? (
+          <p className="break-words text-[12px] text-slate-500">Applied for {booking.candidateJobTitle}</p>
+        ) : null}
         {booking.external ? <p className="text-[12px] text-slate-500">From outside Phoenix — kept on the calendar only, not in Recruitment.</p> : null}
       </div>
 

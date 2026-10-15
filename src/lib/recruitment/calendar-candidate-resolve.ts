@@ -34,6 +34,15 @@ export type CalendarCandidateIdentity = {
   fullName: string;
   email: string | null;
   phone: string | null;
+  /**
+   * The job the interview is for, written onto a candidate this creates as `applied_for_job_title`.
+   *
+   * It travels with the identity rather than being added at the insert, because it only ever applies
+   * to a record this booking CREATES. `createCandidate` matches before it inserts, and a match
+   * returns the existing record untouched — so a candidate already in the pipeline keeps whatever
+   * their own CV said they applied for, and a late interview for a different role never rewrites it.
+   */
+  appliedForJobTitle: string | null;
 };
 
 /**

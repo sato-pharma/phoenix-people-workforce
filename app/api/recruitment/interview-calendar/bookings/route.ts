@@ -8,6 +8,7 @@ import {
   interviewCalendarCaller,
   listInterviewCalendarDay,
   listInterviewCalendarWeek,
+  listInterviewsAwaitingOutcome,
   listUpcomingInterviewsForCandidate,
   type InterviewCvUpload,
 } from "@/lib/recruitment/interview-calendar";
@@ -18,6 +19,7 @@ export const dynamic = "force-dynamic";
 // GET  ?week=YYYY-MM-DD        the week's interviews and sessions (the calendar)
 //      ?day=YYYY-MM-DD         one day's (the schedule dialog marks the taken times)
 //      ?candidateId=<uuid>     one candidate's interviews from today on (shown before booking again)
+//      ?awaiting=outcome       the finished interviews THIS caller still has to say how they went
 // POST                         book one — JSON, or multipart with a `payload` JSON field and a `cv`
 //                              file when someone from outside is booked with their CV
 //
@@ -32,6 +34,12 @@ export async function GET(request: Request) {
     const day = params.get("day");
     const headers = { "Cache-Control": "no-store" };
 
+    if (params.get("awaiting") === "outcome") {
+      // Scoped inside the domain module to the interviews this caller may SET an outcome on — the
+      // lead interviewer or the calendar's owner — so it is a prompt, never a list of other
+      // people's work.
+      return NextResponse.json({ bookings: await listInterviewsAwaitingOutcome(caller), success: true }, { headers });
+    }
     if (candidateId) {
       const bookings = await listUpcomingInterviewsForCandidate(caller, candidateId);
       return NextResponse.json({ bookings, success: true }, { headers });
@@ -84,6 +92,7 @@ export async function POST(request: Request) {
         panelistHrIds: body.panelistHrIds,
         area: body.area,
         line: body.line,
+        jobTitle: body.jobTitle,
         notes: body.notes,
         platform: body.platform,
         sessionId: body.sessionId,
