@@ -20,6 +20,23 @@
 
 import { writeFileSync } from "node:fs";
 
+import { refuseArguments } from "./lib/refuse-arguments.mjs";
+
+// This script takes no arguments, so it says so instead of ignoring one (scripts/lib/refuse-arguments.mjs).
+refuseArguments({
+  name: "generate-cairo-zone-transitions",
+  usage: `generate-cairo-zone-transitions: regenerate src/lib/format/cairo-zone-transitions.ts from
+this machine's IANA timezone data.
+
+  node scripts/generate-cairo-zone-transitions.mjs      rewrite the table, then commit the diff
+  node scripts/generate-cairo-zone-transitions.mjs -h   this text
+
+It takes no arguments: FROM_YEAR and TO_YEAR are constants at the top of the file.`,
+  hints: [
+    "FROM_YEAR / TO_YEAR are constants in this file — edit them, do not pass a range",
+  ],
+});
+
 const ZONE = "Africa/Cairo";
 const FROM_YEAR = 2015;
 const TO_YEAR = 2040;

@@ -11,6 +11,22 @@ import { mkdirSync, writeFileSync } from "fs";
 import { resolve, join } from "path";
 import { config } from "dotenv";
 
+import { refuseArguments } from "./lib/refuse-arguments.mjs";
+
+// This script takes no arguments, so it says so instead of ignoring one (scripts/lib/refuse-arguments.mjs).
+refuseArguments({
+  name: "export-backup-local",
+  usage: `export-backup-local: save every table as .json plus one combined .xlsx under backups/.
+
+  node scripts/export-backup-local.mjs      run the export
+  node scripts/export-backup-local.mjs -h   this text
+
+It takes no arguments, and it reads PRODUCTION Supabase through .env.local.`,
+  hints: [
+    "it writes under backups/ and takes no table or date filter — the set is a constant here",
+  ],
+});
+
 config({ path: ".env.local" });
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;

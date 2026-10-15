@@ -37,6 +37,24 @@ import { dirname, join } from "node:path";
 
 import { PDFJS_BROWSER_POLYFILL, PDFJS_POLYFILL_VERSION } from "./pdfjs-browser-polyfill.mjs";
 
+import { refuseArguments } from "./lib/refuse-arguments.mjs";
+
+// This script takes no arguments, so it says so instead of ignoring one (scripts/lib/refuse-arguments.mjs).
+refuseArguments({
+  name: "sync-pdfjs-assets",
+  usage: `sync-pdfjs-assets: regenerate the committed pdf.js assets under public/pdfjs/ from the
+installed pdfjs-dist. Run it after bumping pdfjs-dist, and commit the diff it writes.
+
+  node scripts/sync-pdfjs-assets.mjs      rewrite public/pdfjs/
+  node scripts/sync-pdfjs-assets.mjs -h   this text
+
+It takes no arguments: the version comes from the installed pdfjs-dist, and PHX_PDFJS_DIST_ROOT
+overrides where that is read from.`,
+  hints: [
+    "the source directory is the env override PHX_PDFJS_DIST_ROOT, not an argument",
+  ],
+});
+
 const require = createRequire(import.meta.url);
 // Resolve pdfjs-dist's package root from its package.json, independent of the pnpm store layout.
 // PHX_PDFJS_DIST_ROOT points this at an unpacked candidate instead — the same override

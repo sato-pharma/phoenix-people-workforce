@@ -4,6 +4,24 @@ import process from "node:process";
 
 import ts from "typescript";
 
+import { refuseArguments } from "./lib/refuse-arguments.mjs";
+
+// This script takes no arguments, so it says so instead of ignoring one (scripts/lib/refuse-arguments.mjs).
+refuseArguments({
+  name: "searchable-select-migration",
+  usage: `searchable-select-migration: rewrite native <select> elements under src/components to
+<SearchableSelect>, IN PLACE, and write a report beside them.
+
+  node scripts/searchable-select-migration.mjs      run the codemod on src/components
+  node scripts/searchable-select-migration.mjs -h   this text
+
+It takes no arguments and it has NO dry run — running it edits your working tree.`,
+  hints: [
+    "it has no dry run: it edits src/components in place, so run it on a branch with a clean tree",
+    "to see what it would touch first, read the report path at the top of the file from a previous run",
+  ],
+});
+
 const ROOT_DIR = process.cwd();
 const COMPONENTS_DIR = path.join(ROOT_DIR, "src", "components");
 const IMPORT_PATH = "@/components/ui/searchable-select";

@@ -3,6 +3,23 @@ import { writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
+import { refuseArguments } from "./lib/refuse-arguments.mjs";
+
+// This script takes no arguments, so it says so instead of ignoring one (scripts/lib/refuse-arguments.mjs).
+refuseArguments({
+  name: "phase14-controlled-mutation-smoke",
+  usage: `phase14-controlled-mutation-smoke: drive the mutation paths against a LOCAL dev server
+with a fixture id that matches nothing, and write its report to the temp directory.
+
+  node scripts/phase14-controlled-mutation-smoke.mjs      run it against http://localhost:3000
+  node scripts/phase14-controlled-mutation-smoke.mjs -h   this text
+
+It takes no arguments: the base URL and the fixture id are constants at the top of the file.`,
+  hints: [
+    "the base URL and the fixture id are constants in this file — edit them, do not pass them",
+  ],
+});
+
 const baseUrl = "http://localhost:3000";
 const fakeId = "PHASE14_NONEXISTENT_SAFE_FIXTURE";
 const fakeUuid = "00000000-0000-0000-0000-000000000000";

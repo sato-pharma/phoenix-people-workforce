@@ -10,6 +10,22 @@ import { writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 import { config } from "dotenv";
 
+import { refuseArguments } from "./lib/refuse-arguments.mjs";
+
+// This script takes no arguments, so it says so instead of ignoring one (scripts/lib/refuse-arguments.mjs).
+refuseArguments({
+  name: "export-derived-tables",
+  usage: `export-derived-tables: export the SoS-derived tables as JSON plus one combined XLSX.
+
+  node scripts/export-derived-tables.mjs      run the export
+  node scripts/export-derived-tables.mjs -h   this text
+
+It takes no arguments: TABLES at the top of the file is the set it exports.`,
+  hints: [
+    "TABLES at the top of this file is the set — edit it, do not pass a table name",
+  ],
+});
+
 config({ path: ".env.local" });
 
 const supabase = createClient(

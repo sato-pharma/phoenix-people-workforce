@@ -10,6 +10,23 @@ import ExcelJS from "exceljs";
 import { readFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 
+import { refuseArguments } from "./lib/refuse-arguments.mjs";
+
+// This script takes no arguments, so it says so instead of ignoring one (scripts/lib/refuse-arguments.mjs).
+refuseArguments({
+  name: "build-xlsx-from-json",
+  usage: `build-xlsx-from-json: build the XLSX workbooks from the JSON backups already on disk.
+
+  node scripts/build-xlsx-from-json.mjs      build them (run export-backup-local.mjs first)
+  node scripts/build-xlsx-from-json.mjs -h   this text
+
+It takes no arguments: TABLES at the top of the file is the set, and the input is whatever
+export-backup-local.mjs last wrote.`,
+  hints: [
+    "run node scripts/export-backup-local.mjs first — this one only reads what that wrote",
+  ],
+});
+
 const MODULE_COLORS = {
   sales:     { tab: "F97316", header: "F97316" },
   weekly:    { tab: "3B82F6", header: "3B82F6" },
