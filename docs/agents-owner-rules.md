@@ -8242,3 +8242,73 @@ error inside the test, and the two caption breaks each fired their own assertion
 - Changing a marketing control setting, a request type or an approval step now writes a required audit row (entity type `marketing_control`) with the before and after of the columns touched. Before, who re-pointed an approval step left no trace.
 
 **Deliberately not done.** Cancelling does not close the request's open approval step. Everything that lists work for an approver already filters on the request's status (the badge, the inbox, the orphan board), and flipping a step to `skipped` would write a timeline entry attributed to the person it was assigned to, as though they had decided it.
+
+## Only the store split's share in Kafr El-Sheikh 2 counts to Dina Fadel — owner, 2026-10-15
+
+His words, in full: **"only stores split in kafr el sheikh 2 count her to dina fadel"**.
+
+**What he was answering.** He asked whether Kafr El-Sheikh 2 is counted to Dina Fadel. It is not, on
+any line, in any month: she holds `SEAT-AIF-DM-D1` (Anti Infective, Delta (1)) and her district is
+Menoufia 1-2, Gharbia 1-2 and Kafr El-Sheikh **1**. Kafr El-Sheikh 2 (`D17`) sits in the line's
+Others bucket — no DM, no rep, `carries_target` false — and the 2026-09-12 move note that brought
+Kafr El-Sheikh 1 into Delta (1) on Pedia says so in plain words: *"Kafr El-Sheikh 2 stays in
+Others."* He then asked where the store split's share of that area is counted, which is the defect
+below, and ruled on it.
+
+**The defect.** `AREA_CITY` groups `D16` and `D17` as one city, Kafr El-Sheikh, so under the city
+rule every wholesaler there divided 50/50 between them — and the half landing on `D17` reached no
+manager at all. Measured on production 2026-10-15 for the **published** September 2026 Anti
+Infective closing:
+
+| | Published | The rule moves | Under the rule |
+| --- | --- | --- | --- |
+| Kafr El-Sheikh 1 (Dina Fadel) | EGP 40,361.38 | **+24,709.25** | EGP 65,070.63 |
+| Kafr El-Sheikh 2 (Others) | EGP 27,261.38 | **−24,709.25** | EGP 2,552.13 |
+
+So **EGP 24,709.25 of the EGP 27,261.38 credited to Kafr El-Sheikh 2 — 90.6% of it — was her
+wholesalers' money**, and the area's own sales were EGP 2,552.13. The wholesalers: ايةام جروب
+للاستثمار وتجارة الادوية (290 Saginko + 100 Royafloxacin) and الفتح لتجارة وتوزيع الأدوية (100
+Saginko) in Kafr El-Sheikh 1, and مخزن كابيتال (5 Saginko) in Kafr El-Sheikh 2. July and August
+carried no Anti Infective wholesaler movement in that city at all, which is why September looked
+like a sudden jump.
+
+**What was built.** `OTHERS_EXCLUDED_AREAS_BY_LINE` in `src/lib/sales/store-sales-city-split.ts`,
+resolved by `excludedSplitAreasFor` — the same shape as Pedia's `OTHERS_EXCLUDED_LINES` (2026-09-08,
+*"exclude in distribution the areas in others"*), narrowed to one named area. An area named there
+receives no share of anybody else's wholesaler split and always keeps what it sold itself, so
+مخزن كابيتال still divides its own 5 packs 2.5/2.5: an excluded area is barred from **receiving**,
+never from keeping its own sale.
+
+**He chose the narrow form deliberately.** Offered three scopes with the production numbers beside
+each — Anti Infective's whole Others set (one line of code, and also Down town 4.67 units,
+October-Zayed 0.50, Red Sea 0.50), Kafr El-Sheikh 2 alone, or Anti Infective plus CNS — he picked
+**Kafr El-Sheikh 2 alone**. So the other three Anti Infective Others areas keep their shares by his
+decision, and CNS keeps sending 65.96 units a month into Kafr El-Sheikh 2 because he declined that
+option (on CNS, `D16` is a **vacant** Alex-BHR area, not Dina Fadel's). Widening it is his call, in
+his own words — never a tidy-up into `OTHERS_EXCLUDED_LINES`.
+
+**Two things that make it self-maintaining.**
+
+- **It is intersected with the live organogram, and that intersection IS the rule.** The area loses
+  its share only while the line actually parks it in Others, so the day he gives Kafr El-Sheikh 2 an
+  Anti Infective seat it starts receiving its own half again with no code change. A hard-coded
+  exclusion would have starved a real rep's area for as long as nobody reread the file.
+- **The publication freeze is the date gate, so the rule carries no date of its own.** Read live
+  2026-10-15: July, August and September 2026 are published on all three lines with no
+  `unpublished_at`, so `phx_write_monthly_store_split_net` refuses them and
+  `loadFrozenStoreSplitIfPublished` serves their frozen net. The rule reaches October 2026 onward
+  and restates nothing announced. Reaching July–September would need him to unpublish them first.
+
+**The trap it cost on the way in.** The key is `lineKey` form — `"anti infective"`, with a **space**.
+`lineKey` collapses `_`, `-` and whitespace to one space, so the `anti_infective` spelling this
+area's own `au.line_area_map` row carries matched nothing. Every set-level assertion passed (they
+called the helper with the underscore directly) while the end-to-end split still divided 290 packs
+145/145. `excludedSplitAreasFor` now normalises its own argument, and the test asserts four
+spellings.
+
+**Pinned by** `tests/store-sales-city-split.test.ts`. Three breaks were watched: dropping the
+`lineKey` normalisation, removing the organogram intersection, and starving the no-organogram case.
+The intersection break first came back **green** — the self-healing assertion had been written with
+an EMPTY Others set and passed through an `others.size === 0` shortcut without ever reaching the
+intersection. It now uses a non-empty Others set that does not contain `D17`, which is both the only
+shape that reaches the intersection and the realistic one.

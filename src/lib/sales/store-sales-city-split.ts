@@ -369,6 +369,60 @@ export const WAREHOUSE_THRESHOLD_LINES: ReadonlySet<string> = new Set(["pedia"])
  */
 export const OTHERS_EXCLUDED_LINES: ReadonlySet<string> = new Set(["pedia"]);
 
+/**
+ * 🔒 THE KAFR EL-SHEIKH 2 RULE — owner, 2026-10-15: **"only stores split in kafr el sheikh 2 count
+ * her to dina fadel"**.
+ *
+ * Kafr El-Sheikh is one city with two areas, so every wholesaler there divides 50/50 between Kafr
+ * El-Sheikh 1 (D16) and Kafr El-Sheikh 2 (D17). On Anti Infective D16 is Dina Fadel's — she holds
+ * SEAT-AIF-DM-D1, Delta (1) — while D17 sits in the line's Others bucket with no DM, no rep and no
+ * target. So half of her own city's wholesaler money was leaving her district and landing where
+ * nobody is scored on it. Measured on production the day he ruled, September 2026 Anti Infective:
+ * **242.50 units / EGP 24,431.38** out of Kafr El-Sheikh 1, which is 89.6% of everything Kafr
+ * El-Sheikh 2 was credited with that month (EGP 27,261 of a total whose own sales were EGP 2,830).
+ * The three wholesalers are ايةام جروب للاستثمار وتجارة الادوية and الفتح لتجارة وتوزيع الأدوية in
+ * D16, and مخزن كابيتال in D17.
+ *
+ * 🔴 IT IS THE SAME SHAPE AS OTHERS_EXCLUDED_LINES ABOVE, NARROWED TO ONE AREA — not a new kind of
+ * rule. An area named here receives no share of anybody else's wholesaler split and always keeps
+ * what it sold itself, exactly as an Others area does on Pedia. That is precisely what he asked
+ * for: the SPLIT share counts to Dina Fadel, and Kafr El-Sheikh 2's own pharmacy sales stay in
+ * Others.
+ *
+ * 🔴 HE CHOSE THE NARROW FORM DELIBERATELY, over being offered the whole-line one. Shown that
+ * adding `anti_infective` to OTHERS_EXCLUDED_LINES would have been one line of code and would also
+ * have stopped Down town (4.67 units), October-Zayed (0.50) and Red Sea (0.50) receiving shares on
+ * the line — 5.67 units beside Kafr El-Sheikh 2's 242.50 — he picked Kafr El-Sheikh 2 alone. So do
+ * NOT "tidy" this into OTHERS_EXCLUDED_LINES: the other three Anti Infective Others areas keep
+ * their shares by his decision, not by omission. Widening it is his call, in his own words.
+ *
+ * 🔴 IT IS GATED ON THE ORGANOGRAM, NOT UNCONDITIONAL, AND THAT IS THE SELF-HEALING PART. The area
+ * loses its share only while the line actually parks it in Others (`regions.others`). The day he
+ * gives Kafr El-Sheikh 2 a seat on Anti Infective — the move I recommended and he declined in
+ * favour of this — it stops being an Others area and starts receiving its own half again, with no
+ * code change and nothing to remember. A hard-coded exclusion would have silently kept starving a
+ * real rep's area.
+ *
+ * NO DATE GATE, BECAUSE THE PUBLICATION FREEZE IS THE DATE GATE. Read live 2026-10-15: July,
+ * August and September 2026 are published on all three lines with no `unpublished_at`, so
+ * `phx_write_monthly_store_split_net` refuses them and `loadFrozenStoreSplitIfPublished` serves
+ * their frozen net — this rule reaches October 2026 onward and restates nothing already announced.
+ * That is the same protection OTHERS_EXCLUDED_LINES relies on. Reaching July–September would need
+ * him to unpublish them first, which the standing rule against changing a published month does not
+ * allow on anyone's initiative but his.
+ *
+ * 🔴 THE KEY IS `lineKey` FORM — "anti infective", a SPACE, not the organogram's `anti_infective`.
+ * `lineKey` collapses `_`, `-` and whitespace to one space, so the underscore spelling this area's
+ * own `au.line_area_map` row carries matches NOTHING here. It cost the first build of this rule:
+ * every set-level assertion passed (they called the helper with the underscore directly) while the
+ * end-to-end split still divided 290 packs 145/145. `excludedSplitAreasFor` now normalises its
+ * argument, so either spelling resolves — the key below stays in the same form as
+ * SPLIT_LINE_KEYS and WAREHOUSE_THRESHOLD_LINES.
+ */
+export const OTHERS_EXCLUDED_AREAS_BY_LINE: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["anti infective", new Set(["D17"])],
+]);
+
 export type SplitRegions = {
   /** Areas the line parks in Others. They receive nothing, but always keep what they sold. */
   others: ReadonlySet<string>;
@@ -471,6 +525,48 @@ export const ALL_SPLIT_AREAS: readonly string[] = [...AREA_CITY.keys()].sort();
  * ─────────────────────────────────────────────────────────────────────────────────────────────
  */
 const NO_AREAS: ReadonlySet<string> = new Set<string>();
+
+/**
+ * The areas barred from RECEIVING a share of somebody else's wholesaler split, on this line.
+ *
+ * 🔴 ONE FUNCTION BECAUSE THERE ARE TWO CALLERS AND THEY MUST NEVER DISAGREE — `splitTargetsFor`,
+ * which plans every row, and the El Qema lead ladder, which re-levels the finished landing. The two
+ * derived this set independently from `OTHERS_EXCLUDED_LINES` before the Kafr El-Sheikh 2 rule, so
+ * a rule added to one of them would have barred an area from the plan and then handed it money
+ * again in the ladder — the exact Matrix-versus-Detail shape this file's header warns about.
+ *
+ * Two rules compose here, both the owner's, and the WIDER one wins where they overlap:
+ *   1. OTHERS_EXCLUDED_LINES — the whole Others set, on Pedia (2026-09-08).
+ *   2. OTHERS_EXCLUDED_AREAS_BY_LINE — named areas, on Anti Infective: Kafr El-Sheikh 2 (2026-10-15).
+ *
+ * 🔴 RULE 2 IS INTERSECTED WITH THE LIVE ORGANOGRAM, AND THAT INTERSECTION IS THE RULE, not a
+ * safety belt. An area keeps its share the moment the line stops parking it in Others, so giving
+ * Kafr El-Sheikh 2 an Anti Infective seat restores its own half with no code change. Reading the
+ * named set alone would starve a real rep's area for as long as nobody remembered this file.
+ *
+ * An EMPTY return is the safe direction and means "split as before": a caller that could not read
+ * the organogram must never silently strip areas out of a distribution.
+ */
+export function excludedSplitAreasFor(
+  line: string,
+  regions?: SplitRegions,
+): ReadonlySet<string> {
+  // Normalised HERE, not left to the callers. Both of them already pass `lineKey` output, but the
+  // organogram spells this line `anti_infective` and the official_line spells it "Anti Infective" —
+  // so an un-normalised argument silently matches no rule and the area keeps receiving. That is
+  // exactly how the first build of the Kafr El-Sheikh 2 rule passed its unit assertions and split
+  // anyway; `lineKey` is idempotent, so calling it twice costs nothing.
+  const key = lineKey(line);
+  const others = regions?.others ?? NO_AREAS;
+  if (OTHERS_EXCLUDED_LINES.has(key)) return others;
+  const named = OTHERS_EXCLUDED_AREAS_BY_LINE.get(key);
+  if (!named || named.size === 0 || others.size === 0) return NO_AREAS;
+  const excluded = new Set<string>();
+  for (const area of named) {
+    if (others.has(area)) excluded.add(area);
+  }
+  return excluded.size === 0 ? NO_AREAS : excluded;
+}
 
 export type SplitPlan = {
   /** Shown as the "city" on the Store Split sheet, so the movement says which rule moved it. */
@@ -603,8 +699,9 @@ export function splitTargetsFor(
   // Cairo gained from a Benha warehouse.
   const localLabel = override?.label ?? city;
   // The exclusion is keyed on the LINE alone — every warehouse on it, not just El Qema's. The
-  // threshold above is the distributor's rule; this one is the organogram's.
-  const excluded = OTHERS_EXCLUDED_LINES.has(line) ? (regions?.others ?? NO_AREAS) : NO_AREAS;
+  // threshold above is the distributor's rule; this one is the organogram's. Pedia excludes its
+  // whole Others set; Anti Infective excludes Kafr El-Sheikh 2 by name — see excludedSplitAreasFor.
+  const excluded = excludedSplitAreasFor(line, regions);
 
   // The ORIGIN is never excluded from its own sale. An area is barred from receiving a share of
   // somebody else's money, not from keeping what it sold itself — and without this a warehouse
@@ -1416,7 +1513,7 @@ function applyQemaLeadGuarantee<T extends StoreSplitRow>(
 
   for (const group of groups.values()) {
     const line = lineKey(group[0].line);
-    const excluded = OTHERS_EXCLUDED_LINES.has(line) ? (regions?.others ?? NO_AREAS) : NO_AREAS;
+    const excluded = excludedSplitAreasFor(line, regions);
     const ladder = QEMA_LEAD_TIERS
       .map((tier) => tier.filter((area) => !excluded.has(area)))
       .filter((tier) => tier.length > 0);
