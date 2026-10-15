@@ -238,7 +238,7 @@ export function runMemoryFoldTaskTests() {
  * nothing else; a branch that was pushed but got no PR is deleted, unless the PR was in fact made.
  */
 export async function runMemoryFoldRetryTests() {
-  const { withRetry, TRANSIENT, FETCH_RETRYABLE, RETRY_DELAYS_MS } = await import("../scripts/module-memory/fold.mjs");
+  const { withRetry, TRANSIENT, FETCH_RETRYABLE, RETRY_DELAYS_MS, MIRROR_STAMP_FILE } = await import("../scripts/module-memory/fold.mjs");
   const fail = (stderr: string) => Object.assign(new Error("Command failed: git push"), { stderr });
   const quiet = { log: () => {}, sleep: async () => {} };
 
@@ -300,4 +300,38 @@ export async function runMemoryFoldRetryTests() {
     "a failed create must first ask whether the PR was made anyway, or a live PR loses its branch");
   assert.ok(/"push", "-q", "origin", "--delete", branch/.test(fold),
     "a pushed branch that got no PR must be deleted, or the next run stacks a second branch beside it");
+
+  // 🔴 A RUN WITH NOTHING NEW TO FILE MUST STILL MEASURE THE MIRROR. Until 2026-10-15 the fold
+  // returned at "nothing to file" BEFORE it ever reached `sync-cloud-context.mjs`, so drift caused
+  // by an EDITED note — same slug, new body — was invisible to all three daily runs and waited for
+  // the next genuinely new note; refreshing it was a hand-run job, and a cloud session reads only
+  // the mirror. Pinned by position, not by wording: exactly ONE early return may stand between the
+  // nothing-to-file test and the sync, and it is the dry run's, which a mirror-only run skips.
+  // The window starts where `gone` is computed, NOT at `mirrorOnly`: the first draft of this test
+  // measured from `mirrorOnly` and a restored early return simply sat one line ABOVE the window,
+  // where it went green. Measured by breaking it exactly that way.
+  const goneAt = fold.indexOf("const gone = [...filedOnMain]");
+  const mirrorOnlyAt = fold.indexOf("const mirrorOnly =");
+  const syncAt = fold.indexOf("sync-cloud-context.mjs");
+  assert.ok(goneAt > 0, "fold.mjs must still compute the slugs that no longer exist");
+  assert.ok(mirrorOnlyAt > goneAt, "fold.mjs must NAME the nothing-to-file case (const mirrorOnly) instead of returning on it");
+  assert.ok(syncAt > mirrorOnlyAt, "and it must reach the mirror sync after it, on a run that files nothing");
+  const beforeSync = fold.slice(goneAt, syncAt);
+  assert.equal([...beforeSync.matchAll(/\breturn;/g)].length, 1,
+    "exactly one early return may stand between the nothing-to-file test and the sync — a second one strands an edited note's drift again");
+  assert.ok(/if \(!APPLY && !mirrorOnly\)/.test(beforeSync),
+    "and that one is the dry run's, which a mirror-only run must skip so it can still measure the drift");
+
+  // 🔴 AND THE SYNC'S OWN STAMP FILE IS NEVER EVIDENCE OF DRIFT. `sync-cloud-context.mjs` rewrites
+  // the mirror README on every run (generated-at line and counts), so counting it would open a PR
+  // three times a day for ever. If that path is ever renamed, the filter stops matching and the
+  // runaway comes back — so the file has to exist.
+  assert.equal(MIRROR_STAMP_FILE, ".claude/cloud-context/README.md", "the stamp file is the mirror's generated README");
+  assert.doesNotThrow(() => read(MIRROR_STAMP_FILE), "it must exist, or the drift filter matches nothing and every run opens a PR");
+  assert.ok(/const changed = staged\.filter\(\(f\) => f !== MIRROR_STAMP_FILE\)/.test(fold),
+    "the drift test must read the staged files and discount the stamp file");
+  assert.ok(fold.indexOf("const changed = staged.filter") < fold.indexOf('git(["commit"'),
+    "and it must run BEFORE the commit, or a run with no drift commits the stamp alone");
+  assert.ok(/cloud mirror refresh/.test(fold),
+    "a mirror-only PR must say so in its own title, never read as a fold that filed notes");
 }

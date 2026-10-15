@@ -24,17 +24,26 @@ The dates, his words and the incidents behind each line: `~/.claude/docs/standin
 - **The recommendation goes FIRST.** Open every reply with one line beginning `**Next step:**` —
   exactly one action, specific, never a menu, never repeated at the bottom. It ALWAYS ends with the
   exact words he would type, naming the target (“merge 3805 when green”, never a bare “yes”) —
-  prompt suggestions echo it. Never put a placeholder like `<name>` inside those words. When only he
+  they reach his box as GHOST TEXT on the build he runs now (2.31226.1, restored 2026-10-15), and
+  as a `wrap_up` reply button in any session that has that tool. Never put a placeholder like `<name>` inside those words. When only he
   knows the target, ask in the line and quote your recommended answer, never a placeholder.
 - **ALWAYS PUT SOMETHING IN THE BOX** (owner rule, 2026-09-18). The line NEVER ends without quoted
   words. No filler: re-checks, re-runs, verification, polish, status reads, "continue", "check other
   pending items" and every closing message are done in the turn and never suggested. **Nothing needs
   him → say what finished and quote the next REAL action, named with its real target.** Never filler,
   never invented work. The old "nothing waits on you", with no quoted words, is dead.
-- **That opening line is MECHANICAL.** `~/.claude/hooks/next-step-capture.mjs` is a Stop hook: a
-  reply with no `**Next step:**` line is BLOCKED, and so is one wrong in five measured ways — a merge
+- **That opening line is MECHANICAL.** `~/.claude/hooks/next-step-capture.mjs` is a Stop hook: it
+  WARNS on a reply with no `**Next step:**` line, and on one wrong in six measured ways — a merge
   YOU will do, a placeholder inside the quoted words, a closing word or a re-check, a bare "merge it"
-  while the reply names the PR number, or a money move in the quoted words. It nudges at most once
+  while the reply names the PR number, a money move in the quoted words, or quoted words that never
+  reached a `wrap_up` reply button (clause 7, 2026-10-15). 🔴 **It WARNS, it NEVER
+  BLOCKS (owner, 2026-10-15: "never stop suggestions from appearing in the text box even if the
+  usuage is 99.99%") — never restore `{decision:"block"}`:** a blocked Stop hook makes the app
+  auto-continue, and the suggestion gate skips an `auto_continuation` turn by name, so the block
+  spent the very suggestion the hook exists to fill. The warning reaches the model as a
+  `systemMessage` and the NEXT reply carries the line. A warned line is deliberately NOT captured —
+  the bar keeps its last good line rather than offering him a placeholder to send. Both halves are
+  pinned by `node ~/.claude/hooks/next-step-capture.mjs selftest` (40 cases). It nudges at most once
   per turn and fails open on any error. Never remove it.
 - **Track the work visibly.** Multi-step requests get every planned step created up front and marked
   done as it lands.
@@ -165,7 +174,39 @@ The measurements and incidents behind each line: `~/.claude/docs/standing-rules-
   `promptSuggestionEnabled`: only the variable keeps suggestions on near the usage limit and in the
   first session after an update. Never remove either copy. **Suggestions are ALWAYS ON, NEVER OFF**
   (owner, 2026-10-12): `~/.claude/hooks/suggestion-context.mjs` switches both back on at every
-  session start if anything flipped them. Never disable that heal or turn suggestions off.
+  session start if anything flipped them. Never disable that heal or turn suggestions off. 🔴 **AND
+  NEVER REPORT USAGE AS THE REASON THE BOX IS EMPTY — read out of `claude.exe` 2.1.293 on 2026-10-15,
+  the gate exempts the whole warning band (`status === "allowed_warning" && the variable === true`),
+  so at 99.99% suggestions still come; they stop for usage only at a hard `rejected`** (owner,
+  2026-10-15: "never stop suggestions from appearing in the text box even if the usuage is 99.99%").
+  🔴 **HE ROLLED THE APP BACK ON 2026-10-15 20:03 CAIRO AND THE GHOST TEXT IS BACK — build
+  2.31226.1, reinstalled from his own kept `Claude-2.31226.1.msix`, mounts NO turn box, so none of
+  this paragraph's mechanism is running: the app asks the CLI for a suggestion again and the quoted
+  words appear in his input box for Tab+Enter. The note `the-desktop-app-cannot-be-rolled-back-to-an-older-build`
+  is REFUTED by that reinstall. Keep the next three sentences for the day he updates again, and never
+  tell him a box is a button in a session that has no `mcp__ccd_turn__` tool.** Before 2026-10-15
+  that rollback: 🔴 **SINCE THE 2026-10-13 DESKTOP UPDATE (app 44.7.0) THE ANSWER WAS THE TURN BOX, NOT ANY
+  SWITCH — THERE WAS NO GHOST TEXT IN AN APP SESSION AT ALL.** The app mounts the turn box
+  (`mcp__ccd_turn__update_plan` / `wrap_up`) in every Code session and in the same breath drops the
+  suggestion request — `zt && (Q.promptSuggestions = void 0)` — so the CLI returns on the FIRST line
+  of its own gate (`if (!this.promptSuggestions()) return`) and not one of its nine rungs is ever
+  reached. **No local lever turns it off** (the gate is server-side; `CLAUDE_DEV_FORCE_GATES` works
+  only in an unpackaged dev build and only forces gates ON), and the five switches stay ON and prove
+  nothing. 🔴 **The one-action words now live in the `wrap_up` REPLY BUTTONS — `actions[0].message`
+  is sent verbatim, the click that replaced Tab+Enter — so every turn that ends with a `Next step:`
+  line ALSO ships those exact words as a button**, and `next-step-capture.mjs` clause 7 warns when
+  it does not. Measured 2026-10-15: first turn-box session 14/10 19:55 Cairo, 39 sessions since.
+  🔴 **The one that emptied his box before that was a HOOK, not a setting: the desktop app runs the
+  Agent-SDK gate, whose only two skip reasons are `host_paused` and a `turnOrigin` in
+  {`scheduled`, `task_notification`, `auto_continuation`, `host_synthetic`, `system`} — and a BLOCKED
+  Stop hook makes the app auto-continue, so the turn it produces is `auto_continuation` and gets no
+  suggestion.** `next-step-capture.mjs` blocked twice on 2026-10-15 and ate its own box both times;
+  it warns instead since that day and must never block again (line 34). A turn a side session's
+  `task_notification` starts is skipped the same way, and nothing can change that. Two more have NO
+  setting: a session must be **the focused one when its turn ends**, and a session's **first reply
+  never gets one** (fewer than two assistant turns). The full nine-rung chain, every silent skip
+  reason and the 10,000-token gate: memory note
+  `the-turn-box-took-the-ghost-text`.
 
 ## Compact Instructions
 

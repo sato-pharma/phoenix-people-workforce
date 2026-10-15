@@ -36,6 +36,9 @@ const INDEX = path.join(MEMORY_DIR, "MEMORY.md");
 const INBOX_HEADING = /^##\s+Inbox\b/;
 const FALLBACK = "sessions";
 const APPLY = process.argv.includes("--apply");
+// Regenerated with its own timestamp by every `sync-cloud-context.mjs` run, so it is never evidence
+// that anything drifted — see the staged-file test below.
+export const MIRROR_STAMP_FILE = ".claude/cloud-context/README.md";
 
 const git = (args, cwd = REPO) => execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1 << 28 }).trim();
 
@@ -222,14 +225,19 @@ async function main() {
   const notes = laptopNotes();
   const fresh = [...notes.keys()].filter((s) => !filedOnMain.has(s)).sort();
   const gone = [...filedOnMain].filter((s) => !notes.has(s));
-  if (!fresh.length && !gone.length) {
-    say("nothing to file — every note on this laptop is already filed on main");
-    return;
-  }
+
+  // 🔴 NOTHING NEW TO FILE IS NOT NOTHING TO DO — THE MIRROR STILL HAS TO BE MEASURED. This used to
+  // return here, so drift from an EDITED note (same slug, new body) never reached the repo on the
+  // 09:00/15:00/21:00 cadence and waited for the next genuinely new note. Measured 2026-10-15: a
+  // note renamed and rewritten by hand left the mirror stale, SessionStart flagged it twice, and the
+  // refresh was a hand-run job. A cloud session reads ONLY the mirror, so a stale one is the wrong
+  // rule in front of the session that cannot check it against anything.
+  const mirrorOnly = !fresh.length && !gone.length;
+  if (mirrorOnly) say("nothing new to file — measuring whether the repo mirror still matches the laptop's notes");
   const filed = fresh.map((s) => ({ slug: s, ...classify(s, notes.get(s), lib) }));
   for (const f of filed) say(`${f.slug} -> ${f.module} (${f.how})`);
   for (const s of gone) say(`${s} -> removed (the note no longer exists on this laptop)`);
-  if (!APPLY) {
+  if (!APPLY && !mirrorOnly) {
     say("dry run — re-run with --apply to open the PR");
     return;
   }
@@ -255,23 +263,53 @@ async function main() {
     execFileSync("node", ["scripts/module-memory/build.mjs"], { cwd: wt, stdio: "inherit" });
     execFileSync("node", ["scripts/module-memory/build.mjs", "--check"], { cwd: wt, stdio: "inherit" });
     git(["add", "-A", "scripts/module-memory", ".claude/rules", ".claude/cloud-context", "docs/module-memory", "AGENTS.md"], wt);
-    const body = [
-      `Files ${filed.length} new memory note(s) under their modules${gone.length ? ` and drops ${gone.length} that no longer exist` : ""}.`,
-      "",
-      "| Note | Module | Why |",
-      "| --- | --- | --- |",
-      ...filed.map((f) => `| \`${f.slug}\` | \`${f.module}\` | ${f.how} |`),
-      ...gone.map((s) => `| \`${s}\` | removed | the note no longer exists on the laptop |`),
-      "",
-      "After this merges, the next fold removes these pointers from the MEMORY.md inbox.",
-      "",
-      "🤖 Generated with [Claude Code](https://claude.com/claude-code)",
-    ].join("\n");
-    git(["commit", "-q", "-m", `chore(memory): memory fold — ${filed.length} note(s) filed\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`], wt);
+
+    // 🔴 THE MIRROR'S README IS REWRITTEN BY EVERY SYNC — it carries the generated-at stamp and the
+    // counts, so it is staged on a run where nothing drifted at all. Counting it as a change would
+    // open a PR three times a day for ever; it is only ever carried ALONGSIDE a real change.
+    const staged = git(["diff", "--cached", "--name-only"], wt).split("\n").map((l) => l.trim()).filter(Boolean);
+    const changed = staged.filter((f) => f !== MIRROR_STAMP_FILE);
+    if (!changed.length) {
+      say("the mirror already matches the laptop's notes — nothing to refresh, no PR opened");
+      return;
+    }
+    if (!APPLY) {
+      say(`dry run — ${changed.length} mirror file(s) have drifted from the laptop's notes; re-run with --apply to open the PR`);
+      for (const f of changed) say(`  ${f}`);
+      return;
+    }
+    const body = mirrorOnly
+      ? [
+          `Refreshes ${changed.length} file(s) of the repo mirror so they match the laptop's memory notes again.`,
+          "",
+          "No note was added or removed — these drifted because a note's own CONTENT was edited, which",
+          "the fold used to skip entirely. A cloud session reads only this mirror.",
+          "",
+          ...changed.map((f) => `- \`${f}\``),
+          "",
+          "🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+        ].join("\n")
+      : [
+          `Files ${filed.length} new memory note(s) under their modules${gone.length ? ` and drops ${gone.length} that no longer exist` : ""}.`,
+          "",
+          "| Note | Module | Why |",
+          "| --- | --- | --- |",
+          ...filed.map((f) => `| \`${f.slug}\` | \`${f.module}\` | ${f.how} |`),
+          ...gone.map((s) => `| \`${s}\` | removed | the note no longer exists on the laptop |`),
+          "",
+          "After this merges, the next fold removes these pointers from the MEMORY.md inbox.",
+          "",
+          "🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+        ].join("\n");
+    const subject = mirrorOnly
+      ? `chore(memory): cloud mirror refresh — ${changed.length} file(s)`
+      : `chore(memory): memory fold — ${filed.length} note(s) filed`;
+    git(["commit", "-q", "-m", `${subject}\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`], wt);
     await withRetry("git push", () => git(["push", "-q", "-u", "origin", branch], wt));
     let url;
     try {
-      url = await withRetry("gh pr create", () => execFileSync("gh", ["pr", "create", "--title", `chore(memory): memory fold — ${day} ${clock} Cairo`, "--body", body, "--head", branch, "--base", "main"], { cwd: wt, encoding: "utf8" }).trim());
+      const title = `${mirrorOnly ? "chore(memory): cloud mirror refresh" : "chore(memory): memory fold"} — ${day} ${clock} Cairo`;
+      url = await withRetry("gh pr create", () => execFileSync("gh", ["pr", "create", "--title", title, "--body", body, "--head", branch, "--base", "main"], { cwd: wt, encoding: "utf8" }).trim());
     } catch (e) {
       // A timed-out create can still have made the PR on GitHub's side, and the retry then fails
       // with "already exists" — so ask for it by branch before treating the branch as an orphan.
