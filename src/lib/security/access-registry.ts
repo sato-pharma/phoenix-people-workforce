@@ -1633,6 +1633,13 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/whatsapp-templates", permission: { resource: "admin", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH", "DELETE"], pattern: "/api/recruitment/whatsapp-templates/*", permission: { resource: "admin", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/whatsapp-templates/send", permission: [{ resource: "recruitment", action: "update" }, { resource: "employees", action: "read" }], csrfRequired: true }),
+  // Job Posts (owner, 2026-10-15) — the job titles behind the advert pictures, and the picture itself.
+  // Every route asserts its recruitment clause and then canBuildJobPosts (Super Admin + Talent
+  // Acquisition). The render is an EXPORT: it produces the file that is posted publicly.
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/job-posts/titles", permission: { resource: "recruitment", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/job-posts/titles", permission: { resource: "recruitment", action: "create" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/recruitment/job-posts/titles/*", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/recruitment/job-posts/render", permission: { resource: "recruitment", action: "export" }, csrfRequired: true }),
   // The WhatsApp Inbox — both company numbers, SUPER ADMIN ONLY (owner, 2026-09-15). Every route
   // passes `recruitment:update` and then refuses any role but Super Admin (`inboxForbidden`), so the
   // permission below is the floor, not the gate. Sends, links and saves write a required audit row;
