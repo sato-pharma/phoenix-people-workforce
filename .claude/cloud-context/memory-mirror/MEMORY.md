@@ -30,11 +30,7 @@
 
 ## Inbox — new notes land here
 
-- [A piped `run watch` exit code is `tail`'s, not `gh`'s](a-piped-run-watch-exit-code-is-tails-not-ghs.md) - exit 0 on a RED run; read the conclusion live.
-- [The plan auto-assigns the rep from the EMPLOYEE area, not the seat](the-plan-auto-assigns-the-rep-from-the-employee-area-not-the-seat.md) - no rep dropdown exists; a wrong `area_id` hides a rep SILENTLY, and `au_v_employee_seat_drift` catches it but alarms nobody.
-- ["Drop the training rows" is TWO sets, split by when the customer was created](a-training-day-row-is-judged-by-when-its-customer-was-created.md) - invented that day goes whole; an earlier REAL doctor loses only his training-room place and goes back to pending. `line_code` separated the two teams on one street.
-- [A scoped CRM drop must guard EVERY table it deletes from](a-scoped-crm-drop-must-guard-every-table-it-deletes-from.md) - `clear-test-rows` reaches `is_test` rows ONLY; a spine-only guard died on the `unplanned_visit_events` grandchild and rolled back.
-- [The desktop app CAN be rolled back](the-desktop-app-cannot-be-rolled-back-to-an-older-build.md) - the update feed serves an older build with `maxVersion` and `Add-AppxPackage -ForceUpdateFromAnyVersion` installs it in place, data untouched; he did it 15 Oct 20:03 Cairo (2.37337.1 → 2.31226.1), and the GHOST TEXT came back with it ([[the-turn-box-took-the-ghost-text]]).
+- [A CRM photo reading is only as good as its accuracy](a-photo-reading-is-only-as-good-as-its-accuracy.md) - Afaf's was ±2,000 m; moving her pin there would have cleared a real `far` flag. Read `photo_accuracy_meters` before calling a pin wrong.
 
 
 
