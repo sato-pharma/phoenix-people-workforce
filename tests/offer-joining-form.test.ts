@@ -168,6 +168,16 @@ async function run() {
       assert.ok(part.includes(email.OFFER_ACCEPT_STEP_TEXT), `${builtin.name}: that step is the button's step instead`);
     }
 
+    //    The plain-text part is read as TEXT: the blocks are stored as HTML, so `Sign &amp; return`
+    //    and `Medical Rep &middot; Alexandria North` printed their entities literally in any client
+    //    that shows the text alternative (measured on the live Corporate letter, 15 Oct 2026).
+    const ENTITY = /&(?:[a-z]+|#\d+|#x[0-9a-f]+);/i;
+    assert.ok(!ENTITY.test(withButton.text), `${builtin.name}: the plain-text part carries no HTML entity (${withButton.text.match(ENTITY)?.[0]})`);
+    assert.ok(
+      !ENTITY.test(email.renderOfferEmail({ blocks: builtin.blocks(), theme: builtin.theme }, SAMPLE).text),
+      `${builtin.name}: nor does the one sent with no button`,
+    );
+
     //    And it is said ONCE. The closing sentence used to be rewritten into a second "press the
     //    Accept button" line, which then sat directly above the answer panel's own lead.
     const leadInHtml = withButton.html.split(email.OFFER_ACCEPT_LEAD).length - 1;
