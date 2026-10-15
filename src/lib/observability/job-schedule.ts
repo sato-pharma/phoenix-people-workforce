@@ -170,7 +170,14 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   { slug: "phoenix-process-notifications", kind: "cron", schedule: "*/5 * * * *", graceSeconds: 10 * MINUTE },
   { slug: "phoenix-background-jobs", kind: "cron", schedule: "0 3 * * 5", graceSeconds: 2 * HOUR },
   { slug: "phoenix-inbound-intake", kind: "cron", schedule: "*/2 * * * *", graceSeconds: 10 * MINUTE },
-  { slug: "phoenix-recruitment-email-intake", kind: "cron", schedule: "4-59/10 * * * *", graceSeconds: 10 * MINUTE },
+  // 🔴 20 MINUTES, NOT 10 — TWO MISSED FIRES, BECAUSE AT 10 ONE WAS ENOUGH TO ALARM. Measured
+  // 2026-10-15 over this check's whole history: 24 outages, and 12 of them lasted 9.8-10.0 minutes,
+  // which is the signature of recovering on the very NEXT scheduled fire. A grace equal to the
+  // interval makes a single skipped run a page, and this job skipping one run costs nothing — the
+  // next one reads the same mailbox. Widening to 20 would have silenced 11 of the 11 alerts in the
+  // last 30 days and still caught both real outages (40 minutes and 8 hours). Never put it back to
+  // one interval; see the grace note in this file's header.
+  { slug: "phoenix-recruitment-email-intake", kind: "cron", schedule: "4-59/10 * * * *", graceSeconds: 20 * MINUTE },
   { slug: "phoenix-run-synthetic-journeys", kind: "cron", schedule: "17 5,8,11,14,17,20 * * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-direct-orders-rotate-sheet-token", kind: "cron", schedule: "23 3 * * 5", graceSeconds: 2 * HOUR },
   { slug: "phoenix-marketing-requests-rotate-sheet-token", kind: "cron", schedule: "43 3 * * 5", graceSeconds: 2 * HOUR },
@@ -196,10 +203,22 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // shape a naive "expected period" calculation gets wrong — it would read the 23-hour gap as a
   // strand every single day. The register computes the previous scheduled fire from the expression
   // instead, which is why cron-parser is used rather than an interval.
-  { slug: "phoenix-crm-contact-lists", kind: "cron", schedule: "*/5 5 * * *", graceSeconds: 10 * MINUTE, vendorSync: true },
+  // 🔴 20 MINUTES, NOT 10 — ONE MISSED SLICE IS TOLERATED, THREE STILL ALARM. The window is twelve
+  // five-minute slices inside hour 5, so at a 10-minute grace a single slow slice was a page: of 12
+  // outages measured 2026-10-15, six lasted 5.2-5.8 minutes (one slice) and three lasted ~15.5
+  // (three slices). 20 silences the six and keeps the nine- and the 26-hour ones, which are real. It
+  // does NOT blind the morning: a job that does not start at all is still reported by 05:30.
+  { slug: "phoenix-crm-contact-lists", kind: "cron", schedule: "*/5 5 * * *", graceSeconds: 20 * MINUTE, vendorSync: true },
   { slug: "phoenix-expense-claims-refresh", kind: "cron", schedule: "51 * * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-recruitment-cv-digest", kind: "cron", schedule: "47 0,6,12,18 * * *", graceSeconds: 1 * HOUR },
-  { slug: "phoenix-ireports360-live-poll", kind: "simple", periodSeconds: 5 * MINUTE, graceSeconds: 15 * MINUTE, vendorSync: true },
+  // 🔴 30 MINUTES, NOT 15 — THE DEPLOY RESTART IS WIDER THAN THE OLD GRACE. This poller runs INSIDE
+  // the production process, so every deploy silences it, and this repo merges many times a day: of
+  // 33 outages measured 2026-10-15, 26 recovered within 4.3 minutes of going down — a ~21-minute
+  // silence against a 20-minute threshold, which is the restart, not a stall. 30 would have silenced
+  // 14 of the 15 alerts in the last 30 days. **Liveness is not weakened by this:**
+  // `phoenix-inbound-intake` (2m period, 10m grace) is the fast "is Phoenix alive?" signal and stays
+  // exactly where it is — widening that one is what would hurt.
+  { slug: "phoenix-ireports360-live-poll", kind: "simple", periodSeconds: 5 * MINUTE, graceSeconds: 30 * MINUTE, vendorSync: true },
   { slug: "phoenix-ireports360-sync", kind: "cron", schedule: "0 6-21/3 * * *", graceSeconds: 2 * HOUR, vendorSync: true },
   { slug: "phoenix-reconcile-visits", kind: "cron", schedule: "0 4 * * 0", graceSeconds: 12 * HOUR, vendorSync: true },
   // The sweeper itself. Declared like any other job so it holds a row and verifies itself on every

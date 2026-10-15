@@ -3,7 +3,12 @@ import { readFileSync } from "node:fs";
 
 import {
   applyExitCode,
+  attachCheckMeta,
   diffCheck,
+  EXTRA_TAGS,
+  MODULE_TAGS,
+  normalizeTags,
+  parseCheckMeta,
   parseDesiredChecks,
   parseDuration,
   payload,
@@ -311,4 +316,188 @@ export async function runHealthchecksScheduleSyncTests() {
   assert.equal(applyExitCode(2, 0), 1, "a failed write must still exit non-zero");
   assert.equal(applyExitCode(0, 1), 1, "drift after a 200 must exit non-zero");
   assert.equal(applyExitCode(2, 1), 1);
+
+  await runCheckMetaTests(checks);
+}
+
+type CheckMeta = { tags: string[]; desc: string };
+
+/**
+ * The tags/description table, added 2026-10-15 after the owner's audit measured that **0 of the 40
+ * live checks carried a tag or a description** — so the dashboard was 40 undifferentiated slugs and
+ * an alert named a slug and a status and nothing about what had stopped or what it cost.
+ *
+ * Three things make that worth pinning, and each one has a counterpart above.
+ *
+ * First, the two tables must stay in lockstep. A declared check with no meta row would be pushed
+ * with neither tag nor description, which is the state this exists to end; a meta row for an
+ * undeclared slug is usually a rename applied to one table only. The sync is the only thing that
+ * reads them together, so if it shrugs, nothing else looks.
+ *
+ * Second, the two parsers must not read each other's rows. They are told apart by CELL COUNT —
+ * four against three — and a reformat that gives either table the other's shape would make one
+ * parser silently match the wrong half and the sync a no-op reporting success, which is the exact
+ * failure this file's header describes.
+ *
+ * Third, the tag vocabulary is closed, and `in-house-only` must agree with the schedule row's own
+ * marker. Two tables both free to say whether a job is watched externally is two tables free to
+ * disagree, and the one a human reads would not be the one the sync pushes.
+ */
+async function runCheckMetaTests(checks: DesiredCheck[]) {
+  const markdown = readFileSync(DOC, "utf8");
+  const meta = parseCheckMeta(markdown) as Map<string, CheckMeta>;
+
+  // Lockstep, asserted in both directions by name rather than only by count — two tables can hold
+  // the same number of rows and still name different slugs.
+  assert.deepEqual(
+    [...meta.keys()].sort(),
+    checks.map((c) => c.slug).sort(),
+    `every check declared in ${DOC}'s schedule table needs exactly one tags/description row, and ` +
+      "no row may name a slug nothing declares",
+  );
+
+  // Neither parser may read the other table's rows. The schedule rows carry four cells and the meta
+  // rows three; this fixture holds one of each and each parser must find exactly its own.
+  const bothTables = [
+    "| `phoenix-fixture` | `17 2 * * *` | 2h | cron-job.org job `1` |",
+    "| `phoenix-fixture` | `sales silent-when-clean` | A red means the fixture stopped. |",
+  ].join("\n");
+  assert.equal(
+    parseDesiredChecks(bothTables).length,
+    1,
+    "the schedule parser must read the 4-cell row and ignore the 3-cell tags/description row",
+  );
+  assert.equal(
+    (parseCheckMeta(bothTables) as Map<string, CheckMeta>).size,
+    1,
+    "the tags/description parser must read the 3-cell row and ignore the 4-cell schedule row",
+  );
+
+  const allowed = new Set([...MODULE_TAGS, ...EXTRA_TAGS]);
+  const descriptions = new Set<string>();
+  for (const check of checks) {
+    const row = meta.get(check.slug);
+    assert.ok(row, `${check.slug} has no tags/description row`);
+
+    for (const tag of row.tags) {
+      assert.ok(
+        allowed.has(tag),
+        `${check.slug} carries the tag "${tag}", which is not in the closed vocabulary ` +
+          `(${[...allowed].sort().join(", ")}) — add it there deliberately or fix the row`,
+      );
+    }
+    assert.equal(
+      row.tags.filter((t) => (MODULE_TAGS as readonly string[]).includes(t)).length,
+      1,
+      `${check.slug} must carry exactly one module tag — that is the whole point of tagging, since ` +
+        "the Healthchecks dashboard already shows the schedule and cannot show the module",
+    );
+    // The one invariant that spans both tables: the marker and the tag are the same fact, so a row
+    // saying `in-house-only` about an externally synced check (or the reverse) makes the table a
+    // human reads disagree with the one the sync pushes.
+    assert.equal(
+      row.tags.includes("in-house-only"),
+      !check.externalSync,
+      `${check.slug}: the in-house-only TAG must agree with the in-house only MARKER on its ` +
+        "schedule row — one of the two rows is wrong",
+    );
+
+    // A description that only restates the slug is worth nothing at 4am, and a pipe would break the
+    // table's own parse and silently drop the row.
+    assert.ok(!row.desc.includes("|"), `${check.slug}'s description must not contain a pipe`);
+    assert.ok(
+      row.desc.length >= 40 && row.desc.length <= 400,
+      `${check.slug}'s description is ${row.desc.length} characters — it must say what a red MEANS ` +
+        "(at least 40) and still fit a notification (at most 400)",
+    );
+    assert.ok(row.desc.endsWith("."), `${check.slug}'s description must be a sentence ending in a full stop`);
+    assert.ok(
+      !descriptions.has(row.desc),
+      `${check.slug}'s description is a duplicate of another check's — a copy-paste that leaves one ` +
+        "check describing another is worse than no description at all",
+    );
+    descriptions.add(row.desc);
+  }
+
+  // Tags come back from the API as ONE space-separated string in arbitrary order — the same hazard
+  // `channels` already has. Without normalising, an identically-tagged check reads as drift for
+  // ever and every run re-POSTs all 40.
+  assert.equal(normalizeTags(["sales", "in-house-only"]), "in-house-only sales");
+  assert.equal(normalizeTags("sales  in-house-only"), "in-house-only sales");
+  assert.equal(normalizeTags(""), "", "no tags must normalise to the empty string, not to a space");
+
+  const tagged = {
+    slug: "phoenix-a",
+    kind: "cron",
+    schedule: "17 2 * * *",
+    tz: "Africa/Cairo",
+    grace: 7200,
+    tags: ["sales", "silent-when-clean"],
+    desc: "A red means the nightly reconciliation did not run.",
+  };
+  const stored = {
+    slug: "phoenix-a",
+    schedule: "17 2 * * *",
+    tz: "Africa/Cairo",
+    grace: 7200,
+    tags: "silent-when-clean sales",
+    desc: "A red means the nightly reconciliation did not run.",
+  };
+  assert.equal(
+    diffCheck(tagged, stored, undefined).action,
+    "ok",
+    "the same tags in a different order must not read as drift",
+  );
+  assert.ok(
+    diffCheck(tagged, { ...stored, tags: "sales" }, undefined).changes.some((c: string) => c.startsWith("tags ")),
+    "a missing tag must be reported as drift",
+  );
+  assert.ok(
+    diffCheck(tagged, { ...stored, desc: "" }, undefined).changes.some((c: string) => c.startsWith("description ")),
+    "a check with no description must be reported as drift — 40 of 40 were in exactly that state",
+  );
+  // Back-compat: a caller holding only the schedule table must diff exactly as it did before, not
+  // be told every check is missing a description it never declared.
+  const untagged = { slug: "phoenix-a", kind: "cron", schedule: "17 2 * * *", tz: "Africa/Cairo", grace: 7200 };
+  assert.equal(
+    diffCheck(untagged, { ...stored, tags: "", desc: "" }, undefined).action,
+    "ok",
+    "a desired check with no tags/desc must not diff against a check that has none",
+  );
+
+  // `payload` is plain .mjs and TypeScript infers its return from the two object literals it
+  // spreads, so `tags` and `desc` — assigned onto `base` conditionally — are not on the inferred
+  // type at all. Read the body as a bag of fields, which is what the HTTP call does with it.
+  const written = payload(tagged, undefined, { update: true }) as Record<string, unknown>;
+  assert.equal(written.tags, "sales silent-when-clean", "the write must carry the tags, sorted");
+  assert.equal(written.desc, tagged.desc, "the write must carry the description");
+  assert.equal(
+    (payload(untagged, undefined, { update: true }) as Record<string, unknown>).tags,
+    undefined,
+    "a check with no declared tags must not have an empty tag string written over it",
+  );
+
+  // Both halves of the lockstep refusal, each proved by its own throw.
+  assert.throws(
+    () => attachCheckMeta([{ slug: "phoenix-missing", grace: 60 }], new Map()),
+    /declared with no tags\/description row: phoenix-missing/,
+    "a declared check with no meta row must stop the run",
+  );
+  assert.throws(
+    () =>
+      attachCheckMeta(
+        [{ slug: "phoenix-a", grace: 60 }],
+        new Map([
+          ["phoenix-a", { tags: ["sales"], desc: "x." }],
+          ["phoenix-renamed", { tags: ["sales"], desc: "y." }],
+        ]),
+      ),
+    /tags\/description rows for undeclared slugs: phoenix-renamed/,
+    "a meta row for a slug nothing declares must stop the run",
+  );
+  assert.deepEqual(
+    attachCheckMeta([{ slug: "phoenix-a", grace: 60 }], new Map([["phoenix-a", { tags: ["sales"], desc: "x." }]])),
+    [{ slug: "phoenix-a", grace: 60, tags: ["sales"], desc: "x." }],
+    "a matching pair must merge the meta onto the schedule row",
+  );
 }

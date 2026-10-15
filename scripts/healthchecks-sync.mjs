@@ -13,6 +13,13 @@
  * The table in docs/observability.md is the source of truth. This script reads it and makes
  * Healthchecks match. It is idempotent: run it as often as you like.
  *
+ * TWO TABLES, BOTH REQUIRED. The schedule table gives each check its cron/period, timezone and
+ * grace; the tags/description table beneath it gives the module tag and the sentence saying what a
+ * red MEANS. Measured on the owner's audit, 15 Oct 2026: 0 of the 40 live checks carried either, so
+ * the dashboard was 40 undifferentiated slugs and an alert named a slug and a status and nothing
+ * about what had stopped. A declared slug missing from the second table, or a row there for a slug
+ * nothing declares, STOPS the run - see attachCheckMeta for why that is a stop and not a warning.
+ *
  *   node scripts/healthchecks-sync.mjs            # dry run - print the diff, change nothing
  *   node scripts/healthchecks-sync.mjs --apply    # push the differences
  *
@@ -81,6 +88,34 @@ const TZ = "Africa/Cairo";
  */
 const IN_HOUSE_ONLY_MARKER = /\bin-house only\b/i;
 
+/**
+ * The closed tag vocabulary, exported so the doc table, this script and the test read ONE list.
+ *
+ * Exactly one MODULE tag per check, because the Healthchecks dashboard shows a check's schedule and
+ * its status and nothing about which part of Phoenix it belongs to - and a project of 40 checks
+ * with no tags at all (measured 15 Oct 2026: 0 of 40 carried a tag or a description) is 40
+ * undifferentiated slugs. There is deliberately NO cadence tag: the dashboard already prints the
+ * schedule beside each check, so a hand-written `daily`/`hourly` would add nothing and drift.
+ */
+export const MODULE_TAGS = Object.freeze([
+  "crm",
+  "direct-orders",
+  "hr",
+  "marketing",
+  "platform",
+  "production-planning",
+  "recruitment",
+  "sales",
+]);
+
+/**
+ * `in-house-only` must agree with the schedule row's own marker - the test asserts that, so the two
+ * tables cannot drift into saying different things about the same check. `silent-when-clean` marks
+ * the jobs whose normal outcome is to send nothing, which is the single most useful thing to know
+ * before concluding from silence that one has stopped.
+ */
+export const EXTRA_TAGS = Object.freeze(["in-house-only", "silent-when-clean"]);
+
 const APPLY = process.argv.includes("--apply");
 
 /** `10m` / `2h` / `12h` -> seconds. Returns null for anything else. */
@@ -130,6 +165,65 @@ export function parseDesiredChecks(markdown) {
     out.push({ slug, kind: "cron", schedule: cron[1], tz: TZ, grace, externalSync });
   }
   return out;
+}
+
+/**
+ * The tags/description table: `| `slug` | `tags` | what a red means |`.
+ *
+ * THREE CELLS, NOT FOUR, AND THAT IS WHAT KEEPS THE TWO TABLES APART. The schedule table's rows
+ * carry four cells, so the `\|\s*$` anchor below cannot match one; and this table's tags cell is
+ * backticked lowercase words, which no cron expression can be. Neither parser can read the other's
+ * rows, and `tests/healthchecks-schedule-sync.test.ts` asserts the counts both ways so a reformat
+ * that makes them overlap fails rather than silently halving a sync.
+ */
+const META_ROW = /^\s*\|\s*`([a-z0-9][a-z0-9-]*)`\s*\|\s*`([a-z][a-z0-9 -]*?)`\s*\|\s*([^|]+?)\s*\|\s*$/;
+
+/** slug -> { tags, desc } for every row of that table. */
+export function parseCheckMeta(markdown) {
+  const out = new Map();
+  for (const line of markdown.split(/\r?\n/)) {
+    const m = META_ROW.exec(line);
+    if (!m) continue;
+    const [, slug, tagCell, desc] = m;
+    if (out.has(slug)) {
+      throw new Error(`${slug} appears twice in the ${DOC} tags/description table - remove one row`);
+    }
+    out.set(slug, { tags: tagCell.trim().split(/\s+/), desc: desc.trim() });
+  }
+  return out;
+}
+
+/**
+ * Join the two tables, and REFUSE rather than push a partial truth.
+ *
+ * A declared check with no tags/description row would be pushed with neither - which is the state
+ * this whole addition exists to end - and a row naming an undeclared slug is a check nobody pings,
+ * usually a slug that was renamed on one table and not the other. Both are a stop, not a warning:
+ * the sync is the only thing that reads these tables together, so if it shrugs, nothing else looks.
+ */
+export function attachCheckMeta(desired, meta) {
+  const declared = new Set(desired.map((d) => d.slug));
+  const missing = desired.filter((d) => !meta.has(d.slug)).map((d) => d.slug);
+  const orphans = [...meta.keys()].filter((slug) => !declared.has(slug));
+  if (missing.length || orphans.length) {
+    const parts = [];
+    if (missing.length) parts.push(`declared with no tags/description row: ${missing.join(", ")}`);
+    if (orphans.length) parts.push(`tags/description rows for undeclared slugs: ${orphans.join(", ")}`);
+    throw new Error(`the two tables in ${DOC} disagree - ${parts.join("; ")}`);
+  }
+  return desired.map((d) => ({ ...d, ...meta.get(d.slug) }));
+}
+
+/**
+ * Tags are stored and returned as ONE space-separated string, in whatever order the API feels
+ * like - the same hazard as `channels`. Sort before comparing or every run re-POSTs every check.
+ */
+export function normalizeTags(value) {
+  return (Array.isArray(value) ? value : String(value || "").split(/\s+/))
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .sort()
+    .join(" ");
 }
 
 function readApiKey() {
@@ -194,6 +288,20 @@ export function diffCheck(desired, actual, desiredChannels) {
     changes.push(`period ${actual.timeout}s -> ${desired.timeout}s`);
   }
   if (Number(actual.grace) !== desired.grace) changes.push(`grace ${actual.grace}s -> ${desired.grace}s`);
+  // Both are OPTIONAL on `desired`, so a caller holding only the schedule table (the offline
+  // listing, and every pre-2026-10-15 test) diffs exactly as before rather than being told that
+  // every check is missing a description it never asked for.
+  if (desired.tags !== undefined) {
+    const want = normalizeTags(desired.tags);
+    const have = normalizeTags(actual.tags);
+    if (want !== have) changes.push(`tags ${have || "(none)"} -> ${want}`);
+  }
+  if (desired.desc !== undefined) {
+    const have = (actual.desc || "").trim();
+    // The whole sentence, never a shortened one: this is the line that says what a red means, and a
+    // clipped diff is unreadable at the moment somebody is deciding whether the wording is right.
+    if (have !== desired.desc) changes.push(have ? `description -> ${desired.desc}` : `description (none) -> ${desired.desc}`);
+  }
   if (desiredChannels !== undefined) {
     const want = normalizeChannels(desiredChannels);
     const have = normalizeChannels(actual.channels);
@@ -245,6 +353,8 @@ export function payload(desired, desiredChannels, { update = false } = {}) {
   // its own schedule while the job runs perfectly, and the next real ping auto-provisions a SECOND
   // check beside it. Found on the first live run, by the read-back below.
   const base = { name: desired.slug, slug: desired.slug, grace: desired.grace };
+  if (desired.tags !== undefined) base.tags = normalizeTags(desired.tags);
+  if (desired.desc !== undefined) base.desc = desired.desc;
   if (!update) base.unique = ["name"];
   if (desiredChannels !== undefined) base.channels = desiredChannels;
   return desired.kind === "cron"
@@ -293,11 +403,15 @@ async function readChannels(key) {
 }
 
 async function main() {
-  const desired = parseDesiredChecks(readFileSync(DOC, "utf8"));
-  if (desired.length === 0) {
+  const markdown = readFileSync(DOC, "utf8");
+  const schedules = parseDesiredChecks(markdown);
+  if (schedules.length === 0) {
     console.error(`No check rows parsed out of ${DOC}. Has the table format changed?`);
     process.exit(1);
   }
+  // Throws when the two tables disagree - see attachCheckMeta. Deliberately BEFORE the API key is
+  // read, so a doc mistake is reported on a laptop with no credentials at all.
+  const desired = attachCheckMeta(schedules, parseCheckMeta(markdown));
   console.log(`healthchecks-sync — ${desired.length} checks declared in docs/observability.md`);
   console.log(`mode: ${APPLY ? "APPLY" : "dry run (pass --apply to push)"}\n`);
 
