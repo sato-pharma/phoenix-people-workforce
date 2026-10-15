@@ -31,6 +31,15 @@ import { loadClosingStoreSplit } from "@/lib/sales/closing-store-split-net";
 import { loadMonthlyClosingPartsWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
 import { OFFICE_RESPREAD_START_PERIOD } from "@/lib/sales/office-distributor";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "restate-area-month",
+  entry: import.meta.url,
+  known: ["--area", "--line", "--period"],
+});
+
 function flag(name: string, fallback: string): string {
   const hit = process.argv.find((arg) => arg.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : fallback;

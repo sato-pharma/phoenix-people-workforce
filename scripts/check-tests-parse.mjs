@@ -30,6 +30,15 @@ import { stripTypeScriptTypes } from 'node:module';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "check-tests-parse",
+  entry: import.meta.url,
+  known: ["--registry"],
+});
+
 /** The file an isolated suite run never loads, and the reason this script exists. */
 export const REGISTRY = 'tests/run-tests.ts';
 

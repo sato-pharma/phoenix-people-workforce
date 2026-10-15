@@ -82,6 +82,15 @@ import {
 import { canonicalHrIdKey, resolveStoredHrId, type StoredHrIdDirectoryEntry } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "backfill-missing-access-profiles",
+  entry: import.meta.url,
+  known: ["--apply", "--dry-run", "--confirm-production"],
+});
+
 const productionSupabaseRef = "ozucdzovmcqvepbozvqf";
 const productionAppUrl = "https://phoenix-hr.satopharma.com";
 const actorLoginId = process.env.PHOENIX_ACCOUNT_PROVISION_ACTOR ?? "system";

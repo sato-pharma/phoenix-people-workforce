@@ -34,6 +34,15 @@ import { systemAccessContext } from "@/lib/auth/permissions";
 import { mergeCandidates } from "@/lib/recruitment/candidate-merge-service";
 import { getCandidate } from "@/lib/recruitment/candidates";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "merge-duplicate-cv-candidates",
+  entry: import.meta.url,
+  known: ["--apply", "--plan"],
+});
+
 type PlannedMerge = {
   duplicateId: string;
   duplicateName: string;

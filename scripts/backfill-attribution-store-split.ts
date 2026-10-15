@@ -56,6 +56,15 @@ import {
 } from "@/lib/sales/attribution-store-split-net";
 import { assertTreeIsCurrent } from "./lib/tree-is-current.ts";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "backfill-attribution-store-split",
+  entry: import.meta.url,
+  known: ["--apply"],
+});
+
 const apply = process.argv.includes("--apply");
 const requested = process.argv.slice(2).filter((arg) => /^\d{4}-\d{2}$/.test(arg));
 

@@ -3,6 +3,15 @@ import path from "node:path";
 
 import { ingestSyntheticJourneyReport, type JourneyResult } from "@/lib/synthetic-journeys/service";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "synthetic-save-report",
+  entry: import.meta.url,
+  known: [],
+});
+
 const reportPath = path.resolve(process.cwd(), process.argv[2] ?? "tests/synthetic/report/latest.json");
 
 if (!fs.existsSync(reportPath)) {

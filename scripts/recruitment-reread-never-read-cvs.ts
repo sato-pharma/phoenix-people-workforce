@@ -24,6 +24,15 @@ import {
 } from "@/lib/recruitment/cv-reread-target-sets";
 import { cvRereadOpsMarker } from "@/lib/recruitment/ops-marker";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "recruitment-reread-never-read-cvs",
+  entry: import.meta.url,
+  known: ["--dry-run", "--unresolved-only", "--include-rules-only", "--force-model", "--newest-rules-only", "--blank-faculty", "--applied-for", "--limit"],
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Re-read the CVs the AI never read.
 //

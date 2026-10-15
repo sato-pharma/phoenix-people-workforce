@@ -29,6 +29,15 @@ import { createHash, randomInt } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import process from "node:process";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "headwind-bootstrap",
+  entry: import.meta.url,
+  known: ["--base", "--admin-login", "--login", "--name", "--service", "--environment", "--skip-railway", "--reset", "--role"],
+});
+
 const args = process.argv.slice(2);
 const flag = (name, fallback = null) => {
   const hit = args.indexOf(`--${name}`);

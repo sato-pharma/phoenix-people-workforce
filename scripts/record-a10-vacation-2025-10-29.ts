@@ -67,6 +67,15 @@ import { systemAccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { createVacationRequestAsAdmin, vacationErrorMessage } from "@/lib/vacation/service";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "record-a10-vacation-2025-10-29",
+  entry: import.meta.url,
+  known: ["--execute"],
+});
+
 const execute = process.argv.includes("--execute");
 const MARKER = "A10_MAILBOX_BACKFILL_2026-09-17";
 const EMPLOYEE_HR_ID = "A-10";

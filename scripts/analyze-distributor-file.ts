@@ -23,6 +23,15 @@ import {
   summarizePreview,
 } from "@/lib/sales/normalizer/service";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "analyze-distributor-file",
+  entry: import.meta.url,
+  known: [],
+});
+
 // ── env: load .env.local exactly like scripts/validate-source-of-sales.mjs ──
 function loadEnvLocal() {
   const path = resolve(process.cwd(), ".env.local");

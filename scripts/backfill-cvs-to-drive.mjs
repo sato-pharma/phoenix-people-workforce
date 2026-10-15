@@ -47,6 +47,15 @@ import { ensureFolderPath, moveDriveFile } from "@/lib/recruitment/drive-tree";
 // besides the candidate. Shared with build-cv-cabinet.mjs, so both scripts load them one way.
 import { cabinetInputFor, loadCabinetFacts, requireImportSenders } from "./cv-cabinet-context.mjs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "backfill-cvs-to-drive",
+  entry: import.meta.url,
+  known: ["--dry-run", "--retry", "--refile", "--verify", "--limit"],
+});
+
 // ── env ──────────────────────────────────────────────────────────────────────────────────────────
 // Loaded by hand rather than via a dependency: this script has to run from a bare worktree, where
 // `pnpm exec` is banned (it purges the node_modules junction) and dotenv may not resolve.

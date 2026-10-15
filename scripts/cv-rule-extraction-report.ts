@@ -22,6 +22,15 @@ import { PDFParse } from "pdf-parse";
 import { runRuleCvExtraction, type CvRuleContext } from "@/lib/recruitment/rule-extraction";
 import { shouldEscalateToAi } from "@/lib/recruitment/cv-extraction-merge";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "cv-rule-extraction-report",
+  entry: import.meta.url,
+  known: [],
+});
+
 // Below this many letters/digits there is no text layer worth reading — the CV is a scan, and
 // belongs to the OCR path rather than to this engine. Same threshold as cv-text-layer.ts.
 const MIN_READABLE_CHARS = 200;

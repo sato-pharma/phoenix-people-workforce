@@ -36,6 +36,15 @@ import { readFileSync } from 'node:fs';
 
 import { readProtectionContexts } from './required-check-names.mjs';
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "wait-pr",
+  entry: import.meta.url,
+  known: ["--ship", "--green", "--timeout"],
+});
+
 const REPO = 'Gawish-1997/phoenix-people-workforce';
 
 /**

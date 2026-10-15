@@ -27,6 +27,15 @@ import { systemAccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { updateVacationRequestAsAdmin, vacationErrorMessage } from "@/lib/vacation/service";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "correct-excuse-days-orgwide",
+  entry: import.meta.url,
+  known: ["--execute"],
+});
+
 const execute = process.argv.includes("--execute");
 const MARKER = "EXCUSE_RULE_2026-08-03";
 

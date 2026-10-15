@@ -4,6 +4,15 @@ import { systemAccessContext } from "@/lib/auth/permissions";
 import { notifyDecisionPending } from "@/lib/market-awareness/notifications";
 import { getActivity } from "@/lib/market-awareness/service";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "market-awareness-refire-pending-notices",
+  entry: import.meta.url,
+  known: ["--send"],
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Re-send the decision notice for every market-awareness activity still waiting on someone.
 //

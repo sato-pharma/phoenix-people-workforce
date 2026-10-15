@@ -45,6 +45,15 @@ import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import postgres from "postgres";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "customer-territory-questions",
+  entry: import.meta.url,
+  known: ["--apply", "--dry-run", "--count-only", "--apply-recommended", "--from", "--to"],
+});
+
 const HEADER_FILL = "FF0F172A";
 const ACCENT_FILL = "FF0A6BA6";
 const ANSWER_FILL = "FFEFF6FF";

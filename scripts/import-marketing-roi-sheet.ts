@@ -16,6 +16,15 @@ import path from "node:path";
 import { importRoiSheetRequests } from "@/lib/marketing-requests/roi-sheet-writer";
 import { readRoiSheet } from "./lib/read-roi-sheet.ts";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "import-marketing-roi-sheet",
+  entry: import.meta.url,
+  known: ["--execute", "--code-as-is", "--limit"],
+});
+
 function loadEnvLocal() {
   const candidates = [
     process.env.MARKETING_ENV_FILE,

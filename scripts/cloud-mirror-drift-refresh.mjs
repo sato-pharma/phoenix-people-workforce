@@ -24,6 +24,15 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "cloud-mirror-drift-refresh",
+  entry: import.meta.url,
+  known: [],
+});
+
 // FAIL OPEN, ALWAYS — a background drift reading must never surface as a hook error.
 process.on("uncaughtException", () => process.exit(0));
 process.on("unhandledRejection", () => process.exit(0));

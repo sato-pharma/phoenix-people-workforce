@@ -409,6 +409,18 @@ export function takeXlsxSnapshot({ repoRoot, snapshotRoot, now = Date.now() }) {
 //   0 copied, or nothing to copy   2 no destination   3 source unreadable   4 a copy failed to verify
 // ---------------------------------------------------------------------------------------------
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  // 🔴 AN UNKNOWN FLAG IS REFUSED, NEVER IGNORED — the header above records the day an ignored flag made this very
+  // job exit 0 having done nothing. Inline and on node builtins only: `xlsx-snapshot.cmd` extracts this file ALONE,
+  // so an import of scripts/lib/refuse-arguments.mjs would stop the hourly backup outright. Exact tokens, not
+  // `--flag=value`: argOf below reads only the separate-value form, so accepting `--repo=x` would ignore it.
+  const SNAPSHOT_FLAGS = ["--repo", "--root"];
+  const unknownFlags = process.argv.slice(2).filter((a) => a.startsWith("-") && !SNAPSHOT_FLAGS.includes(a));
+  if (unknownFlags.length > 0) {
+    console.error(
+      `${new Date().toISOString()} REFUSED — unknown flag ${unknownFlags.join(" ")}; this job accepts ${SNAPSHOT_FLAGS.join(" ")}. Nothing was copied.`,
+    );
+    process.exit(2);
+  }
   const argOf = (flag) => {
     const i = process.argv.indexOf(flag);
     return i > 0 && process.argv[i + 1] ? process.argv[i + 1] : null;

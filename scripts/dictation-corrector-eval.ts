@@ -4,6 +4,15 @@ import { correctDictatedProducts, normalizeArabic } from "../src/lib/phoenix-crm
 import { PRODUCT_VOCABULARY } from "../src/lib/phoenix-crm/dictation-vocabulary.ts";
 import { getSupabaseAdmin } from "../src/lib/supabase/server.ts";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "dictation-corrector-eval",
+  entry: import.meta.url,
+  known: ["--min-hits", "--out", "--freeze", "--token-cache"],
+});
+
 // Measures the Phoenix CRM dictation corrector against the whole old-CRM comment corpus.
 //
 // WHY THIS EXISTS. The corrector respells product names in what the speech engine returns. Whether

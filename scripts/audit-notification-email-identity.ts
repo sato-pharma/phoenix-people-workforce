@@ -1,6 +1,15 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "audit-notification-email-identity",
+  entry: import.meta.url,
+  known: ["--allow-production-readonly"],
+});
+
 const productionRef = "ozucdzovmcqvepbozvqf";
 const pageSize = 1000;
 

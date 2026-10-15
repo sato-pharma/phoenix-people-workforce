@@ -21,6 +21,15 @@ import ExcelJS from "exceljs";
 import { readFileSync, existsSync } from "node:fs";
 import { basename, resolve } from "node:path";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "seed-vlookup-master",
+  entry: import.meta.url,
+  known: ["--dry-run", "--production", "--excel"],
+});
+
 // ── Config ──────────────────────────────────────────────────────────────────────
 
 const CHUNK = 500;

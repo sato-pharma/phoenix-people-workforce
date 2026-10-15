@@ -114,6 +114,15 @@ import {
 import { HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 import { MARKETING_MANUAL_HOLD_MARKER } from "@/lib/marketing-requests/types";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "customer-pharmacy-pending-questions",
+  entry: import.meta.url,
+  known: [],
+});
+
 /** The hand-run 2026-09-08 backfill opened every note with this; no code path writes it. */
 const SECOND_CODE_BACKFILL_PREFIX = "Backfilled 2026-09-08";
 

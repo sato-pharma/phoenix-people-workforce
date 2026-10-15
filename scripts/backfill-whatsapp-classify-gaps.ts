@@ -67,6 +67,15 @@ import { SESSION_COLUMNS, type SessionRow } from "@/lib/recruitment/inbound/what
 import { EXTRA_SESSION_COLUMNS, type ExtraSessionRow } from "@/lib/recruitment/inbound/whatsapp-screening-questions-session";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "backfill-whatsapp-classify-gaps",
+  entry: import.meta.url,
+  known: ["--apply", "--dry-run", "--confirm-production"],
+});
+
 const productionSupabaseRef = "ozucdzovmcqvepbozvqf";
 const SESSIONS_TABLE = "ats_whatsapp_classification_sessions";
 const FIX_COMMIT = "7ebb06022";

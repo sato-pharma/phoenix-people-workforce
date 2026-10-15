@@ -14,6 +14,15 @@
  */
 import ExcelJS from "exceljs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "probe-weekly-xlsx",
+  entry: import.meta.url,
+  known: [],
+});
+
 function cellText(cell: ExcelJS.Cell | undefined): string {
   if (!cell) return "";
   const value = cell.value as unknown;

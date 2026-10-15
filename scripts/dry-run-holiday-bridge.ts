@@ -12,6 +12,15 @@
 import { getHolidayBridgeDaysForMonth } from "../src/lib/deductions/service.ts";
 import { collectHolidayBridgeCandidates } from "../src/lib/deductions/connectors/holiday-bridge.ts";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "dry-run-holiday-bridge",
+  entry: import.meta.url,
+  known: [],
+});
+
 function money(value: number | null | undefined): string {
   if (value == null) return "requires review";
   return new Intl.NumberFormat("en", { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(value);

@@ -9,6 +9,15 @@ import { CvExtractionError, extractCandidateFieldsFromCv } from "@/lib/recruitme
 import { type ExtractedCandidateFields, isEmptyExtractedField } from "@/lib/recruitment/cv-extraction-fields";
 import { cvRereadOpsMarker } from "@/lib/recruitment/ops-marker";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "recruitment-reread-legacy-schema-cvs",
+  entry: import.meta.url,
+  known: ["--dry-run", "--include-titled", "--never-read", "--limit"],
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Re-read the CVs that were read with the OLD, NARROW schema.
 //

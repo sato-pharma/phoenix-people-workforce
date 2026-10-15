@@ -43,6 +43,15 @@ import process from "node:process";
 import { listHeadwindConfigurations } from "@/lib/devices/headwind/configurations";
 import { uploadHeadwindApp } from "@/lib/devices/headwind/uploads";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "headwind-push-apk",
+  entry: import.meta.url,
+  known: ["--apk", "--config", "--actor", "--dry-run"],
+});
+
 const args = process.argv.slice(2);
 const value = (name: string): string | null => {
   const at = args.indexOf(`--${name}`);

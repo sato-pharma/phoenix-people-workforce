@@ -27,6 +27,15 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "select-census",
+  entry: import.meta.url,
+  known: ["--schema", "--column", "--json", "--root", "--include-scripts"],
+});
+
 /* ------------------------------------------------------------------ arguments */
 
 function parseArgs(argv) {

@@ -23,6 +23,15 @@
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "fwc-pull",
+  entry: import.meta.url,
+  known: [],
+});
+
 const month = Number(process.argv[2]);
 const year = Number(process.argv[3]);
 

@@ -43,6 +43,15 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source";
 import { fieldWorkforceDeductionDayWeight } from "@/lib/field-workforce-compliance/weekend-policy";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "build-crm-vacation-target-rows",
+  entry: import.meta.url,
+  known: ["--month", "--year", "--out"],
+});
+
 /**
  * Excluded from every CRM vacation backfill by owner decision, carried over from the 2026-08-03
  * run's input. Kept as a named constant so the exclusion is visible in the output rather than

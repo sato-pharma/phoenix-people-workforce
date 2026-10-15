@@ -23,6 +23,15 @@
 import { createClient } from "@supabase/supabase-js";
 import ExcelJS from "exceljs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "import-pharmacy-code-references",
+  entry: import.meta.url,
+  known: ["--apply"],
+});
+
 const SOURCE_LABEL = "Phoenix_All_Customers_Distributors.xlsx";
 
 /**

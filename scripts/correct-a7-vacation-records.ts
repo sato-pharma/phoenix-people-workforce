@@ -31,6 +31,15 @@ import { systemAccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { updateVacationRequestAsAdmin, vacationErrorMessage } from "@/lib/vacation/service";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "correct-a7-vacation-records",
+  entry: import.meta.url,
+  known: ["--execute"],
+});
+
 const execute = process.argv.includes("--execute");
 const MARKER = "A7_CORRECTION_2026-08-03";
 

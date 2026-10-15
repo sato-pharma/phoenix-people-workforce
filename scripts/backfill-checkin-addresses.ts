@@ -23,6 +23,15 @@ import { hasLocationIqKey, resolveCheckinAddress } from "@/lib/crm/checkin-geoco
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { CRM_CHECKINS_TABLE } from "@/lib/crm/tables";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "backfill-checkin-addresses",
+  entry: import.meta.url,
+  known: [],
+});
+
 const dateFrom = process.argv[2];
 // Africa/Cairo, not UTC. This defaults the INCLUSIVE upper bound of a `check_date` window, and
 // check_date is the agent's phone clock in Cairo time (crm/master.ts). A UTC "today" runs a day

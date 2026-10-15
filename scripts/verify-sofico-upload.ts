@@ -14,6 +14,15 @@ import {
   validateDistributorSalesWorkbookBuffer,
 } from "@/lib/sales/monthly-distributor-import";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "verify-sofico-upload",
+  entry: import.meta.url,
+  known: [],
+});
+
 function loadEnvLocal() {
   const path = resolve(process.cwd(), ".env.local");
   if (!existsSync(path)) return;

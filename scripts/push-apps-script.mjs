@@ -35,6 +35,15 @@ import { pathToFileURL } from "node:url";
 
 import { APPS_SCRIPT_TARGETS, OAUTH_ENV } from "./apps-script-manifest.mjs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "push-apps-script",
+  entry: import.meta.url,
+  known: ["--check", "--only"],
+});
+
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const CONTENT_URL = (scriptId) => `https://script.googleapis.com/v1/projects/${scriptId}/content`;
 

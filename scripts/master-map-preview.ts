@@ -18,6 +18,15 @@ import {
   writeValues,
 } from "@/lib/sales/master-map/sheets-client";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "master-map-preview",
+  entry: import.meta.url,
+  known: ["--all", "--push", "--region"],
+});
+
 const SPREADSHEET_ID =
   process.env.MASTER_MAP_SPREADSHEET_ID ?? "1za3G8C6HCi74qmq4PwP_T7d-rM16UU1XivqEV7A48Hg";
 

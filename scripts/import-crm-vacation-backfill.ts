@@ -44,6 +44,15 @@ import {
   vacationErrorMessage,
 } from "@/lib/vacation/service";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "import-crm-vacation-backfill",
+  entry: import.meta.url,
+  known: ["--execute", "--input", "--limit", "--marker"],
+});
+
 /**
  * Stamped into every created row so the whole batch is identifiable and exactly reversible.
  *

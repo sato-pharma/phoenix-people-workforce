@@ -11,6 +11,15 @@ import {
   cleanupSafetyBanner,
 } from "../src/lib/sales/direct-cleanup-safety.ts";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "source-of-sales-direct-import-cleanup",
+  entry: import.meta.url,
+  known: ["--out", "--backup-dir", "--apply", "--confirm-production-delete", "--help", "-h"],
+});
+
 type Options = Record<string, string | boolean>;
 type SupabaseQueryResult = {
   count?: number | null;

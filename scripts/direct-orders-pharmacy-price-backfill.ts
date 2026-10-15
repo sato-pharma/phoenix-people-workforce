@@ -5,6 +5,15 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { computeDirectOrderSalesValue } from "@/lib/direct-orders/approval-flow";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "direct-orders-pharmacy-price-backfill",
+  entry: import.meta.url,
+  known: ["--apply", "--confirm-restates-achievement", "--project-ref", "--backup-dir", "--help", "-h"],
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Recompute direct-order sales values onto the PHARMACY price.
 //

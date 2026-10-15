@@ -35,6 +35,15 @@
 import { loadMonthlyClosingPartsWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "rep-seat-vacancies",
+  entry: import.meta.url,
+  known: ["--period", "--asOf"],
+});
+
 function flag(name: string, fallback: string): string {
   const hit = process.argv.find((arg) => arg.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : fallback;

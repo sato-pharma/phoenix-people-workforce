@@ -19,6 +19,15 @@ import {
   type SourceOfSalesWarningRow,
 } from "../src/lib/sales/source-of-sales-warning-cleanup.ts";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
+refuseUnknownFlags({
+  name: "source-of-sales-warning-cleanup",
+  entry: import.meta.url,
+  known: ["--out", "--limit", "--corrections", "--backup-dir", "--apply", "--confirm-production-apply", "--help", "-h"],
+});
+
 type Options = Record<string, string | boolean>;
 type PreviewCorrections = Pick<SourceOfSalesReferenceData, "areas" | "regions">;
 
