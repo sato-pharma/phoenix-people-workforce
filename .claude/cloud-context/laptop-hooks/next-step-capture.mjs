@@ -9,7 +9,8 @@
 //      on any failure the previous value simply stays on screen.
 //
 // MODE: `node ~/.claude/hooks/next-step-capture.mjs selftest` runs the decision table against the
-// REAL hook as a child process and prints `0 failed` — 31 cases as of 2026-10-06. Added that day
+// REAL hook as a child process and prints `0 failed` — 40 cases as of 2026-10-15 (clause 7, the
+// turn box, added that day). Added originally on 2026-10-06
 // because this file lives OUTSIDE the repository, so no CI job and no repo test could ever see it
 // weaken: every clause below was added after a measured failure reached his input box, and a
 // regression would simply let that failure through again, silently, on every reply.
@@ -159,12 +160,18 @@ function prune() {
  * the miss was INVISIBLE and nothing corrected it. The owner asked for it back on 2026-09-17:
  * "after each message ... any type any model any effort he show me a suggested next step".
  *
- * A Stop hook answering {decision:"block"} hands `reason` to the model and makes it keep
- * going. That is the one lever that does not care which model is answering.
+ * IT WARNS, IT NEVER BLOCKS (owner, 2026-10-15: "never stop suggestions from appearing in the
+ * text box even if the usuage is 99.99%"). It used to answer {decision:"block"}, which hands
+ * `reason` to the model and makes it keep going. That lever cost the very thing it protected:
+ * a blocked Stop hook makes the desktop app auto-continue, and the app's Agent-SDK suggestion
+ * gate skips any turn whose origin is "auto_continuation" BY NAME - so every block silently
+ * spent the suggestion this hook exists to fill. It blocked twice on 2026-10-15 and he watched
+ * the box come up empty both times. It now emits a `systemMessage`: the model reads the verdict
+ * and the NEXT reply carries the line, while the reply already on screen stands and the turn ENDS
+ * normally - which is the only state in which the app offers a suggestion at all.
  *
- * IT FIRES AT MOST ONCE PER TURN. `stop_hook_active` is true on the continuation this very
- * block caused; blocking again there is an infinite loop, so the second pass only captures and
- * a reply that STILL has no line is left alone rather than spun on.
+ * IT STILL FIRES AT MOST ONCE PER TURN. `stop_hook_active` stays honoured, so a continuation
+ * started for any other reason is not warned at a second time.
  *
  * It FAILS OPEN everywhere else — no transcript, no text, a throw, a tool-only turn: the turn
  * ends. A hook that can strand a reply is worse than a missing line.
@@ -443,6 +450,154 @@ function stripQuoted(text) {
 const DO_NOT_REDO =
   'The task itself is finished: do not redo any work, do not re-run anything, do not re-verify. Replace ONLY the opening line and output nothing else.';
 
+/**
+ * CLAUSE 7 - THE TURN BOX ATE THE GHOST TEXT (measured 2026-10-15, after he reported
+ * "since this update the suggestions are not appearing" across several sessions).
+ *
+ * The desktop app 44.7.0 (app.asar written 2026-10-13 20:46 Cairo; the first session carrying
+ * the turn box started 2026-10-14 19:55) mounts the TURN BOX - the mcp__ccd_turn__update_plan /
+ * wrap_up pair - in every Code session, and in the same breath it switches the suggestion request
+ * OFF for that session:
+ *
+ *     let Ot = n.bu() && i.turnBox === true && re?.turnBox !== false;   // turn box wanted
+ *     ... turnBoxMounted: Rt = await setupMcpAndPlugins(..., { turnBox: Ot, ... })
+ *     let zt = Rt;
+ *     zt && (Q.promptSuggestions = void 0);                            // <- the ghost text dies here
+ *
+ * The CLI then returns on the FIRST line of its own gate (`if (!this.promptSuggestions()) return`),
+ * so none of the nine rungs in [[the-turn-box-took-the-ghost-text]] is ever
+ * reached and no `tengu_prompt_suggestion` event is even emitted. Every switch stays ON and proves
+ * nothing: there is no ghost text to accept with Tab in an app session any more.
+ *
+ * So the ONLY one-action words he has left are the wrap_up REPLY BUTTONS, whose `message` is sent
+ * verbatim as his next message - the click that replaced Tab+Enter. A turn that keeps a task list or
+ * edits a file and then ends without wrap_up draws no box at all, and a wrap_up whose actions do not
+ * carry the line's quoted words leaves him a box he cannot send. Both are the 2026-09-18 rule
+ * ("always put something in the box") failing in the new surface, so both warn here.
+ *
+ * It stays conservative on purpose: no quoted words (clause 1b owns that), no tool use at all, or a
+ * turn that only read things, and this clause says nothing.
+ */
+const BOX_EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+
+/** The tool calls of the CURRENT turn only - back to the last real user message, newest first. */
+function turnToolUses(jsonl) {
+  const lines = jsonl.split('\n');
+  const uses = [];
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const raw = lines[i].trim();
+    if (!raw) continue;
+    let entry;
+    try {
+      entry = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    if (entry.isSidechain) continue;
+    if (entry.type === 'user') {
+      const c = entry.message?.content;
+      // A tool_result wears type "user" too; only a real message closes the turn.
+      if (Array.isArray(c) && c.some((b) => b && b.type === 'tool_result')) continue;
+      break;
+    }
+    if (entry.type !== 'assistant') continue;
+    const blocks = entry.message?.content;
+    if (!Array.isArray(blocks)) continue;
+    for (const b of blocks) {
+      if (b && b.type === 'tool_use') uses.push({ name: String(b.name || ''), input: b.input || {} });
+    }
+  }
+  return uses;
+}
+
+/** Compare a button's words with the line's: case, quotes and punctuation are noise. */
+function sameWords(a) {
+  return String(a || '')
+    .toLowerCase()
+    .replace(/[\u201c\u201d\u2018\u2019"']/g, '')
+    .replace(/[^a-z0-9\u0600-\u06ff ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * 🔴 IS THE TURN BOX EVEN THERE? He put the OLD app build back on 2026-10-15 (package
+ * `Claude_2.31226.1.0_x64`, read off the machine the same evening), and that build mounts no turn
+ * box at all: `mcp__ccd_turn__update_plan` / `wrap_up` are gone from the session, `zt` is false, so
+ * the app never zeroes `promptSuggestions` and THE GHOST TEXT IS BACK. Warning about a missing
+ * wrap_up button there would be the worst outcome this hook has: a warned line is deliberately NOT
+ * captured, so the clause written to fill his box would be the one emptying it, every turn.
+ *
+ * The session's own recorded tool list is the discriminator, and it is exact: a transcript from the
+ * turn-box build carries `"name":"mcp__ccd_turn__update_plan"` and `…__wrap_up` inside its `tools[]`
+ * attachment (measured 2026-10-15: 4 matches in that day's worktree session), and one from this
+ * build carries none (0 matches). It fails SILENT, never loud — no positive sign of the turn box
+ * means no warning, because on this build clause 1b and the ghost text carry the words themselves.
+ */
+const TURN_BOX_TOOL = /"name":"mcp__ccd_turn__/;
+
+function boxViolation(step, jsonl) {
+  const quoted = quotedWords(step);
+  if (!quoted) return '';
+  if (!TURN_BOX_TOOL.test(jsonl)) return '';
+  let uses;
+  try {
+    uses = turnToolUses(jsonl);
+  } catch {
+    return '';
+  }
+  if (!uses.length) return '';
+
+  const wrapUps = uses.filter((u) => u.name.endsWith('__wrap_up'));
+  const planned = uses.some((u) => u.name.endsWith('__update_plan'));
+  const edited = uses.some((u) => BOX_EDIT_TOOLS.has(u.name));
+
+  const WHY =
+    'Since the 2026-10-13 desktop update there is NO ghost text in his input box: when the app mounts the turn box it stops asking for a prompt suggestion for that session (zt && (Q.promptSuggestions = void 0)), whatever the five switches say. The only words he can still send with one action are the wrap_up REPLY BUTTONS - a button\'s `message` is sent verbatim, which is the click that replaced Tab+Enter.';
+
+  if (!wrapUps.length) {
+    if (!planned && !edited) return '';
+    return [
+      'Your opening line ends in words he cannot send: this turn ' +
+        (edited ? 'changed files' : 'kept a task list') +
+        ' and then ended without mcp__ccd_turn__wrap_up, so the app drew no box and his input box is empty.',
+      '',
+      WHY,
+      '',
+      'Call mcp__ccd_turn__wrap_up now - recap (2-3 sentences, what is true and what is not verified), ask (the one decision, under 100 chars), and actions[0] = { label: <1-3 words>, message: ' +
+        JSON.stringify(quoted) +
+        ' } - the quoted words VERBATIM.',
+      '',
+      DO_NOT_REDO,
+    ].join('\n');
+  }
+
+  const last = wrapUps[0].input || {};
+  const actions = Array.isArray(last.actions) ? last.actions : [];
+  const want = sameWords(quoted);
+  const carried = actions.some((a) => {
+    const t = sameWords(a?.message || a?.label || '');
+    if (!t || !want) return false;
+    return t === want || t.includes(want) || (want.includes(t) && t.length >= 10);
+  });
+  if (carried) return '';
+
+  return [
+    'Your wrap_up carries no reply button with the line\'s quoted words, so his input box has nothing in it: ' +
+      (actions.length === 0
+        ? 'you sent a recap with no actions at all, and the app then draws no box.'
+        : 'none of its ' + actions.length + ' action(s) sends those words.'),
+    '',
+    WHY,
+    '',
+    'Call mcp__ccd_turn__wrap_up again with the same recap and actions[0] = { label: <1-3 words>, message: ' +
+      JSON.stringify(quoted) +
+      ' } - the quoted words VERBATIM, his pick first.',
+    '',
+    DO_NOT_REDO,
+  ].join('\n');
+}
+
 function contentViolation(step, text) {
   const quoted = quotedWords(step);
   // Read what the reply SAID, never what it quoted (stripQuoted). The number matters as much
@@ -610,7 +765,16 @@ if (process.argv[2] === 'selftest') {
     const captured = fs.existsSync(capFile) ? fs.readFileSync(capFile, 'utf8') : null;
     if (!out.trim()) return { blocked: false, reason: '', captured };
     const parsed = JSON.parse(out);
-    return { blocked: parsed.decision === 'block', reason: String(parsed.reason || ''), captured };
+    // `blocked` here means "the hook objected", which since 2026-10-15 it does by WARNING
+    // (nextStepVerdict: 'warn') rather than {decision:"block"}. Every case below asserts on the
+    // VERDICT, not on its force, so the table is unchanged.
+    return {
+      blocked: parsed.nextStepVerdict === 'warn' || parsed.decision === 'block',
+      reason: String(parsed.reason || ''),
+      captured,
+      decision: parsed.decision,
+      systemMessage: parsed.systemMessage,
+    };
   };
 
   const check = (label, ok, detail) => {
@@ -702,6 +866,22 @@ if (process.argv[2] === 'selftest') {
     'captured ' + JSON.stringify(capLink.captured),
   );
 
+  // THE 2026-10-15 CHANGE, pinned both ways. A wrong line must still be answered — and it must
+  // NEVER be answered with {decision:"block"}, because a block makes the app auto-continue and the
+  // suggestion gate skips an "auto_continuation" turn by name. Restoring the block to "make it
+  // stick" is precisely what these two catch.
+  const warned = decide('**Next step:** ready — “merge <PR> when green”', { sessionId: 'warned' });
+  check(
+    'a wrong line is answered by a WARNING, never a block',
+    warned.blocked && warned.decision === undefined && !!warned.systemMessage,
+    'decision ' + JSON.stringify(warned.decision) + ', systemMessage ' + JSON.stringify(!!warned.systemMessage),
+  );
+  check(
+    'a warned line is NOT captured, so a placeholder never becomes his ghost text',
+    warned.captured === null,
+    'captured ' + JSON.stringify(warned.captured),
+  );
+
   // stop_hook_active is the infinite-loop guard: the continuation pass must never block again,
   // however wrong the reply still is.
   const cont = decide('no line here at all', { sessionId: 'cont', stopHookActive: true });
@@ -733,6 +913,116 @@ if (process.argv[2] === 'selftest') {
     'it blocked although the last main-assistant reply carried the line',
   );
 
+  // CLAUSE 7 - the turn box. A reply whose quoted words never reach a wrap_up button leaves his
+  // input box empty, which since the 2026-10-13 app update is the ONLY surface those words have.
+  const asst = (blocks) => ({ type: 'assistant', message: { content: blocks } });
+  const userMsg = { type: 'user', message: { content: 'do the thing' } };
+  const planUse = { type: 'tool_use', name: 'mcp__ccd_turn__update_plan', input: { items: [] } };
+  const editUse = { type: 'tool_use', name: 'Write', input: { file_path: 'x' } };
+  const wrapUse = (actions) => ({
+    type: 'tool_use',
+    name: 'mcp__ccd_turn__wrap_up',
+    input: { recap: 'it is pushed', ...(actions ? { ask: 'merge it?', actions } : {}) },
+  });
+
+  const noBox = decide('', {
+    sessionId: 'nobox',
+    entries: [userMsg, asst([planUse]), asst([{ type: 'text', text: GOOD }])],
+  });
+  check(
+    'a task-list turn that never called wrap_up is warned',
+    noBox.blocked && noBox.reason.includes('without mcp__ccd_turn__wrap_up'),
+    'reason: ' + noBox.reason.slice(0, 160),
+  );
+  check(
+    'a box miss still captures the line, because the line itself is good',
+    noBox.captured !== null && noBox.captured.includes('merge 5371 when green'),
+    'captured ' + JSON.stringify(noBox.captured),
+  );
+
+  const recapOnly = decide('', {
+    sessionId: 'recaponly',
+    entries: [userMsg, asst([editUse, wrapUse(null)]), asst([{ type: 'text', text: GOOD }])],
+  });
+  check(
+    'a recap with no actions is warned',
+    recapOnly.blocked && recapOnly.reason.includes('no actions at all'),
+    'reason: ' + recapOnly.reason.slice(0, 160),
+  );
+
+  const wrongWords = decide('', {
+    sessionId: 'wrongwords',
+    entries: [
+      userMsg,
+      asst([editUse, wrapUse([{ label: 'Not now', message: 'park it for tomorrow' }])]),
+      asst([{ type: 'text', text: GOOD }]),
+    ],
+  });
+  check(
+    'a button that sends other words is warned',
+    wrongWords.blocked && wrongWords.reason.includes('none of its 1 action'),
+    'reason: ' + wrongWords.reason.slice(0, 160),
+  );
+
+  const carried = decide('', {
+    sessionId: 'carried',
+    entries: [
+      userMsg,
+      asst([editUse, wrapUse([{ label: 'Merge it', message: 'merge 5371 when green' }, { action: 'commit' }])]),
+      asst([{ type: 'text', text: GOOD }]),
+    ],
+  });
+  check(
+    'a button carrying the quoted words verbatim is left alone',
+    !carried.blocked,
+    'it warned although the words reached a button: ' + carried.reason.slice(0, 160),
+  );
+
+  const readOnly = decide('', {
+    sessionId: 'readonly',
+    entries: [userMsg, asst([{ type: 'tool_use', name: 'Bash', input: {} }]), asst([{ type: 'text', text: GOOD }])],
+  });
+  check(
+    'a read-only turn is never asked for a box',
+    !readOnly.blocked,
+    'it warned a turn that only looked at things: ' + readOnly.reason.slice(0, 160),
+  );
+
+  const priorTurn = decide('', {
+    sessionId: 'priorturn',
+    entries: [
+      userMsg,
+      asst([editUse, wrapUse([{ label: 'Merge it', message: 'merge 5371 when green' }])]),
+      asst([{ type: 'text', text: GOOD }]),
+      { type: 'user', message: { content: 'and now this' } },
+      asst([{ type: 'text', text: GOOD }]),
+    ],
+  });
+  check(
+    'a wrap_up from the PREVIOUS turn does not count for this one',
+    !priorTurn.blocked,
+    'it read across the turn boundary: ' + priorTurn.reason.slice(0, 160),
+  );
+
+  // 🔴 AND ON THE OLD APP BUILD THERE IS NO TURN BOX TO ASK FOR. He put `Claude_2.31226.1.0_x64`
+  // back on 2026-10-15; it mounts no `mcp__ccd_turn__*` pair, so the ghost text is back and this
+  // clause must say NOTHING. A warning is deliberately not captured, so warning here would empty
+  // the very box the clause exists to fill - on every turn that edits a file.
+  const noTurnBox = decide('', {
+    sessionId: 'noturnbox',
+    entries: [userMsg, asst([editUse]), asst([{ type: 'text', text: GOOD }])],
+  });
+  check(
+    'a session whose app mounts no turn box is never asked for a box',
+    !noTurnBox.blocked,
+    'it warned a session that has no wrap_up tool at all: ' + noTurnBox.reason.slice(0, 160),
+  );
+  check(
+    'and its line is still captured, so the ghost text has the words',
+    noTurnBox.captured !== null && noTurnBox.captured.includes('merge 5371 when green'),
+    'captured ' + JSON.stringify(noTurnBox.captured),
+  );
+
   // The owner's live capture directory must be untouched by a selftest run.
   const LIVE_DIR = path.join(process.env.USERPROFILE || os.homedir(), '.claude', '.next-step');
   check(
@@ -749,13 +1039,13 @@ if (process.argv[2] === 'selftest') {
   process.exit(failed ? 1 : 0);
 }
 
-let blocked = false;
 try {
   const input = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^﻿/, ''));
   const sessionId = input?.session_id;
   const transcript = input?.transcript_path;
   if (sessionId && transcript && fs.existsSync(transcript)) {
-    const text = lastAssistantText(tail(transcript));
+    const jsonl = tail(transcript);
+    const text = lastAssistantText(jsonl);
     const step = extractNextStep(text);
 
     // Only a reply that actually SAID something can be missing its line - and only a line
@@ -765,6 +1055,9 @@ try {
     // "Next step:" line is both a rule violation on its own (one line, never repeated) and the
     // hole a placeholder slipped through on 2026-09-29.
     let reason;
+    // A box miss is the one verdict where the LINE is fine - only the surface it has to reach is
+    // missing - so it still captures (see the write below).
+    let boxMiss = false;
     if (!step) {
       reason = NUDGE;
     } else if (countNextSteps(text) > 1) {
@@ -775,17 +1068,34 @@ try {
       ].join('\n');
     } else {
       reason = contentViolation(step, text);
+      if (!reason) {
+        const miss = boxViolation(step, jsonl);
+        if (miss) {
+          reason = miss;
+          boxMiss = true;
+        }
+      }
     }
+    // WARN, NEVER BLOCK - see the head of this file. `systemMessage` reaches the model without
+    // forcing a continuation, so the suggestion on the reply already shown survives.
+    // `nextStepVerdict` is inert to Claude Code (an unknown key is ignored) and is the field
+    // the selftest reads to tell a warned verdict from a clean one.
+    let warned = false;
     if (reason && text && input?.stop_hook_active !== true) {
-      process.stdout.write(JSON.stringify({ decision: 'block', reason }));
-      blocked = true;
+      process.stdout.write(JSON.stringify({ nextStepVerdict: 'warn', reason, systemMessage: reason }));
+      warned = true;
     }
 
-    // Skipped while blocking: the continuation runs this hook again a moment later and
-    // writes the real value, so there is no point flickering the bar to empty in between.
-    if (!blocked) {
-      // An empty file is meaningful and different from a missing one: it means the reply
-      // carried no next step even after the nudge, and the bar prints nothing.
+    // A WARNED line is NEVER captured, and that is deliberate - it is the box's last guard, not a
+    // leftover of the blocking era. Every content check exists to keep one specific string out of
+    // his input box: a placeholder he would send unfilled (he did, 2026-09-17), a money move, a
+    // bare "merge it" that reaches the wrong session, a closing word, a re-check. Writing the bad
+    // line anyway would hand him exactly that as ghost text. So the file is left untouched and the
+    // bar keeps its last GOOD line, which is never one of those strings.
+    //
+    // An empty file is meaningful and different from a missing one: it means the reply carried no
+    // next step, and the bar prints nothing.
+    if (!warned || boxMiss) {
       fs.mkdirSync(DIR, { recursive: true });
       fs.writeFileSync(path.join(DIR, `${sessionId}.txt`), step, 'utf8');
       try {
