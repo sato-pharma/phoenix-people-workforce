@@ -1407,6 +1407,7 @@ import { runClientBundleServerLeakTests } from "./client-bundle-server-leak.test
 import { runRscClientFunctionPropTests } from "./rsc-client-function-props.test.ts";
 import { runDirectOrdersInvoiceScanTests } from "./direct-orders-invoice-scan.test.ts";
 import { runDirectOrdersArabicSearchTests } from "./direct-orders-arabic-search.test.ts";
+import { runDirectOrderSearchShortProbeFastPathTests } from "./direct-order-search-short-probe-fast-path.test.ts";
 import { runCrmBrickCentroidsCacheTests } from "./crm-brick-centroids-cache.test.ts";
 import { runOrgTreeCacheInvalidationTests } from "./org-tree-cache-invalidation.test.ts";
 import { runSosReferenceReadLoadTests } from "./sos-reference-read-load.test.ts";
@@ -5453,6 +5454,12 @@ await runTest("RSC boundary (no server component hands a function prop to a clie
 await runTest("client bundle boundary (no \"use client\" module reaches node:crypto or the service-role client — the leak that made the Direct Orders new-request page 500 the whole dev server)", runClientBundleServerLeakTests);
 await runTest("direct orders invoice scan (a dim page gains real contrast, a failed prepare returns the original, EXIF rotation is applied, no binarisation, the reader is sent the PREPARED image)", runDirectOrdersInvoiceScanTests);
 await runTest("direct orders Arabic search (every fold survives, the strip class never swallows a letter, an unnamed customer is ranked down not hidden, both birth paths are searched)", runDirectOrdersArabicSearchTests);
+await runTest(
+  "direct orders customer search answers a one- or two-character probe from the short-key index: the probe length, its alphabet and the "
+  + "keys it looks up agree with the key function, the trigram arm, the Phoenix arm and the ranking are the original, and the cheaper "
+  + "normalizer keeps its fold pairs and its removal class",
+  runDirectOrderSearchShortProbeFastPathTests,
+);
 await runTest("CRM brick-centroids cache (shared Data Cache not a per-segment module var, 300s TTL unchanged, sos-reference tag, DB read byte-identical, catch OUTSIDE the cache so a transient error is never cached as [], concurrent callers share ONE lookup)", runCrmBrickCentroidsCacheTests);
 await runTest("org tree cache invalidation (a hire, seat transfer, resignation or decline busts the shared sos-reference tag instead of only self-healing after its 300s TTL; seat-transfer's own RPC call now invalidates too)", runOrgTreeCacheInvalidationTests);
 await runTest("SoS reference read load (a burst of concurrent centroid lookups runs ONE load and every caller gets that value, the slot clears on settle and on failure, the Master Map exact count asks for a one-row page)", runSosReferenceReadLoadTests);
