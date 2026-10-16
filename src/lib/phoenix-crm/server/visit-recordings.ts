@@ -216,7 +216,9 @@ export function hearsVisitRecording(viewer: PhoenixCrmViewer, seat: OrgSeat): bo
 export async function loadRecordingsByVisit(
   visitIds: ReadonlyArray<string>,
 ): Promise<Map<string, { seconds: number | null; reviewStatus: RecordingReviewStatus }>> {
-  const rows = await selectByIds<Row>("phoenix_crm_visit_recordings", "path, visit_id, seconds, deleted_at, review_status", "visit_id", visitIds);
+  // The table has no `id` (its key is `path`), so the pager seeks on `path` — on `id` it 42703s and the
+  // visits of any day that holds a visit fail to load.
+  const rows = await selectByIds<Row>("phoenix_crm_visit_recordings", "path, visit_id, seconds, deleted_at, review_status", "visit_id", visitIds, undefined, "path");
   const out = new Map<string, { seconds: number | null; reviewStatus: RecordingReviewStatus }>();
   for (const row of rows) {
     const visitId = textOrNull(row.visit_id);
