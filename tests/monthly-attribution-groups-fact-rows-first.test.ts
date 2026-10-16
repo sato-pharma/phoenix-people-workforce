@@ -91,7 +91,11 @@ export function groupedFirstViolations(body: string): string[] {
     ["max(", /\bmax\s*\(/],
     ["an _agg( aggregate", /\w+_agg\s*\(/],
     ["bool_and( / bool_or(", /\bbool_(?:and|or)\s*\(/],
+    ["every(", /\bevery\s*\(/],
+    ["a statistical aggregate", /\b(?:stddev\w*|var_\w+|variance|mode|percentile_\w+)\s*\(/],
+    ["an aggregate over distinct values", /\(\s*distinct\b/],
     ["select distinct", /\bselect\s+distinct\b/],
+    ["a row-position window function", /\b(?:row_number|rank|dense_rank|percent_rank|cume_dist|ntile|lag|lead|first_value|last_value|nth_value)\s*\(/],
   ] as const) {
     if (pattern.test(lower)) violations.push(`${label} over grouped rows would count groups, not sales — every use must be a sum`);
   }
@@ -113,6 +117,10 @@ export function runMonthlyAttributionGroupsFactRowsFirstTests() {
   for (const needed of ["au.f_seat_occupant_asof", "au.f_line_area_map_asof", "au.monthly_store_split_net", "au.direct_region_allocation", "source_of_sales_product_price_history"]) {
     assert.ok(live.includes(needed), `the function must still read ${needed}`);
   }
+  // The month's price is the newest history row at or before the month — the as-of rule the
+  // regroup must not disturb.
+  assert.match(live, /h\.effective_period <= p_period/, "the price lookup must stay as-of the month (effective_period <= p_period)");
+  assert.match(live, /order by h\.effective_period desc limit 1/, "the price lookup must take the newest price at or before the month");
   assert.match(live, /\bsecurity definer\b/, "SECURITY DEFINER must be re-declared by CREATE OR REPLACE");
   assert.match(live, /set search_path to 'au', 'public'/, "search_path must be re-declared verbatim");
 
@@ -127,6 +135,12 @@ export function runMonthlyAttributionGroupsFactRowsFirstTests() {
   assert.ok(
     groupedFirstViolations(counted).some((v) => v.startsWith("count(")),
     "a count over grouped rows must be refused — it would count ~1,080 groups where it used to count ~32,000 rows",
+  );
+  const summedDistinct = live.replace("sum(pr.total_qty) as q", "sum(distinct pr.total_qty) as q");
+  assert.notEqual(summedDistinct, live, "fixture precondition: the ind_base sums are where the mutation lands");
+  assert.ok(
+    groupedFirstViolations(summedDistinct).some((v) => v.startsWith("an aggregate over distinct values")),
+    "a sum over distinct values must be refused — grouped rows collapse different duplicates than raw rows",
   );
   const cleanedPerRow = live.replace(
     "group by f.official_line, f.region_code, f.area_code, f.product_code, f.is_direct",

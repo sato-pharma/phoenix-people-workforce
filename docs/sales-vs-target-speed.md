@@ -33,9 +33,13 @@ On 16 October all three published months were on that path:
 Those are exactly the months Sales vs Target, Targets and the Business Review show, so almost every
 read of those pages paid the live path three times.
 
-This is not a defect in the freeze. The live path returns today's computation for a published month,
-and that is what these pages show today. The fix below keeps it that way and only makes the live path
-faster.
+This behaviour existed before this change, and this change does not touch it. Serving a published
+month from its frozen totals instead would be the owner's decision, not a speed fix. The fix below
+only makes the live path faster.
+
+Measured after the apply, on 16 Oct 2026 at 19:2x Cairo, the live recompute and the frozen rollup were
+**identical** for all three months on every line: 0 rows differed. For example, September CNS was
+11,885,444.55 both ways. So today the live path recomputes figures that are already stored.
 
 ## Where the time went
 
@@ -95,9 +99,43 @@ What remains in the ~110 ms is mostly the exact-decimal summing of the ~32,000 r
 the fixed seat and price lookups. Going lower means a stored, maintained copy of the published months'
 live result, which is a change in how freshness works, not a speed-only rewrite.
 
+## Two edges left on purpose
+
+- **A month over 1,000 rows pays twice.** PostgREST caps a response at 1,000 rows, so `rpcAll`
+  (`src/lib/supabase/server.ts`) fetches the remainder with a second call, and that call runs the
+  function again. September 2026 returns 978 rows. If a month crosses 1,000, its read time doubles.
+- **The freshness stamp costs about 35 ms a page.** `phx_sales_vs_target_cache_token` ran 2,422 times
+  at a 53 ms mean (35 ms warm). Of that, 16 ms is hashing the 4,615 `au.monthly_targets` rows and
+  9 ms is the configuration fingerprint. Making it near-free means trigger-kept version counters on
+  eight tables. That changes how freshness is tracked, so it is not a speed-only rewrite and was left
+  out.
+
 ## Applied
 
 - Staging (`cifwmndunmlxjhyjugxa`): 16 Oct 2026, ledger version `20261016161005`. Staging's previous
   body was `20260929191509` with its comments intact (md5 `bfb3e89b…`); production's was the same file
   with comments stripped (md5 `8eec7403…`).
-- Production: see the PR.
+- Production (`ozucdzovmcqvepbozvqf`): applied on 16 Oct 2026 at 19:21 Cairo, ledger version
+  `20261016162121`.
+  - `md5(prosrc)` is `b69a9e6269cdbd91d43e6d342562dab8`, the file's body as-is (LF).
+  - The ACL is unchanged: `postgres` and `service_role` only.
+  - The whole output was fingerprinted immediately before and after the apply, and both fingerprints
+    are identical:
+
+    | Output | Rows | md5 |
+    |---|---|---|
+    | `phx_sales_vs_target_range('2026-01','2026-11')` | 9,000 | `5ec33c5254f831dae091746de305d83e` |
+    | `au.f_monthly_attribution`, 2026-01 to 2026-11 | 8,029 | `e2bc486a521651a801c28c410ee3e1b8` |
+
+## The page's own call, before and after (production)
+
+| Call | Before (warm) | After (median of 7) |
+|---|---|---|
+| `phx_sales_vs_target_range('2026-07','2026-07')` | 390 ms | 147 ms |
+| `phx_sales_vs_target_range('2026-08','2026-08')` | 396 ms | 145 ms |
+| `phx_sales_vs_target_range('2026-09','2026-09')` | 409 ms | 167 ms |
+| `phx_sales_vs_target_range('2026-10','2026-10')` | 30 ms | 27 ms |
+| `phx_sales_vs_target_range('2026-07','2026-10')` | 1,287–1,345 ms | 481 ms |
+
+The app asks for one month per call (`src/lib/sales/vs-target.ts`), so a page showing July to October
+pays the sum of the single months: about 1.2 s before and about 0.49 s after.
