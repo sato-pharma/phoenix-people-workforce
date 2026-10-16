@@ -178,6 +178,9 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: siteContentSecurityPolicy,
   },
+  // The browser profiler only runs on a document served with this policy. Sent only by a build that carries a
+  // Sentry DSN, so staging, previews and local runs keep the headers they have today.
+  ...(sentryIngestOrigin ? [{ key: "Document-Policy", value: "js-profiling" }] : []),
   {
     key: "Referrer-Policy",
     value: "strict-origin-when-cross-origin",
@@ -620,4 +623,36 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Source maps and releases: the Sentry build plugin runs ONLY when this build carries an auth token, so every
+// build without one (local, preview, CI, staging) exports the plain config exactly as before. The token is a
+// build-time secret and is never printed; the maps are deleted after upload so none is served to a browser.
+// The four auto-instrument switches stay off — they would wrap every route handler and middleware, and the
+// app already reports through its own paths. No tunnelRoute: the browser reports straight to the ingest host
+// the CSP allows.
+function withOptionalSentry(config: NextConfig): NextConfig {
+  const authToken = String(process.env.SENTRY_AUTH_TOKEN ?? "").trim();
+  if (!authToken) return config;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- loaded only on a build that has a token
+  const { withSentryConfig } = require("@sentry/nextjs") as {
+    withSentryConfig: (config: NextConfig, options: Record<string, unknown>) => NextConfig;
+  };
+  const release = String(process.env.COMMIT_SHA ?? process.env.RAILWAY_GIT_COMMIT_SHA ?? "").trim();
+  return withSentryConfig(config, {
+    // The account's organisation, project and EU host are not secrets, so they are written here, not synced.
+    org: "phoenix-crm",
+    project: "phoenix-workforce",
+    sentryUrl: "https://de.sentry.io",
+    authToken,
+    silent: true,
+    telemetry: false,
+    widenClientFileUpload: true,
+    sourcemaps: { deleteSourcemapsAfterUpload: true },
+    ...(release ? { release: { name: release } } : {}),
+    autoInstrumentServerFunctions: false,
+    autoInstrumentMiddleware: false,
+    autoInstrumentAppDirectory: false,
+    automaticVercelMonitors: false,
+  });
+}
+
+export default withOptionalSentry(nextConfig);
