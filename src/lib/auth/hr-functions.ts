@@ -746,6 +746,10 @@ const HR_SEAT_SELF_SERVICE: Partial<Record<PermissionResource, PermissionAction[
   // which only HR Operations holds.
   leave: ["read", "create"],
   employee_profile: ["read", "update"],
+  // Her own incentive page. permissions.ts derives incentive:read for every role holding
+  // employee_profile:read; naming it here keeps it traceable to this floor, which the HR function
+  // governance test requires of every grant on an HR seat.
+  incentive: READ_ONLY,
   attendance: READ_ONLY,
   overview: READ_ONLY,
   report_it: ["read", "create"],

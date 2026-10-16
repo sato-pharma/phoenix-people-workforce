@@ -87,7 +87,7 @@ export const personalWorkspaceTabs: readonly PersonalWorkspaceTab[] = [
   { group: "me", href: "/workspace/private-calendar", label: "My Calendar", resource: "employee_profile" },
 
   { group: "pay", href: "/workspace/payslips", label: "Payslips", resource: "payslips" },
-  { group: "pay", href: "/workspace/incentive", label: "Incentive", resource: "employee_profile" },
+  { group: "pay", href: "/workspace/incentive", label: "Incentive", resource: "incentive" },
   { group: "pay", href: "/workspace/deductions", label: "Deductions", resource: "employee_profile" },
 
   {

@@ -30,7 +30,7 @@ export default async function EmployeePortalIncentivePageRoute() {
     redirect("/employee-portals");
   }
 
-  await assertPermission(access, "employee_profile", "read");
+  await assertPermission(access, "incentive", "read");
 
   let data = null;
   try {

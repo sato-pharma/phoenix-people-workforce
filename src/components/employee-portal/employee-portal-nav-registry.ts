@@ -105,7 +105,7 @@ export type PortalNavEntry = {
  */
 export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // My Workspace
-  { label: "Incentive", fullLabel: "Incentive", href: "/employee-portals/incentive", icon: Gift, flags: ["showIncentiveTab"], permission: { resource: "employee_profile", action: "read" } },
+  { label: "Incentive", fullLabel: "Incentive", href: "/employee-portals/incentive", icon: Gift, flags: ["showIncentiveTab"], permission: { resource: "incentive", action: "read" } },
   { label: "Plans", fullLabel: "Weekly / Monthly Plan", href: "/employee-portals/plans", icon: CalendarDays, flags: ["showPlansTab"] },
   { label: "Planning", fullLabel: "Planning Calendar", href: "/employee-portals/plans/calendar", icon: CalendarClock, flags: ["showPlanningCalendarTab"], permission: { resource: "weekly_plans", action: "read" } },
   { label: "Vac Appr", fullLabel: "Leave Approvals", href: "/employee-portals/approvals/vacation", icon: CalendarDays, flags: ["showVacationApprovalsTab"], navBadge: "vacation-approvals-pending" },
