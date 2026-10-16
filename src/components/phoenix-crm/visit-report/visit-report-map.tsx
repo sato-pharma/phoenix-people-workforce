@@ -319,7 +319,7 @@ export function VisitReportMap({
           <ul className="mb-2 flex flex-wrap gap-x-5 gap-y-1.5 text-xs font-semibold text-slate-600">
             <li className="flex items-center gap-1.5">
               <span aria-hidden className="inline-block h-3 w-3 border border-white bg-orange-600 shadow-[0_0_0_1px_#ea580c]" />
-              Visit, numbered in its person's save order
+              {"Visit, numbered in its person's save order"}
             </li>
             <li className="flex items-center gap-1.5">
               <span aria-hidden className="inline-block h-3 w-3 border-2 border-[#0A527D] bg-white" />
