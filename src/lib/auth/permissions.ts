@@ -130,6 +130,13 @@ export type PermissionResource =
   // `employee_profile:export`, which is a broad record-export right the rep does not hold and must
   // not gain in order to save a picture of himself.
   | "performance_card_self"
+  // Incentive (self): a person reading their OWN incentive progress and earnings — the portal's
+  // /employee-portals/incentive and the admin shell's /workspace/incentive. Its own resource so the
+  // module can be LOCKED (owner, 2026-10-16): the page used to gate on `employee_profile`, the
+  // portal's entry gate, which can never be locked. The grant is DERIVED, not typed per role — every
+  // role that holds `employee_profile:read` holds this (see the loop above `permissionMatrix`),
+  // which is exactly who could open the page before, so no one gains or loses the tab.
+  | "incentive"
   // Milestones: the service-anniversary and birthday keepsake. SUPER ADMIN ONLY — it is NOT the
   // same shape as spotlight above, and this is the one place that says so. It was Super Admin and
   // CEO until the owner narrowed it himself on 2026-09-23, in these words: "not approved. Make it
@@ -286,6 +293,7 @@ export const permissionResources: PermissionResource[] = [
   "spotlight",
   "spotlight_self",
   "performance_card_self",
+  "incentive",
   "milestones",
   "customer_identity",
   "overview",
@@ -1737,6 +1745,15 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
 };
+
+// Incentive (self) is derived rather than typed into every role block: the page it guards used to
+// ask for `employee_profile:read`, so the same roles hold `incentive:read` now. Written as a loop so
+// a role added tomorrow inherits the grant the day it gets its profile, with nothing to remember.
+for (const role of phoenixRoles) {
+  if (defaultPermissionMatrix[role].employee_profile?.includes("read")) {
+    defaultPermissionMatrix[role].incentive = ["read"];
+  }
+}
 
 export const permissionMatrix: PermissionMap = applyHardPermissionBoundaries(structuredClone(defaultPermissionMatrix));
 
