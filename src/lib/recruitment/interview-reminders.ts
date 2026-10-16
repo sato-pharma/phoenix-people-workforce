@@ -22,6 +22,7 @@
 import { createHash } from "node:crypto";
 
 import { createSystemNotification } from "@/lib/notifications/system";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { listInterviewsToRemindAbout, type ReminderInterview } from "@/lib/recruitment/interview-calendar";
 import { interviewCalendarHref, isDistrictManagerOrAbove } from "@/lib/recruitment/interview-calendar-types";
 import {
@@ -204,8 +205,12 @@ export type InterviewReminderSend = (reminder: InterviewReminder) => Promise<boo
  * responds, so it stays in-app + Telegram only — a daily e-mail for up to a month would be a nuisance,
  * and the pump is the one the owner described as "in-app and Telegram" (2026-09-23).
  */
+export function reminderChannels(reminder: Pick<InterviewReminder, "kind">): Array<"in_app" | "email" | "telegram"> {
+  return reminder.kind === "awaiting" ? ["in_app", "telegram"] : ["in_app", "email", "telegram"];
+}
+
 export const sendInterviewReminder: InterviewReminderSend = async (reminder) => {
-  const channels: Array<"in_app" | "email" | "telegram"> = reminder.kind === "awaiting" ? ["in_app", "telegram"] : ["in_app", "email", "telegram"];
+  const channels = reminderChannels(reminder);
   const result = await createSystemNotification({
     actionUrl: reminder.href,
     channels,
@@ -236,12 +241,92 @@ export const sendInterviewReminder: InterviewReminderSend = async (reminder) => 
   return result.deliveries.some((delivery) => delivery.status === "sent" || delivery.status === "pending" || delivery.status === "retrying");
 };
 
-export type InterviewReminderRun = { considered: number; planned: number; delivered: number; failed: number };
+/**
+ * Which planned reminders have NOTHING left to do. A reminder's key is the event key of its notice,
+ * and a delivery row for a channel means that channel was already claimed — sent, skipped, or handed
+ * to a retry worker — which is exactly the case where `createSystemNotification` would claim nothing
+ * and send nothing. So a reminder whose event already holds a delivery row for EVERY channel it asks
+ * for is settled; one with a channel still missing (a run that died half-way) is not, and goes through
+ * the normal path so that channel is still delivered. Pure: the two reads are handed in.
+ */
+export function settledReminderKeys(
+  reminders: readonly Pick<InterviewReminder, "kind" | "key">[],
+  events: ReadonlyArray<{ id: string; event_key: string }>,
+  deliveries: ReadonlyArray<{ notification_event_id: string; channel: string }>,
+): Set<string> {
+  const channelsByEvent = new Map<string, Set<string>>();
+  for (const delivery of deliveries) {
+    const id = String(delivery.notification_event_id);
+    const seen = channelsByEvent.get(id) ?? new Set<string>();
+    seen.add(delivery.channel);
+    channelsByEvent.set(id, seen);
+  }
+  const eventIdByKey = new Map(events.map((event) => [event.event_key, String(event.id)]));
+  const settled = new Set<string>();
+  for (const reminder of reminders) {
+    const id = eventIdByKey.get(reminder.key);
+    const seen = id ? channelsByEvent.get(id) : undefined;
+    if (seen && reminderChannels(reminder).every((channel) => seen.has(channel))) settled.add(reminder.key);
+  }
+  return settled;
+}
+
+const SETTLED_READ_CHUNK = 40;
+
+/**
+ * Reads, in a few parallel round trips, what `settledReminderKeys` needs. Fails OPEN: any error
+ * answers "nothing is settled", so every reminder takes the full, idempotent path as before.
+ */
+export async function loadSettledReminderKeys(reminders: readonly InterviewReminder[]): Promise<Set<string>> {
+  if (reminders.length === 0) return new Set();
+  try {
+    const db = getSupabaseAdmin();
+    const keys = Array.from(new Set(reminders.map((reminder) => reminder.key)));
+    const eventChunks = await Promise.all(
+      chunk(keys, SETTLED_READ_CHUNK).map(async (slice) => {
+        const { data, error } = await db.from("notification_events").select("id,event_key").in("event_key", slice);
+        if (error) throw error;
+        return (data ?? []) as Array<{ id: string; event_key: string }>;
+      }),
+    );
+    const events = eventChunks.flat();
+    const deliveryChunks = await Promise.all(
+      chunk(
+        events.map((event) => String(event.id)),
+        SETTLED_READ_CHUNK,
+      ).map(async (slice) => {
+        const { data, error } = await db.from("notification_deliveries").select("notification_event_id,channel").in("notification_event_id", slice);
+        if (error) throw error;
+        return (data ?? []) as Array<{ notification_event_id: string; channel: string }>;
+      }),
+    );
+    return settledReminderKeys(reminders, events, deliveryChunks.flat());
+  } catch {
+    return new Set();
+  }
+}
+
+function chunk<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let index = 0; index < items.length; index += size) out.push(items.slice(index, index + size));
+  return out;
+}
+
+/** How many reminders are sent at once. Each send is ~10 database round trips, so a sequential run of a
+ * few dozen new ones outlives the scheduler's 30-second cut; four at a time stays well inside the
+ * mail provider's and Telegram's limits. */
+export const REMINDER_SEND_CONCURRENCY = 4;
+
+export type InterviewReminderRun = { considered: number; planned: number; settled: number; delivered: number; failed: number };
 
 export async function runInterviewReminders(
   now: Date = new Date(),
   send: InterviewReminderSend = sendInterviewReminder,
   load: (from: Date, to: Date) => Promise<ReminderInterview[]> = listInterviewsToRemindAbout,
+  // Only the real sender has delivery rows to look at; an injected one (a test's) is asked about all.
+  findSettled: (reminders: readonly InterviewReminder[]) => Promise<Set<string>> = send === sendInterviewReminder
+    ? loadSettledReminderKeys
+    : async () => new Set(),
 ): Promise<InterviewReminderRun> {
   const interviews = await load(
     // Look back far enough to keep nagging about interviews already held but not yet responded to, and
@@ -250,14 +335,27 @@ export async function runInterviewReminders(
     new Date(now.getTime() + (SEARCH_AHEAD_DAYS + 1) * 86_400_000),
   );
   const plan = planInterviewReminders(interviews, now);
+  // The "record what happened" nag is planned afresh on every ten-minute run for every unrecorded
+  // interview of the last 30 days, and almost all of it was delivered hours ago. Re-sending an
+  // already-delivered key re-reads the person's profile and preferences, rewrites the notice and
+  // its audit row and re-claims three channels — about ten round trips for nothing — so only the
+  // reminders with something left to deliver are sent, and those a few at a time.
+  const settled = await findSettled(plan);
+  const pending = plan.filter((reminder) => !settled.has(reminder.key));
   let delivered = 0;
   let failed = 0;
-  for (const reminder of plan) {
-    try {
-      if (await send(reminder)) delivered += 1;
-    } catch {
-      failed += 1;
+  let next = 0;
+  const worker = async () => {
+    while (next < pending.length) {
+      const reminder = pending[next];
+      next += 1;
+      try {
+        if (await send(reminder)) delivered += 1;
+      } catch {
+        failed += 1;
+      }
     }
-  }
-  return { considered: interviews.length, delivered, failed, planned: plan.length };
+  };
+  await Promise.all(Array.from({ length: Math.min(REMINDER_SEND_CONCURRENCY, pending.length) }, worker));
+  return { considered: interviews.length, delivered, failed, planned: plan.length, settled: plan.length - pending.length };
 }
