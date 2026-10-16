@@ -18,6 +18,8 @@ import {
   sentryTracesSampler,
 } from "../src/lib/observability/sentry-policy.ts";
 import { sentryMonitorConfigFor } from "../src/lib/observability/sentry-cron-monitor.ts";
+import { buildSentryAlertMessage, verifySentrySignature } from "../src/lib/observability/sentry-alert-webhook.ts";
+import { createHmac } from "node:crypto";
 import { JOB_SCHEDULES } from "../src/lib/observability/job-schedule.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -287,10 +289,63 @@ function wiringTests() {
   assert.match(dockerfile, /^ENV NEXT_PUBLIC_SENTRY_DSN=\$NEXT_PUBLIC_SENTRY_DSN$/m);
 }
 
+function alertWebhookTests() {
+  // The signature: HMAC-SHA256 of the raw body, hex, under the integration's client secret.
+  const body = JSON.stringify({ action: "triggered", data: { event: { title: "TypeError: x" } } });
+  const good = createHmac("sha256", "s3cret").update(body, "utf8").digest("hex");
+  assert.equal(verifySentrySignature(body, good, "s3cret"), true);
+  assert.equal(verifySentrySignature(body, good.toUpperCase(), "s3cret"), true, "hex case does not matter");
+  assert.equal(verifySentrySignature(body + " ", good, "s3cret"), false, "a changed body fails");
+  assert.equal(verifySentrySignature(body, good, "other"), false, "another secret fails");
+  assert.equal(verifySentrySignature(body, "", "s3cret"), false, "no signature fails");
+  assert.equal(verifySentrySignature(body, null, "s3cret"), false);
+  assert.equal(verifySentrySignature(body, good, ""), false, "an empty secret never verifies");
+
+  // The message: an alert or a new issue becomes a short text, anything else is ignored, and identifiers are scrubbed.
+  const alert = buildSentryAlertMessage("event_alert", {
+    action: "triggered",
+    data: {
+      event: {
+        title: "TypeError: Cannot read properties of undefined for B-10",
+        culprit: "GET /admin/employees/B-10",
+        level: "error",
+        web_url: "https://phoenix-crm.sentry.io/issues/1/events/2/",
+      },
+      triggered_rule: "New production error",
+    },
+  });
+  assert.ok(alert, "an event alert is forwarded");
+  assert.doesNotMatch(alert.message, /B-10/, "HR ids never reach the message");
+  assert.match(alert.message, /TypeError/);
+  assert.match(alert.message, /Rule: New production error/);
+  assert.equal(alert.url, "https://phoenix-crm.sentry.io/issues/1/events/2/");
+  const created = buildSentryAlertMessage("issue", { action: "created", data: { issue: { title: "Boom", level: "fatal" } } });
+  assert.ok(created && /Boom/.test(created.message), "a created issue is forwarded");
+  assert.equal(buildSentryAlertMessage("issue", { action: "resolved", data: { issue: { title: "Boom" } } }), null, "a resolved issue is not an alert");
+  assert.equal(buildSentryAlertMessage("installation", { action: "created" }), null, "other resources are ignored");
+  assert.equal(buildSentryAlertMessage("event_alert", { data: { event: {} } }), null, "an alert with no title says nothing");
+  assert.equal(
+    buildSentryAlertMessage("event_alert", { data: { event: { title: "x", web_url: "https://evil.example/phish" } } })?.url,
+    null,
+    "only a sentry.io link is ever put in the message",
+  );
+  assert.ok((buildSentryAlertMessage("event_alert", { data: { event: { title: "y".repeat(2000) } } })?.message.length ?? 0) <= 400, "a long title is cut");
+
+  // The wiring: a signed, CSRF-exempt, registered route that refuses everything when its secret is unset.
+  const route = code("app/api/webhooks/sentry/route.ts");
+  assert.match(route, /process\.env\.SENTRY_WEBHOOK_SECRET/);
+  assert.match(route, /status: 500/, "no secret configured means refuse");
+  assert.match(route, /verifySentrySignature\(body, request\.headers\.get\("sentry-hook-signature"\), secret\)[\s\S]*?status: 401/, "a bad signature is a 401 before anything is read");
+  assert.ok(route.indexOf("verifySentrySignature(") < route.indexOf("JSON.parse(body)"), "the body is parsed only after it is verified");
+  assert.match(code("proxy.ts"), /pathname === "\/api\/webhooks\/sentry"/, "the webhook is CSRF-exempt like the other provider webhooks");
+  assert.match(code("src/lib/security/access-registry.ts"), /pattern: "\/api\/webhooks\/sentry"/, "the route is in the access registry");
+}
+
 export function runSentryProductionOnlyTests() {
   gateTests();
   scrubTests();
   beyondErrorsTests();
   cronMonitorTests();
+  alertWebhookTests();
   wiringTests();
 }
