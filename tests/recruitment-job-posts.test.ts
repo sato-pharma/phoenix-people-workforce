@@ -236,6 +236,13 @@ export function runRecruitmentJobPostsTests() {
   assert.ok(copyParsed.needs.some((line) => line.lead === "Greater Cairo resident"), "the residence line stays \"Greater Cairo\", never plain Cairo (owner, 2026-10-16)");
   assert.ok(/headline is null[\s\S]*?Own your line''s marketing plan[\s\S]*?Preferably experience in Chest, ENT or Urology/.test(pmCopy), "the update only fires while the headline is empty and both lists still hold the earlier text");
 
+  // Then (same day): "cairo resident is prefferable" — the residence line is a preference, still Greater Cairo.
+  const pmResidence = readFileSync(new URL("../supabase/migrations/20261016145415_job_post_product_manager_residence_preferred.sql", import.meta.url), "utf8");
+  const [residenceNeeds, residenceGuard] = [...pmResidence.matchAll(/'(\[[\s\S]*?\])'::jsonb/g)].map((m) => JSON.parse(m[1]!.replace(/''/g, "'")) as Array<{ lead: string; rest: string }>);
+  assert.deepEqual(residenceNeeds!.find((line) => /Cairo/.test(line.lead)), { lead: "Greater Cairo resident", rest: "preferred" }, "the residence line reads \"Greater Cairo resident preferred\" — a preference, never plain Cairo");
+  assert.deepEqual(residenceGuard, copyNeeds, "the residence update only fires while the requirements still hold the marketer copy's list");
+  assert.equal(residenceNeeds!.length, 7, "all seven requirements are kept");
+
   // ── The builder: choosing a title loads its words, and the page wears the shared premium look ──
   const page = readFileSync(new URL("../src/components/recruitment/job-post-builder.tsx", import.meta.url), "utf8");
   assert.ok(/const pick = [\s\S]*?load\(found\)/.test(page), "picking a saved title loads its duties and requirements at once");
