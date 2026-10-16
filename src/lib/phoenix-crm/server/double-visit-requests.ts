@@ -445,12 +445,12 @@ export async function editDoubleVisitRequestDays(viewer: PhoenixCrmViewer, raw: 
     p: { request_id: requestId, seat_id: seat.seatId, actor_hr_id: viewer.hrId, days: days.days, is_test: isTest },
   });
   if (result.changed === true) {
-    // The edit made is the one after the count read above: the function adds exactly one to it, under
-    // the request's own row lock, so the row is not read a second time just for its count (2026-10-16
-    // speed audit).
-    const editCount = Number(row.edit_count ?? 0) + 1;
     const waiting = peopleOf(result).filter((person) => person.status === "waiting");
     if (waiting.length > 0) {
+      // The count is read AFTER the edit, never added to the one read before it: two edits landing
+      // together would otherwise both name the same version and the second notice would be taken for a
+      // repeat of the first. Only read when somebody is still waiting to be told.
+      const after = await loadRequestRow(requestId);
       await notifyPhoenixCrm(
         {
           kind: "double_visit_request",
@@ -463,7 +463,7 @@ export async function editDoubleVisitRequestDays(viewer: PhoenixCrmViewer, raw: 
           listType: parseListType(result.customer_list_type),
           days: daysOf(result.days),
           visitOn: null,
-          version: editCount,
+          version: Number(after?.edit_count ?? 1),
         },
         isTest,
       );

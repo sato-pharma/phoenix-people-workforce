@@ -618,11 +618,17 @@ export function runPhoenixCrmPlanScreenExtrasTests(): void {
     assert.doesNotMatch(history, /\.range\(/, "no offset page");
     assert.match(source("src/lib/phoenix-crm/server/plan-history.ts"), /await Promise\.all\(\[\s*loadPeopleNames\(\[source\.source_hr_id\]\),\s*getAgentPlanEntriesForWindow\(/, "the source's name and his plan are read together");
 
-    // The double-visit requests: the row read once on an edit, the report's two reads side by side.
+    // The double-visit requests: an edit's notice version is the count read AFTER the edit — never the
+    // count before it plus one, which two edits landing together would share, so the second notice would
+    // be taken for a repeat — and the report's two reads run side by side.
     const doubleVisits = source("src/lib/phoenix-crm/server/double-visit-requests.ts");
     const editDays = bodyOf(doubleVisits, "export async function editDoubleVisitRequestDays(");
-    assert.equal((editDays.match(/loadRequestRow\(/g) ?? []).length, 1, "an edit reads its request once");
-    assert.match(editDays, /const editCount = Number\(row\.edit_count \?\? 0\) \+ 1;/, "the count is the one the function added to");
+    assert.ok(
+      editDays.indexOf("const after = await loadRequestRow(requestId);") > editDays.indexOf('callPhoenixCrm<Row>("phoenix_crm_edit_double_visit_request_days"'),
+      "the version is read after the edit",
+    );
+    assert.match(editDays, /version: Number\(after\?\.edit_count \?\? 1\),/, "the notice carries the count the edit left");
+    assert.doesNotMatch(editDays, /edit_count \?\? 0\) \+ 1/, "never the count before the edit plus one");
     const report = bodyOf(doubleVisits, "export async function loadDoubleVisitReport(");
     assert.ok(report.indexOf("scopedRead.catch(() => undefined);") < report.indexOf("await loadAddressedRequestRows("), "the scope's requests are read beside the ones addressed to him");
     for (const loader of ["async function loadScopeRequestRows(", "async function loadAddressedRequestRows("]) {
