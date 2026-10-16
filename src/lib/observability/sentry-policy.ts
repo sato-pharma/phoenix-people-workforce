@@ -75,9 +75,9 @@ const SENSITIVE_HEADER = /^(cookie|set-cookie|authorization|proxy-authorization|
 
 /**
  * Strips what identifies a person or a session from an event before it leaves the building.
- * `sendDefaultPii: false` already withholds most of it; this is the second lock, because Phoenix's
- * pages carry payroll and HR identifiers in URLs and request bodies and a changed SDK default must not
- * quietly start shipping them.
+ * SDK 11 has no `sendDefaultPii` switch any more, so this is the ONLY lock, not a second one: Phoenix's
+ * pages carry payroll and HR identifiers in URLs and request bodies and an SDK default must not
+ * quietly ship them.
  */
 export function scrubSentryEvent<T extends ScrubbableSentryEvent>(event: T): T {
   const scrubbable = event as ScrubbableSentryEvent;

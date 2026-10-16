@@ -31,7 +31,6 @@ function loadSdk(dsn: string): Promise<SentrySdk | null> {
       Sentry.init({
         dsn,
         environment: SENTRY_ENVIRONMENT,
-        sendDefaultPii: false,
         maxBreadcrumbs: 20,
         // Our own reporter feeds every window error and rejection into captureClientErrorInSentry.
         integrations: (defaults) => defaults.filter((integration) => integration.name !== "GlobalHandlers"),

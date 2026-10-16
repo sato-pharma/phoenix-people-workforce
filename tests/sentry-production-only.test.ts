@@ -106,7 +106,7 @@ function wiringTests() {
   const server = code("src/lib/observability/sentry-server.ts");
   assert.match(server, /enableOpenTelemetrySetup: false/, "errors only: no OpenTelemetry tracer provider");
   assert.match(server, /enableRuntimeChannelInjection: false/, "errors only: no load-time module rewriting");
-  assert.match(server, /sendDefaultPii: false/);
+  assert.ok(!/sendDefaultPii/.test(server), "SDK 11 has no sendDefaultPii option — it is a type error in `checks`; the scrubber is the lock");
   assert.match(server, /beforeSend: \(event\) => scrubSentryEvent\(event\)/);
   assert.ok(!/tracesSampleRate|profilesSampleRate|replaysSessionSampleRate/.test(server), "no tracing, profiling or replay");
 

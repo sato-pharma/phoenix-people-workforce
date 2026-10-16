@@ -20,7 +20,6 @@ export function initSentryServer(dsn: string): void {
     dsn,
     environment: SENTRY_ENVIRONMENT,
     release: process.env.COMMIT_SHA || process.env.RAILWAY_GIT_COMMIT_SHA || undefined,
-    sendDefaultPii: false,
     enableOpenTelemetrySetup: false,
     enableRuntimeChannelInjection: false,
     beforeSend: (event) => scrubSentryEvent(event),

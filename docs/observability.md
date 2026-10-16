@@ -35,7 +35,7 @@ Back since 2026-10-16, as a second sink beside `app_error_events`, never instead
 
 - **Where it runs is decided by the deployment name, not the build mode.** `src/lib/observability/sentry-policy.ts`: the server needs `APP_ENV=production` AND a valid `SENTRY_DSN`; the browser needs a valid `NEXT_PUBLIC_SENTRY_DSN` AND to be served from the production host. Staging, the Hetzner previews and a laptop are off by construction — a Phoenix build is `NODE_ENV=production` on all of them, so `isProductionRuntime()` is NOT the gate.
 - **What it sends:** server request errors (`onRequestError` → `captureRequestError`), uncaught exceptions and rejections in the Node process, and every browser failure `reportClientError` already sees. **What it does not:** no tracing, profiling, session replay, OpenTelemetry provider or load-time module rewriting (`enableOpenTelemetrySetup: false`, `enableRuntimeChannelInjection: false`), no tunnel route, no sourcemap upload.
-- **Nothing identifying leaves:** `sendDefaultPii: false` plus `scrubSentryEvent` drops the user, cookies, request bodies, query strings and session/role headers from every event.
+- **Nothing identifying leaves:** `scrubSentryEvent` (SDK 11 has no `sendDefaultPii` switch) drops the user, cookies, request bodies, query strings and session/role headers from every event.
 - **Turn it on:** put the project DSN in `SENTRY_DSN` and `NEXT_PUBLIC_SENTRY_DSN` on the production Railway service (the browser one is a build argument, so it needs a redeploy). Turn it off by removing either.
 - **Pinned by** `tests/sentry-production-only.test.ts`.
 
