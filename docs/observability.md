@@ -665,6 +665,41 @@ drain-health probe ignores rows touched inside the same grace (`drain-health.ts`
 not spend the day's single drain alert before the drain closes it. The email outbox is a different
 table and is unchanged. Pinned by `tests/orphaned-delivery-claims.test.ts`.
 
+### Re-firing a stranded morning job
+
+The same deploy killed `phoenix-notify-daily` at 06:37 on 2026-10-16. The sweep saw it from 07:36 and
+told a human, but nothing started the job again, so the day's notifications stayed half-sent.
+`src/lib/observability/job-refire.ts` is that act, and the sweep (`app/api/cron/job-heartbeat-sweep`)
+calls it in the branch that already found a problem.
+
+What it does, and each limit is deliberate:
+
+- **Only a job named in `JOB_REFIRE_POLICIES`.** Today that is `phoenix-notify-daily` alone. A job joins
+  the list only after its sub-jobs were read for what a second run on the same day does. For the daily
+  route that was done on 2026-10-16: every delivery goes through `claimDelivery`, an insert that does
+  nothing on a duplicate of the unique `notification_deliveries.idempotency_key`, and each of the 30
+  sub-jobs passes an explicit key made of the recipient and a Cairo or UTC day (or a once-ever key), so a
+  repeat completes a half-finished fan-out and sends nobody a second message.
+- **Stranded only.** A job that ran and reported failure is left alone.
+- **Once per Cairo day, claimed first.** The claim is the atomic `api_rate_limit_consume` bucket
+  (`job-refire:<slug>:<day>`, limit 1), taken before anything starts. A claim that is lost means nothing
+  is started; a claim that cannot be made also means nothing is started.
+- **Only on the day the run was missed, and only before 12:00 Cairo** (`latestCairoMinutes`).
+- **Production only, and only with `CRON_SECRET`.** The sweep starts the route on this server over
+  loopback (`127.0.0.1:$PORT`, the server binds `0.0.0.0`) with the shared secret, inside `after()`, so
+  the 60-second sweep does not wait for a job that takes minutes.
+
+What a re-fire does **not** heal, from that audit: a claim left `pending` by the killed send (it is closed
+by the orphan rule above, and that one message is lost, not resent); the Vacation SLA step writes two
+repeat event rows per overdue request on every run (a write, not a message); the finance report could
+resend in the narrow case where the first run died after sending and before its marker row; a few
+recruitment alerts are keyed on a set of ids, so a changed set the same day is a second, different
+message. The weekly steps are no-ops on any other day than their own.
+
+Pinned by `tests/job-heartbeat-register.test.ts`: the decision (same day, cut-off, no policy), the claim
+(once, fail closed, a failing trigger never throws) and the wiring (the stranded list only, after the
+alert, through `after()`).
+
 ### The in-house register — `public.job_heartbeats`
 
 `pingDeadMansSwitch` now writes to **two** backends on every call, and neither can block the other
