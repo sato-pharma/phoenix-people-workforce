@@ -373,6 +373,7 @@ import { runRecruitmentInboundQueueTests } from "./recruitment-inbound-queue.tes
 import { runRecruitmentInboundMasteryTests } from "./recruitment-inbound-mastery.test.ts";
 import { runRecruitmentCandidateSourceContextTests } from "./recruitment-candidate-source-context.test.ts";
 import { runRecruitmentDbBatchTests } from "./recruitment-db-batch.test.ts";
+import { runRecruitmentPoolRoundTripsTests } from "./recruitment-pool-round-trips.test.ts";
 import { runAttendanceExportHouseIdentityTests } from "./attendance-export-house-identity.test.ts";
 import { runAttendanceCalendarSourceTests } from "./attendance-calendar-source.test.ts";
 import { runEmployeeStatusFilterConsolidationTests } from "./employee-status-filter-consolidation.test.ts";
@@ -3535,6 +3536,7 @@ await runTest("recruitment inbound intake queue (backoff, dead-letter, dedupe ke
 await runTest("recruitment inbound mastery (analytics, spike, fuzzy dedup, cv-link allowlist)", runRecruitmentInboundMasteryTests);
 await runTest("recruitment candidate source context (email subject / whatsapp first messages)", runRecruitmentCandidateSourceContextTests);
 await runTest("recruitment db batching (.in() id lists stay inside the request URL)", runRecruitmentDbBatchTests);
+await runTest("recruitment pool round trips (counts from the pool rows, whole-table reads start before the pool)", runRecruitmentPoolRoundTripsTests);
 await runTest("attendance calendar source", runAttendanceCalendarSourceTests);
 await runTest("attendance exports (house identity, mapping header row, incomplete warning)", runAttendanceExportHouseIdentityTests);
 await runTest("employee status filter consolidation (5 hand-rolled terminal-status filters → shared constant)", runEmployeeStatusFilterConsolidationTests);

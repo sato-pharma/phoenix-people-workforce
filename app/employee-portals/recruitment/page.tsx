@@ -21,6 +21,7 @@ import { loadCvFolderCabinet } from "@/lib/recruitment/cv-folder-tree-db";
 import { getRecruitmentDashboard, type RecruitmentDashboard } from "@/lib/recruitment/dashboard";
 import { isFileUploadEnabled } from "@/lib/recruitment/file-storage";
 import { listHiringManagerOptions, type HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
+import { countCandidatePoolStatuses } from "@/lib/recruitment/pool-enrichment";
 import { listOpenVacanciesForRequisition, listPositionCatalogue } from "@/lib/recruitment/requisitions";
 import type { Candidate, PositionCatalogueOption } from "@/lib/recruitment/types";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
@@ -128,10 +129,17 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
       )
     : Promise.resolve({ ok: true as const, rows: [] });
 
+  // The dashboard's candidate tiles count the same pool, so they are counted from these rows rather
+  // than from six more `head` requests — see the admin page, which this mirrors. Only when the viewer
+  // reads the pool; a failed pool resolves to null and the dashboard counts for itself.
+  const candidatePoolCounts = canViewCandidates
+    ? poolLoad.then((pool) => (pool.ok ? countCandidatePoolStatuses(pool.rows.map((row) => row.status)) : null))
+    : undefined;
+
   try {
     const [dashboardData, vacancies, catalogue, managerOptions, employeeRows, areas, cabinet] =
       await Promise.all([
-        getRecruitmentDashboard(access),
+        getRecruitmentDashboard(access, candidatePoolCounts ? { candidatePoolCounts } : {}),
         listOpenVacanciesForRequisition(),
         listPositionCatalogue(),
         listHiringManagerOptions(),

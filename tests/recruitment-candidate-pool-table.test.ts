@@ -362,17 +362,18 @@ export async function runRecruitmentCandidatePoolTableTests() {
 
   const candidatesService = read("src/lib/recruitment/candidates.ts");
   assert.ok(
-    candidatesService.includes('.select("candidate_id,created_at,is_cv")'),
-    "the pool's verdict loader must select those three columns and no more — extracted_fields is 1.1 MB across the table, and this query crosses the Atlantic to fetch one boolean",
+    candidatesService.includes('.select("id,candidate_id,created_at,is_cv")'),
+    "the pool's verdict loader must select those four columns and no more — the id is the keyset cursor — because extracted_fields is 1.1 MB across the table, and this query crosses the Atlantic to fetch one boolean",
   );
   assert.ok(
-    candidatesService.includes("if (row.is_cv === false) notACv.add(candidateId);"),
+    read("src/lib/recruitment/pool-enrichment.ts").includes("if (verdict.isCv === false) notACv.add(candidateId);"),
     "only an explicit false is a verdict; NULL means no judgement on record and must never flag a row",
   );
   assert.ok(
-    candidatesService.includes("loadNotACvCandidates(candidates.map((candidate) => candidate.id)),") &&
+    candidatesService.includes("const notACvLoad = loadNotACvCandidates();") &&
+      /^\s+notACvLoad,\s*$/m.test(candidatesService) &&
       candidatesService.includes("const [, , , , latestSends, notACv] = await Promise.all(["),
-    "listCandidates must actually call the loader, or the flag is computed nowhere and every badge below is dead markup",
+    "listCandidates must actually start the loader and await its result, or the flag is computed nowhere and every badge below is dead markup",
   );
 
   // Desktop. The badge sits in the role cell — the cell whose emptiness raises the question — and

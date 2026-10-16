@@ -342,19 +342,32 @@ async function loadLookup(table: string, idsToLoad: number[], label = "name") {
   );
 }
 
-/** `id -> code` for a lookup table that carries one (`areas`, `lines`). */
-async function loadCodeLookup(table: string, idsToLoad: number[]) {
+/**
+ * `id -> name` AND `id -> code` for a lookup table that carries both (`areas`, `lines`), from ONE
+ * request. They were two requests over the same ids and the same rows — one asking for the name, one
+ * for the code — and every request crosses the Atlantic. The name is read exactly as `loadLookup`
+ * reads it (`String(name ?? "")`), the code as it always was (trimmed).
+ */
+async function loadNameAndCodeLookup(table: string, idsToLoad: number[]) {
+  const names = new Map<number, string>();
+  const codes = new Map<number, string>();
   if (idsToLoad.length === 0) {
-    return new Map<number, string>();
+    return { codes, names };
   }
 
   const params = new URLSearchParams({
-    select: "id,code",
+    select: "id,name,code",
     id: inFilter(idsToLoad),
   });
-  const rows = await supabaseRest<Array<{ id: number; code?: string | null }>>(`${table}?${params}`);
+  const rows = await supabaseRest<Array<{ id: number; name?: string | null; code?: string | null }>>(
+    `${table}?${params}`,
+  );
 
-  return new Map(rows.map((row) => [row.id, String(row.code ?? "").trim()]));
+  for (const row of rows) {
+    names.set(row.id, String(row.name ?? ""));
+    codes.set(row.id, String(row.code ?? "").trim());
+  }
+  return { codes, names };
 }
 
 async function loadEmployeeNames(hrIds: string[]) {
@@ -462,7 +475,14 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
   const [
     [
       vacancyRows,
-      [departmentNames, lineNames, areaNames, lineCodes, areaCodes, teamNames, positionTitles, managerNames],
+      [
+        departmentNames,
+        { codes: lineCodes, names: lineNames },
+        { codes: areaCodes, names: areaNames },
+        teamNames,
+        positionTitles,
+        managerNames,
+      ],
     ],
     [employeeDirectory, pendingManagerReplacements],
     offerOutBySeat,
@@ -471,10 +491,8 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
       const rows = await loadVacancyRows();
       const lookups = await Promise.all([
         loadLookup("departments", ids(rows, "department_id")),
-        loadLookup("lines", ids(rows, "line_id")),
-        loadLookup("areas", ids(rows, "area_id")),
-        loadCodeLookup("lines", ids(rows, "line_id")),
-        loadCodeLookup("areas", ids(rows, "area_id")),
+        loadNameAndCodeLookup("lines", ids(rows, "line_id")),
+        loadNameAndCodeLookup("areas", ids(rows, "area_id")),
         loadLookup("teams", ids(rows, "team_id")),
         loadLookup("positions", ids(rows, "position_id"), "title"),
         loadEmployeeNames(textValues(rows, "manager_hr_id")),
