@@ -15,7 +15,7 @@ import { logError } from "@/lib/observability/log";
 import { listUnreadModuleNotices, markNoticesReadForViewer } from "@/lib/notifications/unread";
 import { seatIdIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
 import type { PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
-import { loadLiveTeamSeatIds } from "@/lib/phoenix-crm/server/live-teams";
+import { loadLiveTeamSeatIdsForDisplay } from "@/lib/phoenix-crm/server/live-teams";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import {
   groupUnreadByModule,
@@ -41,8 +41,10 @@ async function loadUnread(access: AccessContext): Promise<PhoenixCrmUnreadNotice
   const pulsing = rows.filter((row) => phoenixCrmNoticePulses(row.eventType));
   // A notice about a team that is not live never pulses (owner, 2026-10-08) — including one written
   // before the team was held back. Read only when something is unread; an unreadable gate fails open.
+  // The badges are asked every minute by every open screen and only FILTER notices already written, so
+  // they take the live teams from the minute-long display copy that a Start or Stop clears at once.
   if (!pulsing.some((row) => row.seatId)) return pulsing;
-  const [live, org] = await Promise.all([loadLiveTeamSeatIds(), loadPhoenixCrmOrg()]);
+  const [live, org] = await Promise.all([loadLiveTeamSeatIdsForDisplay(), loadPhoenixCrmOrg()]);
   if (!live) return pulsing;
   return pulsing.filter((row) => !row.seatId || seatIdIsInLiveTeam(org.seats, row.seatId, live));
 }

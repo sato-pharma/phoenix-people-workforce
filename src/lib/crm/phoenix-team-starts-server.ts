@@ -23,6 +23,7 @@ import { unreadableTeamReadiness } from "@/lib/crm/phoenix-team-readiness";
 import { loadPhoenixTeamReadiness } from "@/lib/crm/phoenix-team-readiness-server";
 import { loadVendorLeftoversBySeat } from "@/lib/crm/phoenix-vendor-leftovers";
 import { logError } from "@/lib/observability/log";
+import { forgetLiveTeamsForDisplay } from "@/lib/phoenix-crm/server/live-teams";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import type { VendorLeftoverRep } from "@/lib/phoenix-crm/vendor-leftovers";
@@ -153,6 +154,8 @@ export async function setPhoenixTeamStart(input: {
     if (refusal) throw new PhoenixTeamStartRefusal(refusal);
     throw new Error(`The team start could not be saved: ${error.message}`);
   }
+  // The badges' copy of the live teams is a minute-long memory; a start or a stop must reach it now.
+  forgetLiveTeamsForDisplay();
   const row = (data ?? {}) as Record<string, unknown>;
   const done = row.done === "started" || row.done === "stopped" || row.done === "cancelled" ? row.done : null;
   if (!done) throw new Error("The team start was saved but its answer could not be read. Reload the page.");

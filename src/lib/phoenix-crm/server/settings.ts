@@ -1,9 +1,14 @@
 /**
  * Phoenix CRM — the settings row, the line opening dates and the Ramadan dates.
  *
- * Read on every request, uncached: three primary-key reads of a handful of rows, and a changed cap or
- * opening date must take effect on the very next save (a cached value would let one more plan through
- * on the old cap).
+ * Held in memory for at most CONFIG_TTL_MS, and dropped the moment the Super Admin saves any of the
+ * three (each save below calls `forgetPhoenixCrmConfig` once the write has landed). Every Phoenix CRM
+ * request builds its viewer from this config, so before the 2026-10-16 performance audit each one paid a
+ * database round trip first, for rows that change a few times a year. The rule that kept it uncached
+ * still holds: a changed cap or opening date takes effect on the very next save, because the page
+ * server is ONE process and the write itself clears the copy — a cached value can never let one more
+ * plan through on the old cap. A process that does not take the save (the worker's scheduled jobs)
+ * catches up within CONFIG_TTL_MS.
  */
 
 import { ApiError, validationError } from "@/lib/http/api-errors";
@@ -38,7 +43,32 @@ function readTargets(raw: unknown): PhoenixCrmSettings["gradeTargets"] {
   return targets;
 }
 
+const CONFIG_TTL_MS = 30_000;
+
+let held: { config: Promise<PhoenixCrmConfig>; readAt: number } | null = null;
+
 export async function loadPhoenixCrmConfig(): Promise<PhoenixCrmConfig> {
+  const now = Date.now();
+  let entry = held;
+  if (!entry || now - entry.readAt >= CONFIG_TTL_MS) {
+    const fresh = { config: readPhoenixCrmConfig(), readAt: now };
+    entry = fresh;
+    held = fresh;
+    // A failed read is never kept: the next request asks the database again.
+    fresh.config.catch(() => {
+      if (held === fresh) held = null;
+    });
+  }
+  // A copy each time, so no caller can change what the next request reads.
+  return structuredClone(await entry.config);
+}
+
+/** The Super Admin changed a setting, a line's opening day or a Ramadan: the next read is fresh. */
+export function forgetPhoenixCrmConfig(): void {
+  held = null;
+}
+
+async function readPhoenixCrmConfig(): Promise<PhoenixCrmConfig> {
   const supabase = getSupabaseAdmin();
   const [settingsResult, rolloutResult, ramadanResult] = await Promise.all([
     supabase
@@ -141,6 +171,7 @@ export async function saveSettings(actorHrId: string, raw: unknown): Promise<voi
     })
     .eq("id", 1);
   throwIfError(error);
+  forgetPhoenixCrmConfig();
 }
 
 export async function saveLineRollout(actorHrId: string, lineCode: string, opensOn: string | null, knownLines: ReadonlySet<string>): Promise<void> {
@@ -150,6 +181,7 @@ export async function saveLineRollout(actorHrId: string, lineCode: string, opens
     .from("phoenix_crm_line_rollout")
     .upsert({ line_code: lineCode, opens_on: opensOn, updated_at: new Date().toISOString(), updated_by_hr_id: actorHrId }, { onConflict: "line_code" });
   throwIfError(error);
+  forgetPhoenixCrmConfig();
 }
 
 export async function saveRamadanOverride(actorHrId: string, raw: unknown): Promise<void> {
@@ -159,6 +191,7 @@ export async function saveRamadanOverride(actorHrId: string, raw: unknown): Prom
   if (body.reset === true) {
     const { error } = await supabase.from("phoenix_crm_ramadan_overrides").delete().eq("hijri_year", hijriYear);
     throwIfError(error);
+    forgetPhoenixCrmConfig();
     return;
   }
   const startsOn = String(body.startsOn ?? "");
@@ -173,4 +206,5 @@ export async function saveRamadanOverride(actorHrId: string, raw: unknown): Prom
       { onConflict: "hijri_year" },
     );
   throwIfError(error);
+  forgetPhoenixCrmConfig();
 }

@@ -63,12 +63,15 @@
  * Never throws: a notice that cannot be delivered must not undo a saved decision.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import { bidiIsolate } from "@/emails/bidi";
 import { formatPhoenixDateTime, formatPhoenixLongDate, formatPhoenixMonth } from "@/lib/i18n/format";
 import { phoenixCrmChannels } from "@/lib/notifications/phoenix-crm-channel-guard";
 import { resolveHrIdsForRole } from "@/lib/notifications/role-recipients";
 import { withdrawInAppNotificationsByEventKeyPrefix } from "@/lib/notifications/in-app";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
+import { afterResponse } from "@/lib/http/after-response";
 import { testAccountsMirroring } from "@/lib/auth/test-persona-directory";
 import { logError } from "@/lib/observability/log";
 import { minuteClock } from "@/lib/phoenix-crm/day-start-rules";
@@ -76,6 +79,7 @@ import { dropReasonLabel } from "@/lib/phoenix-crm/entry-rules";
 import { LOCATION_NOT_CONFIRMED_TEXT, LOCATION_NOT_CONFIRMED_TITLE } from "@/lib/phoenix-crm/google-place-rules";
 import { PHOENIX_CRM_ADMINISTRATOR_HR_ID, planEditStatusLabel, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { seatIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
+import { phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
 import { loadLiveTeamSeatIds } from "@/lib/phoenix-crm/server/live-teams";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
@@ -449,9 +453,26 @@ const REQUEST_WAITING: Record<PhoenixCrmRequestKind, { eventType: string }> = {
  * step this feeds is addressed to an OFFICE: nobody holding the role means that step told no one.
  */
 export async function sfeManagerHrIds(): Promise<string[]> {
+  const scope = sfeManagersOnce.getStore();
+  if (scope) return (scope.read ??= readSfeManagerHrIds());
+  return readSfeManagerHrIds();
+}
+
+async function readSfeManagerHrIds(): Promise<string[]> {
   const { hrIds } = await resolveHrIdsForRole("SFE Manager", "Phoenix CRM — SFE Managers");
   // A test account holds the role it mirrors; its TEST- id is never a real person to tell.
   return hrIds.filter((hrId) => !hrId.startsWith("TEST-"));
+}
+
+/**
+ * Within ONE notice the SFE Managers are read once and shared — `describe` and the activity mirror both
+ * ask. Scoped to the single send, never cached across sends: who holds the role decides who is told, so
+ * a change to it reaches the very next notice.
+ */
+const sfeManagersOnce = new AsyncLocalStorage<{ read?: Promise<string[]> }>();
+
+function withSfeManagersReadOnce<T>(work: () => Promise<T>): Promise<T> {
+  return sfeManagersOnce.run({}, work);
 }
 
 /**
@@ -1658,22 +1679,45 @@ async function activityMirrorDelivery(notice: PhoenixCrmNotice, nativeDeliveries
   return buildActivityMirrorDelivery(notice, org, names, sfe, nativeRecipientKeys);
 }
 
+/**
+ * Tell everyone a Phoenix CRM action concerns — AFTER the reply has gone (Phoenix CRM performance audit,
+ * 2026-10-16). Twenty-odd writes awaited this while the person who pressed Save waited: the live-team
+ * read, the org, the names, the SFE role read, then every recipient's in-app row, Telegram and phone, one
+ * after another — although it never throws, so no answer could ever depend on it. A plan submit measured
+ * 975 ms on production that afternoon. `afterResponse` runs it once the response has closed; outside a
+ * request (a cron's loop, a script, the unit suite) it is awaited exactly as before. The notice therefore
+ * reaches the bell about a second after the save, never before the record it describes exists.
+ *
+ * Callers keep their `await` deliberately: inside a request it returns at once, outside one it is the
+ * same awaited call it always was. A withdrawal that must happen BEFORE the new notice stays an awaited
+ * call ahead of this one, so it still lands first.
+ */
 export async function notifyPhoenixCrm(notice: PhoenixCrmNotice, isTest: boolean): Promise<void> {
+  await afterResponse(`phoenix_crm_notify:${notice.kind}`, () => sendPhoenixCrmNotice(notice, isTest));
+}
+
+async function sendPhoenixCrmNotice(notice: PhoenixCrmNotice, isTest: boolean): Promise<void> {
   try {
-    // Only a LIVE team is told anything (owner, 2026-10-08): a notice about a territory whose team the
-    // Super Admin has not started tells nobody — rep, district manager, SFE or NSM. The test world keeps
-    // its in-app copies, and an unreadable gate fails open (live-teams.ts).
-    if (!isTest) {
-      const live = await loadLiveTeamSeatIds();
-      if (live && !seatIsInLiveTeam(notice.seat, live)) return;
-    }
-    const described = await describe(notice);
-    const deliveries = described === null ? [] : Array.isArray(described) ? described : [described];
-    // Mirror the action to the NSM and SFE in scope (owner, 2026-10-05), as a parallel delivery deduped
-    // against the native recipients — so the tuned notices above are untouched and nobody is told twice.
-    const mirror = await activityMirrorDelivery(notice, deliveries);
-    if (mirror) deliveries.push(mirror);
-    for (const delivery of deliveries) await deliver(notice, delivery, isTest);
+    // One SFE role read per notice: `describe` and the mirror both ask for the SFE Managers, and they
+    // are the same people within one send.
+    await withSfeManagersReadOnce(async () => {
+      // Only a LIVE team is told anything (owner, 2026-10-08): a notice about a territory whose team the
+      // Super Admin has not started tells nobody — rep, district manager, SFE or NSM. The test world keeps
+      // its in-app copies, and an unreadable gate fails open (live-teams.ts). Read fresh on every notice,
+      // never from a cache: a team the Super Admin has just stopped must not be told one more thing.
+      if (!isTest) {
+        const live = await loadLiveTeamSeatIds();
+        if (live && !seatIsInLiveTeam(notice.seat, live)) return;
+      }
+      const described = await describe(notice);
+      const deliveries = described === null ? [] : Array.isArray(described) ? described : [described];
+      // Mirror the action to the NSM and SFE in scope (owner, 2026-10-05), as a parallel delivery deduped
+      // against the native recipients — so the tuned notices above are untouched and nobody is told twice.
+      const mirror = await activityMirrorDelivery(notice, deliveries);
+      if (mirror) deliveries.push(mirror);
+      // Each delivery has its own recipients and its own idempotency key, so none waits on another.
+      await Promise.all(deliveries.map((delivery) => deliver(notice, delivery, isTest)));
+    });
   } catch (error) {
     logError("Phoenix CRM notification failed", {
       labels: { event: "phoenix_crm_notify_failed", kind: notice.kind },
@@ -1766,7 +1810,9 @@ export async function withdrawPhoenixCrmDoubleVisitWaitingNotices(requestId: str
 }
 
 async function deliver(notice: PhoenixCrmNotice, delivery: Delivery, isTest: boolean): Promise<void> {
-  const actionUrl = delivery.path ?? `${PHOENIX_CRM_PORTAL_PATH}?tab=${delivery.tab}`;
+  // Straight to the module's own page. `/field-crm?tab=` still works for every link already sent, but it
+  // is a redirect — a whole portal render — before the page the notice is about. The badges read both.
+  const actionUrl = delivery.path ?? phoenixCrmModulePath(PHOENIX_CRM_PORTAL_PATH, delivery.tab);
   const base = {
     actionUrl,
     category: PHOENIX_CRM_NOTIFICATION_CATEGORY,
