@@ -400,7 +400,10 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/whatsapp-inbox/access.ts",
   "app/(admin)/admin/company-calendar/page.tsx",
   "app/(admin)/admin/early-birds/page.tsx",
-  "app/(admin)/admin/ranks/page.tsx",
+  // The Ranks admin audience (page AND certificate route read it), moved here from the page itself
+  // so the two cannot drift: same grant as before, the Talent Acquisition seat reads the board and
+  // may print any rep's certificate from it.
+  "src/lib/rep-ranks/admin-audience.ts",
   "src/lib/early-birds/permissions.ts",
   "src/lib/private-calendar/logic.ts",
   // REMOVES reach and can only ever remove it: the per-seat page fence. Naming a seat here closes a

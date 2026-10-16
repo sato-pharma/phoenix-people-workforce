@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { stripComments } from "./support/comment-strip.ts";
 
 import { certificateReasons, certificateSentence, rankCertificateHtml, type RankCertificateInput } from "../src/lib/rep-ranks/certificate.ts";
+import { RANK_ADMIN_ROLES } from "../src/lib/rep-ranks/admin-audience.ts";
 import { explainStanding, leverSentence } from "../src/lib/rep-ranks/explain.ts";
 import { insigniaSvgInner } from "../src/lib/rep-ranks/insignia-svg.ts";
 import { promotionSentence, rankForScore, RANK_LADDER, rollingScore, starCount } from "../src/lib/rep-ranks/ladder.ts";
@@ -500,6 +501,13 @@ export function runRepRanksTests() {
   const certificateRoute = readFileSync(new URL("../app/api/rep-ranks/certificate/route.ts", import.meta.url), "utf8");
   assert.match(certificateRoute, /if \(requested !== own && !mayCertifyAnyone\)/);
   assert.match(certificateRoute, /assertPermission\(access, "early_birds", "read"\)/);
+  // The page and the route read ONE audience: HR Resourcing could open /admin/ranks while the route's own shorter list
+  // answered its certificate button 403, which the browser saved as certificate.json.
+  const adminRanksPage = readFileSync(new URL("../app/(admin)/admin/ranks/page.tsx", import.meta.url), "utf8");
+  assert.match(certificateRoute, /RANK_ADMIN_ROLES\.has\(access\.role\)/, "the certificate route reads the shared admin audience");
+  assert.match(adminRanksPage, /RANK_ADMIN_ROLES\.has\(access\.role\)/, "the admin page reads the shared admin audience");
+  assert.ok(!/new Set\(\["Super Admin"/.test(certificateRoute + adminRanksPage), "neither file keeps a private role list");
+  assert.ok(RANK_ADMIN_ROLES.has("HR Resourcing"), "the Talent Acquisition seat may print any rep's certificate");
   const certificateServer = readFileSync(new URL("../src/lib/rep-ranks/server/certificate-pdf.ts", import.meta.url), "utf8");
   assert.match(certificateServer, /audience: "portal"/, "the certificate reads scores only, never the metrics");
 
