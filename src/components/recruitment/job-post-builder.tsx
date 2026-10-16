@@ -2,9 +2,19 @@
 
 // Recruitment — the Job Posts builder (app/(admin)/recruitment/job-posts).
 //
-// Six numbered steps down the left — the job title, what you will do, what you need, the areas and
-// line, then the design and the preview with its downloads on the right. The preview is the SAME HTML
-// the server draws (renderJobPostHtml), in a sandboxed frame, so what downloads is what was on screen.
+// THE POST IS THE PAGE (owner, 2026-10-16: "make the post big in the screen, and make me able to edit
+// anywhere and write anything, exactly as the HR form is"). The picture stands large on the left,
+// as tall as the screen allows, and every word on it is typed over where it is printed — the way the HR
+// paper is its own editing surface. The controls (title, design, the two lists, the areas) sit on the
+// right. The preview is the SAME HTML the server draws (renderJobPostHtml), in a sandboxed frame, so
+// what downloads is what was on screen.
+//
+// 🔴 A WORD TYPED ON THE PICTURE GOES ONE OF TWO PLACES. A duty or a requirement is written back into
+// the draft's own list — so "Save to title" keeps it and the list editors below show it. Every other word
+// (the title's lines, the labels, the chips, the footer) is an EDIT OF THIS POST: kept as text-over-text
+// in `edits`, sent with the download, never saved to the title. The frame is NOT reloaded by its own
+// edits — a reload would throw the cursor away — so the page remembers the exact HTML its own typing
+// produced (`echo`) and reloads only when something else changes it.
 //
 // 🔴 CHOOSING A JOB TITLE FILLS BOTH LISTS AT ONCE. The picker loads that title's saved duties and
 // requirements the moment it changes; typing the name of a saved title into a NEW one loads it too
@@ -18,7 +28,7 @@
 // 🔒 One form design (form-kit), square corners, the shared admin depth tokens, and no horizontal
 // scroll at any width. Every panel wears the dark header band (adminPanelHeaderClassName).
 
-import { ArrowDown, ArrowUp, Check, Download, FileArchive, Plus, Save, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Download, FileArchive, PencilLine, Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
@@ -51,6 +61,7 @@ import {
   type JobPostLine,
   type JobPostTemplateKey,
 } from "@/lib/recruitment/job-posts/templates";
+import { layerEdits, readPictureEdit, writeBack, type PictureEdit } from "@/lib/recruitment/job-posts/picture-edit";
 import {
   JOB_POST_MAX_LINES,
   contentFromDraft,
@@ -147,6 +158,7 @@ function PanelHeader({ step, title, aside }: { step?: number; title: string; asi
 /** What the page's layout pass reports: the text size as a share of normal, and whether it ran out of room. */
 type PostFit = { k: number; limited: boolean };
 
+
 const TOO_LONG_MESSAGE = "This post is too long to print at a readable size. Shorten a line, remove a line, or remove an area.";
 
 /** The verdict of the layout pass, in words: "Fits at full size", "Text 85%", or "Too long". */
@@ -170,21 +182,39 @@ function FitBadge({ fit }: { fit: PostFit | undefined }) {
  * the post could never be on screen at the same time as the words being edited. Sized from HEIGHT
  * instead, the column fits one screen and the sticky finally holds.
  */
-function PostFrame({ html, label, onFit, boxClassName = "w-full" }: { html: string; label: string; onFit?: (fit: PostFit) => void; boxClassName?: string }) {
+function PostFrame({
+  html,
+  label,
+  onFit,
+  onEdit,
+  boxClassName = "w-full",
+}: {
+  html: string;
+  label: string;
+  onFit?: (fit: PostFit) => void;
+  /** Given, the picture is typed on; absent, it is a still picture (the design thumbnails). */
+  onEdit?: (edit: PictureEdit) => void;
+  boxClassName?: string;
+}) {
   const box = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const report = useRef(onFit);
+  const typed = useRef(onEdit);
   const [width, setWidth] = useState(0);
   // The frame is sandboxed without same-origin, so its layout pass cannot be read — it posts its
   // report to the parent instead. Only a message from THIS frame, with the two expected fields, counts.
   useEffect(() => {
     report.current = onFit;
-  }, [onFit]);
+    typed.current = onEdit;
+  }, [onFit, onEdit]);
   useEffect(() => {
     const listen = (event: MessageEvent) => {
       if (!frame.current || event.source !== frame.current.contentWindow) return;
-      const fit = (event.data as { jobPostFit?: { k?: unknown; limited?: unknown } } | null)?.jobPostFit;
+      const data = event.data as { jobPostFit?: { k?: unknown; limited?: unknown }; jobPostEdit?: unknown } | null;
+      const fit = data?.jobPostFit;
       if (fit && typeof fit.k === "number" && typeof fit.limited === "boolean") report.current?.({ k: fit.k, limited: fit.limited });
+      const edit = data?.jobPostEdit === undefined ? null : readPictureEdit(data.jobPostEdit);
+      if (edit) typed.current?.(edit);
     };
     window.addEventListener("message", listen);
     return () => window.removeEventListener("message", listen);
@@ -203,12 +233,12 @@ function PostFrame({ html, label, onFit, boxClassName = "w-full" }: { html: stri
         // maxWidth/maxHeight none: the admin shell clamps every iframe to max-width 100%, which would
         // squeeze this 1080px page into the box BEFORE the scale shrinks it — cutting the right half off.
         <iframe
-          className="pointer-events-none absolute left-0 top-0 border-0"
+          className={cn("absolute left-0 top-0 border-0", !onEdit && "pointer-events-none")}
           ref={frame}
           sandbox="allow-scripts"
           srcDoc={html}
           style={{ height: JOB_POST_HEIGHT, maxHeight: "none", maxWidth: "none", transform: `scale(${scale})`, transformOrigin: "0 0", width: JOB_POST_WIDTH }}
-          tabIndex={-1}
+          tabIndex={onEdit ? 0 : -1}
           title={label}
         />
       ) : null}
@@ -322,6 +352,15 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
   const [busy, setBusy] = useState<string | null>(null);
   const [fits, setFits] = useState<Partial<Record<JobPostTemplateKey, PostFit>>>({});
   const [mainFit, setMainFit] = useState<PostFit | undefined>(undefined);
+  // Words typed over the picture itself, this post only (see the header). `baked` is what the loaded
+  // frame already carries; `echo` is the exact HTML the picture's own typing produced, so the frame is
+  // reloaded only when something ELSE changes it. `unmapped` says part of a typed passage could not be kept.
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [baked, setBaked] = useState<Record<string, string>>({});
+  const [echo, setEcho] = useState<string | null>(null);
+  const [frameHtml, setFrameHtml] = useState("");
+  const [seenHtml, setSeenHtml] = useState("");
+  const [unmapped, setUnmapped] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(initialTitles[0] ? `Ready: the saved wording for “${initialTitles[0].title}” is loaded.` : null);
 
@@ -366,6 +405,8 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
   const load = (found: JobPostTitle) => {
     setSelectedId(found.id);
     setDraft(draftOf(found));
+    setEdits({});
+    setUnmapped(false);
     setDirty(false);
     setError(null);
     setNotice(`Ready: the saved wording for “${found.title}” is loaded.`);
@@ -381,6 +422,8 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
     }
     setSelectedId(NEW);
     setDraft(emptyDraft());
+    setEdits({});
+    setUnmapped(false);
     setDirty(false);
     setError(null);
     setNotice("A new job title: name it, then write what the job does and what it needs.");
@@ -410,20 +453,56 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
     [titles],
   );
 
+  /** The post as the picture shows it, for a given draft and set of typed edits. */
+  const contentOf = (forDraft: JobPostTitleDraft, forEdits: Record<string, string>) => {
+    const made = contentFromDraft(cleaned(forDraft), { areaNoun: areaScope, areas, edits: forEdits, line: postLine }, apply);
+    return variant ? jobPostForArea(made, variant) : made;
+  };
   const content = useMemo(
-    () => contentFromDraft(saveDraft, { areaNoun: areaScope, areas, line: postLine }, apply),
+    () => contentFromDraft(saveDraft, { areaNoun: areaScope, areas, edits, line: postLine }, apply),
     // saveDraft is rebuilt every render; the draft it comes from is the real dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [draft, areas, areaScope, postLine, apply],
+    [draft, areas, areaScope, edits, postLine, apply],
   );
   const shown = useSettled(variant ? jobPostForArea(content, variant) : content, 250);
-  const thumbs = useSettled(content, 900);
+  // The design thumbnails show the post's words but never its typed-over labels: a thumbnail is a look.
+  const thumbContent = useMemo(() => {
+    const { edits: _typed, ...plain } = content;
+    return plain;
+  }, [content]);
+  const thumbs = useSettled(thumbContent, 900);
 
-  const mainHtml = useMemo(() => (assets ? renderJobPostHtml(shown, template, assets) : ""), [assets, shown, template]);
+  const mainHtml = useMemo(() => (assets ? renderJobPostHtml(shown, template, assets, { editable: true }) : ""), [assets, shown, template]);
   const thumbHtml = useMemo(
     () => (assets ? JOB_POST_TEMPLATES.map((t) => renderJobPostHtml(thumbs, t.key, assets)) : []),
     [assets, thumbs],
   );
+
+  // The frame follows the html — except when the html is exactly what the picture's own typing already
+  // produced, where reloading would only throw the cursor away. Derived during render, never in an effect.
+  if (mainHtml !== seenHtml) {
+    setSeenHtml(mainHtml);
+    if (mainHtml !== echo) {
+      setFrameHtml(mainHtml);
+      setBaked(shown.edits ?? {});
+    }
+  }
+
+  /** The picture was typed on: lists write back to the draft, every other word becomes an edit of this post. */
+  const typeOnPicture = (typed: PictureEdit) => {
+    const nextDraft = { ...draft, duties: writeBack(draft.duties, "d", typed.bound), needs: writeBack(draft.needs, "n", typed.bound) };
+    const nextEdits = layerEdits(baked, typed.edits);
+    const listsChanged = nextDraft.duties !== draft.duties || nextDraft.needs !== draft.needs;
+    if (listsChanged) {
+      setDraft(nextDraft);
+      setDirty(true);
+      setNotice(null);
+    }
+    setEdits(nextEdits);
+    setUnmapped(typed.unmapped);
+    if (assets) setEcho(renderJobPostHtml(contentOf(nextDraft, nextEdits), template, assets, { editable: true }));
+  };
+  const editCount = Object.keys(edits).length;
 
   async function save() {
     if (problems.length) {
@@ -465,7 +544,7 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
     setError(null);
     try {
       const res = await fetch("/api/recruitment/job-posts/render", {
-        body: JSON.stringify({ area: format === "zip" ? null : variant, areaNoun: areaScope, areas, format, line: postLine, template, title: saveDraft }),
+        body: JSON.stringify({ area: format === "zip" ? null : variant, areaNoun: areaScope, areas, edits, format, line: postLine, template, title: saveDraft }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -507,8 +586,64 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
   const templateName = JOB_POST_TEMPLATES.find((t) => t.key === template);
 
   return (
-    <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-      {/* ── The words ── */}
+    <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+      {/* ── The picture: large, as tall as the screen, typed on where it is printed ── */}
+      <div className="min-w-0 space-y-3 xl:sticky xl:top-4 xl:self-start">
+        <section className={panelClassName}>
+          <PanelHeader aside={`${templateName?.name} · ${JOB_POST_WIDTH} × ${JOB_POST_HEIGHT} px`} title="The post — click any word and type" />
+          <div className="space-y-2 p-3">
+            {mainHtml ? (
+              <div className={`border border-slate-200 bg-white p-1.5 ${adminSoftDepthClassName}`}>
+                <PostFrame
+                  boxClassName="mx-auto w-full xl:h-[clamp(320px,calc(100vh-11rem),1350px)] xl:w-auto xl:max-w-full"
+                  html={frameHtml || mainHtml}
+                  label="Job post preview"
+                  onEdit={typeOnPicture}
+                  onFit={setMainFit}
+                />
+              </div>
+            ) : (
+              <div className="mx-auto aspect-[4/5] w-full animate-pulse bg-slate-100 xl:h-[clamp(320px,calc(100vh-11rem),1350px)] xl:w-auto xl:max-w-full" />
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <FitBadge fit={mainFit} />
+              {editCount ? (
+                <>
+                  <span className={chipClassName}>
+                    <PencilLine aria-hidden className="h-3.5 w-3.5" /> {editCount} {editCount === 1 ? "word" : "words"} changed on this post
+                  </span>
+                  <button className={phxButtonGhostClassName} onClick={() => setEdits({})} type="button">
+                    <RotateCcw aria-hidden className="h-4 w-4" /> Undo my typing
+                  </button>
+                </>
+              ) : null}
+              <span className="ml-auto flex flex-wrap gap-2">
+                <button className={phxButtonAccentClassName} disabled={busy !== null || mainFit?.limited === true} onClick={() => download("png")} type="button">
+                  <Download aria-hidden className="h-4 w-4" /> {busy === "png" ? "Drawing…" : "Picture"}
+                </button>
+                <button className={phxButtonGhostClassName} disabled={busy !== null || mainFit?.limited === true} onClick={() => download("pdf")} type="button">
+                  <Download aria-hidden className="h-4 w-4" /> {busy === "pdf" ? "Drawing…" : "PDF"}
+                </button>
+                {areas.length > 1 ? (
+                  <button className={phxButtonGhostClassName} disabled={busy !== null} onClick={() => download("zip")} type="button">
+                    <FileArchive aria-hidden className="h-4 w-4" /> {busy === "zip" ? `Drawing ${areas.length + 1}…` : "All (ZIP)"}
+                  </button>
+                ) : null}
+              </span>
+            </div>
+            {mainFit?.limited ? <p className="text-xs font-semibold text-red-700">{TOO_LONG_MESSAGE}</p> : null}
+            {unmapped ? (
+              <p className="text-xs font-semibold text-amber-700">
+                Part of what you typed could not be kept. Click the word again and retype it, or use the lists on the right.
+              </p>
+            ) : null}
+            <FormError>{error}</FormError>
+            {problems.length && !error ? <p className="text-xs font-semibold text-amber-700">{problems[0]}</p> : null}
+          </div>
+        </section>
+      </div>
+
+      {/* ── The controls ── */}
       <div className="min-w-0 space-y-5">
         <section className={panelClassName}>
           <PanelHeader
@@ -614,8 +749,51 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
           </div>
         </section>
 
-        <LinesEditor label="What you will do" lines={draft.duties} onChange={(duties) => edit({ duties })} step={2} />
-        <LinesEditor label="What you need" lines={draft.needs} onChange={(needs) => edit({ needs })} step={3} />
+
+        <section className={panelClassName}>
+          <PanelHeader aside={templateName?.name} step={2} title="Design" />
+          <div className="grid grid-cols-3 gap-2 p-3 sm:grid-cols-6">
+            {JOB_POST_TEMPLATES.map((t, index) => (
+              <CheckTile checked={template === t.key} key={t.key} name="job-post-template" onChange={() => setTemplate(t.key)} type="radio">
+                <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  {thumbHtml[index] ? (
+                    <PostFrame html={thumbHtml[index]!} label={`${t.name} design`} onFit={(fit) => setFits((current) => ({ ...current, [t.key]: fit }))} />
+                  ) : (
+                    <span className="block aspect-[4/5] animate-pulse bg-slate-100" />
+                  )}
+                  <span className="text-xs font-bold leading-tight text-slate-800 sm:text-[10px]">{t.name}</span>
+                  <FitBadge fit={fits[t.key]} />
+                </span>
+              </CheckTile>
+            ))}
+          </div>
+        </section>
+
+
+        {areas.length > 1 ? (
+          <section className={panelClassName}>
+            <PanelHeader title={areaScope === "area" ? "Which area's picture" : "Which region's picture"} />
+            <div className="flex flex-wrap gap-2 p-3" role="tablist">
+              {[null, ...areas].map((area) => (
+                <button
+                  aria-selected={variant === area}
+                  className={variant === area ? phxButtonPrimaryClassName : phxButtonGhostClassName}
+                  key={area ?? "all"}
+                  onClick={() => setPickedArea(area)}
+                  role="tab"
+                  type="button"
+                >
+                  {area ?? (areaScope === "area" ? "All areas" : "All regions")}
+                </button>
+              ))}
+            </div>
+            <p className="px-3 pb-3 text-xs leading-relaxed text-slate-500">
+              The ZIP gives {areas.length + 1} pictures — all {areaScope}s, then one for each {areaScope} — and one PDF with every page.
+            </p>
+          </section>
+        ) : null}
+        <LinesEditor label="What you will do" lines={draft.duties} onChange={(duties) => edit({ duties })} step={3} />
+        <LinesEditor label="What you need" lines={draft.needs} onChange={(needs) => edit({ needs })} step={4} />
 
         <div className="flex flex-wrap items-center gap-3">
           <button className={phxButtonPrimaryClassName} disabled={busy !== null || !dirty} onClick={save} type="button">
@@ -627,7 +805,7 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
         <section className={panelClassName}>
           <PanelHeader
             aside={areas.length ? `${areas.length} of ${JOB_POST_MAX_AREAS} ${areaScope}s · for this post only` : "For this post only"}
-            step={4}
+            step={5}
             title="Where you are hiring"
           />
           <div className="space-y-4 p-4">
@@ -721,84 +899,6 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
                   </select>
                 </FormField>
               </div>
-            ) : null}
-          </div>
-        </section>
-      </div>
-
-      {/* ── The picture ── */}
-      <div className="min-w-0 space-y-5 xl:sticky xl:top-4 xl:self-start">
-        <section className={panelClassName}>
-          <PanelHeader aside={templateName?.name} step={5} title="Design" />
-          {/* Six across only where the column is sticky: the strip is what the post's height is taken
-              from. Stacked below xl the page simply scrolls, so the thumbs stay readable there. */}
-          <div className="grid grid-cols-3 gap-2 p-3 xl:grid-cols-6">
-            {JOB_POST_TEMPLATES.map((t, index) => (
-              <CheckTile checked={template === t.key} key={t.key} name="job-post-template" onChange={() => setTemplate(t.key)} type="radio">
-                <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  {thumbHtml[index] ? (
-                    <PostFrame html={thumbHtml[index]!} label={`${t.name} design`} onFit={(fit) => setFits((current) => ({ ...current, [t.key]: fit }))} />
-                  ) : (
-                    <span className="block aspect-[4/5] animate-pulse bg-slate-100" />
-                  )}
-                  <span className="text-xs font-bold leading-tight text-slate-800 xl:text-[10px]">{t.name}</span>
-                  <FitBadge fit={fits[t.key]} />
-                </span>
-              </CheckTile>
-            ))}
-          </div>
-        </section>
-
-        <section className={panelClassName}>
-          <PanelHeader aside={`${JOB_POST_WIDTH} × ${JOB_POST_HEIGHT} px · 4:5`} step={6} title="Preview and download" />
-          <div className="space-y-3 p-4">
-            <p className="text-xs font-semibold text-slate-500">{templateName?.description}</p>
-            {areas.length > 1 ? (
-              <div className="flex flex-wrap gap-2" role="tablist">
-                {[null, ...areas].map((area) => (
-                  <button
-                    aria-selected={variant === area}
-                    className={variant === area ? phxButtonPrimaryClassName : phxButtonGhostClassName}
-                    key={area ?? "all"}
-                    onClick={() => setPickedArea(area)}
-                    role="tab"
-                    type="button"
-                  >
-                    {area ?? (areaScope === "area" ? "All areas" : "All regions")}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {mainHtml ? (
-              <div className={`border border-slate-200 bg-white p-2 ${adminSoftDepthClassName}`}>
-                <PostFrame boxClassName="mx-auto w-full xl:h-[clamp(300px,calc(100vh-30rem),1350px)] xl:w-auto xl:max-w-full" html={mainHtml} label="Job post preview" onFit={setMainFit} />
-              </div>
-            ) : (
-              <div className="mx-auto aspect-[4/5] w-full animate-pulse bg-slate-100 xl:h-[clamp(300px,calc(100vh-30rem),1350px)] xl:w-auto xl:max-w-full" />
-            )}
-            <div className="flex flex-wrap items-center gap-2">
-              <FitBadge fit={mainFit} />
-              {mainFit?.limited ? <span className="text-xs font-semibold text-red-700">{TOO_LONG_MESSAGE}</span> : null}
-            </div>
-            <FormError>{error}</FormError>
-            {problems.length && !error ? <p className="text-xs font-semibold text-amber-700">{problems[0]}</p> : null}
-            <div className="flex flex-wrap gap-2">
-              <button className={phxButtonAccentClassName} disabled={busy !== null || mainFit?.limited === true} onClick={() => download("png")} type="button">
-                <Download aria-hidden className="h-4 w-4" /> {busy === "png" ? "Drawing…" : "Download picture"}
-              </button>
-              <button className={phxButtonGhostClassName} disabled={busy !== null || mainFit?.limited === true} onClick={() => download("pdf")} type="button">
-                <Download aria-hidden className="h-4 w-4" /> {busy === "pdf" ? "Drawing…" : "Download PDF"}
-              </button>
-              {areas.length > 1 ? (
-                <button className={phxButtonGhostClassName} disabled={busy !== null} onClick={() => download("zip")} type="button">
-                  <FileArchive aria-hidden className="h-4 w-4" /> {busy === "zip" ? `Drawing ${areas.length + 1} posts…` : "Download all (ZIP)"}
-                </button>
-              ) : null}
-            </div>
-            {areas.length > 1 ? (
-              <p className="text-xs leading-relaxed text-slate-500">
-                Download all gives {areas.length + 1} pictures — all {areaScope}s, then one for each {areaScope} — and one PDF with every page.
-              </p>
             ) : null}
           </div>
         </section>
