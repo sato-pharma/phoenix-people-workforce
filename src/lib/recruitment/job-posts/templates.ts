@@ -341,7 +341,9 @@ function executive(p: Parts): string {
   .micro { font-size: 12.5px; font-weight: 700; letter-spacing: .24em; text-transform: uppercase; color: var(--soft); text-align: right; }
   .city { font-size: 20px; font-weight: 700; color: var(--ink); margin-top: 5px; text-align: right; }
   .seam { height: 3px; flex-shrink: 0; background: var(--blue); }
-  .hero { position: relative; height: 326px; flex-shrink: 0; overflow: hidden;
+  /* min-height, not height: a two-line headline pushes the title's statement line down, and a fixed
+     326px hid it under the facts card that overlaps the hero's last 46px. The 66px keeps it 20px clear. */
+  .hero { position: relative; min-height: 326px; padding-bottom: 66px; flex-shrink: 0; overflow: hidden;
           background: radial-gradient(ellipse 700px 400px at 18% 30%, rgba(8,121,184,.2), rgba(8,121,184,0) 70%),
                       repeating-linear-gradient(0deg, rgba(255,255,255,.028) 0 1px, transparent 1px 56px),
                       repeating-linear-gradient(90deg, rgba(255,255,255,.028) 0 1px, transparent 1px 56px),

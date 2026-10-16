@@ -219,6 +219,17 @@ export function runRecruitmentJobPostsTests() {
   assert.ok(/needs = '\[[\s\S]*?Pharmacy, medicine, veterinary or science degree/.test(pmNeeds), "the update only fires while the requirements still hold the seed's draft");
   assert.ok(pmNeeds.includes("Greater Cairo resident") && pmNeeds.includes("Chest, ENT or Urology"), "residence and the specialities preference are in the list");
 
+  // The owner then asked (2026-10-16) for the post tailored to marketers: a headline, six duties in a
+  // marketer's own words, his seven requirements tightened. Guarded on the text the two earlier migrations wrote.
+  const pmCopy = readFileSync(new URL("../supabase/migrations/20261016143954_job_post_product_manager_marketer_copy.sql", import.meta.url), "utf8");
+  const [copyDuties, copyNeeds] = [...pmCopy.matchAll(/'(\[[\s\S]*?\])'::jsonb/g)].map((m) => JSON.parse(m[1]!.replace(/''/g, "'")) as unknown);
+  assert.ok(pmCopy.includes("headline = 'Own the brand.' || chr(10) || 'Lead the launch.'"), "the headline is two lines, split on a newline");
+  const copyParsed = coerceTitleDraft({ title: "Product Manager", department: "Marketing", headline: "Own the brand.\nLead the launch.", duties: copyDuties, needs: copyNeeds });
+  assert.deepEqual(titleDraftViolations(copyParsed), [], "the marketer copy saves as written — headline, six duties, seven requirements");
+  assert.deepEqual([copyParsed.duties.length, copyParsed.needs.length], [6, 7], "six duties and all seven of the owner's requirements");
+  assert.ok(copyParsed.needs.some((line) => line.lead === "Greater Cairo resident"), "the residence line stays \"Greater Cairo\", never plain Cairo (owner, 2026-10-16)");
+  assert.ok(/headline is null[\s\S]*?Own your line''s marketing plan[\s\S]*?Preferably experience in Chest, ENT or Urology/.test(pmCopy), "the update only fires while the headline is empty and both lists still hold the earlier text");
+
   // ── The builder: choosing a title loads its words, and the page wears the shared premium look ──
   const page = readFileSync(new URL("../src/components/recruitment/job-post-builder.tsx", import.meta.url), "utf8");
   assert.ok(/const pick = [\s\S]*?load\(found\)/.test(page), "picking a saved title loads its duties and requirements at once");
@@ -241,6 +252,11 @@ export function runRecruitmentJobPostsTests() {
   // preview shows the same verdict, so the person sees it before pressing download.
   const drawn = renderJobPostHtml(post(), "executive", ASSETS);
   const occurrences = (haystack: string, needle: string) => haystack.split(needle).length - 1;
+  // Executive with a two-line headline: the title drops to a statement line under it. A fixed 326px hero
+  // hid that line under the facts card overlapping the hero's foot (Product Manager, 2026-10-16).
+  const headlined = renderJobPostHtml(post({ headline: "Own the brand.\nLead the launch." }), "executive", ASSETS);
+  assert.ok(headlined.includes('<div class="statement"><i></i>Medical Representative</div>'), "a headlined Executive post still prints the title, as its statement line");
+  assert.ok(headlined.includes(".hero { position: relative; min-height: 326px; padding-bottom: 66px;"), "the Executive hero grows with a two-line headline instead of hiding the title under the facts card");
   assert.ok(drawn.includes("const report = { titles: 0, k: 1, limited: false }"), "the layout report starts as not limited");
   assert.ok(drawn.includes("report.limited = true") && drawn.includes("if (k <= 0.6 || overflowing()) report.limited = true"), "running out of room (a title or the text at its floor, or anything still overflowing) marks the report limited");
   assert.ok(drawn.includes("window.parent.postMessage({ jobPostFit: report }"), "the sandboxed preview posts its fit to the page, the only way out of the frame");
