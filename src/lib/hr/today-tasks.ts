@@ -41,6 +41,7 @@ import type { HrCommandSources } from "@/lib/hr/command-center";
 import { currentCairoDateOnlyIso, formatDateValue } from "@/lib/i18n/format";
 import { listUnoccupiedWorkforceSeats } from "@/lib/platform/metrics";
 import { isProbationDecisionOutstanding } from "@/lib/probation/service";
+import { isUnreviewedCandidateStatus } from "@/lib/recruitment/candidate-status";
 import { applicationStageLabels } from "@/lib/recruitment/labels";
 
 /** How many named rows a task shows before it says how many more there are. */
@@ -621,12 +622,24 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
       (row) => !row.requisition || !DEAD_REQUISITION_STATUSES.has(row.requisition.status),
     );
 
-    const screening = applications.filter((row) => SCREENING_STAGES.has(row.stage));
+    // THE CANDIDATE'S OWN STATUS DECIDES WHETHER A CV IS STILL WAITING, NOT THE APPLICATION'S STAGE.
+    // Every screen that decides on a CV (the pool, shortlist, reject, push to a manager, the offer
+    // sync) writes `ats_candidates.status` and none of them moves the application row, so an
+    // application stays at "CV screening" for ever after the person is shortlisted, rejected or
+    // hired. Measured on production 2026-10-16: all three applications at this stage were decided
+    // candidates (shortlisted, rejected, hired) and read "waiting 61 days" on her board. A row with
+    // no candidate record at all cannot be judged either way, so it stays on the list.
+    const screening = applications.filter(
+      (row) =>
+        SCREENING_STAGES.has(row.stage) &&
+        (!row.candidate || isUnreviewedCandidateStatus(row.candidate.status)),
+    );
     tasks.push(
       task({
         action: "Screen",
-        clearLabel: "No CV is waiting to be read.",
-        detail: "A candidate has applied and is waiting on your read of the CV.",
+        clearLabel: "No application against a requisition is waiting on a CV read.",
+        detail:
+          "A candidate applied against a requisition and nobody has decided on the CV yet — not shortlisted, rejected or sent to a manager.",
         functionKey: "recruiting",
         href: "/hr/cv-database",
         hrefLabel: "Open CV Database",
