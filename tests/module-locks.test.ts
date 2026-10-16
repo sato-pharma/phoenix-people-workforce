@@ -14,7 +14,7 @@ import {
   describeModuleLockRefusal,
   isLockableModule,
 } from "../src/lib/auth/module-locks.ts";
-import { permissionResources } from "../src/lib/auth/permissions.ts";
+import { permissionMatrix, permissionResources, phoenixRoles } from "../src/lib/auth/permissions.ts";
 
 /**
  * Temporary per-account module locks — the rules a wrong answer would hurt someone with.
@@ -76,6 +76,29 @@ export function runModuleLockAddressMapTests() {
   // The PORTAL is covered too — its rows carry no permission metadata, so the portal registry is
   // what puts them in the map. Without this the padlock never appears on an employee's sidebar.
   assert.deepEqual(resolveModulesForPath("/employee-portals/expenses"), ["expenses"]);
+
+  // Incentive is a module of its own (owner, 2026-10-16). Its portal tab and its admin-shell
+  // workspace page both used to gate on Employee Profile — the one module that can never be locked —
+  // so the picker could not offer it. Both addresses must now resolve to it, and the workspace page
+  // is a TAB inside the workspace frame with no sidebar row, so only the personal-workspace list
+  // puts it in the map: without that, a locked person is bounced away without reading the sentence.
+  assert.deepEqual(resolveModulesForPath("/employee-portals/incentive"), ["incentive"]);
+  assert.deepEqual(resolveModulesForPath("/workspace/incentive"), ["incentive"]);
+  assert.equal(resolveLockedModuleForPath("/workspace/incentive", ["incentive"]), "incentive");
+  assert.equal(resolveLockedModuleForPath("/workspace/incentive", ["payslips"]), null);
+  assert.equal(isLockableModule("incentive"), true);
+  // Nobody gains or loses the tab: every role that could open the page through Employee Profile
+  // holds Incentive, and no role holds it without Employee Profile.
+  const incentiveDrift = phoenixRoles.filter(
+    (role) =>
+      Boolean(permissionMatrix[role].employee_profile?.includes("read")) !==
+      Boolean(permissionMatrix[role].incentive?.includes("read")),
+  );
+  assert.deepEqual(incentiveDrift, [], "incentive:read must be held by exactly the roles that hold employee_profile:read");
+  assert.ok(
+    phoenixRoles.some((role) => permissionMatrix[role].incentive?.includes("read")),
+    "at least one role must hold incentive:read, or the picker offers Incentive to nobody",
+  );
 
   // An address no navigation entry covers resolves to nothing, and is therefore never locked. The
   // page still refuses itself through assertPermission; it just words the refusal plainly.

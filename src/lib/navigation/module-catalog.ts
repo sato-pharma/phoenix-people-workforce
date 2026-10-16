@@ -28,6 +28,7 @@ import {
 } from "@/config/system-navigation";
 import { PORTAL_NAV_REGISTRY } from "@/components/employee-portal/employee-portal-nav-registry";
 import { permissionResources, type PermissionResource } from "@/lib/auth/permissions";
+import { personalWorkspaceTabs } from "@/lib/workspace/personal-workspace-nav";
 
 /**
  * What each module is CALLED. Every permission resource has an entry — the union and this record
@@ -75,6 +76,7 @@ export const MODULE_LABELS: Record<PermissionResource, string> = {
   hiring_interviews: "Hiring Interviews",
   hr_calendar: "HR Calendar",
   imports: "Data Imports",
+  incentive: "Incentive",
   leave: "Leave & Vacations",
   mailbox_monitor: "Mailbox Monitor",
   mailbox_offboarding: "Mailbox Revocation",
@@ -163,6 +165,16 @@ function buildHrefIndex(): HrefPermissionEntry[] {
 
   for (const entry of PORTAL_NAV_REGISTRY) {
     add(entry.href, toResources(entry.permission ? [entry.permission] : undefined));
+  }
+
+  // The admin shell's personal workspace (/workspace/incentive, /workspace/payslips, …). Those pages
+  // have no sidebar row of their own — they are tabs inside the workspace frame — so without this
+  // they inherit the bare /workspace address and a locked person is redirected away without ever
+  // reading the lock sentence. The root tab is skipped: it is a prefix of every other workspace
+  // page, so mapping it would only dilute the OR rule for the whole subtree.
+  for (const tab of personalWorkspaceTabs) {
+    if (tab.href === "/workspace") continue;
+    add(tab.href, tab.resource ? [tab.resource] : []);
   }
 
   return Array.from(byHref.entries()).map(([href, resources]) => ({

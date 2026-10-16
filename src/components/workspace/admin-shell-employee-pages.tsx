@@ -379,7 +379,7 @@ export async function WorkspaceDashboardPage() {
 }
 
 export async function WorkspaceIncentivePage() {
-  const access = await requireAdminShellEmployeeWorkspaceAccess({ resource: "employee_profile" });
+  const access = await requireAdminShellEmployeeWorkspaceAccess({ resource: "incentive" });
   const data = await getEmployeePortalIncentiveData(access).catch((error) => {
     logPortalFailure({ route: "/workspace/incentive", module: "incentive", role: access.role, hrId: access.hrId }, error);
     return null;
