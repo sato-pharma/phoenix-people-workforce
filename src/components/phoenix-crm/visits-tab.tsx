@@ -1013,7 +1013,7 @@ function AddFlow({
             onSaved(visit, customerName);
           }}
           part={formStep.part ?? "details"}
-          recording={loaded.recordingRequired ? sent.recording : null}
+          visitRecording={loaded.recordingRequired ? sent.recording : null}
           seatId={seatId}
           test={test}
         />,

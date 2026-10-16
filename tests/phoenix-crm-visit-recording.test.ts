@@ -107,10 +107,10 @@ export function runPhoenixCrmVisitRecordingTests(): void {
   const tab = read("src/components/phoenix-crm/visits-tab.tsx");
   assert.match(tab, /if \(loaded\.recordingRequired && !sent\.recording\) \{\s*return shell\(/, "Add visit opens with the recorder for a switched-on rep");
   assert.match(tab, /<VisitRecordingGate/, "the gate is the recorder screen");
-  assert.match(tab, /recording=\{loaded\.recordingRequired \? sent\.recording : null\}/, "only a switched-on rep's form carries a recording");
+  assert.match(tab, /visitRecording=\{loaded\.recordingRequired \? sent\.recording : null\}/, "only a switched-on rep's form carries a recording");
 
   const form = read("src/components/phoenix-crm/visit-log-form.tsx");
-  assert.match(form, /recordingPath: recording\?\.path \?\? null/, "the save carries the stored path");
+  assert.match(form, /recordingPath: visitRecording\?\.path \?\? null/, "the save carries the stored path");
   assert.match(form, /isVisitRecordingRefusal\(/, "a refused recording sends the rep back to the recorder");
 
   // ── 3. Who hears it ──────────────────────────────────────────────────────────────────────────

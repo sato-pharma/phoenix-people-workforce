@@ -360,7 +360,7 @@ export function VisitLogForm({
   onRecordingRefused,
   onSaved,
   part,
-  recording = null,
+  visitRecording = null,
   seatId,
   test,
 }: {
@@ -385,7 +385,7 @@ export function VisitLogForm({
    * The visit recording a chosen rep sent before the form opened (owner, 2026-10-16), carried in the
    * save so the server can claim it. Null for every rep the Super Admin has not switched on.
    */
-  recording?: { path: string; seconds: number } | null;
+  visitRecording?: { path: string; seconds: number } | null;
   /** The save refused the recording (used, too old, never arrived): Add visit puts the recorder back. */
   onRecordingRefused?: (message: string) => void;
   seatId: string;
@@ -674,8 +674,8 @@ export function VisitLogForm({
         voiceNoteSeconds: voiceNote?.seconds ?? null,
         voiceNoteBytes: voiceNote?.bytes ?? null,
         // The conversation itself, for a rep the Super Admin switched on. It dates nothing either.
-        recordingPath: recording?.path ?? null,
-        recordingSeconds: recording?.seconds ?? null,
+        recordingPath: visitRecording?.path ?? null,
+        recordingSeconds: visitRecording?.seconds ?? null,
       },
     };
   }
