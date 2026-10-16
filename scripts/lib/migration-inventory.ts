@@ -869,6 +869,10 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // names admin_pending, 1 trigger, the review function `prosecdef` true with EXECUTE held by postgres
   // and service_role only, and phoenix_crm_countable_visits keeps security_invoker=true and read 2,334
   // rows before and after (no recording had been claimed). Re-applying it is a no-op.
+  // After both applies the file's `drop trigger if exists` + `create trigger` pair became one
+  // `create or replace trigger` (the Phoenix CRM boundary test allows a migration to drop only its own
+  // policies and constraints). Same trigger, same table, same function: that statement was run on
+  // staging and still reads trigger_count 1, so the file and both databases agree.
   "20261016161248_phoenix_crm_recorded_visit_waits_for_the_administrator.sql",
 ]);
 

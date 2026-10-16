@@ -127,8 +127,7 @@ $$;
 revoke execute on function public.phoenix_crm_unplanned_waits_for_the_administrator() from public, anon, authenticated;
 grant execute on function public.phoenix_crm_unplanned_waits_for_the_administrator() to service_role;
 
-drop trigger if exists phoenix_crm_unplanned_waits_for_the_administrator on public.phoenix_crm_unplanned_visits;
-create trigger phoenix_crm_unplanned_waits_for_the_administrator
+create or replace trigger phoenix_crm_unplanned_waits_for_the_administrator
   before insert on public.phoenix_crm_unplanned_visits
   for each row execute function public.phoenix_crm_unplanned_waits_for_the_administrator();
 

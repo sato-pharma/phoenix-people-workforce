@@ -287,7 +287,7 @@ export function runPhoenixCrmVisitRecordingTests(): void {
   assert.match(reviewSql, /check \(status in \('admin_pending', 'manager_pending', 'sfe_pending', 'approved', 'refused'\)\)/);
   assert.match(
     reviewSql,
-    /create trigger phoenix_crm_unplanned_waits_for_the_administrator\s+before insert on public\.phoenix_crm_unplanned_visits/,
+    /create or replace trigger phoenix_crm_unplanned_waits_for_the_administrator\s+before insert on public\.phoenix_crm_unplanned_visits/,
     "a recorded off-plan visit is moved to the Administrator's step as it is written, whatever path writes it",
   );
   assert.match(reviewSql, /new\.after_admin_status := new\.status;\s*new\.status := 'admin_pending';/, "the step it was going to start at is kept for his yes");
