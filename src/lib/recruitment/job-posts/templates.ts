@@ -609,12 +609,15 @@ function boldBlue(p: Parts): string {
   .page::before { content: ""; position: absolute; inset: 10px; border: 1px solid rgba(255,255,255,.55); z-index: 19; }
   .page::after { content: ""; position: absolute; inset: 15px; border: 1px solid rgba(255,255,255,.22); z-index: 19; }
   .tick.tl, .tick.tr { border-color: #fff; } .tick.bl, .tick.br { border-color: var(--blue-light); }
-  .ghost { position: absolute; left: 40px; top: 150px; font-size: 250px; font-weight: 700; letter-spacing: -.04em; line-height: 1; color: rgba(255,255,255,.05); -webkit-text-stroke: 2px rgba(255,255,255,.32); white-space: nowrap; z-index: 0; }
+  .ghost { position: absolute; left: 40px; top: 150px; font-size: 250px; font-weight: 700; letter-spacing: -.04em; line-height: 1; color: rgba(255,255,255,.03); -webkit-text-stroke: 2px rgba(255,255,255,.15); white-space: nowrap; z-index: 0; }
   .mast { position: relative; z-index: 2; height: 96px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 72px; }
   .mast img { display: block; height: 58px; margin-left: -3px; }
   .areas.ink { background: rgba(10,40,66,.34); box-shadow: inset 0 0 0 1px rgba(255,255,255,.42); }
   .areas.ink .al span { box-shadow: inset 0 0 0 1px rgba(255,255,255,.7); }
   .areas.ink .ak { color: #fff; } .areas.ink .ak s, .areas.ink .al span i { background: #fff; }
+  .areas.ink.few .al { flex: 1; flex-wrap: nowrap; gap: 0; box-shadow: inset 0 0 0 2px rgba(255,255,255,.75); }
+  .areas.ink.few .al span { flex: 1 1 0; justify-content: center; box-shadow: none; background: transparent; }
+  .areas.ink.few .al span + span { border-left: 1px solid rgba(255,255,255,.45); }
   .mast .tag { font-size: 12.5px; font-weight: 700; letter-spacing: .32em; text-transform: uppercase; color: rgba(255,255,255,.9); }
   .hero { position: relative; z-index: 2; flex-shrink: 0; padding: 40px 72px 0; }
   .hirerow { display: flex; align-items: center; gap: 18px; }
@@ -625,28 +628,30 @@ function boldBlue(p: Parts): string {
   h1 span { display: block; }
   h1 span + span { color: var(--ink); }
   .chips { margin-top: 26px; display: flex; flex-wrap: wrap; gap: 10px; }
-  .chips span { display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px; font-size: 15px; font-weight: 700; background: rgba(255,255,255,.1); box-shadow: inset 0 0 0 1px rgba(255,255,255,.5); }
+  .chips span { display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px; font-size: 17px; font-weight: 700; background: rgba(255,255,255,.1); box-shadow: inset 0 0 0 1px rgba(255,255,255,.5); }
   .chips span em { font-style: normal; font-weight: 400; opacity: .8; }
   .chips span s { display: block; width: 6px; height: 6px; background: var(--blue-light); }
   .card { position: relative; z-index: 2; flex: 1; margin: 34px 56px 0; background: #fff; color: var(--body); padding: 30px 36px; display: grid; grid-template-columns: 1fr 1px 1fr; column-gap: 28px; align-content: center;
           box-shadow: 14px 14px 0 var(--ink); overflow: visible; }
   .card .sep { background: var(--line); }
-  .lbl { display: flex; align-items: center; gap: 10px; font-size: 11px; font-weight: 700; letter-spacing: .3em; text-transform: uppercase; color: var(--blue); padding-bottom: 12px; border-bottom: 2px solid var(--blue); }
+  .lbl { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 700; letter-spacing: .3em; text-transform: uppercase; color: var(--blue); padding-bottom: 12px; border-bottom: 2px solid var(--blue); }
   .n .lbl { color: var(--ink); border-color: var(--ink); }
   .lbl em { font-style: normal; font-size: 24px; letter-spacing: -.02em; color: var(--ink); line-height: 1; }
-  .card ul { margin-top: 20px; display: flex; flex-direction: column; gap: calc(var(--k) * 20px); }
+  .card .d, .card .n { display: flex; flex-direction: column; }
+  .card ul { margin-top: 20px; display: flex; flex-direction: column; gap: calc(var(--k) * 20px); flex: 1; }
+  .n ul { justify-content: space-between; }
   .card li { display: flex; align-items: baseline; gap: 11px; font-size: calc(var(--k) * 17.5px); line-height: 1.42; }
   .card li b { color: var(--ink); }
   .card li s { flex: 0 0 7px; height: 7px; background: var(--blue); transform: translateY(-2px); }
   .n li s { background: var(--ink); }
   .apply { position: relative; z-index: 2; flex-shrink: 0; margin: 44px 0 0; height: 140px; background: var(--ink); display: flex; align-items: center; justify-content: space-between; gap: 40px; padding: 0 72px; }
-  .apply .k { font-size: 11.5px; font-weight: 700; letter-spacing: .36em; text-transform: uppercase; color: var(--blue-light); }
+  .apply .k { font-size: 13px; font-weight: 700; letter-spacing: .36em; text-transform: uppercase; color: var(--blue-light); }
   .apply .num { margin-top: 8px; font-size: 52px; font-weight: 700; letter-spacing: -.01em; line-height: 1; white-space: nowrap; }
-  .apply .sub { max-width: 430px; font-size: 14.5px; line-height: 1.55; color: rgba(255,255,255,.8); text-align: left; padding-left: 32px; border-left: 1px solid rgba(255,255,255,.22); }
+  .apply .sub { max-width: 470px; font-size: 17px; line-height: 1.5; color: rgba(255,255,255,.8); text-align: left; padding-left: 32px; border-left: 1px solid rgba(255,255,255,.22); }
   .apply .sub b { color: #fff; }
   .foot { position: relative; z-index: 2; height: 70px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 72px; border-top: 1px solid rgba(93,183,232,.35); background: #0b121a; }
-  .foot b { font-size: 13px; letter-spacing: .3em; text-transform: uppercase; }
-  .foot span { font-size: 13.5px; color: rgba(255,255,255,.75); }`, `
+  .foot b { font-size: 15px; letter-spacing: .3em; text-transform: uppercase; }
+  .foot span { font-size: 15.5px; color: rgba(255,255,255,.75); }`, `
 <div class="page">${TICKS}
   <div class="ghost" aria-hidden="true">HIRING</div>
   <header class="mast"><img src="${p.a.logoOnBlue}" alt="Sato Pharma"><span class="tag">Careers &middot; ${escapeHtml(p.c.department)}</span></header>

@@ -378,4 +378,18 @@ export function runRecruitmentJobPostsTests() {
     "the preview takes its size from the SCREEN's height, not the column's width, so the sticky column fits one screen",
   );
   assert.ok(page.includes("xl:grid-cols-6"), "the six designs sit on one row where the column is sticky, which is what the post's height is taken from");
+
+  // ── Bold Blue polish (owner 2026-10-16: "enhance this") — scoped to Bold Blue, the other five untouched ──
+  // Two to four areas share the whole band instead of huddling at its left; a single area keeps its own
+  // big chip; the two columns end on one line; and the smallest type grew, because a 1080px picture is
+  // read at about a third of its width on a phone.
+  const blue = renderJobPostHtml(post({ areas: ["Alexandria", "Behira"] }), "bold-blue", ASSETS);
+  assert.ok(blue.includes(".areas.ink.few .al { flex: 1; flex-wrap: nowrap; gap: 0; box-shadow: inset 0 0 0 2px rgba(255,255,255,.75); }") && blue.includes(".areas.ink.few .al span + span { border-left"), "Bold Blue: two to four areas sit in ONE field, split by a hairline (owner: \"alexandria and behira in one field\")");
+  assert.ok(!blue.includes(".areas.ink.one .al { flex: 1"), "Bold Blue: a single area is not stretched across the band");
+  assert.ok(blue.includes(".n ul { justify-content: space-between; }"), "Bold Blue: the needs column spreads to end level with the duties column");
+  assert.ok(blue.includes("font-size: 17px; line-height: 1.5;"), "Bold Blue: the apply line is large enough to read on a phone");
+  for (const { key } of JOB_POST_TEMPLATES) {
+    if (key === "bold-blue") continue;
+    assert.ok(!renderJobPostHtml(post({ areas: ["Alexandria", "Behira"] }), key, ASSETS).includes(".areas.ink.few .al {"), `${key}: the Bold Blue band polish stays out of the other designs`);
+  }
 }
