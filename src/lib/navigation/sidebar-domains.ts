@@ -1,6 +1,11 @@
 import type { LucideIcon } from "lucide-react";
 
-import { adminSidebarDomains, UNGROUPED_DOMAIN } from "@/config/sidebar-domains";
+import {
+  adminSidebarDomains,
+  HR_SECTION_FALLBACK_ICON,
+  hrSectionIcons,
+  UNGROUPED_DOMAIN,
+} from "@/config/sidebar-domains";
 import type { NavigationSection } from "@/config/system-navigation";
 
 export type RenderedDomainGroup = {
@@ -85,6 +90,30 @@ export function groupAdminSections(sections: readonly NavigationSection[]): Rend
   }
 
   return domains;
+}
+
+/**
+ * Each section as its own drawer, for the HR seats on `usesSectionDrawers` (active-path.ts). Same
+ * shape as `groupAdminSections` so the rail draws both with one renderer, and the same safety
+ * argument: it runs after `getSections`, every section in comes out exactly once, in the order it
+ * came in, and an empty section is omitted. The group heading is blank because the drawer's own
+ * title IS the section heading — printing it again under the title is the stutter the domain layer
+ * was built to remove.
+ */
+export function sectionsAsDrawers(sections: readonly NavigationSection[]): RenderedDomain[] {
+  return sections
+    .filter((section) => section.items.length > 0)
+    .map((section) =>
+      toRendered(
+        {
+          id: section.id,
+          name: section.label,
+          desc: "",
+          icon: hrSectionIcons[section.id] ?? HR_SECTION_FALLBACK_ICON,
+        },
+        [{ heading: "", sections: [section] }],
+      ),
+    );
 }
 
 function toRendered(
