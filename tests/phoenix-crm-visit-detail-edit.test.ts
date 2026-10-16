@@ -306,7 +306,8 @@ export function runPhoenixCrmVisitDetailEditTests(): void {
     assert.match(tab, /detail && visit\.detailEditable/, "and only on a visit that is his own");
     assert.match(
       tab,
-      /canAddVisitDetail === true \? \{ seatId: view\.territory\.seatId, isTest: view\.isTest \} : null/,
+      // `reload` is how a written-up visit re-reads its own day (2026-10-16 performance audit); the gate is unchanged.
+      /canAddVisitDetail === true \? \{ seatId: view\.territory\.seatId, isTest: view\.isTest(?:, reload: day\.reload)? \} : null/,
       "the door is the server's answer, never the screen's",
     );
     assert.ok(!tab.includes("isToday && view?.canAddVisitDetail"), "and it carries NO day condition — he was asked and answered any time");
