@@ -51,7 +51,7 @@ name: Attendance Weekly Digest
 on:
   schedule:
     # 03:23 UTC = 06:23 Cairo. Offset off the shared :00/:15/:30/:45 firing minute like
-    # every sibling cron here, and clear of migration-drift (07:00) and security-scan (05:17).
+    # every sibling cron here, and clear of migration-drift (07:00) and security-scan (20:17).
     - cron: "23 3 * * *"
     # 10:23 UTC = 13:23 Cairo. Yesterday's punches reach the fingerprint table late in the
     # morning, after the first run, so the afternoon run is the one that sees them

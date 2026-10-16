@@ -165,7 +165,7 @@ nothing, because every job is rounded up to a whole minute.
 🔴 **Every `secret-scan` row in this section and the next is a run that can no longer happen — read
 them as history, not as today's bill.** #4787 merged 2026-09-29 17:05 UTC and #4800 took
 `secret-scan` off `pull_request` at 19:14 UTC the same evening, so `security-scan.yml` now fires
-only on its daily 05:17 UTC schedule and on dispatch. A pull request runs `ci.yml` and nothing else
+only on its daily schedule (05:17 UTC then, 20:17 UTC since 2026-10-16) and on dispatch. A pull request runs `ci.yml` and nothing else
 (verified on #5005, 2026-10-01: one workflow run on the head). Subtract those minutes and the same
 merge today is **24**, the branch below **38**, **50** in all. The point the measurement was taken
 to make — the cost is per *merge*, not per file — is untouched.

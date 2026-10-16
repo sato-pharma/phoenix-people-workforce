@@ -67,7 +67,7 @@ and will not stop the merge on your behalf. `secret-scan` went further in the sa
 `security-scan.yml` lost its `pull_request` trigger, so it cannot appear on a PR at all and its
 absence is **not a gap in coverage** — gitleaks moved onto the machine, into `bash-guard.mjs` clause
 **C12**, which refuses the push before a key ever reaches GitHub, and the workflow still runs daily
-at 05:17 UTC. Never wait for it and never dispatch one to complete the set. Measured on #5005
+at 20:17 UTC. Never wait for it and never dispatch one to complete the set. Measured on #5005
 (2026-10-01): one workflow run on the head — `ci.yml` — and four check runs, `validate`, `checks`,
 `mobile` skipped, `full-e2e` skipped.
 

@@ -498,7 +498,7 @@ workflows:
 | --- | --- | --- |
 | `deploy-drift-check.yml` | `9,39 * * * *` | active |
 | `migration-drift-check.yml` | `0 7 * * *` | active |
-| `security-scan.yml` | `17 5 * * *` | active |
+| `security-scan.yml` | `17 5 * * *` (`17 20 * * *` since 2026-10-16) | active |
 | **`synthetic-journeys.yml`** | `17 2-18/3 * * *` | **active — 1,032 runs, and §3 never listed it** (its `schedule:` leg was REMOVED 2026-10-14; see below) |
 
 A fifth, `security.yml`, reads `disabled_manually` and is correctly absent. The `cron:` lines in

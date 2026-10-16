@@ -322,7 +322,7 @@ coming undone. Fixed by mapping the whole list in one pass (PR #3541).
   `if: github.event_name != 'pull_request'` and now runs on `main`, a dispatch and a schedule;
   `security-scan.yml` lost its `pull_request` trigger entirely (the same gitleaks 8.30.1 moved into
   `bash-guard.mjs` clause **C12**, which refuses the push, so a key never reaches GitHub at all) and
-  keeps its daily 05:17 UTC `schedule`. **So a PR's check list IS the required pair and nothing
+  keeps its daily `schedule` (20:17 UTC since 2026-10-16). **So a PR's check list IS the required pair and nothing
   else.** Their absence from a PR *and* from a merge commit is CORRECT, not a missed gate — do not
   hunt for either afterwards and do not dispatch one to "complete the set". What it costs is real
   and is the point: a red Expo typecheck or a gitleaks finding is now a **fix-forward on `main`**
