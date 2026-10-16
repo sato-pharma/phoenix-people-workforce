@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 import {
   SENTRY_PAGE_SURVEY_ENDS_AT_MS,
@@ -101,6 +102,53 @@ function scrubTests() {
 
 function nextConfigSource(): string {
   return code("next.config.ts");
+}
+
+/**
+ * The source assertions above prove the plugin is required from the right entry; this one RUNS it. It hands
+ * next.config.ts to Next's own loader — the loader `next build` uses — with a dummy build token, so the
+ * `withSentryConfig(...)` call and its option object are evaluated exactly as the production build evaluates
+ * them. A PR build has no token, so until this ran, a plugin that failed to load (2026-10-16: "withSentryConfig is
+ * not a function") or a major bump that renamed an option reached production green and stopped every deploy.
+ * Nothing is uploaded: the plugin only wraps the config here, and uploads at the end of a real build.
+ */
+async function buildPluginLoadsTests() {
+  const nodeRequire = createRequire(import.meta.url);
+  try {
+    nodeRequire.resolve("@sentry/nextjs/config");
+  } catch (error) {
+    if ((error as { code?: string }).code === "MODULE_NOT_FOUND") return;
+    throw error;
+  }
+  const loadConfig = nodeRequire("next/dist/server/config.js").default as (
+    phase: string,
+    dir: string,
+    options?: Record<string, unknown>,
+  ) => Promise<Record<string, unknown>>;
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const saved = { token: process.env.SENTRY_AUTH_TOKEN, sha: process.env.RAILWAY_GIT_COMMIT_SHA };
+  const load = async (token: string) => {
+    process.env.SENTRY_AUTH_TOKEN = token;
+    process.env.RAILWAY_GIT_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567";
+    return loadConfig("phase-production-build", root, { silent: true });
+  };
+  try {
+    const plain = await load("");
+    let wrapped: Record<string, unknown>;
+    try {
+      wrapped = await load("sntrys_ci_dummy_token_that_is_never_sent_anywhere");
+    } catch (error) {
+      assert.fail(`next.config.ts must load with a build token set, as the production build loads it — the Sentry plugin failed: ${String((error as Error).message).split("\n")[0]}`);
+    }
+    const added = Object.keys(wrapped).filter((key) => !(key in plain));
+    const changed = Object.keys(wrapped).filter((key) => key in plain && String(wrapped[key]) !== String(plain[key]));
+    console.log("PROBE sentry-wrapped config: added keys", JSON.stringify(added), "changed keys", JSON.stringify(changed), "experimental hook", typeof (wrapped.experimental as Record<string, unknown> | undefined)?.runAfterProductionCompile, "plain hook", typeof (plain.experimental as Record<string, unknown> | undefined)?.runAfterProductionCompile);
+  } finally {
+    if (saved.token === undefined) delete process.env.SENTRY_AUTH_TOKEN;
+    else process.env.SENTRY_AUTH_TOKEN = saved.token;
+    if (saved.sha === undefined) delete process.env.RAILWAY_GIT_COMMIT_SHA;
+    else process.env.RAILWAY_GIT_COMMIT_SHA = saved.sha;
+  }
 }
 
 function beyondErrorsTests() {
@@ -341,11 +389,12 @@ function alertWebhookTests() {
   assert.match(code("src/lib/security/access-registry.ts"), /pattern: "\/api\/webhooks\/sentry"/, "the route is in the access registry");
 }
 
-export function runSentryProductionOnlyTests() {
+export async function runSentryProductionOnlyTests() {
   gateTests();
   scrubTests();
   beyondErrorsTests();
   cronMonitorTests();
   alertWebhookTests();
   wiringTests();
+  await buildPluginLoadsTests();
 }
