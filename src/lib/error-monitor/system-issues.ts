@@ -14,7 +14,6 @@ import {
   type ErrorEventRow,
   type UserAttemptRow,
 } from "@/lib/error-monitor/service";
-import { getServiceHealthSnapshot, type ServiceHealthResult } from "@/lib/observability/gcp-metrics";
 import {
   deriveAppErrorStatus,
   deriveFailedLoginStatus,
@@ -27,19 +26,15 @@ import { hasOpenAiApiKey } from "@/lib/ai/openai-client";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
 export type ErrorEventRowWithStatus = ErrorEventRow & { status: IssueStatus; displayMessage: string; employeeName: string | null };
-export type { ServiceHealthResult } from "@/lib/observability/gcp-metrics";
 export type UserAttemptRowWithStatus = UserAttemptRow & { status: IssueStatus; displayMessage: string; employeeName: string | null; employeeRole: string | null };
 export type { UnknownAttemptsSummary } from "@/lib/error-monitor/service";
 
 export async function loadSystemIssuesSnapshot() {
   const currentRelease = getCurrentReleaseTag();
-  const [appErrors, activeSignatures, directory, serviceHealth] = await Promise.all([
+  const [appErrors, activeSignatures, directory] = await Promise.all([
     getErrorEvents({ pageSize: 100 }),
     getActiveErrorSignatures(currentRelease),
     getAccountDirectory(),
-    // Non-fatal: the reader returns { available: false, error } instead of throwing, so a
-    // missing GCP config / IAM grant never breaks the rest of the snapshot.
-    getServiceHealthSnapshot(),
   ]);
 
   const appErrorsWithStatus = {
@@ -55,7 +50,6 @@ export async function loadSystemIssuesSnapshot() {
   return {
     aiEnabled: hasOpenAiApiKey(),
     appErrors: appErrorsWithStatus,
-    serviceHealth: serviceHealth satisfies ServiceHealthResult,
   };
 }
 

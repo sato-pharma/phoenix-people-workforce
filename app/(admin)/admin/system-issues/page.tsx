@@ -45,7 +45,7 @@ export default async function SystemIssuesPage() {
     <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-phx-line bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.12),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
       <div className="space-y-7">
         <AdminPageHero
-          description="Live system errors from Supabase, live Cloud Run service health, and per-employee error/failed-login attempt counts. Super Admin + CEO only."
+          description="Live system errors from Supabase and per-employee error/failed-login attempt counts. Super Admin + CEO only."
           eyebrow="System diagnostics"
           icon={<TriangleAlert className="h-3.5 w-3.5" />}
           title="System Issues"
@@ -56,7 +56,6 @@ export default async function SystemIssuesPage() {
             aiEnabled={issuesResult.aiEnabled}
             initialAppErrors={issuesResult.appErrors}
             initialAttempts={attemptsResult}
-            initialServiceHealth={issuesResult.serviceHealth}
           />
         ) : (
           <Card className="border-rose-200 bg-[linear-gradient(135deg,#FFF1F2_0%,#FFFFFF_100%)] p-6 shadow-[0_16px_36px_rgba(244,63,94,0.10)]">

@@ -10,7 +10,7 @@ import { notifyJobsStranded } from "@/lib/observability/job-heartbeat-alert";
 import { sweepJobHeartbeats } from "@/lib/observability/job-heartbeat";
 import { fireCronRouteOnLoopback, refireStrandedJobs } from "@/lib/observability/job-refire";
 import { JOB_HEARTBEAT_SWEEP_SLUG } from "@/lib/observability/job-schedule";
-import { logError, logInfo } from "@/lib/observability/log";
+import { logError, logInfo, logWarning } from "@/lib/observability/log";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 import { runDeadTokenPollingCheck } from "@/lib/share-links/dead-token-polling-alert";
 
@@ -82,9 +82,13 @@ export async function GET(request: Request) {
         labels: { event: "job_heartbeat_sweep_healthy", job: JOB_HEARTBEAT_SWEEP_SLUG },
       });
     } else {
-      // logError, not logWarning: this is the shape the whole layer exists to surface, and it must
-      // be findable in `railway logs` independently of whether the notification went out.
-      logError("Job heartbeat sweep found jobs that have stopped reporting", {
+      // logWarning, NOT logError (owner, 2026-10-16: "remove the job-heartbeat noise"): this runs
+      // every 15 minutes and a stranded job stays stranded, so logError wrote the same row into
+      // `app_error_events` 96 times a day - 955 of the 1,401 rows System Issues held for the week,
+      // which buried every real browser error. It is still a WARNING line in `railway logs`, and the
+      // human channel is the alert below (in-app + Telegram, one message a Cairo day) and the audit
+      // row - neither is the error table.
+      logWarning("Job heartbeat sweep found jobs that have stopped reporting", {
         error: new Error(summary),
         labels: { event: "job_heartbeat_stranded", job: JOB_HEARTBEAT_SWEEP_SLUG },
       });

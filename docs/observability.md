@@ -957,6 +957,14 @@ hard-locked to Super Admin — see `isRolePermissionWithinHardBoundary` in
   `@grpc/grpc-js` into the production graph and repeatedly withholding Railway deploys on its
   transitive HIGH advisory. **Container-level failures are not surfaced in the UI** — use
   `railway logs` for those. Re-pointing this at the Railway log API is open work.
+- **The Service Health card is GONE (2026-10-16).** It read Cloud Run availability and latency from
+  Cloud Monitoring, which died with the GCP billing, so it showed "unavailable" permanently and made the
+  whole page read as broken; `gcp-metrics.ts` and its test went with it. Nothing replaces it here —
+  availability and latency are `railway logs` and Sentry's trace explorer.
+- **The job-heartbeat sweep no longer writes to `app_error_events`.** It ran every 15 minutes and logged
+  an ERROR for as long as a job stayed stranded: 955 of the week's 1,401 rows (96 a day on 10-12 Oct),
+  burying every real browser error. It is a WARNING line now; the alert (in-app + Telegram, one a Cairo
+  day) and the `audit_logs` row are unchanged. A stranded job is read from `job_heartbeats`, not this table.
 - **Per-User Attempts** — aggregates `app_error_events` + failed `auth_login_attempts`
   grouped by HR ID + module/route, computed in application code (`getUserAttemptSummary`
   in `src/lib/error-monitor/service.ts`), not a DB view/RPC — no migration required.
