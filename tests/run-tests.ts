@@ -1719,6 +1719,7 @@ import { runClosingChannelRollupEquivalenceTests } from "./closing-channel-rollu
 import { runClosingDistributorProductRollupEquivalenceTests } from "./closing-distributor-product-rollup-equivalence.test.ts";
 import { runClosingChannelBreakdownRollupEquivalenceTests } from "./closing-channel-breakdown-rollup-equivalence.test.ts";
 import { runMonthlyAttributionRollupEquivalenceTests } from "./monthly-attribution-rollup-equivalence.test.ts";
+import { runMonthlyAttributionGroupsFactRowsFirstTests } from "./monthly-attribution-groups-fact-rows-first.test.ts";
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
 import { runClosingCorrectionsCellTests } from "./closing-corrections-cell.test.ts";
 import { runClosingCorrectionsOneEventTests } from "./closing-corrections-one-event.test.ts";
@@ -6220,6 +6221,12 @@ await runTest(
   + "fallback; gate falls back on no-coverage OR config drift; fingerprint covers exactly the five "
   + "config tables; per-batch refresh wired into every fact-refresh path after the fact rollup)",
   runMonthlyAttributionRollupEquivalenceTests,
+);
+
+await runTest(
+  "monthly attribution groups the fact rows on their raw keys before cleaning them (the speed of every "
+  + "published month on Sales vs Target), and only sums ever see the grouped rows, so no figure moves",
+  runMonthlyAttributionGroupsFactRowsFirstTests,
 );
 
 await runTest(
