@@ -448,7 +448,7 @@ export async function runJobHeartbeatRegisterTests() {
       "no readable overdue time means no re-fire",
     );
 
-    let triggered: string[] = [];
+    const triggered: string[] = [];
     const stranded = [{ overdueSince: overdue, slug: NOTIFY }];
     const now = at("2026-10-16T04:51:00.000Z");
     const claimed: string[] = [];
@@ -461,7 +461,7 @@ export async function runJobHeartbeatRegisterTests() {
     assert.deepEqual(triggered, ["/api/notifications/daily"], "the route is started exactly once");
     assert.deepEqual(claimed, [`${NOTIFY}:2026-10-16`], "the claim is per job per Cairo day");
 
-    triggered = [];
+    triggered.length = 0;
     const second = await refireStrandedJobs(stranded, { claim: async () => false, trigger: (path) => { triggered.push(path); } }, now);
     assert.deepEqual(second.results, [{ outcome: "already_refired_today", slug: NOTIFY }]);
     assert.deepEqual(triggered, [], "a lost claim starts nothing - this is what stops a second sweep firing it again");
