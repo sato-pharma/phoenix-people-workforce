@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 
 import {
   SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE,
@@ -197,6 +198,19 @@ function wiringTests() {
   // Source maps and the release: the build plugin runs only when a build token exists, and keeps the maps off the wire.
   assert.match(nextConfigSource(), /if \(!authToken\) return config/, "a build without a token exports the plain config");
   assert.match(nextConfigSource(), /deleteSourcemapsAfterUpload: true/);
+  // 2026-10-16: the first version required the package ROOT, where withSentryConfig does not exist, and the
+  // production build died with "withSentryConfig is not a function" while every PR check stayed green (a PR build
+  // has no token, so the branch never ran). The plugin lives at the /config entry.
+  assert.match(nextConfigSource(), /require\("@sentry\/nextjs\/config"\)/, "withSentryConfig is exported from the /config entry, not the package root");
+  assert.ok(!/require\("@sentry\/nextjs"\)/.test(nextConfigSource()), "never require the package root for the build plugin");
+  assert.match(nextConfigSource(), /errorHandler: \(error: Error\) => console\.warn\(/, "a rejected token must never stop a production deploy");
+  try {
+    const entry = createRequire(import.meta.url).resolve("@sentry/nextjs/config");
+    assert.match(readFileSync(entry, "utf8"), /withSentryConfig/, "the installed package's /config entry must export withSentryConfig");
+  } catch (error) {
+    if ((error as { code?: string }).code !== "MODULE_NOT_FOUND" && (error as { code?: string }).code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error;
+    assert.notEqual((error as { code?: string }).code, "ERR_PACKAGE_PATH_NOT_EXPORTED", "the installed package must export ./config");
+  }
   assert.match(nextConfigSource(), /telemetry: false/);
   for (const switchName of ["autoInstrumentServerFunctions", "autoInstrumentMiddleware", "autoInstrumentAppDirectory", "automaticVercelMonitors"]) {
     assert.match(nextConfigSource(), new RegExp(`${switchName}: false`), `${switchName} stays off`);
