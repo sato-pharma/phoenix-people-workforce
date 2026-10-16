@@ -6,12 +6,24 @@
 // global handlers, is what keeps each error reported ONCE. The SDK's GlobalHandlers integration is
 // switched off below for the same reason.
 //
-// The SDK is imported lazily, so a browser that is not on the production host never downloads it, and
-// the first production error waits on one dynamic import rather than on every page load.
+// The SDK is imported lazily, so a browser that is not on the production host never downloads it. Since
+// 2026-10-16 (owner: "everything that could be on sentry") it also runs sampled traces, a profile inside a
+// sampled trace, and a session replay of ONLY a session that hit an error — so a production browser loads it
+// once the page has gone idle (startSentryBrowser), not on the first error. Every span is scrubbed in
+// sentry-policy.ts, and the replay masks all text, all inputs and all media: Phoenix's screens are payroll.
 
 import { systemDeployment } from "@/config/system-settings";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
-import { SENTRY_ENVIRONMENT, scrubSentryEvent, sentryClientStatus } from "@/lib/observability/sentry-policy";
+import {
+  SENTRY_ENVIRONMENT,
+  SENTRY_PROFILE_SESSION_SAMPLE_RATE,
+  SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE,
+  SENTRY_REPLAY_SESSION_SAMPLE_RATE,
+  scrubSentryEvent,
+  scrubSentrySpan,
+  sentryClientStatus,
+  sentryTracesSampler,
+} from "@/lib/observability/sentry-policy";
 
 type SentrySdk = typeof import("@sentry/nextjs");
 
@@ -33,13 +45,46 @@ function loadSdk(dsn: string): Promise<SentrySdk | null> {
         environment: SENTRY_ENVIRONMENT,
         maxBreadcrumbs: 20,
         // Our own reporter feeds every window error and rejection into captureClientErrorInSentry.
-        integrations: (defaults) => defaults.filter((integration) => integration.name !== "GlobalHandlers"),
+        integrations: (defaults) => [
+          ...defaults.filter((integration) => integration.name !== "GlobalHandlers"),
+          // The Next SDK already adds page-load and navigation tracing when tracing is on; add it only if it did not.
+          ...(defaults.some((integration) => integration.name === "BrowserTracing") ? [] : [Sentry.browserTracingIntegration()]),
+          // Masks every piece of text, every input and all media: the replay shows layout and clicks, never a figure.
+          Sentry.replayIntegration({ maskAllText: true, maskAllInputs: true, blockAllMedia: true }),
+          Sentry.browserProfilingIntegration(),
+        ],
+        tracesSampler: (context) => sentryTracesSampler(context),
+        // No sentry-trace or baggage header is added to any request, same-origin or not.
+        tracePropagationTargets: [],
+        replaysSessionSampleRate: SENTRY_REPLAY_SESSION_SAMPLE_RATE,
+        replaysOnErrorSampleRate: SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE,
+        profileSessionSampleRate: SENTRY_PROFILE_SESSION_SAMPLE_RATE,
+        profileLifecycle: "trace",
         beforeSend: (event) => scrubSentryEvent(event),
+        beforeSendSpan: (span) => scrubSentrySpan(span),
       });
       return Sentry;
     })
     .catch(() => null);
   return sdk;
+}
+
+/**
+ * Starts the browser SDK once the page is idle, so tracing and the error-time replay buffer run from early in
+ * the session without competing with first paint. A no-op anywhere but the production host.
+ */
+export function startSentryBrowser(): void {
+  try {
+    if (typeof window === "undefined") return;
+    const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
+    const productionHost = new URL(systemDeployment.productionUrl).hostname;
+    if (!sentryClientStatus({ dsn, hostname: window.location.hostname, productionHost }).enabled) return;
+    const start = () => void loadSdk(dsn as string);
+    if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(start, { timeout: 5000 });
+    else window.setTimeout(start, 3000);
+  } catch {
+    // Starting Sentry must never throw into the page.
+  }
 }
 
 export function captureClientErrorInSentry(report: SentryClientReport): void {
