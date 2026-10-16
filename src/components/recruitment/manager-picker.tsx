@@ -53,6 +53,8 @@ export type ManagerPickerOption = {
   regionName: string | null;
   lineName: string | null;
   seatTier: string | null;
+  /** The folders on his shelf, when he holds any. */
+  folders?: string[];
 };
 
 /** First of these that actually holds text. */

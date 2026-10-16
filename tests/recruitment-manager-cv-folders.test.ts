@@ -7,6 +7,7 @@ import {
   districtReturnSuppressionKey,
   type DistrictSeatRow,
 } from "../src/lib/recruitment/district-manager-folders.ts";
+import { foldersToOffer } from "../src/lib/recruitment/folder-choice.ts";
 import { folderHolderKeys } from "../src/lib/recruitment/folder-holders.ts";
 import {
   chooseFolderForPush,
@@ -280,6 +281,29 @@ export function runRecruitmentManagerCvFoldersTests(): void {
       returnRunner.includes("if (seatRows.length === 0) return { notified: false, ok: true, returned: 0 };") &&
         returnRunner.includes("folderHolderKeys(seatRows)"),
       "the daily return skips folder holders, and does nothing at all when the organogram cannot be read",
+    );
+
+    // The folder choice in the send dialogs (owner, 2026-10-16): offered for exactly one manager who
+    // holds folders, always ending in "Other CVs", and never for several managers or for none.
+    const withShelf = [
+      { folders: ["Nasr City", "Heliopolis"], hrId: "D-1" },
+      { folders: [], hrId: "H-1" },
+      { hrId: "H-2" },
+    ];
+    assert.deepEqual(foldersToOffer(withShelf, ["D-1"]), ["Nasr City", "Heliopolis", OTHER_CVS_FOLDER_LABEL]);
+    assert.deepEqual(foldersToOffer(withShelf, ["D-1", "H-1"]), [], "several managers have no single shelf");
+    assert.deepEqual(foldersToOffer(withShelf, []), [], "nobody chosen, nothing offered");
+    assert.deepEqual(foldersToOffer(withShelf, ["H-1"]), [], "a manager with no folders is offered none");
+    assert.deepEqual(foldersToOffer(withShelf, ["H-2"]), [], "…and an option with no folders field is the same");
+    const workspace = read("../src/components/recruitment/recruitment-workspace.tsx");
+    assert.ok(
+      workspace.includes("...(chosenFolder ? { folderArea: chosenFolder } : {})") &&
+        workspace.includes("...(bulkChosenFolder ? { folderArea: bulkChosenFolder } : {})"),
+      "the single and the bulk send both post the chosen folder, and post nothing when the system is to choose",
+    );
+    assert.ok(
+      read("../src/lib/recruitment/hiring-manager-notify.ts").includes("boardsForManager(shelves, hrId)"),
+      "the manager list carries each manager's folders, read from the organogram",
     );
 
     // The overview row.

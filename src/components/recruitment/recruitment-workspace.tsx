@@ -117,6 +117,7 @@ import {
   UNCONFIRMED_FACT_TITLE,
 } from "@/lib/recruitment/candidate-screening-facts";
 import { cairoDayKey, type CandidatePoolStats } from "@/lib/recruitment/candidate-stats";
+import { foldersToOffer } from "@/lib/recruitment/folder-choice";
 import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import type { SelectionBoardEntry } from "@/lib/recruitment/selection";
 import type { RecruitmentDashboard } from "@/lib/recruitment/dashboard";
@@ -173,6 +174,7 @@ import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
 // ones were rebuilt to end — seventeen District Sales Managers no label could tell apart, and two
 // seats in Behira 1 · Pedia that read as one row typed twice. Sharing the components is also what
 // stops the two screens drifting into disagreeing about how a manager's seat is written.
+import { FolderChoice } from "@/components/recruitment/folder-choice";
 import { ManagerPicker } from "@/components/recruitment/manager-picker";
 import { FREE_POSITION, VacancyPicker } from "@/components/recruitment/vacancy-picker";
 import {
@@ -2847,17 +2849,23 @@ function CandidateActionsControl({
   const current = normalizeCandidateStatus(candidate.status);
   const positionChoice = sendPosition[candidate.id] ?? "";
   const folderRefusal = candidateFolderRefusal(candidate);
+  // The folder on the chosen manager's shelf (owner, 2026-10-16). "" lets the system file the CV.
+  const [sendFolder, setSendFolder] = useState("");
+  const shelfFolders = foldersToOffer(hiringManagers, sendTo[candidate.id] ? [sendTo[candidate.id] as string] : []);
+  const chosenFolder = shelfFolders.includes(sendFolder) ? sendFolder : "";
 
   const sendToManager = () =>
     run(async () => {
       const data = await postJson(`/api/recruitment/candidates/${candidate.id}/notify-manager`, {
         managerHrId: sendTo[candidate.id],
+        ...(chosenFolder ? { folderArea: chosenFolder } : {}),
         ...positionBody(positionChoice, sendFreeArea[candidate.id] ?? "", sendFreeTitle[candidate.id] ?? ""),
       });
       const result = (data.result ?? {}) as { folder?: unknown; managerName?: unknown };
       const name = typeof result.managerName === "string" ? result.managerName : "the manager";
       const folder = typeof result.folder === "string" && result.folder ? result.folder : null;
       setOpenPanel(null);
+      setSendFolder("");
       setSendPosition((prev) => ({ ...prev, [candidate.id]: "" }));
       setSendFreeArea((prev) => ({ ...prev, [candidate.id]: "" }));
       setSendFreeTitle((prev) => ({ ...prev, [candidate.id]: "" }));
@@ -2983,6 +2991,7 @@ function CandidateActionsControl({
             panelId={`pool-position-${candidate.id}`}
             vacancyChoice={positionChoice}
           />
+          <FolderChoice disabled={pending} folders={shelfFolders} onChange={setSendFolder} value={chosenFolder} />
           <div className="flex items-center gap-1.5">
             <div className="min-w-0 flex-1">
               <ManagerPicker
@@ -3635,6 +3644,10 @@ function CandidatesTab({
   // so the choice survives the re-render router.refresh() triggers after some other row is acted on.
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkManagerHrId, setBulkManagerHrId] = useState("");
+  // The folder on that manager's shelf the whole batch is filed in; "" lets the system choose.
+  const [bulkManagerFolder, setBulkManagerFolder] = useState("");
+  const bulkShelfFolders = foldersToOffer(hiringManagers, bulkManagerHrId ? [bulkManagerHrId] : []);
+  const bulkChosenFolder = bulkShelfFolders.includes(bulkManagerFolder) ? bulkManagerFolder : "";
   // Which of the owner's own folders the ticked CVs are moved into — see "Move to folder" below.
   const [bulkFolderId, setBulkFolderId] = useState("");
   // Same position choice as sendPosition/sendFreeArea/sendFreeTitle, held once rather than keyed
@@ -4523,6 +4536,11 @@ function CandidatesTab({
                 value={bulkManagerHrId ? [bulkManagerHrId] : []}
               />
             </div>
+            {bulkShelfFolders.length > 0 ? (
+              <div className="w-56 sm:w-64">
+                <FolderChoice disabled={pending} folders={bulkShelfFolders} onChange={setBulkManagerFolder} value={bulkChosenFolder} />
+              </div>
+            ) : null}
             <Button
               disabled={pending || !bulkManagerHrId}
               onClick={() =>
@@ -4530,6 +4548,7 @@ function CandidatesTab({
                   const data = await postJson("/api/recruitment/candidates/notify-manager", {
                     candidateIds: selectedVisibleIds,
                     managerHrId: bulkManagerHrId,
+                    ...(bulkChosenFolder ? { folderArea: bulkChosenFolder } : {}),
                     ...positionBody(bulkPosition, bulkFreeArea, bulkFreeTitle),
                   });
                   const result = (data.result ?? {}) as { count?: unknown; managerName?: unknown };
@@ -4537,6 +4556,7 @@ function CandidatesTab({
                   const count = typeof result.count === "number" ? result.count : selectedVisibleIds.length;
                   setSelectedIds([]);
                   setBulkManagerHrId("");
+                  setBulkManagerFolder("");
                   setBulkPosition("");
                   setBulkFreeArea("");
                   setBulkFreeTitle("");
