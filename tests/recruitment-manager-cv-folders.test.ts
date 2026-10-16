@@ -239,6 +239,16 @@ export function runRecruitmentManagerCvFoldersTests(): void {
     assert.ok(recallRoute.includes("assertSameOriginMutation(request)"), "a mutation answers the same-origin check");
     assert.ok(recallRoute.includes("recallCandidateFromManager("), "and goes through the one recall function");
 
+    // A manager hides a CV that reached him: his own hold ends, in one press, with no reason.
+    const hideRoute = read("../app/api/recruitment/hiring-manager/candidates/[candidateId]/hide/route.ts");
+    assert.ok(hideRoute.includes('requireRecruitmentAccess(request, "hiring_interviews", "update")'), "a manager holds the grant the hide needs");
+    assert.ok(hideRoute.includes("isCandidateSentToCaller(access, candidateId)"), "and only a CV that was sent to him can be hidden");
+    assert.ok(hideRoute.includes("hideCandidateFromManager(access, candidateId)") && !hideRoute.includes("readJsonObject"), "the manager is the session's, never a posted id");
+    assert.ok(recall.includes("managerHrId: access.hrId"), "the hide recalls the CALLER's own hold");
+    assert.ok(read("../src/lib/security/access-registry.ts").includes('pattern: "/api/recruitment/hiring-manager/candidates/*/hide"'), "the hide route is declared in the access registry");
+    const portal = read("../src/components/employee-portal/recruitment-candidates-portal.tsx");
+    assert.ok(portal.includes("/hiring-manager/candidates/${candidate.id}/hide"), "the manager's card posts to the hide route");
+
     // The folder choice rides on the send.
     for (const path of [
       "../app/api/recruitment/candidates/[id]/notify-manager/route.ts",
