@@ -18,8 +18,10 @@ Anyone who reads this as replacing PITR has misread it.
 ## What it does
 
 `pg_cron` runs `recovery.take_snapshots()` at **:05 every hour**. For each registered table it
-builds a canonical JSON payload ordered by primary key, hashes it, and stores a copy **only if the
-hash changed**. Unchanged hours write nothing at all.
+takes a streamed fingerprint (one md5 per row, in primary-key order), and builds and stores a
+canonical JSON copy **only if the fingerprint changed**. Unchanged hours write nothing at all, and
+since 2026-10-16 they build nothing either — see "The streamed fingerprint" below. Until then every
+hour built every table's whole copy just to hash it.
 
 **Observed, not assumed** — the first scheduled fire was watched rather than inferred:
 
@@ -105,6 +107,71 @@ concluding anything.
 
 A manual call proves the function; only a fired job proves the schedule. Do both.
 
+### The streamed fingerprint, since 2026-10-16
+
+**Why it changed.** The first body answered "has this table changed?" by running
+`recovery.canonical_payload()` on all seven tables every hour, then casting each payload to text
+twice — once for its size, once for `md5`. `monthly_closing_locks` had grown to **28,457,501 bytes**
+(53 rows) by 2026-10-16, more than double the 13 MB in the table below, so every :05 held a ~28 MB
+jsonb plus two ~28 MB strings in one backend on a **2 GB** compute, whether or not anything had
+changed. The longest runs were the minutes production stalled:
+
+| Run (Cairo) | Took | What production did in the same minute |
+| --- | --- | --- |
+| 2026-10-08 16:05 | 50.4 s | server renders timing out at 16:06 ("Supabase request timed out.") |
+| 2026-10-10 11:05 | killed | the instance restarted at 11:05:48, 48 s into the run (`cron.job_run_details`: `server restarted`) |
+| 2026-10-11 13:05 | 36.1 s | edge requests fell from ~360 to 26-32 per 10 s between 10:05:10 and 10:05:30 UTC |
+| 2026-10-14 17:05 | 45.2 s | zero edge requests completed 14:05:20-14:05:30 UTC; PostgREST lost its pool (PGRST001) and reconnected at 14:05:44, one second before the run ended |
+
+Overnight the same function took 3.6-5.5 s. Those bursts are what the Error Monitor showed as React
+error **#441** (a server render that threw "Supabase request timed out."), **#412** and
+**PGRST002**. Seen together is not proof the run is the whole cause — the hard instance restarts on
+10, 11 and 12 October are host-level and Supabase's to explain (the memory note
+`a-production-postgres-crash-restart-wears-cloudflare-codes`) — but it was the one piece of hourly
+work that scaled with the largest table, and it no longer has to.
+
+**How it works now** (`supabase/migrations/20261016103901_recovery_snapshot_streamed_fingerprint.sql`):
+
+- `recovery.fingerprint_table(schema, table, pk[], with_payload)` reads the table once and returns
+  the row count, the exact byte size the payload would have, and the fingerprint
+  `'r2:' || md5(string_agg(md5(row_json::text) order by pk))`. Only when asked does it also return the
+  payload itself, identical to `canonical_payload()` — and then all four come from **one statement**,
+  so the count, size and fingerprint stored beside a copy always describe that copy.
+- The size is the sum of the row texts plus `[`, `]` and `, ` between rows, which is byte-identical to
+  `octet_length(payload::text)`, so the 64 MB ceiling still means what it did. The payload is never
+  cast to text.
+- Two `OFFSET 0` fences keep the planner from evaluating `to_jsonb(t)` and its text once per
+  reference. They are load-bearing; the test counts them.
+- `take_snapshots()` calls the fingerprint without the payload, and calls it again with the payload
+  **only inside the changed-table branch**. An unchanged hour holds one row at a time.
+
+**The hash scheme moved, and nothing was re-captured for it.** A version stored before 2026-10-16
+carries `md5(payload::text)`, which a streamed fingerprint cannot equal. The first run afterwards
+re-fingerprinted each table's newest stored version from its own payload
+(`recovery.payload_fingerprint(jsonb)`) and wrote the `r2:` value onto that row — so an unchanged
+table read as unchanged, and no duplicate copy evicted real history from `monthly_closing_locks`,
+which keeps only 12.
+
+**Proven, not assumed.**
+
+- Before writing it, on production, read-only: the streamed fingerprint of live
+  `public.salary_batches` and the fingerprint recomputed from its newest stored payload were identical
+  (`fa18d14e…`), and the size formula gave 5,060 = `octet_length(payload::text)`.
+- On staging, against a throwaway table: an unchanged run stored nothing; an edit was captured with a
+  payload equal to `canonical_payload()`; hash = `payload_fingerprint`, bytes = `octet_length`
+  including a non-ASCII value; an empty table gave `[]`, 2 bytes. The probe tables were removed after.
+- On production, the first scheduled run (2026-10-16 06:05 Cairo, including the one-time upgrade):
+  **checked 7 · changed 0 · error none · 2,074 ms**, against 5,509 ms the hour before. All seven
+  newest rows carry `r2:` hashes, `salary_batches` reads `r2:fa18d14e`, and the store still held 129
+  versions — nothing re-captured.
+- Production and staging carry byte-identical bodies (`md5(prosrc)` of `take_snapshots` is
+  `1c8acd19…` on both).
+
+**Rollback:** re-run the `take_snapshots()` definition from
+`20260929203100_recovery_total_order_on_snapshots.sql`, then drop the two helpers. The old body reads
+every `r2:` hash as a change and captures each table once more — one extra version per table, nothing
+lost.
+
 ## What is protected
 
 | Table | Rows | Payload | Versions kept |
@@ -124,6 +191,14 @@ global ceiling and evict the cheap, useful history of the other six. Add a heavy
 
 Measured after the first real run: the whole store is **2,336 kB on disk** (17 MB of logical JSON,
 which TOASTs well).
+
+**Re-measured 2026-10-16** (the newest stored version of each): `salary_records` 989 rows / 991 kB ·
+`salary_batches` 9 / 5,060 B · `employees` 216 / 560 kB · `monthly_closing_publications` 9 / 151 kB ·
+`monthly_closing_locks` 53 / **28.5 MB** · `monthly_targets` 4,615 / 1.66 MB · `line_area_map` 176 /
+63 kB. The store's logical total was 346,994,978 bytes across 129 versions, most of it
+`monthly_closing_locks`. That is the JSON text size; the 512 MB ceiling below measures the table on
+disk (`pg_total_relation_size`), which TOAST compression keeps far smaller — **44 MB** the same
+morning.
 
 ## Retention, and the rule that matters
 
@@ -242,7 +317,8 @@ which is the stronger of the two answers. Re-run this probe after any grant chan
 | Schema | `recovery` — no `USAGE` for `anon` or `authenticated`, so PostgREST cannot reach it |
 | Created by | `supabase/migrations/20260929200500_recovery_snapshot_store.sql` |
 | Per-table caps | `supabase/migrations/20260929201500_recovery_per_table_version_cap.sql` |
-| Total ordering | `supabase/migrations/20260929203100_recovery_total_order_on_snapshots.sql` — must stay the LAST migration defining these functions |
+| Total ordering | `supabase/migrations/20260929203100_recovery_total_order_on_snapshots.sql` — whichever migration defines each of the three functions LAST must carry its id tiebreak; `tests/recovery-snapshots.test.ts` checks that per function |
+| Streamed fingerprint | `supabase/migrations/20261016103901_recovery_snapshot_streamed_fingerprint.sql` — `fingerprint_table`, `payload_fingerprint`, and the current `take_snapshots()` |
 | Schedule | `cron.job` → `phoenix-recovery-snapshot`, `5 * * * *`, created by `supabase/migrations/20261008140000_schedule_recovery_snapshot_cron.sql` |
 | Health, for CI | `public.phx_ci_recovery_health()` — service role only, counts and timestamps, never contents |
 | Exempt from | `scripts/audit-backup-schemas.mjs` retention, deliberately — it is infrastructure |

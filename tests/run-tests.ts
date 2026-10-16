@@ -2557,6 +2557,7 @@ import { runAccessHelperExecuteGrantLockTests } from "./access-helper-execute-gr
 import { runClosingRepRankingTests } from "./closing-rep-ranking.test.ts";
 import { runClosingRowsSheetTests } from "./closing-rows-sheet.test.ts";
 import { runPhoenixCrmAddPharmacyMatchesByResolvedIdTests } from "./phoenix-crm-add-pharmacy-matches-by-resolved-id.test.ts";
+import { runDomTranslateGuardTests } from "./dom-translate-guard.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -4088,7 +4089,7 @@ await runTest(
   runFactoryPriceResolvedOnceTests,
 );
 await runTest(
-  "recovery undo log (payroll pre-images unreachable by any browser role; a table's newest snapshot is never purged; restore is dry-run by default and takes its own pre-image)",
+  "recovery undo log (payroll pre-images unreachable by any browser role; a table's newest snapshot is never purged; restore is dry-run by default and takes its own pre-image; an unchanged hour builds no copy, only a streamed fingerprint)",
   runRecoverySnapshotTests,
 );
 await runTest("monthly sales run", runMonthlySalesRunTests);
@@ -10112,6 +10113,10 @@ await runTest(
 await runTest(
   "Add a pharmacy sends the TypeScript-resolved customer id to phoenix_crm_add_pharmacy, so a pin or phone captured on a match already on the rep's list never inserts a duplicate when the database's own weaker name search would have missed it",
   runPhoenixCrmAddPharmacyMatchesByResolvedIdTests,
+);
+await runTest(
+  "Google Translate guard (a translated page survives React removing or inserting beside a node the translation moved; each redirect is counted and the Error Monitor row says domGuard=N; it renders before any bundle)",
+  runDomTranslateGuardTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
