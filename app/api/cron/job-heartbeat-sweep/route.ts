@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { writeAuditLog } from "@/lib/admin/audit";
@@ -8,6 +8,7 @@ import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { describeJobHeartbeats } from "@/lib/observability/job-heartbeat-assess";
 import { notifyJobsStranded } from "@/lib/observability/job-heartbeat-alert";
 import { sweepJobHeartbeats } from "@/lib/observability/job-heartbeat";
+import { fireCronRouteOnLoopback, refireStrandedJobs } from "@/lib/observability/job-refire";
 import { JOB_HEARTBEAT_SWEEP_SLUG } from "@/lib/observability/job-schedule";
 import { logError, logInfo } from "@/lib/observability/log";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
@@ -74,6 +75,7 @@ export async function GET(request: Request) {
     const summary = describeJobHeartbeats(verdict);
 
     let alert: Awaited<ReturnType<typeof notifyJobsStranded>> = { delivered: 0, skipped: true };
+    let refire: Awaited<ReturnType<typeof refireStrandedJobs>> = { results: [], skipped: [] };
 
     if (verdict.healthy) {
       logInfo("Job heartbeat sweep: every watched job reported on time", {
@@ -88,6 +90,25 @@ export async function GET(request: Request) {
       });
       alert = await notifyJobsStranded(verdict);
 
+      // The one act this sweep takes besides telling a human: a STRANDED morning job named in
+      // JOB_REFIRE_POLICIES is started again, once, on the day it was missed. `verdict.stranded`
+      // only - a job that ran and reported failure is never re-fired. The run is handed to
+      // `after()` so this 60-second sweep does not wait for a job that takes minutes (job-refire.ts).
+      refire = await refireStrandedJobs(verdict.stranded, {
+        trigger: (path) => {
+          after(async () => {
+            try {
+              await fireCronRouteOnLoopback(path);
+            } catch (error) {
+              logError("A re-fired job did not finish cleanly", {
+                error,
+                labels: { event: "job_refire_run_failed", job: JOB_HEARTBEAT_SWEEP_SLUG },
+              });
+            }
+          });
+        },
+      });
+
       // Only written when something is wrong. A row every 15 minutes saying "all fine" would bury
       // the audit log in 96 entries a day and make the real ones harder to find.
       await writeAuditLog({
@@ -100,6 +121,8 @@ export async function GET(request: Request) {
           checked: verdict.checked,
           failing: verdict.failing.map((problem) => problem.slug),
           misdeclared: verdict.misdeclared.map((problem) => problem.slug),
+          refired: refire.results,
+          refireSkipped: refire.skipped,
           stranded: verdict.stranded.map((problem) => problem.slug),
         },
         summary,
@@ -140,6 +163,7 @@ export async function GET(request: Request) {
         failing: verdict.failing,
         healthy: verdict.healthy,
         misdeclared: verdict.misdeclared,
+        refire,
         stranded: verdict.stranded,
         summary,
       },

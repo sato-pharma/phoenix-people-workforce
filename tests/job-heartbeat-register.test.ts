@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import { parseDesiredChecks } from "../scripts/healthchecks-sync.mjs";
 import {
   assessJobHeartbeats,
@@ -8,6 +10,7 @@ import {
   type JobHeartbeatRow,
 } from "@/lib/observability/job-heartbeat-assess";
 import { JOB_SCHEDULES, type JobScheduleDeclaration } from "@/lib/observability/job-schedule";
+import { decideJobRefires, JOB_REFIRE_POLICIES, refireStrandedJobs } from "@/lib/observability/job-refire";
 
 /**
  * The in-house dead-man's switch (`public.job_heartbeats`).
@@ -401,4 +404,98 @@ export async function runJobHeartbeatRegisterTests() {
     /if \(process\.env\.NODE_ENV === "test"\) return false;/,
     "the NODE_ENV gate is missing from job-heartbeat.ts",
   );
+
+  // ── Re-firing a stranded morning job (job-refire.ts) ─────────────────────────────────────────
+  // 2026-10-16: a deploy killed phoenix-notify-daily at 06:37 and the day's notifications stayed
+  // half-sent. The sweep saw it from 07:36 and did nothing. The decision is pure, so it is pinned
+  // here; the claim and the trigger are injected, so the "once" and "fail closed" rules are too.
+  {
+    const NOTIFY = "phoenix-notify-daily";
+    const overdue = "2026-10-16T04:36:00.000Z"; // 07:36 Cairo
+    const at = (iso: string) => new Date(iso);
+
+    assert.ok(JOB_REFIRE_POLICIES[NOTIFY], "notify-daily is the first job with a re-fire policy");
+    assert.deepEqual(
+      Object.keys(JOB_REFIRE_POLICIES),
+      [NOTIFY],
+      "a job joins this list only after its sub-jobs were read for a same-day repeat (docs/observability.md)",
+    );
+
+    const due = decideJobRefires([{ overdueSince: overdue, slug: NOTIFY }], at("2026-10-16T04:51:00.000Z"));
+    assert.deepEqual(
+      due.due,
+      [{ day: "2026-10-16", path: "/api/notifications/daily", slug: NOTIFY }],
+      "a stranded notify-daily at 07:51 Cairo on the day it was missed is due",
+    );
+    assert.deepEqual(
+      decideJobRefires([{ overdueSince: overdue, slug: "phoenix-retention-risk-pre-payroll" }], at("2026-10-16T04:51:00.000Z")).due,
+      [],
+      "a stranded job with no policy is never re-fired",
+    );
+    assert.equal(
+      decideJobRefires([{ overdueSince: overdue, slug: NOTIFY }], at("2026-10-16T10:30:00.000Z")).due.length,
+      0,
+      "13:30 Cairo is past the cut-off: a morning job started in the afternoon tells people stale things",
+    );
+    assert.equal(
+      decideJobRefires([{ overdueSince: "2026-10-15T04:36:00.000Z", slug: NOTIFY }], at("2026-10-16T04:51:00.000Z")).due.length,
+      0,
+      "yesterday's missed run is not re-fired today",
+    );
+    assert.equal(
+      decideJobRefires([{ overdueSince: null, slug: NOTIFY }], at("2026-10-16T04:51:00.000Z")).due.length,
+      0,
+      "no readable overdue time means no re-fire",
+    );
+
+    let triggered: string[] = [];
+    const stranded = [{ overdueSince: overdue, slug: NOTIFY }];
+    const now = at("2026-10-16T04:51:00.000Z");
+    const claimed: string[] = [];
+    const first = await refireStrandedJobs(
+      stranded,
+      { claim: async (key) => { claimed.push(key); return true; }, trigger: (path) => { triggered.push(path); } },
+      now,
+    );
+    assert.deepEqual(first.results, [{ outcome: "started", slug: NOTIFY }]);
+    assert.deepEqual(triggered, ["/api/notifications/daily"], "the route is started exactly once");
+    assert.deepEqual(claimed, [`${NOTIFY}:2026-10-16`], "the claim is per job per Cairo day");
+
+    triggered = [];
+    const second = await refireStrandedJobs(stranded, { claim: async () => false, trigger: (path) => { triggered.push(path); } }, now);
+    assert.deepEqual(second.results, [{ outcome: "already_refired_today", slug: NOTIFY }]);
+    assert.deepEqual(triggered, [], "a lost claim starts nothing - this is what stops a second sweep firing it again");
+
+    const unclaimable = await refireStrandedJobs(
+      stranded,
+      { claim: async () => { throw new Error("database unreachable"); }, trigger: (path) => { triggered.push(path); } },
+      now,
+    );
+    assert.equal(unclaimable.results[0]?.outcome, "not_started");
+    assert.deepEqual(triggered, [], "if the claim cannot be made nothing is fired - it fails closed");
+
+    const triggerFails = await refireStrandedJobs(
+      stranded,
+      { claim: async () => true, trigger: () => { throw new Error("could not start"); } },
+      now,
+    );
+    assert.equal(triggerFails.results[0]?.outcome, "not_started", "a failing trigger is reported and never thrown into the sweep");
+
+    // WIRING (comment-stripped): the sweep hands the re-fire the STRANDED list only, inside the
+    // branch that already found a problem, and runs the job after the response via after().
+    const sweep = stripComments(readFileSync(new URL("../app/api/cron/job-heartbeat-sweep/route.ts", import.meta.url), "utf8"));
+    assert.ok(sweep.includes("refireStrandedJobs(verdict.stranded,"), "the sweep must re-fire from verdict.stranded - never from the failing list");
+    assert.ok(!sweep.includes("refireStrandedJobs(verdict.failing"), "a job that ran and reported failure is never re-fired");
+    assert.ok(
+      sweep.indexOf("refireStrandedJobs(verdict.stranded") > sweep.indexOf("notifyJobsStranded(verdict)"),
+      "the re-fire sits after the alert, in the branch that found a problem, so a healthy sweep can never start anything",
+    );
+    assert.ok(
+      sweep.includes("after(async () => {") && sweep.indexOf("fireCronRouteOnLoopback(path)") > sweep.indexOf("after(async () => {"),
+      "the run is handed to after() so the 60s sweep does not wait for it",
+    );
+    const refireSource = stripComments(readFileSync(new URL("../src/lib/observability/job-refire.ts", import.meta.url), "utf8"));
+    assert.ok(refireSource.includes("if (!isProductionRuntime())"), "the loopback fire is production only");
+    assert.ok(refireSource.includes("process.env.CRON_SECRET"), "and needs the shared cron secret, like any cron caller");
+  }
 }
