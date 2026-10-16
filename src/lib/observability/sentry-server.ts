@@ -49,10 +49,10 @@ export function captureRequestErrorInSentry(...args: Parameters<typeof Sentry.ca
  * where it was created in Sentry on purpose, so a job nobody set up there sends a check-in Sentry ignores and
  * costs nothing (a monitor is billed per monitor). Never throws.
  */
-export function captureCronCheckInInSentry(jobSlug: string, status: "in_progress" | "ok" | "error", checkInId?: string): string | undefined {
+export function captureCronCheckInInSentry(jobSlug: string, status: "ok" | "error"): string | undefined {
   if (!started) return undefined;
   try {
-    return Sentry.captureCheckIn({ monitorSlug: jobSlug, status, ...(checkInId ? { checkInId } : {}) });
+    return Sentry.captureCheckIn({ monitorSlug: jobSlug, status });
   } catch {
     return undefined;
   }

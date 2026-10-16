@@ -633,7 +633,9 @@ function withOptionalSentry(config: NextConfig): NextConfig {
   const authToken = String(process.env.SENTRY_AUTH_TOKEN ?? "").trim();
   if (!authToken) return config;
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- loaded only on a build that has a token
-  const { withSentryConfig } = require("@sentry/nextjs") as typeof import("@sentry/nextjs");
+  const { withSentryConfig } = require("@sentry/nextjs") as {
+    withSentryConfig: (config: NextConfig, options: Record<string, unknown>) => NextConfig;
+  };
   const release = String(process.env.COMMIT_SHA ?? process.env.RAILWAY_GIT_COMMIT_SHA ?? "").trim();
   return withSentryConfig(config, {
     // The account's organisation, project and EU host are not secrets, so they are written here, not synced.
