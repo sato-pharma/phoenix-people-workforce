@@ -79,7 +79,8 @@ export type WebsiteApplyRoleKey =
   | "hr_section_head"
   | "regulatory_affairs_specialist"
   | "quality_control_analyst"
-  | "office_coordinator";
+  | "office_coordinator"
+  | "product_manager";
 
 export type WebsiteApplyRole = {
   key: WebsiteApplyRoleKey;
@@ -150,6 +151,18 @@ const WEBSITE_APPLY_ROLES: Readonly<Record<WebsiteApplyRoleKey, WebsiteApplyRole
     key: "office_coordinator",
     roleFamily: "office_coordinator",
     title: "Office Coordinator",
+  },
+  // The Product Manager seat (Sheraton, Cairo). Registered by family only, like every row above it: the
+  // form is whatever the WhatsApp bot asks the `product_manager` family — the built-in background,
+  // experience and expected salary, then the five `pm_*` questions and the shared start-date question.
+  // The experience question carries an `end_on`, so an applicant with under a year as a Product Manager
+  // is thanked and the application stops here exactly as it does on WhatsApp (owner, 2026-10-16: "no
+  // pass if more than 1 year make him continue").
+  product_manager: {
+    jobTitle: "Product Manager",
+    key: "product_manager",
+    roleFamily: "product_manager",
+    title: "Product Manager",
   },
 };
 
