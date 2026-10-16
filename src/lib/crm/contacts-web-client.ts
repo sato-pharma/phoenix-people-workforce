@@ -41,6 +41,7 @@
  */
 
 import { getIReports360Config, type IReports360Config } from "@/lib/crm/config";
+import { recordTiming } from "@/lib/observability/timings";
 
 /** The three lists an agent can hold. The vendor's exact spelling — see trap 1 in the header. */
 export const LIST_TYPES = ["PM", "AM", "Pharmacy"] as const;
@@ -368,7 +369,16 @@ export async function crmWebFetchContacts(
   if (response.status !== 200) {
     throw new CrmWebError(`The CRM contact list returned HTTP ${response.status}.`, response.status);
   }
-  return parseContactGrid(body);
+  // Timed into the per-minute process-health line. The parse is synchronous work on a WebForms page of
+  // several hundred kilobytes, and the biggest slice of this scrape was followed by a 4.3-second server
+  // freeze three times on 2026-10-16 — this is the number that confirms or clears it.
+  const startedAt = performance.now();
+  try {
+    return parseContactGrid(body);
+  } finally {
+    recordTiming("crm.contact_grid_parse", performance.now() - startedAt);
+    recordTiming("crm.contact_grid_kb", body.length / 1024);
+  }
 }
 
 /** Every `<input>`/`<select>` on the page, as the postback body a WebForms grid demands back. */

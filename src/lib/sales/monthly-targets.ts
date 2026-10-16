@@ -1,7 +1,11 @@
 // Runtime-safe: closing-area-merges pulls only TYPES from monthly-distributor-import (erased at
 // build time), so this does not close the monthly-distributor-import -> monthly-targets value cycle.
 import { foldAreaCodeForLine, foldAreaOptionsForLine } from "@/lib/sales/closing-area-merges";
-import { loadProductPeriodPrices, loadProductPriceMapForPeriod } from "@/lib/sales/product-period-price";
+import {
+  loadProductMasterRows,
+  loadProductPeriodPrices,
+  loadProductPriceMapForPeriod,
+} from "@/lib/sales/product-period-price";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -157,13 +161,12 @@ export async function loadTargetValidationRefs(): Promise<TargetValidationRefs> 
   const productByKey = new Map<string, string>();
   const confidentialByKey = new Set<string>();
 
-  const [mapResult, productResult] = await Promise.all([
+  const [mapResult, productRows] = await Promise.all([
     supabase.from("au_v_line_area_map").select("line_code,area_code,area_name,carries_target"),
-    supabase.from("source_of_sales_products").select("product_code,product_name,normalized_line,active"),
+    loadProductMasterRows(),
   ]);
 
   if (mapResult.error) throw mapResult.error;
-  if (productResult.error) throw productResult.error;
 
   for (const row of mapResult.data ?? []) {
     const record = row as Record<string, unknown>;
@@ -178,8 +181,7 @@ export async function loadTargetValidationRefs(): Promise<TargetValidationRefs> 
     }
   }
 
-  for (const row of productResult.data ?? []) {
-    const record = row as Record<string, unknown>;
+  for (const record of productRows) {
     if (record.active === false) continue;
     const code = str(record.product_code).trim().toUpperCase();
     if (!code) continue;
@@ -687,12 +689,8 @@ export function lineName(code: string | null | undefined): string {
 
 /** product_code (upper) -> product name, for display (codes are never shown to the user). */
 export async function loadProductNameMap(): Promise<Map<string, string>> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.from("source_of_sales_products").select("product_code,product_name");
-  if (error) throw error;
   const map = new Map<string, string>();
-  for (const row of data ?? []) {
-    const record = row as Record<string, unknown>;
+  for (const record of await loadProductMasterRows()) {
     const code = str(record.product_code).trim().toUpperCase();
     const name = str(record.product_name).trim();
     if (code) map.set(code, name || code);
@@ -717,12 +715,8 @@ export async function loadProductPriceMap(period: string | null): Promise<Map<st
 
 /** product_code (upper) -> family, for the family/therapeutic-area breakdowns. */
 export async function loadProductFamilyMap(): Promise<Map<string, string>> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.from("source_of_sales_products").select("product_code,family");
-  if (error) throw error;
   const map = new Map<string, string>();
-  for (const row of data ?? []) {
-    const record = row as Record<string, unknown>;
+  for (const record of await loadProductMasterRows()) {
     const code = str(record.product_code).trim().toUpperCase();
     const family = str(record.family).trim();
     if (code && family) map.set(code, family);

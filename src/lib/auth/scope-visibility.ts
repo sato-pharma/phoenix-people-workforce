@@ -9,6 +9,8 @@
  *                         save through src/lib/sales/product-scope-list.ts, which writes the two together.
  */
 
+import { cache } from "react";
+
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -42,28 +44,41 @@ type ScopeOverrideRow = {
 
 // ─── read ─────────────────────────────────────────────────────────────────────
 
-export async function getUserLineScopeOverride(loginId: string): Promise<string[] | null> {
+type LoginScopeOverrideColumns = Pick<
+  ScopeOverrideRow,
+  "line_scope_override" | "product_scope_override" | "sales_scope_override"
+>;
+
+// ONE read of a login's three override columns per request. A Sales vs Target render asked
+// app_auth_users for the same row three times, once per column (line, product, sales scope).
+// A failed read answers null, exactly as each single-column read did.
+export const loadLoginScopeOverrides = cache(async (loginId: string): Promise<LoginScopeOverrideColumns | null> => {
   if (!loginId) return null;
   const supabase = getSupabaseAdmin();
   const { data } = await supabase
     .from("app_auth_users")
-    .select("line_scope_override")
+    .select("line_scope_override, product_scope_override, sales_scope_override")
     .eq("login_id", loginId)
     .maybeSingle();
-  const raw = (data as { line_scope_override?: string[] | null } | null)?.line_scope_override;
+  return (data as LoginScopeOverrideColumns | null) ?? null;
+});
+
+export async function getUserLineScopeOverride(loginId: string): Promise<string[] | null> {
+  if (!loginId) return null;
+  const raw = (await loadLoginScopeOverrides(loginId))?.line_scope_override;
   return Array.isArray(raw) && raw.length > 0 ? raw : null;
 }
 
 export async function getUserProductScopeOverride(loginId: string): Promise<string[] | null> {
   if (!loginId) return null;
-  const supabase = getSupabaseAdmin();
-  const { data } = await supabase
-    .from("app_auth_users")
-    .select("product_scope_override")
-    .eq("login_id", loginId)
-    .maybeSingle();
-  const raw = (data as { product_scope_override?: string[] | null } | null)?.product_scope_override;
+  const raw = (await loadLoginScopeOverrides(loginId))?.product_scope_override;
   return Array.isArray(raw) ? raw : null;
+}
+
+/** The raw persisted sales scope override, or null when unset, unreadable or not a login. */
+export async function getUserSalesScopeOverrideRaw(loginId: string): Promise<string | null> {
+  if (!loginId) return null;
+  return (await loadLoginScopeOverrides(loginId))?.sales_scope_override ?? null;
 }
 
 /**

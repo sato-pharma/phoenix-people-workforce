@@ -99,13 +99,18 @@ export function runCvCabinetAuditFixTests() {
   // An unbounded PostgREST select returns 1,000 rows with no marker. Past that, a folder silently
   // loses members and those CVs reappear in the main pool while still filed.
   const attach = functionBody(candidates, "function attachCvFolderMemberships(");
-  assert.match(attach, /\.range\(/, "the pool's membership read must be paged");
-  assert.match(attach, /\.order\("id"/, "paging needs a stable order, or a page repeats or skips rows");
+  assert.match(attach, /readAllFolderItemsOnce\(\)/, "the pool's membership read must go through the folder tree's paged reader");
+  assert.doesNotMatch(attach, /from\("ats_cv_folder_items"\)/, "the pool must not keep a second filings read of its own");
+  assert.match(attach, /\.sort\(\(left, right\) => compareFilingIds\(left\.id, right\.id\)\)/, "the shared rows must be grouped in id order, as the pool always grouped them");
   assert.doesNotMatch(attach, /\.select\("folder_id,candidate_id"\);/, "no unbounded membership select may remain");
 
   const tree = codeOnly(read("src/lib/recruitment/cv-folder-tree-db.ts"));
   const cabinetLoad = functionBody(tree, "export async function loadCvFolderCabinet(");
-  assert.ok(cabinetLoad.includes("readAllFolderItems(supabase)"), "the folder tree must read its filings through the paged reader");
+  assert.ok(cabinetLoad.includes("readAllFolderItemsOnce()"), "the folder tree must read its filings through the paged reader");
+  assert.ok(
+    tree.includes("export const readAllFolderItemsOnce = cache(async () => readAllFolderItems(recruitmentDb()));"),
+    "the reader shared for the render must be the paged reader itself",
+  );
   assert.doesNotMatch(cabinetLoad, /from\("ats_cv_folder_items"\)/, "the folder tree must not keep an unbounded filings select");
   const pagedRead = functionBody(tree, "async function readAllFolderItems(");
   assert.match(pagedRead, /\.range\(/, "the folder tree's filings read must be paged");

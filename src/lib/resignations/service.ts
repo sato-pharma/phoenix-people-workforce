@@ -670,8 +670,10 @@ function isCompanyResignationReader(access: AccessContext) {
 
 export async function getResignationsDashboardData(access?: AccessContext): Promise<ResignationDashboardData> {
   const supabase = getSupabaseAdmin();
-  const directory = await getEmployeeDirectory();
-  const [resignationsResult, candidatesResult, historicalEmployees] = await Promise.all([
+  // The directory joins the reads below rather than going first: none of them needs it, and on a
+  // cold directory cache awaiting it alone was a whole extra wait. A failure still throws.
+  const [directory, resignationsResult, candidatesResult, historicalEmployees] = await Promise.all([
+    getEmployeeDirectory(),
     supabase
       .from("employee_resignations")
       .select("*")
@@ -710,13 +712,36 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
   const actorNameByHrId = new Map<string, string>();
   const hireDateByHrId = new Map<string, string | null>();
   const salaryByHrId = new Map<string, EmployeeSalaryRow>();
-  if (referencedHrIds.length > 0) {
-    const { data: employeeRows } = await supabase
-      .from("employees")
-      .select(
-        "hr_id, full_name, nickname, hire_date, base_salary, extra_cost_of_living, fuel_allowance, payment_mode",
-      )
-      .in("hr_id", referencedHrIds);
+
+  const mappedResignations = (resignationsResult.data ?? []).map((row) =>
+    mapResignation(row as ResignationRow),
+  );
+
+  // The people lookup and the device register below are independent reads, so they run side by
+  // side rather than one after the other. Neither throws: a failed people read leaves the names,
+  // hire dates and salaries blank exactly as before, and the device read never throws (see below).
+  const [employeeLookup, outstandingDevicesByHrId] = await Promise.all([
+    referencedHrIds.length > 0
+      ? supabase
+          .from("employees")
+          .select(
+            "hr_id, full_name, nickname, hire_date, base_salary, extra_cost_of_living, fuel_allowance, payment_mode",
+          )
+          .in("hr_id", referencedHrIds)
+      : null,
+    /**
+     * What each leaver still holds, in ONE query for the whole page.
+     *
+     * Read here rather than inside the map because the map is synchronous and because a per-row
+     * lookup would be one round trip per resignation. It never throws — see
+     * `getOutstandingDevicesByEmployee`: this page is how somebody finds out a person left at all,
+     * and it must render whether or not the device register answers.
+     */
+    getOutstandingDevicesByEmployee(mappedResignations.map((record) => record.employeeHrId)),
+  ]);
+
+  if (employeeLookup) {
+    const { data: employeeRows } = employeeLookup;
     for (const entry of employeeRows ?? []) {
       const row = entry as EmployeeSalaryRow & {
         full_name: string | null;
@@ -730,22 +755,6 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
       salaryByHrId.set(key, row);
     }
   }
-
-  const mappedResignations = (resignationsResult.data ?? []).map((row) =>
-    mapResignation(row as ResignationRow),
-  );
-
-  /**
-   * What each leaver still holds, in ONE query for the whole page.
-   *
-   * Read here rather than inside the map because the map is synchronous and because a per-row
-   * lookup would be one round trip per resignation. It never throws — see
-   * `getOutstandingDevicesByEmployee`: this page is how somebody finds out a person left at all,
-   * and it must render whether or not the device register answers.
-   */
-  const outstandingDevicesByHrId = await getOutstandingDevicesByEmployee(
-    mappedResignations.map((record) => record.employeeHrId),
-  );
 
   const allWorkflowRecords = mappedResignations.map((record) => {
     return {

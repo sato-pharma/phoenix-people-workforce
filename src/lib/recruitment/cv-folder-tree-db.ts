@@ -20,6 +20,8 @@
 // turns that failure back into the same sentence the pre-check would have given. The check is for
 // the sentence; the index is for the truth.
 
+import { cache } from "react";
+
 import type { AccessContext } from "@/lib/auth/permissions";
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { hrIdForStorage } from "@/lib/hr-id";
@@ -132,6 +134,16 @@ async function readAllFolderItems(
   }
 }
 
+/**
+ * `readAllFolderItems`, ONCE per server render.
+ *
+ * The recruitment hub renders the cabinet AND the candidate pool, and the pool needs every filing
+ * too (`attachCvFolderMemberships` in candidates.ts), so the same paged read ran twice per load. React
+ * `cache()` hands the second caller the first one's answer; outside a render (a route handler) it is
+ * a plain call. The rows are shared, so a caller must not mutate them — sort a copy.
+ */
+export const readAllFolderItemsOnce = cache(async () => readAllFolderItems(recruitmentDb()));
+
 /** The whole tree and its contents. Empty — never throwing — when the migration has not landed. */
 export async function loadCvFolderCabinet(options: { withNames?: boolean } = {}): Promise<CvFolderCabinet> {
   const supabase = recruitmentDb();
@@ -139,7 +151,8 @@ export async function loadCvFolderCabinet(options: { withNames?: boolean } = {})
 
   const [foldersResult, itemsResult] = await Promise.all([
     supabase.from("ats_cv_folders").select("id,parent_id,name,created_at,created_by_hr_id"),
-    readAllFolderItems(supabase),
+    // The paged reader, shared with the pool for the render (see readAllFolderItemsOnce).
+    readAllFolderItemsOnce(),
   ]);
 
   if (foldersResult.error) {

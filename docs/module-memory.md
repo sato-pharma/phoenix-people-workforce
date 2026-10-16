@@ -127,7 +127,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `platform` — Platform — auth, security, cron, data access and shared UI | `src/lib/{auth,security,platform,cron-control,background-jobs,observability,error-monitor,share-links,share,http,imports,uploads,ai,validation,qr,operations,synthetic-journeys,admin,format,i18n,ui,utils}/**` and 8 more |
 | `database` — Database, migrations and Supabase | `supabase/**` and 2 more |
 | `engineering` — Engineering — CI, tests, scripts and deploys | `.github/**` and 7 more |
-| `engineering-deploys` — Engineering — Railway deploys and what is actually serving | `Dockerfile` and 9 more |
+| `engineering-deploys` — Engineering — Railway deploys and what is actually serving | `Dockerfile` and 11 more |
 | `git-worktrees` — Git, worktrees and the shared primary checkout | `scripts/{new-session,sync-worktree-env,repo-doctor}*` and 1 more |
 | `sessions` — Sessions — the Claude Code harness, this laptop and the memory system | `.claude/hooks/**` and 4 more |
 <!-- module-memory:directory-table:end -->

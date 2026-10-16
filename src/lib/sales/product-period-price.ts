@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -128,30 +130,49 @@ export function productPeriodPricesFromRows(
   return buildProductPeriodPrices(base, byProduct);
 }
 
+/** One product master row, every column the per-request readers below need. */
+export type ProductMasterRow = {
+  product_code: unknown;
+  product_name: unknown;
+  family: unknown;
+  factory_price: unknown;
+  active: unknown;
+  normalized_line: unknown;
+};
+
+/**
+ * The product master, read ONCE per request. A Targets render asked `source_of_sales_products` for the
+ * same ~30 rows four times — names, families, prices, and the code list the price map walks — each a
+ * full round trip to the database. Throws on a failed read, exactly as each of those reads did.
+ */
+export const loadProductMasterRows = cache(async (): Promise<ProductMasterRow[]> => {
+  const { data, error } = await getSupabaseAdmin()
+    .from("source_of_sales_products")
+    .select("product_code,product_name,family,factory_price,active,normalized_line");
+  if (error) throw error;
+  return (data ?? []) as ProductMasterRow[];
+});
+
 /**
  * Loads the product master's prices and every period override once, and resolves per call.
  *
  * Both tables are tiny — around 30 products and, today, a single override row — so this is one
- * pair of reads for a whole page rather than a lookup per row.
+ * pair of reads for a whole page rather than a lookup per row, and it is shared across the request.
  */
-export async function loadProductPeriodPrices(): Promise<ProductPeriodPrices> {
+export const loadProductPeriodPrices = cache(async (): Promise<ProductPeriodPrices> => {
   const supabase = getSupabaseAdmin();
 
-  const [master, history] = await Promise.all([
-    supabase.from("source_of_sales_products").select("product_code,factory_price"),
+  const [masterRows, history] = await Promise.all([
+    loadProductMasterRows(),
     supabase
       .from("source_of_sales_product_price_history")
       .select("product_code,effective_period,factory_price")
       .order("effective_period", { ascending: true }),
   ]);
-  if (master.error) throw master.error;
   if (history.error) throw history.error;
 
   return productPeriodPricesFromRows(
-    (master.data ?? []).map((row) => {
-      const record = row as Record<string, unknown>;
-      return { productCode: record.product_code, factoryPrice: record.factory_price };
-    }),
+    masterRows.map((record) => ({ productCode: record.product_code, factoryPrice: record.factory_price })),
     (history.data ?? []).map((row) => {
       const record = row as Record<string, unknown>;
       return {
@@ -161,19 +182,16 @@ export async function loadProductPeriodPrices(): Promise<ProductPeriodPrices> {
       };
     }),
   );
-}
+});
 
 /** The `product_code -> price` map shape that the single-period callers want. */
 export async function loadProductPriceMapForPeriod(
   period: string | null | undefined,
 ): Promise<Map<string, number>> {
-  const prices = await loadProductPeriodPrices();
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.from("source_of_sales_products").select("product_code");
-  if (error) throw error;
+  const [prices, masterRows] = await Promise.all([loadProductPeriodPrices(), loadProductMasterRows()]);
   const map = new Map<string, number>();
-  for (const row of data ?? []) {
-    const productCode = code((row as Record<string, unknown>).product_code);
+  for (const row of masterRows) {
+    const productCode = code(row.product_code);
     if (!productCode) continue;
     const price = prices.priceFor(productCode, period);
     if (price != null) map.set(productCode, price);

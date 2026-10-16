@@ -8,6 +8,8 @@
 // This file reads the organogram and nothing else, and imports neither manager-sends.ts nor the
 // folders reader, because both of them ask it a question — an import back would be a cycle.
 
+import { cache } from "react";
+
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { recruitmentDb } from "@/lib/recruitment/db";
@@ -19,8 +21,13 @@ import { managerFolderShelves } from "@/lib/recruitment/manager-cv-folders";
  *
  * A failed read degrades to no rows rather than throwing. The caller then treats nobody as a folder
  * holder, which is the safe direction for the window: the 45 days apply as they always did.
+ *
+ * ONCE PER SERVER RENDER (React `cache()`). One render asks it several times — the hiring-manager
+ * picker for its seats AND its shelves, every `managerHoldsFolders` gate on a manager's inbox — and
+ * the view takes no filter, so every caller gets the same rows. Outside a render it is a plain call.
+ * The rows are shared: callers read them and never mutate them.
  */
-export async function loadDistrictSeatRows(): Promise<DistrictSeatRow[]> {
+export const loadDistrictSeatRows = cache(async (): Promise<DistrictSeatRow[]> => {
   const { data, error } = await recruitmentDb().from("au_v_org_tree").select(DISTRICT_SEAT_COLUMNS);
   if (error) {
     logError("Manager CV folders could not read the org tree", {
@@ -30,7 +37,7 @@ export async function loadDistrictSeatRows(): Promise<DistrictSeatRow[]> {
     return [];
   }
   return (data ?? []) as DistrictSeatRow[];
-}
+});
 
 /** Canonical HR id keys of every manager with at least one shelf. Pure. */
 export function folderHolderKeys(rows: readonly DistrictSeatRow[]): Set<string> {

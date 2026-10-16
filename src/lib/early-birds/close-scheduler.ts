@@ -14,6 +14,7 @@
 import { resolveInProcessHostRefusal, unrefTimer } from "@/lib/crm/live-poller";
 import { runDueEarlyBirdsClose } from "@/lib/early-birds/close";
 import { logError } from "@/lib/observability/log";
+import { trackJob } from "@/lib/observability/running-jobs";
 
 /** How often the self-throttled close is asked. Far below its own 15-minute gate on purpose. */
 export const EARLY_BIRDS_CLOSE_SCHEDULER_TICK_MS = 60_000;
@@ -26,7 +27,7 @@ async function runOnce(): Promise<void> {
   if (inFlight) return;
   inFlight = true;
   try {
-    await runDueEarlyBirdsClose();
+    await trackJob("early-birds:close", runDueEarlyBirdsClose);
   } catch (error) {
     // runDueEarlyBirdsClose already catches its own failures; this is the net under an unexpected
     // throw, so a broken close can never take down the timer or the process.

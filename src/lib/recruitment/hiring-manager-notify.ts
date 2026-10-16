@@ -36,7 +36,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { candidateAlertIdempotencyKey } from "@/lib/recruitment/candidate-alert-key";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { writeApplicationEvent } from "@/lib/recruitment/db";
-import { boardsForManager } from "@/lib/recruitment/district-manager-folders";
+import { boardsForManager, type DistrictSeatRow } from "@/lib/recruitment/district-manager-folders";
 import { loadDistrictSeatRows } from "@/lib/recruitment/folder-holders";
 import { managerFolderShelves } from "@/lib/recruitment/manager-cv-folders";
 import { recordManagerSends } from "@/lib/recruitment/manager-sends";
@@ -188,16 +188,15 @@ type OrgSeat = {
  * appears, just without their line and tier — which is precisely what the picker looked like
  * yesterday. A recruiter losing the ability to send a CV because a view was slow is a regression;
  * losing a line badge is not.
+ *
+ * THE ROWS ARE `loadDistrictSeatRows`'s, not a read of its own. The picker needs the same view for
+ * the folder shelves, and that read selects every column this one did (and more) with no filter,
+ * so one request answers both — and a failed read still comes back as no rows, so no seats here.
  */
-async function loadOrgSeatsByHrId(): Promise<Map<string, OrgSeat>> {
+function orgSeatsByHrId(seatRows: readonly DistrictSeatRow[]): Map<string, OrgSeat> {
   const seats = new Map<string, OrgSeat>();
   try {
-    const { data, error } = await getSupabaseAdmin()
-      .from("au_v_org_tree")
-      .select("occupant_hr_id,seat_tier,line_name,region_name,area_name");
-    if (error) throw error;
-
-    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    for (const row of seatRows as ReadonlyArray<Record<string, unknown>>) {
       const occupantRaw = String(row.occupant_hr_id ?? "").trim();
       const occupant = occupantRaw.toLowerCase();
       if (!occupant) continue;
@@ -253,10 +252,12 @@ export type NotifiedManagerContext = {
  */
 export async function listHiringManagerOptions(): Promise<HiringManagerOption[]> {
   // The organogram is read FIRST, because it decides who is on the list as well as how they read.
-  const orgSeats = await loadOrgSeatsByHrId();
+  // ONE read serves both the seats and the shelves below (see orgSeatsByHrId).
+  const seatRows = await loadDistrictSeatRows();
+  const orgSeats = orgSeatsByHrId(seatRows);
   // The folders each manager holds, for the folder choice in the send dialogs. A failed organogram
   // read gives no folders, so the dialogs simply offer no choice and the server picks as before.
-  const shelves = managerFolderShelves(await loadDistrictSeatRows());
+  const shelves = managerFolderShelves(seatRows);
 
   // ── WHO IS OFFERED ────────────────────────────────────────────────────────────────────────────
   // Two sources unioned, and the union is the fix rather than a belt-and-braces.

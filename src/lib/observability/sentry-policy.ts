@@ -117,9 +117,15 @@ export const SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE = 1;
 
 /**
  * Profiling runs only INSIDE a sampled trace (`profileLifecycle: 'trace'`), so its real share of traffic is
- * this rate times the trace rate above.
+ * this rate times the trace rate above — which is why it is OFF while the page survey below traces every
+ * page: then the profiler ran on every page too. Measured on production 2026-10-16 at the same traffic, the
+ * worst event-loop stall of a typical minute went from 31-88 ms to 372 ms once the survey began, with 7 of
+ * 18 minutes over half a second. Read ONCE, when the process starts, so a server booted during the survey
+ * keeps the profiler off until its next deploy — harmless, and never the other way round.
  */
-export const SENTRY_PROFILE_SESSION_SAMPLE_RATE = 1;
+export function sentryProfileSessionSampleRate(nowMs: number = Date.now()): number {
+  return nowMs < SENTRY_PAGE_SURVEY_ENDS_AT_MS ? 0 : 1;
+}
 
 // Traffic that says nothing: the platform's own health probe, the error reporter's own endpoint (tracing the
 // thing that reports failures only multiplies them) and the static asset tree.

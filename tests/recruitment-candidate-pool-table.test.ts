@@ -370,7 +370,8 @@ export async function runRecruitmentCandidatePoolTableTests() {
     "only an explicit false is a verdict; NULL means no judgement on record and must never flag a row",
   );
   assert.ok(
-    candidatesService.includes("const notACv = await loadNotACvCandidates(candidates.map((candidate) => candidate.id));"),
+    candidatesService.includes("loadNotACvCandidates(candidates.map((candidate) => candidate.id)),") &&
+      candidatesService.includes("const [, , , , latestSends, notACv] = await Promise.all(["),
     "listCandidates must actually call the loader, or the flag is computed nowhere and every badge below is dead markup",
   );
 

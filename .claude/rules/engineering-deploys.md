@@ -10,6 +10,8 @@ paths:
   - "scripts/check-dockerfile.mjs"
   - "tests/dockerfile-parse-gate.test.ts"
   - "tests/railway-deploy-config.test.ts"
+  - "instrumentation.ts"
+  - "src/lib/platform/process-role.ts"
 ---
 
 # Module memory — Engineering — Railway deploys and what is actually serving
@@ -45,6 +47,9 @@ This file is loaded because this session opened a file of this module (or the mo
 - ✅ **RESOLVED 2026-09-30 — the second undocumented project (`superb-smile`) is GONE, so the deploy gate IS now assertable: ONE project deploys this repo, and its production trigger reads `checkSuites: true` (staging and `phoenix-headwind` read `false`).** Read the trigger, never a doc. Account: `docs/agents-production-hooks.md`.
 - **That deploy serves in MINUTES — confirm by listing DEPLOYMENTS**, never by probing the app, and never `railway redeploy` to make a variable "take".
 
+### The web and worker process roles
+
+- 🔴 **`PHOENIX_PROCESS_ROLE=web` STARTS NO BACKGROUND SCHEDULER** — the live poller, the Early Birds close and CRM housekeeping start only where it is `worker` or `all`, and unset means `all` (`src/lib/platform/process-role.ts`, read in `instrumentation.ts`). Added 2026-10-16 after three 4.3 s freezes of the single web process, each straight after the doctor-list scrape's biggest slice; the owner chose a separate worker service. 🔴 **Never let two processes run the poller** — its state lives in memory, so two would double every sync. The cutover sets the web role first, then turns `PHOENIX_LIVE_CRM_POLL` on in the worker. A minute whose worst stall passes 1,000 ms logs `event_loop_stall` naming the running job (`running-jobs.ts`). Pinned by `tests/server-freeze-guards.test.ts`.
 
 _No module rules yet. Add one here, in the PR that teaches it._
 <!-- module-memory:rules:end -->

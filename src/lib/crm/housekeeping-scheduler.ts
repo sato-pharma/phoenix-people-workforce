@@ -15,6 +15,7 @@ import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
 import { addDaysIso, cairoTodayIso } from "@/lib/crm/dates";
 import { PROBATION_DV_LOOKBACK_DAYS, resolveInProcessHostRefusal, unrefTimer } from "@/lib/crm/live-poller";
 import { logError } from "@/lib/observability/log";
+import { trackJob } from "@/lib/observability/running-jobs";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -55,7 +56,7 @@ async function runOnce(): Promise<void> {
 
     const today = cairoTodayIso();
     const window = { dateFrom: addDaysIso(today, -PROBATION_DV_LOOKBACK_DAYS), dateTo: today };
-    const summary = await syncProbationDvDays(getSupabaseAdmin(), window);
+    const summary = await trackJob("crm:housekeeping", () => syncProbationDvDays(getSupabaseAdmin(), window));
     state.lastSuccessMs = nowMs;
     console.log(
       `[crm:housekeeping] probation DV capture ${window.dateFrom}..${window.dateTo} — detected ${summary.detected}, ` +

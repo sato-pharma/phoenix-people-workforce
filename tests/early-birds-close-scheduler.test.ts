@@ -6,6 +6,7 @@ import { resolveInProcessHostRefusal, startLiveCrmPoller } from "../src/lib/crm/
 import { EARLY_BIRDS_DUE_CHECK_MIN_GAP_MS } from "../src/lib/early-birds/schedule.ts";
 
 const ENV_KEYS = [
+  "PHOENIX_PROCESS_ROLE",
   "PHOENIX_LIVE_CRM_POLL",
   "NODE_ENV",
   "RAILWAY_ENVIRONMENT_NAME",
@@ -55,7 +56,11 @@ export function runEarlyBirdsCloseSchedulerTests() {
     /isIReports360Configured|IREPORTS360_/,
     "the scheduler's guard must not require iReports360 credentials",
   );
-  assert.match(schedulerSource, /await runDueEarlyBirdsClose\(\)/, "the scheduler must run the self-throttled close");
+  assert.match(
+    schedulerSource,
+    /await trackJob\("early-birds:close", runDueEarlyBirdsClose\)/,
+    "the scheduler must run the self-throttled close, registered as a running job so a server stall names it",
+  );
   assert.match(schedulerSource, /if \(started\) return/, "the scheduler must refuse a second start");
   assert.match(schedulerSource, /unrefTimer\(timer\)/, "the scheduler's timer must never hold the process open");
   const tickMs = Number(schedulerSource.match(/EARLY_BIRDS_CLOSE_SCHEDULER_TICK_MS = ([\d_]+);/)?.[1]?.replace(/_/g, ""));
@@ -70,6 +75,7 @@ export function runEarlyBirdsCloseSchedulerTests() {
   const saved = new Map<string, string | undefined>(ENV_KEYS.map((key) => [key, process.env[key]]));
   const env = process.env as Record<string, string | undefined>;
   try {
+    delete env.PHOENIX_PROCESS_ROLE;
     env.PHOENIX_LIVE_CRM_POLL = "true";
     env.NODE_ENV = "production";
     env.RAILWAY_ENVIRONMENT_NAME = "production";
