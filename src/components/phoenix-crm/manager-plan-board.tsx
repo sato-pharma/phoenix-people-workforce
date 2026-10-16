@@ -161,10 +161,6 @@ const REP_WEEK: Record<ManagerBoardRepHalf["weekState"], { label: string; tone: 
   no_plan: { label: "No plan", tone: "neutral" },
 };
 
-function halfLabel(half: ManagerHalf): string {
-  return half === "AM" ? "AM" : "PM";
-}
-
 // ── The board ───────────────────────────────────────────────────────────────────────────────────
 
 export function ManagerPlanBoard({
@@ -495,7 +491,7 @@ function HalfStep({
 }) {
   const halfOptions: Array<CrmChoiceOption<ManagerHalf>> = day.halves.map((entry) => ({
     value: entry,
-    label: halfLabel(entry),
+    label: entry,
     note: day.slots.find((candidate) => candidate.half === entry)?.summary ?? "Nothing planned",
   }));
   const kindOptions: Array<CrmChoiceOption<ManagerSlotKind>> = MANAGER_SLOT_KINDS.map((entry) => ({
