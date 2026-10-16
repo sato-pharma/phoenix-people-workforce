@@ -146,6 +146,13 @@ export async function runEmployeeDirectoryStaleBoundTests() {
   assert.match(code, /directoryGeneration \+= 1;\s*directoryCache = null;/, "RED invalidation must bump the generation before it drops the cache");
   const stampGuards = [...code.matchAll(/if \(generation === directoryGeneration\)/g)].length;
   assert.equal(stampGuards, 2, `RED both caches must refuse to stamp a load that began before an invalidation (found ${stampGuards})`);
+  // A pass at probation makes the person payroll-eligible, and payroll reads eligibility from the directory.
+  const probationDecision = stripComments(readFileSync(new URL("../src/lib/probation/intelligence/decision.ts", import.meta.url), "utf8"));
+  assert.match(
+    probationDecision,
+    /payroll_eligible: true[\s\S]*?if \(error\) throw error;\s*invalidateEmployeeDirectoryCache\(\);/,
+    "RED a pass at probation must drop the cached directory, or a payroll draft in the next 90 s leaves the new permanent employee out",
+  );
   assert.equal(
     [...code.matchAll(/loadDirectoryShared\(\)\.catch\(\(\) => undefined\)|loadShared\(\)\.catch\(\(\) => undefined\)/g)].length,
     2,

@@ -4,7 +4,7 @@
 // decision time as the defensible record.
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectoryRows, invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { isProbationAdministrator } from "@/lib/probation/service";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
@@ -203,6 +203,9 @@ async function applyDecisionSideEffects(
         .update({ employment_status: "active", organogram_visible: true, payroll_eligible: true, updated_at: now })
         .eq("hr_id", employeeHrId);
       if (error) throw error;
+      // Payroll eligibility is read from the cached directory; without this a payroll draft built in the next
+      // minute and a half would still leave this employee out.
+      invalidateEmployeeDirectoryCache();
     } else {
       // Terminate → resignation + vacancy. Access intentionally omitted (probation scope is broader
       // than the generic canSeeEmployee — see the probation-scope memory).

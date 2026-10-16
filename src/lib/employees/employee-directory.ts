@@ -409,7 +409,9 @@ const CACHE_TTL = 30000; // 30 seconds
  * After CACHE_TTL a copy is not thrown away at once: for this much longer it is still handed to the caller while a
  * fresh load runs behind it. The total age any caller can see is therefore CACHE_TTL + this (90 s) — a roster that is
  * a minute and a half old at worst, against 30 s before, and never the multi-second wait of a cold load on a poll.
- * A write in this process (`invalidateEmployeeDirectoryCache`) still drops the copy outright.
+ * A write in this process (`invalidateEmployeeDirectoryCache`) still drops the copy, so every writer that changes a
+ * field payroll or an approval chain reads must call it (a pass at probation does). A caller that joins a load already
+ * running when the write lands can still be handed its older answer once; it is just never saved into the cache.
  */
 export const DIRECTORY_REFRESH_BEHIND_MS = 60000;
 
