@@ -378,12 +378,12 @@ async function loadAreaNames(areaCodes: readonly string[]): Promise<Map<string, 
   const names = new Map<string, string>();
   if (areaCodes.length === 0) return names;
   const supabase = getSupabaseAdmin();
-  for (let from = 0; from < areaCodes.length; from += IN_CHUNK) {
-    const chunk = areaCodes.slice(from, from + IN_CHUNK);
-    const { data, error } = await supabase
-      .from("source_of_sales_areas")
-      .select("area_code, area_name")
-      .in("area_code", chunk);
+  // A few chunks at once, folded in chunk order (2026-10-16 performance audit): the same names, and the
+  // same first failure, as the one-chunk-at-a-time loop gave.
+  const answers = await mapWithConcurrency(inChunks(areaCodes), CHUNK_CONCURRENCY, async (chunk) =>
+    supabase.from("source_of_sales_areas").select("area_code, area_name").in("area_code", chunk),
+  );
+  for (const { data, error } of answers) {
     if (error) throw new Error(`Could not read area names: ${error.message}`);
     for (const row of (data ?? []) as Array<{ area_code: string | null; area_name: string | null }>) {
       const name = (row.area_name ?? "").trim();
@@ -400,12 +400,11 @@ async function loadBrickMeta(
   const meta = new Map<string, { areaCode: string | null; areaName: string | null; name: string }>();
   if (brickIds.length === 0) return meta;
   const supabase = getSupabaseAdmin();
-  for (let from = 0; from < brickIds.length; from += IN_CHUNK) {
-    const chunk = brickIds.slice(from, from + IN_CHUNK);
-    const { data, error } = await supabase
-      .from("source_of_sales_bricks")
-      .select("brick_id, brick_name, area_code, active")
-      .in("brick_id", chunk);
+  // A few chunks at once, folded in chunk order (2026-10-16 performance audit) — see `loadAreaNames`.
+  const answers = await mapWithConcurrency(inChunks(brickIds), CHUNK_CONCURRENCY, async (chunk) =>
+    supabase.from("source_of_sales_bricks").select("brick_id, brick_name, area_code, active").in("brick_id", chunk),
+  );
+  for (const { data, error } of answers) {
     if (error) throw new Error(`Could not read brick names: ${error.message}`);
     for (const row of (data ?? []) as Array<{
       active: boolean | null;
@@ -710,66 +709,56 @@ export async function getRepsListForAgent(
   }
 
   const contactIds = rows.map((row) => row.contactCrmId);
-  const [brickByContactId, brickByRegionName, checkins, roster] = await Promise.all([
-    loadContactBrickMap(contactIds),
+  // 🔴 EACH READ STARTS THE MOMENT WHAT IT NEEDS IS IN (2026-10-16 Phoenix CRM performance audit). The
+  // brick names need only the two brick mappings, and the other reps' pins need only the company-wide
+  // roster — neither ever needed this rep's check-ins, which are the slowest read here. They used to
+  // wait for all four of the second stage; now each chains on its own inputs, and every answer is the
+  // one the staged reads gave. Each is handled the moment it starts and awaited where it was used.
+  const contactBrickMapRead = loadContactBrickMap(contactIds);
+  const checkinsRead = loadCheckins(contactIds);
+  const metaRead = Promise.all([contactBrickMapRead, regionBrickMapRead]).then(([byContactId, byRegionName]) => {
+    const needed = new Set<string>();
+    for (const row of rows) {
+      const brickId = byContactId.get(row.contactCrmId) ?? byRegionName.get(normalizeRegionKey(row.region));
+      if (brickId) needed.add(brickId);
+    }
+    return loadBrickMeta([...needed]);
+  });
+  const otherPinsRead = rosterRead.then((rosterRows) => {
+    // Narrow the roster to the contacts that could possibly be the same customer BEFORE asking for any
+    // more check-ins. Matching keys come from the roster on both sides so the two halves of a pair are
+    // normalized identically — reading one side off the display row instead would compare a real name
+    // against the `Contact 12345` placeholder a nameless row falls back to.
+    const rosterById = new Map(rosterRows.map((entry) => [entry.contactCrmId, entry]));
+    const mineNameKeys = new Set<string>();
+    const minePhoneKeys = new Set<string>();
+    for (const id of contactIds) {
+      const entry = rosterById.get(id);
+      if (!entry) continue;
+      if (entry.nameKey) mineNameKeys.add(entry.nameKey);
+      if (entry.phoneKey) minePhoneKeys.add(entry.phoneKey);
+    }
+    const mineIds = new Set(contactIds);
+    const candidateIds = rosterRows
+      .filter(
+        (entry) =>
+          entry.repKey !== repKey &&
+          !mineIds.has(entry.contactCrmId) &&
+          ((entry.nameKey !== "" && mineNameKeys.has(entry.nameKey)) ||
+            (entry.phoneKey != null && minePhoneKeys.has(entry.phoneKey))),
+      )
+      .map((entry) => entry.contactCrmId);
+    return loadPinsFor(candidateIds);
+  });
+  for (const read of [contactBrickMapRead, checkinsRead, metaRead, otherPinsRead]) read.catch(() => undefined);
+
+  const [brickByContactId, brickByRegionName, checkins, roster, otherPins] = await Promise.all([
+    contactBrickMapRead,
     regionBrickMapRead,
-    loadCheckins(contactIds),
+    checkinsRead,
     rosterRead,
+    otherPinsRead,
   ]);
-
-  const needed = new Set<string>();
-  for (const row of rows) {
-    const brickId = brickByContactId.get(row.contactCrmId) ?? brickByRegionName.get(normalizeRegionKey(row.region));
-    if (brickId) needed.add(brickId);
-  }
-
-  // Narrow the roster to the contacts that could possibly be the same customer BEFORE asking for any
-  // more check-ins. Matching keys come from the roster on both sides so the two halves of a pair are
-  // normalized identically — reading one side off the display row instead would compare a real name
-  // against the `Contact 12345` placeholder a nameless row falls back to.
-  const rosterById = new Map(roster.map((entry) => [entry.contactCrmId, entry]));
-  const mineNameKeys = new Set<string>();
-  const minePhoneKeys = new Set<string>();
-  for (const id of contactIds) {
-    const entry = rosterById.get(id);
-    if (!entry) continue;
-    if (entry.nameKey) mineNameKeys.add(entry.nameKey);
-    if (entry.phoneKey) minePhoneKeys.add(entry.phoneKey);
-  }
-  const mineIds = new Set(contactIds);
-  const candidateIds = roster
-    .filter(
-      (entry) =>
-        entry.repKey !== repKey &&
-        !mineIds.has(entry.contactCrmId) &&
-        ((entry.nameKey !== "" && mineNameKeys.has(entry.nameKey)) ||
-          (entry.phoneKey != null && minePhoneKeys.has(entry.phoneKey))),
-    )
-    .map((entry) => entry.contactCrmId);
-
-  const [metaByBrickId, otherPins, counterparties] = await Promise.all([
-    loadBrickMeta([...needed]),
-    loadPinsFor(candidateIds),
-    counterpartiesRead,
-  ]);
-
-  // HAS PHOENIX ACTUALLY TRADED WITH THIS ROW? Matched here rather than inside `contact-trade.ts`
-  // because the area a contact sits in is the SAME two-step brick resolution the grouping below
-  // uses, and resolving it twice is how the badge and the group heading come to disagree about
-  // where a doctor is. See that file's header for why the area — not the name — is what makes a
-  // match trustworthy.
-  const tradeByContact = matchContactTrade(
-    rows.map((row) => {
-      const brickId =
-        brickByContactId.get(row.contactCrmId) ?? brickByRegionName.get(normalizeRegionKey(row.region)) ?? null;
-      return {
-        areaCode: brickId ? (metaByBrickId.get(brickId)?.areaCode ?? null) : null,
-        contactCrmId: row.contactCrmId,
-        name: row.name,
-      };
-    }),
-    counterparties,
-  );
 
   const pins = new Map(otherPins);
   for (const [contactCrmId, found] of checkins) pins.set(contactCrmId, { lat: found.seenAt.lat, lon: found.seenAt.lon });
@@ -796,7 +785,30 @@ export async function getRepsListForAgent(
   for (const list of sharedByContact.values()) {
     for (const entry of list) for (const id of entry.contactCrmIds) partnerIds.add(id);
   }
-  const partnerCheckins = partnerIds.size > 0 ? await loadCheckins([...partnerIds]) : new Map<number, ContactCheckins>();
+  // Read beside the brick names and the trade counterparties, which were already on their way.
+  const [partnerCheckins, metaByBrickId, counterparties] = await Promise.all([
+    partnerIds.size > 0 ? loadCheckins([...partnerIds]) : Promise.resolve(new Map<number, ContactCheckins>()),
+    metaRead,
+    counterpartiesRead,
+  ]);
+
+  // HAS PHOENIX ACTUALLY TRADED WITH THIS ROW? Matched here rather than inside `contact-trade.ts`
+  // because the area a contact sits in is the SAME two-step brick resolution the grouping below
+  // uses, and resolving it twice is how the badge and the group heading come to disagree about
+  // where a doctor is. See that file's header for why the area — not the name — is what makes a
+  // match trustworthy.
+  const tradeByContact = matchContactTrade(
+    rows.map((row) => {
+      const brickId =
+        brickByContactId.get(row.contactCrmId) ?? brickByRegionName.get(normalizeRegionKey(row.region)) ?? null;
+      return {
+        areaCode: brickId ? (metaByBrickId.get(brickId)?.areaCode ?? null) : null,
+        contactCrmId: row.contactCrmId,
+        name: row.name,
+      };
+    }),
+    counterparties,
+  );
 
   // WHAT LOOKS WRONG ABOUT EACH ROW. Computed from the roster, the pins and the check-ins that are
   // already loaded above, so it costs no extra round trip. Deliberately built AFTER the sharing

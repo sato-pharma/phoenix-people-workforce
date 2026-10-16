@@ -175,6 +175,9 @@ export function runPortalRepNavigationSpeedTests(): void {
       ["src/lib/crm/reps-list.ts", "async function loadContactBrickMap("],
       ["src/lib/crm/reps-list.ts", "export async function loadCheckins("],
       ["src/lib/crm/reps-list.ts", "export async function loadPinsFor("],
+      // The brick and area names behind the board's group headings (2026-10-16).
+      ["src/lib/crm/reps-list.ts", "async function loadAreaNames("],
+      ["src/lib/crm/reps-list.ts", "async function loadBrickMeta("],
       // Since 2026-10-16 these two are gathered in the database, with the page walk kept for a database
       // the function has not reached — both halves read their chunks a few at a time.
       ["src/lib/crm/shared-customers.ts", "async function loadPlanDatesCounted("],
@@ -211,6 +214,19 @@ export function runPortalRepNavigationSpeedTests(): void {
     for (const read of ["const regionBrickMapRead = loadRegionBrickMap();", "const rosterRead = loadContactRoster();", "const counterpartiesRead = loadTradeCounterparties();"]) {
       assertBefore(loader, read, "await getRepContactList(hrId)", `${read} starts before the rep's list is awaited`);
     }
+    // 🔴 Each later read chains on its own inputs (2026-10-16): the brick names on the two brick
+    // mappings, the other reps' pins on the roster — never on this rep's check-ins.
+    assert.ok(
+      loader.includes("const metaRead = Promise.all([contactBrickMapRead, regionBrickMapRead]).then("),
+      "the brick names start the moment both brick mappings are in",
+    );
+    assert.ok(loader.includes("const otherPinsRead = rosterRead.then("), "the other reps' pins start the moment the roster is in");
+    assertBefore(loader, "const metaRead = ", "await Promise.all([\n    contactBrickMapRead,", "both start before anything of the second stage is awaited");
+    assertBefore(loader, "const otherPinsRead = ", "await Promise.all([\n    contactBrickMapRead,", "and so does the pins' read");
+    assert.ok(
+      loader.includes("partnerIds.size > 0 ? loadCheckins([...partnerIds]) : Promise.resolve(new Map<number, ContactCheckins>()),\n    metaRead,\n    counterpartiesRead,"),
+      "the partners' check-ins are read beside the brick names and the counterparties",
+    );
 
     // The month activity needs the rep and the month, never the list.
     const board = functionBody(source("src/lib/crm/reps-list-board.ts"), "async function assembleBoard(");
