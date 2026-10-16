@@ -29,8 +29,8 @@ export function runAcceptedOfferAlertTests() {
   const policy = DEFAULT_NOTIFICATION_ROLE_POLICIES.accepted_offer_alert;
   assert.deepEqual(
     policy.roles,
-    ["Super Admin", "HR Operations"],
-    "the owner's recipients (2026-10-02): Super Admin and HR Operations",
+    ["Super Admin", "HR Operations", "HR Resourcing"],
+    "the owner's recipients (2026-10-02): Super Admin and HR Operations, plus Talent Acquisition (2026-10-16)",
   );
   assert.equal(policy.enabled, true, "the alert ships enabled");
   assert.equal(ACCEPTED_OFFER_AUDIENCE, "accepted_offer_alert", "the helper reads the same audience key");

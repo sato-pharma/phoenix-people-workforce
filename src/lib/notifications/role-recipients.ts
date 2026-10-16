@@ -246,8 +246,8 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     key: "accepted_offer_alert",
     label: "Offer accepted — ready to hire",
     description:
-      "Who is told, in-app, by push and on Telegram, the moment a job offer is marked accepted, so the new hire can be seated. The notice carries the candidate's name, the agreed start date and the seat the offer named, and links to the organogram where an accepted offer is now one press to hire. Defaults to Super Admin and HR Operations — the owner's choice, 2026-10-02.",
-    roles: ["Super Admin", "HR Operations"],
+      "Who is told, in-app, by push and on Telegram, the moment a job offer is marked accepted, so the new hire can be seated. The notice carries the candidate's name, the agreed start date and the seat the offer named, and links to the organogram where an accepted offer is now one press to hire. Defaults to Super Admin, HR Operations and Talent Acquisition — the owner's choice, 2026-10-02, with Talent Acquisition added 2026-10-16.",
+    roles: ["Super Admin", "HR Operations", "HR Resourcing"],
     enabled: true,
   },
 };
