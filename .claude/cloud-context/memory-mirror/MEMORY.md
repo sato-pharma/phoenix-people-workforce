@@ -32,11 +32,8 @@
 
 
 
-- [TA handbook Part Two page 8 = three illustrated policies](ta-handbook-part-two-page-8-is-three-illustrated-policies.md) - attendance, leave, salary (2 parts vs 1); no title page, no Phoenix chapter; page by page, he confirms.
 
-- [Recruitment automation spec, before build](recruitment-automation-spec-before-build.md) - seat empties → requisition auto-opens (no approval, owner Yomna); filled → auto-closes; CVs get Attach or Keep only, NEVER a reject recommendation; area from WhatsApp answers, CV governorate fallback.
 
-- [Moving a desktop chat between his accounts](moving-a-desktop-chat-between-accounts-is-copying-its-record.md) - copy its `local_<id>.json` record between the two account folders, never overwrite; allowed by his 2026-10-16 settings grant.
 
 
 
@@ -67,3 +64,15 @@ Put each new memory note's pointer here, one line. The fold (`node scripts/modul
 
 
 
+
+- [Phoenix merge guards fire on another repo's PR](phoenix-merge-guards-fire-on-another-repos-pr.md) - `gh pr merge --repo <other repo>` trips C10/C18 and reads "no checks" as not green; `PHX_MERGE_OK=1` is the stand-down.
+
+- [selectByIds seeks on id; visit recordings have none](selectbyids-seeks-on-id-and-visit-recordings-has-none.md) - a table with no `id` must pass its key (`path`) or every visits day 42703s; "only test accounts broken" was a Friday with no real visits.
+
+- [A careers card's English title routes its Apply form](a-careers-cards-english-title-routes-the-apply-form.md) - `/district\s*manager/i` and friends test the TITLE; "District Sales Manager" silently falls back to email.
+
+- [A slow Railway day is measured from the build log, not GitHub's status](a-slow-railway-day-is-measured-from-the-build-log-not-the-github-status.md) - `Healthcheck succeeded` is go-live; GitHub's `success` lagged 17 min; baseline Railway build 2.84 min (+1.06 with Sentry source maps), push-to-serving 8.5 min.
+
+- [A restart wipes table stats; index-only scans fall back to the heap](a-restart-wipes-table-stats-and-index-only-scans-fall-back-to-the-heap.md) - `Heap Fetches` in the thousands = check `relallvisible/relpages`; `VACUUM (ANALYZE)` took `source_of_sales_import_rows` 77% to 100% visible (205 to 164 ms); six more big tables vacuumed to 100% on 2026-10-16 - a later restart wipes it again.
+
+- [Statement baseline, 2026-10-16 20:44 Cairo, for measuring the slowness fixes](statement-baseline-2026-10-16-2044-cairo-for-measuring-the-slowness-fixes.md) - full `pg_stat_statements` capture (4,048 statements) on production; the note holds the delta query. Cumulative stats still carry pre-fix calls.
