@@ -172,9 +172,12 @@ export type PhoenixCrmIntegrityFlag =
   // location reader, and the page asks that at the tap (src/lib/phoenix-crm/location-reader-probe.ts).
   // The web's answer to the question Android's mock flag answers on a phone.
   //
-  // 🔴 WEAK UNTIL THE OWNER SAYS OTHERWISE. A privacy add-on that blurs location replaces the reader
-  // the same way, and adding it to PHOENIX_CRM_STRONG_INTEGRITY_FLAGS would move a number the rep can
-  // read (`countedIntegrityFlags` and the nightly ranks score share that one list).
+  // 🔴 STRONG, ON THE OWNER'S OWN WORD (2026-10-16: "make the location reader flag strong"), the same
+  // day it shipped weak. It therefore moves the rep's Phoenix Ranks Integrity score — the one owner
+  // exception to Golden Rule #1 — through `countedIntegrityFlags`. It is NOT a precision flag, so an
+  // approximate fix does not excuse it. A privacy add-on that blurs location replaces the reader the
+  // same way; the board's ordinary-cause line says so, and the settle click is how a case that turns
+  // out to be that stops costing the rep.
   /** The page reported that the browser's own location reader had been replaced. */
   | "location_reader_replaced";
 
@@ -185,6 +188,7 @@ export const PHOENIX_CRM_STRONG_INTEGRITY_FLAGS: readonly PhoenixCrmIntegrityFla
   "zero_jitter",
   "photo_pin_disagrees",
   "sign_other_name",
+  "location_reader_replaced",
 ];
 
 /**

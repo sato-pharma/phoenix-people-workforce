@@ -26,6 +26,7 @@ import {
 import { PHOENIX_CRM_DAY_ACTIVITIES } from "../src/lib/phoenix-crm/day-activities.ts";
 import { parseCapturedFix } from "../src/lib/phoenix-crm/entry-rules.ts";
 import { probeLocationReader, readLocationReaderAnswer } from "../src/lib/phoenix-crm/location-reader-probe.ts";
+import { countedIntegrityFlags } from "../src/lib/rep-ranks/field-quality.ts";
 
 /**
  * Phoenix CRM — the mock-location and GPS-plausibility checks.
@@ -842,17 +843,21 @@ export function runPhoenixCrmLocationIntegrityTests(): void {
     };
     const replaced = checkLocationIntegrity({ ...base, readerReplaced: true, readerFindings: ["method_not_engine_code"] });
     assert.deepEqual(replaced.flags, ["location_reader_replaced"], "a replaced reader must be filed");
-    assert.equal(replaced.strong, false, "and it is WEAK — a strong flag moves the rep's own Integrity score");
+    assert.equal(replaced.strong, true, "and it is STRONG, on the owner's word — it moves the rep's own Integrity score");
     assert.deepEqual(replaced.signals.readerFindings, ["method_not_engine_code"], "the findings travel with the case");
     assert.equal(checkLocationIntegrity({ ...base, readerReplaced: false }).flags.length, 0, "an untouched reader files nothing");
     assert.equal(checkLocationIntegrity({ ...base, readerReplaced: false }).signals.readerReplaced, false, "and is recorded as asked");
     assert.equal(checkLocationIntegrity(base).signals.readerReplaced, null, "an older capture is recorded as not asked");
     assert.equal(
       (PHOENIX_CRM_STRONG_INTEGRITY_FLAGS as readonly string[]).includes("location_reader_replaced"),
-      false,
-      "the reader flag stays weak until the owner says otherwise",
+      true,
+      "the reader flag is strong (owner, 2026-10-16: make the location reader flag strong)",
     );
     assert.match(PHOENIX_CRM_INTEGRITY_LABELS.location_reader_replaced, /location reader/, "the board says what was found, in words");
+    // Strong means it reaches the rank: the Phoenix Ranks reader counts it, and an approximate fix does
+    // not excuse it, because a replaced reader is not a precision finding.
+    assert.deepEqual(countedIntegrityFlags(["location_reader_replaced"], 18), ["location_reader_replaced"], "it costs the Integrity score");
+    assert.deepEqual(countedIntegrityFlags(["location_reader_replaced"], 2000), ["location_reader_replaced"], "even on an approximate fix");
   }
 
   console.log("phoenix-crm location integrity: OK");
