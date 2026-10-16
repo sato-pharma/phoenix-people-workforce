@@ -42,7 +42,7 @@ import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governan
 import { GENERIC_NOTIFICATION_TITLE, GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
 import { currentCairoMinutesOfDay } from "@/lib/i18n/format";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
-import { logError } from "@/lib/observability/log";
+import { logError, logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type SystemNotificationChannel = "in_app" | "email" | "telegram" | "push";
@@ -207,6 +207,69 @@ const aggregateDigestEventTypes = new Set(["drift_alert", "high_risk_digest"]);
  * telegram window already held 25 such rows against a limit of 50, push 16.
  */
 export const notificationDeliveryMaxAttempts = 5;
+
+/**
+ * A delivery CLAIM is the empty `pending` row `claimDelivery` writes before a send, filled in
+ * (payload, then `sent` / `skipped` / `failed`) only when that send ends. A process killed in between
+ * - a deploy replacing the container mid-run - leaves the row bare for good: no payload to re-send,
+ * so the retry drain steps over it without counting an attempt, and `assessDrainHealth` then reads
+ * "work was due and nothing was attempted" on every tick, for ever. That is exactly how one Telegram
+ * row written at 06:37:04 on 2026-10-16, while a deploy swapped the container, kept
+ * `phoenix-process-notifications` red from 06:40 on.
+ *
+ * Within this window a bare claim may simply be a send still in flight, so the drain leaves it alone
+ * AND the drain-health probe ignores it (same constant, drain-health.ts) - the worker and the alarm
+ * must agree, or a killed send would spend the day's one drain alert before the worker closed it.
+ */
+export const DELIVERY_CLAIM_GRACE_MS = 5 * 60 * 1000;
+
+export const ORPHANED_DELIVERY_CLAIM_REASON =
+  "The send was interrupted (a restart or deploy) before this delivery was filled in - nothing to re-send.";
+
+/** Pure: has nothing touched this row for longer than a send can plausibly take? Unknown age = no. */
+export function isOrphanedDeliveryClaim(
+  row: { created_at?: string | null; updated_at?: string | null },
+  nowMs: number,
+): boolean {
+  const touchedMs = Date.parse(String(row.updated_at ?? row.created_at ?? ""));
+  if (!Number.isFinite(touchedMs)) return false;
+  return nowMs - touchedMs >= DELIVERY_CLAIM_GRACE_MS;
+}
+
+/**
+ * Closes a due row the drain can never send because it carries no payload. Returns whether it was
+ * closed. The write is conditional on the row STILL being open and untouched since the grace cutoff,
+ * so a send that fills the row in between the read and this write is never overwritten. Never throws:
+ * a failed close just leaves the row for the next tick.
+ */
+export async function closeOrphanedDeliveryClaim(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  row: { attempts?: number | null; created_at?: string | null; id: string; updated_at?: string | null },
+  nowMs: number,
+): Promise<boolean> {
+  if (!isOrphanedDeliveryClaim(row, nowMs)) return false;
+  const { data, error } = await supabase
+    .from("notification_deliveries")
+    .update({
+      attempts: Number(row.attempts ?? 0),
+      last_error: ORPHANED_DELIVERY_CLAIM_REASON,
+      next_attempt_at: null,
+      status: "skipped",
+      updated_at: new Date(nowMs).toISOString(),
+    })
+    .eq("id", row.id)
+    .in("status", ["failed", "pending", "retrying"])
+    .lte("updated_at", new Date(nowMs - DELIVERY_CLAIM_GRACE_MS).toISOString())
+    .select("id");
+  if (error) {
+    logWarning("Could not close an orphaned delivery claim (non-fatal - retried next tick)", {
+      error,
+      labels: { event: "orphaned_delivery_claim_close_failed" },
+    });
+    return false;
+  }
+  return (data ?? []).length > 0;
+}
 
 function cleanText(value: string | null | undefined) {
   return String(value ?? "").trim();
@@ -1199,7 +1262,7 @@ export async function processTelegramDeliveryRetries(limit = 10) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("notification_deliveries")
-    .select("id,attempts,max_attempts,metadata,status,provider_message_id,recipient_hr_id,recipient_user_id")
+    .select("id,attempts,max_attempts,metadata,status,provider_message_id,recipient_hr_id,recipient_user_id,created_at,updated_at")
     .eq("channel", "telegram")
     .in("status", ["failed", "pending", "retrying"])
     .or(`next_attempt_at.is.null,next_attempt_at.lte.${now}`)
@@ -1221,15 +1284,23 @@ export async function processTelegramDeliveryRetries(limit = 10) {
   }
 
   let attempted = 0;
+  let closedOrphans = 0;
   let failed = 0;
   let sent = 0;
+  const nowMs = Date.now();
 
-  for (const row of (data ?? []) as Array<{ attempts?: number | null; id: string; max_attempts?: number | null; metadata?: Record<string, unknown> | null; recipient_hr_id?: string | null; recipient_user_id?: string | null }>) {
+  for (const row of (data ?? []) as Array<{ attempts?: number | null; created_at?: string | null; id: string; max_attempts?: number | null; metadata?: Record<string, unknown> | null; recipient_hr_id?: string | null; recipient_user_id?: string | null; updated_at?: string | null }>) {
     const attempts = Number(row.attempts ?? 0);
     const maxAttempts = Number(row.max_attempts ?? notificationDeliveryMaxAttempts);
     if (attempts >= maxAttempts) continue;
     const telegram = row.metadata?.telegram as Partial<TelegramRetryPayload> | undefined;
-    if (!isResendableTelegramPayload(telegram)) continue;
+    if (!isResendableTelegramPayload(telegram)) {
+      // Nothing to send. A bare claim left by a killed send is closed once it is clearly not in
+      // flight; stepping over it for ever is what kept the drain-health alarm red (see
+      // DELIVERY_CLAIM_GRACE_MS).
+      if (await closeOrphanedDeliveryClaim(supabase, row, nowMs)) closedOrphans += 1;
+      continue;
+    }
 
     const recipientContext = {
       eventType: telegram.eventType ?? "telegram_retry",
@@ -1329,7 +1400,7 @@ export async function processTelegramDeliveryRetries(limit = 10) {
     }
   }
 
-  return { attempted, failed, sent };
+  return { attempted, closedOrphans, failed, sent };
 }
 
 // Mirrors processTelegramDeliveryRetries: drains both genuine send failures AND
@@ -1344,7 +1415,7 @@ export async function processPushDeliveryRetries(limit = 10) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("notification_deliveries")
-    .select("id,attempts,max_attempts,metadata,recipient_hr_id,recipient_user_id")
+    .select("id,attempts,max_attempts,metadata,recipient_hr_id,recipient_user_id,created_at,updated_at")
     .eq("channel", "push")
     .in("status", ["failed", "pending", "retrying"])
     .or(`next_attempt_at.is.null,next_attempt_at.lte.${now}`)
@@ -1361,15 +1432,21 @@ export async function processPushDeliveryRetries(limit = 10) {
   }
 
   let attempted = 0;
+  let closedOrphans = 0;
   let failed = 0;
   let sent = 0;
+  const nowMs = Date.now();
 
-  for (const row of (data ?? []) as Array<{ attempts?: number | null; id: string; max_attempts?: number | null; metadata?: Record<string, unknown> | null; recipient_hr_id?: string | null; recipient_user_id?: string | null }>) {
+  for (const row of (data ?? []) as Array<{ attempts?: number | null; created_at?: string | null; id: string; max_attempts?: number | null; metadata?: Record<string, unknown> | null; recipient_hr_id?: string | null; recipient_user_id?: string | null; updated_at?: string | null }>) {
     const attempts = Number(row.attempts ?? 0);
     const maxAttempts = Number(row.max_attempts ?? notificationDeliveryMaxAttempts);
     if (attempts >= maxAttempts) continue;
     const push = row.metadata?.push as Partial<PushRetryPayload> | undefined;
-    if (!push?.externalId || !push?.title || !push?.message) continue;
+    if (!push?.externalId || !push?.title || !push?.message) {
+      // Same bare claim as the Telegram drain - see DELIVERY_CLAIM_GRACE_MS.
+      if (await closeOrphanedDeliveryClaim(supabase, row, nowMs)) closedOrphans += 1;
+      continue;
+    }
 
     attempted += 1;
     try {
@@ -1437,7 +1514,7 @@ export async function processPushDeliveryRetries(limit = 10) {
     }
   }
 
-  return { attempted, failed, sent };
+  return { attempted, closedOrphans, failed, sent };
 }
 
 export async function retryTelegramDeliveryById(id: string): Promise<SystemNotificationDeliveryResult> {

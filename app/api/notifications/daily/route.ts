@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { logError, logInfo } from "@/lib/observability/log";
-import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
+import { pingDeadMansSwitch, signalDeadMansSwitchStart } from "@/lib/observability/dead-mans-switch";
 
 import { purgeOldActivityEvents } from "@/lib/activity/service";
 import { cleanupOldNotificationData } from "@/lib/notifications/email";
@@ -435,6 +435,10 @@ export async function GET(request: Request) {
     message: "Daily notification run is not authorized.",
   });
   if (denied) return denied;
+  // The start signal comes BEFORE the run so a container swap that kills it mid-way (06:37 on
+  // 2026-10-16) reads "started, never finished" at Healthchecks instead of an unexplained silence.
+  // Every path out of runDailyNotifications ends in a success or fail ping, so a start is never orphaned.
+  await signalDeadMansSwitchStart("phoenix-notify-daily");
   try {
     return await runDailyNotifications(request);
   } catch (error) {

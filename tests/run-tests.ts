@@ -2060,6 +2060,7 @@ import { runHiringEmployeeScopeTests } from "./hiring-employee-scope.test.ts";
 import { runMarketingAdminOverrideNoteTests } from "./marketing-admin-override-note.test.ts";
 import { runRecruitmentPoolFilterTests } from "./recruitment-pool-filters.test.ts";
 import { runNotificationDrainHealthAlertTests } from "./notification-drain-health-alert.test.ts";
+import { runOrphanedDeliveryClaimTests } from "./orphaned-delivery-claims.test.ts";
 import { runNotificationOutboxBatchWindowTests } from "./notification-outbox-batch-window.test.ts";
 import { runNotificationDrainStarvationGuardTests } from "./notification-drain-starvation-guard.test.ts";
 import { runQuietHoursTelegramDeferralTests } from "./quiet-hours-telegram-deferral.test.ts";
@@ -7946,6 +7947,12 @@ await runTest(
   "notification drain health alert (a drain that attempts nothing while work is due is reported "
     + "unhealthy, while an idle, busy, or unprobeable drain stays silent)",
   runNotificationDrainHealthAlertTests,
+);
+
+await runTest(
+  "an orphaned delivery claim (a send a deploy killed between its claim and its fill-in) is closed by the retry drains once it is older than the grace, never inside it, never over a row someone filled in, "
+    + "and the drain-health probe ignores the same young claims so the day's one alert is not spent on a send that is merely in flight",
+  runOrphanedDeliveryClaimTests,
 );
 
 await runTest(

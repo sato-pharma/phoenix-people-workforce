@@ -610,6 +610,41 @@ policy):
    watched either. **Absence of a red check is not evidence of a healthy job when the check was
    never created** — that is precisely how these came to be unwatched in the first place.
 
+### Start signals — "started, never finished"
+
+A deploy replaces the production container, and a cron run in flight dies with it. To Healthchecks
+that looked exactly like a job that never began: both are a missing ping. On 2026-10-16 the 06:36
+`phoenix-notify-daily` run was cut off at 06:37:04 by a container swap (release `abe06c5` → `9d6fa47`,
+two merges 19 seconds apart) and, almost certainly, the 03:35 `phoenix-crm-integrity-sweep` run was
+cut off the same way — and the dashboard could say only "no ping".
+
+`signalDeadMansSwitchStart(slug)` in `src/lib/observability/dead-mans-switch.ts` sends `/start` before
+the run, and the run's own success or fail ping closes it. A check then reads **started, never
+finished** after a restart, and Healthchecks records each run's duration, so a job creeping toward its
+grace shows before it trips. It is **opt-in** (`withDeadMansSwitch(slug, run, { signalStart: true })`),
+external half only (the in-house register records how a run ENDED), awaited so it can never land after
+the ending ping, and inert outside production exactly like a ping. Wired today into
+`phoenix-notify-daily`, `phoenix-crm-integrity-sweep` and `phoenix-ireports360-sync` (the cron route
+and the in-process rolling sync; the weekly reconcile is deliberately not). Add it only to a job whose
+check has a grace longer than a normal run — Healthchecks measures the grace from the start — and which
+always ends in a success or a fail ping.
+
+### A send a deploy killed must not leave a permanent drain alarm
+
+`claimDelivery` writes an empty `pending` `notification_deliveries` row before a send and fills it in
+when the send ends. A process killed between the two leaves a **bare claim**: due, no payload. The
+Telegram and push retry drains used to step over such a row without counting an attempt, so
+`assessDrainHealth` read "work was due and nothing was attempted" on every tick and
+`phoenix-process-notifications` pinged `/fail` from 06:40 on 2026-10-16 (one Telegram row, B-119's
+marketing overdue reminder, written 06:37:04).
+
+Both drains now close a payload-less row as `skipped` once nothing has touched it for
+`DELIVERY_CLAIM_GRACE_MS` (5 minutes, `src/lib/notifications/system.ts`), conditionally — still open and
+still untouched since the cutoff, so a send that fills the row in meanwhile is never overwritten. The
+drain-health probe ignores rows touched inside the same grace (`drain-health.ts`), so a killed send does
+not spend the day's single drain alert before the drain closes it. The email outbox is a different
+table and is unchanged. Pinned by `tests/orphaned-delivery-claims.test.ts`.
+
 ### The in-house register — `public.job_heartbeats`
 
 `pingDeadMansSwitch` now writes to **two** backends on every call, and neither can block the other

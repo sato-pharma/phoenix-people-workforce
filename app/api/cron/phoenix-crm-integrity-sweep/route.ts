@@ -35,7 +35,10 @@ export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/phoenix-crm-integrity-sweep");
   if (denied) return denied;
   try {
-    const result = await withDeadMansSwitch("phoenix-crm-integrity-sweep", () => runPhoenixCrmIntegritySweep());
+    // `signalStart`: a sweep a deploy cut off mid-run reads "started, never finished" at Healthchecks.
+    const result = await withDeadMansSwitch("phoenix-crm-integrity-sweep", () => runPhoenixCrmIntegritySweep(), {
+      signalStart: true,
+    });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     logError("Phoenix CRM integrity sweep failed", {
