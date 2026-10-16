@@ -1253,7 +1253,7 @@ gates demand `NODE_ENV=development`.
 - The browser reaches the server through an ssh tunnel as `phxtunnel` (`permitopen="127.0.0.1:3100"`,
   no shell). The `Host` header is `localhost`, so `/admin/dev-preview`'s loopback gate passes.
 - The server runs in `phx-preview-3100.scope` as `phxlive` (no sudo). Under `-Dev` it is `next dev`,
-  capped at `MemoryHigh=6800M MemoryMax=7G MemorySwapMax=5G` (raised from 5G/5632M/2G on 2026-10-16: the old cap held `-DevAuth` at 5.4 GB with its 2 GB of swap full and every first compile 10–20 s); in the default mode it is
+  capped at `MemoryHigh=6800M MemoryMax=7G MemorySwapMax=5G` (raised from 5G/5632M/2G on 2026-10-16: the old cap held `-DevAuth` at 5.4 GB with its 2 GB of swap full and every first compile 10–20 s). 🔴 **Under `-Dev`, Next restarts the server in place** ("Server is approaching the used memory threshold, restarting...") at 80% of its heap cap, and every page then recompiles cold (the HR Command Center took 7–20 s); `PHOENIX_DEV_HEAP_MB` is therefore 5120 here, not the laptop's 4096. The dev gate itself (`NODE_ENV=development`, `src/lib/auth/dev-preview.ts` and `server.ts`) is why `-DevAuth` can never use the fast build. In the default mode it is
   `/opt/phx-live/live-fast.sh`, capped at `MemoryHigh=6800M MemoryMax=7G MemorySwapMax=5G`.
   `/home/phx/live-ctl.sh` controls it (`prepare`, `serve <devauth> <fast|dev>`, `stop`, `status`,
   `install-env`, `install-env-staging`); `status` ends `mode=… build=…`. The base checkout comes from
