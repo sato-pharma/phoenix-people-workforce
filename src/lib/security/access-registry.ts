@@ -1042,6 +1042,17 @@ export const accessRegistry = [
   // this same person recorded in the last two hours, because unlike playback it costs money per second of
   // audio — "anyone who may hear it" would be a bill for a district's whole history of recordings.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/voice/transcribe", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // The visit recording the Super Admin requires of the reps he chooses (owner, 2026-10-16). The upload
+  // slot is the voice note's shape and gate; the module narrows it to the territory's own rep.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/recording/upload-slot", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // Playback, audited as the voice note's is: hearing a visit's conversation is a disclosure. The module
+  // narrows it to the Super Admin, the SFE managers and the managers above the territory.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/recording/play", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
+  // The Super Admin's own page: switch a rep on or off, download a recording, delete one. `update` at
+  // the route, and the module narrows each to the Super Admin alone.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/recording/admin", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/recording/admin/download", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/recording/admin/delete", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   // The place stamp burned into a live photo (address, brick, area, coordinates). Same gate as taking
   // the photo; it resolves and returns, persisting nothing, so audit is classified but not required.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["POST"], pattern: "/api/phoenix-crm/location", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),

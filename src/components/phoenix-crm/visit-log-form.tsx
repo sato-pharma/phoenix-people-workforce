@@ -96,6 +96,7 @@ import {
 import { isFollowUp, OBJECTION_NOTE_MAX, VISIT_NEXT_STEPS, VISIT_OBJECTIONS, type VisitNextStep, type VisitObjection } from "@/lib/phoenix-crm/visit-outcome";
 import { COMPANY_PICKS, companyToStorage, type VisitCompanyChoice } from "@/lib/phoenix-crm/visit-company";
 import type { SavedVisit, VisitCustomerOption, VisitFormView, VisitPerson } from "@/lib/phoenix-crm/view-types";
+import { isVisitRecordingRefusal } from "@/lib/phoenix-crm/visit-recording-rules";
 import { cn } from "@/lib/utils";
 
 /**
@@ -356,8 +357,10 @@ export function VisitLogForm({
   onBack,
   onPart,
   onReload,
+  onRecordingRefused,
   onSaved,
   part,
+  recording = null,
   seatId,
   test,
 }: {
@@ -378,6 +381,13 @@ export function VisitLogForm({
   /** Read the form again: the customer moved on under the screen (already visited, dropped). */
   onReload: () => void;
   onSaved: (visit: SavedVisit, customerName: string) => void;
+  /**
+   * The visit recording a chosen rep sent before the form opened (owner, 2026-10-16), carried in the
+   * save so the server can claim it. Null for every rep the Super Admin has not switched on.
+   */
+  recording?: { path: string; seconds: number } | null;
+  /** The save refused the recording (used, too old, never arrived): Add visit puts the recorder back. */
+  onRecordingRefused?: (message: string) => void;
   seatId: string;
   test: boolean;
 }) {
@@ -663,6 +673,9 @@ export function VisitLogForm({
         voiceNotePath: voiceNote?.path ?? null,
         voiceNoteSeconds: voiceNote?.seconds ?? null,
         voiceNoteBytes: voiceNote?.bytes ?? null,
+        // The conversation itself, for a rep the Super Admin switched on. It dates nothing either.
+        recordingPath: recording?.path ?? null,
+        recordingSeconds: recording?.seconds ?? null,
       },
     };
   }
@@ -717,6 +730,13 @@ export function VisitLogForm({
       onSaved(saved, next.customerName);
     } catch (error) {
       const code = errorCodeOf(error);
+      if (isVisitRecordingRefusal(code)) {
+        // The recording cannot stand on this visit. Add visit drops it and puts the recorder back, with
+        // this refusal on it — a Save that could never work is not left on the screen.
+        setSaving(false);
+        onRecordingRefused?.(messageOf(error));
+        return;
+      }
       if (code && code.startsWith("phoenix_crm_voice_")) {
         // The slot was already spent, has expired, or never received the audio. Keeping the note would
         // send the rep into the same refusal on every press; dropping it lets him record again. The

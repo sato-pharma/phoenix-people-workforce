@@ -63,3 +63,48 @@ export function CrmVoiceNotePlayer({ path, seconds }: { path: string; seconds: n
     </div>
   );
 }
+
+/**
+ * Playing a visit's RECORDING — the conversation the Super Admin requires of the reps he chooses (owner,
+ * 2026-10-16). Not the voice note above: that is the rep's own comment; this is the visit itself. The
+ * server only sends `recordingSeconds` to a reader who may hear it, so a screen that has the number may
+ * draw this, and the link is signed one visit at a time, on Play.
+ */
+export function CrmVisitRecordingPlayer({ visitId, seconds }: { visitId: string; seconds: number | null }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  async function open() {
+    setLoading(true);
+    setFailed(false);
+    try {
+      const recording = await crmPost<{ url: string }>("/api/phoenix-crm/recording/play", { visitId }, "recording");
+      if (!recording?.url) throw new Error("no link");
+      setUrl(recording.url);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const length = seconds === null ? "" : ` · ${formatSeconds(seconds)}`;
+
+  return (
+    <div className="min-w-0">
+      <p className="font-black text-slate-800">Visit recording{length}</p>
+      {url ? (
+        <audio autoPlay className="mt-1 w-full rounded-none [&::-webkit-media-controls-enclosure]:rounded-none [&::-webkit-media-controls-panel]:rounded-none" controls preload="metadata" src={url} />
+      ) : (
+        <div className="mt-1">
+          <CrmButton busy={loading} disabled={loading} onClick={open} size="sm">
+            {loading ? null : <Play aria-hidden className="h-4 w-4 shrink-0" />}
+            {loading ? "Opening" : "Play"}
+          </CrmButton>
+          {failed ? <p className="mt-1 break-words text-xs font-medium leading-5 text-rose-700">The recording could not be opened. Try again.</p> : null}
+        </div>
+      )}
+    </div>
+  );
+}

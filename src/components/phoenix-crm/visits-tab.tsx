@@ -60,7 +60,9 @@ import { customersFor, OutOfPlanReason, VisitCustomerPicker } from "@/components
 import { CrmStepFooter, CrmStepForm, CrmStepFrame, type CrmStep } from "@/components/phoenix-crm/step-form";
 import { decidersText, logVisitTypeLabel, VisitLogForm, type LogVisitType, type VisitFormPart } from "@/components/phoenix-crm/visit-log-form";
 import { saveDayActivity, UnplannedChoice, VisitStart } from "@/components/phoenix-crm/visit-start";
-import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
+import { VisitRecordingGate } from "@/components/phoenix-crm/visit-recording-gate";
+import { useSentVisitRecording } from "@/components/phoenix-crm/visit-recording-store";
+import { CrmVisitRecordingPlayer, CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { isDayActivity, PHOENIX_CRM_DAY_ACTIVITIES } from "@/lib/phoenix-crm/day-activities";
 import type { ProductAvailability } from "@/lib/phoenix-crm/entry-rules";
@@ -333,6 +335,8 @@ function VisitDetails({ visit }: { visit: VisitRow }) {
       {/* The note sits beside the comment because that is what it is — the same thing said rather than
           typed. A recording can be made in a car afterwards and proves nothing about anybody's day. */}
       {visit.voiceNotePath ? <CrmVoiceNotePlayer path={visit.voiceNotePath} seconds={visit.voiceNoteSeconds} /> : null}
+      {/* The visit's recording (owner, 2026-10-16): present only for a reader the server lets hear it. */}
+      {typeof visit.recordingSeconds === "number" ? <CrmVisitRecordingPlayer seconds={visit.recordingSeconds} visitId={visit.visitId} /> : null}
       <DetailLines visit={visit} />
       <SampleLine visit={visit} />
       <OutcomeLines visit={visit} />
@@ -419,6 +423,11 @@ function VisitTable({ detail, visits }: { detail: DetailDoor; visits: ReadonlyAr
                 {visit.voiceNotePath ? (
                   <div className="mt-1.5">
                     <CrmVoiceNotePlayer path={visit.voiceNotePath} seconds={visit.voiceNoteSeconds} />
+                  </div>
+                ) : null}
+                {typeof visit.recordingSeconds === "number" ? (
+                  <div className="mt-1.5">
+                    <CrmVisitRecordingPlayer seconds={visit.recordingSeconds} visitId={visit.visitId} />
                   </div>
                 ) : null}
                 {visit.samples.length > 0 ? (
@@ -722,6 +731,10 @@ function AddFlow({
 }) {
   const resource = useCrmGet<VisitFormView>(crmUrl("/api/phoenix-crm/visits/form", { seatId, test }), "form");
   const form = resource.data;
+  // The visit recording a chosen rep sends before logging (owner, 2026-10-16), kept until the visit saves.
+  const sent = useSentVisitRecording(seatId, test);
+  // Why the recorder is back in front of the rep, when a save refused the recording it carried.
+  const [recordingNotice, setRecordingNotice] = useState<string | null>(null);
 
   /**
    * One screen of Add visit inside the step form. Steps 1 and 2 take the form's own foot (Back — a tap
@@ -810,6 +823,27 @@ function AddFlow({
       )}
     </CrmPanel>
   );
+
+  // 🔴 A REP THE SUPER ADMIN SWITCHED ON RECORDS THE VISIT BEFORE ANY STEP OF LOGGING IT (owner,
+  // 2026-10-16). The first screen stays reachable — it also carries the day's activity, which is not a
+  // visit — and every road from it to a customer or the form passes through the recorder first. A rep
+  // who is not on the list never reaches this branch: `recordingRequired` is false.
+  if (loaded.recordingRequired && !sent.recording) {
+    return shell(
+      { name: "start" },
+      <VisitRecordingGate
+        notice={recordingNotice}
+        onBack={() => onStep({ name: "start" })}
+        onRecorded={(value) => {
+          setRecordingNotice(null);
+          sent.keep(value);
+        }}
+        seatId={seatId}
+        test={test}
+      />,
+      () => onStep({ name: "start" }),
+    );
+  }
 
   let current: AddStep = step;
   if (step.name === "open") {
@@ -970,8 +1004,16 @@ function AddFlow({
           onBack={() => (formStep.back ? onStep(formStep.back) : onClose())}
           onPart={(part) => onStep({ ...formStep, part })}
           onReload={resource.reload}
-          onSaved={onSaved}
+          onRecordingRefused={(message) => {
+            setRecordingNotice(message);
+            sent.clear();
+          }}
+          onSaved={(visit, customerName) => {
+            sent.clear();
+            onSaved(visit, customerName);
+          }}
           part={formStep.part ?? "details"}
+          recording={loaded.recordingRequired ? sent.recording : null}
           seatId={seatId}
           test={test}
         />,
