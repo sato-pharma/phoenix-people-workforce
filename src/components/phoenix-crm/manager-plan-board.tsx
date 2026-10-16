@@ -887,7 +887,7 @@ function SendStep({
   const plan = view.plan;
   const planned = days.flatMap((day) => day.slots.filter((slot) => slot.kind)).length;
   const fieldHalves = days.reduce((sum, day) => sum + day.halves.length, 0);
-  const flagged = days.flatMap((day) => day.slots.flatMap((slot) => slot.customers.filter((customer) => customer.flag))).length;
+  const offRepDay = days.flatMap((day) => day.slots.flatMap((slot) => slot.customers.filter((customer) => customer.flag))).length;
 
   async function send() {
     setBusy(true);
@@ -947,7 +947,7 @@ function SendStep({
                   <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 px-3 py-2" key={half}>
                     <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{half}</span>
                     <span className="min-w-0 break-words text-sm font-bold text-slate-900">{waiting ? "Not saved yet" : (slot?.summary ?? "Nothing planned")}</span>
-                    {flags.length > 0 ? <CrmPill tone="warn">{`${countText(flags.length)} flagged`}</CrmPill> : null}
+                    {flags.length > 0 ? <CrmPill tone="warn">{`${countText(flags.length)} not on the rep's day`}</CrmPill> : null}
                   </div>
                 );
               })}
@@ -956,7 +956,7 @@ function SendStep({
       </div>
       <p className="text-sm font-semibold text-slate-600">
         {`${countText(planned)} of ${plural(fieldHalves, "half-day", "half-days")} planned`}
-        {flagged > 0 ? ` · ${plural(flagged, "customer is", "customers are")} not on the rep's sent day` : ""}
+        {offRepDay > 0 ? ` · ${plural(offRepDay, "customer is", "customers are")} not on the rep's sent day` : ""}
       </p>
 
       {error ? <CrmNote tone="bad">{error}</CrmNote> : null}
