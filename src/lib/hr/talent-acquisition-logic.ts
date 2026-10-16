@@ -327,11 +327,11 @@ export function buildMonthMarks(
 
 /**
  * Her handbook's HIRING QUALITY family — *"Managers get relevant candidates, and new hires pass
- * their probation."*
+ * their probation."* Only the interview-to-offer ratio is drawn; the owner removed the probation
+ * retention card from her overview on 2026-10-16.
  */
 export function buildHiringQualityKpis(input: {
   offers: readonly OfferRecord[] | undefined;
-  probation: { passCount: number; total: number } | null;
   /** The windowed interview count, or null when that read failed. See interview-volume.ts. */
   volume: { fromIso: string; interviews: number; people: number; truncated: boolean } | null;
 }): TalentKpi[] {
@@ -370,35 +370,8 @@ export function buildHiringQualityKpis(input: {
     );
   }
 
-  // ── Probation retention ───────────────────────────────────────────────────────────────────────
-  //
-  // DECIDED cases only, from each case's frozen decision snapshot — never recomputed, so a later
-  // change to the scoring cannot restate it. Every probation case in production is a Medical
-  // Representative (measured 2026-10-13: 36 of 36), which the caption says rather than letting the
-  // figure imply it covers the company.
-  //
-  // `rollupOutcomes` returns `passRate: 0` when nothing has been decided, and production holds 36
-  // open cases and 0 decided — so this must reach the page as a NULL. `kpi()` derives the rate from
-  // the denominator for exactly that reason; never read `passRate` here.
-  if (input.probation) {
-    kpis.push(
-      kpi({
-        caption:
-          "Of the medical reps whose probation has been decided, how many passed. Counted from each case's frozen " +
-          "decision snapshot, so a later change to the scoring cannot restate it. Windows still running are not " +
-          "counted — a window with no verdict has no outcome to report.",
-        denominator: input.probation.total,
-        denominatorLabel: "cases decided",
-        emptyLabel: "No probation window has been decided yet.",
-        href: "/hr/probation/dashboard",
-        hrefLabel: "Open the Probation Dashboard",
-        key: "probation-retention",
-        label: "Probation retention",
-        numerator: input.probation.passCount,
-        numeratorLabel: "passed probation",
-      }),
-    );
-  }
+  // Probation retention was on this band until 2026-10-16, when the owner had it removed from her
+  // overview ("remove this section from ta overview"). Do not put it back.
 
   return kpis;
 }

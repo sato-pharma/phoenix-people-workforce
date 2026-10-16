@@ -293,9 +293,10 @@ export const adminNavigationSectionSeeds = [
       // broken in the most-seen pixel in the product: a dead read and a clean board would paint the
       // identical nothing. A badge needs a count source that can say "I do not know", which the
       // board itself has and the badge route does not.
-      // HR Resourcing (the Talent Acquisition seat) since 2026-10-08, the owner's answers in chat on 2026-10-08 — her /hr row for
-      // this page must sit inside what this catalogue admits for her (tests/hr-url-namespace.test.ts).
-      { href: "/admin/needs-you", icon: BellRing, label: "Needs You", roles: ["Super Admin", "HR Resourcing"] },
+      // The Talent Acquisition seat (HR Resourcing) was offered this board on 2026-10-08 and had it
+      // taken away on 2026-10-16 at the owner's word ("remove needs you and hide from ta account") —
+      // the page itself refuses her now, so the row is the Super Admin's alone again.
+      { href: "/admin/needs-you", icon: BellRing, label: "Needs You", roles: ["Super Admin"] },
       { href: "/admin/ceo-command-center", icon: LayoutDashboard, label: "CEO Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["CEO"] },
       // `roles` alone already keeps this off the CEO's sidebar, but NOT off Super Admin's — the
       // system-administrator workspace bypasses role gating. excludedRoles is now honoured through
@@ -2209,9 +2210,6 @@ const hrNavigationSectionSeeds = [
       // (payslips, excuses, vacation request…) is still reachable — from that section, and from
       // the My Requests rows at the bottom of this catalogue.
       { href: "/hr/admin/hr-command-center", icon: Gauge, label: "Overview" },
-      // The Talent Acquisition seat (2026-10-08) — the owner's answers in chat on 2026-10-08. The board shows her only the queues
-      // she holds a rung on; the owner-only ones read "not yours" (src/lib/needs-you/sources.ts).
-      { href: "/hr/admin/needs-you", icon: BellRing, label: "Needs You", roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
     ],
     label: "Overview",
   },

@@ -14,7 +14,7 @@
  * Acquisition Specialist, first day Sunday 18 October 2026 — and the bands are her own KPI
  * families, in her handbook's order:
  *
- *   Hiring quality    — interview-to-offer ratio · probation retention
+ *   Hiring quality    — interview-to-offer ratio  (probation retention removed 2026-10-16)
  *   Offer conversion  — offer acceptance % · offer-to-join %        (and the Job-offers chart)
  *   Filling the field — responsibilities 01-04                      (and the pipeline chart)
  *
@@ -41,9 +41,9 @@
  *
  * SOURCES ARE STILL GATED ON HER BUNDLE. `sourcesFor(seat)` decides what may be fetched, exactly as
  * it does for the generic page — a bespoke page that read whatever it liked would walk straight past
- * the guarantee at the top of command-center.ts. `workforce_context` gained `probationOutcomes` and
- * `vacationsToday` on 2026-10-13 so this page's probation KPI and vacation panel are declared work
- * rather than assumed work.
+ * the guarantee at the top of command-center.ts. `workforce_context` gained `vacationsToday`
+ * on 2026-10-13 so this page's vacation panel is declared work rather than assumed work. The
+ * `probationOutcomes` source stays declared on her bundle, but this page no longer reads it.
  *
  * THE ARITHMETIC IS NOT IN THIS FILE. Every pure part of it — the KPI builders, the week strip, the
  * month marks, the joining days — is in `talent-acquisition-logic.ts`, because the calendar panel
@@ -88,8 +88,6 @@ import { buildHrTodayTasks, type HrTask } from "@/lib/hr/today-tasks";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { listOffers } from "@/lib/offers/service";
 import type { OfferRecord } from "@/lib/offers/types";
-import { getProbationOutcomesAnalytics } from "@/lib/probation/intelligence/outcomes-analytics";
-import { canViewProbationAnalytics } from "@/lib/probation/service";
 import {
   getRecruitmentDashboard,
   resolveHiredWindow,
@@ -281,18 +279,6 @@ export async function getTalentAcquisitionOverview(
           loaded.directory = value;
         })
       : null,
-    // Gated on the same predicate the Outcomes analytics page is gated on, because
-    // `getProbationOutcomesAnalytics` takes no AccessContext and asserts nothing of its own.
-    needed.has("probationOutcomes")
-      ? safe(
-          "probationOutcomes",
-          async () =>
-            canViewProbationAnalytics(access) ? await getProbationOutcomesAnalytics() : undefined,
-          failures,
-        ).then((value) => {
-          loaded.probationOutcomes = value;
-        })
-      : null,
     needed.has("vacationsToday")
       ? safe("vacationsToday", () => listOnVacationToday(), failures).then((value) => {
           loaded.vacationsToday = value;
@@ -346,12 +332,6 @@ export async function getTalentAcquisitionOverview(
     },
     hiringQuality: buildHiringQualityKpis({
       offers: loaded.offers,
-      probation: loaded.probationOutcomes
-        ? {
-            passCount: loaded.probationOutcomes.overall.passCount,
-            total: loaded.probationOutcomes.overall.total,
-          }
-        : null,
       volume,
     }),
     offerChart:

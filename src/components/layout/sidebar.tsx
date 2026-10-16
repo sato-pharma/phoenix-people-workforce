@@ -611,6 +611,7 @@ function SortableSectionBlock({
   onTogglePin,
   onToggleSection,
   pinnedSet,
+  plainSingleRow,
   query,
   section,
   sensors,
@@ -625,6 +626,13 @@ function SortableSectionBlock({
   /** Drop the leading icon box on every row in this section. True inside a domain. */
   hideIcon: boolean;
   isAdmin: boolean;
+  /**
+   * A one-row section is drawn as an ORDINARY row — no hub arrow, no hub tint, the same gap above
+   * it as any row — instead of the hub-button look. True in the HR shell: its one-row sections
+   * (the seat's Overview) open a single page, and the hub look on one of them made it read as a
+   * different kind of button from every row around it.
+   */
+  plainSingleRow: boolean;
   itemOrder: string[] | null;
   navInstanceId: string;
   onActivate: (item: NavigationSectionItem) => void;
@@ -679,7 +687,7 @@ function SortableSectionBlock({
   if (orderedItems.length === 1) {
     const soleItem = orderedItems[0];
     return (
-      <div ref={setNodeRef} style={sectionStyle} className={cn("group/single relative mt-4 px-1", isDragging && "opacity-40")}>
+      <div ref={setNodeRef} style={sectionStyle} className={cn("group/single relative px-1", plainSingleRow ? "mt-1.5" : "mt-4", isDragging && "opacity-40")}>
         {isAdmin && !dragDisabled && (
           <button
             aria-label={`Drag to reorder ${section.label} section`}
@@ -703,7 +711,7 @@ function SortableSectionBlock({
           onTogglePin={() => onTogglePin(soleItem.href)}
           pinned={pinnedSet.has(soleItem.href)}
           rail={false}
-          standalone={!flatSidebar}
+          standalone={!flatSidebar && !plainSingleRow}
         />
       </div>
     );
@@ -1040,6 +1048,7 @@ function SidebarNav({
         dragDisabled={dragDisabled}
         flatSidebar={flatSidebar}
         isAdmin={isAdmin}
+        plainSingleRow={mode === "hr"}
         itemOrder={savedItemOrder?.[section.id] ?? null}
         navInstanceId={navInstanceId}
         onActivate={handleActivate}
