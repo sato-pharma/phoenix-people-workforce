@@ -1254,7 +1254,7 @@ gates demand `NODE_ENV=development`.
   no shell). The `Host` header is `localhost`, so `/admin/dev-preview`'s loopback gate passes.
 - The server runs in `phx-preview-3100.scope` as `phxlive` (no sudo). Under `-Dev` it is `next dev`,
   capped at `MemoryHigh=5G MemoryMax=5632M MemorySwapMax=2G`; in the default mode it is
-  `/opt/phx-live/live-fast.sh`, capped at `MemoryHigh=6G MemoryMax=6656M MemorySwapMax=2G`.
+  `/opt/phx-live/live-fast.sh`, capped at `MemoryHigh=6800M MemoryMax=7G MemorySwapMax=5G`.
   `/home/phx/live-ctl.sh` controls it (`prepare`, `serve <devauth> <fast|dev>`, `stop`, `status`,
   `install-env`, `install-env-staging`); `status` ends `mode=… build=…`. The base checkout comes from
   the read-only mirror.
@@ -1281,7 +1281,7 @@ gates demand `NODE_ENV=development`.
 | 13 | Dev-preview drops the real session (by design, `app/api/dev-auth/preview/route.ts`) and writes an audit row to production. | By design, as before. Log in again after a preview. |
 | 14 | With `-DevAuth` on, any request to the port can become any role. | It is off by default. The port is firewalled (#3). The window says so when it is on. |
 | 15 | A page's first compile is slow (30–60 s on the laptop). | Measured on the box 2026-10-12: `/api/healthz` answers **6 s** after `serve`, a cold `/login` through the tunnel is **1.2 s** and a warm one **0.22 s**, because `.next` survives a restart. `dev-preview` also has a replay guard for this. 🔴 **That measurement did not survive real use** — see "Production-build mode": by 2026-10-16 `next dev` here took 2.5–3 min a page. |
-| 16 | In the default mode a saved edit is not on the page until the box has rebuilt (about 4 min). | The sync window prints "rebuilding" and then "✅ SERVING your latest edits — reload the page"; a failed build keeps the previous build serving and prints its error. Instant edits are `phx-live -Dev`. |
+| 16 | In the default mode a saved edit is not on the page until the box has rebuilt (about 2 min). | The sync window prints "rebuilding" and then "✅ SERVING your latest edits — reload the page"; a failed build keeps the previous build serving and prints its error. Instant edits are `phx-live -Dev`. |
 
 **The env.** `phx-live -InstallEnv` reads his `.env.local` and sends it on stdin to
 `live-ctl.sh install-env`. That keeps only the Supabase URL, the anon, publishable and service-role
@@ -1330,6 +1330,12 @@ install, not standalone's traced subset.
 page data on 3 workers), peaking at **6.9 GB RAM + 2.5 GB swap**. The swap-in took ~10 s and `next
 start` was ready in 131 ms. Then `/api/healthz` answered in **7 ms** on the box and `/login` in
 **0.18–0.28 s** through the tunnel, against 10.0 s and 10.3 s under `next dev` an hour earlier.
+
+**Measured on a rebuild** (04:00 Cairo, README.md touched on the box): the rebuild took **116 s**
+(compile 74 s) while the old build kept serving — `/login` stayed at 10–19 ms through the build and
+0.33 s at the peak of 4.1 GB swap. The swap-in then left the port **not answering for a few seconds**
+(one probe read 000) while the server restarted, and `status` read `build=serving` at 04:02:00 with
+`/login` at 19 ms. So a save costs about 2 minutes of waiting and a few seconds of blip, not a hang.
 
 ### Installed and proven on the box, 2026-10-12 (owner: "install phx-live on the Hetzner box")
 
