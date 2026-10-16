@@ -6,6 +6,7 @@
  */
 
 import type { AccessContext } from "@/lib/auth/permissions";
+import { bumpSharedReadGeneration } from "@/lib/cache/shared-read";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import {
   buildPhoenixTeamRows,
@@ -21,7 +22,7 @@ import {
 } from "@/lib/crm/phoenix-team-starts";
 import { unreadableTeamReadiness } from "@/lib/crm/phoenix-team-readiness";
 import { loadPhoenixTeamReadiness } from "@/lib/crm/phoenix-team-readiness-server";
-import { loadVendorLeftoversBySeat } from "@/lib/crm/phoenix-vendor-leftovers";
+import { loadVendorLeftoversBySeat, VENDOR_LEFTOVERS_CACHE } from "@/lib/crm/phoenix-vendor-leftovers";
 import { logError } from "@/lib/observability/log";
 import { forgetLiveTeamsForDisplay } from "@/lib/phoenix-crm/server/live-teams";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
@@ -154,8 +155,10 @@ export async function setPhoenixTeamStart(input: {
     if (refusal) throw new PhoenixTeamStartRefusal(refusal);
     throw new Error(`The team start could not be saved: ${error.message}`);
   }
-  // The badges' copy of the live teams is a minute-long memory; a start or a stop must reach it now.
+  // The badges' copy of the live teams is a minute-long memory; a start or a stop must reach it now. So
+  // is the leftover tally, which counts from each rep's team start — this panel reads it straight back.
   forgetLiveTeamsForDisplay();
+  bumpSharedReadGeneration(VENDOR_LEFTOVERS_CACHE, "team start changed");
   const row = (data ?? {}) as Record<string, unknown>;
   const done = row.done === "started" || row.done === "stopped" || row.done === "cancelled" ? row.done : null;
   if (!done) throw new Error("The team start was saved but its answer could not be read. Reload the page.");
