@@ -863,6 +863,9 @@ const LATER_MIGRATIONS = [
   // The list-template picker's per-territory customer counts, counted in the database (Phoenix CRM
   // performance audit, 2026-10-16). One brand-new read function; it replaces nothing.
   "supabase/migrations/20261016180400_phoenix_crm_customer_counts_by_seat.sql",
+  // The duplicates page's three keep-rule counts, counted in the database (same audit). One brand-new
+  // read function; it replaces nothing.
+  "supabase/migrations/20261016180401_phoenix_crm_customer_merge_counts.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

@@ -5,7 +5,10 @@ import { mergeRefusalText, planMerge, type MergeCandidate } from "@/lib/phoenix-
 import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { territoryName } from "@/lib/phoenix-crm/scope";
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { callPhoenixCrm } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -159,28 +162,19 @@ export async function loadDuplicateCustomers(viewer: PhoenixCrmViewer): Promise<
   // The page asks the same predicate, so the screen can never be more generous than the service.
   if (!canReadDuplicateCustomers(viewer)) return { groups: [], rows: 0 };
 
-  const admin = getSupabaseAdmin();
-  const customers: Row[] = [];
-  // Paged and ordered by id: production holds 8,234 of these, and an unbounded PostgREST read
-  // stops at 1,000 with no error and no marker — which here would quietly hide most duplicates.
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await admin
-      .from("phoenix_crm_customers")
-      .select("id, name, speciality, grade, potential_grade, phone, primary_pharmacy_name, list_type, seat_id, validated_at, created_at")
-      .eq("is_test", false)
-      // 🔴 THE ARCHIVE IS LEFT OUT, OR THE LIST NEVER CLEARS. Removing a duplicate means dropping one
-      //    row, and a dropped row is `dropped` — it stays in the database for ever, so a group that
-      //    counted it reappeared the morning after the SFE had already dealt with it. The three
-      //    statuses here are the rows a rep can actually be asked to visit: on his list, carried over
-      //    and waiting to be validated, and met outside it and waiting to be added.
-      .in("status", ["active", "pending", "outside"])
-      .order("id", { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(`phoenix-crm: reading the customer lists failed — ${error.message}`);
-    const rows = (data ?? []) as Row[];
-    customers.push(...rows);
-    if (rows.length < PAGE) break;
+  // Seats come from the viewer's own org scope, which for these two company roles IS the company —
+  // there is no seats table to read, and inventing one would be a second answer to "whose list is
+  // this" beside the one every other report here uses.
+  const seats = new Map<string, { rep: string | null; territory: string | null }>();
+  for (const seat of viewer.scopeTerritories) {
+    seats.set(seat.seatId, { rep: seat.occupantHrId ?? null, territory: territoryName(seat) });
   }
+  // The reps' names need nothing from the lists, so they are read beside them rather than after
+  // (Phoenix CRM performance audit, 2026-10-16).
+  const [customers, names] = await Promise.all([
+    readListedCustomers(),
+    loadPeopleNames([...seats.values()].map((seat) => seat.rep)),
+  ]);
 
   const bySeat = new Map<string, (IdentityCandidate & { sourceId: string })[]>();
   for (const row of customers) {
@@ -200,15 +194,6 @@ export async function loadDuplicateCustomers(viewer: PhoenixCrmViewer): Promise<
     });
     bySeat.set(seatId, held);
   }
-
-  // Seats come from the viewer's own org scope, which for these two company roles IS the company —
-  // there is no seats table to read, and inventing one would be a second answer to "whose list is
-  // this" beside the one every other report here uses.
-  const seats = new Map<string, { rep: string | null; territory: string | null }>();
-  for (const seat of viewer.scopeTerritories) {
-    seats.set(seat.seatId, { rep: seat.occupantHrId ?? null, territory: territoryName(seat) });
-  }
-  const names = await loadPeopleNames([...seats.values()].map((seat) => seat.rep));
 
   const detail = new Map<string, Row>();
   for (const row of customers) detail.set(text(row.id), row);
@@ -259,34 +244,108 @@ export async function loadDuplicateCustomers(viewer: PhoenixCrmViewer): Promise<
   return { groups, rows };
 }
 
+/**
+ * The uuid space cut into sixteen slices by an id's first hex digit, in ascending order.
+ *
+ * Each slice stops exactly where the next begins — the first is open below, the last open above — so
+ * every id falls in exactly one, and the slices' rows laid end to end ARE the whole table in `id`
+ * order. Postgres orders a uuid by its bytes, which is the order of its lowercase hex text, so a cut
+ * at `"10000000-0000-0000-0000-000000000000"` is a real boundary in that order and not an approximation.
+ * Exported so the test can hold the cover to that promise; a gap here would hide a doctor's second row.
+ */
+export function customerIdSlices(): { from: string | null; below: string | null }[] {
+  const cut = (digit: number): string => `${digit.toString(16)}0000000-0000-0000-0000-000000000000`;
+  return Array.from({ length: 16 }, (_, digit) => ({
+    from: digit === 0 ? null : cut(digit),
+    below: digit === 15 ? null : cut(digit + 1),
+  }));
+}
+
+/** How many of the sixteen slices are read at once — four, as everywhere else this module fans out. */
+const SLICES_AT_ONCE = 4;
+
+/**
+ * Every customer a rep can be asked to visit, company-wide, in `id` order.
+ *
+ * Paged, because production holds more than 11,000 of these and an unbounded PostgREST read stops at
+ * 1,000 with no error and no marker — which here would quietly hide most duplicates.
+ *
+ * 🔴 KEYSET, IN SIXTEEN SLICES READ FOUR AT A TIME, SINCE 2026-10-16. It was an offset walk, a dozen
+ * pages one after another across the Atlantic (Phoenix CRM performance audit), and an offset walk over
+ * a table the field app writes to while it reads can repeat a row or skip one at a page seam. Each
+ * slice is keyset-paged on `id` (`fetchAllRowsKeyset`), and the slices come back in their own order,
+ * so the rows reach the grouping below in exactly the order the single walk delivered them — the
+ * groups, their entries and their order are unchanged. Any slice failing fails the read, loudly.
+ */
+async function readListedCustomers(): Promise<Row[]> {
+  const admin = getSupabaseAdmin();
+  const slices = await mapWithConcurrency(customerIdSlices(), SLICES_AT_ONCE, async (slice) => {
+    try {
+      return await fetchAllRowsKeyset<Row>(
+        () => {
+          let query = admin
+            .from("phoenix_crm_customers")
+            .select("id, name, speciality, grade, potential_grade, phone, primary_pharmacy_name, list_type, seat_id, validated_at, created_at")
+            .eq("is_test", false)
+            // 🔴 THE ARCHIVE IS LEFT OUT, OR THE LIST NEVER CLEARS. Removing a duplicate means dropping one
+            //    row, and a dropped row is `dropped` — it stays in the database for ever, so a group that
+            //    counted it reappeared the morning after the SFE had already dealt with it. The three
+            //    statuses here are the rows a rep can actually be asked to visit: on his list, carried over
+            //    and waiting to be validated, and met outside it and waiting to be added.
+            .in("status", ["active", "pending", "outside"]);
+          if (slice.from) query = query.gte("id", slice.from);
+          if (slice.below) query = query.lt("id", slice.below);
+          return query;
+        },
+        { cursorColumn: "id", cursorOf: (row) => text(row.id) || null, pageSize: PAGE },
+      );
+    } catch (error) {
+      throw new Error(`phoenix-crm: reading the customer lists failed — ${messageOf(error)}`);
+    }
+  });
+  return slices.flat();
+}
+
+function messageOf(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  const message = error && typeof error === "object" ? (error as { message?: unknown }).message : null;
+  return typeof message === "string" ? message : String(error);
+}
+
 type MergeFacts = { activePlaces: Map<string, number>; visits: Map<string, number>; moves: Map<string, number> };
 
-/** Per-customer counts the keep rule reads, paged and chunked so no read can stop at 1,000 silently. */
+/**
+ * Per-customer counts the keep rule reads: active places, visits and moves.
+ *
+ * 🔴 COUNTED IN THE DATABASE SINCE 2026-10-16. This read every place, visit and move row of every
+ * duplicate — a doctor with a year of visits is hundreds of rows — only to add them up here (Phoenix
+ * CRM performance audit). `phoenix_crm_customer_merge_counts` counts the same rows — places with status
+ * `active`, every visit, every move, no `is_test` narrowing on any, as before — and answers one jsonb
+ * object, which PostgREST's silent 1,000-row cap cannot cut short. A customer absent from a count has
+ * none, which `mergeCandidateOf` already reads as zero. A failure throws, as the row reads did: a keep
+ * rule judged on missing counts would name the wrong keeper.
+ */
 async function loadMergeFacts(ids: readonly string[]): Promise<MergeFacts> {
-  const admin = getSupabaseAdmin();
-  const count = async (table: string, activeOnly: boolean): Promise<Map<string, number>> => {
+  if (ids.length === 0) return { activePlaces: new Map(), visits: new Map(), moves: new Map() };
+  let counted: Record<string, unknown> | null;
+  try {
+    counted = await callPhoenixCrm<Record<string, unknown> | null>("phoenix_crm_customer_merge_counts", {
+      p_customer_ids: [...new Set(ids)],
+    });
+  } catch (error) {
+    throw new Error(`phoenix-crm: reading the merge counts for the duplicates failed — ${messageOf(error)}`);
+  }
+  const countsOf = (key: string): Map<string, number> => {
     const counts = new Map<string, number>();
-    for (let i = 0; i < ids.length; i += 150) {
-      const part = ids.slice(i, i + 150);
-      for (let from = 0; ; from += PAGE) {
-        let query = admin.from(table).select("id, customer_id").in("customer_id", part);
-        if (activeOnly) query = query.eq("status", "active");
-        const { data, error } = await query.order("id", { ascending: true }).range(from, from + PAGE - 1);
-        if (error) throw new Error(`phoenix-crm: reading ${table} for the duplicates failed — ${error.message}`);
-        const rows = (data ?? []) as Row[];
-        for (const row of rows) counts.set(text(row.customer_id), (counts.get(text(row.customer_id)) ?? 0) + 1);
-        if (rows.length < PAGE) break;
-      }
+    const byCustomer = counted?.[key];
+    if (!byCustomer || typeof byCustomer !== "object") return counts;
+    for (const [customerId, value] of Object.entries(byCustomer as Record<string, unknown>)) {
+      const count = Number(value);
+      if (Number.isFinite(count)) counts.set(customerId, count);
     }
     return counts;
   };
-  if (ids.length === 0) return { activePlaces: new Map(), visits: new Map(), moves: new Map() };
-  const [activePlaces, visits, moves] = await Promise.all([
-    count("phoenix_crm_places", true),
-    count("phoenix_crm_visits", false),
-    count("phoenix_crm_customer_moves", false),
-  ]);
-  return { activePlaces, visits, moves };
+  return { activePlaces: countsOf("active_places"), visits: countsOf("visits"), moves: countsOf("moves") };
 }
 
 function mergeCandidateOf(id: string, name: string, row: Row | undefined, facts: MergeFacts): MergeCandidate {
