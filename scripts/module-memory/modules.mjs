@@ -257,7 +257,7 @@ export const MODULES = [
     title: "Phoenix CRM — lists, validation, plans and approvals",
     scope: "Who may admit a customer to a rep's list and who validates it, grades, drop/add/bring-back, the weekly plan and its review, off-plan and pharmacy calls, and the decision queues that count what is waiting.",
     globs: [
-      "src/lib/phoenix-crm/{adoption-rules,approval-nudge-rules,customer-list-grouping,entry-rules,list-request-rules,list-row-facts,list-sheet-hours,list-template-rules,monthly-plan-rules,offplan-day,pharmacy-call-rules,plan-edit-rules,plan-review-rules,plan-rules,unplanned-rules,validate-next}.ts",
+      "src/lib/phoenix-crm/{adoption-rules,approval-nudge-rules,customer-list-grouping,entry-rules,list-request-rules,list-row-facts,list-sheet-hours,list-template-rules,monthly-plan-rules,offplan-day,pharmacy-call-rules,plan-board-answer,plan-edit-rules,plan-review-rules,plan-rules,unplanned-rules,validate-next}.ts",
       "src/lib/phoenix-crm/server/{adoption,approval-nudge,awaiting-decisions,decision-queues,refused-readings}.ts",
       "app/api/phoenix-crm/list/**",
       "app/**/phoenix-crm/list-template/**",
