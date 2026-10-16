@@ -31,8 +31,13 @@ const MIGRATION = "supabase/migrations/20261004120000_doctor_lists_follow_each_t
  *  liveFunctionBody(), and this path is read only to prove that re-emission changed nothing else. */
 const NEUTRAL_MIGRATION = "supabase/migrations/20261006185533_crm_contact_list_refusal_neutral.sql";
 
-/** The started-rep anti-join, as every assignment pass must spell it. */
-const STARTED_GUARD = /not exists \(\s*select 1\s*from pg_temp\.crm_refresh_started_reps/;
+/** The started-rep test, as every assignment pass must spell it: `not (` the rep's hr id is in the started
+ *  keys, or his row carries no hr id and his agent id is in the started ids `)`. It used to be an anti-join
+ *  against the temp table, which no join method could hash (an OR of two conditions) — a nested loop of
+ *  12,142 open assignments by 56 started reps, 1.2 s a run (20261016233000). The reps are read into two
+ *  arrays once; the test is the same two conditions. */
+const STARTED_GUARD =
+  /not \(\s*\(nullif\(btrim\((\w)\.agent_hr_id\), ''\) is not null and lower\(btrim\(\1\.agent_hr_id\)\) = any \(v_started_keys\)\)\s*or \(nullif\(btrim\(\1\.agent_hr_id\), ''\) is null and \1\.agent_crm_id is not null\s*and \1\.agent_crm_id = any \(v_started_crm_ids\)\)\s*\)/;
 
 function read(path: string): string {
   return readFileSync(path, "utf8");
@@ -164,16 +169,28 @@ export function runDoctorListsFollowTeamStartsTests() {
     "the contact identity pass is NOT per-rep — guarding it would freeze a started team's doctors' details",
   );
 
+  // The started set is created once and read ONCE, into the two arrays (`drop table` is the other mention);
+  // every test below reads the arrays, never the table again — the table read per row was the 1.2 s.
   assert.equal(
     (refresh.match(/pg_temp\.crm_refresh_started_reps/g) ?? []).length,
-    6,
-    "the started set is created once, counted once, and anti-joined by exactly the four passes",
+    2,
+    "the started set is created once and read once, into the arrays the five tests use",
+  );
+  assert.equal(
+    (refresh.match(/= any \(v_started_keys\)/g) ?? []).length,
+    5,
+    "the frozen count and the four passes each test the hr id against the started keys",
+  );
+  assert.equal(
+    (refresh.match(/= any \(v_started_crm_ids\)/g) ?? []).length,
+    5,
+    "the frozen count and the four passes each fall back to the agent id against the started ids",
   );
 
   // The open pass reads the VENDOR mirror, so its guard keys on that alias, not on the assignment row.
   assert.match(
     passes.open,
-    /f\.hr_key = lower\(btrim\(m\.agent_hr_id\)\)/,
+    /lower\(btrim\(m\.agent_hr_id\)\) = any \(v_started_keys\)/,
     "the open pass keys its guard on the vendor mirror's own agent, which is the row it would insert",
   );
 
@@ -183,7 +200,7 @@ export function runDoctorListsFollowTeamStartsTests() {
   // employees.crm_id is blank, and that rep's whole list would stay the vendor's in silence.
   assert.match(
     refresh,
-    /nullif\(btrim\(a\.agent_hr_id\), ''\) is not null and s\.hr_key = lower\(btrim\(a\.agent_hr_id\)\)/,
+    /nullif\(btrim\(a\.agent_hr_id\), ''\) is not null and lower\(btrim\(a\.agent_hr_id\)\) = any \(v_started_keys\)/,
     "the HR id is tried first",
   );
   assert.match(
