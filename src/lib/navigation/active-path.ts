@@ -264,6 +264,7 @@ export function getSections(
   // role never needs its label resolved for that role.
   const relabelled = gated.map((section) => ({
     ...section,
+    label: (role && section.labelByRole?.[role]) || section.label,
     items: section.items.map((item) =>
       item.labelByRole ? { ...item, label: resolveItemLabel(item, role) } : item,
     ),
