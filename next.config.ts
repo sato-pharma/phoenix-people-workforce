@@ -632,8 +632,8 @@ const nextConfig: NextConfig = {
 function withOptionalSentry(config: NextConfig): NextConfig {
   const authToken = String(process.env.SENTRY_AUTH_TOKEN ?? "").trim();
   if (!authToken) return config;
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- loaded only on a build that has a token
-  const { withSentryConfig } = require("@sentry/nextjs") as {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- loaded only on a build that has a token; withSentryConfig lives at the /config entry, not the package root
+  const { withSentryConfig } = require("@sentry/nextjs/config") as {
     withSentryConfig: (config: NextConfig, options: Record<string, unknown>) => NextConfig;
   };
   const release = String(process.env.COMMIT_SHA ?? process.env.RAILWAY_GIT_COMMIT_SHA ?? "").trim();
@@ -644,6 +644,8 @@ function withOptionalSentry(config: NextConfig): NextConfig {
     sentryUrl: "https://de.sentry.io",
     authToken,
     silent: true,
+    // A rejected or expired token must never stop a production deploy: the upload fails, the build goes on.
+    errorHandler: (error: Error) => console.warn(`[sentry] source-map upload skipped: ${error.message}`),
     telemetry: false,
     widenClientFileUpload: true,
     sourcemaps: { deleteSourcemapsAfterUpload: true },
