@@ -11,7 +11,7 @@
  * own visit" on a rep's territory is closed for him for exactly that reason (visit-log-form.tsx).
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { crmPost, crmUrl, messageOf, newClientId, useCrmGet } from "@/components/phoenix-crm/api";
 import { CaptureLocation, type CapturedPin } from "@/components/phoenix-crm/capture-location";
@@ -60,6 +60,12 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
   const [logging, setLogging] = useState<Logging | null>(null);
   const [finding, setFinding] = useState(false);
   const view = today.data;
+  // The form opens at the top of the panel, and on a phone the Log he pressed can sit a screen or more
+  // below it — so it is brought into view, or the press looks like it did nothing.
+  const formRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (logging) formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [logging]);
 
   return (
     <CrmPanel
@@ -72,18 +78,20 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
       {view ? (
         <>
           {logging ? (
-            <CrmBlock>
-              <LogForm
-                logging={logging}
-                onCancel={() => setLogging(null)}
-                onLogged={(next) => {
-                  today.replace(next);
-                  setLogging(null);
-                }}
-                products={view.products}
-                test={test}
-              />
-            </CrmBlock>
+            <div className="min-w-0 scroll-mt-24" ref={formRef}>
+              <CrmBlock>
+                <LogForm
+                  logging={logging}
+                  onCancel={() => setLogging(null)}
+                  onLogged={(next) => {
+                    today.replace(next);
+                    setLogging(null);
+                  }}
+                  products={view.products}
+                  test={test}
+                />
+              </CrmBlock>
+            </div>
           ) : null}
 
           <CrmBlock title="Planned for today">

@@ -78,7 +78,8 @@ import { doubleVisitDayChoices, doubleVisitSavedNote } from "@/lib/phoenix-crm/d
 import { raisesVisitAsk, visitAskLastDay } from "@/lib/phoenix-crm/visit-ask-rules";
 import { visitDetailEditable } from "@/lib/phoenix-crm/visit-detail-edit-rules";
 import { PHOENIX_VISIT_KIND_LABELS } from "@/lib/phoenix-crm/visit-kind-labels";
-import { MANAGER_OWN_VISIT_CLOSED, managerOwnVisitClosed } from "@/lib/phoenix-crm/manager-plan-rules";
+import { MANAGER_OWN_VISIT_CLOSED } from "@/lib/phoenix-crm/manager-plan-rules";
+import { managerOwnVisitClosedNow } from "@/lib/phoenix-crm/server/manager-plan-switch";
 import { describeDayWindows, isPlanSentForReview, isUuid, planDayStatus } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, personKey, resolveVisitParticipants, territoryReviewer, type OrgIndex } from "@/lib/phoenix-crm/scope";
 import {
@@ -1077,7 +1078,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
       position: member.position,
     })),
     viewerPosition: enteredAs === "manager" ? (chain.find((member) => member.hrId === viewer.hrId)?.position ?? null) : null,
-    ownVisitClosed: enteredAs === "manager" && managerOwnVisitClosed(viewer.org, viewer.hrId),
+    ownVisitClosed: enteredAs === "manager" && (await managerOwnVisitClosedNow(viewer)),
     productManagers: lineProductManagers.map((manager) => ({
       hrId: manager.hrId,
       name: nameOf(productManagerNames, manager.hrId),
@@ -1195,9 +1196,10 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     throw validationError(draft.error);
   }
   const visit = draft.value;
-  // The old "My own visit" is closed for a district manager (owner, 2026-10-16): his single visits go on
-  // his own plan and count in his own report, never under a rep's seat. Double and chain are unchanged.
-  if (enteredAs === "manager" && visit.kind === "single" && managerOwnVisitClosed(viewer.org, viewer.hrId)) {
+  // The old "My own visit" is closed for a district manager who plans in Phoenix CRM (owner, 2026-10-16):
+  // his single visits go on his own plan and count in his own report, never under a rep's seat. One still
+  // on the legacy form keeps it. Double and chain are unchanged.
+  if (enteredAs === "manager" && visit.kind === "single" && (await managerOwnVisitClosedNow(viewer))) {
     throw validationError(MANAGER_OWN_VISIT_CLOSED);
   }
 

@@ -143,6 +143,20 @@ function metaText(territory: TerritorySummary, viewerHrId: string | null, test: 
 }
 
 /**
+ * The "Look at" picker holds four to ten sections depending on who is reading, so its last row is often
+ * short — the ragged row the owner called unfinished on the List (2026-09-30). The last tile spans the
+ * hole: two across on a phone, three from sm (`CrmChoice` columns 3), two across everywhere for a test
+ * persona (columns 2). The class names are written out whole so Tailwind sees each one.
+ */
+function lookAtLastTile(count: number, wide: boolean): string {
+  const phone = count % 2 === 1 ? "[&>*:last-child]:col-span-2" : "";
+  if (!wide) return phone;
+  const rest = count % 3;
+  const fromSm = rest === 1 ? "sm:[&>*:last-child]:col-span-3" : rest === 2 ? "sm:[&>*:last-child]:col-span-2" : "sm:[&>*:last-child]:col-span-1";
+  return cn(phone, fromSm);
+}
+
+/**
  * A switcher note, or nothing at all. "Nothing waiting for you" and "0 waiting" are a note that says
  * nothing: the owner counted ten of them on one screen (2026-10-02), so a zero now prints no note.
  */
@@ -581,7 +595,14 @@ export function TeamTab({
 
           {current ? (
             <CrmBlock className="border-t border-slate-100" title="Look at">
-              <CrmChoice columns={test ? 2 : 3} label="Look at" onChange={chooseSection} options={sectionOptions} value={current} />
+              <CrmChoice
+                className={lookAtLastTile(sectionOptions.length, !test)}
+                columns={test ? 2 : 3}
+                label="Look at"
+                onChange={chooseSection}
+                options={sectionOptions}
+                value={current}
+              />
             </CrmBlock>
           ) : null}
 

@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
+import { owesAWeeklyPlan } from "../src/lib/daily-deductions/no-weekly-plan-select.ts";
 import { resolveEmployeePortalNavVisibility } from "../src/lib/employee-portal/navigation.ts";
 import { PHOENIX_CRM_EMAIL_EVENT_TYPES, PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES } from "../src/lib/notifications/phoenix-crm-channel-guard.ts";
 import {
@@ -11,6 +12,7 @@ import {
   flagManagerCustomer,
   halfOfListType,
   isManagerDayOpen,
+  isManagerPlanSent,
   managerDayHalves,
   managerOutcome,
   managerOwnVisitClosed,
@@ -35,6 +37,8 @@ import {
   readsManagerPlanOf,
   resolveManagerPlanReader,
 } from "../src/lib/phoenix-crm/server/manager-plan-reach.ts";
+import { managerHalfLegacyType } from "../src/lib/phoenix-crm/server/manager-plan-readers.ts";
+import { VISIT_REPORT_FIELDS } from "../src/lib/phoenix-crm/visit-report-fields.ts";
 
 /**
  * Phoenix CRM — the district manager's weekly plan (owner, 2026-10-16, five rounds in chat).
@@ -55,7 +59,11 @@ import {
  *   4. nothing outside the module reads the tables, and nothing reads his visits into a KPI;
  *   5. no email, ever, and the Hub counts each week once;
  *   6. the legacy form refuses a switched district manager, his Plans tab goes and his calendar stays;
- *   7. the old "My own visit" is closed for a district manager.
+ *   7. the old "My own visit" is closed for a district manager;
+ *   8. the review fixes of 17 Oct 2026 — a with-a-rep half-day is Field and never a Double Visit, a new
+ *      tick sits on the rep's own half, a title that still owes the legacy plan keeps it, a re-saved
+ *      half-day keeps its visits, only a sent week is judged, every decision names what it read, and the
+ *      screens keep a dropped rep's customers and their pickers on screen.
  */
 
 // ── The organogram the matrix runs on ───────────────────────────────────────────────────────────
@@ -458,10 +466,97 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   const visits = source("src/lib/phoenix-crm/server/visits.ts");
   assert.match(
     functionBody(visits, "export async function saveVisit("),
-    /enteredAs === "manager" && visit\.kind === "single" && managerOwnVisitClosed\(viewer\.org, viewer\.hrId\)/,
+    /enteredAs === "manager" && visit\.kind === "single" && \(await managerOwnVisitClosedNow\(viewer\)\)/,
     "the server refuses a district manager's single visit under a rep's seat",
   );
+  // …but only once he plans in Phoenix CRM: one still on the legacy form (Mohamed Alaa Eleiwa until his
+  // team starts) has no "My single visits" to log in instead, so he keeps "My own visit".
+  const closedNow = functionBody(source("src/lib/phoenix-crm/server/manager-plan-switch.ts"), "export async function managerOwnVisitClosedNow(");
+  assert.match(closedNow, /if \(!managerOwnVisitClosed\(viewer\.org, viewer\.hrId\)\) return false;/, "the seat test comes first");
+  assert.match(closedNow, /return dmPlansInPhoenixCrm\(viewer\.hrId, \{[^}]*\}\)\.catch\(\(\) => false\);/, "then the switch, and an unreadable answer keeps the option open");
+  assert.match(
+    source("src/lib/phoenix-crm/server/visits.ts"),
+    /ownVisitClosed: enteredAs === "manager" && \(await managerOwnVisitClosedNow\(viewer\)\)/,
+    "the form shows the option closed only where the save would refuse it",
+  );
   assert.match(source("src/components/phoenix-crm/visit-log-form.tsx"), /form\.ownVisitClosed/, "the form shows the option closed");
+
+  // ── 8. The review fixes of 17 Oct 2026 ───────────────────────────────────────────────────────
+
+  // A half-day with a rep is Field, never a Double Visit: only the rep's own logged visit naming him is one.
+  assert.equal(managerHalfLegacyType("with_rep", null), "Field", "with a rep reads as Field on every calendar");
+  assert.equal(managerHalfLegacyType("single_visit", null), "Field");
+  assert.equal(managerHalfLegacyType("admin", "travel"), "Travel");
+  assert.equal(/"Double Visit"/.test(source("src/lib/phoenix-crm/server/manager-plan-readers.ts")), false, "the adapter has no Double Visit to hand any screen");
+  const planField = VISIT_REPORT_FIELDS.find((field) => field.key === "doubleVisitPlan");
+  assert.equal(planField?.label, "Manager's plan with the rep", "the visit report names the plan for what it is, and keeps its key for saved layouts");
+
+  // A NEW tick with a rep sits on that rep's own half-day; one already on this half-day with this rep stays.
+  const plans = source("src/lib/phoenix-crm/server/manager-plans.ts");
+  const saveSlot = functionBody(plans, "export async function saveManagerPlanSlot(");
+  assert.match(saveSlot, /if \(draft\.kind === "with_rep"\) \{[\s\S]*?await assertOnTheRepsHalf\(\{/, "the server checks a with-a-rep tick, not only the screen");
+  const onHalf = functionBody(plans, "async function assertOnTheRepsHalf(");
+  assert.match(onHalf, /repHalfKey\(input\.repSeatId, input\.date, input\.half\)/, "against the rep's own day and half");
+  assert.match(onHalf, /row\.kind === "with_rep" && row\.repSeatId === input\.repSeatId/, "a customer kept from the same rep's half-day passes");
+  assert.match(onHalf, /if \(!onHalf\.has\(id\) && !kept\.has\(id\)\) \{\s*throw conflictError\(/, "anything else is refused");
+
+  // Re-saving a single-visit half-day hands the visits he already logged on it to the new slot.
+  assert.match(saveSlot, /const savedSlotId = textOrNull\(saved\.slot_id\);\s*if \(draft\.kind === "single_visit" && savedSlotId\) \{\s*await relinkPlannedVisits\(/, "the re-saved half-day keeps its visits");
+  const relink = functionBody(plans, "async function relinkPlannedVisits(");
+  assert.match(relink, /\.eq\("is_unplanned", false\)/, "only planned visits move");
+  assert.match(relink, /\.is\("plan_slot_id", null\)/, "only the ones the delete left without a slot");
+  assert.match(relink, /\.eq\("half", input\.half\)/, "only that half-day's");
+  assert.equal(/\bthrow\b/.test(relink), false, "a failed relink is logged, never thrown — the half-day is already saved");
+
+  // Every send and decision names the version its screen showed; the removal names the ask it read.
+  const transition = functionBody(plans, "export async function transitionManagerPlan(");
+  assert.match(transition, /const expectedVersion = expectedVersionOf\(body\.version\);\s*if \(expectedVersion === null\) throw validationError\(/, "a week is never decided unread");
+  assert.equal(/expectedVersionOf\(body\.version\) \?\? /.test(transition), false, "never the version as it stands now");
+  const decideEdit = functionBody(plans, "export async function decideManagerPlanEdit(");
+  assert.match(decideEdit, /if \(expectedVersion === null\) throw validationError\(/, "an edit ask is never decided unread");
+  assert.equal(/expectedVersionOf\(body\.version\) \?\? /.test(decideEdit), false);
+  const decideRemoval = functionBody(source("src/lib/phoenix-crm/server/manager-customers.ts"), "export async function decideManagerCustomerRemoval(");
+  assert.match(decideRemoval, /if \(!requestedAt \|\| requestedAt !== row\.removalRequestedAt\) \{\s*throw conflictError\(/, "a re-raised removal ask is never decided on the old one's page");
+  assert.match(source("src/components/approvals-hub/manager-plan-decision-actions.tsx"), /body = \{ id: target\.customerId, requestedAt: target\.requestedAt,/, "the Hub sends the ask it showed");
+
+  // A title that still owes the legacy weekly plan keeps the legacy form — the no-weekly-plan charge reads it.
+  assert.equal(owesAWeeklyPlan("Product Manager"), true);
+  assert.equal(owesAWeeklyPlan("District Sales Manager"), false, "today's district managers owe no legacy plan");
+  const switchSource = source("src/lib/phoenix-crm/server/manager-plan-switch.ts");
+  assert.match(
+    functionBody(switchSource, "export async function dmPlansInPhoenixCrm("),
+    /if \(seats\.length === 0\) return false;\s*if \(await owesTheLegacyWeeklyPlan\(hrId\)\) return false;/,
+    "a seat holder whose title owes the legacy plan is never switched off it",
+  );
+  assert.match(functionBody(switchSource, "async function owesTheLegacyWeeklyPlan("), /owesAWeeklyPlan\(row\.job_title\)/, "read from the job title, exactly as the charge reads it");
+
+  // Only a sent week is judged; a draft or a returned week lists its visits apart.
+  assert.equal(isManagerPlanSent("draft"), false);
+  assert.equal(isManagerPlanSent("returned"), false);
+  assert.equal(isManagerPlanSent("submitted"), true);
+  const report = functionBody(source("src/lib/phoenix-crm/server/manager-plan-report.ts"), "export async function computeManagerReports(");
+  assert.match(report, /loadManagerSlotRows\(planRows\.filter\(\(plan\) => isManagerPlanSent\(plan\.status\)\)/, "an unsent week's half-days are neither planned nor missed");
+  assert.match(report, /visit\.managerHrId === managerHrId && \(visit\.isUnplanned \|\| !weekSent\)/, "and its visits are still shown, apart");
+
+  // The board: a rep whose half emptied stays selectable while his ticks remain, and Mark all needs a customer.
+  const board = source("src/components/phoenix-crm/manager-plan-board.tsx");
+  const withRepPart = functionBody(board, "function WithRepPart(");
+  assert.match(withRepPart, /const disabled = !canEdit \|\| \(nothingToTick && rep\.seatId !== keptSeatId\);/, "the rep he already ticked customers of stays selectable");
+  assert.match(withRepPart, /\{chosen \|\| dropped\.length > 0 \? \(/, "the dropped customers are shown even when the rep's half is empty");
+  assert.match(withRepPart, /disabled=\{repCustomers\.length === 0\}/, "Mark all is off when the rep has nobody on that half");
+  assert.match(board, /useEffect\(\(\) => \(\) => onHidden\(\), \[\]\);/, "an edit made just before the board leaves the screen is sent on the way out");
+
+  // The Team tab's pickers stay on screen while the next report or list loads.
+  const team = source("src/components/phoenix-crm/manager-plan-team.tsx");
+  assert.match(functionBody(team, "export function ManagerPlansSection("), /const pickers = view \?\? chosenFrom;/, "the week and manager pickers survive a pick");
+  assert.match(functionBody(team, "export function ManagerOwnListSection("), /if \(!chosenFrom \|\| chosenFrom\.mode !== "pick" \|\| !chosenFrom\.managers\) return loading;/, "so does the own-list picker");
+
+  // The visit form never pre-picks a Double visit on a territory with no rep to go with.
+  const visitForm = source("src/components/phoenix-crm/visit-log-form.tsx");
+  assert.match(visitForm, /useState<PhoenixCrmVisitKind>\(form\.ownVisitClosed && enteringManagerHasRep\(form\) \? "double" : "single"\)/, "Double is pre-picked only where it can be saved");
+
+  // His own visit log asks for no photo.
+  assert.equal(/\bphoto/i.test(source("src/lib/phoenix-crm/server/manager-visits.ts")), false, "a district manager's single visit takes no photo");
 
   // ── The words on his screens ─────────────────────────────────────────────────────────────────
 

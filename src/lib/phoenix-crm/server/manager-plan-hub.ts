@@ -80,6 +80,8 @@ export type ManagerHubRemovalDetail = {
   potentialGrade: string | null;
   areaName: string | null;
   reason: string | null;
+  /** When this ask was raised — sent back with the decision, so a re-raised ask is never decided unread. */
+  requestedAt: string | null;
   status: "pending" | "removed" | "refused" | "active";
   statusLabel: string;
   decisionNote: string | null;
@@ -225,6 +227,7 @@ async function removalDetail(viewer: PhoenixCrmViewer, id: string): Promise<Mana
     potentialGrade: row.potentialGrade || null,
     areaName: row.areaName,
     reason: row.removalReason,
+    requestedAt: row.removalRequestedAt,
     status,
     statusLabel,
     decisionNote: row.removalDecisionNote,

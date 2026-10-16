@@ -83,6 +83,10 @@ replacement.
   Return one day.
 - **The Administrator** may act in place of any holder at any stage. The decision is recorded and shown
   as "by the Administrator".
+- **Every decision names what it read.** A send, an approval, a return and a decision on an edit ask
+  carry the plan version the screen showed, and the server refuses one that does not; a decision on an
+  own-list removal carries the time that ask was raised. A page left open on an older week, or on an
+  ask that was refused and raised again, is told to reload — it never decides the newer one unread.
 
 The Hub reads the queue through `server/manager-plan-queue.ts`, merged once into
 `getPlanApprovalsForResponder`. That one merge covers the pending count, the badge, Needs You, the
@@ -93,13 +97,30 @@ feed and Ali's feed.
 
 | Half-day kind | Judged by |
 |---|---|
-| With a rep | The double or chain visits the **rep** logs that name him (`phoenix_crm_report_manager_visits`). Ticking a rep is not itself a double visit. |
+| With a rep | The double or chain visits the **rep** logs that name him, customer by customer: `phoenix_crm_countable_visits` on the rep's seat that day, judged by `countsAsManagersDoubleVisit`. (`phoenix_crm_report_manager_visits` is a per-manager count with no customer in it, so it cannot answer which ticked customer was seen.) Ticking a rep is not itself a double visit. |
 | Single visit | His own `phoenix_crm_manager_visits`. |
 | Admin | Not checkable. |
 
+Only a week he **sent** is judged — waiting for a decision, or approved. A draft, or a week returned to
+him, is still his to change, so it counts nothing as planned or missed; the visits he logged that week
+are listed apart with his unplanned ones.
+
+The planning calendars show a with-a-rep half-day as **Field**, never as a Double Visit, and the Visit
+report generator's column for it reads "Manager's plan with the rep".
+
 His own single visits count **only in his own report**. Nothing adds them to a rep's figures or a
 territory KPI. For the same reason, the old "My own visit" option is closed for anyone holding a DM or
-acting-DM seat. The 25 visits already logged stay as they were.
+acting-DM seat **once he plans in Phoenix CRM** (`managerOwnVisitClosedNow`: the seat test and the
+switch below). One still on the legacy form has no "My single visits" to log in instead, so he keeps
+it; an unreadable switch keeps it open too, because a refused save loses a real visit. On a territory
+with no rep the visit form does not pre-pick Double visit — it says where his visit goes instead. The
+25 visits already logged stay as they were.
+
+Re-saving a single-visit half-day writes it afresh, so the visits he already logged against it are
+handed to the new half-day (`relinkPlannedVisits`) — planned ones of that day and half only. With a
+rep, a new tick must be on that rep's own half-day (`assertOnTheRepsHalf`); a customer he ticked
+before the rep dropped him stays, flagged, and the board keeps that rep selectable so the tick can be
+seen and taken off.
 
 The report is read by:
 
@@ -134,7 +155,12 @@ Five places were checked and left alone, because no DM appears in them:
 ## The switch-off
 
 `dmPlansInPhoenixCrm(hrId)` is true when he holds a DM or acting-DM seat **and** that seat's team is
-live. When it is true:
+live — **unless his job title still owes the legacy plan.** The no-weekly-plan deduction charges a
+Product Manager or a Group Product Manager a day for each week with no plan on the legacy form
+(`owesAWeeklyPlan`, read from `employees.job_title` exactly as the charge reads it), so such a person
+keeps that form whatever seat he holds. On 17 Oct 2026 the DM seats were held by 18 District Sales
+Managers and one Senior District Manager, so this guard switches nobody back today; it stops a future
+seat holder being charged for a plan he was not allowed to file. When it is true:
 
 - **The legacy write paths refuse him.** `createEmployeePlan` and `updateEmployeePlan` refuse, and
   `canSubmitPlans` is false.

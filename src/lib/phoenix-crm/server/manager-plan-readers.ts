@@ -39,14 +39,16 @@ export function managerPlanTitle(weekStart: string): string {
 
 /**
  * The legacy plan's activity type a half-day reads as, so a screen built on that list keeps its colours
- * and its rules: with a rep is a Double Visit, a single visit is Field, and the seven day activities map
- * to the five the legacy list had (the rest read as an Event).
+ * and its rules: with a rep and a single visit are both Field, and the seven day activities map to the five
+ * the legacy list had (the rest read as an Event). 🔴 With a rep is NEVER a "Double Visit" (owner,
+ * 2026-10-16: "the double visit is only counted when the rep submit and log a visit and choose double
+ * visit and his manager") — the half-day's own title names the rep, and the booking of that rep is read
+ * from `repHrId`, never from this word.
  */
-export type LegacyPlanActivityType = "Double Visit" | "Field" | "Travel" | "Meeting" | "Training" | "Admin" | "Event";
+export type LegacyPlanActivityType = "Field" | "Travel" | "Meeting" | "Training" | "Admin" | "Event";
 
 export function managerHalfLegacyType(kind: ManagerSlotKind, activityType: string | null): LegacyPlanActivityType {
-  if (kind === "with_rep") return "Double Visit";
-  if (kind === "single_visit") return "Field";
+  if (kind === "with_rep" || kind === "single_visit") return "Field";
   if (activityType === "travel") return "Travel";
   if (activityType === "meeting") return "Meeting";
   if (activityType === "training") return "Training";
@@ -181,7 +183,8 @@ export function managerHalfDayText(halfDay: Pick<ManagerPlanHalfDay, "kind" | "a
 }
 
 /**
- * The Visit report generator's "planned double visit" rows from the new plan (2026-10-16), in the shape the
+ * The Visit report generator's "manager's plan with the rep" rows from the new plan (2026-10-16) — a plan
+ * to go with the rep, never a double visit, which only the rep's own logged visit makes — in the shape the
  * old double-visit planner's rows had — `{ id, seat_id, plan_date, half, manager_hr_id }` — so the report
  * reads both, side by side. A half-day "with a rep" on a week gone for review or approved; a day returned to
  * him is not a plan until he sends it again. `seat_id` is the REP's seat.

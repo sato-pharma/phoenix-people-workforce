@@ -23,7 +23,7 @@ import {
 type Target =
   | { kind: "plan"; planId: string; version: number; returnableDays: Array<{ date: string; dateText: string }> }
   | { kind: "edit"; requestId: string; version: number }
-  | { kind: "removal"; customerId: string };
+  | { kind: "removal"; customerId: string; requestedAt: string | null };
 
 type Choice = "approve" | "return_week" | "return_day" | "reopen" | "refuse_edit" | "approve_removal" | "refuse_removal";
 
@@ -84,7 +84,7 @@ export function ManagerPlanDecisionActions({ target, byAdministrator, backHref }
       body = { requestId: target.requestId, version: target.version, decision: choice === "reopen" ? "reopen" : "refuse", note: text };
     } else {
       endpoint = "/api/phoenix-crm/manager-plans/customers/removal/decide";
-      body = { id: target.customerId, decision: choice === "approve_removal" ? "approve" : "refuse", note: text };
+      body = { id: target.customerId, requestedAt: target.requestedAt, decision: choice === "approve_removal" ? "approve" : "refuse", note: text };
     }
     setBusy(true);
     setError(null);

@@ -282,6 +282,10 @@ export function ManagerPlanBoard({
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
+  // The board leaving the screen — Nosiba Salah switching "My territory · My district", a tab change —
+  // clears the autosave timer with it, so an edit made inside its 1.5 s would be lost. It is sent on the
+  // way out instead, the way a hidden page sends it.
+  useEffect(() => () => onHidden(), []);
 
   function chooseWeek(next: string) {
     if (Object.keys(drafts).length > 0) void saveWaiting();
@@ -557,11 +561,15 @@ function WithRepPart({
 }) {
   if (view.reps.length === 0) return <CrmEmpty message="No rep sits in your team right now." title="No reps" />;
   const halves = new Map(day.repHalves.filter((entry) => entry.half === half).map((entry) => [entry.seatId, entry]));
+  // The rep this half-day already holds, with customers he ticked: that rep stays selectable even when
+  // the rep's own half is now empty, so the customers the rep dropped can still be seen and unticked.
+  const keptSeatId = slot?.kind === "with_rep" && slot.repSeatId && slot.customers.length > 0 ? slot.repSeatId : null;
   const options: Array<CrmChoiceOption<string>> = view.reps.map((rep) => {
     const repHalf = halves.get(rep.seatId);
     const state = REP_WEEK[repHalf?.weekState ?? rep.weekState];
     const where = repHalf && repHalf.bricks.length > 0 ? repHalf.bricks.join(", ") : null;
-    const disabled = !canEdit || rep.weekState === "no_plan" || !repHalf || repHalf.customers.length === 0;
+    const nothingToTick = rep.weekState === "no_plan" || !repHalf || repHalf.customers.length === 0;
+    const disabled = !canEdit || (nothingToTick && rep.seatId !== keptSeatId);
     return {
       value: rep.seatId,
       label: rep.name,
@@ -594,12 +602,12 @@ function WithRepPart({
         options={options}
         value={draft.repSeatId}
       />
-      {chosen ? (
+      {chosen || dropped.length > 0 ? (
         <div className="grid min-w-0 gap-3 border border-slate-200 p-3">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-black text-slate-900">
-              {`${countText(draft.customers.length)} of ${plural(repCustomers.length, "customer", "customers")} ticked`}
-              {chosen.weekState === "not_sent" ? (
+              {`${countText(draft.customers.length)} of ${plural(repCustomers.length + dropped.length, "customer", "customers")} ticked`}
+              {chosen?.weekState === "not_sent" ? (
                 <CrmPill className="ml-2" tone="warn">
                   Not sent
                 </CrmPill>
@@ -608,6 +616,7 @@ function WithRepPart({
             {canEdit ? (
               <div className="flex flex-wrap gap-2">
                 <CrmButton
+                  disabled={repCustomers.length === 0}
                   onClick={() => onDraft({ ...draft, customers: repCustomers.map((customer) => repRef(customer.customerId, customer.name)) })}
                   size="sm"
                   variant="primary"
@@ -620,8 +629,11 @@ function WithRepPart({
               </div>
             ) : null}
           </div>
-          {chosen.weekState === "not_sent" ? (
+          {chosen?.weekState === "not_sent" ? (
             <p className="text-xs font-semibold leading-5 text-amber-800">The rep has not sent this week yet, so these customers may still change.</p>
+          ) : null}
+          {!chosen ? (
+            <p className="text-xs font-semibold leading-5 text-amber-800">The rep has nothing planned this half any more. Untick the customers below, or choose another rep.</p>
           ) : null}
           <div className="grid min-w-0 gap-2 sm:grid-cols-2">
             {repCustomers.map((customer) => (
@@ -675,7 +687,16 @@ function AdminPart({
   const options: Array<CrmChoiceOption<string>> = view.activities.map((entry) => ({ value: entry.key, label: entry.label, disabled: !canEdit }));
   return (
     <div className="grid min-w-0 gap-4">
-      <CrmChoice columns={7} label="Activity" onChange={(activityType) => onDraft({ ...draft, activityType })} options={options} value={draft.activityType} />
+      {/* Seven activities: the seven-way grid's two-then-four rows with the last spanning the gap, but never
+          seven across — inside the half-day panel a seven-wide row squeezes "Admin work" to one word a line. */}
+      <CrmChoice
+        className="lg:grid-cols-4 lg:[&>*:last-child]:col-span-2"
+        columns={7}
+        label="Activity"
+        onChange={(activityType) => onDraft({ ...draft, activityType })}
+        options={options}
+        value={draft.activityType}
+      />
       <label className="grid min-w-0 gap-1.5" htmlFor={`${idPrefix}-admin-note`}>
         <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Note</span>
         <textarea

@@ -83,7 +83,7 @@ export type ManagerCustomerView = {
 };
 
 const OWN_COLUMNS =
-  "id, manager_hr_id, line_code, name, speciality, phone, contact_note, grade, potential_grade, comment, area_seat_id, area_code, area_name, pin_lat, pin_lon, pin_address, pin_brick_name, status, removal_reason, removal_approver_hr_id, removal_decision_note, is_test, created_at";
+  "id, manager_hr_id, line_code, name, speciality, phone, contact_note, grade, potential_grade, comment, area_seat_id, area_code, area_name, pin_lat, pin_lon, pin_address, pin_brick_name, status, removal_reason, removal_requested_at, removal_approver_hr_id, removal_decision_note, is_test, created_at";
 
 function statusLabelOf(status: ManagerCustomerStatus): string {
   if (status === "removal_pending") return "Waiting to come off the list";
@@ -116,6 +116,7 @@ export function managerCustomerOf(raw: unknown): (ManagerCustomerView & { manage
     status,
     statusLabel: statusLabelOf(status),
     removalReason: textOrNull(row.removal_reason),
+    removalRequestedAt: textOrNull(row.removal_requested_at),
     removalDecisionNote: textOrNull(row.removal_decision_note),
     approverHrId: personKey(textOrNull(row.removal_approver_hr_id)),
     isTest: row.is_test === true,
@@ -137,7 +138,7 @@ export async function loadManagerCustomers(managerHrId: string, isTest: boolean)
   return rows
     .map(managerCustomerOf)
     .filter((row): row is NonNullable<ReturnType<typeof managerCustomerOf>> => row !== null)
-    .map(({ managerHrId: _manager, approverHrId: _approver, isTest: _test, ...view }) => view)
+    .map(({ managerHrId: _manager, approverHrId: _approver, isTest: _test, removalRequestedAt: _requested, ...view }) => view)
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
@@ -410,7 +411,7 @@ export async function addManagerCustomer(viewer: PhoenixCrmViewer, raw: unknown)
   if (error) throw error;
   const added = managerCustomerOf(data);
   if (!added) throw conflictError("The customer could not be added. Reload the page and try again.");
-  const { managerHrId: _manager, approverHrId: _approver, isTest: _test, ...view } = added;
+  const { managerHrId: _manager, approverHrId: _approver, isTest: _test, removalRequestedAt: _requested, ...view } = added;
   return view;
 }
 
@@ -453,7 +454,7 @@ export async function requestManagerCustomerRemoval(viewer: PhoenixCrmViewer, ra
   }
   const updated = await loadManagerCustomerRow(id);
   if (!updated) throw notFoundError("This customer is no longer on Manager's own list. Reload the page.");
-  const { managerHrId: _manager, approverHrId: _approver, isTest: _test, ...view } = updated;
+  const { managerHrId: _manager, approverHrId: _approver, isTest: _test, removalRequestedAt: _requested, ...view } = updated;
   return view;
 }
 
@@ -469,6 +470,12 @@ export async function decideManagerCustomerRemoval(viewer: PhoenixCrmViewer, raw
   if (!row || row.isTest !== isTest) throw notFoundError("This customer is no longer on Manager's own list. Reload the page.");
   const role = managerAskDeciderRole(viewer, { approverHrId: row.approverHrId, isTest });
   if (!role) throw forbiddenError("This removal is decided by the manager above the district manager.");
+  // The decision is on the ask the approver read. A refused ask raised again is a NEW ask with its own
+  // time, so a page left open on the old one cannot approve the new one unread.
+  const requestedAt = textOrNull(body.requestedAt);
+  if (!requestedAt || requestedAt !== row.removalRequestedAt) {
+    throw conflictError("This ask changed since you opened it. Reload the page and read it again.");
+  }
   const note = cleanText(body.note, MANAGER_PLAN_REASON_MAX, "The note");
   if (decision === "refuse" && !note) throw validationError("Write why the customer stays on the list.");
   const result = record(

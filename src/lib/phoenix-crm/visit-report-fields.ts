@@ -247,7 +247,9 @@ export const VISIT_REPORT_FIELDS: ReadonlyArray<VisitReportField> = [
   F("day", "planException", "Plan exception", "text", 28),
   F("day", "dayStartedAt", "Day started at (Cairo time)", "datetime", 20),
   F("day", "dayActivity", "Day activity", "text", 26),
-  F("day", "doubleVisitPlan", "Double-visit plan", "text", 26),
+  // The manager's plan to go with the rep that day — never a double visit, which only the rep's own logged
+  // visit naming him makes (owner, 2026-10-16). The key keeps its old name so saved report layouts still find it.
+  F("day", "doubleVisitPlan", "Manager's plan with the rep", "text", 26),
   F("day", "visitRequest", "Visit request", "text", 26),
   F("day", "onLeave", "On approved leave that day", "yesno", 14),
 

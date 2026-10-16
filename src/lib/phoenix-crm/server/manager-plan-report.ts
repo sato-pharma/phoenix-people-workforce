@@ -8,6 +8,8 @@
  *   - SINGLE VISIT: DONE when he logged it himself (`phoenix_crm_manager_visits`), planned or not.
  *   - ADMIN: never checkable.
  *   - His unplanned single visits are listed APART and never fill a planned row.
+ *   - Only a SENT week (`isManagerPlanSent`) is judged; a draft or a returned week shows its visits apart
+ *     and counts nothing planned.
  *
  * A day closes for its visits at 02:00 Cairo the next morning (`viewer.visitDay`), so until then it reads
  * "Today", never "Not done".
@@ -20,6 +22,7 @@ import { fieldWeekStart, repPlanWeek } from "@/lib/phoenix-crm/calendar";
 import { dayActivityLabel, isDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { countsAsManagersDoubleVisit } from "@/lib/phoenix-crm/double-visit-plan-rules";
 import {
+  isManagerPlanSent,
   managerCustomerFlagLabel,
   managerOutcome,
   managerOutcomeLabel,
@@ -174,7 +177,10 @@ export async function computeManagerReports(
   }
   const planOf = new Map(planRows.map((plan) => [plan.managerHrId, plan]));
   const managerOfPlan = new Map(planRows.map((plan) => [plan.planId, plan.managerHrId]));
-  const slots = await loadManagerSlotRows(planRows.map((plan) => plan.planId));
+  // 🔴 ONLY A WEEK HE SENT IS A PLAN TO JUDGE: a draft, or a week returned to him, is still his to change,
+  // so its half-days are neither planned nor missed (every outside reader's rule, `isManagerPlanSent`).
+  // The visits he logged that week are still shown — apart, with the unplanned ones.
+  const slots = await loadManagerSlotRows(planRows.filter((plan) => isManagerPlanSent(plan.status)).map((plan) => plan.planId));
   const [slotCustomers, visits, withRepDone] = await Promise.all([
     loadManagerSlotCustomers(slots.map((slot) => slot.slotId)),
     loadManagerVisits(managers, { from: weekStart, to: addDaysIso(weekStart, 5) }, isTest),
@@ -261,8 +267,9 @@ export async function computeManagerReports(
       halves.push({ half: slot.half, kind: slot.kind, kindLabel: managerSlotKindLabel(slot.kind), title, note: slot.note, customers });
       daysByDate.set(slot.date, halves);
     }
+    const weekSent = isManagerPlanSent(plan?.status ?? null);
     const unplanned = visits
-      .filter((visit) => visit.managerHrId === managerHrId && visit.isUnplanned)
+      .filter((visit) => visit.managerHrId === managerHrId && (visit.isUnplanned || !weekSent))
       .filter((visit) => !plannedKeys.has(`${visit.visitDate}|${visit.customerId ? `c:${visit.customerId}` : `m:${visit.managerCustomerId}`}`))
       .map((visit): ManagerReportUnplanned => ({
         date: visit.visitDate,

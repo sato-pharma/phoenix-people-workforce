@@ -203,8 +203,8 @@ export function mapPlanRowToPrivateCalendarItem(
 /**
  * One half-day of a district manager's approved Phoenix CRM week, as a calendar item (owner, 2026-10-16:
  * that week REPLACES his legacy plan once his team is live). Display only, like every plan item here: a
- * half-day "with a rep" reads as a Double Visit and a single visit as Field — both judged on the visits
- * actually logged — and an Admin half-day keeps its activity's name.
+ * half-day "with a rep" and a single visit both read as Field — never a Double Visit, which only the rep's
+ * own logged visit makes — and an Admin half-day keeps its activity's name.
  */
 export function mapManagerHalfDayToPrivateCalendarItem(
   halfDay: ManagerPlanHalfDay,

@@ -579,6 +579,46 @@ async function assertDistrictCustomers(customerIds: ReadonlyArray<string>, distr
 }
 
 /**
+ * With a rep, a NEW tick must sit on that rep's own half-day — the screen offers nothing else, and this is
+ * the server's half of it, because a request need not come from the screen. A customer he ticked there
+ * before the rep dropped him stays (owner, 2026-10-16: the row is kept and shown flagged), so the
+ * customers already on this half-day with this same rep pass.
+ */
+async function assertOnTheRepsHalf(input: {
+  managerHrId: string;
+  repSeatId: string;
+  date: string;
+  half: ManagerHalf;
+  customerIds: ReadonlyArray<string>;
+  isTest: boolean;
+}): Promise<void> {
+  if (input.customerIds.length === 0) return;
+  const weekStart = fieldWeekStart(input.date);
+  const [repWeeks, planRows] = await Promise.all([
+    loadRepWeeks([input.repSeatId], weekStart, input.isTest),
+    loadWeekPlanRows([input.managerHrId], weekStart, input.isTest),
+  ]);
+  const onHalf = new Set(
+    (repWeeks.get(input.repSeatId)?.halves.get(repHalfKey(input.repSeatId, input.date, input.half)) ?? []).map((entry) => entry.customerId),
+  );
+  const kept = new Set<string>();
+  const plan = planRows[0] ?? null;
+  if (plan) {
+    const slot = (await loadManagerSlotRows([plan.planId])).find(
+      (row) => row.date === input.date && row.half === input.half && row.kind === "with_rep" && row.repSeatId === input.repSeatId,
+    );
+    if (slot) {
+      for (const row of await loadManagerSlotCustomers([slot.slotId])) if (row.customerId) kept.add(row.customerId);
+    }
+  }
+  for (const id of input.customerIds) {
+    if (!onHalf.has(id) && !kept.has(id)) {
+      throw conflictError(`A customer you ticked is not on the rep's ${input.half} list for this day. Reload the page and tick again.`);
+    }
+  }
+}
+
+/**
  * POST: set, change or clear ONE half-day of his own week. The screen sends the plan version it showed;
  * the database refuses the save when another screen moved the week first. Answers with the board as it
  * now stands.
@@ -602,6 +642,14 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
   if (draft.kind === "with_rep") {
     repSeat = managerTeamSeats(viewer, viewer.hrId).find((entry) => entry.seatId === draft.repSeatId) ?? null;
     if (!repSeat) throw forbiddenError("Choose one of the reps of your own team.");
+    await assertOnTheRepsHalf({
+      managerHrId: viewer.hrId,
+      repSeatId: repSeat.seatId,
+      date: draft.date,
+      half: draft.half,
+      customerIds: draft.customers.flatMap((entry) => ("customerId" in entry ? [entry.customerId] : [])),
+      isTest,
+    });
   }
   if (draft.kind === "single_visit") {
     const district = managerDistrictSeats(viewer, viewer.hrId);
@@ -614,7 +662,7 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
     );
   }
 
-  await callPhoenixCrm<Row>("phoenix_crm_save_manager_plan_slot", {
+  const saved = record(await callPhoenixCrm<Row>("phoenix_crm_save_manager_plan_slot", {
     p: {
       manager_hr_id: viewer.hrId,
       manager_seat_id: seat.seatId,
@@ -634,9 +682,42 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
       expected_version: expectedVersionOf(body.expectedVersion),
       is_test: isTest,
     },
-  });
+  }));
+
+  const savedSlotId = textOrNull(saved.slot_id);
+  if (draft.kind === "single_visit" && savedSlotId) {
+    await relinkPlannedVisits({ managerHrId: viewer.hrId, date: draft.date, half: draft.half, slotId: savedSlotId, isTest });
+  }
 
   return buildBoard(viewer, isTest, resolveManagerPlanReader(viewer, viewer.hrId), fieldWeekStart(draft.date));
+}
+
+/**
+ * The save writes a half-day afresh — the old slot row is deleted and a new one inserted — so every visit
+ * he had already logged against it is left with `plan_slot_id` null by the foreign key (`on delete set
+ * null`) while still marked planned. Re-saving a single-visit half-day he has already started (a week
+ * returned for that day, or the running week) therefore hands those visits to the new slot. Only PLANNED
+ * visits of that same day and half move; an unplanned one stays unplanned. The actual-versus-planned report
+ * matches by day and customer and never read the link, so a failure here is logged, never thrown: the
+ * half-day itself is already saved.
+ */
+async function relinkPlannedVisits(input: { managerHrId: string; date: string; half: ManagerHalf; slotId: string; isTest: boolean }): Promise<void> {
+  const { error } = await getSupabaseAdmin()
+    .from("phoenix_crm_manager_visits")
+    .update({ plan_slot_id: input.slotId })
+    .eq("manager_hr_id", input.managerHrId)
+    .eq("visit_date", input.date)
+    .eq("half", input.half)
+    .eq("is_unplanned", false)
+    .is("plan_slot_id", null)
+    .eq("is_test", input.isTest);
+  if (error) {
+    logWarning("Phoenix CRM could not re-link a district manager's visits to the re-saved half-day", {
+      labels: { event: "phoenix_crm_manager_visit_relink_failed" },
+      error,
+      context: { managerHrId: input.managerHrId, date: input.date, half: input.half },
+    });
+  }
 }
 
 // ── Send, approve, return ───────────────────────────────────────────────────────────────────────
@@ -682,7 +763,10 @@ export async function transitionManagerPlan(viewer: PhoenixCrmViewer, raw: unkno
   const plan = await loadManagerPlanRow(planId, isTest);
   if (!plan) throw notFoundError("This plan is no longer there. Reload the page.");
   const note = noteOf(body.note);
-  const expectedVersion = expectedVersionOf(body.version) ?? plan.version;
+  // Every send and decision names the version its screen showed, so a page left open on an older week
+  // is refused rather than deciding the week as it stands now.
+  const expectedVersion = expectedVersionOf(body.version);
+  if (expectedVersion === null) throw validationError("This plan could not be read. Reload the page.");
 
   if (action === "submit") {
     const seat = assertManagerPlanWriter(viewer);
@@ -836,6 +920,8 @@ export async function decideManagerPlanEdit(viewer: PhoenixCrmViewer, raw: unkno
   if (!role) throw forbiddenError("This ask is decided by the manager above the district manager.");
   const note = noteOf(body.note);
   if (decision === "refuse" && !note) throw validationError("Write why the week stays as it was sent.");
+  const expectedVersion = expectedVersionOf(body.version);
+  if (expectedVersion === null) throw validationError("This ask could not be read. Reload the page.");
   const result = record(
     await callPhoenixCrm<Row>("phoenix_crm_decide_manager_plan_edit", {
       p: {
@@ -844,7 +930,7 @@ export async function decideManagerPlanEdit(viewer: PhoenixCrmViewer, raw: unkno
         actor_hr_id: viewer.hrId,
         actor_role: role,
         note,
-        expected_version: expectedVersionOf(body.version) ?? ask.version,
+        expected_version: expectedVersion,
         is_test: isTest,
       },
     }),

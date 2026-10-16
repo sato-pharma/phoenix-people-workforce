@@ -70,24 +70,54 @@ export function ManagerPlansSection({ test }: { test: boolean }) {
   const [week, setWeek] = useState<string | null>(null);
   const [manager, setManager] = useState<string | null>(null);
   const report = useCrmGet<ManagerPlanReportView>(crmUrl("/api/phoenix-crm/manager-plans/report", { week, manager, test }), "report");
+  // A new week or manager is a new address, and the old answer must never sit under the new choice — so
+  // the pickers keep the answer they were chosen FROM while the report below them loads, rather than the
+  // whole section blanking to a spinner on every pick.
+  const [chosenFrom, setChosenFrom] = useState<ManagerPlanReportView | null>(null);
   const view = report.data;
+  const pickers = view ?? chosenFrom;
 
-  if (!view) {
+  if (!pickers) {
     return report.error ? <CrmLoadError message={report.error} onRetry={report.reload} /> : <CrmLoading label="Loading the district managers' plans" />;
   }
-  const weekOptions: Array<CrmChoiceOption<string>> = view.weeks.map((entry) => ({ value: entry.weekStart, label: entry.name }));
-  const current = view.report;
+  const weekOptions: Array<CrmChoiceOption<string>> = pickers.weeks.map((entry) => ({ value: entry.weekStart, label: entry.name }));
+  const pickWeek = (next: string) => {
+    setChosenFrom(pickers);
+    setWeek(next);
+  };
+  const pickManager = (next: string) => {
+    setChosenFrom(pickers);
+    setManager(next);
+  };
 
   return (
     <>
       <CrmBlock className="border-t border-slate-100" title="Week">
-        <CrmChoice columns={3} label="Week" onChange={setWeek} options={weekOptions} value={view.weekStart} />
+        <CrmChoice columns={3} label="Week" onChange={pickWeek} options={weekOptions} value={view ? view.weekStart : (week ?? pickers.weekStart)} />
       </CrmBlock>
-      {view.mode === "pick" && view.managers ? (
+      {pickers.mode === "pick" && pickers.managers ? (
         <CrmBlock className="border-t border-slate-100" title="District manager">
-          <ManagerPicker label="District manager" managers={view.managers} onPick={setManager} value={view.manager?.hrId ?? null} />
+          <ManagerPicker
+            label="District manager"
+            managers={pickers.managers}
+            onPick={pickManager}
+            value={view ? (view.manager?.hrId ?? null) : (manager ?? pickers.manager?.hrId ?? null)}
+          />
         </CrmBlock>
       ) : null}
+      {view ? <ManagerPlanReportBody view={view} /> : (
+        <CrmBlock className="border-t border-slate-100">
+          {report.error ? <CrmLoadError message={report.error} onRetry={report.reload} /> : <CrmLoading label="Loading the week" />}
+        </CrmBlock>
+      )}
+    </>
+  );
+}
+
+function ManagerPlanReportBody({ view }: { view: ManagerPlanReportView }) {
+  const current = view.report;
+  return (
+    <>
       {current && view.manager ? (
         <CrmBlock className="border-t border-slate-100" title={`${view.manager.name} · ${view.manager.place}`}>
           <CrmNote title={current.summaryText} tone={current.summary.notDone > 0 ? "warn" : "neutral"}>
@@ -166,9 +196,26 @@ export function ManagerOwnListSection({ test }: { test: boolean }) {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // As the plans section: the picker keeps the list it was chosen from while the next one loads.
+  const [chosenFrom, setChosenFrom] = useState<ManagerOwnListView | null>(null);
   const view = list.data;
 
-  if (!view) return list.error ? <CrmLoadError message={list.error} onRetry={list.reload} /> : <CrmLoading label="Loading Manager's own list" />;
+  if (!view) {
+    const loading = list.error ? <CrmLoadError message={list.error} onRetry={list.reload} /> : <CrmLoading label="Loading Manager's own list" />;
+    if (!chosenFrom || chosenFrom.mode !== "pick" || !chosenFrom.managers) return loading;
+    return (
+      <>
+        <CrmBlock className="border-t border-slate-100" title="District manager">
+          <ManagerPicker label="District manager" managers={chosenFrom.managers} onPick={setManager} value={manager} />
+        </CrmBlock>
+        <CrmBlock className="border-t border-slate-100">{loading}</CrmBlock>
+      </>
+    );
+  }
+  const pickManager = (next: string) => {
+    setChosenFrom(view);
+    setManager(next);
+  };
 
   async function askRemoval(customer: ManagerCustomerView) {
     setBusy(true);
@@ -191,7 +238,7 @@ export function ManagerOwnListSection({ test }: { test: boolean }) {
     <>
       {view.mode === "pick" && view.managers ? (
         <CrmBlock className="border-t border-slate-100" title="District manager">
-          <ManagerPicker label="District manager" managers={view.managers} onPick={setManager} value={view.manager?.hrId ?? null} />
+          <ManagerPicker label="District manager" managers={view.managers} onPick={pickManager} value={view.manager?.hrId ?? null} />
         </CrmBlock>
       ) : null}
       {view.manager ? (

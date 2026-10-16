@@ -238,7 +238,7 @@ function RemovalDetail({ detail, backHref }: { detail: ManagerHubRemovalDetail; 
         </section>
         {detail.decideAs ? (
           <ManagerPlanDecisionActions
-            target={{ kind: "removal", customerId: detail.customerId }}
+            target={{ kind: "removal", customerId: detail.customerId, requestedAt: detail.requestedAt }}
             byAdministrator={detail.decideAs === "administrator"}
             backHref={backHref}
           />
