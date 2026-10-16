@@ -1,0 +1,204 @@
+// Configures the Sentry account for Phoenix over Sentry's REST API: the organisation's IP and data scrubbing, and
+// resolving the deliberate test issue — and CHECKS that an alert already emails on every new issue (it does not
+// create one: see scripts/lib/sentry-account-plan.mjs). Safe to run again — every step reads first and only
+// writes what is missing.
+//
+// Usage:
+//   node scripts/sentry-setup.mjs            read the account and print what it WOULD change (writes nothing)
+//   node scripts/sentry-setup.mjs --apply    make those changes
+//   node scripts/sentry-setup.mjs --probe    read only: print which alert and issue endpoints the account answers
+//   --url <base>                             API host; default https://de.sentry.io (the EU region)
+//
+// Needs SENTRY_AUTH_TOKEN in the environment: a personal token from sentry.io -> User settings -> Personal
+// Tokens, with the scopes org:read, org:write, project:read, project:write, alerts:write, event:admin. The
+// token is read from the environment only and is never printed, logged or written to a file.
+// docs/observability.md, "Operating Sentry from a terminal".
+
+import { pathToFileURL } from "node:url";
+
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+import {
+  describeToken,
+  orgPrivacyPatch,
+  pickOrg,
+  pickProject,
+  testIssues,
+  workflowCoveringNewIssues,
+} from "./lib/sentry-account-plan.mjs";
+
+refuseUnknownFlags({
+  name: "sentry-setup",
+  entry: import.meta.url,
+  known: ["--apply", "--url", "--probe"],
+  hints: [
+    "dry run (default): node scripts/sentry-setup.mjs",
+    "make the changes:   node scripts/sentry-setup.mjs --apply",
+    "which endpoints answer: node scripts/sentry-setup.mjs --probe",
+  ],
+});
+
+const TOKEN_HELP = [
+  "SENTRY_AUTH_TOKEN is not set. Create one, then run this again:",
+  "  1. sentry.io -> your name (bottom left) -> User settings -> Personal Tokens -> Create New Token",
+  "  2. scopes: org:read org:write project:read project:write alerts:write event:admin",
+  "  3. PowerShell:  $env:SENTRY_AUTH_TOKEN = '<paste the token>' ; node scripts/sentry-setup.mjs",
+  "     (the token lives only in that window; closing it forgets it)",
+];
+
+function flagValue(argv, flag) {
+  const at = argv.indexOf(flag);
+  return at >= 0 ? argv[at + 1] : undefined;
+}
+
+async function main() {
+  const argv = process.argv.slice(2);
+  const apply = argv.includes("--apply");
+  const base = String(flagValue(argv, "--url") ?? "https://de.sentry.io").replace(/\/+$/, "");
+  const token = process.env.SENTRY_AUTH_TOKEN;
+  if (!token) {
+    for (const line of TOKEN_HELP) console.error(line);
+    process.exit(1);
+  }
+  console.log(`sentry-setup: ${apply ? "APPLY" : "DRY RUN (writes nothing; add --apply to change the account)"} · ${base} · ${describeToken(token)}`);
+
+  async function api(method, path, body) {
+    const response = await fetch(`${base}/api/0${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const text = await response.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = text;
+    }
+    if (!response.ok) {
+      const detail = typeof data === "string" ? data : JSON.stringify(data);
+      const err = new Error(`${method} ${path} -> HTTP ${response.status} ${detail.slice(0, 400)}`);
+      err.status = response.status;
+      throw err;
+    }
+    return data;
+  }
+
+  const orgs = await api("GET", "/organizations/");
+  const org = pickOrg(orgs);
+  if (!org) {
+    console.error(`sentry-setup: cannot decide the organisation — the token sees ${orgs.length}: ${orgs.map((o) => o.slug).join(", ") || "none"}`);
+    process.exitCode = 1;
+    return;
+  }
+  const projects = await api("GET", `/organizations/${org.slug}/projects/`);
+  const project = pickProject(projects);
+  if (!project) {
+    console.error(`sentry-setup: cannot decide the project in ${org.slug}: ${projects.map((p) => p.slug).join(", ") || "none"}`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`  organisation  ${org.slug}\n  project       ${project.slug}`);
+  if (argv.includes("--probe")) {
+    await probe(base, token, org.slug, project.slug, project.id);
+    return;
+  }
+
+  // 1 · organisation-wide scrubbing
+  const orgDetail = await api("GET", `/organizations/${org.slug}/`);
+  const patch = orgPrivacyPatch(orgDetail);
+  if (Object.keys(patch).length === 0) {
+    console.log("  scrubbing     already on (IP addresses, data scrubber, default scrubbers)");
+  } else if (apply) {
+    await api("PUT", `/organizations/${org.slug}/`, patch);
+    console.log(`  scrubbing     SET ${Object.keys(patch).join(", ")}`);
+  } else {
+    console.log(`  scrubbing     WOULD SET ${Object.keys(patch).join(", ")}`);
+  }
+
+  // A step that Sentry's API refuses is reported and the rest still runs: one retired endpoint must not
+  // leave the scrubbing and the cleanup undone. The run then ends non-zero so it is never read as complete.
+  const unfinished = [];
+  async function step(label, work) {
+    try {
+      await work();
+    } catch (error) {
+      if (error.status === 404 || error.status === 405) {
+        unfinished.push(label);
+        console.log(`  ${label.padEnd(13)} NOT DONE — Sentry's API answered HTTP ${error.status} for this step (${error.message.split(" -> ")[0]})`);
+        return;
+      }
+      throw error;
+    }
+  }
+
+  // 2 · the email alert: Sentry's alert system already ships one that emails on every new high-priority issue
+  await step("alert", async () => {
+    const workflows = await api("GET", `/organizations/${org.slug}/workflows/`);
+    const covering = workflowCoveringNewIssues(workflows);
+    if (covering) {
+      const scope = covering.environment ? `only in the "${covering.environment}" environment` : "in every environment (only production ever sends)";
+      console.log(`  alert         OK — "${covering.name}" emails on new issues ${scope}; last fired ${covering.lastTriggered ?? "never"}`);
+    } else {
+      unfinished.push("alert");
+      console.log("  alert         NOT COVERED — no enabled alert emails on a new issue. In Sentry: Alerts -> Create Alert -> Issues, condition \"A new issue is created\", action Email.");
+    }
+  });
+
+  // 3 · the deliberate test issue
+  const issuesPath = `/organizations/${org.slug}/issues/`;
+  await step("test issue", async () => {
+    const issues = await api("GET", `${issuesPath}?project=${encodeURIComponent(project.id)}&statsPeriod=14d&query=${encodeURIComponent("is:unresolved")}`);
+    const stale = testIssues(issues);
+    if (stale.length === 0) {
+      console.log("  test issue    none open");
+    } else if (apply) {
+      const ids = stale.map((issue) => `id=${encodeURIComponent(issue.id)}`).join("&");
+      await api("PUT", `${issuesPath}?project=${encodeURIComponent(project.id)}&${ids}`, { status: "resolved" });
+      console.log(`  test issue    RESOLVED ${stale.length}`);
+    } else {
+      console.log(`  test issue    WOULD RESOLVE ${stale.length}`);
+    }
+  });
+
+  if (unfinished.length > 0) {
+    console.log(`sentry-setup: finished, but NOT DONE: ${unfinished.join(", ")}.`);
+    process.exitCode = 3;
+    return;
+  }
+  console.log("sentry-setup: finished");
+}
+
+// Reads only. Prints which of Sentry's alert and issue endpoints this account answers, so a retired path can be
+// replaced by one that works. No token, no secret and no issue content leaves this function: status and size.
+async function probe(base, token, orgSlug, projectSlug, projectId) {
+  const paths = [
+    `/organizations/${orgSlug}/`,
+    `/projects/${orgSlug}/${projectSlug}/rules/`,
+    `/projects/${orgSlug}/${projectSlug}/`,
+    `/organizations/${orgSlug}/combined-rules/?project=${projectId}`,
+    `/organizations/${orgSlug}/alert-rules/`,
+    `/organizations/${orgSlug}/workflows/`,
+    `/organizations/${orgSlug}/detectors/`,
+    `/organizations/${orgSlug}/issues/?project=${projectId}&statsPeriod=14d&query=is%3Aunresolved`,
+    `/projects/${orgSlug}/${projectSlug}/issues/?statsPeriod=14d`,
+  ];
+  for (const path of paths) {
+    const response = await fetch(`${base}/api/0${path}`, { headers: { Authorization: `Bearer ${token}` } });
+    const text = await response.text();
+    console.log(`  GET /api/0${path.split("?")[0]}  ->  HTTP ${response.status}  (${text.length} bytes)  ${response.ok ? "" : text.slice(0, 120)}`);
+    // The account's existing alerts are configuration, not secrets: their exact shape is what a new one is built from.
+    if (response.ok && path === `/organizations/${orgSlug}/workflows/`) {
+      console.log(`  --- existing workflows (alerts), as Sentry returns them ---\n${text}\n  --- end ---`);
+    }
+  }
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main().catch((error) => {
+    console.error(`sentry-setup: FAILED — ${error.message}`);
+    if (error.status === 401 || error.status === 403) {
+      console.error("  the token was rejected or is missing a scope (org:read org:write project:read project:write alerts:write event:admin)");
+    }
+    process.exitCode = 1;
+  });
+}
