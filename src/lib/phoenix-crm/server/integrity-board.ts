@@ -100,9 +100,30 @@ import { placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/s
 import { selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
+
+/**
+ * How many requests of one chunked read are in flight at once.
+ *
+ * Four, as everywhere else in Phoenix CRM that fans a database loop out: enough that a board of a few
+ * hundred cases stops waiting on one round trip after another, and few enough that one Super Admin
+ * opening the board cannot take a large share of the database's connections from the field app.
+ * The board's reads run side by side as well (`loadIntegrityBoard`), so this is per read, not overall.
+ */
+const CHUNK_READS_AT_ONCE = 4;
+
+/**
+ * How many one-row settlement updates of a bulk settle are in flight at once.
+ *
+ * Higher than a read's four because each is a single-row update by primary key — the cheapest write
+ * there is — and the batch is capped (`INTEGRITY_BULK_SETTLE_CAP`), so this bounds one button press
+ * at a handful of short statements at a time rather than two hundred in a row.
+ */
+const SETTLE_UPDATES_AT_ONCE = 8;
 
 /**
  * Which detector filed a case. The board is the one place they are read together.
@@ -684,11 +705,56 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
     const replay = signals.replay && typeof signals.replay === "object" ? (signals.replay as Record<string, unknown>) : {};
     return [...companions.map((entry) => String(entry ?? "")), String(replay.byRepHrId ?? "")].filter(Boolean);
   };
-  const [people, customers] = await Promise.all([
-    // Whoever SETTLED a case is loaded with the reps, because the board prints the name and never the
-    // HR id — the owner's standing rule holds for the person who closed the case as much as for the
-    // person it is about. The two people the EVIDENCE names come with them: the colleague recorded as
-    // off duty on a visit, and whoever used a replayed coordinate first.
+
+  // ── The reads, declared one by one and started together ───────────────────────────────────────
+  //
+  // 🔴 EACH READ BELOW WAS AWAITED AFTER THE ONE BEFORE IT UNTIL 2026-10-16 — eighteen to twenty-five
+  // round trips end to end, on the page and on the export alike (Phoenix CRM performance audit) —
+  // although almost none of them needs another's answer. Every read needs only the cases themselves,
+  // except three: the places and the places' own trail need the visits the cases point at, and the
+  // second names read needs the trail. So each read is DECLARED here with its reason beside it, as
+  // before, and one `Promise.all` further down starts them together: the board waits for its slowest
+  // chain of reads, never for the sum of them.
+  //
+  // 🔴 AND NOTHING ELSE MOVED. Every select is the select it was, chunked at 50 and non-fatal the way it
+  // was. A chunked read runs four chunks at a time and hands them back IN CHUNK ORDER, and its reader
+  // stops at the first chunk that failed — exactly the rows the one-after-another loop kept when it
+  // broke there — so even a failure leaves the board it left before.
+  const inChunksOf50 = <T>(length: number, read: (index: number) => Promise<T>): Promise<T[]> => {
+    const starts: number[] = [];
+    for (let index = 0; index < length; index += 50) starts.push(index);
+    return mapWithConcurrency(starts, CHUNK_READS_AT_ONCE, read);
+  };
+
+  /**
+   * One chunk of a read that GROWS WITH THE FIELD, keyset-paged on `id`.
+   *
+   * 🔴 TWO READS ON THIS BOARD WERE A SINGLE UNPAGED REQUEST PER CHUNK until 2026-10-16 — every visit of
+   * fifty customers, and the trail of fifty customers or places — and PostgREST answers any request
+   * with at most 1,000 rows and says nothing when it stops. Both grow with every working day, so the
+   * day a chunk passed 1,000 the story would have dropped visits and history lines with no sign of
+   * it. Keyset on `id`, never an offset: both tables are written to while this reads them.
+   *
+   * A page that fails is the whole chunk failing (`failed: true`, no rows), never a shorter answer —
+   * the reader then stops there, as it always did on a failed chunk.
+   */
+  const readGrowing = async (buildQuery: Parameters<typeof fetchAllRowsKeyset>[0]): Promise<{ rows: Row[]; failed: boolean }> => {
+    try {
+      const found = await fetchAllRowsKeyset<Row>(buildQuery, {
+        cursorColumn: "id",
+        cursorOf: (entry) => (entry.id === null || entry.id === undefined ? null : String(entry.id)),
+      });
+      return { rows: found, failed: false };
+    } catch {
+      return { rows: [], failed: true };
+    }
+  };
+
+  // Whoever SETTLED a case is loaded with the reps, because the board prints the name and never the
+  // HR id — the owner's standing rule holds for the person who closed the case as much as for the
+  // person it is about. The two people the EVIDENCE names come with them: the colleague recorded as
+  // off duty on a visit, and whoever used a replayed coordinate first.
+  const readPeople = (): Promise<PeopleNames> =>
     loadPeopleNames([
       ...new Set(
         [
@@ -698,14 +764,23 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
           ...behaviourRead.repHrIds,
         ].filter(Boolean),
       ),
-    ]),
-    // The customer's own list and speciality ride along with the name: both are filter groups the
-    // owner asked for, and the story says "on the PM list" rather than printing a code. There is no
-    // `ampm` column on this table — `list_type` is the AM/PM answer.
-    customerIds.length === 0
-      ? Promise.resolve({ data: [] as Row[] })
-      : supabase.from("phoenix_crm_customers").select("id, name, speciality, list_type").in("id", customerIds),
-  ]);
+    ]);
+
+  // The customer's own list and speciality ride along with the name: both are filter groups the
+  // owner asked for, and the story says "on the PM list" rather than printing a code. There is no
+  // `ampm` column on this table — `list_type` is the AM/PM answer.
+  //
+  // 🔴 CHUNKED SINCE 2026-10-16. It was the one id list on this board sent whole, and an over-long
+  // `.in()` comes back empty with no error — every case would have printed its customer as "—" on
+  // the day the board passed a few hundred customers. Non-fatal per chunk, as the single read was
+  // non-fatal: a chunk that fails leaves its own customers unnamed and nothing else.
+  const readCustomers = async (): Promise<Row[]> => {
+    const pages = await inChunksOf50(customerIds.length, async (index) =>
+      await supabase.from("phoenix_crm_customers").select("id, name, speciality, list_type").in("id", customerIds.slice(index, index + 50)),
+    );
+    return pages.flatMap((page) => (page.data ?? []) as Row[]);
+  };
+
   // The distance a visit was saved from its place already exists on the visit row, written at
   // capture. Read it rather than recompute it: recomputing would let this board and the
   // place-vs-actual report print two different numbers for one visit, and the report is the one
@@ -715,25 +790,30 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   // `phoenix_crm_visits` — a customer id asked of the visits table, which simply returns nothing and
   // leaves the case reading as a visit saved at its place. Only a visit has a distance from a place.
   const visitIds = [...new Set(rows.filter((row) => row.subject_kind === "visit").map((row) => String(row.subject_id)).filter(Boolean))];
-  const visitDistances = new Map<string, { distanceMeters: number | null; locationFlag: string | null }>();
-  // Chunked at 50: a PostgREST `.in()` carrying several hundred ids comes back `{ data: [] }` past
-  // some URL length, and an empty set here would read as “every case is at its place”.
-  for (let index = 0; index < visitIds.length; index += 50) {
-    const { data: visitRows, error: visitError } = await supabase
-      .from("phoenix_crm_visits")
-      .select("id, distance_meters, location_flag")
-      .in("id", visitIds.slice(index, index + 50));
-    // Non-fatal: the board is about the flags, and a missing distance must never blank it.
-    if (visitError) break;
-    for (const visit of (visitRows ?? []) as Array<{ id: string; distance_meters: number | string | null; location_flag: string | null }>) {
-      const raw = visit.distance_meters;
-      const parsed = raw === null || raw === undefined || raw === "" ? null : Number(raw);
-      visitDistances.set(String(visit.id), {
-        distanceMeters: parsed !== null && Number.isFinite(parsed) ? parsed : null,
-        locationFlag: visit.location_flag ? String(visit.location_flag) : null,
-      });
+  const readVisitDistances = async (): Promise<Map<string, { distanceMeters: number | null; locationFlag: string | null }>> => {
+    const visitDistances = new Map<string, { distanceMeters: number | null; locationFlag: string | null }>();
+    // Chunked at 50: a PostgREST `.in()` carrying several hundred ids comes back `{ data: [] }` past
+    // some URL length, and an empty set here would read as “every case is at its place”.
+    const pages = await inChunksOf50(visitIds.length, async (index) =>
+      await supabase
+        .from("phoenix_crm_visits")
+        .select("id, distance_meters, location_flag")
+        .in("id", visitIds.slice(index, index + 50)),
+    );
+    for (const { data: visitRows, error: visitError } of pages) {
+      // Non-fatal: the board is about the flags, and a missing distance must never blank it.
+      if (visitError) break;
+      for (const visit of (visitRows ?? []) as Array<{ id: string; distance_meters: number | string | null; location_flag: string | null }>) {
+        const raw = visit.distance_meters;
+        const parsed = raw === null || raw === undefined || raw === "" ? null : Number(raw);
+        visitDistances.set(String(visit.id), {
+          distanceMeters: parsed !== null && Number.isFinite(parsed) ? parsed : null,
+          locationFlag: visit.location_flag ? String(visit.location_flag) : null,
+        });
+      }
     }
-  }
+    return visitDistances;
+  };
 
   // Every visit each flagged customer saved, as points — what the place's own readings are judged
   // against (owner, 13 October 2026: drop the pin, compare the visits with the photograph). Keyed by
@@ -743,11 +823,10 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   // 🔴 NOTHING IS MEASURED HERE, same as `readingsFor`: the metres belong to the pure view module,
   // and `tests/crm-integrity-place-distance.test.ts` refuses any distance derived in this file by
   // reading its SOURCE, comments included — so even naming the formula here turns that pin red.
-  // Chunked at 50
-  // and non-fatal for the reason the visit distances are — an empty set must read as "no visit to
-  // compare", which is what the sentence says, never as "the visits agree".
+  // Chunked at 50 and non-fatal for the reason the visit distances are — an empty set must read as
+  // "no visit to compare", which is what the sentence says, never as "the visits agree" — and
+  // keyset-paged within each chunk (`readGrowing`), because fifty customers' visits pass 1,000 rows.
   const caseCustomerIds = [...new Set(rows.map((row) => String(row.customer_id ?? "")).filter(Boolean))];
-  const customerVisitPoints = new Map<string, CaseVisitPoint[]>();
   // Its own parse: the loader's `num` is a `const` declared further down, so reaching for it here
   // would be a reference error at runtime and not a type error at build time.
   const coordinate = (value: unknown): number | null => {
@@ -755,60 +834,66 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   };
-  for (let index = 0; index < caseCustomerIds.length; index += 50) {
-    const { data: pointRows, error: pointError } = await supabase
-      .from("phoenix_crm_visits")
-      .select("customer_id, lat, lon, accuracy_meters, captured_at")
-      .in("customer_id", caseCustomerIds.slice(index, index + 50))
-      .eq("is_test", false)
-      .not("lat", "is", null);
-    if (pointError) break;
-    for (const visit of (pointRows ?? []) as Array<Record<string, unknown>>) {
-      const customerId = String(visit.customer_id ?? "");
-      const latitude = coordinate(visit.lat);
-      const longitude = coordinate(visit.lon);
-      if (customerId === "" || latitude === null || longitude === null) continue;
-      const kept = customerVisitPoints.get(customerId) ?? [];
-      kept.push({
-        lat: latitude,
-        lon: longitude,
-        accuracyMeters: coordinate(visit.accuracy_meters),
-        atIso: typeof visit.captured_at === "string" && visit.captured_at !== "" ? visit.captured_at : null,
-      });
-      customerVisitPoints.set(customerId, kept);
+  const readCustomerVisitPoints = async (): Promise<Map<string, CaseVisitPoint[]>> => {
+    const customerVisitPoints = new Map<string, CaseVisitPoint[]>();
+    const pages = await inChunksOf50(caseCustomerIds.length, (index) =>
+      readGrowing(() =>
+        supabase
+          .from("phoenix_crm_visits")
+          // `id` is the keyset cursor and nothing else; the point is still the four readings.
+          .select("id, customer_id, lat, lon, accuracy_meters, captured_at")
+          .in("customer_id", caseCustomerIds.slice(index, index + 50))
+          .eq("is_test", false)
+          .not("lat", "is", null),
+      ),
+    );
+    for (const { rows: pointRows, failed } of pages) {
+      if (failed) break;
+      for (const visit of pointRows) {
+        const customerId = String(visit.customer_id ?? "");
+        const latitude = coordinate(visit.lat);
+        const longitude = coordinate(visit.lon);
+        if (customerId === "" || latitude === null || longitude === null) continue;
+        const kept = customerVisitPoints.get(customerId) ?? [];
+        kept.push({
+          lat: latitude,
+          lon: longitude,
+          accuracyMeters: coordinate(visit.accuracy_meters),
+          atIso: typeof visit.captured_at === "string" && visit.captured_at !== "" ? visit.captured_at : null,
+        });
+        customerVisitPoints.set(customerId, kept);
+      }
     }
-  }
+    return customerVisitPoints;
+  };
 
   // What each flagged place's signboard reads NOW. The place row is the only record of that — the
   // nightly pass keeps a verdict there for every place, flagged or not — so a flag that a later
   // reading has taken the ground out from under can be told apart from one that still stands.
   // Chunked at 50 for the same reason the visits are.
   const signboardPlaceIds = [...new Set(rows.filter((row) => row.source === "signboard").map((row) => String(row.subject_id)).filter(Boolean))];
-  const placeSignboards = new Map<string, StoredSignboardVerdict>();
-  for (let index = 0; index < signboardPlaceIds.length; index += 50) {
-    const { data: placeRows, error: placeError } = await supabase
-      .from("phoenix_crm_places")
-      .select("id, signboard_check")
-      .in("id", signboardPlaceIds.slice(index, index + 50));
-    // Non-fatal, and it fails towards leaving the flag standing: a place whose current verdict could
-    // not be read keeps its case in the live list, which is where an unknown belongs.
-    if (placeError) break;
-    for (const place of (placeRows ?? []) as Array<{ id: string; signboard_check: unknown }>) {
-      // One coercion, shared with Phoenix Ranks' own reader — the two must agree about a withdrawn
-      // case or a rep is charged on one screen for a finding the other has already dropped.
-      const stored = readStoredSignboardVerdict(place.signboard_check);
-      if (!stored) continue;
-      placeSignboards.set(String(place.id), stored);
+  const readPlaceSignboards = async (): Promise<Map<string, StoredSignboardVerdict>> => {
+    const placeSignboards = new Map<string, StoredSignboardVerdict>();
+    const pages = await inChunksOf50(signboardPlaceIds.length, async (index) =>
+      await supabase
+        .from("phoenix_crm_places")
+        .select("id, signboard_check")
+        .in("id", signboardPlaceIds.slice(index, index + 50)),
+    );
+    for (const { data: placeRows, error: placeError } of pages) {
+      // Non-fatal, and it fails towards leaving the flag standing: a place whose current verdict could
+      // not be read keeps its case in the live list, which is where an unknown belongs.
+      if (placeError) break;
+      for (const place of (placeRows ?? []) as Array<{ id: string; signboard_check: unknown }>) {
+        // One coercion, shared with Phoenix Ranks' own reader — the two must agree about a withdrawn
+        // case or a rep is charged on one screen for a finding the other has already dropped.
+        const stored = readStoredSignboardVerdict(place.signboard_check);
+        if (!stored) continue;
+        placeSignboards.set(String(place.id), stored);
+      }
     }
-  }
-
-  const laterReadingFor = (row: Row): IntegrityLaterReading | null =>
-    judgeLaterSignboardReading({
-      source: String(row.source ?? ""),
-      flags: (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag)),
-      filedAt: row.created_at ? String(row.created_at) : null,
-      stored: placeSignboards.get(String(row.subject_id)) ?? null,
-    });
+    return placeSignboards;
+  };
 
   // ── The evidence that turns a case into something a reader can judge ──────────────────────────
   //
@@ -821,9 +906,12 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   // the photograph and the pin as well would make a single read answer two questions, and the next
   // session to change the story's evidence would be editing the line that holds the distance rule.
   const readByIds = async (table: string, columns: string, ids: string[]): Promise<Row[]> => {
-    const out: Row[] = [];
-    for (let index = 0; index < ids.length; index += 50) {
+    const pages = await inChunksOf50(ids.length, async (index) => {
       const { data, error } = await supabase.from(table).select(columns).in("id", ids.slice(index, index + 50));
+      return { data, error };
+    });
+    const out: Row[] = [];
+    for (const { data, error } of pages) {
       // Non-fatal, like every other lookup on this board: the case itself is already read, and a
       // missing photograph or a missing pin must never take the finding off the screen.
       if (error) break;
@@ -838,64 +926,116 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   const placeKindIds = [...new Set(rows.filter((row) => row.subject_kind === "place").map((row) => String(row.subject_id)).filter(Boolean))];
   const sharedKindIds = [...new Set(rows.filter((row) => row.subject_kind === "shared_place").map((row) => String(row.subject_id)).filter(Boolean))];
 
-  const visitEvidenceRows = await readByIds(
-    "phoenix_crm_visits",
-    "id, photo_path, lat, lon, accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_captured_at, captured_at, place_id",
-    visitIds,
-  );
-  const visitEvidence = new Map<string, Row>();
-  for (const found of visitEvidenceRows) visitEvidence.set(String(found.id), found);
+  const readVisitEvidence = (): Promise<Row[]> =>
+    readByIds(
+      "phoenix_crm_visits",
+      "id, photo_path, lat, lon, accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_captured_at, captured_at, place_id",
+      visitIds,
+    );
 
   // The places read here are the place CASES plus the place each flagged visit was saved against —
   // a visit case's story is "the pin you saved and the place on the list are N apart", which needs
-  // the place's own point and cannot be told from the visit row alone.
-  const placeEvidenceIds = [
-    ...new Set([
-      ...placeKindIds,
-      ...visitEvidenceRows.map((found) => (found.place_id ? String(found.place_id) : "")).filter(Boolean),
-      // And the place each case was JUDGED against where the detector named one — see
-      // `anchorPlaceIdOf`. Without this the visit-against-the-photograph cases would resolve to
-      // the visit's own place, or to nothing at all when the visit carries no `place_id`.
-      ...rows.map((row) => anchorPlaceIdOf(row)).filter((id): id is string => id !== null),
-    ]),
-  ];
-  const placeEvidence = new Map<string, Row>();
-  for (const found of await readByIds(
-    "phoenix_crm_places",
-    "id, label, lat, lon, accuracy_meters, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, photo_captured_at, captured_at, brick_name, brick_distance_km, area_name, region_name",
-    placeEvidenceIds,
-  )) {
-    placeEvidence.set(String(found.id), found);
-  }
+  // the place's own point and cannot be told from the visit row alone. That is why this read, alone
+  // among the evidence, waits for the visits: it cannot know which places to ask for before them.
+  const readPlaceEvidence = (visitEvidenceRows: Row[]): Promise<Row[]> => {
+    const placeEvidenceIds = [
+      ...new Set([
+        ...placeKindIds,
+        ...visitEvidenceRows.map((found) => (found.place_id ? String(found.place_id) : "")).filter(Boolean),
+        // And the place each case was JUDGED against where the detector named one — see
+        // `anchorPlaceIdOf`. Without this the visit-against-the-photograph cases would resolve to
+        // the visit's own place, or to nothing at all when the visit carries no `place_id`.
+        ...rows.map((row) => anchorPlaceIdOf(row)).filter((id): id is string => id !== null),
+      ]),
+    ];
+    return readByIds(
+      "phoenix_crm_places",
+      "id, label, lat, lon, accuracy_meters, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, photo_captured_at, captured_at, brick_name, brick_distance_km, area_name, region_name",
+      placeEvidenceIds,
+    );
+  };
 
-  const sharedEvidence = new Map<string, Row>();
-  for (const found of await readByIds(
-    "phoenix_crm_shared_places",
-    "id, name, lat, lon, accuracy_meters, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, photo_captured_at, captured_at, brick_name, brick_distance_km, area_name, region_name",
-    sharedKindIds,
-  )) {
-    sharedEvidence.set(String(found.id), found);
-  }
+  const readSharedEvidence = (): Promise<Row[]> =>
+    readByIds(
+      "phoenix_crm_shared_places",
+      "id, name, lat, lon, accuracy_meters, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, photo_captured_at, captured_at, brick_name, brick_distance_km, area_name, region_name",
+      sharedKindIds,
+    );
 
   // What has happened to this customer and to this place, from the module's own trail of decisions.
   // Two reads because the trail is keyed two ways — a case about a place and a case about a customer
   // each has its own column — and `.in()` on the wrong one returns nothing without saying so.
-  const historyRows: Row[] = [];
-  const eventColumns = "created_at, event_type, actor_hr_id, customer_id, place_id";
-  const readEventsBy = async (column: string, ids: string[]): Promise<void> => {
-    for (let index = 0; index < ids.length; index += 50) {
-      const { data, error } = await supabase
-        .from("phoenix_crm_list_events")
-        .select(eventColumns)
-        .in(column, ids.slice(index, index + 50))
-        .order("created_at", { ascending: true });
-      if (error) break;
-      for (const found of (data ?? []) as Row[]) historyRows.push(found);
+  //
+  // Keyset-paged within each chunk (`readGrowing`), so each chunk comes back in `id` order and is put
+  // back in the trail's own order here: oldest first, as the query used to ask, and two events of the
+  // same instant — one save often writes two — in the order they were written, which the old query
+  // left to the planner. The case's story sorts its own lines oldest first again in any case.
+  const eventColumns = "id, created_at, event_type, actor_hr_id, customer_id, place_id";
+  const readEventsBy = async (column: string, ids: string[]): Promise<Row[]> => {
+    const pages = await inChunksOf50(ids.length, (index) =>
+      readGrowing(() => supabase.from("phoenix_crm_list_events").select(eventColumns).in(column, ids.slice(index, index + 50))),
+    );
+    const out: Row[] = [];
+    for (const { rows: eventRows, failed } of pages) {
+      if (failed) break;
+      const oldestFirst = [...eventRows].sort((left, right) => {
+        const leftAt = String(left.created_at ?? "");
+        const rightAt = String(right.created_at ?? "");
+        if (leftAt !== rightAt) return leftAt < rightAt ? -1 : 1;
+        return Number(left.id) - Number(right.id);
+      });
+      for (const found of oldestFirst) out.push(found);
     }
+    return out;
   };
-  const historyPlaceIds = [...new Set([...placeKindIds, ...visitEvidenceRows.map((found) => (found.place_id ? String(found.place_id) : "")).filter(Boolean)])];
-  await readEventsBy("customer_id", customerIds);
-  await readEventsBy("place_id", historyPlaceIds);
+
+  // The trail of the places — the place cases' own, and the place each flagged visit was saved
+  // against — so it too waits for the visits, and runs beside the places read rather than after it.
+  const readPlaceEvents = (visitEvidenceRows: Row[]): Promise<Row[]> =>
+    readEventsBy("place_id", [
+      ...new Set([...placeKindIds, ...visitEvidenceRows.map((found) => (found.place_id ? String(found.place_id) : "")).filter(Boolean)]),
+    ]);
+
+  // ── Started together: every read above, each as soon as what it needs is known ────────────────
+  //
+  // The visits-dependent pair is chained onto the visits read itself, so it starts the moment those
+  // rows arrive instead of waiting for the slowest of the rest. `loadPeopleNames` still throws on a
+  // failed read, exactly as it did when it ran first — every other read here is non-fatal.
+  const visitEvidenceRead = readVisitEvidence();
+  const placeStageRead = visitEvidenceRead.then((visitEvidenceRows) =>
+    Promise.all([readPlaceEvidence(visitEvidenceRows), readPlaceEvents(visitEvidenceRows)]),
+  );
+  const [people, customerRows, visitDistances, customerVisitPoints, placeSignboards, visitEvidenceRows, sharedRows, customerEventRows, [placeRows, placeEventRows]] =
+    await Promise.all([
+      readPeople(),
+      readCustomers(),
+      readVisitDistances(),
+      readCustomerVisitPoints(),
+      readPlaceSignboards(),
+      visitEvidenceRead,
+      readSharedEvidence(),
+      readEventsBy("customer_id", customerIds),
+      placeStageRead,
+    ]);
+
+  const laterReadingFor = (row: Row): IntegrityLaterReading | null =>
+    judgeLaterSignboardReading({
+      source: String(row.source ?? ""),
+      flags: (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag)),
+      filedAt: row.created_at ? String(row.created_at) : null,
+      stored: placeSignboards.get(String(row.subject_id)) ?? null,
+    });
+
+  const visitEvidence = new Map<string, Row>();
+  for (const found of visitEvidenceRows) visitEvidence.set(String(found.id), found);
+  const placeEvidence = new Map<string, Row>();
+  for (const found of placeRows) placeEvidence.set(String(found.id), found);
+  const sharedEvidence = new Map<string, Row>();
+  for (const found of sharedRows) sharedEvidence.set(String(found.id), found);
+
+  // The customer trail first and the place trail after it, as the two reads used to land: a line on
+  // both keys is one row met twice, and the story drops the second copy.
+  const historyRows: Row[] = [...customerEventRows, ...placeEventRows];
 
   // Whoever acted is named, never numbered — the owner's standing rule, which is why this is a
   // second people read: the actors are only known once the trail has been read.
@@ -929,7 +1069,7 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   const customerNames = new Map<string, string>();
   const customerLists = new Map<string, string>();
   const customerSpecialities = new Map<string, string>();
-  for (const row of ((customers as { data?: Row[] }).data ?? []) as Row[]) {
+  for (const row of customerRows) {
     customerNames.set(String(row.id), String(row.name ?? ""));
     if (row.list_type) customerLists.set(String(row.id), String(row.list_type));
     if (row.speciality) customerSpecialities.set(String(row.id), String(row.speciality));
@@ -1416,34 +1556,44 @@ export async function settleManyIntegrityCases(
 
   const supabase = getSupabaseAdmin();
   // Chunked for the same reason every `.in()` in this file is: an over-long one returns an empty set
-  // with no error at all, and an empty set here would read as "every case has gone".
-  const rows: Row[] = [];
-  for (let index = 0; index < caseIds.length; index += 50) {
+  // with no error at all, and an empty set here would read as "every case has gone". The chunks are
+  // read side by side and kept in their own order; a failed one still fails the whole request, as it
+  // did when they were read one after another.
+  const parts: string[][] = [];
+  for (let index = 0; index < caseIds.length; index += 50) parts.push(caseIds.slice(index, index + 50));
+  const pages = await mapWithConcurrency(parts, CHUNK_READS_AT_ONCE, async (part) => {
     const { data, error } = await supabase
       .from("phoenix_crm_location_integrity")
       .select("id, flags")
-      .in("id", caseIds.slice(index, index + 50));
+      .in("id", part);
     throwIfError(error);
-    rows.push(...((data ?? []) as Row[]));
-  }
+    return (data ?? []) as Row[];
+  });
+  const rows: Row[] = pages.flat();
   const byId = new Map(rows.map((row) => [String(row.id ?? "").toLowerCase(), row]));
 
   const at = new Date().toISOString();
   const by = viewer.hrId.toUpperCase();
-  const settled: string[] = [];
-  for (const caseId of caseIds) {
+  // 🔴 STILL ONE `.update()` PER ROW — only no longer one AFTER another. Up to 200 updates used to run
+  // in sequence while he waited on the button (Phoenix CRM performance audit, 2026-10-16); they now
+  // run a few at a time. Each still stamps that row's own flags, and each answer is put back IN THE
+  // ORDER HE TICKED THEM — results are placed by index — so `settled` and `failed` read exactly as
+  // they did, and one row failing still stops none of the others.
+  const outcomes = await mapWithConcurrency(caseIds, SETTLE_UPDATES_AT_ONCE, async (caseId): Promise<string | null> => {
     const row = byId.get(caseId);
-    if (!row) {
-      failed.push({ caseId, message: "This case is no longer there." });
-      continue;
-    }
+    if (!row) return "This case is no longer there.";
     const flagsNow = (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag));
     const updated = await supabase
       .from("phoenix_crm_location_integrity")
       .update({ settled_at: at, settled_by: by, settled_note: note, settled_flags: flagsNow })
       .eq("id", caseId);
-    if (updated.error) {
-      failed.push({ caseId, message: updated.error.message });
+    return updated.error ? updated.error.message : null;
+  });
+  const settled: string[] = [];
+  for (const [position, caseId] of caseIds.entries()) {
+    const message = outcomes[position];
+    if (message !== null) {
+      failed.push({ caseId, message });
       continue;
     }
     settled.push(caseId);

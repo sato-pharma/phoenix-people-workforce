@@ -609,7 +609,16 @@ function runBulkSettleTests() {
     /flagsNow = \(Array\.isArray\(row\.flags\)/.test(bulk),
     "the flags are read from the ROW, never from the request",
   );
-  assert.ok(/for \(const caseId of caseIds\)[\s\S]*\.update\(/.test(bulk), "the update is per row, inside the loop");
+  // The updates run a few at a time since 2026-10-16 (Phoenix CRM performance audit) — still ONE per
+  // ticked case, inside the per-case callback, and read back in the order he ticked them.
+  assert.ok(
+    /mapWithConcurrency\(caseIds, SETTLE_UPDATES_AT_ONCE, async \(caseId\)[\s\S]*\.update\(\{[\s\S]*\}\)\s*\.eq\("id", caseId\)/.test(bulk),
+    "the update is per row, one call per ticked case, narrowed to that case's own id",
+  );
+  assert.ok(
+    /for \(const \[position, caseId\] of caseIds\.entries\(\)\)[\s\S]*outcomes\[position\]/.test(bulk),
+    "the answers are read back in the order the cases were ticked, so settled and failed keep his order",
+  );
   assert.ok(!/\.update\(\{[\s\S]*\}\)\s*\n?\s*\.in\(/.test(bulk), "a single update over an .in() would stamp one case's flags on the batch");
 
   // A 404 and never a 403: naming this board is the disclosure.
