@@ -10,6 +10,8 @@
 
 import {
   JOB_POST_MAX_AREAS,
+  JOB_POST_MAX_EDITS,
+  JOB_POST_MAX_EDIT_LENGTH,
   isJobPostTemplateKey,
   type JobPostContent,
   type JobPostLine,
@@ -164,9 +166,28 @@ export function postRequestViolations(input: { draft: JobPostTitleDraft; areas: 
  * the SERVER supplies. The WhatsApp number and the careers address never come from a request — a post
  * cannot be pointed at somebody else's number from the browser.
  */
+/**
+ * The words a person typed over the picture, as the request carries them: a plain object of text to
+ * text. Anything else reads as none, a pair with a blank key or an over-long side is dropped, and at most
+ * JOB_POST_MAX_EDITS are kept — so a replayed or hand-made request cannot make the renderer do unbounded work.
+ */
+export function coerceTextEdits(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, string> = {};
+  for (const [rawKey, rawValue] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof rawValue !== "string") continue;
+    const key = rawKey.replace(/\s+/g, " ").trim();
+    const next = rawValue.replace(/\s+/g, " ").trim();
+    if (!key || key.length > JOB_POST_MAX_EDIT_LENGTH || next.length > JOB_POST_MAX_EDIT_LENGTH || key === next) continue;
+    out[key] = next;
+    if (Object.keys(out).length >= JOB_POST_MAX_EDITS) break;
+  }
+  return out;
+}
+
 export function contentFromDraft(
   draft: JobPostTitleDraft,
-  post: { areas: string[]; line: string | null; areaNoun?: "area" | "region" },
+  post: { areas: string[]; line: string | null; areaNoun?: "area" | "region"; edits?: Record<string, string> },
   apply: { whatsapp: string; careers: string },
 ): JobPostContent {
   return {
@@ -184,5 +205,6 @@ export function contentFromDraft(
     menuName: draft.menuName || draft.title,
     whatsapp: apply.whatsapp,
     careers: apply.careers,
+    ...(post.edits && Object.keys(post.edits).length ? { edits: post.edits } : {}),
   };
 }
