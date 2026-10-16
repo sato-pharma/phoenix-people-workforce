@@ -104,6 +104,9 @@ export type HrTask = {
 /** The statuses that mean a requisition is live recruiting rather than history. */
 const OPEN_REQUISITION_STATUSES = new Set(["req_open", "req_published"]);
 
+/** The statuses after which nobody can be moved forward on a requisition any more. */
+const DEAD_REQUISITION_STATUSES = new Set(["req_filled", "req_closed", "req_cancelled"]);
+
 /**
  * The directory's open seats, deduped the one way every other seat surface does it.
  *
@@ -125,6 +128,29 @@ export function openWorkforceSeats(directory: EmployeeDirectoryData) {
 }
 
 /**
+ * Seats the owner has ruled to leave empty until he hires into them, so no recruiting queue may ask
+ * anyone to "raise a requisition" for them (owner, 2026-09-30: "we will hire soon neglect cairo
+ * pedia dm and reps now"; Anti Infective Menoufia 1 is parked the same way). They are still EMPTY
+ * seats — the Vacant Seats count and the Vacancy Report keep listing them — they are just not
+ * recruiting nobody has started. Matched by line and area NAME, because `position_vacancies` is one
+ * row per vacancy EVENT and a seat that empties again gets a new code and a new row id.
+ */
+const PARKED_SEATS: ReadonlyArray<{ areaNames: readonly string[]; lineName: string }> = [
+  { areaNames: ["Cairo", "Heliopolis", "Nasr City", "Cairo East 1", "Cairo East 2", "Cairo West"], lineName: "Pedia" },
+  { areaNames: ["Menoufia 1"], lineName: "Anti Infective" },
+];
+
+function isParkedSeat(seat: { areaName?: string | null; lineName?: string | null }): boolean {
+  const line = String(seat.lineName ?? "").trim().toLowerCase();
+  const area = String(seat.areaName ?? "").trim().toLowerCase();
+  if (!line || !area) return false;
+  return PARKED_SEATS.some(
+    (parked) =>
+      parked.lineName.toLowerCase() === line && parked.areaNames.some((name) => name.toLowerCase() === area),
+  );
+}
+
+/**
  * The recruiting picture, split the one way that makes it honest.
  *
  * ONE FUNCTION, TWO READERS — the task list and the Recruiting tiles both call this, so the board
@@ -134,11 +160,13 @@ export function openWorkforceSeats(directory: EmployeeDirectoryData) {
  * organogram counted SEATS, and no screen put the two beside each other.
  *
  * Generic on purpose. It needs one field from each row and nothing else, so it can be driven
- * directly by a test with plain literals rather than by a full recruitment dashboard.
+ * directly by a test with plain literals rather than by a full recruitment dashboard. A seat's
+ * area and line names are read only when the row carries them, to leave the PARKED_SEATS out of
+ * `unrecruitedSeats` — and only there: a requisition raised against one still counts as live.
  */
 export function splitVacanciesByRequisition<
   R extends { status: string; vacancyId: number | null },
-  V extends { vacancyId: number },
+  V extends { areaName?: string | null; lineName?: string | null; vacancyId: number },
 >(
   requisitions: readonly R[],
   vacancies: readonly V[],
@@ -160,7 +188,9 @@ export function splitVacanciesByRequisition<
     staleRequisitions: openRequisitions.filter(
       (row) => row.vacancyId !== null && !openSeatIds.has(row.vacancyId),
     ),
-    unrecruitedSeats: vacancies.filter((vacancy) => !requisitionedSeatIds.has(vacancy.vacancyId)),
+    unrecruitedSeats: vacancies.filter(
+      (vacancy) => !requisitionedSeatIds.has(vacancy.vacancyId) && !isParkedSeat(vacancy),
+    ),
   };
 }
 
@@ -582,7 +612,14 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
 
   // ── Recruiting ─────────────────────────────────────────────────────────────
   if (loaded.recruitment) {
-    const applications = loaded.recruitment.applications;
+    // An application on a requisition that is already FILLED, closed or cancelled is waiting on
+    // nothing — the seat it was for is gone — so it is not work for her. Measured 2026-10-16: the one
+    // "Move 1 interview forward" row was an application sitting at HR interview for 61 days on a
+    // requisition whose status was `req_filled`, with no interview booking ever made. No requisition
+    // at all (a candidate pooled before one was raised) stays in, as before.
+    const applications = loaded.recruitment.applications.filter(
+      (row) => !row.requisition || !DEAD_REQUISITION_STATUSES.has(row.requisition.status),
+    );
 
     const screening = applications.filter((row) => SCREENING_STAGES.has(row.stage));
     tasks.push(

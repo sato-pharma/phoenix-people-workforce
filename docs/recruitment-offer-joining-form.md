@@ -57,7 +57,8 @@ Employee chain in its order (`src/lib/offers/joining-form-service.ts`): `upsertE
 Owner, 2026-10-09: *"send the notification to SFE and HR and manager and manager of manager"*, his
 example being "Omar Arwa (Sohag 1) accepted the offer. Hire date: 11-1-2026."
 
-- HR (the `accepted_offer_alert` audience, Super Admin and HR Operations by default) keeps the fuller
+- HR (the `accepted_offer_alert` audience — Super Admin, HR Operations and, since 2026-10-16, the
+  Talent Acquisition seat `HR Resourcing`, by default) keeps the fuller
   notice it always had — the record, the seat, the Sato email, what is left to do.
 - A second, short notice (`announceAcceptedOfferToTeam`, event `offer_accepted_team`) goes to the
   **SFE Manager** (by role, so no policy row and no migration), the hire's **manager** and that

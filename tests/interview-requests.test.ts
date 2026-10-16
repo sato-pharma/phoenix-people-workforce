@@ -92,6 +92,8 @@ export async function runInterviewRequestTests() {
   const notify = stripComments(read("src/lib/recruitment/interview-request-notifications.ts"));
   assert.match(notify, /resolveHrIdsForRole\("Super Admin"/, "the inbox notice reaches the Super Admin");
   assert.match(notify, /resolveHrIdsForRole\("HR Operations"/, "and HR Operations");
+  assert.match(notify, /resolveHrIdsForRole\("HR Resourcing"/, "and the Talent Acquisition seat, who reads the calendar (owner, 2026-10-16)");
+  assert.match(notify, /HR will phone the candidates/, "her copy says what HR will do — she cannot give a CV its time herself");
   assert.match(notify, /interview-request-created:/, "the new-request notice is deduped per recipient");
   assert.match(notify, /interview-request-scheduled:/, "the requester is told once per booked CV");
   assert.match(notify, /interview-assigned:/, "the interviewer is told once per interview");

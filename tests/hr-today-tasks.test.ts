@@ -32,6 +32,7 @@ import { currentCairoDateOnlyIso } from "../src/lib/i18n/format.ts";
 import { countUnoccupiedWorkforceSeats } from "../src/lib/platform/metrics.ts";
 import { isProbationDecisionOutstanding } from "../src/lib/probation/service.ts";
 import type { ProbationDecision, ProbationRow } from "../src/lib/probation/types.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 function requisition(id: number, status: string, vacancyId: number | null) {
   return { id: `REQ-${id}`, status, vacancyId };
@@ -112,6 +113,56 @@ export async function runHrTodayTasksTests() {
       "a null vacancyId must not be read as 'the seat is filled' — that would invent work that does not exist",
     );
     assert.equal(split.unrecruitedSeats.length, 0, "seat 50 is requisitioned");
+  }
+
+  {
+    // Seats the owner parked (2026-09-30, "neglect cairo pedia dm and reps now"; Menoufia 1 the same
+    // way) are EMPTY but are not recruiting nobody has started — Talent Acquisition's board listed 7
+    // of them among "Raise a requisition for 42 empty seats" on 2026-10-16. Every other seat stays.
+    const parked = [
+      { areaName: "Cairo", lineName: "Pedia", vacancyId: 348 },
+      { areaName: "Heliopolis", lineName: "Pedia", vacancyId: 315 },
+      { areaName: "Nasr City", lineName: "pedia", vacancyId: 330 },
+      { areaName: "Cairo East 1", lineName: "Pedia", vacancyId: 292 },
+      { areaName: "Cairo East 2", lineName: "Pedia", vacancyId: 293 },
+      { areaName: "Cairo West", lineName: "Pedia", vacancyId: 246 },
+      { areaName: "Menoufia 1", lineName: "Anti Infective", vacancyId: 369 },
+    ];
+    const live = [
+      { areaName: "Kafr El-Sheikh 1", lineName: "CNS", vacancyId: 400 },
+      { areaName: "Heliopolis", lineName: "CNS", vacancyId: 401 },
+      { areaName: "Alexandria 1", lineName: "Pedia", vacancyId: 402 },
+      { areaName: null, lineName: null, vacancyId: 403 },
+    ];
+    const split = splitVacanciesByRequisition([], [...parked, ...live]);
+    assert.deepEqual(
+      split.unrecruitedSeats.map((row) => row.vacancyId),
+      [400, 401, 402, 403],
+      "the seven parked seats are not 'raise a requisition' work; a same-named area on another line, another Pedia area, and a seat with no names all stay",
+    );
+    const withRequisition = splitVacanciesByRequisition([requisition(9, "req_open", 348)], parked);
+    assert.equal(
+      withRequisition.openRequisitions.length,
+      1,
+      "a requisition raised against a parked seat is still live recruiting",
+    );
+  }
+
+  {
+    // An application on a requisition that is filled, closed or cancelled waits on nothing: Hanaa
+    // Mohamed Zaki sat at HR interview for 61 days on a `req_filled` requisition with no interview
+    // ever booked, and was the whole of "Move 1 interview forward".
+    const source = stripComments(readFileSync("src/lib/hr/today-tasks.ts", "utf8"));
+    assert.match(
+      source,
+      /DEAD_REQUISITION_STATUSES = new Set\(\["req_filled", "req_closed", "req_cancelled"\]\)/,
+      "the three terminal requisition statuses are named once",
+    );
+    assert.match(
+      source,
+      /const applications = loaded\.recruitment\.applications\.filter\(\s*\(row\) => !row\.requisition \|\| !DEAD_REQUISITION_STATUSES\.has\(row\.requisition\.status\)/,
+      "both the screening and the interview queue read applications on a live requisition only; one with no requisition stays in",
+    );
   }
 
   // ── 2. Seats are counted as SEATS, never as vacancy rows ───────────────────

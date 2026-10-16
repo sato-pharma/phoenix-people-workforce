@@ -107,8 +107,8 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   activity_inactivity_digest: { roles: ["Super Admin"], enabled: true },
   // 25th key, added 2026-10-02. Fires the moment a job offer is marked accepted, so the new hire
   // can be seated. Owner chose Super Admin + HR Operations, in-app + push + Telegram (he added
-  // Telegram when asked), and never email.
-  accepted_offer_alert: { roles: ["Super Admin", "HR Operations"], enabled: true },
+  // Telegram when asked), and never email. Talent Acquisition (HR Resourcing) added 2026-10-16.
+  accepted_offer_alert: { roles: ["Super Admin", "HR Operations", "HR Resourcing"], enabled: true },
 };
 
 export function runNotificationRoleRecipientsTests() {
