@@ -17,8 +17,11 @@ const LOOKUPS_PER_HOUR = 120;
 // POST = the place stamp burned into a live photo: the street address, the Phoenix brick, area and
 // region, and the coordinates — the same wording as every other Phoenix evidence photo. Same gate as
 // taking the photo (`create`); it reveals only the geography of a point the caller already holds, and
-// writes nothing. Each lookup is a paid street-address call, so it is limited per person; a refused
-// lookup costs the photo nothing — the phone stamps the coordinates alone.
+// writes nothing. Each lookup can be a paid street-address call, so it is limited per person; a refused
+// lookup costs the photo nothing — the phone stamps the coordinates alone. Since 2026-10-16 a capture
+// within ~11 m of one asked about in the last few hours is answered from memory instead of from Google
+// (`memoizeReverseGeocode`), and the allowance still counts EVERY lookup, remembered or not, so who is
+// refused and when is exactly what it was.
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
