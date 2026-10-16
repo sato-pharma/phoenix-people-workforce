@@ -685,13 +685,14 @@ export function runDistrictManagerFolderTests(): void {
       "it must ask canViewerSeeManagerCandidates about the board's OWN manager — restating the rule is how the offered set and the permitted set drift apart",
     );
 
-    // And the check itself must ASK the placement rule rather than restate it. A second copy of
-    // "who may see this" is how a screen and its gate drift into disagreeing, which is the shape
-    // that ends with a manager reading a CV the folders would never have shown him.
+    // And the check itself must ASK the same fact that fills the folders rather than restate it. Since
+    // 2026-10-16 that fact is a send row (a person pushed the CV to this manager), so the gate and the
+    // folders cannot disagree about whose CV it is — both read `isCandidateSentToManager` /
+    // `listSendsForManager`, never a placement rule.
     const loader = read("../src/lib/recruitment/district-manager-folders-db.ts");
     assert.ok(
-      loader.includes("placeCandidatesInDistrictFolders"),
-      "isCandidateInViewerDistrict must answer with the same placement that fills the folders",
+      loader.includes("isCandidateSentToManager(candidateId, viewerHrId)"),
+      "isCandidateInViewerDistrict must answer with the same send that fills the folders",
     );
   }
 

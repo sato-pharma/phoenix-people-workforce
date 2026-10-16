@@ -47,6 +47,7 @@ export function CandidateReadCard({
   canCall = false,
   files,
   onSkipped,
+  unrestricted = false,
   viewerHrId,
   footer,
 }: {
@@ -72,6 +73,11 @@ export function CandidateReadCard({
   files: TeamCandidateFile[];
   /** Called after a Skip, so the folder can drop the card in place. Own folders only. */
   onSkipped?: (candidateId: string) => void;
+  /**
+   * TRUE on the manager's OWN folders, which hold only CVs a person sent to him: the phone number and
+   * the file are his without any reservation (owner, 2026-10-16).
+   */
+  unrestricted?: boolean;
   viewerHrId: string | null;
   /**
    * An optional action strip below the comment thread. Passed ONLY from the district folders, where
@@ -81,7 +87,7 @@ export function CandidateReadCard({
   footer?: ReactNode;
 }) {
   const appliedFor = candidateRowAppliedFor(candidate);
-  const call = useCandidateCall(candidate, initialClaim, viewerHrId);
+  const call = useCandidateCall(candidate, initialClaim, viewerHrId, unrestricted);
   return (
     <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6" id={`candidate-${candidate.id}`}>
       {/* Who has taken this CV, before anything else on the card. On the team screen this is the ONLY
@@ -118,7 +124,7 @@ export function CandidateReadCard({
       <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
         {/* Hidden unless this reader is the one who took the CV. On the team screen he never can be,
             so it reads a plain "Hidden" rather than pointing at a button that is not there. */}
-        <Field label="Phone" value={call.phone ?? hiddenPhoneText(canCall)} />
+        <Field label="Phone" value={call.phone ?? (unrestricted ? null : hiddenPhoneText(canCall))} />
         <Field label="Email" value={candidate.email} />
         <Field label="Governorate" value={candidate.governorate} />
         {/* What the applicant ASKED for, which is what put this CV in a district folder at all. Kept

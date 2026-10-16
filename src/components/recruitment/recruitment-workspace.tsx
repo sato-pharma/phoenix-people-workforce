@@ -19,6 +19,7 @@ import {
   Send,
   Sparkles,
   Trash2,
+  Undo2,
   UserPlus,
   Users,
   X,
@@ -2853,13 +2854,14 @@ function CandidateActionsControl({
         managerHrId: sendTo[candidate.id],
         ...positionBody(positionChoice, sendFreeArea[candidate.id] ?? "", sendFreeTitle[candidate.id] ?? ""),
       });
-      const result = (data.result ?? {}) as { managerName?: unknown };
+      const result = (data.result ?? {}) as { folder?: unknown; managerName?: unknown };
       const name = typeof result.managerName === "string" ? result.managerName : "the manager";
+      const folder = typeof result.folder === "string" && result.folder ? result.folder : null;
       setOpenPanel(null);
       setSendPosition((prev) => ({ ...prev, [candidate.id]: "" }));
       setSendFreeArea((prev) => ({ ...prev, [candidate.id]: "" }));
       setSendFreeTitle((prev) => ({ ...prev, [candidate.id]: "" }));
-      return `${candidateDisplayName(candidate.fullName)} sent to ${name}.`;
+      return `${candidateDisplayName(candidate.fullName)} sent to ${name}${folder ? `, in the ${folder} folder` : ""}.`;
     });
 
   const startApplication = () =>
@@ -2871,6 +2873,19 @@ function CandidateActionsControl({
       setOpenPanel(null);
       return "Application started.";
     });
+
+  // Taking a CV back out of a manager's folder (owner, 2026-10-16: "can anytime get it back"). The CV
+  // is removed from that manager's folder at once; if nobody else holds it, it returns to the
+  // shortlist. Nothing about it is restricted by whether the manager has opened it.
+  const takeBackFromManager = () => {
+    if (!notified) return;
+    run(async () => {
+      await postJson(`/api/recruitment/candidates/${candidate.id}/recall-from-manager`, {
+        managerHrId: notified.hrId,
+      });
+      return `${candidateDisplayName(candidate.fullName)} taken back from ${notified.name}.`;
+    });
+  };
 
   return (
     <div className="space-y-1.5">
@@ -2889,6 +2904,15 @@ function CandidateActionsControl({
             >
               <Send className="h-3.5 w-3.5" />
             </PoolIconButton>
+            {notified?.hrId ? (
+              <PoolIconButton
+                disabled={pending}
+                label={`Take it back from ${notified.name}`}
+                onClick={takeBackFromManager}
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+              </PoolIconButton>
+            ) : null}
             <PoolIconButton
               active={openPanel === "start"}
               disabled={pending}

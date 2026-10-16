@@ -36,6 +36,7 @@ import {
 import { Suspense } from "react";
 
 import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-first-visit-board";
+import { ManagerCvFoldersRow } from "@/components/employee-portal/dashboards/manager-cv-folders-row";
 import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
@@ -160,6 +161,8 @@ export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
       {totalPending > 0 && (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
       )}
+
+      <ManagerCvFoldersRow summary={snapshot.cvFolders} />
 
       <NationalKeycards nsmNational={nsmNational} />
 

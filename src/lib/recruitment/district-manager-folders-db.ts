@@ -1,327 +1,170 @@
-// Recruitment / ATS — reading the district folders out of the database.
+// Recruitment / ATS — reading every manager's CV folders out of the database.
 //
-// The rule itself is in district-manager-folders.ts and is deliberately pure. This is the half that
-// talks to Postgres: the organogram on one side, the CV pool on the other, handed to that rule and
-// narrowed to the one person allowed to open them.
+// THE FOLDERS ARE FILLED BY SENDS AND NOTHING ELSE (owner, 2026-10-16: "no more managers receive CVs
+// automatic ... the TA or admin push a CV whenever needed and can any time get it back"). The shelves
+// are the organogram's — a folder per area, empty — and a CV is in one because a row in
+// `ats_candidate_manager_sends` says a person sent it to that manager. Until 2026-10-16 this file swept
+// the whole CV pool and let a placement rule decide who "should" receive each applicant; it no longer
+// reads the pool at all. The shelf and fill rules are pure, in manager-cv-folders.ts.
 //
-// ── WHAT A DISTRICT MANAGER CAN NOW SEE, STATED PLAINLY ─────────────────────────────────────────
-//
-// This WIDENS what a manager sees, and it is the widening the owner asked for: "populate the folders
-// based on the CVs we receive. So if you need a CV from any area, he click the folder and open he
-// find all CVs." Until today a manager saw only the CVs a recruiter had pushed to him. He now also
-// sees every CV whose applicant SAID they want to work in one of his own areas.
-//
-// The scope is his areas and nothing else. It is not "all candidates" — it is derived from the org
-// tree seat by seat, so a district manager sees his districts, an NSM covering a vacant district
-// sees that district, and somebody holding no district seat gets an empty list rather than a
-// company-wide one. That direction matters: a picker is never wider than its viewer, and a
-// company-wide list has already offered one medical rep the names of every rep in the company.
-//
-// ── AND THE ARCHIVE REACHES THEM TOO, WHICH IS THE BACKFILL ─────────────────────────────────────
-//
-// The owner, 2026-08-31: *"you will start backfilling from the historicals ... the two hundred
-// eligible, you will backfill them. But anyone non eligible, you will make the admin be able to
-// check first their CV and confirm."* A CV that arrived before the apply flow existed named no area
-// and answered no question, so it reaches a REGION through the governorate its own text mentions,
-// and lands in that district's "No area named" folder rather than beside people who asked for the
-// area by name. Only CVs the background judge reads as eligible go that way; paramedical and
-// unreadable ones wait for an admin, which is what he asked for.
-//
-// ── WHAT NEVER REACHES A FOLDER ─────────────────────────────────────────────────────────────────
-//
-// A rejection, a paramedical CV (shelved or judged), and an area that was READ off a CV rather than
-// declared by the applicant. All of them are refused inside the pure rule, where they can be tested
-// without a database, and none of them is refused again here — this file must not grow a second
-// copy of a policy that would then drift from the one the tests pin.
-//
-// ── AND SINCE 2026-09-09, ANYBODY APPLYING FOR THE DISTRICT MANAGER'S OWN JOB ───────────────────
-//
-// The owner: *"a district manager never receives district manager."* Those applications do not
-// vanish; they go UP, onto the manager boards `managerApplicantBoards` builds for the regional and
-// national sales managers above each district. Both kinds of board come back from
-// `listDistrictBoardsForManager`, told apart by `intake`, so one loader still answers "what does
-// this person open" for a district manager and for his manager alike.
+// WHAT A MANAGER SEES IS HIS OWN SENDS, with no 45-day limit (owner, 2026-10-16: a manager who holds
+// folders keeps a CV until it is taken back or he returns it — folder-holders.ts). Taking a CV
+// back is deleting that send row (manager-recall.ts), and a manager's own Return does the same, so
+// the folder, the gates and the reminders all read one fact and cannot disagree about whose CV it is.
 
-import { logError } from "@/lib/observability/log";
-// The skips half of the folder suppression. It imports the PURE district-manager-folders for the key
-// function, never this file, so the dependency runs one way and there is no cycle to pay for — the
-// same care isCandidateInViewerTeamDistrict is kept out of this module for.
-import { loadManagerSkipSuppressions } from "@/lib/recruitment/candidate-call-claims-db";
 import { mapCandidate, recruitmentDb, type CandidateDbRow } from "@/lib/recruitment/db";
+import { chunkIds } from "@/lib/recruitment/db-batch";
+import { boardsForManager, type DistrictManagerBoard, type UnplacedDeclaration } from "@/lib/recruitment/district-manager-folders";
 import {
-  boardsForManager,
-  DISTRICT_SEAT_COLUMNS,
-  districtManagerBoards,
-  managerApplicantBoards,
-  placeCandidatesInDistrictFolders,
-  type DistrictManagerBoard,
-  type DistrictSeatRow,
-  type UnplacedDeclaration,
-} from "@/lib/recruitment/district-manager-folders";
-import { isReturnSuppressed, loadManagerReturnSuppressions } from "@/lib/recruitment/district-returns";
-import { isWithinFolderHold } from "@/lib/recruitment/manager-hold-window";
+  fillShelvesFromSends,
+  managerFolderShelves,
+  type FolderSend,
+} from "@/lib/recruitment/manager-cv-folders";
+import { loadDistrictSeatRows } from "@/lib/recruitment/folder-holders";
+import {
+  isCandidateSentToManager,
+  listAllManagerSends,
+  listSendsForCandidate,
+  listSendsForManager,
+  managerSendStamp,
+  type ManagerSend,
+} from "@/lib/recruitment/manager-sends";
 import type { Candidate } from "@/lib/recruitment/types";
 
 /** A board carrying whole candidate records, which is what every screen renders. */
 export type DistrictBoard = DistrictManagerBoard<Candidate>;
 
-/**
- * The organogram.
- *
- * A failed read degrades to no boards rather than throwing. This section is an addition to a page
- * that already works without it, and taking My Candidates down because a view was slow would cost a
- * manager the CVs actually sent to him in order to fail at showing him the ones that were not.
- */
-async function loadDistrictSeatRows(): Promise<DistrictSeatRow[]> {
-  const { data, error } = await recruitmentDb().from("au_v_org_tree").select(DISTRICT_SEAT_COLUMNS);
-  if (error) {
-    logError("District CV folders could not read the org tree", {
-      error,
-      labels: { event: "district_folders_tree_read_failed" },
-    });
-    return [];
-  }
-  return (data ?? []) as DistrictSeatRow[];
+// The organogram read lives in folder-holders.ts (manager-sends.ts needs it too, and cannot import
+// this file back). A failed read degrades to no boards rather than throwing.
+export { loadDistrictSeatRows };
+
+function folderSendOf(send: ManagerSend): FolderSend {
+  return {
+    candidateId: send.candidateId,
+    folderArea: send.position?.areaName ?? null,
+    managerHrId: send.managerHrId,
+    sentAt: send.sentAt,
+  };
 }
 
-/**
- * How many rows are fetched per request, and why this is paged at all.
- *
- * An unbounded PostgREST select stops at 1000 rows with no error and no marker, and the failure that
- * produces here is invisible: the 1001st applicant simply never appears in anybody's folder, and an
- * empty area folder is indistinguishable from an area nobody has applied to. Production holds about
- * 600 CVs today, so this pages twice — the point is that it will still be correct at 20,000.
- */
-const PAGE_SIZE = 500;
-const MAX_PAGES = 40;
-
-/**
- * Every CV that could reach a folder, newest first.
- *
- * IT NO LONGER FILTERS, AND THAT IS THE BACKFILL. Until the owner asked for the historicals this
- * query asked Postgres for the CVs that declared an area, which was cheap and reached about 120
- * rows. Not one of the 420 live archived CVs declared one — they predate the question — so the same
- * filter now excludes precisely the pool it was told to include. Everything is read and the pure
- * rule decides, which is also where the decision is testable without a database.
- *
- * A `neq` on status is deliberately NOT used to drop the rejected ones here. PostgREST's `neq`
- * excludes NULLs as well, so a CV whose status was never set would vanish from every folder with no
- * error anywhere — and `canFileCandidate` already refuses the rejected ones in the rule.
- */
-async function loadRoutableCandidates(): Promise<Candidate[]> {
+/** The CVs named by these ids, keyed by id. Batched because the list grows with the sends. */
+async function loadCandidatesById(ids: readonly string[]): Promise<Map<string, Candidate>> {
+  const found = new Map<string, Candidate>();
   const supabase = recruitmentDb();
-
-  const counted = await supabase
-    .from("ats_candidates")
-    .select("id", { count: "exact", head: true });
-  if (counted.error) {
-    logError("District CV folders could not count the CVs", {
-      error: counted.error,
-      labels: { event: "district_folders_candidate_count_failed" },
-    });
-  }
-
-  const rows: CandidateDbRow[] = [];
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const from = page * PAGE_SIZE;
-    const { data, error } = await supabase
-      .from("ats_candidates")
-      .select("*")
-      // Ordered explicitly, and with a UNIQUE column as the tie-break. Paging an unordered result is
-      // how one row is fetched twice and another never at all — Postgres makes no promise that two
-      // requests order equal rows the same way.
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) {
-      logError("District CV folders could not read the CVs", {
-        error,
-        labels: { event: "district_folders_candidate_read_failed", page: String(page) },
-      });
-      break;
+  for (const batch of chunkIds([...new Set(ids)])) {
+    const { data, error } = await supabase.from("ats_candidates").select("*").in("id", batch);
+    if (error) throw error;
+    for (const row of (data ?? []) as CandidateDbRow[]) {
+      const candidate = mapCandidate(row);
+      found.set(candidate.id, candidate);
     }
-    const batch = (data ?? []) as CandidateDbRow[];
-    rows.push(...batch);
-    if (batch.length < PAGE_SIZE) break;
   }
-
-  // The count is a CHECK, not a limit. If the two disagree, the folders are short of somebody — and
-  // a folder quietly missing a CV is worse than an empty one, because it reads as an answer. This is
-  // the only signal that would ever say so.
-  const expected = counted.count ?? null;
-  if (expected !== null && expected !== rows.length) {
-    logError("District CV folders fetched a different number of CVs than exist", {
-      labels: {
-        event: "district_folders_candidate_count_mismatch",
-        expected: String(expected),
-        fetched: String(rows.length),
-      },
-    });
-  }
-
-  return rows.map((row) => mapCandidate(row));
+  return found;
 }
 
 /**
- * Every district's folders, for the whole company.
+ * Every manager's folders, for the whole company, with every send ever made — the 45-day window is
+ * deliberately NOT applied, because a CV that aged out of an account was still received. Used by the
+ * engagement report. Never handed to a screen as it stands.
  *
- * Never handed to a screen as it stands — every caller narrows it to one manager first. It is
- * separate because the unplaced list belongs to the recruitment team rather than to a manager: a CV
- * that named "Qena" reached nobody's folder, and somebody has to be told that.
+ * `unplaced` is always empty now: nothing is placed automatically, so nothing can fail to be.
  */
 export async function loadAllDistrictBoards(): Promise<{
   boards: DistrictBoard[];
   unplaced: UnplacedDeclaration[];
   placements: number;
 }> {
-  const [rows, candidates] = await Promise.all([loadDistrictSeatRows(), loadRoutableCandidates()]);
-  if (rows.length === 0) return { boards: [], placements: 0, unplaced: [] };
-  return placeCandidatesInDistrictFolders({ candidates, rows });
+  const [rows, sends] = await Promise.all([loadDistrictSeatRows(), listAllManagerSends()]);
+  if (rows.length === 0 || !sends || sends.length === 0) return { boards: [], placements: 0, unplaced: [] };
+  const candidates = await loadCandidatesById(sends.map((send) => send.candidateId));
+  const boards = fillShelvesFromSends({
+    candidates,
+    sends: sends.map(folderSendOf),
+    shelves: managerFolderShelves<Candidate>(rows),
+  });
+  return { boards, placements: boards.reduce((total, board) => total + board.candidateCount, 0), unplaced: [] };
 }
 
 /**
- * The folders this one person opens.
+ * The folders this one person opens — every area on his shelf, and in each the CVs sent to him.
  *
- * Returns an empty list for anybody holding no district seat, which is most people who reach the
- * portal. A screen renders nothing at all then, rather than an empty heading.
+ * Returns an empty list for anybody holding no seat on the organogram, which is most people who reach
+ * the portal. A screen renders nothing at all then, rather than an empty heading.
  */
 export async function listDistrictBoardsForManager(
   managerHrId: string | null | undefined,
 ): Promise<DistrictBoard[]> {
   if (!String(managerHrId ?? "").trim()) return [];
 
-  // THE SEATS FIRST, AND THE CVs ONLY IF HE HOLDS ANY. Most people who open My Candidates hold no
-  // district seat at all, and for them the candidate sweep would be work done to produce an empty
-  // array — on every page load. The tree read is one small view; the candidate read is the one that
-  // grows with the applicant pool, so it is the one worth not doing.
   const rows = await loadDistrictSeatRows();
   if (rows.length === 0) return [];
-  // BOTH kinds of board, or this pre-check refuses the very people the manager boards were built
-  // for. A national sales manager holds no district seat of his own — that is the whole reason
-  // isCandidateInViewerTeamDistrict had to exist — so asking only for district boards would return
-  // an empty list before the candidate sweep ever ran, and every district-manager applicant would
-  // reach nobody at all.
-  const seatBoards = [...districtManagerBoards(rows), ...managerApplicantBoards(rows)];
-  if (boardsForManager(seatBoards, managerHrId).length === 0) return [];
+  const shelves = boardsForManager(managerFolderShelves<Candidate>(rows), managerHrId);
+  if (shelves.length === 0) return [];
 
-  // His returns are read alongside the CV sweep, not before it: a CV he has handed back to the
-  // administrator drops out of his folders here, and stays in every other line's. The report path
-  // (loadAllDistrictBoards) deliberately does NOT do this — a returned CV was still received.
-  //
-  // TWO WAYS OUT OF ONE MANAGER'S FOLDER, ONE SUPPRESSION SET. Since 2026-09-09 a manager may also
-  // press Skip on a CV in his folder, which is the same shape as a return — his own pass, leaving
-  // the CV in front of every other manager who can see it — so it feeds the SAME set through the
-  // SAME key function and the pure placement rule never learns there are two. What differs is only
-  // where they go: a return puts the CV in the administrator's queue, a skip tells nobody.
-  const [routable, returnedByHim, skippedByHim] = await Promise.all([
-    loadRoutableCandidates(),
-    loadManagerReturnSuppressions(managerHrId),
-    loadManagerSkipSuppressions(managerHrId),
-  ]);
-  // ── THE 45-DAY WINDOW, APPLIED BEFORE PLACEMENT ──────────────────────────────────────────────
-  //
-  // The owner, 2026-10-06: *"collect all old CVs from the manager's accounts ... Never a CV stay at a
-  // district manager account or any manager account more than 45 days."* The folders are derived, so
-  // there is no row to expire — a CV simply stops being offered to a manager once it is more than 45
-  // days since it arrived (or since its applicant last said where they want to work).
-  //
-  // FILTERED HERE, ON THE LIST, rather than inside the pure placement rule, for two reasons. The
-  // report path (loadAllDistrictBoards) must keep seeing every CV — a CV that aged out of a manager's
-  // account was still received — and the rule's own signature is pinned by source tests that this
-  // manager-scoped call must keep matching. The window itself is manager-hold-window.ts, shared with
-  // every other route a CV reaches a manager by.
-  const now = new Date();
-  const candidates = routable.filter((candidate) => isWithinFolderHold(candidate, now));
-  // ONE SET, and it keeps the name the placement rule knows it by. Both halves are the same fact —
-  // this manager has finished with this CV — and the pure rule has no business learning that there
-  // are two ways to reach it. Naming the variable anything else also breaks the source pin in
-  // tests/recruitment-district-returns.test.ts, which exists to prove the manager-scoped path
-  // applies suppressions at all; that pin is worth keeping intact rather than editing around.
-  const suppressedReturns =
-    skippedByHim.size === 0 ? returnedByHim : new Set([...returnedByHim, ...skippedByHim]);
-  const { boards } = placeCandidatesInDistrictFolders({ candidates, rows, suppressedReturns });
-  return boardsForManager(boards, managerHrId);
+  // listSendsForManager applies no cutoff to a folder holder (owner, 2026-10-16). null means the sends table is not in this database yet — empty shelves, not an error.
+  const sends = (await listSendsForManager(managerHrId)) ?? [];
+  if (sends.length === 0) return shelves;
+  const candidates = await loadCandidatesById(sends.map((send) => send.candidateId));
+  // HIS OWN SEND, overlaid on the candidate's shared columns: those hold whoever was sent the CV
+  // last, so without this a card would show another manager's date and position as his own.
+  for (const send of sends) {
+    const candidate = candidates.get(send.candidateId);
+    if (candidate) candidates.set(candidate.id, { ...candidate, ...managerSendStamp(send) });
+  }
+  return fillShelvesFromSends({ candidates, sends: sends.map(folderSendOf), shelves });
 }
 
 /**
- * May this caller open THIS CV, because its applicant asked for one of his own areas?
- *
- * A FOURTH ROUTE INTO HIRING-MANAGER SCOPE, and without it the folders would be a screen that
- * cannot be used. The other three all key on a CV having been PUSHED to somebody — to the caller, to
- * somebody below him, or to a requisition he owns — and a CV sitting in a district folder has been
- * pushed to nobody by definition. Every card would render a View CV button that answers 403 and a
- * comment box that refuses to load, which is a worse screen than no screen at all.
- *
- * IT ASKS THE RULE, IT DOES NOT RESTATE IT. The same placement that put the CV in front of him is
- * what answers here — one candidate through `placeCandidatesInDistrictFolders`, against his own
- * boards — so an applicant the folders would not show is an applicant this refuses, permanently and
- * without a second copy of the policy to drift. A rejection, a paramedical confirmation and an
- * extracted-not-declared area are all refused in there.
- *
- * Cheap: one candidate row plus the org tree, no candidate sweep.
- *
- * TWO FUNCTIONS, ONE PLACEMENT. `districtBoardsHoldingCandidate` answers "whose folders is this CV
- * in" and is deliberately not scoped to anybody — the scoping is the caller's question, and a
- * National Sales Manager reading a district manager's folder needs a DIFFERENT answer to the one
- * below without needing a second copy of the placement. That caller is
- * `isCandidateInViewerTeamDistrict` in hiring-manager-team.ts, which lives there rather than here
- * because it needs the team roster and this module must not import that one back — the dependency
- * runs one way, and PR #2816 already paid for a cycle in this area with a Turbopack build crash.
+ * Whose folders is this CV in, right now? Every manager with a live send of it, as the board it sits
+ * on. Deliberately not scoped to anybody — the scoping is the caller's question — and an empty list
+ * means no manager holds it. A National Sales Manager reading a district manager's folder is answered
+ * by `isCandidateInViewerTeamDistrict` in hiring-manager-team.ts, which asks this and then the roster;
+ * it lives there because it needs the roster and this module must not import that one back.
  */
 export async function districtBoardsHoldingCandidate(candidateId: string): Promise<DistrictBoard[]> {
-  if (!String(candidateId ?? "").trim()) return [];
+  const id = String(candidateId ?? "").trim();
+  if (!id) return [];
 
-  const { data, error } = await recruitmentDb()
-    .from("ats_candidates")
-    .select("*")
-    .eq("id", candidateId)
-    .maybeSingle();
+  // No window here: a board exists only for a manager who holds folders, and folders are not held to
+  // the 45 days (owner, 2026-10-16).
+  const live = await listSendsForCandidate(id);
+  if (live.length === 0) return [];
+
+  const { data, error } = await recruitmentDb().from("ats_candidates").select("*").eq("id", id).maybeSingle();
   if (error) throw error;
   if (!data) return [];
-
   const candidate = mapCandidate(data as CandidateDbRow);
-  // PAST ITS 45 DAYS A CV IS IN NOBODY'S FOLDER (manager-hold-window.ts). This is the gate behind both
-  // "may he open this CV" and "may his national manager", so it must answer exactly as the list does:
-  // a CV the folders stopped showing cannot be opened by guessing its id.
-  if (!isWithinFolderHold(candidate)) return [];
 
   const rows = await loadDistrictSeatRows();
   if (rows.length === 0) return [];
-
-  const { boards } = placeCandidatesInDistrictFolders({
-    candidates: [candidate],
-    rows,
-  });
-  return boards.filter((board) => board.candidateCount > 0);
+  return fillShelvesFromSends({
+    candidates: new Map([[candidate.id, candidate]]),
+    sends: live.map(folderSendOf),
+    shelves: managerFolderShelves<Candidate>(rows),
+  }).filter((board) => board.candidateCount > 0);
 }
 
+/**
+ * May this caller open THIS CV because it is in one of his own folders? That is, a person sent it to
+ * him, inside its 45 days. A return he made removes the send, so this needs no second check.
+ */
 export async function isCandidateInViewerDistrict(
   viewerHrId: string | null | undefined,
   candidateId: string,
 ): Promise<boolean> {
-  if (!(await isCandidateInViewerDistrictScope(viewerHrId, candidateId))) return false;
-  // A CV he returned to the administrator is no longer his to open — the same decision that drops it
-  // from his folder revokes his access to its file and comment thread. Checked after the cheaper
-  // placement so the read only happens for a CV that was actually in his district.
-  return !(await isReturnSuppressed(viewerHrId, candidateId));
+  return isCandidateInViewerDistrictScope(viewerHrId, candidateId);
 }
 
 /**
- * The SAME "is this CV in his district" question, but blind to any return he has already made.
- *
- * This is what the return route gates on, and the difference is the whole point: isCandidateInViewer
- * District above answers "may he still OPEN it", which a returned CV fails; this answers "was it ever
- * his to return", which a returned CV still passes. Gating the return on the suppression-aware check
- * would make the second press a 403 instead of the honest "already returned", and would forbid a
- * manager from ever correcting a note on a return he just made.
+ * The same question, named for the routes that gate a return or a call on "was it ever his". Kept as
+ * its own name because those routes are pinned by it; there is no longer any difference to draw.
  */
 export async function isCandidateInViewerDistrictScope(
   viewerHrId: string | null | undefined,
   candidateId: string,
 ): Promise<boolean> {
   if (!String(viewerHrId ?? "").trim()) return false;
-  const holding = await districtBoardsHoldingCandidate(candidateId);
-  return boardsForManager(holding, viewerHrId).length > 0;
+  return (await isCandidateSentToManager(candidateId, viewerHrId)) === true;
 }
 
 /** Every candidate id on these boards, deduplicated — one CV can sit in three managers' folders. */
@@ -333,4 +176,15 @@ export function districtBoardCandidateIds(boards: readonly DistrictBoard[]): str
     }
   }
   return [...ids];
+}
+
+/**
+ * This manager's empty shelves — the folders a CV can be sent into. Empty for a manager who holds no
+ * seat on the organogram (a head-office manager), who keeps "Sent to you" and nothing else.
+ */
+export async function loadManagerShelves(managerHrId: string | null | undefined): Promise<DistrictBoard[]> {
+  if (!String(managerHrId ?? "").trim()) return [];
+  const rows = await loadDistrictSeatRows();
+  if (rows.length === 0) return [];
+  return boardsForManager(managerFolderShelves<Candidate>(rows), managerHrId);
 }

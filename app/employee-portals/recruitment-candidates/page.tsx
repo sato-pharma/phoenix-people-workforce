@@ -16,14 +16,14 @@ import { listApplications } from "@/lib/recruitment/applications";
 import { adminTwinOfPortalCandidatesHref, CANDIDATE_LINK_PARAM } from "@/lib/recruitment/candidate-page-link";
 import {
   redactCandidateContact,
-  redactCandidateListContact,
-  redactDistrictBoardsContact,
   revealPhoneToViewer,
 } from "@/lib/recruitment/candidate-call-claims";
 import { loadCallClaims } from "@/lib/recruitment/candidate-call-claims-db";
 import { loadCandidateOpeners } from "@/lib/recruitment/candidate-openers-db";
 import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
+import { listCandidateViews } from "@/lib/recruitment/candidate-views";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
+import { unseenIdsOnBoards } from "@/lib/recruitment/manager-cv-folders";
 import {
   districtBoardCandidateIds,
   listDistrictBoardsForManager,
@@ -145,8 +145,16 @@ export default async function EmployeePortalRecruitmentCandidatesPage({
   // for the same reason: the banner sits at the top of every card, and a card that had to ask for it
   // would show it late. The viewer's own opens are left out.
   const openers = await loadCandidateOpeners(cardCandidateIds, access.hrId);
-  const visibleSentToMe = redactCandidateListContact(sentToMe, callClaims, access.hrId);
-  const visibleDistrictBoards = redactDistrictBoardsContact(districtBoards, callClaims, access.hrId);
+  // NO REDACTION ON A CV SENT TO THIS MANAGER (owner, 2026-10-16): once Talent Acquisition has sent
+  // it, the number, the file and everything else are his to use. His folders ARE his sends, so both
+  // lists below are exactly the CVs that were sent to him. Only the applications he reaches through a
+  // requisition he owns, which no person sent him, keep the "I will call" rule.
+  const visibleSentToMe = sentToMe;
+  const visibleDistrictBoards = districtBoards;
+  // Which folder CVs he has not opened since they were sent: the folders pulse for these, and the
+  // first folder holding one is open when the page does.
+  const views = await listCandidateViews(access.hrId);
+  const unseenIds = unseenIdsOnBoards(districtBoards, (candidateId) => views[candidateId]?.lastSeenAt);
   const visibleApplications = myCandidates.map((application) =>
     application.candidate
       ? {
@@ -170,6 +178,7 @@ export default async function EmployeePortalRecruitmentCandidatesPage({
         initialApplications={visibleApplications}
         initialCallClaims={callClaims}
         initialDistrictBoards={visibleDistrictBoards}
+        initialUnseenIds={unseenIds}
         initialFilings={filings}
         initialFiles={initialFiles}
         initialOpeners={openers}

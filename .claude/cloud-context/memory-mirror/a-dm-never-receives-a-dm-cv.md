@@ -1,6 +1,6 @@
 ---
 name: a-dm-never-receives-a-dm-cv
-description: "Owner rule 2026-09-09 - a district manager NEVER receives an application for a district manager post. DMs receive medical reps; the sales manager ABOVE a district receives the DM applicants, and so does everyone above him. Stated once as a rank - a manager receives only applicants for seats strictly BELOW his own. Holds for the automatic folders AND for a recruiter's hand-push. Read before changing district-manager-folders.ts, candidate-seat-rank.ts, sendCandidatesToManager, or before 'fixing' a district folder that now looks emptier."
+description: "Owner rule 2026-09-09 - a district manager NEVER receives an application for a district manager post. DMs receive medical reps; the sales manager ABOVE a district receives the DM applicants, and so does everyone above him. Stated once as a rank - a manager receives only applicants for seats strictly BELOW his own. Now holds for a recruiter's hand-push only (the gate in sendCandidatesToManager): the automatic folders it also governed were REMOVED 2026-10-16, when a manager's folders became empty shelves filled only by what a person sends. Read before changing candidate-seat-rank.ts or sendCandidatesToManager."
 metadata: 
   node_type: memory
   created: 2026-09-09
@@ -8,6 +8,8 @@ metadata:
   type: feedback
   originSessionId: 131afc38-77af-472e-b526-e10d7ac9f9f0
 ---
+
+**⚠ AMENDED 2026-10-16 — the folder half below is HISTORY.** The owner ended automatic delivery (*"now no more managers receive cvs automatic"*): a manager's folders are empty shelves off the organogram and hold only a CV a person sent (docs/recruitment-manager-cv-folders.md). `candidateManagerSeatTier` and `managerMayBeSentApplication` remain, and still refuse a hand-push of an applicant for the manager's own seat or above; `managerApplicantBoards` and the 96 → 31 board counts describe the removed placement and are kept only as the account of why the rank rule exists.
 
 **The owner's words, 2026-09-09**, on finding district managers reading applications for their own
 job in `/employee-portals/recruitment-candidates`: *"the district managers receive medical reps and

@@ -35,7 +35,8 @@ import {
   type TeamManager,
   type TeamRosterEntry,
 } from "@/lib/recruitment/hiring-manager-team-scope";
-import { isWithinManagerHold, managerHoldCutoffIso } from "@/lib/recruitment/manager-hold-window";
+import { loadFolderHolderKeys, managerHoldsFolders } from "@/lib/recruitment/folder-holders";
+import { isWithinManagerHold } from "@/lib/recruitment/manager-hold-window";
 import type { TeamCandidateFile } from "@/lib/recruitment/types";
 import type { Candidate } from "@/lib/recruitment/types";
 
@@ -99,17 +100,14 @@ async function countPushesByManager(managerHrIds: readonly string[]): Promise<Ma
   if (keys.length === 0) return counts;
 
   const supabase = recruitmentDb();
+  const holders = await loadFolderHolderKeys();
   // Chunked at 50: a PostgREST `.in()` carrying several hundred ids returns zero rows and no error.
   for (let index = 0; index < keys.length; index += 50) {
     const chunk = keys.slice(index, index + 50);
     const { data, error } = await supabase
       .from("ats_candidates")
-      .select("manager_notified_hr_id,status")
-      .in("manager_notified_hr_id", chunk)
-      // The picker's number must be the number of CVs the list behind it will show, and that list
-      // holds a CV for 45 days at most (manager-hold-window.ts). A count that kept the expired ones
-      // would read "14 CVs" over a manager whose page opens empty.
-      .gte("manager_notified_at", managerHoldCutoffIso());
+      .select("manager_notified_hr_id,status,manager_notified_at")
+      .in("manager_notified_hr_id", chunk);
     if (error) {
       // 42703 = the column predates migration 20260815180000_candidate_manager_push. Absent counts
       // are a worse answer than zero counts, but they are not this caller's fault and must not take
@@ -120,6 +118,11 @@ async function countPushesByManager(managerHrIds: readonly string[]): Promise<Ma
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
       const key = canonicalHrIdKey(String(row.manager_notified_hr_id ?? ""));
       if (!key) continue;
+      // The picker's number must be the number of CVs the list behind it will show, and that list
+      // holds a CV for 45 days at most (manager-hold-window.ts) — except for a manager who holds
+      // folders (owner, 2026-10-16). Filtered here, not in the query, because the exemption is per
+      // manager. A date that cannot be read is not inside the window, as everywhere else.
+      if (!holders.has(key) && !isWithinManagerHold(String(row.manager_notified_at ?? ""))) continue;
       const entry = counts.get(key) ?? { all: 0, awaiting: 0 };
       entry.all += 1;
       // "Awaiting" is the same question the manager's own card asks itself — a CV nobody has
@@ -228,7 +231,10 @@ export async function isCandidateWithinViewerTeam(access: AccessContext, candida
   if (!stamped) return false;
   // Past its 45 days the CV is no longer "sitting with" that manager, so it is not in his viewer's
   // team scope either (manager-hold-window.ts) — the same cutoff the list and the picker count use.
-  if (!isWithinManagerHold(String(row?.manager_notified_at ?? ""))) return false;
+  // A manager who holds folders has no window (owner, 2026-10-16), so his CVs stay in this scope too.
+  if (!isWithinManagerHold(String(row?.manager_notified_at ?? "")) && !(await managerHoldsFolders(String(stamped)))) {
+    return false;
+  }
   const roster = await loadTeamRoster();
   return canViewerSeeManagerCandidates({
     managerHrId: String(stamped),

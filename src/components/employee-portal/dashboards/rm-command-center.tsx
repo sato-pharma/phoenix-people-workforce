@@ -37,6 +37,7 @@ import {
 import { Suspense } from "react";
 
 import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-first-visit-board";
+import { ManagerCvFoldersRow } from "@/components/employee-portal/dashboards/manager-cv-folders-row";
 import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
@@ -265,6 +266,8 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
           plansAwaitingApproval={plansCount}
         />
       ) : null}
+
+      <ManagerCvFoldersRow summary={snapshot.cvFolders} />
 
       <RegionKeycards rmRegional={rmRegional} />
 

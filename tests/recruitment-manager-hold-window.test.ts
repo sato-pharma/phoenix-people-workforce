@@ -130,12 +130,14 @@ export function runRecruitmentManagerHoldWindowTests() {
   const listSends = functionBody(sends, "listSendsForManager");
   const gateSend = functionBody(sends, "isCandidateSentToManager");
   assert.ok(
-    listSends.includes('.gte("sent_at", managerHoldCutoffIso(now))'),
-    "the manager's pushed list must drop a send older than 45 days",
+    listSends.includes('query.gte("sent_at", managerHoldCutoffIso(now))') &&
+      listSends.includes("managerHoldsFolders(managerHrId)"),
+    "the manager's pushed list must drop a send older than 45 days — unless he holds folders (owner, 2026-10-16)",
   );
   assert.ok(
-    gateSend.includes('.gte("sent_at", managerHoldCutoffIso(now))'),
-    "…and the gate behind it must answer with the SAME cutoff, or a CV off his list can still be opened by id",
+    gateSend.includes('query.gte("sent_at", managerHoldCutoffIso(now))') &&
+      gateSend.includes("managerHoldsFolders(managerHrId)"),
+    "…and the gate behind it must answer with the SAME cutoff and the SAME exemption, or a CV off his list can still be opened by id",
   );
   for (const history of ["listSendsForCandidate", "listLatestSendByCandidate"]) {
     assert.ok(
@@ -147,47 +149,45 @@ export function runRecruitmentManagerHoldWindowTests() {
   const candidates = read("../src/lib/recruitment/candidates.ts");
   const inbox = functionBody(candidates, "listCandidatesSentToManager");
   assert.ok(
-    /\.in\("manager_notified_hr_id", keys\)[\s\S]*?\.gte\("manager_notified_at", managerHoldCutoffIso\(now\)\)[\s\S]*?\.order\("manager_notified_at"/.test(inbox),
-    "the single-manager stamp (the second source of the pushed list) must be cut at 45 days too",
+    /\.in\("manager_notified_hr_id", keys\)[\s\S]*?managerHoldsFolders\(managerHrId\)[\s\S]*?\.gte\("manager_notified_at", managerHoldCutoffIso\(now\)\)[\s\S]*?\.order\("manager_notified_at"/.test(inbox),
+    "the single-manager stamp (the second source of the pushed list) must be cut at 45 days too, for everyone but a folder holder",
   );
   assert.ok(inbox.includes("listSendsForManager(managerHrId, now)"), "both sources read the same instant");
 
   const view = read("../src/lib/recruitment/hiring-manager-view.ts");
   assert.match(
     view,
-    /hrIdsMatch\(String\(stamped\), access\.hrId\) &&\s*isWithinManagerHold\(String\(row\?\.manager_notified_at/,
-    "the file gate's stamp check must expire with the list",
+    /hrIdsMatch\(String\(stamped\), access\.hrId\) &&\s*\(isWithinManagerHold\(String\(row\?\.manager_notified_at[\s\S]*?managerHoldsFolders\(access\.hrId\)/,
+    "the file gate's stamp check must expire with the list, and carry the same folder-holder exemption",
   );
 
   const team = read("../src/lib/recruitment/hiring-manager-team.ts");
   assert.match(
     team,
-    /\.in\("manager_notified_hr_id", chunk\)[\s\S]*?\.gte\("manager_notified_at", managerHoldCutoffIso\(\)\)/,
+    /\.in\("manager_notified_hr_id", chunk\)[\s\S]*?!holders\.has\(key\) && !isWithinManagerHold\(String\(row\.manager_notified_at/,
     "the team picker's count must equal what the list behind it shows",
   );
   assert.match(
     team,
-    /if \(!isWithinManagerHold\(String\(row\?\.manager_notified_at/,
+    /if \(!isWithinManagerHold\(String\(row\?\.manager_notified_at[\s\S]*?managerHoldsFolders\(String\(stamped\)\)/,
     "the team gate must expire with the push it reads",
   );
 
   const folders = read("../src/lib/recruitment/district-manager-folders-db.ts");
+  // Since 2026-10-16 the folders are filled by the manager's sends, so the 45 days are applied where
+  // the sends are read — `listSendsForManager` (asserted above) — and not to a candidate row.
   const forManager = functionBody(folders, "listDistrictBoardsForManager");
   assert.ok(
-    forManager.includes("routable.filter((candidate) => isWithinFolderHold(candidate, now))"),
-    "the manager-scoped folder loader must drop a CV past 45 days BEFORE placement",
+    forManager.includes("await listSendsForManager(managerHrId)"),
+    "the manager-scoped folder loader reads his sends through the one function that drops a send past 45 days",
   );
   assert.ok(
-    forManager.includes("placeCandidatesInDistrictFolders({ candidates, rows, suppressedReturns })"),
-    "…and still hand the placement rule exactly the call the returns test pins",
-  );
-  assert.ok(
-    !functionBody(folders, "loadAllDistrictBoards").includes("isWithinFolderHold"),
+    functionBody(folders, "loadAllDistrictBoards").includes("listAllManagerSends()"),
     "the whole-company report path must NOT apply the window — a CV that aged out of a manager's account was still received",
   );
   assert.ok(
-    functionBody(folders, "districtBoardsHoldingCandidate").includes("if (!isWithinFolderHold(candidate)) return [];"),
-    "the gate behind the folders (his own and his national manager's) must answer exactly as the list does",
+    !functionBody(folders, "districtBoardsHoldingCandidate").includes("isWithinManagerHold"),
+    "a board exists only for a manager who holds folders, and a folder holder has no window (owner, 2026-10-16)",
   );
 
   const engagement = read("../src/lib/recruitment/manager-cv-engagement.ts");
@@ -223,6 +223,18 @@ export function runRecruitmentManagerHoldWindowTests() {
     expired[1].holds.map((hold) => hold.daysHeld),
     [90, 46],
     "holds are listed oldest first, each with its whole days held",
+  );
+  // A manager who holds folders is never past his window (owner, 2026-10-16: "lift it").
+  const folderHolder = record("f1", [{ days: 90, hrId: "B-12" }]);
+  assert.deepEqual(
+    classifyExpiredHolds([folderHolder], NOW, new Set(["b-12"])).map((item) => item.candidateId),
+    [],
+    "a 90-day-old CV held by a folder holder stays",
+  );
+  assert.deepEqual(
+    classifyExpiredHolds([folderHolder], NOW).map((item) => item.candidateId),
+    ["f1"],
+    "…and the same CV goes back when the holder is not exempt",
   );
   assert.equal(
     classifyExpiredHolds([record("x", [{ days: 46 }], " sent_to_manager ")], NOW).length,
@@ -321,10 +333,14 @@ export function runRecruitmentManagerHoldWindowTests() {
   );
 
   // ── What a manager is told ────────────────────────────────────────────────────────────────────
-  for (const path of [
-    "../src/components/employee-portal/district-folders-section.tsx",
-    "../src/components/employee-portal/recruitment-candidates-portal.tsx",
-  ]) {
-    assert.ok(read(path).includes("MANAGER_HOLD_DAYS"), `${path} must tell the manager about the 45 days, from the one constant`);
-  }
+  // The folders screen no longer promises a limit (owner, 2026-10-16); the list of other CVs sent to him
+  // still tells a manager about the 45 days, from the one constant.
+  assert.ok(
+    !read("../src/components/employee-portal/district-folders-section.tsx").includes("MANAGER_HOLD_DAYS"),
+    "a folder holder is not held to 45 days, so his folders screen must not say he is",
+  );
+  assert.ok(
+    read("../src/components/employee-portal/recruitment-candidates-portal.tsx").includes("MANAGER_HOLD_DAYS"),
+    "a CV sent to a manager who holds no folders still goes back after 45 days, and the screen says so from the one constant",
+  );
 }

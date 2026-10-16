@@ -380,7 +380,7 @@ export function districtRoutingRegionOptions(candidate: DistrictFolderCandidate)
   return options;
 }
 
-function indexBySeatId(rows: readonly DistrictSeatRow[]): Map<string, DistrictSeatRow> {
+export function indexBySeatId(rows: readonly DistrictSeatRow[]): Map<string, DistrictSeatRow> {
   const index = new Map<string, DistrictSeatRow>();
   for (const row of rows) {
     const seatId = text(row.seat_id);
@@ -483,7 +483,7 @@ export function districtManagerBoards<T = DistrictFolderCandidate>(
  * Every seat id above `seatId`, nearest first. Stops on a cycle rather than looping — an org tree
  * with one is broken, and a chain invented out of it would be indistinguishable from a real one.
  */
-function ancestorSeatIds(seatId: string, bySeatId: Map<string, DistrictSeatRow>): string[] {
+export function ancestorSeatIds(seatId: string, bySeatId: Map<string, DistrictSeatRow>): string[] {
   const chain: string[] = [];
   const visited = new Set<string>([seatId]);
   let current = text(bySeatId.get(seatId)?.parent_seat_id ?? "");

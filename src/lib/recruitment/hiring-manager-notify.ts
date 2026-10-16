@@ -446,6 +446,17 @@ export async function pushCandidateToManager(input: {
   return sent;
 }
 
+/** The position a send is recorded under once it is filed in a named folder: the folder IS its area. */
+function positionInFolder(position: SentForPosition | null, folder: string): SentForPosition {
+  return {
+    areaName: folder,
+    jobTitle: position?.jobTitle ?? null,
+    lineName: position?.lineName ?? null,
+    regionName: position?.regionName ?? null,
+    vacancyId: position?.vacancyId ?? null,
+  };
+}
+
 /** "Ahmed, Sara and Mona" — never an ellipsis, never a count standing in for the names. */
 function joinNames(names: string[]): string {
   if (names.length <= 1) return names[0] ?? "";
@@ -490,6 +501,12 @@ export async function pushCandidatesToManager(input: {
    * 2026-08-28, and refusing one would break the flow rather than improve the filing.
    */
   position?: SentForPosition | null;
+  /**
+   * The folder on the manager's shelf each candidate goes in, by candidate id. Absent or null for a
+   * candidate means "Other CVs". Stored in the send's own `sent_for_area`, so the folder travels with
+   * the send exactly as the position does, and a send to a second manager can name a different one.
+   */
+  folderByCandidate?: Readonly<Record<string, string | null>>;
 }): Promise<{ count: number; managerHrId: string; managerName: string; sentAt: string }> {
   if (input.candidates.length === 0) {
     throw new Error("Choose at least one candidate to send.");
@@ -636,17 +653,27 @@ export async function pushCandidatesToManager(input: {
   // is a send that will not be seen, which is precisely the silence this module exists to end. The
   // one tolerated case is the table not existing yet — recordManagerSends returns false rather than
   // throwing for that, because code ships minutes before its migration is applied.
-  await recordManagerSends({
-    actorHrId: input.actorHrId,
-    candidateIds: input.candidates.map((candidate) => candidate.id),
-    managerArea: manager.areaName,
-    managerHrId: input.managerHrId,
-    managerJobTitle: manager.jobTitle,
-    managerName,
-    managerRegion: manager.regionName,
-    position: input.position ?? null,
-    sentAt,
-  });
+  //
+  // One write per FOLDER: a send's folder is the area stored on its own row, and the candidates of one
+  // push can belong in different folders of the same manager's shelf.
+  const idsByFolder = new Map<string, string[]>();
+  for (const candidate of input.candidates) {
+    const folder = input.folderByCandidate?.[candidate.id] ?? "";
+    idsByFolder.set(folder, [...(idsByFolder.get(folder) ?? []), candidate.id]);
+  }
+  for (const [folder, candidateIds] of idsByFolder) {
+    await recordManagerSends({
+      actorHrId: input.actorHrId,
+      candidateIds,
+      managerArea: manager.areaName,
+      managerHrId: input.managerHrId,
+      managerJobTitle: manager.jobTitle,
+      managerName,
+      managerRegion: manager.regionName,
+      position: folder ? positionInFolder(input.position ?? null, folder) : (input.position ?? null),
+      sentAt,
+    });
+  }
 
   return { count: input.candidates.length, managerHrId: input.managerHrId, managerName, sentAt };
 }

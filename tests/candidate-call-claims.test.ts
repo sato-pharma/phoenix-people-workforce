@@ -214,10 +214,13 @@ export async function runCandidateCallClaimTests() {
   // THE FILE FOLLOWS THE PHONE NUMBER (owner, 2026-10-13: download only after "I will call"). Anything
   // not on the render list — no format at all, the bare URL's save-file prompt — is served only to
   // the manager `revealPhoneToViewer` names, and is asked BEFORE the file is fetched.
+  // 2026-10-16: a CV a person SENT to the caller is served as the file with no reservation first
+  // ("no restriction — he can download"). Every other CV keeps the reservation test, still the same
+  // function that unmasks the number and never a second copy of it.
   assert.match(
     fileRoute,
-    /const isRender = Boolean\(format && RENDER_ONLY_FORMATS\.has\(format\)\);\s*if \(!isRender && !revealPhoneToViewer\(await loadCallClaim\(candidateId\), access\.hrId\)\) \{/,
-    "a non-render request must be refused unless the caller holds the reservation — the same test that unmasks the number, never a second copy of it",
+    /const isRender = Boolean\(format && RENDER_ONLY_FORMATS\.has\(format\)\);\s*if \(\s*!isRender &&\s*!\(await isCandidateSentToCaller\(access, candidateId\)\) &&\s*!revealPhoneToViewer\(await loadCallClaim\(candidateId\), access\.hrId\)\s*\) \{/,
+    "a non-render request must be refused unless the CV was sent to the caller or the caller holds the reservation — the same test that unmasks the number, never a second copy of it",
   );
   assert.ok(
     fileRoute.indexOf("revealPhoneToViewer(await loadCallClaim") <
@@ -259,8 +262,21 @@ export async function runCandidateCallClaimTests() {
     // raw row inside a response body: the object shorthand `{ candidates, ... }` and the identity
     // `{ candidates: candidates }`. Anything else there is a call, and the only calls that produce a
     // candidate for a manager are the redactors.
+    // THE TWO ROUTES THAT HAND BACK ONLY THE CALLER'S OWN SENT CVs ARE EXEMPT (owner, 2026-10-16: once a
+    // CV has reached a manager there is "no any restriction — can download, can see number, can do
+    // anything"). Both read the caller's own id off the session, so what they return is a CV a person
+    // pushed to that very manager. The team routes — a manager reading what sits with those BELOW
+    // him — stay redacted and stay in this sweep.
+    const OWN_SENT_ROUTES = new Set(["candidates/route.ts", "candidates/[candidateId]/decision/route.ts"]);
+    for (const exempt of OWN_SENT_ROUTES) {
+      assert.ok(
+        routeFiles.some((name) => name.replace(/\\/g, "/") === exempt),
+        `the exempt route ${exempt} should still exist — a stale exemption is a hole`,
+      );
+    }
     const offenders: string[] = [];
     for (const name of routeFiles) {
+      if (OWN_SENT_ROUTES.has(name.replace(/\\/g, "/"))) continue;
       const source = stripComments(readFileSync(join(routesRoot, name), "utf8"));
       for (const body of source.matchAll(/NextResponse\.json\(\{([\s\S]{0,800}?)\}\s*[,)]/g)) {
         const payload = body[1];
@@ -277,23 +293,20 @@ export async function runCandidateCallClaimTests() {
     );
   }
 
-  // ── 11 · A skip must actually leave the manager's folder ─────────────────────────────────────
+  // ── 11 · A folder holds only what a person sent ──────────────────────────────────────────────
   //
-  // The suppression set the placement rule is handed has to carry BOTH halves. Its sibling test
-  // (recruitment-district-returns) pins that the manager-scoped loader passes `suppressedReturns` at
-  // all, which is what proves a RETURN is applied; this pins that a SKIP is folded into that same
-  // set. Without it the union can be dropped in a tidy-up and every skipped CV silently comes back,
-  // with the sibling test still green because the call literal it reads is unchanged.
+  // 2026-10-16: the folders are filled by sends and nothing else, so a manager's Return or Skip is
+  // not a suppression to be remembered any more — it deletes his own send row, and a re-push by
+  // Talent Acquisition is a new send that brings the CV back. The loader therefore reads his sends
+  // and neither a return table nor a skip table.
   const foldersLoader = read("../src/lib/recruitment/district-manager-folders-db.ts");
   assert.ok(
-    foldersLoader.includes("loadManagerSkipSuppressions(managerHrId)"),
-    "the manager-scoped folder loader must read his skips",
+    foldersLoader.includes("listSendsForManager(managerHrId)"),
+    "the manager-scoped folder loader must read the CVs sent to him",
   );
   assert.ok(
-    /skippedByHim\.size === 0 \? returnedByHim : new Set\(\[\.\.\.returnedByHim, \.\.\.skippedByHim\]\)/.test(
-      foldersLoader,
-    ),
-    "and must union them with his returns into the ONE set the placement rule is given — a skip that is read but not folded in leaves the CV sitting in his folder",
+    !foldersLoader.includes("loadManagerSkipSuppressions") && !foldersLoader.includes("placeCandidatesInDistrictFolders"),
+    "and must not place anybody by itself — a folder filled by a rule is the automatic delivery the owner removed",
   );
 
   const cvActions = read("../src/components/employee-portal/candidate-cv-actions.tsx");

@@ -107,6 +107,12 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // a minute no other job holds. Must match scripts/cronjob-sync.mjs exactly, and lands in the SAME
   // sitting as its cron job. NO watchingSince: a new declaration, never a restored one.
   { slug: "phoenix-recruitment-requisition-autopilot", kind: "cron", schedule: "27 * * * *", graceSeconds: 2 * HOUR },
+  // Hourly on :41 (owner, 2026-10-16: a manager's CV folder keeps notifying until its CV is opened).
+  // The route sends only between 08:00 and 21:59 Cairo and still pings its heartbeat at night, so the
+  // check stays a straight hourly one. On :41, a minute no other job holds. Must match
+  // scripts/cronjob-sync.mjs exactly, and lands in the SAME sitting as its cron job. NO watchingSince:
+  // a new declaration, never a restored one.
+  { slug: "phoenix-recruitment-manager-cv-reminders", kind: "cron", schedule: "41 * * * *", graceSeconds: 2 * HOUR },
   // 06:55 Cairo, every day — before the field day starts, and on :55 so a red execution names one
   // job. Daily rather than field-days-only: the job runs on a Friday too and simply finds the
   // Thursday before, which is what keeps its heartbeat a straight daily one. Must match

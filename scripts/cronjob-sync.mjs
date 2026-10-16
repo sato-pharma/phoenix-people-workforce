@@ -171,6 +171,18 @@ const JOBS = {
     // none on most fires.
     requestTimeout: 300,
   },
+  "recruitment-manager-cv-reminders": {
+    title: "Phoenix — manager CV folder reminders",
+    path: "/api/cron/recruitment-manager-cv-reminders",
+    // Hourly on :41 (owner, 2026-10-16: the folder keeps notifying until its CV is opened). The route
+    // itself stays quiet outside 08:00-21:59 Cairo, so the schedule is a plain hourly one and the
+    // heartbeat stays a straight hourly one. On :41, a minute no other job holds. Matches
+    // JOB_SCHEDULES exactly.
+    schedule: { hours: [-1], minutes: [41], mdays: [-1], months: [-1], wdays: [-1] },
+    // The org tree, the live sends and the managers' views are indexed reads; at most one message per
+    // manager follows. None on most fires.
+    requestTimeout: 300,
+  },
   "phoenix-crm-daily-digest": {
     title: "Phoenix — CRM daily digest",
     path: "/api/cron/phoenix-crm-daily-digest",

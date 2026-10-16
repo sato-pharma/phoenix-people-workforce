@@ -8,6 +8,7 @@ import {
   str,
 } from "@/app/api/recruitment/_lib/http";
 import { isCandidateInViewerDistrictScope } from "@/lib/recruitment/district-manager-folders-db";
+import { deleteManagerSend } from "@/lib/recruitment/manager-sends";
 import { isDistrictReturnReasonCode, recordDistrictReturn } from "@/lib/recruitment/district-returns";
 
 export const runtime = "nodejs";
@@ -83,6 +84,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       reasonCode,
       reasonNote,
     });
+
+    // The folder is its sends (manager-cv-folders.ts), so handing the CV back leaves it by deleting
+    // HIS send row — nobody else's. A re-push by Talent Acquisition writes a fresh row and puts it
+    // back in front of him.
+    await deleteManagerSend(id, access.hrId);
 
     // `recorded: false` means the CV was already returned — an honest 200, not an error.
     return NextResponse.json({ success: true, recorded });
