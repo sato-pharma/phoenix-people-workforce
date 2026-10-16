@@ -75,8 +75,21 @@ export function runPortalRepNavigationSpeedTests(): void {
       "loadPeopleNames([",
       "the List's mirror reads start before the names are awaited, not after",
     );
-    assert.match(list, /mirrorReads\?\.catch\(\(\) => undefined\);/, "and are handled the moment they start, so a failure is never unhandled");
+    assert.match(list, /mirrorReads\??\.catch\(\(\) => undefined\);/, "and are handled the moment they start, so a failure is never unhandled");
     assert.match(list, /await mirrorReads;/, "and are still awaited inside the block that logs their failure");
+
+    // 2026-10-16 performance audit: the List starts its whole wave BESIDE the reference mint, the
+    // visit form's pattern. Only the two reads the mint can change wait for it.
+    assert.match(list, /ensured\.then\(\(\) => loadReference\(/, "the List's reference waits for the mint — the mint fills in its customer ids");
+    assert.match(list, /ensured\.then\(\(\) => loadTerritoryCustomers\(/, "and so does its customer list — the mint adds to it");
+    assert.doesNotMatch(list, /await ensureReferenceCustomers\(/, "and nothing else waits for the mint");
+    assertBefore(list, "const wave = Promise.all([", "await ensured;", "every other List read starts before the mint is awaited");
+    assert.ok(list.includes("wave.catch(() => undefined);"), "the early wave is handled the moment it starts");
+    assertBefore(list, "const mirrorReads = customersRead.then(", "const wave = Promise.all([", "the mirror reads start the moment the customer list lands");
+    // The List counts its reference states itself; from readiness it takes only the stamped day, read
+    // straight off its row — never the second whole seat-reference computation `loadReadiness` runs.
+    assert.doesNotMatch(list, /loadReadiness\(/, "the List never runs the readiness computation for one stamped date");
+    assert.ok(list.includes("loadStoredReadyAt(seat.seatId)"), "it reads the stamped day off the readiness row");
   }
 
   // ── Phoenix CRM · the visit form, the screen a rep opens most ──────────────────────────────────

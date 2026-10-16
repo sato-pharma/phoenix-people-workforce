@@ -154,6 +154,7 @@ import type {
   PhoenixCrmRequestStatus,
   PhoenixCrmTiming,
 } from "@/lib/phoenix-crm/types";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
@@ -1028,7 +1029,10 @@ export async function loadPlannerReferences(seatId: string, isTest: boolean, cus
   if (pending.length === 0) return references;
   const reference = await loadReference(seatId, isTest);
   const byContact = new Map(reference.map((row) => [Number(row.contact_crm_id), row]));
-  const brickMeta = await loadBrickNames(reference.map((row) => row.brick_id).filter((brickId): brickId is string => Boolean(brickId)));
+  // Only the bricks of the entries asked about (2026-10-16 performance audit): the loop below reads no
+  // other, and a whole territory's reference holds hundreds where Today asks about a handful.
+  const matched = pending.map((row) => byContact.get(Number(row.reference_contact_crm_id))).filter((entry): entry is ReferenceRow => Boolean(entry));
+  const brickMeta = await loadBrickNames(matched.map((entry) => entry.brick_id).filter((brickId): brickId is string => Boolean(brickId)));
   for (const row of pending) {
     const entry = byContact.get(Number(row.reference_contact_crm_id));
     if (!entry) continue;
@@ -1048,10 +1052,16 @@ export type SeatReadiness = ReadinessSummary & { seatId: string; readyAt: string
 export async function loadReadiness(seatIds: string[], markReady = false): Promise<Map<string, SeatReadiness>> {
   const readiness = new Map<string, SeatReadiness>();
   const asked = [...new Set(seatIds)];
-  for (const part of chunk(asked, 150)) {
+  // FOUR CHUNKS AT A TIME (2026-10-16 Phoenix CRM performance audit). Each chunk is a whole reference
+  // computation for 150 territories, and the company-wide boards asked them one after another. The
+  // answers are folded in chunk order, exactly as the loop did, so the map reads the same.
+  const answers = await mapWithConcurrency(chunk(asked, 150), 4, async (part) => {
     const { data, error } = await getSupabaseAdmin().rpc("phoenix_crm_seat_readiness", { p_seat_ids: part, p_mark_ready: markReady });
     throwIfError(error);
-    for (const row of (data ?? []) as Row[]) {
+    return (data ?? []) as Row[];
+  });
+  for (const rows of answers) {
+    for (const row of rows) {
       const total = Number(row.reference_total ?? 0);
       const validated = Number(row.validated_count ?? 0);
       const dropped = Number(row.dropped_count ?? 0);
@@ -1077,6 +1087,21 @@ export async function loadReadiness(seatIds: string[], markReady = false): Promi
     throw new Error(`phoenix_crm_seat_readiness answered no row for ${unanswered.length} of ${asked.length} territories`);
   }
   return readiness;
+}
+
+/**
+ * The day ONE territory was stamped ready, or null — the only figure the List takes from readiness.
+ *
+ * WHY NOT `loadReadiness` (2026-10-16 Phoenix CRM performance audit). The List counts its reference
+ * states itself, off the reference it has already read, and used the readiness call for nothing but
+ * `ready_at`. Without `p_mark_ready` that call returns `coalesce(t.ready_at, m.ready_at)` where `m`
+ * (the rows it stamps) is empty, so its `ready_at` IS this table's — yet it computed the whole seat
+ * reference a second time to get there. Same row, same value, one primary-key read.
+ */
+async function loadStoredReadyAt(seatId: string): Promise<string | null> {
+  const { data, error } = await getSupabaseAdmin().from("phoenix_crm_territory_readiness").select("ready_at").eq("seat_id", seatId).maybeSingle();
+  throwIfError(error);
+  return text((data as Row | null)?.ready_at);
 }
 
 function requestKindOf(value: unknown): PhoenixCrmRequestKind {
@@ -1180,18 +1205,19 @@ const REQUEST_COLUMNS =
 /** Waiting requests, and the ones decided lately, for some territories. */
 export async function loadRequestRows(seatIds: string[], isTest: boolean, options: { pendingOnly?: boolean } = {}): Promise<Row[]> {
   const since = new Date(Date.now() - DECIDED_REQUESTS_DAYS * 86400000).toISOString();
-  const rows: Row[] = [];
-  for (const part of chunk([...new Set(seatIds)], 100)) {
-    const page = await fetchAllRowsKeyset<Row>(
+  // Four chunks at a time, folded in chunk order (2026-10-16 performance audit): the rows, and so the
+  // stable sort below, are exactly what the one-at-a-time loop produced.
+  const pages = await mapWithConcurrency(chunk([...new Set(seatIds)], 100), 4, (part) =>
+    fetchAllRowsKeyset<Row>(
       () => {
         let query = getSupabaseAdmin().from("phoenix_crm_list_requests").select(REQUEST_COLUMNS).in("seat_id", part).eq("is_test", isTest);
         query = options.pendingOnly ? query.eq("status", "pending") : query.or(`status.eq.pending,decided_at.gte.${since}`);
         return query;
       },
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-    );
-    rows.push(...page);
-  }
+    ),
+  );
+  const rows: Row[] = pages.flat();
   return rows.sort((left, right) => String(right.requested_at).localeCompare(String(left.requested_at)));
 }
 
@@ -1213,19 +1239,18 @@ function monthsBack(isoDay: string, months: number): string {
 export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknown, test: unknown): Promise<TerritoryListView> {
   const { seat, isTest } = territoryForRead(viewer, seatId, readTestFlag(test));
   const monthStart = monthStartOf(viewer.cairoToday);
-  await ensureReferenceCustomers(seat, isTest);
-  const [reference, { customers, placesByCustomer }, requestRows, visitCounts, pharmaciesByCustomer, readinessMap, locationChecks, repNotes] =
-    await Promise.all([
-      loadReference(seat.seatId, isTest),
-      loadTerritoryCustomers(seat.seatId, isTest),
-      loadRequestRows([seat.seatId], isTest),
-      loadMonthVisitCounts(seat.seatId, isTest, monthStart, viewer.cairoToday),
-      loadCustomerPharmacies(seat.seatId, isTest),
-      isTest ? Promise.resolve(null) : loadReadiness([seat.seatId]),
-      loadLocationChecks(seat.seatId, isTest),
-      // The comments somebody chose to show this territory's rep. Rep-visible only, in the query.
-      loadRepVisiblePlaceNotes(seat.seatId, isTest),
-    ]);
+
+  // 🔴 ONE WAVE, BESIDE THE MINT (2026-10-16 Phoenix CRM performance audit — the visit form's own
+  // pattern, loadVisitForm). The List waited for the reference mint before it read anything at all.
+  // Only two reads depend on the mint: the reference (whose `customer_id` it fills in) and the customer
+  // list (which it adds to). Nothing else here can name a customer minted a moment ago — he has no
+  // request, no visit, no pharmacy feedback, no validation check and no comment yet, and the mint
+  // writes nothing but customers and their list events. So every other read starts BESIDE the mint,
+  // and the mint's own failure is still the one that surfaces, first, exactly as when it ran alone.
+  const ensured = ensureReferenceCustomers(seat, isTest);
+  const referenceRead = ensured.then(() => loadReference(seat.seatId, isTest));
+  const customersRead = ensured.then(() => loadTerritoryCustomers(seat.seatId, isTest));
+  const requestRowsRead = loadRequestRows([seat.seatId], isTest);
 
   // 🔴 WHO ELSE CARRIES THESE CUSTOMERS (owner, 2026-09-30: "if a doctor is shared between this rep
   // and another rep, it was highlighted"). Answered against the iReports360 roster, because only a
@@ -1237,13 +1262,12 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   // highlight is a nicety; the list itself is the page.
   //
   // 🔴 STARTED HERE, BESIDE THE NAMES AND THE BRICK NAMES, NOT AFTER THEM (2026-10-01, "slow to
-  // transfer between page and page", Phoenix CRM first). All three need only what the wave above
-  // answered — the mirror reads the reference contact behind each customer and the seat's occupant —
-  // so awaiting them in turn made the List as slow as the three added together. The keys are the
-  // same set as before; the order they are read in changes nothing, since every answer is per contact.
-  const sharedKeys = customers
-    .map((row) => numberOrNull(row.reference_contact_crm_id))
-    .filter((id): id is number => typeof id === "number");
+  // transfer between page and page", Phoenix CRM first). All three need only what the wave answers —
+  // the mirror reads the reference contact behind each customer and the seat's occupant — so awaiting
+  // them in turn made the List as slow as the three added together. Since 2026-10-16 they start the
+  // moment the CUSTOMER LIST lands, not after the whole wave (the pharmacy and request reads among
+  // it). The keys are the same set as before; the order they are read in changes nothing, since every
+  // answer is per contact.
   // `occupantHrId`, not `repHrId` — OrgSeat has no such field, and reading one that does not exist
   // made this whole block silently unreachable: no sharing, no check-in point, and no error to see.
   // NOT gated on `isTest`. Both reads key on the REAL iReports360 contact behind a customer
@@ -1260,8 +1284,11 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   // doctor has had chances to appear, short enough that a pattern abandoned in the spring is not read
   // back to him as current.
   const occupantHrId = seat.occupantHrId;
-  const mirrorReads =
-    occupantHrId && sharedKeys.length > 0
+  const mirrorReads = customersRead.then(({ customers }) => {
+    const sharedKeys = customers
+      .map((row) => numberOrNull(row.reference_contact_crm_id))
+      .filter((id): id is number => typeof id === "number");
+    return occupantHrId && sharedKeys.length > 0
       ? Promise.all([
           loadSharedCustomersFor(sharedKeys, occupantHrId),
           loadObservedPointsFor(sharedKeys),
@@ -1269,10 +1296,11 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
           loadVisitHistoryFor(sharedKeys),
         ])
       : null;
+  });
   // Handled the moment it starts, because it is awaited only once the names are in: a failure landing
   // while they load would otherwise be an UNHANDLED rejection. The `await` below still receives it,
-  // and logs it exactly as before.
-  mirrorReads?.catch(() => undefined);
+  // and logs it exactly as before. (A failure of the customer list itself fails the wave below first.)
+  mirrorReads.catch(() => undefined);
 
   // 🔴 WHERE A CURATED CUSTOMER COULD GO (owner, 2026-10-06). Resolved only for the SFE Manager and
   // the Super Admin, and the occupants' names ride in the SAME batched read as this seat's own people:
@@ -1283,20 +1311,49 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     ? viewer.scopeTerritories.filter((entry) => entry.seatId !== seat.seatId && Boolean(entry.lineCode))
     : [];
 
-  const [names, referenceBrickMeta] = await Promise.all([
-    loadPeopleNames([
-      ...territoryPeople(viewer.org, [seat]),
-      ...requestPeople(requestRows),
-      ...customers.map((row) => text(row.validated_by_hr_id)),
-      // The rep who pinned a pharmacy — shown by NAME beside the pin, never his HR id (AGENTS.md §4).
-      ...customers.map((row) => text(row.pharmacy_pin_captured_by_hr_id)),
-      ...targetSeats.map((entry) => entry.occupantHrId),
-      reference[0]?.source_hr_id ?? null,
-    ]),
+  const wave = Promise.all([
+    referenceRead,
+    customersRead,
+    requestRowsRead,
+    loadMonthVisitCounts(seat.seatId, isTest, monthStart, viewer.cairoToday),
+    loadCustomerPharmacies(seat.seatId, isTest),
+    // The stamped day only — the List counts the reference states itself (loadStoredReadyAt).
+    isTest ? Promise.resolve(null) : loadStoredReadyAt(seat.seatId),
+    loadLocationChecks(seat.seatId, isTest),
+    // The comments somebody chose to show this territory's rep. Rep-visible only, in the query.
+    loadRepVisiblePlaceNotes(seat.seatId, isTest),
+    // The people named on the page, the moment the three reads that name them land.
+    Promise.all([requestRowsRead, customersRead, referenceRead]).then(([requestRows, { customers }, reference]) =>
+      loadPeopleNames([
+        ...territoryPeople(viewer.org, [seat]),
+        ...requestPeople(requestRows),
+        ...customers.map((row) => text(row.validated_by_hr_id)),
+        // The rep who pinned a pharmacy — shown by NAME beside the pin, never his HR id (AGENTS.md §4).
+        ...customers.map((row) => text(row.pharmacy_pin_captured_by_hr_id)),
+        ...targetSeats.map((entry) => entry.occupantHrId),
+        reference[0]?.source_hr_id ?? null,
+      ]),
+    ),
     // The name and area of every brick iReports360 carries a reference customer in — so a pending
-    // customer groups under his known brick rather than an amber "not yet mapped" heading.
-    loadBrickNames(reference.map((row) => row.brick_id).filter((brickId): brickId is string => Boolean(brickId))),
+    // customer groups under his known brick rather than an amber "not yet mapped" heading. It needs the
+    // reference alone, so it starts the moment the reference lands.
+    referenceRead.then((reference) => loadBrickNames(reference.map((row) => row.brick_id).filter((brickId): brickId is string => Boolean(brickId)))),
   ]);
+  // Handled at once: if the mint fails, `await ensured` below throws its error and the wave is dropped.
+  wave.catch(() => undefined);
+  await ensured;
+  const [
+    reference,
+    { customers, placesByCustomer },
+    requestRows,
+    visitCounts,
+    pharmaciesByCustomer,
+    storedReadyAt,
+    locationChecks,
+    repNotes,
+    names,
+    referenceBrickMeta,
+  ] = await wave;
   const requests = requestRows.map((row) => {
     const request = mapRequestRow(row, names);
     return { ...request, ...requestRights(viewer, seat, isTest, request) };
@@ -1410,9 +1467,11 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   listCustomers.sort((left, right) => left.listType.localeCompare(right.listType) || left.name.localeCompare(right.name));
 
   // The mirror reads started beside the names above; a highlight they cannot give leaves the list whole.
-  if (mirrorReads) {
-    try {
-      const [sharedByContact, observedByContact, planDatesByContact, historyByContact] = await mirrorReads;
+  // Null when there is nobody to compare against (no occupant, or no reference customer on the list).
+  try {
+    const mirror = await mirrorReads;
+    if (mirror) {
+      const [sharedByContact, observedByContact, planDatesByContact, historyByContact] = mirror;
       for (const customer of listCustomers) {
         if (customer.referenceContactCrmId === null) continue;
         const shared = sharedByContact.get(customer.referenceContactCrmId) ?? null;
@@ -1423,12 +1482,12 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
         customer.planPattern = pattern.length > 0 ? pattern : null;
         customer.referenceHistory = historyByContact.get(customer.referenceContactCrmId) ?? null;
       }
-    } catch (error) {
-      logError("Phoenix CRM list: the shared-customer and check-in reads could not run", {
-        error,
-        labels: { event: "phoenix_crm_shared_customers_failed" },
-      });
     }
+  } catch (error) {
+    logError("Phoenix CRM list: the shared-customer and check-in reads could not run", {
+      error,
+      labels: { event: "phoenix_crm_shared_customers_failed" },
+    });
   }
 
   const referenceEntries: ListReferenceEntry[] = reference.map((row) => ({
@@ -1447,7 +1506,6 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   }));
 
   const summary = summarizeReadiness(referenceEntries.map((entry) => entry.state));
-  const stored = readinessMap?.get(seat.seatId) ?? null;
   const source = reference[0] ?? null;
   const ramadan = nextRamadan(viewer.cairoToday, viewer.config.ramadanOverrides);
 
@@ -1480,7 +1538,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
           (left.lineName ?? "").localeCompare(right.lineName ?? "") ||
           (left.repName ?? left.territoryName).localeCompare(right.repName ?? right.territoryName),
       ),
-    readiness: { ...summary, ready: summary.ready || Boolean(stored?.readyAt), readyAt: stored?.readyAt ?? null },
+    readiness: { ...summary, ready: summary.ready || Boolean(storedReadyAt), readyAt: storedReadyAt },
     referenceSource: source ? { name: nameOf(names, source.source_hr_id, "") || null, isCurrent: source.source_is_current } : null,
     reference: referenceEntries,
     customers: listCustomers,
