@@ -5,7 +5,11 @@ import {
   type BusinessScope,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
-import { getUserLineScopeOverride, getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
+import {
+  getUserLineScopeOverride,
+  getUserProductScopeOverride,
+  getUserSalesScopeOverrideRaw,
+} from "@/lib/auth/scope-visibility";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import {
   isHeadOfficeLine,
@@ -348,16 +352,11 @@ export function computeSalesAccessScope(input: ComputeScopeInput): SalesAccessSc
   };
 }
 
-// Mirror of service.ts getPersistedSalesScopeOverride so the two sales-scope systems agree.
+// Mirror of service.ts getPersistedSalesScopeOverride so the two sales-scope systems agree. Shares
+// one login-row read with the product and line overrides read beside it.
 async function getPersistedSalesScopeOverride(ctx: AccessContext): Promise<BusinessScope | null> {
   if (!ctx.loginId) return null;
-  const supabase = getSupabaseAdmin();
-  const { data } = await supabase
-    .from("app_auth_users")
-    .select("sales_scope_override")
-    .eq("login_id", ctx.loginId)
-    .maybeSingle();
-  const raw = String((data as { sales_scope_override?: string | null } | null)?.sales_scope_override ?? "")
+  const raw = String((await getUserSalesScopeOverrideRaw(ctx.loginId)) ?? "")
     .trim()
     .toUpperCase();
   return ["SELF", "TEAM", "HIERARCHY", "LINE", "COMPANY", "NONE"].includes(raw)

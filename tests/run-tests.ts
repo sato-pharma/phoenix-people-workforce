@@ -2565,6 +2565,8 @@ import { runClosingRowsSheetTests } from "./closing-rows-sheet.test.ts";
 import { runPhoenixCrmAddPharmacyMatchesByResolvedIdTests } from "./phoenix-crm-add-pharmacy-matches-by-resolved-id.test.ts";
 import { runDomTranslateGuardTests } from "./dom-translate-guard.test.ts";
 import { runServerFreezeGuardsTests } from "./server-freeze-guards.test.ts";
+import { runSharedReadCacheTests } from "./shared-read-cache.test.ts";
+import { runClosingFunctionsPriceOnceTests } from "./closing-functions-price-once.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -10157,6 +10159,14 @@ await runTest(
 await runTest(
   "the page server does not freeze for work nobody is waiting on — the Sentry profiler is off while the page survey traces every request and returns by itself when it ends, PHOENIX_PROCESS_ROLE=web makes the shared host guard refuse every in-process scheduler while unset or a typo keeps today's behaviour, every poller tick, deep run, notification step, Early Birds close and housekeeping pass registers itself so a stall names its job, and a page server's minute frozen past one second raises one fingerprinted alert per culprit while the worker's stalls raise none",
   runServerFreezeGuardsTests,
+);
+await runTest(
+  "a dashboard may reuse the company CRM window for up to one minute and nothing else may — a copy older than sixty seconds is never served, two viewers missing at once share one load, a write drops the copy and a load the write overtook is served but never kept, a missing source is never remembered, no stored row is handed out by reference, the cache is bounded by entries and rows, only the SFE field analytics opts in, the shared key carries every input, and a saved Phoenix CRM visit or a poll that wrote rows refreshes it",
+  runSharedReadCacheTests,
+);
+await runTest(
+  "the Monthly Closing's brick and distributor-product reads price each product ONCE through phx_factory_price with the period they were asked for, keep every join, filter and the confidential exclusion they had, keep a priceless product at zero, carry no comment that would change the live body's digest, and stay executable by the service role alone",
+  runClosingFunctionsPriceOnceTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

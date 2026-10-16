@@ -34,6 +34,7 @@
  * returns void, which is what stops a later edit here reaching for its issue time out of habit.
  */
 
+import { refreshSharedCrmWindows } from "@/lib/crm/shared-windows";
 import { validationError } from "@/lib/http/api-errors";
 import { fieldWeekStart, isIsoDay, isRamadanDay, monthStartOf } from "@/lib/phoenix-crm/calendar";
 import { gradeTarget } from "@/lib/phoenix-crm/coverage";
@@ -1367,6 +1368,9 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
       time_anchor_id: offlineAnchorId,
     },
   });
+  // A dashboard may show the company's CRM window from a copy up to a minute old (owner, 2026-10-16);
+  // a visit saved here is shown at once, so the copy is dropped. Never throws, never costs the visit.
+  if (result.duplicate !== true) refreshSharedCrmWindows("phoenix-crm visit saved");
 
   // Was this position real? Judged AFTER the save, deliberately: the answer never reaches the rep,
   // never changes what comes back to him, and can never cost him a visit he actually made. A repeat

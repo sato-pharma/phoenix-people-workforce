@@ -79,6 +79,7 @@ import {
   syncCrmContactLists,
 } from "@/lib/crm/contacts-sync";
 import { CRM_SYNC_RUNS_TABLE } from "@/lib/crm/tables";
+import { refreshSharedCrmWindows } from "@/lib/crm/shared-windows";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
@@ -1039,6 +1040,11 @@ async function tick(): Promise<void> {
         prefetched: { capturedAt, checkins: probe.checkins, visits: probe.visits },
         trigger: "cron",
       });
+      // Rows changed, so a dashboard's minute-old copy is dropped (in this process; another process's copy
+      // ages out within the minute).
+      if (result.rowsUpserted > 0 || result.checkinsUpserted > 0 || result.rowsDeleted > 0) {
+        refreshSharedCrmWindows("crm live poll wrote changes");
+      }
       console.log(
         `[crm:live-poll] ${dateFrom}..${dateTo} — upserted ${result.rowsUpserted} visits, ${result.checkinsUpserted} check-ins` +
           (result.rowsDeleted > 0 ? `, deleted ${result.rowsDeleted}` : "") +

@@ -237,17 +237,26 @@ export async function getSfeCrmFieldAnalytics(input: {
   topN?: number;
 }): Promise<SfeCrmFieldAnalytics> {
   const topN = input.topN ?? 6;
+  // A display-only overview of the whole company's window, so all three reads may come from a copy up
+  // to a minute old (owner, 2026-10-16) — the same window costs a probe plus a request per day each.
   const [rawVisits, checkins, unlabeledComments] = await Promise.all([
-    queryVisits<VisitRow>({ dateFrom: input.dateFrom, dateTo: input.dateTo, columns: VISIT_COLUMNS }),
+    queryVisits<VisitRow>({ dateFrom: input.dateFrom, dateTo: input.dateTo, columns: VISIT_COLUMNS, reuseRecentWindow: true }),
     // The SFE Manager's and the CEO's overview — no rep reaches it, so a started Phoenix CRM team's visits
     // count as its check-ins here (owner, 2026-10-02; src/lib/crm/phoenix-team-starts.ts lists every
     // reader that asks).
-    queryCheckins<CheckinRow>({ dateFrom: input.dateFrom, dateTo: input.dateTo, columns: CHECKIN_COLUMNS, includePhoenixVisits: true }),
+    queryCheckins<CheckinRow>({
+      dateFrom: input.dateFrom,
+      dateTo: input.dateTo,
+      columns: CHECKIN_COLUMNS,
+      includePhoenixVisits: true,
+      reuseRecentWindow: true,
+    }),
     queryVisits<{ comment: string | null; crm_visit_id: number | null }>({
       columns: UNLABELED_COMMENT_COLUMNS,
       dateFrom: input.dateFrom,
       dateTo: input.dateTo,
       visitTypes: [UNLABELED_FIELD_VISIT_TYPE],
+      reuseRecentWindow: true,
     }),
   ]);
   const unlabeledCommentById = new Map(

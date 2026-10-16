@@ -18,6 +18,7 @@ import { isRetentionRiskSubjectTitle } from "@/lib/retention-risk/eligibility";
 import { getNationalHolidayDateSet } from "@/lib/vacation/national-holidays";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { queryVisits } from "@/lib/crm/reads";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { loadPhoenixWorkEvidenceDays } from "@/lib/crm/phoenix-work-evidence";
 import { mergePhoenixWorkEvidence } from "@/lib/retention-risk/phoenix-evidence";
 import {
@@ -158,6 +159,12 @@ async function loadLeaveDates(startDate: string, endDate: string): Promise<Map<s
  */
 const HR_ID_FILTER_CHUNK = 40;
 
+/**
+ * How many of those chunks are scanned at once. They are independent reads of the same window, so
+ * one after another only stacked round trips; they are folded in chunk order all the same.
+ */
+const CHUNK_CONCURRENCY = 4;
+
 async function loadCrmActivity(
   hrIds: readonly string[],
   scanStart: string,
@@ -167,17 +174,29 @@ async function loadCrmActivity(
   const firstSeen = new Map<string, string>();
   if (hrIds.length === 0) return { activity, firstSeen, rowCount: 0 };
 
-  let rowCount = 0;
+  const chunks: string[][] = [];
   for (let index = 0; index < hrIds.length; index += HR_ID_FILTER_CHUNK) {
-    const rows = await queryVisits<VisitDayRow>({
-      agentHrIds: hrIds.slice(index, index + HR_ID_FILTER_CHUNK),
-      columns: "agent_hr_id,visit_date",
-      dateFrom: scanStart,
-      dateTo: scanEnd,
-      // A rep who has already left is not a flight risk, and their rows would be excluded anyway;
-      // leaving the default in place keeps departed-agent data invisible here as everywhere else.
-      requireAgentHrId: true,
-    });
+    chunks.push(hrIds.slice(index, index + HR_ID_FILTER_CHUNK));
+  }
+  // The Phoenix CRM evidence is read alongside the chunks rather than after them: it depends on
+  // none of them. Any failure still rejects the whole load, as it did when these ran in sequence.
+  const [chunkRows, phoenixEvidence] = await Promise.all([
+    mapWithConcurrency(chunks, CHUNK_CONCURRENCY, (agentHrIds) =>
+      queryVisits<VisitDayRow>({
+        agentHrIds,
+        columns: "agent_hr_id,visit_date",
+        dateFrom: scanStart,
+        dateTo: scanEnd,
+        // A rep who has already left is not a flight risk, and their rows would be excluded anyway;
+        // leaving the default in place keeps departed-agent data invisible here as everywhere else.
+        requireAgentHrId: true,
+      }),
+    ),
+    loadPhoenixWorkEvidenceDays({ end: scanEnd, start: scanStart }),
+  ]);
+
+  let rowCount = 0;
+  for (const rows of chunkRows) {
     rowCount += rows.length;
 
     for (const row of rows) {
@@ -195,7 +214,7 @@ async function loadCrmActivity(
   }
   // Phoenix CRM work the counting view hides (a team not yet started). A failed read throws, which
   // the caller turns into "CRM unavailable" rather than naming reps who were provably working.
-  mergePhoenixWorkEvidence(activity, firstSeen, await loadPhoenixWorkEvidenceDays({ end: scanEnd, start: scanStart }));
+  mergePhoenixWorkEvidence(activity, firstSeen, phoenixEvidence);
   return { activity, firstSeen, rowCount };
 }
 

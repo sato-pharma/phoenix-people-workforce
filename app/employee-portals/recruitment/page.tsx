@@ -116,6 +116,18 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
   let cvFolderCabinet: CvFolderCabinetData = { members: {}, rows: [] };
   let initialError: string | null = null;
 
+  // The pool starts WITH the reads below rather than after them: it needs none of their answers, and
+  // run second it was a whole extra wait on every load. Settled on its own, so a failed pool still
+  // leaves the dashboard, vacancies and folders on screen beside the error, exactly as when it ran last.
+  // The slim read: the pool table never reads the repeating CV blocks. The profile panel that does
+  // gets them from its own GET /api/recruitment/candidates/[id].
+  const poolLoad: Promise<{ ok: true; rows: Candidate[] } | { ok: false; error: unknown }> = canViewCandidates
+    ? listCandidates({ withRepeatingCvBlocks: false }).then(
+        (rows) => ({ ok: true as const, rows }),
+        (error: unknown) => ({ ok: false as const, error }),
+      )
+    : Promise.resolve({ ok: true as const, rows: [] });
+
   try {
     const [dashboardData, vacancies, catalogue, managerOptions, employeeRows, areas, cabinet] =
       await Promise.all([
@@ -144,11 +156,9 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
     managers = employeeRows
       .map((row) => ({ hrId: row.hrId, fullName: row.displayName }))
       .sort((a, b) => a.fullName.localeCompare(b.fullName));
-    if (canViewCandidates) {
-      // The slim read: the pool table never reads the repeating CV blocks. The profile panel that
-      // does gets them from its own GET /api/recruitment/candidates/[id].
-      candidates = await listCandidates({ withRepeatingCvBlocks: false });
-    }
+    const pool = await poolLoad;
+    if (!pool.ok) throw pool.error;
+    candidates = pool.rows;
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Failed to load recruitment data.";
   }

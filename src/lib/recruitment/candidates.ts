@@ -30,7 +30,9 @@ import {
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
 import type { CandidateUnconfirmedCvFacts } from "@/lib/recruitment/candidate-screening-facts";
 import { chunkIds } from "@/lib/recruitment/db-batch";
+import { readAllFolderItemsOnce } from "@/lib/recruitment/cv-folder-tree-db";
 import { managerHoldsFolders } from "@/lib/recruitment/folder-holders";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { managerHoldCutoffIso } from "@/lib/recruitment/manager-hold-window";
 import {
   isAfter,
@@ -283,6 +285,16 @@ export async function findCandidatesByPhoneNorm(
   }));
 }
 
+/**
+ * How many batches of one whole-pool enrichment read are in flight at once.
+ *
+ * The batches are independent, so running them one after another only stacked round trips: the
+ * pool is ~14 batches of 100, each a full trip to Frankfurt. Four at a time, and every loader below
+ * still folds its batches in INDEX order, so "first row seen wins" and "later batch overwrites"
+ * come out exactly as they did when the loop was sequential.
+ */
+const ENRICHMENT_BATCH_CONCURRENCY = 4;
+
 // Loads each candidate's most-recent intake event (from the ats_candidate_source_context view)
 // and reduces it to the display shape, keyed by candidate id. Best-effort: if the view is missing
 // (migration not yet applied) or the query fails, returns an empty map so candidates still list —
@@ -294,15 +306,14 @@ async function loadSourceContextByCandidate(ids: string[]): Promise<Map<string, 
   // listCandidates passes the WHOLE pool through here, so the id list is unbounded and must be
   // batched (see db-batch.ts). chunkIds rather than fetchRowsInBatches because this stays
   // best-effort: one failed batch drops its own enrichment, it does not break the candidate list.
-  const rows: SourceContextRow[] = [];
-  for (const batch of chunkIds(ids)) {
+  const batches = await mapWithConcurrency(chunkIds(ids), ENRICHMENT_BATCH_CONCURRENCY, async (batch) => {
     const { data, error } = await supabase
       .from("ats_candidate_source_context")
       .select("candidate_id,channel,subject,raw_metadata")
       .in("candidate_id", batch);
-    if (error || !data) continue;
-    rows.push(...(data as SourceContextRow[]));
-  }
+    return error || !data ? [] : (data as SourceContextRow[]);
+  });
+  const rows: SourceContextRow[] = batches.flat();
   for (const row of rows) {
     const candidateId = textOrNull((row as { candidate_id?: unknown }).candidate_id);
     if (!candidateId) continue;
@@ -333,14 +344,17 @@ async function loadCvJobTitlesByCandidate(ids: string[]): Promise<CvJobTitles> {
   const readField = (fields: Record<string, unknown> | null, key: string): string | null =>
     textOrNull((fields?.[key] as { value?: unknown } | null | undefined)?.value);
   const seen = new Set<string>();
-  for (const batch of chunkIds(ids)) {
+  // Fetched four batches at a time, folded in batch order (ENRICHMENT_BATCH_CONCURRENCY).
+  const pages = await mapWithConcurrency(chunkIds(ids), ENRICHMENT_BATCH_CONCURRENCY, async (batch) => {
     const { data, error } = await supabase
       .from("ats_candidate_cv_extractions")
       .select("candidate_id,created_at,extracted_fields")
       .in("candidate_id", batch)
       .order("created_at", { ascending: false });
-    if (error || !data) continue;
-    for (const row of data as Array<{ candidate_id?: unknown; extracted_fields?: unknown }>) {
+    return error || !data ? [] : (data as Array<{ candidate_id?: unknown; extracted_fields?: unknown }>);
+  });
+  for (const data of pages) {
+    for (const row of data) {
       const candidateId = textOrNull(row.candidate_id);
       // Newest first, so the first row seen for a candidate is the one that counts — and both
       // fields must be taken from that SAME extraction, never mixed across two readings.
@@ -398,7 +412,8 @@ async function loadUnconfirmedCvFactsByCandidate(ids: string[]): Promise<Map<str
   if (ids.length === 0) return facts;
   const supabase = recruitmentDb();
   const seen = new Set<string>();
-  for (const batch of chunkIds(ids)) {
+  // Fetched four batches at a time, folded in batch order (ENRICHMENT_BATCH_CONCURRENCY).
+  const pages = await mapWithConcurrency(chunkIds(ids), ENRICHMENT_BATCH_CONCURRENCY, async (batch) => {
     const { data, error } = await supabase
       .from("ats_candidate_cv_extractions")
       .select(
@@ -411,8 +426,10 @@ async function loadUnconfirmedCvFactsByCandidate(ids: string[]): Promise<Map<str
       )
       .in("candidate_id", batch)
       .order("created_at", { ascending: false });
-    if (error || !data) continue;
-    for (const row of data as UnconfirmedCvFactRow[]) {
+    return error || !data ? [] : (data as UnconfirmedCvFactRow[]);
+  });
+  for (const data of pages) {
+    for (const row of data) {
       const candidateId = textOrNull(row.candidate_id);
       // Newest first, so the first row seen for a candidate wins and every fact on it comes from
       // that ONE reading — never mixed across two, which would pair a title from July with an
@@ -510,23 +527,20 @@ async function attachFolderFilerNames(candidates: Candidate[]): Promise<void> {
  * people because a query hiccuped — is how somebody is lost. Same reasoning as the loaders above,
  * and as `loadCvFolderCabinet`'s own missing-table fallback, which covers the window between this
  * code deploying and the migration being applied.
+ *
+ * ONE READ PER RENDER, SHARED WITH THE FOLDER TREE. The recruitment hub loads the cabinet and the
+ * pool in the same render, and both used to page the whole table on their own. They now share
+ * `readAllFolderItemsOnce` — the cabinet's paged reader (ordered, with `id` breaking ties), which
+ * returns NO rows at all on any failed page, so the fail-open direction above is unchanged.
  */
 async function attachCvFolderMemberships(candidates: Candidate[]): Promise<void> {
   if (candidates.length === 0) return;
-  const supabase = recruitmentDb();
-  const rows: Array<{ folder_id?: string | null; candidate_id?: string | null }> = [];
-  const PAGE = 1000;
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from("ats_cv_folder_items")
-      .select("id,folder_id,candidate_id")
-      .order("id", { ascending: true })
-      .range(from, from + PAGE - 1);
-    // A failure part-way leaves every CV visible, never a half-read set that hides some of them.
-    if (error || !data) return;
-    rows.push(...(data as typeof rows));
-    if (data.length < PAGE) break;
-  }
+  const { data, error } = await readAllFolderItemsOnce();
+  // A failure part-way leaves every CV visible, never a half-read set that hides some of them.
+  if (error) return;
+  // Re-sorted into `id` order — the order this read used to page in — so each CV's folder list
+  // reads in the same order it always did. A copy: the rows are shared with the folder tree.
+  const rows = [...data].sort((left, right) => compareFilingIds(left.id, right.id));
 
   const byCandidate = new Map<string, string[]>();
   for (const row of rows) {
@@ -543,6 +557,14 @@ async function attachCvFolderMemberships(candidates: Candidate[]): Promise<void>
   }
 }
 
+/** Ascending filing id. The column is a bigint identity, so it compares as a number, as SQL orders it. */
+function compareFilingIds(left: unknown, right: unknown): number {
+  const a = Number(left);
+  const b = Number(right);
+  if (Number.isFinite(a) && Number.isFinite(b)) return a - b;
+  return String(left ?? "").localeCompare(String(right ?? ""));
+}
+
 /**
  * The job title of the vacancy a candidate was formally put forward for, keyed by candidate id.
  *
@@ -554,14 +576,17 @@ async function loadRequisitionJobTitleByCandidate(ids: string[]): Promise<Map<st
   const map = new Map<string, string>();
   if (ids.length === 0) return map;
   const supabase = recruitmentDb();
-  for (const batch of chunkIds(ids)) {
+  // Fetched four batches at a time, folded in batch order (ENRICHMENT_BATCH_CONCURRENCY).
+  const pages = await mapWithConcurrency(chunkIds(ids), ENRICHMENT_BATCH_CONCURRENCY, async (batch) => {
     const { data, error } = await supabase
       .from("ats_applications")
       .select("candidate_id,created_at,ats_requisitions(job_title)")
       .in("candidate_id", batch)
       .order("created_at", { ascending: false });
-    if (error || !data) continue;
-    for (const row of data as Array<{ candidate_id?: unknown; ats_requisitions?: unknown }>) {
+    return error || !data ? [] : (data as Array<{ candidate_id?: unknown; ats_requisitions?: unknown }>);
+  });
+  for (const data of pages) {
+    for (const row of data) {
       const candidateId = textOrNull(row.candidate_id);
       if (!candidateId || map.has(candidateId)) continue;
       const requisition = Array.isArray(row.ats_requisitions) ? row.ats_requisitions[0] : row.ats_requisitions;
@@ -626,14 +651,17 @@ async function loadNotACvCandidates(ids: string[]): Promise<Set<string>> {
   if (ids.length === 0) return notACv;
   const supabase = recruitmentDb();
   const seen = new Set<string>();
-  for (const batch of chunkIds(ids)) {
+  // Fetched four batches at a time, folded in batch order (ENRICHMENT_BATCH_CONCURRENCY).
+  const pages = await mapWithConcurrency(chunkIds(ids), ENRICHMENT_BATCH_CONCURRENCY, async (batch) => {
     const { data, error } = await supabase
       .from("ats_candidate_cv_extractions")
       .select("candidate_id,created_at,is_cv")
       .in("candidate_id", batch)
       .order("created_at", { ascending: false });
-    if (error || !data) continue;
-    for (const row of data as Array<{ candidate_id?: unknown; is_cv?: unknown }>) {
+    return error || !data ? [] : (data as Array<{ candidate_id?: unknown; is_cv?: unknown }>);
+  });
+  for (const data of pages) {
+    for (const row of data) {
       const candidateId = textOrNull(row.candidate_id);
       // Newest first, so the first row seen for a candidate is the verdict that stands. A later
       // re-read that DID find a CV must overrule an older "no", not be overruled by it.
@@ -701,7 +729,7 @@ export async function listCandidates(
   // Concurrently: the four reads touch different fields on the same objects and none reads
   // another's output, so serialising them would only add Atlantic round trips to a page that
   // already waits on one.
-  const [, , , , latestSends] = await Promise.all([
+  const [, , , , latestSends, notACv] = await Promise.all([
     attachAppliedFor(candidates),
     attachUnconfirmedCvFacts(candidates),
     attachFolderFilerNames(candidates),
@@ -710,6 +738,10 @@ export async function listCandidates(
     // so serialising it would only add an Atlantic round trip to a page that already waits on one.
     attachCvFolderMemberships(candidates),
     listLatestSendByCandidate(),
+    // The "Not a CV" verdicts, in the wave for the same reason: they need only the ids. Read after
+    // the wave, their whole-pool batches were a second wait on every pool load. Applied at the end,
+    // where they always were.
+    loadNotACvCandidates(candidates.map((candidate) => candidate.id)),
   ]);
 
   // ── WHO HAS THIS CV, RESOLVED ONCE FOR EVERY SCREEN ─────────────────────────────────────────────
@@ -755,7 +787,6 @@ export async function listCandidates(
     const flag = dupFlags.get(candidate.id);
     candidate.possibleDuplicate = flag ? { candidateId: flag.id, reason: flag.reason } : null;
   }
-  const notACv = await loadNotACvCandidates(candidates.map((candidate) => candidate.id));
   for (const candidate of candidates) {
     if (notACv.has(candidate.id)) candidate.notACv = true;
   }
