@@ -38,6 +38,22 @@ folders of the CVs. The folder pumps notifications and never stops until the CV 
 - `src/components/employee-portal/dashboards/manager-cv-folders-row.tsx` — the overview row on the
   district, regional and national sales manager landing pages (`snapshot.cvFolders`).
 
+## Hiding a CV
+
+Owner, 2026-10-16: *"make district manager able to hide the CV if he received him."* Every CV card in a
+manager's portal carries a **Hide** button. One press, no reason: `POST
+/api/recruitment/hiring-manager/candidates/[candidateId]/hide` runs `hideCandidateFromManager`, which is
+the recall (`manager-recall.ts`) aimed at the caller's OWN hold - his send is deleted, the legacy stamp is put
+right, and a CV nobody else holds goes back to `shortlisted` with the note "Hidden by <name>". It leaves
+his folders, his Sent-to-you list and the hourly reminder together. Hide rejects nobody and answers no
+recruiter (Skip does that); Talent Acquisition keeps the CV and a re-push brings it back. The manager is
+the session's, never a posted id, and the CV must have been sent to him.
+
+**Why the reminder looked like CVs still arriving (2026-10-16).** Nothing is placed by a rule any more
+(no send since 1 September in production), but the hourly reminder names every CV a folder holder has
+not opened, with no age limit - 12 CVs sent 26-31 August were still pinging four managers every hour
+(57 notifications that day). Hide is the way out of that list.
+
 ## The reminder rules
 
 - **Hourly, 08:00–21:59 Cairo** (`REMINDER_FIRST_HOUR_CAIRO`, `REMINDER_LAST_HOUR_CAIRO`). Night is silent;

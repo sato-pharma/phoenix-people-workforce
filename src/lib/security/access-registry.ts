@@ -1537,6 +1537,9 @@ export const accessRegistry = [
   // every card until the caller holds the claim, so its scoping is the thing standing between a
   // manager and a number he has not committed to using.
   sessionApi({ methods: ["PATCH"], pattern: "/api/recruitment/hiring-manager/candidates/*/call", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
+  // A manager hides a CV that reached him (owner, 2026-10-16): ends his own hold, so a mutation with
+  // its own audit row, ahead of the candidates/** read-only catch-all below.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/hiring-manager/candidates/*/hide", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/hiring-manager/candidates/**", permission: { resource: "hiring_interviews", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/applications/**", permission: { resource: "hiring_interviews", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/interviews/**", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
