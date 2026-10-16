@@ -4,6 +4,14 @@ Owner rule, 2026-10-06: *"Never a CV stay at a district manager account or any m
 than 45 days. Then collect it back to the admin."* Module memory carries the one-line rule
 (`.claude/rules/recruitment.md`); this is the account.
 
+> **Lifted for folder holders, 2026-10-16** (owner: "lift it"). A manager who holds CV folders — a district
+> manager, or a regional or national sales manager — is not held to the 45 days: he keeps a CV until
+> Talent Acquisition takes it back or he returns it. `src/lib/recruitment/folder-holders.ts` answers who holds
+> folders from the organogram (`managerHoldsFolders`, `folderHolderKeys`). Every read below applies the window
+> only to everyone else: `listSendsForManager`, `isCandidateSentToManager`, `listAllManagerSends({ withinHold })`,
+> the legacy-stamp reads, the team picker's count and gate, and `classifyExpiredHolds`. The daily return does
+> nothing at all when the organogram cannot be read, because unreadable reads as nobody holding folders.
+
 ## The number and the comparison
 
 `src/lib/recruitment/manager-hold-window.ts` is the only place the number lives
@@ -23,7 +31,7 @@ arithmetic.
 | Route | Where it is read | The clock |
 | --- | --- | --- |
 | **Pushed** — the desk sent it to this manager | `ats_candidate_manager_sends` (`listSendsForManager`, `isCandidateSentToManager`) and the legacy single-manager stamp `ats_candidates.manager_notified_*` (`listCandidatesSentToManager`, `isCandidateSentToCaller`) | `sent_at` / `manager_notified_at`. A **re-send is a fresh 45 days** — it is a new row with a new `sent_at`. |
-| **District folders** — derived, nothing stored | `listDistrictBoardsForManager`, `districtBoardsHoldingCandidate` in `district-manager-folders-db.ts` | The later of the CV's `createdAt` and `preferencesDeclaredAt` (`folderHoldAnchor`). A candidate who declares new preferences re-enters the folders for a fresh 45 days. |
+| **District folders** — the same sends, shown on the manager's shelves (since 2026-10-16 a folder holds only what a person sent; see [recruitment-manager-cv-folders.md](recruitment-manager-cv-folders.md)) | `listDistrictBoardsForManager`, `districtBoardsHoldingCandidate` in `district-manager-folders-db.ts`, both reading `ats_candidate_manager_sends` | `sent_at`, exactly as the pushed route. Before 2026-10-16 this row was derived from the CV's `createdAt` / `preferencesDeclaredAt` (`folderHoldAnchor`); that anchor is no longer read by the folders. |
 | **Team view** — NSM / RSM looking down their tree | `hiring-manager-team.ts` (`countPushesByManager`, `isCandidateWithinViewerTeam`), built off the two routes above | Same as the pushed clock; the picker's count and the gate behind it both apply it. |
 
 A fourth route — a requisition the manager **owns** — is a hiring process the manager is running,
@@ -76,9 +84,10 @@ open items, which is the opposite of what he asked.
 
 ## First effect
 
-- **District folders: immediately on deploy.** About 99 of the 105 CVs then live in folders are older
-  than 45 days and leave them; about 6 (re-declared) stay. They were never "sent", so nothing needs
-  returning for them — they simply stop being shown.
+- **District folders: immediately on deploy (as first shipped, 2026-10-06).** About 99 of the 105 CVs
+  then live in folders were older than 45 days and left them; about 6 (re-declared) stayed. They were
+  never "sent", so nothing needed returning for them. Superseded 2026-10-16: folders are now filled
+  only by sends, so every folder starts empty and the 45 days run from each send.
 - **Pushed CVs: from 2026-10-10 (Cairo)** — the oldest live send is 45 days old that day. 58 pushed CVs
   expire between 10 and 15 October, and come back on the daily run after each.
 

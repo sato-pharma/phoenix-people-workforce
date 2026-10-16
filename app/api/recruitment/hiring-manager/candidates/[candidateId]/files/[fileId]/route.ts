@@ -3,15 +3,14 @@ import { NextResponse } from "next/server";
 import { revealPhoneToViewer } from "@/lib/recruitment/candidate-call-claims";
 import { loadCallClaim } from "@/lib/recruitment/candidate-call-claims-db";
 import { recruitmentFileResponse } from "@/lib/recruitment/file-response";
-import { downloadHiringManagerCandidateFile } from "@/lib/recruitment/hiring-manager-view";
+import { downloadHiringManagerCandidateFile, isCandidateSentToCaller } from "@/lib/recruitment/hiring-manager-view";
 import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** What a manager is told when he asks this route for the file itself without holding the reservation. */
-const DOWNLOAD_BLOCKED =
-  'Press "I will call" on this CV to download it. Until then it is read on screen only.';
+/** What a manager is told when he asks this route for the file of a CV nobody sent him. */
+const DOWNLOAD_BLOCKED = "This CV was not sent to you, so its file is read on screen only.";
 
 /**
  * The delivery modes that are a RENDER rather than a file. Every manager in scope gets these.
@@ -31,7 +30,15 @@ const RENDER_ONLY_FORMATS = new Set(["base64", "doc-text"]);
 // Gated on the narrow `hiring_interviews` resource (not `recruitment`/`candidates`) — see
 // hiring-manager-view.ts for why.
 //
-// ── THE FILE ITSELF GOES ONLY TO THE MANAGER HOLDING THE RESERVATION ────────────────────────────
+// ── THE FILE GOES TO THE MANAGER A PERSON SENT IT TO, AND TO THE ONE HOLDING A RESERVATION ──────
+//
+// OWNER, 2026-10-16: once a CV has reached a manager from Talent Acquisition there is "no restriction
+// — he can download, see the number, do anything". So a CV sent to the caller (his folders ARE his
+// sends) is served as the file itself, with no "I will call" first. The reservation route below is
+// kept for the other case this route still serves — a CV the caller reaches by seniority or by an
+// application he owns — where the number stays hidden until he asks for it.
+//
+// What follows is the earlier rule, which now covers only those CVs:
 //
 // The owner blocked the manager's download on 2026-09-09 (*"the download to be blocked of the cv"*)
 // and, on 2026-10-13, asked for managers to be able to download any CV from wherever they find it.
@@ -61,7 +68,11 @@ export async function GET(
     // Drive is the same refusal with a bill attached.
     const format = new URL(request.url).searchParams.get("format");
     const isRender = Boolean(format && RENDER_ONLY_FORMATS.has(format));
-    if (!isRender && !revealPhoneToViewer(await loadCallClaim(candidateId), access.hrId)) {
+    if (
+      !isRender &&
+      !(await isCandidateSentToCaller(access, candidateId)) &&
+      !revealPhoneToViewer(await loadCallClaim(candidateId), access.hrId)
+    ) {
       return NextResponse.json(
         { error: "forbidden", message: DOWNLOAD_BLOCKED, success: false },
         { status: 403 },

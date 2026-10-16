@@ -17,7 +17,8 @@
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { recruitmentDb } from "@/lib/recruitment/db";
-import { managerHoldCutoffIso } from "@/lib/recruitment/manager-hold-window";
+import { loadFolderHolderKeys, managerHoldsFolders } from "@/lib/recruitment/folder-holders";
+import { isWithinManagerHold, managerHoldCutoffIso } from "@/lib/recruitment/manager-hold-window";
 import { managerLabel } from "@/lib/recruitment/person-labels";
 import type { SentForPosition } from "@/lib/recruitment/types";
 
@@ -243,7 +244,8 @@ export async function recordManagerSends(input: {
  * else here: stored ids are MIXED CASE ('B-12', 'b-10', 'PD-0001'), PostgREST eq is case-sensitive,
  * and a filter matching nothing is indistinguishable from "nothing was sent to you".
  *
- * ONLY THE SENDS STILL INSIDE THEIR 45 DAYS (manager-hold-window.ts). A send older than that is not
+ * ONLY THE SENDS STILL INSIDE THEIR 45 DAYS (manager-hold-window.ts) — EXCEPT FOR A MANAGER WHO HOLDS
+ * FOLDERS, whose sends carry no limit (owner, 2026-10-16: "lift it"). A send older than that is not
  * deleted — it stays on the trail, and the timeline and the screening queue still read it — it just
  * stops being something this manager can see or open. `now` is a parameter so a test can pin it.
  */
@@ -254,12 +256,9 @@ export async function listSendsForManager(
   const keys = hrIdLookupKeys(managerHrId);
   if (keys.length === 0) return [];
 
-  const { data, error } = await recruitmentDb()
-    .from(MANAGER_SENDS_TABLE)
-    .select(SEND_COLUMNS)
-    .in("manager_hr_id", keys)
-    .gte("sent_at", managerHoldCutoffIso(now))
-    .order("sent_at", { ascending: false });
+  let query = recruitmentDb().from(MANAGER_SENDS_TABLE).select(SEND_COLUMNS).in("manager_hr_id", keys);
+  if (!(await managerHoldsFolders(managerHrId))) query = query.gte("sent_at", managerHoldCutoffIso(now));
+  const { data, error } = await query.order("sent_at", { ascending: false });
 
   if (error) {
     if (isMissingTable(error)) return null;
@@ -395,7 +394,8 @@ export function isAfter(candidate: string | null | undefined, than: string | nul
  * column's answer instead of turning a missing migration into a denied CV.
  *
  * A SEND OLDER THAN 45 DAYS ANSWERS FALSE, the same cutoff `listSendsForManager` applies, so the
- * CV that fell off his list cannot still be opened by guessing its id (manager-hold-window.ts).
+ * CV that fell off his list cannot still be opened by guessing its id (manager-hold-window.ts). A
+ * manager who holds folders has no cutoff, here as there.
  */
 export async function isCandidateSentToManager(
   candidateId: string,
@@ -405,16 +405,86 @@ export async function isCandidateSentToManager(
   const keys = hrIdLookupKeys(managerHrId);
   if (keys.length === 0 || !candidateId) return false;
 
-  const { data, error } = await recruitmentDb()
+  let query = recruitmentDb()
     .from(MANAGER_SENDS_TABLE)
     .select("candidate_id")
     .eq("candidate_id", candidateId)
-    .in("manager_hr_id", keys)
-    .gte("sent_at", managerHoldCutoffIso(now))
-    .limit(1);
+    .in("manager_hr_id", keys);
+  if (!(await managerHoldsFolders(managerHrId))) query = query.gte("sent_at", managerHoldCutoffIso(now));
+  const { data, error } = await query.limit(1);
 
   if (error) {
     if (isMissingTable(error)) return null;
+    throw error;
+  }
+  return (data ?? []).length > 0;
+}
+
+/**
+ * Every send in the table, newest first — what the folders and the reminder run are built from.
+ *
+ * `withinHold` applies the same 45-day cutoff the manager's own list does — and, like it, to nobody who
+ * holds folders. The reminder run wants it; the engagement report does not, because a CV that aged out of an
+ * account was still received. Paged for the reason `listLatestSendByCandidate` is: PostgREST stops at
+ * 1000 rows without saying so, and a send missing from this list reads as "never sent".
+ *
+ * Returns null — distinct from an empty list — when the table is not in this database yet.
+ */
+export async function listAllManagerSends(
+  options: { now?: Date; withinHold?: boolean } = {},
+): Promise<ManagerSend[] | null> {
+  const supabase = recruitmentDb();
+  const sends: ManagerSend[] = [];
+  const now = options.now ?? new Date();
+  const holders = options.withinHold ? await loadFolderHolderKeys() : null;
+
+  for (let page = 0; page < SEND_PAGE_LIMIT; page += 1) {
+    const from = page * SEND_PAGE_SIZE;
+    const { data, error } = await supabase
+      .from(MANAGER_SENDS_TABLE)
+      .select(SEND_COLUMNS)
+      .order("candidate_id", { ascending: true })
+      .order("manager_hr_id", { ascending: true })
+      .range(from, from + SEND_PAGE_SIZE - 1);
+    if (error) {
+      if (isMissingTable(error)) return null;
+      throw error;
+    }
+    sends.push(
+      ...((data ?? []) as SendDbRow[])
+        .map(mapSend)
+        .filter((send) => send.candidateId && send.sentAt)
+        .filter(
+          (send) =>
+            !holders || holders.has(canonicalHrIdKey(send.managerHrId) ?? "") || isWithinManagerHold(send.sentAt, now),
+        ),
+    );
+    if ((data ?? []).length < SEND_PAGE_SIZE) return sends;
+  }
+
+  throw new Error(
+    `Manager-send paging stopped at ${SEND_PAGE_LIMIT * SEND_PAGE_SIZE} rows. Refusing to report a short list of sends.`,
+  );
+}
+
+/**
+ * Take one CV back out of one manager's folders: delete the (candidate, manager) send row.
+ *
+ * Returns whether a row was there to delete. The caller (`recallCandidateFromManager`) owns
+ * everything around it — the legacy stamp and the candidate's status — because those are decisions
+ * about the CV, and this file only knows about sends.
+ */
+export async function deleteManagerSend(candidateId: string, managerHrId: string): Promise<boolean> {
+  const keys = hrIdLookupKeys(managerHrId);
+  if (keys.length === 0 || !candidateId) return false;
+  const { data, error } = await recruitmentDb()
+    .from(MANAGER_SENDS_TABLE)
+    .delete()
+    .eq("candidate_id", candidateId)
+    .in("manager_hr_id", keys)
+    .select("candidate_id");
+  if (error) {
+    if (isMissingTable(error)) return false;
     throw error;
   }
   return (data ?? []).length > 0;

@@ -56,6 +56,7 @@ export function CandidateCallControl({
   canAct,
   children,
   claim,
+  hideReservation = false,
   onChanged,
   skip,
   viewerHrId,
@@ -66,6 +67,11 @@ export function CandidateCallControl({
   /** Buttons this card owns, rendered in the SAME row so the pair reads as a pair. */
   children?: ReactNode;
   claim: CandidateCallClaim | null;
+  /**
+   * Leave out "I will call" and its undo. True on a CV a person sent to this reader, where the number
+   * is his without reserving it (owner, 2026-10-16); the buttons this card owns still render.
+   */
+  hideReservation?: boolean;
   onChanged: (change: CandidateCallChange) => void;
   /** Passed only by a card whose Skip is the manager's own pass — see the three shapes above. */
   skip?: { onSkipped: (candidateId: string) => void };
@@ -127,7 +133,7 @@ export function CandidateCallControl({
             else holds — that is the whole reservation — so on a taken CV there is no button at all
             rather than a disabled one, which invites a press and explains nothing. The notice at the
             top of the card says who has it. */}
-        {!claim ? (
+        {!claim && !hideReservation ? (
           <Button disabled={busy} onClick={() => void send("will_call")} size="sm">
             I will call
           </Button>
@@ -147,7 +153,7 @@ export function CandidateCallControl({
             Skip
           </Button>
         ) : null}
-        {mine ? (
+        {mine && !hideReservation ? (
           <Button disabled={busy} onClick={() => void send("release")} size="sm" variant="secondary">
             I won&apos;t call after all
           </Button>
@@ -213,6 +219,12 @@ export function useCandidateCall(
   candidate: { phone: string | null; whatsapp: string | null },
   initialClaim: CandidateCallClaim | null,
   viewerHrId: string | null,
+  /**
+   * TRUE for a CV a person sent to this reader (owner, 2026-10-16: once it reaches him there is "no
+   * restriction"). The number then belongs to him without pressing anything, and the server no longer
+   * strips it from his lists. False everywhere else, where the "I will call" reservation still rules.
+   */
+  unrestricted = false,
 ) {
   const [claim, setClaim] = useState(initialClaim);
   const [phone, setPhone] = useState(candidate.phone);
@@ -229,7 +241,7 @@ export function useCandidateCall(
     if (change.whatsapp !== null) setWhatsapp(change.whatsapp);
   };
 
-  const mine = isViewersOwnClaim(claim, viewerHrId);
+  const mine = unrestricted || isViewersOwnClaim(claim, viewerHrId);
   return {
     apply,
     claim,

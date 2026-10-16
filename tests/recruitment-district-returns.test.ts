@@ -210,22 +210,25 @@ export function runRecruitmentDistrictReturnsTests(): void {
 
     // ── The report path stays blind to returns; the manager path applies them ────────────────────
     const loader = read("../src/lib/recruitment/district-manager-folders-db.ts");
+    // 2026-10-16: a return no longer needs remembering as a suppression. The return route deletes the
+    // manager's own send row (`deleteManagerSend`), so the folder, the access gate and the reminders
+    // all read one fact; the report path still reads every send ever made, the returned one included
+    // only while it exists, which is why the route records the return in the returns table FIRST.
     assert.ok(
-      loader.includes("placeCandidatesInDistrictFolders({ candidates, rows })"),
-      "the whole-company report path must NOT pass suppressedReturns — a returned CV was still received, and the engagement report counts it",
+      loader.includes("listAllManagerSends()"),
+      "the whole-company report path reads every send, with no 45-day window",
     );
     assert.ok(
-      loader.includes("placeCandidatesInDistrictFolders({ candidates, rows, suppressedReturns })"),
-      "the manager-scoped path MUST apply his returns, or a returned CV would sit in his folder looking un-returned",
+      loader.includes("await listSendsForManager(managerHrId)"),
+      "the manager-scoped path reads only the CVs sent to him — a returned one has no send row left",
     );
     assert.ok(
-      loader.includes("loadManagerReturnSuppressions(managerHrId)"),
-      "…and it reads those returns from the returns table for the one manager whose folders it builds",
+      loader.includes("(await isCandidateSentToManager(candidateId, viewerHrId)) === true"),
+      "isCandidateInViewerDistrict must revoke access to a CV the manager returned — the same fact that drops it from his folder",
     );
-    // The access split: OPEN is suppression-aware, SCOPE (what the return route gates on) is not.
     assert.ok(
-      loader.includes("return !(await isReturnSuppressed(viewerHrId, candidateId));"),
-      "isCandidateInViewerDistrict must revoke access to a CV the manager returned — the same decision that drops it from his folder",
+      !loader.includes("isReturnSuppressed") && !loader.includes("loadManagerReturnSuppressions"),
+      "the folder loader keeps no second copy of a return",
     );
 
     // ── The return route: the grant every DM holds, gated to a CV actually in his district ───────

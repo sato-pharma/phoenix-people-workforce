@@ -41,6 +41,7 @@ import { logError } from "@/lib/observability/log";
 import { CANDIDATE_STATUS_NOTE_MAX_LENGTH, normalizeCandidateStatus } from "@/lib/recruitment/candidate-status";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { chunkIds } from "@/lib/recruitment/db-batch";
+import { folderHolderKeys, loadDistrictSeatRows } from "@/lib/recruitment/folder-holders";
 import { isWithinManagerHold, MANAGER_HOLD_DAYS, managerHoldDaysHeld } from "@/lib/recruitment/manager-hold-window";
 import { MANAGER_SENDS_TABLE } from "@/lib/recruitment/manager-sends";
 import { managerLabel } from "@/lib/recruitment/person-labels";
@@ -92,16 +93,29 @@ export type ExpiredHold = {
  *
  * A candidate is skipped, never returned, when it is not `sent_to_manager` (a decision has already
  * moved it), when no send has a readable date (its age is unknown, and an unknown age is never proof
- * of 45 days), or when any one send is still inside the window.
+ * of 45 days), or when any one send is still inside the window. A hold by a manager who holds folders
+ * is always inside it.
  */
-export function classifyExpiredHolds(candidates: readonly SentCandidateRecord[], now: Date): ExpiredHold[] {
+export function classifyExpiredHolds(
+  candidates: readonly SentCandidateRecord[],
+  now: Date,
+  /** Canonical keys of managers who hold folders: their holds carry no limit (owner, 2026-10-16). */
+  exemptManagerKeys: ReadonlySet<string> = new Set(),
+): ExpiredHold[] {
   const expired: ExpiredHold[] = [];
   for (const candidate of candidates) {
     if (normalizeCandidateStatus(candidate.status) !== "sent_to_manager") continue;
 
     const dated = candidate.sends.filter((send) => Number.isFinite(Date.parse(send.sentAt)));
     if (dated.length === 0) continue;
-    if (dated.some((send) => isWithinManagerHold(send.sentAt, now))) continue;
+    if (
+      dated.some(
+        (send) =>
+          exemptManagerKeys.has(canonicalHrIdKey(send.managerHrId) ?? "") || isWithinManagerHold(send.sentAt, now),
+      )
+    ) {
+      continue;
+    }
 
     expired.push({
       candidateId: candidate.id,
@@ -359,8 +373,12 @@ export async function runManagerHoldReturn(now: Date = new Date()): Promise<Mana
     const candidateRows = await loadSentCandidates();
     if (candidateRows.length === 0) return { notified: false, ok: true, returned: 0 };
 
+    // Who holds folders is read from the organogram. An unreadable organogram reads as NOBODY, which
+    // would send every folder CV back, so that run returns nothing at all and tries again tomorrow.
+    const seatRows = await loadDistrictSeatRows();
+    if (seatRows.length === 0) return { notified: false, ok: true, returned: 0 };
     const sendRows = await loadSendRows(candidateRows.map((row) => String(row.id ?? "")).filter(Boolean));
-    const expired = classifyExpiredHolds(assembleSentCandidates(candidateRows, sendRows), now);
+    const expired = classifyExpiredHolds(assembleSentCandidates(candidateRows, sendRows), now, folderHolderKeys(seatRows));
     if (expired.length === 0) return { notified: false, ok: true, returned: 0 };
 
     const returned: ExpiredHold[] = [];

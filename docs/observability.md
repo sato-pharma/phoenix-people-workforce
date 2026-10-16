@@ -439,6 +439,7 @@ policy):
    | `phoenix-mapping-guard-notify` | `5,20,35,50 * * * *` | 1h | cron-job.org job `8427700` |
    | `phoenix-interview-reminders` | `3,13,23,33,43,53 * * * *` | 1h | cron-job.org job `8478976` · **in-house only** |
    | `phoenix-recruitment-requisition-autopilot` | `27 * * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-recruitment-manager-cv-reminders` | `41 * * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-crm-daily-digest` | `55 6 * * *` | 2h | cron-job.org job `8526396` · **in-house only** |
    | `phoenix-crm-integrity-sweep` | `35 3 * * *` | 3h | cron-job.org job `8525234` · **in-house only** |
    | `phoenix-crm-plan-reminder` | `57 12,17 * * *` | 2h | cron-job.org job `8562812` · **in-house only** |
@@ -528,6 +529,7 @@ policy):
    | `phoenix-distributor-upload-overdue-nudge` | `sales silent-when-clean` | Tells the Super Admin and the SFE Manager which distributor files for the month just closed are later than they were last month. A red means a late file went unreported. |
    | `phoenix-mapping-guard-notify` | `sales` | The attribution freshness clock — it refreshes the stale attribution periods four times an hour. A red means the attribution figures are drifting behind the sales data underneath them. |
    | `phoenix-recruitment-requisition-autopilot` | `recruitment in-house-only silent-when-clean` | The hourly requisition autopilot: an open requisition for every empty seat, and every requisition whose seat is filled closed as Filled. It sends nothing by design, so a red means seats stopped opening or closing on their own and Talent Acquisition is working from a stale list. |
+   | `phoenix-recruitment-manager-cv-reminders` | `recruitment in-house-only silent-when-clean` | The hourly reminder to each manager holding CV folders about CVs sent to them and not yet opened, 08:00-21:59 Cairo, in-app, Telegram and push, never email. A manager with nothing unopened is told nothing, so a red means an unopened CV stopped being chased. |
    | `phoenix-interview-reminders` | `recruitment in-house-only silent-when-clean` | Reminds each person chosen to conduct an interview, the evening before and an hour before, in-app, email and Telegram. A red means an interviewer may be given no reminder at all. |
    | `phoenix-crm-daily-digest` | `crm in-house-only silent-when-clean` | Phoenix CRM's 06:55 digest to each district manager about the previous field day, in-app and Telegram. A clean manager is told nothing, so this check is the only proof it ran. |
    | `phoenix-crm-integrity-sweep` | `crm in-house-only` | Phoenix CRM's 03:35 photo-duplicate and integrity sweep. It notifies nobody by design and only writes evidence for the board, so a red here is the only way anyone learns it stopped. |

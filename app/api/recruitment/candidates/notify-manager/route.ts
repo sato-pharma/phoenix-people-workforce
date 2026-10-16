@@ -49,7 +49,8 @@ export async function POST(request: Request) {
     }
 
     // The position rides along optionally. A body that names none still sends — see positionInput.
-    const result = await sendCandidatesToManager(access, candidateIds, managerHrId, positionInput(body));
+    // The folder on his shelf is optional too: left out, it is chosen from the position and the CV.
+    const result = await sendCandidatesToManager(access, candidateIds, managerHrId, positionInput(body), str(body.folderArea));
     return NextResponse.json({ result, success: true });
   } catch (error) {
     return recruitmentApiError(error, "Failed to send those candidates to that manager.");

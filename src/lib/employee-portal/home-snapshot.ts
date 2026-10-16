@@ -9,6 +9,8 @@ import { isReviewPeriod, windowLabel } from "@/lib/business-review/period-format
 import { getVacationBalancePeriod } from "@/lib/vacation/calculations";
 import { getEmployeeAnnualLeaveBalanceDays } from "@/lib/vacation/service";
 import { interviewCalendarCaller, listMyUpcomingInterviews } from "@/lib/recruitment/interview-calendar";
+import type { ManagerFolderSummary } from "@/lib/recruitment/manager-cv-folders";
+import { loadManagerCvFolderSummary } from "@/lib/recruitment/manager-cv-folders-summary";
 import type { InterviewPlatform } from "@/lib/recruitment/interview-calendar-types";
 import {
   getDsmTeamPerformance,
@@ -155,6 +157,9 @@ export const DV_FOCUS_ROLES = new Set([
   "Group Product Manager",
   "Training Manager",
 ]);
+
+/** The three sales-manager seats that hold CV folders on the organogram (owner, 2026-10-16). */
+const CV_FOLDER_ROLES = new Set(["District Manager", "Regional Manager", "National Sales Manager"]);
 
 /**
  * Resigned people are OFF the daily CRM board — not greyed out, not listed red as "did not
@@ -573,6 +578,12 @@ export type PortalHomeSnapshot = {
   plansCountAvailable: boolean;
   /** DM/RM/NSM/PM/GPM/TM only: personal DV trend, scope coverage, and probation DV watchlist. */
   dvFocus: DoubleVisitPortalFocus | null;
+  /**
+   * District, Regional and National Sales Manager only: the CV folders on this manager's shelf and how
+   * many of the CVs in them are still unopened (owner, 2026-10-16). Null for anybody who holds no
+   * shelf, so the overview row is absent rather than reading "0 folders".
+   */
+  cvFolders?: ManagerFolderSummary | null;
 };
 
 type RoleSpecificExtras = Pick<
@@ -1083,6 +1094,11 @@ export async function getPortalHomeSnapshot(
   const planAdherencePromise = hrId ? loadPortalPlanAdherence(hrId).catch(() => null) : Promise.resolve(null);
   // Days LEFT, not the raw entitlement — see leaveDaysRemaining's own doc on PortalHomeSnapshot.
   const leaveDaysRemainingPromise = hrId ? getEmployeeAnnualLeaveBalanceDays(hrId).catch(() => null) : Promise.resolve(null);
+  // The CV folders on a sales manager's shelf (owner, 2026-10-16). Started here with the rest; a failed
+  // read degrades to no row, because a landing page must never fail over a folder summary.
+  const cvFoldersPromise: Promise<ManagerFolderSummary | null> = CV_FOLDER_ROLES.has(role) && hrId
+    ? loadManagerCvFolderSummary(hrId).catch(() => null)
+    : Promise.resolve(null);
   // The person's own upcoming interviews — outside the role branches, data-driven like plan
   // adherence: whether they have any interview is the only honest test, so that is the test.
   const myInterviewsPromise: Promise<PortalMyInterview[]> = hrId
@@ -1265,14 +1281,16 @@ export async function getPortalHomeSnapshot(
   // does on the Vacation Report and the request page — omitting it silently kept this tile on
   // the hire-anniversary reset for an employee whose real period had already rolled over.
   const balance = getVacationBalancePeriod({ employeeHrId: hrId, hireDate: shell.hrContract.hireDate, referenceDate: today });
-  const [roleExtras, dvFocus, earlyBirdStars, planAdherence, leaveDaysRemaining, myInterviews] = await Promise.all([
-    roleExtrasPromise,
-    dvFocusPromise,
-    earlyBirdStarsPromise,
-    planAdherencePromise,
-    leaveDaysRemainingPromise,
-    myInterviewsPromise,
-  ]);
+  const [roleExtras, dvFocus, earlyBirdStars, planAdherence, leaveDaysRemaining, myInterviews, cvFolders] =
+    await Promise.all([
+      roleExtrasPromise,
+      dvFocusPromise,
+      earlyBirdStarsPromise,
+      planAdherencePromise,
+      leaveDaysRemainingPromise,
+      myInterviewsPromise,
+      cvFoldersPromise,
+    ]);
 
   return {
     shell,
@@ -1299,5 +1317,6 @@ export async function getPortalHomeSnapshot(
     plansAwaitingManagerApproval,
     plansCountAvailable,
     dvFocus,
+    cvFolders,
   };
 }

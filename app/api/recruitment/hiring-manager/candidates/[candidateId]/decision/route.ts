@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
 
-import {
-  redactCandidateContact,
-  revealPhoneToViewer,
-} from "@/lib/recruitment/candidate-call-claims";
 import { loadCallClaim, releaseCandidateCall } from "@/lib/recruitment/candidate-call-claims-db";
 import { updateCandidateStatus } from "@/lib/recruitment/candidates";
 import {
@@ -91,13 +87,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
       await releaseCandidateCall({ candidateId, managerHrId: access.hrId }).catch(() => undefined);
     }
 
-    // The candidate this route hands back is the row as STORED, phone number and all, and a screen
-    // that renders it from anywhere but the claim would print what the page took away. Redacted
-    // against whatever claim now stands — which, after a Skip, is no longer his. Read AFTER the
-    // release above, deliberately, so the answer reflects the state the manager is left in.
+    // The candidate is handed back as stored, phone number included: the gate above proved it was
+    // SENT to this caller, and a CV a person sent to him is fully his (owner, 2026-10-16). The claim
+    // is still returned, read AFTER the release above so it reflects the state he is left in.
     const claim = await loadCallClaim(candidateId);
     return NextResponse.json({
-      candidate: redactCandidateContact(candidate, revealPhoneToViewer(claim, access.hrId)),
+      candidate,
       claim,
       success: true,
     });

@@ -83,6 +83,11 @@ type Props = {
    */
   initialDistrictBoards: DistrictManagerBoard<Candidate>[];
   /**
+   * The CVs in his folders he has not opened since they were sent — what makes a folder pulse and
+   * opens the first such folder on arrival. Computed on the server from his own view history.
+   */
+  initialUnseenIds?: string[];
+  /**
    * What this manager has filed onto HIS OWN shelf, keyed by candidate id.
    *
    * His own, not the recruitment team's: filing here writes ats_candidate_manager_folders and
@@ -462,7 +467,8 @@ function SentCandidateCard({
   const [candidate, setCandidate] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const call = useCandidateCall(initial, initialClaim, viewerHrId);
+  // A CV sent to this manager is fully his — number, file, everything (owner, 2026-10-16).
+  const call = useCandidateCall(initial, initialClaim, viewerHrId, true);
 
   const notified = candidate.managerNotified;
   // Only an untouched candidate still needs an answer. Once the manager (or the recruiter) has
@@ -553,7 +559,7 @@ function SentCandidateCard({
       <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
         {/* Hidden until he takes the CV. The owner, 2026-09-09 — and it is the reservation that
             reveals it, which is what makes "I will call" something he can act on. */}
-        <Field label="Phone" value={call.phone ?? hiddenPhoneText(true)} />
+        <Field label="Phone" value={call.phone} />
         <Field label="Email" value={candidate.email} />
         <Field label="Governorate" value={candidate.governorate} />
         <Field label="Current job title" value={candidate.currentJobTitle} />
@@ -614,6 +620,7 @@ function SentCandidateCard({
                   canAct
                   candidateId={candidate.id}
                   claim={call.claim}
+                  hideReservation
                   onChanged={call.apply}
                   viewerHrId={viewerHrId}
                 >
@@ -668,6 +675,7 @@ function RecruitmentCandidatesPortalBody({
   initialFiles: files,
   initialSentToMe: sentToMe,
   initialTeam,
+  initialUnseenIds,
   viewerHrId,
 }: Props) {
   const [applications, setApplications] = useState(initialApplications);
@@ -680,10 +688,28 @@ function RecruitmentCandidatesPortalBody({
   // leaves "Sent to you" entirely rather than sitting in a position folder AND in a shelf. A
   // candidate in two lists is a candidate answered twice.
   const {
-    live: liveSends,
+    live: liveAndFoldered,
     shelves,
     filedCount,
   } = useMemo(() => partitionManagerCandidates(sentToMe, filings), [filings, sentToMe]);
+
+  // THE FOLDERS ARE HIS SENDS, so a CV sitting in one of his folders is not listed a second time
+  // under "Sent to you" — it is drawn once, by the same card, inside its folder. What stays in
+  // "Sent to you" is a CV that fits no folder on his shelf at all (a manager with no seat on the
+  // organogram has no folders, so for him this is every CV).
+  const foldered = useMemo(() => {
+    const ids = new Set<string>();
+    for (const board of initialDistrictBoards) {
+      for (const folder of board.folders) for (const candidate of folder.candidates) ids.add(candidate.id);
+    }
+    return ids;
+  }, [initialDistrictBoards]);
+  const liveSends = useMemo(
+    () => liveAndFoldered.filter((candidate) => !foldered.has(candidate.id)),
+    [foldered, liveAndFoldered],
+  );
+  const sentById = useMemo(() => new Map(sentToMe.map((candidate) => [candidate.id, candidate])), [sentToMe]);
+  const unseenIds = useMemo(() => new Set(initialUnseenIds ?? []), [initialUnseenIds]);
 
   const onFilingChanged = (candidateId: string, filing: ManagerFolderFiling | null) => {
     setFilings((current) => withManagerFiling(current, candidateId, filing));
@@ -716,14 +742,10 @@ function RecruitmentCandidatesPortalBody({
   // they used to be two separate expressions.
   const showGroupHeadings = shouldShowGroupHeadings(positionFolders, unfiledSends);
 
-  // One loader returns both kinds of board — the areas a district manager holds, and the districts a
-  // sales manager above him reads district-manager applications for. They are split HERE rather than
-  // in two server calls because the placement that fills them is one pass over one CV pool; splitting
-  // it would mean sweeping ~600 candidates twice to answer one screen.
-  const areaBoards = initialDistrictBoards.filter((board) => board.intake !== "district_managers");
-  const managerApplicantBoards = initialDistrictBoards.filter(
-    (board) => board.intake === "district_managers",
-  );
+  // Every board is now a shelf of area folders, whatever the seat — a regional or national sales
+  // manager holds every area beneath him — so there is no separate "district manager applicants"
+  // section any more: an application for a district manager post is just a CV that was sent.
+  const areaBoards = initialDistrictBoards;
 
   const reload = async () => {
     try {
@@ -765,8 +787,8 @@ function RecruitmentCandidatesPortalBody({
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Sent to you</h2>
             <p className="text-xs text-slate-500">
-              CVs the recruitment team asked you to look at. A CV stays here for {MANAGER_HOLD_DAYS} days, then goes
-              back to the recruitment team.
+              CVs the recruitment team asked you to look at. A CV in one of your folders stays until it is taken back
+              or you return it; any other CV goes back to the recruitment team after {MANAGER_HOLD_DAYS} days.
             </p>
           </div>
           {/* ── One folder per position ───────────────────────────────────────────────────────
@@ -830,24 +852,8 @@ function RecruitmentCandidatesPortalBody({
         callClaims={callClaims}
         files={files}
         ownFolders
-        viewerHrId={viewerHrId}
-      />
-
-      {/* Applications for a DISTRICT MANAGER post, which only the managers above a district ever
-          see. The owner, 2026-09-09: *"the district managers receive medical reps and the national
-          sales managers receive district managers and medical reps. A district manager never
-          receives district manager."* Its own section rather than more folders in the one above,
-          because these are a different job being applied for and the screening banner over that
-          section says "one of your areas", which is not what these are. Renders nothing at all for a
-          district manager — he holds no board of this kind by construction. */}
-      <DistrictFoldersSection
-        boards={managerApplicantBoards}
-        callClaims={callClaims}
-        files={files}
-        heading="District manager applicants"
-        ownFolders
-        rescreenBanner={false}
-        subheading="People applying to run one of the districts under you, filed by the district they asked for. District managers never see these."
+        renderOwnCard={(candidate) => renderSentCard(sentById.get(candidate.id) ?? candidate)}
+        unseenIds={unseenIds}
         viewerHrId={viewerHrId}
       />
 

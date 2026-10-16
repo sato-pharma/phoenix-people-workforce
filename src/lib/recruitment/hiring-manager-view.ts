@@ -40,6 +40,7 @@ import {
 } from "@/lib/recruitment/hiring-manager-team";
 import { getFileForDownload, listCandidateFiles, type FileDownload } from "@/lib/recruitment/files";
 import { recordManagerCvOpen } from "@/lib/recruitment/manager-cv-engagement";
+import { managerHoldsFolders } from "@/lib/recruitment/folder-holders";
 import { isWithinManagerHold } from "@/lib/recruitment/manager-hold-window";
 import { isCandidateSentToManager } from "@/lib/recruitment/manager-sends";
 import { getRequisition } from "@/lib/recruitment/requisitions";
@@ -71,10 +72,11 @@ export async function isCandidateSentToCaller(access: AccessContext, candidateId
   // THE STAMP COUNTS ONLY INSIDE ITS 45 DAYS (manager-hold-window.ts). The list this gate guards
   // stops showing a CV the second it is 45 days old; a gate that kept answering yes would let a
   // manager open, by id, a CV that is no longer in his account.
+  // A manager who holds folders has no window (owner, 2026-10-16).
   if (
     Boolean(stamped) &&
     hrIdsMatch(String(stamped), access.hrId) &&
-    isWithinManagerHold(String(row?.manager_notified_at ?? ""))
+    (isWithinManagerHold(String(row?.manager_notified_at ?? "")) || (await managerHoldsFolders(access.hrId)))
   ) {
     return true;
   }

@@ -30,6 +30,7 @@ import {
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
 import type { CandidateUnconfirmedCvFacts } from "@/lib/recruitment/candidate-screening-facts";
 import { chunkIds } from "@/lib/recruitment/db-batch";
+import { managerHoldsFolders } from "@/lib/recruitment/folder-holders";
 import { managerHoldCutoffIso } from "@/lib/recruitment/manager-hold-window";
 import {
   isAfter,
@@ -82,6 +83,8 @@ import {
 } from "@/lib/recruitment/db";
 import { logError } from "@/lib/observability/log";
 import { positionFolderLabel } from "@/lib/recruitment/position-folder";
+import { loadManagerShelves } from "@/lib/recruitment/district-manager-folders-db";
+import { chooseFolderForPush, OTHER_CVS_FOLDER_LABEL } from "@/lib/recruitment/manager-cv-folders";
 import { resolveSentForPosition } from "@/lib/recruitment/vacancy-options";
 import {
   BULK_DECISION_MAX,
@@ -785,7 +788,8 @@ export async function getCandidate(id: string): Promise<Candidate | null> {
  * is case-sensitive, and a filter matching nothing is indistinguishable from "nothing was sent to
  * you". That exact mistake made the manager dropdown empty earlier today.
  *
- * NOTHING OLDER THAN 45 DAYS, from either source (manager-hold-window.ts). The owner, 2026-10-06:
+ * NOTHING OLDER THAN 45 DAYS, from either source (manager-hold-window.ts), unless the manager holds
+ * folders: those carry no limit (owner, 2026-10-16: "lift it"). The owner, 2026-10-06:
  * *"Never a CV stay at a district manager account or any manager account more than 45 days."* A CV
  * the recruiter sends again is a new row timestamp, so it starts a fresh 45 days; one that is not
  * re-sent drops off this list the second it is 45 days old, and the daily run takes its status back.
@@ -810,15 +814,14 @@ export async function listCandidatesSentToManager(managerHrId: string | null | u
   // where a manager is shown an empty page that means the opposite of what it says.
   const sends = await listSendsForManager(managerHrId, now);
 
-  const legacy = await supabase
-    .from("ats_candidates")
-    .select("*")
-    .in("manager_notified_hr_id", keys)
-    // A stamp with no date is not provably inside the window, and `gte` drops a NULL — the same
-    // fail-closed answer manager-hold-window.ts gives. Every real send also has a row in the table
-    // above, so this costs a manager nothing he is entitled to.
-    .gte("manager_notified_at", managerHoldCutoffIso(now))
-    .order("manager_notified_at", { ascending: false });
+  let legacyQuery = supabase.from("ats_candidates").select("*").in("manager_notified_hr_id", keys);
+  // A stamp with no date is not provably inside the window, and `gte` drops a NULL — the same
+  // fail-closed answer manager-hold-window.ts gives. Every real send also has a row in the table
+  // above, so this costs a manager nothing he is entitled to. A folder holder has no window.
+  if (!(await managerHoldsFolders(managerHrId))) {
+    legacyQuery = legacyQuery.gte("manager_notified_at", managerHoldCutoffIso(now));
+  }
+  const legacy = await legacyQuery.order("manager_notified_at", { ascending: false });
   if (legacy.error) {
     // 42703 = the column does not exist, which is the pre-migration state and NOT a fault of this
     // caller: 20260815180000_candidate_manager_push adds it. Everything else is a real failure and
@@ -2053,9 +2056,17 @@ export async function sendCandidateToManager(
   candidateId: string,
   managerHrId: string,
   position?: SentForPositionInput | null,
-): Promise<{ candidateName: string; managerHrId: string; managerName: string; sentAt: string }> {
-  const sent = await sendCandidatesToManager(access, [candidateId], managerHrId, position);
-  return { ...sent, candidateName: sent.candidateNames[0] ?? "" };
+  folderArea?: string | null,
+): Promise<{
+  candidateName: string;
+  /** The folder on the manager's shelf the CV was filed in; null for a manager who holds no folders. */
+  folder: string | null;
+  managerHrId: string;
+  managerName: string;
+  sentAt: string;
+}> {
+  const sent = await sendCandidatesToManager(access, [candidateId], managerHrId, position, folderArea);
+  return { ...sent, candidateName: sent.candidateNames[0] ?? "", folder: sent.folders[0]?.folder ?? null };
 }
 
 /**
@@ -2084,7 +2095,16 @@ export async function sendCandidatesToManager(
   candidateIds: string[],
   managerHrId: string,
   position?: SentForPositionInput | null,
-): Promise<{ candidateNames: string[]; count: number; managerHrId: string; managerName: string; sentAt: string }> {
+  folderArea?: string | null,
+): Promise<{
+  candidateNames: string[];
+  count: number;
+  /** Where each CV was filed on the manager's shelf. `folder` is null for a manager with no folders. */
+  folders: Array<{ candidateName: string; folder: string | null }>;
+  managerHrId: string;
+  managerName: string;
+  sentAt: string;
+}> {
   const ids = Array.from(new Set(candidateIds.map((id) => String(id ?? "").trim()).filter(Boolean)));
   if (ids.length === 0) throw new Error("Choose at least one candidate to send.");
 
@@ -2131,9 +2151,42 @@ export async function sendCandidatesToManager(
   // not once a manager has already been alerted about a position that no longer exists.
   const sentForPosition = position ? await resolveSentForPosition(position) : null;
 
+  // ── WHICH FOLDER ON HIS SHELF (owner, 2026-10-16) ─────────────────────────────────────────────
+  //
+  // Every manager holds an empty folder per area, and a CV is in one only because it was sent there.
+  // The recruiter's choice wins; otherwise the area of the position, then the area the applicant
+  // declared, then the area their CV's own text names; otherwise "Other CVs". A folder the recruiter
+  // names that is not on this manager's shelf is refused by name rather than filed somewhere else.
+  const requestedFolder = String(folderArea ?? "").trim();
+  const shelves = await loadManagerShelves(manager.hrId);
+  const wantsOther = requestedFolder === OTHER_CVS_FOLDER_LABEL;
+  if (shelves.length > 0 && requestedFolder && !wantsOther) {
+    const onShelf = chooseFolderForPush({ boards: shelves, requested: requestedFolder });
+    if (!onShelf) throw new Error(`${requestedFolder} is not a folder on ${manager.name}'s shelf.`);
+  }
+  const folderByCandidate: Record<string, string | null> = {};
+  const filedIn: Array<{ candidateName: string; folder: string | null }> = [];
+  for (const candidate of candidates) {
+    const folder =
+      shelves.length === 0 || wantsOther
+        ? null
+        : chooseFolderForPush({
+            boards: shelves,
+            candidate,
+            positionArea: sentForPosition?.areaName ?? null,
+            requested: requestedFolder,
+          });
+    folderByCandidate[candidate.id] = folder;
+    filedIn.push({
+      candidateName: candidate.fullName,
+      folder: shelves.length === 0 ? null : (folder ?? OTHER_CVS_FOLDER_LABEL),
+    });
+  }
+
   const sent = await pushCandidatesToManager({
     actorHrId: access.hrId ?? null,
     candidates: candidates.map((candidate) => ({ id: candidate.id, name: candidate.fullName })),
+    folderByCandidate,
     managerHrId: manager.hrId,
     position: sentForPosition,
   });
@@ -2156,7 +2209,7 @@ export async function sendCandidatesToManager(
     await updateCandidateStatus(access, candidate.id, "sent_to_manager", note);
   }
 
-  return { ...sent, candidateNames: candidates.map((candidate) => candidate.fullName) };
+  return { ...sent, candidateNames: candidates.map((candidate) => candidate.fullName), folders: filedIn };
 }
 
 /** Loads a specific set of candidates, batched because the id list comes from a multi-select. */
