@@ -67,7 +67,9 @@ not opened, with no age limit - 12 CVs sent 26-31 August were still pinging four
   itself raises.
 - **A new notification row every hour**: the idempotency key carries the hour bucket, because the same
   key would overwrite the previous reminder and keep its read state.
-- **It stops** when the CV is opened, when Talent Acquisition takes it back, or when he returns it. There is no
+- **It stops** when the CV is opened, when Talent Acquisition takes it back, when he returns or hides it, or
+  **7 days after the send** (owner, 2026-10-16: "stop the folder reminder after 7 days" -
+  `REMINDER_MAX_DAYS`, `isWithinReminderWindow`). The CV stays in the folder; only the nag ends. There is no
   45-day end for a manager who holds folders (decision 4).
 
 ## Decisions taken without a question (owner can reverse any)

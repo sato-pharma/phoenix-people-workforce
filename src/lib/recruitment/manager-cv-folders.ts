@@ -360,6 +360,24 @@ export function unseenSendsByManager(input: {
 export const REMINDER_FIRST_HOUR_CAIRO = 8;
 export const REMINDER_LAST_HOUR_CAIRO = 21;
 
+/**
+ * How long a CV keeps reminding after it reaches a folder (owner, 2026-10-16: "stop the folder
+ * reminder after 7 days"). The CV itself stays in the folder; only the nag ends. One number, read by
+ * the job and by nothing that decides who holds a CV.
+ */
+export const REMINDER_MAX_DAYS = 7;
+
+/**
+ * True while a send is young enough to remind about. Strictly under {@link REMINDER_MAX_DAYS} days
+ * old, and a send whose time cannot be read is NOT reminded: a nag with no clock on it is exactly
+ * what the cap exists to stop.
+ */
+export function isWithinReminderWindow(sentAt: string, now: Date): boolean {
+  const sent = Date.parse(sentAt);
+  if (!Number.isFinite(sent)) return false;
+  return now.getTime() - sent < REMINDER_MAX_DAYS * 24 * 60 * 60 * 1000;
+}
+
 /** The Cairo wall-clock hour (0-23) of an instant. */
 export function cairoHour(now: Date): number {
   const hour = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hour12: false, timeZone: "Africa/Cairo" }).format(now);

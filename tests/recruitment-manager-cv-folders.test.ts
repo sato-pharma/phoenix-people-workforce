@@ -14,8 +14,10 @@ import {
   fillShelvesFromSends,
   isReminderHour,
   isSendUnseen,
+  isWithinReminderWindow,
   managerFolderShelves,
   OTHER_CVS_FOLDER_LABEL,
+  REMINDER_MAX_DAYS,
   reminderHourBucket,
   summarizeManagerFolders,
   unseenIdsOnBoards,
@@ -209,6 +211,14 @@ export function runRecruitmentManagerCvFoldersTests(): void {
     assert.equal(isReminderHour(new Date("2026-01-15T05:59:00Z")), false, "07:59 Cairo is still night");
     assert.equal(isReminderHour(new Date("2026-01-15T19:59:00Z")), true, "21:59 Cairo is still the working day");
     assert.equal(isReminderHour(new Date("2026-01-15T20:00:00Z")), false, "22:00 Cairo is night");
+
+    // The nag ends seven days after the send; the CV itself stays in the folder.
+    const now = new Date("2026-10-17T10:00:00Z");
+    assert.equal(REMINDER_MAX_DAYS, 7, "the owner capped the reminder at 7 days");
+    assert.equal(isWithinReminderWindow("2026-10-10T10:00:01Z", now), true, "a send one second short of 7 days still reminds");
+    assert.equal(isWithinReminderWindow("2026-10-10T10:00:00Z", now), false, "a send exactly 7 days old no longer reminds");
+    assert.equal(isWithinReminderWindow("2026-08-30T10:00:00Z", now), false, "a six-week-old send does not remind");
+    assert.equal(isWithinReminderWindow("not a date", now), false, "a send with no readable time is not reminded");
     assert.equal(isReminderHour(new Date("2026-01-15T22:30:00Z")), false, "midnight is night");
     assert.equal(reminderHourBucket(new Date("2026-10-16T08:41:27.123Z")), "2026-10-16T08:00:00.000Z", "one identity per hour");
   }
@@ -269,6 +279,7 @@ export function runRecruitmentManagerCvFoldersTests(): void {
     assert.ok(reminders.includes("reminderHourBucket(now)") && reminders.includes('eventType: "candidate_reminder"'), "a new reminder row every hour, not an overwrite of the last one");
     assert.ok(reminders.includes("boardsForManager(shelves, send.managerHrId).length > 0"), "only a manager who holds folders is reminded");
     assert.ok(reminders.includes("listAllManagerSends({ now, withinHold: true })"), "the 45 days are applied to everyone except a manager who holds folders");
+    assert.ok(reminders.includes("isWithinReminderWindow(send.sentAt, now)"), "a send older than the cap is not reminded");
     assert.ok(reminders.includes("if (dryRun) continue;"), "a dry run sends nothing");
 
     const cron = read("../app/api/cron/recruitment-manager-cv-reminders/route.ts");
