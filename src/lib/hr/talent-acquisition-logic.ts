@@ -18,6 +18,7 @@
  */
 
 import type { HrBundleName } from "@/lib/auth/hr-functions";
+import type { HrCommandTile } from "@/lib/hr/command-center";
 import type { CalendarGridDay, CalendarItem } from "@/lib/calendar/logic";
 import type { InterviewBooking, InterviewCalendarRole } from "@/lib/recruitment/interview-calendar-types";
 import { formatTimeRange } from "@/lib/recruitment/interview-calendar-week";
@@ -533,7 +534,7 @@ export function breakdownBarPercent(count: number, largest: number): number {
   return Math.max(4, Math.round((count / largest) * 100));
 }
 
-/** The three groups the eight figure cards stand in, in the order he reads them. */
+/** The three groups the six figure cards stand in, in the order he reads them. */
 export type TalentTileGroupKey = "seats" | "candidates" | "outcomes";
 
 export type TalentTileGroupSpec = {
@@ -546,23 +547,24 @@ export type TalentTileGroupSpec = {
 };
 
 /**
- * THE THREE GROUPS (owner, 2026-10-16, "Three labelled groups"): Seats, Candidates, Outcomes.
+ * THE THREE GROUPS: Seats, Candidates, Outcomes. Re-cut 2026-10-16 (owner: vacants by line with the
+ * actual number against the line's total structure, Hired and Offers Out as they were, a CVs
+ * Received card, "and remove the rest of the key cards") from eight figures to six.
  *
- * Keyed on the TILE KEYS `buildRecruitingTiles` already emits, never on a label — a label is worded
- * for a person and is reworded freely; a key is what the builder promises.
+ * Keyed on TILE KEYS, never on a label — a label is worded for a person and is reworded freely.
  */
 export const TALENT_TILE_GROUPS: readonly TalentTileGroupSpec[] = [
   {
-    caption: "Empty seats and their requisitions",
+    caption: "Empty seats, by line",
     key: "seats",
     label: "Seats",
-    tileKeys: ["open-requisitions", "seats-unrecruited", "requisitions-stale"],
+    tileKeys: ["vacants-pedia", "vacants-anti-infective", "vacants-cns"],
   },
   {
-    caption: "Where the CVs stand now",
+    caption: "CVs that reached the pool",
     key: "candidates",
     label: "Candidates",
-    tileKeys: ["awaiting-review", "with-managers", "active-candidates"],
+    tileKeys: ["cvs-received"],
   },
   {
     caption: "Hires and open offers",
@@ -571,6 +573,65 @@ export const TALENT_TILE_GROUPS: readonly TalentTileGroupSpec[] = [
     tileKeys: ["hired", "offers-sent"],
   },
 ];
+
+/**
+ * The two figures the shared recruiting builder emits that stay on her page, untouched. The builder
+ * serves the HR command centre too, so it keeps every other figure and this page drops them here.
+ */
+export const TALENT_KEPT_BUILDER_TILE_KEYS: readonly string[] = ["hired", "offers-sent"];
+
+/** The business lines whose seats she sees, in his reading order (Pedia, Anti Infective, CNS). */
+export const TALENT_SEAT_LINES: ReadonlyArray<{ key: string; label: string }> = [
+  { key: "pedia", label: "Pedia" },
+  { key: "anti-infective", label: "Anti Infective" },
+  { key: "cns", label: "CNS" },
+];
+
+function lineMatches(name: string | null | undefined, label: string): boolean {
+  return String(name ?? "").trim().toLowerCase() === label.toLowerCase();
+}
+
+/**
+ * One card per line: the figure is the line's VACANT SEATS, and the caption puts the actual
+ * headcount against the line's total structure — "35 of 36 seats filled".
+ *
+ * Total structure is the active people in the line plus its open seats, the same sum the CEO
+ * landing's "Total structure" card prints for the company (`calculateWorkforceStructureSummary`),
+ * so a line's three numbers always add up. The open seats come from `openWorkforceSeats`, which has
+ * already deduplicated `position_vacancies` down to distinct seats. A vacancy PARKED on purpose
+ * (Cairo Pedia) is still an empty seat and still counts here — it is parked from recruiting, not
+ * from the structure.
+ */
+export function buildLineVacancyTiles(input: {
+  activeLineNames: ReadonlyArray<string | null | undefined>;
+  openSeatLineNames: ReadonlyArray<string | null | undefined>;
+}): HrCommandTile[] {
+  return TALENT_SEAT_LINES.map((line) => {
+    const active = input.activeLineNames.filter((name) => lineMatches(name, line.label)).length;
+    const vacant = input.openSeatLineNames.filter((name) => lineMatches(name, line.label)).length;
+    const total = active + vacant;
+    return {
+      href: "/hr/reports/vacancies",
+      key: `vacants-${line.key}`,
+      label: `Vacants · ${line.label}`,
+      sub: `${active} of ${total} seats filled`,
+      tone: vacant > 0 ? "amber" : "emerald",
+      value: vacant,
+    };
+  });
+}
+
+/** The CVs Received card. `windowPhrase` is `describeWindow(...)`: "in October", or "11 Sep – 22 Sep". */
+export function buildCvsReceivedTile(count: number, windowPhrase: string): HrCommandTile {
+  return {
+    href: "/hr/recruitment",
+    key: "cvs-received",
+    label: "CVs Received",
+    sub: `received ${windowPhrase}`,
+    tone: "slate",
+    value: count,
+  };
+}
 
 export type TalentTileGroup<T> = TalentTileGroupSpec & { tiles: T[] };
 

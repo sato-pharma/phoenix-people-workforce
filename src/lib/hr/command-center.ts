@@ -399,6 +399,11 @@ export type HrCommandSources = Partial<{
  * it open to.
  */
 function hiredWindowCaption(window: HiredWindow): string {
+  return `hired ${describeWindow(window)}`;
+}
+
+/** The window as a phrase that follows a verb: "in October" for a whole month, else "11 Sep – 22 Sep". */
+export function describeWindow(window: HiredWindow): string {
   const day = (iso: string) =>
     new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }).format(
       new Date(`${iso}T00:00:00Z`),
@@ -417,9 +422,9 @@ function hiredWindowCaption(window: HiredWindow): string {
     const name = new Intl.DateTimeFormat("en-GB", { month: "long", timeZone: "UTC" }).format(
       new Date(`${window.fromIso}T00:00:00Z`),
     );
-    return `hired in ${name}`;
+    return `in ${name}`;
   }
-  return `hired ${day(window.fromIso)} – ${day(window.toIso)}`;
+  return `${day(window.fromIso)} – ${day(window.toIso)}`;
 }
 
 /**
