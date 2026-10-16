@@ -74,6 +74,9 @@ ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
 ARG NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_ONESIGNAL_APP_ID
+# Sentry (sentry.io) browser DSN — production only. Empty on any service that does not set it, which is the OFF switch:
+# sentry-client.ts also refuses to start anywhere but the production host.
+ARG NEXT_PUBLIC_SENTRY_DSN
 # 🔴 NO `NEXT_PUBLIC_COMMIT_SHA` HERE, AND RE-ADDING ONE WOULD TAG NOTHING. It sat in this list as an inert slot — declared,
 # re-exported, and read by ZERO call sites across src/, app/ and lib/ — under a comment claiming it tagged which revision a client
 # error came from. It never did: what identifies a release is `getDeployRevision()` in src/lib/observability/deploy-identity.ts,
@@ -87,6 +90,7 @@ ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_ONESIGNAL_APP_ID=$NEXT_PUBLIC_ONESIGNAL_APP_ID
+ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 
 RUN pnpm run build
 
