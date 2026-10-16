@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 import {
   JOB_POST_MAX_AREAS,
@@ -112,6 +112,34 @@ export function runRecruitmentJobPostsTests() {
   const noAreas = renderJobPostHtml(post(), "executive", ASSETS);
   assert.ok(noAreas.includes("Sheraton, Cairo"), "no area chosen -> the location fact is printed");
   assert.ok(!noAreas.includes("Hiring in") && !noAreas.includes('class="areas'), "no area chosen -> no area band");
+
+  // 🔴 A MULTI-AREA POST SHOUTS ITS AREAS TOO (owner, 2026-10-16: "the area or region should clear
+  // obvious"). The band shipped earlier that day set ONE area at 28px but left two or more at body
+  // size, so the three-area District Sales Manager post whispered. The size is tiered by COUNT, so
+  // the common case is loud and a full twelve still fits the picture.
+  const tiers: Array<[number, string]> = [[1, "areas one "], [3, "areas few "], [6, "areas some "], [12, "areas "]];
+  for (const [count, cls] of tiers) {
+    const many = Array.from({ length: count }, (_, i) => `Area ${i + 1}`);
+    const html = renderJobPostHtml(post({ areas: many }), "executive", ASSETS);
+    assert.ok(html.includes(`<div class="${cls}`), `${count} areas -> the band carries "${cls.trim()}"`);
+  }
+  const fewCss = renderJobPostHtml(post({ areas: ["A", "B", "C"] }), "executive", ASSETS);
+  assert.ok(/\.areas\.few \.al span \{[^}]*font-size: 25px/.test(fewCss), "two to four areas are set at 25px, not body size");
+  assert.ok(/\.areas\.few \.al span \{[^}]*inset 0 0 0 2px/.test(fewCss), "and carry the heavy frame the one-area band uses");
+
+  // 🔴 A POST NAMES AREAS OR WHOLE REGIONS (owner, 2026-10-16: "also add regions for district
+  // managers") — a district manager runs a district, so his post names the region, and the band and
+  // the WhatsApp line must say "region", never "area".
+  const byRegion = renderJobPostHtml(post({ areaNoun: "region", areas: ["Delta", "Upper Egypt", "Alexandria"] }), "executive", ASSETS);
+  assert.ok(byRegion.includes("Hiring in 3 regions"), 'a region post reads "Hiring in 3 regions"');
+  assert.ok(byRegion.includes("and your region") && !byRegion.includes("and your area"), "and asks the applicant for their region");
+  const byArea = renderJobPostHtml(post({ areas: ["Tanta", "Banha", "Zagazig"] }), "executive", ASSETS);
+  assert.ok(byArea.includes("Hiring in 3 areas") && byArea.includes("and your area"), 'the default is still "areas" — an older caller is unchanged');
+  assert.equal(
+    contentFromDraft({ ...coerceTitleDraft({ title: "District Sales Manager", department: "Sales", duties: [{ lead: "x", rest: "" }], needs: [{ lead: "y", rest: "" }] }) }, { areaNoun: "nonsense" as never, areas: [], line: null }, { careers: "c", whatsapp: "w" }).areaNoun,
+    "area",
+    "anything but the literal \"region\" reads as an area, so a bad request never invents a third noun",
+  );
 
   // ── The line prints only when it was chosen ────────────────────────────────────────────────────
   for (const { key } of JOB_POST_TEMPLATES) {
@@ -249,6 +277,31 @@ export function runRecruitmentJobPostsTests() {
   assert.deepEqual(residenceNeeds!.find((line) => /Cairo/.test(line.lead)), { lead: "Greater Cairo resident", rest: "preferred" }, "the residence line reads \"Greater Cairo resident preferred\" — a preference, never plain Cairo");
   assert.deepEqual(residenceGuard, copyNeeds, "the residence update only fires while the requirements still hold the marketer copy's list");
   assert.equal(residenceNeeds!.length, 7, "all seven requirements are kept");
+
+  // Then "nxt" (2026-10-16): the same wording rule reaches the three Sheraton office seats, whose seed
+  // (20261015223405) spelled it "Cairo-based". It stays a REQUIREMENT there — those seats sit in the
+  // office every working day — unlike the Product Manager's preference above.
+  const officeSeats = readFileSync(new URL("../supabase/migrations/20261016155332_job_post_office_seats_greater_cairo_residence.sql", import.meta.url), "utf8");
+  for (const seat of ["hr section head", "office coordinator", "talent acquisition specialist"]) {
+    assert.ok(officeSeats.includes(`'${seat}'`), `the correction names the ${seat} seat`);
+  }
+  assert.ok(
+    officeSeats.includes('\'{"lead": "Greater Cairo resident", "rest": "/ able to commute to Sheraton"}\'::jsonb'),
+    'the office seats read "Greater Cairo resident / able to commute to Sheraton" — Greater Cairo, and still a requirement',
+  );
+  assert.ok(
+    officeSeats.includes('t.needs @> \'[{"lead": "Cairo-based", "rest": "/ able to commute to Sheraton"}]\'::jsonb'),
+    "it fires only while the line still reads exactly as the seed wrote it, so a requirement edited on the page is never overwritten",
+  );
+
+  // THE RATCHET: no migration written after that correction may put a plain "Cairo-based" requirement
+  // back on a job post (owner: "no cairo residnece without great"). The earlier seeds legitimately
+  // still contain it — they are precisely what the correction rewrites — so only later files are read.
+  const migrationsDir = new URL("../supabase/migrations/", import.meta.url);
+  const plainCairoAfter = readdirSync(migrationsDir)
+    .filter((name) => name.endsWith(".sql") && name.slice(0, 14) > "20261016155332")
+    .filter((name) => /"lead":\s*"Cairo-based"/.test(readFileSync(new URL(name, migrationsDir), "utf8").replace(/^[ \t]*--.*$/gm, "")));
+  assert.deepEqual(plainCairoAfter, [], 'no migration after the correction writes a plain "Cairo-based" requirement — the residence line is always "Greater Cairo"');
 
   // ── The builder: choosing a title loads its words, and the page wears the shared premium look ──
   const page = readFileSync(new URL("../src/components/recruitment/job-post-builder.tsx", import.meta.url), "utf8");
