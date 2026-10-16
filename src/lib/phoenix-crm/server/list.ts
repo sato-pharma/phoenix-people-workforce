@@ -735,6 +735,9 @@ const CUSTOMER_COLUMNS =
   "pharmacy_pin_lat, pharmacy_pin_lon, pharmacy_pin_accuracy_meters, pharmacy_pin_captured_at, pharmacy_pin_captured_by_hr_id, pharmacy_pin_address, " +
   "pharmacy_pin_governorate, pharmacy_pin_area_code, pharmacy_pin_area_name, pharmacy_pin_brick_id, pharmacy_pin_brick_name, pharmacy_pin_brick_distance_km, pharmacy_pin_brick_lookup";
 
+/** The most customer ids `loadTerritoryCustomers` puts in one `in(...)` filter — a day's plan is far fewer. */
+const CUSTOMER_IDS_READ_MAX = 150;
+
 /**
  * Every customer carried over from the territory's iReports360 list has a row here, pending until the
  * rep validates it at the clinic. Minting them is idempotent, so every read of the list, the planner
@@ -757,13 +760,21 @@ export async function ensureReferenceCustomers(seat: OrgSeat, isTest: boolean): 
  * `onListOnly` keeps the list itself: validated, or carried over and waiting to be. `includeOutside`
  * adds the customers met outside the list and waiting to be added — the visit form offers them (a
  * second out-of-list visit to the same person), the planner deliberately does not.
+ *
+ * `customerIds` reads only those customers and their places, for a caller that already knows which it
+ * needs — Today, whose stops are the day's planned customers and nobody else. Every other filter still
+ * stands, so a planned customer who has left the list is still not on it. A list longer than
+ * `CUSTOMER_IDS_READ_MAX` reads the whole territory as before: a superset, never a shorter answer.
  */
 export async function loadTerritoryCustomers(
   seatId: string,
   isTest: boolean,
-  options: { onListOnly?: boolean; includeOutside?: boolean } = {},
+  options: { onListOnly?: boolean; includeOutside?: boolean; customerIds?: readonly string[] } = {},
 ): Promise<{ customers: Row[]; placesByCustomer: Map<string, ListPlace[]> }> {
   const supabase = getSupabaseAdmin();
+  const wanted = options.customerIds ? [...new Set(options.customerIds)] : null;
+  const only = wanted && wanted.length <= CUSTOMER_IDS_READ_MAX ? wanted : null;
+  if (only && only.length === 0) return { customers: [], placesByCustomer: new Map<string, ListPlace[]>() };
   const [customers, places] = await Promise.all([
     fetchAllRowsKeyset<Row>(
       () => {
@@ -771,12 +782,16 @@ export async function loadTerritoryCustomers(
         // On the list: validated, or carried over and waiting to be. A dropped customer is left out, and
         // one waiting outside the list only when the caller asks for him.
         if (options.onListOnly) query = query.in("status", options.includeOutside ? ["active", "pending", "outside"] : ["active", "pending"]);
+        if (only) query = query.in("id", only);
         return query;
       },
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     ),
     fetchAllRowsKeyset<Row>(
-      () => supabase.from("phoenix_crm_places").select(PLACE_COLUMNS).eq("seat_id", seatId).eq("is_test", isTest).eq("status", "active"),
+      () => {
+        const query = supabase.from("phoenix_crm_places").select(PLACE_COLUMNS).eq("seat_id", seatId).eq("is_test", isTest).eq("status", "active");
+        return only ? query.in("customer_id", only) : query;
+      },
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     ),
   ]);

@@ -118,8 +118,31 @@ export function runPortalRepNavigationSpeedTests(): void {
     );
     assert.doesNotMatch(today, /const names = await loadPeopleNames\(/, "and the territory's names are read with the rest, never after it");
     // His own week (owner, 2026-10-02) is one more read of the same wave — never awaited after it.
-    assertBefore(today, "loadWeekProgress(seat.seatId, isTest, date),", "const stops: PlannedStop[] = [];", "the week's read is inside the day's one wave");
+    assertBefore(today, "loadWeekProgress(seat.seatId, isTest, date, { planRow: planRowRead }),", "const stops: PlannedStop[] = [];", "the week's read is inside the day's one wave");
     assert.doesNotMatch(today, /await loadWeekProgress\(/, "and never awaited on its own");
+    // 🔴 The week's plan row is read ONCE (2026-10-16) and handed to the stops, the planned activities
+    // and the week, rather than three reads of one row.
+    assert.ok(today.includes("const planRowRead = loadWeekPlanRow(seat.seatId, isTest, date);"), "the plan row is read once");
+    for (const reader of [
+      "plannedCustomersOn(seat.seatId, isTest, date, { planRow: planRowRead })",
+      "loadPlannedActivitiesOn(seat.seatId, isTest, date, { planRow: planRowRead })",
+      "loadWeekProgress(seat.seatId, isTest, date, { planRow: planRowRead })",
+    ]) {
+      assert.ok(today.includes(reader), `${reader} — handed the one row`);
+    }
+    // And the stops' customers are read for the day's approved plan alone, never the whole territory.
+    assert.match(
+      today,
+      /const customersRead = plannedRead\.then\(\(planned\) =>\s*loadTerritoryCustomers\(seat\.seatId, isTest, \{ onListOnly: true, customerIds: planned\.status === "approved" \? planned\.customerIds : \[\] \}\),\s*\);/,
+      "Today reads only the customers its stops can be",
+    );
+    const territoryCustomers = functionBody(source("src/lib/phoenix-crm/server/list.ts"), "export async function loadTerritoryCustomers(");
+    assert.ok(territoryCustomers.includes('if (only) query = query.in("id", only);'), "the narrowed read keeps every other filter on the customers");
+    assert.ok(territoryCustomers.includes('return only ? query.in("customer_id", only) : query;'), "and reads those customers' places alone");
+    for (const reader of ["export async function loadPlannedActivitiesOn(", "export async function loadWeekProgress("]) {
+      const path = reader.includes("Week") ? "src/lib/phoenix-crm/server/week-progress.ts" : "src/lib/phoenix-crm/server/plan-activities.ts";
+      assert.ok(functionBody(source(path), reader).includes("await options.planRow;"), `${reader} uses the row it is handed`);
+    }
     const week = functionBody(source("src/lib/phoenix-crm/server/week-progress.ts"), "export async function loadWeekProgress(");
     assertBefore(week, "visitsRead.catch(() => undefined);", "await supabase", "and inside it, the visits' read starts beside the plan's, not after it");
   }
