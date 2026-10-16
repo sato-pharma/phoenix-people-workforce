@@ -578,7 +578,7 @@ async function loadAddressedRequestRows(hrId: string, isTest: boolean, since: st
 export async function loadDoubleVisitReport(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<DoubleVisitReport> {
   const isTest = testModeFor(viewer, raw.test);
   const audience = doubleVisitReportAudience(viewer);
-  if (!audience) throw forbiddenError("Double visit requests are for managers, product managers and SFE. A rep reads his own on the customer's page.");
+  if (!audience) throw forbiddenError("Double visit requests are for managers, product managers and SFE. A rep reads their own requests on the customer's page.");
   const since = addDaysIso(viewer.cairoToday, -REPORT_DAYS);
 
   const addressed = await loadAddressedRequestRows(viewer.hrId, isTest, since);
