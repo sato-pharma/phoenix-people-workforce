@@ -130,15 +130,26 @@ export async function requestRecordingSlot(viewer: PhoenixCrmViewer, raw: unknow
 
   const [year, month] = viewer.cairoToday.split("-");
   const path = `${isTest ? "test/" : ""}${storageSegment(seat.seatId)}/${year}/${month}/${crypto.randomUUID()}${extension}`;
-  const { error: slotError } = await supabase.from("phoenix_crm_visit_recordings").insert({
-    path,
-    issued_to_hr_id: viewer.hrId,
-    seat_id: seat.seatId,
-    is_test: isTest,
-  });
-  throwIfError(slotError);
+  const insertSlot = async () =>
+    supabase.from("phoenix_crm_visit_recordings").insert({
+      path,
+      issued_to_hr_id: viewer.hrId,
+      seat_id: seat.seatId,
+      is_test: isTest,
+    });
 
-  const { data, error } = await supabase.storage.from(PHOENIX_CRM_RECORDING_BUCKET).createSignedUploadUrl(path);
+  // The row and the signed URL are asked for together, as the photo slot's are (`photos.ts`
+  // `issuePhotoSlot` says why): the path is made here, so signing it needs nothing from the row. The
+  // row's error is checked FIRST, so a failed row still answers exactly as before and a URL signed
+  // for a path with no slot behind it is dropped, never returned — the claim refuses such a path.
+  const [slot, signing] = await Promise.allSettled([
+    insertSlot(),
+    supabase.storage.from(PHOENIX_CRM_RECORDING_BUCKET).createSignedUploadUrl(path),
+  ]);
+  if (slot.status === "rejected") throw slot.reason;
+  throwIfError(slot.value.error);
+  if (signing.status === "rejected") throw signing.reason;
+  const { data, error } = signing.value;
   if (error || !data) throw error ?? new Error("The recording upload could not be prepared.");
   return { path, signedUrl: data.signedUrl, token: data.token, contentType };
 }
