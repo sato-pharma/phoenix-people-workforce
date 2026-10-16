@@ -123,6 +123,8 @@ import {
 import { loadWhatsAppApplicantsView } from "@/lib/recruitment/whatsapp-applicants-loader";
 import type { CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import type { ScreeningRatingFilter } from "@/lib/recruitment/candidate-rating";
+import { loadRequisitionMatchInputs } from "@/lib/recruitment/requisition-attach";
+import { recommendRequisition } from "@/lib/recruitment/requisition-match";
 import type { Candidate } from "@/lib/recruitment/types";
 
 import type { DuplicateReason, WorkspaceCandidateRow } from "@/lib/recruitment/screening-workspace-types";
@@ -314,9 +316,11 @@ function locationOf(
 export async function loadScreeningWorkspace(
   viewerHrId: string | null | undefined,
   filters: ScreeningQueueFilters = {},
-  options: { canSendToManagers?: boolean } = {},
+  options: { canSendToManagers?: boolean; canAttachToRequisition?: boolean } = {},
 ): Promise<ScreeningWorkspace> {
   const canSendToManagers = Boolean(options.canSendToManagers);
+  // Admin or Talent Acquisition only (owner, 2026-10-16). The page decides, holding the AccessContext.
+  const canAttach = Boolean(options.canAttachToRequisition);
   // READ FIRST, because the pool itself now depends on it: a link naming one vacant seat builds a
   // different pool from the ordinary queue. Pure, cheap, and no round trip - see screening-link.ts.
   const narrowing = parseScreeningFilters(filters);
@@ -353,7 +357,7 @@ export async function loadScreeningWorkspace(
     // second: "has read" is permanent history, "is reading" is a five-minute lease that expires.
     listLiveClaimsByCandidate(viewerHrId),
     canSendToManagers ? listHiringManagerOptions() : Promise.resolve<HiringManagerOption[]>([]),
-    canSendToManagers ? listOpenVacancyOptions() : Promise.resolve<VacancyOption[]>([]),
+    canSendToManagers || canAttach ? listOpenVacancyOptions() : Promise.resolve<VacancyOption[]>([]),
     canSendToManagers
       ? listUsedPositionText()
       : Promise.resolve<{ jobTitles: string[]; areas: string[] }>({ areas: [], jobTitles: [] }),
@@ -368,6 +372,18 @@ export async function loadScreeningWorkspace(
     // same loader that page uses, so both pages find the same people.
     whatsAppSearch ? loadWhatsAppApplicantsView() : Promise.resolve<WhatsAppApplicantsView | null>(null),
   ]);
+
+  // The open requisitions a CV can be attached to, named from the seats just read. After the batch
+  // rather than inside it, because the names come from that batch's vacancy list.
+  // A failed read costs the band, never the page: the screen works without a recommendation.
+  let requisitionInputs: Awaited<ReturnType<typeof loadRequisitionMatchInputs>> | null = null;
+  if (canAttach) {
+    try {
+      requisitionInputs = await loadRequisitionMatchInputs(openVacancies);
+    } catch (error) {
+      console.error("[screening] requisition recommendation read failed", error);
+    }
+  }
 
   // A DECIDED shelved CV leaves the workstation exactly as it leaves the queue: the whole purpose of
   // the shelf is that a good-but-not-now CV stops being offered for review again. Taken off BEFORE
@@ -656,6 +672,14 @@ export async function loadScreeningWorkspace(
       seatReason: seatReasons.get(candidate.id) ?? null,
       statusRaw: String(candidate.status ?? ""),
       vacancyIds: [],
+      requisitionRecommendation: requisitionInputs
+        ? recommendRequisition({
+            attachedRequisitionIds: requisitionInputs.attachedByCandidate.get(candidate.id) ?? [],
+            candidate: { ...seatInputFor(candidate), status },
+            requisitions: requisitionInputs.requisitions,
+            vacancies: openVacancies,
+          })
+        : null,
     };
   };
 

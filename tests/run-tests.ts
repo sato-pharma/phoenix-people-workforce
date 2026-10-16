@@ -2330,6 +2330,7 @@ import { runInterviewCalendarTests } from "./interview-calendar.test.ts";
 import { runInterviewCalendarApplicationTests } from "./interview-calendar-application.test.ts";
 import { runScreeningDownloadApplicationTests } from "./screening-download-application.test.ts";
 import { runInterviewReminderTests } from "./interview-reminders.test.ts";
+import { runRecruitmentAutomationTests } from "./recruitment-automation.test.ts";
 import { runInterviewTier3Tests } from "./interview-tier3.test.ts";
 import { runInterviewRequestTests } from "./interview-requests.test.ts";
 import { runInterviewRoleAndOutcomeTests } from "./interview-role-and-outcome.test.ts";
@@ -9018,6 +9019,11 @@ await runTest(
 await runTest(
   "interview reminders go to the chosen interviewer only, District Manager and above, by in-app, email and Telegram: the evening before from 5:00 PM Cairo with the day's list and one hour before each interview, each sent once by its key",
   runInterviewReminderTests,
+);
+
+await runTest(
+  "the recruitment autopilot opens an already-open requisition for every empty seat with none (one per seat across its vacancy events, never a parked seat, never a replacement for somebody still employed), fills or cancels a requisition whose seat row is filled or cancelled and never touches a draft; the screening recommendation places a CV by the area tapped on WhatsApp first and the CV address only without one, has exactly two verdicts — attach or keep — and never Reject; the one-press attach is Admin or Talent Acquisition only, and the hourly cron, its heartbeat and its registry row are wired",
+  runRecruitmentAutomationTests,
 );
 
 

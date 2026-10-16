@@ -74,6 +74,7 @@ import { roleFitVerdictLabels } from "@/lib/recruitment/role-fit";
 import type { WorkspaceCandidateRow, WorkspaceVacancy } from "@/lib/recruitment/screening-workspace-types";
 import { FREE_POSITION, NO_POSITION, VacancyPicker } from "@/components/recruitment/vacancy-picker";
 import { CandidateStars } from "@/components/recruitment/workstation/candidate-stars";
+import { RequisitionRecommendationBand } from "@/components/recruitment/workstation/requisition-recommendation-band";
 import type { CandidateRating } from "@/lib/recruitment/candidate-rating";
 import { cn } from "@/lib/utils";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
@@ -86,6 +87,7 @@ export type SendState = {
 };
 
 export function WorkstationReviewHeader({
+  attachedTo,
   busy,
   canDecide,
   canRate,
@@ -95,6 +97,7 @@ export function WorkstationReviewHeader({
   error,
   focus,
   hiringManagers,
+  onAttach,
   onDecide,
   onNext,
   onRate,
@@ -109,6 +112,8 @@ export function WorkstationReviewHeader({
   suggestedVacancyIds,
   vacancies,
 }: {
+  /** The requisition this sitting attached the CV to, or null. Replaces the recommendation band. */
+  attachedTo: string | null;
   busy: boolean;
   /**
    * May this reader shortlist or reject this CV?
@@ -143,6 +148,8 @@ export function WorkstationReviewHeader({
   /** The whole screen is the document. This band answers by becoming one line. */
   focus: boolean;
   hiringManagers: readonly ManagerPickerOption[];
+  /** The one press on the recommendation band (owner, 2026-10-16) — see requisition-recommendation-band.tsx. */
+  onAttach: (requisitionId: string) => void;
   onDecide: (status: CandidateStatus, note: string | null) => void;
   /**
    * Null on a CV's OWN page — the tab a press in the list opens. There is no queue in that tab to
@@ -353,6 +360,17 @@ export function WorkstationReviewHeader({
   );
   const afterBands = (
     <>
+      {/* The recommendation is present only for Admin and Talent Acquisition — the loader leaves it
+          null for everybody else — and only while the CV is still the screen's to place. */}
+      {canDecide && row.requisitionRecommendation ? (
+        <RequisitionRecommendationBand
+          attachedTo={attachedTo}
+          busy={busy}
+          key={row.id}
+          onAttach={onAttach}
+          recommendation={row.requisitionRecommendation}
+        />
+      ) : null}
       {error ? (
         <p className="border-t border-phx-danger-line bg-phx-danger-bg px-4 py-1.5 text-[12px] font-semibold text-phx-danger">
           {error}

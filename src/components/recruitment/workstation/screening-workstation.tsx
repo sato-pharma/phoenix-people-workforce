@@ -304,6 +304,9 @@ export function ScreeningWorkstation({
   const [rated, setRated] = useState<Record<string, CandidateRating | null>>({});
   const [noteCounts, setNoteCounts] = useState<Record<string, number>>({});
   const [sentInSession, setSentInSession] = useState<Record<string, string>>({});
+  // The requisition each CV was attached to in this sitting, by code — what the band says instead of
+  // the recommendation once the press has landed.
+  const [attachedInSession, setAttachedInSession] = useState<Record<string, string>>({});
   /** Archived to the Duplicates shelf in this session - dropped from the list without a reload. */
   const [archived, setArchived] = useState<Record<string, boolean>>({});
   /**
@@ -585,6 +588,49 @@ export function ScreeningWorkstation({
       }
     },
     [busy, decided, decidedNote, goToNext, selected],
+  );
+
+  /**
+   * Attach the CV being read to an open requisition — the recommendation band's one press (owner,
+   * 2026-10-16). The server opens the application, tells the hiring manager and keeps the CV
+   * shortlisted; this records the shortlist the same way a Shortlist press would, then moves on, as
+   * Shortlist does. No undo window: an application has been opened and a manager told, and taking
+   * the status back would not take either of those back.
+   */
+  const attach = useCallback(
+    async (requisitionId: string) => {
+      const selectedId = selected?.id;
+      if (!selectedId || busy) return;
+      setBusy(true);
+      setActionError(null);
+      try {
+        const res = await fetch(`/api/recruitment/candidates/${selectedId}/attach-requisition`, {
+          body: JSON.stringify({ requisitionId }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          message?: string;
+          requisitionCode?: string;
+          status?: string;
+        };
+        if (!res.ok) throw new Error(data.message ?? "Could not attach that CV to the requisition.");
+        const code = data.requisitionCode ?? "the requisition";
+        setAttachedInSession((prev) => ({ ...prev, [selectedId]: code }));
+        if (data.status === "shortlisted") {
+          const note = `Attached to ${code}.`;
+          setDecided((prev) => ({ ...prev, [selectedId]: "shortlisted" }));
+          setDecidedNote((prev) => ({ ...prev, [selectedId]: note }));
+          tabs.current?.post({ id: selectedId, kind: "decided", note, status: "shortlisted" });
+        }
+        goToNext();
+      } catch (caught) {
+        setActionError(caught instanceof Error ? caught.message : "Could not attach that CV to the requisition.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, goToNext, selected],
   );
 
   /**
@@ -1444,6 +1490,7 @@ export function ScreeningWorkstation({
             {selected ? (
               <>
                 <WorkstationReviewHeader
+                  attachedTo={attachedInSession[selected.id] ?? null}
                   busy={busy}
                   canDecide={canDecide}
                   canReply={canReply}
@@ -1453,6 +1500,7 @@ export function ScreeningWorkstation({
                   focus={focus}
                   hiringManagers={hiringManagers}
                   canRate={canDecide}
+                  onAttach={(requisitionId) => void attach(requisitionId)}
                   onDecide={decide}
                   onNext={ownPage ? null : goToNext}
                   onRate={rate}
