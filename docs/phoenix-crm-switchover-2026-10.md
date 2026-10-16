@@ -414,3 +414,49 @@ door then returned exactly the nine reps, and one `select public.crm_contact_mas
 `phoenixVendorHandedOver` 0 — nine lists opened, nobody else's row touched. Shahd's own list is **104 PM + 8 AM**,
 `source = 'phoenix_crm'`, open from **11 October 2026**. It writes no ledger row, so the file is carried in
 `ACKNOWLEDGED_EXCEPTIONS` with those digests as its evidence.
+
+## Phoenix wins the day — for a medical rep
+
+**Owner, 2026-10-16.** All 21 teams are started (the 11 not yet running from Saturday 10 October; Mohamed Eleiwa's team
+from 17 October, because it was started first). The 2 October rule — a started team's iReports360 visits are ignored from
+its start — is narrowed: *"once you see an entry for a medical rep in Phoenix, drop the iReports; district managers keep
+both."* Scope: everything that reads visits.
+
+### The rule
+
+- **A day with a Phoenix entry for the rep drops his iReports360 visits and check-ins of THAT day.** A day with no
+  Phoenix entry keeps them, so a rep who has not yet moved to Phoenix on a given day is counted as he always was.
+- **An entry** is a countable Phoenix visit with a rep on it, or a recorded day activity of a counted kind (meeting,
+  conference, health day, sales day, training, admin work, travel), on a started REP seat and inside the start.
+- **A district manager has no entry day by design** — his team seat is not a rep seat — so he keeps BOTH apps. His own
+  iReports360 rows are never dropped by this rule.
+- **The plans door is unchanged.** `crm_plan_entries_unified` still drops a started team's iReports360 plan entries, a
+  district manager's included.
+
+### The shape — `20261016201551_phoenix_crm_wins_the_day_for_medical_reps.sql`
+
+One new function, `phoenix_crm_rep_entry_days()` (security definer, `service_role` only, rows hr_key / agent_crm_id /
+entry_day), and `create or replace` of the two doors whose iReports360 branch changes: `crm_visits_unified` and
+`crm_checkins_unified`. Only the iReports360 branch's exclusion is rewritten — two `not exists` clauses against the
+function, by HR id and, for a vendor row with none, by CRM id. The Phoenix branches, the column order and the types are
+untouched, so no reader changed shape. Rollback: re-apply the two earlier view definitions (`20261010161139`), then drop
+the function.
+
+### Readers moved with it
+
+- **Early Birds** (`collect.ts`) no longer judges a rep by his start window; the day's clock is the first Phoenix visit
+  when there is one and the iReports360 check-in when there is not, and the check-ins door already drops the latter on a
+  Phoenix day.
+- **"Recorded in both apps on the same day"** (the old "still recording in iReports360" flag) now counts only the mirror
+  rows the rule drops — a vendor row on a day the rep also has a Phoenix entry — by asking the same function the views
+  use. Its wording lost "counted nowhere", which is no longer true of a day Phoenix does not hold.
+- rep-day, the call rate and the KPI boards read the views and need no change; the call rate's "submitted" basis counts
+  every submitted visit, so a vendor row on a Phoenix-empty day scores again.
+
+### Measured on production before applying (read-only)
+
+1,395 iReports360 visits across 40 people (12 days) return to the figures, because they sit on days with no Phoenix
+entry; 7 newly drop, on days the rep also recorded in Phoenix. Both are the intended effect. Applied to staging and
+production on 16 October 2026; `phoenix_crm_rep_entry_days()` returned 277 entry rows, md5 of the function body
+`362949c1365a82a1b0eb79398219171f`. No data row was touched — the change restates figures through two views, and
+production has no PITR.

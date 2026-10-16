@@ -6,12 +6,11 @@
  * `ireports360_*` tables (`src/lib/crm/phoenix-team-starts.ts`).
  *
  * 🔴 IT READS THE RAW MIRROR, AND THE MODULE'S OWN READ DOOR CANNOT ANSWER THIS. `queryVisits` in
- * `src/lib/crm/reads.ts` selects from `crm_visits_unified`, and from a team's start that view
- * ANTI-JOINS exactly these visits out — the owner's rule of 2026-10-02, and the whole point of it — so
- * the door would answer a clean zero for a rep logging every day (20261002123958's own header: "his
- * iReports360 rows are left out of the same view that carries..."). 🔴 **That is invisible until
- * 2026-10-03**, when Delta (1)'s start lands: before it the view still carries the rows, so a probe
- * today cannot tell the two apart and only the view's definition can.
+ * `src/lib/crm/reads.ts` selects from `crm_visits_unified`, and for a started team's rep that view
+ * ANTI-JOINS exactly these visits out on every day he also has a Phoenix entry (the owner's rule of
+ * 2026-10-02, narrowed to "Phoenix wins the day" on 2026-10-16), so the door would answer a clean zero
+ * for a rep double-entering every day. Which days those are comes from `phoenix_crm_rep_entry_days()`,
+ * the very function the view anti-joins, so this flag and the figures cannot disagree.
  *
  * `tests/crm-single-source.test.ts` caught the first draft of this file and was right to: the escape it
  * offers is the justified allow-list entry, which is what this file carries, NOT a read routed through
@@ -34,7 +33,7 @@ import { getOrLoadShared } from "@/lib/cache/shared-read";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import type { VendorLeftoverRep } from "@/lib/phoenix-crm/vendor-leftovers";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
 type RepRow = {
   seat_id?: unknown;
@@ -45,6 +44,8 @@ type RepRow = {
 };
 
 type VisitRow = { agent_crm_id?: unknown; agent_hr_id?: unknown; visit_date?: unknown };
+
+type EntryDayRow = { hr_key?: unknown; agent_crm_id?: unknown; entry_day?: unknown };
 
 /** One started rep's tally on one territory — a flat row, so the shared cache can hold and copy it. */
 type LeftoverTally = { seatId: string; visits: number; lastDay: string; hrId: string | null };
@@ -107,6 +108,25 @@ async function loadLeftoverTallies(): Promise<LeftoverTally[] | null> {
     );
   if (reps.length === 0) return [];
 
+  // 🔴 PHOENIX WINS THE DAY (2026-10-16): a mirror row is dropped from the figures only on a day its rep
+  // also has a Phoenix entry, and that is the only row this flag may count. `phoenix_crm_rep_entry_days()`
+  // is the SAME function the two doors anti-join, so the flag and the figures cannot disagree. A district
+  // manager has no entry day by design (he keeps both apps), so he is never named here.
+  let entryDays: EntryDayRow[];
+  try {
+    entryDays = await rpcAll<EntryDayRow>(supabase, "phoenix_crm_rep_entry_days", {}, ["hr_key", "entry_day"]);
+  } catch {
+    return null;
+  }
+  const entryByHr = new Set<string>();
+  const entryByCrmId = new Set<string>();
+  for (const entry of entryDays) {
+    const day = typeof entry.entry_day === "string" ? entry.entry_day.slice(0, 10) : null;
+    if (!day) continue;
+    if (typeof entry.hr_key === "string") entryByHr.add(`${entry.hr_key.toLowerCase()}|${day}`);
+    if (typeof entry.agent_crm_id === "number") entryByCrmId.add(`${entry.agent_crm_id}|${day}`);
+  }
+
   // The vendor mirror is keyed by the vendor's own agent id; a rep with none never logged there.
   const crmIds = [...new Set(reps.map((rep) => rep.agentCrmId).filter((id): id is number => id !== null))];
   if (crmIds.length === 0) return [];
@@ -157,6 +177,9 @@ async function loadLeftoverTallies(): Promise<LeftoverTally[] | null> {
         (candidate.countedUntil === null || day < candidate.countedUntil),
     );
     if (!rep) continue;
+    // The view's own test: by the row's HR id when it has one, by the vendor id when it has none.
+    const droppedForPhoenix = hrId ? entryByHr.has(`${hrId.toLowerCase()}|${day}`) : entryByCrmId.has(`${crmId}|${day}`);
+    if (!droppedForPhoenix) continue;
     const key = `${rep.seatId}|${crmId}`;
     const found = byRep.get(key) ?? { seatId: rep.seatId, visits: 0, lastDay: day, hrId: hrId ?? rep.hrKey };
     found.visits += 1;

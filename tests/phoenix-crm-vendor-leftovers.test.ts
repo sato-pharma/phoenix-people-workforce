@@ -15,11 +15,13 @@ import {
 } from "../src/lib/phoenix-crm/vendor-leftovers.ts";
 
 /**
- * Phoenix CRM — who is still recording in iReports360 after his team moved.
+ * Phoenix CRM — who recorded the SAME day in both apps after his team moved.
  *
- * From a team's start its reps' iReports360 visits are IGNORED everywhere (owner, 2026-10-02), so a
- * rep who carries on logging there is doing real work that reaches no figure at all. The flag exists
- * to make that visible to the people who can act on it.
+ * Phoenix wins the day for a started team's rep (owner, 2026-10-16): on a day he has a Phoenix entry his
+ * iReports360 visits are IGNORED everywhere, so a rep who records that day in both apps is doing the
+ * work twice and the second copy reaches no figure. The flag exists to make that visible to the people
+ * who can act on it. A day recorded only in iReports360 counts and is no flag; a district manager keeps
+ * both apps and is never named.
  *
  * Two things here are easy to get wrong in opposite directions, and both are pinned:
  *   · the question CANNOT be asked of `crm_visits_unified` — the view anti-joins exactly these rows
@@ -46,12 +48,12 @@ export function runPhoenixCrmVendorLeftoverTests(): void {
 
     assert.equal(
       vendorLeftoverNote([rep("Ahmed Samir", 1, "2026-10-05")]),
-      "Ahmed Samir is still recording in iReports360 — 1 visit since the team moved, counted nowhere.",
+      "Ahmed Samir is still recording in iReports360 on days also recorded in Phoenix CRM — 1 visit since the team moved, not counted.",
       "one rep, one visit: singular on both halves",
     );
     assert.equal(
       vendorLeftoverNote([rep("Ahmed Samir", 12, "2026-10-05"), rep("Mona Fathy", 3, "2026-10-04")]),
-      "Ahmed Samir and Mona Fathy are still recording in iReports360 — 15 visits since the team moved, counted nowhere.",
+      "Ahmed Samir and Mona Fathy are still recording in iReports360 on days also recorded in Phoenix CRM — 15 visits since the team moved, not counted.",
       "two reps: both named, the visits summed",
     );
     assert.equal(
@@ -60,7 +62,7 @@ export function runPhoenixCrmVendorLeftoverTests(): void {
         rep("Mona Fathy", 3, "2026-10-04"),
         rep("Karim Adel", 1, "2026-10-03"),
       ]),
-      "Ahmed Samir, Mona Fathy and Karim Adel are still recording in iReports360 — 16 visits since the team moved, counted nowhere.",
+      "Ahmed Samir, Mona Fathy and Karim Adel are still recording in iReports360 on days also recorded in Phoenix CRM — 16 visits since the team moved, not counted.",
       "three reps read as a sentence, not as a list of rows",
     );
 
@@ -74,12 +76,12 @@ export function runPhoenixCrmVendorLeftoverTests(): void {
     const heading = VENDOR_LEFTOVER_TITLE.toLowerCase();
     assert.ok(note.length > 0 && heading.length > 0, "nothing to check — the assertions below would pass vacuously");
     // A rep still on the old app is following the habit he was trained in. The wording carries the
-    // COST ("counted nowhere") and no verdict on him.
+    // COST ("not counted") and no verdict on him.
     for (const accusing of ["refus", "ignor", "fail", "violat", "should", "must", "warning", "breach", "wrong", "not allowed"]) {
       assert.ok(!note.includes(accusing), `the sentence reads as a complaint about the rep ("${accusing}")`);
       assert.ok(!heading.includes(accusing), `the heading reads as a verdict ("${accusing}")`);
     }
-    assert.ok(note.includes("counted nowhere"), "it states the cost, which is the whole reason to show it");
+    assert.ok(note.includes("not counted"), "it states the cost, which is the whole reason to show it");
   }
 
   // ── 3. The order a manager works them ────────────────────────────────────────────────────────
@@ -118,9 +120,17 @@ export function runPhoenixCrmVendorLeftoverTests(): void {
     // debt rather than a file that quietly reaches past the door.
     assert.equal(
       CRM_VISITS_MIRROR_ALLOW_LIST["src/lib/crm/phoenix-vendor-leftovers.ts"],
-      "who is still recording in iReports360 after his team moved — the unified view anti-joins exactly those rows out, so the door would answer a confident zero",
+      "who recorded a day in both apps after his team moved — the unified view anti-joins exactly those rows out, so the door would answer a confident zero",
       "the allow-list entry carries WHY, which is what stops it being removed as dead weight",
     );
+
+    // 🔴 PHOENIX WINS THE DAY (2026-10-16): only a mirror row on a day its rep also has a Phoenix entry is
+    // a leftover, asked of the SAME function the two doors anti-join — a row on a day Phoenix does not
+    // hold counts as always and is no flag at all, and a failed read of the days is never cached.
+    assert.match(loader, /rpcAll<EntryDayRow>\(supabase, "phoenix_crm_rep_entry_days"/, "the entry days come from the function the views use");
+    assert.match(loader, /entryByHr\.has\(`\$\{hrId\.toLowerCase\(\)\}\|\$\{day\}`\)/, "by the row's HR id when it has one");
+    assert.match(loader, /entryByCrmId\.has\(`\$\{crmId\}\|\$\{day\}`\)/, "by the vendor id when it has none — the view's own test");
+    assert.match(loader, /if \(!droppedForPhoenix\) continue;/, "a day Phoenix does not hold is not a leftover");
 
     // Each rep's OWN window, so a team started later is never judged by visits that still belonged
     // in iReports360 when they were made, and a rep who left a started seat stops counting.

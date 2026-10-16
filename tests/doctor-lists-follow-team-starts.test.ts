@@ -430,7 +430,6 @@ export function runDoctorListsFollowTeamStartsTests() {
   );
   for (const reader of [
     "src/lib/crm/rep-day.ts",
-    "src/lib/early-birds/collect.ts",
     "src/lib/crm/kpis-board.ts",
     "src/lib/crm/call-rate-service.ts",
   ]) {
@@ -445,4 +444,11 @@ export function runDoctorListsFollowTeamStartsTests() {
       `${reader} must not read the doctor-list door — it would count a vendor-less rep's days as Phoenix's`,
     );
   }
+  // Early Birds stopped asking the started windows on 2026-10-16 (Phoenix wins the DAY: its clock follows the
+  // rep-day's own Phoenix visit) — it must still never read the doctor-list door.
+  assert.doesNotMatch(
+    read("src/lib/early-birds/collect.ts"),
+    /loadDoctorListRepWindows/,
+    "early-birds/collect.ts must not read the doctor-list door — it would count a vendor-less rep's days as Phoenix's",
+  );
 }

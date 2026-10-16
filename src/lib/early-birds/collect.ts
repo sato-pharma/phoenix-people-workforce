@@ -14,8 +14,6 @@ import { isMedicalRepDirectoryEmployee } from "@/lib/employee-portal/service";
 import { fieldWorkforceDeductionDayWeight } from "@/lib/field-workforce-compliance/weekend-policy";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { buildEarlyBirdsDailyWinners } from "@/lib/early-birds/daily-board";
-import { loadStartedRepWindows } from "@/lib/crm/phoenix-started-reps";
-import { startedWindowCovers } from "@/lib/early-birds/phoenix-start";
 import { earlyBirdsPeriodDays, type EarlyBirdsPeriod } from "@/lib/early-birds/period";
 import { EARLY_BIRDS_EARLIEST_PLAUSIBLE_START_MINUTES } from "@/lib/early-birds/scoring";
 import type {
@@ -49,9 +47,10 @@ export type EarlyBirdsInputs = {
    */
   gpsStartByRepDay: Map<string, number>;
   /**
-   * `${hrIdKey}|${dateIso}` of every rep-day a started Phoenix CRM team's start covers. On those days
-   * the rep's clock is his first Phoenix visit and his iReports360 check-ins are not read at all — so the
-   * scorer counts and names such a start as a first visit, never as GPS (phoenix-start.ts).
+   * `${hrIdKey}|${dateIso}` of every rep-day on which the rep made a countable Phoenix CRM visit. On those
+   * days his clock is his first Phoenix visit and his iReports360 check-ins are left out by the read door
+   * (Phoenix wins the day) — so the scorer counts and names such a start as a first visit, never as GPS
+   * (phoenix-start.ts). A day with no Phoenix visit is not in the set and is scored on iReports360.
    */
   phoenixClockRepDays: Set<string>;
   /** Last day actually scored — the period end, or today for a mid-period preview. */
@@ -168,7 +167,7 @@ export async function collectEarlyBirdsInputs(input: {
     };
   }
 
-  const [visits, checkins, startedWindows] = await Promise.all([
+  const [visits, checkins] = await Promise.all([
     queryVisits<VisitRowWithDate>({
       dateFrom: input.period.startIso,
       dateTo: throughIso,
@@ -184,33 +183,17 @@ export async function collectEarlyBirdsInputs(input: {
       // to a particular visit — see gpsStartByRepDay below.
       columns: "agent_crm_id, agent_hr_id, contact_crm_id, check_date",
     }),
-    loadStartedRepWindows(),
   ]);
 
-  // Every rep-day of this roster within a started Phoenix CRM team's start (phoenix-start.ts): on it his
-  // clock is his first Phoenix visit, and his iReports360 check-ins are read neither as his start, nor
-  // as a visit's check-in, nor on the daily board — the module stays on one clock.
-  const phoenixClockRepDays = new Set<string>();
-  for (const rep of startedWindows.length > 0 ? reps : []) {
-    for (const dateIso of periodDays) {
-      if (startedWindowCovers(startedWindows, { hrId: rep.hrId, crmId: null }, dateIso)) {
-        phoenixClockRepDays.add(`${rep.hrIdKey}|${dateIso}`);
-      }
-    }
-  }
-  const liveCheckins =
-    startedWindows.length === 0
-      ? checkins
-      : checkins.filter(
-          (checkin) =>
-            !startedWindowCovers(
-              startedWindows,
-              { hrId: checkin.agent_hr_id ?? null, crmId: checkin.agent_crm_id },
-              String(checkin.check_date ?? "").slice(0, 10),
-            ),
-        );
+  // PHOENIX WINS THE DAY (owner, 2026-10-16): a rep-day on which he made a countable Phoenix visit is on
+  // Phoenix's clock — his first Phoenix visit — and a day on which he made none is on iReports360's.
+  // The check-in door already leaves out his iReports360 check-ins of a day he has a Phoenix entry
+  // (crm_checkins_unified), so the check-ins below are the days Phoenix has nothing for, and read as they
+  // always did. The module still never mixes two clocks inside one rep-day.
+  const phoenixStarts = phoenixFirstVisitStarts(visits);
+  const phoenixClockRepDays = new Set<string>(phoenixStarts.keys());
 
-  const checkinIndex = indexCheckinsByAgentContactDay(liveCheckins);
+  const checkinIndex = indexCheckinsByAgentContactDay(checkins);
   const realVisitTypes = new Set<number>(CRM_DOUBLE_VISIT_TYPE_CODES);
 
   const facts: EarlyBirdsVisitFact[] = [];
@@ -226,7 +209,7 @@ export async function collectEarlyBirdsInputs(input: {
   // is both the honest answer to the question the board asks and immune to that.
   const gpsStartByRepDay = new Map<string, number>();
 
-  for (const checkin of liveCheckins) {
+  for (const checkin of checkins) {
     const dateIso = String(checkin.check_date ?? "").slice(0, 10);
     if (!dateIso) continue;
     const bucket = checkinsByDate.get(dateIso);
@@ -243,9 +226,9 @@ export async function collectEarlyBirdsInputs(input: {
     if (current === undefined || minutes < current) gpsStartByRepDay.set(key, minutes);
   }
 
-  // On a rep-day within a start, his first countable Phoenix visit IS the day's start.
-  for (const [key, minutes] of phoenixFirstVisitStarts(visits)) {
-    if (phoenixClockRepDays.has(key)) gpsStartByRepDay.set(key, minutes);
+  // On a rep-day with a countable Phoenix visit, his first one IS the day's start.
+  for (const [key, minutes] of phoenixStarts) {
+    gpsStartByRepDay.set(key, minutes);
   }
 
   for (const row of visits) {
