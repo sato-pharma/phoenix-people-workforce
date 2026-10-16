@@ -251,6 +251,25 @@ export function runPortalRepNavigationSpeedTests(): void {
     assertBefore(functionBody(list, "export async function addPlace("), "const subjectRead = validationSubject(", "await sharedPlaceForSeating(", "Add place reads its customer beside the venue");
   }
 
+  // ── Phoenix CRM · a polyclinic's board is read once (2026-10-16) ───────────────────────────────
+  {
+    const check = source("src/lib/phoenix-crm/server/schedule-check.ts");
+    // The premise: the question put to the model names nobody, so one reading serves every doctor.
+    const board = functionBody(check, "export async function readScheduleBoard(");
+    assert.doesNotMatch(board, /customerName/, "the board's reading never depends on whose name is held against it");
+    assert.ok(board.includes("downloadVenueTimetablePhoto({"), "and it still reads a reused board through the venue door");
+    assert.match(
+      functionBody(check, "export async function readPlaceSchedule("),
+      /return judgeScheduleBoard\(await readScheduleBoard\(input\), input\.customerName\);/,
+      "one doctor's read is the board's reading judged on his name — the same path, not a copy",
+    );
+    const settle = functionBody(source("src/lib/phoenix-crm/server/venue-timetable.ts"), "export async function settleVenueTimetable(");
+    assert.equal((settle.match(/readScheduleBoard\(/g) ?? []).length, 1, "the building's board is read once");
+    assert.doesNotMatch(settle, /readPlaceSchedule\(/, "never once per doctor");
+    assert.ok(settle.includes("judgeScheduleBoard(board, name)"), "and each doctor is judged on his own name");
+    assertBefore(settle, "if (judged.length > 0) {", "readScheduleBoard(", "nothing is read when no seated doctor has a usable name");
+  }
+
   // ── Phoenix CRM · Reports and the shared chunk ─────────────────────────────────────────────────
   {
     // Outside the test world the default Visits address reads nothing the scope answers.
