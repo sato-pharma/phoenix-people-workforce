@@ -56,6 +56,20 @@ export async function register() {
       console.error("[sentry] failed to start:", error);
     }
 
+    // Which process this is. A `web` process answers pages and starts none of the three schedulers below
+    // (resolveInProcessHostRefusal refuses them); the `worker` service runs them, so a heavy job can no
+    // longer freeze every page (src/lib/platform/process-role.ts). Said once at boot, a typo loudest.
+    try {
+      const { isUnrecognisedProcessRole, resolveProcessRole } = await import("@/lib/platform/process-role");
+      const raw = process.env.PHOENIX_PROCESS_ROLE;
+      if (isUnrecognisedProcessRole(raw)) {
+        console.error(`[process-role] PHOENIX_PROCESS_ROLE=${JSON.stringify(raw)} is not web, worker or all — running as "all"`);
+      }
+      console.log(`[process-role] ${resolveProcessRole(raw)}`);
+    } catch (error) {
+      console.error("[process-role] failed to resolve:", error);
+    }
+
     try {
       const { startLiveCrmPoller } = await import("@/lib/crm/live-poller");
       const result = startLiveCrmPoller();

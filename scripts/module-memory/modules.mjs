@@ -806,6 +806,9 @@ export const MODULES = [
       "scripts/check-dockerfile.mjs",
       "tests/dockerfile-parse-gate.test.ts",
       "tests/railway-deploy-config.test.ts",
+      // The web/worker process roles decide which Railway service runs the background jobs.
+      "instrumentation.ts",
+      "src/lib/platform/process-role.ts",
     ],
     keywords: ["railway", "deploy", "deployed", "revision", "healthz", "readyz", "wait for ci", "deploy gate", "base image", "docker hub", "dockerfile", "volume", "region"],
     tables: [],

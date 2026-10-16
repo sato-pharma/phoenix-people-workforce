@@ -12,6 +12,7 @@ import { roundCurrency } from "@/lib/payroll/money";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { getSalesScope, normalizeHrId, normalizeHrIdForAccess, normalizeLineName, resolveEmployeeIdentityId, type AccessContext, type BusinessScope } from "@/lib/auth/permissions";
+import { getUserSalesScopeOverrideRaw } from "@/lib/auth/scope-visibility";
 import { salesRoleOverrideForHrId } from "@/lib/sales/role-mapping";
 import {
   canViewRestrictedProducts,
@@ -135,14 +136,8 @@ export function collectHierarchy(
 async function getPersistedSalesScopeOverride(accessContext: AccessContext): Promise<BusinessScope | null> {
   if (!accessContext.loginId) return null;
 
-  const supabase = getSupabaseAdmin();
-  const { data } = await supabase
-    .from("app_auth_users")
-    .select("sales_scope_override")
-    .eq("login_id", accessContext.loginId)
-    .maybeSingle();
-
-  const raw = String((data as { sales_scope_override?: string | null } | null)?.sales_scope_override ?? "")
+  // The same per-request login-row read access-scope.ts uses, so the two never disagree.
+  const raw = String((await getUserSalesScopeOverrideRaw(accessContext.loginId)) ?? "")
     .trim()
     .toUpperCase();
 

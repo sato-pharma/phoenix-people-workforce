@@ -5,6 +5,8 @@
 // recruitment owner/deadline/priority). It snapshots the vacancy's org-unit ids
 // so offer creation can pass them straight through to the offer engine.
 
+import { cache } from "react";
+
 import type { AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
@@ -61,16 +63,32 @@ function enrich(requisition: Requisition, names: Map<string, string>): Requisiti
   };
 }
 
+/**
+ * Every requisition row, newest first — read ONCE per server render.
+ *
+ * The recruitment overview reads this twice in one render: `getRecruitmentDashboard` lists the
+ * requisitions, and `listApplications` beside it lists them again for its scope check. Same table,
+ * same order, no filter, so React `cache()` hands the second caller the first one's rows (an error
+ * is thrown to both). Outside a render it is a plain call. Nothing mutates the rows — every caller
+ * maps them into new objects.
+ */
+const loadAllRequisitionRows = cache(async (): Promise<RequisitionDbRow[]> => {
+  const { data, error } = await recruitmentDb()
+    .from("ats_requisitions")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as RequisitionDbRow[];
+});
+
 export async function listRequisitions(access: AccessContext): Promise<Requisition[]> {
-  const supabase = recruitmentDb();
-  const [{ data, error }, names, scopeHrIds] = await Promise.all([
-    supabase.from("ats_requisitions").select("*").order("created_at", { ascending: false }),
+  const [rows, names, scopeHrIds] = await Promise.all([
+    loadAllRequisitionRows(),
     employeeNameByHrId(),
     resolveHiringManagerScopeHrIds(access),
   ]);
-  if (error) throw error;
 
-  const requisitions = ((data ?? []) as RequisitionDbRow[]).map((row) => enrich(mapRequisition(row), names));
+  const requisitions = rows.map((row) => enrich(mapRequisition(row), names));
   return filterRequisitionsForAccess(access, requisitions, scopeHrIds);
 }
 
@@ -91,12 +109,17 @@ export async function getRequisition(access: AccessContext, id: string): Promise
 
 // Open vacancies that do not yet have an active requisition — the create-form list.
 export async function listOpenVacanciesForRequisition(): Promise<VacancyReportRow[]> {
-  const [report, supabase] = [await getVacancyReport(), recruitmentDb()];
+  const supabase = recruitmentDb();
+  // Concurrently: the active-requisition read does not depend on the vacancy report, and run after
+  // it, it was a second round trip waiting on the first. A failed report still throws first.
+  const [report, { data, error }] = await Promise.all([
+    getVacancyReport(),
+    supabase
+      .from("ats_requisitions")
+      .select("vacancy_id,status")
+      .in("status", activeRequisitionStatuses),
+  ]);
   const open = report.rows.filter((row) => row.status === "open");
-  const { data, error } = await supabase
-    .from("ats_requisitions")
-    .select("vacancy_id,status")
-    .in("status", activeRequisitionStatuses);
   if (error) throw error;
   const wrapped = new Set(
     ((data ?? []) as RequisitionDbRow[])

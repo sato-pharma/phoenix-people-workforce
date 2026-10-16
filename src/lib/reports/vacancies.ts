@@ -455,39 +455,46 @@ async function loadEmployeePendingManagerReplacements(hrIds: string[]) {
 }
 
 export async function getVacancyReport(): Promise<VacancyReportData> {
-  const [vacancyRows, employeeDirectory] = await Promise.all([
-    loadVacancyRows(),
-    getEmployeeDirectory(),
-  ]);
+  // THREE INDEPENDENT CHAINS, run side by side. They used to be four serial stages — vacancy rows,
+  // then their lookups, then the pending-replacement read, then the offers read — although only the
+  // lookups wait on the vacancy rows and only the replacement read waits on the directory. Each
+  // chain keeps its own order, so every value below is the one the serial version produced.
   const [
-    departmentNames,
-    lineNames,
-    areaNames,
-    lineCodes,
-    areaCodes,
-    teamNames,
-    positionTitles,
-    managerNames,
-  ] =
-    await Promise.all([
-      loadLookup("departments", ids(vacancyRows, "department_id")),
-      loadLookup("lines", ids(vacancyRows, "line_id")),
-      loadLookup("areas", ids(vacancyRows, "area_id")),
-      loadCodeLookup("lines", ids(vacancyRows, "line_id")),
-      loadCodeLookup("areas", ids(vacancyRows, "area_id")),
-      loadLookup("teams", ids(vacancyRows, "team_id")),
-      loadLookup("positions", ids(vacancyRows, "position_id"), "title"),
-      loadEmployeeNames(textValues(vacancyRows, "manager_hr_id")),
-    ]);
-  const pendingManagerReplacements = await loadEmployeePendingManagerReplacements(
-    employeeDirectory.employees.map((employee) => employee.hrId),
-  );
-  // Which open seats already have a letter out against them — so the report's "Add employee to
-  // this seat" action can open Add Employee pre-filled from an ACCEPTED offer, the same one-press
-  // hire the organogram popup gives. Keyed by the vacancy's own id (offerSeatKeyForVacancy), which
-  // is this row's `id`. Returns an empty map on any failure, so an offers read that fails can never
-  // be the reason the vacancy report will not build.
-  const offerOutBySeat = await loadOfferOutBySeat();
+    [
+      vacancyRows,
+      [departmentNames, lineNames, areaNames, lineCodes, areaCodes, teamNames, positionTitles, managerNames],
+    ],
+    [employeeDirectory, pendingManagerReplacements],
+    offerOutBySeat,
+  ] = await Promise.all([
+    (async () => {
+      const rows = await loadVacancyRows();
+      const lookups = await Promise.all([
+        loadLookup("departments", ids(rows, "department_id")),
+        loadLookup("lines", ids(rows, "line_id")),
+        loadLookup("areas", ids(rows, "area_id")),
+        loadCodeLookup("lines", ids(rows, "line_id")),
+        loadCodeLookup("areas", ids(rows, "area_id")),
+        loadLookup("teams", ids(rows, "team_id")),
+        loadLookup("positions", ids(rows, "position_id"), "title"),
+        loadEmployeeNames(textValues(rows, "manager_hr_id")),
+      ]);
+      return [rows, lookups] as const;
+    })(),
+    (async () => {
+      const directory = await getEmployeeDirectory();
+      const replacements = await loadEmployeePendingManagerReplacements(
+        directory.employees.map((employee) => employee.hrId),
+      );
+      return [directory, replacements] as const;
+    })(),
+    // Which open seats already have a letter out against them — so the report's "Add employee to
+    // this seat" action can open Add Employee pre-filled from an ACCEPTED offer, the same one-press
+    // hire the organogram popup gives. Keyed by the vacancy's own id (offerSeatKeyForVacancy), which
+    // is this row's `id`. Returns an empty map on any failure, so an offers read that fails can never
+    // be the reason the vacancy report will not build.
+    loadOfferOutBySeat(),
+  ]);
 
   const mappedRows = vacancyRows.map((row): VacancyReportRow => ({
     areaId: row.area_id,

@@ -27,6 +27,8 @@ import { addDaysIso, hasRealVendorTime, todayIso } from "@/lib/crm/dates";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
+import { getOrLoadShared, sharedReadKey } from "@/lib/cache/shared-read";
+import { CRM_CHECKIN_WINDOWS, CRM_VISIT_WINDOWS } from "@/lib/crm/shared-windows";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CrmCheckinRow, CrmVisitRow } from "@/lib/crm/types";
 import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
@@ -475,6 +477,26 @@ export function dayScanRuns(days: readonly string[], runDays: number | undefined
   const runs: string[][] = [];
   for (let index = 0; index < days.length; index += size) runs.push(days.slice(index, index + size));
   return runs;
+}
+
+// ── A dashboard may reuse a company window up to a minute old ────────────────────────────────
+// The owner's choice (2026-10-16): a dashboard's company-wide window may be served from a copy up to
+// 60 s old, and a Phoenix CRM visit captured by this process refreshes it at once. OPT-IN per read
+// (`reuseRecentWindow`), and only a display reader opts in — a read that decides money, a deduction,
+// an approval or a notification always reads live. Only the company-window path is shared: a read
+// that names people is a handful of indexed requests already. The key carries every input that
+// changes the rows (the whole options object, the projection, the page size and the exclusion list).
+// The namespace names and the refresh live in `shared-windows.ts`, so a write path need not import the door.
+const CRM_WINDOW_SHARED_LIMITS = { maxEntries: 8, maxRowsTotal: 100_000 };
+
+/** `read` through the shared copy when `key` is set (the caller opted in), else straight through. */
+async function readWindowMaybeShared<Row extends object>(
+  namespace: string,
+  key: string | null,
+  read: () => Promise<Row[] | null>,
+): Promise<Row[] | null> {
+  if (key === null) return read();
+  return (await getOrLoadShared(namespace, key, read, CRM_WINDOW_SHARED_LIMITS)).rows;
 }
 
 /** Runs `read` for every day, {@link DAY_SLICE_CONCURRENCY} at a time, results kept in day order. */
@@ -1039,6 +1061,10 @@ export async function queryVisits<T = CrmVisitRow>(
      * day, and the same rows in the same order, because the runs cover the window once each
      * ({@link dayScanRuns}). A dense read must keep 1 — a run's every page re-reads the whole run. */
     sliceDays?: number;
+    /** Opt-in, DISPLAY readers only: a company-wide window may be served from a copy up to a minute
+     * old (see "A dashboard may reuse a company window" above). Never for a read that decides money, a
+     * deduction, an approval or a notification. A read that names people is unaffected. */
+    reuseRecentWindow?: boolean;
   },
 ): Promise<T[]> {
   if (options.agentCrmIds && options.agentCrmIds.length === 0) return [];
@@ -1101,8 +1127,9 @@ export async function queryVisits<T = CrmVisitRow>(
   // A read limited to listed days (`visitDates`) requests those days of the window and no others.
   const listedDays = options.visitDates ? new Set(options.visitDates) : null;
   const days = windowDays && listedDays ? windowDays.filter((day) => listedDays.has(day)) : windowDays;
+  const sharedKey = options.reuseRecentWindow ? sharedReadKey({ excludedInList, options, pageSize, projection }) : null;
   const rows: Row[] | null = days
-    ? await readCompanyWindow<Row, readonly string[]>({
+    ? await readWindowMaybeShared<Row>(CRM_VISIT_WINDOWS, sharedKey, () => readCompanyWindow<Row, readonly string[]>({
         // A run of listed days is a contiguous stretch of the sorted list, so any listed day between
         // its first and last is in it; the `visit_date IN` filter keeps every unlisted day out.
         days: dayScanRuns(days, options.sliceDays),
@@ -1118,7 +1145,7 @@ export async function queryVisits<T = CrmVisitRow>(
         scanDay: scan,
         order: (a, b) => compareUuidText(a.id, b.id),
         sortDays: true,
-      })
+      }))
     : await scan(null);
   if (rows === null) return [];
   if (excludedCrmIds.length > 0) markPartnerCreditOnlyRows(rows, excludedCrmIds);
@@ -1324,6 +1351,8 @@ export async function queryCheckins<T = CrmCheckinRow>(
      * iReports360 check-ins only, exactly as before.
      */
     includePhoenixVisits?: boolean;
+    /** Opt-in, DISPLAY readers only — the check-in twin of the {@link queryVisits} option. */
+    reuseRecentWindow?: boolean;
   },
 ): Promise<T[]> {
   if (options.agentCrmIds && options.agentCrmIds.length === 0) return [];
@@ -1398,8 +1427,9 @@ export async function queryCheckins<T = CrmCheckinRow>(
   // scans" above). The days are disjoint and in calendar order, each sorted by (check_date, id), so
   // joining them end to end IS the single scan's order — no re-sort, and no id can be in two days.
   const days = checkinFilterNamesPeople(options) ? null : dayScanSlices(options.dateFrom, options.dateTo);
+  const sharedKey = options.reuseRecentWindow ? sharedReadKey({ excludedInList, options, pageSize, projection }) : null;
   const rows: Row[] | null = days
-    ? await readCompanyWindow<Row>({
+    ? await readWindowMaybeShared<Row>(CRM_CHECKIN_WINDOWS, sharedKey, () => readCompanyWindow<Row>({
         days,
         pageSize,
         probe: async () => {
@@ -1413,7 +1443,7 @@ export async function queryCheckins<T = CrmCheckinRow>(
         scanDay: scan,
         order: compareCheckinScanOrder,
         sortDays: false,
-      })
+      }))
     : await scan(null);
   return rows ?? [];
 }
