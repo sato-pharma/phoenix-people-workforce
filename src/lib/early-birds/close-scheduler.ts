@@ -12,7 +12,7 @@
 // closes the poller's 20-120s ticks did.
 
 import { resolveInProcessHostRefusal, unrefTimer } from "@/lib/crm/live-poller";
-import { runDueEarlyBirdsClose } from "@/lib/early-birds/close";
+import { isEarlyBirdsCloseCheckDue, runDueEarlyBirdsClose } from "@/lib/early-birds/close";
 import { logError } from "@/lib/observability/log";
 import { trackJob } from "@/lib/observability/running-jobs";
 
@@ -25,6 +25,9 @@ let inFlight = false;
 
 async function runOnce(): Promise<void> {
   if (inFlight) return;
+  // A throttled minute does nothing; registering it would name this job in every stall line
+  // (PHOENIX-WORKFORCE-3 blamed "early-birds:close" for a freeze it took no part in).
+  if (!isEarlyBirdsCloseCheckDue()) return;
   inFlight = true;
   try {
     await trackJob("early-birds:close", runDueEarlyBirdsClose);

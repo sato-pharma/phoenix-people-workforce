@@ -38,6 +38,14 @@ import { notifyEarlyBirdsRecommendation } from "@/lib/early-birds/notify";
 /** In-memory throttle on how often the DATABASE is asked. Losing it on restart costs one query. */
 let lastDueCheckMs = 0;
 
+/**
+ * Would runDueEarlyBirdsClose do real work now, or return idle at its throttle? The scheduler asks this
+ * before registering the job, so an idle minute is never named as the culprit of an event-loop stall.
+ */
+export function isEarlyBirdsCloseCheckDue(nowMs = Date.now()): boolean {
+  return nowMs - lastDueCheckMs >= EARLY_BIRDS_DUE_CHECK_MIN_GAP_MS;
+}
+
 type SnapshotRow = {
   id: string;
   period_key: string;
