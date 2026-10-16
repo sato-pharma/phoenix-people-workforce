@@ -209,6 +209,16 @@ export function runRecruitmentJobPostsTests() {
   }
   assert.equal(seeded.get("District Sales Manager")?.duties, 6, "all six District Sales Manager duties are kept");
 
+  // The Product Manager's requirements are the owner's own too (pasted 2026-10-16): a later migration swaps
+  // the seed's draft list for his seven lines, guarded so an edit made on the page is never overwritten.
+  const pmNeeds = readFileSync(new URL("../supabase/migrations/20261016142455_job_post_product_manager_needs.sql", import.meta.url), "utf8");
+  const [pmNew] = [...pmNeeds.matchAll(/'(\[[\s\S]*?\])'::jsonb/g)].map((m) => JSON.parse(m[1]!.replace(/''/g, "'")) as unknown);
+  const pmParsed = coerceTitleDraft({ title: "Product Manager", department: "Marketing", duties: [{ lead: "x", rest: "" }], needs: pmNew });
+  assert.deepEqual(titleDraftViolations(pmParsed), [], "the Product Manager's seven requirements save as written");
+  assert.equal(pmParsed.needs.length, 7, "all seven of the owner's Product Manager requirements are kept");
+  assert.ok(/needs = '\[[\s\S]*?Pharmacy, medicine, veterinary or science degree/.test(pmNeeds), "the update only fires while the requirements still hold the seed's draft");
+  assert.ok(pmNeeds.includes("Greater Cairo resident") && pmNeeds.includes("Chest, ENT or Urology"), "residence and the specialities preference are in the list");
+
   // ── The builder: choosing a title loads its words, and the page wears the shared premium look ──
   const page = readFileSync(new URL("../src/components/recruitment/job-post-builder.tsx", import.meta.url), "utf8");
   assert.ok(/const pick = [\s\S]*?load\(found\)/.test(page), "picking a saved title loads its duties and requirements at once");
