@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
 
+import { withSavedBoards } from "../src/lib/phoenix-crm/plan-board-answer.ts";
 import { buildWeekCopyPlacements } from "../src/lib/phoenix-crm/plan-copy.ts";
 import { dayOffPhrase, planDayOff, resolvePlanItems, type PlanItemDraft, type PlanRuleCustomer } from "../src/lib/phoenix-crm/plan-rules.ts";
 import { suggestWeek, type SuggestInput } from "../src/lib/phoenix-crm/plan-suggest.ts";
@@ -484,6 +485,159 @@ export function runPhoenixCrmPlanScreenExtrasTests(): void {
     assert.ok(line.includes("sticky bottom-[var(--crm-sticky-bottom,0px)]"), "held where the Save bar stood, above the portal's bottom bar");
     assert.ok(line.includes("break-words"), "a long reason wraps");
     assert.doesNotMatch(line, /\brounded-(?!none\b)|\btruncate\b|\bline-clamp-|\boverflow-x-auto\b/, "square, never cut short, never a sideways scroll");
+  }
+
+  // ── 4. A save answers with the week it saved: the board no longer reads the month again ─────────
+  // (2026-10-16 speed audit — every pause in his ticking saved, then re-read the whole month: 16 to 22
+  // reads, eight deep, 2.3 s at the median.)
+  {
+    type View = Parameters<typeof withSavedBoards>[0];
+    type Board = Parameters<typeof withSavedBoards>[1][number];
+    const MONTH = "2026-10-01";
+    const week = (weekStart: string, version: number | null, leading = false, planId = `plan-${weekStart}`) =>
+      ({ weekStart, leading, label: weekStart, plan: version === null ? null : { planId, version } }) as unknown as View["weeks"][number];
+    const meters = (placed: number) =>
+      ({ tallies: [], amMeter: { covered: placed }, pmMeter: { covered: placed + 1 }, callRate: { amPlacements: placed } }) as unknown as NonNullable<Board["meters"]>;
+    const view = {
+      monthStart: MONTH,
+      weeks: [week("2026-09-26", 3, true), week("2026-10-03", 4), week("2026-10-10", null)],
+      tallies: [],
+      amMeter: { covered: 0 },
+      pmMeter: { covered: 0 },
+      callRate: { amPlacements: 0 },
+      customers: [],
+      blockedReason: null,
+    } as unknown as View;
+
+    // The saved week takes its own place and the meters move with it; nothing else on the board changes.
+    const answered = withSavedBoards(view, [{ monthStart: MONTH, week: week("2026-10-03", 5), meters: meters(7) }]);
+    assert.ok(answered, "an answer for this board is put on it");
+    assert.equal(answered.weeks[1].plan?.version, 5, "the week as the save left it");
+    assert.equal(answered.weeks[0], view.weeks[0], "every other week is the very same");
+    assert.equal(answered.weeks[2], view.weeks[2]);
+    assert.deepEqual([answered.amMeter, answered.pmMeter, answered.callRate], [{ covered: 7 }, { covered: 8 }, { amPlacements: 7 }], "AM and PM each from the answer, never averaged");
+    assert.equal(answered.customers, view.customers, "the list is untouched");
+    assert.equal(answered.blockedReason, view.blockedReason);
+    assert.equal(view.weeks[1].plan?.version, 4, "and the board it was handed is never changed in place");
+
+    // The leading week enters no meter: its answer carries none, and the board's stand.
+    const leadingSaved = withSavedBoards(view, [{ monthStart: MONTH, week: week("2026-09-26", 4, true), meters: null }]);
+    assert.equal(leadingSaved?.weeks[0].plan?.version, 4);
+    assert.equal(leadingSaved?.amMeter, view.amMeter, "the leading week moves no meter");
+
+    // A week's first save makes its plan; two saves before the first was put in place: both weeks, and
+    // the LAST save's meters, which counted the first.
+    const two = withSavedBoards(view, [
+      { monthStart: MONTH, week: week("2026-10-03", 5), meters: meters(7) },
+      { monthStart: MONTH, week: week("2026-10-10", 1), meters: meters(9) },
+    ]);
+    assert.equal(two?.weeks[1].plan?.version, 5);
+    assert.equal(two?.weeks[2].plan?.version, 1);
+    assert.deepEqual(two?.amMeter, { covered: 9 });
+
+    // Anything that is not exactly this board's reads the board again, as every save did before.
+    assert.equal(withSavedBoards(view, [{ monthStart: "2026-11-01", week: week("2026-10-03", 5), meters: meters(7) }]), null, "another month");
+    assert.equal(withSavedBoards(view, [{ monthStart: MONTH, week: week("2026-10-17", 1), meters: meters(7) }]), null, "a week the board does not hold");
+    assert.equal(withSavedBoards(view, [{ monthStart: MONTH, week: week("2026-10-03", 5, true), meters: null }]), null, "a week the board files differently");
+    assert.equal(withSavedBoards(view, [{ monthStart: MONTH, week: week("2026-10-03", 3), meters: meters(7) }]), null, "🔴 an answer older than a read that landed after it");
+    assert.equal(withSavedBoards(view, [{ monthStart: MONTH, week: week("2026-10-03", 5, false, "another"), meters: meters(7) }]), null, "another plan's week");
+    assert.equal(withSavedBoards(view, [{ monthStart: MONTH, week: week("2026-10-03", null), meters: meters(7) }]), null, "a week the board holds a plan for, answered with none");
+
+    // ── The wiring ──
+    const board = source("src/components/phoenix-crm/plan-board.tsx");
+    const saveItself = bodyOf(board, "async function saveItself(");
+    assert.ok(saveItself.includes("const boardMonth = options.keepalive ? undefined : view.monthStart;"), "his board names the month on screen; a save leaving with the page asks for nothing back");
+    assert.ok(
+      saveItself.includes("const payload = { ...buildWeekSavePayload({ seatId, test, week: state.week, draft: sentFrom, customers: customersNow }), boardMonth };"),
+      "on the very payload the button's save sends",
+    );
+    assert.match(saveItself, /if \(saved\.board\) boards\.push\(saved\.board\);\s*else unanswered = true;/, "every answer is kept, and one with no board is remembered");
+    assert.match(saveItself, /if \(!unanswered && boards\.length > 0\) \{\s*setSavedBoards\(/, "every save answered: its weeks are put in place");
+    assert.match(saveItself, /\} else \{\s*setQuietRead\(true\);\s*resource\.reload\(\);\s*\}/, "otherwise the board reads itself again, quietly, exactly as before");
+    assert.match(board, /if \(savedBoards !== null && !resource\.loading\) \{/, "put in place only once no read is on its way");
+    assert.ok(board.includes("const answered = view && savedBoards.url === planUrl ? withSavedBoards(view, savedBoards.boards) : null;"), "and only on the board it was saved from");
+    assert.match(bodyOf(board, "async function saveWeeks("), /resource\.reload\(\);/, "a reviewer's Save button reads the board again as it always did");
+
+    const route = source("app/api/phoenix-crm/plans/route.ts");
+    assert.match(route, /const saved = await savePlan\(viewer, body, keep\);/);
+    assert.match(route, /boardMonth !== undefined && keep\.reads \? await loadMonthlyWeekAfterSave\(viewer, \{ boardMonth, saved, reads: keep\.reads \}\) : null;/, "asked for, the save answers with the board");
+    assert.match(route, /const plan = board \? \{ \.\.\.saved, board \} : saved;/, "and otherwise exactly as before");
+
+    const month = source("src/lib/phoenix-crm/server/monthly-plans.ts");
+    assert.match(bodyOf(month, "export async function loadMonthlyWeekAfterSave("), /catch \(error\) \{[\s\S]*?return null;/, "a board it cannot draw is null — never a failed save");
+    // ONE week builder and ONE meter composer for the month and for the answer, so the two can never draw
+    // a week, or count a customer, apart.
+    assert.equal((month.match(/buildMonthlyWeekView\(/g) ?? []).length, 4, "declared once; the month calls it twice, the answer once");
+    assert.equal((month.match(/monthMeters\(/g) ?? []).length, 3, "declared once; the month and the answer call it");
+    assert.equal((month.match(/meterCustomerOf\(/g) ?? []).length, 3, "declared once; the month and the answer count customers through it");
+    const answer = bodyOf(month, "async function savedWeekBoard(");
+    assert.match(answer, /Number\(planRow\.version\) !== saved\.version\) return null;/, "a newer save already on the week: the board reads it whole");
+    assert.match(answer, /holidays: reads\.holidays,\s*leave: reads\.leave,/, "what the save read is not read again");
+    assert.match(answer, /in\("week_start", leading \? \[weekStart\] : weeks\)/, "the leading week reads only itself — it enters no meter");
+  }
+
+  // ── 5. The plan reads that waited on each other (2026-10-16 speed audit) ─────────────────────────
+  {
+    const plans = source("src/lib/phoenix-crm/server/plans.ts");
+    assert.match(
+      bodyOf(plans, "export async function loadPlanItemRows("),
+      /mapWithConcurrency\(chunk\(\[\.\.\.new Set\(planIds\)\], 50\), PLAN_READ_CONCURRENCY,/,
+      "a plan's item chunks are read a few at a time, never one after another",
+    );
+    assert.match(bodyOf(plans, "export async function loadPlanReviews("), /mapWithConcurrency\(chunk\(\[\.\.\.territoryById\.keys\(\)\], 100\), PLAN_READ_CONCURRENCY,/, "and so are the review list's territories");
+
+    const save = bodyOf(plans, "export async function savePlan(");
+    assert.ok(save.indexOf("const reads = Promise.all([") < save.indexOf("await assertRepMayChangeWeek("), "the save's list, holidays and leave start beside the one-week guard");
+    assert.match(save, /await afterResponse\("phoenix_crm_plan_save_readiness_stamp", \(\) => territoryReadiness\(seat\.seatId, false, true\)\);/, "the readiness stamp runs once the answer has gone");
+    assert.equal((save.match(/venueNamesOf\(|loadSharedPlaceNames\(/g) ?? []).length, 1, "the venue names are read once per save");
+
+    const planner = bodyOf(plans, "export async function loadPlanner(");
+    assert.ok(planner.indexOf("venueNamesOf(placesByCustomer)") < planner.indexOf("] = await wave;"), "the week planner's venue names ride in its wave");
+    assert.ok(planner.indexOf("loadPlanEditState(") < planner.indexOf("] = await wave;"), "and so does the week's request to edit it");
+    const monthPlanner = bodyOf(source("src/lib/phoenix-crm/server/monthly-plans.ts"), "export async function loadMonthlyPlanner(");
+    assert.ok(monthPlanner.indexOf("venueNamesOf(placesByCustomer)") < monthPlanner.indexOf("] = await wave;"), "the month board's venue names ride in its wave");
+    assert.doesNotMatch(monthPlanner, /await loadSharedPlaceNames\(/, "never after it");
+
+    const transition = bodyOf(plans, "export async function transitionPlan(");
+    assert.ok(transition.indexOf("const allRowsRead = loadPlanItemRows(") < transition.indexOf("await assertRepMayChangeWeek("), "a send's rows start beside the guard");
+    assert.doesNotMatch(transition, /loadSharedPlaceIdsByPlace/, "and the venue rides on the item's own place");
+
+    const reviews = bodyOf(source("src/lib/phoenix-crm/server/monthly-plans.ts"), "export async function loadMonthlyPlanReviews(");
+    assert.ok(reviews.indexOf("const planRowsEarly = isTest ? null : planRowsOf(territories);") < reviews.indexOf("headerRows = await headerQuery(null);"), "the month review's weekly plans are read beside its headers");
+    assert.equal((reviews.match(/mapWithConcurrency\(/g) ?? []).length, 2, "and both of its chunk loops are bounded, never one chunk at a time");
+
+    const edits = source("src/lib/phoenix-crm/server/plan-edits.ts");
+    assert.match(bodyOf(edits, "export async function loadPlanEditState("), /mapWithConcurrency\(/);
+    assert.match(bodyOf(edits, "export async function loadPlanEditRows("), /mapWithConcurrency\(/);
+
+    // 🔴 Copy last month's mirror read: keyset on the mirror's own key, never an offset with no order —
+    // past 1,000 rows an unordered offset page could repeat a row or skip one.
+    const history = bodyOf(source("src/lib/crm/plan-board.ts"), "export async function getAgentPlanEntriesForWindow(");
+    assert.match(history, /query\.gt\("crm_plan_entry_id", cursor\)/);
+    assert.match(history, /\.order\("crm_plan_entry_id", \{ ascending: true \}\)\.limit\(PAGE_SIZE\)/);
+    assert.doesNotMatch(history, /\.range\(/, "no offset page");
+    assert.match(source("src/lib/phoenix-crm/server/plan-history.ts"), /await Promise\.all\(\[\s*loadPeopleNames\(\[source\.source_hr_id\]\),\s*getAgentPlanEntriesForWindow\(/, "the source's name and his plan are read together");
+
+    // The double-visit requests: the row read once on an edit, the report's two reads side by side.
+    const doubleVisits = source("src/lib/phoenix-crm/server/double-visit-requests.ts");
+    const editDays = bodyOf(doubleVisits, "export async function editDoubleVisitRequestDays(");
+    assert.equal((editDays.match(/loadRequestRow\(/g) ?? []).length, 1, "an edit reads its request once");
+    assert.match(editDays, /const editCount = Number\(row\.edit_count \?\? 0\) \+ 1;/, "the count is the one the function added to");
+    const report = bodyOf(doubleVisits, "export async function loadDoubleVisitReport(");
+    assert.ok(report.indexOf("scopedRead.catch(() => undefined);") < report.indexOf("await loadAddressedRequestRows("), "the scope's requests are read beside the ones addressed to him");
+    for (const loader of ["async function loadScopeRequestRows(", "async function loadAddressedRequestRows("]) {
+      assert.match(bodyOf(doubleVisits, loader), /mapWithConcurrency\(chunk\(/, `${loader} reads its chunks a few at a time`);
+    }
+
+    // The plan save rewrites only the items that changed — every save sends every item of the open days.
+    const migration = readFileSync(new URL("supabase/migrations/20261016180100_phoenix_crm_save_plan_writes_only_changed_items.sql", ROOT), "utf8").replace(/--.*$/gm, "");
+    assert.match(migration, /insert into public\.phoenix_crm_plan_items as t \(/);
+    assert.match(
+      migration,
+      /where \(t\.place_id, t\.list_type, t\.receives, t\.start_minute, t\.exception_type, t\.exception_note\)\s+is distinct from\s+\(excluded\.place_id, excluded\.list_type, excluded\.receives, excluded\.start_minute, excluded\.exception_type, excluded\.exception_note\);/,
+      "an item sent back as it is stored is left alone",
+    );
+    assert.match(migration, /revoke execute on function public\.phoenix_crm_save_plan\(jsonb\) from public, anon, authenticated;\s*grant execute on function public\.phoenix_crm_save_plan\(jsonb\) to service_role;/);
   }
 
   console.log("phoenix-crm plan screen extras: OK");

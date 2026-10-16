@@ -958,7 +958,19 @@ export function runPhoenixCrmPlanBoardTests(): void {
       "a single-row read ERRORS once a day holds two — Today would stop opening on exactly those days",
     );
     const plans = stripComments(readFileSync("src/lib/phoenix-crm/server/plans.ts", "utf8"));
-    assert.match(plans, /if \(Array\.isArray\(body\.starts\)\) \{\s*await savePlanDayStarts\(/, "a caller that sends no start times leaves them as they were");
+    assert.match(
+      plans,
+      /Array\.isArray\(body\.starts\)\s*\?\s*savePlanDayStarts\(\{[\s\S]*?\}\)\s*:\s*Promise\.resolve\(null\),/,
+      "a caller that sends no start times leaves them as they were",
+    );
+    // The activities and the starts are sent together (2026-10-16 speed audit) — and a refusal still
+    // reads as it did: the activities' first, then the starts'.
+    assert.match(plans, /const \[activitiesSaved, startsSaved\] = await Promise\.allSettled\(\[/, "the two saves travel together");
+    assert.match(
+      plans,
+      /if \(activitiesSaved\.status === "rejected"\) throw activitiesSaved\.reason;\s*if \(startsSaved\.status === "rejected"\) throw startsSaved\.reason;/,
+      "and the activities' refusal surfaces first",
+    );
 
     // The migration: the key widened to one of each kind, the save keyed on it, and the day's starts.
     const sql = readFileSync("supabase/migrations/20260930213537_phoenix_crm_plan_day_details.sql", "utf8").replace(/--.*$/gm, "");

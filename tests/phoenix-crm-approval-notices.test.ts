@@ -381,7 +381,9 @@ export function runPhoenixCrmApprovalNoticeTests() {
 
     // It is read off the PRE-transition row, because `submit` clears the decision off the plan.
     const plans = source("src/lib/phoenix-crm/server/plans.ts");
-    assert.match(plans, /\.select\("id, seat_id, week_start, status, is_test, decided_by_hr_id, decided_by_role"\)/);
+    // `returned_day` / `decided_at` ride on the same read since 2026-10-16: the one-week guard is handed
+    // this row instead of reading the plan a second time.
+    assert.match(plans, /\.select\("id, seat_id, week_start, status, is_test, decided_by_hr_id, decided_by_role, returned_day, decided_at"\)/);
     assert.match(
       plans,
       /planRow\.status === "returned" && planRow\.decided_by_role === "sfe_manager" \? textOrNull\(planRow\.decided_by_hr_id\) : null/,
