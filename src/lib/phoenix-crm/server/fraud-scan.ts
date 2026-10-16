@@ -60,6 +60,10 @@ import {
   PHOENIX_CRM_PORTAL_PATH,
   sfeManagerHrIds,
 } from "@/lib/phoenix-crm/server/notifications";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
+
+/** How many people are being sent the weekly report at once. */
+const DELIVERIES_AT_ONCE = 4;
 
 /**
  * Where the notice points: the module's own exceptions surface, exactly as the 06:55 digest does.
@@ -157,9 +161,13 @@ export async function runPhoenixCrmFraudScan(
     };
   }
 
+  // Several people at once rather than one after another (Phoenix CRM performance audit, 2026-10-16),
+  // started in the same order. Each person is one entry of the map, so nobody is sent two. Every send
+  // is still counted once, delivered or failed.
   let delivered = 0;
   let failed = 0;
-  for (const [hrId, tier] of [...tierByHrId].sort((left, right) => left[0].localeCompare(right[0]))) {
+  const recipients = [...tierByHrId].sort((left, right) => left[0].localeCompare(right[0]));
+  await mapWithConcurrency(recipients, DELIVERIES_AT_ONCE, async ([hrId, tier]) => {
     try {
       await send({ hrId, summary: tier === "super_admin" ? superSummary : sfeSummary, weekKey: window.toIso });
       delivered += 1;
@@ -170,7 +178,7 @@ export async function runPhoenixCrmFraudScan(
         error,
       });
     }
-  }
+  });
 
   return {
     window,

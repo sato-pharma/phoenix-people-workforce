@@ -39,10 +39,13 @@ import {
   VISIT_ROLLUP_EVENT_TYPE,
   type PhoenixCrmVisitRollup,
 } from "@/lib/phoenix-crm/visit-rollup-rules";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const HOUR_MS = 60 * 60 * 1000;
+/** How many managers are being sent their rollup at once. */
+const DELIVERIES_AT_ONCE = 4;
 const VISIT_COLUMNS = "id, seat_id, rep_hr_id";
 
 type VisitRow = { id: string; seat_id: string | null; rep_hr_id: string | null };
@@ -144,20 +147,27 @@ export async function runPhoenixCrmVisitRollup(
   );
   const rollups = planPhoenixCrmVisitRollup(recipients, windowLabel, hourBucket);
 
+  // Several managers at once rather than one after another (Phoenix CRM performance audit,
+  // 2026-10-16); anyone sent more than one still gets his in their order. Every send is still
+  // counted once, delivered or failed.
+  const perPerson = new Map<string, PhoenixCrmVisitRollup[]>();
+  for (const rollup of rollups) perPerson.set(rollup.hrId, [...(perPerson.get(rollup.hrId) ?? []), rollup]);
   let delivered = 0;
   let failed = 0;
-  for (const rollup of rollups) {
-    try {
-      await send(rollup);
-      delivered += 1;
-    } catch (error) {
-      failed += 1;
-      logError("Phoenix CRM visit rollup delivery failed", {
-        labels: { event: "phoenix_crm_visit_rollup_failed", job: "phoenix-crm-visit-rollup" },
-        error,
-      });
+  await mapWithConcurrency([...perPerson.values()], DELIVERIES_AT_ONCE, async (theirs) => {
+    for (const rollup of theirs) {
+      try {
+        await send(rollup);
+        delivered += 1;
+      } catch (error) {
+        failed += 1;
+        logError("Phoenix CRM visit rollup delivery failed", {
+          labels: { event: "phoenix_crm_visit_rollup_failed", job: "phoenix-crm-visit-rollup" },
+          error,
+        });
+      }
     }
-  }
+  });
 
   return { ...base, recipients: rollups.length, delivered, failed };
 }
