@@ -34,7 +34,7 @@ import {
   territoryForMissedRecordRemoval,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
-import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
+import { loadDayActivityOn, mapDayActivityRow, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { callPhoenixCrm, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { ensureReferenceCustomers, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm, withdrawPhoenixCrmVisitNotices } from "@/lib/phoenix-crm/server/notifications";
@@ -96,15 +96,25 @@ export async function loadMissedRecordForm(
 
   // The list is minted from the territory's iReports360 reference first, exactly as the rep's own visit
   // form does — a rep who never opened Phoenix CRM still has his customers to enter a visit to.
-  await ensureReferenceCustomers(seat, isTest);
-  const [{ customers }, plan, visitedRead, families, activity, names] = await Promise.all([
-    loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }),
+  //
+  // 🔴 ONE WAVE, NOT TWO (Phoenix CRM performance audit, 2026-10-16) — the shape `loadVisitForm` in
+  // visits.ts settled on 2026-10-01. Only the customer list depends on the mint, because the mint can
+  // add customers to it; nothing else here can name a customer minted a moment ago — he has no plan
+  // row, no visit and no name to look up yet. So every other read starts BESIDE the mint, and the
+  // mint's own failure is still the one that surfaces, first, exactly as when it ran alone.
+  const ensured = ensureReferenceCustomers(seat, isTest);
+  const wave = Promise.all([
+    ensured.then(() => loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true })),
     plannedCustomersOn(seat.seatId, isTest, date),
     getSupabaseAdmin().from("phoenix_crm_visits").select("customer_id").eq("seat_id", seat.seatId).eq("is_test", isTest).eq("visit_date", date),
     lineProductsByFamily(seat.lineName),
     loadDayActivityOn(seat.seatId, isTest, date),
     loadPeopleNames(territoryPeople(viewer.org, [seat])),
   ]);
+  // Handled at once: if the mint fails, `await ensured` below throws its error and the wave is dropped.
+  wave.catch(() => undefined);
+  await ensured;
+  const [{ customers }, plan, visitedRead, families, activity, names] = await wave;
   throwIfError(visitedRead.error);
 
   // Sent means gone for review: a draft or a returned plan is the rep's own to edit, and is no authority
@@ -257,7 +267,7 @@ export async function enterMissedActivity(
     return { cleared: true, activity: null };
   }
 
-  await callPhoenixCrm("phoenix_crm_save_day_activity", {
+  const saved = await callPhoenixCrm<Row>("phoenix_crm_save_day_activity", {
     p: {
       activity_date: entry.activityDate,
       activity_type: entry.draft.activityType,
@@ -270,7 +280,13 @@ export async function enterMissedActivity(
       seat_id: seat.seatId,
     },
   });
-  return { cleared: false, activity: await loadDayActivityOn(seat.seatId, isTest, entry.activityDate) };
+  // 🔴 THE SAVED ROW, NOT A SECOND READ OF IT (Phoenix CRM performance audit, 2026-10-16). The function
+  // returns the row it wrote — date, type, half day and note — but not WHO wrote it or for whom, and
+  // those two are exactly what this call just passed it: it stores `actor_hr_id` as the entered-by and
+  // `rep_hr_id` as the rep, verbatim. So the "entered for him" mark is the one a read-back would
+  // compute. A result missing its date or type (an older function) falls back to reading the day.
+  const activity = mapDayActivityRow({ ...saved, entered_by_hr_id: viewer.hrId, rep_hr_id: repHrId });
+  return { cleared: false, activity: activity ?? (await loadDayActivityOn(seat.seatId, isTest, entry.activityDate)) };
 }
 
 // ── Removing a visit he entered by mistake ──────────────────────────────────────────────────────
