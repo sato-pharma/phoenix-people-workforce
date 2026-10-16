@@ -10,6 +10,8 @@ import type { Instrumentation } from "next";
 // `isBenignClientDisconnect` is the reason an aborted request does not reach it at all.
 import { isBenignClientDisconnect } from "@/lib/error-monitor/benign-disconnect";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
+// Import-free as well. The SDK itself is only ever loaded dynamically, from inside the nodejs guards below.
+import { sentryServerStatus } from "@/lib/observability/sentry-policy";
 
 // Starts the continuous iReports360 live poller (src/lib/crm/live-poller.ts) exactly once per
 // server process. The import MUST stay dynamic and inside the nodejs-runtime guard: this hook is
@@ -35,6 +37,23 @@ export async function register() {
       );
     } catch (error) {
       console.error("[keep-alive] failed to pin:", error);
+    }
+
+    // Sentry (sentry.io), PRODUCTION ONLY and errors only — sentry-policy.ts decides, from APP_ENV and
+    // the DSN, so staging, the previews and a laptop never load the SDK. Second, so a scheduler that
+    // throws while starting below is already covered by its process handlers. Own try: Sentry must never
+    // be the reason Phoenix does not boot.
+    try {
+      const status = sentryServerStatus({ appEnv: process.env.APP_ENV, dsn: process.env.SENTRY_DSN });
+      if (status.enabled) {
+        const { initSentryServer } = await import("@/lib/observability/sentry-server");
+        initSentryServer(process.env.SENTRY_DSN as string);
+        console.log("[sentry] started: production errors are forwarded to sentry.io");
+      } else {
+        console.log(`[sentry] not started: ${status.reason}`);
+      }
+    } catch (error) {
+      console.error("[sentry] failed to start:", error);
     }
 
     try {
@@ -133,6 +152,21 @@ async function forwardServerErrorToIngestion(
   }
 }
 
+// The Sentry half of onRequestError. Reached only in the nodejs runtime AND only when the policy says
+// production, so on every other deployment this is a no-op that never imports the SDK. Never throws.
+async function forwardRequestErrorToSentry(
+  ...args: Parameters<Instrumentation.onRequestError>
+): Promise<void> {
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  if (!sentryServerStatus({ appEnv: process.env.APP_ENV, dsn: process.env.SENTRY_DSN }).enabled) return;
+  try {
+    const { captureRequestErrorInSentry } = await import("@/lib/observability/sentry-server");
+    captureRequestErrorInSentry(...args);
+  } catch (sentryError) {
+    console.error("Failed to forward request error to Sentry:", sentryError);
+  }
+}
+
 // Captures errors thrown in nested React Server Components / route handlers —
 // forwards to our own error table.
 //
@@ -144,5 +178,6 @@ async function forwardServerErrorToIngestion(
 export async function onRequestError(...args: Parameters<Instrumentation.onRequestError>) {
   const [error, request, context] = args;
   if (isBenignClientDisconnect(error)) return;
+  await forwardRequestErrorToSentry(error, request, context);
   await forwardServerErrorToIngestion(error, request, context);
 }
