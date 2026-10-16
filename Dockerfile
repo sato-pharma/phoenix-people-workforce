@@ -92,6 +92,15 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_ONESIGNAL_APP_ID=$NEXT_PUBLIC_ONESIGNAL_APP_ID
 ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 
+# Sentry source maps and release — BUILD-TIME ONLY. next.config.ts runs the upload plugin solely when
+# SENTRY_AUTH_TOKEN is non-empty, so a service that sets none builds exactly as before. These ARGs are not
+# re-exported into the runner stage below, so the token never reaches the running image. The commit sha is what
+# names the release; Railway passes it as a build arg, and an empty value just leaves the release unnamed.
+ARG SENTRY_AUTH_TOKEN
+ARG RAILWAY_GIT_COMMIT_SHA
+ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN
+ENV RAILWAY_GIT_COMMIT_SHA=$RAILWAY_GIT_COMMIT_SHA
+
 RUN pnpm run build
 
 # Production image, copy all the files and run next

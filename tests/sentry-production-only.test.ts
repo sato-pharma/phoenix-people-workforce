@@ -2,15 +2,23 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE,
+  SENTRY_REPLAY_SESSION_SAMPLE_RATE,
+  SENTRY_TRACES_SAMPLE_RATE,
   parseSentryDsn,
   scrubSentryEvent,
+  scrubSentryLog,
+  scrubSentryPath,
+  scrubSentrySpan,
+  scrubSentryText,
   sentryClientStatus,
   sentryServerStatus,
+  sentryTracesSampler,
 } from "../src/lib/observability/sentry-policy.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
- * Sentry (sentry.io) runs on PRODUCTION ONLY, and sends errors only.
+ * Sentry (sentry.io) runs on PRODUCTION ONLY, and everything it sends is bounded and scrubbed.
  *
  * The gate is the deployment NAME, because a Phoenix build is NODE_ENV=production on staging, on the
  * Hetzner previews and on a laptop's `next start` alike — so "is this a production build" answers yes
@@ -85,6 +93,60 @@ function scrubTests() {
   assert.deepEqual(scrubSentryEvent({}), {}, "an event with no request or user is returned untouched");
 }
 
+function nextConfigSource(): string {
+  return code("next.config.ts");
+}
+
+function beyondErrorsTests() {
+  // Sampling: a fixed small rate, nothing for the probe or the reporter's own endpoint, a parent's decision wins.
+  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll" }), SENTRY_TRACES_SAMPLE_RATE);
+  assert.ok(SENTRY_TRACES_SAMPLE_RATE > 0 && SENTRY_TRACES_SAMPLE_RATE <= 0.1, "a free quota is spent per span");
+  for (const name of ["GET /api/healthz", "GET /api/errors/client", "GET /_next/static/chunks/app.js", "GET /favicon.ico"]) {
+    assert.equal(sentryTracesSampler({ name }), 0, `${name} says nothing and is never traced`);
+  }
+  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll", parentSampled: true }), 1);
+  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll", parentSampled: false }), 0);
+  assert.equal(SENTRY_REPLAY_SESSION_SAMPLE_RATE, 0, "an ordinary session is never recorded");
+  assert.equal(SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE, 1, "the lead-up to an error is");
+
+  // Paths: HR ids, uuids, numbers and long tokens go; words stay; the query and fragment go.
+  assert.equal(scrubSentryPath("/admin/employees/B-10"), "/admin/employees/:id");
+  assert.equal(scrubSentryPath("/admin/employees/b10/edit?tab=pay#x"), "/admin/employees/:id/edit");
+  assert.equal(scrubSentryPath("/api/leave/4821/approve"), "/api/leave/:id/approve");
+  assert.equal(scrubSentryPath("/x/3f2b8c1e-9d4a-4e6b-8a1f-0c2d3e4f5a6b"), "/x/:id");
+  assert.equal(scrubSentryPath("/admin/payroll/summary"), "/admin/payroll/summary");
+  assert.equal(scrubSentryText("GET /admin/employees/B-10?month=2026-10"), "GET /admin/employees/:id");
+  assert.equal(scrubSentryText("failed for omar@satopharma.com on B-204"), "failed for [email] on :id");
+  assert.equal(scrubSentryText("fetch https://phoenix-hr.satopharma.com/api/leave/4821"), "fetch https://phoenix-hr.satopharma.com/api/leave/:id");
+
+  const span = scrubSentrySpan({
+    name: "GET /admin/employees/B-10",
+    attributes: {
+      "http.url": "https://phoenix-hr.satopharma.com/admin/employees/B-10?x=1",
+      "url.query": "hr_id=B-10",
+      "user.email": "a@b.com",
+      "http.request.header.cookie": "phoenix_session=secret",
+      "db.statement": "select * from payroll where hr_id = 'B-10'",
+      "http.status_code": 200,
+    },
+  });
+  assert.equal(span.name, "GET /admin/employees/:id");
+  assert.deepEqual(
+    Object.keys(span.attributes ?? {}).sort(),
+    ["http.status_code", "http.url"],
+    "user, header, query and SQL attributes never leave",
+  );
+  assert.equal(span.attributes?.["http.url"], "https://phoenix-hr.satopharma.com/admin/employees/:id");
+
+  const log = scrubSentryLog({
+    message: "send failed for omar@satopharma.com at /admin/employees/B-10",
+    attributes: { "sentry.origin": "auto.console", employee_name: "x", salary: 1, route: "/api/leave/4821", level: "error" },
+  });
+  assert.equal(log.message, "send failed for [email] at /admin/employees/:id");
+  assert.deepEqual(Object.keys(log.attributes ?? {}).sort(), ["level", "route", "sentry.origin"], "a name or a figure never rides a log");
+  assert.equal(log.attributes?.route, "/api/leave/:id");
+}
+
 function wiringTests() {
   // instrumentation.ts is bundled for both runtimes: it may import the pure policy statically and the
   // SDK only dynamically, inside a nodejs guard that the policy has already cleared.
@@ -104,11 +166,15 @@ function wiringTests() {
 
   // Only these two files may name the SDK; sentry-client loads it lazily so a staging browser never downloads it.
   const server = code("src/lib/observability/sentry-server.ts");
-  assert.match(server, /enableOpenTelemetrySetup: false/, "errors only: no OpenTelemetry tracer provider");
-  assert.match(server, /enableRuntimeChannelInjection: false/, "errors only: no load-time module rewriting");
+  assert.match(server, /enableRuntimeChannelInjection: false/, "no load-time module rewriting on the payroll server");
   assert.ok(!/sendDefaultPii/.test(server), "SDK 11 has no sendDefaultPii option — it is a type error in `checks`; the scrubber is the lock");
   assert.match(server, /beforeSend: \(event\) => scrubSentryEvent\(event\)/);
-  assert.ok(!/tracesSampleRate|profilesSampleRate|replaysSessionSampleRate/.test(server), "no tracing, profiling or replay");
+  assert.match(server, /beforeSendSpan: \(span\) => scrubSentrySpan\(span\)/, "every span is scrubbed before it leaves");
+  assert.match(server, /beforeSendLog: \(log\) => scrubSentryLog\(log\)/, "every log line is scrubbed before it leaves");
+  assert.match(server, /tracesSampler: \(context\) => sentryTracesSampler\(context\)/, "sampling goes through the policy, never a literal rate");
+  assert.match(server, /levels: \["warn", "error"\]/, "only warn and error console lines become logs");
+  assert.ok(!/tracesSampleRate|profilesSampleRate|replaysSessionSampleRate/.test(server), "rates live in sentry-policy.ts only");
+  assert.ok(!/monitorConfig/.test(server), "a cron check-in never creates a monitor — that is billed per monitor and decided in Sentry's own screen");
 
   const client = code("src/lib/observability/sentry-client.ts");
   assert.ok(!/from\s+["']@sentry\//.test(client), "the browser SDK is imported lazily, never statically");
@@ -116,7 +182,38 @@ function wiringTests() {
   assert.match(client, /sentryClientStatus\(/);
   assert.match(client, /integration\.name !== "GlobalHandlers"/, "our reporter feeds window errors; the SDK's own handlers would double-report");
   assert.match(client, /beforeSend: \(event\) => scrubSentryEvent\(event\)/);
-  assert.ok(!/tracesSampleRate|replaysSessionSampleRate|replayIntegration/.test(client));
+  assert.match(client, /beforeSendSpan: \(span\) => scrubSentrySpan\(span\)/);
+  assert.match(client, /replayIntegration\(\{ maskAllText: true, maskAllInputs: true, blockAllMedia: true \}\)/, "Phoenix screens are payroll: a replay shows layout, never a figure");
+  assert.match(client, /replaysSessionSampleRate: SENTRY_REPLAY_SESSION_SAMPLE_RATE/);
+  assert.match(client, /tracePropagationTargets: \[\]/, "no trace header is added to any request");
+  assert.ok(!/tracesSampleRate|replaysSessionSampleRate: [01]/.test(client), "rates live in sentry-policy.ts only");
+  assert.match(code("src/components/layout/global-error-reporter.tsx"), /startSentryBrowser\(\)/, "the browser SDK starts from the one mounted reporter");
+
+  // The cron monitor leg rides the dead-man's switch, behind the same production gate.
+  const switchSource = code("src/lib/observability/dead-mans-switch.ts");
+  assert.match(switchSource, /checkInSentry\(jobSlug, outcome\)/);
+  assert.match(switchSource, /sentryServerStatus\(\{ appEnv: process\.env\.APP_ENV, dsn: process\.env\.SENTRY_DSN \}\)\.enabled\) return/);
+
+  // Source maps and the release: the build plugin runs only when a build token exists, and keeps the maps off the wire.
+  assert.match(nextConfigSource(), /if \(!authToken\) return config/, "a build without a token exports the plain config");
+  assert.match(nextConfigSource(), /deleteSourcemapsAfterUpload: true/);
+  assert.match(nextConfigSource(), /telemetry: false/);
+  for (const switchName of ["autoInstrumentServerFunctions", "autoInstrumentMiddleware", "autoInstrumentAppDirectory", "automaticVercelMonitors"]) {
+    assert.match(nextConfigSource(), new RegExp(`${switchName}: false`), `${switchName} stays off`);
+  }
+  assert.ok(!/tunnelRoute/.test(nextConfigSource()), "reports go straight to the ingest host the CSP allows, never through a tunnel");
+  assert.match(nextConfigSource(), /Document-Policy[\s\S]{0,40}js-profiling/, "the browser profiler needs this header");
+  assert.match(nextConfigSource(), /sentryIngestOrigin \? \[\{ key: "Document-Policy"/, "and only a build that carries a DSN sends it");
+  const buildDockerfile = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
+  assert.match(buildDockerfile, /^ARG SENTRY_AUTH_TOKEN$/m);
+  assert.ok(
+    buildDockerfile.indexOf("ARG SENTRY_AUTH_TOKEN") < buildDockerfile.search(/^RUN pnpm run build$/m),
+    "the token must be declared before the build that uses it",
+  );
+  assert.ok(
+    buildDockerfile.indexOf("ARG SENTRY_AUTH_TOKEN") < buildDockerfile.search(/^FROM base AS runner$/m),
+    "and only in the build stage — the token never reaches the running image",
+  );
 
   // The one browser funnel feeds it.
   assert.match(code("src/lib/error-monitor/report-client-error.ts"), /captureClientErrorInSentry\(/);
@@ -136,5 +233,6 @@ function wiringTests() {
 export function runSentryProductionOnlyTests() {
   gateTests();
   scrubTests();
+  beyondErrorsTests();
   wiringTests();
 }

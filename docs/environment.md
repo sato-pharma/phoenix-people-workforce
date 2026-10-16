@@ -534,7 +534,7 @@ copies directly with no variable fallback, so deleting the secret copies would s
 |---|---|
 | RAILWAY_TOKEN | Auth for `sync-railway-production-secrets.yml`'s Railway CLI calls |
 | CLOUDFLARE_API_TOKEN | Not currently consumed by any workflow or app code — held for future Cloudflare DNS/cache automation |
-| SENTRY_AUTH_TOKEN | Reserved for sourcemap upload. Nothing reads it today — no Sentry build plugin is wired (see docs/observability.md, "Sentry") |
+| SENTRY_AUTH_TOKEN | Build-time Sentry token for source-map upload and release creation. `next.config.ts` runs the Sentry build plugin only when it is non-empty; the Dockerfile declares it as a build argument in the build stage only. Empty means a plain build (see docs/observability.md, "Sentry") |
 
 ### CI / testing
 | Secret | Purpose |

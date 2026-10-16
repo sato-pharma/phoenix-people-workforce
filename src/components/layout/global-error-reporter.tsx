@@ -7,6 +7,7 @@ import {
   isCrossOriginMaskedErrorEvent,
 } from "@/lib/error-monitor/cross-origin-masked";
 import { reportClientError } from "@/lib/error-monitor/report-client-error";
+import { startSentryBrowser } from "@/lib/observability/sentry-client";
 import { isStaleDeployChunkError, isTransientRouterMountError, recoverFromStaleDeployOnce } from "@/lib/utils/stale-deploy-recovery";
 
 
@@ -65,6 +66,7 @@ export function GlobalErrorReporter() {
 
     window.addEventListener("error", handleError);
     window.addEventListener("unhandledrejection", handleRejection);
+    startSentryBrowser();
 
     return () => {
       window.removeEventListener("error", handleError);

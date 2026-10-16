@@ -1,7 +1,7 @@
 # Observability
 
 _Phoenix Workforce runs on **Railway** (moved off GCP Cloud Run 2026-08-01). Sentry was retired
-2026-07-31 and came back 2026-10-16 as a production-only, errors-only add-on (see "Sentry" below). What still works today: the `app_error_events` table (server errors via
+2026-07-31 and came back 2026-10-16 as a production-only add-on (see "Sentry" below). What still works today: the `app_error_events` table (server errors via
 `instrumentation.ts`'s `onRequestError` → `/api/errors/client`; client errors via
 `reportClientError` → the same endpoint), structured JSON logging (`src/lib/observability/log.ts`,
 readable with `railway logs`), the health probes, and the Healthchecks.io dead-man's-switch on the
@@ -29,14 +29,25 @@ problem currently depends on someone looking at `/admin/system-issues`, `railway
 Healthchecks notification for a cron that stopped pinging. Replacing the alerting layer is open
 work, not a solved problem.
 
-## Sentry (sentry.io) — production only, errors only
+## Sentry (sentry.io) — production only
 
-Back since 2026-10-16, as a second sink beside `app_error_events`, never instead of it.
+Back since 2026-10-16, as a second sink beside `app_error_events`, never instead of it. It started as errors only and the same day grew to everything Sentry can do (owner: "everything that could be on sentry"), each piece bounded in `sentry-policy.ts` and scrubbed before it leaves.
 
 - **Where it runs is decided by the deployment name, not the build mode.** `src/lib/observability/sentry-policy.ts`: the server needs `APP_ENV=production` AND a valid `SENTRY_DSN`; the browser needs a valid `NEXT_PUBLIC_SENTRY_DSN` AND to be served from the production host. Staging, the Hetzner previews and a laptop are off by construction — a Phoenix build is `NODE_ENV=production` on all of them, so `isProductionRuntime()` is NOT the gate.
-- **What it sends:** server request errors (`onRequestError` → `captureRequestError`), uncaught exceptions and rejections in the Node process, and every browser failure `reportClientError` already sees. **What it does not:** no tracing, profiling, session replay, OpenTelemetry provider or load-time module rewriting (`enableOpenTelemetrySetup: false`, `enableRuntimeChannelInjection: false`), no tunnel route, no sourcemap upload.
-- **Nothing identifying leaves:** `scrubSentryEvent` (SDK 11 has no `sendDefaultPii` switch) drops the user, cookies, request bodies, query strings and session/role headers from every event.
+- **What it sends:**
+  - **Errors:** server request errors (`onRequestError` → `captureRequestError`), uncaught exceptions and rejections in the Node process, and every browser failure `reportClientError` already sees.
+  - **Traces:** 5% of requests and page loads (`SENTRY_TRACES_SAMPLE_RATE`), none for the health probe, the error reporter's own endpoint, `_next` assets or the favicon. A parent's decision wins. No trace header is added to any request (`tracePropagationTargets: []`).
+  - **Profiles:** server and browser, only inside a sampled trace (`profileLifecycle: "trace"`). The browser profiler needs the `Document-Policy: js-profiling` header, which `next.config.ts` sends only on a build that carries a DSN. Server profiling is not yet confirmed in production.
+  - **Session replay:** only the session of a user who hit an error (on-error rate 1, ordinary-session rate 0), with all text, all inputs and all media masked. It shows layout and clicks, never a figure.
+  - **Logs:** the app's own `warn` and `error` console lines. A log line can still hold free text, so `scrubSentryLog` masks paths, HR ids and e-mail addresses and drops attributes named like a person, a credential or an amount.
+  - **Cron check-ins:** every cron run already reports to Healthchecks and `job_heartbeats`; `pingDeadMansSwitch` now also sends a Sentry check-in. It carries no `monitorConfig`, so it creates no monitor: a job shows up in Sentry's Crons screen only once someone creates a monitor with that job's slug there. Monitors may be billed per monitor, which is why the code never makes one.
+  - **Releases and source maps:** see "Source maps" below.
+  - **What it does not:** load-time module rewriting (`enableRuntimeChannelInjection: false`), a tunnel route, and the user-feedback button.
+- **Every browser now loads the SDK.** `startSentryBrowser()` runs from the mounted `GlobalErrorReporter` once the page is idle, on the production host only, so tracing and the error-time replay buffer run from early in the session.
+- **Nothing identifying leaves:** `scrubSentryEvent` (SDK 11 has no `sendDefaultPii` switch) drops the user, cookies, request bodies, query strings and session/role headers from every event. `scrubSentrySpan` turns identifying path segments (an HR id, a uuid, a number) into `:id`, strips queries, and drops user, header, query and SQL attributes from every span.
+- **Source maps:** `next.config.ts` wraps the config with the Sentry build plugin only when `SENTRY_AUTH_TOKEN` is non-empty at build time. It uploads the maps to organisation `phoenix-crm`, project `phoenix-workforce` on `https://de.sentry.io`, names the release after the commit sha, and deletes the maps afterwards so none is served. The Dockerfile declares the token as a build argument in the build stage only. A build without a token is unchanged. The token is created in Sentry (an organisation token with release and source-map permission) and stored as the GitHub secret `SENTRY_AUTH_TOKEN`, which the production secret sync already forwards to Railway.
 - **Turn it on:** put the project DSN in `SENTRY_DSN` and `NEXT_PUBLIC_SENTRY_DSN` on the production Railway service (the browser one is a build argument, so it needs a redeploy). Turn it off by removing either.
+- **Created by hand in Sentry's screen (not by code):** the uptime monitor on the production URL and any cron monitors. Both can be billed per monitor.
 - **Pinned by** `tests/sentry-production-only.test.ts`.
 
 ### Operating Sentry from a terminal

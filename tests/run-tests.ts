@@ -10146,7 +10146,7 @@ await runTest(
   runDomTranslateGuardTests,
 );
 await runTest(
-  "Sentry runs on production only and sends errors only — the server needs APP_ENV=production AND a valid DSN (staging builds as NODE_ENV=production, so the build mode is not the gate), the browser needs the production host, a staging or look-alike host stays off even with a DSN baked in, events lose the user, cookies, bodies, query strings and session headers, the SDK is reached only by dynamic import behind the policy, tracing and replay are absent, and the CSP gets its ingest host from the build's own DSN",
+  "Sentry runs on production only, and every span, log and event is scrubbed before it leaves — the server needs APP_ENV=production AND a valid DSN (staging builds as NODE_ENV=production, so the build mode is not the gate), the browser needs the production host, a staging or look-alike host stays off even with a DSN baked in, events lose the user, cookies, bodies, query strings and session headers, the SDK is reached only by dynamic import behind the policy, tracing and replay are absent, and the CSP gets its ingest host from the build's own DSN",
   runSentryProductionOnlyTests,
 );
 await runTest(

@@ -39,7 +39,7 @@ export async function register() {
       console.error("[keep-alive] failed to pin:", error);
     }
 
-    // Sentry (sentry.io), PRODUCTION ONLY and errors only — sentry-policy.ts decides, from APP_ENV and
+    // Sentry (sentry.io), PRODUCTION ONLY — sentry-policy.ts decides, from APP_ENV and
     // the DSN, so staging, the previews and a laptop never load the SDK. Second, so a scheduler that
     // throws while starting below is already covered by its process handlers. Own try: Sentry must never
     // be the reason Phoenix does not boot.
