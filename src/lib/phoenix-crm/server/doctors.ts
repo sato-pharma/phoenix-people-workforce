@@ -30,6 +30,7 @@ import { chunk } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { describeTerritory, territoryPeople } from "@/lib/phoenix-crm/server/territory";
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
@@ -93,11 +94,28 @@ export function directorySeats(viewer: PhoenixCrmViewer): OrgSeat[] {
   return viewer.org.territories.filter((seat) => Boolean(seat.lineCode && viewer.openLines.has(seat.lineCode)));
 }
 
-/** Active places per customer, over many seats at once. */
+/**
+ * How many seat chunks are read at once. A company role's directory spans every territory in the
+ * company — several hundred seats, so several chunks — and each chunk is its own keyset walk; four at a
+ * time is the module's usual allowance for a database fan-out, enough to stop the walks queueing one
+ * behind another without opening a connection per seat.
+ */
+const SEAT_CHUNKS_AT_ONCE = 4;
+
+/**
+ * Active places per customer, over many seats at once.
+ *
+ * The rows are still read one per place rather than counted in the database, deliberately: PostgREST's
+ * embedded `count` has never been used against this project, a plan item and a visit each carry both a
+ * customer and a place (so PostgREST can see more than one way to embed the one in the other), and a
+ * read that fails here takes the whole directory down with it. A per-customer aggregate would return
+ * about as many rows anyway, because nearly every validated customer has exactly one place. So the
+ * read stays as it was and only its chunks run side by side.
+ */
 async function loadPlaceCounts(seatIds: string[], isTest: boolean): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
-  for (const part of chunk(seatIds, 100)) {
-    const rows = await fetchAllRowsKeyset<Row>(
+  const parts = await mapWithConcurrency(chunk(seatIds, 100), SEAT_CHUNKS_AT_ONCE, (part) =>
+    fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
           .from("phoenix_crm_places")
@@ -106,13 +124,37 @@ async function loadPlaceCounts(seatIds: string[], isTest: boolean): Promise<Map<
           .eq("is_test", isTest)
           .eq("status", "active"),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-    );
+    ),
+  );
+  for (const rows of parts) {
     for (const row of rows) {
       const customerId = String(row.customer_id);
       counts.set(customerId, (counts.get(customerId) ?? 0) + 1);
     }
   }
   return counts;
+}
+
+/**
+ * The validated customers on these seats, in the order the chunks were cut — each chunk's rows in id
+ * order, exactly as when the chunks were read one after another, so a tie in the final sort lands
+ * where it always did.
+ */
+async function loadValidatedCustomers(seatIds: string[], isTest: boolean): Promise<Row[]> {
+  const parts = await mapWithConcurrency(chunk(seatIds, 100), SEAT_CHUNKS_AT_ONCE, (part) =>
+    fetchAllRowsKeyset<Row>(
+      () =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_customers")
+          .select("id, seat_id, list_type, name, speciality, grade, validated_at, validated_by_hr_id")
+          .in("seat_id", part)
+          .eq("is_test", isTest)
+          .eq("status", "active")
+          .not("validated_at", "is", null),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    ),
+  );
+  return parts.flat();
 }
 
 /**
@@ -128,27 +170,21 @@ export async function loadDoctorDirectory(viewer: PhoenixCrmViewer, isTest: bool
   const seatIds = seats.map((seat) => seat.seatId);
   if (seatIds.length === 0) return { rows: [], scope, territoryCount: 0 };
 
-  const customers: Row[] = [];
-  for (const part of chunk(seatIds, 100)) {
-    const rows = await fetchAllRowsKeyset<Row>(
-      () =>
-        getSupabaseAdmin()
-          .from("phoenix_crm_customers")
-          .select("id, seat_id, list_type, name, speciality, grade, validated_at, validated_by_hr_id")
-          .in("seat_id", part)
-          .eq("is_test", isTest)
-          .eq("status", "active")
-          .not("validated_at", "is", null),
-      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-    );
-    customers.push(...rows);
-  }
-
-  const placeCounts = await loadPlaceCounts(seatIds, isTest);
-  const names = await loadPeopleNames([
-    ...territoryPeople(viewer.org, seats),
-    ...customers.map((row) => (typeof row.validated_by_hr_id === "string" ? row.validated_by_hr_id : null)),
-  ]);
+  // 🔴 ONE WAVE, NOT THREE READS IN A ROW (Phoenix CRM performance audit, 2026-10-16). The customers,
+  // their place counts and the names were read strictly one after another, although only the names
+  // need the customers (the validators are named on them) and the place counts need nothing but the
+  // seats. So the counts run beside the customers, and the names start the moment the customers land.
+  const customersRead = loadValidatedCustomers(seatIds, isTest);
+  // Handled at once: if the customers fail, the wave below rejects with that same error, and the
+  // names' own chain must never be left holding an unhandled rejection of it.
+  const namesRead = customersRead.then((customers) =>
+    loadPeopleNames([
+      ...territoryPeople(viewer.org, seats),
+      ...customers.map((row) => (typeof row.validated_by_hr_id === "string" ? row.validated_by_hr_id : null)),
+    ]),
+  );
+  namesRead.catch(() => undefined);
+  const [customers, placeCounts, names] = await Promise.all([customersRead, loadPlaceCounts(seatIds, isTest), namesRead]);
   const territoryById = new Map(seats.map((seat) => [seat.seatId, describeTerritory(viewer.org, seat, names)]));
 
   const rows: DoctorDirectoryRow[] = [];

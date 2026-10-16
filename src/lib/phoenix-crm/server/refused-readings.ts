@@ -13,14 +13,17 @@
  *      produce. A rep who is already being refused must not then be refused differently, or
  *      hit a 500, because an evidence insert failed.
  *
- *   3. 🔴 IT IS AWAITED, UNLIKE THE INTEGRITY JUDGEMENT, AND THAT IS DELIBERATE. `judgeCapture` runs
- *      after a save has already returned; this one runs while the request is still open, so a
- *      fire-and-forget promise can be killed with the serverless invocation and record nothing —
- *      which is precisely the hole being closed. One bounded insert is paid before an error message
- *      the rep is waiting for anyway. If that ever becomes the wrong trade, the fix is a queue, never
- *      an unawaited promise.
+ *   3. 🔴 IT IS AWAITED, UNLIKE THE INTEGRITY JUDGEMENT, AND THAT IS DELIBERATE. The first reason
+ *      given here — a fire-and-forget promise killed with a serverless invocation — no longer applies:
+ *      production is one long-lived Node process on Railway, and `afterResponse` (used by the blocked
+ *      permission below) is the safe way to write after a reply. These two stay awaited because a
+ *      refusal is rare, the rep is waiting for his refusal message anyway, the row is in before he can
+ *      try again, and the off-listing count on his NEXT attempt reads the off-listing rows. Re-checked in the
+ *      Phoenix CRM performance audit, 2026-10-16. Never a bare unawaited promise: nothing would log its
+ *      failure.
  */
 
+import { afterResponse } from "@/lib/http/after-response";
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import { PLACE_MAX_ACCURACY_METERS, refusedReadingOf, type PlaceDraft } from "@/lib/phoenix-crm/entry-rules";
 import { type BlockedPermission } from "@/lib/phoenix-crm/refused-readings-rules";
@@ -215,8 +218,11 @@ export type BlockedPermissionInput = {
  *
  *   3. 🔴 IT IS NOT AWAITED BY THE BROWSER, AND THAT IS THE DIFFERENCE. The other two run inside a
  *      request the rep is already waiting on. This one has no request of its own to ride: the
- *      permission died in the browser, so the browser posts it fire-and-forget and the ROUTE awaits
- *      this insert before answering 204. Nothing on the phone waits for the answer.
+ *      permission died in the browser, so the browser posts it fire-and-forget. Since 2026-10-16 the
+ *      insert runs AFTER the route's 204 has gone (`afterResponse`, Phoenix CRM performance audit):
+ *      nothing reads that answer, production is one long-lived Node process on Railway where Next's
+ *      `after()` completes the task once the response has closed, and outside a request scope the
+ *      task is simply awaited as before. Its failure is logged inside the task exactly as it was.
  *
  * NO CUSTOMER IS ATTACHED, deliberately. A blocked permission is a fact about the PHONE — the same
  * switch blocks every customer on the list, and a row tied to whichever one happened to be on screen
@@ -225,27 +231,34 @@ export type BlockedPermissionInput = {
  */
 export async function recordBlockedPermission(input: BlockedPermissionInput): Promise<void> {
   try {
+    // Stamped when the report ARRIVED, never when the deferred insert happens to run.
     const refusedAt = new Date();
-    const { error } = await getSupabaseAdmin()
-      .from("phoenix_crm_refused_readings")
-      .insert({
-        subject_kind: input.subjectKind,
-        reason: "blocked",
-        // Paired with the reason by the table's own CHECK (20261013163001): a 'blocked' row without
-        // it is refused by the database, and no other reason may carry it.
-        blocked_permission: input.permission,
-        seat_id: input.seatId,
-        rep_hr_id: input.repHrId.toUpperCase(),
-        customer_id: null,
-        refused_at: refusedAt.toISOString(),
-        visit_date: cairoBusinessDay(refusedAt),
-        // Every reading column stays null on purpose: there was no position and no photo to report,
-        // and a 0 here would read as a rep standing exactly on the pin.
-        is_test: input.isTest,
-      });
-    if (error) {
-      console.error("[phoenix-crm] blocked permission not recorded", { seatId: input.seatId, message: error.message });
-    }
+    const row = {
+      subject_kind: input.subjectKind,
+      reason: "blocked",
+      // Paired with the reason by the table's own CHECK (20261013163001): a 'blocked' row without
+      // it is refused by the database, and no other reason may carry it.
+      blocked_permission: input.permission,
+      seat_id: input.seatId,
+      rep_hr_id: input.repHrId.toUpperCase(),
+      customer_id: null,
+      refused_at: refusedAt.toISOString(),
+      visit_date: cairoBusinessDay(refusedAt),
+      // Every reading column stays null on purpose: there was no position and no photo to report,
+      // and a 0 here would read as a rep standing exactly on the pin.
+      is_test: input.isTest,
+    };
+    // Rule 3: after the 204. The task swallows its own failure, so `afterResponse` never has one.
+    await afterResponse("phoenix_crm_blocked_permission", async () => {
+      try {
+        const { error } = await getSupabaseAdmin().from("phoenix_crm_refused_readings").insert(row);
+        if (error) {
+          console.error("[phoenix-crm] blocked permission not recorded", { seatId: input.seatId, message: error.message });
+        }
+      } catch (error) {
+        console.error("[phoenix-crm] blocked permission record failed", { seatId: input.seatId, error });
+      }
+    });
   } catch (error) {
     console.error("[phoenix-crm] blocked permission record failed", { seatId: input.seatId, error });
   }

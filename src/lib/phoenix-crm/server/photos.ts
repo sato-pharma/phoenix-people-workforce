@@ -38,16 +38,18 @@ function storageSegment(value: string): string {
 
 export type PhotoSlot = { path: string; signedUrl: string; token: string; issuedAt: string };
 
-export async function issuePhotoSlot(input: {
+type PhotoSlotInput = {
   hrId: string;
   seat: OrgSeat;
   isTest: boolean;
   purpose: PhotoPurpose;
   cairoToday: string;
-}): Promise<PhotoSlot> {
-  const supabase = getSupabaseAdmin();
+};
+
+/** The hourly allowance, then the path a new slot will hold. Refuses past the allowance. */
+async function nextSlotPath(input: PhotoSlotInput): Promise<string> {
   const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const recent = await supabase
+  const recent = await getSupabaseAdmin()
     .from("phoenix_crm_photo_uploads")
     .select("path", { count: "exact", head: true })
     .eq("issued_to_hr_id", input.hrId)
@@ -61,9 +63,12 @@ export async function issuePhotoSlot(input: {
   }
 
   const [year, month] = input.cairoToday.split("-");
-  const path = `${input.isTest ? "test/" : ""}${storageSegment(input.seat.seatId)}/${year}/${month}/${input.purpose}/${crypto.randomUUID()}.jpg`;
-  const issuedAt = new Date().toISOString();
-  const { error: slotError } = await supabase.from("phoenix_crm_photo_uploads").insert({
+  return `${input.isTest ? "test/" : ""}${storageSegment(input.seat.seatId)}/${year}/${month}/${input.purpose}/${crypto.randomUUID()}.jpg`;
+}
+
+/** The slot row: who, which territory, what for, test or real, and the issue time a save is dated by. */
+async function insertSlotRow(input: PhotoSlotInput, path: string, issuedAt: string) {
+  return getSupabaseAdmin().from("phoenix_crm_photo_uploads").insert({
     path,
     issued_to_hr_id: input.hrId,
     seat_id: input.seat.seatId,
@@ -71,29 +76,53 @@ export async function issuePhotoSlot(input: {
     is_test: input.isTest,
     issued_at: issuedAt,
   });
-  throwIfError(slotError);
+}
 
-  const { data, error } = await supabase.storage.from(PHOENIX_CRM_PHOTO_BUCKET).createSignedUploadUrl(path);
+export async function issuePhotoSlot(input: PhotoSlotInput): Promise<PhotoSlot> {
+  const path = await nextSlotPath(input);
+  const issuedAt = new Date().toISOString();
+
+  // 🔴 THE ROW AND THE SIGNED URL ARE ASKED FOR TOGETHER (Phoenix CRM performance audit, 2026-10-16).
+  // The path is made here, so signing it needs nothing from the row, and the rep pressing the shutter
+  // waited for one round trip and then another for no reason. What must not change is what he gets
+  // back when the row fails: settled rather than raced, so the ROW's error is checked first and a
+  // signed URL for a path with no slot behind it is never handed out — exactly as when signing only
+  // began after the insert. A URL signed for a failed row is simply dropped; with no slot row, a save
+  // can never consume it.
+  const [slot, signing] = await Promise.allSettled([
+    insertSlotRow(input, path, issuedAt),
+    getSupabaseAdmin().storage.from(PHOENIX_CRM_PHOTO_BUCKET).createSignedUploadUrl(path),
+  ]);
+  if (slot.status === "rejected") throw slot.reason;
+  throwIfError(slot.value.error);
+  if (signing.status === "rejected") throw signing.reason;
+  const { data, error } = signing.value;
   if (error || !data) throw error ?? new Error("The photo upload could not be prepared.");
   return { path, signedUrl: data.signedUrl, token: data.token, issuedAt };
 }
 
 /**
- * An upload slot for the person about to take the photo: a place photo for whoever may validate the
- * list — the territory's rep, and since 2026-10-02 a manager of it (owner's pick) — and a visit photo
- * for whoever may enter the territory's visits.
+ * Who may take this photo, for which territory and world — the gate both slot doors share.
+ *
+ * A place photo for whoever may validate the list — the territory's rep, and since 2026-10-02 a manager
+ * of it (owner's pick) — and a visit photo for whoever may enter the territory's visits.
  *
  * 🔴 The place slot must match `validateCustomer`'s own gate (`territoryForValidation`). With the
  * narrower one it refused the camera, which is the FIRST step of validating, so a manager would have
  * been offered a Validate button that could not take a photo.
  */
-export async function requestPhotoSlot(viewer: PhoenixCrmViewer, raw: unknown): Promise<PhotoSlot> {
+function photoSlotInput(viewer: PhoenixCrmViewer, raw: unknown): PhotoSlotInput {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const purpose: PhotoPurpose | null = body.purpose === "place" ? "place" : body.purpose === "visit" ? "visit" : null;
   if (!purpose) throw validationError("Reload the page and open the camera again.");
   const test = readTestFlag(body.test);
   const { seat, isTest } = purpose === "place" ? territoryForValidation(viewer, body.seatId, test) : territoryForVisit(viewer, body.seatId, test);
-  return issuePhotoSlot({ hrId: viewer.hrId, seat, isTest, purpose, cairoToday: viewer.cairoToday });
+  return { hrId: viewer.hrId, seat, isTest, purpose, cairoToday: viewer.cairoToday };
+}
+
+/** An upload slot for the person about to take the photo — see `photoSlotInput` for who may. */
+export async function requestPhotoSlot(viewer: PhoenixCrmViewer, raw: unknown): Promise<PhotoSlot> {
+  return issuePhotoSlot(photoSlotInput(viewer, raw));
 }
 
 /** The bucket refuses anything larger; the same 2 MB ceiling as every other Phoenix evidence photo. */
@@ -108,13 +137,19 @@ const DATA_URL_PATTERN = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/;
  * The web page uploads straight to the signed slot from the browser (`sendToSlot` PUTs the JPEG to
  * `slot.signedUrl`). React Native cannot PUT the raw bytes of a stamped photo to that URL reliably —
  * this build has no `expo-file-system`, and `fetch` will not stream a `file://` body to a third-party
- * URL — so the phone sends the stamped JPEG as a base64 data URL to this function and the SERVER does
- * the same PUT the browser would have. Every guarantee the slot carries is kept: the same
- * `requestPhotoSlot` issues the path (who, which territory, what for, test or real, one slot-per-hour
+ * URL — so the phone sends the stamped JPEG as a base64 data URL to this function and the SERVER
+ * stores it. Every guarantee the slot carries is kept: the same gate and the same slot row as
+ * `requestPhotoSlot` issue the path (who, which territory, what for, test or real, one slot-per-hour
  * budget), and the returned `path`/`issuedAt` are exactly what a later save consumes with
  * `phoenix_crm_take_photo`. Only the last hop moves from the phone to this server, which changes
  * nothing about what is stored or how a visit is dated — the slot's issue time is still the capture
  * time. Guarded by the same `phoenix_crm:create` permission as the slot route.
+ *
+ * 🔴 NO SIGNED URL ON THIS PATH (Phoenix CRM performance audit, 2026-10-16). Until then the server
+ * signed an upload URL for itself and then PUT up to 2 MB to it — a round trip to mint a token for a
+ * door it already holds the key to. It now writes the object with the service client, to the SAME
+ * path, with the same content type, the same refusal to overwrite, the same cache metadata the
+ * browser's PUT leaves, and the same two refusals the rep read before.
  */
 export async function uploadPhotoDirect(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ path: string; issuedAt: string }> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -126,30 +161,48 @@ export async function uploadPhotoDirect(viewer: PhoenixCrmViewer, raw: unknown):
     throw validationError("The photo is larger than Phoenix accepts. Take it again.");
   }
 
-  // Issues the slot with the same gate the browser's slot route uses: a place photo for the rep, a
-  // visit photo for whoever may enter this territory's visits.
-  const slot = await requestPhotoSlot(viewer, body);
+  // The same gate the browser's slot route uses — a place photo for whoever may validate, a visit photo
+  // for whoever may enter this territory's visits — then the allowance and the slot row. The row is
+  // written BEFORE the bytes, as it always was, so a refused or failed row never leaves an object in
+  // the bucket that no slot can account for.
+  const input = photoSlotInput(viewer, body);
+  const path = await nextSlotPath(input);
+  const issuedAt = new Date().toISOString();
+  const { error: slotError } = await insertSlotRow(input, path, issuedAt);
+  throwIfError(slotError);
 
-  let response: Response;
+  let stored: { error: unknown };
   try {
-    response = await fetch(slot.signedUrl, {
-      body: new Uint8Array(bytes),
-      headers: { "content-type": "image/jpeg", "x-upsert": "false" },
-      method: "PUT",
-    });
+    stored = await getSupabaseAdmin()
+      .storage.from(PHOENIX_CRM_PHOTO_BUCKET)
+      .upload(path, bytes, {
+        contentType: "image/jpeg",
+        upsert: false,
+        // The browser's PUT names no cache-control, and Storage records `no-cache` for such an
+        // upload; the client library would otherwise stamp its own one-hour default on this path's
+        // objects only.
+        headers: { "cache-control": "no-cache" },
+      });
   } catch {
     throw new ApiError(502, "photo_upload_failed", "The photo could not be uploaded. Take it again where the signal is better.");
   }
-  // A retried upload whose earlier answer was lost: the object already sits at the path. The web
-  // client treats the same 409 as success, and so does the save, which only needs the object to exist.
-  if (!response.ok && response.status !== 409) {
-    const detail = await response.text().catch(() => "");
-    if (!/already exists|duplicate/i.test(detail)) {
+  if (stored.error) {
+    const failure = stored.error as { status?: unknown; statusCode?: unknown; message?: unknown };
+    // No HTTP status means the bucket never answered — a dropped connection, which is what a failed
+    // `fetch` meant on the old path, and it keeps that path's words.
+    if (typeof failure.status !== "number") {
+      throw new ApiError(502, "photo_upload_failed", "The photo could not be uploaded. Take it again where the signal is better.");
+    }
+    // A retried upload whose earlier answer was lost: the object already sits at the path. The web
+    // client treats the same 409 as success, and so does the save, which only needs the object to exist.
+    const duplicate =
+      failure.status === 409 || String(failure.statusCode ?? "") === "409" || /already exists|duplicate/i.test(String(failure.message ?? ""));
+    if (!duplicate) {
       throw new ApiError(502, "photo_upload_failed", "The photo did not upload. Take it again.");
     }
   }
 
-  return { path: slot.path, issuedAt: slot.issuedAt };
+  return { path, issuedAt };
 }
 
 /** The territory a stored photo path belongs to, and whether it is a test photo. */

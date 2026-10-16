@@ -215,8 +215,10 @@ export function runPhoenixCrmRefusedReadingsTests() {
   assert.ok(recorderCode.includes("visit_date: cairoBusinessDay(refusedAt)"), "the Cairo visit day, which ends at 02:00 — never the database's UTC day");
 
   // ── 8. Every door that refuses a reading files it, and files it BEFORE throwing ──
-  // Awaited, unlike judgeCapture: this runs while the request is still open, so an unawaited promise
-  // can be killed with the invocation and record nothing — the exact hole being closed.
+  // Awaited, unlike judgeCapture: a refusal is rare, the rep is waiting for his message anyway, and the
+  // row is in before he can try again. A bare unawaited promise would have nobody to log its failure.
+  // (The serverless reason first given here retired with the move to one long-lived Node process —
+  // re-checked 2026-10-16.)
   for (const [file, doors] of [
     ["src/lib/phoenix-crm/server/list.ts", 2],
     ["src/lib/phoenix-crm/server/visits.ts", 1],
@@ -243,7 +245,7 @@ export function runPhoenixCrmRefusedReadingsTests() {
     assert.equal(
       (source.match(/recordRefusedReading\(/g) ?? []).length,
       doors,
-      `${file}: exactly ${doors} call(s) — an unawaited one anywhere else would die with the invocation`,
+      `${file}: exactly ${doors} call(s) — an unawaited one anywhere else would be a write nobody waits for or logs`,
     );
   }
 
@@ -390,8 +392,9 @@ export function runPhoenixCrmRefusedReadingsTests() {
   //
   // The two rules at the top of this file still hold, and the third is INVERTED on purpose: the rep
   // learns nothing new, nothing can cost him his work, and this one write is NOT awaited by the
-  // browser — it has no request of its own to ride, so the browser posts it fire-and-forget and the
-  // route awaits the insert before answering its 204.
+  // browser — it has no request of its own to ride, so the browser posts it fire-and-forget. Since
+  // 2026-10-16 (Phoenix CRM performance audit) the route does not wait for the insert either: the 204
+  // goes first and the insert runs in an after-response task, pinned below.
 
   // The report off the wire: bounded, total, and it never says whose phone it was.
   assert.deepEqual(
@@ -431,6 +434,10 @@ export function runPhoenixCrmRefusedReadingsTests() {
     assert.ok(!blockedCode.includes(reading), `no ${reading} — there was no reading, and a 0 would read as a rep standing exactly on the pin`);
   }
   assert.doesNotMatch(blockedCode, /\.(?:upsert|update|delete)\(/, "it only ever inserts");
+  const blockedAfterAt = blockedCode.indexOf('afterResponse("phoenix_crm_blocked_permission", async () => {');
+  const blockedInsertAt = blockedCode.indexOf('.from("phoenix_crm_refused_readings").insert(row)');
+  assert.ok(blockedAfterAt > 0 && blockedInsertAt > blockedAfterAt, "the insert runs after the 204, inside the after-response task");
+  assert.ok(blockedCode.indexOf("visit_date: cairoBusinessDay(refusedAt)") < blockedAfterAt, "and the row is stamped when the report ARRIVED, before the task is handed off");
 
   // The route: always 204, the rep from the session, the body only able to ADD the test flag.
   const blockedRoute = stripComments(readFileSync("app/api/phoenix-crm/refused-readings/route.ts", "utf8"));

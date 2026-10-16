@@ -321,4 +321,17 @@ export async function runPhoenixCrmStartGuideTests(): Promise<void> {
       );
     }
   }
+
+  // ── The route keeps each page for the life of the process, so the builder must stay pure ───────
+  // (Phoenix CRM performance audit, 2026-10-16.) Held once per language, the page is only as fresh as
+  // the process serving it — right for a pure function of the language, and wrong the day someone adds
+  // a date or a name to it. Two builds of one language must be the same string.
+  {
+    for (const language of START_GUIDE_LANGUAGES) {
+      assert.equal(buildPhoenixCrmStartGuide(language), buildPhoenixCrmStartGuide(language), `${language}: the page is a pure function of its language`);
+    }
+    const route = readFileSync(new URL("../app/api/phoenix-crm/start-guide/route.ts", import.meta.url), "utf8");
+    assert.match(route, /return new Response\(startGuideHtml\(language\), \{/, "the route serves the kept page");
+    assert.match(route, /await assertPermission\(access, "phoenix_crm", "read"\);/, "and still checks the permission on every request");
+  }
 }
