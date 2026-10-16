@@ -81,7 +81,19 @@ function checkSelectByIdsShape(): void {
   assert.match(body, /dedupeIds\(ids\)/, "selectByIds cleans the ids through dedupeIds");
   assert.match(body, /chunk\(unique, IN_ID_CHUNK\)/, "and chunks them by IN_ID_CHUNK, so no `.in()` can overflow");
   assert.match(body, /fetchAllRowsKeyset</, "and keyset-pages each chunk, so the 1,000-row cap cannot shorten it");
-  assert.match(body, /cursorColumn: "id"/, "seeking on id, which every chunk's select must therefore include");
+  assert.match(body, /cursorColumn = "id"/, "seeking on id by default, which every chunk's select must therefore include");
+  assert.match(body, /cursorOf: \(row\) => \(row\[cursorColumn\]/, "and the cursor is read from the same column it seeks on");
+
+  // A table with no `id` must name its own key, or the keyset orders on a column that is not there (42703).
+  // phoenix_crm_visit_recordings is keyed on `path`; with `id` every day holding a visit failed to load
+  // ("Could not load the visits."), seen first in the test accounts, the only ones with a visit that day.
+  const recordings = read("src/lib/phoenix-crm/server/visit-recordings.ts");
+  const loader = functionBody(recordings, "loadRecordingsByVisit");
+  assert.match(
+    loader,
+    /selectByIds<Row>\("phoenix_crm_visit_recordings",[^;]*"visit_id",\s*visitIds,\s*undefined,\s*"path"\)/,
+    "the recordings read seeks on path, the table's key, because it has no id",
+  );
 }
 
 function checkLoadersGoThroughSelectByIds(): void {

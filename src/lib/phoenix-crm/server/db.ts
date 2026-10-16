@@ -358,6 +358,10 @@ export function seatScoped<Q>(query: Q, seats: readonly string[] | null): Q {
  *
  * So the ids are de-duplicated and nullish ones dropped, each id chunk is kept well under the cliff,
  * and every chunk is keyset-paged on `id`. `columns` MUST therefore include `id`.
+ *
+ * 🔴 A table with NO `id` column names its own unique key as `cursorColumn` (and selects it): the
+ * keyset orders and seeks on that column, so an absent `id` is a 42703 that fails the WHOLE read.
+ * `phoenix_crm_visit_recordings` is keyed on `path` and took every visit day down with it, 2026-10-16.
  */
 export async function selectByIds<T extends Record<string, unknown> = Record<string, unknown>>(
   table: string,
@@ -366,6 +370,7 @@ export async function selectByIds<T extends Record<string, unknown> = Record<str
   ids: ReadonlyArray<string | null | undefined>,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tune?: (query: any) => any,
+  cursorColumn = "id",
 ): Promise<T[]> {
   const unique = dedupeIds(ids);
   if (unique.length === 0) return [];
@@ -376,7 +381,7 @@ export async function selectByIds<T extends Record<string, unknown> = Record<str
         const base = getSupabaseAdmin().from(table).select(columns).in(idColumn, part);
         return tune ? tune(base) : base;
       },
-      { cursorColumn: "id", cursorOf: (row) => (row.id == null ? null : String(row.id)) },
+      { cursorColumn, cursorOf: (row) => (row[cursorColumn] == null ? null : String(row[cursorColumn])) },
     );
     rows.push(...page);
   }
