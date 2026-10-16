@@ -1927,7 +1927,9 @@ export function DropScreen({
             <p className="text-sm font-medium leading-6 text-slate-600">
               {steps} {until}{" "}
               {customer
-                ? `Once approved, the customer moves to the Archive and keeps ${customer.places.length === 1 ? "its clinic" : `its ${plural(customer.places.length, "clinic", "clinics")}`}, so bringing the customer back needs no new photo. A waiting grade request is withdrawn.`
+                ? customer.places.length === 0
+                  ? "Once approved, the customer moves to the Archive. A waiting grade request is withdrawn."
+                  : `Once approved, the customer moves to the Archive and keeps ${customer.places.length === 1 ? "its clinic" : `its ${plural(customer.places.length, "clinic", "clinics")}`}, so bringing the customer back needs no new photo. A waiting grade request is withdrawn.`
                 : "Once approved, the customer counts as done for the list."}
             </p>
           </CrmBlock>

@@ -19,6 +19,7 @@ import { useState } from "react";
 import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
 import { LocateFixed, RotateCcw } from "lucide-react";
 
+import { noteReading } from "@/components/phoenix-crm/location-reader";
 import { reportBlockedPermission } from "@/components/phoenix-crm/report-blocked-permission";
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
@@ -66,6 +67,7 @@ export function CaptureLocation({
     setBusy(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        noteReading(position);
         setBusy(false);
         onChange({
           lat: position.coords.latitude,

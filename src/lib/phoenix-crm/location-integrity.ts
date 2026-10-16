@@ -164,7 +164,19 @@ export type PhoenixCrmIntegrityFlag =
    * kilometre and the worst is 5.9 km. A second FLAG rather than a second detector, so one case
    * carries both and a reader can still see the shorter ones for what they are.
    */
-  | "visit_very_far_from_photo";
+  | "visit_very_far_from_photo"
+  // ── The browser's own location reader (2026-10-16) ──────────────────────────────────────────
+  //
+  // Owner, 2026-10-16: "add a silent check for a replaced location reader in Phoenix CRM". An add-on
+  // that changes where a page thinks the phone is puts its own function in place of the browser's
+  // location reader, and the page asks that at the tap (src/lib/phoenix-crm/location-reader-probe.ts).
+  // The web's answer to the question Android's mock flag answers on a phone.
+  //
+  // 🔴 WEAK UNTIL THE OWNER SAYS OTHERWISE. A privacy add-on that blurs location replaces the reader
+  // the same way, and adding it to PHOENIX_CRM_STRONG_INTEGRITY_FLAGS would move a number the rep can
+  // read (`countedIntegrityFlags` and the nightly ranks score share that one list).
+  /** The page reported that the browser's own location reader had been replaced. */
+  | "location_reader_replaced";
 
 export const PHOENIX_CRM_STRONG_INTEGRITY_FLAGS: readonly PhoenixCrmIntegrityFlag[] = [
   "mock_provider",
@@ -221,6 +233,7 @@ export const PHOENIX_CRM_INTEGRITY_LABELS: Record<PhoenixCrmIntegrityFlag, strin
   // different reading that happens to be the same point for 1,312 of the 1,403 validated places.
   visit_far_from_photo: "The visit was saved far from the photograph taken at the place",
   visit_very_far_from_photo: "The visit was saved more than a kilometre from the photograph",
+  location_reader_replaced: "The browser's own location reader had been replaced on the page",
 };
 
 /**
@@ -364,6 +377,12 @@ export type PhoenixCrmIntegrityInput = {
   /** Android's own mock-provider flag. Null on the web and on iOS, where it does not exist. */
   deviceMocked: boolean | null;
   /**
+   * The browser's answer to whether its location reader was still its own (location-reader-probe.ts).
+   * Null or absent is NOT ASKED — an older bundle, a page that could not be read — never "clean".
+   */
+  readerReplaced?: boolean | null;
+  readerFindings?: readonly string[];
+  /**
    * The rep's own recent fixes, plus any fix by anyone that shares this coordinate. Order does not
    * matter; the caller decides how far back to look.
    */
@@ -437,6 +456,11 @@ export function checkLocationIntegrity(input: PhoenixCrmIntegrityInput): Phoenix
   // ── Layer 1 — the phone told us ───────────────────────────────────────────────────────────────
   if (input.deviceMocked === true) flags.add("mock_provider");
   signals.deviceMocked = input.deviceMocked;
+  // The browser's half of the same question. Recorded either way, so a later reading can tell "asked
+  // and its own" (false) from "never asked" (null); a flag only on a positive answer.
+  if (input.readerReplaced === true) flags.add("location_reader_replaced");
+  signals.readerReplaced = input.readerReplaced ?? null;
+  if (input.readerFindings && input.readerFindings.length > 0) signals.readerFindings = [...input.readerFindings];
 
   // ── Is this fix precise enough to be judged on precision at all? ──────────────────────────────
   //

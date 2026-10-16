@@ -424,6 +424,21 @@ function openingSentence(input: CaseStoryInput): string {
 
 // ── One sentence per finding, and the ordinary reason for it ────────────────────────────────────
 
+/** The location-reader probe's codes in words (location-reader-probe.ts); null when none were sent. */
+const READER_FINDING_WORDS: Record<string, string> = {
+  navigator_own_property: "the reader was set on the page itself",
+  reader_not_engine_object: "the reader was not the browser's own object",
+  method_own_property: "its functions were set on the page itself",
+  method_not_engine_code: "its functions were not the browser's own code",
+  position_not_engine_object: "the readings it handed back were not the browser's own",
+};
+
+function readerFindingWords(value: unknown): string | null {
+  if (!Array.isArray(value)) return null;
+  const words = value.map((code) => (typeof code === "string" ? READER_FINDING_WORDS[code] : undefined)).filter((text): text is string => Boolean(text));
+  return words.length === 0 ? null : words.join("; ");
+}
+
 /**
  * The measured fact for a flag, written with this case's own numbers.
  *
@@ -443,6 +458,12 @@ function flagFact(flag: string, input: CaseStoryInput): string | null {
     // ── The phone's own answer ──────────────────────────────────────────────────────────────────
     case "mock_provider":
       return "The phone itself reported that a mock-location app was active when the reading was taken.";
+    case "location_reader_replaced": {
+      const found = readerFindingWords(signals.readerFindings);
+      return found === null
+        ? "When this was saved, the browser's own location reader had been replaced by something on the page."
+        : `When this was saved, the browser's own location reader had been replaced by something on the page: ${found}.`;
+    }
 
     // ── Position, over this rep's own history ───────────────────────────────────────────────────
     case "coordinate_replay": {
@@ -594,6 +615,8 @@ function flagOrdinaryCause(flag: string): string | null {
   switch (flag) {
     case "mock_provider":
       return "Some handsets report this for a navigation or developer setting the person may not know is switched on.";
+    case "location_reader_replaced":
+      return "A browser add-on that blurs or blocks location for privacy replaces the reader in the same way, without moving anybody.";
     case "coordinate_replay":
       return "A phone that cannot get a fresh reading indoors commonly hands back the last one it held.";
     case "impossible_travel":

@@ -25,6 +25,7 @@ import {
 } from "../src/lib/phoenix-crm/location-integrity.ts";
 import { PHOENIX_CRM_DAY_ACTIVITIES } from "../src/lib/phoenix-crm/day-activities.ts";
 import { parseCapturedFix } from "../src/lib/phoenix-crm/entry-rules.ts";
+import { probeLocationReader, readLocationReaderAnswer } from "../src/lib/phoenix-crm/location-reader-probe.ts";
 
 /**
  * Phoenix CRM — the mock-location and GPS-plausibility checks.
@@ -723,6 +724,135 @@ export function runPhoenixCrmLocationIntegrityTests(): void {
     // Nobody at all is still nobody — the board prints a name beside every case.
     assert.equal(personOnTheVisit({ repHrId: null, managerHrId: null }), null);
     assert.equal(personOnTheVisit({ repHrId: "   ", managerHrId: "" }), null, "whitespace names nobody");
+  }
+
+  // ── The browser's own location reader (owner, 2026-10-16) ───────────────────────────────────
+  //
+  // "add a silent check for a replaced location reader in Phoenix CRM". The web cannot ask Android's
+  // mock question, but it can ask whether the page's location reader is still the browser's own.
+  {
+    // A stand-in for the browser, built from a function that prints `[native code]` the way the
+    // engine's own do — `Math.max` is a real native function in node.
+    class EngineGeolocation {}
+    class EnginePosition {}
+    class EngineCoords {}
+    for (const method of ["getCurrentPosition", "watchPosition", "clearWatch"]) {
+      Object.defineProperty(EngineGeolocation.prototype, method, { value: Math.max });
+    }
+    const browser = (reader: unknown = new EngineGeolocation()) => {
+      class EngineNavigator {}
+      Object.defineProperty(EngineNavigator.prototype, "geolocation", { get: () => reader });
+      return {
+        navigator: new EngineNavigator() as object,
+        Geolocation: EngineGeolocation as unknown,
+        GeolocationPosition: EnginePosition as unknown,
+        GeolocationCoordinates: EngineCoords as unknown,
+      };
+    };
+    const enginePosition = () => {
+      const position = new EnginePosition();
+      Object.defineProperty(position, "coords", { value: new EngineCoords() });
+      return position;
+    };
+
+    // 1 · An untouched browser is ASKED and answers "its own" — false, never null.
+    assert.deepEqual(
+      probeLocationReader(browser(), [enginePosition()]),
+      { readerReplaced: false, readerFindings: [] },
+      "an untouched browser must never be accused",
+    );
+
+    // 2 · A method written onto the reader itself — what a location-changing add-on does.
+    const patched = new EngineGeolocation();
+    Object.defineProperty(patched, "getCurrentPosition", {
+      value: (success: (position: unknown) => void) => success({ coords: { latitude: 30, longitude: 31 } }),
+    });
+    const onTheReader = probeLocationReader(browser(patched));
+    assert.equal(onTheReader.readerReplaced, true, "a replaced method must be caught");
+    assert.deepEqual(onTheReader.readerFindings, ["method_own_property", "method_not_engine_code"]);
+
+    // 3 · The engine's own prototype rewritten, so nothing is "own" anywhere — the source still says.
+    class RewrittenGeolocation {}
+    Object.defineProperty(RewrittenGeolocation.prototype, "getCurrentPosition", { value: function getCurrentPosition() {} });
+    Object.defineProperty(RewrittenGeolocation.prototype, "watchPosition", { value: Math.max });
+    assert.deepEqual(
+      probeLocationReader({ ...browser(new RewrittenGeolocation()), Geolocation: RewrittenGeolocation }).readerFindings,
+      ["method_not_engine_code"],
+      "a prototype rewrite is caught by its source alone",
+    );
+
+    // 4 · The whole reader swapped on navigator for a plain object.
+    const swapped = browser();
+    Object.defineProperty(swapped.navigator, "geolocation", { value: { getCurrentPosition() {}, watchPosition() {} } });
+    assert.deepEqual(
+      probeLocationReader(swapped).readerFindings,
+      ["navigator_own_property", "reader_not_engine_object", "method_own_property", "method_not_engine_code"],
+      "a swapped reader answers every question it can",
+    );
+
+    // 5 · A made-up reading handed back through a reader that looks untouched.
+    assert.deepEqual(
+      probeLocationReader(browser(), [{ coords: { latitude: 30, longitude: 31 }, timestamp: 1 }]).readerFindings,
+      ["position_not_engine_object"],
+      "a plain-object reading is not the engine's",
+    );
+
+    // 6 · An engine that does not name the position types (an older Safari) is NOT asked that question.
+    const older = { ...browser(), GeolocationPosition: undefined, GeolocationCoordinates: undefined };
+    assert.equal(probeLocationReader(older, [{ coords: {} }]).readerReplaced, false, "an unnamed type is never read as a replaced one");
+
+    // 7 · No reader at all is NOT ASKED — null, never "clean" and never "replaced".
+    assert.deepEqual(probeLocationReader({}), { readerReplaced: null, readerFindings: [] });
+    assert.deepEqual(probeLocationReader({ navigator: {} }), { readerReplaced: null, readerFindings: [] });
+
+    // 8 · Total: a page whose objects throw on being read never throws out of the probe.
+    const refuse = () => {
+      throw new Error("no");
+    };
+    assert.doesNotThrow(() => probeLocationReader({ navigator: new Proxy({}, { get: refuse, getOwnPropertyDescriptor: refuse }) }));
+
+    // 9 · The wire: only a boolean and only known codes survive; anything sent in their place is dropped.
+    const parsed = parseCapturedFix({
+      lat: CAIRO_CLINIC.lat,
+      lon: CAIRO_CLINIC.lon,
+      readerReplaced: true,
+      readerFindings: ["method_not_engine_code", "<b>anything</b>", 7, "method_own_property"],
+    });
+    assert.equal(parsed.ok, true, "a replaced reader must still SAVE — the rep is never refused");
+    if (parsed.ok) {
+      assert.equal(parsed.value.readerReplaced, true);
+      assert.deepEqual(parsed.value.readerFindings, ["method_own_property", "method_not_engine_code"]);
+    }
+    const olderBundle = parseCapturedFix({ lat: CAIRO_CLINIC.lat, lon: CAIRO_CLINIC.lon });
+    if (olderBundle.ok) {
+      assert.deepEqual([olderBundle.value.readerReplaced, olderBundle.value.readerFindings], [null, []], "an older bundle is not asked");
+    }
+    assert.deepEqual(readLocationReaderAnswer({ readerReplaced: "true", readerFindings: "method_own_property" }), {
+      readerReplaced: null,
+      readerFindings: [],
+    });
+
+    // 10 · The judgement: a positive answer files a WEAK flag; null and false file nothing.
+    const base = {
+      fix: { ...CAIRO_CLINIC, accuracyMeters: 18, capturedAt: at("2026-10-16T09:00:00.000Z") },
+      repHrId: "R-1",
+      customerId: "c-9",
+      deviceMocked: null,
+      history: [],
+    };
+    const replaced = checkLocationIntegrity({ ...base, readerReplaced: true, readerFindings: ["method_not_engine_code"] });
+    assert.deepEqual(replaced.flags, ["location_reader_replaced"], "a replaced reader must be filed");
+    assert.equal(replaced.strong, false, "and it is WEAK — a strong flag moves the rep's own Integrity score");
+    assert.deepEqual(replaced.signals.readerFindings, ["method_not_engine_code"], "the findings travel with the case");
+    assert.equal(checkLocationIntegrity({ ...base, readerReplaced: false }).flags.length, 0, "an untouched reader files nothing");
+    assert.equal(checkLocationIntegrity({ ...base, readerReplaced: false }).signals.readerReplaced, false, "and is recorded as asked");
+    assert.equal(checkLocationIntegrity(base).signals.readerReplaced, null, "an older capture is recorded as not asked");
+    assert.equal(
+      (PHOENIX_CRM_STRONG_INTEGRITY_FLAGS as readonly string[]).includes("location_reader_replaced"),
+      false,
+      "the reader flag stays weak until the owner says otherwise",
+    );
+    assert.match(PHOENIX_CRM_INTEGRITY_LABELS.location_reader_replaced, /location reader/, "the board says what was found, in words");
   }
 
   console.log("phoenix-crm location integrity: OK");
