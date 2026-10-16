@@ -1,6 +1,7 @@
-// Configures the Sentry account for Phoenix over Sentry's REST API: the "Production: new error" email alert,
-// the organisation's IP and data scrubbing, and resolving the deliberate test issue. Safe to run again —
-// every step reads first and only writes what is missing.
+// Configures the Sentry account for Phoenix over Sentry's REST API: the organisation's IP and data scrubbing, and
+// resolving the deliberate test issue — and CHECKS that an alert already emails on every new issue (it does not
+// create one: see scripts/lib/sentry-account-plan.mjs). Safe to run again — every step reads first and only
+// writes what is missing.
 //
 // Usage:
 //   node scripts/sentry-setup.mjs            read the account and print what it WOULD change (writes nothing)
@@ -17,15 +18,12 @@ import { pathToFileURL } from "node:url";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
 import {
-  SENTRY_ALERT_NAME,
-  buildAlertRulePayload,
   describeToken,
-  findRuleByName,
   orgPrivacyPatch,
-  otherEmailRules,
   pickOrg,
   pickProject,
   testIssues,
+  workflowCoveringNewIssues,
 } from "./lib/sentry-account-plan.mjs";
 
 refuseUnknownFlags({
@@ -133,23 +131,16 @@ async function main() {
     }
   }
 
-  // 2 · the email alert
-  const rulesPath = `/projects/${org.slug}/${project.slug}/rules/`;
-  let alertChecked = false;
+  // 2 · the email alert: Sentry's alert system already ships one that emails on every new high-priority issue
   await step("alert", async () => {
-    const rules = await api("GET", rulesPath);
-    if (findRuleByName(rules, SENTRY_ALERT_NAME)) {
-      console.log(`  alert         "${SENTRY_ALERT_NAME}" already exists`);
-      alertChecked = true;
-    } else if (apply) {
-      const created = await api("POST", rulesPath, buildAlertRulePayload());
-      console.log(`  alert         CREATED "${created?.name ?? SENTRY_ALERT_NAME}" (email on every new production issue, at most once per 30 minutes)`);
-      alertChecked = true;
+    const workflows = await api("GET", `/organizations/${org.slug}/workflows/`);
+    const covering = workflowCoveringNewIssues(workflows);
+    if (covering) {
+      const scope = covering.environment ? `only in the "${covering.environment}" environment` : "in every environment (only production ever sends)";
+      console.log(`  alert         OK — "${covering.name}" emails on new issues ${scope}; last fired ${covering.lastTriggered ?? "never"}`);
     } else {
-      console.log(`  alert         WOULD CREATE "${SENTRY_ALERT_NAME}"`);
-    }
-    for (const rule of otherEmailRules(rules)) {
-      console.log(`  note          another rule already emails: "${rule.name}" — keep it or delete it in Sentry; this script never deletes a rule`);
+      unfinished.push("alert");
+      console.log("  alert         NOT COVERED — no enabled alert emails on a new issue. In Sentry: Alerts -> Create Alert -> Issues, condition \"A new issue is created\", action Email.");
     }
   });
 
@@ -169,18 +160,8 @@ async function main() {
     }
   });
 
-  // 4 · read it back, so "created" is never taken on the response's word
-  if (apply && alertChecked) {
-    const after = await api("GET", rulesPath);
-    if (!findRuleByName(after, SENTRY_ALERT_NAME)) {
-      console.error(`sentry-setup: the alert "${SENTRY_ALERT_NAME}" is NOT in the project after creating it`);
-      process.exitCode = 1;
-      return;
-    }
-    console.log(`  verified      "${SENTRY_ALERT_NAME}" is present on ${project.slug}`);
-  }
   if (unfinished.length > 0) {
-    console.log(`sentry-setup: finished, but NOT DONE: ${unfinished.join(", ")}. Run:  node scripts/sentry-setup.mjs --probe  and send the output.`);
+    console.log(`sentry-setup: finished, but NOT DONE: ${unfinished.join(", ")}.`);
     process.exitCode = 3;
     return;
   }

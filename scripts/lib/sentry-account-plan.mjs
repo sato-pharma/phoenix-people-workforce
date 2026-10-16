@@ -3,10 +3,13 @@
 // and tests/sentry-account-setup.test.ts calls these directly.
 //
 // The account is configured over Sentry's REST API, not by `sentry-cli`: the CLI covers releases, sourcemaps
-// and issue triage, but has no command that creates an alert rule or changes an organisation's data-scrubbing
-// settings. The CLI is installed beside this for triage (`sentry-cli issues list`), not for this.
+// and issue triage, but has no command that changes an organisation's data-scrubbing settings. It is installed
+// beside this for triage (`sentry-cli issues list`), not for this.
+//
+// Alerts are NOT created here. The account runs Sentry's new alert system, where the old project `rules` endpoint
+// answers 404 and the replacement's create shape could not be verified; and the account already ships an alert that
+// emails on every new high-priority issue. This file only decides whether that is so.
 
-export const SENTRY_ALERT_NAME = "Production: new error";
 export const SENTRY_PROJECT_SLUG = "phoenix-workforce";
 
 // The deliberate test error fired on 2026-10-16 after PR 5985; its text starts with this.
@@ -27,34 +30,26 @@ export function apiBaseFromDsn(dsn) {
   }
 }
 
-/**
- * The issue alert: email on every NEW issue, production only, at most once per 30 minutes per issue.
- * `IssueOwners` with `AllMembers` as the fallthrough needs no member id, so the rule is the same on any
- * account and a personal token is not required to look one up.
- */
-export function buildAlertRulePayload() {
-  return {
-    name: SENTRY_ALERT_NAME,
-    actionMatch: "all",
-    filterMatch: "all",
-    frequency: 30,
-    environment: "production",
-    conditions: [{ id: "sentry.rules.conditions.first_seen_event.FirstSeenEventCondition" }],
-    filters: [],
-    actions: [
-      {
-        id: "sentry.mail.actions.NotifyEmailAction",
-        targetType: "IssueOwners",
-        targetIdentifier: "",
-        fallthroughType: "AllMembers",
-      },
-    ],
-  };
+// The triggers that mean "email me when a NEW issue appears". An account on Sentry's alert system (workflows) gets one of
+// these by default ("Send a notification for high priority issues"), and a hand-made rule uses the other.
+export const NEW_ISSUE_TRIGGERS = ["new_high_priority_issue", "first_seen_event"];
+
+/** Does this workflow (alert) email people when a new issue appears? */
+export function emailsOnNewIssues(workflow) {
+  if (!workflow || workflow.enabled === false) return false;
+  const triggers = workflow.triggers?.conditions;
+  const fires = Array.isArray(triggers) && triggers.some((c) => NEW_ISSUE_TRIGGERS.includes(c?.type));
+  const emails =
+    Array.isArray(workflow.actionFilters) &&
+    workflow.actionFilters.some((f) => Array.isArray(f?.actions) && f.actions.some((a) => a?.type === "email" && a?.status !== "disabled"));
+  return fires && emails;
 }
 
-/** The rules already on the project, by name. */
-export function findRuleByName(rules, name) {
-  return Array.isArray(rules) ? (rules.find((rule) => rule && rule.name === name) ?? null) : null;
+/** The enabled alert that already covers new issues, or null. A production-only one is still production-only coverage. */
+export function workflowCoveringNewIssues(workflows) {
+  if (!Array.isArray(workflows)) return null;
+  const covering = workflows.filter(emailsOnNewIssues);
+  return covering.find((w) => w.environment === "production") ?? covering.find((w) => !w.environment) ?? null;
 }
 
 /** The keys of ORG_PRIVACY the organisation does not have yet, as a patch body — empty when nothing differs. */
@@ -84,18 +79,6 @@ export function testIssues(issues) {
   if (!Array.isArray(issues)) return [];
   return issues.filter(
     (issue) => issue && issue.status !== "resolved" && String(issue.title ?? issue.metadata?.value ?? "").includes(TEST_ISSUE_TEXT),
-  );
-}
-
-/** Other rules that already email on a new or high-priority issue — reported, never deleted. */
-export function otherEmailRules(rules) {
-  if (!Array.isArray(rules)) return [];
-  return rules.filter(
-    (rule) =>
-      rule &&
-      rule.name !== SENTRY_ALERT_NAME &&
-      Array.isArray(rule.actions) &&
-      rule.actions.some((action) => String(action?.id ?? "").includes("NotifyEmailAction")),
   );
 }
 

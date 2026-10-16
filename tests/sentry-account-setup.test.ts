@@ -7,31 +7,54 @@ import { fileURLToPath } from "node:url";
 
 import {
   ORG_PRIVACY,
-  SENTRY_ALERT_NAME,
   TEST_ISSUE_TEXT,
   apiBaseFromDsn,
-  buildAlertRulePayload,
   describeToken,
-  findRuleByName,
+  emailsOnNewIssues,
   orgPrivacyPatch,
-  otherEmailRules,
   pickOrg,
   pickProject,
   testIssues,
+  workflowCoveringNewIssues,
 } from "../scripts/lib/sentry-account-plan.mjs";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
- * `scripts/sentry-setup.mjs` configures the Sentry account (the "Production: new error" email alert, the
- * organisation's IP and data scrubbing, and the deliberate test issue) over Sentry's REST API.
+ * `scripts/sentry-setup.mjs` configures the Sentry account over Sentry's REST API: the organisation's IP and data
+ * scrubbing, the deliberate test issue, and a CHECK that an alert already emails on every new issue.
  *
  * It is the one script here that holds a credential and writes to a third party, so the tests hold three
- * things: the decisions (pure functions), the safety properties (dry run is the default, the token is never
- * printed, an unknown flag does nothing), and the whole script run against a local stand-in for Sentry —
- * which is the only way to see which requests a dry run and an --apply actually make.
+ * things: the decisions (pure functions, fed the exact alert shapes the owner's account returned on 2026-10-16),
+ * the safety properties (dry run is the default, the token is never printed, an unknown flag does nothing, nothing
+ * is ever deleted or created), and the whole script run against a local stand-in for Sentry — the only way to see
+ * which requests a dry run and an --apply actually make.
  */
 
 const TOKEN = "sntryu_TESTTOKEN_0123456789abcdef";
+
+// The three alerts the owner's account returned (trimmed to the fields the script reads).
+const HIGH_PRIORITY = {
+  name: "Send a notification for high priority issues",
+  enabled: true,
+  environment: null,
+  lastTriggered: "2026-10-16T05:16:12.514134Z",
+  triggers: { conditions: [{ type: "new_high_priority_issue" }, { type: "existing_high_priority_issue" }] },
+  actionFilters: [{ actions: [{ type: "email", status: "active" }] }],
+};
+const PR_READY = {
+  name: "Send a notification when pull requests are ready",
+  enabled: true,
+  environment: null,
+  triggers: { conditions: [{ type: "seer_activity_trigger" }] },
+  actionFilters: [{ actions: [{ type: "email", status: "active" }] }],
+};
+const SUGGESTED_ASSIGNEES_OFF = {
+  name: "Notify Suggested Assignees",
+  enabled: false,
+  environment: "production",
+  triggers: { conditions: [{ type: "first_seen_event" }] },
+  actionFilters: [{ actions: [{ type: "email", status: "active" }] }],
+};
 
 function code(path: string): string {
   return stripComments(readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n"));
@@ -43,18 +66,18 @@ function pureTests() {
   assert.equal(apiBaseFromDsn("https://abc@o45.ingest.sentry.io/9"), "https://sentry.io");
   assert.equal(apiBaseFromDsn("not a url"), null);
 
-  const rule = buildAlertRulePayload();
-  assert.equal(rule.name, SENTRY_ALERT_NAME);
-  assert.equal(rule.environment, "production", "the alert is scoped to the production environment");
-  assert.equal(rule.frequency, 30, "at most one email per issue per 30 minutes");
-  assert.deepEqual(rule.conditions.map((c: { id: string }) => c.id), ["sentry.rules.conditions.first_seen_event.FirstSeenEventCondition"]);
-  assert.equal(rule.actions.length, 1);
-  assert.equal(rule.actions[0].id, "sentry.mail.actions.NotifyEmailAction");
-  assert.equal(rule.actions[0].fallthroughType, "AllMembers", "a rule that names no member must still reach a person");
+  assert.equal(emailsOnNewIssues(HIGH_PRIORITY), true, "the default high-priority alert emails on a new issue");
+  assert.equal(emailsOnNewIssues(PR_READY), false, "an alert about pull requests is not new-issue coverage");
+  assert.equal(emailsOnNewIssues(SUGGESTED_ASSIGNEES_OFF), false, "a DISABLED alert covers nothing");
+  assert.equal(emailsOnNewIssues({ ...HIGH_PRIORITY, actionFilters: [{ actions: [{ type: "slack" }] }] }), false, "an alert that does not email is not email coverage");
+  assert.equal(emailsOnNewIssues({ ...HIGH_PRIORITY, actionFilters: [{ actions: [{ type: "email", status: "disabled" }] }] }), false);
+  assert.equal(emailsOnNewIssues(undefined), false);
 
-  assert.equal(findRuleByName([{ name: "other" }, { name: SENTRY_ALERT_NAME }], SENTRY_ALERT_NAME)?.name, SENTRY_ALERT_NAME);
-  assert.equal(findRuleByName([{ name: "other" }], SENTRY_ALERT_NAME), null);
-  assert.equal(findRuleByName(undefined, SENTRY_ALERT_NAME), null, "an unreadable answer is never read as 'the rule exists'");
+  assert.equal(workflowCoveringNewIssues([PR_READY, SUGGESTED_ASSIGNEES_OFF, HIGH_PRIORITY])?.name, HIGH_PRIORITY.name);
+  assert.equal(workflowCoveringNewIssues([PR_READY, SUGGESTED_ASSIGNEES_OFF]), null, "no enabled new-issue email means NOT covered");
+  assert.equal(workflowCoveringNewIssues(undefined), null, "an unreadable answer is never read as 'covered'");
+  const productionOnly = { ...HIGH_PRIORITY, name: "prod only", environment: "production" };
+  assert.equal(workflowCoveringNewIssues([HIGH_PRIORITY, productionOnly])?.name, "prod only", "a production-scoped alert is named in preference");
 
   assert.deepEqual(orgPrivacyPatch({ ...ORG_PRIVACY }), {}, "scrubbing that is already on writes nothing");
   assert.deepEqual(orgPrivacyPatch({ dataScrubber: true, dataScrubberDefaults: true, scrubIPAddresses: false }), { scrubIPAddresses: true });
@@ -75,9 +98,6 @@ function pureTests() {
   ];
   assert.deepEqual(testIssues(issues).map((i: { id: string }) => i.id), ["1"], "only the open deliberate test error is resolved, never a real one");
 
-  const emailing = { name: "Send a notification for high priority issues", actions: [{ id: "sentry.mail.actions.NotifyEmailAction" }] };
-  assert.deepEqual(otherEmailRules([emailing, { name: SENTRY_ALERT_NAME, actions: emailing.actions }, { name: "slack", actions: [{ id: "x.SlackAction" }] }]), [emailing]);
-
   assert.equal(describeToken(TOKEN), `a token of ${TOKEN.length} characters`);
   assert.ok(!describeToken(TOKEN).includes(TOKEN.slice(0, 6)), "no part of the token appears in its description");
   assert.equal(describeToken(undefined), "no token");
@@ -91,7 +111,6 @@ function sourceTests() {
   const interpolations = (script.match(/\$\{token\}/g) ?? []).length;
   const headerUses = (script.match(/Authorization: `Bearer \$\{token\}`/g) ?? []).length;
   assert.ok(headerUses >= 1 && interpolations === headerUses, "the token is interpolated only into an Authorization header, nowhere else");
-  assert.match(script, /Authorization: `Bearer \$\{token\}`/);
   const logLines = script
     .replace(/describeToken\(token\)/g, "")
     .split("\n")
@@ -100,16 +119,17 @@ function sourceTests() {
   assert.ok(logLines.every((line) => !/\$\{[^}]*\btoken\b[^}]*\}/.test(line)), "no log line interpolates the token");
   assert.ok(!/readFileSync|writeFileSync|appendFileSync|\.env\.local|sentry-build-plugin/.test(script), "the token is never read from or written to a file");
   assert.ok(!/\bDELETE\b|"DELETE"/.test(script), "this script never deletes a rule, an issue or a project");
+  assert.ok(!/api\("POST"/.test(script), "this script creates nothing: the alert is checked, not made");
+  assert.equal((script.match(/process\.exit\(/g) ?? []).length, 1, "only the no-token exit (before any request) may call process.exit: after a request it crashes libuv on Windows");
 }
 
 type Seen = { method: string; path: string; auth: string | undefined; body: unknown };
 
 async function withFakeSentry<T>(
-  options: { status?: number; rulesStatus?: number } | undefined,
+  options: { status?: number; workflows?: unknown[]; workflowsStatus?: number } | undefined,
   run: (base: string, seen: Seen[]) => Promise<T>,
 ): Promise<T> {
   const seen: Seen[] = [];
-  const rules: Array<{ name: string; actions: unknown[] }> = [];
   const readBody = (req: IncomingMessage) =>
     new Promise<unknown>((resolve) => {
       let text = "";
@@ -136,12 +156,9 @@ async function withFakeSentry<T>(
     if (method === "GET" && path === "/api/0/organizations/sato/projects/") return send(200, [{ id: "77", slug: "phoenix-workforce" }]);
     if (method === "GET" && path === "/api/0/organizations/sato/") return send(200, { dataScrubber: true, dataScrubberDefaults: false, scrubIPAddresses: false });
     if (method === "PUT" && path === "/api/0/organizations/sato/") return send(200, {});
-    if (options?.rulesStatus && path.startsWith("/api/0/projects/sato/phoenix-workforce/rules/")) return send(options.rulesStatus, null);
-    if (method === "GET" && path === "/api/0/projects/sato/phoenix-workforce/rules/") return send(200, rules);
-    if (method === "POST" && path === "/api/0/projects/sato/phoenix-workforce/rules/") {
-      const created = body as { name: string; actions: unknown[] };
-      rules.push({ name: created.name, actions: created.actions });
-      return send(200, created);
+    if (method === "GET" && path === "/api/0/organizations/sato/workflows/") {
+      if (options?.workflowsStatus) return send(options.workflowsStatus, null);
+      return send(200, options?.workflows ?? [PR_READY, HIGH_PRIORITY, SUGGESTED_ASSIGNEES_OFF]);
     }
     if (method === "GET" && path.startsWith("/api/0/organizations/sato/issues/?project=77")) {
       return send(200, [
@@ -169,7 +186,7 @@ function runScript(args: string[], env: Record<string, string | undefined>) {
       [fileURLToPath(new URL("../scripts/sentry-setup.mjs", import.meta.url)), ...args],
       { env: merged, encoding: "utf8", timeout: 60_000 },
       (error, stdout, stderr) => {
-        const exit = error && typeof (error as { code?: unknown }).code === "number" ? ((error as { code: number }).code) : error ? 1 : 0;
+        const exit = error && typeof (error as { code?: unknown }).code === "number" ? (error as { code: number }).code : error ? 1 : 0;
         resolve({ code: exit, out: `${stdout}\n${stderr}` });
       },
     );
@@ -200,7 +217,7 @@ async function behaviourTests() {
     assert.equal(result.code, 0, result.out);
     assert.match(result.out, /DRY RUN/);
     assert.match(result.out, /WOULD SET dataScrubberDefaults, scrubIPAddresses/);
-    assert.match(result.out, /WOULD CREATE "Production: new error"/);
+    assert.match(result.out, /alert\s+OK — "Send a notification for high priority issues" emails on new issues/);
     assert.match(result.out, /WOULD RESOLVE 1/);
     assert.deepEqual([...new Set(seen.map((r) => r.method))], ["GET"], "a dry run makes only GET requests");
     assert.ok(seen.every((r) => r.auth === `Bearer ${TOKEN}`), "every request carries the token in the header");
@@ -208,44 +225,45 @@ async function behaviourTests() {
     assert.ok(!result.out.includes(TOKEN.slice(0, 12)), "no part of the token is in the output");
   });
 
-  // --apply: sets the missing scrubbing keys only, creates the alert, resolves ONLY the test issue, reads back.
+  // --apply: sets the missing scrubbing keys only, resolves ONLY the test issue, creates nothing.
   await withFakeSentry(undefined, async (base, seen) => {
     const result = await runScript(["--apply", "--url", base], { SENTRY_AUTH_TOKEN: TOKEN });
     assert.equal(result.code, 0, result.out);
-    assert.match(result.out, /verified\s+"Production: new error" is present/);
     assert.ok(!result.out.includes(TOKEN));
 
     const orgPut = seen.find((r) => r.method === "PUT" && r.path === "/api/0/organizations/sato/");
     assert.deepEqual(orgPut?.body, { dataScrubberDefaults: true, scrubIPAddresses: true }, "only the keys that differ are written");
 
-    const created = seen.find((r) => r.method === "POST");
-    assert.equal((created?.body as { name: string }).name, SENTRY_ALERT_NAME);
-    assert.equal((created?.body as { environment: string }).environment, "production");
-
     const resolved = seen.find((r) => r.method === "PUT" && r.path.includes("/issues/"));
     assert.ok(resolved?.path.includes("id=501") && !resolved.path.includes("502"), "a real failure is never resolved");
     assert.deepEqual(resolved?.body, { status: "resolved" });
 
-    assert.deepEqual([...new Set(seen.map((r) => r.method))].sort(), ["GET", "POST", "PUT"], "no DELETE, ever");
+    assert.deepEqual([...new Set(seen.map((r) => r.method))].sort(), ["GET", "PUT"], "no POST and no DELETE, ever: nothing is created or removed");
   });
 
-  // The rules endpoint answering 404 (as it did on the owner's account, 2026-10-16) must not stop the scrubbing or
-  // the cleanup: they are still done, the alert is reported NOT DONE, and the run ends non-zero.
-  await withFakeSentry({ rulesStatus: 404 }, async (base, seen) => {
+  // No alert emails on a new issue: it is reported NOT COVERED, the rest still runs, and the run ends non-zero.
+  await withFakeSentry({ workflows: [PR_READY, SUGGESTED_ASSIGNEES_OFF] }, async (base) => {
+    const result = await runScript(["--apply", "--url", base], { SENTRY_AUTH_TOKEN: TOKEN });
+    assert.equal(result.code, 3, result.out);
+    assert.match(result.out, /alert\s+NOT COVERED/);
+    assert.match(result.out, /scrubbing\s+SET/, "the scrubbing is still applied");
+    assert.match(result.out, /test issue\s+RESOLVED 1/, "the cleanup is still done");
+  });
+
+  // An endpoint Sentry has retired (404) is NOT DONE, never a crash that skips the other steps.
+  await withFakeSentry({ workflowsStatus: 404 }, async (base) => {
     const result = await runScript(["--apply", "--url", base], { SENTRY_AUTH_TOKEN: TOKEN });
     assert.equal(result.code, 3, result.out);
     assert.match(result.out, /alert\s+NOT DONE/);
-    assert.match(result.out, /scrubbing\s+SET/, "the scrubbing is still applied");
-    assert.match(result.out, /test issue\s+RESOLVED 1/, "the cleanup is still done");
-    assert.match(result.out, /--probe/);
-    assert.ok(!seen.some((r) => r.method === "POST"), "no alert is created through an endpoint that said 404");
+    assert.match(result.out, /test issue\s+RESOLVED 1/, "the cleanup still runs after a retired endpoint");
   });
 
-  // --probe reads only, and says which endpoints answer.
+  // --probe reads only, and prints the account's existing alerts.
   await withFakeSentry(undefined, async (base, seen) => {
     const result = await runScript(["--probe", "--url", base], { SENTRY_AUTH_TOKEN: TOKEN });
     assert.equal(result.code, 0, result.out);
-    assert.match(result.out, /GET \/api\/0\/projects\/sato\/phoenix-workforce\/rules\/\s+->\s+HTTP 200/);
+    assert.match(result.out, /GET \/api\/0\/organizations\/sato\/workflows\/\s+->\s+HTTP 200/);
+    assert.match(result.out, /existing workflows/);
     assert.deepEqual([...new Set(seen.map((r) => r.method))], ["GET"], "a probe makes only GET requests");
     assert.ok(!result.out.includes(TOKEN));
   });
