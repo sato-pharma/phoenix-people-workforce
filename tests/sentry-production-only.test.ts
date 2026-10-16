@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 import {
+  SENTRY_PAGE_SURVEY_ENDS_AT_MS,
   SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE,
   SENTRY_REPLAY_SESSION_SAMPLE_RATE,
   SENTRY_TRACES_SAMPLE_RATE,
@@ -102,13 +103,29 @@ function nextConfigSource(): string {
 
 function beyondErrorsTests() {
   // Sampling: a fixed small rate, nothing for the probe or the reporter's own endpoint, a parent's decision wins.
-  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll" }), SENTRY_TRACES_SAMPLE_RATE);
+  const afterSurvey = SENTRY_PAGE_SURVEY_ENDS_AT_MS + 1;
+  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll" }, afterSurvey), SENTRY_TRACES_SAMPLE_RATE);
   assert.ok(SENTRY_TRACES_SAMPLE_RATE > 0 && SENTRY_TRACES_SAMPLE_RATE <= 0.1, "a free quota is spent per span");
   for (const name of ["GET /api/healthz", "GET /api/errors/client", "GET /_next/static/chunks/app.js", "GET /favicon.ico"]) {
-    assert.equal(sentryTracesSampler({ name }), 0, `${name} says nothing and is never traced`);
+    assert.equal(sentryTracesSampler({ name }, afterSurvey), 0, `${name} says nothing and is never traced`);
+    assert.equal(sentryTracesSampler({ name }, SENTRY_PAGE_SURVEY_ENDS_AT_MS - 1), 0, `${name} stays quiet during the page survey`);
   }
-  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll", parentSampled: true }), 1);
-  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll", parentSampled: false }), 0);
+  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll", parentSampled: true }, afterSurvey), 1);
+  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll", parentSampled: false }, afterSurvey), 0);
+
+  // The page survey (owner, 2026-10-16: "measure all pages, every single page"): every page request is traced until
+  // midnight Cairo on 2026-10-19, API calls and bare "RSC GET" / "middleware GET" stay at the fixed rate, and after
+  // that instant everything is back to the fixed rate by itself.
+  const duringSurvey = SENTRY_PAGE_SURVEY_ENDS_AT_MS - 1;
+  assert.equal(SENTRY_PAGE_SURVEY_ENDS_AT_MS, Date.parse("2026-10-20T00:00:00+03:00"), "the window ends at midnight Cairo");
+  for (const name of ["GET /admin/payroll", "GET /employee-portals/plans", "/admin/reps-list"]) {
+    assert.equal(sentryTracesSampler({ name }, duringSurvey), 1, `${name} is a page and is traced during the survey`);
+    assert.equal(sentryTracesSampler({ name }, SENTRY_PAGE_SURVEY_ENDS_AT_MS), SENTRY_TRACES_SAMPLE_RATE, `${name} drops back when the survey ends`);
+  }
+  for (const name of ["GET /api/messages", "POST /admin/payroll", "RSC GET", "middleware GET"]) {
+    assert.equal(sentryTracesSampler({ name }, duringSurvey), SENTRY_TRACES_SAMPLE_RATE, `${name} is not a page request`);
+  }
+  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll", parentSampled: false }, duringSurvey), 0, "a parent's decision still wins");
   assert.equal(SENTRY_REPLAY_SESSION_SAMPLE_RATE, 0, "an ordinary session is never recorded");
   assert.equal(SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE, 1, "the lead-up to an error is");
 

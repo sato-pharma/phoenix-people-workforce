@@ -130,10 +130,30 @@ export function isQuietSentryRoute(name: string | undefined): boolean {
   return QUIET_ROUTE.test(String(name ?? ""));
 }
 
-/** `tracesSampler` for both runtimes: the fixed rate, zero for quiet routes, and a parent's decision wins. */
-export function sentryTracesSampler(context: { name?: string; parentSampled?: boolean | undefined }): number {
+// Owner, 2026-10-16: "measure all pages, every single page". At 5% a page nobody opens often has no timing at all, so
+// for three days every PAGE request is traced (API calls stay at the fixed rate). It ends by itself: after the
+// instant below the sampler is back to the fixed rate with no deploy and nobody to remember. Cairo is UTC+3 until
+// the clocks change on 2026-10-29, so this midnight is 21:00 UTC on the 19th.
+export const SENTRY_PAGE_SURVEY_ENDS_AT_MS = Date.UTC(2026, 9, 19, 21, 0, 0);
+
+const PAGE_TRANSACTION = /^(?:GET\s+)?\/(?!api\/)/i;
+
+/** Is this transaction name a page (not an API call, not a bare "RSC GET" or "middleware GET")? */
+export function isSentryPageTransaction(name: string | undefined): boolean {
+  return PAGE_TRANSACTION.test(String(name ?? ""));
+}
+
+/**
+ * `tracesSampler` for both runtimes: zero for quiet routes, a parent's decision wins, every page while the survey
+ * window is open, and the fixed rate for everything else.
+ */
+export function sentryTracesSampler(
+  context: { name?: string; parentSampled?: boolean | undefined },
+  nowMs: number = Date.now(),
+): number {
   if (isQuietSentryRoute(context.name)) return 0;
   if (typeof context.parentSampled === "boolean") return context.parentSampled ? 1 : 0;
+  if (nowMs < SENTRY_PAGE_SURVEY_ENDS_AT_MS && isSentryPageTransaction(context.name)) return 1;
   return SENTRY_TRACES_SAMPLE_RATE;
 }
 
