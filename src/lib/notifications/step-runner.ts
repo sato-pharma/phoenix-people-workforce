@@ -20,6 +20,7 @@
 // and because Promise.race attaches handlers to it, a late rejection is not unhandled.
 
 import { logError } from "@/lib/observability/log";
+import { trackJob } from "@/lib/observability/running-jobs";
 
 export type StepStatus = "ok" | "timeout" | "error" | "skipped";
 export type StepTiming = { step: string; ms: number; status: StepStatus };
@@ -79,7 +80,8 @@ export async function runStep<T>(
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const outcome = await Promise.race<{ value: T } | { error: unknown } | typeof TIMED_OUT>([
-      thunk().then(
+      // Registered so the process-health stall line can name the step that froze the server.
+      trackJob(`cron:process:${name}`, thunk).then(
         (value) => ({ value }),
         (error) => ({ error }),
       ),

@@ -16,12 +16,12 @@ import { systemDeployment } from "@/config/system-settings";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import {
   SENTRY_ENVIRONMENT,
-  SENTRY_PROFILE_SESSION_SAMPLE_RATE,
   SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE,
   SENTRY_REPLAY_SESSION_SAMPLE_RATE,
   scrubSentryEvent,
   scrubSentrySpan,
   sentryClientStatus,
+  sentryProfileSessionSampleRate,
   sentryTracesSampler,
 } from "@/lib/observability/sentry-policy";
 
@@ -58,7 +58,8 @@ function loadSdk(dsn: string): Promise<SentrySdk | null> {
         tracePropagationTargets: [],
         replaysSessionSampleRate: SENTRY_REPLAY_SESSION_SAMPLE_RATE,
         replaysOnErrorSampleRate: SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE,
-        profileSessionSampleRate: SENTRY_PROFILE_SESSION_SAMPLE_RATE,
+        // Off while the page survey traces every page, exactly as on the server (sentry-policy.ts says why).
+        profileSessionSampleRate: sentryProfileSessionSampleRate(),
         profileLifecycle: "trace",
         beforeSend: (event) => scrubSentryEvent(event),
         beforeSendSpan: (span) => scrubSentrySpan(span),

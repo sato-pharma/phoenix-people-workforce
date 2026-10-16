@@ -2564,6 +2564,7 @@ import { runClosingRepRankingTests } from "./closing-rep-ranking.test.ts";
 import { runClosingRowsSheetTests } from "./closing-rows-sheet.test.ts";
 import { runPhoenixCrmAddPharmacyMatchesByResolvedIdTests } from "./phoenix-crm-add-pharmacy-matches-by-resolved-id.test.ts";
 import { runDomTranslateGuardTests } from "./dom-translate-guard.test.ts";
+import { runServerFreezeGuardsTests } from "./server-freeze-guards.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -10153,7 +10154,11 @@ await runTest(
   "the Sentry account setup script (scripts/sentry-setup.mjs) is a dry run unless --apply is passed, refuses a mistyped flag, never prints or stores its token, never deletes anything, and — run against a local stand-in for Sentry — reads only on a dry run and on --apply sets just the missing scrubbing keys, creates the production-only new-error email alert, resolves only the deliberate test issue and reads the alert back",
   runSentryAccountSetupTests,
 );
-const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
+await runTest(
+  "the page server does not freeze for work nobody is waiting on — the Sentry profiler is off while the page survey traces every request and returns by itself when it ends, PHOENIX_PROCESS_ROLE=web makes the shared host guard refuse every in-process scheduler while unset or a typo keeps today's behaviour, every poller tick, deep run, notification step, Early Birds close and housekeeping pass registers itself so a stall names its job, and a page server's minute frozen past one second raises one fingerprinted alert per culprit while the worker's stalls raise none",
+  runServerFreezeGuardsTests,
+);
+const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
 for (const t of slowest) {

@@ -82,6 +82,8 @@ import { CRM_SYNC_RUNS_TABLE } from "@/lib/crm/tables";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
+import { processRoleRefusal } from "@/lib/platform/process-role";
+import { trackJob } from "@/lib/observability/running-jobs";
 import { pingDeadMansSwitch, signalDeadMansSwitchStart } from "@/lib/observability/dead-mans-switch";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
 import { logError, logWarning } from "@/lib/observability/log";
@@ -1001,7 +1003,8 @@ async function tick(): Promise<void> {
     nowMs: Date.now(),
   });
   if (dueWork) {
-    await runScheduledWork(dueWork);
+    // Named in the process-health stall line, so a freeze points at the job that caused it.
+    await trackJob(`crm:${dueWork}`, () => runScheduledWork(dueWork));
     return;
   }
 
@@ -1082,7 +1085,7 @@ function scheduleNext(): void {
   const delayMs = intervalSeconds * 1000 + Math.floor(Math.random() * TICK_JITTER_MS);
   state.timer = setTimeout(() => {
     state.tickIndex += 1;
-    void tick().finally(scheduleNext);
+    void trackJob("crm:live-poll", tick).finally(scheduleNext);
   }, delayMs);
   unrefTimer(state.timer);
 }
@@ -1097,9 +1100,13 @@ export type LivePollerStartResult = { reason?: string; started: boolean };
  *    .env file in this repo, so a dev machine — whose .env.local points at PRODUCTION Supabase —
  *    can never start a second writer against prod);
  *  - a production Next.js build (`next dev` is excluded even if someone exports the flag);
- *  - RAILWAY_ENVIRONMENT_NAME === "production" (belt-and-braces host pin).
+ *  - RAILWAY_ENVIRONMENT_NAME === "production" (belt-and-braces host pin);
+ *  - and this is not the PAGE server (PHOENIX_PROCESS_ROLE=web): background work runs on the worker
+ *    service, because work done here freezes every page while it runs (src/lib/platform/process-role.ts).
  */
 export function resolveInProcessHostRefusal(): string | null {
+  const roleRefusal = processRoleRefusal();
+  if (roleRefusal) return roleRefusal;
   if (process.env.PHOENIX_LIVE_CRM_POLL !== "true") return "PHOENIX_LIVE_CRM_POLL is not 'true'";
   if (process.env.NODE_ENV !== "production") return "not a production build";
   if (process.env.RAILWAY_ENVIRONMENT_NAME !== "production") return "RAILWAY_ENVIRONMENT_NAME is not 'production'";

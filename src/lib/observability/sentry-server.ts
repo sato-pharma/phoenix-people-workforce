@@ -3,10 +3,10 @@ import * as Sentry from "@sentry/nextjs";
 import { sentryMonitorConfigFor } from "@/lib/observability/sentry-cron-monitor";
 import {
   SENTRY_ENVIRONMENT,
-  SENTRY_PROFILE_SESSION_SAMPLE_RATE,
   scrubSentryEvent,
   scrubSentryLog,
   scrubSentrySpan,
+  sentryProfileSessionSampleRate,
   sentryTracesSampler,
 } from "@/lib/observability/sentry-policy";
 
@@ -30,7 +30,7 @@ export function initSentryServer(dsn: string): void {
     release: process.env.COMMIT_SHA || process.env.RAILWAY_GIT_COMMIT_SHA || undefined,
     enableRuntimeChannelInjection: false,
     tracesSampler: (context) => sentryTracesSampler(context),
-    profileSessionSampleRate: SENTRY_PROFILE_SESSION_SAMPLE_RATE,
+    profileSessionSampleRate: sentryProfileSessionSampleRate(),
     profileLifecycle: "trace",
     // The app already prints structured warn/error lines; those two levels become Sentry logs.
     integrations: [Sentry.consoleLoggingIntegration({ levels: ["warn", "error"] })],
@@ -43,6 +43,20 @@ export function initSentryServer(dsn: string): void {
 export function captureRequestErrorInSentry(...args: Parameters<typeof Sentry.captureRequestError>): void {
   if (!started) return;
   Sentry.captureRequestError(...args);
+}
+
+/**
+ * A server freeze (the event loop stalled past the alert line) as a Sentry issue. The fingerprint names the role and
+ * the jobs that ran in that minute, so each new culprit opens ONE issue — and a new issue reaches the owner's
+ * Telegram through the issue webhook — while a repeat of a known one only adds an event to it. Never throws.
+ */
+export function captureStallInSentry(message: string, fingerprint: string[]): void {
+  if (!started) return;
+  try {
+    Sentry.captureMessage(message, { fingerprint, level: "warning" });
+  } catch {
+    // A monitoring outage must never become a second incident.
+  }
 }
 
 /**
