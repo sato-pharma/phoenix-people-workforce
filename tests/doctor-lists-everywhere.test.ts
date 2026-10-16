@@ -202,7 +202,7 @@ export function runDoctorListsEverywhereTests() {
     "it runs before the fifth pass, or the foreign key would refuse the assignment row",
   );
   const nameStatement = REFRESH.slice(REFRESH.lastIndexOf("insert into public.crm_contacts as c (", nameRow), nameRow + 600);
-  assert.match(nameStatement, /'phoenix',/, "the name row is marked 'phoenix' — the only source value the CHECK allows");
+  assert.match(nameStatement, /'phoenix'::text as source,/, "the name row is marked 'phoenix' — the only source value the CHECK allows");
   assert.match(
     REFRESH.slice(nameRow),
     /name = coalesce\(c\.name, excluded\.name\)/,

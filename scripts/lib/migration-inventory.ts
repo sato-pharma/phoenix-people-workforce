@@ -912,6 +912,27 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // and the eight marketing_roi_*_facts tables and the run's affected_periods are identical before
   // and after (row counts 36/17/8/30/16/64/20/3). Re-applying it is a no-op (`create or replace`).
   "20261016223000_marketing_roi_refresh_skips_through_periods.sql",
+  // 2026-10-16, applied to staging and then production (about 22:40 Cairo, outside the 06:00-22:00
+  // poller window) with `node scripts/apply-sql-file.mjs <file> <env>` (production with
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com) — the standing route, because both MCP
+  // doors refuse a `create or replace function` whose body merely CONTAINS a `drop table pg_temp.…`,
+  // and this body holds five. That route writes NO ledger row, so the absence here is the apply route
+  // and not a missed migration.
+  // Verified by digest on BOTH projects, not by presence: md5(pg_proc.prosrc) for
+  // public.crm_contact_master_refresh reads 8f343dc21428862adb1d4df1a66190b8 over 31,040 chars on
+  // ozucdzovmcqvepbozvqf and on cifwmndunmlxjhyjugxa, md5-equal to the dollar-quoted body in this file
+  // (as-is LF), and this file is the function's LAST definer. The pre-image is
+  // 20261015215500_a_vendorless_reps_phoenix_list_opens.sql, whose body digests
+  // f099c54bdeed10ee8b8756968a972c73 — exactly what production held before the apply, which makes that
+  // file the one-command rollback. SECURITY INVOKER, `proconfig` {search_path=public} and proacl
+  // (service_role only) were read in the same query, so the security shape is unchanged, and the
+  // function comment digests 4783f46b123e6285c42489bc54d4e1a7 on both. Its effect, measured on
+  // production inside rolled-back transactions: the unperturbed hourly-style call went from 3,055 ms to
+  // 1,139 ms with identical returned counts and identical checksums of every column of crm_contacts
+  // (d4c9c487cd207cc56d199f1ffc83b9f9) and crm_contact_assignments (c502703a849506b236a580cb25904b22);
+  // on staging three perturbed scenarios were IDENTICAL too. Re-applying it is a no-op
+  // (`create or replace`).
+  "20261016233000_crm_contact_master_refresh_skips_idle_work.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
