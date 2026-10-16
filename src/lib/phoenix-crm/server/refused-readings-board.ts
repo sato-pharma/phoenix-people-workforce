@@ -36,6 +36,7 @@ import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { photoPathTerritory } from "@/lib/phoenix-crm/server/photos";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -48,6 +49,15 @@ const ROW_LIMIT = 1000;
 const LATEST_LIMIT = 100;
 /** A `.in()` carrying several hundred ids comes back empty past some URL length — never read wider. */
 const CHUNK = 50;
+/** How many of those fifty-id reads are in flight at once (Phoenix CRM performance audit, 2026-10-16). */
+const CHUNK_READS_AT_ONCE = 4;
+
+/** Where each fifty-id chunk starts: 0, 50, 100, … — the same chunks the one-at-a-time walk read. */
+function chunkStarts(length: number): number[] {
+  const starts: number[] = [];
+  for (let index = 0; index < length; index += CHUNK) starts.push(index);
+  return starts;
+}
 
 export type RefusedAttemptRow = RefusedAttempt & {
   repName: string;
@@ -108,10 +118,11 @@ async function loadLaterSaves(attempts: readonly RefusedAttempt[]): Promise<Late
   if (customerIds.length === 0) return [];
   // Nothing before the oldest refusal can resolve one, so the read never goes wider than that.
   const since = tied.reduce((oldest, attempt) => (attempt.refusedAt < oldest ? attempt.refusedAt : oldest), tied[0]!.refusedAt);
-  const saves: LaterSave[] = [];
-  for (let index = 0; index < customerIds.length; index += CHUNK) {
+  // The chunks are asked a few at a time rather than one after another, and read back in their own
+  // order below, so the saves list comes out exactly as the one-at-a-time walk built it.
+  const pages = await mapWithConcurrency(chunkStarts(customerIds.length), CHUNK_READS_AT_ONCE, (index) => {
     const slice = customerIds.slice(index, index + CHUNK);
-    const [visits, places] = await Promise.all([
+    return Promise.all([
       supabase
         .from("phoenix_crm_visits")
         .select("customer_id, entered_by_hr_id, captured_at")
@@ -125,6 +136,9 @@ async function loadLaterSaves(attempts: readonly RefusedAttempt[]): Promise<Late
         .gte("created_at", since)
         .eq("is_test", false),
     ]);
+  });
+  const saves: LaterSave[] = [];
+  for (const [visits, places] of pages) {
     // Non-fatal by design: a failed read here must leave the refusals visible, with the outcome
     // unproven rather than the whole board blank. The outcome is then read as "not through yet",
     // which is the safe direction — a rep is never reported as having got through on a read that failed.
@@ -196,21 +210,25 @@ export async function loadRefusedReadingsBoard(viewer: PhoenixCrmViewer, now: Da
   }
 
   const customerIds = [...new Set(attempts.map((attempt) => attempt.customerId).filter((id): id is string => id !== null))];
-  const customerNames = new Map<string, string>();
-  for (let index = 0; index < customerIds.length; index += CHUNK) {
-    const { data: customers, error: customerError } = await supabase
-      .from("phoenix_crm_customers")
-      .select("id, name")
-      .in("id", customerIds.slice(index, index + CHUNK));
-    // Non-fatal: a customer shown as "—" is better than a board that will not open.
-    if (customerError) break;
-    for (const customer of (customers ?? []) as Row[]) customerNames.set(String(customer.id), String(customer.name ?? ""));
-  }
-
-  const [people, saves] = await Promise.all([
+  // The customers' names, the reps' names and the later saves do not depend on one another, so the
+  // three are asked at once instead of the names first and the other two after.
+  const [customerPages, people, saves] = await Promise.all([
+    mapWithConcurrency(chunkStarts(customerIds.length), CHUNK_READS_AT_ONCE, async (index) =>
+      await supabase
+        .from("phoenix_crm_customers")
+        .select("id, name")
+        .in("id", customerIds.slice(index, index + CHUNK)),
+    ),
     loadPeopleNames(attempts.map((attempt) => attempt.repHrId)),
     loadLaterSaves(attempts),
   ]);
+  const customerNames = new Map<string, string>();
+  for (const { data: customers, error: customerError } of customerPages) {
+    // Non-fatal: a customer shown as "—" is better than a board that will not open. Read back in
+    // chunk order and stopped at the first failed chunk, exactly as the one-at-a-time walk stopped.
+    if (customerError) break;
+    for (const customer of (customers ?? []) as Row[]) customerNames.set(String(customer.id), String(customer.name ?? ""));
+  }
 
   const reps = summariseByRep(attempts, saves).map((entry) => ({ ...entry, repName: nameOf(people, entry.repHrId) || entry.repHrId }));
   const photoById = new Map<string, string>();
