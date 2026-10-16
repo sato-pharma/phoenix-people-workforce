@@ -493,6 +493,29 @@ export const MODULES = [
     keywords: ["recruitment", "candidate", "candidates", "cv", "cvs", "job offer", "offer letter", "interview", "vacancy", "vacancies", "ats", "whatsapp cv", "screening", "توظيف"],
     tables: ["ats_", "recruitment", "candidate", "offer", "whatsapp", "cv_"],
   },
+  // 🔴 SPLIT 2026-10-16, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `recruitment` reached 28
+  // rules and its injected pointer measured 4,097 bytes against the 4,000-byte margin
+  // `tests/module-memory.test.ts` holds, the moment the Product Manager question gate landed. The
+  // INBOUND half is the clean cut: what an applicant is ASKED and READS — the bot's own words, its role
+  // menu, the owner-worded screening questions with their show_if/end_on rules, and the public careers
+  // form that renders the same set — is one family, and none of it is read while editing an offer
+  // letter, a candidate's card or the interview calendar. `recruitment` KEEPS EVERY GLOB IT HAD, so an
+  // inbound file loads the PAIR and nothing that used to arrive stops arriving. The file itself was far
+  // under its 72,000-byte cap — two different limits, and this is the small one.
+  {
+    id: "recruitment-inbound",
+    title: "Recruitment — the WhatsApp bot, the screening questions and the careers form",
+    scope: "What an applicant is asked and reads: the WhatsApp classify flow and its role menu, the owner-worded auto-replies and screening questions, show_if/end_on, and the public careers application form.",
+    globs: [
+      "src/lib/recruitment/inbound/**",
+      "app/api/public/apply/**",
+      "app/**/screening-questions/**",
+      "tests/*{whatsapp,screening,website-apply}*",
+      "supabase/migrations/*{whatsapp,screening}*",
+    ],
+    keywords: ["whatsapp bot", "screening question", "screening questions", "auto reply", "auto-replies", "careers form", "careers page", "apply form", "role menu", "show_if", "end_on"],
+    tables: ["ats_whatsapp_"],
+  },
   {
     id: "hiring-documents",
     title: "Hiring documents, contracts and company papers",

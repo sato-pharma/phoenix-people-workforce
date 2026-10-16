@@ -687,7 +687,7 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
       <div className="min-w-0 space-y-5 xl:sticky xl:top-4 xl:self-start">
         <section className={panelClassName}>
           <PanelHeader aside={templateName?.name} step={5} title="Design" />
-          <div className="grid grid-cols-3 gap-2 p-3 sm:grid-cols-5">
+          <div className="grid grid-cols-3 gap-2 p-3">
             {JOB_POST_TEMPLATES.map((t, index) => (
               <CheckTile checked={template === t.key} key={t.key} name="job-post-template" onChange={() => setTemplate(t.key)} type="radio">
                 <span className="flex min-w-0 flex-1 flex-col gap-1.5">

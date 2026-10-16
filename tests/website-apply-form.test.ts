@@ -87,6 +87,7 @@ export function runWebsiteApplyFormTests() {
     "regulatory_affairs_specialist",
     "quality_control_analyst",
     "office_coordinator",
+    "product_manager",
   ]);
   const ocRole = resolveWebsiteApplyRole("office_coordinator");
   assert.ok(ocRole, "the Office Coordinator position must resolve on the careers form");
@@ -408,4 +409,110 @@ export function runWebsiteApplyFormTests() {
   // can only relax a role whose form genuinely does not carry them.
   const stillRequired = validateWebsiteApplication(role, form, { ...good, answers: { ...good.answers, salary: "" } });
   assert.equal(stillRequired.ok, false, "a role asked salary still has to answer it");
+
+  // ── The Product Manager seat: the experience question is a real GATE ──────────────────────────
+  // Owner, 2026-10-16: "no pass if more than 1 year make him continue". So the years-as-a-Product-
+  // Manager question carries an `end_on` over BOTH answers under a year, and this seat keeps the
+  // built-in expected salary and the shared start-date question ("ask about expexcted salary and
+  // when will be able to join if accwpted"). There is deliberately NO English question — he excluded
+  // it — and none of the wording is pinned here, because every word is his to reword on the
+  // Screening Questions screen.
+  const pmRole = resolveWebsiteApplyRole("product_manager");
+  assert.ok(pmRole, "the Product Manager position must resolve on the careers form");
+  assert.equal(pmRole.roleFamily, "product_manager", "it is asked the product_manager family's own questions");
+  assert.equal(pmRole.jobTitle, "Product Manager", "the stored job title matches what the WhatsApp bot writes");
+
+  const PM_STOP = "Thank you for your interest in Sato Pharma. This role needs more than a year as a Product Manager.";
+  const pmYears = [
+    { description: "I work in another role", title: "Not a Product Manager", value: "not_yet" },
+    { description: null, title: "Less than 1 year", value: "lt_1" },
+    { description: null, title: "1 - 3 years", value: "1_3" },
+    { description: null, title: "3 - 5 years", value: "3_5" },
+    { description: null, title: "More than 5 years", value: "gt_5" },
+  ];
+  const pmq = (questionKey: string, sortOrder: number, overrides: Partial<ScreeningQuestion> = {}): ScreeningQuestion => ({
+    appliesToRoleFamilies: ["product_manager"],
+    bodyText: `${questionKey}?`,
+    endOn: null,
+    id: questionKey,
+    isActive: true,
+    kind: "tappable",
+    options: yesNo,
+    questionKey,
+    showIf: null,
+    sortOrder,
+    ...overrides,
+  });
+  const pmExtras: ScreeningQuestion[] = [
+    pmq("pm_experience", 200, { endOn: { message: PM_STOP, values: ["not_yet", "lt_1"] }, options: pmYears }),
+    pmq("pm_launch", 201),
+    pmq("pm_greater_cairo", 202),
+    pmq("pm_specialities", 203),
+    pmq("pm_ms_office", 204),
+    // The start-date question is the EXISTING shared row, widened to this family rather than copied.
+    pmq("oc_start_date", 300, { appliesToRoleFamilies: ["office_coordinator", "medical_rep", "district_manager", "human_resources", "product_manager"] }),
+  ];
+  const pmForm = assembleWebsiteApplyForm(pmRole, HR_AUDIENCES, pmExtras, AREAS_BY_REGION);
+  assert.deepEqual(
+    pmForm.fields.map((field) => field.key),
+    [
+      "full_name", "email", "phone", "cv", "background", "experience", "salary",
+      "extra:pm_experience", "extra:pm_launch", "extra:pm_greater_cairo", "extra:pm_specialities",
+      "extra:pm_ms_office", "extra:oc_start_date",
+    ],
+    "the Product Manager is asked background, experience and the expected salary, then its five questions, then when they could join",
+  );
+
+  const pmGate = pmForm.fields.find((field) => field.key === "extra:pm_experience");
+  assert.equal(pmGate?.required, true, "the question that can end the application is required — it gates the rest");
+  assert.deepEqual(
+    pmGate?.endOn,
+    { message: PM_STOP, values: ["not_yet", "lt_1"] },
+    "BOTH answers under a year end it — a gate that listed only one would pass a sub-year applicant",
+  );
+
+  const pmBase: WebsiteApplyRawAnswers = {
+    answers: {
+      background: "pharmacy",
+      experience: "3_5",
+      "extra:oc_start_date": "yes",
+      "extra:pm_experience": "1_3",
+      "extra:pm_greater_cairo": "yes",
+      "extra:pm_launch": "yes",
+      "extra:pm_ms_office": "yes",
+      "extra:pm_specialities": "yes",
+      salary: "45000",
+    },
+    email: "nour@example.com",
+    fullName: "Nour Adel",
+    phone: "01233333333",
+  };
+  const pmOk = validateWebsiteApplication(pmRole, pmForm, pmBase);
+  assert.ok(pmOk.ok, "a Product Manager of one to three years is accepted and carries on");
+  assert.equal(pmOk.classification.endedMessage, null);
+  assert.equal(pmOk.classification.expectedSalary, "45000", "the expected salary is asked of this seat");
+  assert.equal(pmOk.classification.extraAnswers.pm_experience, "1 - 3 years", "the answer is stored as its TITLE");
+  assert.equal(pmOk.classification.extraAnswers.oc_start_date, "Yes", "when they could join is stored with the rest");
+
+  // THE HEADLINE: under a year as a Product Manager ends the application at that answer, with his
+  // message, and nothing after it is read — a forged answer to a later question is never stored.
+  for (const under of ["not_yet", "lt_1"]) {
+    const ended = validateWebsiteApplication(pmRole, pmForm, {
+      ...pmBase,
+      answers: { ...pmBase.answers, "extra:pm_experience": under },
+    });
+    assert.ok(ended.ok, `a ${under} applicant is still recorded — their CV stays on file`);
+    assert.equal(ended.classification.endedMessage, PM_STOP, `and ${under} gets the owner's message`);
+    assert.deepEqual(
+      Object.keys(ended.classification.extraAnswers),
+      ["pm_experience"],
+      "nothing after the ending answer is stored",
+    );
+  }
+
+  const pmSkipped = validateWebsiteApplication(pmRole, pmForm, {
+    ...pmBase,
+    answers: { ...pmBase.answers, "extra:pm_experience": "" },
+  });
+  assert.equal(pmSkipped.ok, false, "leaving the gate question blank is refused");
 }

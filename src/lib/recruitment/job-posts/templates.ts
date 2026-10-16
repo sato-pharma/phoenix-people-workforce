@@ -1,11 +1,11 @@
-// Recruitment — the job-post pictures. Five looks, one set of fields.
+// Recruitment — the job-post pictures. Six looks, one set of fields.
 //
-// 🔒 THE FIVE LOOKS ARE THE OWNER'S APPROVED RENDERS, PORTED ONE TO ONE. He saw them on 2026-10-15 as
+// 🔒 THE FIRST FIVE LOOKS ARE THE OWNER'S APPROVED RENDERS, PORTED ONE TO ONE. He saw them on 2026-10-15 as
 // PNGs (F:\Hiring Posts\2026-10-15 Job Post Templates\, built by build-templates.mjs there) and
 // answered "build the job post module with all rendered templates". Executive is the v7 look he
 // approved on 2026-10-06; Split, Editorial, Bold Blue and Night Blueprint are its four siblings. A
 // change of colour, spacing or type here is a change to a design he signed off — fix defects, never
-// restyle.
+// restyle. The sixth, Brand Brief, is the design he asked for on 2026-10-16 for product managers.
 //
 // 🔒 A TEMPLATE IS A LOOK, NEVER A SOURCE OF WORDS. Every word on a post comes from the job title's
 // row (ats_job_post_titles) or the post's own choices (areas, line). Nothing here invents copy: no
@@ -57,7 +57,7 @@ export type JobPostContent = {
  */
 export type JobPostAssets = { fontRegular: string; fontBold: string; logo: string; logoOnDark: string; logoOnBlue: string; arabic: string };
 
-export const JOB_POST_TEMPLATE_KEYS = ["executive", "split", "editorial", "bold-blue", "night-blueprint"] as const;
+export const JOB_POST_TEMPLATE_KEYS = ["executive", "split", "editorial", "bold-blue", "night-blueprint", "brand-brief"] as const;
 export type JobPostTemplateKey = (typeof JOB_POST_TEMPLATE_KEYS)[number];
 
 export const JOB_POST_TEMPLATES: ReadonlyArray<{ key: JobPostTemplateKey; name: string; description: string }> = [
@@ -66,6 +66,7 @@ export const JOB_POST_TEMPLATES: ReadonlyArray<{ key: JobPostTemplateKey; name: 
   { key: "editorial", name: "Editorial", description: "White magazine page, numbered duties, checklist panel" },
   { key: "bold-blue", name: "Bold Blue", description: "The whole post in brand blue, white card, ink shadow" },
   { key: "night-blueprint", name: "Night Blueprint", description: "Dark page on a blueprint grid, light-blue glow" },
+  { key: "brand-brief", name: "Brand Brief", description: "For product managers: a brand artboard at proof stage, key message and call to action" },
 ];
 
 export function isJobPostTemplateKey(value: unknown): value is JobPostTemplateKey {
@@ -137,15 +138,18 @@ export function jobPostFileStem(content: Pick<JobPostContent, "title">, area?: s
 
 type Fact = [label: string, value: string];
 
-/** The key facts, in the approved order. Location reads the area when the post names exactly one. */
+/**
+ * The key facts, in the approved order. Location is the title's own ("Field-based, Egypt",
+ * "Sheraton, Cairo") and never the area: the areas band carries those, large, and a fact repeating the
+ * one area directly above that band read as a mistake on the per-area picture (owner, 2026-10-16).
+ */
 function facts(content: JobPostContent): Fact[] {
   const out: Fact[] = [];
   if (content.reportsTo) out.push(["Reports to", content.reportsTo]);
   out.push(["Department", content.department]);
   if (content.line) out.push(["Line", content.line]);
   out.push(["Employment", content.employment]);
-  const n = content.areas.length;
-  out.push(["Location", n === 1 ? content.areas[0]! : n > 1 ? `${n} areas` : content.location]);
+  out.push(["Location", content.location]);
   return out;
 }
 
@@ -185,7 +189,16 @@ const BASE_CSS = `
   .areas.stack { flex-direction: column; align-items: stretch; gap: 12px; padding: 0; border: 0; background: none; margin-top: 26px; }
   .areas.stack .al { flex-direction: column; gap: 8px; }
   .areas.stack .al span { background: rgba(255,255,255,.06); color: #fff; box-shadow: inset 0 0 0 1px rgba(93,183,232,.55); }
-  .areas.stack .ak { color: var(--blue-light); } .areas.stack .ak s, .areas.stack .al span i { background: var(--blue-light); }`;
+  .areas.stack .ak { color: var(--blue-light); } .areas.stack .ak s, .areas.stack .al span i { background: var(--blue-light); }
+  /* 🔒 EVERY AREA SITS IN ITS OWN FRAME (owner, 2026-10-16: "put every area in separate frame") — one or
+     twelve, each area name is boxed on its own, never run together and never a bare line of text. */
+  .areas.one { gap: 26px; padding: 17px 22px; }
+  .areas.one .ak { font-size: 12px; }
+  .areas.one .al span { padding: 11px 20px; gap: 12px; font-size: 28px; letter-spacing: -.01em; line-height: 1.15; box-shadow: inset 0 0 0 2px var(--blue); }
+  .areas.one .al span i { width: 9px; height: 9px; }
+  .areas.one:not(.dark):not(.ink):not(.stack) { border-color: var(--blue); background: #eaf5fc; }
+  .areas.one.stack { gap: 14px; }
+  .areas.one.stack .al span { font-size: 30px; padding: 12px 18px; box-shadow: inset 0 0 0 2px var(--blue-light); }`;
 
 const FOOT_CSS = `
   .foot { position: relative; height: 84px; flex-shrink: 0; background: var(--ink); display: flex; align-items: center; justify-content: space-between; padding: 0 72px; }
@@ -303,10 +316,13 @@ type Parts = {
 function parts(c: JobPostContent, a: JobPostAssets): Parts {
   const li = (items: JobPostLine[]) => items.map((line) => `<li><s></s><p>${lineHtml(line)}</p></li>`).join("");
   const n = c.areas.length;
-  // A one-area picture carries its area in the Location fact; the list block is for two or more.
+  // 🔴 THE AREA IS THE FIRST THING A FIELD-FORCE CANDIDATE LOOKS FOR, SO IT IS A BAND, NOT A FACT
+  // (owner, 2026-10-16: "the area or region we are hiring in must be clear obvious clear"). Before that
+  // a one-area picture — the per-area download, the one that actually goes out — named its area only in
+  // the small Location fact. It now carries the same band as a multi-area post, with the area set large.
   const areas = (cls = "", style = "") =>
-    n > 1
-      ? `<div class="areas ${cls}" style="${style}"><div class="ak"><s></s>Open in ${n} areas</div><div class="al">${c.areas
+    n > 0
+      ? `<div class="areas ${n === 1 ? "one " : ""}${cls}" style="${style}"><div class="ak"><s></s>Hiring in${n > 1 ? ` ${n} areas` : ""}</div><div class="al">${c.areas
           .map((area) => `<span><i></i>${escapeHtml(area)}</span>`)
           .join("")}</div></div>`
       : "";
@@ -341,7 +357,9 @@ function executive(p: Parts): string {
   .micro { font-size: 12.5px; font-weight: 700; letter-spacing: .24em; text-transform: uppercase; color: var(--soft); text-align: right; }
   .city { font-size: 20px; font-weight: 700; color: var(--ink); margin-top: 5px; text-align: right; }
   .seam { height: 3px; flex-shrink: 0; background: var(--blue); }
-  .hero { position: relative; height: 326px; flex-shrink: 0; overflow: hidden;
+  /* min-height, not height: a two-line headline pushes the title's statement line down, and a fixed
+     326px hid it under the facts card that overlaps the hero's last 46px. The 66px keeps it 20px clear. */
+  .hero { position: relative; min-height: 326px; padding-bottom: 66px; flex-shrink: 0; overflow: hidden;
           background: radial-gradient(ellipse 700px 400px at 18% 30%, rgba(8,121,184,.2), rgba(8,121,184,0) 70%),
                       repeating-linear-gradient(0deg, rgba(255,255,255,.028) 0 1px, transparent 1px 56px),
                       repeating-linear-gradient(90deg, rgba(255,255,255,.028) 0 1px, transparent 1px 56px),
@@ -417,7 +435,7 @@ function executive(p: Parts): string {
 }
 
 function split(p: Parts): string {
-  const side = p.f.filter(([k]) => k !== "Department" && !(p.c.areas.length > 1 && k === "Location"));
+  const side = p.f.filter(([k]) => k !== "Department");
   return doc(`${p.c.title} - Split`, p.a, `
   .mast { height: 96px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 72px; border-bottom: 3px solid var(--blue); }
   .mast img { height: 46px; }
@@ -685,12 +703,162 @@ function nightBlueprint(p: Parts): string {
 </div>`);
 }
 
+/**
+ * Brand Brief — the post for marketers (owner, 2026-10-16: "product managers are marketers … detail
+ * oriented, create a perfect job post tailored for them"). The page is an artboard on a pasteboard, the
+ * way a brand manager sees a visual aid at proof stage: rulers measured from the artboard's own origin,
+ * crop marks, the artboard's name above it, a press colour bar, a slug line and a registration mark. On
+ * the artboard the headline reads as the KEY MESSAGE, the duties as a numbered plan, the requirements as
+ * a checklist, and the WhatsApp number as the CALL TO ACTION button. Every word still comes from the title
+ * row; the furniture is the only thing this design adds.
+ */
+function brandBrief(p: Parts): string {
+  const title = escapeHtml(p.c.title);
+  const h1 = p.t.length > 1 ? `<span>${p.t[0]}</span><span class="l2"><mark>${p.t[1]}</mark></span>` : `<span class="l2"><mark>${p.t[0] ?? ""}</mark></span>`;
+  const message = p.h.length
+    ? `<div class="km"><i></i><div><div class="k">Key message</div><p>${p.h.map((line, i) => `<span${i ? ' class="l2"' : ""}>${line}</span>`).join("")}</p></div></div>`
+    : "";
+  const plan = p.c.duties
+    .map((line, i) => `<li><em>${String(i + 1).padStart(2, "0")}</em><p>${lineHtml(line)}</p></li>`)
+    .join("");
+  const top = Array.from({ length: 11 }, (_, i) => `<b style="left: ${21 + i * 100}px">${i * 100}</b>`).join("");
+  const left = Array.from({ length: 13 }, (_, i) => `<b style="top: ${21 + i * 100}px">${i * 100}</b>`).join("");
+  const swatches = ["#0879b8", "#5db7e8", "#14273e", "#111820", "rgba(17,24,32,.6)", "rgba(17,24,32,.3)", "rgba(17,24,32,.1)", "#fff"]
+    .map((colour) => `<u style="background: ${colour}"></u>`)
+    .join("");
+  return doc(`${p.c.title} - Brand Brief`, p.a, `
+  .page { background: #e4e9ed; padding: 36px; }
+  .ruler { position: absolute; z-index: 3; background-color: #f7f9fa; }
+  .ruler b { position: absolute; font-size: 8px; font-weight: 700; color: #7b868e; letter-spacing: .02em; line-height: 1; }
+  .ruler.x { top: 0; left: 18px; right: 0; height: 18px; border-bottom: 1px solid #c3ccd3;
+             background-image: linear-gradient(90deg, #8f9aa2 1px, transparent 1px), linear-gradient(90deg, #8f9aa2 1px, transparent 1px), linear-gradient(90deg, #b3bcc3 1px, transparent 1px);
+             background-size: 100px 18px, 50px 8px, 10px 4px; background-position: 18px 100%, 18px 100%, 18px 100%; background-repeat: repeat-x; }
+  .ruler.x b { top: 2px; }
+  .ruler.y { top: 18px; left: 0; bottom: 0; width: 18px; border-right: 1px solid #c3ccd3;
+             background-image: linear-gradient(180deg, #8f9aa2 1px, transparent 1px), linear-gradient(180deg, #8f9aa2 1px, transparent 1px), linear-gradient(180deg, #b3bcc3 1px, transparent 1px);
+             background-size: 18px 100px, 8px 50px, 4px 10px; background-position: 100% 18px, 100% 18px, 100% 18px; background-repeat: repeat-y; }
+  .ruler.y b { left: 2px; writing-mode: vertical-rl; transform: rotate(180deg); }
+  .ruler.o { top: 0; left: 0; width: 18px; height: 18px; border-right: 1px solid #c3ccd3; border-bottom: 1px solid #c3ccd3; }
+  .ruler.o::after { content: ""; position: absolute; left: 5px; top: 5px; width: 7px; height: 7px; box-shadow: inset 0 0 0 1px #8f9aa2; }
+  .crop { position: absolute; z-index: 3; background: var(--ink); }
+  .crop.h { width: 12px; height: 1px; } .crop.v { width: 1px; height: 12px; }
+  .abname { position: absolute; z-index: 3; top: 22px; left: 44px; font-size: 9.5px; font-weight: 700; letter-spacing: .06em; color: #5b6770; }
+  .cbar { position: absolute; z-index: 3; right: 11px; top: 150px; display: flex; flex-direction: column; gap: 4px; }
+  .cbar u { display: block; width: 14px; height: 14px; box-shadow: inset 0 0 0 1px rgba(17,24,32,.18); }
+  .slug { position: absolute; z-index: 3; bottom: 0; height: 36px; display: flex; align-items: center; font-size: 9px; font-weight: 700; letter-spacing: .24em; text-transform: uppercase; color: #6c7880; }
+  .slug.l { left: 56px; } .slug.r { right: 56px; }
+  .reg { position: absolute; z-index: 3; left: 527px; bottom: 5px; width: 26px; height: 26px; }
+  .reg::before { content: ""; position: absolute; left: 6px; top: 6px; width: 14px; height: 14px; box-shadow: inset 0 0 0 1px var(--ink); }
+  .reg::after { content: ""; position: absolute; inset: 0; background: linear-gradient(var(--ink), var(--ink)) 50% 0 / 1px 100% no-repeat, linear-gradient(var(--ink), var(--ink)) 0 50% / 100% 1px no-repeat; }
+  .board { position: relative; flex: 1; min-height: 0; background: #fff; display: flex; flex-direction: column; padding: 26px 52px 0; box-shadow: 6px 6px 0 rgba(17,24,32,.13); }
+  /* The margin guides sit 20px OUTSIDE the content, never on its edge — a line touching a word reads as
+     a clipped column, which is exactly what a proof is meant to rule out. */
+  .board::before { content: ""; position: absolute; top: 0; bottom: 0; left: 32px; right: 32px; border-left: 1px solid rgba(93,183,232,.3); border-right: 1px solid rgba(93,183,232,.3); pointer-events: none; }
+  .board > * { position: relative; }
+  .mast { flex-shrink: 0; height: 62px; display: flex; align-items: center; justify-content: space-between; }
+  .mast img { height: 44px; }
+  .mast .brief { text-align: right; }
+  .mast .brief .k { display: inline-flex; align-items: center; gap: 9px; font-size: 11.5px; font-weight: 700; letter-spacing: .34em; text-transform: uppercase; color: var(--blue); }
+  .mast .brief .k s { display: block; width: 8px; height: 8px; background: var(--blue); }
+  .mast .brief .v { margin-top: 5px; font-size: 14px; font-weight: 700; color: var(--ink); letter-spacing: .03em; }
+  .rule { flex-shrink: 0; margin-top: 14px; height: 2px; background: var(--ink); }
+  .rule::before { content: ""; position: absolute; left: 0; top: -2px; width: 96px; height: 6px; background: var(--blue); }
+  .hero { flex-shrink: 0; margin-top: 30px; display: grid; grid-template-columns: minmax(0, 1fr) 270px; column-gap: 44px; }
+  .tagrow { display: flex; align-items: center; gap: 14px; }
+  .tag { display: inline-flex; align-items: center; gap: 10px; background: var(--blue); color: #fff; padding: 8px 13px 8px 14px; font-size: 12.5px; font-weight: 700; letter-spacing: .32em; text-transform: uppercase; }
+  .tag s { display: block; width: 7px; height: 7px; background: #fff; }
+  .tagrow i { display: block; flex: 0 0 40px; border-top: 1px solid var(--blue); }
+  .tagrow .dept { font-size: 12px; font-weight: 700; letter-spacing: .32em; text-transform: uppercase; color: var(--blue); }
+  h1 { margin-top: 20px; font-size: 92px; line-height: 1; letter-spacing: -.045em; font-weight: 700; color: var(--ink); }
+  h1 span { display: block; white-space: nowrap; }
+  h1 mark { color: var(--blue); background: linear-gradient(180deg, transparent 62%, rgba(93,183,232,.32) 62%, rgba(93,183,232,.32) 90%, transparent 90%); padding-right: 8px; }
+  .km { margin-top: 26px; display: grid; grid-template-columns: 4px minmax(0, 1fr); column-gap: 18px; }
+  .km > i { background: var(--blue); }
+  .km .k { font-size: 11px; font-weight: 700; letter-spacing: .32em; text-transform: uppercase; color: var(--blue); }
+  .km p { margin-top: 8px; font-size: 31px; line-height: 1.16; font-weight: 700; letter-spacing: -.02em; color: var(--ink); }
+  .km p span { display: block; } .km p .l2 { color: var(--blue); }
+  .hero > div:first-child { align-self: center; }
+  .spec { align-self: stretch; display: flex; flex-direction: column; border-top: 3px solid var(--ink); border-bottom: 1px solid var(--line); }
+  .spec .sh { display: flex; align-items: center; justify-content: space-between; padding: 12px 0 10px; font-size: 11px; font-weight: 700; letter-spacing: .32em; text-transform: uppercase; color: var(--ink); }
+  .spec .sh s { display: block; width: 8px; height: 8px; box-shadow: inset 0 0 0 1.5px var(--blue); }
+  .spec .row { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 9px 0 10px; border-top: 1px solid var(--line); }
+  .spec .row .k { font-size: 9.5px; font-weight: 700; letter-spacing: .28em; text-transform: uppercase; color: #7b868e; }
+  .spec .row .v { margin-top: 5px; font-size: 17px; font-weight: 700; color: var(--ink); line-height: 1.25; }
+  .spec .sh + .row .v { color: var(--blue); }
+  .body { flex: 1; margin-top: 30px; display: grid; grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr); column-gap: 34px; align-content: center; }
+  .body > i { background: var(--line); }
+  .sec { display: flex; align-items: baseline; gap: 12px; padding-bottom: 12px; border-bottom: 2px solid var(--ink); }
+  .sec em { font-style: normal; font-size: 24px; font-weight: 700; letter-spacing: -.02em; color: var(--blue); line-height: 1; }
+  .sec b { font-size: 12px; font-weight: 700; letter-spacing: .3em; text-transform: uppercase; color: var(--ink); }
+  .sec span { margin-left: auto; font-size: 10px; font-weight: 700; letter-spacing: .3em; text-transform: uppercase; color: #7b868e; }
+  ol.plan { margin-top: calc(var(--k) * 20px); display: flex; flex-direction: column; gap: calc(var(--k) * 16px); }
+  ol.plan li { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr); column-gap: 16px; align-items: start; }
+  ol.plan li:not(:last-child)::after { content: ""; position: absolute; left: 14px; top: 30px; width: 2px; bottom: calc(var(--k) * -16px); background: #b9d8e9; }
+  ol.plan li em { position: relative; z-index: 1; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-style: normal; font-size: 12px; font-weight: 700; color: var(--blue); background: #fff; box-shadow: inset 0 0 0 1.5px var(--blue); }
+  ol.plan li:first-child em { background: var(--blue); color: #fff; }
+  ol.plan li p { padding-top: 3px; font-size: calc(var(--k) * 17px); line-height: 1.42; }
+  ol.plan li b, ul.check li b { color: var(--ink); }
+  ul.check { margin-top: calc(var(--k) * 20px); display: flex; flex-direction: column; gap: calc(var(--k) * 15px); }
+  ul.check li { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 14px; align-items: start; font-size: calc(var(--k) * 17px); line-height: 1.42; }
+  ul.check li s { position: relative; width: 18px; height: 18px; margin-top: 3px; box-shadow: inset 0 0 0 1.5px var(--blue); }
+  ul.check li s::after { content: ""; position: absolute; left: 6px; top: 2px; width: 4px; height: 9px; border-right: 2px solid var(--blue); border-bottom: 2px solid var(--blue); transform: rotate(45deg); }
+  .cta { flex-shrink: 0; margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--line); display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 40px; align-items: center; }
+  .cta .ann { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; margin-bottom: 14px; font-size: 11px; font-weight: 700; letter-spacing: .32em; text-transform: uppercase; color: var(--blue); }
+  .cta .ann i { display: block; width: 40px; border-top: 1px solid var(--blue); }
+  .btn { display: grid; grid-template-columns: auto 34px; column-gap: 26px; align-items: center; background: var(--blue); color: #fff; padding: 15px 28px 17px; box-shadow: 7px 7px 0 var(--ink); }
+  .btn .arr { position: relative; display: block; height: 2px; background: #fff; }
+  .btn .arr::after { content: ""; position: absolute; right: 0; top: -6px; width: 12px; height: 12px; border-top: 2px solid #fff; border-right: 2px solid #fff; transform: rotate(45deg); transform-origin: 100% 0; }
+  .btn .k { font-size: 11px; font-weight: 700; letter-spacing: .34em; text-transform: uppercase; color: rgba(255,255,255,.82); }
+  .btn .num { margin-top: 7px; font-size: 46px; font-weight: 700; letter-spacing: -.01em; line-height: 1; white-space: nowrap; }
+  .cta .h { font-size: 26px; font-weight: 700; letter-spacing: -.01em; color: var(--ink); }
+  .cta .sub { margin-top: 8px; font-size: 15px; line-height: 1.5; color: var(--soft); }
+  .cta .sub b { color: var(--ink); }
+  .bf { flex-shrink: 0; margin-top: 26px; height: 56px; border-top: 2px solid var(--ink); display: flex; align-items: center; justify-content: space-between; }
+  .bf b { display: flex; align-items: center; gap: 12px; font-size: 12.5px; letter-spacing: .3em; text-transform: uppercase; color: var(--ink); }
+  .bf b s { display: block; width: 8px; height: 8px; background: var(--blue); }
+  .bf span { font-size: 13px; color: var(--soft); }`, `
+<div class="page">
+  <div class="ruler o"></div><div class="ruler x" aria-hidden="true">${top}</div><div class="ruler y" aria-hidden="true">${left}</div>
+  <div class="crop h" style="left: 20px; top: 36px"></div><div class="crop v" style="left: 36px; top: 20px"></div>
+  <div class="crop h" style="left: 1048px; top: 36px"></div><div class="crop v" style="left: 1043px; top: 20px"></div>
+  <div class="crop h" style="left: 20px; top: 1313px"></div><div class="crop v" style="left: 36px; top: 1318px"></div>
+  <div class="crop h" style="left: 1048px; top: 1313px"></div><div class="crop v" style="left: 1043px; top: 1318px"></div>
+  <div class="abname">01 &mdash; ${title}</div>
+  <div class="cbar" aria-hidden="true">${swatches}</div>
+  <div class="slug l">Sato Pharma &middot; Job brief &middot; ${title}</div><div class="reg" aria-hidden="true"></div><div class="slug r">${JOB_POST_WIDTH} &times; ${JOB_POST_HEIGHT} px &middot; 4:5 &middot; RGB</div>
+  <main class="board">
+    <header class="mast"><img src="${p.a.logo}" alt="Sato Pharma"><div class="brief"><div class="k"><s></s>Job brief</div><div class="v">Careers &middot; Cairo, Egypt</div></div></header>
+    <div class="rule"></div>
+    <section class="hero">
+      <div>
+        <div class="tagrow"><span class="tag"><s></s>We are hiring</span><i></i><span class="dept">${escapeHtml(p.c.department)}</span></div>
+        <h1>${h1}</h1>
+        ${message}
+      </div>
+      <div class="spec"><div class="sh">The brief<s></s></div>${p.f.map(([k, v]) => `<div class="row"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("")}</div>
+    </section>
+    ${p.areas("", "margin-top: 24px")}
+    <section class="body fit">
+      <div><div class="sec"><em>01</em><b>What you will do</b><span>The plan</span></div><ol class="plan">${plan}</ol></div>
+      <i></i>
+      <div><div class="sec"><em>02</em><b>What you need</b><span>The profile</span></div><ul class="check">${p.needs}</ul></div>
+    </section>
+    <section class="cta"><div class="ann">Call to action<i></i></div>
+      <div class="btn"><div><div class="k">WhatsApp</div><div class="num">${p.num}</div></div><i class="arr" aria-hidden="true"></i></div>
+      <div><div class="h">Ready to apply?</div><div class="sub">${p.applySub}</div></div>
+    </section>
+    <footer class="bf"><b><s></s>Sato Pharma</b><span>www.satopharma.com &middot; Head Office: Sheraton, Cairo, Egypt</span></footer>
+  </main>
+</div>`);
+}
+
 const BUILDERS: Record<JobPostTemplateKey, (p: Parts) => string> = {
   executive,
   split,
   editorial,
   "bold-blue": boldBlue,
   "night-blueprint": nightBlueprint,
+  "brand-brief": brandBrief,
 };
 
 /** One complete, self-contained HTML document for one picture. */
