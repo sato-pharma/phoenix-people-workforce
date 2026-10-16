@@ -5,6 +5,7 @@ import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/forma
 import { listApplications, type ApplicationWithContext } from "@/lib/recruitment/applications";
 import { type CandidateStatus } from "@/lib/recruitment/candidate-status";
 import { recruitmentDb } from "@/lib/recruitment/db";
+import { candidatePoolCountsFromTotals } from "@/lib/recruitment/pool-enrichment";
 import { listRequisitions } from "@/lib/recruitment/requisitions";
 import {
   applicationStages,
@@ -48,7 +49,12 @@ export type CandidatePoolCounts = Record<CandidateStatus, number>;
  *
  * `new` is the remainder after the five other piles are taken off the total, not a count of its own:
  * the decision tabs file a status nothing can read under "not decided yet", and counting the same way
- * keeps this figure equal to the pile the recruiter sees.
+ * keeps this figure equal to the pile the recruiter sees (`candidatePoolCountsFromTotals`, shared with
+ * the page's own derivation from the pool rows, so the two cannot disagree).
+ *
+ * Six requests, one per pile. The Recruitment page does not make them: it already reads the whole pool,
+ * so it hands the dashboard counts taken from those rows (`candidatePoolCounts`, below) and this read
+ * stays for the callers with no pool in hand, and as the fallback when the pool read fails.
  */
 export async function getCandidatePoolCounts(): Promise<CandidatePoolCounts> {
   const db = recruitmentDb();
@@ -66,14 +72,7 @@ export async function getCandidatePoolCounts(): Promise<CandidatePoolCounts> {
     countOf("rejected"),
     countOf("hired"),
   ]);
-  return {
-    backup,
-    hired,
-    new: Math.max(0, total - shortlisted - backup - sentToManager - rejected - hired),
-    rejected,
-    sent_to_manager: sentToManager,
-    shortlisted,
-  };
+  return candidatePoolCountsFromTotals({ backup, hired, rejected, sentToManager, shortlisted, total });
 }
 
 /** One CV nobody has decided on yet, as the "Screen" queue names it. */
@@ -212,12 +211,23 @@ export function isHiredInsideWindow(
 
 export async function getRecruitmentDashboard(
   access: AccessContext,
-  options: { awaitingReviewLimit?: number; hiredWindow?: HiredWindow } = {},
+  options: {
+    awaitingReviewLimit?: number;
+    /**
+     * The pool's piles, counted from the pool rows the caller is already reading — resolved to null
+     * when that read failed. Given, the six `head` counts are not made; null falls back to them, so a
+     * failed pool still leaves the dashboard its figures. Only a caller whose rows ARE the whole pool
+     * may pass this: a page whose viewer may not read candidates holds an empty list, which would
+     * count as an empty pool.
+     */
+    candidatePoolCounts?: Promise<CandidatePoolCounts | null>;
+    hiredWindow?: HiredWindow;
+  } = {},
 ): Promise<RecruitmentDashboard> {
   const [requisitions, applications, candidatePool, awaitingReview] = await Promise.all([
     listRequisitions(access),
     listApplications(access),
-    getCandidatePoolCounts(),
+    (async () => (options.candidatePoolCounts ? await options.candidatePoolCounts : null) ?? getCandidatePoolCounts())(),
     options.awaitingReviewLimit ? listAwaitingReview(options.awaitingReviewLimit) : undefined,
   ]);
 

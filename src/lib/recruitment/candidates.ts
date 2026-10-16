@@ -33,7 +33,9 @@ import { chunkIds } from "@/lib/recruitment/db-batch";
 import { readAllFolderItemsOnce } from "@/lib/recruitment/cv-folder-tree-db";
 import { managerHoldsFolders } from "@/lib/recruitment/folder-holders";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { managerHoldCutoffIso } from "@/lib/recruitment/manager-hold-window";
+import { notACvCandidateIds, type ExtractionVerdictRow } from "@/lib/recruitment/pool-enrichment";
 import {
   isAfter,
   listLatestSendByCandidate,
@@ -610,9 +612,20 @@ async function loadRequisitionJobTitleByCandidate(ids: string[]): Promise<Map<st
  * Exported for the candidate's own page (candidate-record.ts), so its "Applying for" gives the same
  * answer as the pool row the name was pressed on.
  */
-export async function attachAppliedFor(candidates: Candidate[]): Promise<void> {
+export async function attachAppliedFor(
+  candidates: Candidate[],
+  options: {
+    /**
+     * The intake context the caller already started reading. `listCandidates` passes the whole-view
+     * walk it began before the pool arrived; every other caller holds a handful of candidates and
+     * leaves this out, so their ids are looked up in batches as before.
+     */
+    sourceContext?: Promise<Map<string, CandidateSourceContext>>;
+  } = {},
+): Promise<void> {
   if (candidates.length === 0) return;
-  const sourceContext = await loadSourceContextByCandidate(candidates.map((candidate) => candidate.id));
+  const sourceContext = await (options.sourceContext ??
+    loadSourceContextByCandidate(candidates.map((candidate) => candidate.id)));
   for (const candidate of candidates) {
     const context = sourceContext.get(candidate.id);
     if (context) candidate.sourceContext = context;
@@ -646,31 +659,58 @@ export async function attachAppliedFor(candidates: Candidate[]): Promise<void> {
  * before the column existed reads that way — and calling those not-a-CV would hide real applicants,
  * which is far worse than the confusion this fixes. Same fail-open shape as the intake gate.
  */
-async function loadNotACvCandidates(ids: string[]): Promise<Set<string>> {
-  const notACv = new Set<string>();
-  if (ids.length === 0) return notACv;
-  const supabase = recruitmentDb();
-  const seen = new Set<string>();
-  // Fetched four batches at a time, folded in batch order (ENRICHMENT_BATCH_CONCURRENCY).
-  const pages = await mapWithConcurrency(chunkIds(ids), ENRICHMENT_BATCH_CONCURRENCY, async (batch) => {
-    const { data, error } = await supabase
-      .from("ats_candidate_cv_extractions")
-      .select("candidate_id,created_at,is_cv")
-      .in("candidate_id", batch)
-      .order("created_at", { ascending: false });
-    return error || !data ? [] : (data as Array<{ candidate_id?: unknown; is_cv?: unknown }>);
-  });
-  for (const data of pages) {
-    for (const row of data) {
-      const candidateId = textOrNull(row.candidate_id);
-      // Newest first, so the first row seen for a candidate is the verdict that stands. A later
-      // re-read that DID find a CV must overrule an older "no", not be overruled by it.
-      if (!candidateId || seen.has(candidateId)) continue;
-      seen.add(candidateId);
-      if (row.is_cv === false) notACv.add(candidateId);
-    }
+async function loadNotACvCandidates(): Promise<Set<string>> {
+  // THE WHOLE TABLE, in id order, rather than the pool's ids a hundred at a time. Three narrow columns
+  // are ~110 bytes a row (3,503 rows on 2026-10-16), so the table is four requests where the pool's ids
+  // were fifteen, and it needs no answer from the pool read — it starts BEFORE it (see listCandidates).
+  // No `extracted_fields` is selected, so nothing large is read from the TOAST. The newest-row-per-
+  // candidate rule is `notACvCandidateIds`'s, a pure function with its own test.
+  //
+  // Best-effort, exactly as the batched read was: a failure leaves the set empty, so no row is flagged,
+  // which is the direction that hides nobody.
+  try {
+    const rows = await fetchAllRowsKeyset<ExtractionVerdictRow>(
+      () => recruitmentDb().from("ats_candidate_cv_extractions").select("id,candidate_id,created_at,is_cv"),
+      { cursorColumn: "id", cursorOf: (row) => textOrNull(row.id) },
+    );
+    return notACvCandidateIds(rows);
+  } catch {
+    return new Set<string>();
   }
-  return notACv;
+}
+
+/**
+ * The latest intake context of EVERY candidate, in one walk of the view.
+ *
+ * `ats_candidate_source_context` is one row per candidate (the newest intake event), 1,412 rows on
+ * 2026-10-16 and 4 ms to read whole — against fifteen `.in()` requests for the pool's ids, each of which
+ * asked the database to find its hundred. It needs nothing from the pool read, so `listCandidates`
+ * starts it first and the two run side by side. Keyset on `candidate_id` (unique in the view), so a
+ * CV arriving mid-read can neither repeat nor skip a row.
+ *
+ * Best-effort like the batched loader beside it: a failure returns an empty map and the Source column
+ * simply shows nothing, rather than breaking the pool.
+ */
+async function loadSourceContextForWholePool(): Promise<Map<string, CandidateSourceContext>> {
+  const map = new Map<string, CandidateSourceContext>();
+  try {
+    const rows = await fetchAllRowsKeyset<SourceContextRow>(
+      () =>
+        recruitmentDb().from("ats_candidate_source_context").select("candidate_id,channel,subject,raw_metadata"),
+      {
+        cursorColumn: "candidate_id",
+        cursorOf: (row) => textOrNull((row as { candidate_id?: unknown }).candidate_id),
+      },
+    );
+    for (const row of rows) {
+      const candidateId = textOrNull((row as { candidate_id?: unknown }).candidate_id);
+      if (!candidateId) continue;
+      map.set(candidateId, describeCandidateSource(row));
+    }
+  } catch {
+    map.clear();
+  }
+  return map;
 }
 
 /**
@@ -722,15 +762,20 @@ export async function listCandidates(
 ): Promise<Candidate[]> {
   const columns =
     options.withRepeatingCvBlocks === false ? CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS : "*";
+  // The two side tables whose answer does not depend on the pool's ids are read WHOLE, and they start
+  // here, beside the pool, instead of after it: a request waiting for the pool's rows to learn which
+  // ids to ask for was a whole extra wait at the front of the longest chain on the page. Neither
+  // promise can reject (both catch inside), so one left unawaited by a failed pool read is harmless.
+  const sourceContextLoad = loadSourceContextForWholePool();
+  const notACvLoad = loadNotACvCandidates();
   const rows = await selectEveryCandidateRow((table) =>
     table.select(columns).order("created_at", { ascending: false }),
   );
   const candidates = rows.map(mapCandidate);
-  // Concurrently: the four reads touch different fields on the same objects and none reads
-  // another's output, so serialising them would only add Atlantic round trips to a page that
-  // already waits on one.
+  // Concurrently: the reads touch different fields on the same objects and none reads another's
+  // output, so serialising them would only add Atlantic round trips to a page that already waits on one.
   const [, , , , latestSends, notACv] = await Promise.all([
-    attachAppliedFor(candidates),
+    attachAppliedFor(candidates, { sourceContext: sourceContextLoad }),
     attachUnconfirmedCvFacts(candidates),
     attachFolderFilerNames(candidates),
     // The hand-built folder tree's memberships. In the same wave for the same reason as its three
@@ -738,10 +783,9 @@ export async function listCandidates(
     // so serialising it would only add an Atlantic round trip to a page that already waits on one.
     attachCvFolderMemberships(candidates),
     listLatestSendByCandidate(),
-    // The "Not a CV" verdicts, in the wave for the same reason: they need only the ids. Read after
-    // the wave, their whole-pool batches were a second wait on every pool load. Applied at the end,
+    // The "Not a CV" verdicts: the whole-table walk started above, awaited here. Applied at the end,
     // where they always were.
-    loadNotACvCandidates(candidates.map((candidate) => candidate.id)),
+    notACvLoad,
   ]);
 
   // ── WHO HAS THIS CV, RESOLVED ONCE FOR EVERY SCREEN ─────────────────────────────────────────────
