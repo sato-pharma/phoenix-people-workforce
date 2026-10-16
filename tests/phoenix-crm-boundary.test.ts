@@ -871,6 +871,9 @@ const LATER_MIGRATIONS = [
   // The duplicates page's three keep-rule counts, counted in the database (same audit). One brand-new
   // read function; it replaces nothing.
   "supabase/migrations/20261016180401_phoenix_crm_customer_merge_counts.sql",
+  // The List's doctor-pharmacy cards read only the visits that can change them (same audit). One
+  // brand-new read function over phoenix_crm_visits; it replaces nothing.
+  "supabase/migrations/20261016180201_phoenix_crm_customer_pharmacy_feedback.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
