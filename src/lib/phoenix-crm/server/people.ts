@@ -10,6 +10,7 @@ import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { personKey } from "@/lib/phoenix-crm/scope";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type PeopleNames = ReadonlyMap<string, string>;
@@ -26,10 +27,15 @@ export async function loadPeopleNames(hrIds: Iterable<string | null | undefined>
 
   const lookup = [...new Set([...wanted].flatMap((key) => hrIdLookupKeys(key)))];
   const supabase = getSupabaseAdmin();
-  for (const part of chunk(lookup, 200)) {
+  // A national scope's names are several batches; they are read four at a time and walked back in
+  // batch order, so "the first row wins" picks the same row it always did.
+  const batches = await mapWithConcurrency(chunk(lookup, 200), 4, async (part) => {
     const { data, error } = await supabase.from("employees").select("hr_id, full_name, nickname").in("hr_id", part);
     throwIfError(error);
-    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    return (data ?? []) as Array<Record<string, unknown>>;
+  });
+  for (const rows of batches) {
+    for (const row of rows) {
       const key = personKey(typeof row.hr_id === "string" ? row.hr_id : null);
       if (!key || !wanted.has(key) || names.has(key)) continue;
       const fullName = typeof row.full_name === "string" ? row.full_name.trim() : "";
