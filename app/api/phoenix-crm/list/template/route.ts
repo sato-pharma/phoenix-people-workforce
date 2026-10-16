@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { afterResponse } from "@/lib/http/after-response";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
 import { buildListTemplateFor } from "@/lib/phoenix-crm/server/list-template";
@@ -30,12 +31,16 @@ export async function GET(request: Request) {
     const seatId = search.get("seatId");
 
     const { buffer, fileName, seat } = await buildListTemplateFor(viewer, seatId, search.get("test"));
-    await writeAuditLog({
-      actorLoginId: access.loginId ?? null,
-      entityId: seat.seatId,
-      entityType: "phoenix_crm_list_template",
-      summary: `Downloaded the Phoenix CRM customer-list template for ${seat.seatId}`,
-    });
+    // Written once the file has gone: `writeAuditLog` swallows its own failure, so the download never
+    // depended on the insert and no longer waits for it.
+    await afterResponse("phoenix_crm_list_template_audit", () =>
+      writeAuditLog({
+        actorLoginId: access.loginId ?? null,
+        entityId: seat.seatId,
+        entityType: "phoenix_crm_list_template",
+        summary: `Downloaded the Phoenix CRM customer-list template for ${seat.seatId}`,
+      }),
+    );
     return new NextResponse(buffer as unknown as ArrayBuffer, {
       headers: {
         "cache-control": "no-store",
