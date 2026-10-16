@@ -11,7 +11,7 @@ import { ChromiumUnavailableError } from "@/lib/pdf/chromium";
 import { canBuildJobPosts } from "@/lib/recruitment/access";
 import { JobPostTooLongError, renderJobPostBundle, renderJobPostPdf, renderJobPostPng } from "@/lib/recruitment/job-posts/render";
 import { JOB_POST_CAREERS, JOB_POST_TEMPLATES, jobPostFileStem, jobPostForArea } from "@/lib/recruitment/job-posts/templates";
-import { coerceAreaNoun, coerceAreas, coerceTitleDraft, contentFromDraft, postRequestViolations } from "@/lib/recruitment/job-posts/titles";
+import { coerceAreaNoun, coerceAreas, coerceTextEdits, coerceTitleDraft, contentFromDraft, postRequestViolations } from "@/lib/recruitment/job-posts/titles";
 import { NEW_CHANNEL_APPLY_WHATSAPP_NUMBER } from "@/lib/recruitment/outreach/job-post-channels";
 
 export const runtime = "nodejs";
@@ -48,6 +48,7 @@ export async function POST(request: Request) {
     const draft = coerceTitleDraft(body.title && typeof body.title === "object" ? (body.title as Record<string, unknown>) : {});
     const areas = coerceAreas(body.areas);
     const areaNoun = coerceAreaNoun(body.areaNoun);
+    const edits = coerceTextEdits(body.edits);
     const line = typeof body.line === "string" && body.line.trim() ? body.line.trim() : null;
     const problems = postRequestViolations({ areas, draft, line, template: body.template });
     if (problems.length) return recruitmentProblem(problems.join(" "), 400);
@@ -55,14 +56,14 @@ export async function POST(request: Request) {
 
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: `export:job-post:${format}` });
 
-    const content = contentFromDraft(draft, { areaNoun, areas, line }, { careers: JOB_POST_CAREERS, whatsapp: NEW_CHANNEL_APPLY_WHATSAPP_NUMBER });
+    const content = contentFromDraft(draft, { areaNoun, areas, edits, line }, { careers: JOB_POST_CAREERS, whatsapp: NEW_CHANNEL_APPLY_WHATSAPP_NUMBER });
 
     const record = (area: string | null) =>
       writeAuditLog({
         actorLoginId: access.loginId ?? null,
         entityId: null,
         entityType: "job_post_download",
-        newValues: { areaNoun, areas, area, department: content.department, design: template, format, line, title: content.title },
+        newValues: { areaNoun, areas, area, department: content.department, design: template, edits: Object.keys(edits).length, format, line, title: content.title },
         summary: `Downloaded the “${content.title}” job post (${JOB_POST_TEMPLATES.find((t) => t.key === template)?.name ?? template} design, ${
           format === "zip" ? "the full set" : format.toUpperCase()
         }${area ? `, ${area}` : areas.length ? `, ${areas.join(", ")}` : ""})`,

@@ -54,6 +54,14 @@ export type JobPostContent = {
   /** Local form, e.g. 01159888247. */
   whatsapp: string;
   careers: string;
+  /**
+   * WORDS EDITED ON THE PICTURE ITSELF, per post (owner, 2026-10-16: "edit anywhere and write anything,
+   * exactly as the HR form is"). Keyed by the text as the template wrote it, valued by what the person
+   * typed over it. Duties and requirements are NOT here — they write back into the draft's lists, so
+   * "Save to title" keeps them. Applied to the finished HTML, so the preview, the per-area pictures and
+   * the download all print the same words.
+   */
+  edits?: Record<string, string>;
 };
 
 /**
@@ -291,10 +299,12 @@ export const JOB_POST_TITLE_FLOOR_PX = 24;
  * out of its sandboxed frame).
  */
 const FIT_SCRIPT = `<script>
-window.__jobPostFit = (async () => {
+const fit = async () => {
   if (document.fonts && document.fonts.ready) await document.fonts.ready;
   const report = { titles: 0, k: 1, limited: false };
+  document.documentElement.style.removeProperty("--k");
   document.querySelectorAll("h1").forEach((el) => {
+    el.style.fontSize = "";
     let size = parseFloat(getComputedStyle(el).fontSize);
     while (el.scrollWidth > el.clientWidth + 1 && size > ${JOB_POST_TITLE_FLOOR_PX}) { size -= 1; el.style.fontSize = size + "px"; }
     if (el.scrollWidth > el.clientWidth + 1) report.limited = true;
@@ -309,7 +319,9 @@ window.__jobPostFit = (async () => {
   if (k <= ${JOB_POST_TEXT_FLOOR} || overflowing()) report.limited = true;
   try { if (window.parent !== window) window.parent.postMessage({ jobPostFit: report }, "*"); } catch (e) {}
   return report;
-})();
+};
+window.__jobPostFit = fit();
+window.__jobPostRefit = fit;
 </script>`;
 
 function doc(name: string, assets: JobPostAssets, css: string, body: string): string {
@@ -339,7 +351,7 @@ type Parts = {
 };
 
 function parts(c: JobPostContent, a: JobPostAssets): Parts {
-  const li = (items: JobPostLine[]) => items.map((line) => `<li><s></s><p>${lineHtml(line)}</p></li>`).join("");
+  const li = (items: JobPostLine[], kind: "d" | "n") => items.map((line, i) => `<li><s></s><p data-f="${kind}${i}">${lineHtml(line)}</p></li>`).join("");
   const n = c.areas.length;
   const noun = c.areaNoun === "region" ? "region" : "area";
   // 🔴 THE AREA IS THE FIRST THING A FIELD-FORCE CANDIDATE LOOKS FOR, SO IT IS A BAND, NOT A FACT
@@ -359,8 +371,8 @@ function parts(c: JobPostContent, a: JobPostAssets): Parts {
     t: titleLines(c.title).map(escapeHtml),
     h: headlineLines(c.headline).map(escapeHtml),
     f: facts(c).map(([k, v]) => [escapeHtml(k), escapeHtml(v)] as Fact),
-    duties: li(c.duties),
-    needs: li(c.needs),
+    duties: li(c.duties, "d"),
+    needs: li(c.needs, "n"),
     areas,
     applySub,
     num: escapeHtml(formatPostNumber(c.whatsapp)),
@@ -532,7 +544,7 @@ function editorial(p: Parts): string {
   const side = p.f.filter(([k]) => k !== "Department");
   const lede = p.h.length ? `<p class="lede"><b>${p.h[0]}</b>${p.h[1] ? ` ${p.h[1]}` : ""}</p>` : "";
   const numbered = p.c.duties
-    .map((line, i) => `<li><em>${String(i + 1).padStart(2, "0")}</em><p>${lineHtml(line)}</p></li>`)
+    .map((line, i) => `<li><em>${String(i + 1).padStart(2, "0")}</em><p data-f="d${i}">${lineHtml(line)}</p></li>`)
     .join("");
   return doc(`${p.c.title} - Editorial`, p.a, `
   .page { background: #fff; }
@@ -750,7 +762,7 @@ function brandBrief(p: Parts): string {
     ? `<div class="km"><i></i><div><div class="k">Key message</div><p>${p.h.map((line, i) => `<span${i ? ' class="l2"' : ""}>${line}</span>`).join("")}</p></div></div>`
     : "";
   const plan = p.c.duties
-    .map((line, i) => `<li><em>${String(i + 1).padStart(2, "0")}</em><p>${lineHtml(line)}</p></li>`)
+    .map((line, i) => `<li><em>${String(i + 1).padStart(2, "0")}</em><p data-f="d${i}">${lineHtml(line)}</p></li>`)
     .join("");
   const top = Array.from({ length: 11 }, (_, i) => `<b style="left: ${21 + i * 100}px">${i * 100}</b>`).join("");
   const left = Array.from({ length: 13 }, (_, i) => `<b style="top: ${21 + i * 100}px">${i * 100}</b>`).join("");
@@ -892,7 +904,170 @@ const BUILDERS: Record<JobPostTemplateKey, (p: Parts) => string> = {
   "brand-brief": brandBrief,
 };
 
+/* ───────────── typing on the picture ───────────── */
+
+/** The most typed-over passages one post carries, and the longest either side of one may be. */
+export const JOB_POST_MAX_EDITS = 120;
+export const JOB_POST_MAX_EDIT_LENGTH = 400;
+
+/** Whitespace collapsed and trimmed — the one way a passage is compared, in the page and on the server. */
+function normText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+const NAMED_ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', mdash: "—", middot: "·", times: "×", nbsp: " " };
+
+/** The few entities the templates write, back to the characters the browser reads from them. */
+function decodeEntities(value: string): string {
+  return value
+    .replace(/&#(\d+);/g, (_m, n: string) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_m, n: string) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&([a-z]+);/gi, (m, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? m);
+}
+
+/**
+ * Print the words a person typed over the picture. Each key is a passage exactly as the template wrote
+ * it; its text, wherever it appears in the BODY as a whole passage, is replaced. Style and script text
+ * is never touched, nor is a duty or requirement (those write back to the draft's own lists), and the
+ * whitespace around a passage is kept so the layout does not move. Pure, so the browser's preview and
+ * the server's download run the same function over the same HTML.
+ */
+export function applyTextEdits(html: string, edits: Record<string, string> | undefined): string {
+  if (!edits) return html;
+  const entries = Object.entries(edits).filter(([key]) => normText(key));
+  if (!entries.length) return html;
+  const map = new Map(entries.map(([key, value]) => [normText(key), value] as const));
+  const bodyAt = html.indexOf("<body>");
+  if (bodyAt < 0) return html;
+  const scriptAt = html.lastIndexOf("<script>");
+  const end = scriptAt > bodyAt ? scriptAt : html.length;
+  const pieces = html.slice(bodyAt, end).split(/(<[^>]*>)/);
+  let raw = false;
+  let listItem = false;
+  for (let i = 0; i < pieces.length; i += 1) {
+    const piece = pieces[i]!;
+    if (i % 2 === 1) {
+      const tag = /^<\s*(\/?)\s*([a-zA-Z][a-zA-Z0-9]*)/.exec(piece);
+      if (!tag) continue;
+      const closing = tag[1] === "/";
+      const name = tag[2]!.toLowerCase();
+      if (name === "style" || name === "script") raw = !closing;
+      if (name === "p" && closing) listItem = false;
+      else if (name === "p" && /\sdata-f=/.test(piece)) listItem = true;
+      continue;
+    }
+    if (raw || listItem) continue;
+    const spaced = /^(\s*)([\s\S]*?)(\s*)$/.exec(piece)!;
+    const key = normText(decodeEntities(spaced[2]!));
+    if (!key) continue;
+    const typed = map.get(key);
+    if (typed !== undefined) pieces[i] = spaced[1] + escapeHtml(typed) + spaced[3];
+  }
+  return html.slice(0, bodyAt) + pieces.join("") + html.slice(end);
+}
+
+/**
+ * Inside the editable preview only — never the download. Every text-bearing element becomes
+ * contenteditable, the way the HR paper makes its page the editing surface; Enter, rich paste and
+ * formatting keys are refused so a post stays one flat line per element. Two things go to the parent
+ * page after a pause in typing: every passage whose text changed (keyed by the text the template wrote),
+ * and the bold-then-rest reading of each duty or requirement (data-f), which the page writes back into
+ * its lists. The layout pass runs again first, so the "Text 85%" and "Too long" verdicts stay true.
+ */
+const EDIT_CSS = `
+  *::before, *::after, .tick, .ghost, .wm, .rail, .blocks, .blocks u { pointer-events: none !important; }
+  [contenteditable] { outline: none; cursor: text; caret-color: #f97316; }
+  [contenteditable]:hover { outline: 2px dashed rgba(249,115,22,.9); outline-offset: 3px; }
+  [contenteditable]:focus { outline: 2px solid #f97316; outline-offset: 3px; }
+  ::selection { background: rgba(249,115,22,.35); }`;
+
+// The script is a plain string with no template placeholders, so it is written once, here, as the
+// browser will read it.
+const EDIT_SCRIPT = String.raw`<script>
+(() => {
+  const SKIP = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1 };
+  const norm = (s) => s.replace(/\s+/g, " ").trim();
+  const nodes = () => { const out = []; const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) { if (!SKIP[n.parentNode.nodeName]) out.push(n); } return out; };
+  const keyed = [];
+  const inList = (n) => !!(n.parentNode && n.parentNode.closest && n.parentNode.closest("[data-f]"));
+  nodes().forEach((n) => { if (norm(n.data)) { n.__o = n.data; n.__f = inList(n); keyed.push(n); n.parentNode.setAttribute("contenteditable", "true"); } });
+  document.body.spellcheck = false;
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") e.preventDefault();
+    if ((e.ctrlKey || e.metaKey) && /^[biu]$/i.test(e.key)) e.preventDefault();
+  });
+  document.addEventListener("beforeinput", (e) => {
+    if (/^(insertParagraph|insertLineBreak|insertFromDrop|formatBold|formatItalic|formatUnderline)$/.test(e.inputType)) e.preventDefault();
+  });
+  document.addEventListener("paste", (e) => {
+    e.preventDefault();
+    const text = (e.clipboardData && e.clipboardData.getData("text/plain")) || "";
+    document.execCommand("insertText", false, text.replace(/\s+/g, " "));
+  });
+  document.addEventListener("drop", (e) => e.preventDefault());
+  const collect = () => {
+    nodes().forEach((n) => {
+      if (n.__o !== undefined || !n.data) return;
+      const before = n.previousSibling && n.previousSibling.__o !== undefined ? n.previousSibling : null;
+      const after = n.nextSibling && n.nextSibling.__o !== undefined ? n.nextSibling : null;
+      if (before) { before.data += n.data; n.remove(); } else if (after) { after.data = n.data + after.data; n.remove(); }
+    });
+    const edits = {};
+    let unmapped = false;
+    nodes().forEach((n) => { if (n.__o === undefined && norm(n.data) && !inList(n)) unmapped = true; });
+    keyed.forEach((n) => {
+      if (n.__f) return;
+      const now = document.body.contains(n) ? n.data : "";
+      if (now !== n.__o) { const k = norm(n.__o); if (k) edits[k] = norm(now); }
+    });
+    const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const bound = {};
+    document.querySelectorAll("[data-f]").forEach((p) => {
+      const b = p.querySelector("b");
+      const all = p.textContent || "";
+      let lead = b ? b.textContent || "" : "";
+      let rest = b ? all.slice(lead.length) : "";
+      if (!b || !norm(rest)) {
+        // The whole line was typed over and the bold went with it: read it the way every approved line
+        // is written, a short opening that ends in a colon, then the rest.
+        const m = /^([^:]{1,40}:)\s*([\s\S]*)$/.exec(all);
+        lead = m ? m[1] : all;
+        rest = m ? m[2] : "";
+      }
+      lead = norm(lead);
+      rest = norm(rest);
+      bound[p.getAttribute("data-f")] = { lead: lead, rest: rest };
+      if (!b || norm(b.textContent || "") !== lead) {
+        // Typing broke the bold-then-rest shape; draw it again so the picture shows what will print.
+        const sel = window.getSelection();
+        const here = sel && sel.anchorNode && p.contains(sel.anchorNode);
+        p.innerHTML = "<b>" + esc(lead) + "</b>" + (rest ? (/^[,.;:)]/.test(rest) ? "" : " ") + esc(rest) : "");
+        if (here && sel) { const r = document.createRange(); r.selectNodeContents(p); r.collapse(false); sel.removeAllRanges(); sel.addRange(r); }
+      }
+    });
+    return { edits: edits, bound: bound, unmapped: unmapped };
+  };
+  let timer = 0;
+  document.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      try { await window.__jobPostRefit(); } catch (e) {}
+      try { window.parent.postMessage({ jobPostEdit: collect() }, "*"); } catch (e) {}
+    }, 250);
+  });
+})();
+</script>`;
+
+export type JobPostRenderOptions = {
+  /** The live preview only: the page is typed on. Never set for a download. */
+  editable?: boolean;
+};
+
 /** One complete, self-contained HTML document for one picture. */
-export function renderJobPostHtml(content: JobPostContent, template: JobPostTemplateKey, assets: JobPostAssets): string {
-  return BUILDERS[template](parts(content, assets));
+export function renderJobPostHtml(content: JobPostContent, template: JobPostTemplateKey, assets: JobPostAssets, options: JobPostRenderOptions = {}): string {
+  const html = applyTextEdits(BUILDERS[template](parts(content, assets)), content.edits);
+  if (!options.editable) return html;
+  const styled = html.replace("</style></head>", `${EDIT_CSS}</style></head>`);
+  const at = styled.lastIndexOf("</body>");
+  return styled.slice(0, at) + EDIT_SCRIPT + styled.slice(at);
 }

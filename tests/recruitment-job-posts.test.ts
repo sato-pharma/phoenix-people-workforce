@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 
+import { layerEdits, readPictureEdit, writeBack } from "../src/lib/recruitment/job-posts/picture-edit.ts";
 import {
   JOB_POST_MAX_AREAS,
+  JOB_POST_MAX_EDITS,
   JOB_POST_TEMPLATES,
+  applyTextEdits,
   jobPostFileStem,
   jobPostForArea,
   renderJobPostHtml,
@@ -13,6 +16,7 @@ import {
 import {
   JOB_POST_MAX_LINES,
   coerceAreas,
+  coerceTextEdits,
   coerceTitleDraft,
   contentFromDraft,
   postRequestViolations,
@@ -377,7 +381,9 @@ export function runRecruitmentJobPostsTests() {
     /boxClassName="[^"]*xl:h-\[clamp\([^"]*100vh[^"]*\)\][^"]*xl:w-auto/.test(page),
     "the preview takes its size from the SCREEN's height, not the column's width, so the sticky column fits one screen",
   );
-  assert.ok(page.includes("xl:grid-cols-6"), "the six designs sit on one row where the column is sticky, which is what the post's height is taken from");
+  assert.ok(page.includes("sm:grid-cols-6"), "the six designs sit on one row from the small breakpoint up");
+  assert.ok(page.includes("xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]"), "the picture is the first and larger column; the controls sit beside it");
+  assert.ok(page.indexOf("The post — click any word and type") < page.indexOf('title="Job title"'), "the picture comes before the controls in the page");
 
   // ── Bold Blue polish (owner 2026-10-16: "enhance this") — scoped to Bold Blue, the other five untouched ──
   // Two to four areas share the whole band instead of huddling at its left; a single area keeps its own
@@ -392,4 +398,88 @@ export function runRecruitmentJobPostsTests() {
     if (key === "bold-blue") continue;
     assert.ok(!renderJobPostHtml(post({ areas: ["Alexandria", "Behira"] }), key, ASSETS).includes(".areas.ink.few .al {"), `${key}: the Bold Blue band polish stays out of the other designs`);
   }
+  // ── Typing on the picture (owner 2026-10-16: "make me able to edit anywhere and write anything, exactly as the HR form is") ──
+  // The picture is the editing surface. A duty or requirement writes back into the draft's own list
+  // (so "Save to title" keeps it); every other word is a per-post edit applied to the finished HTML,
+  // which is why the preview, the per-area picture and the download cannot disagree.
+  const typedPost = post({ areas: ["Alexandria"], duties: [{ lead: "Lead", rest: "the team & grow it" }], needs: [{ lead: "Car", rest: "owned" }] });
+  for (const { key } of JOB_POST_TEMPLATES) {
+    const plain = renderJobPostHtml(typedPost, key, ASSETS);
+    assert.equal(occurrences(plain, 'data-f="d0"'), 1, `${key}: the first duty names its own place`);
+    assert.equal(occurrences(plain, 'data-f="n0"'), 1, `${key}: the first requirement names its own place`);
+    assert.ok(!plain.includes("jobPostEdit") && !plain.includes("contenteditable"), `${key}: a download is never editable`);
+    const live = renderJobPostHtml(typedPost, key, ASSETS, { editable: true });
+    assert.ok(live.includes("jobPostEdit") && live.includes("pointer-events: none !important"), `${key}: the preview carries the typing script and lets clicks reach the words`);
+    assert.equal(occurrences(live, "</body>"), 1, `${key}: the script is inside the one body`);
+    assert.ok(live.includes("window.__jobPostRefit"), `${key}: the layout pass can run again after a word is typed`);
+    // Found by typing in a real browser: a retyped duty came back all bold, and its old text nodes were
+    // reported as deleted words. A line is read back as bold-opening-then-rest (the opening ends in a
+    // colon) and redrawn, and words inside a list line are never also counted as post edits.
+    assert.ok(live.includes("n.__f = inList(n)") && live.includes("if (n.__f) return;"), `${key}: a list line's words are not also reported as typed-over words`);
+    assert.ok(live.includes("^([^:]{1,40}:)") && live.includes('p.innerHTML = "<b>"'), `${key}: a retyped line is split at its colon and redrawn, so the picture shows what will print`);
+  }
+  const base = renderJobPostHtml(typedPost, "bold-blue", ASSETS);
+  const typed = renderJobPostHtml(
+    { ...typedPost, edits: { "We are hiring": "Join us <now>", "What you need": "You bring", "Full-time": "Part-time", Lead: "NOT A PASSAGE OF ITS OWN" } },
+    "bold-blue",
+    ASSETS,
+  );
+  assert.ok(typed.includes("Join us &lt;now&gt;") && !typed.includes(">We are hiring<"), "a fixed label typed over is replaced, and what was typed is escaped, never markup");
+  assert.ok(typed.includes("You bring") && typed.includes("Part-time"), "a heading and a fact typed over are replaced");
+  assert.ok(typed.includes("<b>Lead</b> the team &amp; grow it"), "a duty is never touched by an edit — it writes back to the list instead");
+  assert.equal(typed.split("<style>")[1]!.split("</style>")[0], base.split("<style>")[1]!.split("</style>")[0], "typed words never reach the stylesheet");
+  assert.ok(applyTextEdits(base, { Alexandria: "Alex" }).includes("<i></i>Alex<"), "an area name typed over prints as typed");
+  assert.equal(applyTextEdits(base, {}), base, "no edits is the same HTML");
+  assert.ok(
+    applyTextEdits("<body><div>  Hello &amp; welcome  </div><script>x</script></body>", { "Hello & welcome": "Hi" }).includes("<div>  Hi  </div>"),
+    "an entity in the template matches the text the browser reads, and the spacing around it is kept",
+  );
+  const twoAreas = { ...typedPost, edits: { "We are hiring": "Join us" }, areas: ["A", "B"] };
+  assert.equal(jobPostForArea(twoAreas, "A").edits?.["We are hiring"], "Join us", "the per-area picture keeps the post's typed words");
+  assert.ok(renderJobPostHtml(jobPostForArea(twoAreas, "A"), "bold-blue", ASSETS).includes(">Join us<"), "and prints them");
+
+  assert.deepEqual(coerceTextEdits({ " a  b ": "c", x: 3, "": "y", same: "same" }), { "a b": "c" }, "a pair needs a real key, a string value and an actual change");
+  assert.deepEqual(coerceTextEdits(["a"]), {}, "an array is not a set of edits");
+  assert.deepEqual(coerceTextEdits("nope"), {}, "neither is a string");
+  assert.equal(
+    Object.keys(coerceTextEdits(Object.fromEntries(Array.from({ length: JOB_POST_MAX_EDITS + 50 }, (_v, i) => [`k${i}`, "v"])))).length,
+    JOB_POST_MAX_EDITS,
+    "a request cannot make the renderer carry unbounded edits",
+  );
+  assert.deepEqual(coerceTextEdits({ ["k".repeat(401)]: "v", ok: "v".repeat(401) }), {}, "an over-long passage is dropped on either side");
+  const draftForEdits = coerceTitleDraft({ title: "T", department: "Sales", duties: [{ lead: "a", rest: "b" }], needs: [{ lead: "c", rest: "d" }] });
+  assert.equal(contentFromDraft(draftForEdits, { areas: [], line: null }, { careers: "c", whatsapp: "1" }).edits, undefined, "a post with no typed words carries no edits key");
+  assert.deepEqual(contentFromDraft(draftForEdits, { areas: [], edits: { a: "b" }, line: null }, { careers: "c", whatsapp: "1" }).edits, { a: "b" }, "typed words reach the post's content");
+
+  // The messages from the frame are believed only after their shape is checked.
+  assert.equal(readPictureEdit(null), null);
+  assert.equal(readPictureEdit({ edits: {}, bound: {} }), null, "a message with no verdict on unmapped text is refused");
+  assert.deepEqual(
+    readPictureEdit({ edits: { a: "b", c: 4 }, bound: { d0: { lead: "x", rest: "y" }, d1: { lead: 1, rest: "y" } }, unmapped: false }),
+    { bound: { d0: { lead: "x", rest: "y" } }, edits: { a: "b" }, unmapped: false },
+    "only strings survive",
+  );
+
+  // Where typed words go: lists write back to the rows they came from, skipping rows the picture never printed.
+  const rows = [{ lead: "One", rest: "first" }, { lead: "", rest: "" }, { lead: "Two", rest: "second" }];
+  const written = writeBack(rows, "d", { d1: { lead: "Two", rest: "changed" } });
+  assert.deepEqual(written[2], { lead: "Two", rest: "changed" }, "the second PRINTED line is the third row, because the blank row between them is not printed");
+  assert.deepEqual(written[1], { lead: "", rest: "" }, "the blank row stays blank");
+  assert.equal(writeBack(rows, "d", { d0: { lead: "One", rest: "first" } }), rows, "nothing typed is the same list, so nothing is marked unsaved");
+  // Edits: the frame reports its whole difference from the html it loaded.
+  assert.deepEqual(layerEdits({}, { A: "B" }), { A: "B" }, "a new edit is added");
+  assert.deepEqual(layerEdits({ A: "B" }, {}), { A: "B" }, "an edit baked into the loaded frame stays");
+  assert.deepEqual(layerEdits({ A: "B" }, { B: "C" }), { A: "C" }, "typed over twice, in different loads, is one edit from the original");
+  assert.deepEqual(layerEdits({ A: "B" }, { B: "A" }), {}, "typed back to the original, it drops out");
+  assert.deepEqual(layerEdits({}, { A: "A" }), {}, "a no-op is not an edit");
+
+  // The screen: the frame is typed on, the lists write back, other words become edits, and a reload only
+  // happens when the picture's own typing did not cause the new html.
+  assert.ok(page.includes("onEdit={typeOnPicture}") && page.includes("readPictureEdit(data.jobPostEdit)"), "the picture reports what is typed over it");
+  assert.ok(page.includes("if (mainHtml !== echo)"), "the frame is not reloaded by its own typing, which would throw the cursor away");
+  assert.ok(page.includes("areas, edits, format, line: postLine"), "the download carries the typed words");
+  assert.ok(page.includes("{ editable: true }") && page.includes("const { edits: _typed, ...plain } = content;"), "only the main preview is editable; the design thumbnails never show typed-over labels");
+  assert.ok(page.includes('!onEdit && "pointer-events-none"'), "a thumbnail stays a still picture");
+  const route2 = readFileSync(new URL("../app/api/recruitment/job-posts/render/route.ts", import.meta.url), "utf8");
+  assert.ok(route2.includes("coerceTextEdits(body.edits)") && route2.includes("areaNoun, areas, edits, line"), "the server re-checks the typed words and prints them");
 }
