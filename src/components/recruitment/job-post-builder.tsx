@@ -160,8 +160,17 @@ function FitBadge({ fit }: { fit: PostFit | undefined }) {
   );
 }
 
-/** One post, drawn at its true 1080×1350 and scaled to the width it is given. */
-function PostFrame({ html, label, onFit }: { html: string; label: string; onFit?: (fit: PostFit) => void }) {
+/**
+ * One post, drawn at its true 1080×1350 and scaled to the box it is given.
+ *
+ * `boxClassName` is how the preview opts out of being sized by WIDTH. The picture is 4:5, so a
+ * 630px column makes it 790px tall — and with the design strip and the buttons the whole right-hand
+ * column came to about 1,560px against a ~900px screen (owner, 2026-10-16: "scrolling in job post
+ * page is frustrating"). A sticky block taller than the viewport pins once and then scrolls away, so
+ * the post could never be on screen at the same time as the words being edited. Sized from HEIGHT
+ * instead, the column fits one screen and the sticky finally holds.
+ */
+function PostFrame({ html, label, onFit, boxClassName = "w-full" }: { html: string; label: string; onFit?: (fit: PostFit) => void; boxClassName?: string }) {
   const box = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const report = useRef(onFit);
@@ -189,7 +198,7 @@ function PostFrame({ html, label, onFit }: { html: string; label: string; onFit?
   }, []);
   const scale = width / JOB_POST_WIDTH;
   return (
-    <div ref={box} className="relative w-full overflow-hidden bg-slate-100" style={{ aspectRatio: `${JOB_POST_WIDTH} / ${JOB_POST_HEIGHT}` }}>
+    <div ref={box} className={`relative overflow-hidden bg-slate-100 ${boxClassName}`} style={{ aspectRatio: `${JOB_POST_WIDTH} / ${JOB_POST_HEIGHT}` }}>
       {width > 0 ? (
         // maxWidth/maxHeight none: the admin shell clamps every iframe to max-width 100%, which would
         // squeeze this 1080px page into the box BEFORE the scale shrinks it — cutting the right half off.
@@ -721,7 +730,9 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
       <div className="min-w-0 space-y-5 xl:sticky xl:top-4 xl:self-start">
         <section className={panelClassName}>
           <PanelHeader aside={templateName?.name} step={5} title="Design" />
-          <div className="grid grid-cols-3 gap-2 p-3">
+          {/* Six across only where the column is sticky: the strip is what the post's height is taken
+              from. Stacked below xl the page simply scrolls, so the thumbs stay readable there. */}
+          <div className="grid grid-cols-3 gap-2 p-3 xl:grid-cols-6">
             {JOB_POST_TEMPLATES.map((t, index) => (
               <CheckTile checked={template === t.key} key={t.key} name="job-post-template" onChange={() => setTemplate(t.key)} type="radio">
                 <span className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -730,7 +741,7 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
                   ) : (
                     <span className="block aspect-[4/5] animate-pulse bg-slate-100" />
                   )}
-                  <span className="text-xs font-bold text-slate-800">{t.name}</span>
+                  <span className="text-xs font-bold leading-tight text-slate-800 xl:text-[10px]">{t.name}</span>
                   <FitBadge fit={fits[t.key]} />
                 </span>
               </CheckTile>
@@ -760,10 +771,10 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
             ) : null}
             {mainHtml ? (
               <div className={`border border-slate-200 bg-white p-2 ${adminSoftDepthClassName}`}>
-                <PostFrame html={mainHtml} label="Job post preview" onFit={setMainFit} />
+                <PostFrame boxClassName="mx-auto w-full xl:h-[clamp(300px,calc(100vh-30rem),1350px)] xl:w-auto xl:max-w-full" html={mainHtml} label="Job post preview" onFit={setMainFit} />
               </div>
             ) : (
-              <div className="aspect-[4/5] w-full animate-pulse bg-slate-100" />
+              <div className="mx-auto aspect-[4/5] w-full animate-pulse bg-slate-100 xl:h-[clamp(300px,calc(100vh-30rem),1350px)] xl:w-auto xl:max-w-full" />
             )}
             <div className="flex flex-wrap items-center gap-2">
               <FitBadge fit={mainFit} />
