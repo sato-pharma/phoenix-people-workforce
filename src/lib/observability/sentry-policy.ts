@@ -137,9 +137,9 @@ export function sentryTracesSampler(context: { name?: string; parentSampled?: bo
   return SENTRY_TRACES_SAMPLE_RATE;
 }
 
-// Path segments that name ONE thing: an HR id (B-10), a UUID, a bare number, or a long token. Phoenix puts
+// Path segments that name ONE thing: an HR id (B-10), a bare number, or a long token (a 36-character uuid is one). Phoenix puts
 // all of them in URLs (/admin/employees/B-10, /payroll/2026-10/…), and a span name is a URL.
-const IDENTIFYING_SEGMENT = /^(?:[A-Za-z]{1,3}-?\d{1,8}|\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Za-z0-9_-]{24,})$/i;
+const IDENTIFYING_SEGMENT = /^(?:[A-Za-z]{1,3}-?\d{1,8}|\d+|[A-Za-z0-9_-]{24,})$/i;
 const HR_ID_IN_TEXT = /\b[A-Z]-\d{1,6}\b/g;
 const EMAIL_IN_TEXT = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 
