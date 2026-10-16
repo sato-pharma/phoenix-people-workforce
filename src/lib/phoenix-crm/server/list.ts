@@ -157,7 +157,8 @@ import type {
 } from "@/lib/phoenix-crm/types";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
-import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
+import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
+import { afterResponse } from "@/lib/http/after-response";
 
 /** Decided requests stay on the rep's screen this long, so the answer is seen. */
 const DECIDED_REQUESTS_DAYS = 45;
@@ -1067,7 +1068,27 @@ export async function loadReference(seatId: string, isTest: boolean): Promise<Re
     "list_type",
     "contact_crm_id",
   ]);
+  return withoutCertainWholesalers(rows);
+}
+
+/** The wholesaler rule above, in the one place both reads of the seat's reference go through. */
+function withoutCertainWholesalers(rows: ReferenceRow[]): ReferenceRow[] {
   return rows.filter((row) => !(isPharmacyListType(row.list_type) && isCertainWholesalerVenue(row.name)));
+}
+
+/**
+ * ONE contact's entry on the seat's reference — the first `loadReference` would hold for him, in its
+ * own order, after the same wholesaler rule — without carrying the whole territory's list to the app
+ * (2026-10-16 Phoenix CRM performance audit). The function still answers for the seat; only his rows
+ * travel.
+ */
+async function loadReferenceEntry(seatId: string, isTest: boolean, contactCrmId: number): Promise<ReferenceRow | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .rpc("phoenix_crm_seat_reference", { p_seat_ids: [seatId], p_is_test: isTest })
+    .eq("contact_crm_id", contactCrmId)
+    .order("list_type", { ascending: true });
+  if (error) throw toQueryError(error);
+  return withoutCertainWholesalers((data ?? []) as ReferenceRow[])[0] ?? null;
 }
 
 /**
@@ -1790,13 +1811,15 @@ type ValidationSubject = { name: string; listType: PhoenixCrmListType; customerI
 async function validationSubject(seatId: string, isTest: boolean, mode: string, body: Row): Promise<ValidationSubject | null> {
   if (mode === "reference") {
     const contact = Number(body.referenceContactCrmId);
-    const entry = (await loadReference(seatId, isTest)).find((row) => Number(row.contact_crm_id) === contact);
-    if (!entry) return null;
     // 🔴 The customer's OWN row id, which the carried-over list does not carry: a refusal is counted
     // against it (`countOffListingRefusals`), and without it a rep refused on an account whose pin has
     // moved would be refused again for ever. A carried-over customer HAS a row — status `pending`
     // until he is validated — so this finds one for every entry the seat is still to validate.
-    const customerId = await customerIdForReference(seatId, isTest, contact);
+    //
+    // Both read at once, and the reference for this one contact only (2026-10-16 performance audit):
+    // the entry is the one the whole list would have given, and the row id never fails the read.
+    const [entry, customerId] = await Promise.all([loadReferenceEntry(seatId, isTest, contact), customerIdForReference(seatId, isTest, contact)]);
+    if (!entry) return null;
     return { name: String(entry.name), listType: parseListType(entry.list_type), customerId };
   }
   if (mode === "listed") {
@@ -2030,6 +2053,12 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   } else {
     throw validationError("Reload the page and try again.");
   }
+  // 🔴 THE PLACE ROW IS BUILT WHILE THE CHECKS RUN (2026-10-16 Phoenix CRM performance audit).
+  // `placePayload` reads the photo's slot and resolves the point's brick and address, and nothing the
+  // checks below decide reads or changes any of it — so it starts now and is awaited exactly where it
+  // was used. A check that refuses still throws first, and the row it built is never saved.
+  const placeRowRead = place ? placePayload(place, seat) : null;
+  placeRowRead?.catch(() => undefined);
   // The owner's two steps (2026-10-03), before anything is written: is the Google listing this account,
   // and did he stand at it. A mismatch throws here; a hold is saved but not validated.
   const subject =
@@ -2098,7 +2127,7 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     if (signboard && payload.hold_review === undefined && signboardHoldsForReview(signboard.check)) {
       payload.hold_review = signboard.record;
     }
-    payload.place = await placePayload(place, seat);
+    payload.place = await (placeRowRead ?? placePayload(place, seat));
   }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_validate_customer", { p: payload });
@@ -2119,38 +2148,48 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   if (validated.held && !isTest) {
     await notifyValidationReviewWaiting({ customerName: validated.customerName, seat, repHrId: viewer.hrId, reviewId: text(result.review_id) });
   }
-  // A validated place is the reference point every later visit to this customer is measured against,
-  // so a spoof here is worth more to a cheat than a spoofed visit — one fake pin makes a year of
-  // visits read "ok". Judged after the save, silently, exactly as a visit is.
-  //
-  // 🔴 A SEATING IS NOT JUDGED HERE, AND SKIPPING IT IS CORRECT RATHER THAN A HOLE. Both detectors
-  // compare READINGS: `judgeCapture` the fixed point against this rep's own history, and
-  // `filePlaceCaptureTrust` the pin against the photo's reading. A seated row has neither — its point
-  // was copied from the venue, which WAS judged when the rep captured it at the door. Judging it again
-  // would file one venue's single capture once per customer seated in it and read as a cluster.
-  if (place) {
-    await judgeCaptureForPlace(viewer, seat.seatId, isTest, validated.placeId, validated.customerId, validated.capturedAt, place);
-  }
-  // What the timetable said, kept on the seated row for every seating and not only the held ones — the
-  // same reason the signboard verdict is kept below.
-  if (schedule) await recordPlaceSchedule(validated.placeId, schedule);
-  // The verdict is kept on the place row for EVERY place and not only the held ones, so "how many
-  // validated places has the system actually read the sign of" is a query rather than 643 photographs
-  // eyeballed by hand. A plain update, deliberately outside the RPC's transaction: the verdict is a
-  // RECORD and the gate is `hold_review`, which the RPC already writes atomically with the row.
-  if (signboard) await recordPlaceSignboard(validated.placeId, signboard.check);
-  // He validated again, so the "could not be confirmed" notice about his last photo is withdrawn —
-  // never left in his bell after the thing it asked for is done.
-  if (!validated.held && !isTest) await withdrawValidationNotConfirmed(validated.customerId);
-  // His visits from before he had a place get their distance now (owner, 2026-09-29). Never the rep's
-  // to see; the managers' place-vs-actual report reads it.
-  await restampVisitLocationsQuietly({
-    seatId: seat.seatId,
-    isTest,
-    customerId: validated.customerId,
-    actorHrId: viewer.hrId,
-    settings: viewer.config.settings,
-    scope: "unplaced",
+  // 🔴 THE RECORDS BELOW GO AFTER THE REPLY (2026-10-16 Phoenix CRM performance audit). Each one is
+  // kept AFTER the save and swallows its own failure — `judgeCapture` and `filePlaceCaptureTrust`,
+  // `recordPlaceSchedule`, `recordPlaceSignboard`, `withdrawValidationNotConfirmed` and
+  // `restampVisitLocationsQuietly` all say "never throws" — so none of them could ever change what the
+  // rep is told, and he no longer waits for them. They still run, in this order, once the reply has gone.
+  const judgedPlace = place;
+  const keptSchedule = schedule;
+  const keptSignboard = signboard;
+  await afterResponse("phoenix-crm validate: post-save records", async () => {
+    // A validated place is the reference point every later visit to this customer is measured against,
+    // so a spoof here is worth more to a cheat than a spoofed visit — one fake pin makes a year of
+    // visits read "ok". Judged after the save, silently, exactly as a visit is.
+    //
+    // 🔴 A SEATING IS NOT JUDGED HERE, AND SKIPPING IT IS CORRECT RATHER THAN A HOLE. Both detectors
+    // compare READINGS: `judgeCapture` the fixed point against this rep's own history, and
+    // `filePlaceCaptureTrust` the pin against the photo's reading. A seated row has neither — its point
+    // was copied from the venue, which WAS judged when the rep captured it at the door. Judging it again
+    // would file one venue's single capture once per customer seated in it and read as a cluster.
+    if (judgedPlace) {
+      await judgeCaptureForPlace(viewer, seat.seatId, isTest, validated.placeId, validated.customerId, validated.capturedAt, judgedPlace);
+    }
+    // What the timetable said, kept on the seated row for every seating and not only the held ones — the
+    // same reason the signboard verdict is kept below.
+    if (keptSchedule) await recordPlaceSchedule(validated.placeId, keptSchedule);
+    // The verdict is kept on the place row for EVERY place and not only the held ones, so "how many
+    // validated places has the system actually read the sign of" is a query rather than 643 photographs
+    // eyeballed by hand. A plain update, deliberately outside the RPC's transaction: the verdict is a
+    // RECORD and the gate is `hold_review`, which the RPC already writes atomically with the row.
+    if (keptSignboard) await recordPlaceSignboard(validated.placeId, keptSignboard.check);
+    // He validated again, so the "could not be confirmed" notice about his last photo is withdrawn —
+    // never left in his bell after the thing it asked for is done.
+    if (!validated.held && !isTest) await withdrawValidationNotConfirmed(validated.customerId);
+    // His visits from before he had a place get their distance now (owner, 2026-09-29). Never the rep's
+    // to see; the managers' place-vs-actual report reads it.
+    await restampVisitLocationsQuietly({
+      seatId: seat.seatId,
+      isTest,
+      customerId: validated.customerId,
+      actorHrId: viewer.hrId,
+      settings: viewer.config.settings,
+      scope: "unplaced",
+    });
   });
   if (validated.requestId && validated.requestKind) {
     await notifyRequestRaised(viewer, seat, isTest, {
@@ -2380,6 +2419,11 @@ export async function addPlace(
   const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
   if (!isUuid(body.customerId)) throw validationError("Choose the customer this place belongs to.");
   const customerId = String(body.customerId).toLowerCase();
+  // Who the place is for, read beside the venue and the draft rather than after them (2026-10-16
+  // performance audit) — one row by id, which nothing below changes. Handled the moment it starts: a
+  // refusal below throws first, and a failure of its own still surfaces where it is awaited.
+  const subjectRead = validationSubject(seat.seatId, isTest, "listed", { customerId });
+  subjectRead.catch(() => undefined);
   // A customer already validated at his own clinic who ALSO receives in a polyclinic is seated in it
   // here, by the same route a first place takes. He legitimately ends with two places, which is what
   // the five-active cap in `phoenix_crm_add_place` has always allowed for.
@@ -2402,7 +2446,10 @@ export async function addPlace(
     }
     place = parsed.value;
   }
-  const subject = await validationSubject(seat.seatId, isTest, "listed", { customerId });
+  // The place row is built while the checks run, as `validateCustomer` builds it — see the note there.
+  const placeRowRead = place ? placePayload(place, seat) : null;
+  placeRowRead?.catch(() => undefined);
+  const subject = await subjectRead;
   let signboard: { check: PhoenixCrmSignboardCheck; record: Row } | null = null;
   let schedule: PhoenixCrmScheduleCheck | null = null;
   let matched: Row | null = null;
@@ -2454,7 +2501,7 @@ export async function addPlace(
       actor_hr_id: viewer.hrId,
       is_test: isTest,
       customer_id: customerId,
-      place: seated && venue ? await seatedPlacePayload(venue, seated) : await placePayload(place as PlaceDraft, seat),
+      place: seated && venue ? await seatedPlacePayload(venue, seated) : await (placeRowRead ?? placePayload(place as PlaceDraft, seat)),
       ...(matched ? { google: matched } : {}),
       ...(holdRecord ? { hold_review: holdRecord } : {}),
     },
@@ -2468,14 +2515,21 @@ export async function addPlace(
   if (added.held && !isTest) {
     await notifyValidationReviewWaiting({ customerName: added.customerName, seat, repHrId: viewer.hrId, reviewId: text(result.review_id) });
   }
-  // A second place is a second reference point, judged exactly as the first one is — unless it is a
-  // seating, which carries no reading of its own to judge (`validateCustomer` records why in full).
-  if (place) {
-    const issuedAt = await photoSlotIssuedAt(place.photoPath).catch(() => null);
-    if (issuedAt) await judgeCaptureForPlace(viewer, seat.seatId, isTest, added.placeId, added.customerId, issuedAt, place);
-  }
-  if (signboard) await recordPlaceSignboard(added.placeId, signboard.check);
-  if (schedule) await recordPlaceSchedule(added.placeId, schedule);
+  // After the reply, for the reason `validateCustomer` gives: each of these is a record kept after the
+  // save that swallows its own failure, so the rep never waited on anything they could tell him.
+  const judgedPlace = place;
+  const keptSignboard = signboard;
+  const keptSchedule = schedule;
+  await afterResponse("phoenix-crm add place: post-save records", async () => {
+    // A second place is a second reference point, judged exactly as the first one is — unless it is a
+    // seating, which carries no reading of its own to judge (`validateCustomer` records why in full).
+    if (judgedPlace) {
+      const issuedAt = await photoSlotIssuedAt(judgedPlace.photoPath).catch(() => null);
+      if (issuedAt) await judgeCaptureForPlace(viewer, seat.seatId, isTest, added.placeId, added.customerId, issuedAt, judgedPlace);
+    }
+    if (keptSignboard) await recordPlaceSignboard(added.placeId, keptSignboard.check);
+    if (keptSchedule) await recordPlaceSchedule(added.placeId, keptSchedule);
+  });
   return added;
 }
 

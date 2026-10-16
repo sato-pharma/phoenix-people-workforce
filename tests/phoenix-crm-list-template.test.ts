@@ -264,7 +264,7 @@ function checkRepCanValidate(): void {
   // takes for it, and the branch the SQL answers with. A mode added to one end and not the others
   // fails here rather than in a rep's hand at a clinic door.
   const service = read("src/lib/phoenix-crm/server/list.ts");
-  const validate = service.slice(service.indexOf("export async function validateCustomer("), service.indexOf("payload.place = await placePayload("));
+  const validate = service.slice(service.indexOf("export async function validateCustomer("), service.indexOf("payload.place = await (placeRowRead ?? placePayload("));
   const sent = [...screens.matchAll(/mode: "(reference|listed|new|outside)"/g)].map((match) => match[1]!);
   for (const mode of new Set(sent)) {
     assert.ok(

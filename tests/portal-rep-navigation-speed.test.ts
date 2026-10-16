@@ -217,6 +217,40 @@ export function runPortalRepNavigationSpeedTests(): void {
     assertBefore(board, "const activityRead", "await getRepsListForAgent(", "the board's activity starts beside the list, not after it");
   }
 
+  // ── Phoenix CRM · Validate and Add place (2026-10-16) ──────────────────────────────────────────
+  {
+    const list = source("src/lib/phoenix-crm/server/list.ts");
+    for (const declaration of ["export async function validateCustomer(", "export async function addPlace("]) {
+      const save = functionBody(list, declaration);
+      // The place row is built while the Google and signboard checks run, never after them...
+      assert.ok(save.includes("const placeRowRead = place ? placePayload(place, seat) : null;"), `${declaration} starts the place row early`);
+      assert.ok(save.includes("placeRowRead?.catch(() => undefined);"), `${declaration} handles it the moment it starts`);
+      assertBefore(save, "const placeRowRead = ", "googleCheckForSave(subject, place,", `${declaration} starts it before the Google check`);
+      // ...and the records kept after the save no longer hold the reply open.
+      assert.ok(save.includes("await afterResponse("), `${declaration} keeps its post-save records after the reply`);
+      assertBefore(save, "await afterResponse(", "await recordPlaceSignboard(", `${declaration}: the signboard verdict is kept after the reply`);
+      assertBefore(save, "await afterResponse(", "await judgeCaptureForPlace(", `${declaration}: the capture is judged after the reply`);
+      const deferred = save.slice(save.indexOf("await afterResponse("), save.indexOf("\n  });", save.indexOf("await afterResponse(")));
+      assert.doesNotMatch(deferred, /notify/i, `${declaration}: a notice is never deferred from here — the notices own their own timing`);
+    }
+    const validate = functionBody(list, "export async function validateCustomer(");
+    assertBefore(validate, "await afterResponse(", "restampVisitLocationsQuietly(", "the restamp of his earlier visits runs after the reply");
+    assertBefore(validate, "});\n  if (validated.requestId && validated.requestKind) {", "await notifyRequestRaised(", "and the request's notice is sent as it always was, outside it");
+
+    // The reference entry is read for one contact, beside his own row id.
+    const subject = functionBody(list, "async function validationSubject(");
+    assert.ok(
+      subject.includes("await Promise.all([loadReferenceEntry(seatId, isTest, contact), customerIdForReference(seatId, isTest, contact)])"),
+      "the carried-over entry and his row id are read at once",
+    );
+    assert.doesNotMatch(subject, /loadReference\(seatId, isTest\)/, "never the whole territory's reference for one contact");
+    const entry = functionBody(list, "async function loadReferenceEntry(");
+    assert.ok(entry.includes('.eq("contact_crm_id", contactCrmId)'), "only his rows travel");
+    assert.ok(entry.includes('.order("list_type", { ascending: true })'), "in the order the whole list holds them");
+    assert.ok(entry.includes("withoutCertainWholesalers("), "after the same wholesaler rule");
+    assertBefore(functionBody(list, "export async function addPlace("), "const subjectRead = validationSubject(", "await sharedPlaceForSeating(", "Add place reads its customer beside the venue");
+  }
+
   // ── Phoenix CRM · Reports and the shared chunk ─────────────────────────────────────────────────
   {
     // Outside the test world the default Visits address reads nothing the scope answers.
