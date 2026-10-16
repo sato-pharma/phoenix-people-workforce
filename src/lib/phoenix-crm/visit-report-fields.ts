@@ -139,7 +139,11 @@ export const VISIT_REPORT_FIELDS: ReadonlyArray<VisitReportField> = [
   F("when", "syncedAt", "Synced at (Cairo time)", "datetime", 20),
 
   // ── Who and where in the org (10) ──
-  F("org", "repName", "Rep name", "text", 24),
+  // 🔴 "Who visited", never "Rep name": a district manager's own call on a rep's territory carries no rep,
+  // and printing his name under "Rep" is false about a real person (the integrity board's "Who", 2026-10-13).
+  F("org", "repName", "Who visited", "text", 24, {
+    hint: "The rep, or the manager when it was a manager's own visit with no rep on it.",
+  }),
   F("org", "repSeat", "Rep seat", "text", 28),
   F("org", "line", "Line", "text", 16),
   F("org", "district", "Team / district", "text", 22),
@@ -335,6 +339,7 @@ export type VisitReportRow = {
   visitId: string;
   visitDate: string;
   savedAtIso: string;
+  /** Whose visit it is: the rep, or the manager on his own visit — never the seat's occupant. */
   repName: string;
   customerName: string;
   listType: string;

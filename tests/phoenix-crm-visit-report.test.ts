@@ -4,7 +4,9 @@ import { readFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 
 import { canReadVisitReport, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
+import type { OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 import { buildVisitReportValues, type VisitReportContext } from "../src/lib/phoenix-crm/server/visit-report-values.ts";
+import { MISSED_VISIT_LOCATION_LABEL } from "../src/lib/phoenix-crm/visit-location-words.ts";
 import {
   VISIT_REPORT_SHEET,
   buildVisitReportWorkbook,
@@ -168,6 +170,7 @@ function context(overrides: Partial<VisitReportContext> = {}): VisitReportContex
     evidence: null,
     names: new Map(),
     onLeave: null,
+    personHrId: null,
     place: { label: "Pharmacy One, Faisal", status: "validated" },
     placeNotes: [],
     planItem: null,
@@ -215,10 +218,31 @@ function checkValues(): void {
   assert.equal(values.plannedOrNot, "Planned");
   assert.equal(buildVisitReportValues(context({ visit: { ...context().visit, is_unplanned: true } })).plannedOrNot, "Unplanned");
   assert.equal(values.editedBySuperAdmin, "No");
+
+  // 🔴 WHOSE VISIT (2026-10-16): a manager's own visit has no rep on it and sits on a rep's seat. It is the
+  // manager's, named by the loader — never the seat's occupant, which printed 13 of them under a rep's name.
+  const seat = { areaName: "Faisal", lineName: "Pedia", occupantHrId: "B-1", regionName: null, seatId: "SEAT-1", seatLabel: null } as unknown as OrgSeat;
+  const names = new Map([["B-1", "Mahmoud Adel"], ["B-50", "Hany Saad"]]);
+  const managersOwn = buildVisitReportValues(
+    context({ names, personHrId: "B-50", seat, visit: { ...context().visit, manager_hr_id: "B-50", rep_hr_id: null } }),
+  );
+  assert.equal(managersOwn.repName, "Hany Saad", "a manager's own visit names the manager");
+  const nobody = buildVisitReportValues(context({ names, personHrId: null, seat, visit: { ...context().visit, rep_hr_id: null } }));
+  assert.notEqual(nobody.repName, "Mahmoud Adel", "and never falls back to whoever holds the seat");
+
+  // 🔴 A visit the Super Admin entered later for a rep carries no reading — it says so, never "No validated place".
+  const enteredLater = buildVisitReportValues(
+    context({ visit: { ...context().visit, entered_by_hr_id: "B-10", location_flag: "no_place", rep_hr_id: "B-1" } }),
+  );
+  assert.equal(enteredLater.locationFlag, MISSED_VISIT_LOCATION_LABEL);
+  const ownSave = buildVisitReportValues(
+    context({ visit: { ...context().visit, entered_by_hr_id: "B-1", location_flag: "no_place", rep_hr_id: "B-1" } }),
+  );
+  assert.equal(ownSave.locationFlag, "No validated place", "a rep's own save keeps its real wording");
 }
 
 function checkSequence(): void {
-  const base: Omit<SequenceInput, "visitId" | "savedAtMs" | "fixAtMs" | "lat" | "visitDate" | "customerId"> = { lon: 31.2, seatId: "SEAT-1" };
+  const base: Omit<SequenceInput, "visitId" | "savedAtMs" | "fixAtMs" | "lat" | "visitDate" | "customerId"> = { lon: 31.2, person: "B-1" };
   const first: SequenceInput = { ...base, customerId: "C1", fixAtMs: Date.parse("2026-10-06T06:00:00Z"), lat: 30, savedAtMs: Date.parse("2026-10-06T07:00:00Z"), visitDate: "2026-10-06", visitId: "V1" };
   const second: SequenceInput = { ...base, customerId: "C2", fixAtMs: Date.parse("2026-10-06T06:30:00Z"), lat: 30.09, savedAtMs: Date.parse("2026-10-06T07:30:00Z"), visitDate: "2026-10-06", visitId: "V2" };
   const earlier: SequenceInput = { ...base, customerId: "C1", fixAtMs: null, lat: 30, savedAtMs: Date.parse("2026-10-02T07:00:00Z"), visitDate: "2026-10-02", visitId: "V0" };
@@ -243,6 +267,15 @@ function checkSequence(): void {
   assert.ok(noFix.get("V2")?.distanceFromPreviousKm !== null, "the distance is still a straight line between the two positions");
   const backwards = computeVisitSequence([first, { ...second, fixAtMs: Date.parse("2026-10-06T05:00:00Z") }]);
   assert.equal(backwards.get("V2")?.speedKmh, null, "two phone clocks that disagree about the order measure nothing");
+
+  // 🔴 A DAY IS ONE PERSON'S (2026-10-16): his manager's own call on the same seat, saved between his two,
+  // takes no place in his order, his count or his gaps.
+  const managers: SequenceInput = { ...second, customerId: "C9", person: "B-50", savedAtMs: Date.parse("2026-10-06T07:15:00Z"), visitId: "VM" };
+  const shared = computeVisitSequence([first, managers, second]);
+  assert.equal(shared.get("V2")?.numberInDay, 2, "the rep's second visit is still his second");
+  assert.equal(shared.get("V2")?.visitsThatDay, 2, "and his day still holds two");
+  assert.equal(shared.get("V2")?.gapMinutes, 30, "measured from his own first visit, not from the manager's");
+  assert.equal(shared.get("VM")?.numberInDay, 1, "the manager's call is the first of his own day");
 }
 
 // ── 3 · the dashboard ───────────────────────────────────────────────────────────────────────────
@@ -399,9 +432,33 @@ function checkSource(): void {
   assert.match(body, /\$\{positions \? ", device_mocked" : ""\}/, "device_mocked is not even in the SFE Manager's select");
   assert.match(body, /if \(!positions\) tuned = tuned\.in\("source", SFE_SOURCES\);/, "a position case is never queried for the SFE Manager");
 
+  // Whose visit: the integrity board's own rule, never the seat's occupant.
+  assert.match(loader, /personOnTheVisit\(\{/, "the loader names a visit's person with the integrity board's rule");
+  assert.ok(!loader.includes("seat?.occupantHrId"), "and never falls back to whoever holds the seat");
+  assert.match(loader, /person: whoseVisit\(visit\)/, "a day's order is per person, not per seat");
+  assert.match(loader, /locationFlag: visitLocationFlagLabel\(visit\)/, "the row head says when the Super Admin entered a visit later");
+
   const route = source("app/api/phoenix-crm/visit-report/route.ts");
   assert.ok(route.indexOf("assertSameOriginMutation(request)") < route.indexOf("resolveAccessContext(request)"), "the POST checks the origin before anything else");
   assert.match(route, /assertPermission\(access, "phoenix_crm", "read"\)/);
+  // 🔴 Opening the report on screen discloses where named people's phones were, so it is rate limited and audited.
+  const limit = route.indexOf("assertApiRateLimit(");
+  assert.ok(limit !== -1 && limit < route.indexOf("loadVisitReport("), "the screen's read is rate limited BEFORE the heavy read");
+  assert.match(route, /writeAuditLog\(/, "every report built on screen is audited");
+  assert.match(route, /entityType: "phoenix_crm_visit_report_view"/, "under its own entity type");
+
+  // The map is built once and redrawn — a pin click or a day change never builds a new one.
+  const map = source("src/components/phoenix-crm/visit-report/visit-report-map.tsx");
+  assert.match(map, /if \(existing && existing\.element === element\) \{\s*map = existing\.map;\s*\} else \{\s*map = new MapCtor\(/, "a new map only when there is none for this element");
+  assert.equal((map.match(/new MapCtor\(/g) ?? []).length, 1);
+  assert.match(map, /if \(fittedKeyRef\.current !== fitKey\)/, "the view is refitted only when what is shown changes");
+
+  // The headings count the fields the viewer is actually offered.
+  for (const path of ["app/(admin)/admin/phoenix-crm/visit-report/page.tsx", "app/employee-portals/visit-report/page.tsx"]) {
+    const text = source(path);
+    assert.ok(!/from the \d+/.test(text), `${path} never hard-codes how many fields there are`);
+    assert.match(text, /visitReportFieldsFor\(scope\.sight\)\.length/, `${path} counts the viewer's own fields`);
+  }
 
   const exportRoute = source("app/api/phoenix-crm/visit-report/export/route.ts");
   assert.ok(exportRoute.indexOf("assertExportRateLimit(") < exportRoute.indexOf("loadVisitReport("), "the rate limit runs BEFORE the heavy read");

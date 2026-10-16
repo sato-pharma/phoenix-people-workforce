@@ -83,9 +83,9 @@ export function buildVisitReportDashboard(input: {
   const tiles: VisitReportDashboardTile[] = [
     { label: "Visits", value: total.toLocaleString("en-US"), hint: `${days.length} day${days.length === 1 ? "" : "s"} with visits` },
     {
-      label: "Visits per rep per working day",
+      label: "Visits per person per working day",
       value: repDays.size === 0 ? "—" : (total / repDays.size).toFixed(1),
-      hint: `${reps.size} rep${reps.size === 1 ? "" : "s"}, over the days each logged any visit`,
+      hint: `${reps.size} ${reps.size === 1 ? "person" : "people"}, over the days each logged any visit`,
     },
     { label: "On the plan", value: percent(planned, total), hint: `${planned} of ${total}` },
     { label: "With a manager or product manager", value: percent(notSingle, total), hint: `${notSingle} of ${total}` },
@@ -131,7 +131,7 @@ export function buildVisitReportDashboard(input: {
   barsOf("entry-route", "when", "How the visit was entered", "entryRoute", textValues(rows, "entryRoute"));
 
   if (chosen.has("repName") && reps.size > 1) {
-    add("per-rep", "org", "Visits per rep", "bars", tally(rows.map((row) => row.repName), 12));
+    add("per-rep", "org", "Visits per person", "bars", tally(rows.map((row) => row.repName), 12));
   }
 
   barsOf("list-type", "customer", "AM, PM or pharmacy", "listType", textValues(rows, "listType"));

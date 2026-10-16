@@ -21,7 +21,7 @@ Account behind the one-line cue in `.claude/rules/phoenix-crm-boards.md` (owner,
 
 `manager` (the default), `sfe`, `superAdmin`.
 
-- The district manager is offered **95 of the 113 fields**. He never gets the 17 `sfe`-sight ones — the
+- The district manager is offered **97 of the 115 fields**. He never gets the 17 `sfe`-sight ones — the
   measurement behind a distance (accuracy, phone clock, a place's accuracy, where its point came from), per
   "District Managers see the distance only" (2 Oct 2026), plus the integrity cases, the device telemetry and
   the speed that come from silent tables — nor `mockDevice`.
@@ -41,5 +41,30 @@ come from the same loader, so the file cannot hold a field or a visit the screen
 
 The order, gap and speed fields come from save times: they carry their reading note, are never flagged, and
 the speed uses only the phone's own reading times (owner, 2 Oct 2026).
+
+## The 16 Oct 2026 audit fixes
+
+The owner asked for a deep audit of the report on 16 Oct 2026 and then for five of its findings to be fixed.
+
+- **Whose visit it is.** A visit with no rep on it is a manager's own single visit, and it is the
+  manager's. The loader asks `personOnTheVisit` (rep first, then manager), the integrity board's own rule.
+  It never falls back to the seat's occupant. That fallback printed 13 of the 25 such visits on production
+  under the name of the rep whose territory they were on, and the other 12 as "Unknown rep" on vacant
+  seats. It also put them into that rep's day order, gaps, route line and "Visits per rep" panel. The field
+  is now labelled **Who visited**, the table column **Who**, and the tile and panel say *person*. The
+  `· N reps` count still counts reps only. The day sequence is keyed on the person, never the seat.
+- **The on-screen read is rate limited and audited.** The access registry declared the POST audited, but
+  nothing wrote a row: there were 0 rows against 6 for the workbook. The route now runs
+  `assertApiRateLimit` first (20 a minute; the workbook allows 10). After the read it writes a
+  `phoenix_crm_visit_report_view` audit row past the response, so a logging failure never refuses a reader.
+- **The map is built once.** A pin click or a day change redraws the markers on the existing map. Before,
+  every one built a new map, which reloaded the tiles and lost the reader's pan and zoom. The view is
+  fitted again only when the day or the shown visits change. Markers are numbered, and routes drawn, per
+  person per day.
+- **Two wording errors.** The page headings count the fields the viewer is actually offered
+  (`visitReportFieldsFor(scope.sight).length`) instead of a hard-coded 113. The real totals are 115 in all
+  and 97 for a district manager. A visit the Super Admin entered later for a rep (`isEnteredForRep`, 18 on
+  production) reads *No location: entered later by the Super Admin*, the wording every other screen uses,
+  instead of "No validated place".
 
 Pinned by `tests/phoenix-crm-visit-report.test.ts`.

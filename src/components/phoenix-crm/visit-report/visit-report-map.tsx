@@ -4,9 +4,17 @@
  * Phoenix CRM — the Visit report's map: where each visit was saved, the validated place beside it, and the
  * day's route.
  *
- * A filled square is a visit, numbered in the order the visits were SAVED; a hollow square is the
- * validated place it belongs to, tied to the visit by a dashed line when the phone was far from it. The
- * route joins the visits of one day in save order with straight lines.
+ * A filled square is a visit, numbered in the order its PERSON saved that day's visits; a hollow square is
+ * the validated place it belongs to, tied to the visit by a dashed line when the phone was far from it.
+ * Each person's route joins his visits of one day in save order with straight lines.
+ *
+ * 🔴 PER PERSON, NEVER ACROSS THE DISTRICT (2026-10-16). A district has several reps on one day; one
+ * sequence over all of them numbered one rep's visits by another's saves and drew a single line from one
+ * rep's door to another's, which is a route nobody travelled.
+ *
+ * 🔴 ONE MAP FOR THE ELEMENT'S LIFE (2026-10-16). Picking a visit or a day redraws the markers on the map
+ * that is already there; building a new map each time reloaded every tile and threw away the reader's own
+ * pan and zoom. The view is fitted again only when WHAT is shown changes, never for a highlight.
  *
  * 🔴 SAVE ORDER IS HOW THE REP LOGGED HIS DAY, NOT THE ORDER HE WAS AT THE DOORS (owner, 2026-10-02) — he
  * may log the morning from the car. The route is therefore drawn plain, with a sentence under the map that
@@ -21,6 +29,7 @@ import { CrmBlock, CrmButton, CrmNote, CrmPanel } from "@/components/phoenix-crm
 import {
   importGoogleLibrary,
   loadGoogleMaps,
+  type GoogleMapHandle,
   type GoogleMapsApi,
   type GoogleMarkerHandle,
   type GooglePolylineHandle,
@@ -40,6 +49,26 @@ function isLocated(row: VisitReportRow): row is Located {
   return Number.isFinite(row.visitLat) && Number.isFinite(row.visitLon);
 }
 
+/** Whose day a visit is in: the person who visited, and the day. */
+function personDayKey(row: VisitReportRow): string {
+  return `${row.repName}|${row.visitDate}`;
+}
+
+function straightLineMetres(path: ReadonlyArray<Located>): number {
+  let metres = 0;
+  for (let index = 1; index < path.length; index += 1) {
+    const a = path[index - 1];
+    const b = path[index];
+    const dLat = ((b.visitLat - a.visitLat) * Math.PI) / 180;
+    const dLon = ((b.visitLon - a.visitLon) * Math.PI) / 180;
+    const h =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((a.visitLat * Math.PI) / 180) * Math.cos((b.visitLat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+    metres += 2 * 6_371_000 * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+  return metres;
+}
+
 function squareIcon(fill: string, stroke: string, fillOpacity: number) {
   return { fillColor: fill, fillOpacity, path: SQUARE, scale: 1, strokeColor: stroke, strokeWeight: 2 };
 }
@@ -57,6 +86,8 @@ export function VisitReportMap({
   const mapRef = useRef<HTMLDivElement | null>(null);
   const markersRef = useRef<GoogleMarkerHandle[]>([]);
   const linesRef = useRef<GooglePolylineHandle[]>([]);
+  const mapInstanceRef = useRef<{ element: HTMLDivElement; map: GoogleMapHandle } | null>(null);
+  const fittedKeyRef = useRef<string | null>(null);
   const pickRef = useRef(onPick);
   const [googleMaps, setGoogleMaps] = useState<GoogleMapsApi | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +111,34 @@ export function VisitReportMap({
     const inDay = day === ALL_DAYS ? located : located.filter((row) => row.visitDate === day);
     return inDay.slice().sort((left, right) => left.savedAtIso.localeCompare(right.savedAtIso));
   }, [day, located]);
+
+  /** Each visit's number: its place in its own person's day, in save order. */
+  const numberOf = useMemo(() => {
+    const numbers = new Map<string, number>();
+    const counts = new Map<string, number>();
+    for (const row of shown) {
+      const key = personDayKey(row);
+      const next = (counts.get(key) ?? 0) + 1;
+      counts.set(key, next);
+      numbers.set(row.visitId, next);
+    }
+    return numbers;
+  }, [shown]);
+
+  /** One route per person, only when ONE day is shown: seven days' lines would be a tangle that says nothing. */
+  const routes = useMemo(() => {
+    if (day === ALL_DAYS) return [];
+    const byPerson = new Map<string, Located[]>();
+    for (const row of shown) {
+      const path = byPerson.get(row.repName) ?? [];
+      path.push(row);
+      byPerson.set(row.repName, path);
+    }
+    return [...byPerson.values()].filter((path) => path.length > 1);
+  }, [day, shown]);
+
+  /** What is shown — the view is fitted again only when this changes, never for a highlight alone. */
+  const fitKey = useMemo(() => `${day}|${shown.map((row) => row.visitId).join(",")}`, [day, shown]);
 
   useEffect(() => {
     if (!browserKey || located.length === 0) return;
@@ -122,15 +181,24 @@ export function VisitReportMap({
         linesRef.current = [];
 
         const first = shown[0];
-        const map = new MapCtor(element, {
-          center: { lat: first.visitLat, lng: first.visitLon },
-          mapTypeControl: false,
-          streetViewControl: false,
-          zoom: 13,
-        });
+        const existing = mapInstanceRef.current;
+        let map: GoogleMapHandle;
+        if (existing && existing.element === element) {
+          map = existing.map;
+        } else {
+          map = new MapCtor(element, {
+            center: { lat: first.visitLat, lng: first.visitLon },
+            mapTypeControl: false,
+            streetViewControl: false,
+            zoom: 13,
+          });
+          mapInstanceRef.current = { element, map };
+          fittedKeyRef.current = null;
+        }
         const bounds = BoundsCtor ? new BoundsCtor() : null;
 
         shown.forEach((row, index) => {
+          const number = numberOf.get(row.visitId) ?? index + 1;
           const spot = { lat: row.visitLat, lng: row.visitLon };
           bounds?.extend(spot);
           const far = row.locationFlag === "Far from the place";
@@ -138,10 +206,10 @@ export function VisitReportMap({
 
           const visitMarker = new MarkerCtor({
             icon: squareIcon(far ? FAR_COLOUR : VISIT_COLOUR, picked ? "#0f172a" : "#ffffff", 1),
-            label: { color: "#ffffff", fontSize: "11px", fontWeight: "800", text: String(index + 1) },
+            label: { color: "#ffffff", fontSize: "11px", fontWeight: "800", text: String(number) },
             map,
             position: spot,
-            title: `${index + 1}. ${row.customerName} — ${cairoClock(row.savedAtIso)}`,
+            title: `${number}. ${row.repName} · ${row.customerName} — ${cairoClock(row.savedAtIso)}`,
             zIndex: picked ? 1000 : 10 + index,
           });
           visitMarker.addListener?.("click", () => pickRef.current(row.visitId));
@@ -173,20 +241,29 @@ export function VisitReportMap({
           }
         });
 
-        // The day's route, only when ONE day is shown: seven days' lines would be a tangle that says nothing.
-        if (day !== ALL_DAYS && shown.length > 1 && PolylineCtor) {
-          linesRef.current.push(
-            new PolylineCtor({
-              map,
-              path: shown.map((row) => ({ lat: row.visitLat, lng: row.visitLon })),
-              strokeColor: VISIT_COLOUR,
-              strokeOpacity: 0.85,
-              strokeWeight: 3,
-            }),
-          );
+        if (PolylineCtor) {
+          for (const path of routes) {
+            linesRef.current.push(
+              new PolylineCtor({
+                map,
+                path: path.map((row) => ({ lat: row.visitLat, lng: row.visitLon })),
+                strokeColor: VISIT_COLOUR,
+                strokeOpacity: 0.85,
+                strokeWeight: 3,
+              }),
+            );
+          }
         }
 
-        if (bounds && shown.length > 1) map.fitBounds(bounds, 64);
+        if (fittedKeyRef.current !== fitKey) {
+          fittedKeyRef.current = fitKey;
+          if (bounds && shown.length > 1) {
+            map.fitBounds(bounds, 64);
+          } else {
+            map.setCenter?.({ lat: first.visitLat, lng: first.visitLon });
+            map.setZoom?.(13);
+          }
+        }
         setError(null);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Google Maps could not draw the visits.");
@@ -197,24 +274,13 @@ export function VisitReportMap({
     return () => {
       cancelled = true;
     };
-  }, [day, googleMaps, highlightId, shown]);
+  }, [fitKey, googleMaps, highlightId, numberOf, routes, shown]);
 
   const missing = rows.length - located.length;
-  const routeKm = useMemo(() => {
-    if (day === ALL_DAYS || shown.length < 2) return null;
-    let metres = 0;
-    for (let index = 1; index < shown.length; index += 1) {
-      const a = shown[index - 1];
-      const b = shown[index];
-      const dLat = ((b.visitLat - a.visitLat) * Math.PI) / 180;
-      const dLon = ((b.visitLon - a.visitLon) * Math.PI) / 180;
-      const h =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos((a.visitLat * Math.PI) / 180) * Math.cos((b.visitLat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
-      metres += 2 * 6_371_000 * Math.asin(Math.min(1, Math.sqrt(h)));
-    }
-    return metres;
-  }, [day, shown]);
+  const routeKm = useMemo(
+    () => (routes.length === 0 ? null : routes.reduce((sum, path) => sum + straightLineMetres(path), 0)),
+    [routes],
+  );
 
   if (!browserKey) {
     return (
@@ -228,7 +294,7 @@ export function VisitReportMap({
 
   return (
     <CrmPanel
-      description="A filled square is a visit, numbered in the order it was saved. A hollow square is the validated place, tied to the visit by a dashed line when the phone was far from it."
+      description="A filled square is a visit, numbered in the order its person saved that day's visits. A hollow square is the validated place, tied to the visit by a dashed line when the phone was far from it."
       eyebrow="Map"
       title="Where the visits were saved"
     >
@@ -253,7 +319,7 @@ export function VisitReportMap({
           <ul className="mb-2 flex flex-wrap gap-x-5 gap-y-1.5 text-xs font-semibold text-slate-600">
             <li className="flex items-center gap-1.5">
               <span aria-hidden className="inline-block h-3 w-3 border border-white bg-orange-600 shadow-[0_0_0_1px_#ea580c]" />
-              Visit, numbered in save order
+              Visit, numbered in its person's save order
             </li>
             <li className="flex items-center gap-1.5">
               <span aria-hidden className="inline-block h-3 w-3 border-2 border-[#0A527D] bg-white" />
@@ -272,7 +338,11 @@ export function VisitReportMap({
           {error ? <p className="mt-2 text-sm font-semibold text-amber-800">{error}</p> : null}
           {!googleMaps && !error ? <p className="mt-2 text-sm font-medium text-slate-500">Loading Google Maps</p> : null}
           <p className="mt-2 break-words text-xs font-medium leading-5 text-slate-500">
-            {routeKm !== null ? `The line joins this day's visits in the order they were saved: ${formatDistance(routeKm)} in a straight line between them. ` : ""}
+            {routeKm === null
+              ? ""
+              : routes.length === 1
+                ? `The line joins this day's visits in the order they were saved: ${formatDistance(routeKm)} in a straight line between them. `
+                : `Each line joins one person's visits that day in the order they were saved: ${formatDistance(routeKm)} in a straight line, all lines together. `}
             Save order is how the day was logged, not the order the doors were reached.
             {missing > 0 ? ` ${countText(missing)} visit${missing === 1 ? " has" : "s have"} no position and ${missing === 1 ? "is" : "are"} not drawn.` : ""}
           </p>

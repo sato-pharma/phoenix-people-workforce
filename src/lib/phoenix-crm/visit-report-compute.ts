@@ -67,8 +67,12 @@ function dayNumber(day: string): number {
 
 export type SequenceInput = {
   visitId: string;
-  /** The territory the rep works — a day's order is per rep and per day. */
-  seatId: string;
+  /**
+   * Whose day the visit belongs to — the rep, or the manager on his own visit (`personOnTheVisit`) — and a
+   * day's order is per person and per day. 🔴 NEVER THE SEAT: a district manager's own call on a rep's
+   * territory took a place in that rep's day, shifting his order and his gaps (2026-10-16).
+   */
+  person: string;
   visitDate: string;
   savedAtMs: number;
   /** When the PHONE took the reading, on its own clock; null when the capture never recorded it. */
@@ -103,7 +107,7 @@ export function computeVisitSequence(inputs: ReadonlyArray<SequenceInput>): Map<
 
   const byRepDay = new Map<string, SequenceInput[]>();
   for (const input of inputs) {
-    const key = `${input.seatId}|${input.visitDate}`;
+    const key = `${input.person}|${input.visitDate}`;
     const day = byRepDay.get(key) ?? [];
     day.push(input);
     byRepDay.set(key, day);

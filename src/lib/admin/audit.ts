@@ -332,6 +332,11 @@ export type AuditEntityType =
   // Who downloaded a Visit report workbook (2026-10-15), over which rep or district and period. The Super
   // Admin and the SFE Manager only; no migration — audit_logs has no CHECK on entity_type.
   | "phoenix_crm_visit_report_export"
+  // Who opened a Visit report ON SCREEN (2026-10-16), over which rep or district, period and how many
+  // fields. A row of its own and not the export's: the screen shows where named people's phones were just
+  // as the file does, and until this type existed the access registry declared the read audited while
+  // nothing wrote a row (0 on production). Best-effort, as the export's is. No migration.
+  | "phoenix_crm_visit_report_view"
   // Who downloaded the location-integrity board, and how much of it (2026-10-13). ITS OWN TYPE and
   // not folded into the reports pack above, because what leaves the building here is different in
   // kind: the evidence a named rep's capture was questioned, which Phoenix CRM never shows that rep.
