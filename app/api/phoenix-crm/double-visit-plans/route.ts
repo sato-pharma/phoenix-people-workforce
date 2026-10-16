@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { loadDoubleVisitPlan, saveDoubleVisitSlot } from "@/lib/phoenix-crm/server/double-visit-plans";
+import { loadDoubleVisitPlan } from "@/lib/phoenix-crm/server/double-visit-plans";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
@@ -29,19 +29,25 @@ export async function GET(request: Request) {
   }
 }
 
-// POST = one half-day set, changed or cleared. `create`, the district manager's own work, and narrowed
-// in the service to the district manager's OWN plan (`assertDoubleVisitPlanWriter`); the Super Admin
-// writes one only in test mode. SFE (no `create`) reads and never writes. Nobody is notified.
+// POST = 410 Gone. The district manager's weekly plan (owner, 2026-10-16) replaced this planner: he now
+// plans each half-day with a rep, an admin activity or single visits at /api/phoenix-crm/manager-plans,
+// sent to his RSM/NSM. The GET stays, so a week planned here can still be read. Same gate as before, so
+// a stale screen is answered and a stranger is still refused.
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
     await assertPermission(access, "phoenix_crm", "create");
-    const viewer = await resolvePhoenixCrmViewer(access);
-    const body = (await request.json()) as unknown;
-    const plan = await saveDoubleVisitSlot(viewer, body);
-    return NextResponse.json({ plan, success: true });
+    await resolvePhoenixCrmViewer(access);
+    return NextResponse.json(
+      {
+        error: "superseded",
+        message: "The double-visit planner was replaced by the weekly plan. Open Phoenix CRM, then Plan, to plan your week.",
+        success: false,
+      },
+      { status: 410 },
+    );
   } catch (error) {
     return phoenixCrmFailure(error, "Could not save the double visit.");
   }

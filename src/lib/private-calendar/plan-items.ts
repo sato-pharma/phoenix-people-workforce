@@ -24,6 +24,8 @@
 // Read-only. Never mutates plan, attendance or deduction data.
 
 import { hrIdLookupKeys } from "@/lib/hr-id";
+import { loadManagerPlanHalfDays, managerHalfDayText, type ManagerPlanHalfDay } from "@/lib/phoenix-crm/server/manager-plan-readers";
+import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readAllPrivateCalendarRows, type PrivateCalendarItem } from "@/lib/private-calendar/logic";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -199,6 +201,68 @@ export function mapPlanRowToPrivateCalendarItem(
 }
 
 /**
+ * One half-day of a district manager's approved Phoenix CRM week, as a calendar item (owner, 2026-10-16:
+ * that week REPLACES his legacy plan once his team is live). Display only, like every plan item here: a
+ * half-day "with a rep" reads as a Double Visit and a single visit as Field — both judged on the visits
+ * actually logged — and an Admin half-day keeps its activity's name.
+ */
+export function mapManagerHalfDayToPrivateCalendarItem(
+  halfDay: ManagerPlanHalfDay,
+  names: { rep: string | null; approver: string | null },
+): PrivateCalendarItem {
+  const activityType = halfDay.legacyType;
+  const title = managerHalfDayText(halfDay, names.rep);
+  const recordedNowhereElse = plannedActivityIsRecordedNowhereElse(activityType);
+  const detailLines = [`Activity: ${activityType}`, `Half day: ${halfDay.half}`];
+  if (halfDay.kind === "single_visit" && halfDay.areaName) detailLines.push(`Where: ${halfDay.areaName}`);
+  if (halfDay.kind !== "admin") detailLines.push(`Customers planned: ${halfDay.customerCount}`);
+  detailLines.push(`Week: ${halfDay.weekStart}`);
+  if (names.approver) detailLines.push(`Approved by: ${names.approver}`);
+  return {
+    activityKind: "plan",
+    approvalImpact: recordedNowhereElse
+      ? "Approved by the manager, and the only thing this kind of day produces — so compare it against what was actually recorded; it does not stand in for attendance."
+      : "Approved by the manager. The day still needs its own record: a punch, a logged visit or an approved request.",
+    chipLines: [activityType === title ? activityType : `${activityType} · ${title}`],
+    description: halfDay.note,
+    detailLines,
+    employeeDepartmentName: null,
+    employeeHrId: halfDay.managerHrId,
+    employeeJobTitle: null,
+    employeeLineName: null,
+    employeeName: null,
+    endDate: halfDay.date,
+    exceptionFlags: [],
+    id: `crm-plan-${halfDay.slotId}`,
+    managerName: names.approver,
+    plannedActivityIsRecordedNowhereElse: recordedNowhereElse,
+    severity: "info",
+    source: "plan",
+    sourceLabel: "Approved weekly plan",
+    sourceRecordId: halfDay.slotId,
+    sourceSystem: "Phoenix CRM",
+    sourceTable: "phoenix_crm_manager_plan_slots",
+    startDate: halfDay.date,
+    status: halfDay.status === "approved" ? "Approved" : "Manager approved",
+    time: halfDay.half,
+    title,
+  };
+}
+
+/** His signed-off Phoenix CRM half-days for these people, as calendar items. */
+async function loadManagerPlanPrivateCalendarItems(employeeHrIds: string[], start: string, end: string): Promise<PrivateCalendarItem[]> {
+  const halfDays = await loadManagerPlanHalfDays({ from: start, to: end, managerHrIds: employeeHrIds, statuses: ["first_approved", "approved"] });
+  if (halfDays.length === 0) return [];
+  const names = await loadPeopleNames(halfDays.flatMap((halfDay) => [halfDay.repHrId, halfDay.decidedByHrId]));
+  return halfDays.map((halfDay) =>
+    mapManagerHalfDayToPrivateCalendarItem(halfDay, {
+      rep: halfDay.repHrId ? nameOf(names, halfDay.repHrId, "a rep") : null,
+      approver: halfDay.decidedByHrId ? nameOf(names, halfDay.decidedByHrId, "") || null : null,
+    }),
+  );
+}
+
+/**
  * Every approved WEEKLY plan item for these employees inside [start, end], as calendar items.
  *
  * Weekly only, which is the owner's own wording ("the approved weekly plan"): the weekly plan is the
@@ -245,6 +309,12 @@ export async function loadPlanPrivateCalendarItems(
         if (!date || date < start || date > end) continue;
         items.push(mapPlanRowToPrivateCalendarItem(header, item));
       }
+    }
+    try {
+      items.push(...(await loadManagerPlanPrivateCalendarItems(employeeHrIds, start, end)));
+    } catch (error) {
+      // A database without the plan's tables yet adds nothing; anything else fails the source like the legacy read.
+      if (!/phoenix_crm_manager_plan|PGRST205|42P01/i.test(error instanceof Error ? error.message : JSON.stringify(error))) throw error;
     }
     return { items, ready: true };
   } catch (error) {

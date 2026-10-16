@@ -22,6 +22,7 @@ import { isSamePerson, sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import type { HistoricalApprovalItem } from "@/components/action-center/types";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { loadManagerPlanDecisions } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** Why this row counted as yours — shown to the reader so the list never looks arbitrary. */
@@ -328,6 +329,29 @@ export async function getDecisionsMadeForMe(
         href: href("plan", row.id),
         decidedByHrId: cleanText(row.manager_decision_by_hr_id),
         decidedNote: decisionNote(row.manager_decision_comment),
+      });
+    }
+  }
+
+  // ── the district managers' Phoenix CRM weeks: scoped to my direct reports ───
+  // His week replaced the legacy plan once his team went live (owner, 2026-10-16). Only the step that
+  // was mine — the first approver's — and only when somebody else took it: the Administrator acting in
+  // place of the holder is exactly the decision this tab exists to show.
+  if (teamHrIds.length > 0) {
+    const decisions = await loadManagerPlanDecisions(teamHrIds, since);
+    for (const decision of decisions) {
+      if (decision.approverStage !== "first" || isMe(decision.decidedByHrId)) continue;
+      pushTeamRow({
+        id: `decided-for-me:crm_manager_plan:${decision.planId}:${decision.stage}`,
+        module: "weekly_plan",
+        employeeName: nameFor(decision.managerHrId),
+        employeeHrId: decision.managerHrId,
+        title: `Weekly plan · Phoenix CRM · ${decision.weekStart}`,
+        decision: decision.decision,
+        decidedAt: decision.decidedAt,
+        href: href("plan", decision.planId),
+        decidedByHrId: decision.decidedByHrId,
+        decidedNote: decisionNote(decision.note),
       });
     }
   }

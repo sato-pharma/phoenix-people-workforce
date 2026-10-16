@@ -238,6 +238,30 @@ const REFUSALS: Record<string, Refusal> = {
   double_visit_not_yours: { status: 403, message: "Only the rep who raised this request changes its days." },
   double_visit_not_asked: { status: 403, message: "Only a person asked answers this request." },
   double_visit_bad_day: { status: 409, message: "Choose one of the days the rep offered that has not passed. Reload the page." },
+  // The district manager's weekly plan (owner, 2026-10-16): one half-day at a time, sent to his RSM/NSM.
+  manager_plan_bad_kind: { status: 400, message: "Choose With a rep, Admin or Single visit for this half-day." },
+  manager_plan_slot_empty: { status: 400, message: "Choose at least one customer for this half-day." },
+  manager_plan_not_field_time: {
+    status: 400,
+    message: "A half-day is planned on a field day: Saturday to Wednesday AM or PM, Thursday AM only.",
+  },
+  manager_plan_day_passed: { status: 409, message: "This day has passed, so it stays as it was planned. Reload the page." },
+  manager_plan_week_closed: { status: 409, message: "You plan the coming week, or this week while it was never sent. Reload the page." },
+  manager_plan_not_editable: { status: 409, message: "This week is sent. Ask to edit it to change it." },
+  manager_plan_day_not_returned: { status: 409, message: "Only the day returned to you can change. Reload the page." },
+  manager_plan_customer_gone: { status: 409, message: "A customer you chose is no longer on the list. Reload the page and choose again." },
+  manager_plan_customer_not_reps: { status: 409, message: "With a rep, choose only that rep's own customers. Reload the page." },
+  manager_plan_not_found: { status: 404, message: "This plan is no longer there. Reload the page." },
+  manager_plan_no_approver: {
+    status: 409,
+    message: "Nobody holds the manager seat above yours, so there is nobody to send this to. The Super Admin fills that seat.",
+  },
+  manager_plan_edit_already_open: { status: 409, message: "You already asked to edit this week. Its answer shows on the week." },
+  manager_plan_edit_not_found: { status: 404, message: "This ask to edit is no longer there. Reload the page." },
+  manager_plan_edit_decided: { status: 409, message: "This ask to edit was already answered. Reload the page." },
+  manager_customer_not_found: { status: 404, message: "This customer is no longer on Manager's own list. Reload the page." },
+  manager_customer_not_active: { status: 409, message: "This customer is already waiting to come off the list. Reload the page." },
+  manager_customer_removal_decided: { status: 409, message: "This removal was already decided. Reload the page." },
   // The same-seat duplicate merge (owner, 2026-10-08). Only the one-off script reaches these — the
   // function is service-role only — so the reader is whoever runs it, and each names the pair it skips.
   keeper_is_loser: { status: 400, message: "A customer cannot be merged into itself. Choose two different records." },
@@ -249,6 +273,10 @@ const REFUSALS: Record<string, Refusal> = {
   visit_same_day: { status: 409, message: "Both records have a visit on the same day, so the pair is left for a person to decide." },
   plan_same_day: { status: 409, message: "Both records are planned on the same day, so the pair is left for a person to decide." },
   ask_waiting_twice: { status: 409, message: "Both records have a visit ask waiting, so the pair is left for a person to decide." },
+  manager_visit_same_day: {
+    status: 409,
+    message: "A district manager logged a single visit on both records on the same day, so the pair is left for a person to decide.",
+  },
 };
 
 function messageOf(error: unknown): string {

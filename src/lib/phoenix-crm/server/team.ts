@@ -41,7 +41,7 @@ import { loadReversibleItems } from "@/lib/phoenix-crm/server/administrator-reve
 import { offPlanLocationFlag } from "@/lib/phoenix-crm/server/blind-payloads";
 import { loadDayStartsBySeat } from "@/lib/phoenix-crm/server/day-start";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
-import { doubleVisitPlanReach, type DoubleVisitPlanReach } from "@/lib/phoenix-crm/server/double-visit-plans";
+import { managerPlanReach } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { loadReadiness, loadRequestRows, mapRequestRow, requestPeople, requestRights, type ListRequest, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
 import { loadOffPlanRows } from "@/lib/phoenix-crm/server/offplan-cap";
 import { loadMovedFromDays } from "@/lib/phoenix-crm/server/offplan-day";
@@ -288,12 +288,11 @@ export type TeamView = {
    */
   planEdits: TeamPlanEdit[];
   /**
-   * The district manager's double-visit plan (owner, 2026-10-02): whose plans this viewer reads —
-   * his own as the district manager, or any district manager's as SFE or the Super Admin — and
-   * whether he writes them. Null for everyone the plan's route refuses (a regional or national
-   * manager, the CEO), so the section is never offered to them. The rep never sees it.
+   * The district manager's weekly plan (owner, 2026-10-16), which replaced the double-visit planner on
+   * this tab: "own" — the district manager himself (his report and Manager's own list); "pick" — his
+   * RSM/NSM, SFE, the CEO and the Super Admin, choosing a district manager. Null for a rep.
    */
-  doubleVisits: DoubleVisitPlanReach | null;
+  managerPlans: { mode: "own" | "pick" } | null;
   /**
    * A rep's asks for a visit with somebody (owner, 2026-10-02): how this viewer reads them — the ones
    * asked of him or told to him, or every one in scope for SFE and the Super Admin — whether he has any
@@ -497,7 +496,10 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     requests,
     unplannedVisits,
     planEdits,
-    doubleVisits: doubleVisitPlanReach(viewer, isTest),
+    managerPlans: (() => {
+      const reach = managerPlanReach(viewer);
+      return reach ? { mode: reach.mode } : null;
+    })(),
     visitAsks,
     reversible,
     summary: {

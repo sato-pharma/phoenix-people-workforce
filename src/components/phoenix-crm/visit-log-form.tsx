@@ -241,7 +241,11 @@ function participantsOf(form: VisitFormView, seniorHrId: string | null): Partici
     const seniorOptions = me ? people.filter((person) => person.position > me.position) : [];
     return {
       options: [
-        { value: "single", label: "My own visit", note: "Without the rep" },
+        // Closed for a district manager (owner, 2026-10-16): he logs his own visits under My single
+        // visits on the Visits tab, where they count in his own report only.
+        form.ownVisitClosed
+          ? { value: "single", label: "My own visit", note: "Log it under My single visits", disabled: true }
+          : { value: "single", label: "My own visit", note: "Without the rep" },
         { value: "double", label: "Double visit", note: rep ? `With ${rep}` : "This territory has no rep", disabled: !rep },
         {
           value: "chain",
@@ -403,7 +407,8 @@ export function VisitLogForm({
   // The reason box is open when there is no reason yet — including when the server says a visit he
   // chose as planned was not on a plan sent for today, and asks for one.
   const [reasonOpen, setReasonOpen] = useState(initialVisitType === "out_of_plan" && !initialReason);
-  const [kind, setKind] = useState<PhoenixCrmVisitKind>("single");
+  // A district manager entering starts on Double visit: his "My own visit" is closed (owner, 2026-10-16).
+  const [kind, setKind] = useState<PhoenixCrmVisitKind>(form.ownVisitClosed ? "double" : "single");
   // A rep's Double (one) and Chain (two): the people ticked from the one list, in the order ticked.
   const [picked, setPicked] = useState<string[]>([]);
   // A manager entering a chain picks the senior manager above himself — his own box, unchanged.

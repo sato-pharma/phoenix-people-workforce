@@ -31,6 +31,7 @@ import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
 import { canReadVisitReport, isLocationBlind, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dedupeIds, selectByIds, seatScoped, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { readDoubleVisitPlansForReport } from "@/lib/phoenix-crm/server/double-visit-plans";
+import { readManagerWithRepSlotsForReport } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS, PLAN_STATUSES_WITH_SENT_DAYS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
@@ -405,7 +406,12 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
     [dayStarts, dayActivities, doublePlans] = await Promise.all([
       readSeatRange("phoenix_crm_day_starts", "id, seat_id, started_on, started_at", "id", seatIds, { column: "started_on", from: period.from, to: period.to }, includeTest),
       readSeatRange("phoenix_crm_day_activities", "id, seat_id, activity_date, activity_type, half_day, note", "id", seatIds, { column: "activity_date", from: period.from, to: period.to }, includeTest),
-      readDoubleVisitPlansForReport(seatIds, { from: period.from, to: period.to }, includeTest),
+      // The old double-visit planner's rows, and the half-days "with a rep" of the district manager's
+      // weekly plan that replaced it (2026-10-16) — the same row shape, read side by side.
+      Promise.all([
+        readDoubleVisitPlansForReport(seatIds, { from: period.from, to: period.to }, includeTest),
+        readManagerWithRepSlotsForReport(seatIds, { from: period.from, to: period.to }, includeTest),
+      ]).then(([legacy, weekly]) => [...legacy, ...weekly]),
     ]);
     if (has("onLeave")) {
       const read = await loadSeatLeaveDays(target.seats, { from: period.from, to: period.to });

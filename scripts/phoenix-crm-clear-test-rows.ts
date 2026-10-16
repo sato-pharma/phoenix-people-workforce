@@ -24,8 +24,9 @@
  *     column. A `pg_class`-wide inventory counts its rows a second time, and a delete against it
  *     errors. Its rows clear themselves with the visits. The emitted file asserts it is still a
  *     view, so if it is ever materialised the run aborts instead of quietly leaving rows behind.
- *  2. SEVEN child tables carry no `is_test` column at all, so a flag-only delete fails on their
- *     foreign keys. They are reached through a parent — see FLAGLESS_CHILDREN. Two of their column
+ *  2. Ten child tables carry no `is_test` column at all (seven on 2026-10-09, plus the district
+ *     manager's plan slots, ticked customers and events from 20261017000000), so a flag-only delete
+ *     fails on their foreign keys. They are reached through a parent — see FLAGLESS_CHILDREN. Two of their column
  *     names do not read the way you would guess: `phoenix_crm_plan_edit_request_events` is keyed on
  *     `request_id`, and `phoenix_crm_unplanned_visit_events.visit_id` is a uuid matching
  *     `phoenix_crm_unplanned_visits.visit_id` — NOT that table's bigint `id`, which answers
@@ -60,9 +61,17 @@ export const FLAGLESS_CHILDREN = [
   "phoenix_crm_plan_edit_request_events",
   "phoenix_crm_monthly_plan_events",
   "phoenix_crm_unplanned_visit_events",
+  // The district manager's weekly plan (20261017000000): its slots, its ticked customers and its
+  // trail hang off the plan header and carry no flag of their own.
+  "phoenix_crm_manager_plan_slots",
+  "phoenix_crm_manager_plan_customers",
+  "phoenix_crm_manager_plan_events",
 ] as const;
 
 const TEST_PLANS = "select id from phoenix_crm_plans where is_test";
+const TEST_MANAGER_PLANS = "select id from phoenix_crm_manager_plans where is_test";
+const TEST_MANAGER_SLOTS = `select id from phoenix_crm_manager_plan_slots where plan_id in (${TEST_MANAGER_PLANS})`;
+const TEST_MANAGER_CUSTOMERS = "select id from phoenix_crm_manager_customers where is_test";
 const TEST_CUSTOMERS = "select id from phoenix_crm_customers where is_test";
 const TEST_PLACES = "select id from phoenix_crm_places where is_test";
 const TEST_VISITS = "select id from phoenix_crm_visits where is_test";
@@ -109,6 +118,27 @@ export const DELETE_PLAN: readonly Step[] = [
     where: `is_test or customer_id in (${TEST_CUSTOMERS}) or visit_id in (${TEST_VISITS})`,
   },
   { table: "phoenix_crm_plans", by: "flag", where: "is_test" },
+
+  // The district manager's weekly plan. Its ticked customers and his own visits reference
+  // phoenix_crm_customers with no cascade, so they go before the spine; the header's other children
+  // cascade, and are named anyway so the proof reads every table.
+  {
+    table: "phoenix_crm_manager_plan_customers",
+    by: "parent",
+    where:
+      `slot_id in (${TEST_MANAGER_SLOTS}) or customer_id in (${TEST_CUSTOMERS})` +
+      ` or manager_customer_id in (${TEST_MANAGER_CUSTOMERS})`,
+  },
+  {
+    table: "phoenix_crm_manager_visits",
+    by: "flag",
+    where: `is_test or customer_id in (${TEST_CUSTOMERS}) or manager_customer_id in (${TEST_MANAGER_CUSTOMERS})`,
+  },
+  { table: "phoenix_crm_manager_plan_slots", by: "parent", where: `plan_id in (${TEST_MANAGER_PLANS})` },
+  { table: "phoenix_crm_manager_plan_events", by: "parent", where: `plan_id in (${TEST_MANAGER_PLANS})` },
+  { table: "phoenix_crm_manager_plan_edit_requests", by: "flag", where: `is_test or plan_id in (${TEST_MANAGER_PLANS})` },
+  { table: "phoenix_crm_manager_plans", by: "flag", where: "is_test" },
+  { table: "phoenix_crm_manager_customers", by: "flag", where: "is_test" },
 
   // Everything hanging off a customer, a place or a visit.
   { table: "phoenix_crm_customer_moves", by: "flag", where: `is_test or customer_id in (${TEST_CUSTOMERS})` },

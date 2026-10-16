@@ -139,6 +139,7 @@ export default async function EmployeePortalProfilePage() {
     phoenixCrm.forecast,
     phoenixCrm.placeChecks,
     phoenixCrm.doubleVisitRequests,
+    phoenixCrm.managerPlans,
   );
 
   const employmentRows: Array<{

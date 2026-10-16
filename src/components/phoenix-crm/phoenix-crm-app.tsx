@@ -48,7 +48,7 @@ import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { preloadPhoenixCrmTab } from "@/components/phoenix-crm/tab-preload";
 import { TelegramConnectCard } from "@/components/phoenix-crm/telegram-connect-card";
 import { CrmSurfaceProvider, type CrmSurface } from "@/components/phoenix-crm/surface";
-import { CrmBlock, CrmButton, CrmEmpty, CrmField, CrmLoading, CrmNote, CrmPanel, CrmPill, CrmSelect } from "@/components/phoenix-crm/ui";
+import { CrmBlock, CrmButton, CrmChoice, CrmEmpty, CrmField, CrmLoading, CrmNote, CrmPanel, CrmPill, CrmSelect } from "@/components/phoenix-crm/ui";
 import type { PendingValidate, PendingVisit } from "@/components/phoenix-crm/visits-tab";
 import { isForecastLine } from "@/lib/phoenix-crm/daily-forecast";
 import { PHOENIX_CRM_PORTAL_BASE, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
@@ -68,6 +68,11 @@ const tabLoading = () => <CrmLoading />;
 const VisitsTab = dynamic(() => import("@/components/phoenix-crm/visits-tab").then((mod) => mod.VisitsTab), { loading: tabLoading });
 const ListTab = dynamic(() => import("@/components/phoenix-crm/list-tab").then((mod) => mod.ListTab), { loading: tabLoading });
 const PlanBoard = dynamic(() => import("@/components/phoenix-crm/plan-board").then((mod) => mod.PlanBoard), { loading: tabLoading });
+// The district manager's own week and his own single visits (owner, 2026-10-16) — fetched only by him.
+const ManagerPlanBoard = dynamic(() => import("@/components/phoenix-crm/manager-plan-board").then((mod) => mod.ManagerPlanBoard), { loading: tabLoading });
+const ManagerSingleVisits = dynamic(() => import("@/components/phoenix-crm/manager-single-visits").then((mod) => mod.ManagerSingleVisits), {
+  loading: tabLoading,
+});
 const ForecastTab = dynamic(() => import("@/components/phoenix-crm/forecast-tab").then((mod) => mod.ForecastTab), { loading: tabLoading });
 const TeamTab = dynamic(() => import("@/components/phoenix-crm/team-tab").then((mod) => mod.TeamTab), { loading: tabLoading });
 const CalendarTab = dynamic(() => import("@/components/phoenix-crm/calendar-tab").then((mod) => mod.CalendarTab), { loading: tabLoading });
@@ -316,6 +321,9 @@ export function PhoenixCrmApp({
   const [seenAddress, setSeenAddress] = useState<{ add: AddIntent | null; tab: string | null }>({ add: null, tab: tabParam });
   const [addVisitNonce, setAddVisitNonce] = useState(0);
   const [planWeekNonce, setPlanWeekNonce] = useState(0);
+  // Nosiba Salah holds a rep seat AND plans as acting district manager (owner, 2026-10-16: she files
+  // both): which of her two weeks the Plan tab shows. Everyone else has one of them, or none.
+  const [planScope, setPlanScope] = useState<"territory" | "district">("territory");
   const topRef = useRef<HTMLDivElement>(null);
   const refreshRun = useRef(0);
   const refreshedAt = useRef(0);
@@ -812,8 +820,40 @@ export function PhoenixCrmApp({
     );
   }
 
+  /** "My territory · My district" — over the Plan tab, for the one person who plans both weeks. */
+  function planScopeSwitch(): ReactNode {
+    return (
+      <CrmPanel>
+        <CrmBlock>
+          <CrmChoice
+            columns={2}
+            label="Which week"
+            onChange={setPlanScope}
+            options={[
+              { value: "territory", label: "My territory", note: "Your own customers, as a rep" },
+              { value: "district", label: "My district", note: "Your week as district manager" },
+            ]}
+            value={planScope}
+          />
+        </CrmBlock>
+      </CrmPanel>
+    );
+  }
+
   function tabContent(key: TabKey): ReactNode {
     const { cairoToday } = overview;
+    // A district manager whose team is live plans HIS week here (owner, 2026-10-16) and logs his own
+    // single visits on Visits. Never a rep's screen: the server sets `planner` for a DM seat holder only.
+    const managerPlanner = overview.managerPlans?.planner === true;
+    if (key === "plan" && managerPlanner && (!viewer.isRep || planScope === "district")) {
+      return (
+        <div className="min-w-0 space-y-4">
+          {viewer.isRep ? planScopeSwitch() : null}
+          <ManagerPlanBoard key={`manager|${test}`} onChanged={refreshOverview} onDirtyChange={holdReporters.plan} test={test} />
+        </div>
+      );
+    }
+    if (key === "visits" && managerPlanner && seats.visits === null) return <ManagerSingleVisits key={`single|${test}`} test={test} />;
     if (key === "team") {
       return (
         <TeamTab
@@ -859,20 +899,23 @@ export function PhoenixCrmApp({
     }
     if (key === "visits") {
       return (
-        <VisitsTab
-          addNonce={addVisitNonce}
-          // Answered once: a Visits tab let go and remounted later must not see the same ask again.
-          onAddHandled={() => setAddVisitNonce(0)}
-          openingDay={overview.visitDay}
-          key={`${seatId}|${test}`}
-          onOpenList={() => openTab("list")}
-          onPendingVisitDone={pendingVisitDone}
-          onStartValidate={startValidate}
-          onWorkChange={holdReporters.visits}
-          pendingVisit={arrivedVisit ?? pendingVisit}
-          seatId={seatId}
-          test={test}
-        />
+        <div className="min-w-0 space-y-4">
+          {managerPlanner ? <ManagerSingleVisits key={`single|${test}`} test={test} /> : null}
+          <VisitsTab
+            addNonce={addVisitNonce}
+            // Answered once: a Visits tab let go and remounted later must not see the same ask again.
+            onAddHandled={() => setAddVisitNonce(0)}
+            openingDay={overview.visitDay}
+            key={`${seatId}|${test}`}
+            onOpenList={() => openTab("list")}
+            onPendingVisitDone={pendingVisitDone}
+            onStartValidate={startValidate}
+            onWorkChange={holdReporters.visits}
+            pendingVisit={arrivedVisit ?? pendingVisit}
+            seatId={seatId}
+            test={test}
+          />
+        </div>
       );
     }
     if (key === "list") {
@@ -889,15 +932,18 @@ export function PhoenixCrmApp({
       );
     }
     return (
-      <PlanBoard
-        key={`${seatId}|${test}`}
-        onChanged={refreshOverview}
-        onDirtyChange={holdReporters.plan}
-        onOpenList={() => requestMove({ kind: "seat", seatId, tab: "list" })}
-        seatId={seatId}
-        test={test}
-        weekNonce={planWeekNonce}
-      />
+      <div className="min-w-0 space-y-4">
+        {managerPlanner && viewer.isRep ? planScopeSwitch() : null}
+        <PlanBoard
+          key={`${seatId}|${test}`}
+          onChanged={refreshOverview}
+          onDirtyChange={holdReporters.plan}
+          onOpenList={() => requestMove({ kind: "seat", seatId, tab: "list" })}
+          seatId={seatId}
+          test={test}
+          weekNonce={planWeekNonce}
+        />
+      </div>
     );
   }
 

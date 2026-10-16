@@ -18,6 +18,7 @@ import type { EmployeeExcuseRequest } from "@/lib/excuses/service";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import type { ContractRow } from "@/lib/contracts/types";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { getCrmManagerPlanActionItems } from "@/lib/approvals-hub/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -113,8 +114,10 @@ async function fetchAllItems(
     options.includeOutstation ? listOutstationRequests().catch(() => null) : Promise.resolve(null),
     getContractRenewalDashboardData(viewAccess).catch(() => null),
     getPlansAwaitingAction(planManagerAccess).catch(() => null),
+    // The district managers' Phoenix CRM weeks, asks to edit and own-list removals waiting on him.
+    getCrmManagerPlanActionItems(viewAccess).catch(() => null),
   ]);
-  const [leave, resig, excuse, outstation, contract, plans] = settled;
+  const [leave, resig, excuse, outstation, contract, plans, crmManagerPlans] = settled;
   const items: ActionHubItem[] = [];
   if (leave.status === "fulfilled" && leave.value) for (const r of leave.value.rows) items.push(mapLeave(r));
   if (resig.status === "fulfilled" && resig.value) for (const r of resig.value.records.filter((r) => r.status === "submitted" || r.status === "under_review")) items.push(mapResignation(r));
@@ -122,6 +125,7 @@ async function fetchAllItems(
   if (outstation.status === "fulfilled" && outstation.value) for (const r of outstation.value.filter((r) => r.status === "submitted")) items.push(mapOutstation(r));
   if (contract.status === "fulfilled" && contract.value) for (const r of contract.value.rows) { const i = mapContract(r); if (i) items.push(i); }
   if (plans.status === "fulfilled" && plans.value) for (const p of plans.value) items.push(mapWeeklyPlan(p));
+  if (crmManagerPlans.status === "fulfilled" && crmManagerPlans.value) items.push(...crmManagerPlans.value);
   items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
   return items;
 }

@@ -468,32 +468,37 @@ export function runPhoenixCrmDoubleVisitPlanTests(): void {
       ["src/lib/phoenix-crm/server/double-visit-plans.ts"],
       "the table is read and written by its own service and nowhere else — no rep screen, no report, no digest",
     );
+    // 🔴 RETIRED 2026-10-16: the district manager's weekly plan (`manager-plans.ts`) replaced this planner.
+    // Its Team-tab section is gone and its POST answers 410; the GET and the table stay, so a week planned
+    // here can still be read, and the Visit report still shows those weeks beside the new plan's.
     assert.deepEqual(
       holding("@/lib/phoenix-crm/server/double-visit-plans"),
       [
         "app/api/phoenix-crm/double-visit-plans/route.ts",
-        "src/lib/phoenix-crm/server/team.ts",
         // The Visit report generator's loader (2026-10-15) reads the plans through the service's own
         // `readDoubleVisitPlansForReport`; the screen is the Super Admin's and the SFE Manager's alone.
         "src/lib/phoenix-crm/server/visit-report.ts",
         "src/lib/phoenix-crm/view-types.ts",
       ],
-      "the service is reached by its route, the Team tab's flag, the Super Admin's visit report and the screens' type names only",
+      "the service is reached by its route, the Super Admin's visit report and the type names only — the Team tab no longer asks it",
     );
-    assert.deepEqual(
-      holding("@/components/phoenix-crm/double-visit-plan-section"),
-      ["src/components/phoenix-crm/team-tab.tsx"],
-      "the section is drawn in the Team tab and nowhere else",
-    );
+    assert.deepEqual(holding("@/components/phoenix-crm/double-visit-plan-section"), [], "no screen draws the retired planner");
+    assert.deepEqual(holding("DoubleVisitPlanSection"), [], "and its section is gone, not hidden");
     assert.deepEqual(
       holding("/api/phoenix-crm/double-visit-plans"),
-      ["src/components/phoenix-crm/double-visit-plan-section.tsx", "src/lib/security/access-registry.ts"],
-      "the route is called by the Team tab's section alone",
+      ["src/lib/security/access-registry.ts"],
+      "no screen calls the retired route; the registry still names it, because the GET still answers",
     );
     assert.deepEqual(
       holding("@/lib/phoenix-crm/double-visit-plan-rules"),
-      ["src/components/phoenix-crm/double-visit-plan-section.tsx", "src/lib/phoenix-crm/server/double-visit-plans.ts"],
-      "the rules are read by the section and the service only",
+      [
+        // The weekly plan reuses its district-manager list and its "counts as his double visit" rule.
+        "src/lib/phoenix-crm/manager-plan-rules.ts",
+        "src/lib/phoenix-crm/server/double-visit-plans.ts",
+        "src/lib/phoenix-crm/server/manager-plan-reach.ts",
+        "src/lib/phoenix-crm/server/manager-plan-report.ts",
+      ],
+      "the rules are read by the service and by the weekly plan that replaced it",
     );
 
     // No notice of any kind: the service and its route import nothing that sends one.
@@ -519,19 +524,19 @@ export function runPhoenixCrmDoubleVisitPlanTests(): void {
       "a write is gated before anything is read or written",
     );
 
-    // The Team tab offers the section only to the people the route serves, from the server's own answer.
+    // The Team tab no longer carries the planner: the district manager's weekly plan took its place there.
     const team = source("src/lib/phoenix-crm/server/team.ts");
-    assert.ok(team.includes("doubleVisits: doubleVisitPlanReach(viewer, isTest),"), "the Team view carries the server's answer");
-    const tab = source("src/components/phoenix-crm/team-tab.tsx");
-    assert.match(tab, /const doubleVisits = team\.data\?\.doubleVisits \?\? null;\s+if \(doubleVisits\) \{\s+sectionOptions\.push\(\{\s+value: "double",/, "offered only when the server says so");
-    assert.ok(tab.includes('{current === "double" && doubleVisits ? <DoubleVisitPlanSection cairoToday={cairoToday} test={test} /> : null}'), "and drawn only then");
+    assert.equal(team.includes("doubleVisitPlanReach"), false, "the Team view no longer asks for the retired planner's reach");
+    assert.ok(team.includes("managerPlans: (() => {"), "it carries the weekly plan's reach instead");
 
     // The route: `read` to look, `create` to write, the origin checked first — and the registry agrees.
     const route = source("app/api/phoenix-crm/double-visit-plans/route.ts");
     assert.match(route, /export async function GET[\s\S]*?await assertPermission\(access, "phoenix_crm", "read"\);[\s\S]*?loadDoubleVisitPlan\(/);
     assert.match(
       route,
-      /export async function POST[\s\S]*?const csrf = assertSameOriginMutation\(request\);[\s\S]*?await assertPermission\(access, "phoenix_crm", "create"\);[\s\S]*?saveDoubleVisitSlot\(/,
+      /export async function POST[\s\S]*?const csrf = assertSameOriginMutation\(request\);[\s\S]*?await assertPermission\(access, "phoenix_crm", "create"\);[\s\S]*?error: "superseded"[\s\S]*?\{ status: 410 \}/,
+      "a save answers 410 superseded, behind the same gate a save had",
     );
+    assert.equal(route.includes("saveDoubleVisitSlot("), false, "and writes nothing");
   }
 }

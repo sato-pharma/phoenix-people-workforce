@@ -1,6 +1,7 @@
 import crypto from "crypto";
 
 import { writeAuditLog } from "@/lib/admin/audit";
+import { DM_PLANS_IN_PHOENIX_CRM, dmPlansInPhoenixCrm } from "@/lib/phoenix-crm/server/manager-plan-switch";
 import {
   canonicalPlanningRegionName,
   planningAreaBelongsToRegion,
@@ -2443,7 +2444,14 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
   const directoryByHrId = new Map(directory.employees.map((item) => [normalizeHrId(item.hrId), item]));
   const viewerHrId = normalizeHrId(access.hrId);
   const employee = directory.employees.find((item) => normalizeHrId(item.hrId) === viewerHrId) ?? null;
-  const canSubmitPlans = Boolean(employee && canSubmitFromEmployee(employee, access.role) && await canAccess(access, "weekly_plans", "create"));
+  // A district manager whose Phoenix CRM team is live plans his week THERE now (owner, 2026-10-16), so
+  // this form offers him no new plan; what he already filed stays readable and decidable.
+  const canSubmitPlans = Boolean(
+    employee &&
+      canSubmitFromEmployee(employee, access.role) &&
+      await canAccess(access, "weekly_plans", "create") &&
+      !(await plansInPhoenixCrm(access)),
+  );
   const canAcknowledgeHr = isHrReviewer(access, employee);
   // Mirrors moveWeeklyPlanToPeriod exactly: HR/Super-Admin AND the approve grant. A flag carrying
   // only half the gate renders a button the server then rejects.
@@ -3414,6 +3422,20 @@ function formatPlanDayLabel(date: string): string {
   }
 }
 
+/**
+ * A district manager whose own Phoenix CRM team is live plans his week in Phoenix CRM, not here (owner,
+ * 2026-10-16: "replace the old DM plan"; Mohamed Alaa stays on this form until his team starts). Each
+ * one switches by himself the day his team starts. A failed read keeps this form open rather than
+ * stranding a manager with no form at all.
+ */
+async function plansInPhoenixCrm(access: AccessContext): Promise<boolean> {
+  return dmPlansInPhoenixCrm(access.hrId).catch(() => false);
+}
+
+async function assertPlansOnThisForm(access: AccessContext): Promise<void> {
+  if (await plansInPhoenixCrm(access)) throw new Error(DM_PLANS_IN_PHOENIX_CRM);
+}
+
 export async function createEmployeePlan(access: AccessContext, input: {
   anchorDate: string;
   items: EmployeePlanItemInput[];
@@ -3421,6 +3443,7 @@ export async function createEmployeePlan(access: AccessContext, input: {
   submit?: boolean;
 }) {
   await assertPermission(access, "weekly_plans", "create");
+  await assertPlansOnThisForm(access);
   const employee = await currentEmployee(access);
   if (!employee || !canSubmitFromEmployee(employee, access.role)) {
     throw new Error("Forbidden: this position is not eligible to submit weekly/monthly plans.");
@@ -3531,6 +3554,7 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
   await assertPermission(access, "weekly_plans", "update");
   const existing = await loadPlanRow(planId);
   assertPlanOwner(access, existing);
+  await assertPlansOnThisForm(access);
 
   if (isClosedEmployeePlanStatus(existing.status)) {
     // Revising a closed plan: spawn a new draft revision (parent_plan_id chain).
