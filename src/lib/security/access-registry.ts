@@ -1017,7 +1017,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visit-report", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/phoenix-crm/visit-report/export", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // The Visit report's saved views (2026-10-16) — the viewer's own, keyed on the viewer's HR id in the service.
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST", "DELETE"], pattern: "/api/phoenix-crm/visit-report/views", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visit-report/views", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visit-report/views", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["DELETE"], pattern: "/api/phoenix-crm/visit-report/views", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
   // The one-page start guide a District Manager sends a rep, English or Arabic. NOT audited and not
   // scoped: it names no rep, no customer and no figure, so there is nothing in it to disclose and
   // nothing for an organogram scope to narrow. It is served as HTML because the browser is what

@@ -15,6 +15,7 @@
  */
 
 import { notFoundError, validationError } from "@/lib/http/api-errors";
+import { isUuid } from "@/lib/http/uuid";
 import { canReadVisitReport, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { visitReportTierOf } from "@/lib/phoenix-crm/server/visit-report";
 import {
@@ -28,7 +29,6 @@ import {
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const TABLE = "phoenix_crm_visit_report_views";
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type ViewRow = { id: string; name: string; fields: string[] | null };
 
@@ -96,7 +96,7 @@ export async function saveVisitReportView(viewer: PhoenixCrmViewer, input: { nam
 export async function deleteVisitReportView(viewer: PhoenixCrmViewer, id: unknown): Promise<{ id: string; name: string }> {
   const { isTest, ownerHrId } = ownerOf(viewer);
   const clean = typeof id === "string" ? id.trim() : "";
-  if (!UUID.test(clean)) throw validationError("Choose a saved view to delete.");
+  if (!isUuid(clean)) throw validationError("Choose a saved view to delete.");
   const { data, error } = await getSupabaseAdmin()
     .from(TABLE)
     .delete()

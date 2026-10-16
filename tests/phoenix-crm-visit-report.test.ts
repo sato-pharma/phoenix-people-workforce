@@ -617,7 +617,15 @@ function checkSavedViews(): void {
   }
 
   const registry = readFileSync(new URL("src/lib/security/access-registry.ts", ROOT), "utf8");
-  assert.match(registry, /methods: \["GET", "POST", "DELETE"\], pattern: "\/api\/phoenix-crm\/visit-report\/views", permission: \{ resource: "phoenix_crm", action: "read" \}, guard: "assert-permission", csrfRequired: true/);
+  // One entry per method (the module's boundary test decides each gate): the list is a plain read, a save
+  // and a delete are audited mutations that check the origin.
+  assert.match(registry, /sessionApi\(\{ methods: \["GET"\], pattern: "\/api\/phoenix-crm\/visit-report\/views", permission: \{ resource: "phoenix_crm", action: "read" \}, guard: "assert-permission", csrfRequired: false \}\)/);
+  for (const method of ["POST", "DELETE"]) {
+    assert.ok(
+      registry.includes(`sessionApi({ audit: { classification: "mutation", required: true }, methods: ["${method}"], pattern: "/api/phoenix-crm/visit-report/views", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true })`),
+      `the registry records ${method} as an audited write that checks the origin`,
+    );
+  }
 
   const migration = readFileSync(new URL("supabase/migrations/20261017001000_phoenix_crm_visit_report_views.sql", ROOT), "utf8").replace(/--.*$/gm, "");
   assert.match(migration, /create unique index if not exists phoenix_crm_visit_report_views_owner_name_uidx\s+on public\.phoenix_crm_visit_report_views \(owner_hr_id, is_test, name\);/, "the upsert's key, and a plain index PostgREST can infer");
