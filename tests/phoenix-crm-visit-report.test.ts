@@ -590,8 +590,8 @@ function checkSavedViews(): void {
   // 🔴 ONLY ITS OWNER (owner, 2026-10-16). Every read, save and delete is keyed on the viewer's own HR id
   // AND the test world, and no function takes an owner from its caller.
   const service = source("src/lib/phoenix-crm/server/visit-report-views.ts");
-  assert.equal((service.match(/.eq("owner_hr_id", ownerHrId)/g) ?? []).length, 3, "list, the cap's count and delete are each keyed on the owner");
-  assert.equal((service.match(/.eq("is_test", isTest)/g) ?? []).length, 3, "and on the test world — a persona carries the real person's HR id");
+  assert.equal(service.split('.eq("owner_hr_id", ownerHrId)').length - 1, 3, "list, the cap's count and delete are each keyed on the owner");
+  assert.equal(service.split('.eq("is_test", isTest)').length - 1, 3, "and on the test world — a persona carries the real person's HR id");
   assert.match(service, /owner_hr_id: ownerHrId/, "a save writes the viewer as the owner");
   assert.match(service, /onConflict: "owner_hr_id,is_test,name"/, "the same name again replaces that view");
   assert.match(service, /ownerHrId: viewer.hrId/, "the owner is the viewer, never an argument");
