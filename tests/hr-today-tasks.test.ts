@@ -586,4 +586,46 @@ export async function runHrTodayTasksTests() {
       "40 days out is a diary note — the 7-day threshold is the whole distinction",
     );
   }
+
+  // ── 7. A CV already decided on is not waiting for a read ───────────────────
+  {
+    // THE DEFECT THIS PINS (2026-10-16). The board counted applications by their STAGE, and no
+    // decision screen moves the application: shortlisting, rejecting or hiring writes the
+    // CANDIDATE's status. Production held three applications at CV screening, all three for people
+    // already shortlisted, rejected or hired, and the Talent Acquisition seat read "waiting 61 days".
+    const longAgo = new Date(Date.now() - 61 * 86_400_000).toISOString();
+    const application = (id: string, stage: string, candidate: { status: string } | null) => ({
+      candidate: candidate && { fullName: id, ...candidate },
+      id,
+      lastStageChangedAt: longAgo,
+      requisition: { jobTitle: "District Sales Manager" },
+      stage,
+    });
+    const sources = {
+      recruitment: {
+        applications: [
+          application("undecided", "cv_screening", { status: "new" }),
+          application("legacy-text", "cv_screening", { status: "Candidate created" }),
+          application("no-candidate-row", "application_received", null),
+          application("shortlisted", "cv_screening", { status: "shortlisted" }),
+          application("rejected", "cv_screening", { status: "rejected" }),
+          application("hired", "cv_screening", { status: "hired" }),
+          application("with-manager", "phone_screening", { status: "sent_to_manager" }),
+          application("backup", "cv_screening", { status: "backup" }),
+          application("undecided-but-interviewing", "hr_interview", { status: "new" }),
+        ],
+        requisitions: [],
+      },
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- literal fixtures, not fetches
+    const screening = buildHrTodayTasks(sources as any, "HR Resourcing").find(
+      (item) => item.key === "screen-candidates",
+    );
+    assert.ok(screening, "the screening task was not built");
+    assert.deepEqual(
+      screening.items.map((item) => item.id).sort(),
+      ["legacy-text", "no-candidate-row", "undecided"],
+      "only an application whose candidate is still undecided is waiting on a CV read — a decided candidate (shortlisted, rejected, hired, with a manager, backup) must never read as 'waiting 61 days', and a row with no candidate record cannot be judged so it stays rather than vanishing",
+    );
+  }
 }
