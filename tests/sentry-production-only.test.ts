@@ -16,6 +16,8 @@ import {
   sentryServerStatus,
   sentryTracesSampler,
 } from "../src/lib/observability/sentry-policy.ts";
+import { sentryMonitorConfigFor } from "../src/lib/observability/sentry-cron-monitor.ts";
+import { JOB_SCHEDULES } from "../src/lib/observability/job-schedule.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -148,6 +150,28 @@ function beyondErrorsTests() {
   assert.equal(log.attributes?.route, "/api/leave/:id");
 }
 
+function cronMonitorTests() {
+  // A declared cron job becomes a crontab monitor in Africa/Cairo, with the register's own grace as the margin.
+  const daily = sentryMonitorConfigFor("phoenix-notify-daily");
+  assert.deepEqual(daily?.schedule, { type: "crontab", value: "36 6 * * *" });
+  assert.equal(daily?.checkinMargin, 60, "a one-hour grace is a sixty-minute margin");
+  assert.equal(daily?.timezone, "Africa/Cairo", "the register is Cairo local; UTC would put every window hours off");
+  assert.equal(daily?.failureIssueThreshold, 2);
+  assert.equal(daily?.recoveryThreshold, 1);
+  // A job on a plain interval becomes an interval monitor.
+  assert.deepEqual(sentryMonitorConfigFor("phoenix-ireports360-live-poll")?.schedule, { type: "interval", value: 5, unit: "minute" });
+  // A job the register never declared sends no config, so Sentry ignores its check-in and creates nothing.
+  assert.equal(sentryMonitorConfigFor("not-a-declared-job"), undefined);
+  assert.equal(sentryMonitorConfigFor(""), undefined);
+  // Every declaration yields a usable monitor, and none has a margin of zero.
+  for (const job of JOB_SCHEDULES) {
+    const config = sentryMonitorConfigFor(job.slug);
+    assert.ok(config, `${job.slug} must produce a monitor config`);
+    assert.ok(config.checkinMargin >= 1, `${job.slug} needs a margin of at least a minute`);
+    assert.ok(config.schedule.type === "crontab" ? config.schedule.value.split(" ").length === 5 : config.schedule.value >= 1, `${job.slug} needs a real schedule`);
+  }
+}
+
 function wiringTests() {
   // instrumentation.ts is bundled for both runtimes: it may import the pure policy statically and the
   // SDK only dynamically, inside a nodejs guard that the policy has already cleared.
@@ -175,7 +199,7 @@ function wiringTests() {
   assert.match(server, /tracesSampler: \(context\) => sentryTracesSampler\(context\)/, "sampling goes through the policy, never a literal rate");
   assert.match(server, /levels: \["warn", "error"\]/, "only warn and error console lines become logs");
   assert.ok(!/tracesSampleRate|profilesSampleRate|replaysSessionSampleRate/.test(server), "rates live in sentry-policy.ts only");
-  assert.ok(!/monitorConfig/.test(server), "a cron check-in never creates a monitor — that is billed per monitor and decided in Sentry's own screen");
+  assert.match(server, /captureCheckIn\(\{ monitorSlug: jobSlug, status \}, sentryMonitorConfigFor\(jobSlug\)\)/, "the monitor is built from the register of scheduled jobs, never written by hand in Sentry");
 
   const client = code("src/lib/observability/sentry-client.ts");
   assert.ok(!/from\s+["']@sentry\//.test(client), "the browser SDK is imported lazily, never statically");
@@ -248,5 +272,6 @@ export function runSentryProductionOnlyTests() {
   gateTests();
   scrubTests();
   beyondErrorsTests();
+  cronMonitorTests();
   wiringTests();
 }
