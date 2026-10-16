@@ -390,7 +390,25 @@ function alertWebhookTests() {
   assert.match(code("src/lib/security/access-registry.ts"), /pattern: "\/api\/webhooks\/sentry"/, "the route is in the access registry");
 }
 
+function sentryCheckPageTests() {
+  // The example page: Super Admin only, and the server half throws only after the SAME gate the SDK uses.
+  const page = code("app/(admin)/admin/sentry-check/page.tsx");
+  assert.match(page, /access\.role !== "Super Admin"[\s\S]*?redirect\(/, "the Sentry Check page is the Super Admin's alone");
+  assert.match(page, /sentryServerStatus\(\{ appEnv: process\.env\.APP_ENV, dsn: process\.env\.SENTRY_DSN \}\)/, "the page reads the SDK's own production gate");
+
+  const route = code("app/api/admin/sentry-check/route.ts");
+  assert.match(route, /assertSameOriginMutation\(request\)/);
+  assert.match(route, /access\.role !== "Super Admin"[\s\S]*?status: 403/, "the trigger route refuses everyone but the Super Admin");
+  assert.match(route, /!status\.enabled[\s\S]*?status: 409/, "off production the route refuses instead of throwing");
+  assert.ok(
+    route.indexOf("!status.enabled") < route.indexOf('throw new Error("Sentry Check'),
+    "the deliberate throw comes only after the production gate",
+  );
+  assert.match(code("src/lib/security/access-registry.ts"), /pattern: "\/api\/admin\/sentry-check"/, "the route is in the access registry");
+}
+
 export async function runSentryProductionOnlyTests() {
+  sentryCheckPageTests();
   gateTests();
   scrubTests();
   beyondErrorsTests();
