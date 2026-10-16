@@ -367,4 +367,15 @@ export function runRecruitmentJobPostsTests() {
   assert.ok(!renderJobPostHtml(post(), "bold-blue", ASSETS).includes("<img src=\"" + ASSETS.arabic), "the Arabic wordmark is never an <img> — never a masthead");
   assert.ok(render.includes('"brand/sato-pharma-logo-on-navy-reverse.svg"') && render.includes('"brand/sato-pharma-logo-on-blue.svg"') && render.includes('"brand/sato-pharma-arabic-on-light.png"'), "the server draws with the on-dark mark and the Arabic wordmark");
   assert.ok(builder.includes("/brand/sato-pharma-logo-on-navy-reverse.svg") && builder.includes("/brand/sato-pharma-logo-on-blue.svg") && builder.includes("/brand/sato-pharma-arabic-on-light.png"), "the preview loads the same two files, so it matches the download");
+
+  // ── The post stays on screen while the words are edited (owner 2026-10-16: "scrolling in job post page is frustrating") ──
+  // The picture is 4:5, so taking its size from the COLUMN'S WIDTH made the right-hand column about
+  // 1,560px tall against a ~900px screen — and a sticky block taller than the viewport pins once and
+  // then scrolls away, which is why `xl:sticky` never helped. Measured in a harness at 1512×900:
+  // 1,558px before, 876px after. Both halves carry it, so both are pinned.
+  assert.ok(
+    /boxClassName="[^"]*xl:h-\[clamp\([^"]*100vh[^"]*\)\][^"]*xl:w-auto/.test(page),
+    "the preview takes its size from the SCREEN's height, not the column's width, so the sticky column fits one screen",
+  );
+  assert.ok(page.includes("xl:grid-cols-6"), "the six designs sit on one row where the column is sticky, which is what the post's height is taken from");
 }
