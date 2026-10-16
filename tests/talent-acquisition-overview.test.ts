@@ -19,6 +19,7 @@ import {
   joinersArriving,
   joinersBetween,
   JOINERS_WINDOW_DAYS,
+  offerStartKey,
   kpi,
   KPI_WINDOW_DAYS,
   longDayLabel,
@@ -457,6 +458,32 @@ function testTheRebuiltPagesPureHelpers() {
     "offers that did not load give loaded: false — the panel then says it could not tell",
   );
   assert.equal(JOINERS_WINDOW_DAYS, 14, "the window he chose: joiners arriving in 14 days");
+
+  // THE STORED SHAPE. `offers.start_date` is text the way the LETTER prints it ("18 October 2026"),
+  // not `yyyy-mm-dd`, so every fixture above is a shape production does not hold. Read as a slice of
+  // ten characters it fell outside every window and the panel said nobody was joining while four
+  // accepted offers started on 17 and 18 October.
+  const stored = joinersArriving(
+    [
+      offer({ id: "dsm", startDate: "17 October 2026", status: "accepted" }),
+      offer({ id: "rep", startDate: "18 October 2026", status: "accepted" }),
+      offer({ id: "bare-day", startDate: "9 November 2026", status: "accepted" }),
+      offer({ id: "started", startDate: "11 October 2026", status: "accepted" }),
+      offer({ id: "unreadable", startDate: "next month", status: "accepted" }),
+      offer({ id: "blank", startDate: "", status: "accepted" }),
+    ],
+    "2026-10-16",
+  );
+  assert.deepEqual(
+    stored.rows.map((row) => [row.id, row.dateKey]),
+    [
+      ["dsm", "2026-10-17"],
+      ["rep", "2026-10-18"],
+    ],
+    "a letter-date start reads as its real day; one already started, one past day fourteen, one that cannot be read and a blank one are not on the panel",
+  );
+  assert.equal(offerStartKey("1 november 2026"), "2026-11-01", "a bare day and any capitalisation read");
+  assert.equal(offerStartKey("2026-10-18"), "2026-10-18", "an ISO start date still reads");
 }
 
 // ── 1c. The three panels he chose say a failure, and say an empty day, differently ────────────

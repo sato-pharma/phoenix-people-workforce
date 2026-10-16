@@ -22,6 +22,7 @@ import type { HrCommandTile } from "@/lib/hr/command-center";
 import type { CalendarGridDay, CalendarItem } from "@/lib/calendar/logic";
 import type { InterviewBooking, InterviewCalendarRole } from "@/lib/recruitment/interview-calendar-types";
 import { formatTimeRange } from "@/lib/recruitment/interview-calendar-week";
+import { isIsoDate, parseLetterDate } from "@/lib/offers/dates";
 import type { OfferRecord } from "@/lib/offers/types";
 import type { DailyCvDigest } from "@/lib/recruitment/inbound/daily-cv-digest";
 
@@ -246,6 +247,20 @@ export function toTalentInterview(booking: InterviewBooking): TalentInterview {
  */
 
 /**
+ * An offer's start date as `yyyy-mm-dd`, or "" when it is neither that nor a letter date.
+ *
+ * AN OFFER STORES ITS START DATE THE WAY THE LETTER PRINTS IT — "18 October 2026" — so the value is
+ * read through the letter-date parser, never sliced as if it were `yyyy-mm-dd`. Sliced, every
+ * accepted offer on production fell outside every window and the panel said nobody was joining.
+ */
+export function offerStartKey(startDate: string | null | undefined): string {
+  const raw = (startDate ?? "").trim();
+  if (!raw) return "";
+  if (isIsoDate(raw.slice(0, 10))) return raw.slice(0, 10);
+  return parseLetterDate(raw) ?? "";
+}
+
+/**
  * The joining days inside a span, from the offers that were ACCEPTED.
  *
  * `OfferFields.startDate` is the date the letter itself names, which is the date she onboards
@@ -260,12 +275,10 @@ export function joinersBetween(
 ): TalentJoiner[] {
   return offers
     .filter((offer) => offer.status === "accepted")
-    .filter((offer) => {
-      const start = (offer.startDate ?? "").slice(0, 10);
-      return Boolean(start) && start >= fromKey && start <= toKey;
-    })
-    .map((offer) => ({
-      dateKey: offer.startDate.slice(0, 10),
+    .map((offer) => ({ offer, start: offerStartKey(offer.startDate) }))
+    .filter(({ start }) => Boolean(start) && start >= fromKey && start <= toKey)
+    .map(({ offer, start }) => ({
+      dateKey: start,
       href: `/hr/offers?open=${encodeURIComponent(offer.id)}`,
       id: offer.id,
       name: offer.candidateName,
