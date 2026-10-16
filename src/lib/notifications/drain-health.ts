@@ -1,5 +1,5 @@
 import { notificationOutboxMaxAttempts, notificationOutboxTable } from "@/lib/notifications/email";
-import { notificationDeliveryMaxAttempts } from "@/lib/notifications/system";
+import { DELIVERY_CLAIM_GRACE_MS, notificationDeliveryMaxAttempts } from "@/lib/notifications/system";
 import { logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -117,6 +117,10 @@ async function countDueDeliveryRows(
   // it is filtered by status alone. The other two carry the same retry budget the outbox does.
   const channel = queue === "deferred" ? "email" : queue;
   const statuses = queue === "deferred" ? ["pending"] : ["failed", "pending", "retrying"];
+  // A row touched inside the claim grace may be a send still in flight (a bare claim, filled in
+  // when the send ends) - not stranded work. The drains close such a row once it is older than
+  // this, so the probe and the drains must use the same line; see DELIVERY_CLAIM_GRACE_MS.
+  const claimGraceCutoffIso = new Date(Date.parse(runStartedAtIso) - DELIVERY_CLAIM_GRACE_MS).toISOString();
 
   try {
     let query = getSupabaseAdmin()
@@ -125,6 +129,7 @@ async function countDueDeliveryRows(
       .eq("channel", channel)
       .in("status", statuses)
       .lte("created_at", runStartedAtIso)
+      .lte("updated_at", claimGraceCutoffIso)
       .or(`next_attempt_at.is.null,next_attempt_at.lte.${runStartedAtIso}`);
 
     if (queue !== "deferred") query = query.lt("attempts", notificationDeliveryMaxAttempts);

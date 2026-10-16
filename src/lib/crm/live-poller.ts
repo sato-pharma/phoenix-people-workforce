@@ -82,7 +82,7 @@ import { CRM_SYNC_RUNS_TABLE } from "@/lib/crm/tables";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
-import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
+import { pingDeadMansSwitch, signalDeadMansSwitchStart } from "@/lib/observability/dead-mans-switch";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
 import { logError, logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -862,6 +862,9 @@ async function runScheduledWork(work: Exclude<ScheduledCrmWork, null>): Promise<
   // Resolved BEFORE the run so the digest reports the exact window the run used, even if the
   // run itself straddles an ISO-week boundary.
   const scheduledAt = new Date();
+  // The rolling sync only: a run a deploy cut off reads "started, never finished" at Healthchecks.
+  // Every path below ends in a success or a fail ping, so a start is never orphaned by a normal exit.
+  if (!isReconcile) await signalDeadMansSwitchStart(slug);
   try {
     await reapStaleIReports360SyncRuns();
     const result = isReconcile ? await runWideIReports360Reconciliation(scheduledAt) : await runScheduledIReports360Sync();

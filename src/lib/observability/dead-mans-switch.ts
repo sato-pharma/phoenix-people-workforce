@@ -39,12 +39,18 @@ function pingKey(): string | null {
 
 export type DeadMansSwitchOutcome = "success" | "fail";
 
+/**
+ * What one request to Healthchecks can say. `start` is not an outcome: it says only "this run began",
+ * and exists in the external half alone - the in-house heartbeat register records how a run ENDED.
+ */
+type HealthchecksSignal = DeadMansSwitchOutcome | "start";
+
 /** The external half: Healthchecks.io. Inert when HEALTHCHECKS_PING_KEY is unset. */
-async function pingHealthchecks(jobSlug: string, outcome: DeadMansSwitchOutcome, detail?: string): Promise<void> {
+async function pingHealthchecks(jobSlug: string, outcome: HealthchecksSignal, detail?: string): Promise<void> {
   const key = pingKey();
   if (!key) return;
 
-  const suffix = outcome === "fail" ? "/fail" : "";
+  const suffix = outcome === "fail" ? "/fail" : outcome === "start" ? "/start" : "";
   const url = `${pingHost()}/${key}/${encodeURIComponent(jobSlug)}${suffix}?create=1`;
 
   try {
@@ -108,6 +114,26 @@ export async function pingDeadMansSwitch(jobSlug: string, outcome: DeadMansSwitc
 }
 
 /**
+ * Tells Healthchecks this run has BEGUN (`/start`). Same contract as `pingDeadMansSwitch`: never
+ * throws, inert outside production and without a ping key, external half only.
+ *
+ * WHY A LONG JOB SENDS ONE. Without it a run a deploy killed halfway and a run that never began look
+ * identical - both are just a missing ping. On 2026-10-16 `phoenix-notify-daily` and, almost
+ * certainly, `phoenix-crm-integrity-sweep` were each cut off by a container swap, and the dashboard
+ * could only say "no ping". With a start signal Healthchecks shows "started, never finished", which
+ * points straight at a restart, and it records how long each run takes, so a job creeping toward its
+ * grace shows before it trips. It is AWAITED, never fire-and-forget: a start that landed AFTER the
+ * run's own success ping would leave the check "started" for good and raise a false alarm.
+ *
+ * Only for a job whose check is tuned with a grace longer than a normal run (Healthchecks measures
+ * the grace from the start), and only for one that always ends in a success or fail ping.
+ */
+export async function signalDeadMansSwitchStart(jobSlug: string): Promise<void> {
+  if (!isProductionRuntime()) return;
+  await pingHealthchecks(jobSlug, "start");
+}
+
+/**
  * Wraps a cron job body: pings "success" if `run` resolves, pings "fail" (with the error message
  * as diagnostic detail) if it throws — then re-throws unchanged, so the caller's own try/catch,
  * logError, and HTTP status logic are completely undisturbed. Use this when a route's existing
@@ -115,8 +141,15 @@ export async function pingDeadMansSwitch(jobSlug: string, outcome: DeadMansSwitc
  * app/api/notifications/daily/route.ts, which deliberately never throws on a PARTIAL sub-job
  * failure (see that route's own comment), call `pingDeadMansSwitch` directly instead so the ping
  * can reflect that nuance.
+ *
+ * `signalStart: true` sends the `/start` signal first - see `signalDeadMansSwitchStart`.
  */
-export async function withDeadMansSwitch<T>(jobSlug: string, run: () => Promise<T>): Promise<T> {
+export async function withDeadMansSwitch<T>(
+  jobSlug: string,
+  run: () => Promise<T>,
+  options: { signalStart?: boolean } = {},
+): Promise<T> {
+  if (options.signalStart) await signalDeadMansSwitchStart(jobSlug);
   try {
     const result = await run();
     await pingDeadMansSwitch(jobSlug, "success");

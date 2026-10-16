@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
-import { pingDeadMansSwitch, withDeadMansSwitch } from "../src/lib/observability/dead-mans-switch.ts";
+import {
+  pingDeadMansSwitch,
+  signalDeadMansSwitchStart,
+  withDeadMansSwitch,
+} from "../src/lib/observability/dead-mans-switch.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 type FetchCall = { url: string; init: RequestInit | undefined };
 
@@ -233,6 +239,126 @@ export async function runDeadMansSwitchTests() {
       } finally {
         restore();
       }
+    }
+
+    // THE START SIGNAL. A run a deploy killed halfway and a run that never began are both just a
+    // missing ping; `/start` is what lets Healthchecks tell "started, never finished" apart.
+    // It is the slug URL with `/start` before the query string, and it carries no body.
+    {
+      const { calls, restore } = stubFetch("resolve");
+      try {
+        await signalDeadMansSwitchStart("phoenix-notify-daily");
+        assert.equal(calls.length, 1, "one start signal is exactly one request");
+        assert.equal(calls[0].url, "https://hc-ping.com/test-ping-key/phoenix-notify-daily/start?create=1");
+        assert.equal(calls[0].init?.method, "POST");
+        assert.equal(calls[0].init?.body, undefined, "a start signal carries no body");
+      } finally {
+        restore();
+      }
+    }
+
+    // Inert exactly like a ping: no key, or a non-production runtime, means no network call at all.
+    {
+      const { calls, restore } = stubFetch("resolve");
+      try {
+        process.env.APP_ENV = "staging";
+        await signalDeadMansSwitchStart("phoenix-notify-daily");
+        assert.equal(calls.length, 0, "non-production ⇒ a start signal must never reach the shared dashboard");
+        process.env.APP_ENV = "production";
+        delete process.env.HEALTHCHECKS_PING_KEY;
+        await signalDeadMansSwitchStart("phoenix-notify-daily");
+        assert.equal(calls.length, 0, "no ping key ⇒ a start signal must never attempt a network call");
+      } finally {
+        process.env.APP_ENV = "production";
+        process.env.HEALTHCHECKS_PING_KEY = "test-ping-key";
+        restore();
+      }
+    }
+
+    // A start signal that cannot be delivered must never throw, exactly like a ping.
+    {
+      const { restore } = stubFetch("reject");
+      try {
+        await assert.doesNotReject(
+          () => signalDeadMansSwitchStart("phoenix-notify-daily"),
+          "a failed start signal must never throw out of a cron job",
+        );
+      } finally {
+        restore();
+      }
+    }
+
+    // withDeadMansSwitch is OPT-IN: a job that does not ask sends exactly the one ending ping it
+    // always did, so the other twenty-odd wired jobs are unchanged.
+    {
+      const { calls, restore } = stubFetch("resolve");
+      try {
+        await withDeadMansSwitch("phoenix-background-jobs", async () => "ok");
+        assert.equal(calls.length, 1, "no signalStart ⇒ no start signal");
+        assert.ok(!calls[0].url.includes("/start"));
+      } finally {
+        restore();
+      }
+    }
+
+    // With signalStart the start comes FIRST and is AWAITED before the run begins - a start that
+    // landed after the success ping would leave the check "started" for good and raise a false
+    // alarm - then the ending ping follows. The run observes the start already sent.
+    {
+      const { calls, restore } = stubFetch("resolve");
+      try {
+        let seenWhenRunBegan = -1;
+        const result = await withDeadMansSwitch(
+          "phoenix-crm-integrity-sweep",
+          async () => {
+            seenWhenRunBegan = calls.length;
+            return { photos: 3 };
+          },
+          { signalStart: true },
+        );
+        assert.deepEqual(result, { photos: 3 }, "run()'s value passes through unchanged");
+        assert.equal(seenWhenRunBegan, 1, "the start signal must already be sent when the run begins");
+        assert.equal(calls.length, 2, "one start, one ending ping");
+        assert.equal(calls[0].url, "https://hc-ping.com/test-ping-key/phoenix-crm-integrity-sweep/start?create=1");
+        assert.equal(calls[1].url, "https://hc-ping.com/test-ping-key/phoenix-crm-integrity-sweep?create=1");
+      } finally {
+        restore();
+      }
+    }
+
+    // A run that throws after a start still ends in /fail and still re-throws the original error.
+    {
+      const { calls, restore } = stubFetch("resolve");
+      try {
+        const boom = new Error("cut off by upstream");
+        await assert.rejects(
+          () => withDeadMansSwitch("phoenix-ireports360-sync", async () => { throw boom; }, { signalStart: true }),
+          (err: unknown) => err === boom,
+        );
+        assert.equal(calls.length, 2);
+        assert.ok(calls[0].url.includes("/start?"), "start first");
+        assert.ok(calls[1].url.includes("/fail?"), "then /fail");
+      } finally {
+        restore();
+      }
+    }
+
+    // The three long jobs actually ask for it, at the point they run. Source-level because the
+    // routes cannot be executed here; comment-stripped so the explanation cannot satisfy the check.
+    {
+      const read = (path: string) => stripComments(readFileSync(new URL(path, import.meta.url), "utf8"));
+      const sweep = read("../app/api/cron/phoenix-crm-integrity-sweep/route.ts");
+      const sync = read("../app/api/cron/ireports360-visits-sync/route.ts");
+      const daily = read("../app/api/notifications/daily/route.ts");
+      const poller = read("../src/lib/crm/live-poller.ts");
+      assert.match(sweep, /withDeadMansSwitch\(\s*"phoenix-crm-integrity-sweep"[\s\S]*?signalStart:\s*true/, "integrity sweep must signal start");
+      assert.match(sync, /withDeadMansSwitch\("phoenix-ireports360-sync"[\s\S]*?signalStart:\s*true/, "iReports360 sync route must signal start");
+      assert.match(daily, /signalDeadMansSwitchStart\("phoenix-notify-daily"\)/, "notify-daily must signal start");
+      assert.ok(
+        daily.indexOf('signalDeadMansSwitchStart("phoenix-notify-daily")') < daily.indexOf("await runDailyNotifications(request)"),
+        "and before the run, not after it",
+      );
+      assert.match(poller, /if \(!isReconcile\) await signalDeadMansSwitchStart\(slug\)/, "the in-process rolling sync must signal start");
     }
   } finally {
     for (const [k, v] of Object.entries(saved)) {

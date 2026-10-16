@@ -94,7 +94,7 @@ export async function runQuietHoursTelegramDeferralTests() {
   );
   assert.match(
     telegramWorker,
-    /if \(!isResendableTelegramPayload\(telegram\)\) continue;/,
+    /if \(!isResendableTelegramPayload\(telegram\)\) \{/,
     "processTelegramDeliveryRetries must use isResendableTelegramPayload, the rule the quiet-hours deferral checks",
   );
 

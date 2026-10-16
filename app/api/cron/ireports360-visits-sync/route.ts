@@ -98,7 +98,8 @@ export async function GET(request: Request) {
     // server clock.
     // Slug matches the live Cloud Scheduler job name (phoenix-ireports360-sync), not JOB_NAME
     // above ("ireports360-visits-sync") — the Healthchecks check uses this slug.
-    return await withDeadMansSwitch("phoenix-ireports360-sync", () => runSync());
+    // `signalStart`: a run cut off mid-sync reads "started, never finished" at Healthchecks.
+    return await withDeadMansSwitch("phoenix-ireports360-sync", () => runSync(), { signalStart: true });
   } catch (error) {
     logError("iReports360 visits sync failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });
     const message = clientSafeErrorMessage(error, "iReports360 visits sync failed.");
