@@ -736,7 +736,9 @@ function brandBrief(p: Parts): string {
   .reg::before { content: ""; position: absolute; left: 6px; top: 6px; width: 14px; height: 14px; box-shadow: inset 0 0 0 1px var(--ink); }
   .reg::after { content: ""; position: absolute; inset: 0; background: linear-gradient(var(--ink), var(--ink)) 50% 0 / 1px 100% no-repeat, linear-gradient(var(--ink), var(--ink)) 0 50% / 100% 1px no-repeat; }
   .board { position: relative; flex: 1; min-height: 0; background: #fff; display: flex; flex-direction: column; padding: 26px 52px 0; box-shadow: 6px 6px 0 rgba(17,24,32,.13); }
-  .board::before { content: ""; position: absolute; top: 0; bottom: 0; left: 52px; right: 52px; border-left: 1px solid rgba(93,183,232,.32); border-right: 1px solid rgba(93,183,232,.32); pointer-events: none; }
+  /* The margin guides sit 20px OUTSIDE the content, never on its edge — a line touching a word reads as
+     a clipped column, which is exactly what a proof is meant to rule out. */
+  .board::before { content: ""; position: absolute; top: 0; bottom: 0; left: 32px; right: 32px; border-left: 1px solid rgba(93,183,232,.3); border-right: 1px solid rgba(93,183,232,.3); pointer-events: none; }
   .board > * { position: relative; }
   .mast { flex-shrink: 0; height: 62px; display: flex; align-items: center; justify-content: space-between; }
   .mast img { height: 44px; }
@@ -754,17 +756,17 @@ function brandBrief(p: Parts): string {
   .tagrow .dept { font-size: 12px; font-weight: 700; letter-spacing: .32em; text-transform: uppercase; color: var(--blue); }
   h1 { margin-top: 20px; font-size: 92px; line-height: 1; letter-spacing: -.045em; font-weight: 700; color: var(--ink); }
   h1 span { display: block; white-space: nowrap; }
-  h1 mark { color: var(--blue); background: linear-gradient(180deg, transparent 60%, rgba(93,183,232,.38) 60%, rgba(93,183,232,.38) 90%, transparent 90%); padding-right: 8px; }
+  h1 mark { color: var(--blue); background: linear-gradient(180deg, transparent 62%, rgba(93,183,232,.32) 62%, rgba(93,183,232,.32) 90%, transparent 90%); padding-right: 8px; }
   .km { margin-top: 26px; display: grid; grid-template-columns: 4px minmax(0, 1fr); column-gap: 18px; }
   .km > i { background: var(--blue); }
   .km .k { font-size: 11px; font-weight: 700; letter-spacing: .32em; text-transform: uppercase; color: var(--blue); }
   .km p { margin-top: 8px; font-size: 31px; line-height: 1.16; font-weight: 700; letter-spacing: -.02em; color: var(--ink); }
   .km p span { display: block; } .km p .l2 { color: var(--blue); }
   .hero > div:first-child { align-self: center; }
-  .spec { align-self: end; border-top: 3px solid var(--ink); }
+  .spec { align-self: stretch; display: flex; flex-direction: column; border-top: 3px solid var(--ink); border-bottom: 1px solid var(--line); }
   .spec .sh { display: flex; align-items: center; justify-content: space-between; padding: 12px 0 10px; font-size: 11px; font-weight: 700; letter-spacing: .32em; text-transform: uppercase; color: var(--ink); }
   .spec .sh s { display: block; width: 8px; height: 8px; box-shadow: inset 0 0 0 1.5px var(--blue); }
-  .spec .row { padding: 9px 0 10px; border-top: 1px solid var(--line); }
+  .spec .row { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 9px 0 10px; border-top: 1px solid var(--line); }
   .spec .row .k { font-size: 9.5px; font-weight: 700; letter-spacing: .28em; text-transform: uppercase; color: #7b868e; }
   .spec .row .v { margin-top: 5px; font-size: 17px; font-weight: 700; color: var(--ink); line-height: 1.25; }
   .spec .sh + .row .v { color: var(--blue); }
@@ -788,7 +790,9 @@ function brandBrief(p: Parts): string {
   .cta { flex-shrink: 0; margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--line); display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 40px; align-items: center; }
   .cta .ann { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; margin-bottom: 14px; font-size: 11px; font-weight: 700; letter-spacing: .32em; text-transform: uppercase; color: var(--blue); }
   .cta .ann i { display: block; width: 40px; border-top: 1px solid var(--blue); }
-  .btn { background: var(--blue); color: #fff; padding: 15px 28px 17px; box-shadow: 7px 7px 0 var(--ink); }
+  .btn { display: grid; grid-template-columns: auto 34px; column-gap: 26px; align-items: center; background: var(--blue); color: #fff; padding: 15px 28px 17px; box-shadow: 7px 7px 0 var(--ink); }
+  .btn .arr { position: relative; display: block; height: 2px; background: #fff; }
+  .btn .arr::after { content: ""; position: absolute; right: 0; top: -6px; width: 12px; height: 12px; border-top: 2px solid #fff; border-right: 2px solid #fff; transform: rotate(45deg); transform-origin: 100% 0; }
   .btn .k { font-size: 11px; font-weight: 700; letter-spacing: .34em; text-transform: uppercase; color: rgba(255,255,255,.82); }
   .btn .num { margin-top: 7px; font-size: 46px; font-weight: 700; letter-spacing: -.01em; line-height: 1; white-space: nowrap; }
   .cta .h { font-size: 26px; font-weight: 700; letter-spacing: -.01em; color: var(--ink); }
@@ -825,7 +829,7 @@ function brandBrief(p: Parts): string {
       <div><div class="sec"><em>02</em><b>What you need</b><span>The profile</span></div><ul class="check">${p.needs}</ul></div>
     </section>
     <section class="cta"><div class="ann">Call to action<i></i></div>
-      <div class="btn"><div class="k">WhatsApp</div><div class="num">${p.num}</div></div>
+      <div class="btn"><div><div class="k">WhatsApp</div><div class="num">${p.num}</div></div><i class="arr" aria-hidden="true"></i></div>
       <div><div class="h">Ready to apply?</div><div class="sub">${p.applySub}</div></div>
     </section>
     <footer class="bf"><b><s></s>Sato Pharma</b><span>www.satopharma.com &middot; Head Office: Sheraton, Cairo, Egypt</span></footer>
