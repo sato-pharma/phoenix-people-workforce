@@ -856,6 +856,20 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // three `prosecdef` true and not executable by anon; both new tables read relrowsecurity TRUE and
   // authenticated holds no select. Re-applying it is a no-op (`if not exists` / `create or replace`).
   "20261016133000_phoenix_crm_double_visit_requests.sql",
+  // 2026-10-16, applied to staging and then production with `node scripts/apply-sql-file.mjs <file>
+  // <env>` (production with PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com) after the
+  // staging MCP answered {"status":"declined"} on this SQL. That route writes NO ledger row, so the
+  // absence here is the apply route and not a missed migration.
+  // Verified by digest on BOTH projects, not by presence: md5(pg_proc.prosrc) reads
+  // phoenix_crm_review_visit_recording cf2c740910fc3f4f78216c36bfc74bbe,
+  // phoenix_crm_unplanned_waits_for_the_administrator 12c85c1cb784432f0162a26c2e26bdca,
+  // phoenix_crm_report_visits_by_day dc47db5d6c7441484d1d498dc7d767e3 and
+  // phoenix_crm_report_plan_vs_actual 8dc59ac824f25781051f140a3822a1a6 — each md5-equal to the
+  // dollar-quoted body in this file (as-is LF). On production: 4 review columns, the status CHECK
+  // names admin_pending, 1 trigger, the review function `prosecdef` true with EXECUTE held by postgres
+  // and service_role only, and phoenix_crm_countable_visits keeps security_invoker=true and read 2,334
+  // rows before and after (no recording had been claimed). Re-applying it is a no-op.
+  "20261016161248_phoenix_crm_recorded_visit_waits_for_the_administrator.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

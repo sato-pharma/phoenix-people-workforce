@@ -514,6 +514,8 @@ function SavedNote({ onOpenList, saved }: { onOpenList?: () => void; saved: Save
       {/* The server's own verdict, not what he chose on the first step — so a rep who picked Planned
           for a customer his plan no longer holds finds out here rather than a month later. */}
       {visit.unplannedNote ? <span className="mt-1 block">{visit.unplannedNote}</span> : null}
+      {/* A recorded visit counts once it is approved (owner, 2026-10-16). An off-plan one already says so above. */}
+      {visit.recordingNote && visit.unplannedKind !== "out_of_plan" ? <span className="mt-1 block">{visit.recordingNote}</span> : null}
       {/* "Arrange a double visit" asked his manager by itself (owner, 2026-10-02) — his own request. */}
       {visit.visitAskNote ? <span className="mt-1 block break-words">{visit.visitAskNote}</span> : null}
       {/* The LAST question: the people asked for a double visit (owner, 2026-10-16). Their answers show on the customer's page. */}

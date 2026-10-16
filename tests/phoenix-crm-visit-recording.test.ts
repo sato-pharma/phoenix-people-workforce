@@ -2,10 +2,21 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  isUnplannedVisitStatus,
+  isUnplannedVisitWaiting,
+  unplannedVisitRepNote,
+  unplannedVisitStageOf,
+} from "../src/lib/phoenix-crm/unplanned-rules.ts";
+import {
   describeRecordingLength,
   describeRecordingSize,
+  isRecordingReviewStatus,
   isVisitRecordingRefusal,
+  RECORDED_VISIT_REP_NOTE,
+  RECORDING_REVIEW_NOTE_MAX,
   recordingDownloadName,
+  recordingReviewLabel,
+  VISIT_RECORDING_ADMIN_PATH,
   VISIT_RECORDING_MAX_BYTES,
   VISIT_RECORDING_MAX_SECONDS,
   VISIT_RECORDING_MIN_SECONDS,
@@ -29,6 +40,10 @@ import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
  *   3. Who hears it: the Super Admin, an SFE manager, the territory's own chain — never the rep.
  *   4. Who manages it: the Super Admin alone, on the page, the routes and inside every service.
  *   5. The bounds, the wording, and the file name a download is saved under.
+ *   6. A recorded visit of ANY type waits for the Administrator first (owner, 2026-10-16: "any visit any
+ *      type which is recorder must go for adminstarator approval first even if in plan"): it counts in
+ *      nothing until he approves it, a recorded off-plan visit reaches its manager only after his yes,
+ *      and the manager's decide path refuses it while it waits.
  */
 function read(path: string): string {
   return stripComments(readFileSync(path, "utf8").replace(/\r\n/g, "\n"));
@@ -84,7 +99,7 @@ export function runPhoenixCrmVisitRecordingTests(): void {
   assert.ok(claimAt < rpcAt, "the claim runs BEFORE the save writes anything, so the visit can never exist without it");
   assert.match(
     save.slice(Math.max(0, claimAt - 120), claimAt),
-    /if \(enteredAs === "rep"\) \{\s*await $/,
+    /const recorded = enteredAs === "rep" \? await $/,
     "only the rep's own save is asked — a manager's double visit and the Super Admin's entry never are",
   );
 
@@ -120,7 +135,12 @@ export function runPhoenixCrmVisitRecordingTests(): void {
     /export function hearsVisitRecording\(viewer: PhoenixCrmViewer, seat: OrgSeat\): boolean \{\s*if \(viewer\.isSuperAdmin \|\| viewer\.isSfeManager\) return true;\s*return managerChain\(viewer\.org, seat\.seatId\)\.some\(\(member\) => member\.hrId === viewer\.hrId\);\s*\}/,
     "his answer 4: the Super Admin, the SFE managers and the territory's own managers — and nobody else",
   );
-  assert.match(visits, /hearsVisitRecording\(viewer, seat\) \? await loadRecordingSecondsByVisit\(/, "the day reads recordings only for a reader who may hear them");
+  assert.match(visits, /const hears = hearsVisitRecording\(viewer, seat\);/, "the day asks who may hear the recordings");
+  assert.match(
+    visits,
+    /return hears && recording\.seconds !== null \? \{ \.\.\.visit, countsInKpi, recordingSeconds: recording\.seconds \} : \{ \.\.\.visit, countsInKpi \};/,
+    "the recording's length — what draws the player — goes only to a reader who may hear it",
+  );
   const sign = service.slice(service.indexOf("export async function signVisitRecording("));
   assert.match(sign.slice(0, 1600), /hearsVisitRecording\(/, "the play route asks the same question before signing");
 
@@ -179,4 +199,94 @@ export function runPhoenixCrmVisitRecordingTests(): void {
     "the claim is never callable with the browser key",
   );
   assert.match(sql, /'phoenix-crm-recordings',\s*'phoenix-crm-recordings',\s*false/, "the bucket is private");
+
+  // ── 6. A recorded visit of ANY type waits for the Administrator first ─────────────────────────
+  assert.equal(isRecordingReviewStatus("pending"), true);
+  assert.equal(isRecordingReviewStatus("approved"), true);
+  assert.equal(isRecordingReviewStatus("refused"), true);
+  assert.equal(isRecordingReviewStatus("admin_pending"), false, "the recording's own decision has three states, nothing else");
+  assert.equal(RECORDING_REVIEW_NOTE_MAX, 500, "the database's own ceiling");
+  assert.equal(recordingReviewLabel("pending"), "Waiting for your approval");
+  assert.equal(VISIT_RECORDING_ADMIN_PATH, "/admin/field-crm/visit-recording", "the board links to the page that decides it");
+
+  // The rep's wording names no person and no check (Golden Rule #1).
+  for (const note of [RECORDED_VISIT_REP_NOTE, unplannedVisitRepNote("admin_pending")]) {
+    assert.match(note, /counts once it is approved/, "the rep is told it counts once approved");
+    assert.doesNotMatch(note, /Administrator|checked|reviewed|Omar/i, "and never who approves it or that it is checked");
+  }
+
+  // An off-plan recorded visit's first step is the Administrator's, and it is still WAITING.
+  assert.equal(isUnplannedVisitStatus("admin_pending"), true);
+  assert.equal(isUnplannedVisitWaiting("admin_pending"), true, "while he has not decided, it counts in nothing");
+  assert.equal(unplannedVisitStageOf("admin_pending"), null, "it is no manager's or SFE's step — they cannot decide it yet");
+
+  // The manager's and SFE's decide path refuses it while it waits for him.
+  const unplanned = read("src/lib/phoenix-crm/server/unplanned.ts");
+  const decideAt = unplanned.indexOf("export async function decideUnplannedVisit(");
+  assert.ok(decideAt > 0, "the decide path could not be located");
+  assert.match(
+    unplanned.slice(decideAt, decideAt + 3000),
+    /if \(status === "admin_pending"\) throw forbiddenError\(/,
+    "a manager cannot decide a visit still waiting for the Administrator",
+  );
+
+  // The save holds back the manager's notice for a recorded visit; the Administrator's yes sends it.
+  assert.match(save, /if \(unplannedKind === "out_of_plan" && result\.duplicate !== true && !recorded\) \{/, "no notice to the manager before the Administrator decides");
+  assert.match(save, /recordingNote: recorded \? RECORDED_VISIT_REP_NOTE : null/, "the rep is told it counts once approved");
+  const review = service.slice(service.indexOf("export async function reviewRecordedVisit("));
+  assert.match(
+    review.slice(0, 400),
+    /assertManager\(viewer\);\s*if \(!canAdminister\(viewer\)\) throw forbiddenError\(/,
+    "the decision is the Administrator's alone, asked inside the service",
+  );
+  assert.match(review, /if \(decision === "refuse" && note === null\) throw validationError\(/, "a refusal carries a note");
+  assert.match(
+    review,
+    /unplannedStatus === "manager_pending" \|\| unplannedStatus === "sfe_pending"/,
+    "his yes hands an off-plan visit to its step, and that step is told then",
+  );
+  assert.match(review, /kind: "unplanned_visit_raised"/);
+
+  const reviewRoute = read("app/api/phoenix-crm/recording/admin/review/route.ts");
+  assert.match(reviewRoute, /assertSameOriginMutation\(request\)/, "the review route is a same-origin POST");
+  assert.match(reviewRoute, /await assertPermission\(access, "phoenix_crm", "approve"\)/, "and asks the approve permission first");
+
+  // The Needs You board carries the waiting count to his own lane, asked for him alone.
+  const crmNeedsYou = read("src/lib/phoenix-crm/server/needs-you.ts");
+  assert.match(
+    crmNeedsYou,
+    /canAdminister\(viewer\) \? countRecordedVisitsWaiting\(\) : Promise\.resolve\(\{ count: 0, oldestAt: null \}\)/,
+    "a true zero with no query for everyone else",
+  );
+  const countAt = service.indexOf("export async function countRecordedVisitsWaiting(");
+  assert.ok(countAt > 0, "the module owns the count");
+  const countBody = service.slice(countAt, service.indexOf("\n}\n", countAt));
+  assert.match(countBody, /\.eq\("review_status", "pending"\)/);
+  assert.match(countBody, /saved\.has\(/, "a claim whose visit was never written is not counted");
+  assert.doesNotMatch(countBody, /catch/, "a failed read travels to the board's amber row");
+
+  // The database half.
+  const reviewSql = stripSqlComments(
+    readFileSync("supabase/migrations/20261016161248_phoenix_crm_recorded_visit_waits_for_the_administrator.sql", "utf8"),
+  );
+  assert.match(reviewSql, /add column if not exists review_status text not null default 'pending'/, "every recording starts waiting");
+  assert.match(reviewSql, /check \(status in \('admin_pending', 'manager_pending', 'sfe_pending', 'approved', 'refused'\)\)/);
+  assert.match(
+    reviewSql,
+    /create trigger phoenix_crm_unplanned_waits_for_the_administrator\s+before insert on public\.phoenix_crm_unplanned_visits/,
+    "a recorded off-plan visit is moved to the Administrator's step as it is written, whatever path writes it",
+  );
+  assert.match(reviewSql, /new\.after_admin_status := new\.status;\s*new\.status := 'admin_pending';/, "the step it was going to start at is kept for his yes");
+  assert.match(
+    reviewSql,
+    /with \(security_invoker = true\) as[\s\S]*and not exists \(\s*select 1 from public\.phoenix_crm_visit_recordings r\s*where r\.visit_id = v\.id and r\.review_status <> 'approved'\s*\)/,
+    "the countable view leaves out every recorded visit he has not approved — planned included",
+  );
+  assert.match(reviewSql, /where r\.visit_id = v_visit_id for update;/, "the decision locks the recording row, so two clicks cannot both decide");
+  assert.match(reviewSql, /raise exception 'phoenix_crm:recording_reviewed'/, "a decided recording is never decided twice");
+  assert.match(
+    reviewSql,
+    /revoke execute on function public\.phoenix_crm_review_visit_recording\(jsonb\) from public, anon, authenticated;/,
+    "the decision is never callable with the browser key",
+  );
 }

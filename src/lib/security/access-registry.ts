@@ -1060,6 +1060,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/recording/admin", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/recording/admin/download", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/recording/admin/delete", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // The Administrator approves or refuses a recorded visit (owner, 2026-10-16). The service asks
+  // `canAdminister` again, so the matrix action is the floor, not the gate.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/recording/admin/review", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // The place stamp burned into a live photo (address, brick, area, coordinates). Same gate as taking
   // the photo; it resolves and returns, persisting nothing, so audit is classified but not required.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["POST"], pattern: "/api/phoenix-crm/location", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),

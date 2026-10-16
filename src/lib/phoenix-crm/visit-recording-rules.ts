@@ -106,6 +106,35 @@ export type RecordingRepRow = {
   setAt: string | null;
 };
 
+/**
+ * 🔴 A RECORDED VISIT WAITS FOR THE ADMINISTRATOR FIRST, WHATEVER ITS TYPE (owner, 2026-10-16: *"any
+ * visit any type which is recorder must go for adminstarator approval first even if in plan"*). Planned,
+ * out of plan, out of list or a pharmacy: it counts in nothing until he approves it on the Visit
+ * Recording page, and a recorded off-plan visit reaches the district manager and SFE only after his yes.
+ * His refusal ends it. The decision is kept on the recording row (`review_status`), the one row every
+ * recorded visit has; `phoenix_crm_countable_visits` reads it.
+ */
+export type RecordingReviewStatus = "pending" | "approved" | "refused";
+
+export function isRecordingReviewStatus(value: unknown): value is RecordingReviewStatus {
+  return value === "pending" || value === "approved" || value === "refused";
+}
+
+/** The Visit Recording page, where the Administrator approves or refuses a recorded visit. */
+export const VISIT_RECORDING_ADMIN_PATH = "/admin/field-crm/visit-recording";
+
+/** The refusal note's ceiling — the database's own (500). */
+export const RECORDING_REVIEW_NOTE_MAX = 500;
+
+/** What the rep reads once a recorded visit is saved. It names no person and no check (Golden Rule #1). */
+export const RECORDED_VISIT_REP_NOTE = "Recorded. The visit counts once it is approved.";
+
+export function recordingReviewLabel(status: RecordingReviewStatus): string {
+  if (status === "approved") return "Approved — it counts";
+  if (status === "refused") return "Refused — it does not count";
+  return "Waiting for your approval";
+}
+
 export type RecordingListRow = {
   path: string;
   visitId: string;
@@ -117,11 +146,23 @@ export type RecordingListRow = {
   areaName: string;
   seconds: number | null;
   bytes: number | null;
+  /** "Planned", "Out of plan", "Out of list" or "Pharmacy" — what the visit was, for the decision. */
+  visitTypeLabel: string;
+  reviewStatus: RecordingReviewStatus;
+  reviewedByName: string | null;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  /** The file was deleted; the visit is still decided on what the row says about it. */
+  deleted: boolean;
 };
 
 export type VisitRecordingAdminView = {
   reps: RecordingRepRow[];
+  /** Recorded visits waiting for the Administrator, oldest first — whatever their age, deleted file or not. */
+  waiting: RecordingListRow[];
   recordings: RecordingListRow[];
   /** The window the recordings list covers, as Cairo days. */
   since: string;
+  /** Whether this viewer is the Administrator, the one person who approves a recorded visit. */
+  canReview: boolean;
 };

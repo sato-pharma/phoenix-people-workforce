@@ -43,9 +43,14 @@
  * decide one. Both halves look like tidying and are not: narrowing the href to the source's default
  * would send him to a screen with no decision on it, and widening the gate would put the queue on the
  * screens of people who cannot act on it.
+ *
+ * 🔴 **THE RECORDED-VISIT COUNT IS THE ADMINISTRATOR'S ALONE, AND LINKS TO THE VISIT RECORDING PAGE.**
+ * Added 2026-10-16, the day the owner ruled that a recorded visit of any type waits for his approval
+ * first. It counts in nothing until he decides, so a rep's figures wait on him by name. Asked only when
+ * `canAdminister` is true — a true zero with no query for everyone else.
  */
 
-import { readsTeamReports, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canAdminister, readsTeamReports, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import {
   countPhoenixCrmListRequestsWaitingForYou,
   countPhoenixCrmOffPlanVisitsWaitingForYou,
@@ -58,6 +63,7 @@ import {
   countReopenedCustomersWaiting,
   countValidationReviewsWaiting,
 } from "@/lib/phoenix-crm/server/validation-reviews";
+import { countRecordedVisitsWaiting } from "@/lib/phoenix-crm/server/visit-recordings";
 
 export type PhoenixCrmDecisionCounts = {
   /** List requests — a grade, a drop, an add, a bring-back — at a step this viewer takes. */
@@ -97,6 +103,13 @@ export type PhoenixCrmDecisionCounts = {
   reopenedWaiting: number;
   /** When the oldest of those was refused, so the row can state how long it has waited. */
   oldestReopenedAt: string | null;
+  /**
+   * Recorded visits waiting on the Administrator (owner, 2026-10-16) — any type, planned included. Each
+   * counts in nothing until he decides. His alone (`canAdminister`): 0 with no query for everyone else.
+   */
+  recordedVisits: number;
+  /** When the oldest of those was recorded, so the row can state its age. */
+  oldestRecordedVisitAt: string | null;
   /** True when the two decision counts are TEST entries — the Super Admin, or a test account. */
   isTest: boolean;
 };
@@ -113,7 +126,7 @@ export function phoenixCrmReadsDecisions(viewer: PhoenixCrmViewer): boolean {
 }
 
 /**
- * The five counts, in one wave. It THROWS on any failed read rather than reporting a zero — the
+ * The counts, in one wave. It THROWS on any failed read rather than reporting a zero — the
  * board turns a rejection into its amber "could not be read" row, and a zero it cannot prove is the
  * one shape that board must never have.
  */
@@ -122,7 +135,7 @@ export async function loadPhoenixCrmDecisionCounts(viewer: PhoenixCrmViewer): Pr
   const seatIds = viewer.scopeTerritories.map((seat) => seat.seatId);
 
   const decidesPlaces = canDecideValidationReviews(viewer);
-  const [listRequests, offPlanVisits, weeklyPlans, readiness, placeCheck, reopened] = await Promise.all([
+  const [listRequests, offPlanVisits, weeklyPlans, readiness, placeCheck, reopened, recorded] = await Promise.all([
     countPhoenixCrmListRequestsWaitingForYou(seats),
     countPhoenixCrmOffPlanVisitsWaitingForYou(seats),
     // The weekly plans waiting on him. It was missing here until 2026-10-08 while the module's own
@@ -138,6 +151,8 @@ export async function loadPhoenixCrmDecisionCounts(viewer: PhoenixCrmViewer): Pr
     decidesPlaces ? countValidationReviewsWaiting() : Promise.resolve({ count: 0, oldestAt: null }),
     // The same gate for the same reason: only he refuses a place, so only he is told it is not redone.
     decidesPlaces ? countReopenedCustomersWaiting() : Promise.resolve({ count: 0, oldestAt: null }),
+    // A recorded visit waits on the Administrator alone, so for everybody else this is a true zero.
+    canAdminister(viewer) ? countRecordedVisitsWaiting() : Promise.resolve({ count: 0, oldestAt: null }),
   ]);
 
   let awaitingValidation = 0;
@@ -153,6 +168,8 @@ export async function loadPhoenixCrmDecisionCounts(viewer: PhoenixCrmViewer): Pr
     oldestPlaceCheckAt: placeCheck.oldestAt,
     reopenedWaiting: reopened.count,
     oldestReopenedAt: reopened.oldestAt,
+    recordedVisits: recorded.count,
+    oldestRecordedVisitAt: recorded.oldestAt,
     isTest: seats.isTest,
   };
 }
