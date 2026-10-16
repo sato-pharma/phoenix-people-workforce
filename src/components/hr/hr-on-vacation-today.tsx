@@ -41,13 +41,27 @@
 
 import { ArrowUpRight, Plane } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import type { OnVacationTodayRow } from "@/lib/vacation/on-vacation-today";
 
 /** The seat's own Vacation Report — the row the HR Operations sidebar actually offers her. */
 const REPORT_HREF = "/hr/leave-management/vacation-report";
 
-export function HrOnVacationToday({ rows }: { rows: OnVacationTodayRow[] | null }) {
+/**
+ * `linked` is TRUE for the seat the Vacation Report opens for (HR Operations) and FALSE for the
+ * Talent Acquisition seat (owner, 2026-10-16, option "hide the link and the row links, keep the
+ * panel"). Her panel reads the company's approved absences through her Workforce Context function,
+ * but the report it would link to scopes her to her OWN leave, so the button and every row link
+ * landed her on a page that could not show the person named above it. The names stay; the links go.
+ */
+export function HrOnVacationToday({
+  linked = true,
+  rows,
+}: {
+  linked?: boolean;
+  rows: OnVacationTodayRow[] | null;
+}) {
   // The source did not answer. Drawing "nobody is on a vacation today" here would be the
   // misleading zero — see the header.
   if (rows === null) return null;
@@ -81,10 +95,7 @@ export function HrOnVacationToday({ rows }: { rows: OnVacationTodayRow[] | null 
         <ul className="divide-y divide-slate-200/70 border-t border-slate-200/70">
           {rows.map((row) => (
             <li key={row.id}>
-              <Link
-                className="group/row flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 transition-colors duration-150 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500 sm:px-6"
-                href={row.href}
-              >
+              <RowShell href={linked ? row.href : null}>
                 <Plane
                   aria-hidden="true"
                   className="h-3.5 w-3.5 shrink-0 self-center text-slate-400"
@@ -110,25 +121,46 @@ export function HrOnVacationToday({ rows }: { rows: OnVacationTodayRow[] | null 
                 <span className="ml-auto whitespace-nowrap text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">
                   {row.untilLabel}
                 </span>
-                <ArrowUpRight
-                  aria-hidden="true"
-                  className="h-3.5 w-3.5 shrink-0 self-center text-orange-400 opacity-0 transition-opacity duration-150 group-hover/row:opacity-100"
-                />
-              </Link>
+                {linked ? (
+                  <ArrowUpRight
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5 shrink-0 self-center text-orange-400 opacity-0 transition-opacity duration-150 group-hover/row:opacity-100"
+                  />
+                ) : null}
+              </RowShell>
             </li>
           ))}
         </ul>
       )}
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-slate-200/70 px-4 py-3 sm:px-6">
-        <Link
-          className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-orange-600 transition-colors hover:text-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
-          href={REPORT_HREF}
-        >
-          Open the Vacation Report
-          <ArrowUpRight aria-hidden="true" className="h-3.5 w-3.5" />
-        </Link>
-      </div>
+      {linked ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-slate-200/70 px-4 py-3 sm:px-6">
+          <Link
+            className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-orange-600 transition-colors hover:text-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+            href={REPORT_HREF}
+          >
+            Open the Vacation Report
+            <ArrowUpRight aria-hidden="true" className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+/** One absence row: a link to its request, or the same row with no link when the seat cannot open it. */
+function RowShell({ children, href }: { children: ReactNode; href: string | null }) {
+  if (href === null) {
+    return (
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 sm:px-6">{children}</div>
+    );
+  }
+  return (
+    <Link
+      className="group/row flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 transition-colors duration-150 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500 sm:px-6"
+      href={href}
+    >
+      {children}
+    </Link>
   );
 }

@@ -15,7 +15,7 @@
  * families, in her handbook's order:
  *
  *   Conversion — interview to offer · offer acceptance · offer to join   (three key cards)
- *   The field  — the eight recruiting figures, in three groups: Seats · Candidates · Outcomes
+ *   The field  — the six recruiting figures (vacants by line, CVs received, hired, offers out), in three groups: Seats · Candidates · Outcomes
  *
  * REBUILT 2026-10-16 ("from scratch premium polish to her overview landing page"). The two charts
  * he once named (Live candidates by pipeline stage, Job offers by status) are NOT built here any
@@ -62,9 +62,10 @@ import { HR_ROLE_BUNDLES, type HrBundleName } from "@/lib/auth/hr-functions";
 import { hrefOutsideSeatFence } from "@/lib/auth/seat-page-fences";
 import { buildMonthGrid } from "@/lib/calendar/logic";
 import { getCompanyCalendarWorkspace } from "@/lib/calendar/service";
-import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectory, isActiveDirectoryEmployee } from "@/lib/employees/employee-directory";
 import {
   buildRecruitingTiles,
+  describeWindow,
   hrBundleForRole,
   loadPersonalRecord,
   safe,
@@ -77,6 +78,8 @@ import {
 } from "@/lib/hr/command-center";
 import {
   buildHiringQualityKpis,
+  buildCvsReceivedTile,
+  buildLineVacancyTiles,
   buildMonthMarks,
   buildOfferConversionKpis,
   cairoMinutesNow,
@@ -85,6 +88,7 @@ import {
   KPI_WINDOW_DAYS,
   RECRUITING_TASK_KEYS,
   TALENT_ACQUISITION_SEAT,
+  TALENT_KEPT_BUILDER_TILE_KEYS,
   toTalentInterview,
   type TalentCalendar,
   type TalentCvToday,
@@ -92,7 +96,7 @@ import {
   type TalentKpi,
   type TalentToday,
 } from "@/lib/hr/talent-acquisition-logic";
-import { buildHrTodayTasks, type HrTask } from "@/lib/hr/today-tasks";
+import { buildHrTodayTasks, openWorkforceSeats, type HrTask } from "@/lib/hr/today-tasks";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { listOffers } from "@/lib/offers/service";
 import type { OfferRecord } from "@/lib/offers/types";
@@ -116,6 +120,7 @@ import {
   upcomingWeekStart,
   weekStartFor,
 } from "@/lib/recruitment/interview-calendar-week";
+import { countCandidatesReceivedInWindow } from "@/lib/recruitment/cvs-received";
 import { buildTodaysCvDigest } from "@/lib/recruitment/inbound/daily-cv-digest";
 import { countInterviewVolume } from "@/lib/recruitment/interview-volume";
 import { listOnVacationToday, type OnVacationTodayRow } from "@/lib/vacation/on-vacation-today";
@@ -329,7 +334,7 @@ export async function getTalentAcquisitionOverview(
   const pageUnavailable: string[] = [];
 
   // The calendar waits for the offers, because the joining days on it come from the accepted ones.
-  const [volume, personal, { calendar, today }, cvToday] = await Promise.all([
+  const [volume, personal, { calendar, today }, cvToday, cvsReceived] = await Promise.all([
     countInterviewVolume(KPI_WINDOW_DAYS, now).catch(() => {
       pageUnavailable.push("Interviews held");
       return null;
@@ -351,6 +356,14 @@ export async function getTalentAcquisitionOverview(
         pageUnavailable.push("CVs received today");
         return { status: "failed" };
       }),
+    // The CVs received in the Hired card's window. Null when her seat may not read candidates or
+    // the read failed; the card is then ABSENT, never drawn as "0 CVs received".
+    canAccess(access, "candidates", "read")
+      .then((allowed) => (allowed ? countCandidatesReceivedInWindow(hiredWindow) : null))
+      .catch((): null => {
+        pageUnavailable.push("CVs received");
+        return null;
+      }),
   ]);
   // The week is the real calendar component and reads itself, so what this page can still fail to
   // get is her ROLE on it (no role, no week at all) and her OWN agenda. Either one is named here,
@@ -365,7 +378,23 @@ export async function getTalentAcquisitionOverview(
     cvToday,
     field: {
       hiredWindow,
-      tiles: fenced(seat, buildRecruitingTiles(loaded) ?? []),
+      tiles: fenced(seat, [
+        // Vacants by line, absent when the directory did not load: a 0 there would say "every seat
+        // is filled", the false all-clear the seat tiles have always refused to print.
+        ...(loaded.directory
+          ? buildLineVacancyTiles({
+              activeLineNames: loaded.directory.employees
+                .filter((employee) => isActiveDirectoryEmployee(employee))
+                .map((employee) => employee.lineName),
+              openSeatLineNames: openWorkforceSeats(loaded.directory).map((seatRow) => seatRow.lineName),
+            })
+          : []),
+        ...(cvsReceived === null ? [] : [buildCvsReceivedTile(cvsReceived, describeWindow(hiredWindow))]),
+        // The shared builder serves the HR command centre too; her page keeps only two of its figures.
+        ...(buildRecruitingTiles(loaded) ?? []).filter((tile) =>
+          TALENT_KEPT_BUILDER_TILE_KEYS.includes(tile.key),
+        ),
+      ]),
     },
     hiringQuality: buildHiringQualityKpis({
       offers: loaded.offers,
