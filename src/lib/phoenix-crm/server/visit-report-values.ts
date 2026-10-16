@@ -125,6 +125,7 @@ const CUSTOMER_STATUS_LABELS: Record<string, string> = {
 const REVIEW_STATUS_LABELS: Record<string, string> = { pending: "Waiting for the Super Admin", approved: "Approved", rejected: "Sent back" };
 
 const OFF_PLAN_STATUS_LABELS: Record<string, string> = {
+  admin_pending: "Waiting for the Administrator",
   manager_pending: "Waiting for the manager",
   sfe_pending: "Waiting for SFE",
   approved: "Approved — it counts",

@@ -106,6 +106,50 @@ export type RecordingRepRow = {
   setAt: string | null;
 };
 
+/**
+ * 🔴 A RECORDED VISIT WAITS FOR THE ADMINISTRATOR FIRST, WHATEVER ITS TYPE (owner, 2026-10-16: *"any
+ * visit any type which is recorder must go for adminstarator approval first even if in plan"*). Planned,
+ * out of plan, out of list or a pharmacy: it counts in nothing until he approves it on the Visit
+ * Recording page, and a recorded off-plan visit reaches the district manager and SFE only after his yes.
+ * His refusal ends it. The decision is kept on the recording row (`review_status`), the one row every
+ * recorded visit has; `phoenix_crm_countable_visits` reads it.
+ */
+export type RecordingReviewStatus = "pending" | "approved" | "refused";
+
+export function isRecordingReviewStatus(value: unknown): value is RecordingReviewStatus {
+  return value === "pending" || value === "approved" || value === "refused";
+}
+
+/** The Visit Recording page, where the Administrator approves or refuses a recorded visit. */
+export const VISIT_RECORDING_ADMIN_PATH = "/admin/field-crm/visit-recording";
+
+/** The refusal note's ceiling — the database's own (500). */
+export const RECORDING_REVIEW_NOTE_MAX = 500;
+
+/**
+ * What the rep reads once a recorded visit is saved, in the owner's own words (2026-10-16: "show here ur
+ * visit is pending admin approval"). It names a role, never a person and never a check (Golden Rule #1).
+ * It never stops his next visit: every one waits on its own, and all of them stay pending until the
+ * Administrator decides.
+ */
+export const RECORDED_VISIT_REP_NOTE = "Your visit is pending admin approval. It counts once it is approved.";
+
+/**
+ * Where a recorded visit's approval has got to, on the rep's OWN visit list — his own approval, shown so
+ * he knows it is not counting yet, the same way an off-plan visit shows its step.
+ */
+export function recordingReviewRepLabel(status: RecordingReviewStatus): string {
+  if (status === "approved") return "Approved — it counts";
+  if (status === "refused") return "Not approved — it does not count";
+  return "Pending admin approval";
+}
+
+export function recordingReviewLabel(status: RecordingReviewStatus): string {
+  if (status === "approved") return "Approved — it counts";
+  if (status === "refused") return "Refused — it does not count";
+  return "Waiting for your approval";
+}
+
 export type RecordingListRow = {
   path: string;
   visitId: string;
@@ -117,11 +161,23 @@ export type RecordingListRow = {
   areaName: string;
   seconds: number | null;
   bytes: number | null;
+  /** "Planned", "Out of plan", "Out of list" or "Pharmacy" — what the visit was, for the decision. */
+  visitTypeLabel: string;
+  reviewStatus: RecordingReviewStatus;
+  reviewedByName: string | null;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  /** The file was deleted; the visit is still decided on what the row says about it. */
+  deleted: boolean;
 };
 
 export type VisitRecordingAdminView = {
   reps: RecordingRepRow[];
+  /** Recorded visits waiting for the Administrator, oldest first — whatever their age, deleted file or not. */
+  waiting: RecordingListRow[];
   recordings: RecordingListRow[];
   /** The window the recordings list covers, as Cairo days. */
   since: string;
+  /** Whether this viewer is the Administrator, the one person who approves a recorded visit. */
+  canReview: boolean;
 };

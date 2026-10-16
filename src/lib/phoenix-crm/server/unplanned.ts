@@ -285,6 +285,9 @@ export async function decideUnplannedVisit(viewer: PhoenixCrmViewer, raw: unknow
   if (!seat) throw notFoundError("This territory is no longer in the organogram. Reload the page.");
   const status: UnplannedVisitStatus = isUnplannedVisitStatus(row.status) ? row.status : "approved";
   if (!isUnplannedVisitWaiting(status)) throw forbiddenError("This visit was already decided. Reload the page.");
+  // A RECORDED visit waits for the Administrator first (owner, 2026-10-16), and his step is taken on the
+  // Visit Recording page — never here, by anybody, his own override included.
+  if (status === "admin_pending") throw forbiddenError("This recorded visit waits for the Administrator's approval first. Reload the page.");
   const stage = unplannedVisitStageOf(status) as UnplannedVisitStage;
   // The Administrator approves or declines at whichever step it waits at, in place of its holder, and
   // is no step himself (owner, 2026-10-14; before that he could only decline, 2026-10-08).

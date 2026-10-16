@@ -116,7 +116,7 @@ async function loadPlanEvents(planIds: ReadonlyArray<string>): Promise<Map<strin
 }
 
 function offPlanOf(status: unknown): DailyPlanOffPlan {
-  if (status === "manager_pending" || status === "sfe_pending") return "waiting";
+  if (status === "admin_pending" || status === "manager_pending" || status === "sfe_pending") return "waiting";
   if (status === "approved" || status === "refused") return status;
   return "recorded";
 }
