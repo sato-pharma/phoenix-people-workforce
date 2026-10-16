@@ -140,9 +140,10 @@ async function buildPluginLoadsTests() {
     } catch (error) {
       assert.fail(`next.config.ts must load with a build token set, as the production build loads it — the Sentry plugin failed: ${String((error as Error).message).split("\n")[0]}`);
     }
-    const added = Object.keys(wrapped).filter((key) => !(key in plain));
-    const changed = Object.keys(wrapped).filter((key) => key in plain && String(wrapped[key]) !== String(plain[key]));
-    console.log("PROBE sentry-wrapped config: added keys", JSON.stringify(added), "changed keys", JSON.stringify(changed), "experimental hook", typeof (wrapped.experimental as Record<string, unknown> | undefined)?.runAfterProductionCompile, "plain hook", typeof (plain.experimental as Record<string, unknown> | undefined)?.runAfterProductionCompile);
+    // The wrapper must hand the app's own config back, not replace it: the security headers are the part of it a
+    // broken wrap would drop without any build error.
+    assert.equal(typeof wrapped.headers, "function", "the Sentry-wrapped config must still carry the app's headers()");
+    assert.equal(typeof plain.headers, "function", "the unwrapped config carries headers() too");
   } finally {
     if (saved.token === undefined) delete process.env.SENTRY_AUTH_TOKEN;
     else process.env.SENTRY_AUTH_TOKEN = saved.token;

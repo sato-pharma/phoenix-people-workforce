@@ -129,7 +129,7 @@ sit in the table above as required checks. Both were demoted on 2026-09-29 and t
 #1894, which also removed the `--exit-code 0` that had made gitleaks incapable of failing (40
 consecutive green runs that proved nothing). 🔴 **It no longer runs on a PR at all** — the trigger was
 removed on 2026-09-29 and the same gitleaks moved into `bash-guard.mjs` clause C12, which refuses the
-push instead, earlier and closer to the author. What remains is the daily 05:17 UTC run over `main`
+push instead, earlier and closer to the author. What remains is the daily 20:17 UTC run over `main` (moved from 05:17 on 2026-10-16)
 plus a dispatch. Semgrep's `sast-scan` **is** in the file (its own job, deliberately never a required
 check); an earlier version of this paragraph said SAST "no longer runs at all", which is wrong. Since
 GHAS is not purchasable on a personal account (`security_and_analysis: null`), these two are the
