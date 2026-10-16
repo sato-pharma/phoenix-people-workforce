@@ -65,7 +65,16 @@ export async function register() {
       if (isUnrecognisedProcessRole(raw)) {
         console.error(`[process-role] PHOENIX_PROCESS_ROLE=${JSON.stringify(raw)} is not web, worker or all — running as "all"`);
       }
-      console.log(`[process-role] ${resolveProcessRole(raw)}`);
+      const role = resolveProcessRole(raw);
+      console.log(`[process-role] ${role}`);
+      // Production pages must not share their thread with the schedulers. "all" there means the
+      // web/worker split was never configured, and every heavy job freezes every page again.
+      if (role === "all" && process.env.RAILWAY_ENVIRONMENT_NAME === "production" && process.env.NODE_ENV === "production") {
+        console.error(
+          '[process-role] production is running as "all" — background jobs share the page server\'s event loop. ' +
+            "Set PHOENIX_PROCESS_ROLE=web here and run a worker service with PHOENIX_PROCESS_ROLE=worker.",
+        );
+      }
     } catch (error) {
       console.error("[process-role] failed to resolve:", error);
     }
