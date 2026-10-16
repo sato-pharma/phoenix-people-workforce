@@ -125,25 +125,25 @@ async function buildPluginLoadsTests() {
     dir: string,
     options?: Record<string, unknown>,
   ) => Promise<Record<string, unknown>>;
-  const root = fileURLToPath(new URL("..", import.meta.url));
+  // Next keeps every loaded config in a per-process cache keyed by the directory string (and phase and pid), so a
+  // first load with no token would be replayed to a second load WITH one and next.config.ts would never be
+  // evaluated again — the first version of this guard did exactly that and passed on a deliberately broken
+  // plugin import. One load, with the token, under a spelling of the directory (no trailing separator) that no
+  // other caller in the suite uses.
+  const root = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]+$/, "");
   const saved = { token: process.env.SENTRY_AUTH_TOKEN, sha: process.env.RAILWAY_GIT_COMMIT_SHA };
-  const load = async (token: string) => {
-    process.env.SENTRY_AUTH_TOKEN = token;
-    process.env.RAILWAY_GIT_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567";
-    return loadConfig("phase-production-build", root, { silent: true });
-  };
   try {
-    const plain = await load("");
+    process.env.SENTRY_AUTH_TOKEN = "sntrys_ci_dummy_token_that_is_never_sent_anywhere";
+    process.env.RAILWAY_GIT_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567";
     let wrapped: Record<string, unknown>;
     try {
-      wrapped = await load("sntrys_ci_dummy_token_that_is_never_sent_anywhere");
+      wrapped = await loadConfig("phase-production-build", root, { silent: true });
     } catch (error) {
       assert.fail(`next.config.ts must load with a build token set, as the production build loads it — the Sentry plugin failed: ${String((error as Error).message).split("\n")[0]}`);
     }
     // The wrapper must hand the app's own config back, not replace it: the security headers are the part of it a
     // broken wrap would drop without any build error.
     assert.equal(typeof wrapped.headers, "function", "the Sentry-wrapped config must still carry the app's headers()");
-    assert.equal(typeof plain.headers, "function", "the unwrapped config carries headers() too");
   } finally {
     if (saved.token === undefined) delete process.env.SENTRY_AUTH_TOKEN;
     else process.env.SENTRY_AUTH_TOKEN = saved.token;
