@@ -11,16 +11,35 @@ import {
   VISIT_REPORT_SHEET,
   buildVisitReportWorkbook,
   visitReportCellValue,
+  visitReportWorkbookColumns,
 } from "../src/lib/phoenix-crm/server/visit-report-workbook.ts";
 import { computeVisitSequence, type SequenceInput } from "../src/lib/phoenix-crm/visit-report-compute.ts";
-import { buildVisitReportDashboard } from "../src/lib/phoenix-crm/visit-report-dashboard.ts";
+import { buildVisitReportDashboard, countVisitReportFilled } from "../src/lib/phoenix-crm/visit-report-dashboard.ts";
+import {
+  EMPTY_VISIT_REPORT_FILTER,
+  NO_POSITION,
+  describeVisitReportFilter,
+  isVisitReportFilterEmpty,
+  matchesVisitReportFilter,
+  narrowVisitReportView,
+  readVisitReportFilter,
+  visitReportFilterOptions,
+  visitReportFilterParams,
+  type VisitReportFilter,
+} from "../src/lib/phoenix-crm/visit-report-filters.ts";
 import {
   VISIT_REPORT_CATEGORIES,
   VISIT_REPORT_FIELDS,
+  VISIT_REPORT_LEAD_KEYS,
+  VISIT_REPORT_SAVED_VIEWS_MAX,
+  VISIT_REPORT_STARTER_SETS,
+  VISIT_REPORT_VIEW_NAME_MAX,
+  cleanVisitReportViewName,
   resolveVisitReportPeriod,
   resolveVisitReportSelection,
   visitReportField,
   visitReportFieldsFor,
+  visitReportStarterFields,
   type VisitReportRow,
   type VisitReportView,
 } from "../src/lib/phoenix-crm/visit-report-fields.ts";
@@ -381,25 +400,30 @@ async function checkWorkbook(): Promise<void> {
   assert.equal(sheet.name, VISIT_REPORT_SHEET);
 
   const text = (row: number, column: number): string => String(sheet.getCell(row, column).text ?? "");
-  const heading = fields.map((_, index) => text(5, index + 1));
-  assert.deepEqual(heading, fields.map((field) => field.label), "the headings are exactly the chosen fields, in the catalogue's order");
-  assert.equal(text(5, fields.length + 1), "", "and nothing sits beside them");
+  // The date, who visited and the customer lead (owner, 2026-10-16) — "Who visited" was not ticked and is
+  // there anyway; the two that were ticked are not printed twice. Then the chosen rest, in catalogue order.
+  const columns = ["Visit date", "Who visited", "Customer name", "Saved at (Cairo time)", "Distance from the place (m)", "Next step"];
+  const heading = columns.map((_, index) => text(5, index + 1));
+  assert.deepEqual(heading, columns, "the lead three, then exactly the chosen fields, in the catalogue's order");
+  assert.equal(text(5, columns.length + 1), "", "and nothing sits beside them");
 
-  const mastheadText = [1, 2, 3].flatMap((rowNumber) => fields.map((_, index) => text(rowNumber, index + 1))).join(" | ");
+  const mastheadText = [1, 2, 3].flatMap((rowNumber) => columns.map((_, index) => text(rowNumber, index + 1))).join(" | ");
   assert.match(mastheadText, /Visit report/, "the house masthead carries the title");
   assert.match(mastheadText, /Mahmoud Adel/, "and the rep's name, never a code");
   assert.match(mastheadText, /Prepared for Omar Gawish/, "and who prepared it");
 
-  const dataRows = [6, 7].map((rowNumber) => fields.map((_, index) => sheet.getCell(rowNumber, index + 1).value));
+  const dataRows = [6, 7].map((rowNumber) => columns.map((_, index) => sheet.getCell(rowNumber, index + 1).value));
   const dateCell = dataRows[0][0];
   assert.ok(dateCell instanceof Date && dateCell.toISOString().startsWith("2026-10-06"), "a date is a real date");
-  const savedCell = dataRows[0][2];
+  assert.equal(dataRows[0][1], "Mahmoud Adel", "who visited comes from the row itself when it was not ticked");
+  assert.equal(dataRows[0][2], "Pharmacy One", "a ticked lead field keeps its own value");
+  const savedCell = dataRows[0][3];
   assert.ok(savedCell instanceof Date, "an instant is a real date-time");
   assert.equal((savedCell as Date).getUTCHours(), 9, "written as the Cairo wall clock: 07:30 UTC in January is 09:30 in Cairo");
   assert.equal((savedCell as Date).getUTCMinutes(), 30);
-  assert.equal(dataRows[0][3], 250, "a distance is a number that sorts");
-  assert.ok(dataRows[1][3] === null || dataRows[1][3] === "", "a blank is an empty cell, never a zero");
-  assert.ok(dataRows[1][4] === null || dataRows[1][4] === "");
+  assert.equal(dataRows[0][4], 250, "a distance is a number that sorts");
+  assert.ok(dataRows[1][4] === null || dataRows[1][4] === "", "a blank is an empty cell, never a zero");
+  assert.ok(dataRows[1][5] === null || dataRows[1][5] === "");
   assert.equal(String(sheet.getCell(8, 1).value ?? ""), "", "only the visits the filter returned, one row each");
 
   let everyCell = "";
@@ -417,6 +441,188 @@ async function checkWorkbook(): Promise<void> {
 
   assert.equal(visitReportCellValue("integer", null), null);
   assert.equal(visitReportCellValue("yesno", true), "Yes");
+}
+
+// ── 1 · the ready-made sets ─────────────────────────────────────────────────────────────────────
+
+function checkStarterSets(): void {
+  assert.deepEqual(
+    VISIT_REPORT_STARTER_SETS.map((set) => set.label),
+    ["Daily activity", "Location", "Off-plan approvals"],
+    "the three sets the owner was offered",
+  );
+  for (const set of VISIT_REPORT_STARTER_SETS) {
+    for (const key of set.keys) assert.ok(visitReportField(key), `${set.label} names ${key}, which is in the catalogue`);
+    assert.equal(new Set(set.keys).size, set.keys.length, `${set.label} names no field twice`);
+    for (const key of VISIT_REPORT_LEAD_KEYS) assert.ok(set.keys.includes(key), `${set.label} starts from the date, who visited and the customer`);
+  }
+
+  // Each set is cut to the reader's sight: a district manager's Location set holds the distance and the
+  // places, never the accuracy, the cases or the device; the SFE Manager's never the mock-location field.
+  const location = VISIT_REPORT_STARTER_SETS.find((set) => set.id === "location")!;
+  const forManager = visitReportStarterFields(location, "manager").map((field) => field.key);
+  const managerSight = new Set(visitReportFieldsFor("manager").map((field) => field.key));
+  for (const key of forManager) assert.ok(managerSight.has(key), `${key} is within the district manager's sight`);
+  for (const key of ["visitAccuracy", "photoAccuracy", "placeAccuracy", "pointSource", "integrityDetectors", "integrityStrength", "mockDevice"]) {
+    assert.ok(!forManager.includes(key), `the district manager's Location set leaves out ${key}`);
+  }
+  assert.ok(forManager.includes("distanceFromPlace") && forManager.includes("locationFlag"), "and keeps the distance and the far / at-the-place wording");
+  const forSfe = visitReportStarterFields(location, "sfe").map((field) => field.key);
+  assert.ok(!forSfe.includes("mockDevice") && forSfe.includes("integrityDetectors"), "the SFE Manager gets the cases, never the mock-location field");
+  assert.ok(visitReportStarterFields(location, "superAdmin").some((field) => field.key === "mockDevice"), "the Super Admin gets all of it");
+}
+
+// ── 3 · the result filters ──────────────────────────────────────────────────────────────────────
+
+function checkFilters(): void {
+  const rows = [
+    row(1, { repName: "Aya Ibrahim" }),
+    row(2, { locationFlag: "Far from the place", planned: false, repName: "Aya Ibrahim" }),
+    row(3, { locationFlag: null, repName: "Hany Saad" }),
+    row(4, { locationFlag: "Far from the place", repName: "Hany Saad", values: { nextStep: "Visit again" } }),
+  ];
+  const only = (filter: Partial<VisitReportFilter>) =>
+    rows.filter((entry) => matchesVisitReportFilter(entry, { ...EMPTY_VISIT_REPORT_FILTER, ...filter })).map((entry) => entry.visitId);
+
+  assert.deepEqual(only({}), ["V1", "V2", "V3", "V4"], "no filter keeps every visit");
+  assert.deepEqual(only({ who: "Hany Saad" }), ["V3", "V4"], "who visited");
+  assert.deepEqual(only({ day: "2026-10-02" }), ["V2"], "one day");
+  assert.deepEqual(only({ planned: "unplanned" }), ["V2"], "unplanned only");
+  assert.deepEqual(only({ planned: "planned" }), ["V1", "V3", "V4"], "planned only");
+  assert.deepEqual(only({ position: "Far from the place" }), ["V2", "V4"], "far from the place");
+  assert.deepEqual(only({ position: NO_POSITION }), ["V3"], "a visit with no position has a choice of its own");
+  assert.deepEqual(only({ position: "Far from the place", who: "Aya Ibrahim" }), ["V2"], "the filters combine");
+
+  const options = visitReportFilterOptions(rows);
+  assert.deepEqual(options.who, ["Aya Ibrahim", "Hany Saad"], "only the people the answer holds");
+  assert.deepEqual(options.days, ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"]);
+  assert.deepEqual(options.positions, ["Far from the place", "At the place", NO_POSITION], "far first, a blank position last");
+
+  // The same four filters travel to the workbook route as parameters and come back unchanged.
+  const chosen: VisitReportFilter = { day: "2026-10-04", planned: "planned", position: "Far from the place", who: "Hany Saad" };
+  const params = new URLSearchParams(visitReportFilterParams(chosen));
+  assert.deepEqual(readVisitReportFilter((key) => params.get(key)), chosen, "a filter survives the trip to the file");
+  assert.deepEqual(visitReportFilterParams(EMPTY_VISIT_REPORT_FILTER), {}, "an unfiltered link carries no filter at all");
+  const junk = new URLSearchParams({ day: "yesterday", planned: "maybe", position: "   ", who: "x".repeat(500) });
+  assert.ok(isVisitReportFilterEmpty(readVisitReportFilter((key) => junk.get(key))), "a malformed filter narrows nothing");
+  assert.equal(describeVisitReportFilter(chosen), "Hany Saad · 4 Oct 2026 · planned visits · Far from the place");
+
+  // Narrowing works the figures out again from what is left — the count, the days, the "recorded on" counts
+  // and the dashboard — and an empty filter hands back the server's own answer untouched.
+  const fields = ["nextStep"].map((key) => visitReportField(key)!);
+  const view: VisitReportView = {
+    dashboard: buildVisitReportDashboard({ days: ["x"], fields, filled: countVisitReportFilled(rows, fields), rows }),
+    days: ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"],
+    filled: countVisitReportFilled(rows, fields),
+    generatedAtIso: "2026-10-16T09:00:00Z",
+    period: { days: 4, from: "2026-10-01", to: "2026-10-04" },
+    rows,
+    selected: ["nextStep"],
+    target: { id: "SEAT-D", kind: "district", name: "Delta (1)", reps: ["Aya Ibrahim"] },
+    total: rows.length,
+  };
+  assert.equal(narrowVisitReportView(view, EMPTY_VISIT_REPORT_FILTER, fields), view, "no filter: the server's figures stand");
+  const narrowedView = narrowVisitReportView(view, { ...EMPTY_VISIT_REPORT_FILTER, who: "Hany Saad" }, fields);
+  assert.equal(narrowedView.total, 2);
+  assert.deepEqual(narrowedView.rows.map((entry) => entry.visitId), ["V3", "V4"]);
+  assert.deepEqual(narrowedView.days, ["2026-10-03", "2026-10-04"]);
+  assert.deepEqual(narrowedView.filled, { nextStep: 1 }, "recorded on 1 of the 2 visits that are left");
+  assert.equal(narrowedView.dashboard.tiles.find((tile) => tile.label === "Visits")?.value, "2", "the dashboard counts what is shown");
+  assert.equal(narrowedView.dashboard.tiles.find((tile) => tile.label === "Far from the place")?.value, "100%", "1 of the 1 measured");
+  assert.match(narrowedView.dashboard.panels.find((panel) => panel.id === "next-steps")?.note ?? "", /Recorded on 1 of 2 visits/);
+}
+
+// ── 4 · the workbook's lead columns ─────────────────────────────────────────────────────────────
+
+async function checkWorkbookLead(): Promise<void> {
+  assert.deepEqual(VISIT_REPORT_LEAD_KEYS, ["visitDate", "repName", "customerName"]);
+  const onlyDistance = ["distanceFromPlace"].map((key) => visitReportField(key)!);
+  assert.deepEqual(
+    visitReportWorkbookColumns(onlyDistance).map((field) => field.key),
+    ["visitDate", "repName", "customerName", "distanceFromPlace"],
+    "the lead three come first even when none of them was ticked",
+  );
+  const tickedLead = ["customerName", "comment", "repName", "visitDate"].map((key) => visitReportField(key)!);
+  assert.deepEqual(
+    visitReportWorkbookColumns(tickedLead).map((field) => field.key),
+    ["visitDate", "repName", "customerName", "comment"],
+    "a ticked lead field is moved to the front, never printed twice",
+  );
+
+  // A file of distances alone still says on every line whose visit it was, from the row's own head.
+  const rows: VisitReportRow[] = [row(5, { customerName: "Customer Five", repName: "Hany Saad", values: { distanceFromPlace: 40 } })];
+  const view: VisitReportView = {
+    dashboard: { panels: [], tiles: [] },
+    days: ["2026-10-05"],
+    filled: {},
+    generatedAtIso: "2026-10-16T09:00:00Z",
+    period: { days: 5, from: "2026-10-01", to: "2026-10-05" },
+    rows,
+    selected: ["distanceFromPlace"],
+    target: { id: "SEAT-1", kind: "rep", name: "Hany Saad", reps: [] },
+    total: 1,
+  };
+  const bytes = await buildVisitReportWorkbook({ fields: onlyDistance, narrowedTo: "Far from the place", view, viewerName: "Omar Gawish" });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(bytes as unknown as ArrayBuffer);
+  const sheet = workbook.worksheets[0];
+  const text = (rowNumber: number, column: number): string => String(sheet.getCell(rowNumber, column).text ?? "");
+  assert.deepEqual([1, 2, 3, 4].map((column) => text(5, column)), ["Visit date", "Who visited", "Customer name", "Distance from the place (m)"]);
+  const date = sheet.getCell(6, 1).value;
+  assert.ok(date instanceof Date && date.toISOString().startsWith("2026-10-05"), "the date is the visit's own, as a real date");
+  assert.equal(sheet.getCell(6, 2).value, "Hany Saad");
+  assert.equal(sheet.getCell(6, 3).value, "Customer Five");
+  assert.equal(sheet.getCell(6, 4).value, 40);
+  assert.equal(text(4, 1), "The visit", "the lead three sit under one band of their own");
+  const masthead = [1, 2, 3].flatMap((rowNumber) => [1, 2, 3, 4].map((column) => text(rowNumber, column))).join(" | ");
+  assert.match(masthead, /Only Far from the place/, "a narrowed file says what it was narrowed to");
+}
+
+// ── 6 · saved views ─────────────────────────────────────────────────────────────────────────────
+
+function checkSavedViews(): void {
+  assert.equal(cleanVisitReportViewName("  Monday   review "), "Monday review", "spaces are collapsed");
+  assert.equal(cleanVisitReportViewName("   "), null, "a blank name is refused");
+  assert.equal(cleanVisitReportViewName(42), null);
+  assert.equal(cleanVisitReportViewName("x".repeat(VISIT_REPORT_VIEW_NAME_MAX + 1)), null, "a name over the limit is refused, never cut");
+  assert.equal(VISIT_REPORT_SAVED_VIEWS_MAX, 20);
+
+  // 🔴 ONLY ITS OWNER (owner, 2026-10-16). Every read, save and delete is keyed on the viewer's own HR id
+  // AND the test world, and no function takes an owner from its caller.
+  const service = source("src/lib/phoenix-crm/server/visit-report-views.ts");
+  assert.equal((service.match(/.eq("owner_hr_id", ownerHrId)/g) ?? []).length, 3, "list, the cap's count and delete are each keyed on the owner");
+  assert.equal((service.match(/.eq("is_test", isTest)/g) ?? []).length, 3, "and on the test world — a persona carries the real person's HR id");
+  assert.match(service, /owner_hr_id: ownerHrId/, "a save writes the viewer as the owner");
+  assert.match(service, /onConflict: "owner_hr_id,is_test,name"/, "the same name again replaces that view");
+  assert.match(service, /ownerHrId: viewer.hrId/, "the owner is the viewer, never an argument");
+  for (const fn of ["listVisitReportViews", "saveVisitReportView", "deleteVisitReportView"]) {
+    assert.match(service, new RegExp(`export async function ${fn}\\(viewer: PhoenixCrmViewer(?:, (?:input|id): [^)]*)?\\)`), `${fn} takes the viewer and nothing naming an owner`);
+  }
+  assert.match(service, /if \(!canReadVisitReport\(viewer\)\) throw notFoundError/, "gated as the report is, with the same 404");
+  assert.equal(
+    (service.match(/resolveVisitReportSelection\(/g) ?? []).length,
+    2,
+    "fields are cleaned to the reader's sight on the way in and on the way out",
+  );
+  assert.match(service, /VISIT_REPORT_SAVED_VIEWS_MAX/, "the cap is held by the service");
+
+  const route = source("app/api/phoenix-crm/visit-report/views/route.ts");
+  for (const method of ["GET", "POST", "DELETE"]) {
+    const body = route.slice(route.indexOf(`export async function ${method}(`));
+    assert.ok(body.indexOf('assertPermission(access, "phoenix_crm", "read")') !== -1, `${method} asks the permission gate`);
+  }
+  for (const method of ["POST", "DELETE"]) {
+    const body = route.slice(route.indexOf(`export async function ${method}(`));
+    assert.ok(body.indexOf("assertSameOriginMutation(") < body.indexOf("resolveAccessContext("), `${method} refuses a cross-site write first`);
+  }
+
+  const registry = readFileSync(new URL("src/lib/security/access-registry.ts", ROOT), "utf8");
+  assert.match(registry, /methods: \["GET", "POST", "DELETE"\], pattern: "\/api\/phoenix-crm\/visit-report\/views", permission: \{ resource: "phoenix_crm", action: "read" \}, guard: "assert-permission", csrfRequired: true/);
+
+  const migration = readFileSync(new URL("supabase/migrations/20261017001000_phoenix_crm_visit_report_views.sql", ROOT), "utf8").replace(/--.*$/gm, "");
+  assert.match(migration, /create unique index if not exists phoenix_crm_visit_report_views_owner_name_uidx\s+on public\.phoenix_crm_visit_report_views \(owner_hr_id, is_test, name\);/, "the upsert's key, and a plain index PostgREST can infer");
+  assert.match(migration, /alter table public\.phoenix_crm_visit_report_views enable row level security;/);
+  assert.match(migration, /revoke all on table public\.phoenix_crm_visit_report_views from public, anon, authenticated;/, "no browser key reads anybody's views");
 }
 
 // ── 5 · where the line is held in the source ────────────────────────────────────────────────────
@@ -496,6 +702,24 @@ function checkSource(): void {
 
   const workbook = source("src/lib/phoenix-crm/server/visit-report-workbook.ts");
   assert.equal((workbook.match(/addWorksheet\(/g) ?? []).length, 1, "the workbook adds exactly one worksheet");
+
+  // What is on screen is what is in the file, after narrowing too: the route narrows the loaded answer
+  // through the screen's own matcher before the workbook is built from it.
+  const narrowAt = exportRoute.indexOf("narrowVisitReportView(");
+  assert.ok(narrowAt > exportRoute.indexOf("loadVisitReport(") && narrowAt < exportRoute.indexOf("buildVisitReportWorkbook("), "the file is narrowed exactly as the screen is");
+  assert.match(exportRoute, /readVisitReportFilter\(/);
+
+  const generator = source("src/components/phoenix-crm/visit-report/visit-report-generator.tsx");
+  assert.match(generator, /\.\.\.visitReportFilterParams\(filter\)/, "the download link carries the filters on screen");
+  assert.match(generator, /narrowVisitReportView\(view, filter, appliedFields\)/, "the screen narrows through the same function");
+  for (const piece of ["<VisitReportDashboardView dashboard={shown.dashboard} />", "rows={shown.rows} />"]) {
+    assert.ok(generator.includes(piece), `the dashboard, the map and the table all read the narrowed answer: ${piece}`);
+  }
+  assert.equal((generator.match(/rows=\{shown\.rows\}/g) ?? []).length, 2, "the map and the table both");
+  // The remembered choice is a per-browser convenience: every storage call is inside a try.
+  const storage = generator.slice(generator.indexOf("function readLastFields"), generator.indexOf("function splitTarget"));
+  assert.equal((storage.match(/try \{/g) ?? []).length, 2, "reading and writing the last choice can never break the page");
+  assert.ok(!/localStorage/.test(generator.replace(storage, "")), "nothing else touches browser storage");
 }
 
 export async function runPhoenixCrmVisitReportTests(): Promise<void> {
@@ -503,11 +727,15 @@ export async function runPhoenixCrmVisitReportTests(): Promise<void> {
     ["1 · the catalogue", checkCatalogue],
     ["1 · the selection and who reads it", checkSelection],
     ["1 · the period", checkPeriod],
+    ["1 · the ready-made sets", checkStarterSets],
     ["2 · one visit's values", checkValues],
     ["2 · the sequence facts", checkSequence],
     ["3 · the dashboard", checkDashboard],
+    ["3 · the result filters", checkFilters],
     ["4 · the workbook read back", checkWorkbook],
+    ["4 · the workbook's lead columns", checkWorkbookLead],
     ["5 · the source pins", checkSource],
+    ["6 · saved views", checkSavedViews],
   ];
   const failures: string[] = [];
   for (const [name, check] of sections) {

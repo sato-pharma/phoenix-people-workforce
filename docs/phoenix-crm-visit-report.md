@@ -72,4 +72,45 @@ The owner asked for a deep audit of the report on 16 Oct 2026 and then for five 
   visits, in the table, the location field and the dashboard. The owner added this fix to the same PR the
   same night.
 
+## The 16 Oct 2026 additions
+
+After the audit the owner asked for the three improvements it recommended, plus saved views ("make a save
+view for someone to save his fav choices"). Asked in chat, he answered four questions, each with the
+recommended option except the third.
+
+- **The Excel file always starts with Visit date · Who visited · Customer name** ("Always lead with
+  them"). This reverses the 15 Oct "only the chosen and filtered data" ruling for these three columns
+  alone: a file of distances or approval notes with no date and no name on each line cannot be read on
+  its own. A ticked lead field moves to the front and is never printed twice; an unticked one takes the
+  row's own head (`row.visitDate`, `row.repName`, `row.customerName`), which every row carries for every
+  reader. The three sit under one band, "The visit". The screen's table already led with them.
+  `VISIT_REPORT_LEAD_KEYS`, `visitReportWorkbookColumns`.
+- **Three ready-made sets** — Daily activity, Location, Off-plan approvals (`VISIT_REPORT_STARTER_SETS`).
+  Each is cut to the reader's sight by `visitReportStarterFields`, so a district manager's Location set
+  holds the distance and the far / at-the-place wording and none of the 17 `sfe`-sight fields. A set
+  only ticks boxes; Apply still runs the report.
+- **The last choice is remembered in the browser.** With no link to reopen and no fields in the address,
+  the last applied choice is ticked on arrival. It lives in `localStorage` under
+  `phoenix-crm:visit-report:last-fields`, every read and write is inside a `try`, and the page works the
+  same without it. It is a convenience only; saved views are the durable store.
+- **Result filters** — who visited, one day, planned or unplanned, and the position against the place
+  (far first, a visit with no position as a choice of its own). One pure matcher,
+  `src/lib/phoenix-crm/visit-report-filters.ts`, narrows the table, the map and the dashboard
+  (`narrowVisitReportView` works the count, the days, the "recorded on X of Y" counts and every panel out
+  again from what is left). The download link carries the same four filters, and the workbook route
+  narrows through the same function before it builds the file, so what is on screen is still what is in
+  the file. The subtitle and the export's audit row say what it was narrowed to. Filters only remove
+  visits from an answer the loader already shaped, so they cannot widen what a reader sees. A new Apply
+  starts unnarrowed.
+- **Saved views are their owner's only, and hold fields only** ("Only its owner", "Fields only").
+  Table `phoenix_crm_visit_report_views` (migration `20261017001000`), keyed on the viewer's canonical
+  HR id AND `is_test` — a test login carries the HR id of the real person it mirrors, so without the
+  flag the two would share one list. `src/lib/phoenix-crm/server/visit-report-views.ts` takes no owner
+  argument anywhere, so nobody, the Super Admin included, lists or deletes another person's views. The
+  same name saved again replaces that view; at most 20 per person; a name is at most 60 characters. The
+  field keys are cleaned against the reader's sight on save AND on read. The route
+  (`/api/phoenix-crm/visit-report/views`, GET · POST · DELETE) is gated by `canReadVisitReport` with the
+  report's own 404, and a save or a delete writes a `phoenix_crm_visit_report_saved_view` audit row past
+  the response.
+
 Pinned by `tests/phoenix-crm-visit-report.test.ts`.

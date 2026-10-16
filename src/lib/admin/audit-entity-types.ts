@@ -135,6 +135,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   phoenix_crm_reports_export: true,
   phoenix_crm_visit_report_export: true,
   phoenix_crm_visit_report_view: true,
+  phoenix_crm_visit_report_saved_view: true,
   planning_calendar_export: true,
   private_calendar_data_dispute: true,
   probation_assessment: true,

@@ -874,6 +874,9 @@ const LATER_MIGRATIONS = [
   // The List's doctor-pharmacy cards read only the visits that can change them (same audit). One
   // brand-new read function over phoenix_crm_visits; it replaces nothing.
   "supabase/migrations/20261016180201_phoenix_crm_customer_pharmacy_feedback.sql",
+  // The Visit report's saved views (owner, 2026-10-16). ONE brand-new table and NOTHING else — no
+  // function, no column on anything that exists, and it replaces nothing, so it appends safely at the end.
+  "supabase/migrations/20261017001000_phoenix_crm_visit_report_views.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

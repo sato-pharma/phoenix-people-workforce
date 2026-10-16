@@ -63,6 +63,24 @@ function numberValues(rows: ReadonlyArray<VisitReportRow>, key: string): number[
   });
 }
 
+/** For each sparse chosen field, how many of these visits carry a value — the "recorded on X of Y" count. */
+export function countVisitReportFilled(rows: ReadonlyArray<VisitReportRow>, fields: ReadonlyArray<VisitReportField>): Record<string, number> {
+  const filled: Record<string, number> = {};
+  for (const field of fields) {
+    if (!field.sparse) continue;
+    filled[field.key] = rows.filter((row) => {
+      const value = row.values[field.key];
+      return value !== null && value !== undefined && value !== "";
+    }).length;
+  }
+  return filled;
+}
+
+/** The days these visits fall on, in order. */
+export function visitReportDays(rows: ReadonlyArray<VisitReportRow>): string[] {
+  return [...new Set(rows.map((row) => row.visitDate))].sort();
+}
+
 export function buildVisitReportDashboard(input: {
   rows: ReadonlyArray<VisitReportRow>;
   fields: ReadonlyArray<VisitReportField>;

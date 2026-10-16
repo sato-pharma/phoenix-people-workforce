@@ -337,6 +337,9 @@ export type AuditEntityType =
   // as the file does, and until this type existed the access registry declared the read audited while
   // nothing wrote a row (0 on production). Best-effort, as the export's is. No migration.
   | "phoenix_crm_visit_report_view"
+  // A Visit report saved view saved or deleted (2026-10-16): the owner's own named choice of fields, nothing
+  // else. Recorded because the access registry declares the route audited. No migration.
+  | "phoenix_crm_visit_report_saved_view"
   // Who downloaded the location-integrity board, and how much of it (2026-10-13). ITS OWN TYPE and
   // not folded into the reports pack above, because what leaves the building here is different in
   // kind: the evidence a named rep's capture was questioned, which Phoenix CRM never shows that rep.

@@ -42,7 +42,7 @@ import { managerChain, territoriesBelow, TERRITORY_TIER, type OrgSeat } from "@/
 import { VISIT_ASK_KIND_LABELS } from "@/lib/phoenix-crm/visit-ask-rules";
 import { phoenixVisitKindLabel } from "@/lib/phoenix-crm/visit-kind-labels";
 import { addDays, computeVisitSequence, firstDayOfPreviousMonth, monthKey, type SequenceInput } from "@/lib/phoenix-crm/visit-report-compute";
-import { buildVisitReportDashboard } from "@/lib/phoenix-crm/visit-report-dashboard";
+import { buildVisitReportDashboard, countVisitReportFilled, visitReportDays } from "@/lib/phoenix-crm/visit-report-dashboard";
 import {
   resolveVisitReportPeriod,
   resolveVisitReportSelection,
@@ -70,7 +70,7 @@ function assertReader(viewer: PhoenixCrmViewer): void {
 }
 
 /** What this viewer is, for the catalogue's sight: the Super Admin, the SFE Manager, or a district manager. */
-function visitReportTierOf(viewer: PhoenixCrmViewer): VisitReportReaderTier {
+export function visitReportTierOf(viewer: PhoenixCrmViewer): VisitReportReaderTier {
   if (viewer.isSuperAdmin) return "superAdmin";
   return viewer.isSfeManager ? "sfe" : "manager";
 }
@@ -589,15 +589,9 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
     };
   });
 
-  const filled: Record<string, number> = {};
-  for (const field of fields) {
-    if (!field.sparse) continue;
-    filled[field.key] = rows.filter((row) => {
-      const value = row.values[field.key];
-      return value !== null && value !== undefined && value !== "";
-    }).length;
-  }
-  const days = [...new Set(rows.map((row) => row.visitDate))].sort();
+  // The same two helpers the screen's filters use, so a narrowed screen and a narrowed file count alike.
+  const filled = countVisitReportFilled(rows, fields);
+  const days = visitReportDays(rows);
 
   return {
     dashboard: buildVisitReportDashboard({ days, fields, filled, rows }),
