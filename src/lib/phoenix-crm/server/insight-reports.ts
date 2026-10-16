@@ -72,7 +72,15 @@ import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { doctorListType, parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import { lineProductsByFamily } from "@/lib/phoenix-crm/server/products";
-import { chooseTerritories, periodOf, type ChosenTerritories, type ReportFilterInput } from "@/lib/phoenix-crm/server/reports";
+import {
+  chooseTerritories,
+  periodOf,
+  readSeatGroups,
+  shareInFlight,
+  type ChosenTerritories,
+  type ReportFilterInput,
+} from "@/lib/phoenix-crm/server/reports";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { resolveSalesAccessScope } from "@/lib/sales/access-scope";
 import { RESTRICTED_PRODUCT_CODES } from "@/lib/sales/confidential-products";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -145,9 +153,10 @@ async function countableVisits(
   includeTest: boolean,
   columns: string,
 ): Promise<Row[]> {
-  const rows: Row[] = [];
-  for (const batch of chunk(seats.map((seat) => seat.seatId))) {
-    const part = await fetchAllRowsKeyset<Row>(
+  // Groups of territories four at a time, handed back exactly as one walk per batch of 200 returned
+  // them (`readSeatGroups`).
+  return readSeatGroups(seats.map((seat) => seat.seatId), 200, (batch) =>
+    fetchAllRowsKeyset<Row>(
       () => {
         let query = getSupabaseAdmin()
           .from("phoenix_crm_countable_visits")
@@ -159,10 +168,23 @@ async function countableVisits(
         return query;
       },
       { cursorColumn: "id", cursorOf: (row) => textOrNull(row.id) },
-    );
-    rows.push(...part);
-  }
-  return rows;
+    ),
+  );
+}
+
+/**
+ * The columns What the field heard and the missing-stock board read, as ONE list — so the reports
+ * pack, which opens both at the same moment over the same territories and period, reads the period's
+ * visits once (`shareInFlight`). Each board still takes only the fields it uses; the extra columns
+ * reach no screen.
+ */
+const HEARD_AND_STOCK_COLUMNS =
+  "seat_id, customer_id, list_type, visit_date, captured_at, pharmacy_name, product_availability, next_step, next_step_on, products, objection, objection_note";
+
+/** The period's countable visits for the two boards above. The rows are shared: neither board changes them. */
+function heardAndStockVisits(seats: ReadonlyArray<OrgSeat>, period: ReportPeriod, includeTest: boolean): Promise<Row[]> {
+  const key = `phoenix-crm:heard-and-stock|${includeTest}|${period.from}|${period.to}|${seats.map((seat) => seat.seatId).join(",")}`;
+  return shareInFlight(key, () => countableVisits(seats, period, includeTest, HEARD_AND_STOCK_COLUMNS));
 }
 
 // CAPACITY is a KPI, and a pharmacy is in none of them (owner, 2026-10-02): a pharmacy on the
@@ -206,31 +228,56 @@ type SeatList = { customers: CapacityCustomer[]; source: "phoenix" | "reference"
 async function capacityLists(seats: ReadonlyArray<OrgSeat>, includeTest: boolean): Promise<Map<string, SeatList>> {
   const lists = new Map<string, SeatList>();
   const seen = new Set<string>();
-  for (const batch of chunk(seats.map((seat) => seat.seatId))) {
-    const rows = await fetchAllRowsKeyset<Row>(
+  const seatIds = seats.map((seat) => seat.seatId);
+  // On the list: validated, or carried over and waiting to be. Outside the list and the Archive are
+  // not — so only those two statuses travel. Read over groups of territories four at a time, in the
+  // single walk's own order (`readSeatGroups`), so each list's customers arrive as they always did.
+  const rows = await readSeatGroups(seatIds, 200, (batch) =>
+    fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
           .from("phoenix_crm_customers")
           .select("id, seat_id, list_type, grade, status, validated_at")
           .in("seat_id", batch)
-          .eq("is_test", includeTest),
+          .eq("is_test", includeTest)
+          .in("status", ["active", "pending"]),
       { cursorColumn: "id", cursorOf: (row) => textOrNull(row.id) },
-    );
-    for (const row of rows) {
-      const seatId = String(row.seat_id);
-      seen.add(seatId);
-      // On the list: validated, or carried over and waiting to be. Outside the list and the Archive are not.
-      const status = String(row.status);
-      if (status !== "active" && status !== "pending") continue;
-      const list: SeatList = lists.get(seatId) ?? { customers: [], source: "phoenix" };
-      const capacityListType = listTypeOf(row.list_type);
-      if (capacityListType === null) continue;
-      list.customers.push({ listType: capacityListType, grade: gradeOf(row.grade), validated: textOrNull(row.validated_at) !== null });
-      lists.set(seatId, list);
-    }
+    ),
+  );
+  for (const row of rows) {
+    const seatId = String(row.seat_id);
+    seen.add(seatId);
+    const status = String(row.status);
+    if (status !== "active" && status !== "pending") continue;
+    const list: SeatList = lists.get(seatId) ?? { customers: [], source: "phoenix" };
+    const capacityListType = listTypeOf(row.list_type);
+    if (capacityListType === null) continue;
+    list.customers.push({ listType: capacityListType, grade: gradeOf(row.grade), validated: textOrNull(row.validated_at) !== null });
+    lists.set(seatId, list);
   }
 
-  const unopened = seats.map((seat) => seat.seatId).filter((seatId) => !seen.has(seatId));
+  // 🔴 "OPENED" IS ANY ROW AT ALL, NOT ANY ROW ON THE LIST. A territory whose every customer was
+  // dropped or moved outside the list has been opened in Phoenix, so it reads its own (empty) list and
+  // never the iReports360 reference — that is what the unfiltered read above used to decide. Only the
+  // territories it found nothing for are asked again, without the status filter; on a working day
+  // that is the few never opened, which hold no rows, so this read is all but free.
+  const unseen = seatIds.filter((seatId) => !seen.has(seatId));
+  if (unseen.length > 0) {
+    const opened = await readSeatGroups(unseen, 200, (batch) =>
+      fetchAllRowsKeyset<Row>(
+        () =>
+          getSupabaseAdmin()
+            .from("phoenix_crm_customers")
+            .select("id, seat_id")
+            .in("seat_id", batch)
+            .eq("is_test", includeTest),
+        { cursorColumn: "id", cursorOf: (row) => textOrNull(row.id) },
+      ),
+    );
+    for (const row of opened) seen.add(String(row.seat_id));
+  }
+
+  const unopened = seatIds.filter((seatId) => !seen.has(seatId));
   if (unopened.length > 0) {
     const reference = await rpcAll<Row>(getSupabaseAdmin(), "phoenix_crm_seat_reference", { p_seat_ids: unopened, p_is_test: includeTest }, [
       "seat_id",
@@ -342,18 +389,18 @@ async function heardVisits(seats: ReadonlyArray<OrgSeat>, period: ReportPeriod, 
   // What the DOCTORS said: the report has an AM side and a PM side and nothing else, so a pharmacy
   // visit would be filed as PM — and the pharmacy a doctor's visit names carries that visit's own
   // products (owner, 2026-10-03), so it would count every product heard there twice.
-  const rows = (
-    await countableVisits(seats, period, includeTest, "seat_id, customer_id, list_type, visit_date, products, objection, objection_note")
-  ).filter((row) => listTypeOf(row.list_type) !== null);
+  const rows = (await heardAndStockVisits(seats, period, includeTest)).filter((row) => listTypeOf(row.list_type) !== null);
   if (rows.length === 0) return [];
 
   const specialities = new Map<string, string | null>();
   const customerIds = [...new Set(rows.map((row) => textOrNull(row.customer_id)).filter((id): id is string => id !== null))];
-  for (const part of chunk(customerIds, 200)) {
+  // Four id batches at a time rather than one after another; a lookup by id, so the order is moot.
+  const specialityBatches = await mapWithConcurrency(chunk(customerIds, 200), 4, async (part) => {
     const { data, error } = await getSupabaseAdmin().from("phoenix_crm_customers").select("id, speciality").in("id", part);
     throwIfError(error);
-    for (const row of (data ?? []) as Row[]) specialities.set(String(row.id), textOrNull(row.speciality));
-  }
+    return (data ?? []) as Row[];
+  });
+  for (const row of specialityBatches.flat()) specialities.set(String(row.id), textOrNull(row.speciality));
 
   const seatsById = new Map(seats.map((seat) => [seat.seatId, seat]));
   return rows.map((row) => {
@@ -496,23 +543,19 @@ export async function loadMissingStockReport(viewer: PhoenixCrmViewer, raw: Repo
   const period = periodOf(viewer, raw);
   if (seats.length === 0) return { ...buildMissingStock([], [], () => ""), includeTest, period };
 
-  const rows = await countableVisits(
-    seats,
-    period,
-    includeTest,
-    "seat_id, customer_id, list_type, visit_date, captured_at, pharmacy_name, product_availability, next_step, next_step_on",
-  );
+  const rows = await heardAndStockVisits(seats, period, includeTest);
 
   // The customers named on a chase, by name — never an id on the screen.
   const customerNames = new Map<string, string>();
   const chaseCustomerIds = [
     ...new Set(rows.filter((row) => row.next_step === "pharmacy_stock").map((row) => textOrNull(row.customer_id)).filter((id): id is string => id !== null)),
   ];
-  for (const part of chunk(chaseCustomerIds, 200)) {
+  const nameBatches = await mapWithConcurrency(chunk(chaseCustomerIds, 200), 4, async (part) => {
     const { data, error } = await getSupabaseAdmin().from("phoenix_crm_customers").select("id, name").in("id", part);
     throwIfError(error);
-    for (const row of (data ?? []) as Row[]) customerNames.set(String(row.id), textOrNull(row.name) ?? "Unnamed customer");
-  }
+    return (data ?? []) as Row[];
+  });
+  for (const row of nameBatches.flat()) customerNames.set(String(row.id), textOrNull(row.name) ?? "Unnamed customer");
 
   const seatsById = new Map(seats.map((seat) => [seat.seatId, seat]));
   return {
