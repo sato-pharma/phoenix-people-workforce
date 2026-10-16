@@ -102,6 +102,11 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // land in, so a slower clock would skip interviews. Off every other job's minutes so a red execution
   // names one job. Must match scripts/cronjob-sync.mjs exactly.
   { slug: "phoenix-interview-reminders", kind: "cron", schedule: "3,13,23,33,43,53 * * * *", graceSeconds: 1 * HOUR },
+  // Hourly on :27 (owner, 2026-10-16: "I don't want manual work in the recruitment"): opens a
+  // requisition for every empty seat and closes as Filled the ones whose seat is filled. On :27,
+  // a minute no other job holds. Must match scripts/cronjob-sync.mjs exactly, and lands in the SAME
+  // sitting as its cron job. NO watchingSince: a new declaration, never a restored one.
+  { slug: "phoenix-recruitment-requisition-autopilot", kind: "cron", schedule: "27 * * * *", graceSeconds: 2 * HOUR },
   // 06:55 Cairo, every day — before the field day starts, and on :55 so a red execution names one
   // job. Daily rather than field-days-only: the job runs on a Friday too and simply finds the
   // Thursday before, which is what keeps its heartbeat a straight daily one. Must match

@@ -21,6 +21,7 @@ import type { CandidateRating } from "@/lib/recruitment/candidate-rating";
 import type { CandidateRedFlag } from "@/lib/recruitment/red-flag";
 import type { CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
+import type { RequisitionRecommendation } from "@/lib/recruitment/requisition-match";
 import type { RoleFitVerdict } from "@/lib/recruitment/role-fit";
 import type { ScreeningBand } from "@/lib/recruitment/screening-order";
 import type { ScreeningWorkQueue } from "@/lib/recruitment/screening-queues";
@@ -185,6 +186,11 @@ export type WorkspaceCandidateRow = {
   queues: ScreeningWorkQueue[];
   /** The open seats this CV is attributed to. Precomputed so the vacancy rail filters in one pass. */
   vacancyIds: number[];
+  /**
+   * Which open requisition this CV should be attached to, or why it stays shortlisted (owner,
+   * 2026-10-16 — never a Reject). Null when the reader cannot attach, or the CV is already decided.
+   */
+  requisitionRecommendation: RequisitionRecommendation | null;
 };
 
 /**

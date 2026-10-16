@@ -15,6 +15,7 @@ import {
   screeningHref,
   type ScreeningQueueFilters,
 } from "@/lib/recruitment/screening-link";
+import { canAttachToRequisition } from "@/lib/recruitment/requisition-attach";
 import { loadScreeningWorkspace } from "@/lib/recruitment/screening-workspace";
 
 export const dynamic = "force-dynamic";
@@ -110,7 +111,12 @@ async function ScreeningContent({
   // Everything else on the workspace is readable without them.
   const canUpdate = await canAccess(access, "recruitment", "update");
   const canDecide = await canAccess(access, "candidates", "update");
-  const workspace = await loadScreeningWorkspace(access.hrId, filters, { canSendToManagers: canUpdate });
+  // The one-press Attach to requisition: Admin or Talent Acquisition only (owner, 2026-10-16), and
+  // only a reader who may decide at all — its route asserts candidates:update as well.
+  const workspace = await loadScreeningWorkspace(access.hrId, filters, {
+    canAttachToRequisition: canDecide && canAttachToRequisition(access),
+    canSendToManagers: canUpdate,
+  });
 
   return (
     <WorkstationPageClient

@@ -327,6 +327,17 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // like role-recipients.ts. The recipients receive an in-app + Telegram message and a link to the
   // calendar they already reach; the notice carries no salary, personnel or payroll figure.
   "src/lib/recruitment/interview-request-notifications.ts",
+  // Names "Super Admin" and "HR Resourcing" in REQUISITION_ATTACH_ROLES, added 2026-10-16 (owner:
+  // "by one click from admin or TA"). Reviewed verdict: it is a GATE and it can only NARROW. The
+  // press already sits behind `candidates:update`, which only those two seats hold; this restates
+  // the answer in the service itself so a matrix override cannot widen it. Attaching opens an
+  // application on a requisition she already recruits for, and nothing else.
+  "src/lib/recruitment/requisition-attach.ts",
+  // Names "HR Resourcing" in resolveHrIdsForRole, added 2026-10-16. Reviewed verdict: it picks the
+  // OWNER written on a requisition the autopilot opens (owner: "Yomna Gamal", read from the role so
+  // her successor inherits it). It grants nothing and gates nothing, like role-recipients.ts: being
+  // the owner gives her no grant she did not already hold.
+  "src/lib/recruitment/requisition-autopilot.ts",
   "src/lib/reports/organogram.ts",
   "src/lib/resignations/service.ts",
   // src/lib/sato-email/access.ts left this list on 2026-10-08: it named only the retired HR Advisory seat.

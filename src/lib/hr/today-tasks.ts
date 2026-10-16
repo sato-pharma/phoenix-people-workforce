@@ -144,7 +144,7 @@ const PARKED_SEATS: ReadonlyArray<{ areaNames: readonly string[]; lineName: stri
   { areaNames: ["Menoufia 1"], lineName: "Anti Infective" },
 ];
 
-function isParkedSeat(seat: { areaName?: string | null; lineName?: string | null }): boolean {
+export function isParkedSeat(seat: { areaName?: string | null; lineName?: string | null }): boolean {
   const line = String(seat.lineName ?? "").trim().toLowerCase();
   const area = String(seat.areaName ?? "").trim().toLowerCase();
   if (!line || !area) return false;

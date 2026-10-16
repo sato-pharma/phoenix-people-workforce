@@ -160,6 +160,17 @@ const JOBS = {
     // Nowhere near the 30s platform cut. 300 matches the rest of the account.
     requestTimeout: 300,
   },
+  "recruitment-requisition-autopilot": {
+    title: "Phoenix — requisition autopilot",
+    path: "/api/cron/recruitment-requisition-autopilot",
+    // Hourly on :27 (owner, 2026-10-16): every empty seat gets an open requisition and every
+    // requisition whose seat is filled is closed as Filled, with nobody pressing anything. On :27,
+    // a minute no other job holds, so a red execution names one job. Matches JOB_SCHEDULES exactly.
+    schedule: { hours: [-1], minutes: [27], mdays: [-1], months: [-1], wdays: [-1] },
+    // The directory, two indexed reads, then at most MAX_OPENINGS_PER_RUN openings plus the fills —
+    // none on most fires.
+    requestTimeout: 300,
+  },
   "phoenix-crm-daily-digest": {
     title: "Phoenix — CRM daily digest",
     path: "/api/cron/phoenix-crm-daily-digest",
