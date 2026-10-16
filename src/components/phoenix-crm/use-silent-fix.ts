@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 
+import { locationReaderPayload, noteReading } from "@/components/phoenix-crm/location-reader";
 import { VISIT_MAX_ACCURACY_METERS, withinAccuracy } from "@/lib/phoenix-crm/entry-rules";
 
 /** One reading of the phone's position. `at` is when the phone took it, on the phone's clock. */
@@ -78,6 +79,7 @@ export function useSilentFix(): SilentFixReader {
     if (watchRef.current !== null) return true;
     watchRef.current = navigator.geolocation.watchPosition(
       (position) => {
+        noteReading(position);
         const reading: SilentFix = {
           lat: position.coords.latitude,
           lon: position.coords.longitude,
@@ -141,6 +143,10 @@ export function useSilentFix(): SilentFixReader {
  * from `position.timestamp` and then dropped. Sending it is what stops the server's receipt being the
  * only clock on a one-tap visit: the two together say how old the reading already was when he pressed,
  * both ends measured by the same phone, so a wrong phone clock cancels out of the answer.
+ *
+ * `readerReplaced` / `readerFindings` answer the question the web CAN ask in place of `deviceMocked`:
+ * whether the browser's own location reader is still the browser's (location-reader.ts). Asked at
+ * the tap, recorded for the board, refused to nobody.
  */
 export function silentFixPayload(fix: SilentFix, tappedAt: number) {
   // A reading with no usable clock sends none. `new Date(NaN).toISOString()` throws, and a throw here
@@ -154,5 +160,6 @@ export function silentFixPayload(fix: SilentFix, tappedAt: number) {
     deviceCapturedAt: new Date(tappedAt).toISOString(),
     fixTakenAt: takenAt !== null && !Number.isNaN(takenAt.getTime()) ? takenAt.toISOString() : null,
     deviceMocked: null,
+    ...locationReaderPayload(),
   };
 }

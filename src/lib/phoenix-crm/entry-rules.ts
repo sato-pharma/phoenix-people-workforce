@@ -22,6 +22,7 @@ import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { isUsableFix } from "@/lib/phoenix-crm/geo";
+import { readLocationReaderAnswer } from "@/lib/phoenix-crm/location-reader-probe";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import { parseUnplannedReason } from "@/lib/phoenix-crm/unplanned-rules";
@@ -152,6 +153,17 @@ export type CapturedFix = {
   photoLon: number | null;
   photoAccuracyMeters: number | null;
   photoCapturedAt: string | null;
+  /**
+   * Whether the BROWSER's own location reader was still its own when this was sent — the question
+   * the web can ask where `deviceMocked` cannot (owner, 2026-10-16; location-reader-probe.ts). Null is
+   * NOT ASKED: an older bundle, or a page that could not be read. Recorded for the Super Admin's
+   * board and refused to nobody, exactly as `deviceMocked` is.
+   *
+   * Optional on the type so a hand-built fix need not name it; `parseCapturedFix` always sets both.
+   */
+  readerReplaced?: boolean | null;
+  /** Which of the probe's questions answered "replaced", by its own codes and nothing else. */
+  readerFindings?: string[];
 };
 
 const NO_FIX_AT_THE_PLACE = `Your location was not captured. Allow location for ${BROWSER_PLACEHOLDER} and capture it again at the clinic.`;
@@ -311,6 +323,7 @@ export function parseCapturedFix(raw: Record<string, unknown>, noFixMessage = NO
       deviceCapturedAt,
       fixTakenAt,
       deviceMocked,
+      ...readLocationReaderAnswer(raw),
       // Read through the SAME guards as the pin, and independently of it: a body carrying only
       // half a shutter pair contributes no coordinate at all rather than a lopsided one. Never
       // defaulted to the pin - that substitution is the defect #4781 removed elsewhere.

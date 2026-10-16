@@ -148,6 +148,9 @@ export type JudgeCaptureInput = {
   fix: { lat: number; lon: number; accuracyMeters: number | null; capturedAt: Date };
   /** Android's mock-provider flag as the phone reported it; null where it cannot be asked. */
   deviceMocked: boolean | null;
+  /** Whether the browser's own location reader was replaced (location-reader-probe.ts); null when not asked. */
+  readerReplaced?: boolean | null;
+  readerFindings?: readonly string[];
 };
 
 /**
@@ -167,6 +170,8 @@ export async function judgeCapture(input: JudgeCaptureInput): Promise<void> {
       repHrId,
       customerId: input.customerId,
       deviceMocked: input.deviceMocked,
+      readerReplaced: input.readerReplaced ?? null,
+      readerFindings: input.readerFindings ?? [],
       history: history.filter((prior) => prior.capturedAt.getTime() !== input.fix.capturedAt.getTime()),
     });
     if (verdict.flags.length === 0) return;

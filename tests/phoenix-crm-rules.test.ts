@@ -540,6 +540,9 @@ function runEntryRuleTests() {
     // When the phone TOOK the reading, absent here and therefore NOT MEASURED. Its own assertions
     // are below; it is in this shape so a build that stopped carrying it would show up here too.
     fixTakenAt: null,
+    // The browser's own location reader (2026-10-16): absent here, so NOT ASKED — never "its own".
+    readerReplaced: null,
+    readerFindings: [],
     // The shutter fix, added 2026-09-29. Absent here for the same reason and with the same
     // meaning: NOT MEASURED. An older build, the web, or a handset whose shutter read nothing all
     // send no shutter keys, and none of them is refused for it. Never defaulted to lat/lon.
@@ -569,6 +572,8 @@ function runEntryRuleTests() {
       deviceCapturedAt: "2026-10-03T15:00:00Z",
       deviceMocked: null,
       fixTakenAt: null,
+      readerReplaced: null,
+      readerFindings: [],
       photoAccuracyMeters: 18.8,
       photoCapturedAt: "2026-10-03T15:00:21Z",
       photoLat: 30.0501,
@@ -627,6 +632,9 @@ function runEntryRuleTests() {
       // Also from the shared reader, and also unstored for a place: only a VISIT's provenance row
       // carries the fix time, because only a visit is one tap taken in the moment.
       fixTakenAt: null,
+      // The reader answer rides the same shared parser and IS judged for a place (judgeCaptureForPlace).
+      readerReplaced: null,
+      readerFindings: [],
       // Parsed by the SHARED captured-fix reader, so a place carries these too. Nothing stores
       // them yet: the 2026-09-29 migration added photo_* to phoenix_crm_visits only, and a place
       // is captured once rather than visited, so there is no pin-versus-shutter question to ask

@@ -16,6 +16,7 @@ import { fetchEvidenceLocation } from "@/components/outstation/evidence-watermar
 import { CaptureLocation, type CapturedPin } from "@/components/phoenix-crm/capture-location";
 import { dayLabelWithYear } from "@/components/phoenix-crm/format";
 import { LivePhotoCapture, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
+import { locationReaderPayload } from "@/components/phoenix-crm/location-reader";
 import { TimingsEditor, timingsToDrafts } from "@/components/phoenix-crm/timings-editor";
 import { CrmBlock, CrmField, CrmNote, crmInputClassName } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
@@ -101,6 +102,9 @@ export function placePayload(photo: CapturedPhoto, draft: PlaceDraftState) {
     photoCapturedAt: photo.shutterCapturedAt,
     label: draft.label.trim() || null,
     timings: timingsToDrafts(draft.timings),
+    // Whether the browser's own location reader is still its own (location-reader.ts) — asked as the
+    // place is sent, recorded for the board, refused to nobody.
+    ...locationReaderPayload(),
   };
 }
 

@@ -1613,6 +1613,8 @@ async function judgeCaptureForPlace(
     isTest,
     fix: { lat: point.lat, lon: point.lon, accuracyMeters: point.accuracyMeters, capturedAt },
     deviceMocked: place.deviceMocked,
+    readerReplaced: place.readerReplaced ?? null,
+    readerFindings: place.readerFindings ?? [],
   });
   // The photo's reading against the pin's. 🔴 EACH READING WAS ONLY EVER CHECKED AGAINST ITS OWN
   // CEILING, so three live active places sit with their two readings 687 m, 869 m and 1,553 m apart,

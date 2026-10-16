@@ -1353,6 +1353,8 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
         isTest,
         fix: { lat: visit.lat, lon: visit.lon, accuracyMeters: visit.accuracyMeters, capturedAt },
         deviceMocked: visit.deviceMocked,
+        readerReplaced: visit.readerReplaced ?? null,
+        readerFindings: visit.readerFindings ?? [],
       });
       // And WHEN the phone took that position, and which install sent it. Written here for the same
       // three reasons as the judgement above — after the save, answering nothing, swallowing its own

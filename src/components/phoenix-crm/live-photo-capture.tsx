@@ -34,6 +34,7 @@ import { useEffect, useRef, useState } from "react";
 import { Camera, LoaderCircle, LocateFixed, RotateCcw, UploadCloud, X } from "lucide-react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { noteReading } from "@/components/phoenix-crm/location-reader";
 import { reportBlockedPermission } from "@/components/phoenix-crm/report-blocked-permission";
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
@@ -295,6 +296,7 @@ export function LivePhotoCapture({
     setLocationNote("Finding your location");
     watchRef.current = navigator.geolocation.watchPosition(
       (position) => {
+        noteReading(position);
         const reading: Fix = {
           lat: position.coords.latitude,
           lon: position.coords.longitude,
