@@ -24,11 +24,11 @@ import Link from "next/link";
 
 import {
   orderTodaysInterviews,
-  startTimeLabel,
+  startClockParts,
   type TalentToday,
 } from "@/lib/hr/talent-acquisition-logic";
 
-import { TaChip, TaCouldNotLoad, TaEmpty, TaPanel, TaQuietLink } from "./panel";
+import { TA_ROW_LINK_CLASS, TaChip, TaCouldNotLoad, TaEmpty, TaPanel, TaQuietLink } from "./panel";
 
 const CALENDAR_HREF = "/hr/recruitment/interview-calendar";
 
@@ -64,18 +64,19 @@ export function TaTodayInterviews({ className = "", today }: { className?: strin
         <TaEmpty
           action={<TaQuietLink href={CALENDAR_HREF}>Book on the calendar</TaQuietLink>}
           icon={CalendarX2}
-          line="Nothing is booked for the rest of today. The week below shows what is coming."
+          line="Nothing is booked today. The week below shows what is coming."
           title="No interviews today"
         />
       ) : (
         <ol className="divide-y divide-slate-100">
           {rows.map((row) => {
             const PlatformIcon = /zoom|teams|meet|online/i.test(row.platformLabel) ? Video : MapPin;
+            const clock = startClockParts(row.startMinutes);
             return (
               <li key={row.id}>
                 <Link
                   aria-label={`${row.timeLabel}, ${row.candidateName}${row.jobTitle ? `, ${row.jobTitle}` : ""}${row.done ? ", ended" : row.next ? ", next" : ""}`}
-                  className={`group/row relative flex items-start gap-3 px-4 py-3 transition-colors hover:bg-orange-50/40 focus-visible:bg-orange-50/60 focus-visible:outline-none ${
+                  className={`${TA_ROW_LINK_CLASS} items-start ${
                     row.next ? "bg-[linear-gradient(90deg,rgba(255,247,237,0.95)_0%,rgba(255,255,255,0)_75%)]" : ""
                   }`}
                   href={row.href}
@@ -85,15 +86,16 @@ export function TaTodayInterviews({ className = "", today }: { className?: strin
                   ) : null}
                   {/* The time column: the start large, the end under it, so a run of rows reads down
                       the left edge like a diary. */}
-                  <span className="flex w-12 shrink-0 flex-col items-start pt-0.5">
+                  <span className="flex w-14 shrink-0 flex-col items-start pt-0.5">
                     <span
                       className={`text-[15px] font-black leading-none tabular-nums ${
-                        row.done ? "text-slate-400" : row.next ? "text-orange-700" : "text-slate-900"
+                        row.done ? "text-slate-500" : row.next ? "text-orange-700" : "text-slate-900"
                       }`}
                     >
-                      {startTimeLabel(row.startMinutes)}
+                      {clock.time}
+                      <span className="ml-0.5 text-[10px] tracking-[0.06em]">{clock.suffix}</span>
                     </span>
-                    <span className="mt-1 text-[10px] font-bold tabular-nums text-slate-400">
+                    <span className="mt-1 text-[10px] font-bold tabular-nums text-slate-500">
                       {row.durationMinutes} min
                     </span>
                   </span>
@@ -103,6 +105,7 @@ export function TaTodayInterviews({ className = "", today }: { className?: strin
                         className={`break-words text-[13px] font-bold leading-snug ${
                           row.done ? "text-slate-500" : "text-slate-900 group-hover/row:text-orange-800"
                         }`}
+                        dir="auto"
                       >
                         {row.candidateName}
                       </span>
@@ -114,7 +117,7 @@ export function TaTodayInterviews({ className = "", today }: { className?: strin
                         {row.jobTitle}
                       </span>
                     ) : null}
-                    <span className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                    <span className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">
                       <span className="inline-flex items-center gap-1 whitespace-nowrap">
                         <PlatformIcon aria-hidden="true" className="h-3 w-3" />
                         {row.platformLabel}

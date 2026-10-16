@@ -89,7 +89,7 @@ export function TaCvArrivals({ className = "", cvToday }: { className?: string; 
               <p className="text-4xl font-black leading-none tabular-nums text-slate-900">
                 {digest.total.toLocaleString("en-US")}
               </p>
-              <p className={`${TA_CAPS_CLASS} mt-1.5 text-slate-400`}>
+              <p className={`${TA_CAPS_CLASS} mt-1.5 text-slate-500`}>
                 {digest.total === 1 ? "CV arrived today" : "CVs arrived today"}
               </p>
             </div>

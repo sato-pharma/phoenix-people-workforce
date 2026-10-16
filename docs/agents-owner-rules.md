@@ -8155,6 +8155,38 @@ FIGURE, where the builder sets them as meanings (good, waiting, a problem) — n
 by `tests/talent-acquisition-overview.test.ts`, which refuses a sky, blue, indigo, violet, purple,
 fuchsia, cyan or teal class and the Sato blue hexes in the page and every new part.
 
+**The three conversion cards, as the audit of 2026-10-16 corrected them** (all three of his answers
+were the recommended option, asked in chat as multiple choice).
+
+- *Interview to offer* read **66%** (45 letters over 68 people) and the like-for-like figure was about
+  **22%**. The 45 were every letter written in 90 days — 12 withdrawn, test-looking ones, letters to
+  people who were never on the calendar (28 of the 45 had no booking) — over the people interviewed, so
+  the top half was not a subset of the bottom and the old caption admitted it could pass 100%. It now
+  counts, among the people interviewed, those who hold a live letter. Measured on production the same
+  day: 12 matched through the pointer on the candidate (`ats_candidates.offer_id`), 3 more through the
+  e-mail on the letter, 15 of 68. A booking in the future no longer counts as an interview held.
+- *Offer to join* read **22 of 22** under "joined through the form", and only 3 of the 22 came through
+  the form (19 through HR's Add Employee). It now counts accepted letters whose employee is active with
+  a first day on or before today: **18 of 22 = 82%** that day, the other four starting 18 and 24 October,
+  so it climbs as first days pass.
+- The header says "Last 90 days" over all three, and now it is true of all three: Offer acceptance and
+  Offer to join read only the letters written in the window (before, they read the newest 200 with no
+  date filter). Without the Employee Master the join card is left out, never drawn as 0 of N.
+- *CVs received* keeps counting people HR added by hand from the interview calendar (3 on 15 October,
+  33 of 1,432 lifetime) — his answer: keep counting them. The 18:00 CV summary is unchanged.
+
+**His other answers the same day.** *Screen* counts the candidate pool's New pile (754 that day) —
+it read 0 because it counted applications against a requisition. The vacancy cards stay as they are:
+his rule "if hired then exclude from vacants" already holds, because a hired person's seat is closed
+(all 14 sent or accepted letters that point at a seat were checked: every accepted one is `filled`,
+the only open one is a letter still awaiting a reply). Parked seats were not decided and are not
+flagged. One sent letter (Zahraa Hamdy Sobeih, District Sales Manager) carries 12 October as both its
+start date and its validity date, and he says her real date is 1 November 2026, so no "past its
+validity" flag was added to Offers Out. The month grid wears Phoenix tones only: ink for holidays,
+ember for joinings, orange for interviews and birthdays, amber for leave, slate for events and plans,
+told apart by lightness and the named legend, pinned by the hue ban in
+`tests/talent-acquisition-overview.test.ts`.
+
 ## The rep ranking workbook's admin button — owner, 2026-10-13
 
 He had just merged the rep ranking workbook into the Anti Infective employee portal (#5867) and

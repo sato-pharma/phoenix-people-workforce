@@ -10,8 +10,8 @@
  *
  * THE VOCABULARY IS THE PLATFORM'S, NOT A ONE-OFF. Depth is `adminPanelDepthClassName` (his
  * 2026-09-08 premium rule: real depth, sharp corners), the accent edge fades the way the page-header
- * rail does, and the captions are the micro-caps every HR landing page already uses. The four
- * Phoenix tones are below (`TA_TONE`); amber still means "waiting" and rose "a problem" on every figure.
+ * rail does, and the captions are the micro-caps every HR landing page already uses. The Phoenix
+ * tones are below (`TA_TONE`); amber still means "waiting" and rose "a problem" on every figure.
  *
  * SQUARE EDGES, NO ELLIPSIS, NO SIDEWAYS SCROLL. Nothing here sets a radius; a long name WRAPS
  * (`break-words`), never cuts; nothing sets a minimum width.
@@ -25,6 +25,14 @@ import { adminChipDepthClassName, adminPanelDepthClassName } from "@/components/
 
 /** The micro-caps every label on the page wears. One string, so no label drifts a pixel. */
 export const TA_CAPS_CLASS = "text-[10px] font-black uppercase tracking-[0.16em]";
+
+/**
+ * A row in a Today panel that opens its record. One string for the three panels' rows, so hover and
+ * KEYBOARD focus are the same everywhere: the warm tint alone is ~1.05:1 against white, which is no
+ * focus indicator at all, so the ring is what a keyboard user sees.
+ */
+export const TA_ROW_LINK_CLASS =
+  "group/row relative flex gap-3 px-4 py-3 transition-colors hover:bg-orange-50/40 focus-visible:bg-orange-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500";
 
 /** A small count or state chip. Tone is meaning, never decoration. */
 export function TaChip({
@@ -68,7 +76,6 @@ export const TA_TONE = {
   mark: "text-orange-700",
   medallion: "border-orange-200 bg-[linear-gradient(135deg,#FFF7ED_0%,#FFEDD5_100%)] text-orange-600",
   rule: "bg-[linear-gradient(90deg,rgba(249,115,22,0.6)_0%,rgba(251,146,60,0.35)_14%,rgba(148,163,184,0.3)_45%,rgba(148,163,184,0)_100%)]",
-  wash: "bg-[linear-gradient(180deg,#FFF6EE_0%,#FFFFFF_55%,#FDFAF7_100%)]",
 } as const;
 
 /**
@@ -91,7 +98,7 @@ export function TaCaption({
         <span aria-hidden="true" className={`inline-block h-1.5 w-1.5 shrink-0 rotate-45 ${tone.diamond}`} />
         <span className={`${TA_CAPS_CLASS} ${dark ? "text-white" : tone.label}`}>{label}</span>
         {caption ? (
-          <span className={`break-words text-[10px] font-semibold ${dark ? "text-slate-300" : "text-slate-400"}`}>
+          <span className={`break-words text-[10px] font-semibold ${dark ? "text-slate-300" : "text-slate-500"}`}>
             {caption}
           </span>
         ) : null}
@@ -173,7 +180,7 @@ export function TaPanel({
             ) : null}
           </div>
           {subtitle ? (
-            <p className="mt-1 break-words text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
+            <p className="mt-1 break-words text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">
               {subtitle}
             </p>
           ) : null}

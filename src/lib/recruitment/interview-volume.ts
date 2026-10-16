@@ -21,6 +21,14 @@
  * the external ones are keyed on their name. Dropping them would under-report the denominator,
  * which inflates the ratio.
  *
+ * THE NUMERATOR IS THE SAME PEOPLE, NOT A SECOND POPULATION (owner, 2026-10-16: "like for like"). It
+ * used to be every offer letter written in the window — withdrawn ones, drafts, letters to people who
+ * were never on the calendar — over the people interviewed, so it read 66% against a like-for-like
+ * 22% and could pass 100%. `countOfferedPeople` now counts, among the people interviewed, those who
+ * hold a live letter, so the top half is a subset of the bottom half by construction. A person is
+ * matched to a letter by the letter their candidate record points at (`ats_candidates.offer_id`),
+ * else by the e-mail on it; a letter nobody can be traced to is in neither half.
+ *
  * A WINDOW, NEVER A LIFETIME. Offers in this system predate the calendar by eleven days, and a
  * lifetime ratio would divide this month's offers by every interview ever held — the same defect
  * the "Hired" tile carried until the owner asked how it could read what it read (see
@@ -41,11 +49,19 @@ const BOOKINGS = "ats_interview_bookings";
 /** The read ceiling. See the header — `truncated` reports it rather than hiding it. */
 const READ_CAP = 5000;
 
+/** Candidate ids per request. An id is a uuid, so a batch of 100 keeps the URL well inside the limit. */
+const CANDIDATE_BATCH = 100;
+
 export type InterviewVolume = {
   /** The window's first day, as an ISO instant. Printed in the caption, never recomputed there. */
   fromIso: string;
   /** Interviews held in the window — one row per booking, every round of every candidate. */
   interviews: number;
+  /**
+   * Of those people, how many hold a live offer letter. NULL when no letters were handed in to match
+   * against — the caller's letters did not load — so the ratio is left out rather than drawn as 0%.
+   */
+  offered: number | null;
   /** DISTINCT people interviewed in the window. The interview-to-offer denominator. */
   people: number;
   /** True when the read hit `READ_CAP`: both figures are then a floor, not a total. */
@@ -58,9 +74,26 @@ export type InterviewVolume = {
  */
 export type InterviewVolumeRow = {
   candidate_id: string | null;
+  external_email?: string | null;
   external_name: string | null;
   starts_at?: string | null;
 };
+
+/** What the numerator needs to know about a recruitment record. */
+export type InterviewedCandidate = { email: string | null; offerId: string | null };
+
+/**
+ * The live letters, as plain keys. "Live" is every letter except a withdrawn one and a draft: a draft
+ * was never written to anybody and a withdrawn one was pulled, while a sent, accepted or declined
+ * letter IS an offer the person received. Built by the caller from its own offers list so this file
+ * never imports the offers module.
+ */
+export type LiveLetterKeys = { emails: ReadonlySet<string>; ids: ReadonlySet<string> };
+
+/** An address as it is compared: trimmed and lower-cased, nothing cleverer. */
+function addressKey(value: string | null | undefined): string {
+  return String(value ?? "").trim().toLowerCase();
+}
 
 /**
  * One person, as this count identifies them: the recruitment record when there is one, and the
@@ -93,6 +126,54 @@ export function countDistinctPeople(rows: readonly InterviewVolumeRow[]): number
 }
 
 /**
+ * How many of the interviewed people hold a live letter. Pure, like `countDistinctPeople`, and driven
+ * by literals in the test: the matching rule is what makes the ratio honest.
+ *
+ * ONE PERSON IS COUNTED ONCE however many rounds they sat, and a person counts as offered if ANY of
+ * their rows is — the candidate record's pointer to a live letter, that record's e-mail on a live
+ * letter, or the e-mail typed on an outside booking. Matching is by pointer and address only, never
+ * by name: two people share a name, and an offer credited to the wrong one flatters the ratio.
+ */
+export function countOfferedPeople(
+  rows: readonly InterviewVolumeRow[],
+  candidates: ReadonlyMap<string, InterviewedCandidate>,
+  letters: LiveLetterKeys,
+): number {
+  const offered = new Set<string>();
+  for (const row of rows) {
+    const key = personKey(row);
+    if (!key || offered.has(key)) continue;
+    const candidate = row.candidate_id ? candidates.get(row.candidate_id.trim()) : undefined;
+    const pointer = candidate?.offerId ?? "";
+    const addresses = [addressKey(candidate?.email), addressKey(row.external_email)].filter(Boolean);
+    if ((pointer && letters.ids.has(pointer)) || addresses.some((address) => letters.emails.has(address))) {
+      offered.add(key);
+    }
+  }
+  return offered.size;
+}
+
+/** The recruitment records behind the interviewed people, read in small batches. */
+async function readInterviewedCandidates(
+  rows: readonly InterviewVolumeRow[],
+): Promise<Map<string, InterviewedCandidate>> {
+  const ids = [...new Set(rows.map((row) => (row.candidate_id ?? "").trim()).filter(Boolean))];
+  const found = new Map<string, InterviewedCandidate>();
+  const supabase = getSupabaseAdmin();
+  for (let index = 0; index < ids.length; index += CANDIDATE_BATCH) {
+    const { data, error } = await supabase
+      .from("ats_candidates")
+      .select("id,email,offer_id")
+      .in("id", ids.slice(index, index + CANDIDATE_BATCH));
+    if (error) throw error;
+    for (const record of (data ?? []) as unknown as { email: string | null; id: string; offer_id: string | null }[]) {
+      found.set(String(record.id), { email: record.email, offerId: record.offer_id ? String(record.offer_id) : null });
+    }
+  }
+  return found;
+}
+
+/**
  * Interviews held, and people interviewed, in the last `days` days.
  *
  * `now` is injectable so a test can drive a fixed window; the default is the real clock. The window
@@ -103,6 +184,7 @@ export function countDistinctPeople(rows: readonly InterviewVolumeRow[]): number
 export async function countInterviewVolume(
   days = 90,
   now: Date = new Date(),
+  letters?: LiveLetterKeys,
 ): Promise<InterviewVolume> {
   const from = new Date(now.getTime() - days * 86_400_000);
   const fromIso = from.toISOString();
@@ -110,17 +192,23 @@ export async function countInterviewVolume(
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from(BOOKINGS)
-    .select("candidate_id,external_name,starts_at")
+    .select("candidate_id,external_email,external_name,starts_at")
     .gte("starts_at", fromIso)
+    // An interview booked for later has not happened yet. Counting its person as "interviewed" put a
+    // name in the bottom half that no letter could honestly follow.
+    .lte("starts_at", now.toISOString())
     .order("starts_at", { ascending: true })
     .range(0, READ_CAP - 1);
   if (error) throw error;
 
   const rows = (data ?? []) as unknown as InterviewVolumeRow[];
 
+  const candidates = letters ? await readInterviewedCandidates(rows) : null;
+
   return {
     fromIso,
     interviews: rows.length,
+    offered: letters && candidates ? countOfferedPeople(rows, candidates, letters) : null,
     people: countDistinctPeople(rows),
     truncated: rows.length >= READ_CAP,
   };

@@ -45,6 +45,7 @@ import {
   isUnreviewedCandidateStatus,
   normalizeCandidateStatus,
 } from "@/lib/recruitment/candidate-status";
+import { intakeSourceLabel } from "@/lib/recruitment/intake-source";
 import { applicationStageLabels } from "@/lib/recruitment/labels";
 
 /** How many named rows a task shows before it says how many more there are. */
@@ -269,9 +270,14 @@ function task(input: {
   subject: string;
   /** Given the count, the heading. Takes the count so the noun can agree with it. */
   title: (count: number) => string;
+  /**
+   * The true size of the queue when `items` is only its longest-waiting rows. Without it the count
+   * is the rows handed in, which is right for every queue that lists all of its work.
+   */
+  total?: number;
 }): HrTask {
   const sorted = [...input.items].sort((a, b) => b.sortKey - a.sortKey);
-  const count = sorted.length;
+  const count = Math.max(sorted.length, input.total ?? 0);
   const urgency: HrTaskUrgency =
     count === 0 ? "clear" : sorted.some((item) => item.urgent) ? "overdue" : "due";
 
@@ -643,35 +649,60 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
         SCREENING_STAGES.has(row.stage) &&
         (!row.candidate || isUnreviewedCandidateStatus(row.candidate.status)),
     );
+    // THE QUEUE IS THE CANDIDATE POOL WHEN THE CALLER LOADED IT (owner, 2026-10-16: "count new
+    // candidates"). Applications against a requisition are a half of the ATS almost nobody uses, so
+    // this queue read 0 on the day 754 candidates sat at status New. The total is the pool's `new`
+    // pile — the same figure as "Awaiting Review" — and the rows are the longest-waiting few. A
+    // caller that did not load the pool (a test literal, an older page) gets the application list
+    // exactly as before.
+    const awaitingReview = loaded.recruitment.awaitingReview;
+    const fromPool = Boolean(awaitingReview);
     tasks.push(
       task({
         action: "Screen",
-        clearLabel: "No application against a requisition is waiting on a CV read.",
-        detail:
-          "A candidate applied against a requisition and nobody has decided on the CV yet — not shortlisted, rejected or sent to a manager.",
+        clearLabel: fromPool
+          ? "No CV is waiting on a decision."
+          : "No application against a requisition is waiting on a CV read.",
+        detail: fromPool
+          ? "A CV is in the candidate pool and nobody has decided on it yet — not shortlisted, rejected or sent to a manager."
+          : "A candidate applied against a requisition and nobody has decided on the CV yet — not shortlisted, rejected or sent to a manager.",
         functionKey: "recruiting",
         href: "/hr/cv-database",
         hrefLabel: "Open CV Database",
-        items: screening.map((row) => {
-          const days = daysSince(row.lastStageChangedAt);
-          return {
-            age: waitingLabel(days),
-            href: "/hr/cv-database",
-            id: row.id,
-            meta: [
-              applicationStageLabels[row.stage],
-              row.requisition?.jobTitle ?? null,
-            ]
-              .filter(Boolean)
-              .join(" · "),
-            name: row.candidate?.fullName ?? "Candidate record with no name",
-            sortKey: days,
-            urgent: days >= OVERDUE_DAYS,
-          };
-        }),
+        items: awaitingReview
+          ? awaitingReview.map((row) => {
+              const days = daysSince(row.receivedAt);
+              return {
+                age: waitingLabel(days),
+                href: "/hr/cv-database",
+                id: row.id,
+                meta: intakeSourceLabel(row.source) || "Candidate pool",
+                name: row.fullName?.trim() || "Candidate record with no name",
+                sortKey: days,
+                urgent: days >= OVERDUE_DAYS,
+              };
+            })
+          : screening.map((row) => {
+              const days = daysSince(row.lastStageChangedAt);
+              return {
+                age: waitingLabel(days),
+                href: "/hr/cv-database",
+                id: row.id,
+                meta: [
+                  applicationStageLabels[row.stage],
+                  row.requisition?.jobTitle ?? null,
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+                name: row.candidate?.fullName ?? "Candidate record with no name",
+                sortKey: days,
+                urgent: days >= OVERDUE_DAYS,
+              };
+            }),
         key: "screen-candidates",
         subject: "CV screening",
         title: (count) => `Screen ${count} ${pluralise(count, "candidate", "candidates")}`,
+        total: awaitingReview ? loaded.recruitment.summary.candidatePool?.new : undefined,
       }),
     );
 

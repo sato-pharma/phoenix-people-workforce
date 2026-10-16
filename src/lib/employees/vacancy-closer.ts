@@ -143,6 +143,22 @@ async function loadEmployeeFullName(hrId: string | null) {
 // are reached independently from the same /overview + command-center request paths (via
 // getEmployeeDirectory()'s internal vacancy calls), so without this a single page load issued
 // this same position_vacancies query multiple times.
+/**
+ * Whether THIS request's open-vacancy read gave up and returned an empty list.
+ *
+ * `getOpenVacancies` swallows a timeout or a schema-cache miss as "no vacancies" so the directory
+ * still loads, which is the right call for a page that merely lists seats and the wrong one for a
+ * page that PRINTS a count: "0 vacant, every seat is filled" over a failed read is the false
+ * all-clear. Per request (React `cache`), so a page can ask after the directory has loaded, with no
+ * second query. Outside a request it is a fresh object each time and always reads "fine" — no worse
+ * than before.
+ */
+const vacancyReadState = cache(() => ({ failed: false }));
+
+export function openVacancyReadFailed(): boolean {
+  return vacancyReadState().failed;
+}
+
 const getOpenVacancies = cache(async (): Promise<VacancyLookupRow[]> => {
   try {
     const loadRows = (includeReplacement: boolean) => {
@@ -223,6 +239,7 @@ const getOpenVacancies = cache(async (): Promise<VacancyLookupRow[]> => {
       message.includes("schema cache") ||
       message.includes("could not find")
     ) {
+      vacancyReadState().failed = true;
       return [];
     }
 

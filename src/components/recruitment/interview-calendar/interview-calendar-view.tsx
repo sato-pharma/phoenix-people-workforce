@@ -187,6 +187,7 @@ export function InterviewCalendarView({
   initialWeek,
   link = null,
   lockedWeek = null,
+  refreshToken,
   role,
   todayKey,
   zoomConnected,
@@ -200,6 +201,14 @@ export function InterviewCalendarView({
   link?: InterviewCalendarLinkView | null;
   /** The one week a week-limited link opens — the week cannot be changed. */
   lockedWeek?: string | null;
+  /**
+   * A host page that re-reads itself on a timer (the Talent Acquisition overview) passes a value that
+   * changes with each server render. The week is fetched by this component's own effect, which a
+   * `router.refresh()` never re-runs, so without it the grid sits on what it read when the page
+   * opened while everything around it moves. Changing it re-reads the week IN PLACE: no loading
+   * flash, and nothing the viewer has open is closed.
+   */
+  refreshToken?: number | string;
   role: InterviewCalendarRole;
   todayKey: string;
   zoomConnected: boolean;
@@ -299,7 +308,7 @@ export function InterviewCalendarView({
     return () => {
       live = false;
     };
-  }, [api, weekStart]);
+  }, [api, refreshToken, weekStart]);
 
   // An interview in the week on screen is read straight from it (above). One a link points at outside
   // that week is asked for directly, and the grid moves to its week.

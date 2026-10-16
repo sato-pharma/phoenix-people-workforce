@@ -76,7 +76,53 @@ export async function getCandidatePoolCounts(): Promise<CandidatePoolCounts> {
   };
 }
 
+/** One CV nobody has decided on yet, as the "Screen" queue names it. */
+export type AwaitingReviewRow = {
+  fullName: string | null;
+  id: string;
+  /** When the CV reached us (`created_at`), so the queue can say how long it has waited. */
+  receivedAt: string | null;
+  /** The intake channel code, shown through `intakeSourceLabel` and never raw. */
+  source: string | null;
+};
+
+/**
+ * The CVs that have waited longest with no decision, oldest first.
+ *
+ * THE SCREEN QUEUE READS THE CANDIDATE POOL (owner, 2026-10-16: "count new candidates"). It used to
+ * read applications against a requisition, which is a half of the ATS almost nobody uses — it read
+ * 0 on the day 754 candidates sat at status New. The total comes from `getCandidatePoolCounts().new`
+ * so it equals the "Awaiting Review" figure everywhere else; this read only NAMES the first few, and
+ * a row is a strict `new` while the total also holds any legacy free-text status, so the two can
+ * differ by a handful and the total is the one that counts.
+ */
+export async function listAwaitingReview(limit: number): Promise<AwaitingReviewRow[]> {
+  const { data, error } = await recruitmentDb()
+    .from("ats_candidates")
+    .select("id,full_name,created_at,source")
+    .eq("status", "new")
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as unknown as {
+    created_at: string | null;
+    full_name: string | null;
+    id: string;
+    source: string | null;
+  }[]).map((row) => ({
+    fullName: row.full_name,
+    id: String(row.id),
+    receivedAt: row.created_at,
+    source: row.source,
+  }));
+}
+
 export type RecruitmentDashboard = {
+  /**
+   * The longest-waiting CVs with no decision. Present only when the caller asked for them
+   * (`awaitingReviewLimit`), because it is one more read and only the HR task queue names them.
+   */
+  awaitingReview?: AwaitingReviewRow[];
   requisitions: Requisition[];
   applications: ApplicationWithContext[];
   summary: {
@@ -119,8 +165,18 @@ export function resolveHiredWindow(
   now: Date = new Date(),
 ): HiredWindow {
   const fallback = currentCairoMonthWindow(now);
-  const clean = (value?: string | null) =>
-    typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim()) ? value.trim() : null;
+  // A REAL calendar day, not just the right shape: "2026-13-45" matches a digit pattern, rolls over
+  // inside the Cairo conversion without an error, and then fails far from here ("Invalid time
+  // value") and takes the whole page down. `2026-02-31` would silently have become 3 March.
+  const clean = (value?: string | null) => {
+    const text = typeof value === "string" ? value.trim() : "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+    const [year, month, day] = text.split("-").map(Number);
+    const check = new Date(Date.UTC(year, month - 1, day));
+    return check.getUTCFullYear() === year && check.getUTCMonth() === month - 1 && check.getUTCDate() === day
+      ? text
+      : null;
+  };
 
   const from = clean(input.from) ?? fallback.fromIso;
   const to = clean(input.to) ?? fallback.toIso;
@@ -156,12 +212,13 @@ export function isHiredInsideWindow(
 
 export async function getRecruitmentDashboard(
   access: AccessContext,
-  options: { hiredWindow?: HiredWindow } = {},
+  options: { awaitingReviewLimit?: number; hiredWindow?: HiredWindow } = {},
 ): Promise<RecruitmentDashboard> {
-  const [requisitions, applications, candidatePool] = await Promise.all([
+  const [requisitions, applications, candidatePool, awaitingReview] = await Promise.all([
     listRequisitions(access),
     listApplications(access),
     getCandidatePoolCounts(),
+    options.awaitingReviewLimit ? listAwaitingReview(options.awaitingReviewLimit) : undefined,
   ]);
 
   const stageCounts: Record<string, number> = {};
@@ -184,6 +241,7 @@ export async function getRecruitmentDashboard(
   ).length;
 
   return {
+    ...(awaitingReview ? { awaitingReview } : {}),
     requisitions,
     applications,
     summary: {

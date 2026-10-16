@@ -21,7 +21,9 @@ import type { HrBundleName } from "@/lib/auth/hr-functions";
 import type { HrCommandTile } from "@/lib/hr/command-center";
 import type { CalendarGridDay, CalendarItem } from "@/lib/calendar/logic";
 import type { InterviewBooking, InterviewCalendarRole } from "@/lib/recruitment/interview-calendar-types";
-import { formatTimeRange } from "@/lib/recruitment/interview-calendar-week";
+import { formatTimeOfDay, formatTimeRange } from "@/lib/recruitment/interview-calendar-week";
+import { canonicalHrIdKey } from "@/lib/hr-id";
+import { isIsoDate, parseLetterDate } from "@/lib/offers/dates";
 import type { OfferRecord } from "@/lib/offers/types";
 import type { DailyCvDigest } from "@/lib/recruitment/inbound/daily-cv-digest";
 
@@ -185,6 +187,11 @@ export type TalentCalendar = {
   /** FALSE when the company calendar did not answer — the grid then carries only her own two kinds. */
   monthItemsLoaded: boolean;
   /**
+   * The instant the server built this page, in ms. It changes on every 60-second re-read, which is
+   * what tells the embedded week grid (that fetches its own data) to read its week again.
+   */
+  refreshedAt?: number;
+  /**
    * Today, in Cairo, as the SERVER saw it.
    *
    * Carried rather than computed in the component, because the month grid marks today whatever week
@@ -246,6 +253,41 @@ export function toTalentInterview(booking: InterviewBooking): TalentInterview {
  */
 
 /**
+ * An offer's start date as `yyyy-mm-dd`, or "" when it is neither that nor a letter date.
+ *
+ * AN OFFER STORES ITS START DATE THE WAY THE LETTER PRINTS IT — "18 October 2026" — so the value is
+ * read through the letter-date parser, never sliced as if it were `yyyy-mm-dd`. Sliced, every
+ * accepted offer on production fell outside every window and the panel said nobody was joining.
+ */
+export function offerStartKey(startDate: string | null | undefined): string {
+  const raw = (startDate ?? "").trim();
+  if (!raw) return "";
+  if (isIsoDate(raw.slice(0, 10))) return raw.slice(0, 10);
+  return parseLetterDate(raw) ?? "";
+}
+
+/**
+ * Where a joining row leads: the Job Offers list. The page reads no `?open=<id>` (it takes no search
+ * params at all), so a row that carried one only LOOKED like a deep link to that offer.
+ */
+const OFFERS_HREF = "/hr/offers";
+
+/**
+ * The day an accepted offer's person walks in. Once the offer has an employee record, THAT record's
+ * hire date wins — it is the date attendance and payroll run from, and HR can move it after the
+ * letter went out (measured 2026-10-16: a letter said 17 October while the employee record said
+ * 24 October). Until there is a record, the letter's own start date stands.
+ */
+function joiningDayKey(
+  offer: OfferRecord,
+  hireDateByHrId: ReadonlyMap<string, string> | undefined,
+): string {
+  const key = canonicalHrIdKey(offer.employeeHrId);
+  const hired = key ? (hireDateByHrId?.get(key) ?? "") : "";
+  return isIsoDate(hired) ? hired : offerStartKey(offer.startDate);
+}
+
+/**
  * The joining days inside a span, from the offers that were ACCEPTED.
  *
  * `OfferFields.startDate` is the date the letter itself names, which is the date she onboards
@@ -257,16 +299,15 @@ export function joinersBetween(
   offers: readonly OfferRecord[],
   fromKey: string,
   toKey: string,
+  hireDateByHrId?: ReadonlyMap<string, string>,
 ): TalentJoiner[] {
   return offers
     .filter((offer) => offer.status === "accepted")
-    .filter((offer) => {
-      const start = (offer.startDate ?? "").slice(0, 10);
-      return Boolean(start) && start >= fromKey && start <= toKey;
-    })
-    .map((offer) => ({
-      dateKey: offer.startDate.slice(0, 10),
-      href: `/hr/offers?open=${encodeURIComponent(offer.id)}`,
+    .map((offer) => ({ offer, start: joiningDayKey(offer, hireDateByHrId) }))
+    .filter(({ start }) => Boolean(start) && start >= fromKey && start <= toKey)
+    .map(({ offer, start }) => ({
+      dateKey: start,
+      href: OFFERS_HREF,
       id: offer.id,
       name: offer.candidateName,
       title: offer.title,
@@ -340,37 +381,72 @@ export function buildMonthMarks(
 }
 
 /**
+ * The first instant of the KPI window — the same `now - 90 days` arithmetic
+ * `countInterviewVolume` uses, so the conversion cards and the interview count cover one period.
+ */
+export function kpiWindowFromIso(now: Date, days = KPI_WINDOW_DAYS): string {
+  return new Date(now.getTime() - days * 86_400_000).toISOString();
+}
+
+/**
+ * The live letters as plain keys, for matching an interviewed person to a letter. "Live" is every
+ * letter except a withdrawn one and a draft: a draft was never written to anybody and a withdrawn
+ * one was pulled, while a sent, accepted or declined letter is an offer the person received.
+ */
+export function liveLetterKeys(offers: readonly OfferRecord[]): { emails: Set<string>; ids: Set<string> } {
+  const emails = new Set<string>();
+  const ids = new Set<string>();
+  for (const offer of offers) {
+    if (offer.status === "withdrawn" || offer.status === "draft") continue;
+    if (offer.id) ids.add(String(offer.id));
+    const address = (offer.candidateEmail ?? "").trim().toLowerCase();
+    if (address) emails.add(address);
+  }
+  return { emails, ids };
+}
+
+/**
  * Her handbook's HIRING QUALITY family — *"Managers get relevant candidates, and new hires pass
  * their probation."* Only the interview-to-offer ratio is drawn; the owner removed the probation
  * retention card from her overview on 2026-10-16.
  */
 export function buildHiringQualityKpis(input: {
-  offers: readonly OfferRecord[] | undefined;
   /** The windowed interview count, or null when that read failed. See interview-volume.ts. */
-  volume: { fromIso: string; interviews: number; people: number; truncated: boolean } | null;
+  volume: {
+    fromIso: string;
+    interviews: number;
+    /** Of those people, how many hold a live letter — null when the letters were not available. */
+    offered: number | null;
+    people: number;
+    truncated: boolean;
+  } | null;
 }): TalentKpi[] {
   const kpis: TalentKpi[] = [];
 
   // ── Interview to offer ────────────────────────────────────────────────────────────────────────
   //
-  // DISTINCT PEOPLE on the bottom, OFFER LETTERS on top, over the same 90 days.
+  // THE SAME PEOPLE ON BOTH SIDES (owner, 2026-10-16: "like for like"). The bottom is the distinct
+  // people interviewed in the window; the top is how many of THOSE people hold a live offer letter.
+  // It used to be every letter written in the window over the people interviewed, which read 66%
+  // against a like-for-like 22% on 2026-10-16: it counted withdrawn and test letters, and letters
+  // to people who were never on the calendar, so it could pass 100% and the caption had to apologise.
   //
   // It counts offer LETTERS (the `offers` module) and not also `ats_offers`, which is what
   // `offersMade` in hiring-analytics.ts adds together. That is a decision: the letter module is the
   // door this seat uses and the one the Job-offers chart beside it plots, while `ats_offers` is the
   // ATS's own governed offer object and is already inside the pipeline chart's Offer column.
-  // Measured 2026-10-13 against production: 43 letters against 2 ATS rows. Naming one door in the
-  // caption is honest; adding two doors together and dividing by a third table's people is not.
+  // Measured 2026-10-13 against production: 43 letters against 2 ATS rows.
   const volume = input.volume;
-  if (volume) {
-    const made = (input.offers ?? []).filter((offer) => (offer.createdAt ?? "") >= volume.fromIso)
-      .length;
+  // No matched count means the letters were not available. A card for it would be a figure invented
+  // out of a failure, so it is left out; the offers read names itself on the page's notice.
+  if (volume && volume.offered !== null) {
     kpis.push(
       kpi({
         caption:
-          `Of the people interviewed in the last ${KPI_WINDOW_DAYS} days, how many were written an offer letter. ` +
-          "Both halves count the same period, so this moves when your own work moves — it is not a lifetime total. " +
-          "Above 100% means letters went to people interviewed before this period.",
+          `Of the people interviewed in the last ${KPI_WINDOW_DAYS} days, how many hold an offer letter — ` +
+          "withdrawn and draft letters are not counted. A person is matched to a letter through the record their " +
+          "CV sits on, or the e-mail on it. Both halves are the same people, so this cannot pass 100%, and it " +
+          "moves when your own work moves — it is not a lifetime total.",
         denominator: volume.people,
         denominatorLabel: "people interviewed",
         emptyLabel: "No interview has been held in this period yet.",
@@ -378,8 +454,8 @@ export function buildHiringQualityKpis(input: {
         hrefLabel: "Open the Interview Calendar",
         key: "interview-to-offer",
         label: "Interview to offer",
-        numerator: made,
-        numeratorLabel: "offer letters written",
+        numerator: volume.offered,
+        numeratorLabel: "holding an offer letter",
       }),
     );
   }
@@ -391,26 +467,61 @@ export function buildHiringQualityKpis(input: {
 }
 
 /**
+ * The accepted letters whose person has actually STARTED: an employee record that is active, and a
+ * first day that has arrived. A person who said yes and starts next week is an acceptance and not yet
+ * a start, which is what the "Offer to join" card used to blur (owner, 2026-10-16).
+ *
+ * The first day is the Employee Master's hire date when there is one and the letter's own date
+ * otherwise (`joiningDayKey`, the rule the joiners panel uses). A record with neither has no first
+ * day to have arrived, so it does not count as started.
+ */
+export function startedOfferIds(
+  offers: readonly OfferRecord[],
+  input: {
+    /** Canonical hr id keys of the employees whose record is active. */
+    activeHrIds: ReadonlySet<string>;
+    hireDateByHrId: ReadonlyMap<string, string> | undefined;
+    todayKey: string;
+  },
+): Set<string> {
+  const started = new Set<string>();
+  for (const offer of offers) {
+    if (offer.status !== "accepted") continue;
+    const key = canonicalHrIdKey(offer.employeeHrId);
+    if (!key || !input.activeHrIds.has(key)) continue;
+    const day = joiningDayKey(offer, input.hireDateByHrId);
+    if (day && day <= input.todayKey) started.add(String(offer.id));
+  }
+  return started;
+}
+
+/**
  * Her handbook's OFFER CONVERSION family — *"The candidates we choose accept the offer and actually
  * join."*
+ *
+ * BOTH CARDS COUNT THE LETTERS WRITTEN IN THE KPI WINDOW (owner, 2026-10-16). They used to read the
+ * newest 200 letters with no date filter under a "Last 90 days" header that only the interview card
+ * honoured. A letter with no timestamp is counted out: it cannot be shown to belong to the window.
+ *
+ * `started` is null when the Employee Master did not load; the join card is then ABSENT rather than
+ * drawn as 0 of N, which would say nobody arrived.
  */
-export function buildOfferConversionKpis(offers: readonly OfferRecord[] | undefined): TalentKpi[] {
+export function buildOfferConversionKpis(
+  offers: readonly OfferRecord[] | undefined,
+  options: { fromIso: string; started: ReadonlySet<string> | null },
+): TalentKpi[] {
   if (!offers) return [];
-  const accepted = offers.filter((offer) => offer.status === "accepted");
-  const declined = offers.filter((offer) => offer.status === "declined");
-  // The joining form is what creates the employee record, so `employeeHrId` is the proof somebody
-  // actually joined. It is NULL for an acceptance HR recorded by hand (`acceptedVia: "hr"`), which
-  // is most of them today — measured 2026-10-13: 2 of 26 accepted offers carry one. The caption
-  // therefore says what the figure counts, because the gap is a RECORDING gap and not a joining
-  // gap, and a reader who took it for the latter would be reading a crisis that is not there.
-  const joined = accepted.filter((offer) => Boolean(offer.employeeHrId));
+  const inWindow = offers.filter((offer) => (offer.createdAt ?? "") >= options.fromIso);
+  const accepted = inWindow.filter((offer) => offer.status === "accepted");
+  const declined = inWindow.filter((offer) => offer.status === "declined");
+  const started = options.started;
 
-  return [
+  const cards: TalentKpi[] = [
     kpi({
       caption:
-        "Of the candidates who answered an offer, how many said yes. Letters still awaiting a reply are in neither " +
-        "half — an offer nobody has answered is not a decision yet, and counting it would make a busy week look " +
-        "like a bad one.",
+        `Of the offers written in the last ${KPI_WINDOW_DAYS} days that candidates have answered, how many said yes. ` +
+        "Letters still awaiting a reply are in neither half — an offer nobody has answered is not a decision yet, " +
+        "and counting it would make a busy week look like a bad one.",
       denominator: accepted.length + declined.length,
       denominatorLabel: "offers answered",
       emptyLabel: "No offer has been answered yet.",
@@ -421,22 +532,27 @@ export function buildOfferConversionKpis(offers: readonly OfferRecord[] | undefi
       numerator: accepted.length,
       numeratorLabel: "offers accepted",
     }),
-    kpi({
-      caption:
-        "Of the accepted offers, how many have an employee record created from the joining form. An acceptance you " +
-        "record by hand carries no employee record, so it counts in the bottom half and not the top — a low figure " +
-        "here usually means the joining form was not used, not that people did not join.",
-      denominator: accepted.length,
-      denominatorLabel: "offers accepted",
-      emptyLabel: "No offer has been accepted yet.",
-      href: "/hr/offers",
-      hrefLabel: "Open Job Offers",
-      key: "offer-to-join",
-      label: "Offer to join",
-      numerator: joined.length,
-      numeratorLabel: "joined through the form",
-    }),
   ];
+  if (started) {
+    cards.push(
+      kpi({
+        caption:
+          `Of the offers accepted in the last ${KPI_WINDOW_DAYS} days, how many people are now active employees ` +
+          "whose first day has arrived. Someone who said yes and starts next week is in the bottom half and not " +
+          "yet the top, so this climbs on its own as first days pass.",
+        denominator: accepted.length,
+        denominatorLabel: "offers accepted",
+        emptyLabel: "No offer has been accepted yet.",
+        href: "/hr/offers",
+        hrefLabel: "Open Job Offers",
+        key: "offer-to-join",
+        label: "Offer to join",
+        numerator: accepted.filter((offer) => started.has(String(offer.id))).length,
+        numeratorLabel: "employee started",
+      }),
+    );
+  }
+  return cards;
 }
 
 // ── THE REBUILT PAGE (owner, 2026-10-16) ─────────────────────────────────────────────────────────
@@ -680,11 +796,14 @@ export function orderTodaysInterviews(
   }));
 }
 
-/** "10:00" — the start alone, for the time column; the full range stays in `timeLabel`. */
-export function startTimeLabel(startMinutes: number): string {
-  const hours = Math.floor(startMinutes / 60);
-  const minutes = startMinutes % 60;
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+/**
+ * "2:00" and "PM" — the start alone, for the time column, in the Interview Calendar's own 12-hour
+ * reading. The week grid, the "mine" list and every row's accessible name already say "2:00 PM", so
+ * the Today panel saying "14:00" put two clocks on one page.
+ */
+export function startClockParts(startMinutes: number): { suffix: string; time: string } {
+  const [time = "", suffix = ""] = formatTimeOfDay(startMinutes).split(" ");
+  return { suffix, time };
 }
 
 /** Minutes past midnight in Cairo for an instant — the clock `orderTodaysInterviews` reads. */
@@ -737,12 +856,13 @@ export function joinersArriving(
   offers: readonly OfferRecord[] | undefined,
   todayKey: string,
   windowDays: number = JOINERS_WINDOW_DAYS,
+  hireDateByHrId?: ReadonlyMap<string, string>,
 ): TalentJoiners {
   const toKey = addDaysToKey(todayKey, windowDays);
   return {
     fromKey: todayKey,
     loaded: offers !== undefined,
-    rows: offers ? joinersBetween(offers, todayKey, toKey) : [],
+    rows: offers ? joinersBetween(offers, todayKey, toKey, hireDateByHrId) : [],
     toKey,
   };
 }

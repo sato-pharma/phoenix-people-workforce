@@ -140,6 +140,21 @@ export function runHiredTilePeriodTests() {
     { fromIso: "2026-07-01", toIso: "2026-09-30" },
     "one bound is usable: the other keeps its default",
   );
+  // The right SHAPE is not a real day: "2026-13-45" passed a digit pattern, rolled over inside the
+  // Cairo conversion and then threw "Invalid time value" far from here, taking the whole page down;
+  // "2026-02-31" silently became 3 March.
+  for (const impossible of ["2026-13-45", "2026-00-10", "2026-02-31", "2026-04-31"]) {
+    assert.deepEqual(
+      resolveHiredWindow({ from: impossible, to: "2026-09-15" }, now),
+      { fromIso: "2026-09-01", toIso: "2026-09-15" },
+      `${impossible} is not a calendar day — it falls back to the default bound, never to a rolled-over date`,
+    );
+  }
+  assert.deepEqual(
+    resolveHiredWindow({ from: "2028-02-29", to: "2028-03-01" }, now),
+    { fromIso: "2028-02-29", toIso: "2028-03-01" },
+    "a real leap day is still honoured",
+  );
 
   // ── The lifetime figure survives under its own name ───────────────────────
   // Redefining `hires` in place would silently change it for any future reader; the fix ADDS a

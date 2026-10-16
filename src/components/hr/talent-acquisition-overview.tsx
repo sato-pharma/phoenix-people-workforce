@@ -16,9 +16,10 @@
  * "premium polish", never below 9.5 out of 10. His answers that evening are the spec:
  *
  *   1. The identity strip                          untouched, byte for byte
+ *        Conversion                                standing in its reserve, beside her portrait:
+ *                                                  interview to offer · offer acceptance · offer to join
  *   2. The command rail                            Needs attention (+ overdue) · the Hired window
- *   3. The key cards, ONE container
- *        Conversion                                interview to offer · offer acceptance · offer to join
+ *   3. The figures, ONE container
  *        Seats · Candidates · Outcomes             the six figures, in THREE LABELLED GROUPS
  *   4. Today                                      today's interviews · joiners in 14 days · CVs today
  *   5. The calendar                               the real interview calendar, unchanged
@@ -148,7 +149,7 @@ const KEY_CARD_ORDER = ["interview-to-offer", "offer-acceptance", "offer-to-join
  * purged and the grid would silently collapse to one column.
  *
  * `GROUP_GRID_BY_TOTAL` is the grid the three groups share once the container is wide enough for
- * every figure in ONE ROW (1120px — eight cards of ~130px; at 840px they were 109px and every label broke onto three lines, which he called awful on 2026-10-16), and `GROUP_SPAN_BY_COUNT` is how many of
+ * every figure in ONE ROW (1120px — six cards of ~170px; below that they are cramped and every label breaks onto three lines, which he called awful on 2026-10-16), and `GROUP_SPAN_BY_COUNT` is how many of
  * those columns a group takes: one per card, so every card on the row is the same width whichever
  * group it is in ("two card styles", "eight cards wrap into two rows of four" — both fixed here).
  */
@@ -235,17 +236,17 @@ function MetricTile({ tile }: { tile: HrCommandTile }) {
       />
       <ArrowUpRight
         aria-hidden="true"
-        className="absolute right-2 top-2.5 h-3.5 w-3.5 text-orange-400 opacity-0 transition-opacity duration-200 group-hover/tile:opacity-100"
+        className="absolute right-2 top-2.5 h-3.5 w-3.5 text-orange-400 opacity-0 transition-opacity duration-200 group-focus-visible/tile:opacity-100 group-hover/tile:opacity-100"
       />
       {/* The label sits in a box two lines tall, so a one-line label and a wrapped one put their
           figures on the SAME line across the row. */}
-      <span className="flex min-h-[23px] items-center break-words text-[9px] font-black uppercase leading-tight tracking-[0.14em] text-slate-500">
+      <span className="flex min-h-[34px] items-center break-words text-[9px] font-black uppercase leading-tight tracking-[0.14em] text-slate-500 @min-[480px]:min-h-[23px]">
         {tile.label}
       </span>
       <span className={`mt-3 break-words text-3xl font-black leading-none tabular-nums ${toneClass}`}>
         {tile.valueLabel ?? tile.value.toLocaleString("en-US")}
       </span>
-      <span className="mt-2 break-words text-[10px] font-bold uppercase leading-snug tracking-[0.12em] text-slate-400">
+      <span className="mt-2 break-words text-[10px] font-bold uppercase leading-snug tracking-[0.12em] text-slate-500">
         {tile.sub}
       </span>
     </Link>
@@ -276,10 +277,15 @@ function KpiCard({ kpi }: { kpi: TalentKpi }) {
   const measured = kpi.rate !== null;
   const meter = rateMeterPercent(kpi.rate);
   const Icon = KPI_ICONS[kpi.key];
+  // The accessible name carries the FIGURE and both halves, because an aria-label replaces the
+  // card's content: without them a screen reader never hears the percentage it is on.
+  const spokenFigure = measured
+    ? `${Math.round((kpi.rate ?? 0) * 100)} percent, ${kpi.numerator.toLocaleString("en-US")} ${kpi.numeratorLabel} of ${kpi.denominator.toLocaleString("en-US")} ${kpi.denominatorLabel}`
+    : kpi.emptyLabel;
 
   return (
     <Link
-      aria-label={`${kpi.label}. ${kpi.caption} ${kpi.hrefLabel}.`}
+      aria-label={`${kpi.label}: ${spokenFigure}. ${kpi.caption} ${kpi.hrefLabel}.`}
       className={`${CARD_MOTION_CLASS} flex-row items-center gap-3 border border-white/10 bg-[linear-gradient(160deg,rgba(255,255,255,0.09)_0%,rgba(255,255,255,0.025)_100%)] px-3 py-2 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-sm hover:border-orange-400/60 hover:bg-[linear-gradient(160deg,rgba(255,255,255,0.13)_0%,rgba(255,255,255,0.04)_100%)] hover:shadow-[0_14px_32px_rgba(0,0,0,0.35)]`}
       href={kpi.href}
       title={kpi.caption}
@@ -297,16 +303,18 @@ function KpiCard({ kpi }: { kpi: TalentKpi }) {
       ) : null}
       <ArrowUpRight
         aria-hidden="true"
-        className="absolute right-1.5 top-1.5 h-3 w-3 text-orange-300 opacity-0 transition-opacity duration-200 group-hover/tile:opacity-100"
+        className="absolute right-1.5 top-1.5 h-3 w-3 text-orange-300 opacity-0 transition-opacity duration-200 group-focus-visible/tile:opacity-100 group-hover/tile:opacity-100"
       />
       {measured ? (
-        <span className="relative w-[4.5rem] shrink-0 break-words text-[2rem] @min-[880px]:w-[4.75rem] font-black leading-none tracking-[-0.02em] tabular-nums text-white [text-shadow:0_2px_18px_rgba(249,115,22,0.35)]">
+        // `whitespace-nowrap` and a 5rem box: "100%" is ~74px of type and sat in a 72px box, so a
+        // full-marks day could wrap its "%" and push the band past the air beside her portrait.
+        <span className="relative w-20 shrink-0 whitespace-nowrap text-[2rem] font-black leading-none tracking-[-0.02em] tabular-nums text-white [text-shadow:0_2px_18px_rgba(249,115,22,0.35)]">
           {Math.round((kpi.rate ?? 0) * 100)}
           <span className="text-[1.1rem] text-orange-300">%</span>
         </span>
       ) : null}
       <span className="relative flex min-w-0 flex-1 flex-col">
-        <span className="text-[9.5px] font-black uppercase leading-tight tracking-[0.16em] text-orange-200">
+        <span className="break-words text-[9.5px] font-black uppercase leading-tight tracking-[0.16em] text-orange-200">
           {kpi.label}
         </span>
         {measured ? (
@@ -349,8 +357,7 @@ function UnavailableNotice({ sources }: { sources: string[] }) {
       <TriangleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
       <p className="text-[11px] font-semibold leading-relaxed text-amber-900">
         Some figures could not be loaded and are not shown below:{" "}
-        <span className="font-black">{sources.join(", ")}</span>. Everything else on this page is
-        current.
+        <span className="font-black">{sources.join(", ")}</span>. They fill in on the next refresh.
       </p>
     </div>
   );
@@ -466,7 +473,11 @@ export function TalentAcquisitionOverview({
           HER RECRUITING QUEUES ONLY. `RECRUITING_TASK_KEYS` in the data module is an allow-list, so
           the support desk cannot arrive here — "totally donot show employee requests". ── */}
       <TaCommandRail
-        hiredWindow={groups.some((group) => group.tiles.some((tile) => tile.key === "hired")) ? data.field.hiredWindow : null}
+        hiredWindow={
+          groups.some((group) => group.tiles.some((tile) => tile.key === "hired" || tile.key === "cvs-received"))
+            ? data.field.hiredWindow
+            : null
+        }
         onToggle={() => setShowPendings((previous) => !previous)}
         open={showPendings}
         overdueCount={overdueCount}
@@ -474,11 +485,11 @@ export function TalentAcquisitionOverview({
         pendingCount={pendingCount}
       />
 
-      {showPendings ? (
-        <div id={PENDINGS_PANEL_ID}>
-          <HrTodayPanel icons={TASK_ICONS} openAll tasks={data.tasks} />
-        </div>
-      ) : null}
+      {/* ALWAYS in the document, so the button's `aria-controls` never points at nothing; the panel
+          mounts inside it only while it is open. */}
+      <div hidden={!showPendings} id={PENDINGS_PANEL_ID}>
+        {showPendings ? <HrTodayPanel icons={TASK_ICONS} openAll tasks={data.tasks} /> : null}
+      </div>
 
       {data.unavailableSources.length > 0 ? (
         <UnavailableNotice sources={data.unavailableSources} />

@@ -108,18 +108,23 @@ const TAB_OFF = `text-slate-500 ${CONTROL_SKIN}`;
  *
  * ONE PLACE, because the grid draws a mark twice — as a dot at 375px and as a named row from `sm`
  * up — and a dot whose colour disagreed with the row underneath it would be worse than either.
+ *
+ * PHOENIX TONES ONLY (owner, 2026-10-16: "stick to phx identity", and the month grid was the one part
+ * of her page still painting sky, fuchsia, indigo and green). The kinds are told apart by lightness
+ * within the Phoenix palette — ink, ember, orange, amber, slate — and by the named legend and the
+ * titled rows beside every dot, so no kind depends on its hue alone.
  */
 const MARK_STYLES: Record<
   TalentMonthMark["kind"],
   { dot: string; icon: LucideIcon; label: string; text: string }
 > = {
-  birthday: { dot: "bg-fuchsia-400", icon: CakeSlice, label: "Birthday", text: "text-fuchsia-700" },
-  event: { dot: "bg-sky-400", icon: CalendarDays, label: "Event", text: "text-sky-700" },
-  holiday: { dot: "bg-emerald-500", icon: PartyPopper, label: "Holiday", text: "text-emerald-700" },
+  birthday: { dot: "bg-orange-300", icon: CakeSlice, label: "Birthday", text: "text-orange-600" },
+  event: { dot: "bg-slate-500", icon: CalendarDays, label: "Event", text: "text-slate-700" },
+  holiday: { dot: "bg-slate-900", icon: PartyPopper, label: "Holiday", text: "text-slate-900" },
   interview: { dot: "bg-orange-500", icon: Users, label: "Interview", text: "text-orange-700" },
-  joining: { dot: "bg-indigo-500", icon: UserRoundCheck, label: "Joining", text: "text-indigo-700" },
+  joining: { dot: "bg-orange-800", icon: UserRoundCheck, label: "Joining", text: "text-orange-900" },
   leave: { dot: "bg-amber-400", icon: Plane, label: "On leave", text: "text-amber-700" },
-  plan: { dot: "bg-slate-400", icon: Target, label: "Plan", text: "text-slate-600" },
+  plan: { dot: "bg-slate-300", icon: Target, label: "Plan", text: "text-slate-600" },
 };
 
 /** The order the legend and each day's marks read in — the company's facts before her own. */
@@ -181,7 +186,7 @@ function MonthCell({
       <div className="flex items-baseline justify-between gap-1">
         <span
           className={`font-display text-[12px] font-black leading-none tabular-nums sm:text-[13px] ${
-            isToday ? "text-orange-600" : inMonth ? "text-slate-900" : "text-slate-300"
+            isToday ? "text-orange-700" : inMonth ? "text-slate-900" : "text-slate-400"
           }`}
         >
           {date.slice(8)}
@@ -193,10 +198,16 @@ function MonthCell({
             {ordered.slice(0, 6).map((mark, index) => (
               <span
                 aria-hidden="true"
-                className={`h-1.5 w-1.5 rounded-full ${MARK_STYLES[mark.kind].dot}`}
+                className={`h-1.5 w-1.5 ${MARK_STYLES[mark.kind].dot}`}
                 key={`${mark.kind}-${index}`}
               />
             ))}
+            {/* Six dots fit; a seventh mark is COUNTED, never silently dropped. */}
+            {ordered.length > 6 ? (
+              <span className="text-[8px] font-black leading-none tabular-nums text-slate-500">
+                +{ordered.length - 6}
+              </span>
+            ) : null}
           </span>
         ) : null}
       </div>
@@ -212,7 +223,7 @@ function MonthCell({
         ))}
         {/* A count, never an ellipsis. "+2 more" says there are two; "…" says nothing at all. */}
         {ordered.length > 3 ? (
-          <p className="text-[9px] font-black uppercase tracking-[0.1em] text-slate-400">
+          <p className="text-[9px] font-black uppercase tracking-[0.1em] text-slate-500">
             +{ordered.length - 3} more
           </p>
         ) : null}
@@ -234,7 +245,8 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
       else next.set(key, value);
     }
     const query = next.toString();
-    router.push(query ? `${pathname}?${query}` : pathname);
+    // `scroll: false`: moving between months must not throw her back to the top of the page.
+    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }
 
   const { month, year } = calendar.month;
@@ -258,7 +270,7 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
   return (
     <section className="border-t border-slate-100" id="hr-group-calendar">
       <div className="flex flex-wrap items-start gap-3 border-b border-slate-200/70 bg-gradient-to-b from-white to-slate-50/60 px-5 py-4">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-orange-200 bg-gradient-to-br from-orange-50 to-orange-100 text-orange-600 shadow-[0_4px_10px_rgba(249,115,22,0.14)]">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center border border-orange-200 bg-gradient-to-br from-orange-50 to-orange-100 text-orange-600 shadow-[0_4px_10px_rgba(249,115,22,0.14)]">
           <CalendarDays aria-hidden="true" className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
@@ -307,6 +319,7 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
               canRequest={calendar.interviewCalendar.canRequest}
               initialOpen={null}
               initialWeek={calendar.weekStart}
+              refreshToken={calendar.refreshedAt}
               role={calendar.interviewCalendar.role}
               todayKey={todayKey}
               zoomConnected={calendar.interviewCalendar.zoomConnected}
@@ -355,19 +368,22 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
                       >
                         <span
                           aria-hidden={sameDayAsAbove ? "true" : undefined}
-                          className="w-[72px] shrink-0 whitespace-nowrap text-[9px] font-black uppercase tracking-[0.14em] text-slate-400 tabular-nums"
+                          className="w-[72px] shrink-0 whitespace-nowrap text-[9px] font-black uppercase tracking-[0.14em] text-slate-500 tabular-nums"
                         >
                           {sameDayAsAbove
                             ? ""
                             : `${weekdayShort(interview.dateKey)} ${formatShortDate(interview.dateKey)}`}
                         </span>
-                        <span className="whitespace-nowrap text-[9.5px] font-black uppercase tracking-[0.1em] text-orange-600 tabular-nums">
+                        <span className="whitespace-nowrap text-[9.5px] font-black uppercase tracking-[0.1em] text-orange-700 tabular-nums">
                           {interview.timeLabel}
                         </span>
-                        <span className="min-w-0 flex-1 break-words text-[12px] font-black text-slate-900">
+                        {/* `grow basis-40`, not `flex-1`: a zero basis never drops to its own line, so
+                            at 375px a name was squeezed into ~38px beside the time. 10rem is the
+                            least it will take before the row wraps and gives it the whole line. */}
+                        <span className="min-w-0 grow basis-40 break-words text-[12px] font-black text-slate-900" dir="auto">
                           {interview.candidateName}
                         </span>
-                        <span className="break-words text-[8.5px] font-black uppercase tracking-[0.16em] text-slate-300">
+                        <span className="break-words text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">
                           {interview.platformLabel}
                         </span>
                       </Link>
@@ -414,7 +430,7 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
                     <span className="inline-flex items-center gap-1.5" key={kind}>
                       <span
                         aria-hidden="true"
-                        className={`h-2 w-2 shrink-0 rounded-full ${style.dot}`}
+                        className={`h-2 w-2 shrink-0 ${style.dot}`}
                       />
                       <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-[0.12em] text-slate-500">
                         {style.label}
@@ -437,7 +453,7 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
             <div className="grid grid-cols-7 gap-px border border-slate-200 bg-slate-200/80 shadow-[0_1px_2px_rgba(15,23,42,0.045)]">
               {MONTH_COLUMN_LABELS.map((label) => (
                 <div
-                  className="min-w-0 bg-white px-1 py-1.5 text-center text-[8.5px] font-black uppercase tracking-[0.18em] text-slate-400"
+                  className="min-w-0 bg-white px-1 py-1.5 text-center text-[8.5px] font-black uppercase tracking-[0.18em] text-slate-500"
                   key={label}
                 >
                   {label}
