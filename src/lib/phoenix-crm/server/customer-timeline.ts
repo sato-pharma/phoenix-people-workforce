@@ -55,28 +55,33 @@ export async function loadCustomerTimeline(
   const customerId = typeof raw.customerId === "string" ? raw.customerId.trim() : "";
   if (!isUuid(customerId)) throw validationError("Choose a customer.");
 
+  // The customer check and his visits are asked for TOGETHER (2026-10-16 Phoenix CRM performance
+  // audit), where the visits used to wait for the check. Nothing reaches the page before the check
+  // passes, and its answer is still read first: the visits read is held to this same seat and world,
+  // so on a customer who is not here it can only come back empty, and it is thrown away unread.
   const supabase = getSupabaseAdmin();
-  const customer = await supabase
-    .from("phoenix_crm_customers")
-    .select("id")
-    .eq("id", customerId)
-    .eq("seat_id", seat.seatId)
-    .eq("is_test", isTest)
-    .maybeSingle();
+  const [customer, visits] = await Promise.all([
+    supabase
+      .from("phoenix_crm_customers")
+      .select("id")
+      .eq("id", customerId)
+      .eq("seat_id", seat.seatId)
+      .eq("is_test", isTest)
+      .maybeSingle(),
+    supabase
+      .from("phoenix_crm_visits")
+      .select(TIMELINE_VISIT_COLUMNS)
+      .eq("seat_id", seat.seatId)
+      .eq("customer_id", customerId)
+      .eq("is_test", isTest)
+      .order("visit_date", { ascending: false })
+      .order("captured_at", { ascending: false })
+      .limit(TIMELINE_VISITS_MAX + 1),
+  ]);
   throwIfError(customer.error);
   if (!customer.data) throw notFoundError("This customer is not on this territory's list. Reload the page.");
-
-  const { data, error } = await supabase
-    .from("phoenix_crm_visits")
-    .select(TIMELINE_VISIT_COLUMNS)
-    .eq("seat_id", seat.seatId)
-    .eq("customer_id", customerId)
-    .eq("is_test", isTest)
-    .order("visit_date", { ascending: false })
-    .order("captured_at", { ascending: false })
-    .limit(TIMELINE_VISITS_MAX + 1);
-  throwIfError(error);
-  const rows = (data ?? []) as unknown as Row[];
+  throwIfError(visits.error);
+  const rows = (visits.data ?? []) as unknown as Row[];
 
   const entries = buildCustomerTimeline(
     rows.slice(0, TIMELINE_VISITS_MAX).map((row): TimelineVisit => ({

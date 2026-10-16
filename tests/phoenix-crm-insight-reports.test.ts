@@ -858,8 +858,17 @@ function runTimelineTests(): void {
   assert.equal(TIMELINE_VISITS_MAX, 100);
   const loader = source("src/lib/phoenix-crm/server/customer-timeline.ts");
   assert.match(loader, /territoryForRead\(viewer, raw\.seatId, readTestFlag\(raw\.test\)\)/, "read through the list's own seat gate");
-  assert.equal([...loader.matchAll(/\.select\(/g)].length, 2, "two reads: the customer, then his visits");
+  assert.equal([...loader.matchAll(/\.select\(/g)].length, 2, "two reads: the customer and his visits");
   assert.match(loader, /\.from\("phoenix_crm_visits"\)\s*\.select\(TIMELINE_VISIT_COLUMNS\)/);
+  // 2026-10-16 performance audit: asked for together, and the customer check still decides first.
+  assert.match(loader, /const \[customer, visits\] = await Promise\.all\(\[/, "the check and the visits travel together");
+  assert.ok(
+    loader.indexOf("throwIfError(customer.error);") >= 0 &&
+      loader.indexOf("throwIfError(customer.error);") < loader.indexOf('throw notFoundError("This customer is not on this territory') &&
+      loader.indexOf('throw notFoundError("This customer is not on this territory') < loader.indexOf("throwIfError(visits.error);") &&
+      loader.indexOf("throwIfError(visits.error);") < loader.indexOf("buildCustomerTimeline("),
+    "a customer who is not here is refused before anything about his visits is looked at",
+  );
 
   const screen = source("src/components/phoenix-crm/customer-timeline.tsx");
   assert.doesNotMatch(screen, /distance|accuracy|location|flag|formatDistance|\blat\b|\blon\b/i, "the timeline screen shows no check of any kind");
