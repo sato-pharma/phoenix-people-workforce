@@ -860,6 +860,11 @@ const LATER_MIGRATIONS = [
   // review function, one brand-new trigger function, and the two report functions REPLACED — so it must
   // come after every earlier definer of those two, which is why it is last.
   "supabase/migrations/20261016161248_phoenix_crm_recorded_visit_waits_for_the_administrator.sql",
+  // Two counts the reports used to make by carrying every row across (2026-10-16 performance audit):
+  // items per plan for the exceptions board, and each territory's first countable visit and visit count
+  // for the adoption report. TWO brand-new read functions and nothing else — no table, no column, and it
+  // replaces nothing, so it appends safely at the end and cannot disturb the replacement ordering above.
+  "supabase/migrations/20261016180300_phoenix_crm_report_count_reads.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
