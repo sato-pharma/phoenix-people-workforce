@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
-import { stripComments } from "./support/comment-strip.ts";
+import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
 
 import {
@@ -193,6 +193,23 @@ export function runPhoenixCrmPharmacyCallTests(): void {
       `binary list_type readers rose to ${occurrences} (baseline 0). A new \`=== "AM" ? "AM" : "PM"\` files a pharmacy among the doctors and nothing else will catch it — use parseListType and decide whether that surface shows pharmacies at all.\n  ${offenders.join("\n  ")}`,
     );
 
+  }
+
+  // ── 8. A request on a pharmacy must be storable (production, 2026-10-15) ──────────────────────
+  // `phoenix_crm_create_request` copies the customer's own list_type into the request row, and the
+  // table's CHECK still said ('AM', 'PM') — so "Ask to drop" on any of the 1,843 pharmacies failed
+  // with 23514 and the rep read only "Could not send the request.". The LAST migration to define
+  // that constraint is the one production runs, so it is the one that must name Pharmacy.
+  {
+    const dir = new URL("supabase/migrations/", ROOT);
+    const defining = readdirSync(dir)
+      .filter((file) => file.endsWith(".sql"))
+      .sort()
+      .filter((file) => /add constraint phoenix_crm_list_requests_list_type\b/i.test(readFileSync(new URL(file, dir), "utf8")));
+    assert.ok(defining.length > 0, "no migration defines phoenix_crm_list_requests_list_type — the guard below would be vacuous");
+    const latest = stripSqlComments(readFileSync(new URL(defining[defining.length - 1]!, dir), "utf8"));
+    const check = latest.match(/add constraint phoenix_crm_list_requests_list_type\s+check\s*\(([^;]*)\)\s*;/i)?.[1] ?? "";
+    assert.match(check, /'Pharmacy'/, `${defining[defining.length - 1]} must let a request name a pharmacy`);
   }
 
   console.log("phoenix-crm pharmacy calls: OK");
