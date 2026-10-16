@@ -7,7 +7,9 @@ import { cairoLocalToUtc } from "../src/lib/recruitment/interview-calendar-week.
 import {
   nextWorkingDayAfter,
   planInterviewReminders,
+  REMINDER_SEND_CONCURRENCY,
   runInterviewReminders,
+  settledReminderKeys,
   type InterviewReminder,
 } from "../src/lib/recruitment/interview-reminders.ts";
 import { stripComments } from "./support/comment-strip.ts";
@@ -135,6 +137,80 @@ export async function runInterviewReminderTests() {
     "one failing send does not stop the others",
   );
   assert.equal(sent.length, 1);
+
+  // SPEED (16 Oct 2026: the route ran 30 s against the scheduler's 30 s cut). The daily "record what
+  // happened" nag is re-planned every ten minutes for every unrecorded interview of the last 30 days, and
+  // all but the first run's were delivered long ago. What is already delivered is not sent again, and the
+  // rest goes out a few at a time, not one after another — with every reminder, recipient and key as before.
+  const backlog = Array.from({ length: 12 }, (_, index) => interview(`n${index}`, "2026-09-21", 11, { interviewerHrId: `D-${20 + index}` }));
+  const backlogNow = at("2026-09-22", 9, 30);
+  const backlogPlan = planInterviewReminders(backlog, backlogNow);
+  assert.equal(backlogPlan.length, 12, "twelve unrecorded interviews: twelve nags planned");
+  const settledKeys = new Set(backlogPlan.slice(0, 9).map((reminder) => reminder.key));
+  const attempted: string[] = [];
+  let inFlight = 0;
+  let peak = 0;
+  const speedRun = await runInterviewReminders(
+    backlogNow,
+    async (reminder) => {
+      attempted.push(reminder.key);
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      inFlight -= 1;
+      return true;
+    },
+    async () => backlog,
+    async () => settledKeys,
+  );
+  assert.deepEqual(
+    attempted.sort(),
+    backlogPlan.slice(9).map((reminder) => reminder.key).sort(),
+    "a reminder whose delivery rows already exist is not sent again — only the three new ones are",
+  );
+  assert.deepEqual(
+    { delivered: speedRun.delivered, failed: speedRun.failed, planned: speedRun.planned, settled: speedRun.settled },
+    { delivered: 3, failed: 0, planned: 12, settled: 9 },
+    "the run still reports all twelve as planned",
+  );
+  const everyone = await runInterviewReminders(backlogNow, async () => true, async () => backlog);
+  assert.equal(everyone.delivered, 12, "with nothing known settled, every reminder is sent exactly as before");
+  attempted.length = 0;
+  peak = 0;
+  await runInterviewReminders(
+    backlogNow,
+    async (reminder) => {
+      attempted.push(reminder.key);
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      inFlight -= 1;
+      return true;
+    },
+    async () => backlog,
+  );
+  assert.equal(attempted.length, 12, "all twelve new reminders are sent");
+  assert.ok(peak > 1 && peak <= REMINDER_SEND_CONCURRENCY, `sent several at a time, never more than ${REMINDER_SEND_CONCURRENCY} (peak ${peak})`);
+
+  // What counts as settled: the event exists and holds a delivery row for EVERY channel the reminder
+  // asks for. A run that died after in-app but before Telegram leaves it unsettled, so Telegram still goes.
+  const [nag, hourNudge] = [backlogPlan[0], planInterviewReminders([eleven], at("2026-09-22", 10, 3))[0]];
+  const events = [
+    { event_key: nag.key, id: "1" },
+    { event_key: hourNudge.key, id: "2" },
+  ];
+  const rows = (id: string, channels: string[]) => channels.map((channel) => ({ channel, notification_event_id: id }));
+  assert.deepEqual(
+    [...settledReminderKeys([nag, hourNudge], events, [...rows("1", ["in_app", "telegram"]), ...rows("2", ["in_app", "email", "telegram"])])].sort(),
+    [nag.key, hourNudge.key].sort(),
+    "all channels present: both are settled (the nag asks for two channels, the one-hour nudge for three)",
+  );
+  assert.deepEqual(
+    [...settledReminderKeys([nag, hourNudge], events, [...rows("1", ["in_app"]), ...rows("2", ["in_app", "telegram"])])],
+    [],
+    "a channel with no delivery row yet keeps the reminder unsettled, so it is still delivered",
+  );
+  assert.deepEqual([...settledReminderKeys([nag], [], [])], [], "no event yet: unsettled");
 
   // WIRING: the three channels the owner named, once by key, and nothing but the interviewer is told.
   const source = stripComments(read("src/lib/recruitment/interview-reminders.ts"));
