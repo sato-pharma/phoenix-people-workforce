@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as unknown;
     const parsed = parseEvidenceLocationBody((body && typeof body === "object" ? body : {}) as Record<string, unknown>);
     if (!parsed) throw validationError("Your location was not captured. Capture it again.");
-    const location = await resolveEvidenceLocation(parsed);
+    const location = await resolveEvidenceLocation(parsed, { reuseNearbyAddress: true });
     return NextResponse.json({ location, success: true });
   } catch (error) {
     return phoenixCrmFailure(error, "Could not read the place for this location.");

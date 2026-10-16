@@ -201,25 +201,16 @@ export function runPhoenixCrmManagerValidatesTests(): void {
     );
     assert.doesNotMatch(photos, /territoryForRepWrite/, "and the old gate is gone from this file, not merely unused");
 
-    // The shutter's wait (Phoenix CRM performance audit, 2026-10-16). Both doors share that one gate, and
-    // the slot row and its signed URL are asked for together — settled, never raced, so the ROW's error
-    // is read first and a URL for a path with no slot behind it is never handed out.
+    // The shutter's wait (Phoenix CRM performance audit, 2026-10-16). The slot row and its signed URL are
+    // asked for together — settled, never raced, so the ROW's error is read first and a URL for a path
+    // with no slot behind it is never handed out.
     assert.match(photos, /return issuePhotoSlot\(photoSlotInput\(viewer, raw\)\);/, "the browser's slot door asks the shared gate");
-    assert.match(photos, /const input = photoSlotInput\(viewer, body\);/, "and so does the native app's upload");
     const issue = photos.slice(photos.indexOf("export async function issuePhotoSlot("), photos.indexOf("function photoSlotInput("));
     assert.match(issue, /await Promise\.allSettled\(\[\s*insertSlotRow\(input, path, issuedAt\),\s*getSupabaseAdmin\(\)\.storage\.from\(PHOENIX_CRM_PHOTO_BUCKET\)\.createSignedUploadUrl\(path\),/);
     assert.ok(
       issue.indexOf("throwIfError(slot.value.error);") < issue.indexOf("const { data, error } = signing.value;"),
       "a failed slot row answers before the signed URL is even looked at",
     );
-    // The native app's upload writes the object with the service client — no URL signed for itself —
-    // and only AFTER its slot row is in, so no object ever sits in the bucket without a slot.
-    const direct = photos.slice(photos.indexOf("export async function uploadPhotoDirect("), photos.indexOf("export function photoPathTerritory("));
-    assert.doesNotMatch(direct, /createSignedUploadUrl|fetch\(/, "the native upload signs nothing and PUTs to nothing");
-    const rowAt = direct.indexOf("throwIfError(slotError);");
-    const uploadAt = direct.indexOf(".upload(path, bytes, {");
-    assert.ok(rowAt > 0 && uploadAt > rowAt, "the slot row is written before the bytes");
-    assert.match(direct, /upsert: false,/, "and an object at the path is never overwritten");
   }
 
   console.log("phoenix-crm a manager validates: OK");

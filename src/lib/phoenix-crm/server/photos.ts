@@ -137,19 +137,13 @@ const DATA_URL_PATTERN = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/;
  * The web page uploads straight to the signed slot from the browser (`sendToSlot` PUTs the JPEG to
  * `slot.signedUrl`). React Native cannot PUT the raw bytes of a stamped photo to that URL reliably —
  * this build has no `expo-file-system`, and `fetch` will not stream a `file://` body to a third-party
- * URL — so the phone sends the stamped JPEG as a base64 data URL to this function and the SERVER
- * stores it. Every guarantee the slot carries is kept: the same gate and the same slot row as
- * `requestPhotoSlot` issue the path (who, which territory, what for, test or real, one slot-per-hour
+ * URL — so the phone sends the stamped JPEG as a base64 data URL to this function and the SERVER does
+ * the same PUT the browser would have. Every guarantee the slot carries is kept: the same
+ * `requestPhotoSlot` issues the path (who, which territory, what for, test or real, one slot-per-hour
  * budget), and the returned `path`/`issuedAt` are exactly what a later save consumes with
  * `phoenix_crm_take_photo`. Only the last hop moves from the phone to this server, which changes
  * nothing about what is stored or how a visit is dated — the slot's issue time is still the capture
  * time. Guarded by the same `phoenix_crm:create` permission as the slot route.
- *
- * 🔴 NO SIGNED URL ON THIS PATH (Phoenix CRM performance audit, 2026-10-16). Until then the server
- * signed an upload URL for itself and then PUT up to 2 MB to it — a round trip to mint a token for a
- * door it already holds the key to. It now writes the object with the service client, to the SAME
- * path, with the same content type, the same refusal to overwrite, the same cache metadata the
- * browser's PUT leaves, and the same two refusals the rep read before.
  */
 export async function uploadPhotoDirect(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ path: string; issuedAt: string }> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -161,48 +155,30 @@ export async function uploadPhotoDirect(viewer: PhoenixCrmViewer, raw: unknown):
     throw validationError("The photo is larger than Phoenix accepts. Take it again.");
   }
 
-  // The same gate the browser's slot route uses — a place photo for whoever may validate, a visit photo
-  // for whoever may enter this territory's visits — then the allowance and the slot row. The row is
-  // written BEFORE the bytes, as it always was, so a refused or failed row never leaves an object in
-  // the bucket that no slot can account for.
-  const input = photoSlotInput(viewer, body);
-  const path = await nextSlotPath(input);
-  const issuedAt = new Date().toISOString();
-  const { error: slotError } = await insertSlotRow(input, path, issuedAt);
-  throwIfError(slotError);
+  // Issues the slot with the same gate the browser's slot route uses: a place photo for the rep, a
+  // visit photo for whoever may enter this territory's visits.
+  const slot = await requestPhotoSlot(viewer, body);
 
-  let stored: { error: unknown };
+  let response: Response;
   try {
-    stored = await getSupabaseAdmin()
-      .storage.from(PHOENIX_CRM_PHOTO_BUCKET)
-      .upload(path, bytes, {
-        contentType: "image/jpeg",
-        upsert: false,
-        // The browser's PUT names no cache-control, and Storage records `no-cache` for such an
-        // upload; the client library would otherwise stamp its own one-hour default on this path's
-        // objects only.
-        headers: { "cache-control": "no-cache" },
-      });
+    response = await fetch(slot.signedUrl, {
+      body: new Uint8Array(bytes),
+      headers: { "content-type": "image/jpeg", "x-upsert": "false" },
+      method: "PUT",
+    });
   } catch {
     throw new ApiError(502, "photo_upload_failed", "The photo could not be uploaded. Take it again where the signal is better.");
   }
-  if (stored.error) {
-    const failure = stored.error as { status?: unknown; statusCode?: unknown; message?: unknown };
-    // No HTTP status means the bucket never answered — a dropped connection, which is what a failed
-    // `fetch` meant on the old path, and it keeps that path's words.
-    if (typeof failure.status !== "number") {
-      throw new ApiError(502, "photo_upload_failed", "The photo could not be uploaded. Take it again where the signal is better.");
-    }
-    // A retried upload whose earlier answer was lost: the object already sits at the path. The web
-    // client treats the same 409 as success, and so does the save, which only needs the object to exist.
-    const duplicate =
-      failure.status === 409 || String(failure.statusCode ?? "") === "409" || /already exists|duplicate/i.test(String(failure.message ?? ""));
-    if (!duplicate) {
+  // A retried upload whose earlier answer was lost: the object already sits at the path. The web
+  // client treats the same 409 as success, and so does the save, which only needs the object to exist.
+  if (!response.ok && response.status !== 409) {
+    const detail = await response.text().catch(() => "");
+    if (!/already exists|duplicate/i.test(detail)) {
       throw new ApiError(502, "photo_upload_failed", "The photo did not upload. Take it again.");
     }
   }
 
-  return { path, issuedAt };
+  return { path: slot.path, issuedAt: slot.issuedAt };
 }
 
 /** The territory a stored photo path belongs to, and whether it is a test photo. */

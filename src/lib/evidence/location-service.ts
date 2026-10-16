@@ -3,9 +3,9 @@
  * brick / area / region it falls in.
  *
  * Two independent lookups, run together because neither needs the other:
- *   - Google reverse geocoding gives the street address a human recognises (remembered for a few
- *     hours per ~11 m cell — `memoizeReverseGeocode` — because a rep asks it again at every door he
- *     returns to);
+ *   - Google reverse geocoding gives the street address a human recognises (for Phoenix CRM's captures
+ *     only, remembered for a few hours per ~11 m cell — `memoizeReverseGeocode` — because a rep asks
+ *     it again at every door he returns to);
  *   - the brick centroid index (`src/lib/crm/brick-geo.ts`) gives the Phoenix territory, which
  *     Google has never heard of and which is the half an approver actually acts on.
  *
@@ -137,19 +137,27 @@ function pickAddress(result: ReverseGeocode): string | null {
  *
  * Never throws. A caller that gets `address: null` and `brickName: null` still has a usable stamp —
  * the coordinates it passed in are echoed back and the wording covers the gap.
+ *
+ * `reuseNearbyAddress` is Phoenix CRM's alone (its photo stamp and its place save): the outstation,
+ * direct-order and marketing captures ask Google every time, exactly as before 2026-10-16, because
+ * the marketing capture writes Google's area and governorate into the customer it creates.
  */
-export async function resolveEvidenceLocation(input: {
-  accuracyMeters?: number | null;
-  latitude: number;
-  longitude: number;
-}): Promise<EvidenceLocationPayload> {
+export async function resolveEvidenceLocation(
+  input: {
+    accuracyMeters?: number | null;
+    latitude: number;
+    longitude: number;
+  },
+  options: { reuseNearbyAddress?: boolean } = {},
+): Promise<EvidenceLocationPayload> {
   const latitude = Number(input.latitude);
   const longitude = Number(input.longitude);
 
   const [geocode, centroids] = await Promise.all([
-    // Answered from memory when a capture in the same ~11 m cell asked within the last few hours —
-    // see `memoizeReverseGeocode`; the coordinates below are still the ones passed in.
-    reverseGeocodeNearby(latitude, longitude)
+    // With `reuseNearbyAddress`, answered from memory when a capture in the same ~11 m cell asked
+    // within the last few hours — see `memoizeReverseGeocode`; the coordinates below are still the
+    // ones passed in.
+    (options.reuseNearbyAddress ? reverseGeocodeNearby(latitude, longitude) : googleReverseGeocode({ lat: latitude, lng: longitude }))
       // A missing GOOGLE_MAPS_SERVER_KEY returns null; a 5xx from Google throws. Neither may cost
       // the rep their photo.
       .catch(() => null),

@@ -144,7 +144,18 @@ async function runReverseGeocodeMemoTests() {
 
   // The stamp still uses the capture's own coordinates — the memo holds only Google's address.
   const service = read(SERVICE);
-  assert.match(service, /reverseGeocodeNearby\(latitude, longitude\)\s*\.catch\(\(\) => null\)/, "the endpoint still turns any lookup failure into no address");
+  assert.match(
+    service,
+    /\(options\.reuseNearbyAddress \? reverseGeocodeNearby\(latitude, longitude\) : googleReverseGeocode\(\{ lat: latitude, lng: longitude \}\)\)[\s\S]{0,240}?\.catch\(\(\) => null\)/,
+    "the endpoint still turns any lookup failure into no address, remembered or not",
+  );
+  // Phoenix CRM's captures alone opt in: the marketing capture writes Google's area and governorate into
+  // the customer it creates, so outstation, direct orders and marketing still ask Google every time.
+  assert.match(read("app/api/phoenix-crm/location/route.ts"), /resolveEvidenceLocation\(parsed, \{ reuseNearbyAddress: true \}\)/);
+  assert.match(read("src/lib/phoenix-crm/server/place-location.ts"), /\{ reuseNearbyAddress: true \}/, "and the place save reads the same remembered address its photo was stamped with");
+  for (const route of ["app/api/outstation/reverse-geocode/route.ts", "app/api/direct-orders/reverse-geocode/route.ts", "app/api/marketing-requests/reverse-geocode/route.ts"]) {
+    assert.doesNotMatch(read(route), /reuseNearbyAddress/, `${route} asks Google every time, as before`);
+  }
   assert.match(service, /const brick = resolveBrickForPoint\(latitude, longitude, centroids\);/, "the brick is resolved from the exact pin");
   assert.match(service, /\blatitude,\s+longitude,\s+regionName:/, "and the stamp carries the exact pin");
 }
