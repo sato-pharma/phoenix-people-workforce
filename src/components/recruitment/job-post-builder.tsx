@@ -299,6 +299,11 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
   const [draft, setDraft] = useState<JobPostTitleDraft>(initialTitles[0] ? draftOf(initialTitles[0]) : emptyDraft());
   const [dirty, setDirty] = useState(false);
   const [areas, setAreas] = useState<string[]>([]);
+  // A post names AREAS or whole REGIONS (owner, 2026-10-16: "also add regions for district
+  // managers") — a district manager runs a district, so listing every area under it is wrong.
+  // Switching clears the picks, because the two are different vocabularies and a mixed list would
+  // print "3 areas" over a region name.
+  const [areaScope, setAreaScope] = useState<"area" | "region">("area");
   const [areaFilter, setAreaFilter] = useState("");
   const [showLine, setShowLine] = useState(false);
   const [line, setLine] = useState(lines[0] ?? "");
@@ -397,10 +402,10 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
   );
 
   const content = useMemo(
-    () => contentFromDraft(saveDraft, { areas, line: postLine }, apply),
+    () => contentFromDraft(saveDraft, { areaNoun: areaScope, areas, line: postLine }, apply),
     // saveDraft is rebuilt every render; the draft it comes from is the real dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [draft, areas, postLine, apply],
+    [draft, areas, areaScope, postLine, apply],
   );
   const shown = useSettled(variant ? jobPostForArea(content, variant) : content, 250);
   const thumbs = useSettled(content, 900);
@@ -451,7 +456,7 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
     setError(null);
     try {
       const res = await fetch("/api/recruitment/job-posts/render", {
-        body: JSON.stringify({ area: format === "zip" ? null : variant, areas, format, line: postLine, template, title: saveDraft }),
+        body: JSON.stringify({ area: format === "zip" ? null : variant, areaNoun: areaScope, areas, format, line: postLine, template, title: saveDraft }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -479,6 +484,13 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
   const atAreaLimit = areas.length >= JOB_POST_MAX_AREAS;
   const toggleArea = (area: string, on: boolean) => {
     setAreas((current) => (on ? (current.length >= JOB_POST_MAX_AREAS ? current : [...current, area]) : current.filter((a) => a !== area)));
+  };
+  const regionOptions = areaGroups.map((group) => group.label);
+  const pickScope = (next: "area" | "region") => {
+    if (next === areaScope) return;
+    setAreaScope(next);
+    setAreas([]);
+    setPickedArea(null);
   };
   const filter = areaFilter.trim().toLowerCase();
   const dutiesReady = saveDraft.duties.length;
@@ -605,13 +617,23 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
 
         <section className={panelClassName}>
           <PanelHeader
-            aside={areas.length ? `${areas.length} of ${JOB_POST_MAX_AREAS} areas · for this post only` : "For this post only"}
+            aside={areas.length ? `${areas.length} of ${JOB_POST_MAX_AREAS} ${areaScope}s · for this post only` : "For this post only"}
             step={4}
-            title="Areas and line"
+            title="Where you are hiring"
           />
           <div className="space-y-4 p-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <CheckTile checked={areaScope === "area"} onChange={() => pickScope("area")}>
+                <span className="text-sm font-semibold text-slate-800">Areas — one area is one rep</span>
+              </CheckTile>
+              <CheckTile checked={areaScope === "region"} onChange={() => pickScope("region")}>
+                <span className="text-sm font-semibold text-slate-800">Regions — for a district manager</span>
+              </CheckTile>
+            </div>
             <p className="text-xs leading-relaxed text-slate-500">
-              Optional. One area is one rep. With two or more areas, Download all gives the all-areas post and one post for each area.
+              {areaScope === "area"
+                ? "Optional. One area is one rep. With two or more areas, Download all gives the all-areas post and one post for each area."
+                : "Optional. A district manager runs a whole region, so the post names the region rather than listing every area under it. With two or more regions, Download all gives the all-regions post and one post for each region."}
             </p>
             {areas.length ? (
               <div className="flex flex-wrap items-center gap-2">
@@ -633,10 +655,10 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
             ) : null}
             {atAreaLimit ? (
               <p className="text-xs font-semibold text-amber-700">
-                A post lists at most {JOB_POST_MAX_AREAS} areas. Remove one to add another.
+                A post lists at most {JOB_POST_MAX_AREAS} {areaScope}s. Remove one to add another.
               </p>
             ) : null}
-            <FormField htmlFor="job-post-area-filter" label="Find an area">
+            <FormField htmlFor="job-post-area-filter" label={areaScope === "area" ? "Find an area" : "Find a region"}>
               <input
                 className={phxFieldClassName}
                 id="job-post-area-filter"
@@ -646,7 +668,18 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
               />
             </FormField>
             <div className={`max-h-72 space-y-4 overflow-y-auto border border-slate-200 bg-slate-50 p-3 ${adminRecessedDepthClassName}`}>
-              {areaGroups.map((group) => {
+              {areaScope === "region" ? (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {regionOptions
+                    .filter((region) => !filter || region.toLowerCase().includes(filter))
+                    .map((region) => (
+                      <CheckTile checked={areas.includes(region)} key={region} onChange={(on) => toggleArea(region, on)}>
+                        <span className="min-w-0 text-sm font-semibold text-slate-800">{region}</span>
+                      </CheckTile>
+                    ))}
+                </div>
+              ) : (
+                areaGroups.map((group) => {
                 const shownAreas = group.areas.filter((area) => !filter || area.toLowerCase().includes(filter));
                 if (!shownAreas.length) return null;
                 return (
@@ -661,7 +694,8 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
                     </div>
                   </div>
                 );
-              })}
+                })
+              )}
             </div>
             {lines.length ? (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-end">
@@ -719,7 +753,7 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
                     role="tab"
                     type="button"
                   >
-                    {area ?? "All areas"}
+                    {area ?? (areaScope === "area" ? "All areas" : "All regions")}
                   </button>
                 ))}
               </div>
@@ -752,7 +786,7 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
             </div>
             {areas.length > 1 ? (
               <p className="text-xs leading-relaxed text-slate-500">
-                Download all gives {areas.length + 1} pictures — all areas, then one for each area — and one PDF with every page.
+                Download all gives {areas.length + 1} pictures — all {areaScope}s, then one for each {areaScope} — and one PDF with every page.
               </p>
             ) : null}
           </div>

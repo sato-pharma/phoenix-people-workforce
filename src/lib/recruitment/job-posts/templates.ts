@@ -40,6 +40,13 @@ export type JobPostContent = {
   needs: JobPostLine[];
   /** The areas this post is open in. One area means one rep — never a count. */
   areas: string[];
+  /**
+   * What `areas` holds — individual areas, or whole regions (owner, 2026-10-16: "also add regions
+   * for district managers"). A district manager covers a district, so his post names the region it
+   * sits in rather than listing every area under it. It only changes the WORD the band and the
+   * WhatsApp line print; the list itself travels the same way either way.
+   */
+  areaNoun?: "area" | "region";
   /** CNS, Anti Infective or Pedia — printed only when the person chose to show it. */
   line: string | null;
   /** The wording after "choose" on the WhatsApp line. */
@@ -198,7 +205,25 @@ const BASE_CSS = `
   .areas.one .al span i { width: 9px; height: 9px; }
   .areas.one:not(.dark):not(.ink):not(.stack) { border-color: var(--blue); background: #eaf5fc; }
   .areas.one.stack { gap: 14px; }
-  .areas.one.stack .al span { font-size: 30px; padding: 12px 18px; box-shadow: inset 0 0 0 2px var(--blue-light); }`;
+  .areas.one.stack .al span { font-size: 30px; padding: 12px 18px; box-shadow: inset 0 0 0 2px var(--blue-light); }
+  /* 🔴 A MULTI-AREA POST MUST SHOUT ITS AREAS AS LOUDLY AS A ONE-AREA POST (owner, 2026-10-16:
+     "the area or region should clear obvious"). The band shipped the same day set a single area at
+     28px but left two or more at 16.5px — body-copy size, in a hairline frame — so the three-area
+     District Sales Manager post whispered exactly where a field candidate looks first. The size is
+     tiered by COUNT rather than scaled by --k, because --k shrinks the duties to pay for the band:
+     2-4 areas stay large, 5-8 step down, and 9-12 keep the original size so a full twelve still fits. */
+  .areas.few { gap: 24px; padding: 16px 22px; }
+  .areas.few .ak { font-size: 12px; }
+  .areas.few .al { gap: 12px; }
+  .areas.few .al span { padding: 10px 18px; gap: 11px; font-size: 25px; letter-spacing: -.01em; line-height: 1.15; box-shadow: inset 0 0 0 2px var(--blue); }
+  .areas.few .al span i { width: 9px; height: 9px; }
+  .areas.few:not(.dark):not(.ink):not(.stack) { border-color: var(--blue); background: #eaf5fc; }
+  .areas.some .ak { font-size: 11.5px; }
+  .areas.some .al span { padding: 10px 16px; font-size: 20.5px; box-shadow: inset 0 0 0 2px var(--blue); }
+  .areas.few.stack .al span { font-size: 26px; padding: 11px 17px; }
+  .areas.some.stack .al span { font-size: 21px; }
+  .areas.few.dark .al span, .areas.few.ink .al span, .areas.few.stack .al span,
+  .areas.some.dark .al span, .areas.some.ink .al span, .areas.some.stack .al span { box-shadow: inset 0 0 0 2px var(--blue-light); }`;
 
 const FOOT_CSS = `
   .foot { position: relative; height: 84px; flex-shrink: 0; background: var(--ink); display: flex; align-items: center; justify-content: space-between; padding: 0 72px; }
@@ -316,17 +341,18 @@ type Parts = {
 function parts(c: JobPostContent, a: JobPostAssets): Parts {
   const li = (items: JobPostLine[]) => items.map((line) => `<li><s></s><p>${lineHtml(line)}</p></li>`).join("");
   const n = c.areas.length;
+  const noun = c.areaNoun === "region" ? "region" : "area";
   // 🔴 THE AREA IS THE FIRST THING A FIELD-FORCE CANDIDATE LOOKS FOR, SO IT IS A BAND, NOT A FACT
   // (owner, 2026-10-16: "the area or region we are hiring in must be clear obvious clear"). Before that
   // a one-area picture — the per-area download, the one that actually goes out — named its area only in
   // the small Location fact. It now carries the same band as a multi-area post, with the area set large.
   const areas = (cls = "", style = "") =>
     n > 0
-      ? `<div class="areas ${n === 1 ? "one " : ""}${cls}" style="${style}"><div class="ak"><s></s>Hiring in${n > 1 ? ` ${n} areas` : ""}</div><div class="al">${c.areas
+      ? `<div class="areas ${n === 1 ? "one " : n <= 4 ? "few " : n <= 8 ? "some " : ""}${cls}" style="${style}"><div class="ak"><s></s>Hiring in${n > 1 ? ` ${n} ${noun}s` : ""}</div><div class="al">${c.areas
           .map((area) => `<span><i></i>${escapeHtml(area)}</span>`)
           .join("")}</div></div>`
       : "";
-  const applySub = `Send your CV on WhatsApp and choose <b>${escapeHtml(c.menuName)}</b>${n > 1 ? " and your area" : ""} &mdash; or apply at <b>${escapeHtml(c.careers)}</b>`;
+  const applySub = `Send your CV on WhatsApp and choose <b>${escapeHtml(c.menuName)}</b>${n > 1 ? ` and your ${noun}` : ""} &mdash; or apply at <b>${escapeHtml(c.careers)}</b>`;
   return {
     c,
     a,

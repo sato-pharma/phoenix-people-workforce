@@ -126,6 +126,15 @@ export function titleDraftViolations(draft: JobPostTitleDraft): string[] {
 }
 
 /** The areas a post names: trimmed, blanks and repeats dropped, in the order they were picked. */
+/**
+ * A post names either areas or whole regions — a district manager's post names the region he will
+ * run (owner, 2026-10-16). Anything but the literal "region" reads as "area", so an older client,
+ * a replayed request or a typo keeps today's wording instead of inventing a third noun.
+ */
+export function coerceAreaNoun(value: unknown): "area" | "region" {
+  return value === "region" ? "region" : "area";
+}
+
 export function coerceAreas(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
@@ -157,7 +166,7 @@ export function postRequestViolations(input: { draft: JobPostTitleDraft; areas: 
  */
 export function contentFromDraft(
   draft: JobPostTitleDraft,
-  post: { areas: string[]; line: string | null },
+  post: { areas: string[]; line: string | null; areaNoun?: "area" | "region" },
   apply: { whatsapp: string; careers: string },
 ): JobPostContent {
   return {
@@ -170,6 +179,7 @@ export function contentFromDraft(
     duties: draft.duties,
     needs: draft.needs,
     areas: post.areas,
+    areaNoun: post.areaNoun === "region" ? "region" : "area",
     line: post.line,
     menuName: draft.menuName || draft.title,
     whatsapp: apply.whatsapp,
