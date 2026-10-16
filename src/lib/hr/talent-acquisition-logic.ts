@@ -22,6 +22,7 @@ import type { CalendarGridDay, CalendarItem } from "@/lib/calendar/logic";
 import type { InterviewBooking, InterviewCalendarRole } from "@/lib/recruitment/interview-calendar-types";
 import { formatTimeRange } from "@/lib/recruitment/interview-calendar-week";
 import type { OfferRecord } from "@/lib/offers/types";
+import type { DailyCvDigest } from "@/lib/recruitment/inbound/daily-cv-digest";
 
 /** The seat this page is built for. The route's gate, and the only bundle it ever renders. */
 export const TALENT_ACQUISITION_SEAT: HrBundleName = "HR Resourcing";
@@ -98,6 +99,11 @@ export type TalentInterview = {
   interviewerName: string | null;
   /** How long it runs, in minutes — the figure `timeLabel`'s end time is built from. */
   durationMinutes: number;
+  /**
+   * The role this round is for — the booking's own `jobTitle`, else what the candidate applied for.
+   * Null when neither names one; the page then prints nothing rather than "Role not set".
+   */
+  jobTitle: string | null;
   /** "Zoom", "In person" — the platform as a person reads it, never the stored token. */
   platformLabel: string;
   startMinutes: number;
@@ -202,6 +208,12 @@ export function platformLabel(platform: string | null | undefined): string {
   return PLATFORM_LABELS[token] ?? (token ? token.replace(/_/g, " ") : "Not set");
 }
 
+/** A stored title, trimmed, or null when it is blank — a booking stores "" as often as null. */
+function cleanTitle(value: string | null | undefined): string | null {
+  const text = String(value ?? "").trim();
+  return text ? text : null;
+}
+
 /** One booking, flattened. The link opens the interview on the calendar she already holds. */
 export function toTalentInterview(booking: InterviewBooking): TalentInterview {
   return {
@@ -211,6 +223,7 @@ export function toTalentInterview(booking: InterviewBooking): TalentInterview {
     href: `/hr/recruitment/interview-calendar?open=${encodeURIComponent(booking.id)}`,
     id: booking.id,
     interviewerName: booking.interviewerName,
+    jobTitle: cleanTitle(booking.jobTitle) ?? cleanTitle(booking.candidateJobTitle),
     platformLabel: platformLabel(booking.platform),
     startMinutes: booking.startMinutes,
     timeLabel: formatTimeRange(booking.startMinutes, booking.durationMinutes),
@@ -423,4 +436,252 @@ export function buildOfferConversionKpis(offers: readonly OfferRecord[] | undefi
       numeratorLabel: "joined through the form",
     }),
   ];
+}
+
+// ── THE REBUILT PAGE (owner, 2026-10-16) ─────────────────────────────────────────────────────────
+//
+// "do a fucken wide big hilarious full end to end sweep from scratch premium polish to her overview
+// landing page". His answers the same evening shaped what follows: the eight figure cards stand in
+// THREE LABELLED GROUPS, and three new panels sit under them — today's interviews, the joiners
+// arriving in the next fourteen days, and the CVs received today. Every helper below is pure, so the
+// rules each one carries are pinned by a test without a database, a clock or a browser.
+
+/** How far ahead the joiners panel looks, in days, counting today as day 0. */
+export const JOINERS_WINDOW_DAYS = 14;
+
+/**
+ * A `YYYY-MM-DD` key moved by whole days.
+ *
+ * Done in UTC on purpose: a date KEY has no time of day, so the arithmetic must not have one either.
+ * Doing it in local time moves a key across a DST change by an hour and, at midnight, by a whole day —
+ * Egypt observes DST, and that is exactly the kind of fault that only appears twice a year.
+ */
+export function addDaysToKey(dateKey: string, days: number): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const moved = new Date(Date.UTC(year, (month ?? 1) - 1, day ?? 1) + days * 86_400_000);
+  return moved.toISOString().slice(0, 10);
+}
+
+/** Whole days from one key to another — negative when `to` is earlier. Both are Cairo date keys. */
+export function daysBetweenKeys(fromKey: string, toKey: string): number {
+  const toUtc = (key: string) => {
+    const [year, month, day] = key.split("-").map(Number);
+    return Date.UTC(year, (month ?? 1) - 1, day ?? 1);
+  };
+  return Math.round((toUtc(toKey) - toUtc(fromKey)) / 86_400_000);
+}
+
+/**
+ * "Today", "Tomorrow", "In 5 days" — how near a joining day is, as a person says it.
+ *
+ * A date that has already passed reads "Started 2 days ago" rather than a negative count; the panel
+ * never asks for one, but a label that printed "In -2 days" would be the one visible sign of it.
+ */
+export function daysUntilLabel(todayKey: string, dateKey: string): string {
+  const days = daysBetweenKeys(todayKey, dateKey);
+  if (days === 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  if (days > 1) return `In ${days} days`;
+  if (days === -1) return "Started yesterday";
+  return `Started ${Math.abs(days)} days ago`;
+}
+
+/** The three parts of a date block — "SUN", "18", "OCT" — read from the key alone, never a clock. */
+export function dateBlockParts(dateKey: string): { day: string; month: string; weekday: string } {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, (month ?? 1) - 1, day ?? 1));
+  return {
+    day: String(day ?? ""),
+    month: new Intl.DateTimeFormat("en-GB", { month: "short", timeZone: "UTC" }).format(date),
+    weekday: new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "short" }).format(date),
+  };
+}
+
+/** "Friday 16 October" — the day the page is about, from the server's Cairo key. */
+export function longDayLabel(dateKey: string): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+    weekday: "long",
+  }).format(new Date(Date.UTC(year, (month ?? 1) - 1, day ?? 1)));
+}
+
+/**
+ * How much of a conversion meter to fill, as a whole percentage — or NULL, which draws no meter.
+ *
+ * NULL in, NULL out: a measure with nothing to divide by has no meter, for the same reason it has no
+ * percentage (see `kpi()`). Above 100% fills the meter and no more — interview-to-offer can pass 100%
+ * when letters go to people interviewed before the window, and a bar drawn past its own track would
+ * break the card it sits in.
+ */
+export function rateMeterPercent(rate: number | null): number | null {
+  if (rate === null || !Number.isFinite(rate)) return null;
+  return Math.max(0, Math.min(100, Math.round(rate * 100)));
+}
+
+/**
+ * A bar's width inside a breakdown, as a whole percentage of the biggest group.
+ *
+ * Relative to the LARGEST group, not to the total: the bars compare groups with each other, and
+ * scaling them to the total makes every bar short on a day with many small groups. A group with any
+ * count at all is never drawn thinner than 4%, so "1" is still visibly a bar beside "20".
+ */
+export function breakdownBarPercent(count: number, largest: number): number {
+  if (count <= 0 || largest <= 0) return 0;
+  return Math.max(4, Math.round((count / largest) * 100));
+}
+
+/** The three groups the eight figure cards stand in, in the order he reads them. */
+export type TalentTileGroupKey = "seats" | "candidates" | "outcomes";
+
+export type TalentTileGroupSpec = {
+  /** One short line under the caption — what the group answers. */
+  caption: string;
+  key: TalentTileGroupKey;
+  label: string;
+  /** The tile keys that belong here, in their reading order. */
+  tileKeys: readonly string[];
+};
+
+/**
+ * THE THREE GROUPS (owner, 2026-10-16, "Three labelled groups"): Seats, Candidates, Outcomes.
+ *
+ * Keyed on the TILE KEYS `buildRecruitingTiles` already emits, never on a label — a label is worded
+ * for a person and is reworded freely; a key is what the builder promises.
+ */
+export const TALENT_TILE_GROUPS: readonly TalentTileGroupSpec[] = [
+  {
+    caption: "Empty seats and their requisitions",
+    key: "seats",
+    label: "Seats",
+    tileKeys: ["open-requisitions", "seats-unrecruited", "requisitions-stale"],
+  },
+  {
+    caption: "Where the CVs stand now",
+    key: "candidates",
+    label: "Candidates",
+    tileKeys: ["awaiting-review", "with-managers", "active-candidates"],
+  },
+  {
+    caption: "Hires and open offers",
+    key: "outcomes",
+    label: "Outcomes",
+    tileKeys: ["hired", "offers-sent"],
+  },
+];
+
+export type TalentTileGroup<T> = TalentTileGroupSpec & { tiles: T[] };
+
+/**
+ * The figure cards, sorted into their groups — and NOTHING DROPPED.
+ *
+ * A tile whose key no group names (a ninth figure added to the shared builder one day) joins the
+ * LAST group rather than vanishing: a figure the builder emits is a figure somebody decided she
+ * should see, and silently dropping it is the failure that never shows up in a review. A group with
+ * no tiles at all (the directory did not load, so the two seat figures were never built and only
+ * Open requisitions is left — or nothing) is left out, so no caption ever sits over an empty row.
+ */
+export function groupRecruitingTiles<T extends { key: string }>(tiles: readonly T[]): TalentTileGroup<T>[] {
+  const claimed = new Set(TALENT_TILE_GROUPS.flatMap((group) => group.tileKeys));
+  const strays = tiles.filter((tile) => !claimed.has(tile.key));
+  return TALENT_TILE_GROUPS.map((group, index) => {
+    const own = group.tileKeys.flatMap((key) => tiles.filter((tile) => tile.key === key));
+    const isLast = index === TALENT_TILE_GROUPS.length - 1;
+    return { ...group, tiles: isLast ? [...own, ...strays] : own };
+  }).filter((group) => group.tiles.length > 0);
+}
+
+/**
+ * Today's interviews, in the order they happen, and which one is NEXT.
+ *
+ * `nowMinutes` is minutes past Cairo midnight as the SERVER saw it — the same reason `todayKey` is
+ * carried rather than computed in the browser. An interview is `done` once its END has passed, not
+ * its start: one that began ten minutes ago is still happening, and greying it out would tell her it
+ * is over while the candidate is still in the room. `next` is the first one not done.
+ */
+export type TalentTodayInterview = TalentInterview & { done: boolean; next: boolean };
+
+export function orderTodaysInterviews(
+  interviews: readonly TalentInterview[],
+  nowMinutes: number,
+): TalentTodayInterview[] {
+  const sorted = [...interviews].sort(
+    (left, right) =>
+      left.startMinutes - right.startMinutes || left.candidateName.localeCompare(right.candidateName),
+  );
+  const nextId = sorted.find((one) => one.startMinutes + one.durationMinutes > nowMinutes)?.id ?? null;
+  return sorted.map((one) => ({
+    ...one,
+    done: one.startMinutes + one.durationMinutes <= nowMinutes,
+    next: one.id === nextId,
+  }));
+}
+
+/** "10:00" — the start alone, for the time column; the full range stays in `timeLabel`. */
+export function startTimeLabel(startMinutes: number): string {
+  const hours = Math.floor(startMinutes / 60);
+  const minutes = startMinutes % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+/** Minutes past midnight in Cairo for an instant — the clock `orderTodaysInterviews` reads. */
+export function cairoMinutesNow(now: Date): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    hourCycle: "h23",
+    minute: "2-digit",
+    timeZone: "Africa/Cairo",
+  }).formatToParts(now);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+  return hour * 60 + minute;
+}
+
+/**
+ * The CVs received today, as the page carries them: the digest when it loaded, a named failure when
+ * it did not, and HIDDEN for a seat that may not read candidates — which draws no panel at all,
+ * because a panel that says "could not load" to somebody who was never allowed to see it is a lie.
+ */
+export type TalentCvToday =
+  | { digest: DailyCvDigest; status: "loaded" }
+  | { status: "failed" }
+  | { status: "hidden" };
+
+/** Today's interviews as the page carries them. `loaded: false` = the read failed, never "none". */
+export type TalentToday = {
+  interviews: TalentInterview[];
+  loaded: boolean;
+  nowMinutes: number;
+};
+
+/** The joiners panel's span and rows. `loaded: false` = the offers did not load, never "nobody". */
+export type TalentJoiners = {
+  fromKey: string;
+  loaded: boolean;
+  rows: TalentJoiner[];
+  toKey: string;
+};
+
+/**
+ * Who arrives in the next fortnight, from the ACCEPTED offers already on the page.
+ *
+ * No new read: it is `joinersBetween` over the offers `listOffers` already returned, on a window
+ * starting TODAY (a joiner starting today is the most important row on the panel, not history).
+ * Offers that did not load give `loaded: false`, so the panel says it could not tell rather than
+ * printing "nobody is joining" over a failed read.
+ */
+export function joinersArriving(
+  offers: readonly OfferRecord[] | undefined,
+  todayKey: string,
+  windowDays: number = JOINERS_WINDOW_DAYS,
+): TalentJoiners {
+  const toKey = addDaysToKey(todayKey, windowDays);
+  return {
+    fromKey: todayKey,
+    loaded: offers !== undefined,
+    rows: offers ? joinersBetween(offers, todayKey, toKey) : [],
+    toKey,
+  };
 }

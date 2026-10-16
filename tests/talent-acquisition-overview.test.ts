@@ -4,13 +4,26 @@ import { readFileSync } from "node:fs";
 import { HR_ROLE_BUNDLES } from "../src/lib/auth/hr-functions.ts";
 import { sourcesFor } from "../src/lib/hr/command-center.ts";
 import {
+  addDaysToKey,
+  breakdownBarPercent,
   buildHiringQualityKpis,
   buildMonthMarks,
   buildOfferConversionKpis,
+  cairoMinutesNow,
+  dateBlockParts,
+  daysBetweenKeys,
+  daysUntilLabel,
+  groupRecruitingTiles,
+  joinersArriving,
   joinersBetween,
+  JOINERS_WINDOW_DAYS,
   kpi,
   KPI_WINDOW_DAYS,
+  longDayLabel,
+  orderTodaysInterviews,
+  rateMeterPercent,
   RECRUITING_TASK_KEYS,
+  startTimeLabel,
   TALENT_ACQUISITION_SEAT,
 } from "../src/lib/hr/talent-acquisition-logic.ts";
 import type { OfferRecord } from "../src/lib/offers/types.ts";
@@ -45,6 +58,13 @@ const LOGIC = "src/lib/hr/talent-acquisition-logic.ts";
 const DATA = "src/lib/hr/talent-acquisition-overview.ts";
 const PAGE_COMPONENT = "src/components/hr/talent-acquisition-overview.tsx";
 const CALENDAR_COMPONENT = "src/components/hr/talent-acquisition-calendar.tsx";
+/** The rebuilt page's own parts (owner, 2026-10-16) — one frame, one rail, three panels. */
+const PANEL_COMPONENT = "src/components/hr/talent-acquisition/panel.tsx";
+const RAIL_COMPONENT = "src/components/hr/talent-acquisition/command-rail.tsx";
+const TODAY_COMPONENT = "src/components/hr/talent-acquisition/today-interviews.tsx";
+const JOINERS_COMPONENT = "src/components/hr/talent-acquisition/joiners-arriving.tsx";
+const CV_COMPONENT = "src/components/hr/talent-acquisition/cv-arrivals.tsx";
+const NEW_PARTS = [PANEL_COMPONENT, RAIL_COMPONENT, TODAY_COMPONENT, JOINERS_COMPONENT, CV_COMPONENT];
 /** The real interview calendar — the component her week tab MOUNTS, rather than imitates. */
 const SIBLING_GRID = "src/components/recruitment/interview-calendar/interview-calendar-view.tsx";
 const ROUTE = "app/(admin)/admin/hr-command-center/page.tsx";
@@ -132,6 +152,312 @@ function testARateIsNeverDrawnAsZero() {
       "WOULD show. Rendering nothing would make a measure with no data look like a measure that " +
       "does not exist",
   );
+
+  // Interview to offer, Offer acceptance and Offer to join are KEY CARDS (owner, 2026-10-16): the
+  // whole card is the link, in the page's one card frame, and the caption was MOVED to the tooltip
+  // and the accessible name, never dropped.
+  const keyCard = component.slice(component.indexOf("function KpiCard"), component.indexOf("function UnavailableNotice"));
+  assert.match(keyCard, /<Link\b/, "a measure is drawn as a key card that is itself the link");
+  assert.match(keyCard, /CARD_MOTION_CLASS/, "the key card moves like every other card on the page — one hover lift, one focus ring");
+  // THE SCOREBOARD (owner, 2026-10-16: "add colors to her page and some artistic touches her page is
+  // so pale and poor"): the three measures stand on the page's one dark band.
+  assert.ok(
+    component.includes("bg-[linear-gradient(135deg,#000000_0%,#070707_55%,#1C0E02_100%)]"),
+    "the conversion measures stand on the dark scoreboard, in the Phoenix hero's own black and ember",
+  );
+  assert.ok(
+    component.includes("className={adminHeroGridOverlayClassName}"),
+    "which wears the platform hero's own grid and glows, never a one-off texture",
+  );
+  // PHOENIX TONES ONLY (owner, 2026-10-16: "too much like this, stick to phx identity" — the four-hue
+  // version was shown and refused). No decorative second hue on any part of the page.
+  for (const file of [PAGE_COMPONENT, ...NEW_PARTS]) {
+    const code = codeOf(file);
+    for (const hue of [/\b(?:bg|text|border|from|to|via)-(?:sky|blue|indigo|violet|purple|fuchsia|cyan|teal)-\d/, /#0A527D|#0A6BA6|#1482C2|#06121F/i]) {
+      assert.ok(!hue.test(code), `${file} paints a second hue (${hue}) — her page wears the Phoenix identity only`);
+    }
+  }
+  const tileCode = component.slice(component.indexOf("function MetricTile"), component.indexOf("function KpiCard"));
+  assert.ok(
+    tileCode.includes("tabular-nums ${toneClass}"),
+    "a figure keeps the builder's tone colour — amber waiting, rose a problem",
+  );
+  assert.ok(!tileCode.includes("tabular-nums ${tone."), "and the decoration never paints the number itself");
+  // HIS OWN DASHBOARD'S CARD (owner, 2026-10-16: "awful", then "audit the b-10 dashboard and take
+  // ideas from it in design"): one frame for all eight — no per-tone bar, no watermark, no medallion.
+  assert.doesNotMatch(tileCode, /toneBarClass|medallion|opacity-\[0\.07\]|<Icon\b/, "a figure card carries no tone bar, watermark or icon — the dressed card was refused");
+  assert.match(tileCode, /text-3xl font-black/, "the figure is the B-10 card's text-3xl");
+  // NEVER CUT A WORD (owner, 2026-10-16: "never the ever tranculte text"). The band is a flex item
+  // with overflow hidden, which may shrink below its content: it was cut to 120px of 232.
+  assert.ok(
+    component.includes('className="relative flex flex-auto shrink-0 flex-col overflow-hidden border border-[#1a1a1a]'),
+    "the Conversion band never shrinks below its own text",
+  );
+  assert.match(keyCard, /title=\{kpi\.caption\}/, "the caption stays reachable on the card as its tooltip");
+  assert.match(keyCard, /aria-label=\{`\$\{kpi\.label\}\. \$\{kpi\.caption\}/, "and in its accessible name");
+  assert.doesNotMatch(keyCard, /<figure|<figcaption/, "the large captioned figure is gone");
+  // The meter reads the rate through the one helper that returns NULL for a null rate, and is drawn
+  // only when that helper gave a number — so a measure with nothing to divide by draws no bar.
+  assert.match(keyCard, /rateMeterPercent\(kpi\.rate\)/, "the meter's fill comes from rateMeterPercent");
+  assert.match(keyCard, /meter !== null \?/, "and no meter is drawn for a null rate");
+  // The card LIES DOWN at every width (owner, 2026-10-16, "fit the keycards where i marked"): the
+  // band stands in the ~116px of air beside her portrait, and a standing card is taller than that.
+  assert.doesNotMatch(keyCard, /:contents|:flex-col|:order-/, "the key card never stands up — it must fit the air beside the portrait");
+
+  // ...and the three stand in ONE ROW, in the order he named them.
+  assert.match(
+    component,
+    /\["interview-to-offer", "offer-acceptance", "offer-to-join"\]/,
+    "the key-card row holds Interview to offer, Offer acceptance, Offer to join, in that order",
+  );
+  assert.ok(
+    component.includes('3: "@min-[600px]:grid-cols-3"'),
+    "three lying-down key cards share one row once their band holds 600px",
+  );
+  // THE CONVERSION BAND STANDS IN THE AIR BESIDE HER PORTRAIT (owner, 2026-10-16, circling it: "fit
+  // the keycards where i marked") — handed to the strip as its `reserve`, so it sits under the notice
+  // rail and above the command rail, never back on the figures' ground.
+  assert.match(
+    component,
+    /<PhoenixIdentityStrip[^>]*\breserve=\{conversionBand\}/,
+    "the Conversion band is the strip's reserve — it stands beside her portrait",
+  );
+  assert.equal(component.split('aria-label="Conversion"').length - 1, 1, "and is drawn once, there and nowhere else");
+  const stripAt = component.indexOf("<PhoenixIdentityStrip");
+  const railAt = component.indexOf("<TaCommandRail");
+  const groupsAt = component.indexOf("{groups.map(");
+  const todayAt = component.indexOf("<TaTodayInterviews");
+  const calendarAt = component.indexOf("<TalentAcquisitionCalendar");
+  assert.ok(
+    stripAt > -1 && stripAt < railAt && railAt < groupsAt && groupsAt < todayAt && todayAt < calendarAt,
+    "the page reads top to bottom: identity strip (conversion beside the portrait), command rail, the three groups, today, the calendar",
+  );
+
+  // THE EIGHT FIGURES IN THREE LABELLED GROUPS (owner, 2026-10-16, "Three labelled groups"), every
+  // card the same width in ONE ROW once the container holds 1120px — one column per card.
+  assert.match(component, /groupRecruitingTiles\(data\.field\.tiles\)/, "the figures are grouped by the pure helper");
+  assert.ok(
+    component.includes('8: "@min-[1120px]:grid-cols-8"'),
+    "all eight figures share ONE row once their CONTAINER holds 1120px, whatever the window is",
+  );
+  assert.ok(component.includes('3: "@min-[1120px]:col-span-3"'), "a group of three spans three of those columns");
+  assert.ok(component.includes('2: "@min-[1120px]:col-span-2"'), "and a group of two spans two");
+  assert.match(component, /<TaCaption caption=\{group\.caption\} label=\{group\.label\} \/>/, "each group wears its caption");
+  assert.equal(component.split("<MetricTile ").length - 1, 1, "the figures are drawn once, inside their groups");
+  assert.match(
+    component,
+    /flex min-h-\[23px\] items-center/,
+    "a figure's label sits in a two-line box, so a wrapped label and a one-line label put their figures on the same line",
+  );
+  assert.ok(component.includes("@container relative overflow-hidden border-b"), "the cards and today share ONE container");
+
+  // The Hired window lives on the command rail, at its right — never between or under the card rows.
+  const rail = codeOf(RAIL_COMPONENT);
+  assert.match(rail, /<HiredWindowPicker\b/, "the Hired window is drawn by the command rail");
+  assert.ok(!component.includes("<HiredWindowPicker"), "and nowhere else on the page");
+  assert.ok(rail.includes("@min-[720px]:ml-auto"), "it sits at the right of that bar once the bar has room");
+  assert.ok(rail.includes("pageHeaderRailClassName"), "the rail wears the platform's own page-header edge");
+
+  // Duplicates removed (owner, 2026-10-16, "remove duplicates", all four ticked): the band headers
+  // and the two charts whose every number is already a card, the second count beside Needs
+  // attention, and the awaiting-reply chip. Each is refused by name so it cannot drift back.
+  for (const file of [PAGE_COMPONENT, RAIL_COMPONENT]) {
+    const code = codeOf(file);
+    assert.ok(!code.includes("hr-group-offer-conversion"), `${file}: the Offer conversion band is gone`);
+    assert.ok(!code.includes("hr-group-filling-the-field"), `${file}: the Filling the field band is gone`);
+    assert.ok(!code.includes("hr-group-hiring-quality"), `${file}: the Hiring quality band is gone`);
+    assert.ok(!code.includes("HrCommandCharts"), `${file}: neither duplicate chart is drawn any more`);
+    assert.ok(!code.includes("to action"), `${file}: no second count sits beside Needs attention`);
+    assert.ok(!/awaiting reply/i.test(code), `${file}: the awaiting-reply chip is gone`);
+  }
+  // The rail's one addition is a PART of the one total, drawn only when there is something overdue.
+  assert.match(rail, /overdueCount > 0 \?/, "the overdue chip is drawn only when something is overdue");
+  assert.match(
+    component,
+    /task\.urgency === "overdue"/,
+    "and it counts the pendings already past due — a part of the Needs attention total, never a second total",
+  );
+}
+
+// ── 1b. The pure helpers behind the rebuilt page ─────────────────────────────────────────────
+function testTheRebuiltPagesPureHelpers() {
+  // Date keys move in whole days, with no clock — across a month end, a year end and a DST change.
+  assert.equal(addDaysToKey("2026-10-16", 14), "2026-10-30", "fourteen days from 16 October is 30 October");
+  assert.equal(addDaysToKey("2026-12-25", 10), "2027-01-04", "and the arithmetic crosses a year end");
+  assert.equal(
+    addDaysToKey("2026-04-23", 7),
+    "2026-04-30",
+    "and a DST change (Egypt moves its clocks in late April) moves nothing — a date key has no hour",
+  );
+  assert.equal(daysBetweenKeys("2026-10-16", "2026-10-18"), 2, "Friday to Sunday is two days");
+  assert.equal(daysBetweenKeys("2026-10-18", "2026-10-16"), -2, "and backwards is negative");
+
+  assert.equal(daysUntilLabel("2026-10-16", "2026-10-16"), "Today");
+  assert.equal(daysUntilLabel("2026-10-16", "2026-10-17"), "Tomorrow");
+  assert.equal(daysUntilLabel("2026-10-16", "2026-10-25"), "In 9 days");
+  assert.equal(
+    daysUntilLabel("2026-10-16", "2026-10-14"),
+    "Started 2 days ago",
+    "a date already passed never prints a negative count",
+  );
+  assert.deepEqual(dateBlockParts("2026-10-18"), { day: "18", month: "Oct", weekday: "Sun" });
+  assert.equal(longDayLabel("2026-10-16"), "Friday 16 October");
+
+  // The meter: NULL in, NULL out — and never past its own track.
+  assert.equal(rateMeterPercent(null), null, "a null rate draws no meter at all, never an empty one");
+  assert.equal(rateMeterPercent(0.66), 66);
+  assert.equal(rateMeterPercent(1.4), 100, "interview-to-offer can pass 100%, and the bar stops at its track");
+  assert.equal(rateMeterPercent(0), 0, "a real zero is a real zero — it is a rate, not an absence");
+
+  // Breakdown bars are relative to the LARGEST group, and a single CV is still visibly a bar.
+  assert.equal(breakdownBarPercent(11, 11), 100);
+  assert.equal(breakdownBarPercent(1, 60), 4, "one CV beside sixty is still a 4% bar, not an invisible sliver");
+  assert.equal(breakdownBarPercent(0, 11), 0);
+
+  // The three groups, and NOTHING DROPPED.
+  const keys = [
+    "open-requisitions",
+    "seats-unrecruited",
+    "requisitions-stale",
+    "awaiting-review",
+    "with-managers",
+    "active-candidates",
+    "hired",
+    "offers-sent",
+  ];
+  const grouped = groupRecruitingTiles(keys.map((key) => ({ key })));
+  assert.deepEqual(
+    grouped.map((group) => [group.label, group.tiles.map((tile) => tile.key)]),
+    [
+      ["Seats", ["open-requisitions", "seats-unrecruited", "requisitions-stale"]],
+      ["Candidates", ["awaiting-review", "with-managers", "active-candidates"]],
+      ["Outcomes", ["hired", "offers-sent"]],
+    ],
+    "the eight figures sort into Seats, Candidates and Outcomes, in his reading order",
+  );
+  assert.deepEqual(
+    groupRecruitingTiles([...keys, "a-ninth-figure"].map((key) => ({ key })))
+      .at(-1)
+      ?.tiles.map((tile) => tile.key),
+    ["hired", "offers-sent", "a-ninth-figure"],
+    "a figure no group names joins the LAST group — a figure the builder emits is never silently dropped",
+  );
+  assert.deepEqual(
+    groupRecruitingTiles([{ key: "awaiting-review" }]).map((group) => group.key),
+    ["candidates"],
+    "a group with no figures is left out, so no caption sits over an empty row",
+  );
+  // The builder's own keys are the contract the groups are written against.
+  const builder = codeOf("src/lib/hr/command-center.ts");
+  for (const key of keys) {
+    assert.ok(
+      builder.includes(`tile("${key}"`),
+      `command-center.ts no longer emits the "${key}" figure — the group it belongs to would lose it silently`,
+    );
+  }
+
+  // Today's interviews: ENDED once the END has passed, NEXT is the first not ended.
+  const interview = (id: string, startMinutes: number) => ({
+    candidateName: `Person ${id}`,
+    dateKey: "2026-10-18",
+    durationMinutes: 30,
+    href: "#",
+    id,
+    interviewerName: null,
+    jobTitle: null,
+    platformLabel: "Zoom",
+    startMinutes,
+    timeLabel: "",
+  });
+  const ordered = orderTodaysInterviews([interview("c", 660), interview("a", 540), interview("b", 600)], 610);
+  assert.deepEqual(ordered.map((one) => one.id), ["a", "b", "c"], "the rows run in the order they happen");
+  assert.deepEqual(
+    ordered.map((one) => [one.done, one.next]),
+    [
+      [true, false],
+      [false, true],
+      [false, false],
+    ],
+    "at 10:10 the 9:00 has ended, and the 10:00 is NEXT although it started — its candidate is still in the room",
+  );
+  assert.ok(
+    orderTodaysInterviews([interview("a", 540)], 1_000).every((one) => one.done && !one.next),
+    "after the last interview nothing is next",
+  );
+  assert.equal(startTimeLabel(540), "09:00");
+  assert.equal(
+    cairoMinutesNow(new Date("2026-10-16T07:30:00.000Z")),
+    10 * 60 + 30,
+    "07:30 UTC is 10:30 in Cairo on 16 October 2026 (UTC+3, summer time)",
+  );
+
+  // Joiners: the window starts TODAY, and offers that did not load are NOT "nobody joining".
+  const arriving = joinersArriving(
+    [
+      offer({ id: "today", startDate: "2026-10-16", status: "accepted" }),
+      offer({ id: "edge", startDate: "2026-10-30", status: "accepted" }),
+      offer({ id: "past", startDate: "2026-10-15", status: "accepted" }),
+      offer({ id: "far", startDate: "2026-10-31", status: "accepted" }),
+    ],
+    "2026-10-16",
+  );
+  assert.equal(arriving.toKey, "2026-10-30", "the window is fourteen days, today counted as day 0");
+  assert.deepEqual(
+    arriving.rows.map((row) => row.id).sort(),
+    ["edge", "today"],
+    "a joiner starting TODAY is on the panel, and so is the fourteenth day; yesterday and day fifteen are not",
+  );
+  assert.equal(arriving.loaded, true);
+  assert.deepEqual(
+    joinersArriving(undefined, "2026-10-16"),
+    { fromKey: "2026-10-16", loaded: false, rows: [], toKey: "2026-10-30" },
+    "offers that did not load give loaded: false — the panel then says it could not tell",
+  );
+  assert.equal(JOINERS_WINDOW_DAYS, 14, "the window he chose: joiners arriving in 14 days");
+}
+
+// ── 1c. The three panels he chose say a failure, and say an empty day, differently ────────────
+function testTheTodayPanelsNeverDrawAFailureAsAQuietDay() {
+  for (const [file, gate, what] of [
+    [TODAY_COMPONENT, /!today\.loaded \?/, "today's interviews"],
+    [JOINERS_COMPONENT, /!joiners\.loaded \?/, "the joiners"],
+    [CV_COMPONENT, /!digest \?/, "today's CVs"],
+  ] as const) {
+    const code = codeOf(file);
+    assert.match(code, gate, `${what} must branch on the read having LOADED before it branches on empty`);
+    assert.match(code, /<TaCouldNotLoad what=/, `${what} must draw the named failure notice on a failed read`);
+    assert.match(code, /<TaEmpty\b/, `${what} must draw its own calm empty state on a genuinely empty day`);
+  }
+  const cv = codeOf(CV_COMPONENT);
+  assert.match(
+    cv,
+    /if \(cvToday\.status === "hidden"\) return null;/,
+    "a seat that may not read candidates gets NO CVs panel — never a 'could not load' for something it was never allowed to see",
+  );
+  assert.ok(cv.includes("digest.byJobTitle"), "the CVs panel lists the digest's role breakdown");
+  assert.ok(cv.includes("digest.bySource"), "and its channel breakdown");
+  assert.ok(!/and \$\{|more`|\.slice\(0, ?\d/.test(cv), "every group is listed — no 'and N more', no cut list");
+
+  const data = codeOf(DATA);
+  assert.match(
+    data,
+    /canAccess\(access, "candidates", "read"\)/,
+    "the CVs are asked for only when her seat may read candidates",
+  );
+  assert.match(data, /buildTodaysCvDigest\(now\)/, "and counted by the 18:00 summary's own builder, so the two never disagree");
+  assert.match(data, /listInterviewCalendarDay\(caller, todayKey\)/, "today's interviews come through the calendar's own day reader and gate");
+  assert.match(data, /joinersArriving\(loaded\.offers, calendar\.todayKey\)/, "the joiners are the offers already loaded — no new read");
+  for (const line of [
+    'pageUnavailable.push("CVs received today")',
+    'if (!today.loaded) pageUnavailable.push("Today\'s interviews")',
+  ]) {
+    assert.ok(data.includes(line), `a failed read must reach the page's notice by name: ${line}`);
+  }
+
+  // The frame: a zero count is not drawn beside an empty state that already says "none".
+  const panel = codeOf(PANEL_COMPONENT);
+  assert.match(panel, /typeof count === "number" && count > 0 \?/, "a zero count chip is never drawn");
+  assert.match(panel, /@container relative flex/, "every panel is its own container, so its insides follow its width");
 }
 
 // ── 2. Her handbook's two KPI families count what their captions say ──────────────────────────
@@ -353,6 +679,7 @@ function testAMultiDayHolidayIsMarkedOnEveryDayItCovers() {
         href: "/x",
         id: "i1",
         interviewerName: null,
+        jobTitle: null,
         platformLabel: "Zoom",
         startMinutes: 540,
         timeLabel: "09:00 - 09:30",
@@ -415,7 +742,7 @@ function testEmployeeRequestsIsOffThePageAndStillInHerSeat() {
 
   // Not a single mention in the CODE of either new component or of the loader. Comments stripped
   // first, because all three files discuss this rule at length and by name — see the file header.
-  for (const file of [DATA, LOGIC, PAGE_COMPONENT, CALENDAR_COMPONENT]) {
+  for (const file of [DATA, LOGIC, PAGE_COMPONENT, CALENDAR_COMPONENT, ...NEW_PARTS]) {
     const code = codeOf(file);
     assert.ok(
       !/supportRequests|support-requests|listAllSupportRequests/.test(code),
@@ -438,39 +765,29 @@ function testEmployeeRequestsIsOffThePageAndStillInHerSeat() {
   );
 }
 
-// ── 7. Both charts he named by name, each in its own band ─────────────────────────────────────
-function testBothChartsHeNamedSurviveOnTheirOwnBands() {
+// ── 7. The two charts he once named are GONE — as duplicates of the cards, on his word ──────────
+//
+// On 13 October 2026 he named "Live candidates, by pipeline stage" and "Job offers, by status" to
+// keep. On 16 October he ticked both as duplicates of the cards ("remove duplicates") — every number
+// either chart drew is a figure card on the same page. So the loader no longer builds them for this
+// page at all (building data nothing draws is a read on every page load for nobody), and the page
+// draws none. The generic page keeps its own builder and both charts, untouched.
+function testTheTwoDuplicateChartsAreNeitherBuiltNorDrawn() {
   const data = codeOf(DATA);
+  for (const name of ["buildRecruitingCharts", "OFFERS_BY_STATUS_CHART_KEY", "HrCommandChart", "offerChart"]) {
+    assert.ok(
+      !data.includes(name),
+      `the loader still carries ${name}. Both charts were removed as duplicates of the cards on ` +
+        "2026-10-16 — building them again is the first step to drawing them again",
+    );
+  }
+  for (const file of [PAGE_COMPONENT, ...NEW_PARTS]) {
+    assert.ok(!/<HrCommandCharts/.test(codeOf(file)), `${file} draws a chart: every figure on her page is a card`);
+  }
   assert.match(
-    data,
-    /OFFERS_BY_STATUS_CHART_KEY/,
-    'the Job-offers chart must be identified by the exported key, not by rebuilding the chart or ' +
-      "matching its title. A title match would silently stop working the day the caption is reworded",
-  );
-  assert.match(
-    data,
-    /chart\.key !== OFFERS_BY_STATUS_CHART_KEY/,
-    "the Filling-the-field band must EXCLUDE the offers chart, and the Offer-conversion band take " +
-      'it — "Job offers, by status" belongs beside the two rates it explains (owner, 2026-10-13)',
-  );
-  assert.match(
-    data,
-    /buildRecruitingCharts/,
-    "both charts come from the generic page's own builder. A second copy of either would let one " +
-      "seat's two pages print two different answers, which is the founding rule of command-center.ts",
-  );
-
-  const component = codeOf(PAGE_COMPONENT);
-  assert.match(
-    component,
-    /<HrCommandCharts charts=\{\[data\.offerChart\]\}/,
-    "and the offers chart is drawn by HrCommandCharts — the same component, so his chart keeps the " +
-      "caption, the colour and the footer link he already approved",
-  );
-  assert.match(
-    component,
-    /<HrCommandCharts charts=\{data\.field\.charts\}/,
-    "as is the pipeline chart in the Filling-the-field band",
+    codeOf("src/lib/hr/command-center.ts"),
+    /export function buildRecruitingCharts/,
+    "and the generic page's builder is still there — the removal was this page's, not every seat's",
   );
 }
 
@@ -495,12 +812,22 @@ function testTheIdentityStripIsTheGenericPagesByteForByte() {
       .filter((token) => token.includes("="))
       .sort();
   assert.deepEqual(
-    props(minePropsMatch![1]),
+    props(minePropsMatch![1]).filter((prop) => prop !== "reserve={conversionBand}"),
     props(genericPropsMatch![1]),
-    "the strip must receive the SAME four props on both pages, written the same way. The owner's " +
-      'instruction was "do not touch, do not ever touch" (2026-10-12) and "donot touch photo or ' +
-      'identity banner" (2026-10-13) — a fifth prop, a renamed one or a reordered value is a touch',
+    "the strip must receive the SAME four identity props on both pages, written the same way. The " +
+      'owner\'s instruction was "do not touch, do not ever touch" (2026-10-12) and "donot touch photo ' +
+      'or identity banner" (2026-10-13) — a renamed prop or a reordered value is a touch. The ONE ' +
+      'addition is reserve, his own (2026-10-16, "fit the keycards where i marked")',
   );
+  assert.ok(props(minePropsMatch![1]).includes("reserve={conversionBand}"), "her page fills the air beside the portrait");
+  // Every OTHER landing keeps the strip exactly as it was: given no reserve, the notices still fill
+  // the air with their shut peek — "i donot want this blanque area empty like this" (2026-10-13).
+  const stripCode = codeOf("src/components/phoenix-signature-card/PhoenixIdentityStrip.tsx");
+  assert.ok(
+    stripCode.includes('<PhoenixIdentityNotices className="flex-1" reservesAir={Boolean(photoSrc)} />'),
+    "a strip given no reserve still draws the notices' peek in the air",
+  );
+  assert.match(stripCode, /\{reserve \? \(/, "and only a strip given a reserve puts something else there");
   assert.ok(
     !/CeoHeroIdentity/.test(mine),
     "and it must not also draw the dark band. Two identities on one page is the defect " +
@@ -511,7 +838,7 @@ function testTheIdentityStripIsTheGenericPagesByteForByte() {
 // ── 9. The house look: square edges, no sideways scroll, no ellipsis ──────────────────────────
 function testTheNewComponentsObeyTheThreeGoldenRules() {
   const offences: string[] = [];
-  for (const file of [PAGE_COMPONENT, CALENDAR_COMPONENT]) {
+  for (const file of [PAGE_COMPONENT, CALENDAR_COMPONENT, ...NEW_PARTS]) {
     const code = codeOf(file);
 
     // `rounded-full` is a CIRCLE, not a corner — the generic page's icon badge and the charts'
@@ -820,21 +1147,19 @@ function testThePendingsPanelIsOneDisclosureWiredToItsButton() {
     "and it opens with every task expanded — somebody who has just pressed 'Needs attention' has " +
       "asked for the pendings, not for the most urgent one",
   );
-  assert.match(
-    component,
-    /aria-controls=\{PENDINGS_PANEL_ID\}/,
-    "the button must name the panel it controls",
-  );
+  // The button lives on the command rail; the page hands it the panel's id and its open state from
+  // the SAME constant and the SAME state the panel itself is drawn from.
+  const rail = codeOf(RAIL_COMPONENT);
+  assert.match(rail, /aria-controls=\{panelId\}/, "the button must name the panel it controls");
+  assert.match(rail, /aria-expanded=\{open\}/, "and it is a disclosure, so it says whether it is open");
+  assert.equal((rail.match(/Needs attention/g) ?? []).length, 1, "and there is exactly one Needs attention button");
+  assert.match(component, /panelId=\{PENDINGS_PANEL_ID\}/, "the rail is given the panel's id from the constant");
+  assert.match(component, /open=\{showPendings\}/, "and the panel's own open state");
   assert.match(
     component,
     /id=\{PENDINGS_PANEL_ID\}/,
     "and the panel must carry that same id from the same constant, so the two cannot drift into a " +
       "dangling aria reference",
-  );
-  assert.match(
-    component,
-    /aria-expanded=\{showPendings\}/,
-    "and it is a disclosure, so it says whether it is open",
   );
 }
 
@@ -866,13 +1191,15 @@ function testTheOpenPageRefreshesItsOwnFigures() {
 
 export function runTalentAcquisitionOverviewTests() {
   testARateIsNeverDrawnAsZero();
+  testTheRebuiltPagesPureHelpers();
+  testTheTodayPanelsNeverDrawAFailureAsAQuietDay();
   testTheOfferConversionFamilyCountsAnsweredOffersOnly();
   testHiringQualityWindowsBothHalvesAndNullsTheUndecided();
   testDistinctPeopleCollapsesRoundsAndKeepsOutsiders();
   testOnlyAnAcceptedOfferDrawsAJoiningDay();
   testAMultiDayHolidayIsMarkedOnEveryDayItCovers();
   testEmployeeRequestsIsOffThePageAndStillInHerSeat();
-  testBothChartsHeNamedSurviveOnTheirOwnBands();
+  testTheTwoDuplicateChartsAreNeitherBuiltNorDrawn();
   testTheIdentityStripIsTheGenericPagesByteForByte();
   testTheNewComponentsObeyTheThreeGoldenRules();
   testHerWeekIsTheInterviewCalendarItself();

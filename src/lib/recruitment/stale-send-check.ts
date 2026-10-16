@@ -34,7 +34,7 @@ import { cairoTodayIso } from "@/lib/attendance/working-days";
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
 import { createSystemNotification, createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
-import { recruitmentAlertRoles } from "@/lib/recruitment/access";
+import { recruitmentDeskAlertRoles } from "@/lib/recruitment/access";
 import { managerLabel } from "@/lib/recruitment/person-labels";
 import {
   STALE_SEND_ESCALATE_AFTER_DAYS,
@@ -342,10 +342,11 @@ export async function loadActiveManagerHrIds(managerHrIds: readonly string[]): P
 /**
  * Whoever can reassign a candidate stuck with the wrong manager.
  *
- * `recruitmentAlertRoles` — Super Admin, HR Advisory and, since 2026-10-08, the Talent Acquisition
- * seat (HR Resourcing) — is the same list `inbound/recruitment-notify.ts`
- * already notifies about every arriving CV, so the escalation lands with the people who are already
- * watching this pipeline rather than inventing a new audience. Do NOT read the role named "Talent
+ * `recruitmentDeskAlertRoles` — the Super Admin; the Talent Acquisition seat (HR Resourcing) is
+ * deliberately NOT on it since 2026-10-16, her notification center holds only a new CV, an interview
+ * request and an accepted offer — is the same list `inbound/recruitment-notify.ts` uses for its other
+ * alerts, so the escalation lands with the people who are already watching this pipeline rather than
+ * inventing a new audience. Do NOT read the role named "Talent
  * Acquisition" into this: it was retired from the role list on 2026-08-28 and holds nobody.
  *
  * Measured in production that day, this resolves to exactly ONE reachable person (`B-10`) — the
@@ -356,7 +357,7 @@ export async function recruitmentDeskHrIds(): Promise<string[]> {
   const { data, error } = await supabase
     .from("app_auth_users")
     .select("hr_id")
-    .in("role", recruitmentAlertRoles as unknown as string[]);
+    .in("role", recruitmentDeskAlertRoles as unknown as string[]);
   if (error) {
     logError("Stale-send check could not resolve the recruitment escalation recipients.", {
       error,

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { PhoenixIdentityNotices } from "@/components/phoenix-signature-card/PhoenixIdentityNotices";
 
@@ -454,6 +454,15 @@ export type PhoenixIdentityStripProps = {
   /** Optional honorific, e.g. "Dr." */
   prefix?: string;
   /**
+   * WHAT FILLS THE AIR BESIDE THE PORTRAIT, UNDER THE NOTICE RAIL (owner, 2026-10-16, circling that
+   * air on the Talent Acquisition overview: "fit the keycards where i marked"). Absent — every other
+   * landing — the band is exactly what it was: the notices, whose shut peek fills the air. Given, the
+   * notices keep their rail (and still open on a press, growing the band because she asked), and this
+   * content stands under it in the reserve instead of the peek. It is in normal flow, so content taller
+   * than the reserve grows the row rather than being clipped — the caller sizes it to the air.
+   */
+  reserve?: ReactNode;
+  /**
    * The notice band under the bar. On by default: the band is the answer to the owner's "make use
    * of it", and a landing that opted out silently would be the one page where the reserved air came
    * back. It exists so a surface that genuinely must not fetch (a print or export view) can say so.
@@ -469,6 +478,7 @@ export function PhoenixIdentityStrip({
   name,
   photoSrc = null,
   prefix,
+  reserve,
   showNotices = true,
   title,
 }: PhoenixIdentityStripProps) {
@@ -1007,7 +1017,13 @@ export function PhoenixIdentityStrip({
         NO PHOTO, NO COLUMN: there is no standing portrait, nothing is reserved, and the notices take
         the full width under the bar. */}
     <div className="flex items-stretch gap-4">
-      {showNotices ? (
+      {reserve ? (
+        // The caller's content takes the air, so the notices draw their rail and no peek.
+        <div className="flex min-w-0 flex-1 flex-col">
+          {showNotices ? <PhoenixIdentityNotices reservesAir={false} /> : null}
+          <div className="flex min-w-0 flex-auto shrink-0 flex-col pt-1.5">{reserve}</div>
+        </div>
+      ) : showNotices ? (
         // `reservesAir` is the photo, and nothing else: the spacer beside this band exists only when
         // there IS a standing portrait, so it is the one condition under which the shut band has air
         // to fill without growing the page. See the prop's own header in that file.

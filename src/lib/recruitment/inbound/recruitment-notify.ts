@@ -2,13 +2,15 @@
 //
 // No shared "HR IDs by role" export exists in this codebase today — the nearest precedent is a
 // private, unexported hrIdsForRole() in src/lib/direct-orders/service.ts. This is the same idea,
-// scoped to recruitment's own alert list (recruitmentAlertRoles: Super Admin, HR Advisory and the
-// Talent Acquisition seat), so an inbound
-// CV from email or WhatsApp reaches whoever can actually review and assign it.
+// scoped to recruitment's own alert lists: a NEW CV reaches recruitmentAlertRoles (the Super Admin and
+// the Talent Acquisition seat) so it reaches whoever can actually review and assign it, and every
+// other alert in this file reads recruitmentDeskAlertRoles, which leaves the Talent Acquisition seat
+// out (owner, 2026-10-16: her notification center holds a new CV, an interview request and an
+// accepted offer).
 
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { recruitmentAlertRoles } from "@/lib/recruitment/access";
+import { recruitmentAlertRoles, recruitmentDeskAlertRoles } from "@/lib/recruitment/access";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import type { CandidateMatchReason } from "@/lib/recruitment/candidate-matching";
 import type { InboundCvChannel } from "@/lib/recruitment/inbound/cv-intake-service";
@@ -128,7 +130,7 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
 export async function notifyDailyCvDigest(digest: DailyCvDigest): Promise<void> {
   if (digest.total === 0) return;
 
-  const recipientHrIds = await hrIdsForRoles(recruitmentAlertRoles);
+  const recipientHrIds = await hrIdsForRoles(recruitmentDeskAlertRoles);
   if (recipientHrIds.length === 0) return;
 
   await createSystemNotificationForRecipients(
@@ -175,7 +177,7 @@ export async function notifyWhatsAppIntakeUnhealthy(health: WhatsAppIntakeHealth
   const PUSHABLE = ["api_unreachable", "webhook_misrouted", "public_channel_dead", "silent"] as const;
   if (!(PUSHABLE as readonly string[]).includes(health.status)) return;
 
-  const recipientHrIds = await hrIdsForRoles(recruitmentAlertRoles);
+  const recipientHrIds = await hrIdsForRoles(recruitmentDeskAlertRoles);
   if (recipientHrIds.length === 0) return;
 
   // Each title names the fault, not the symptom, so the phone notification alone is enough to know
@@ -227,7 +229,7 @@ export async function notifyInboundIntakeDeadLetter(input: {
   providerMessageId: string;
   error: string;
 }): Promise<void> {
-  const recipientHrIds = await hrIdsForRoles(recruitmentAlertRoles);
+  const recipientHrIds = await hrIdsForRoles(recruitmentDeskAlertRoles);
   if (recipientHrIds.length === 0) return;
 
   const channelLabel = input.channel === "whatsapp" ? "WhatsApp" : "email";
@@ -259,7 +261,7 @@ export async function notifyInboundIntakeSpike(
   input: { errors: number; deadLettered: number; windowLabel: string },
   now: Date = new Date(),
 ): Promise<void> {
-  const recipientHrIds = await hrIdsForRoles(recruitmentAlertRoles);
+  const recipientHrIds = await hrIdsForRoles(recruitmentDeskAlertRoles);
   if (recipientHrIds.length === 0) return;
 
   await createSystemNotificationForRecipients(
@@ -308,7 +310,7 @@ export async function notifyInboundWhatsAppTextOnly(input: {
   alreadyApplied: boolean;
   askedAboutTheJob?: boolean;
 }): Promise<void> {
-  const recipientHrIds = await hrIdsForRoles(recruitmentAlertRoles);
+  const recipientHrIds = await hrIdsForRoles(recruitmentDeskAlertRoles);
   if (recipientHrIds.length === 0) return;
 
   // Three genuinely different situations, and the phone alert has to distinguish them without being
@@ -378,7 +380,7 @@ export async function notifyInboundWhatsAppUnreadableCv(input: {
   /** A WhatsApp username sender who shared no phone number: never answered, by owner decision. */
   noPhoneNumber?: boolean;
 }): Promise<void> {
-  const recipientHrIds = await hrIdsForRoles(recruitmentAlertRoles);
+  const recipientHrIds = await hrIdsForRoles(recruitmentDeskAlertRoles);
   if (recipientHrIds.length === 0) return;
 
   const what = input.cause === "too_large" ? "sent a file too large to open" : "sent something we could not read as a CV";

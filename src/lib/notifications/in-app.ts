@@ -9,6 +9,7 @@ import {
 } from "@/lib/communication/metrics";
 import { canViewerSeeNotification, isPersonalBellCategory, PERSONAL_BELL_CATEGORIES } from "@/lib/notifications/recipients";
 import { notificationHrefForViewerRole } from "@/lib/notifications/hrefs";
+import { noticeFetchLimit, noticeHiddenFromSeat } from "@/lib/notifications/seat-notice-filter";
 // A LEAF of the Phoenix CRM server tree, chosen deliberately: it imports only access, db and the
 // pure rules, so the bell never ends up in a cycle with that module's own notifications file.
 import { phoenixCrmPlanIdsAwaitingDecision, phoenixCrmVisitIdsAwaitingDecision } from "@/lib/phoenix-crm/server/awaiting-decisions";
@@ -413,6 +414,9 @@ export async function listInAppNotificationsForViewer(
   try {
     const supabase = getSupabaseAdmin();
     const boundedLimit = Math.max(1, Math.min(limit, 20));
+    // A seat that hides some notices reads past them (see seat-notice-filter.ts); the slice below
+    // still returns at most boundedLimit.
+    const readLimit = noticeFetchLimit(access.role, boundedLimit);
     const selectColumns =
       "id,category,subject,scheduled_for,sent_at,status,metadata,recipients,employee_hr_id,created_at,module,priority,action_url,event_type,test_login_id";
 
@@ -424,7 +428,7 @@ export async function listInAppNotificationsForViewer(
       .eq("employee_hr_id", employeeHrId.toUpperCase())
       .in("category", allowedCategories)
       .order("created_at", { ascending: false })
-      .limit(boundedLimit);
+      .limit(readLimit);
 
     if (employeeResult.error) throw employeeResult.error;
 
@@ -440,7 +444,7 @@ export async function listInAppNotificationsForViewer(
       .overlaps("recipients", [employeeHrId])
       .in("category", allowedCategories)
       .order("created_at", { ascending: false })
-      .limit(boundedLimit);
+      .limit(readLimit);
 
     if (!recipientResult.error) {
       for (const row of (recipientResult.data ?? []) as InAppNotificationEventRow[]) {
@@ -454,6 +458,9 @@ export async function listInAppNotificationsForViewer(
       // "leave") that may carry mis-assigned recipients. Defense-in-depth on top
       // of the SQL .in("category", ...) filter. See src/lib/notifications/recipients.ts.
       .filter((row) => isPersonalBellCategory(row.category))
+      // The Talent Acquisition seat's centre holds three notices; the older recruitment alerts
+      // already written for her are dropped here (seat-notice-filter.ts).
+      .filter((row) => !noticeHiddenFromSeat(access.role, row.event_type))
       // Fail-closed recipient isolation applied AFTER the DB query — never rely on
       // the SQL employee/overlap filters alone. See src/lib/notifications/recipients.ts.
       .filter((row) =>

@@ -36,10 +36,19 @@ export function hiringManagerInterviewType(role: PhoenixRole): InterviewType {
 // HR Advisory left it on 2026-10-08 when the owner moved recruiting off the HR Business Partner, so
 // those two screens are the Super Admin's alone.
 export const recruitmentManageRoles: readonly PhoenixRole[] = ["Super Admin"];
-// The AUDIENCE of every recruitment alert — new CVs (inbound/recruitment-notify.ts), stale sends
-// (stale-send-check.ts) and the triage backlog (triage-backlog-check.ts). The managers above plus the
-// Talent Acquisition seat, added 2026-10-08 at the owner's answer in chat: "Add her now".
+// The AUDIENCE of the NEW CV alert (inbound/recruitment-notify.ts, `recruitment_inbound_cv`) — the
+// managers above plus the Talent Acquisition seat, added 2026-10-08 at the owner's answer in chat:
+// "Add her now". Since 2026-10-16 it is the audience of that one alert alone: her notification
+// center holds exactly three notices (a new CV, an interview request, an accepted offer), so every
+// other recruitment alert reads `recruitmentDeskAlertRoles` below.
 export const recruitmentAlertRoles: readonly PhoenixRole[] = [...recruitmentManageRoles, "HR Resourcing"];
+// The AUDIENCE of every OTHER recruitment alert — WhatsApp text-only and unreadable CVs, intake
+// health, dead letters and spikes, the daily CV digest, stale sends, the triage backlog and CVs
+// returned by managers. Without the Talent Acquisition seat (owner, 2026-10-16: "in the ta account
+// notification center she should see 1 new cv received, 2 interview requests, 3 accepted job
+// offers"). The same list the managers hold, and kept apart from it so a later edit to one cannot
+// quietly move the other.
+export const recruitmentDeskAlertRoles: readonly PhoenixRole[] = [...recruitmentManageRoles];
 // Roles that WORK the pipeline's screens: the managers above plus the Talent Acquisition seat
 // (HR Resourcing), opened 2026-10-08 from the owner's own ticks on the access blueprint. A screen
 // list only — nothing here sends anybody anything.

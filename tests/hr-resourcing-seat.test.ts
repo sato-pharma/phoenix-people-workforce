@@ -41,8 +41,14 @@ import {
   canViewInboundIntakeHealth,
   canViewWhatsAppOutboundLog,
   recruitmentAlertRoles,
+  recruitmentDeskAlertRoles,
   recruitmentManageRoles,
 } from "../src/lib/recruitment/access.ts";
+import {
+  noticeFetchLimit,
+  noticeHiddenFromSeat,
+  TALENT_ACQUISITION_HIDDEN_EVENT_TYPES,
+} from "../src/lib/notifications/seat-notice-filter.ts";
 import { canViewOrganogramSensitiveFields } from "../src/lib/reports/organogram.ts";
 import { canSeeDoctorCoverage, DOCTOR_COVERAGE_PORTAL_ROLES } from "../src/lib/crm/doctor-coverage-roles.ts";
 import { seesWholeInterviewCalendar } from "../src/lib/recruitment/interview-calendar-types.ts";
@@ -226,14 +232,52 @@ export async function runHrResourcingSeatTests() {
     !(recruitmentManageRoles as readonly string[]).includes(SEAT),
     "the managers' list stays without her: it is also the gate of two screens he left out",
   );
+  // 2026-10-16 narrowed that to ONE alert: her notification center holds a new CV, an interview
+  // request and an accepted offer, so the new-CV sender alone reads the list she is on and every
+  // other recruitment alert reads the desk list without her.
+  assert.ok(!(recruitmentDeskAlertRoles as readonly string[]).includes(SEAT), "the other recruitment alerts do not address her");
+  const notifySource = source("src/lib/recruitment/inbound/recruitment-notify.ts");
+  assert.equal(
+    (notifySource.match(/hrIdsForRoles\(recruitmentAlertRoles\)/g) ?? []).length,
+    1,
+    "exactly one sender in recruitment-notify.ts reads the audience she is on: the new-CV alert",
+  );
+  assert.ok(
+    (notifySource.match(/hrIdsForRoles\(recruitmentDeskAlertRoles\)/g) ?? []).length >= 6,
+    "every other alert in recruitment-notify.ts reads the desk list",
+  );
   for (const reader of [
-    "src/lib/recruitment/inbound/recruitment-notify.ts",
     "src/lib/recruitment/stale-send-check.ts",
     "src/lib/recruitment/triage-backlog-check.ts",
   ]) {
-    assert.match(source(reader), /recruitmentAlertRoles/, `${reader} reads the alert audience`);
+    assert.match(source(reader), /recruitmentDeskAlertRoles/, `${reader} reads the desk audience`);
+    assert.doesNotMatch(source(reader), /recruitmentAlertRoles/, `${reader} must not address the Talent Acquisition seat`);
     assert.doesNotMatch(source(reader), /recruitmentManageRoles/, `${reader} must not fall back to the managers' list`);
   }
+  // ...and the older alerts already written for her stay out of her band. A deny-list, so her own
+  // personal notices (a vacation decision) are never taken with them, and only HER seat is touched.
+  for (const type of TALENT_ACQUISITION_HIDDEN_EVENT_TYPES) {
+    assert.equal(noticeHiddenFromSeat(SEAT, type), true, `${type} is hidden from her band`);
+    for (const other of ["Super Admin", "HR Operations", "CEO"] as PhoenixRole[]) {
+      assert.equal(noticeHiddenFromSeat(other, type), false, `${type} still reaches ${other}`);
+    }
+  }
+  for (const kept of [
+    "recruitment_inbound_cv",
+    "interview_request_created",
+    "accepted_offer_alert",
+    "vacation_decision",
+    null,
+  ]) {
+    assert.equal(noticeHiddenFromSeat(SEAT, kept), false, `${kept ?? "an untyped notice"} stays in her band`);
+  }
+  assert.equal(noticeFetchLimit(SEAT, 20) > 20, true, "her list reads past the notices it hides");
+  assert.equal(noticeFetchLimit("Super Admin", 20), 20, "every other seat reads exactly the limit it asked for");
+  assert.match(
+    source("src/lib/notifications/in-app.ts"),
+    /\.filter\(\(row\) => !noticeHiddenFromSeat\(access\.role, row\.event_type\)\)/,
+    "the notice list drops her hidden kinds",
+  );
   // "Open all four": Needs You, WhatsApp Inbox, Milestones and Spotlight — Needs You was TAKEN BACK
   // on 2026-10-16 ("remove needs you and hide from ta account"), the other three stand.
   assert.deepEqual([...(grants.spotlight ?? [])], ["read", "export"], "Spotlight, as the Super Admin holds it");
@@ -270,7 +314,7 @@ export async function runHrResourcingSeatTests() {
   );
   assert.match(
     sidebarSource,
-    /standalone=\{!flatSidebar && !plainSingleRow\}/,
+    /standalone={!flatSidebar && !tiled && !plainSingleRow}/,
     "a one-row section in the HR shell carries no hub arrow and no hub tint",
   );
   // KPIs: "Give her KPIs" — a company seat, admin shell, not the portal.
