@@ -58,13 +58,11 @@ import {
 } from "@/lib/phoenix-crm/list-template-rules";
 import { readTestFlag, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { weekTimingsText } from "@/lib/phoenix-crm/timings";
-import { callPhoenixCrm, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { callPhoenixCrm } from "@/lib/phoenix-crm/server/db";
 import { canReadIntegrityBoard } from "@/lib/phoenix-crm/server/integrity-board";
 import { loadTerritoryCustomers, mapTimings } from "@/lib/phoenix-crm/server/list";
-import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { buildPhoenixCrmListTemplate, type ListTemplateCustomer } from "@/lib/phoenix-crm/server/list-template-workbook";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { excelCellText, loadExcelWorkbook } from "@/lib/uploads/exceljs-rows";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
@@ -145,8 +143,12 @@ export async function listTemplateTerritories(viewer: PhoenixCrmViewer): Promise
   assertListLoader(viewer);
   const seats = viewer.scopeTerritories.filter((seat) => Boolean(seat.lineCode));
   if (seats.length === 0) return [];
-  const names = await loadPeopleNames(seats.map((seat) => seat.occupantHrId));
-  const counts = await countCustomersPerSeat(seats.map((seat) => seat.seatId));
+  // The names and the counts need nothing from each other, so they are asked together rather than one
+  // after the other (Phoenix CRM performance audit, 2026-10-16).
+  const [names, counts] = await Promise.all([
+    loadPeopleNames(seats.map((seat) => seat.occupantHrId)),
+    countCustomersPerSeat(seats.map((seat) => seat.seatId)),
+  ]);
   return seats
     .map((seat) => ({
       customers: counts.get(seat.seatId) ?? 0,
@@ -160,37 +162,27 @@ export async function listTemplateTerritories(viewer: PhoenixCrmViewer): Promise
 async function countCustomersPerSeat(seatIds: readonly string[]): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   if (seatIds.length === 0) return counts;
-  // One read for every seat, counted here: a per-seat count would be one round trip each and every
-  // round trip from Railway to Supabase crosses the Atlantic.
+  // One read for every seat: a per-seat count would be one round trip each and every round trip from
+  // Railway to Supabase crosses the Atlantic.
   //
-  // 🔴 PAGED, because `.limit(20000)` DOES NOT RAISE PostgREST's own 1,000-row ceiling — it stops there
-  // with no error and no marker (the module rule). The whole company's list is far past 1,000, so the
-  // unpaged read counted the first page only: the territories that happened to sort late read 0 and the
-  // SFE would download a template whose "Already on the list" sheet claimed an empty list for a seat
-  // that has one, and enter its customers a second time. Found in review, 2026-10-03.
+  // 🔴 COUNTED IN THE DATABASE SINCE 2026-10-16, NOT BY FETCHING EVERY ROW. The picker prints one number
+  // per territory, and it used to read every customer on every list to get it — about 11,500 rows on
+  // production, a thousand at a time, a dozen round trips one after another — only to count them here
+  // and throw them away (Phoenix CRM performance audit). `phoenix_crm_customer_counts_by_seat` applies
+  // the very same filter (these seats, `is_test = false`, status active, pending or outside) and answers
+  // ONE jsonb object, which PostgREST's silent 1,000-row cap cannot cut short — the trap that once made
+  // the unpaged row read print 0 for the territories that sorted late, inviting the SFE to load a list
+  // that already existed (found in review, 2026-10-03). The seat ids travel in the request body, so a
+  // company-wide picker can never push the URL past its header limit either.
   //
-  // `id` is the total order the walk needs, and `refuse` rather than `stop`: a count the picker PRINTS
-  // is a number somebody acts on, so a truncated one must fail loudly instead of reading low.
-  const { rows, error } = await readEveryPage<Row>(
-    () =>
-      getSupabaseAdmin()
-        .from("phoenix_crm_customers")
-        .select("id, seat_id")
-        .in("seat_id", [...seatIds])
-        .eq("is_test", false)
-        .in("status", ["active", "pending", "outside"])
-        .order("id", { ascending: true }),
-    {
-      maxRows: 200_000,
-      uniqueBy: (row) => String(row.id ?? ""),
-      what: "the customers on these territories' lists",
-      whenFull: "refuse",
-    },
-  );
-  throwIfError(error);
-  for (const row of rows) {
-    const seatId = String(row.seat_id ?? "");
-    counts.set(seatId, (counts.get(seatId) ?? 0) + 1);
+  // A failed count throws, as the paged read refused: a count the picker PRINTS is a number somebody
+  // acts on, so it must fail loudly rather than read low.
+  const bySeat = await callPhoenixCrm<Record<string, unknown> | null>("phoenix_crm_customer_counts_by_seat", {
+    p_seat_ids: [...seatIds],
+  });
+  for (const [seatId, customers] of Object.entries(bySeat ?? {})) {
+    const count = Number(customers);
+    if (Number.isFinite(count)) counts.set(seatId, count);
   }
   return counts;
 }

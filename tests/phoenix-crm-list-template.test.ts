@@ -529,14 +529,31 @@ function checkReviewEdges(): void {
 
   const service = stripComments(readFileSync("src/lib/phoenix-crm/server/list-template.ts", "utf8"));
 
-  // (b) The picker's customer counts are PAGED. `.limit(n)` cannot raise PostgREST's 1,000-row cap, so
-  // an unpaged read counted the first page and the territories sorting after it read 0 — and a 0 there
-  // invites the SFE to load a list that already exists, twice.
-  assert.match(service, /readEveryPage</, "the per-seat counts are read through the module's pager");
+  // (b) The picker's customer counts can never be cut short by PostgREST's 1,000-row cap. `.limit(n)`
+  // cannot raise it, so an unpaged row read counted the first page and the territories sorting after
+  // it read 0 — and a 0 there invites the SFE to load a list that already exists, twice. Since
+  // 2026-10-16 the count is the database's own (one jsonb object, which the cap cannot touch) rather
+  // than ~11,500 rows fetched a thousand at a time only to be counted here.
   assert.doesNotMatch(service, /\.limit\(\s*\d{4,}\s*\)/, "never a four-figure .limit(), which reads as a ceiling it cannot set");
   const counting = service.slice(service.indexOf("async function countCustomersPerSeat("), service.indexOf("export type ListTemplateImportResult"));
-  assert.match(counting, /whenFull:\s*"refuse"/, "and a count the picker PRINTS fails loudly rather than reading low");
-  assert.match(counting, /\.order\("id"/, "paged on a total order, or the walk repeats and skips rows");
+  assert.match(
+    counting,
+    /callPhoenixCrm<[^(]*>\("phoenix_crm_customer_counts_by_seat", \{\s*p_seat_ids: \[\.\.\.seatIds\],?\s*\}\)/,
+    "the per-seat counts are one aggregate call with every seat in the request body",
+  );
+  assert.doesNotMatch(counting, /\.from\("phoenix_crm_customers"\)/, "and never a row read of the customers table counted in the page server");
+  assert.doesNotMatch(counting, /\.catch\(|try \{/, "a failed count fails loudly — a count the picker PRINTS must never read low");
+  // The aggregate keeps the page's own filter, so every territory prints the number it printed before.
+  const counts = readFileSync("supabase/migrations/20261016180400_phoenix_crm_customer_counts_by_seat.sql", "utf8");
+  assert.match(counts, /returns jsonb/, "one object, never a set of rows the 1,000-row cap could cut");
+  assert.match(counts, /c\.seat_id = any \(p_seat_ids\)/, "the seats asked about");
+  assert.match(counts, /c\.is_test = false/, "real customers only");
+  assert.match(counts, /c\.status in \('active', 'pending', 'outside'\)/, "on the list, waiting to be validated, or waiting to be added — the same three");
+  assert.match(
+    counts,
+    /revoke execute on function public\.phoenix_crm_customer_counts_by_seat\(text\[\]\) from public, anon, authenticated;\s*grant execute on function public\.phoenix_crm_customer_counts_by_seat\(text\[\]\) to service_role;/,
+    "the service role alone may call it, like every sibling read function",
+  );
 
   // (c) A sheet that does not say which territory it is for is REFUSED. The marker is the only thing
   // between a whole graded list and the wrong rep; accepting a null one threw it away in exactly the

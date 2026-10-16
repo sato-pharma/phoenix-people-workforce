@@ -295,6 +295,14 @@ export function runPhoenixCrmBehaviourIntegrityTests(): void {
       "a month is RECOMPUTED WHOLE — the old rows go immediately before the new ones, or a verdict that no longer holds lingers for ever",
     );
 
+    // Phoenix CRM performance audit, 2026-10-16: the lines' closing sales are read side by side, and
+    // each line keeps its own failure — a line the closing cannot answer for answers exactly as it
+    // always did, and never takes the other lines with it.
+    const salesRead = service.slice(service.indexOf("async function salesByLine("), service.indexOf("export async function readMonthVisits("));
+    assert.match(salesRead, /mapWithConcurrency\(lines, LINES_AT_ONCE, async \(code\) => \{\s*try \{/, "each line is read inside its own try, side by side");
+    assert.match(salesRead, /\} catch \{[\s\S]*?return \{ areas: new Set<string>\(\), sold: false \};/, "a failed line answers for itself alone, as it always did");
+    assert.match(salesRead, /for \(const \[position, code\] of lines\.entries\(\)\) out\.set\(code, answers\[position\]!\);/, "and the answers are filed in the lines' own order");
+
     // The sweep tells nobody, in either direction.
     for (const word of ["notify", "sendNotification", "telegram", "sendEmail"]) {
       assert.equal(service.toLowerCase().includes(word.toLowerCase()), false, `the behaviour pass must not ${word} anybody`);
