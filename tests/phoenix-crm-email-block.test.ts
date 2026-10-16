@@ -72,6 +72,11 @@ const EVENT_TYPES = [
   // The courtesy copy of a rep's ask for a visit (owner, 2026-10-02: "told (in-app)"): the manager above
   // for a chain visit, the rep's district manager for a product manager's. Nothing waits on it.
   "visit_ask_told",
+  // A rep's request for a double visit (owner, 2026-10-16). Born in-app, Telegram and phone; never emailed.
+  "double_visit_waiting",
+  "double_visit_days_changed",
+  "double_visit_accepted",
+  "double_visit_declined",
   // 🔴 The expiry of a request to edit a week MOVED HERE from the emailing list on 2026-10-02, when
   // the owner was asked directly whether the new daily pass should email as it closes one and chose
   // "in-app and Telegram only, no email". His "only" is enforced on both axes (PUSH_BLOCKED below).
@@ -251,6 +256,8 @@ export function runPhoenixCrmEmailBlockTests() {
       "src/lib/phoenix-crm/server/plan-edits.ts",
       // A rep's ask for a visit: raised from the customer's page or a visit's next step, then answered.
       "src/lib/phoenix-crm/server/visit-asks.ts",
+      // A rep's request for a double visit (owner, 2026-10-16): raised from the visit, re-dated, answered.
+      "src/lib/phoenix-crm/server/double-visit-requests.ts",
     ]) {
       const source = readFileSync(file, "utf8");
       const calls = source.split("notifyPhoenixCrm(").slice(1);

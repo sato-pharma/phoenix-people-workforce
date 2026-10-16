@@ -14,6 +14,7 @@ import { ApiError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { forecastIsOffered } from "@/lib/phoenix-crm/daily-forecast";
 import {
+  doubleVisitReportAudience,
   readsFieldHeardByProduct,
   readsTeamPlaceChecks,
   resolvePhoenixCrmViewer,
@@ -93,10 +94,15 @@ export function phoenixCrmHasSomethingToSay(viewer: PhoenixCrmViewer): boolean {
  * "in every district manager account, build a tab in his sidebar"). ONE viewer lookup answers all
  * three, because the sidebar is drawn on every portal page.
  */
-export type PhoenixCrmSidebarEntries = { crm: boolean; forecast: boolean; placeChecks: boolean };
+export type PhoenixCrmSidebarEntries = { crm: boolean; forecast: boolean; placeChecks: boolean; doubleVisitRequests: boolean };
 
 /** No row at all — what a failed, refused or seatless lookup answers. */
-export const NO_PHOENIX_CRM_ENTRIES: PhoenixCrmSidebarEntries = { crm: false, forecast: false, placeChecks: false };
+export const NO_PHOENIX_CRM_ENTRIES: PhoenixCrmSidebarEntries = {
+  crm: false,
+  forecast: false,
+  placeChecks: false,
+  doubleVisitRequests: false,
+};
 
 /**
  * Whether My Visits and the portal sidebar show the Phoenix CRM row: to a holder of `phoenix_crm`
@@ -117,7 +123,14 @@ export async function phoenixCrmSidebarEntries(access: AccessContext): Promise<P
     if (!(await canAccess(access, "phoenix_crm", "read"))) return NO_PHOENIX_CRM_ENTRIES;
     const viewer = await resolvePhoenixCrmViewer(access);
     const crm = phoenixCrmHasSomethingToSay(viewer);
-    return { crm, forecast: crm && forecastIsOffered(viewer), placeChecks: readsTeamPlaceChecks(viewer) };
+    return {
+      crm,
+      forecast: crm && forecastIsOffered(viewer),
+      placeChecks: readsTeamPlaceChecks(viewer),
+      // The Double visit requests report (owner, 2026-10-16) — every manager up to the CEO and the product
+      // managers a rep can ask. The page's own predicate, so the row cannot open onto a redirect.
+      doubleVisitRequests: doubleVisitReportAudience(viewer) !== null,
+    };
   } catch (error) {
     if ((error instanceof ApiError && error.status < 500) || isForbiddenError(error)) return NO_PHOENIX_CRM_ENTRIES;
     logError("Phoenix CRM entry check failed", {

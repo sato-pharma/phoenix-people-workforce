@@ -59,6 +59,7 @@ export async function GET(request: Request) {
       phoenixCrm.crm,
       phoenixCrm.forecast,
       phoenixCrm.placeChecks,
+      phoenixCrm.doubleVisitRequests,
     );
 
     const activeLocks = await locksPromise;

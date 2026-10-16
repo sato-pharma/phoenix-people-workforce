@@ -2140,6 +2140,11 @@ const employeePortalNavigationSectionSeeds = [
       // name exactly as the row above is, with NO `roles:` list for the same reason: an acting district
       // manager holds the seat without the role name. The page's own gate (`canReadVisitReport`) is the boundary.
       { href: "/employee-portals/visit-report", icon: ClipboardList, label: "Visit report", permissions: [{ resource: "phoenix_crm", action: "read" }] },
+      // Double visit requests — the double visits reps ask for and every person's answer (owner, 2026-10-16),
+      // listed for the palette and the tab name exactly as the rows above are, with NO `roles:` list: the
+      // report's own gate (`doubleVisitReportAudience` — a manager's seat, or a product manager a rep can
+      // ask) is the boundary, and a roles list would hide it from somebody the page admits.
+      { href: "/employee-portals/double-visit-requests", icon: UsersRound, label: "Double visit requests", permissions: [{ resource: "phoenix_crm", action: "read" }] },
     ],
     label: "Leave Management",
   },
@@ -4549,6 +4554,20 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager"],
   },
   {
+    // The double visits reps ask for at a customer, and how every person asked has answered (owner,
+    // 2026-10-16: "a new sidebar report is generated for managers … all managers must have access on this
+    // report as per their scope upto ceo"). The Super Admin, the CEO and the SFE Manager read every
+    // territory here; every other manager reads his own team's at /employee-portals/double-visit-requests.
+    // `doubleVisitReportAudience` is the enforcing gate inside the page and every route; this card only
+    // draws the link.
+    href: "/admin/phoenix-crm/double-visit-requests",
+    icon: UsersRound,
+    label: "Double Visit Requests",
+    description: "The double visits reps ask their managers and product managers for at a customer, the days they offer and every person's answer.",
+    permissions: [{ resource: "phoenix_crm", action: "read" }],
+    roles: ["Super Admin", "CEO", "SFE Manager"],
+  },
+  {
     // Captures Phoenix CRM turned away on their LOCATION, and whether the rep got through afterwards
     // (owner, 2026-10-03: "build the refused readings view for the SFE").
     //
@@ -5208,6 +5227,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/field-crm",
           // A report he builds from the visits rather than a check on them — a board, not data quality.
           "/admin/phoenix-crm/visit-report",
+          // What the reps ask their managers for, and the answers: a board, not data quality.
+          "/admin/phoenix-crm/double-visit-requests",
         ],
       },
       {

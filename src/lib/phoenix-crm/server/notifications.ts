@@ -88,6 +88,8 @@ import type { VisitAskKind } from "@/lib/phoenix-crm/visit-ask-rules";
 export const PHOENIX_CRM_NOTIFICATION_MODULE = "phoenix_crm";
 export const PHOENIX_CRM_NOTIFICATION_CATEGORY = "phoenix_crm";
 export const PHOENIX_CRM_PORTAL_PATH = "/employee-portals/field-crm";
+/** The double-visit requests report (owner, 2026-10-16): the page every double-visit notice opens. */
+export const DOUBLE_VISIT_REQUESTS_PATH = "/employee-portals/double-visit-requests";
 
 /**
  * How a decision's decider is named in a notice. The Administrator is always "The Administrator" — never
@@ -299,6 +301,30 @@ export type PhoenixCrmNotice =
     }
   | {
       /**
+       * A rep's REQUEST for a double visit, raised by the last question of his visit (owner,
+       * 2026-10-16): up to three field days, any number of the people offered, each answering on his
+       * own. `raised` tells every person asked; `days_changed` tells those still waiting (the rep
+       * edited the days — he can never cancel); `accepted` / `declined` tell the rep which person
+       * answered. A cancel does not exist, so there is no such step.
+       */
+      kind: "double_visit_request";
+      seat: OrgSeat;
+      requestId: string;
+      step: "raised" | "days_changed" | "accepted" | "declined";
+      repHrId: string;
+      /** raised / days_changed: the people to tell. accepted / declined: the person who answered. */
+      askedHrIds: string[];
+      customerName: string;
+      listType: PhoenixCrmListType;
+      /** The days the rep offers, earliest first. */
+      days: string[];
+      /** The day the person accepted. Null for every other step. */
+      visitOn: string | null;
+      /** Which edit this is (the request's `edit_count`), so a second change is not swallowed by the first's key. */
+      version: number;
+    }
+  | {
+      /**
        * A rep pressed "Show your manager you started working" (owner, 2026-10-03). His district
        * manager and the SFE Manager are told the time AND where he was — the one Phoenix CRM notice
        * that reports a rep's position to his managers, which the owner ruled explicitly ("their
@@ -371,6 +397,11 @@ type Delivery = {
   message: string;
   /** A product manager answers an ask on the Reports page, the one page of the module he opens. */
   tab: "team" | "list" | "plan" | "visits" | "forecast" | "reports";
+  /**
+   * Where the notice opens when it is NOT a tab of the Phoenix CRM page — the double-visit requests
+   * report (owner, 2026-10-16), a page of its own that managers AND product managers both open.
+   */
+  path?: string;
   recordId: string;
   idempotencyKey: string;
   subjectHrId: string | null;
@@ -790,10 +821,67 @@ export function visitAskDeliveries(notice: Extract<PhoenixCrmNotice, { kind: "vi
   return deliveries;
 }
 
+/**
+ * A rep's request for a double visit (owner, 2026-10-16), raised, re-dated or answered.
+ *
+ * Raised and re-dated: every person asked who still waits, one delivery each so each has his own key
+ * and a request sent twice reaches nobody twice. The edit's key carries its version, so a second change
+ * of the days is not swallowed by the first's. Answered: the rep, who reads "accepted, Tue 6 Oct" or
+ * "declined" from the person who answered. Nothing is ever cancelled, so nothing is withdrawn on one.
+ */
+async function describeDoubleVisitRequest(notice: Extract<PhoenixCrmNotice, { kind: "double_visit_request" }>): Promise<Delivery[]> {
+  const names = await loadPeopleNames([notice.repHrId, ...notice.askedHrIds]);
+  return doubleVisitRequestDeliveries(notice, names);
+}
+
+/** The deliveries of one double-visit step, given the people's names. Pure, so who is told and the keys are tested without a database. */
+export function doubleVisitRequestDeliveries(notice: Extract<PhoenixCrmNotice, { kind: "double_visit_request" }>, names: PeopleNames): Delivery[] {
+  const territory = territoryName(notice.seat);
+  const rep = nameOf(names, notice.repHrId, "A rep");
+  const customer = `${notice.customerName} (${notice.listType})`;
+  const base = { recordId: notice.requestId, subjectHrId: notice.repHrId, tab: "team" as const, path: DOUBLE_VISIT_REQUESTS_PATH };
+  const prefix = phoenixCrmDoubleVisitNoticeKeyPrefix(notice.requestId);
+  const offered = notice.days.map((day) => formatPhoenixLongDate(day)).join(", ");
+  const asked = notice.step === "raised" || notice.step === "days_changed";
+
+  if (asked) {
+    const changed = notice.step === "days_changed";
+    return notice.askedHrIds.map((hrId): Delivery => ({
+      ...base,
+      recipients: [hrId],
+      eventType: changed ? "double_visit_days_changed" : "double_visit_waiting",
+      title: changed ? `Double visit days changed: ${notice.customerName}` : `Double visit asked of you: ${notice.customerName}`,
+      message: changed
+        ? `${rep} changed the days offered for a double visit with you to ${customer} on ${territory}: ${offered}. Accept one day or decline, in Double visit requests.`
+        : `${rep} asks for a double visit with you to ${customer} on ${territory}. Days offered: ${offered}. Accept one day or decline, in Double visit requests.`,
+      idempotencyKey: `${prefix}${personKey(hrId) ?? hrId}:${changed ? `days:${notice.version}` : "raised"}`,
+    }));
+  }
+
+  const answeredBy = notice.askedHrIds[0] ?? "";
+  const who = nameOf(names, answeredBy, "The person asked");
+  const accepted = notice.step === "accepted";
+  const day = accepted && notice.visitOn ? formatPhoenixLongDate(notice.visitOn) : "the day agreed";
+  return [
+    {
+      ...base,
+      recipients: [notice.repHrId],
+      eventType: accepted ? "double_visit_accepted" : "double_visit_declined",
+      title: accepted ? `Double visit accepted: ${notice.customerName}` : `Double visit declined: ${notice.customerName}`,
+      message: accepted
+        ? `${who} accepted your double visit to ${customer}. The visit is on ${day}.`
+        : `${who} declined your double visit to ${customer}.`,
+      // The answer is keyed on the person AND what he answered, so a changed mind reaches the rep as a second notice.
+      idempotencyKey: `${prefix}answer:${personKey(answeredBy) ?? answeredBy}:${notice.step}:${notice.visitOn ?? "none"}`,
+    },
+  ];
+}
+
 async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[] | null> {
   const territory = territoryName(notice.seat);
 
   if (notice.kind === "plan_edit") return describePlanEdit(notice);
+  if (notice.kind === "double_visit_request") return describeDoubleVisitRequest(notice);
   if (notice.kind === "first_visit") return describeFirstVisit(notice);
   if (notice.kind === "day_start") return describeDayStart(notice);
   if (notice.kind === "visit_ask") return describeVisitAsk(notice);
@@ -1228,6 +1316,9 @@ function activityMirrorPeopleIds(notice: PhoenixCrmNotice): string[] {
     case "visit_ask":
       ids.push(notice.repHrId, notice.askedHrId);
       break;
+    case "double_visit_request":
+      ids.push(notice.repHrId, ...notice.askedHrIds);
+      break;
     case "forecast_sent":
     case "unplanned_visit_raised":
     case "day_start":
@@ -1426,6 +1517,29 @@ function activityMirrorLine(notice: PhoenixCrmNotice, names: PeopleNames): Mirro
         keySuffix: `visit_ask:${notice.askId}:${notice.status}`,
       };
     }
+    case "double_visit_request": {
+      const rep = nameOf(names, notice.repHrId, "A rep");
+      const people = notice.askedHrIds.map((hrId) => nameOf(names, hrId, "the person asked")).join(", ");
+      const customer = `${bidiIsolate(notice.customerName)} (${notice.listType})`;
+      const days = notice.days.map((day) => formatPhoenixLongDate(day)).join(", ");
+      const message =
+        notice.step === "raised"
+          ? `${rep} asked ${people} for a double visit to ${customer} on ${territory}. Days offered: ${days}.`
+          : notice.step === "days_changed"
+            ? `${rep} changed the days offered for a double visit to ${customer} on ${territory}: ${days}.`
+            : notice.step === "accepted"
+              ? `${people} accepted ${rep}'s double visit to ${customer}${notice.visitOn ? ` on ${formatPhoenixLongDate(notice.visitOn)}` : ""}.`
+              : `${people} declined ${rep}'s double visit to ${customer}.`;
+      const answered = notice.step === "accepted" || notice.step === "declined";
+      return {
+        title: `Activity · double visit: ${notice.customerName}`,
+        message,
+        tab: "team",
+        recordId: notice.requestId,
+        subjectHrId: notice.repHrId,
+        keySuffix: `double_visit:${notice.requestId}:${notice.step}${notice.step === "days_changed" ? `:${notice.version}` : ""}${answered ? `:${notice.askedHrIds[0] ?? ""}:${notice.visitOn ?? "none"}` : ""}`,
+      };
+    }
     case "day_start": {
       const rep = nameOf(names, notice.repHrId, "A rep");
       return {
@@ -1478,6 +1592,8 @@ function activityMirrorActorHrId(notice: PhoenixCrmNotice): string | null {
       return notice.actorHrId;
     case "visit_ask":
       return notice.status === "waiting" ? notice.repHrId : notice.askedHrId;
+    case "double_visit_request":
+      return notice.step === "accepted" || notice.step === "declined" ? (notice.askedHrIds[0] ?? null) : notice.repHrId;
     // 🔴 Explicitly nobody, and not left to the default: this notice deliberately carries NO decider
     // hr id — the rep must never be able to learn that a person judged his photo (Golden Rule #1) —
     // and the one person who can decide these is the Super Admin, who is not in the mirror's audience
@@ -1626,8 +1742,31 @@ export async function withdrawPhoenixCrmVisitAskNotices(askId: string, step: "wa
   }
 }
 
+/** Every notice ever raised about one double-visit request — each step, each person, and the test-world copies. */
+export function phoenixCrmDoubleVisitNoticeKeyPrefix(requestId: string): string {
+  return `phoenix_crm:double_visit:${requestId}:`;
+}
+
+/**
+ * Take back the "accept or decline" line of a person who has answered (the off-plan visit's notice
+ * follows the same rule), so he is not left with a to-do he already did. Never throws, exactly like
+ * `notifyPhoenixCrm`. There is no whole-request withdrawal: a request is never cancelled.
+ */
+export async function withdrawPhoenixCrmDoubleVisitWaitingNotices(requestId: string, hrId: string): Promise<void> {
+  const key = personKey(hrId) ?? hrId;
+  try {
+    // `<request>:<person>:raised` and `<request>:<person>:days:<version>` — one prefix is all of his.
+    await withdrawInAppNotificationsByEventKeyPrefix(`${phoenixCrmDoubleVisitNoticeKeyPrefix(requestId)}${key}:`);
+  } catch (error) {
+    logError("Phoenix CRM double visit notice withdrawal failed", {
+      labels: { event: "phoenix_crm_double_visit_withdraw_failed", requestId },
+      error,
+    });
+  }
+}
+
 async function deliver(notice: PhoenixCrmNotice, delivery: Delivery, isTest: boolean): Promise<void> {
-  const actionUrl = `${PHOENIX_CRM_PORTAL_PATH}?tab=${delivery.tab}`;
+  const actionUrl = delivery.path ?? `${PHOENIX_CRM_PORTAL_PATH}?tab=${delivery.tab}`;
   const base = {
     actionUrl,
     category: PHOENIX_CRM_NOTIFICATION_CATEGORY,

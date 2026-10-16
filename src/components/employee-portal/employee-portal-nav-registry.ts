@@ -213,6 +213,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Phoenix CRM", fullLabel: "Phoenix CRM", href: "/employee-portals/field-crm", icon: ClipboardList, flags: ["showPhoenixCrmTab"] },
   { label: "Place checks", fullLabel: "Place checks", href: "/employee-portals/place-checks", icon: MapPinCheck, flags: ["showTeamPlaceChecksTab"], permission: { resource: "phoenix_crm", action: "read" } },
   { label: "Visit report", fullLabel: "Visit report", href: "/employee-portals/visit-report", icon: ClipboardList, flags: ["showTeamPlaceChecksTab"], permission: { resource: "phoenix_crm", action: "read" } },
+  { label: "DV requests", fullLabel: "Double visit requests", href: "/employee-portals/double-visit-requests", icon: UsersRound, flags: ["showDoubleVisitRequestsTab"], permission: { resource: "phoenix_crm", action: "read" } },
   { label: "Calendar", fullLabel: "Team Calendar", href: "/employee-portals/team-calendar", icon: CalendarRange, flags: ["showTeamCalendarTab"] },
   { label: "DV Planner", fullLabel: "DV Planner", href: "/employee-portals/dv-planner", icon: CalendarCheck2, flags: ["showDoubleVisitReportTab"], permission: { resource: "double_visit_analytics", action: "read" } },
   { label: "DV Report", fullLabel: "Double Visit Report", href: "/employee-portals/double-visit-report", icon: FileSpreadsheet, flags: ["showDoubleVisitReportTab"], permission: { resource: "double_visit_analytics", action: "read" } },

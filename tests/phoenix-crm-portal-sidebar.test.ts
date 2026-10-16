@@ -152,8 +152,8 @@ export function runPhoenixCrmPortalSidebarTests() {
       // manager's own board. Every answer the gate returns has to arrive here, last and in order:
       // one left out is not a type error anywhere — the row simply never draws, for the one person
       // the module decided to show it to.
-      /phoenixCrm\.crm,\s*phoenixCrm\.forecast,\s*phoenixCrm\.placeChecks,\s*$/,
-      `${path} passes all three of the gate's answers through, last and in order, or its sidebar loses a row`,
+      /phoenixCrm\.crm,\s*phoenixCrm\.forecast,\s*phoenixCrm\.placeChecks,\s*phoenixCrm\.doubleVisitRequests,\s*$/,
+      `${path} passes all four of the gate's answers through, last and in order, or its sidebar loses a row`,
     );
   }
 

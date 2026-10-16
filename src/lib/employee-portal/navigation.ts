@@ -132,6 +132,14 @@ export type EmployeePortalNavVisibility = {
    * the very predicate that gates the page, so the row can never open onto a redirect.
    */
   showTeamPlaceChecksTab?: boolean;
+  /**
+   * Double visit requests — what the reps ask their managers and product managers for at a customer, and
+   * each person's answer (owner, 2026-10-16: "a new sidebar report is generated for managers … all
+   * managers must have access on this report as per their scope upto ceo"). NOT a role test, for the same
+   * reason as the rows above: `phoenixCrmSidebarEntries` answers it with `doubleVisitReportAudience`, the
+   * very predicate that gates the page and its routes, so the row can never open onto a redirect.
+   */
+  showDoubleVisitRequestsTab?: boolean;
   // Sales Intelligence (Product / Group Product Managers): line- or product-scoped
   // analytics surfaces that mirror the admin dashboards inside the employee portal.
   showRoiIntelligenceTab?: boolean;
@@ -558,6 +566,7 @@ export function resolveEmployeePortalNavVisibility(
   hasPhoenixCrmEntry?: boolean,
   hasPhoenixCrmForecast?: boolean,
   hasTeamPlaceChecks?: boolean,
+  hasDoubleVisitRequests?: boolean,
 ): EmployeePortalNavVisibility {
   const resolvedRole = resolvePortalRole(roleLabel, accessRole);
   const normalizedLine = String(employeeLineName ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -933,6 +942,8 @@ export function resolveEmployeePortalNavVisibility(
     // And its district-manager half (owner, 2026-10-13). `readsTeamPlaceChecks` answers it, so a
     // manager whose seat tier changes gains or loses the row without a list here being edited.
     showTeamPlaceChecksTab: hasTeamPlaceChecks === true,
+    // And the report of the double visits reps ask for (owner, 2026-10-16), the module's own answer too.
+    showDoubleVisitRequestsTab: hasDoubleVisitRequests === true,
     showRoiIntelligenceTab,
     // Mirrors PORTAL_SOS_ACTION_ROLES (portal-sos-dashboard.ts). Medical Rep added 2026-09-14 (owner):
     // he sees his own area's pharmacy action lists only, never the distributor dashboard.

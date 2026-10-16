@@ -272,6 +272,16 @@ const ROUTE_GATES: RouteGate[] = [
   // own row (`assertVisitAskAnswerer`), never a name in the body — and it is audited as a mutation.
   post("visit-asks/answer", "read"),
   get("visit-asks/inbox"),
+  // A rep's REQUEST for a double visit (owner, 2026-10-16) — the last question of his visit, any number of
+  // the people offered, up to three days. A SEPARATE workflow from the ask above, and it has NO cancel
+  // route: he edits the days and never takes the request back. The customer's page reads through the
+  // list's seat gate; the edit is `create` narrowed to the territory's own rep; answering is `read` for
+  // the same reason as above (a product manager holds `read` alone) with the identity gate read from the
+  // request's own row; the report is `read`, narrowed in the service by `doubleVisitReportAudience`.
+  get("double-visit-requests"),
+  post("double-visit-requests/edit", "create"),
+  post("double-visit-requests/answer", "read"),
+  get("double-visit-requests/report"),
   // The Doctors directory: validated customers across territories, scoped downward on the server.
   get("doctors"),
   // There is no "integrity" gate here because there is no integrity ROUTE (2026-09-26). It had no
@@ -841,6 +851,9 @@ const LATER_MIGRATIONS = [
   // Visit recording for the reps the Super Admin chooses (owner, 2026-10-16). Two brand-new tables, a
   // private bucket and ONE brand-new function; it replaces nothing, so it appends safely at the end.
   "supabase/migrations/20261016103900_phoenix_crm_visit_recording.sql",
+  // A rep's request for a double visit (owner, 2026-10-16). Two brand-new tables and three brand-new
+  // functions — raise, edit the days, answer — and deliberately no fourth: there is no cancel.
+  "supabase/migrations/20261016133000_phoenix_crm_double_visit_requests.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

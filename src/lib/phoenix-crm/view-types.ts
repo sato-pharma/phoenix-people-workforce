@@ -116,6 +116,12 @@ export type {
   VisitAskSummary,
   VisitAskView,
 } from "@/lib/phoenix-crm/server/visit-asks";
+export type {
+  DoubleVisitCustomerView,
+  DoubleVisitPersonView,
+  DoubleVisitReport,
+  DoubleVisitRequestView,
+} from "@/lib/phoenix-crm/server/double-visit-requests";
 export type { PhotoSlot } from "@/lib/phoenix-crm/server/photos";
 export type { TimeAnchorView } from "@/lib/phoenix-crm/server/time-anchor";
 export type { PhoenixCrmSettingsView, SettingsLine, SettingsRamadan } from "@/lib/phoenix-crm/server/admin-settings";
