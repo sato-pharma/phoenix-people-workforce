@@ -138,11 +138,13 @@ export async function runSharedReadCacheTests() {
   // ── (5) Nothing stored is handed out by reference ─────────────────────────────
   {
     _resetSharedReadCache();
-    const original = [{ id: 1, marked: false }];
+    type MarkedRow = { id: number; marked: boolean };
+    const original: MarkedRow[] = [{ id: 1, marked: false }];
+    const nothing = async (): Promise<MarkedRow[]> => [];
     const first = await getOrLoadShared("t", "k", async () => original, LIMITS);
     first.rows![0].marked = true;
     original[0].marked = true;
-    const second = await getOrLoadShared("t", "k", async () => [], LIMITS);
+    const second = await getOrLoadShared("t", "k", nothing, LIMITS);
     assert.equal(second.cache, "hit");
     assert.equal(
       second.rows![0].marked,
@@ -151,7 +153,7 @@ export async function runSharedReadCacheTests() {
     );
     // And a copy handed out FROM the cache is the caller's own too.
     second.rows![0].marked = true;
-    const third = await getOrLoadShared("t", "k", async () => [], LIMITS);
+    const third = await getOrLoadShared("t", "k", nothing, LIMITS);
     assert.equal(third.cache, "hit");
     assert.equal(third.rows![0].marked, false, "RED a cache hit must hand out copies, never the stored rows themselves");
   }
