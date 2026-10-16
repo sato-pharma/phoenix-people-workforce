@@ -156,6 +156,7 @@ const PINNED = [
   "scripts/run-holiday-bridge-collection.ts",
   "scripts/seed-vlookup-master.mjs",
   "scripts/select-census.mjs",
+  "scripts/sentry-setup.mjs",
   "scripts/setup-telegram-bot.mjs",
   "scripts/slow-audit.mjs",
   "scripts/source-of-sales-direct-import-cleanup.ts",
