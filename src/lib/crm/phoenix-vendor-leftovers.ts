@@ -33,6 +33,7 @@
 import { getOrLoadShared } from "@/lib/cache/shared-read";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import type { VendorLeftoverRep } from "@/lib/phoenix-crm/vendor-leftovers";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type RepRow = {
@@ -111,12 +112,24 @@ async function loadLeftoverTallies(): Promise<LeftoverTally[] | null> {
   if (crmIds.length === 0) return [];
   const earliest = reps.reduce((lowest, rep) => (rep.countedFrom < lowest ? rep.countedFrom : lowest), reps[0].countedFrom);
 
-  const visitsRead = await supabase
-    .from("ireports360_visits")
-    .select("agent_crm_id, agent_hr_id, visit_date")
-    .gte("visit_date", earliest)
-    .in("agent_crm_id", crmIds);
-  if (visitsRead.error) return null;
+  // 🔴 A KEYSET WALK, NOT ONE READ (2026-10-16 performance audit). PostgREST stops at 1,000 rows with
+  // no error, and this read grows every day a started rep keeps logging in iReports360 — 765 rows on
+  // 16 October, past 1,000 within the week — after which the Team tab would have UNDERCOUNTED with
+  // nothing to say so. Below 1,000 the walk returns exactly the rows the single read did.
+  let visitRows: VisitRow[];
+  try {
+    visitRows = await fetchAllRowsKeyset<VisitRow & { id?: unknown }>(
+      () =>
+        supabase
+          .from("ireports360_visits")
+          .select("id, agent_crm_id, agent_hr_id, visit_date")
+          .gte("visit_date", earliest)
+          .in("agent_crm_id", crmIds),
+      { cursorColumn: "id", cursorOf: (row) => (typeof row.id === "string" ? row.id : null) },
+    );
+  } catch {
+    return null;
+  }
 
   // Each vendor id's started reps, in the function's own order — so the search below walks only the
   // reps carrying THIS id (rather than every started rep, for every visit row) and still finds the
@@ -130,7 +143,7 @@ async function loadLeftoverTallies(): Promise<LeftoverTally[] | null> {
   }
 
   const byRep = new Map<string, LeftoverTally>();
-  for (const row of (visitsRead.data ?? []) as VisitRow[]) {
+  for (const row of visitRows) {
     const day = typeof row.visit_date === "string" ? row.visit_date.slice(0, 10) : null;
     const crmId = typeof row.agent_crm_id === "number" ? row.agent_crm_id : null;
     const hrId = typeof row.agent_hr_id === "string" ? row.agent_hr_id : null;
