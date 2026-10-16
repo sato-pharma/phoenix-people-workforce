@@ -37,7 +37,7 @@ import { cairoTodayIso } from "@/lib/attendance/working-days";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
-import { recruitmentAlertRoles } from "@/lib/recruitment/access";
+import { recruitmentDeskAlertRoles } from "@/lib/recruitment/access";
 import { DEFAULT_CANDIDATE_STATUS } from "@/lib/recruitment/candidate-status";
 // Borrowed rather than copied. Both are pure, both already exported, and a second floored-day
 // helper that rounds differently from the first is exactly how two alarms come to disagree about
@@ -270,10 +270,11 @@ export async function loadUntriagedApplicants(): Promise<UntriagedApplicant[]> {
 /**
  * The recruitment desk — the people who can actually triage this queue.
  *
- * `recruitmentAlertRoles` (Super Admin, HR Advisory and, since 2026-10-08, the Talent Acquisition
- * seat) is the same audience `stale-send-check.ts`
- * escalates to and the same one `inbound/recruitment-notify.ts` tells about arriving CVs, so this
- * lands with the people already watching the pipeline rather than inventing a new audience. Do NOT
+ * `recruitmentDeskAlertRoles` (the Super Admin; the Talent Acquisition seat is deliberately NOT on it
+ * since 2026-10-16, her notification center holds only a new CV, an interview request and an accepted
+ * offer) is the same audience `stale-send-check.ts` escalates to and the same one
+ * `inbound/recruitment-notify.ts` tells about its other alerts, so this lands with the people already
+ * watching the pipeline rather than inventing a new audience. Do NOT
  * read the role named "Talent Acquisition" into this — it was retired on 2026-08-28 and holds
  * nobody.
  */
@@ -282,7 +283,7 @@ async function recruitmentDeskHrIds(): Promise<string[]> {
   const { data, error } = await supabase
     .from("app_auth_users")
     .select("hr_id")
-    .in("role", recruitmentAlertRoles as unknown as string[]);
+    .in("role", recruitmentDeskAlertRoles as unknown as string[]);
   if (error) {
     logError("Triage backlog check could not resolve the recruitment desk recipients.", {
       error,

@@ -62,7 +62,7 @@ import {
   type NavigationSectionItem,
 } from "@/config/system-navigation";
 import { systemAssets, systemIdentity, systemUiText } from "@/config/system-settings";
-import { domainIdForHref, groupAdminSections } from "@/lib/navigation/sidebar-domains";
+import { domainIdForHref, groupAdminSections, sectionsAsDrawers } from "@/lib/navigation/sidebar-domains";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import {
@@ -71,6 +71,7 @@ import {
   normalizePathnameForMode,
   usesAdminChrome,
   usesFlatSidebar,
+  usesSectionDrawers,
   type PermissionLookup,
 } from "@/lib/navigation/active-path";
 import { applyPersonalLayout, type PersonalNavigationLayout } from "@/lib/navigation/personal-layout";
@@ -360,6 +361,7 @@ function NavRow({
   onTogglePin,
   rail,
   standalone = false,
+  tiled = false,
 }: {
   active: boolean;
   dark: boolean;
@@ -373,6 +375,11 @@ function NavRow({
   onTogglePin?: () => void;
   rail: boolean;
   standalone?: boolean;
+  /**
+   * The HR seats' drawer rail (`usesSectionDrawers`): a 28px bevelled tile on a 40px row. The tile
+   * is 4px NARROWER than the 32px box `labelBudgetPx` charges, so no label loses width to it.
+   */
+  tiled?: boolean;
 }) {
   const Icon = item.icon;
   // The one tab that outranks the rest. Keyed on href rather than a nav-config flag so the
@@ -406,7 +413,7 @@ function NavRow({
           "relative flex w-full items-center text-phx-md font-semibold transition-colors duration-150",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60 focus-visible:ring-offset-2",
           dark ? "focus-visible:ring-offset-slate-900" : "focus-visible:ring-offset-white",
-          rail ? "justify-center px-0 py-2.5" : "gap-2 px-2 py-2.5",
+          rail ? "justify-center px-0 py-2.5" : tiled ? "gap-2.5 px-2 py-1.5" : "gap-2 px-2 py-2.5",
           // Premium row: the owner's own overview outranks every other tab, so it carries a
           // standing gradient + ring instead of only lighting up when active. Deliberately warmer
           // and heavier than the active state so it still reads as "the top one" when you are
@@ -433,6 +440,9 @@ function NavRow({
             : active
               ? "bg-[linear-gradient(90deg,#FFF1E4_0%,#FFFBF7_65%,transparent_100%)] text-phx-ink"
               : "text-[#5A6678] hover:bg-[#F7F4EF] hover:text-phx-ink"),
+          // A shade brighter at rest on the HR drawer rail: under a tile the label is the second
+          // thing read, and slate-400 on black read as disabled beside the lit tile.
+          tiled && dark && !active && !premium && "text-slate-300",
         )}
         href={item.href}
         onClick={onActivate}
@@ -441,7 +451,8 @@ function NavRow({
         {!dropIcon && (
         <span
           className={cn(
-            "relative flex h-8 w-8 shrink-0 items-center justify-center transition-colors duration-150",
+            "relative flex shrink-0 items-center justify-center transition-colors duration-150",
+            tiled ? "h-7 w-7" : "h-8 w-8",
             // `premium` outranks everything; then the active state; then `standalone`, which tints
             // the icon box so a hub button reads as different from a single-destination link.
             premium
@@ -451,7 +462,11 @@ function NavRow({
                   ? "bg-[linear-gradient(180deg,#FB923C_0%,#F97316_100%)] text-white shadow-[0_8px_16px_rgba(249,115,22,0.32)]"
                   : standalone
                     ? "bg-orange-500/15 text-[#F8B56B] ring-1 ring-orange-400/30 group-hover:ring-orange-400/50"
-                    : "bg-white/5 text-slate-400 ring-1 ring-white/10 group-hover:text-[#F8B56B] group-hover:ring-white/20"
+                    : tiled
+                      // Bevelled, never orange: a lit top edge over a falling wash gives the tile
+                      // depth, and the accent stays spent on the active row alone.
+                      ? "bg-[linear-gradient(180deg,rgba(255,255,255,0.085)_0%,rgba(255,255,255,0.025)_100%)] text-slate-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_1px_2px_rgba(0,0,0,0.5)] ring-1 ring-white/[0.08] group-hover:text-[#F8B56B] group-hover:ring-white/20"
+                      : "bg-white/5 text-slate-400 ring-1 ring-white/10 group-hover:text-[#F8B56B] group-hover:ring-white/20"
                 : active
                   ? "bg-phx-accent text-white shadow-[0_8px_16px_rgba(249,115,22,0.28)]"
                   : standalone
@@ -464,7 +479,7 @@ function NavRow({
               : "bg-amber-50 text-amber-600 shadow-none ring-1 ring-amber-200"),
           )}
         >
-          <LeadingIcon className="h-4 w-4" />
+          <LeadingIcon className={tiled ? "h-[15px] w-[15px]" : "h-4 w-4"} />
           {rail && <ApprovalNavBadge compact dark={dark} navBadge={item.navBadge} />}
         </span>
         )}
@@ -539,6 +554,7 @@ function SortableNavRow({
   onActivate,
   onTogglePin,
   pinned,
+  tiled,
 }: {
   item: NavigationSectionItem;
   active: boolean;
@@ -548,6 +564,7 @@ function SortableNavRow({
   onActivate: () => void;
   onTogglePin: () => void;
   pinned: boolean;
+  tiled: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.href,
@@ -573,7 +590,7 @@ function SortableNavRow({
             "absolute top-1/2 z-20 flex h-8 -translate-y-1/2 cursor-grab items-center justify-center bg-[#000000] text-slate-600 opacity-0 transition hover:text-slate-300 focus-visible:opacity-100 active:cursor-grabbing group-hover/dnd-row:opacity-100",
             // The grip used to overlay the icon box. With no box it would cover the first letters
             // of the label, so it narrows and moves flush to the edge.
-            hideIcon ? "left-0 w-5" : "left-[8px] w-8",
+            hideIcon ? "left-0 w-5" : tiled ? "left-[8px] w-7" : "left-[8px] w-8",
           )}
           type="button"
           {...attributes}
@@ -591,6 +608,7 @@ function SortableNavRow({
         onTogglePin={onTogglePin}
         pinned={pinned}
         rail={false}
+        tiled={tiled}
       />
     </div>
   );
@@ -616,6 +634,7 @@ function SortableSectionBlock({
   section,
   sensors,
   sectionDragging,
+  tiled,
   transitionsReady,
 }: {
   activeHref: string | null;
@@ -644,6 +663,8 @@ function SortableSectionBlock({
   section: NavigationSection;
   sensors: ReturnType<typeof useSensors>;
   sectionDragging: boolean;
+  /** The HR seats' drawer rail — every row carries its tile (see NavRow `tiled`). */
+  tiled: boolean;
   transitionsReady: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -711,7 +732,8 @@ function SortableSectionBlock({
           onTogglePin={() => onTogglePin(soleItem.href)}
           pinned={pinnedSet.has(soleItem.href)}
           rail={false}
-          standalone={!flatSidebar && !plainSingleRow}
+          standalone={!flatSidebar && !tiled && !plainSingleRow}
+          tiled={tiled}
         />
       </div>
     );
@@ -804,6 +826,7 @@ function SortableSectionBlock({
                     onActivate={() => onActivate(item)}
                     onTogglePin={() => onTogglePin(item.href)}
                     pinned={pinnedSet.has(item.href)}
+                    tiled={tiled}
                   />
                 ))}
               </div>
@@ -1003,8 +1026,15 @@ function SidebarNav({
   // The SFE Manager keeps the flat, headless rail (`usesFlatSidebar`) — a domain layer over a
   // deliberately headingless sidebar would reintroduce exactly the chrome that was subtracted.
   const useDomains = isAdmin && !flatSidebar && !rail && !query;
+  // The two HR seats draw each SECTION as its own drawer, rows tiled (usesSectionDrawers). The
+  // admin domain map knows only admin section ids, so on /hr every section used to fall through to
+  // one "More" drawer. Every other role, and the admin rail itself, takes the branch below as before.
+  const sectionDrawers = useDomains && usesSectionDrawers(mode, currentRole);
   const domains = useMemo(() => {
     if (!useDomains) return [];
+    if (sectionDrawers) {
+      return sectionsAsDrawers(applyOrder(visibleSections, (section) => section.id, savedSectionOrder));
+    }
     // Grouped from the VISIBLE sections rather than the ordered ones, so a group's rows read in
     // the order sidebar-domains.ts lists them. A saved user order is then applied within each
     // group, which leaves the default untouched (applyOrder returns the input unchanged when
@@ -1016,7 +1046,7 @@ function SidebarNav({
         sections: applyOrder(group.sections, (section) => section.id, savedSectionOrder),
       })),
     }));
-  }, [useDomains, visibleSections, savedSectionOrder]);
+  }, [useDomains, sectionDrawers, visibleSections, savedSectionOrder]);
 
   const activeDomainId = useMemo(() => domainIdForHref(domains, activeHref), [domains, activeHref]);
   // What the viewer last clicked, REMEMBERED WITH the page it was clicked on. Storing `forActive`
@@ -1041,7 +1071,8 @@ function SidebarNav({
   function renderSectionBlock(section: NavigationSection) {
     return (
       <SortableSectionBlock
-        hideIcon={useDomains}
+        hideIcon={useDomains && !sectionDrawers}
+        tiled={sectionDrawers}
         key={section.id}
         activeHref={activeHref}
         collapsedSectionIds={collapsedSectionIds}
@@ -1288,6 +1319,25 @@ function SidebarNav({
             domains.map((domain) => {
               const open = openDomainId === domain.id;
               const DomainIcon = domain.icon;
+              // A one-row section on the HR drawer rail IS its row: a drawer that opens onto a
+              // single link is an extra click that says nothing, so the row stands on its own.
+              const soleRow = sectionDrawers && domain.rowCount === 1 ? domain.groups[0]?.sections[0]?.items[0] : undefined;
+              if (soleRow) {
+                return (
+                  <div key={domain.id} className="border-b border-white/[0.06] px-1 py-1.5 last:border-b-0">
+                    <NavRow
+                      active={soleRow.href === activeHref}
+                      dark
+                      item={soleRow}
+                      onActivate={() => handleActivate(soleRow)}
+                      onTogglePin={() => togglePin(soleRow.href)}
+                      pinned={pinnedSet.has(soleRow.href)}
+                      rail={false}
+                      tiled
+                    />
+                  </div>
+                );
+              }
               return (
                 // The open domain reads as a raised container rather than as a header that
                 // happened to expand: a barely-there wash, a 2px edge, and its own hairline
@@ -1324,6 +1374,9 @@ function SidebarNav({
                         open
                           ? "border-phx-accent/45 bg-phx-accent/[0.18] text-phx-accent"
                           : "border-white/[0.07] bg-white/[0.04] text-slate-400 group-hover/dom:border-white/[0.16] group-hover/dom:text-slate-200",
+                        // The HR drawer rail: the same tile, bevelled like its rows. No glow — the
+                        // open tile's accent fill is already the one warm mark a closed rail carries.
+                        sectionDrawers && "shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_1px_2px_rgba(0,0,0,0.5)]",
                       )}
                     >
                       <DomainIcon className="h-4 w-4" />

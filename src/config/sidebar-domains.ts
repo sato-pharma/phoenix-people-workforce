@@ -1,16 +1,27 @@
 import {
   CalendarClock,
+  CalendarCog,
   ChartColumnBig,
+  CircleUserRound,
   ClipboardCheck,
   ClipboardList,
+  Crown,
   Database,
+  HandHelping,
   Inbox,
   LayoutDashboard,
   Megaphone,
+  MessagesSquare,
+  Plane,
   ReceiptText,
   Settings2,
+  Sparkles,
+  Target,
+  Timer,
   UserPlus,
+  Users,
   UsersRound,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -331,6 +342,28 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
  * This is the safety net for rule 2 above, not a category anyone should be using: the test fails
  * on a section that lands here, so in a green repo it is always empty.
  */
+/**
+ * The drawer icon for each `/hr` section, on the two HR seats that draw their sections as drawers
+ * (`usesSectionDrawers`, active-path.ts). None repeats a row icon either seat can see, so a drawer
+ * never reads as one of its own rows — tests/hr-seat-section-drawers.test.ts holds that. A section
+ * missing here falls back to `HR_SECTION_FALLBACK_ICON` rather than drawing an empty tile.
+ */
+export const hrSectionIcons: Readonly<Record<string, LucideIcon>> = {
+  "hr-overview": Sparkles,
+  "hr-people": Users,
+  "hr-recruitment": Target,
+  "hr-outreach": MessagesSquare,
+  "hr-requests": HandHelping,
+  "hr-attendance": CalendarCog,
+  "hr-leave": Plane,
+  "hr-payroll": Wallet,
+  "hr-probation": Timer,
+  "hr-performance": Crown,
+  "hr-self": CircleUserRound,
+};
+
+export const HR_SECTION_FALLBACK_ICON: LucideIcon = Settings2;
+
 export const UNGROUPED_DOMAIN: SidebarDomain = {
   id: "more",
   name: "More",

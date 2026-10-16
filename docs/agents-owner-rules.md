@@ -8107,6 +8107,54 @@ dashboard is the silent one. Pinned by `tests/identity-strip-emblem.test.ts` §8
 **Standing from the same day, and not re-litigated:** do not touch the portrait or the identity
 banner, and never show Employee requests on her page.
 
+### Her overview, rebuilt 2026-10-16
+
+He asked for her landing page to be rebuilt from scratch with full premium polish, and answered
+three questions before the build: **add Today's interviews, Joiners arriving in the next 14 days and
+CVs received today**, and stand the eight figure cards in **three labelled groups — Seats,
+Candidates, Outcomes**. The page now reads, top to bottom: the identity strip → the command rail
+(the one Needs attention button, an "N overdue" chip only when something is overdue, and the Hired
+window at its right) → the three groups → the Today band → the interview calendar → on a vacation
+today → my record.
+
+**The Conversion scoreboard stands in the air beside her portrait** — the same evening he circled
+the white space under the notice rail, left of the photo, and wrote *"fit the keycards where i
+marked"*. The strip gained ONE optional prop, `reserve`: given, the notices keep their rail (and
+still open on a press) and the caller's content stands under it; absent — every other landing — the
+strip is byte-for-byte what it was, with the notices' shut peek filling that air. The three cards lie
+down at every width (figure left, label, meter and named halves right) so the band fits the reserve:
+measured on her account, row 144px against a 143px reserve at a 1440px window, 160 = 160 at 1531px,
+168 = 168 at 1920px. Under ~1100px the reserve is only ~93px of air and the band grows the row
+instead of clipping — a figure is never cut to fit (*"never the ever tranculte text"*, same evening:
+the band is a flex item with `overflow-hidden`, which CAN shrink below its content, and at a 1009px
+window it was cut to 120px of 232 until it became `flex-auto shrink-0`). The sweep that proves it
+tests every text node's rectangle against every clipping ancestor; a `scrollHeight` check reads
+every glow and watermark as a cut and is useless here.
+
+**The eight figure cards are his own dashboard's card.** The dressed version — a different tone bar
+per card, a wash, a medallion and a watermark, eight across at 109px — he called *"awful"* and then
+said *"audit the b-10 dashboard and take ideas from it in design"*. So they are `HrCommandCenter`'s
+`MetricTile`: centred, tracked caps label, `text-3xl` figure, faded top edge (Phoenix orange on every
+card), the arrow on hover, no icons. They stand eight across only from 1120px of container (~130px a
+card); under that each group is its own row of wide cards, as his dashboard's are.
+
+- The parts live in `src/components/hr/talent-acquisition/` (`panel.tsx` holds the shared frame);
+  the data comes from domain reads that already existed — `listInterviewCalendarDay`, the offers
+  the page already loads, and `buildTodaysCvDigest`, gated on `candidates:read`.
+- **A failed read is never drawn as a quiet day.** Each Today panel checks that its read LOADED
+  before it chooses between a list and an empty state; a failure names itself in amber.
+- The duplicate charts and the never-rendering Hiring quality band are gone from the loader, not
+  just hidden.
+
+**The colours are Phoenix's only.** He asked for colour the same evening ("her page is so pale and
+poor"), was shown a four-hue version — Sato blue for Seats, violet for Candidates, emerald for
+Outcomes, a navy scoreboard — and refused it: *"nono too much like this, stick to phx identity"*.
+So the dark band is the platform hero's black deepening into ember, and every edge, medallion,
+marker, watermark and glow is Phoenix orange or amber. Emerald, amber and rose appear only on a
+FIGURE, where the builder sets them as meanings (good, waiting, a problem) — never as a theme. Pinned
+by `tests/talent-acquisition-overview.test.ts`, which refuses a sky, blue, indigo, violet, purple,
+fuchsia, cyan or teal class and the Sato blue hexes in the page and every new part.
+
 ## The rep ranking workbook's admin button — owner, 2026-10-13
 
 He had just merged the rep ranking workbook into the Anti Infective employee portal (#5867) and

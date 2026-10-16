@@ -117,6 +117,24 @@ export function usesFlatSidebar(role?: PhoenixRole) {
 }
 
 /**
+ * The HR seats whose `/hr` rail draws every section as its OWN drawer — an icon tile, the heading
+ * in the accent, a row count, one drawer open at a time — with an icon tile on every row (owner,
+ * 2026-10-16: "premium polish the appearance tiles titles buttons", scoped in his own words to
+ * "her and hr operation only never touch admin sidebar").
+ *
+ * Before it, `/hr` borrowed the admin rail's domain layer, which knows only admin section ids, so
+ * every HR section fell through to its catch-all and both seats read their whole rail inside ONE
+ * drawer titled "More", rows stripped of their icons. Presentation only: it runs on the output of
+ * `getSections` and cannot add or remove a row. The admin rail, and every other role in any mode,
+ * is untouched — tests/hr-seat-section-drawers.test.ts pins both halves.
+ */
+export const sectionDrawerRoles: readonly PhoenixRole[] = ["HR Resourcing", "HR Operations"];
+
+export function usesSectionDrawers(mode: NavigationMode | undefined, role?: PhoenixRole) {
+  return mode === "hr" && Boolean(role && sectionDrawerRoles.includes(role));
+}
+
+/**
  * Resolve an item's DISPLAYED label for `role` — the per-role override from `labelByRole` if one
  * is set for this role, else the item's own canonical `label`. The canonical label is what
  * canonical label alone, at config-build time (see `defaultModuleId` in system-navigation.ts), so

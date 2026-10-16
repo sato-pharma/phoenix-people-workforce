@@ -301,6 +301,17 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // his word, while the grant and the sidebar row stay.
   "src/lib/hr/talent-acquisition-logic.ts",
   "src/lib/notifications/role-recipients.ts",
+  // Names HR Resourcing in `noticeHiddenFromSeat` / `noticeFetchLimit`, added 2026-10-16 so her
+  // notification center holds a new CV, interview requests and accepted offers only. Reviewed
+  // verdict: it can only ever REMOVE rows from her own band. The deny-list drops recruitment alert
+  // kinds from the read AFTER the recipient-isolation filter has run, so it widens nothing, grants
+  // nothing and gates no route; for every other role both helpers return their input unchanged.
+  "src/lib/notifications/seat-notice-filter.ts",
+  // Names both seats in `sectionDrawerRoles`, added 2026-10-16 with the tiled drawer rail. Reviewed
+  // verdict: presentation only. `usesSectionDrawers` is read by the sidebar renderer AFTER
+  // `getSections` has decided which rows exist, so it cannot add, remove or re-gate a row; the
+  // seats' access is whatever the permission matrix already gave them.
+  "src/lib/navigation/active-path.ts",
   // The offer joining form (owner, 2026-10-08). It names HR Operations only as the ACTOR of
   // provisionNewHireAccess, to take that seat's create-only, rank-bounded door: it can make one NEW
   // default-rank login for the hr id the form just wrote and never change an existing account. It

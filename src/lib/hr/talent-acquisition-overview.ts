@@ -11,12 +11,17 @@
  * on this"*.
  *
  * So the spine of this page is **section 06 of SATO-DIS-2026-01 v1.0** — Yomna Gamal, Talent
- * Acquisition Specialist, first day Sunday 18 October 2026 — and the bands are her own KPI
+ * Acquisition Specialist, first day Sunday 18 October 2026 — and its figures are her own KPI
  * families, in her handbook's order:
  *
- *   Hiring quality    — interview-to-offer ratio  (probation retention removed 2026-10-16)
- *   Offer conversion  — offer acceptance % · offer-to-join %        (and the Job-offers chart)
- *   Filling the field — responsibilities 01-04                      (and the pipeline chart)
+ *   Conversion — interview to offer · offer acceptance · offer to join   (three key cards)
+ *   The field  — the eight recruiting figures, in three groups: Seats · Candidates · Outcomes
+ *
+ * REBUILT 2026-10-16 ("from scratch premium polish to her overview landing page"). The two charts
+ * he once named (Live candidates by pipeline stage, Job offers by status) are NOT built here any
+ * more: he ticked both as duplicates of the cards the same day ("remove duplicates"). In their place
+ * this loader carries the three panels he chose that evening — today's interviews, the joiners
+ * arriving in the next fourteen days, and the CVs received today.
  *
  * TWO KPI FAMILIES ARE DELIBERATELY ABSENT, and that is the owner's own answer in chat, not an
  * omission to be "completed" later: **Retention support** (early attrition, documented risk cases)
@@ -32,10 +37,11 @@
  * `answer-support-requests` task, and does not read the source either. Taking the grant away would
  * be a different instruction, and he did not give it.
  *
- * EVERY FIGURE IS THE REPO'S OWN. The tiles and the two charts come from the SAME builders the
- * generic page uses (`buildRecruitingTiles`, `buildRecruitingCharts` in command-center.ts), the
- * personal record from `loadPersonalRecord`, the tasks from `buildHrTodayTasks`, the calendar from
- * the Interview Calendar's and the Company Calendar's own services. Nothing here recomputes a
+ * EVERY FIGURE IS THE REPO'S OWN. The tiles come from the SAME builder the generic page uses
+ * (`buildRecruitingTiles` in command-center.ts), the personal record from `loadPersonalRecord`,
+ * the tasks from `buildHrTodayTasks`, the calendar and today's interviews from the Interview
+ * Calendar's own services, the joiners from `joinersBetween` over the offers already loaded, and the
+ * CVs received today from the daily CV digest's own `buildTodaysCvDigest`. Nothing here recomputes a
  * figure a page already computes; a faster bespoke count would be the same mistake as an export
  * that does not match the screen.
  *
@@ -51,22 +57,19 @@
  * file's header.
  */
 
-import type { AccessContext } from "@/lib/auth/permissions";
+import { canAccess, type AccessContext } from "@/lib/auth/permissions";
 import { HR_ROLE_BUNDLES, type HrBundleName } from "@/lib/auth/hr-functions";
 import { hrefOutsideSeatFence } from "@/lib/auth/seat-page-fences";
 import { buildMonthGrid } from "@/lib/calendar/logic";
 import { getCompanyCalendarWorkspace } from "@/lib/calendar/service";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import {
-  buildRecruitingCharts,
   buildRecruitingTiles,
   hrBundleForRole,
   loadPersonalRecord,
-  OFFERS_BY_STATUS_CHART_KEY,
   safe,
   SOURCE_LABELS,
   sourcesFor,
-  type HrCommandChart,
   type HrCommandSources,
   type HrCommandTile,
   type HrPersonalRecord,
@@ -76,13 +79,18 @@ import {
   buildHiringQualityKpis,
   buildMonthMarks,
   buildOfferConversionKpis,
+  cairoMinutesNow,
+  joinersArriving,
   joinersBetween,
   KPI_WINDOW_DAYS,
   RECRUITING_TASK_KEYS,
   TALENT_ACQUISITION_SEAT,
   toTalentInterview,
   type TalentCalendar,
+  type TalentCvToday,
+  type TalentJoiners,
   type TalentKpi,
+  type TalentToday,
 } from "@/lib/hr/talent-acquisition-logic";
 import { buildHrTodayTasks, type HrTask } from "@/lib/hr/today-tasks";
 import { currentCairoDateParts } from "@/lib/i18n/format";
@@ -96,6 +104,7 @@ import {
 import {
   interviewCalendarAbilities,
   interviewCalendarCaller,
+  listInterviewCalendarDay,
   listInterviewCalendarWeek,
   listMyUpcomingInterviews,
   mayRequestInterviews,
@@ -107,6 +116,7 @@ import {
   upcomingWeekStart,
   weekStartFor,
 } from "@/lib/recruitment/interview-calendar-week";
+import { buildTodaysCvDigest } from "@/lib/recruitment/inbound/daily-cv-digest";
 import { countInterviewVolume } from "@/lib/recruitment/interview-volume";
 import { listOnVacationToday, type OnVacationTodayRow } from "@/lib/vacation/on-vacation-today";
 import { isZoomConfigured } from "@/lib/zoom/meetings";
@@ -115,17 +125,25 @@ export { TALENT_ACQUISITION_SEAT, KPI_WINDOW_DAYS, RECRUITING_TASK_KEYS };
 
 export type TalentAcquisitionOverviewData = {
   calendar: TalentCalendar;
-  /** Responsibilities 01-04: the recruiting tiles, their window, and the pipeline chart. */
-  field: { charts: HrCommandChart[]; hiredWindow: HiredWindow; tiles: HrCommandTile[] };
+  /**
+   * The CVs that arrived today (Cairo), counted by the daily digest's own builder. Three states, not
+   * two: a seat that may not read candidates gets no panel at all, and a FAILED read is said — never
+   * drawn as "0 CVs today", which is the one wrong answer a count of arrivals can give.
+   */
+  cvToday: TalentCvToday;
+  /** Responsibilities 01-04: the recruiting figures and the Hired card's window. */
+  field: { hiredWindow: HiredWindow; tiles: HrCommandTile[] };
   hiringQuality: TalentKpi[];
-  /** The Job-offers-by-status chart, moved up beside the conversion KPIs it explains. */
-  offerChart: HrCommandChart | null;
+  /** Accepted offers starting from today to fourteen days ahead. */
+  joiners: TalentJoiners;
   offerConversion: TalentKpi[];
   onVacationToday: OnVacationTodayRow[] | null;
   personal: HrPersonalRecord;
   seat: HrBundleName;
   /** Her recruiting queues only — never the support desk. See `RECRUITING_TASK_KEYS`. */
   tasks: HrTask[];
+  /** Every interview on the calendar today that her seat may read, with the server's Cairo clock. */
+  today: TalentToday;
   unavailableSources: string[];
 };
 
@@ -171,8 +189,9 @@ async function loadCalendar(
   access: AccessContext,
   offers: readonly OfferRecord[] | undefined,
   options: { month?: { month: number; year: number } | null; now: Date; week?: string | null },
-): Promise<TalentCalendar> {
+): Promise<{ calendar: TalentCalendar; today: TalentToday }> {
   const now = options.now;
+  const todayKey = cairoDateKey(now);
   // THE SAME WEEK THE REAL CALENDAR PAGE OPENS ON — `upcomingWeekStart`, not the week today sits in.
   // The two differ on a FRIDAY and a SATURDAY, which are not working days here: the week containing
   // today is then Sunday-to-Thursday entirely in the past, so her landing page would open every
@@ -185,8 +204,11 @@ async function loadCalendar(
   const { year, month } = options.month ?? currentCairoDateParts();
 
   const caller = await interviewCalendarCaller(access).catch(() => null);
-  const [mine, workspace, role, abilities, canRequest] = await Promise.all([
+  const [mine, todays, workspace, role, abilities, canRequest] = await Promise.all([
     caller ? listMyUpcomingInterviews(caller, now).catch(() => null) : null,
+    // Today's interviews, read through the calendar's own DAY reader and its own gate — the same
+    // bookings the week grid draws, never a second query of the table.
+    caller ? listInterviewCalendarDay(caller, todayKey).catch(() => null) : null,
     getCompanyCalendarWorkspace(access, year, month).catch(() => null),
     resolveInterviewCalendarRole(access).catch(() => null),
     interviewCalendarAbilities(access).catch(() => ({
@@ -216,7 +238,7 @@ async function loadCalendar(
     gridDates[0] ?? `${year}-${String(month).padStart(2, "0")}-01`,
     gridDates[gridDates.length - 1] ?? gridDates[0] ?? "",
   );
-  return {
+  const calendar: TalentCalendar = {
     interviewCalendar: role ? { abilities, canRequest, role, zoomConnected: isZoomConfigured() } : null,
     mine: (mine ?? []).map(toTalentInterview),
     mineLoaded: mine !== null,
@@ -232,8 +254,16 @@ async function loadCalendar(
       year,
     },
     monthItemsLoaded: workspace !== null && workspace.schemaReady,
-    todayKey: cairoDateKey(now),
+    todayKey,
     weekStart,
+  };
+  return {
+    calendar,
+    today: {
+      interviews: (todays?.bookings ?? []).map(toTalentInterview),
+      loaded: todays !== null,
+      nowMinutes: cairoMinutesNow(now),
+    },
   };
 }
 
@@ -299,7 +329,7 @@ export async function getTalentAcquisitionOverview(
   const pageUnavailable: string[] = [];
 
   // The calendar waits for the offers, because the joining days on it come from the accepted ones.
-  const [volume, personal, calendar] = await Promise.all([
+  const [volume, personal, { calendar, today }, cvToday] = await Promise.all([
     countInterviewVolume(KPI_WINDOW_DAYS, now).catch(() => {
       pageUnavailable.push("Interviews held");
       return null;
@@ -310,6 +340,17 @@ export async function getTalentAcquisitionOverview(
       now,
       week: options.week ?? null,
     }),
+    // The CVs received today, by the daily digest's own builder — the same count the 18:00 summary
+    // sends, so the panel and that summary can never disagree. Asked only when her seat may read
+    // candidates; a refusal or a failed read is NULL, and NULL is named below, never drawn as zero.
+    canAccess(access, "candidates", "read")
+      .then(async (allowed): Promise<TalentCvToday> =>
+        allowed ? { digest: await buildTodaysCvDigest(now), status: "loaded" } : { status: "hidden" },
+      )
+      .catch((): TalentCvToday => {
+        pageUnavailable.push("CVs received today");
+        return { status: "failed" };
+      }),
   ]);
   // The week is the real calendar component and reads itself, so what this page can still fail to
   // get is her ROLE on it (no role, no week at all) and her OWN agenda. Either one is named here,
@@ -317,16 +358,12 @@ export async function getTalentAcquisitionOverview(
   if (!calendar.interviewCalendar) pageUnavailable.push("Interview calendar");
   if (!calendar.mineLoaded) pageUnavailable.push("Your own interviews");
   if (!calendar.monthItemsLoaded) pageUnavailable.push("Company calendar");
-
-  const charts = buildRecruitingCharts(loaded);
+  if (!today.loaded) pageUnavailable.push("Today's interviews");
 
   return {
     calendar,
+    cvToday,
     field: {
-      charts: fenced(
-        seat,
-        charts.filter((chart) => chart.key !== OFFERS_BY_STATUS_CHART_KEY),
-      ),
       hiredWindow,
       tiles: fenced(seat, buildRecruitingTiles(loaded) ?? []),
     },
@@ -334,11 +371,7 @@ export async function getTalentAcquisitionOverview(
       offers: loaded.offers,
       volume,
     }),
-    offerChart:
-      fenced(
-        seat,
-        charts.filter((chart) => chart.key === OFFERS_BY_STATUS_CHART_KEY),
-      )[0] ?? null,
+    joiners: joinersArriving(loaded.offers, calendar.todayKey),
     offerConversion: buildOfferConversionKpis(loaded.offers),
     onVacationToday: loaded.vacationsToday ?? null,
     personal,
@@ -356,6 +389,7 @@ export async function getTalentAcquisitionOverview(
         href: hrefOutsideSeatFence(seat, item.href) ?? task.href,
       })),
     })),
+    today,
     unavailableSources: [
       ...new Set([...failures.map((key) => SOURCE_LABELS[key]), ...pageUnavailable]),
     ].sort(),

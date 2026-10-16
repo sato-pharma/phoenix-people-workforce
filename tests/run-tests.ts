@@ -1002,6 +1002,7 @@ import { runHrJobWorkbookTests } from "./hr-job-workbook.test.ts";
 import { runHrOperationsCompanyScopeTests } from "./hr-operations-company-scope.test.ts";
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
 import { runHrResourcingSeatTests } from "./hr-resourcing-seat.test.ts";
+import { runHrSeatSectionDrawersTests } from "./hr-seat-section-drawers.test.ts";
 import { runCvDatabaseRecruitingBoundaryTests } from "./cv-database-recruiting-boundary.test.ts";
 import { runTitlePermissionGovernanceTests } from "./title-permission-governance.test.ts";
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
@@ -4459,6 +4460,11 @@ await runTest(
   + "no employee documents or payroll, every unticked page fenced in the sidebar, AppShell and the page APIs, "
   + "probation read without export, no recruitment alert audience, and the role open in all three CHECK constraints)",
   runHrResourcingSeatTests,
+);
+await runTest(
+  "HR seat section drawers (Talent Acquisition and HR Operations draw each /hr section as its own "
+  + "tiled drawer, every row kept; no other role in any mode, and the admin rail, is touched)",
+  runHrSeatSectionDrawersTests,
 );
 await runTest(
   "CV database recruiting boundary (HR Operations holds vacancies:read for the Vacancies Report and "
