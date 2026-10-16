@@ -225,6 +225,88 @@ function testRecommendation() {
   }
   assert.equal(recommendRequisition({ candidate: rep, requisitions: [], vacancies: VACANCIES })?.verdict, "keep");
 
+  // A SEAT WHOSE "AREA" IS THE COMPANY IS PLACED BY THE JOB ALONE. The Product Manager seat left by
+  // the Marketing product manager carries area "Egypt" on production, and the Office Coordinator and
+  // Training Manager seats carry "Head office" — names no candidate ever taps on WhatsApp and no CV
+  // ever gives as a governorate, so every CV for them came back "keep" while the requisition sat open.
+  const pmVacancy = vacancy(10, "Egypt", "Anti Infective", "Product Manager");
+  const pmRequisitions: OpenRequisitionOption[] = [
+    ...REQUISITIONS,
+    { areaName: "Egypt", code: "REQ-PM", id: "r-pm", jobTitle: "Product Manager", lineName: "Anti Infective", regionName: "Egypt", vacancyId: 10 },
+  ];
+  const pmVacancies = [...VACANCIES, pmVacancy];
+  const productManager = { appliedForJobTitle: "Product Manager", currentJobTitle: "Product Manager", hasMedicalRepExperience: false };
+
+  const pmTapped = recommendRequisition({
+    candidate: { ...productManager, preferredAreaName: "Cairo" },
+    requisitions: pmRequisitions,
+    vacancies: pmVacancies,
+  });
+  assert.equal(pmTapped?.verdict, "attach", "a Product Manager CV reaches the Product Manager requisition");
+  assert.deepEqual(
+    pmTapped?.verdict === "attach" ? pmTapped.options.map((option) => option.code) : [],
+    ["REQ-PM"],
+    "and only that one — a country-wide seat is placed by the job, never offered to every CV",
+  );
+
+  const pmFromCv = recommendRequisition({
+    candidate: { ...productManager, address: "Nasr City, Cairo", governorate: "Cairo" },
+    requisitions: pmRequisitions,
+    vacancies: pmVacancies,
+  });
+  assert.deepEqual(
+    pmFromCv?.verdict === "attach" ? pmFromCv.options.map((option) => option.code) : [],
+    ["REQ-PM"],
+    "with no WhatsApp answer the CV's own governorate still reaches it",
+  );
+
+  // THE TRAINING SEAT IS THE SAME HOLE — REQ-2026-IEILI2 stands open at head office, and a CV reading
+  // "Training Manager" named no job family at all, so it could only ever come back "keep".
+  const trainingRequisitions: OpenRequisitionOption[] = [
+    ...REQUISITIONS,
+    { areaName: "Head office", code: "REQ-TR", id: "r-tr", jobTitle: "Training Manager", lineName: null, regionName: "Egypt", vacancyId: 12 },
+  ];
+  const trainingVacancies = [...VACANCIES, vacancy(12, "Head office", null, "Training Manager")];
+  const training = recommendRequisition({
+    candidate: { appliedForJobTitle: "Training Manager", currentJobTitle: "Training Specialist", preferredAreaName: "Cairo" },
+    requisitions: trainingRequisitions,
+    vacancies: trainingVacancies,
+  });
+  assert.deepEqual(
+    training?.verdict === "attach" ? training.options.map((option) => option.code) : [],
+    ["REQ-TR"],
+    "a training CV reaches the Training Manager requisition",
+  );
+
+  // AND A FIELD TRAINER IS STILL A REPRESENTATIVE. The training family is deliberately narrow — the
+  // rep family must keep a CV that merely mentions training in the field.
+  const fieldTrainer = recommendRequisition({
+    candidate: { appliedForJobTitle: "Medical Representative", currentJobTitle: "Medical Representative and field training", preferredAreaName: "Menoufia 2" },
+    requisitions: trainingRequisitions,
+    vacancies: trainingVacancies,
+  });
+  assert.deepEqual(
+    fieldTrainer?.verdict === "attach" ? fieldTrainer.options.map((option) => option.code) : [],
+    ["REQ-M"],
+    "a representative who trains in the field keeps the representative seat",
+  );
+
+  // AND IT WIDENS NOTHING ELSE. A District Sales Manager seat whose area merely repeats its region is
+  // a REAL place: "Cairo" is not the company, and a candidate who named somewhere else stays put.
+  const dsmRequisitions: OpenRequisitionOption[] = [
+    { areaName: "Cairo", code: "REQ-DSM", id: "r-dsm", jobTitle: "District Sales Manager", lineName: "Pedia", regionName: "Cairo", vacancyId: 11 },
+  ];
+  const dsmVacancies = [vacancy(11, "Cairo", "Pedia", "District Sales Manager")];
+  assert.equal(
+    recommendRequisition({
+      candidate: { appliedForJobTitle: "District Sales Manager", preferredAreaName: "Aswan" },
+      requisitions: dsmRequisitions,
+      vacancies: dsmVacancies,
+    })?.verdict,
+    "keep",
+    "a real area that happens to equal its region is still an area",
+  );
+
   // NEVER RECOMMEND REJECT (owner, 2026-10-16): the verdict vocabulary is exactly attach and keep.
   const source = stripComments(read("src/lib/recruitment/requisition-match.ts"));
   const verdicts = [...source.matchAll(/verdict: "([a-z_]+)"/g)].map((match) => match[1]);

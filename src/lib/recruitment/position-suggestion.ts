@@ -158,6 +158,25 @@ const TITLE_FAMILIES: Array<{ family: string; cv: RegExp; seat: RegExp }> = [
     seat: /district (sales )?manager/,
   },
   {
+    // MARKETING'S OWN SEATS, AND THEY MUST BE TESTED BEFORE THE REP FAMILY. A product manager in
+    // Egyptian pharma is almost always an ex-representative and usually a pharmacy graduate, so the
+    // rep family below claims the title on the word "pharmacist" alone: measured 2026-10-16, a CV
+    // reading "Product Manager" came back with no family at all, which this file treats as "a job we
+    // are not hiring for" — and so both synthetic Product Manager CVs were told "keep" while the
+    // Product Manager requisition stood open. Specific before generic, and the senior reading wins.
+    cv: /product (group )?manager|brand manager|marketing manager|group marketing/,
+    family: "product-manager",
+    seat: /product manager|brand manager|marketing manager/,
+  },
+  {
+    // The training seat has the same hole, and the same cause — "Training Manager" named no family.
+    // Kept narrow to the managing and specialist forms: a representative who also trains in the
+    // field is a representative, and the rep family below must keep that CV.
+    cv: /training (manager|specialist|supervisor|head|officer|lead)|learning (and|&) development|\bl ?& ?d\b|sfe (manager|supervisor|specialist)/,
+    family: "training",
+    seat: /training/,
+  },
+  {
     // The pharmacy and clinical titles belong here on purpose. In Egypt a medical representative is
     // normally a pharmacy, veterinary or science graduate, and "Pharmacist" is the single commonest
     // current title on file among people who are plainly applying for a rep's job. Leaving it out
