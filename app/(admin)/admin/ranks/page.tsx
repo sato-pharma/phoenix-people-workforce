@@ -13,21 +13,20 @@ import { RepRanksProfile } from "@/components/rep-ranks/rep-ranks-profile";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
+import { RANK_ADMIN_ROLES } from "@/lib/rep-ranks/admin-audience";
 import { loadRankBoard, loadRankProfile } from "@/lib/rep-ranks/server/read";
 import { RANK_WINDOW_KINDS, type RankWindowKind } from "@/lib/rep-ranks/windows";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// HR Resourcing — the Talent Acquisition seat, ticked by the owner on 2026-10-08.
-const ALLOWED_ROLES = new Set(["Super Admin", "CEO", "SFE Manager", "HR Resourcing"]);
 const BASE_PATH = "/admin/ranks";
 
 type PageProps = { searchParams?: Promise<{ window?: string; key?: string; line?: string; rep?: string }> };
 
 export default async function AdminRepRanksPage({ searchParams }: PageProps) {
   const access = await resolveAccessContextFromPage();
-  if (access.scope !== "system" && !ALLOWED_ROLES.has(access.role)) redirect("/admin");
+  if (access.scope !== "system" && !RANK_ADMIN_ROLES.has(access.role)) redirect("/admin");
   if (!(await canAccess(access, "early_birds", "read"))) redirect("/admin");
 
   const params = (await searchParams) ?? {};

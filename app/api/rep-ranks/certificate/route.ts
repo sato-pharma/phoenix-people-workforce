@@ -4,15 +4,13 @@ import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { ChromiumUnavailableError } from "@/lib/pdf/chromium";
+import { RANK_ADMIN_ROLES } from "@/lib/rep-ranks/admin-audience";
 import { RankCertificateError, loadRankCertificate, renderRankCertificatePdf } from "@/lib/rep-ranks/server/certificate-pdf";
 import { RANK_WINDOW_KINDS, type RankWindowKind } from "@/lib/rep-ranks/windows";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-/** The admin twin's audience (app/(admin)/admin/ranks/page.tsx) — the only callers who may print another rep's certificate. */
-const CERTIFY_ANYONE_ROLES = new Set(["Super Admin", "CEO", "SFE Manager"]);
 
 /**
  * A rep's Phoenix Ranks certificate, as a PDF (owner, 2026-10-05: "any rep who is taking a rank or a
@@ -36,7 +34,7 @@ export async function GET(request: Request) {
     if (!requested) {
       return Response.json({ error: "The certificate is for medical representatives on Phoenix Ranks." }, { status: 403 });
     }
-    const mayCertifyAnyone = access.scope === "system" || CERTIFY_ANYONE_ROLES.has(access.role);
+    const mayCertifyAnyone = access.scope === "system" || RANK_ADMIN_ROLES.has(access.role);
     if (requested !== own && !mayCertifyAnyone) {
       return Response.json({ error: "You can print your own certificate only." }, { status: 403 });
     }
