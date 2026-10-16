@@ -1,11 +1,11 @@
 ---
 name: a-production-postgres-crash-restart-wears-cloudflare-codes
-description: "The 521/520/525 bursts are the WHOLE DATABASE INSTANCE being hard-restarted, not a Cloudflare flap and not a Postgres crash — three days running (10 Oct 11:05:48, 11 Oct 13:14:01, 12 Oct 19:04:50 Cairo), each 'not properly shut down' with no shutdown request and no PANIC, and PgBouncer/PostgREST/GoTrue all booting in the same second BEFORE the postmaster; confirm it with pg_postmaster_start_time() and the sidecars' own boot lines, never with the edge status codes."
+description: "The 521/520/525 bursts are the WHOLE DATABASE INSTANCE being hard-restarted, not a Cloudflare flap and not a Postgres crash — three days running (10 Oct 11:05:48, 11 Oct 13:14:01, 12 Oct 19:04:50 Cairo), each 'not properly shut down' with no shutdown request and no PANIC, and PgBouncer/PostgREST/GoTrue all booting in the same second BEFORE the postmaster; confirm it with pg_postmaster_start_time() and the sidecars' own boot lines, never with the edge status codes. CORRECTED 2026-10-16: the hourly recovery.take_snapshots() was NOT cleared — the 10 Oct restart landed 48 s into its 11:05 run, and its 36-50 s runs (8, 11, 14 Oct at :05) were database-wide stalls; it now streams a fingerprint (20261016103901)."
 metadata:
   node_type: memory
   type: project
   originSessionId: 7227dfbc-9a64-48b5-a8d0-94f28cee391e
-  modified: 2026-10-13T03:49:23.979Z
+  modified: 2026-10-16T03:13:41.380Z
 ---
 
 Reported 2026-10-12 as "a 38-second Supabase edge outage, 79 requests failed". The edge codes verify
@@ -53,7 +53,19 @@ is one query per day — `starting PostgreSQL%` is the cheap needle. The clock t
 `ACTIVE_HEALTHY` afterwards, so project status disproves nothing.
 
 🔴 **AND THEREFORE THE CAUSE IS NOT PROVABLE FROM INSIDE THE DATABASE — STOP LOOKING FOR IT THERE.**
-Every in-house suspect is exonerated by evidence, not by assumption: `cron.job_run_details` shows the
+🔴 **CORRECTION, 2026-10-16 — THE HOURLY SNAPSHOT WAS CLEARED ON THE WRONG EVIDENCE.** The durations
+below are the runs that FINISHED. The 10 Oct 11:05 run never did: the restart at 11:05:48 killed it
+48 s in (`cron.job_run_details` runid 289, `server restarted`), so it has no duration to be quiet
+about. And on days with no restart the same job ran 50.4 s (8 Oct 16:05), 36.1 s (11 Oct 13:05) and
+45.2 s (14 Oct 17:05), each the minute production stalled — edge requests collapsing, PGRST001,
+renders timing out (React #441, #412, PGRST002 in the Error Monitor). It was building
+`monthly_closing_locks` (28.5 MB) as JSON and casting it to text twice every hour on the 2 GB
+compute. That does not prove it caused the host-level restarts, which stay Supabase's to explain;
+it does mean "every in-house suspect is exonerated" was false. The check is now a streamed
+fingerprint that builds nothing on an unchanged hour (migration `20261016103901`, first production
+run 2.1 s against 5.5 s). Account: `docs/security/recovery-snapshots.md`, "The streamed fingerprint".
+
+What follows is the original reading. Every in-house suspect is exonerated by evidence, not by assumption: `cron.job_run_details` shows the
 three jobs at 3.4–9.8 s with the 19:05 run starting *after* the restart; `edge_logs` requests/min were
 **falling** into it (2480, 2313, 2112, 936, 646, 1600, 2021, 652 over 15:56–16:03 UTC, then 59 with
 58 × 5xx at 16:04); connections were 17 of 200; there is no OOM, PANIC, `signal 9` or
