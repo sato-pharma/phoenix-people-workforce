@@ -205,6 +205,10 @@ async function probe(base, token, orgSlug, projectSlug, projectId) {
     const response = await fetch(`${base}/api/0${path}`, { headers: { Authorization: `Bearer ${token}` } });
     const text = await response.text();
     console.log(`  GET /api/0${path.split("?")[0]}  ->  HTTP ${response.status}  (${text.length} bytes)  ${response.ok ? "" : text.slice(0, 120)}`);
+    // The account's existing alerts are configuration, not secrets: their exact shape is what a new one is built from.
+    if (response.ok && path === `/organizations/${orgSlug}/workflows/`) {
+      console.log(`  --- existing workflows (alerts), as Sentry returns them ---\n${text}\n  --- end ---`);
+    }
   }
 }
 
