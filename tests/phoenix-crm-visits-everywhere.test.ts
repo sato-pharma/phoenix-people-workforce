@@ -623,8 +623,6 @@ function runNoticeTests(): void {
 type Start = { teamSeatId: string; startsOn: string; stopsOn: string | null };
 type SeatRow = { seatId: string; parentSeatId: string | null; tier: string };
 type Span = { seatId: string; hrId: string; from: string; until: string | null };
-type Person = { hrKey: string; crmId: number | null; from: string; until: string | null };
-
 function within(day: string, from: string, until: string | null): boolean {
   return day >= from && (until === null || day < until);
 }
@@ -638,27 +636,16 @@ function startedSeats(starts: readonly Start[], seats: readonly SeatRow[]) {
   );
 }
 
-/** phoenix_crm_started_team_reps, transcribed: whoever sat on those territories — or on the team's own seat. */
-function startedPeople(starts: readonly Start[], seats: readonly SeatRow[], occupancy: readonly Span[], crmIdOf: (hrId: string) => number | null): Person[] {
-  const windows = [
-    ...startedSeats(starts, seats),
-    ...starts.map((start) => ({ seatId: start.teamSeatId, startsOn: start.startsOn, stopsOn: start.stopsOn })),
-  ];
-  return windows.flatMap((window) =>
-    occupancy
-      .filter((span) => span.seatId === window.seatId && span.hrId.trim() !== "")
-      .map((span) => {
-        const from = span.from > window.startsOn ? span.from : window.startsOn;
-        const until = [span.until, window.stopsOn].filter((day): day is string => day !== null).sort()[0] ?? null;
-        return { hrKey: span.hrId.trim().toLowerCase(), crmId: crmIdOf(span.hrId), from, until };
-      })
-      .filter((person) => person.until === null || person.until > person.from),
-  );
-}
-
 type Served = { system: "ireports360" | "phoenix"; who: string; day: string; double?: string | null };
 
-/** The visits door's three branches over a fixture, each predicate transcribed from the SQL pinned below. */
+/**
+ * The visits door's three branches over a fixture, each predicate transcribed from the SQL pinned below.
+ *
+ * PHOENIX WINS THE DAY (owner, 2026-10-16): an iReports360 row drops only on a day its person has a
+ * countable entry in Phoenix CRM — a real visit by that rep, or a recorded day activity of a counted kind,
+ * on a REP seat of a started team (phoenix_crm_rep_entry_days). A district manager holds no rep seat, so
+ * he has no entry day and keeps both systems.
+ */
 function serve(input: {
   starts: readonly Start[];
   seats: readonly SeatRow[];
@@ -669,22 +656,24 @@ function serve(input: {
   activities: ReadonlyArray<{ seatId: string; rep: string; day: string; type: string; isTest?: boolean }>;
 }): Served[] {
   const seats = startedSeats(input.starts, input.seats);
-  const people = startedPeople(input.starts, input.seats, input.occupancy, (hrId) => input.crmIds[hrId.toUpperCase()] ?? null);
   const onSeat = (seatId: string, day: string) => seats.some((row) => row.seatId === seatId && within(day, row.startsOn, row.stopsOn));
+  const kinds = ["meeting", "conference", "health_day", "sales_day", "training", "admin_work", "travel"];
+  const countedVisits = input.phoenix.filter((row) => !row.isTest && onSeat(row.seatId, row.day));
+  const countedActivities = input.activities.filter((row) => !row.isTest && kinds.includes(row.type) && onSeat(row.seatId, row.day));
+  const entryDays = [
+    ...countedVisits.filter((row) => row.rep).map((row) => ({ hrKey: row.rep!.trim().toLowerCase(), day: row.day })),
+    ...countedActivities.map((row) => ({ hrKey: row.rep.trim().toLowerCase(), day: row.day })),
+  ];
+  const crmIdOf = (hrKey: string): number | null => input.crmIds[hrKey.toUpperCase()] ?? null;
   const vendor = input.vendor
     .filter((row) => {
       const key = row.hrId?.trim().toLowerCase() ?? "";
-      if (key) return !people.some((person) => person.hrKey === key && within(row.day, person.from, person.until));
-      return !people.some((person) => person.crmId !== null && person.crmId === row.crmId && within(row.day, person.from, person.until));
+      if (key) return !entryDays.some((entry) => entry.hrKey === key && entry.day === row.day);
+      return !entryDays.some((entry) => crmIdOf(entry.hrKey) !== null && crmIdOf(entry.hrKey) === row.crmId && entry.day === row.day);
     })
     .map((row): Served => ({ system: "ireports360", who: row.hrId ?? `crm:${row.crmId}`, day: row.day }));
-  const visits = input.phoenix
-    .filter((row) => !row.isTest && onSeat(row.seatId, row.day))
-    .map((row): Served => ({ system: "phoenix", who: (row.rep ?? row.manager)!, day: row.day, double: row.rep ? row.manager : null }));
-  const kinds = ["meeting", "conference", "health_day", "sales_day", "training", "admin_work", "travel"];
-  const activities = input.activities
-    .filter((row) => !row.isTest && kinds.includes(row.type) && onSeat(row.seatId, row.day))
-    .map((row): Served => ({ system: "phoenix", who: row.rep, day: row.day }));
+  const visits = countedVisits.map((row): Served => ({ system: "phoenix", who: (row.rep ?? row.manager)!, day: row.day, double: row.rep ? row.manager : null }));
+  const activities = countedActivities.map((row): Served => ({ system: "phoenix", who: row.rep, day: row.day }));
   return [...vendor, ...visits, ...activities];
 }
 
@@ -696,18 +685,40 @@ function runNoDoubleCountTests(code: string): void {
   const vendor = flat(vendorBranch);
   assert.ok(
     vendor.includes(
-      "and not exists ( select 1 from public.phoenix_crm_started_team_reps() r where r.hr_key = lower(btrim(v.agent_hr_id)) " +
-        "and v.visit_date >= r.counted_from and (r.counted_until is null or v.visit_date < r.counted_until) )",
+      "and not exists ( select 1 from public.phoenix_crm_rep_entry_days() e where e.hr_key = lower(btrim(v.agent_hr_id)) " +
+        "and e.entry_day = v.visit_date )",
     ),
-    "within a start, a started team's people leave the iReports360 branch for exactly the days they sat there",
+    "PHOENIX WINS THE DAY: an iReports360 row leaves the branch only on a day its rep has a Phoenix entry",
   );
   assert.ok(
     vendor.includes(
-      "and not exists ( select 1 from public.phoenix_crm_started_team_reps() r where nullif(btrim(v.agent_hr_id), '') is null " +
-        "and r.agent_crm_id = v.agent_crm_id and v.visit_date >= r.counted_from and (r.counted_until is null or v.visit_date < r.counted_until) )",
+      "and not exists ( select 1 from public.phoenix_crm_rep_entry_days() e where nullif(btrim(v.agent_hr_id), '') is null " +
+        "and e.agent_crm_id = v.agent_crm_id and e.entry_day = v.visit_date )",
     ),
     "a vendor row with no hr id is still his, by his CRM id",
   );
+  assert.doesNotMatch(vendor, /phoenix_crm_started_team_reps|counted_from|counted_until/, "and no longer from the start's window: a day with no Phoenix entry keeps its iReports360 rows");
+
+  // The entry days themselves: a real visit by a REP on a started rep seat, or a recorded day activity of a
+  // counted kind on one — the team's OWN seat is left out, so a district manager keeps both systems.
+  const entryDays = flat(
+    functionSql(lastDefinerSql(/create or replace function public\.phoenix_crm_rep_entry_days\(/, "phoenix_crm_rep_entry_days"), "phoenix_crm_rep_entry_days"),
+  );
+  for (const clause of [
+    "returns table (hr_key text, agent_crm_id bigint, entry_day date) language sql stable security definer set search_path to 'public'",
+    "select lower(btrim(p.rep_hr_id)) as hr_key, p.visit_date as entry_day from public.phoenix_crm_countable_visits p join public.phoenix_crm_started_team_seats() team on team.seat_id = p.seat_id and p.visit_date >= team.starts_on and (team.stops_on is null or p.visit_date < team.stops_on) where not p.is_test and nullif(btrim(p.rep_hr_id), '') is not null",
+    "join public.phoenix_crm_started_team_seats() team on team.seat_id = a.seat_id",
+    "a.activity_date >= least(team.starts_on, coalesce(run.day_activities_from, team.starts_on))",
+    "and a.activity_type in ('meeting', 'conference', 'health_day', 'sales_day', 'training', 'admin_work', 'travel')",
+    "where upper(btrim(emp.hr_id)) = upper(e.hr_key)",
+  ]) {
+    assert.ok(entryDays.includes(clause), `the entry days hold: ${clause}`);
+  }
+  assert.doesNotMatch(entryDays, /phoenix_crm_team_starts s\b|union all|team_seat_id, s\.team_seat_id/, "the team's own (district manager's) seat is no entry day");
+  assert.doesNotMatch(entryDays, /lower\(btrim\(emp\.hr_id\)\)/, "the employee lookup uses the indexed upper(btrim()) expression, never lower()");
+  const entryDaysSql = lastDefinerSql(/create or replace function public\.phoenix_crm_rep_entry_days\(/, "phoenix_crm_rep_entry_days");
+  assert.match(entryDaysSql, /revoke execute on function public\.phoenix_crm_rep_entry_days\(\) from public, anon, authenticated;/);
+  assert.match(entryDaysSql, /grant execute on function public\.phoenix_crm_rep_entry_days\(\) to service_role;/);
   assert.ok(
     flat(visitBranch).includes(
       "join public.phoenix_crm_started_team_seats() team on team.seat_id = p.seat_id and p.visit_date >= team.starts_on and (team.stops_on is null or p.visit_date < team.stops_on)",
@@ -798,6 +809,7 @@ function runNoDoubleCountTests(code: string): void {
       { hrId: "E-5", crmId: 5005, day: "2026-10-04" },
       { hrId: null, crmId: 6006, day: "2026-10-08" },
       { hrId: null, crmId: 6006, day: "2026-10-12" },
+      { hrId: null, crmId: 6006, day: "2026-10-13" },
       { hrId: null, crmId: 9999, day: "2026-10-12" },
     ],
     phoenix: [
@@ -810,6 +822,7 @@ function runNoDoubleCountTests(code: string): void {
       { seatId: "R2", rep: "C-3", manager: null, day: "2026-10-07" },
       { seatId: "R1", rep: "A-1", manager: null, day: "2026-10-26" },
       { seatId: "R9", rep: "E-5", manager: null, day: "2026-10-04" },
+      { seatId: "R3", rep: "F-6", manager: null, day: "2026-10-12" },
     ],
     activities: [
       { seatId: "R1", rep: "A-1", day: "2026-10-01", type: "meeting" },
@@ -826,21 +839,27 @@ function runNoDoubleCountTests(code: string): void {
 
   assert.deepEqual(systemsOn("A-1", "2026-09-30"), ["ireports360"], "before the start iReports360 stays the source — Delta's 30 September is kept");
   assert.deepEqual(systemsOn("A-1", "2026-10-01"), [], "and nothing Phoenix is served before the start (onboarding stays out)");
-  assert.deepEqual(systemsOn("A-1", "2026-10-04"), ["phoenix"], "from the start, Phoenix INSTEAD of iReports360 — once, the test row left out");
+  assert.deepEqual(systemsOn("A-1", "2026-10-04"), ["phoenix"], "on a day with a Phoenix entry, Phoenix INSTEAD of iReports360 — once, the test row left out");
   assert.deepEqual(systemsOn("A-1", "2026-10-26"), ["ireports360"], "a stop gives the vendor rows back from its Saturday, and serves no Phoenix row after it");
-  assert.deepEqual(systemsOn("B-2", "2026-10-05"), ["phoenix"], "a rep still on the team speaks through Phoenix only");
-  assert.deepEqual(systemsOn("B-2", "2026-10-07"), ["ireports360"], "a rep who left gets his iReports360 rows back from the day he left");
-  assert.deepEqual(systemsOn("C-3", "2026-10-05"), ["ireports360"], "a rep who joined keeps every iReports360 day from before he joined (any casing)");
-  assert.deepEqual(systemsOn("C-3", "2026-10-07"), ["phoenix"], "and is counted from Phoenix once he sits on the team");
+  assert.deepEqual(systemsOn("A-1", "2026-10-06"), ["phoenix"], "a recorded day activity is an entry too: that day is Phoenix's");
+  assert.deepEqual(systemsOn("B-2", "2026-10-05"), ["phoenix"], "a rep with a Phoenix entry that day speaks through Phoenix only");
+  assert.deepEqual(systemsOn("B-2", "2026-10-07"), ["ireports360"], "a rep with no Phoenix entry that day (he left the seat) keeps his iReports360 row");
+  assert.deepEqual(systemsOn("C-3", "2026-10-05"), ["ireports360"], "a rep keeps every iReports360 day on which he made no Phoenix entry (any casing)");
+  assert.deepEqual(systemsOn("C-3", "2026-10-07"), ["phoenix"], "and is counted from Phoenix on a day he has an entry");
   assert.deepEqual(systemsOn("D-4", "2026-10-01"), ["ireports360"], "the district manager's vendor rows before the start stay");
-  assert.deepEqual(systemsOn("D-4", "2026-10-04"), ["phoenix"], "\"Yes, the whole team\": from the start his own vendor rows leave, and his own Phoenix visit counts as the agent");
+  assert.deepEqual(
+    systemsOn("D-4", "2026-10-04"),
+    ["ireports360", "phoenix"],
+    "A DISTRICT MANAGER KEEPS BOTH (owner, 2026-10-16): he has no rep entry day, so his iReports360 row stays beside his own Phoenix visit",
+  );
   assert.equal(served.find((row) => row.who === "A-1" && row.day === "2026-10-05")?.double, "D-4", "the double visit he makes credits him as the partner");
   assert.deepEqual(systemsOn("G-7", "2026-10-04"), ["ireports360"], "a district manager of a team never started is untouched");
   assert.deepEqual(systemsOn("E-5", "2026-10-04"), ["ireports360"], "a team never started keeps iReports360, and its Phoenix visits are not served");
-  assert.deepEqual(systemsOn("crm:6006", "2026-10-08"), ["ireports360"], "a CRM-id-only row before the person sat down stays");
-  assert.deepEqual(systemsOn("crm:6006", "2026-10-12"), [], "and leaves once he sits on the team, by his CRM id");
+  assert.deepEqual(systemsOn("crm:6006", "2026-10-08"), ["ireports360"], "a CRM-id-only row on a day he made no Phoenix entry stays");
+  assert.deepEqual(systemsOn("crm:6006", "2026-10-12"), [], "and leaves on a day he has one, by his CRM id");
+  assert.deepEqual(systemsOn("crm:6006", "2026-10-13"), ["ireports360"], "the next day, with no entry, it is the vendor's again");
   assert.deepEqual(systemsOn("crm:9999", "2026-10-12"), ["ireports360"], "a CRM id nobody on the team holds is untouched");
-  assert.deepEqual(systemsOn("A-1", "2026-10-06"), ["phoenix"], "a recorded training day is a worked day from Phoenix");
+  assert.deepEqual(systemsOn("A-1", "2026-10-06"), ["phoenix"], "a recorded training day is a worked day from Phoenix (and, as an entry, wins that day)");
   assert.deepEqual(systemsOn("A-1", "2026-10-07"), [], "never a test one");
   assert.deepEqual(systemsOn("A-1", "2026-10-08"), [], "and never a kind the view has not been given a worked-day code for");
 
@@ -1460,12 +1479,14 @@ function runCheckinDoorTests(plans: string): void {
   const vendor = flat(vendorBranch);
   assert.ok(vendor.includes("where c.check_date < coalesce( (select k.cutover_date::timestamp at time zone 'UTC' from public.crm_cutover k where k.id), 'infinity'::timestamptz ) and not exists"), "its cutover clause as it was, then the two clauses");
   assert.ok(
-    vendor.includes(
-      "where r.hr_key = lower(btrim(c.agent_hr_id)) and (c.check_date at time zone 'UTC')::date >= r.counted_from and (r.counted_until is null or (c.check_date at time zone 'UTC')::date < r.counted_until)",
-    ),
-    "a started team's people's iReports360 check-ins are ignored after the start, as their visits are",
+    vendor.includes("where e.hr_key = lower(btrim(c.agent_hr_id)) and e.entry_day = (c.check_date at time zone 'UTC')::date"),
+    "PHOENIX WINS THE DAY on a check-in too: it is ignored only on a day its rep has a Phoenix entry, as his visits are",
   );
-  assert.ok(vendor.includes("where nullif(btrim(c.agent_hr_id), '') is null and r.agent_crm_id = c.agent_crm_id"), "by CRM id on a check-in with no hr id");
+  assert.ok(
+    vendor.includes("where nullif(btrim(c.agent_hr_id), '') is null and e.agent_crm_id = c.agent_crm_id and e.entry_day = (c.check_date at time zone 'UTC')::date"),
+    "by CRM id on a check-in with no hr id",
+  );
+  assert.doesNotMatch(vendor, /phoenix_crm_started_team_reps|counted_from|counted_until/, "no longer from the start's window");
 
   const names = vendorItems.map(outputName);
   const items = itemsOf(phoenixBranch, "from public.phoenix_crm_countable_visits p");
@@ -1624,9 +1645,13 @@ function runStartClockTests(): void {
   const collect = stripComments(read("src/lib/early-birds/collect.ts"));
   assert.match(collect, /import \{ crmMinutesPastMidnight, phoenixFirstVisitStarts \} from "@\/lib\/crm\/sfe-field-analytics";/, "Early Birds reads the one helper");
   assert.match(collect, /visit_type_description, contact_name, customer_name, comment, visit_date, crm_visit_id, source"/, "Early Birds reads what marks a Phoenix row");
-  assert.match(collect, /const checkinIndex = indexCheckinsByAgentContactDay\(liveCheckins\);/, "a visit is never matched to a check-in the start set aside");
-  assert.match(collect, /for \(const checkin of liveCheckins\) \{/, "nor is one his start or his daily-board time");
-  assert.match(collect, /if \(phoenixClockRepDays\.has\(key\)\) gpsStartByRepDay\.set\(key, minutes\);/, "within a start, his first Phoenix visit IS the day's start");
+  // PHOENIX WINS THE DAY: the clock is Phoenix's on a rep-day with a Phoenix visit and iReports360's on one
+  // without, so Early Birds no longer asks the started windows at all — the read door has already left out
+  // the iReports360 check-ins of every day a rep has a Phoenix entry.
+  assert.doesNotMatch(collect, /loadStartedRepWindows|startedWindowCovers|liveCheckins/, "no start window decides a rep-day's clock any more");
+  assert.match(collect, /const phoenixClockRepDays = new Set<string>\(phoenixStarts\.keys\(\)\);/, "a rep-day is on Phoenix's clock exactly when it has a countable Phoenix visit");
+  assert.match(collect, /const checkinIndex = indexCheckinsByAgentContactDay\(checkins\);/, "a visit is matched to the check-ins the door serves for Phoenix-empty days");
+  assert.match(collect, /for \(const \[key, minutes\] of phoenixStarts\) \{\s*gpsStartByRepDay\.set\(key, minutes\);\s*\}/, "on such a day his first Phoenix visit IS the day's start");
   assert.match(collect, /gpsEligible: !phoenixVisit && typeof row\.contact_crm_id === "number" && row\.contact_crm_id !== 0,/, "a Phoenix visit is never in the GPS share");
   for (const file of ["src/lib/early-birds/service.ts", "src/lib/early-birds/close.ts"]) {
     assert.match(read(file), /phoenixClockRepDays: inputs\.phoenixClockRepDays,/, `${file} scores on the same clock`);

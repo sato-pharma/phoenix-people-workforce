@@ -53,6 +53,11 @@
  *      id when the vendor row carries no hr id (the sync leaves a few blank). A rep who joins a started
  *      team keeps every iReports360 day from before he joined; one who leaves gets his vendor rows back
  *      from the day he left; a stop gives them all back from its Saturday.
+ *      ▸ PHOENIX WINS THE DAY (owner, 2026-10-16, superseding "ignored from the start" for REPS): these
+ *      rows are dropped only on a DAY the rep also has a Phoenix entry — a countable visit or a recorded
+ *      day activity of a counted kind, on a started REP seat (`phoenix_crm_rep_entry_days()`, migration
+ *      `20261016201551`). A day with no Phoenix entry keeps his iReports360 rows. A district manager's
+ *      own team seat is never an entry, so he keeps BOTH apps. The plans door is unchanged.
  *   2. Phoenix visits: every real (`is_test = false`) row of `phoenix_crm_countable_visits` — the
  *      module's own predicate for "this visit counts", read and never re-typed, so an off-plan visit
  *      appears once it is approved — on a started team's territory, within its start.
