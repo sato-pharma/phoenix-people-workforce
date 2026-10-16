@@ -39,6 +39,15 @@ Back since 2026-10-16, as a second sink beside `app_error_events`, never instead
 - **Turn it on:** put the project DSN in `SENTRY_DSN` and `NEXT_PUBLIC_SENTRY_DSN` on the production Railway service (the browser one is a build argument, so it needs a redeploy). Turn it off by removing either.
 - **Pinned by** `tests/sentry-production-only.test.ts`.
 
+### Operating Sentry from a terminal
+
+Two tools, two jobs. **Account setup is `scripts/sentry-setup.mjs`** (Sentry's REST API); **day-to-day triage is `sentry-cli`**. The CLI has no command that creates an alert rule or sets an organisation's data scrubbing, which is why the script exists.
+
+- **The token** is a personal token (sentry.io → User settings → Personal Tokens) with the scopes `org:read org:write project:read project:write alerts:write event:admin`. It is read from the `SENTRY_AUTH_TOKEN` environment variable only — never a file, never printed, never committed. The `.env.sentry-build-plugin` file left over from the retired account is not used.
+- **Set up the account once** (EU region, so the API host is `https://de.sentry.io`, which is the script's default). In PowerShell: `$env:SENTRY_AUTH_TOKEN = '<token>'; node scripts/sentry-setup.mjs` prints what it would change and writes nothing; add `--apply` to make the changes. It is safe to run again: it reads first and writes only what is missing — the "Production: new error" email alert (new issue, `production` only, at most one email per 30 minutes), IP and data scrubbing on the organisation, and resolving the deliberate test issue. It never deletes a rule, and it lists any other rule that already emails so the owner can keep or remove it.
+- **Triage** with `sentry-cli` (installed globally with `npm install -g @sentry/cli`; add `--url https://de.sentry.io` on every call, or set `SENTRY_URL`, because the default is the US host): `sentry-cli --url https://de.sentry.io info` verifies the token, `sentry-cli --url https://de.sentry.io issues list -o <org> -p phoenix-workforce` lists open issues, and `issues resolve -i <id>` closes one.
+- **Pinned by** `tests/sentry-account-setup.test.ts`, which runs the whole script against a local stand-in for Sentry.
+
 ## Error capture
 
 - **Server errors:** `instrumentation.ts`'s `onRequestError` forwards to `/api/errors/client`
