@@ -109,6 +109,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `rep-ranks` — Phoenix Ranks — the rep board, its pillars and the certificate | `src/lib/rep-ranks/**` and 6 more |
 | `crm-doctor-lists` — Doctor lists — the contact master, its refresh and the list changes | `src/lib/crm/contact-lists/**` and 9 more |
 | `marketing` — Marketing requests, venues, pharmacies and ROI | `src/lib/{marketing-requests,venues,pharmacy-master,pharmacy-search,customer-pharmacy-mapping,verified-captures,market-awareness,sales-marketing-intelligence,evidence}/**` and 4 more |
+| `marketing-roi` — Marketing ROI — the fact rebuild, the verdict, the Tracker, the Coverage Report and the Scorecard | `src/lib/marketing-requests/{roi,coverage-report,manager-scorecard}*` and 4 more |
 | `recruitment` — Recruitment, CVs and offers | `src/lib/{recruitment,cv,offers,whatsapp-inbox,mailbox-monitor,zoom}/**` and 4 more |
 | `recruitment-inbound` — Recruitment — the WhatsApp bot, the screening questions and the careers form | `src/lib/recruitment/inbound/**` and 4 more |
 | `hiring-documents` — Hiring documents, contracts and company papers | `src/lib/{hiring-pack,hiring-documents,contracts,business-cards,spotlight,pdf,export}/**` and 4 more |

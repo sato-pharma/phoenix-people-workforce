@@ -84,7 +84,7 @@ function runPermissionTests() {
 
 type RouteGate = {
   route: string;
-  method: "GET" | "POST";
+  method: "GET" | "POST" | "DELETE";
   action: PermissionAction;
   audit: "mutation" | "access-read" | "export" | null;
   auditRequired: boolean;
@@ -329,6 +329,13 @@ const ROUTE_GATES: RouteGate[] = [
   // workbook is an export for the reason the pack's is: a file naming employees leaves the building.
   { route: "visit-report", method: "POST", action: "read", audit: "access-read", auditRequired: true },
   exportGet("visit-report/export"),
+  // The Visit report's saved views (owner, 2026-10-16): each reader's own named choices of fields. The
+  // report's own `read` gate and 404 (`canReadVisitReport`); the service keys every call on the viewer's
+  // HR id and takes no owner argument. A save and a delete write to the database, so both are audited as
+  // mutations and both refuse a cross-site request first; the list is a plain read.
+  get("visit-report/views"),
+  post("visit-report/views", "read"),
+  { route: "visit-report/views", method: "DELETE", action: "read", audit: "mutation", auditRequired: true },
   // The one-page start guide, English or Arabic. A plain `read` and no audit: it is a help page whose
   // content is identical for everyone who can open the module, holding no rep, no customer and no
   // figure — there is nothing here for an organogram scope to narrow or for an export log to record.
@@ -453,7 +460,7 @@ function runRouteTests() {
       assert.ok(at === -1 || at > gateAt, `${label} calls ${early} before its permission check`);
     }
 
-    if (gate.method === "POST") {
+    if (gate.method !== "GET") {
       const csrfAt = block.search(/const csrf = assertSameOriginMutation\(request\);\s+if \(csrf\) return csrf;/);
       assert.ok(csrfAt >= 0 && csrfAt < contextAt, `${label} refuses a cross-site request before anything else`);
     } else {
@@ -475,7 +482,7 @@ function runRouteTests() {
     assert.deepEqual(entry.permission, { resource: "phoenix_crm", action: gate.action }, `${label}: the registry declares the action the handler asserts`);
     assert.equal(entry.authMode, "session", `${label} is a session route`);
     assert.equal(entry.guard, "assert-permission", `${label} is gated by assertPermission`);
-    assert.equal(entry.csrf.required, method === "POST", `${label}: every POST checks the origin, and no GET claims to`);
+    assert.equal(entry.csrf.required, method !== "GET", `${label}: every POST and DELETE checks the origin, and no GET claims to`);
     assert.equal(entry.audit.classification, gate.audit ?? undefined, `${label}: audit classification`);
     assert.equal(entry.audit.required, gate.auditRequired, `${label}: audit required`);
     assert.equal(findAccessRegistryEntry(entry.pattern, method)?.pattern, entry.pattern, `${label} resolves to its own entry, never a blanket`);
@@ -897,6 +904,9 @@ const LATER_MIGRATIONS = [
   // that name a customer. That function's earlier definer (20261008120000) is not on this list, so no
   // ordering above can be disturbed; it appends at the end.
   "supabase/migrations/20261017000000_phoenix_crm_manager_plan.sql",
+  // The Visit report's saved views (owner, 2026-10-16). ONE brand-new table and NOTHING else — no
+  // function, no column on anything that exists, and it replaces nothing, so it appends safely at the end.
+  "supabase/migrations/20261017001000_phoenix_crm_visit_report_views.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

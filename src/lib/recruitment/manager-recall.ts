@@ -65,7 +65,7 @@ function stampOf(send: ManagerSend) {
  */
 export async function recallCandidateFromManager(
   access: AccessContext,
-  input: { candidateId: string; managerHrId: string },
+  input: { candidateId: string; managerHrId: string; statusNote?: (managerName: string) => string },
 ): Promise<RecallResult> {
   const candidate = await getCandidate(input.candidateId);
   if (!candidate) throw new Error("Candidate not found.");
@@ -90,8 +90,34 @@ export async function recallCandidateFromManager(
 
   let statusReturned = false;
   if (remaining.length === 0 && normalizeCandidateStatus(candidate.status) === "sent_to_manager") {
-    await updateCandidateStatus(access, candidate.id, "shortlisted", `Taken back from ${managerName}.`);
+    await updateCandidateStatus(
+      access,
+      candidate.id,
+      "shortlisted",
+      input.statusNote ? input.statusNote(managerName) : `Taken back from ${managerName}.`,
+    );
     statusReturned = true;
   }
   return { candidateName: candidate.fullName, managerName, statusReturned };
+}
+
+/**
+ * A manager hides a CV that reached him — one press, no reason asked.
+ *
+ * The owner, 2026-10-16: "make district manager able to hide the CV if he received him." It is the
+ * recall run on the caller's OWN hold: his send goes, the legacy stamp is put right and a CV nobody
+ * else holds goes back to `shortlisted`, so it leaves his folders, his "Sent to you" list and the
+ * hourly reminder in one step. Talent Acquisition still has the CV and a re-push brings it back.
+ * The manager is always the session's, never a posted id, so nobody can hide a CV from somebody else.
+ */
+export async function hideCandidateFromManager(
+  access: AccessContext,
+  candidateId: string,
+): Promise<RecallResult> {
+  if (!access.hrId) throw new Error("Your session has no HR id, so a CV cannot be hidden.");
+  return recallCandidateFromManager(access, {
+    candidateId,
+    managerHrId: access.hrId,
+    statusNote: (managerName) => `Hidden by ${managerName}.`,
+  });
 }

@@ -70,8 +70,20 @@ on:
   #
   # The daily run below is unchanged and is the backstop for anything that arrives another way (a
   # push from a machine without the hook, a web edit, a merge of someone else's branch).
+  #
+  # 🔴 WHEN IT IS REQUESTED IS NOT WHEN IT RUNS, AND WHEN IT RUNS HOLDS A DEPLOY. GitHub starts this cron
+  # 4½–9½ hours after the minute asked for (measured 5–16 Oct 2026 on requests made between 03:23 and 10:23
+  # UTC), and the Semgrep step alone runs ~9½ minutes. A run attaches a check suite to whatever commit is
+  # `main` HEAD when it starts, and Railway's Wait for CI holds that commit's deploy until the suite ends — on
+  # 16 Oct a 05:17 UTC request started at 09:45 UTC (12:45 Cairo) and held a deploy 9 minutes. Merges to
+  # `main` are quietest 04:00–07:00 Cairo (about 1 an hour, against 2–3.8 an hour from noon to 03:00), so the
+  # request is moved to 20:17 UTC: if the lateness is relative to the request, as measured, the run starts
+  # 00:47–05:47 UTC (03:47–08:47 Cairo). UNPROVEN for this request time — read `gh run list --workflow
+  # security-scan.yml` after a few days, and if it still starts after 08:00 UTC the delay is not relative and
+  # the fix is a cron-job.org dispatch at a chosen quiet minute. Account: docs/deployment.md, "A slow day is
+  # measured from the build log".
   schedule:
-    - cron: "17 5 * * *" # daily 05:17 UTC, offset from the 07:00 migration-drift cron
+    - cron: "17 20 * * *" # daily 20:17 UTC (23:17 Cairo), requested early on purpose — see above
   workflow_dispatch:
 
 # 🔴 cancel-in-progress WENT FALSE ON 2026-09-30, AND IT IS THE SAME RULE AS THE `continue-on-error`

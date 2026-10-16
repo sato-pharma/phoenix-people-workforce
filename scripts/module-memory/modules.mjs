@@ -501,6 +501,28 @@ export const MODULES = [
     keywords: ["marketing request", "marketing requests", "venue", "venues", "pharmacy code", "distributor code", "makhzan", "wholesaler", "marketing roi", "verified capture", "صيدلية"],
     tables: ["marketing_", "venue", "pharmacy", "customer_pharmacy"],
   },
+  // 🔴 SPLIT 2026-10-16, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `marketing` had 85 bytes
+  // of pointer left under the 4,000-byte margin `tests/module-memory.test.ts` holds (3,915), and the
+  // hourly fact rebuild's period-read rule took it to 4,085. The ROI half is the clean cut — the verdict
+  // and its three copies, the fact rebuild, the Tracker, the Coverage Report and the Manager Scorecard
+  // are one family and none of it is read while editing a venue, a pharmacy code or a licence.
+  // `marketing` KEEPS EVERY GLOB IT HAD, so an ROI file loads the PAIR and nothing that used to arrive
+  // stops arriving. The file itself was at 69% of its 72,000-byte cap — two different limits, and this
+  // was the small one.
+  {
+    id: "marketing-roi",
+    title: "Marketing ROI — the fact rebuild, the verdict, the Tracker, the Coverage Report and the Scorecard",
+    scope: "How a marketing request's return is measured and shown: the stored ROI facts and their hourly rebuild, the awaiting-data verdict and its copies, the ROI Tracker and its live stages, the Coverage Report, and the Manager Scorecard.",
+    globs: [
+      "src/lib/marketing-requests/{roi,coverage-report,manager-scorecard}*",
+      "src/components/marketing-requests/{roi,coverage,marketing-roi,marketing-coverage,marketing-manager-scorecard}*",
+      "app/**/{marketing-roi,marketing-roi-report,marketing-roi-tracker,roi-tracking,coverage-report,manager-scorecard,roi-refresh,roi-business-report,roi-tracker,roi-explain}/**",
+      "tests/*{marketing-roi,marketing-coverage,marketing-manager-scorecard}*",
+      "supabase/migrations/*marketing_roi*",
+    ],
+    keywords: ["roi tracker", "roi tracking", "marketing roi", "coverage report", "manager scorecard", "awaiting data", "roi facts", "roi refresh"],
+    tables: ["marketing_roi_"],
+  },
   {
     id: "recruitment",
     title: "Recruitment, CVs and offers",

@@ -658,6 +658,41 @@ Never push directly to `main`. Work happens on a branch/PR and merges after CI p
 The old Cloud Run pipeline did deploy a no-traffic revision, smoke-test it, and only then promote
 it to 100%. That safety net is **gone**. Any doc, comment, or memory describing it is pre-cutover.
 
+## A slow day is measured from the build log
+
+Measured on 2026-10-16 after the owner said "Railway is very slow today". Railway's status page and
+githubstatus.com were clean and the live site answered in 0.3-1.0 s; the merges did go live later, for
+four separate reasons that stacked. Read each from its own source, never from one headline number.
+
+- **True go-live is the `Healthcheck succeeded` line of the deploy's build log**, not GitHub's
+  deployment `success`: `railway logs -b <deployment-id> -p Phoenix-HR-Workforce -e production -s
+  phoenix-people-workforce --json` (pass `-p/-e/-s` from a worktree, which is not linked; on Windows
+  spawn it from node with `shell: true`). GitHub's status lagged the app already serving by 4.3 and
+  16.9 minutes on two deploys that day, and by nothing on the 114 before, all after the second Railway
+  service (`phoenix-workforce-worker`, same repo and sha) was created. Cause unproven.
+- **Baseline, push to serving (median):** 8.5 min on 13 Oct, 9.1 on 14 Oct, 8.5 on 15 Oct, 9.8 on 16
+  Oct. Main CI before Railway starts: 5.4, 5.6, 5.2, 6.6 min. Railway scheduled-to-healthy: about
+  2.9 min, flat.
+- **The unit-suite step of `checks` swings 170-190 s against 220-320 s on the same GitHub-hosted
+  `ubuntu-latest` runner** (runner variance, not a code change) and is most of the CI difference.
+- **The Sentry source-map plugin adds about 40 s to every FRESH Railway build** (162 s to 202 s, n=12 and
+  n=14; the upload step is about 25 s). Compare fresh builds only: a cached rebuild of one sha takes
+  about 40 s and skews any all-builds median (the first comparison said +64 s and was wrong for that
+  reason).
+- **A scheduled run holds a deploy.** A `schedule:` run attaches its check suite to whatever commit is
+  `main` HEAD when it starts, and Wait for CI holds that commit's deploy until the suite ends. On 16 Oct
+  the daily Security Scan (Semgrep step alone 572 s) started at 12:45 Cairo and held a deploy about 9
+  minutes. GitHub starts these crons 4.5-9.5 hours after the minute requested, so the request was moved
+  from 05:17 to 20:17 UTC; merges to `main` per Cairo hour since 2 Oct run 3.4-3.8 at 22:00-00:00 and
+  0.74-1.35 at 04:00-07:00. Whether the late start follows the new request is unproven: read the start
+  times with `gh run list --workflow security-scan.yml` after a few days, and if they still fall after
+  08:00 UTC, dispatch it from cron-job.org at a chosen quiet minute instead.
+- **A build that fails only when a Sentry token is present reaches production green.** PR builds carry
+  no token, so on 16 Oct 13:12-13:57 two merges never deployed (`withSentryConfig is not a function`:
+  the plugin lives at `@sentry/nextjs/config`, not the package root) and the fix took about 23 minutes.
+  `tests/sentry-production-only.test.ts` now loads `next.config.ts` through Next's own loader with a
+  dummy token, so a plugin that cannot load fails the PR instead.
+
 ## Production Verification
 
 The public production domain is https://phoenix-hr.satopharma.com (also reachable at

@@ -8,16 +8,23 @@
  * 🔴 WHAT IS ON SCREEN IS WHAT IS IN THE FILE. The download link is built from the choice that was APPLIED,
  * never from the form as it stands now, so editing a field after Apply cannot make the file differ from the
  * page. Both are answered by the same server loader, which is also what removes a field above the viewer's
- * sight: the SFE Manager is never offered the mock-location evidence and could not ask for it by hand.
+ * sight: the SFE Manager is never offered the mock-location evidence and could not ask for it by hand. The
+ * result filters (2026-10-16) keep the same promise: they narrow the dashboard, the map and the table
+ * through `narrowVisitReportView`, and the link carries the same four filters to the workbook route, which
+ * narrows through the same function.
+ *
+ * Choosing fields (owner, 2026-10-16): three ready-made sets cut to the reader's sight, the reader's own
+ * saved views (server-side, owner only, fields only), and — with no link to reopen — the last choice made
+ * in this browser, ticked on arrival. None of them applies anything; Apply still does.
  *
  * The choice rides in the page address so a link reopens the same report. The address is read-write only
- * from the page's own path — this file names no route.
+ * from the page's own path — this file names no page route.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Download } from "lucide-react";
+import { Download, Trash2 } from "lucide-react";
 
-import { crmPost, crmUrl, messageOf } from "@/components/phoenix-crm/api";
+import { crmDelete, crmPost, crmUrl, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { countText, dayLabelWithYear, shiftIsoDay } from "@/components/phoenix-crm/format";
 import { VisitReportDashboardView } from "@/components/phoenix-crm/visit-report/visit-report-dashboard";
 import { VisitReportMap } from "@/components/phoenix-crm/visit-report/visit-report-map";
@@ -36,9 +43,23 @@ import {
 import { CheckTile } from "@/components/ui/form-kit";
 import { cn } from "@/lib/utils";
 import {
+  EMPTY_VISIT_REPORT_FILTER,
+  describeVisitReportFilter,
+  isVisitReportFilterEmpty,
+  narrowVisitReportView,
+  visitReportFilterOptions,
+  visitReportFilterParams,
+  type VisitReportFilter,
+} from "@/lib/phoenix-crm/visit-report-filters";
+import {
   VISIT_REPORT_CATEGORIES,
+  VISIT_REPORT_SAVED_VIEWS_MAX,
+  VISIT_REPORT_STARTER_SETS,
+  VISIT_REPORT_VIEW_NAME_MAX,
   resolveVisitReportPeriod,
   visitReportFieldsFor,
+  visitReportStarterFields,
+  type VisitReportSavedView,
   type VisitReportScopeView,
   type VisitReportView,
 } from "@/lib/phoenix-crm/visit-report-fields";
@@ -56,6 +77,31 @@ type Applied = { kind: "rep" | "district"; id: string; from: string; to: string;
 
 const REPORT_ENDPOINT = "/api/phoenix-crm/visit-report";
 const EXPORT_ENDPOINT = "/api/phoenix-crm/visit-report/export";
+const VIEWS_ENDPOINT = "/api/phoenix-crm/visit-report/views";
+
+/**
+ * The last choice of fields, in THIS browser only — a convenience. The saved views are the durable store,
+ * on the server; this is lost with a private window or cleared site data, and the page works without it.
+ */
+const LAST_FIELDS_KEY = "phoenix-crm:visit-report:last-fields";
+
+function readLastFields(): string[] {
+  try {
+    const raw = window.localStorage.getItem(LAST_FIELDS_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((key): key is string => typeof key === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLastFields(keys: ReadonlyArray<string>): void {
+  try {
+    window.localStorage.setItem(LAST_FIELDS_KEY, JSON.stringify(keys));
+  } catch {
+    // Blocked or full storage: the choice is simply not remembered.
+  }
+}
 
 function splitTarget(value: string): { kind: "rep" | "district"; id: string } | null {
   const [kind, ...rest] = value.split(":");
@@ -73,6 +119,8 @@ function previousMonth(isoDay: string): { from: string; to: string } {
   return { from: first.toISOString().slice(0, 10), to: last.toISOString().slice(0, 10) };
 }
 
+const SUBHEAD = "text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+
 export function VisitReportGenerator({ initial, scope }: { initial: VisitReportInitial; scope: VisitReportScopeView }) {
   const offered = useMemo(() => visitReportFieldsFor(scope.sight), [scope.sight]);
   const offeredKeys = useMemo(() => new Set(offered.map((field) => field.key)), [offered]);
@@ -89,6 +137,13 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
   const [view, setView] = useState<VisitReportView | null>(null);
   const [applied, setApplied] = useState<Applied | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<VisitReportFilter>(EMPTY_VISIT_REPORT_FILTER);
+  /** Where the ticked fields came from — a ready-made set, a saved view or the last choice — said under the buttons. */
+  const [startedFrom, setStartedFrom] = useState<string | null>(null);
+  const [viewName, setViewName] = useState("");
+  const [viewsBusy, setViewsBusy] = useState<string | null>(null);
+  const [viewsNote, setViewsNote] = useState<{ tone: "bad" | "good"; text: string } | null>(null);
+  const savedViews = useCrmGet<VisitReportSavedView[]>(VIEWS_ENDPOINT, "views");
   const autoRan = useRef(false);
   const resultRef = useRef<HTMLDivElement | null>(null);
 
@@ -122,6 +177,13 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
       return next;
     });
 
+  /** Ticks exactly these fields (those this reader is offered) and says where they came from. */
+  const startFrom = (label: string, keys: ReadonlyArray<string>) => {
+    const wanted = new Set(keys);
+    setSelected(new Set(offered.filter((field) => wanted.has(field.key)).map((field) => field.key)));
+    setStartedFrom(label);
+  };
+
   const run = useCallback(
     async (choice: Applied) => {
       setBusy(true);
@@ -135,6 +197,9 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
         setView(answer);
         setApplied(choice);
         setHighlightId(null);
+        // A new answer starts unnarrowed: a person or a day chosen for the last one may not be in this one.
+        setFilter(EMPTY_VISIT_REPORT_FILTER);
+        writeLastFields(choice.fields);
         const params = new URLSearchParams({
           apply: "1",
           fields: choice.fields.join(","),
@@ -175,18 +240,59 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
     });
   };
 
-  // A link carrying `apply=1` reopens its own report once, on arrival — never again after he edits the form.
+  // On arrival, once: a link carrying `apply=1` reopens its own report; with no link and no fields in the
+  // address, the last choice made in this browser is ticked. Never again after the form is edited.
   useEffect(() => {
     if (autoRan.current) return;
     autoRan.current = true;
     const linked = splitTarget(initial.target);
-    if (!initial.apply || !linked || !initial.from || !initial.to) return;
-    // In the catalogue's order, the way the form lists them, so the page never reads its own link as an edit.
-    const keys = offered.filter((field) => initial.fields.includes(field.key)).map((field) => field.key);
-    // Deferred a tick: the report's own state is set by `run`, and an effect must not set state in the same
-    // breath it runs (react-hooks/set-state-in-effect). No cleanup, so a development double-run still fires once.
-    if (keys.length > 0) queueMicrotask(() => void run({ fields: keys, from: initial.from, id: linked.id, kind: linked.kind, to: initial.to }));
-  }, [initial, offered, run]);
+    if (initial.apply && linked && initial.from && initial.to) {
+      // In the catalogue's order, the way the form lists them, so the page never reads its own link as an edit.
+      const keys = offered.filter((field) => initial.fields.includes(field.key)).map((field) => field.key);
+      // Deferred a tick: the report's own state is set by `run`, and an effect must not set state in the same
+      // breath it runs (react-hooks/set-state-in-effect). No cleanup, so a development double-run still fires once.
+      if (keys.length > 0) queueMicrotask(() => void run({ fields: keys, from: initial.from, id: linked.id, kind: linked.kind, to: initial.to }));
+      return;
+    }
+    if (initial.fields.length > 0) return;
+    const remembered = readLastFields().filter((key) => offeredKeys.has(key));
+    if (remembered.length === 0) return;
+    queueMicrotask(() => {
+      setSelected(new Set(remembered));
+      setStartedFrom("your last choice");
+    });
+  }, [initial, offered, offeredKeys, run]);
+
+  const saveView = async () => {
+    const keys = offered.filter((field) => selected.has(field.key)).map((field) => field.key);
+    setViewsBusy("save");
+    setViewsNote(null);
+    try {
+      const saved = await crmPost<VisitReportSavedView>(VIEWS_ENDPOINT, { fields: keys, name: viewName }, "view");
+      const others = (savedViews.data ?? []).filter((entry) => entry.id !== saved.id && entry.name !== saved.name);
+      savedViews.replace([...others, saved].sort((left, right) => left.name.localeCompare(right.name)));
+      setViewName("");
+      setViewsNote({ text: `Saved "${saved.name}" with ${countText(saved.fields.length)} field${saved.fields.length === 1 ? "" : "s"}.`, tone: "good" });
+    } catch (cause) {
+      setViewsNote({ text: messageOf(cause), tone: "bad" });
+    } finally {
+      setViewsBusy(null);
+    }
+  };
+
+  const deleteView = async (entry: VisitReportSavedView) => {
+    setViewsBusy(entry.id);
+    setViewsNote(null);
+    try {
+      await crmDelete<boolean>(crmUrl(VIEWS_ENDPOINT, { id: entry.id }), "deleted");
+      savedViews.replace((savedViews.data ?? []).filter((other) => other.id !== entry.id));
+      setViewsNote({ text: `Deleted "${entry.name}".`, tone: "good" });
+    } catch (cause) {
+      setViewsNote({ text: messageOf(cause), tone: "bad" });
+    } finally {
+      setViewsBusy(null);
+    }
+  };
 
   const chips = useMemo(() => {
     const lastMonth = previousMonth(scope.cairoToday);
@@ -204,6 +310,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
         id: applied.id,
         kind: applied.kind,
         to: applied.to,
+        ...visitReportFilterParams(filter),
       })
     : null;
 
@@ -223,6 +330,17 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
     const chosen = new Set(view.selected);
     return offered.filter((field) => chosen.has(field.key));
   }, [offered, view]);
+
+  // The applied answer, narrowed by the result filters — the dashboard, the map, the table and the file.
+  const shown = useMemo(() => (view ? narrowVisitReportView(view, filter, appliedFields) : null), [appliedFields, filter, view]);
+  const options = useMemo(() => (view ? visitReportFilterOptions(view.rows) : null), [view]);
+  const narrowed = !isVisitReportFilterEmpty(filter);
+  const setFilterPart = <K extends keyof VisitReportFilter>(key: K, value: VisitReportFilter[K]) =>
+    setFilter((current) => ({ ...current, [key]: value }));
+
+  const views = savedViews.data;
+  const nameTaken = views?.some((entry) => entry.name === viewName.replace(/\s+/g, " ").trim()) ?? false;
+  const atCap = (views?.length ?? 0) >= VISIT_REPORT_SAVED_VIEWS_MAX && !nameTaken;
 
   return (
     <div className="grid min-w-0 gap-5">
@@ -291,16 +409,114 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
         <CrmBlock
           actions={
             <>
-              <CrmButton onClick={() => setSelected(new Set(offered.map((field) => field.key)))} size="sm">
+              <CrmButton
+                onClick={() => {
+                  setSelected(new Set(offered.map((field) => field.key)));
+                  setStartedFrom(null);
+                }}
+                size="sm"
+              >
                 Select everything
               </CrmButton>
-              <CrmButton onClick={() => setSelected(new Set())} size="sm">
+              <CrmButton
+                onClick={() => {
+                  setSelected(new Set());
+                  setStartedFrom(null);
+                }}
+                size="sm"
+              >
                 Clear
               </CrmButton>
             </>
           }
           title={`2 · Fields — ${countText(selected.size)} of ${countText(offered.length)} chosen`}
         >
+          <div className="mb-3 grid min-w-0 gap-4 border border-slate-200 bg-slate-50 p-3.5">
+            <div className="grid min-w-0 gap-2">
+              <p className={SUBHEAD}>Start from a ready-made set</p>
+              <div className="flex min-w-0 flex-wrap gap-2">
+                {VISIT_REPORT_STARTER_SETS.map((set) => {
+                  const keys = visitReportStarterFields(set, scope.sight).map((field) => field.key);
+                  return (
+                    <CrmButton key={set.id} onClick={() => startFrom(set.label, keys)} size="sm" title={set.blurb}>
+                      {set.label} · {countText(keys.length)}
+                    </CrmButton>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid min-w-0 gap-2">
+              <p className={SUBHEAD}>Your saved views</p>
+              {savedViews.error ? (
+                <p className="break-words text-xs font-semibold leading-5 text-rose-700">{savedViews.error}</p>
+              ) : views === null ? (
+                <p className="text-xs font-medium leading-5 text-slate-500">Reading your saved views.</p>
+              ) : views.length === 0 ? (
+                <p className="text-xs font-medium leading-5 text-slate-500">None yet. Tick the fields you use, name them below and save.</p>
+              ) : (
+                <div className="flex min-w-0 flex-wrap gap-2">
+                  {views.map((entry) => (
+                    <span className="inline-flex min-w-0 max-w-full items-stretch" key={entry.id}>
+                      <CrmButton className="min-w-0 break-words" onClick={() => startFrom(entry.name, entry.fields)} size="sm">
+                        {entry.name} · {countText(entry.fields.length)}
+                      </CrmButton>
+                      <CrmButton
+                        aria-label={`Delete the saved view ${entry.name}`}
+                        busy={viewsBusy === entry.id}
+                        className="-ml-px shrink-0"
+                        onClick={() => void deleteView(entry)}
+                        size="sm"
+                        title="Delete this saved view"
+                        variant="danger"
+                      >
+                        {viewsBusy === entry.id ? null : <Trash2 aria-hidden className="h-3.5 w-3.5" />}
+                      </CrmButton>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+              <CrmField
+                hint={`Only you see your saved views, on any device. Up to ${VISIT_REPORT_SAVED_VIEWS_MAX}; the same name again replaces that view.`}
+                htmlFor="visit-report-view-name"
+                label="Save the ticked fields as a view"
+              >
+                <input
+                  className={crmInputClassName}
+                  id="visit-report-view-name"
+                  maxLength={VISIT_REPORT_VIEW_NAME_MAX}
+                  onChange={(event) => setViewName(event.target.value)}
+                  placeholder="A name, such as Monday review"
+                  type="text"
+                  value={viewName}
+                />
+              </CrmField>
+              <CrmButton
+                busy={viewsBusy === "save"}
+                disabled={!viewName.trim() || selected.size === 0 || atCap || views === null}
+                onClick={() => void saveView()}
+              >
+                {nameTaken ? "Replace view" : "Save view"}
+              </CrmButton>
+            </div>
+            {atCap ? (
+              <p className="text-xs font-semibold leading-5 text-amber-800">
+                You have {VISIT_REPORT_SAVED_VIEWS_MAX} saved views. Delete one to save another, or reuse a name to replace it.
+              </p>
+            ) : null}
+            {viewsNote ? (
+              <CrmNote tone={viewsNote.tone}>{viewsNote.text}</CrmNote>
+            ) : null}
+            {startedFrom ? (
+              <p className="break-words text-xs font-semibold leading-5 text-slate-600">
+                Ticked from {startedFrom}. Change any box below, then press Apply.
+              </p>
+            ) : null}
+          </div>
+
           <div className="grid min-w-0 gap-3">
             {VISIT_REPORT_CATEGORIES.map((category) => {
               const fields = offered.filter((field) => field.category === category.id);
@@ -375,7 +591,9 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
             ) : null}
             <p className="min-w-0 shrink grow basis-full break-words text-xs font-semibold text-slate-500 sm:basis-0 sm:text-right">
               {countText(selected.size)} of {countText(offered.length)} fields chosen
-              {downloadHref ? " · the file holds exactly the visits and fields shown below" : ""}
+              {downloadHref
+                ? ` · the file holds exactly the visits shown below${narrowed ? " after narrowing" : ""}, and always starts with the date, who visited and the customer`
+                : ""}
             </p>
           </div>
         </div>
@@ -383,22 +601,84 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
 
       {busy && !view ? <CrmLoading label="Building the report" /> : null}
 
-      {view ? (
+      {view && shown && options ? (
         <div className="grid min-w-0 scroll-mt-4 gap-5" ref={resultRef}>
           <CrmPanel
             eyebrow="Result"
             title={view.target.name}
             description={
               <>
-                {dayLabelWithYear(view.period.from)} to {dayLabelWithYear(view.period.to)} · {countText(view.total)} visit{view.total === 1 ? "" : "s"} ·{" "}
+                {dayLabelWithYear(view.period.from)} to {dayLabelWithYear(view.period.to)} ·{" "}
+                {narrowed ? `${countText(shown.total)} of ${countText(view.total)} visits shown` : `${countText(view.total)} visit${view.total === 1 ? "" : "s"}`} ·{" "}
                 {countText(view.selected.length)} field{view.selected.length === 1 ? "" : "s"}
                 {view.target.kind === "district" ? ` · ${countText(view.target.reps.length)} reps` : ""}
               </>
             }
-          />
-          <VisitReportDashboardView dashboard={view.dashboard} />
-          <VisitReportMap highlightId={highlightId} onPick={setHighlightId} rows={view.rows} />
-          <VisitReportTable fields={appliedFields} highlightId={highlightId} rows={view.rows} />
+          >
+            <CrmBlock title="Show only">
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <CrmField htmlFor="visit-report-filter-who" label="Who visited">
+                  <CrmSelect id="visit-report-filter-who" onChange={(event) => setFilterPart("who", event.target.value || null)} value={filter.who ?? ""}>
+                    <option value="">Everyone</option>
+                    {options.who.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
+                <CrmField htmlFor="visit-report-filter-day" label="Day">
+                  <CrmSelect id="visit-report-filter-day" onChange={(event) => setFilterPart("day", event.target.value || null)} value={filter.day ?? ""}>
+                    <option value="">Every day</option>
+                    {options.days.map((day) => (
+                      <option key={day} value={day}>
+                        {dayLabelWithYear(day)}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
+                <CrmField htmlFor="visit-report-filter-planned" label="On the plan">
+                  <CrmSelect
+                    id="visit-report-filter-planned"
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setFilterPart("planned", value === "planned" || value === "unplanned" ? value : null);
+                    }}
+                    value={filter.planned ?? ""}
+                  >
+                    <option value="">Planned and unplanned</option>
+                    <option value="planned">Planned only</option>
+                    <option value="unplanned">Unplanned only</option>
+                  </CrmSelect>
+                </CrmField>
+                <CrmField htmlFor="visit-report-filter-position" label="Position against the place">
+                  <CrmSelect id="visit-report-filter-position" onChange={(event) => setFilterPart("position", event.target.value || null)} value={filter.position ?? ""}>
+                    <option value="">Any position</option>
+                    {options.positions.map((position) => (
+                      <option key={position} value={position}>
+                        {position}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
+              </div>
+              <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
+                <p className="min-w-0 grow break-words text-xs font-semibold leading-5 text-slate-500">
+                  {narrowed
+                    ? `Showing ${countText(shown.total)} of ${countText(view.total)} visits · ${describeVisitReportFilter(filter)}. The dashboard, the map, the visits and the Excel file are narrowed together.`
+                    : "Narrows the dashboard, the map, the visits and the Excel file together, without reading the report again."}
+                </p>
+                {narrowed ? (
+                  <CrmButton onClick={() => setFilter(EMPTY_VISIT_REPORT_FILTER)} size="sm">
+                    Show everything
+                  </CrmButton>
+                ) : null}
+              </div>
+            </CrmBlock>
+          </CrmPanel>
+          <VisitReportDashboardView dashboard={shown.dashboard} />
+          <VisitReportMap highlightId={highlightId} onPick={setHighlightId} rows={shown.rows} />
+          <VisitReportTable fields={appliedFields} highlightId={highlightId} rows={shown.rows} />
         </div>
       ) : null}
     </div>

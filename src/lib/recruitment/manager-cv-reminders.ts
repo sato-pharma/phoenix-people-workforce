@@ -3,8 +3,8 @@
 // The owner, 2026-10-16: when a CV reaches a manager's folder, "the folder pumps notifications and
 // never stop until the cv is seen". The first alert is the one the send itself raises
 // (pushCandidatesToManager). This is every one after it: hourly through the Cairo working day, one
-// message per manager naming every CV not yet opened, until each one is opened or goes back to the
-// recruitment team at 45 days.
+// message per manager naming every CV not yet opened, until each one is opened, is taken back, or is
+// seven days old (REMINDER_MAX_DAYS; the CV stays in the folder, only the nag ends).
 //
 // "SEEN" IS "OPENED", and it is the manager's own `ats_candidate_views` row — the same row the
 // recruiter's "Opened by" banner reads. A view at or after the send counts; a re-push after an old
@@ -27,6 +27,7 @@ import { boardsForManager, districtReturnSuppressionKey } from "@/lib/recruitmen
 import { loadDistrictSeatRows } from "@/lib/recruitment/district-manager-folders-db";
 import {
   isReminderHour,
+  isWithinReminderWindow,
   managerFolderShelves,
   reminderHourBucket,
   unseenSendsByManager,
@@ -108,6 +109,8 @@ export async function runManagerCvReminders(
   const shelves = managerFolderShelves(rows);
   const folderSends: FolderSend[] = sends
     .filter((send) => boardsForManager(shelves, send.managerHrId).length > 0)
+    // Seven days and the nag ends; the CV stays in the folder (owner, 2026-10-16).
+    .filter((send) => isWithinReminderWindow(send.sentAt, now))
     .map((send) => ({
       candidateId: send.candidateId,
       folderArea: send.position?.areaName ?? null,
