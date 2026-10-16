@@ -138,15 +138,18 @@ export function jobPostFileStem(content: Pick<JobPostContent, "title">, area?: s
 
 type Fact = [label: string, value: string];
 
-/** The key facts, in the approved order. Location reads the area when the post names exactly one. */
+/**
+ * The key facts, in the approved order. Location is the title's own ("Field-based, Egypt",
+ * "Sheraton, Cairo") and never the area: the areas band carries those, large, and a fact repeating the
+ * one area directly above that band read as a mistake on the per-area picture (owner, 2026-10-16).
+ */
 function facts(content: JobPostContent): Fact[] {
   const out: Fact[] = [];
   if (content.reportsTo) out.push(["Reports to", content.reportsTo]);
   out.push(["Department", content.department]);
   if (content.line) out.push(["Line", content.line]);
   out.push(["Employment", content.employment]);
-  const n = content.areas.length;
-  out.push(["Location", n === 1 ? content.areas[0]! : n > 1 ? `${n} areas` : content.location]);
+  out.push(["Location", content.location]);
   return out;
 }
 
@@ -186,7 +189,16 @@ const BASE_CSS = `
   .areas.stack { flex-direction: column; align-items: stretch; gap: 12px; padding: 0; border: 0; background: none; margin-top: 26px; }
   .areas.stack .al { flex-direction: column; gap: 8px; }
   .areas.stack .al span { background: rgba(255,255,255,.06); color: #fff; box-shadow: inset 0 0 0 1px rgba(93,183,232,.55); }
-  .areas.stack .ak { color: var(--blue-light); } .areas.stack .ak s, .areas.stack .al span i { background: var(--blue-light); }`;
+  .areas.stack .ak { color: var(--blue-light); } .areas.stack .ak s, .areas.stack .al span i { background: var(--blue-light); }
+  /* 🔒 EVERY AREA SITS IN ITS OWN FRAME (owner, 2026-10-16: "put every area in separate frame") — one or
+     twelve, each area name is boxed on its own, never run together and never a bare line of text. */
+  .areas.one { gap: 26px; padding: 17px 22px; }
+  .areas.one .ak { font-size: 12px; }
+  .areas.one .al span { padding: 11px 20px; gap: 12px; font-size: 28px; letter-spacing: -.01em; line-height: 1.15; box-shadow: inset 0 0 0 2px var(--blue); }
+  .areas.one .al span i { width: 9px; height: 9px; }
+  .areas.one:not(.dark):not(.ink):not(.stack) { border-color: var(--blue); background: #eaf5fc; }
+  .areas.one.stack { gap: 14px; }
+  .areas.one.stack .al span { font-size: 30px; padding: 12px 18px; box-shadow: inset 0 0 0 2px var(--blue-light); }`;
 
 const FOOT_CSS = `
   .foot { position: relative; height: 84px; flex-shrink: 0; background: var(--ink); display: flex; align-items: center; justify-content: space-between; padding: 0 72px; }
@@ -304,10 +316,13 @@ type Parts = {
 function parts(c: JobPostContent, a: JobPostAssets): Parts {
   const li = (items: JobPostLine[]) => items.map((line) => `<li><s></s><p>${lineHtml(line)}</p></li>`).join("");
   const n = c.areas.length;
-  // A one-area picture carries its area in the Location fact; the list block is for two or more.
+  // 🔴 THE AREA IS THE FIRST THING A FIELD-FORCE CANDIDATE LOOKS FOR, SO IT IS A BAND, NOT A FACT
+  // (owner, 2026-10-16: "the area or region we are hiring in must be clear obvious clear"). Before that
+  // a one-area picture — the per-area download, the one that actually goes out — named its area only in
+  // the small Location fact. It now carries the same band as a multi-area post, with the area set large.
   const areas = (cls = "", style = "") =>
-    n > 1
-      ? `<div class="areas ${cls}" style="${style}"><div class="ak"><s></s>Open in ${n} areas</div><div class="al">${c.areas
+    n > 0
+      ? `<div class="areas ${n === 1 ? "one " : ""}${cls}" style="${style}"><div class="ak"><s></s>Hiring in${n > 1 ? ` ${n} areas` : ""}</div><div class="al">${c.areas
           .map((area) => `<span><i></i>${escapeHtml(area)}</span>`)
           .join("")}</div></div>`
       : "";
@@ -420,7 +435,7 @@ function executive(p: Parts): string {
 }
 
 function split(p: Parts): string {
-  const side = p.f.filter(([k]) => k !== "Department" && !(p.c.areas.length > 1 && k === "Location"));
+  const side = p.f.filter(([k]) => k !== "Department");
   return doc(`${p.c.title} - Split`, p.a, `
   .mast { height: 96px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 72px; border-bottom: 3px solid var(--blue); }
   .mast img { height: 46px; }

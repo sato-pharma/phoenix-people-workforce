@@ -62,6 +62,7 @@ function applyBands(html: string): number {
 }
 
 export function runRecruitmentJobPostsTests() {
+  const occurrences = (haystack: string, needle: string) => haystack.split(needle).length - 1;
   // ── Every template carries every word ──────────────────────────────────────────────────────────
   assert.equal(JOB_POST_TEMPLATES.length, 6, "the owner's five approved templates, plus Brand Brief for product managers (2026-10-16)");
 
@@ -96,7 +97,13 @@ export function runRecruitmentJobPostsTests() {
         assert.ok(!html.includes(other), `${key}: the ${area} picture must not name ${other}`);
       }
       assert.ok(!html.includes("and your area"), `${key}: a one-area picture does not ask for the area`);
-      assert.ok(!html.includes("Open in"), `${key}: a one-area picture has no area list`);
+      // 🔴 The area is a BAND on every design, not just the Location fact (owner, 2026-10-16: "the area
+      // or region we are hiring in must be clear obvious clear"). The per-area picture is the one that
+      // goes out, so this is the case that must shout — and the fact must NOT repeat it above the band.
+      assert.ok(html.includes(`<div class="areas one `), `${key}: a one-area picture carries the area band`);
+      assert.ok(html.includes("<s></s>Hiring in</div>") && !html.includes("Hiring in 1 area"), `${key}: the band reads "Hiring in", with no count for one area`);
+      assert.equal(occurrences(html, `>${area}<`), 1, `${key}: the ${area} picture names ${area} ONCE — the band, never also the Location fact`);
+      assert.ok(html.includes(">Field-based, Egypt<") || html.includes(">Sheraton, Cairo<"), `${key}: the Location fact keeps the title's own location`);
     }
   }
   assert.deepEqual(all.areas, AREAS, "narrowing to one area leaves the source post untouched");
@@ -104,7 +111,7 @@ export function runRecruitmentJobPostsTests() {
   // No areas at all: the plain location fact, and no area block.
   const noAreas = renderJobPostHtml(post(), "executive", ASSETS);
   assert.ok(noAreas.includes("Sheraton, Cairo"), "no area chosen -> the location fact is printed");
-  assert.ok(!noAreas.includes("Open in"), "no area chosen -> no area block");
+  assert.ok(!noAreas.includes("Hiring in") && !noAreas.includes('class="areas'), "no area chosen -> no area band");
 
   // ── The line prints only when it was chosen ────────────────────────────────────────────────────
   for (const { key } of JOB_POST_TEMPLATES) {
@@ -264,7 +271,6 @@ export function runRecruitmentJobPostsTests() {
   // The layout pass reports whether it ran out of room; the server refuses such a post (422), and the
   // preview shows the same verdict, so the person sees it before pressing download.
   const drawn = renderJobPostHtml(post(), "executive", ASSETS);
-  const occurrences = (haystack: string, needle: string) => haystack.split(needle).length - 1;
   // Executive with a two-line headline: the title drops to a statement line under it. A fixed 326px hero
   // hid that line under the facts card overlapping the hero's foot (Product Manager, 2026-10-16).
   const headlined = renderJobPostHtml(post({ headline: "Own the brand.\nLead the launch." }), "executive", ASSETS);
