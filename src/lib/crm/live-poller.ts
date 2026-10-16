@@ -466,6 +466,51 @@ async function probeWindow(
   }
 }
 
+/** A run is a DEEP run (rolling sync or wide reconcile) when its window is this many days wide. */
+export const DEEP_RUN_MIN_SPAN_DAYS = 9;
+const RECONCILE_MIN_SPAN_DAYS = 25;
+
+/**
+ * The last successful rolling sync and wide reconcile, read from ireports360_visits_sync_runs.
+ *
+ * The read asks for DEEP runs only (`date_from` at least DEEP_RUN_MIN_SPAN_DAYS back). It used to
+ * take the newest 200 successful rows of every kind, and the live poll writes a row for each small
+ * probe: on 2026-10-11 the table took 20-44 of them an hour from 10:00 Cairo, so by the 17:35
+ * deploy the 04:00 reconcile was 231 rows back, fell outside the 200, and the restarted poller saw
+ * "Sunday, past 04:00, never reconciled" and pulled the same 30 days again. Every other weekday is
+ * safe because the reconcile is only ever due on a Sunday, which is why it surfaced on Sundays.
+ * Probe rows begin within two days of today, so the filter drops them in SQL and the 200-row cap
+ * can no longer be spent on them.
+ */
+export async function readDeepRunMarkers(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  todayIso: string,
+): Promise<{ lastReconcileSuccessMs: number | null; lastRollingSuccessMs: number | null }> {
+  const { data, error } = await supabase
+    .from(CRM_SYNC_RUNS_TABLE)
+    .select("date_from, date_to, started_at, status")
+    .eq("status", "success")
+    .lte("date_from", addDaysIso(todayIso, -DEEP_RUN_MIN_SPAN_DAYS))
+    .order("started_at", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(error.message);
+  let lastReconcileSuccessMs: number | null = null;
+  let lastRollingSuccessMs: number | null = null;
+  for (const row of (data ?? []) as Array<{ date_from: string; date_to: string; started_at: string; status: string }>) {
+    const spanDays = Math.round(
+      (new Date(`${row.date_to}T00:00:00Z`).getTime() - new Date(`${row.date_from}T00:00:00Z`).getTime()) / 86_400_000,
+    );
+    const startedMs = new Date(row.started_at).getTime();
+    if (!Number.isFinite(startedMs)) continue;
+    if (spanDays >= RECONCILE_MIN_SPAN_DAYS && lastReconcileSuccessMs === null) lastReconcileSuccessMs = startedMs;
+    else if (spanDays >= DEEP_RUN_MIN_SPAN_DAYS && spanDays < RECONCILE_MIN_SPAN_DAYS && lastRollingSuccessMs === null) {
+      lastRollingSuccessMs = startedMs;
+    }
+    if (lastReconcileSuccessMs !== null && lastRollingSuccessMs !== null) break;
+  }
+  return { lastReconcileSuccessMs, lastRollingSuccessMs };
+}
+
 /**
  * Seeds the scheduled-work markers from the most recent successful deep runs in
  * ireports360_visits_sync_runs, so a deploy restart (which happens on every merge to main)
@@ -476,23 +521,9 @@ async function probeWindow(
  */
 async function seedScheduledWorkMarkers(): Promise<void> {
   try {
-    const { data, error } = await getSupabaseAdmin()
-      .from(CRM_SYNC_RUNS_TABLE)
-      .select("date_from, date_to, started_at, status")
-      .eq("status", "success")
-      .order("started_at", { ascending: false })
-      .limit(200);
-    if (error) throw new Error(error.message);
-    for (const row of (data ?? []) as Array<{ date_from: string; date_to: string; started_at: string; status: string }>) {
-      const spanDays = Math.round(
-        (new Date(`${row.date_to}T00:00:00Z`).getTime() - new Date(`${row.date_from}T00:00:00Z`).getTime()) / 86_400_000,
-      );
-      const startedMs = new Date(row.started_at).getTime();
-      if (!Number.isFinite(startedMs)) continue;
-      if (spanDays >= 25 && state.lastReconcileSuccessMs === null) state.lastReconcileSuccessMs = startedMs;
-      else if (spanDays >= 9 && spanDays < 25 && state.lastRollingSuccessMs === null) state.lastRollingSuccessMs = startedMs;
-      if (state.lastReconcileSuccessMs !== null && state.lastRollingSuccessMs !== null) break;
-    }
+    const markers = await readDeepRunMarkers(getSupabaseAdmin(), cairoTodayIso());
+    if (state.lastReconcileSuccessMs === null) state.lastReconcileSuccessMs = markers.lastReconcileSuccessMs;
+    if (state.lastRollingSuccessMs === null) state.lastRollingSuccessMs = markers.lastRollingSuccessMs;
   } catch (error) {
     logError("CRM live poller could not seed scheduled-work markers; deep runs will fire on the first due tick", {
       error,

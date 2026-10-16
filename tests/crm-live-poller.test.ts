@@ -10,6 +10,7 @@ import {
   CONTACT_LIST_SYNC_LATEST_CAIRO_MINUTES,
   CONTACT_LIST_SYNC_MIN_GAP_MS,
   DAY_TICK_SECONDS,
+  DEEP_RUN_MIN_SPAN_DAYS,
   FAST_TICK_SECONDS,
   NIGHT_TICK_SECONDS,
   PARITY_SWEEP_EARLIEST_CAIRO_MINUTES,
@@ -18,6 +19,7 @@ import {
   PLAN_SYNC_FAILURE_RETRY_GAP_MS,
   PLAN_SYNC_MIN_GAP_MS,
   PROBATION_DV_LOOKBACK_DAYS,
+  readDeepRunMarkers,
   RECONCILE_FAILURE_RETRY_GAP_MS,
   RECONCILE_MIN_GAP_MS,
   resolveDueScheduledWork,
@@ -77,7 +79,7 @@ function memoOf(entries: Array<[number, { day: string; hash: string }]>): Snapsh
   return new Map(entries);
 }
 
-export function runCrmLivePollerTests() {
+export async function runCrmLivePollerTests() {
   // ── stableStringify: key order must not matter, nesting and arrays must ──────────────────────
   assert.equal(stableStringify({ b: 1, a: 2 }), stableStringify({ a: 2, b: 1 }));
   assert.notEqual(stableStringify({ a: 1 }), stableStringify({ a: 2 }));
@@ -619,5 +621,73 @@ export function runCrmLivePollerTests() {
     else process.env.PHOENIX_LIVE_CRM_POLL = savedFlag;
     if (savedRailway === undefined) delete process.env.RAILWAY_ENVIRONMENT_NAME;
     else process.env.RAILWAY_ENVIRONMENT_NAME = savedRailway;
+  }
+
+  // ── A restart on a Sunday afternoon must still find that morning's reconcile ──────────────────
+  // On 2026-10-11 the weekly reconcile ran at 04:00 Cairo and ran AGAIN at 17:35 after a deploy.
+  // The poller remembers its last deep run by reading the newest 200 successful rows of
+  // ireports360_visits_sync_runs, and by 17:35 the table had taken 231 small probe rows after the
+  // 04:00 reconcile, so it was past row 200, the marker came back null and "Sunday, past 04:00,
+  // never reconciled" fired again. The reader must ask for DEEP runs only. The fake below keeps
+  // the table's real shape and applies the filters it is given, so a reader that stops asking for
+  // deep runs sees the 200 newest probes and loses the reconcile.
+  {
+    type RunRow = { date_from: string; date_to: string; started_at: string; status: string };
+    const rows: RunRow[] = [];
+    const reconcileStartedMs = Date.parse("2026-10-10T22:00:13Z"); // 04:00:13 Cairo on Sunday 11 Oct
+    rows.push({ date_from: "2026-08-12", date_to: "2026-09-11", started_at: new Date(reconcileStartedMs).toISOString(), status: "success" });
+    const rollingStartedMs = Date.parse("2026-10-11T12:01:21Z"); // 15:01 Cairo
+    rows.push({ date_from: "2026-10-01", date_to: "2026-10-11", started_at: new Date(rollingStartedMs).toISOString(), status: "success" });
+    rows.push({ date_from: "2026-10-01", date_to: "2026-10-11", started_at: "2026-10-11T06:00:36Z", status: "success" });
+    for (let i = 0; i < 231; i += 1) {
+      // The small same-day and one-day probe rows the live poll writes all day.
+      const startedAt = new Date(Date.parse("2026-10-10T22:30:00Z") + i * 3 * 60_000).toISOString();
+      rows.push({ date_from: i % 2 === 0 ? "2026-10-11" : "2026-10-10", date_to: "2026-10-11", started_at: startedAt, status: "success" });
+    }
+    rows.push({ date_from: "2026-08-05", date_to: "2026-09-04", started_at: "2026-10-04T01:00:00Z", status: "failed" });
+    const fakeSupabase = {
+      from: () => {
+        let filtered = rows.slice();
+        const query = {
+          select: () => query,
+          eq: (column: string, value: string) => {
+            filtered = filtered.filter((row) => (row as unknown as Record<string, string>)[column] === value);
+            return query;
+          },
+          lte: (column: string, value: string) => {
+            filtered = filtered.filter((row) => (row as unknown as Record<string, string>)[column] <= value);
+            return query;
+          },
+          order: (column: string, options: { ascending: boolean }) => {
+            filtered.sort((a, b) => ((a as unknown as Record<string, string>)[column] < (b as unknown as Record<string, string>)[column] ? 1 : -1) * (options.ascending ? -1 : 1));
+            return query;
+          },
+          limit: (count: number) => Promise.resolve({ data: filtered.slice(0, count), error: null }),
+        };
+        return query;
+      },
+    } as never;
+    assert.ok(rows.filter((row) => row.status === "success").length > 200, "the table must hold more successful rows than the reader's cap");
+
+    const markers = await readDeepRunMarkers(fakeSupabase, "2026-10-11");
+    assert.equal(
+      markers.lastReconcileSuccessMs,
+      reconcileStartedMs,
+      "the 04:00 reconcile must still be remembered after 231 probe rows - otherwise a Sunday deploy re-runs the 30-day pull",
+    );
+    assert.equal(markers.lastRollingSuccessMs, rollingStartedMs, "the newest rolling sync is the other marker");
+    assert.ok(DEEP_RUN_MIN_SPAN_DAYS >= 2, "probe windows reach back at most a day or two, so the deep threshold must clear them");
+
+    // And a remembered reconcile is what keeps the weekly job from firing a second time.
+    const sundayAfternoon = Date.parse("2026-10-11T14:35:00Z"); // 17:35 Cairo
+    const dueAfterRestart = resolveDueScheduledWork({
+      ...sunday5amCairo,
+      ...noHistory,
+      ...parityParkedSunday,
+      lastReconcileSuccessMs: markers.lastReconcileSuccessMs,
+      minutesSinceMidnight: 17 * 60 + 35,
+      nowMs: sundayAfternoon,
+    });
+    assert.notEqual(dueAfterRestart, "wide-reconcile", "with its 04:00 run remembered, a 17:35 restart must not run the reconcile again");
   }
 }
