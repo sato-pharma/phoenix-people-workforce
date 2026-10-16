@@ -80,6 +80,7 @@ import { getVacationRequestPageData } from "@/lib/vacation/service";
 import { resolvePersonalWorkspaceTabs } from "@/lib/workspace/personal-workspace-nav";
 import {
   buildHrTodayTasks,
+  ITEM_PREVIEW_LIMIT,
   openWorkforceSeats,
   splitVacanciesByRequisition,
   type HrTask,
@@ -1472,7 +1473,11 @@ export async function getHrCommandCenterData(
   // slowest source, not the sum of them.
   await Promise.all([
     needed.has("recruitment")
-      ? safe("recruitment", () => getRecruitmentDashboard(access, { hiredWindow }), failures).then((value) => {
+      ? safe(
+          "recruitment",
+          () => getRecruitmentDashboard(access, { awaitingReviewLimit: ITEM_PREVIEW_LIMIT, hiredWindow }),
+          failures,
+        ).then((value) => {
           loaded.recruitment = value;
         })
       : null,

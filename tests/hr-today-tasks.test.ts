@@ -629,6 +629,62 @@ export async function runHrTodayTasksTests() {
     );
   }
 
+  // ── 7b. The Screen queue is the candidate pool when the caller loaded it ───
+  {
+    // THE DEFECT THIS PINS (owner, 2026-10-16: "count new candidates"). The queue read applications
+    // against a requisition and showed 0 while 754 candidates sat at status New — the half of the
+    // ATS people actually work is the pool. The total is the pool's `new` pile, the same figure as
+    // "Awaiting Review"; the rows are only the longest-waiting few, so the count must NOT be the
+    // number of rows.
+    const longAgo = new Date(Date.now() - 40 * 86_400_000).toISOString();
+    const sources = {
+      recruitment: {
+        applications: [],
+        awaitingReview: [
+          { fullName: "Mona Fathy", id: "c-1", receivedAt: longAgo, source: "whatsapp" },
+          { fullName: null, id: "c-2", receivedAt: new Date().toISOString(), source: null },
+        ],
+        requisitions: [],
+        summary: { candidatePool: { new: 754 } },
+      },
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- literal fixtures, not fetches
+    const screening = buildHrTodayTasks(sources as any, "HR Resourcing").find(
+      (item) => item.key === "screen-candidates",
+    );
+    assert.ok(screening, "the screening task was not built");
+    assert.equal(screening.count, 754, "RED the queue's count is the pool's undecided pile, not the two rows previewed");
+    assert.equal(screening.totalItems, 754, "and the true number is carried beside the capped rows");
+    assert.equal(screening.title, "Screen 754 candidates", "the heading says the true size");
+    assert.equal(screening.urgency, "overdue", "a CV that has waited 40 days makes the queue overdue");
+    assert.deepEqual(
+      screening.items.map((item) => [item.id, item.meta, item.name]),
+      [
+        ["c-1", "WhatsApp", "Mona Fathy"],
+        ["c-2", "Candidate pool", "Candidate record with no name"],
+      ],
+      "the longest-waiting CV comes first, the intake channel is a name and not a code, and a nameless record is said so",
+    );
+    assert.equal(
+      buildHrTodayTasks(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- literal fixtures, not fetches
+        { recruitment: { applications: [], awaitingReview: [], requisitions: [], summary: { candidatePool: { new: 0 } } } } as any,
+        "HR Resourcing",
+      ).find((item) => item.key === "screen-candidates")?.urgency,
+      "clear",
+      "an empty pool pile is a clear queue, never a phantom row",
+    );
+
+    // Both loaders must ask for it, or the page quietly falls back to the unused half.
+    for (const file of ["../src/lib/hr/command-center.ts", "../src/lib/hr/talent-acquisition-overview.ts"]) {
+      assert.match(
+        readFileSync(new URL(file, import.meta.url), "utf8"),
+        /getRecruitmentDashboard\(access, \{ awaitingReviewLimit: ITEM_PREVIEW_LIMIT, hiredWindow \}\)/,
+        `${file} must load the longest-waiting CVs for the Screen queue`,
+      );
+    }
+  }
+
   // ── 8. A rejected or hired candidate is not waiting at an interview ────────
   {
     // Same defect as §7, on the interview list: no decision screen moves the application's stage.

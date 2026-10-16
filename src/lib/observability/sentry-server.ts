@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 
+import { sentryMonitorConfigFor } from "@/lib/observability/sentry-cron-monitor";
 import {
   SENTRY_ENVIRONMENT,
   SENTRY_PROFILE_SESSION_SAMPLE_RATE,
@@ -45,14 +46,14 @@ export function captureRequestErrorInSentry(...args: Parameters<typeof Sentry.ca
 }
 
 /**
- * One cron run, reported to Sentry's cron monitoring as a check-in. NO `monitorConfig`: a monitor exists only
- * where it was created in Sentry on purpose, so a job nobody set up there sends a check-in Sentry ignores and
- * costs nothing (a monitor is billed per monitor). Never throws.
+ * One cron run, reported to Sentry's cron monitoring as a check-in. The monitor config comes from the register of
+ * scheduled jobs (sentry-cron-monitor.ts), so Sentry creates the monitor on the job's first check-in; a job the
+ * register does not declare sends no config and Sentry ignores it. Never throws.
  */
 export function captureCronCheckInInSentry(jobSlug: string, status: "ok" | "error"): string | undefined {
   if (!started) return undefined;
   try {
-    return Sentry.captureCheckIn({ monitorSlug: jobSlug, status });
+    return Sentry.captureCheckIn({ monitorSlug: jobSlug, status }, sentryMonitorConfigFor(jobSlug));
   } catch {
     return undefined;
   }

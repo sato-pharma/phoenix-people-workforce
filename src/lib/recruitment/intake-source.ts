@@ -18,6 +18,7 @@
 const SOURCE_LABELS: Record<string, string> = {
   email: "Email",
   interview_calendar: "Interview calendar",
+  website: "Website",
   whatsapp: "WhatsApp",
 };
 

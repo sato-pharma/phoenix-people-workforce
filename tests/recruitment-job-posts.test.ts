@@ -62,8 +62,15 @@ function applyBands(html: string): number {
 }
 
 export function runRecruitmentJobPostsTests() {
+  const occurrences = (haystack: string, needle: string) => haystack.split(needle).length - 1;
   // ── Every template carries every word ──────────────────────────────────────────────────────────
-  assert.equal(JOB_POST_TEMPLATES.length, 5, "the owner approved five templates");
+  assert.equal(JOB_POST_TEMPLATES.length, 6, "the owner's five approved templates, plus Brand Brief for product managers (2026-10-16)");
+
+  // Brand Brief prints the title row's headline as its KEY MESSAGE — and nothing at all when there is none.
+  const brief = renderJobPostHtml(post({ headline: "Own the brand.\nLead the launch." }), "brand-brief", ASSETS);
+  assert.ok(brief.includes('<div class="k">Key message</div><p><span>Own the brand.</span><span class="l2">Lead the launch.</span></p>'), "brand-brief: the headline's two lines are the key message");
+  assert.ok(!renderJobPostHtml(post(), "brand-brief", ASSETS).includes("Key message"), "brand-brief: no headline, no key message — a template never invents copy");
+  assert.ok(brief.includes('<div class="abname">01 &mdash; Medical Representative</div>'), "brand-brief: the artboard carries the job title as its name");
 
   for (const { key } of JOB_POST_TEMPLATES) {
     const html = renderJobPostHtml(post({ areas: AREAS }), key, ASSETS);
@@ -90,7 +97,13 @@ export function runRecruitmentJobPostsTests() {
         assert.ok(!html.includes(other), `${key}: the ${area} picture must not name ${other}`);
       }
       assert.ok(!html.includes("and your area"), `${key}: a one-area picture does not ask for the area`);
-      assert.ok(!html.includes("Open in"), `${key}: a one-area picture has no area list`);
+      // 🔴 The area is a BAND on every design, not just the Location fact (owner, 2026-10-16: "the area
+      // or region we are hiring in must be clear obvious clear"). The per-area picture is the one that
+      // goes out, so this is the case that must shout — and the fact must NOT repeat it above the band.
+      assert.ok(html.includes(`<div class="areas one `), `${key}: a one-area picture carries the area band`);
+      assert.ok(html.includes("<s></s>Hiring in</div>") && !html.includes("Hiring in 1 area"), `${key}: the band reads "Hiring in", with no count for one area`);
+      assert.equal(occurrences(html, `>${area}<`), 1, `${key}: the ${area} picture names ${area} ONCE — the band, never also the Location fact`);
+      assert.ok(html.includes(">Field-based, Egypt<") || html.includes(">Sheraton, Cairo<"), `${key}: the Location fact keeps the title's own location`);
     }
   }
   assert.deepEqual(all.areas, AREAS, "narrowing to one area leaves the source post untouched");
@@ -98,7 +111,7 @@ export function runRecruitmentJobPostsTests() {
   // No areas at all: the plain location fact, and no area block.
   const noAreas = renderJobPostHtml(post(), "executive", ASSETS);
   assert.ok(noAreas.includes("Sheraton, Cairo"), "no area chosen -> the location fact is printed");
-  assert.ok(!noAreas.includes("Open in"), "no area chosen -> no area block");
+  assert.ok(!noAreas.includes("Hiring in") && !noAreas.includes('class="areas'), "no area chosen -> no area band");
 
   // ── The line prints only when it was chosen ────────────────────────────────────────────────────
   for (const { key } of JOB_POST_TEMPLATES) {
@@ -209,6 +222,34 @@ export function runRecruitmentJobPostsTests() {
   }
   assert.equal(seeded.get("District Sales Manager")?.duties, 6, "all six District Sales Manager duties are kept");
 
+  // The Product Manager's requirements are the owner's own too (pasted 2026-10-16): a later migration swaps
+  // the seed's draft list for his seven lines, guarded so an edit made on the page is never overwritten.
+  const pmNeeds = readFileSync(new URL("../supabase/migrations/20261016142455_job_post_product_manager_needs.sql", import.meta.url), "utf8");
+  const [pmNew] = [...pmNeeds.matchAll(/'(\[[\s\S]*?\])'::jsonb/g)].map((m) => JSON.parse(m[1]!.replace(/''/g, "'")) as unknown);
+  const pmParsed = coerceTitleDraft({ title: "Product Manager", department: "Marketing", duties: [{ lead: "x", rest: "" }], needs: pmNew });
+  assert.deepEqual(titleDraftViolations(pmParsed), [], "the Product Manager's seven requirements save as written");
+  assert.equal(pmParsed.needs.length, 7, "all seven of the owner's Product Manager requirements are kept");
+  assert.ok(/needs = '\[[\s\S]*?Pharmacy, medicine, veterinary or science degree/.test(pmNeeds), "the update only fires while the requirements still hold the seed's draft");
+  assert.ok(pmNeeds.includes("Greater Cairo resident") && pmNeeds.includes("Chest, ENT or Urology"), "residence and the specialities preference are in the list");
+
+  // The owner then asked (2026-10-16) for the post tailored to marketers: a headline, six duties in a
+  // marketer's own words, his seven requirements tightened. Guarded on the text the two earlier migrations wrote.
+  const pmCopy = readFileSync(new URL("../supabase/migrations/20261016143954_job_post_product_manager_marketer_copy.sql", import.meta.url), "utf8");
+  const [copyDuties, copyNeeds] = [...pmCopy.matchAll(/'(\[[\s\S]*?\])'::jsonb/g)].map((m) => JSON.parse(m[1]!.replace(/''/g, "'")) as unknown);
+  assert.ok(pmCopy.includes("headline = 'Own the brand.' || chr(10) || 'Lead the launch.'"), "the headline is two lines, split on a newline");
+  const copyParsed = coerceTitleDraft({ title: "Product Manager", department: "Marketing", headline: "Own the brand.\nLead the launch.", duties: copyDuties, needs: copyNeeds });
+  assert.deepEqual(titleDraftViolations(copyParsed), [], "the marketer copy saves as written — headline, six duties, seven requirements");
+  assert.deepEqual([copyParsed.duties.length, copyParsed.needs.length], [6, 7], "six duties and all seven of the owner's requirements");
+  assert.ok(copyParsed.needs.some((line) => line.lead === "Greater Cairo resident"), "the residence line stays \"Greater Cairo\", never plain Cairo (owner, 2026-10-16)");
+  assert.ok(/headline is null[\s\S]*?Own your line''s marketing plan[\s\S]*?Preferably experience in Chest, ENT or Urology/.test(pmCopy), "the update only fires while the headline is empty and both lists still hold the earlier text");
+
+  // Then (same day): "cairo resident is prefferable" — the residence line is a preference, still Greater Cairo.
+  const pmResidence = readFileSync(new URL("../supabase/migrations/20261016145415_job_post_product_manager_residence_preferred.sql", import.meta.url), "utf8");
+  const [residenceNeeds, residenceGuard] = [...pmResidence.matchAll(/'(\[[\s\S]*?\])'::jsonb/g)].map((m) => JSON.parse(m[1]!.replace(/''/g, "'")) as Array<{ lead: string; rest: string }>);
+  assert.deepEqual(residenceNeeds!.find((line) => /Cairo/.test(line.lead)), { lead: "Greater Cairo resident", rest: "preferred" }, "the residence line reads \"Greater Cairo resident preferred\" — a preference, never plain Cairo");
+  assert.deepEqual(residenceGuard, copyNeeds, "the residence update only fires while the requirements still hold the marketer copy's list");
+  assert.equal(residenceNeeds!.length, 7, "all seven requirements are kept");
+
   // ── The builder: choosing a title loads its words, and the page wears the shared premium look ──
   const page = readFileSync(new URL("../src/components/recruitment/job-post-builder.tsx", import.meta.url), "utf8");
   assert.ok(/const pick = [\s\S]*?load\(found\)/.test(page), "picking a saved title loads its duties and requirements at once");
@@ -230,7 +271,11 @@ export function runRecruitmentJobPostsTests() {
   // The layout pass reports whether it ran out of room; the server refuses such a post (422), and the
   // preview shows the same verdict, so the person sees it before pressing download.
   const drawn = renderJobPostHtml(post(), "executive", ASSETS);
-  const occurrences = (haystack: string, needle: string) => haystack.split(needle).length - 1;
+  // Executive with a two-line headline: the title drops to a statement line under it. A fixed 326px hero
+  // hid that line under the facts card overlapping the hero's foot (Product Manager, 2026-10-16).
+  const headlined = renderJobPostHtml(post({ headline: "Own the brand.\nLead the launch." }), "executive", ASSETS);
+  assert.ok(headlined.includes('<div class="statement"><i></i>Medical Representative</div>'), "a headlined Executive post still prints the title, as its statement line");
+  assert.ok(headlined.includes(".hero { position: relative; min-height: 326px; padding-bottom: 66px;"), "the Executive hero grows with a two-line headline instead of hiding the title under the facts card");
   assert.ok(drawn.includes("const report = { titles: 0, k: 1, limited: false }"), "the layout report starts as not limited");
   assert.ok(drawn.includes("report.limited = true") && drawn.includes("if (k <= 0.6 || overflowing()) report.limited = true"), "running out of room (a title or the text at its floor, or anything still overflowing) marks the report limited");
   assert.ok(drawn.includes("window.parent.postMessage({ jobPostFit: report }"), "the sandboxed preview posts its fit to the page, the only way out of the frame");

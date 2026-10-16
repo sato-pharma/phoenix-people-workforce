@@ -143,7 +143,7 @@ export function coerceAreas(value: unknown): string[] {
 /** Everything wrong with a post about to be drawn — the title's rules plus the post's own. */
 export function postRequestViolations(input: { draft: JobPostTitleDraft; areas: string[]; line: string | null; template: unknown }): string[] {
   const out = titleDraftViolations(input.draft);
-  if (!isJobPostTemplateKey(input.template)) out.push("Choose one of the five templates.");
+  if (!isJobPostTemplateKey(input.template)) out.push("Choose one of the six templates.");
   if (input.areas.length > JOB_POST_MAX_AREAS) out.push(`A post can list at most ${JOB_POST_MAX_AREAS} areas.`);
   if (input.areas.some((area) => area.length > AREA_MAX)) out.push(`An area name is longer than ${AREA_MAX} characters.`);
   if (input.line && input.line.length > FACT_MAX) out.push(`The line name is longer than ${FACT_MAX} characters.`);
