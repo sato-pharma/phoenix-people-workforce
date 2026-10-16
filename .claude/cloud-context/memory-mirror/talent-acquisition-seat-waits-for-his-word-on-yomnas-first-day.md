@@ -1,21 +1,39 @@
 ---
 name: talent-acquisition-seat-waits-for-his-word-on-yomnas-first-day
-description: "The Talent Acquisition seat (key HR Resourcing) is HANDED OUT BY THE OWNER HIMSELF in User Access (\"Just build the account. I will add here later.\", 2026-10-08) — never assign it for him. The HR Business Partner seat (HR Advisory) was RETIRED the same evening (\"no more HR business partner … everything regarding recruiting is for the talent acquisition\"; the rest \"Leave it for system administrator now\"), so until he hands the seat out, recruiting and the old seat's other work are the Super Admin's alone — by his choice, never \"fix\" it back."
+description: "HANDED OUT — the owner gave Yomna Gamal the Talent Acquisition seat himself on 2026-10-10 20:59 Cairo (app_auth_users HR-011, role `HR Resourcing`, active), so the 2026-10-08 \"just build the account, I will add here later\" is CLOSED. Her employee record exists (HR-011, job_title `Talent Acquisition`, created 2026-10-10 20:59). Still open as of 2026-10-16: her app_auth_users row has **no email**, so she has no sign-in, and she starts Sunday 18 October 2026. The HR Business Partner seat (HR Advisory) stays RETIRED — never revive it."
 metadata:
   node_type: memory
   type: project
-  originSessionId: 20dab7a8-3489-4f14-bae1-fcaf52a0e6bb
-  modified: 2026-10-08T21:30:00.000Z
+  originSessionId: cf710d0c-aa4b-4707-8344-754e4089a663
+  modified: 2026-10-15T22:31:59.187Z
 ---
 
-The seat is built and live (#5552, #5557, #5560, 2026-10-08). Nobody holds it yet. The new hire is **Yomna Gamal**: offer "Talent Acquisition Specialist" sent 2026-10-07, start date 18 October 2026, not accepted as of 2026-10-08 20:45 Cairo, no employee record and no login yet.
+**Verified on production `ozucdzovmcqvepbozvqf`, 2026-10-16 ~01:35 Cairo.** This note previously said
+she had no employee record and no login, and that the seat was waiting on his word. Both were true on
+2026-10-08 and are **no longer true** — he acted on 2026-10-10.
 
-Asked when Yomna should get it, the owner chose **"I'll tell you on her first day"**, then the same evening: **"Just build the account. I will add here later. Just build it and shh."** So HE gives the seat out in User Access (the picker shows it as "Talent Acquisition" since #5560). Nothing is scheduled. A session never assigns it unasked, and keeps replies short on this.
+- `employees` **HR-011** — Yomna Gamal, job_title **`Talent Acquisition`**, department Human Resources,
+  `employment_status` active, created **2026-10-10 20:59:07 Cairo**.
+- `app_auth_users` **HR-011** — role **`HR Resourcing`** (the Talent Acquisition seat), `is_active` true,
+  created **2026-10-10 20:59:14 Cairo**, **`email` is NULL**.
 
-**The HR Business Partner seat is RETIRED, not owed anything** (2026-10-08, PR #5565). First "move recruiting off the HR Business Partner", then "no more HR business partner. This title, no more … everything regarding recruiting is for the talent acquisition", and asked who takes the rest, "Leave it for system administrator now". So: `HR Advisory` is a dormant key in `retiredPhoenixRoles` (empty grants, salary-redaction restrictions kept, refused by User Access); the "HR Business Partner" title and its workbook are gone; its four other functions sit on `UNASSIGNED_HR_FUNCTIONS` (the Super Admin's). The workflow-registry migration `20261008235900_retire_hr_advisory_seat.sql` is APPLIED in production — before it, the Talent Acquisition seat could open the pipeline but move nothing, nor file her own leave. Until he hands the seat out, only the Super Admin works the pipeline — he was told and chose it.
+**The one thing still open: she has no sign-in.** A null `email` on the auth row means no credential to
+give her. Her New Starter Handbook Part One (built 2026-10-12, `SATO-DIS-2026-01 v1.0`) ends on a page
+that shows SIGN-IN and PASSWORD as masked rows with the status "Being prepared for you" and promises
+Part Two "within the week". Her first day is **Sunday 18 October 2026** (confirmed a Sunday).
 
-For reference, when he does hand it out: the account is auto-provisioned as `Employee` — "Talent Acquisition Specialist" is deliberately NOT in `INITIAL_ACCESS_ROLE_BY_TITLE` (`src/lib/employees/access-role.ts`, a closed map of rank-100 field roles; never add this title). The role change is HIS click in User Access (`upsertAccessUserCore` in `src/lib/admin/access-control.ts` writes `app_auth_users.role`, `user_access_profiles` and the session bump together).
+**Title mismatch to settle before Part Two prints:** Phoenix holds `Talent Acquisition`; the handbook
+and her offer both say **Talent Acquisition Specialist** (pages 1 and 6). One of the two should move.
 
-**Why:** he wants the hand-over on his word, not a timer, and he chose to move recruiting before anyone holds the seat.
+**The HR Business Partner seat is RETIRED, not owed anything** (2026-10-08, PR #5565): `HR Advisory` is a
+dormant key in `retiredPhoenixRoles`, the title and its workbook are gone, and its four other functions
+sit on `UNASSIGNED_HR_FUNCTIONS` (the Super Admin's). Migration `20261008235900_retire_hr_advisory_seat.sql`
+is applied in production. Never revive the seat or the title, and never hand its unassigned functions to
+another seat unasked.
 
-**How to apply:** never give an HR seat recruiting back to "cover" the empty seat, never revive the HR Business Partner seat or title, never hand its unassigned functions to a seat unasked, and never create the new hire's employee record or login ahead of HR's own flow. Related: [[hr-seats-are-composed-from-a-function-catalogue]].
+**Why:** he moved recruiting onto this seat before anyone held it, then filled it himself two days later.
+
+**How to apply:** do not re-ask whether to assign the seat — it is assigned. Do not create or alter her
+records to "finish" onboarding. The live gap is the sign-in email, and giving someone a credential is
+his call, not a session's. Related: [[hr-seats-are-composed-from-a-function-catalogue]],
+[[the-house-document-identity-standard]].
