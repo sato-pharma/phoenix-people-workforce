@@ -222,6 +222,21 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
       loader.indexOf("canReadRefusedReadings(viewer)") !== -1 && loader.indexOf("canReadRefusedReadings(viewer)") < loader.indexOf("getSupabaseAdmin()"),
       "the audience is checked before the loader builds a database client",
     );
+    // Phoenix CRM performance audit, 2026-10-16: the fifty-id chunks are read a few at a time, and
+    // read BACK in chunk order with the same two failure rules — a failed customer chunk stops the
+    // names there, a failed saves chunk is skipped — so the board prints what it printed before.
+    assert.equal(
+      (board.match(/mapWithConcurrency\(chunkStarts\([a-zA-Z]+\.length\), CHUNK_READS_AT_ONCE,/g) ?? []).length,
+      2,
+      "both chunked reads — the customers' names and the later saves — go a few at a time",
+    );
+    assert.ok(board.includes("if (customerError) break;"), "a failed name chunk still ends the names there, as the one-at-a-time walk did");
+    assert.ok(board.includes("if (visits.error || places.error) continue;"), "and a failed saves chunk is still skipped, never fatal");
+    assert.match(
+      loader,
+      /await Promise\.all\(\[\s*mapWithConcurrency\(chunkStarts\(customerIds\.length\)[\s\S]*?loadPeopleNames\([\s\S]*?loadLaterSaves\(attempts\),\s*\]\)/,
+      "the customers' names, the reps' names and the later saves are asked at once — none waits for another",
+    );
   }
 
   // ── 6 · Only the recorder and this reader name the table ────────────────────────────────────────

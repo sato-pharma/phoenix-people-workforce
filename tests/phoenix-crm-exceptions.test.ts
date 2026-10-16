@@ -280,13 +280,30 @@ export function runPhoenixCrmExceptionsTests(): void {
     assert.equal(/location[-_]?integrity/i.test(service), false, "the exceptions board reads no integrity evidence");
 
     // Every read is over ALL the seats at once. One-per-territory is 420 round trips for the SFE.
+    // Since 2026-10-16 the plan items are COUNTED in the database rather than carried here row by row
+    // to be counted — a company's week was ten thousand rows for one number per plan.
     assert.equal(
       (service.match(/getSupabaseAdmin\(\)/g) ?? []).length,
-      3,
-      "three direct queries — plans, plan items and visits — plus the readiness RPC, and none of them per territory",
+      2,
+      "two direct queries — plans and visits — plus the readiness and item-count functions, and none of them per territory",
     );
+    assert.ok(service.includes('callPhoenixCrm<unknown>("phoenix_crm_plan_item_counts", { p_plan_ids: part })'), "the items are counted per plan, in the database");
+    assert.equal(service.includes('from("phoenix_crm_plan_items")'), false, "and never read row by row to be counted here");
     assert.ok(service.includes("loadReadiness(seatIds)"), "readiness is asked for every seat in one call");
+    assert.ok(service.includes(": sharedReadiness(seatIds),"), "shared with the adoption report when the pack opens both at once");
     assert.ok(service.includes("fetchAllRowsKeyset"), "and each one pages, like every other read in the module");
+    // The visits keep the walk's own rows and order, read in groups four at a time.
+    assert.ok(service.includes("readSeatGroups(seatIds, 150, (part) =>"), "the visits are read over groups of territories, not one walk per batch");
+
+    // The item count is what the old loop counted: every item of every one of these plans, nothing else.
+    {
+      const sql = readFileSync(new URL("../supabase/migrations/20261016180300_phoenix_crm_report_count_reads.sql", import.meta.url), "utf8").replace(/--.*$/gm, "");
+      const start = sql.indexOf("create or replace function public.phoenix_crm_plan_item_counts(");
+      assert.notEqual(start, -1, "the item-count function is defined");
+      const body = sql.slice(start, sql.indexOf("\n$$;", start));
+      assert.match(body, /from public\.phoenix_crm_plan_items i\s+where i\.plan_id = any\(p_plan_ids\)\s+group by i\.plan_id/, "every item of the asked plans, one row per plan");
+      assert.doesNotMatch(body, /\band\b/i, "with no other condition — the old loop counted every item row");
+    }
 
     // The gate is the shared predicate, not a role list, and the service refuses as well as the chip.
     assert.ok(service.includes("if (!readsTeamReports(viewer)) throw forbiddenError("), "the service is the boundary, not the chip");

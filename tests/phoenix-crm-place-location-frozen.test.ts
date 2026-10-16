@@ -172,8 +172,8 @@ function runServerTests() {
   // pinned the literal text `{ lat: place.lat, lon: place.lon }` and went green on a call that
   // could not compile, because resolveEvidenceLocation takes latitude/longitude. A test that
   // passes on code typecheck rejects is worse than no test — it says the layer is guarded.
-  assert.match(geography[1], /resolveEvidenceLocation\(\{[^}]*\blatitude: point\.lat\b/, "the clean address is resolved from the fixed point's latitude");
-  assert.match(geography[1], /resolveEvidenceLocation\(\{[^}]*\blongitude: point\.lon\b/, "the clean address is resolved from the fixed point's longitude");
+  assert.match(geography[1], /resolveEvidenceLocation\(\s*\{[^}]*\blatitude: point\.lat\b/, "the clean address is resolved from the fixed point's latitude");
+  assert.match(geography[1], /resolveEvidenceLocation\(\s*\{[^}]*\blongitude: point\.lon\b/, "the clean address is resolved from the fixed point's longitude");
   assert.match(geography[1], /resolveBrickForPoint\(point\.lat, point\.lon, centroids,/, "the brick is resolved from the fixed point");
   // 🔴 AND THE CAPTURING SEAT'S TERRITORY GOES WITH IT. Without this argument the nearest centroid
   // wins outright, and 34 live centroids sit on coordinates two AREAS share — so a capture's area

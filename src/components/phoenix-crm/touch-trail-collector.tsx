@@ -355,7 +355,7 @@ export function PhoenixCrmTouchTrail({ test = false }: { test?: boolean }) {
       settleTyping();
       const element = elementOf(nativeEvent.target);
       record({ element: descriptorFor(element), elementLabel: labelFor(element), kind: "submit" });
-      // A submit is a decision point: file it now rather than five seconds later, so a crash on the
+      // A submit is a decision point: file it now rather than up to thirty seconds later, so a crash on the
       // next line still leaves the attempt on the record.
       flush("full");
     };

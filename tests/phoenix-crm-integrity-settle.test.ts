@@ -358,8 +358,43 @@ function visitPhotographPassTests(): void {
   assert.match(silent, /async function runVisitPhotographGap\(/, "the fifth pass must exist");
   assert.match(
     silent,
-    /await runVisitPhotographGap\(todayIso, result\);/,
+    /await runVisitPhotographGap\(todayIso, result, \{ visits: windowVisits, places: activePlaces \}\);/,
     "runPhoenixCrmSilentSweep must CALL the fifth pass — a detector nothing calls files nothing",
+  );
+
+  // ── The fifth pass reuses passes 1 and 3's reads (Phoenix CRM performance audit, 2026-10-16) ──
+  // 🔴 ONLY A WHOLE READ IS HANDED ON. The fifth pass asks a narrower question of the same window;
+  // below the ceiling that is the matching rows of the wider read, but a wider read that stopped at
+  // its ceiling holds FEWER of them than the narrower read would, and the pass would quietly look at
+  // less. So a capped read is handed on as null, and the pass then reads for itself.
+  assert.match(silent, /const whole: WholeRead = read\.capped \? null : visits;/, "pass 1 hands its window on only when it was read whole");
+  assert.match(silent, /return read\.capped \? null : read\.rows;/, "and pass 3 its places only when they were read whole");
+  // The narrowing is the narrower read's own filter, nothing more and nothing less.
+  assert.match(
+    silent,
+    /narrowedFrom\(wholeReads\.visits, \(visit\) => visit\.lat !== null && visit\.lat !== undefined\)/,
+    "the window is kept to the visits with a reading — the photograph read's own .not(\"lat\", \"is\", null)",
+  );
+  assert.match(
+    silent,
+    /narrowedFrom\(wholeReads\.places, \(place\) => place\.photo_lat !== null && place\.photo_lat !== undefined\)/,
+    "and the places to those whose photograph carries a fix — its own .not(\"photo_lat\", \"is\", null)",
+  );
+  // The wider reads carry every column the fifth pass reads off a row.
+  assert.match(silent, /product_manager_hr_id, lat, lon, accuracy_meters"\)/, "pass 1's read carries each visit's own reading");
+  assert.match(silent, /status, photo_lat, photo_lon, photo_accuracy_meters, photo_captured_at, photo_path"/, "pass 3's read carries each place's photograph fix and path");
+  // And the passes keep their order — the fifth still runs last.
+  const runner = silent.slice(silent.indexOf("export async function runPhoenixCrmSilentSweep("));
+  const order = ["runRosterAndCadence(", "runCoverage(", "runSharedVenues(", "runVisitPhotographGap("].map((name) => runner.indexOf(name));
+  assert.ok(order.every((at, index) => at > 0 && (index === 0 || at > order[index - 1]!)), "the five passes still run one after another, in their order");
+
+  // 🔴 THE CADENCE FILINGS OF ONE CUSTOMER STAY IN WALK ORDER. The customer is the subject, two
+  // people can each have called the same one, and both findings upsert one row — the later one
+  // stands. Filed side by side they would race, and which finding stands would be chance.
+  assert.match(
+    silent,
+    /mapWithConcurrency\(\[\.\.\.cadenceByCustomer\.values\(\)\], FILINGS_AT_ONCE, async \(filings\) => \{\s*for \(const filing of filings\) await fileCustomerCadenceFlag\(filing\);\s*\}\)/,
+    "a customer's cadence filings go one after another; only different customers go side by side",
   );
 
   // The far line is the module's own live setting, never a constant in the pass. A second copy of

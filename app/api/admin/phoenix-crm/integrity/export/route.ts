@@ -14,6 +14,7 @@ import { integrityBoardRows, integrityRowDistanceWords } from "@/lib/crm-integri
 import { addPhoenixTableSheet, type ExportColumn, type ExportRow } from "@/lib/export/table-workbook";
 // The owner reads every stamp in Cairo local, never raw UTC (house rule).
 import { cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
+import { afterResponse } from "@/lib/http/after-response";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { phoenixCrmFailure } from "@/lib/phoenix-crm/server/http";
@@ -92,8 +93,17 @@ export async function GET(request: NextRequest) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "phoenix_crm", "read");
-    const viewer = await resolvePhoenixCrmViewer(access);
-    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:admin:crm-integrity" });
+    // The rate limit needs only who is asking, never the organogram, so the two are asked together
+    // rather than one after the other (Phoenix CRM performance audit, 2026-10-16) — and both still
+    // answer before the board is loaded, the heavy read the limit exists to protect. The viewer's own
+    // refusal is reported first when both refuse, exactly as when it was asked first.
+    const [viewerRead, limitRead] = await Promise.allSettled([
+      resolvePhoenixCrmViewer(access),
+      assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:admin:crm-integrity" }),
+    ]);
+    if (viewerRead.status === "rejected") throw viewerRead.reason;
+    if (limitRead.status === "rejected") throw limitRead.reason;
+    const viewer = viewerRead.value;
 
     // The board, with every audience narrowing inside it — then the SAME mapping and the SAME matcher
     // the screen uses, over the filters the screen wrote into the address. That is the whole reason
@@ -183,12 +193,16 @@ export async function GET(request: NextRequest) {
     });
     const buffer = await workbook.xlsx.writeBuffer();
 
-    await writeAuditLog({
-      actorLoginId: access.loginId ?? null,
-      entityType: "phoenix_crm_integrity_export",
-      entityId: null,
-      summary: `Exported the location-integrity board (${caseRows.length} cases, ${repRows.length} reps)`,
-    });
+    // On the record once the file has gone. `writeAuditLog` is best-effort — it logs its own failure
+    // and never throws — so the download never depended on it and need not wait for its insert.
+    await afterResponse("phoenix-crm-integrity-export-audit", () =>
+      writeAuditLog({
+        actorLoginId: access.loginId ?? null,
+        entityType: "phoenix_crm_integrity_export",
+        entityId: null,
+        summary: `Exported the location-integrity board (${caseRows.length} cases, ${repRows.length} reps)`,
+      }),
+    );
 
     // The Cairo day in the filename, never the UTC one: downloaded at 01:30 Cairo the UTC stamp names
     // yesterday, and a folder of these would read as a day out.

@@ -54,11 +54,15 @@ export const STREAM_PAGE = 100;
 /**
  * Beyond this, a device stamp behind its own arrival is the CLOCK and not the flush.
  *
- * The browser holds an event for up to `FLUSH_EVERY_MS` and then pays the network, so a few seconds
- * of lag is the design working. A minute is a phone whose clock is wrong, and so is any lag at all in
- * the other direction — an event cannot arrive before it happened.
+ * The browser holds an event for up to `FLUSH_EVERY_MS` and then pays the network, so some lag is the
+ * design working. A minute is a phone whose clock is wrong, and so is any lag at all in the other
+ * direction — an event cannot arrive before it happened.
+ *
+ * Held at the one minute it has always meant: when the flush wait went from 5 s to 30 s (2026-10-16)
+ * the old `FLUSH_EVERY_MS + 55_000` would have quietly moved the line the Super Admin reads to 85 s.
+ * The wait plus thirty seconds for the network is that same minute.
  */
-export const DEVICE_CLOCK_GRACE_MS = FLUSH_EVERY_MS + 55_000;
+export const DEVICE_CLOCK_GRACE_MS = FLUSH_EVERY_MS + 30_000;
 
 /** One stored interaction, as the reader works with it. */
 export type TouchTrailRow = {

@@ -21,6 +21,7 @@ import {
 } from "@/lib/phoenix-crm/server/access";
 import { chunk } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { readSeatGroups } from "@/lib/phoenix-crm/server/reports";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { loadApprovedLeaveDays, type ApprovedLeaveDay } from "@/lib/vacation/approved-leave-days";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -142,12 +143,14 @@ export async function loadTeamCalendar(
     return { days: monthDays(month), isTest, leaveUnread: false, missedRecords, month, rows: [], scope, totals: emptyVisitCountSplit() };
   }
 
-  const [visits, activities, people] = await Promise.all([
+  // HR's leave is read beside the visits, not after them: it never throws (a failed read comes back
+  // as `unread`), so running it alongside changes nothing but the wait.
+  const [visits, activities, people, leave] = await Promise.all([
     loadVisitDays(seatIds, isTest, bounds),
     loadActivityDays(seatIds, isTest, bounds),
     describePeople(viewer, seats),
+    loadLeaveDays(seats, bounds),
   ]);
-  const leave = await loadLeaveDays(seats, bounds);
 
   const rows = buildTeamCalendar(month, people, { activities, leave: leave.days, visits });
   return {
@@ -198,8 +201,10 @@ async function loadVisitDays(
   const pharmacies = new Map<string, Set<string>>();
   const waiting = new Map<string, number>();
 
-  for (const part of chunk([...seatIds], 150)) {
-    const rows = await fetchAllRowsKeyset<Row>(
+  // Groups of territories read four at a time, handed back as the one walk per batch of 150 returned
+  // them — same rows, same order (`readSeatGroups`).
+  const rows = await readSeatGroups([...seatIds], 150, (part) =>
+    fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
           // Named columns, every one read off the live view: PostgREST answers a column that is not
@@ -215,33 +220,33 @@ async function loadVisitDays(
           .lte("visit_date", bounds.to)
           .in("seat_id", part),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-    );
-    for (const row of rows) {
-      const day = cleanDay(row.visit_date);
-      const seatId = String(row.seat_id ?? "");
-      if (!day || !seatId) continue;
-      const at = `${seatId}|${day}`;
-      if (row.customer_validated !== true) {
-        waiting.set(at, (waiting.get(at) ?? 0) + 1);
-        continue;
-      }
-      const found = amPm.get(at) ?? { am: 0, pm: 0 };
-      // Through the golden rule's own helper: a pharmacy is a third list since 2026-10-02, and an
-      // `=== "AM" ? am : pm` would have filed every one of them among the doctors.
-      const bucket = visitCountBucketForListType(row.list_type);
-      if (bucket === "AM") found.am += 1;
-      else if (bucket === "PM") found.pm += 1;
-      amPm.set(at, found);
-      // Keyed as the day screen keys it (`todayPharmacies`), so the cell and the day it opens agree:
-      // a doctor's "ص.الفيومي" and the visit to "صيدلية الفيومي" itself are one pharmacy, and a box that
-      // names two pharmacies is two.
-      for (const name of pharmacyNamesOnVisit(row.list_type, String(row.pharmacy_name ?? ""))) {
-        const pharmacy = pharmacyNameKey(name);
-        if (!pharmacy) continue;
-        const seen = pharmacies.get(at) ?? new Set<string>();
-        seen.add(pharmacy);
-        pharmacies.set(at, seen);
-      }
+    ),
+  );
+  for (const row of rows) {
+    const day = cleanDay(row.visit_date);
+    const seatId = String(row.seat_id ?? "");
+    if (!day || !seatId) continue;
+    const at = `${seatId}|${day}`;
+    if (row.customer_validated !== true) {
+      waiting.set(at, (waiting.get(at) ?? 0) + 1);
+      continue;
+    }
+    const found = amPm.get(at) ?? { am: 0, pm: 0 };
+    // Through the golden rule's own helper: a pharmacy is a third list since 2026-10-02, and an
+    // `=== "AM" ? am : pm` would have filed every one of them among the doctors.
+    const bucket = visitCountBucketForListType(row.list_type);
+    if (bucket === "AM") found.am += 1;
+    else if (bucket === "PM") found.pm += 1;
+    amPm.set(at, found);
+    // Keyed as the day screen keys it (`todayPharmacies`), so the cell and the day it opens agree:
+    // a doctor's "ص.الفيومي" and the visit to "صيدلية الفيومي" itself are one pharmacy, and a box that
+    // names two pharmacies is two.
+    for (const name of pharmacyNamesOnVisit(row.list_type, String(row.pharmacy_name ?? ""))) {
+      const pharmacy = pharmacyNameKey(name);
+      if (!pharmacy) continue;
+      const seen = pharmacies.get(at) ?? new Set<string>();
+      seen.add(pharmacy);
+      pharmacies.set(at, seen);
     }
   }
 

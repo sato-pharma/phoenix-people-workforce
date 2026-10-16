@@ -93,6 +93,14 @@ const NO_HALVES: SpeakHalves = { text: "none", audio: false };
 const TRANSCRIBE_URL = "/api/phoenix-crm/voice/transcribe";
 
 /**
+ * The server's answer to "can a recording be written out here?", kept for the page's life once it is
+ * known (Phoenix CRM performance audit, 2026-10-16). Every comment step mounts this control, so a visit
+ * asked the same question two or three times, and the answer is the server's configuration — it does not
+ * change between one visit and the next. A failed or pending probe keeps nothing, so the next mount asks.
+ */
+let transcriptionAnswer: boolean | null = null;
+
+/**
  * The handover breadcrumb is throttled to at most one per window — not latched for the tab's whole life. It
  * exists because the handover makes no request of its own, so `/admin/error-monitor` would otherwise have
  * nothing to show that the Firefox path is being taken. On Firefox that handover is the NORMAL path on
@@ -190,8 +198,12 @@ export function CrmSpeak({
    * A definite `false` is still the only answer that changes the promise: a failed or pending probe leaves
    * the optimistic reading, so the copy never flickers between engines while it is in flight.
    */
-  const probe = useCrmGet<{ available: boolean }>(browser.audio ? TRANSCRIBE_URL : null, "transcription");
-  const serverAvailable = probe.data?.available !== false;
+  const probe = useCrmGet<{ available: boolean }>(browser.audio && transcriptionAnswer === null ? TRANSCRIBE_URL : null, "transcription");
+  const probed = probe.data?.available;
+  useEffect(() => {
+    if (typeof probed === "boolean") transcriptionAnswer = probed;
+  }, [probed]);
+  const serverAvailable = (probed ?? transcriptionAnswer) !== false;
   const halves: SpeakHalves = browser.text === "server" && !serverAvailable ? { ...browser, text: "none" } : browser;
   /** Pulled out as a plain string so `store` can depend on it without depending on an object identity. */
   const engine = halves.text;

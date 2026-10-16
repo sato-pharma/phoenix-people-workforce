@@ -1585,8 +1585,10 @@ export function runNavigationPersonalLayoutTests() {
 
     // The shell must read the EFFECTIVE layout, or a published default renders for nobody.
     const shell = readFileSync("src/components/layout/app-shell.tsx", "utf8");
+    // Read beside the topbar's identity since 2026-10-16 (one round trip instead of two) — still the
+    // EFFECTIVE layout, still under the session's own key, and still what the sidebar renders.
     assert.ok(
-      shell.includes("const { layout: personalLayout } = await loadEffectiveLayout(layoutOwnerKey(access));"),
+      /const \[\{ layout: personalLayout \}, viewer\] = await Promise\.all\(\[\s*loadEffectiveLayout\(layoutOwnerKey\(access\)\),/.test(shell),
       "the app shell must resolve the effective layout, not just the personal one",
     );
 

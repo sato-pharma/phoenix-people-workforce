@@ -43,6 +43,7 @@ import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { downloadPhoto } from "@/lib/phoenix-crm/server/photos";
 import { runPhoenixCrmSignboardSweep, type SignboardSweepResult } from "@/lib/phoenix-crm/server/signboard-sweep";
 import { runPhoenixCrmSilentSweep, type SilentSweepResult } from "@/lib/phoenix-crm/server/silent-detectors";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -67,6 +68,9 @@ export const PHOTO_COMPARE_DAYS = 180;
  * for, so the corpus reaches this only through the pager in `loadPhotoCorpus`.
  */
 export const PHOTO_CORPUS_MAX = 20_000;
+
+/** How many photos are downloaded and hashed at once. Each holds one photo's bytes while it is read. */
+const PHOTO_READS_AT_ONCE = 4;
 
 export type PhotoSweepResult = {
   /** Photos that had no fingerprint and were read this run. */
@@ -211,7 +215,11 @@ export async function runPhoenixCrmPhotoSweep(options: { limit?: number; include
   const fresh: PhotoFingerprint[] = [];
   const rows: Row[] = [];
 
-  for (const candidate of candidates) {
+  // Each photo is still read once and wrapped on its own; they are simply fetched a few at a time
+  // rather than one after another (Phoenix CRM performance audit, 2026-10-16). The answers come back
+  // in the candidates' own order, so the rows below are written exactly as the one-at-a-time walk
+  // wrote them. Four, not more: each one holds a photo's bytes in memory while sharp reads it.
+  const readings = await mapWithConcurrency(candidates, PHOTO_READS_AT_ONCE, async (candidate) => {
     let sha256: string | null = null;
     let dhash: string | null = null;
     let failure: string | null = null;
@@ -229,7 +237,11 @@ export async function runPhoenixCrmPhotoSweep(options: { limit?: number; include
     } catch (error) {
       failure = String(error instanceof Error ? error.message : error).slice(0, 200);
     }
+    return { sha256, dhash, failure, sizeBytes };
+  });
 
+  for (const [position, candidate] of candidates.entries()) {
+    const { sha256, dhash, failure, sizeBytes } = readings[position]!;
     result.fingerprinted += 1;
     if (failure !== null) result.failed += 1;
     rows.push({

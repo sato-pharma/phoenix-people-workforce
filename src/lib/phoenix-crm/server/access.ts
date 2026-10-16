@@ -25,6 +25,8 @@
  *     together without either ever touching a real row.
  */
 
+import { cache } from "react";
+
 import { isSamePerson } from "@/lib/auth/identity-aliases";
 import { canAccess, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 import { ApiError, forbiddenError, notFoundError } from "@/lib/http/api-errors";
@@ -91,7 +93,16 @@ export type PhoenixCrmViewer = {
 
 const COMPANY_ROLES = new Set<PhoenixRole>(["Super Admin", "CEO", "SFE Manager"]);
 
-export async function resolvePhoenixCrmViewer(access: AccessContext): Promise<PhoenixCrmViewer> {
+/**
+ * The viewer, built once per page render (Phoenix CRM performance audit, 2026-10-16). A portal page
+ * asked twice — the shell's sidebar entries and the page itself — and paid the organogram, the config
+ * and three permission reads both times. React's `cache` keys on the request's one `AccessContext`
+ * (the page resolver is itself cached, so both callers hold the same object). A route handler has no
+ * render, so there `cache` simply calls through and every API request resolves its own viewer.
+ */
+export const resolvePhoenixCrmViewer = cache(buildPhoenixCrmViewer);
+
+async function buildPhoenixCrmViewer(access: AccessContext): Promise<PhoenixCrmViewer> {
   const hrId = personKey(access.hrId);
   if (!hrId) throw forbiddenError("Your account is not linked to an HR record.");
   const [org, config, canCreate, canApprove, canUpdate] = await Promise.all([

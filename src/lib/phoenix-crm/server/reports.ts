@@ -88,12 +88,87 @@ import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS, PLAN_STATUSES_WITH_SENT_DAYS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { seatTierTitle } from "@/lib/phoenix-crm/server/territory";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
 
 function asRows(data: unknown): Row[] {
   return Array.isArray(data) ? (data as Row[]) : [];
+}
+
+// ── Reading many territories at once ────────────────────────────────────────────────────────────
+
+/** Territories per read inside one batch, and how many of those reads are in flight at once. */
+const SEAT_GROUP_SIZE = 20;
+const SEAT_GROUP_CONCURRENCY = 4;
+
+/** Ascending by `id` — a lower-case uuid string sorts exactly as Postgres sorts the uuid. */
+function byRowId(left: { id?: unknown }, right: { id?: unknown }): number {
+  const a = String(left.id);
+  const b = String(right.id);
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * One keyset read over many territories, made as several smaller reads four at a time — and handed
+ * back as exactly the rows, in exactly the order, the single walk returned.
+ *
+ * WHY (2026-10-16 Phoenix CRM performance audit). Every multi-territory report read its rows as one
+ * keyset walk per batch of 150 or 200 territories, 1,000 rows a page, one page after the other — a
+ * national scope's month is a dozen round trips in series while the manager watches a spinner. Split
+ * into groups of twenty territories, the pages are read four at a time.
+ *
+ * 🔴 NOTHING ON A SCREEN MAY MOVE. Each batch is still the caller's own batch; every territory in it
+ * lands in exactly one group, and a row belongs to one territory, so the union is the batch's rows,
+ * each once. They are then put back in `id` order — the walk's own order — because a stable sort
+ * downstream breaks its ties in the order it was given. `id` is a uuid on every table read through
+ * here, and a lower-case uuid's text sorts as Postgres sorts the uuid (hex digits and fixed-place
+ * dashes, byte for byte). `read` must therefore be a keyset walk on `id`.
+ */
+export async function readSeatGroups<T extends { id?: unknown }>(
+  seatIds: ReadonlyArray<string>,
+  batchSize: number,
+  read: (seatIds: string[]) => Promise<T[]>,
+): Promise<T[]> {
+  const batches = chunk(seatIds, batchSize);
+  const groups = batches.flatMap((batch, at) => chunk([...new Set(batch)], SEAT_GROUP_SIZE).map((seats) => ({ at, seats })));
+  const parts = await mapWithConcurrency(groups, SEAT_GROUP_CONCURRENCY, (group) => read(group.seats));
+  const byBatch = batches.map((): T[] => []);
+  parts.forEach((rows, index) => byBatch[groups[index]!.at]!.push(...rows));
+  return byBatch.flatMap((rows) => rows.sort(byRowId));
+}
+
+const inFlight = new Map<string, Promise<unknown>>();
+
+/**
+ * One read shared by the callers that ask for it AT THE SAME MOMENT — and nothing kept once it lands.
+ *
+ * The reports pack loads every section at once, and several sections open with the same heavy read:
+ * the readiness of every territory (the exceptions board and adoption), the countable visits of the
+ * period (what the field heard and the missing-stock board). Two callers asking the same question in
+ * the same instant now share one answer. Nothing is cached: the next request reads afresh, so no
+ * figure can be older than it was. `key` must hold EVERYTHING that changes the answer.
+ *
+ * A shared answer is shared by reference, so a caller must never change what it is handed.
+ */
+export function shareInFlight<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const running = inFlight.get(key) as Promise<T> | undefined;
+  if (running) return running;
+  const started = load().finally(() => inFlight.delete(key));
+  inFlight.set(key, started);
+  return started;
+}
+
+/**
+ * A read started BEFORE the code knows it will be needed, so it runs beside the reads ahead of it.
+ * Its rejection is marked handled here — a page that returns early without it must not trip an
+ * unhandled rejection — and the SAME promise, failure and all, is what the caller awaits when it does
+ * need it, so a failed read still fails the page exactly where it used to.
+ */
+export function startedEarly<T>(read: Promise<T>): Promise<T> {
+  read.catch(() => undefined);
+  return read;
 }
 
 export type ReportFilterInput = {
@@ -538,7 +613,7 @@ export async function loadPlanReport(viewer: PhoenixCrmViewer, raw: ReportFilter
   const mode = comparisonModeOf(viewer, raw);
   const previous = previousPeriod(period);
   const peers = peerTerritories(viewer);
-  const [data, baseline, leave, dayActivities] = await Promise.all([
+  const [data, baseline, leave, dayActivities, names] = await Promise.all([
     callPhoenixCrm<unknown>("phoenix_crm_report_plan_vs_actual", {
       p_seat_ids: chosen.seats.map((seat) => seat.seatId),
       p_from: period.from,
@@ -558,13 +633,15 @@ export async function loadPlanReport(viewer: PhoenixCrmViewer, raw: ReportFilter
       chosen.includeTest,
       period,
     ),
+    // Every chosen territory's rep, read beside the figures rather than after them: a row is only
+    // ever one of these territories, so the rows' names are a subset of this answer.
+    loadPeopleNames(chosen.seats.map((seat) => seat.occupantHrId)),
   ]);
   const seatsById = new Map(chosen.seats.map((seat) => [seat.seatId, seat]));
   const { groups, totals } = groupPlanByTerritory(
     asRows(data).filter((row) => seatsById.has(String(row.seat_id))),
     leave.days,
   );
-  const names = await loadPeopleNames(groups.map((group) => seatsById.get(group.seatId)?.occupantHrId));
   const activitiesBySeat = new Map<string, Record<string, string>>();
   for (const [key, activity] of dayActivities) {
     const seatId = key.slice(0, key.lastIndexOf("|"));
@@ -683,7 +760,7 @@ export async function loadCoverageReport(viewer: PhoenixCrmViewer, raw: ReportFi
   const mode = comparisonModeOf(viewer, raw);
   const previousMonthStart = addDaysIso(month.monthStart, -1).slice(0, 7) + "-01";
   const peers = peerTerritories(viewer);
-  const [data, baseline] = await Promise.all([
+  const [data, baseline, names] = await Promise.all([
     callPhoenixCrm<unknown>("phoenix_crm_report_coverage", {
       p_seat_ids: chosen.seats.map((seat) => seat.seatId),
       p_month_start: month.monthStart,
@@ -694,11 +771,11 @@ export async function loadCoverageReport(viewer: PhoenixCrmViewer, raw: ReportFi
       : mode === "previous"
         ? coverageFigures(chosen.seats.map((seat) => seat.seatId), previousMonthStart, chosen.includeTest)
         : coverageFigures(peers.map((seat) => seat.seatId), month.monthStart, chosen.includeTest),
+    loadPeopleNames(chosen.seats.map((seat) => seat.occupantHrId)),
   ]);
   const chosenIds = new Set(chosen.seats.map((seat) => seat.seatId));
   const { groups, totals } = groupCoverageByTerritory(asRows(data).filter((row) => chosenIds.has(String(row.seat_id))));
   const bySeat = new Map(groups.map((group) => [group.seatId, group]));
-  const names = await loadPeopleNames(chosen.seats.map((seat) => seat.occupantHrId));
   const rows = chosen.seats
     .map((seat) => {
       const group = bySeat.get(seat.seatId);
@@ -940,10 +1017,10 @@ export async function loadVisitLocationReport(viewer: PhoenixCrmViewer, raw: Rep
   // this report is computed over these rows — `total`, the far / weak-GPS / no-place counts, the
   // measured count and the farthest distance — so each one was a figure over a truncated set wearing
   // the shape of a complete one, and the row the manager most needs (the farthest) is exactly the
-  // one a cut-off could drop. A keyset walk on `id`, the shape every other read in this module uses.
-  const rows: Row[] = [];
-  for (const batch of chunk(seats.map((seat) => seat.seatId))) {
-    const page = await fetchAllRowsKeyset<Row>(
+  // one a cut-off could drop. A keyset walk on `id`, the shape every other read in this module uses —
+  // made over groups of territories four at a time (`readSeatGroups`), the same rows in the same order.
+  const rows = await readSeatGroups(seats.map((seat) => seat.seatId), 200, (batch) =>
+    fetchAllRowsKeyset<Row>(
       () => {
         const query = getSupabaseAdmin()
           .from("phoenix_crm_visits")
@@ -963,9 +1040,8 @@ export async function loadVisitLocationReport(viewer: PhoenixCrmViewer, raw: Rep
         return chosen.includeTest ? query : query.eq("is_test", false);
       },
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-    );
-    rows.push(...page);
-  }
+    ),
+  );
 
   const seatsById = new Map(seats.map((seat) => [seat.seatId, seat]));
   const names = await loadPeopleNames(rows.map((row) => textOrNull(row.rep_hr_id) ?? textOrNull(row.entered_by_hr_id)));
@@ -1096,9 +1172,19 @@ export async function loadCustomerFrequencyReport(
   // The targets the viewer was already resolved with — no second read, and no chance of this page
   // scoring against a different copy of the settings than the rest of his session.
   const settings = viewer.config.settings;
-  const names = await loadPeopleNames([seat.occupantHrId]);
 
-  const listed = await listedCustomers(seat.seatId, chosen.includeTest, month);
+  // Every read the page needs, started together rather than one after another. The three that matter
+  // only when the list has customers are still started now — on a territory with a list, which is
+  // every working one, they were going to be read anyway — and a listless territory never waits on
+  // them: their failure is held (`startedEarly`) and surfaces only where it always did, when they are used.
+  const visitDaysRead = startedEarly(visitDaysByCustomer(seat.seatId, chosen.includeTest, month));
+  const planDaysRead = startedEarly(plannedDaysByCustomer(seat.seatId, chosen.includeTest, month));
+  // 🔴 A planning on a day HR approved his leave is never a time he owed (owner, 2026-10-01).
+  const leaveRead = startedEarly(loadSeatLeaveDays([seat], { from: month.monthStart, to: month.monthEnd }));
+  const [names, listed] = await Promise.all([
+    loadPeopleNames([seat.occupantHrId]),
+    listedCustomers(seat.seatId, chosen.includeTest, month),
+  ]);
   if (listed.length === 0) {
     return {
       includeTest: chosen.includeTest,
@@ -1112,12 +1198,7 @@ export async function loadCustomerFrequencyReport(
     };
   }
 
-  const [visitDays, planDaysByCustomer, leave] = await Promise.all([
-    visitDaysByCustomer(seat.seatId, chosen.includeTest, month),
-    plannedDaysByCustomer(seat.seatId, chosen.includeTest, month),
-    // 🔴 A planning on a day HR approved his leave is never a time he owed (owner, 2026-10-01).
-    loadSeatLeaveDays([seat], { from: month.monthStart, to: month.monthEnd }),
-  ]);
+  const [visitDays, planDaysByCustomer, leave] = await Promise.all([visitDaysRead, planDaysRead, leaveRead]);
   const daysByCustomer = visitDays.days;
 
   const rows = buildCustomerFrequencyReport(
@@ -1242,19 +1323,25 @@ async function plannedDaysByCustomer(
   );
   const out = new Map<string, string[]>();
   if (plans.length === 0) return out;
-  const facts = await loadPlanDayFacts(plans, includeTest);
+  // The day facts and the items are independent reads, so they run together; the item batches run
+  // four at a time and are walked back in batch order, so each customer's days arrive as before.
+  const [facts, itemBatches] = await Promise.all([
+    loadPlanDayFacts(plans, includeTest),
+    mapWithConcurrency(chunk(plans.map((plan) => String(plan.id)), 150), 4, (part) =>
+      fetchAllRowsKeyset<Row>(
+        () =>
+          getSupabaseAdmin()
+            .from("phoenix_crm_plan_items")
+            .select("id, plan_id, customer_id, plan_date")
+            .in("plan_id", part)
+            .gte("plan_date", month.monthStart)
+            .lte("plan_date", month.monthEnd),
+        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+      ),
+    ),
+  ]);
 
-  for (const part of chunk(plans.map((plan) => String(plan.id)), 150)) {
-    const items = await fetchAllRowsKeyset<Row>(
-      () =>
-        getSupabaseAdmin()
-          .from("phoenix_crm_plan_items")
-          .select("id, plan_id, customer_id, plan_date")
-          .in("plan_id", part)
-          .gte("plan_date", month.monthStart)
-          .lte("plan_date", month.monthEnd),
-      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-    );
+  for (const items of itemBatches) {
     for (const item of items) {
       const id = textOrNull(item.customer_id);
       const day = textOrNull(item.plan_date)?.slice(0, 10);
@@ -1340,6 +1427,9 @@ export async function loadTrackingSheetReport(
   // 🔴 PER SEAT, NOT PER VIEWER (audit, 2026-10-02): an ACTING District Manager reading his OWN rep
   // seat's sheet is that seat's rep, and the spacing note judges how its rep worked his month.
   const managerView = readsTeamReportsOn(viewer, seat);
+  // The month's visits start beside the list rather than after it; a listless territory returns
+  // without them, as it always did (`startedEarly` holds their failure until they are used).
+  const visitDaysRead = startedEarly(visitDaysByCustomer(seat.seatId, chosen.includeTest, month));
   const [listed, names] = await Promise.all([
     listedCustomers(seat.seatId, chosen.includeTest, month),
     loadPeopleNames([seat.occupantHrId]),
@@ -1353,7 +1443,7 @@ export async function loadTrackingSheetReport(
     return { days, includeTest: chosen.includeTest, month, needsOneTerritory: false, rows: [], seat: seatView, showsSpacing: managerView };
   }
 
-  const daysByCustomer = (await visitDaysByCustomer(seat.seatId, chosen.includeTest, month)).days;
+  const daysByCustomer = (await visitDaysRead).days;
   // 🔴 THE SPACING NOTE MUST NOT JUDGE DAYS NOBODY HAS LIVED YET. It measures the tail since the
   // last visit against the longest gap, and it was handed `month.monthEnd` — so on the 3rd of a
   // month it read a 28-day tail and said "Seen on the 1st and the 2nd, then not again" about a

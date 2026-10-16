@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { afterResponse } from "@/lib/http/after-response";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { phoenixCrmFailure } from "@/lib/phoenix-crm/server/http";
 import { importListTemplate } from "@/lib/phoenix-crm/server/list-template";
@@ -27,12 +28,16 @@ export async function POST(request: Request) {
     const viewer = await resolvePhoenixCrmViewer(access);
 
     const result = await importListTemplate(viewer, await request.formData());
-    await writeAuditLog({
-      actorLoginId: access.loginId ?? null,
-      entityId: result.seatId,
-      entityType: "phoenix_crm_list_template_import",
-      summary: `Loaded ${result.loaded} customer(s) onto the Phoenix CRM list for ${result.seatId} from a sheet (${result.refused.length} row(s) refused, days and hours set for ${result.hoursSet})`,
-    });
+    // Written once the answer has gone: `writeAuditLog` swallows its own failure, so the answer never
+    // depended on the insert and no longer waits for it.
+    await afterResponse("phoenix_crm_list_template_import_audit", () =>
+      writeAuditLog({
+        actorLoginId: access.loginId ?? null,
+        entityId: result.seatId,
+        entityType: "phoenix_crm_list_template_import",
+        summary: `Loaded ${result.loaded} customer(s) onto the Phoenix CRM list for ${result.seatId} from a sheet (${result.refused.length} row(s) refused, days and hours set for ${result.hoursSet})`,
+      }),
+    );
     return NextResponse.json({ result, success: true });
   } catch (error) {
     return phoenixCrmFailure(error, "Could not load that list.");

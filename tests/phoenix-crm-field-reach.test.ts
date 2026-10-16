@@ -185,7 +185,10 @@ export function runPhoenixCrmFieldReachTests() {
 
     const today = source("src/lib/phoenix-crm/server/today.ts");
     const wave = today.slice(today.indexOf("await Promise.all(["), today.indexOf("]);", today.indexOf("await Promise.all([")));
-    assert.ok(wave.includes("loadWeekProgress(seat.seatId, isTest, date),"), "the week joins the day's one parallel wave — never a read after it");
+    assert.ok(
+      wave.includes("loadWeekProgress(seat.seatId, isTest, date, { planRow: planRowRead }),"),
+      "the week joins the day's one parallel wave — never a read after it — on the plan row Today reads once",
+    );
     assert.match(today, /const plannedStopsRead = Promise\.all\(\[customersRead, plannedRead\]\)\.then\(/, "and the wave keeps the shape the speed pins hold");
     assert.ok(today.includes("week,\n"), "and the day hands it on");
 

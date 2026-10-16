@@ -38,6 +38,7 @@
 import { addDaysIso } from "@/lib/crm/dates";
 import { conflictError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { formatPhoenixLongDate, formatPhoenixMonth } from "@/lib/i18n/format";
+import { logError } from "@/lib/observability/log";
 import {
   boardLeadingWeek,
   editablePlanDays,
@@ -65,7 +66,8 @@ import {
   type MonthlyCallRate,
   type MonthlyListMeter,
 } from "@/lib/phoenix-crm/monthly-plan-rules";
-import { sentChangesOf, type PlanSentChanges } from "@/lib/phoenix-crm/plan-review-rules";
+import type { PlanDayStarts } from "@/lib/phoenix-crm/plan-day-starts";
+import { sentChangesOf, type PlanSentChanges, type SentEvent } from "@/lib/phoenix-crm/plan-review-rules";
 import {
   isPlanEditable,
   isUuid,
@@ -95,7 +97,7 @@ import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@
 import { ensureReferenceCustomers, loadMonthVisitCounts, loadPlannerReferences, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
-import { loadPlanActivities } from "@/lib/phoenix-crm/server/plan-activities";
+import { loadPlanActivities, type PlannedActivityRow } from "@/lib/phoenix-crm/server/plan-activities";
 import { loadPlanDayStarts } from "@/lib/phoenix-crm/server/plan-day-starts";
 import { loadSeatDaysOff, loadSeatPendingLeave } from "@/lib/phoenix-crm/server/leave-days";
 import { editAcknowledgedAt, loadPlanEditState, repStateOf, type PlanEditRequestView, type PlanEditState } from "@/lib/phoenix-crm/server/plan-edits";
@@ -110,18 +112,22 @@ import {
   loadPlanItemRows,
   mapPlan,
   PLAN_COLUMNS,
+  PLAN_READ_CONCURRENCY,
   planPeople,
   REVIEW_ITEM_COLUMNS,
   statusOf,
   territoryReadiness,
+  venueNamesOf,
   type PlanDayView,
+  type PlanSaveReads,
   type PlanSummary,
+  type SavedPlan,
   type TerritoryReadiness,
 } from "@/lib/phoenix-crm/server/plans";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
-import { loadSharedPlaceNames } from "@/lib/phoenix-crm/server/shared-places";
 import { effectiveListType, type PlannerCustomer, type PlannerInsight, type PlannerPlace } from "@/lib/phoenix-crm/suggestions";
 import type { PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -324,6 +330,186 @@ export type MonthlyPlannerView = {
   blockedReason: string | null;
 };
 
+/** The month's four meters — what a save of one of its own weeks moves. */
+type MonthMeters = Pick<MonthlyPlannerView, "tallies" | "amMeter" | "pmMeter" | "callRate">;
+
+/** The fields of a planner customer the month's meters read. */
+type MeterCustomer = Pick<PlannerCustomer, "customerId" | "name" | "listType" | "grade" | "speciality" | "pending">;
+
+/**
+ * One customer of the list as the month counts him, or null for a pharmacy, which is never planned. One
+ * composer for the board and for the answer to a save, so the two can never count a customer apart.
+ */
+function meterCustomerOf(row: Row, places: Parameters<typeof effectiveListType>[1]): MeterCustomer | null {
+  const listType = listTypeOf(row.list_type);
+  if (listType === null) return null;
+  return {
+    customerId: String(row.id),
+    name: String(row.name),
+    // A seated customer is planned and counted in the session of his seating (owner, 2026-10-10).
+    listType: effectiveListType(listType, places),
+    grade: parseGrade(row.grade),
+    speciality: textOrNull(row.speciality),
+    pending: row.status === "pending",
+  };
+}
+
+/** The planner's customer order: AM first, then by name. The tallies keep it among equals. */
+function byListThenName(left: MeterCustomer, right: MeterCustomer): number {
+  return left.listType.localeCompare(right.listType) || left.name.localeCompare(right.name);
+}
+
+/**
+ * The month's meters off the placements of its OWN weeks (never the leading week's — `itemRows` is
+ * handed in without them). AM and PM are always reported apart, never averaged (the call-rate golden
+ * rule). `customers` come in the planner's order (`byListThenName`).
+ */
+function monthMeters(input: {
+  monthStart: string;
+  settings: PhoenixCrmViewer["config"]["settings"];
+  customers: ReadonlyArray<MeterCustomer>;
+  itemRows: ReadonlyArray<Row>;
+}): MonthMeters {
+  const { monthStart, settings, itemRows } = input;
+  // Placements across the whole month, per customer and per list.
+  const placementsByCustomer = new Map<string, number>();
+  let amPlacements = 0;
+  let pmPlacements = 0;
+  for (const item of itemRows) {
+    const customerId = String(item.customer_id);
+    placementsByCustomer.set(customerId, (placementsByCustomer.get(customerId) ?? 0) + 1);
+    const itemListType = listTypeOf(item.list_type);
+    if (itemListType === null) continue;
+    if (itemListType === "AM") amPlacements += 1;
+    else pmPlacements += 1;
+  }
+
+  const tallies: MonthlyDoctorRow[] = input.customers.map((customer) => {
+    const placed = placementsByCustomer.get(customer.customerId) ?? 0;
+    const tally = tallyDoctorMonth({ customerId: customer.customerId, listType: customer.listType, grade: customer.grade, placed }, settings);
+    return { ...tally, name: customer.name, speciality: customer.speciality, pending: customer.pending };
+  });
+  tallies.sort(
+    (left, right) =>
+      left.listType.localeCompare(right.listType) ||
+      Number(left.done) - Number(right.done) ||
+      Number(left.pending) - Number(right.pending) ||
+      left.name.localeCompare(right.name),
+  );
+
+  // A customer not validated yet has no grade norm, so he is left out of the meters (his placements
+  // still count for the call rate, which measures the days worked, not the panel).
+  const scored = tallies.filter((row) => !row.pending);
+  const amMeter = summarizeMonthlyList(scored, "AM");
+  const pmMeter = summarizeMonthlyList(scored, "PM");
+  const callRate = monthlyCallRate({ monthStart, amPlacements, pmPlacements }, settings);
+  return { tallies, amMeter, pmMeter, callRate };
+}
+
+/**
+ * Everything one week of the month board is drawn from. One builder serves the board
+ * (`loadMonthlyPlanner`) and the answer to a save (`loadMonthlyWeekAfterSave`), so a week a save answers
+ * with reads exactly as the same week read with its month.
+ */
+type MonthlyWeekInputs = {
+  viewer: PhoenixCrmViewer;
+  isTest: boolean;
+  monthStart: string;
+  today: string;
+  /** ONE instant for the whole answer, so every week on it agrees about the deadline. */
+  now: Date;
+  /** The leading week is the week the rep is in, not the month's first days (calendar.ts `boardLeadingWeek`). */
+  leadingIsRunning: boolean;
+  settings: PhoenixCrmViewer["config"]["settings"];
+  isRamadan: (isoDay: string) => boolean;
+  names: PeopleNames;
+  territory: TerritorySummary;
+  editState: ReadonlyMap<string, PlanEditState>;
+  activities: ReadonlyMap<string, PlannedActivityRow[]>;
+  starts: ReadonlyMap<string, PlanDayStarts>;
+  holidays: ReadonlyMap<string, string>;
+  leave: ReadonlyMap<string, string>;
+  pendingLeave: ReadonlyMap<string, string>;
+  sends: ReadonlyMap<string, SentEvent[]>;
+  decidesWeeks: boolean;
+  repForWeeks: boolean;
+  reviewerForWeeks: boolean;
+  returnerForWeeks: boolean;
+};
+
+// One builder for both, so the leading week is judged by exactly the same rules as the month's own —
+// its own plan row, its own editable window, its own Send. Only its name and its note differ.
+function buildMonthlyWeekView(inputs: MonthlyWeekInputs, weekStart: string, planRow: Row | null, weekItems: Row[], leading: boolean): MonthlyWeekView {
+  const { viewer, isTest, monthStart, today, now, leadingIsRunning, settings, isRamadan, names, territory, editState } = inputs;
+  const { activities, starts, holidays, leave, pendingLeave, sends, decidesWeeks, repForWeeks, reviewerForWeeks, returnerForWeeks } = inputs;
+  const weekStatus = planRow ? statusOf(planRow.status) : null;
+  const weekPlan = planRow ? mapPlan(planRow, names, territory) : null;
+  // One week at a time (owner, 2026-10-01): the same answer the server gives a save or a send.
+  const edit: PlanEditState | null = planRow ? (editState.get(String(planRow.id)) ?? null) : null;
+  // A week returned for ONE day (owner, 2026-10-02: "Only that day"): that day alone is the rep's to
+  // change — the same days `savePlan` accepts — and every other day reads as fixed, which greys it.
+  const returnedDay = standingReturnedDay({
+    status: weekStatus,
+    returnedDay: weekPlan?.returnedDay ?? null,
+    decidedAt: weekPlan?.decidedAt ?? null,
+    editAcknowledgedAt: editAcknowledgedAt(edit),
+  });
+  const builtDays = buildDays({ weekStart, cairoToday: today, itemRows: weekItems, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays, leave, pendingLeave });
+  const days = onlyReturnedDayEditable(builtDays, returnedDay);
+  const dueOn = weekPlan?.dueOn ?? weeklyPlanDueOn(weekStart);
+  const open = editablePlanDays(weekStart, today).length > 0;
+  const staleOpen = days.some((day) => day.editable && day.items.some((item) => item.stale));
+  const repState: RepWeekState = repForWeeks ? repStateOf({ weekStart, cairoToday: today, status: weekStatus, edit }) : "closed";
+  const canEdit = repState === "plan";
+  const latest = edit?.latest ?? null;
+  const editRequest =
+    edit?.waiting ??
+    (latest && ((latest.status === "refused" && (weekStatus === "submitted" || weekStatus === "approved")) || (latest.status === "reopened" && weekStatus === "draft"))
+      ? latest
+      : null);
+  const previousMonth = formatPhoenixMonth(addDaysIso(monthStart, -1));
+  return {
+    weekStart,
+    weekNumber: leading ? 0 : weekNumberInMonth(weekStart),
+    label: leading ? (leadingIsRunning ? RUNNING_WEEK_LABEL : LEADING_WEEK_LABEL) : `Week ${weekNumberInMonth(weekStart)}`,
+    leading,
+    // Where this week is filed, said where he is standing: it belongs to the month before.
+    leadingNote: leading
+      ? leadingIsRunning
+        ? `This is the week you are in, from ${formatPhoenixLongDate(weekStart)}. It belongs to ${previousMonth}.`
+        : `These are the first days of ${formatPhoenixMonth(monthStart)}, on the week of ${formatPhoenixLongDate(weekStart)} — which belongs to ${previousMonth}.`
+      : null,
+    status: weekStatus,
+    statusLabel: planStatusLine({
+      status: weekStatus,
+      repName: territory.repName,
+      reviewerName: territory.reviewerName,
+      deciderName: weekPlan?.decidedByName ?? null,
+    }),
+    days,
+    plan: weekPlan,
+    dueOn,
+    dueOnLabel: planDueLabel(dueOn),
+    // A rep is told only about the week he can still send; a manager reads it on every open week.
+    // Judged on the DEADLINE INSTANT, not on the date: between 23:55 and midnight a date test would
+    // call the week not-yet-overdue while the server stamps that same send late.
+    overdue:
+      (repForWeeks ? canEdit : open)
+      && planDeadlinePassed(dueOn, now)
+      && (weekStatus === null || weekStatus === "draft" || weekStatus === "returned"),
+    open,
+    repState,
+    canEdit,
+    canSubmit: canEdit && weekStatus !== null && isPlanEditable(weekStatus) && weekItems.length > 0 && !staleOpen,
+    canAskToEdit: repState === "sent" && weekPlan !== null,
+    editRequest,
+    canApprove: (reviewerForWeeks || canOverrideDecision(viewer, isTest)) && weekStatus === "submitted",
+    canReturn: open && returnerForWeeks && (weekStatus === "submitted" || weekStatus === "approved"),
+    returnedDay,
+    sentChanges: decidesWeeks && weekStatus === "submitted" && planRow ? sentChangesOf(sends.get(String(planRow.id)) ?? []) : null,
+  };
+}
+
 export async function loadMonthlyPlanner(
   viewer: PhoenixCrmViewer,
   raw: { seatId: unknown; test: unknown; month: unknown },
@@ -422,6 +608,11 @@ export async function loadMonthlyPlanner(
     loadSeatDaysOff(seat, { from: addDaysIso(monthStart, -14), to: addDaysIso(monthEndOf(monthStart), 14) }),
     // Leave he has asked for and nobody has decided: named on the plan, never a day off (owner, 2026-10-08).
     loadSeatPendingLeave(seat, { from: addDaysIso(monthStart, -14), to: addDaysIso(monthEndOf(monthStart), 14) }),
+    // The building each seated place sits in, by name, so the plan can say WHICH polyclinic or centre a
+    // customer is in (owner, 2026-10-10). Wording only: the cap never depends on this read. It needs the
+    // places alone, so it follows the customer list inside the wave instead of trailing after it
+    // (2026-10-16 speed audit).
+    customersRead.then(({ placesByCustomer }) => venueNamesOf(placesByCustomer)),
   ]);
   wave.catch(() => undefined);
   await ensured;
@@ -435,33 +626,14 @@ export async function loadMonthlyPlanner(
     insights,
     leave,
     pendingLeave,
+    venueNames,
   ] = await wave;
 
   const settings = viewer.config.settings;
   const isRamadan = (isoDay: string) => isRamadanDay(isoDay, viewer.config.ramadanOverrides);
 
-  // Placements across the whole month, per customer and per list.
-  const placementsByCustomer = new Map<string, number>();
-  let amPlacements = 0;
-  let pmPlacements = 0;
-  for (const item of itemRows) {
-    const customerId = String(item.customer_id);
-    placementsByCustomer.set(customerId, (placementsByCustomer.get(customerId) ?? 0) + 1);
-    const itemListType = listTypeOf(item.list_type);
-    if (itemListType === null) continue;
-    if (itemListType === "AM") amPlacements += 1;
-    else pmPlacements += 1;
-  }
-
-  // The building each seated place sits in, by name, so the plan can say WHICH polyclinic or centre a
-  // customer is in (owner, 2026-10-10). Wording only: the cap never depends on this read.
-  const venueNames = await loadSharedPlaceNames([...placesByCustomer.values()].flatMap((list) => list.map((place) => place.sharedPlaceId ?? null)));
-
   const plannerCustomers: PlannerCustomer[] = customers.flatMap((row) => {
     const customerId = String(row.id);
-    // A pharmacy is never planned, so it is not offered to the monthly planner either.
-    const listType = listTypeOf(row.list_type);
-    if (listType === null) return [];
     const places: PlannerPlace[] = (placesByCustomer.get(customerId) ?? []).map((place) => ({
       placeId: place.placeId,
       label: place.label,
@@ -475,41 +647,25 @@ export async function loadMonthlyPlanner(
       sharedPlaceName: place.sharedPlaceId ? (venueNames.get(place.sharedPlaceId)?.name ?? null) : null,
       session: place.session ?? null,
     }));
+    // A pharmacy is never planned, so it is not offered to the monthly planner either.
+    const counted = meterCustomerOf(row, places);
+    if (counted === null) return [];
     return {
       customerId,
-      name: String(row.name),
-      // A seated customer is planned and counted in the session of his seating (owner, 2026-10-10).
-      listType: effectiveListType(listType, places),
-      grade: parseGrade(row.grade),
-      speciality: textOrNull(row.speciality),
+      name: counted.name,
+      listType: counted.listType,
+      grade: counted.grade,
+      speciality: counted.speciality,
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
-      pending: row.status === "pending",
+      pending: counted.pending,
       reference: references.get(customerId) ?? null,
       insight: insights.get(customerId) ?? null,
       places,
     };
   });
-  plannerCustomers.sort((left, right) => left.listType.localeCompare(right.listType) || left.name.localeCompare(right.name));
+  plannerCustomers.sort(byListThenName);
 
-  const tallies: MonthlyDoctorRow[] = plannerCustomers.map((customer) => {
-    const placed = placementsByCustomer.get(customer.customerId) ?? 0;
-    const tally = tallyDoctorMonth({ customerId: customer.customerId, listType: customer.listType, grade: customer.grade, placed }, settings);
-    return { ...tally, name: customer.name, speciality: customer.speciality, pending: customer.pending };
-  });
-  tallies.sort(
-    (left, right) =>
-      left.listType.localeCompare(right.listType) ||
-      Number(left.done) - Number(right.done) ||
-      Number(left.pending) - Number(right.pending) ||
-      left.name.localeCompare(right.name),
-  );
-
-  // A customer not validated yet has no grade norm, so he is left out of the meters (his placements
-  // still count for the call rate, which measures the days worked, not the panel).
-  const scored = tallies.filter((row) => !row.pending);
-  const amMeter = summarizeMonthlyList(scored, "AM");
-  const pmMeter = summarizeMonthlyList(scored, "PM");
-  const callRate = monthlyCallRate({ monthStart, amPlacements, pmPlacements }, settings);
+  const { tallies, amMeter, pmMeter, callRate } = monthMeters({ monthStart, settings, customers: plannerCustomers, itemRows });
 
   const itemsByPlan = new Map<string, Row[]>();
   for (const row of itemRows) {
@@ -519,87 +675,37 @@ export async function loadMonthlyPlanner(
     itemsByPlan.set(planId, list);
   }
   const territory = describeTerritory(viewer.org, seat, names);
-  const repForWeeks = canWriteAsRep(viewer, seat, isTest) && Boolean(seat.lineCode);
-  const reviewerForWeeks = canReviewTerritory(viewer, seat, isTest);
-  const returnerForWeeks = canReturnTerritoryPlan(viewer, seat, isTest);
-  // One builder for both, so the leading week is judged by exactly the same rules as the month's own —
-  // its own plan row, its own editable window, its own Send. Only its name and its note differ.
-  const toWeekView = (weekStart: string, planRow: Row | null, weekItems: Row[], leading: boolean): MonthlyWeekView => {
-    const weekStatus = planRow ? statusOf(planRow.status) : null;
-    const weekPlan = planRow ? mapPlan(planRow, names, territory) : null;
-    // One week at a time (owner, 2026-10-01): the same answer the server gives a save or a send.
-    const edit: PlanEditState | null = planRow ? (editState.get(String(planRow.id)) ?? null) : null;
-    // A week returned for ONE day (owner, 2026-10-02: "Only that day"): that day alone is the rep's to
-    // change — the same days `savePlan` accepts — and every other day reads as fixed, which greys it.
-    const returnedDay = standingReturnedDay({
-      status: weekStatus,
-      returnedDay: weekPlan?.returnedDay ?? null,
-      decidedAt: weekPlan?.decidedAt ?? null,
-      editAcknowledgedAt: editAcknowledgedAt(edit),
-    });
-    const builtDays = buildDays({ weekStart, cairoToday: today, itemRows: weekItems, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays, leave, pendingLeave });
-    const days = onlyReturnedDayEditable(builtDays, returnedDay);
-    const dueOn = weekPlan?.dueOn ?? weeklyPlanDueOn(weekStart);
-    const open = editablePlanDays(weekStart, today).length > 0;
-    const staleOpen = days.some((day) => day.editable && day.items.some((item) => item.stale));
-    const repState: RepWeekState = repForWeeks ? repStateOf({ weekStart, cairoToday: today, status: weekStatus, edit }) : "closed";
-    const canEdit = repState === "plan";
-    const latest = edit?.latest ?? null;
-    const editRequest =
-      edit?.waiting ??
-      (latest && ((latest.status === "refused" && (weekStatus === "submitted" || weekStatus === "approved")) || (latest.status === "reopened" && weekStatus === "draft"))
-        ? latest
-        : null);
-    const previousMonth = formatPhoenixMonth(addDaysIso(monthStart, -1));
-    return {
-      weekStart,
-      weekNumber: leading ? 0 : weekNumberInMonth(weekStart),
-      label: leading ? (leadingIsRunning ? RUNNING_WEEK_LABEL : LEADING_WEEK_LABEL) : `Week ${weekNumberInMonth(weekStart)}`,
-      leading,
-      // Where this week is filed, said where he is standing: it belongs to the month before.
-      leadingNote: leading
-        ? leadingIsRunning
-          ? `This is the week you are in, from ${formatPhoenixLongDate(weekStart)}. It belongs to ${previousMonth}.`
-          : `These are the first days of ${formatPhoenixMonth(monthStart)}, on the week of ${formatPhoenixLongDate(weekStart)} — which belongs to ${previousMonth}.`
-        : null,
-      status: weekStatus,
-      statusLabel: planStatusLine({
-        status: weekStatus,
-        repName: territory.repName,
-        reviewerName: territory.reviewerName,
-        deciderName: weekPlan?.decidedByName ?? null,
-      }),
-      days,
-      plan: weekPlan,
-      dueOn,
-      dueOnLabel: planDueLabel(dueOn),
-      // A rep is told only about the week he can still send; a manager reads it on every open week.
-      // Judged on the DEADLINE INSTANT, not on the date: between 23:55 and midnight a date test would
-      // call the week not-yet-overdue while the server stamps that same send late.
-      overdue:
-        (repForWeeks ? canEdit : open)
-        && planDeadlinePassed(dueOn, now)
-        && (weekStatus === null || weekStatus === "draft" || weekStatus === "returned"),
-      open,
-      repState,
-      canEdit,
-      canSubmit: canEdit && weekStatus !== null && isPlanEditable(weekStatus) && weekItems.length > 0 && !staleOpen,
-      canAskToEdit: repState === "sent" && weekPlan !== null,
-      editRequest,
-      canApprove: (reviewerForWeeks || canOverrideDecision(viewer, isTest)) && weekStatus === "submitted",
-      canReturn: open && returnerForWeeks && (weekStatus === "submitted" || weekStatus === "approved"),
-      returnedDay,
-      sentChanges: decidesWeeks && weekStatus === "submitted" && planRow ? sentChangesOf(sends.get(String(planRow.id)) ?? []) : null,
-    };
+  const weekInputs: MonthlyWeekInputs = {
+    viewer,
+    isTest,
+    monthStart,
+    today,
+    now,
+    leadingIsRunning,
+    settings,
+    isRamadan,
+    names,
+    territory,
+    editState,
+    activities,
+    starts,
+    holidays,
+    leave,
+    pendingLeave,
+    sends,
+    decidesWeeks,
+    repForWeeks: canWriteAsRep(viewer, seat, isTest) && Boolean(seat.lineCode),
+    reviewerForWeeks: canReviewTerritory(viewer, seat, isTest),
+    returnerForWeeks: canReturnTerritoryPlan(viewer, seat, isTest),
   };
   const weekViews: MonthlyWeekView[] = weeks.map((weekStart) => {
     const planRow = planRows.find((row) => String(row.week_start) === weekStart) ?? null;
-    return toWeekView(weekStart, planRow, planRow ? itemsByPlan.get(String(planRow.id)) ?? [] : [], false);
+    return buildMonthlyWeekView(weekInputs, weekStart, planRow, planRow ? itemsByPlan.get(String(planRow.id)) ?? [] : [], false);
   });
   // 🔴 FIRST IN THE LIST, AND OUTSIDE `weekViews` — the month's own flags below (`staleOnOpenDays`,
   // and through it the month's Send) are about the month's OWN weeks, and must not be gated on a week
   // that belongs to the month before.
-  const leadingView = leadingWeek ? toWeekView(leadingWeek, leadingRow, leadingItems, true) : null;
+  const leadingView = leadingWeek ? buildMonthlyWeekView(weekInputs, leadingWeek, leadingRow, leadingItems, true) : null;
 
   const monthStatusByStart = new Map<string, PhoenixCrmPlanStatus>();
   for (const row of (monthsResult.data ?? []) as Row[]) monthStatusByStart.set(String(row.month_start), statusOf(row.status));
@@ -668,6 +774,139 @@ export async function loadMonthlyPlanner(
     canReturn: monthOpen && canReturnTerritoryPlan(viewer, seat, isTest) && (status === "submitted" || status === "approved"),
     blockedReason,
   };
+}
+
+// ── The board's answer to a save ──────────────────────────────────────────────────────────────────
+
+/**
+ * What a save of the rep's own board answers with besides the save itself (owner, 2026-10-02 — his board
+ * saves itself): the week it saved, and — when that week is one of the month's own — the month's meters,
+ * each built by the very code `loadMonthlyPlanner` draws them with. The board puts these in place of
+ * its own and reads nothing again. Nothing else on the board moves on a save: a save never changes a
+ * week's status, the month's header, the list, the readiness count or another week.
+ */
+export type SavedWeekBoard = {
+  /** The month the board showed when it saved — the answer is only ever put on that month. */
+  monthStart: string;
+  week: MonthlyWeekView;
+  /** Null when the saved week is the leading one: it enters no meter, so the board's stand as they are. */
+  meters: MonthMeters | null;
+};
+
+/**
+ * 🔴 THE AUTOSAVE NO LONGER READS THE WHOLE MONTH AGAIN (2026-10-16 speed audit). Every pause in the
+ * rep's ticking saved the week and then re-read the whole month — 16 to 22 reads, eight deep, 2.3 s at
+ * the median — only to redraw the one week he had saved and the meters it moved. The save already holds
+ * most of what that week is drawn from (its list, its holidays, his leave); this reads the rest for that
+ * one week and hands it back with the save.
+ *
+ * It NEVER fails the save: anything it cannot answer exactly — a month the board does not show, a week
+ * that is not on it, a newer save already on the week, a read that fails — answers null, and the board
+ * reads itself again exactly as it did before.
+ */
+export async function loadMonthlyWeekAfterSave(
+  viewer: PhoenixCrmViewer,
+  input: { boardMonth: unknown; saved: SavedPlan; reads: PlanSaveReads },
+): Promise<SavedWeekBoard | null> {
+  try {
+    return await savedWeekBoard(viewer, input);
+  } catch (error) {
+    logError("Phoenix CRM could not draw the saved week for the plan board", {
+      error,
+      labels: { event: "phoenix_crm_plan_save_board_unread" },
+    });
+    return null;
+  }
+}
+
+async function savedWeekBoard(
+  viewer: PhoenixCrmViewer,
+  { boardMonth, saved, reads }: { boardMonth: unknown; saved: SavedPlan; reads: PlanSaveReads },
+): Promise<SavedWeekBoard | null> {
+  const { seat, isTest, weekStart } = reads;
+  const today = viewer.cairoToday;
+  const now = new Date();
+  // The month the board read, exactly as it read it — never one worked out here.
+  if (typeof boardMonth !== "string" || !plannableMonths(today).includes(boardMonth)) return null;
+  const monthStart = boardMonth;
+  const weeks = fieldWeeksOfMonth(monthStart);
+  const leadingWeek = boardLeadingWeek(monthStart, today);
+  const leading = !weeks.includes(weekStart);
+  if (leading && weekStart !== leadingWeek) return null;
+  const leadingIsRunning = leadingWeek !== null && leadingWeek !== leadingFieldWeekOfMonth(monthStart);
+  const decidesWeeks = canReviewTerritory(viewer, seat, isTest) || canReturnTerritoryPlan(viewer, seat, isTest);
+
+  // The saved week's row — and, unless it is the leading week, which enters no meter, every other week
+  // of the month, whose placements the meters count.
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_plans")
+    .select(PLAN_COLUMNS)
+    .eq("seat_id", seat.seatId)
+    .eq("is_test", isTest)
+    .in("week_start", leading ? [weekStart] : weeks);
+  throwIfError(error);
+  const planRows = (data ?? []) as Row[];
+  const planRow = planRows.find((row) => String(row.week_start) === weekStart) ?? null;
+  // Another save already on the week (a second tab, a second phone): the board reads it whole.
+  if (!planRow || String(planRow.id) !== saved.planId || Number(planRow.version) !== saved.version) return null;
+  const planId = String(planRow.id);
+
+  const [itemRows, names, activities, starts, editState, pendingLeave] = await Promise.all([
+    loadPlanItemRows(
+      planRows.map((row) => String(row.id)),
+      ITEM_COLUMNS,
+    ),
+    loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...planPeople([planRow])]),
+    loadPlanActivities([planId]),
+    loadPlanDayStarts([planId]),
+    loadPlanEditState([planId], isTest),
+    // Leave he has asked for and nobody has decided: named on the plan, never a day off (owner, 2026-10-08).
+    loadSeatPendingLeave(seat, { from: weekStart, to: addDaysIso(weekStart, 5) }),
+  ]);
+  const territory = describeTerritory(viewer.org, seat, names);
+  const settings = viewer.config.settings;
+  const week = buildMonthlyWeekView(
+    {
+      viewer,
+      isTest,
+      monthStart,
+      today,
+      now,
+      leadingIsRunning,
+      settings,
+      isRamadan: (isoDay: string) => isRamadanDay(isoDay, viewer.config.ramadanOverrides),
+      names,
+      territory,
+      editState,
+      activities,
+      starts,
+      // The week's own holidays and leave, read by the save itself over exactly these six days.
+      holidays: reads.holidays,
+      leave: reads.leave,
+      pendingLeave,
+      // A save leaves a week a draft or returned, and only a SENT week shows what changed since its last
+      // send, so nothing the sends kept is ever drawn here.
+      sends: new Map<string, SentEvent[]>(),
+      decidesWeeks,
+      repForWeeks: canWriteAsRep(viewer, seat, isTest) && Boolean(seat.lineCode),
+      reviewerForWeeks: canReviewTerritory(viewer, seat, isTest),
+      returnerForWeeks: canReturnTerritoryPlan(viewer, seat, isTest),
+    },
+    weekStart,
+    planRow,
+    itemRows.filter((row) => String(row.plan_id) === planId),
+    leading,
+  );
+  if (leading) return { monthStart, week, meters: null };
+
+  // The list the save checked its items against — the board's own list (on-list customers only), in the
+  // board's own order, so the tallies come back in the order the board draws them.
+  const customers = reads.customers.flatMap((row) => {
+    const counted = meterCustomerOf(row, reads.placesByCustomer.get(String(row.id)) ?? []);
+    return counted ? [counted] : [];
+  });
+  customers.sort(byListThenName);
+  return { monthStart, week, meters: monthMeters({ monthStart, settings, customers, itemRows }) };
 }
 
 // ── Submit / reopen (the rep) ─────────────────────────────────────────────────────────────────────
@@ -810,12 +1049,30 @@ export async function loadMonthlyPlanReviews(viewer: PhoenixCrmViewer, raw: { te
       },
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     );
+  // The weekly plans of this month's field-weeks, for the doctor and account counts and the far-apart days.
+  // The chunks are read a few at a time, never one after another (2026-10-16 speed audit), in chunk order.
+  const weeks = fieldWeeksOfMonth(monthStart);
+  const planRowsOf = async (seats: ReadonlyArray<OrgSeat>): Promise<Row[]> => {
+    const seatIds = seats.map((seat) => seat.seatId);
+    if (weeks.length === 0 || seatIds.length === 0) return [];
+    const pages = await mapWithConcurrency(chunk(seatIds, 100), PLAN_READ_CONCURRENCY, (part) =>
+      fetchAllRowsKeyset<Row>(
+        () => supabase.from("phoenix_crm_plans").select("id, seat_id, week_start, is_test").eq("is_test", isTest).in("seat_id", part).in("week_start", weeks),
+        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+      ),
+    );
+    return pages.flat();
+  };
+  // Outside test mode the rows are every territory in scope — known before a header is read — so the
+  // weekly plans are read BESIDE the headers rather than after them. A failed header read still
+  // surfaces first. Test mode lists only the territories that have a header, so it still waits for them.
+  const planRowsEarly = isTest ? null : planRowsOf(territories);
+  planRowsEarly?.catch(() => undefined);
   let headerRows: Row[];
   if ((isTest && viewer.isSuperAdmin) || viewer.basis === "all") {
     headerRows = await headerQuery(null);
   } else {
-    headerRows = [];
-    for (const part of chunk([...territoryById.keys()], 100)) headerRows.push(...(await headerQuery(part)));
+    headerRows = (await mapWithConcurrency(chunk([...territoryById.keys()], 100), PLAN_READ_CONCURRENCY, (part) => headerQuery(part))).flat();
   }
   headerRows = headerRows.filter((row) => territoryById.has(String(row.seat_id)));
 
@@ -831,19 +1088,7 @@ export async function loadMonthlyPlanReviews(viewer: PhoenixCrmViewer, raw: { te
   const headerBySeat = new Map(monthHeaders.map((row) => [String(row.seat_id), row]));
   const rowSeats = isTest ? monthHeaders.map((row) => territoryById.get(String(row.seat_id)) as OrgSeat) : territories;
 
-  // The weekly plans of this month's field-weeks, for the doctor and account counts and the far-apart days.
-  const weeks = fieldWeeksOfMonth(monthStart);
-  const seatIds = rowSeats.map((seat) => seat.seatId);
-  const planRows: Row[] = [];
-  if (weeks.length > 0 && seatIds.length > 0) {
-    for (const part of chunk(seatIds, 100)) {
-      const page = await fetchAllRowsKeyset<Row>(
-        () => supabase.from("phoenix_crm_plans").select("id, seat_id, week_start, is_test").eq("is_test", isTest).in("seat_id", part).in("week_start", weeks),
-        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-      );
-      planRows.push(...page);
-    }
-  }
+  const planRows = await (planRowsEarly ?? planRowsOf(rowSeats));
   const planSeatById = new Map(planRows.map((row) => [String(row.id), String(row.seat_id)]));
 
   const [itemRows, names] = await Promise.all([

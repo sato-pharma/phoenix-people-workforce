@@ -2204,9 +2204,62 @@ export async function readContactVisitHistory(
   options: { daysSince?: string } = {},
 ): Promise<Map<number, CrmContactVisitHistory>> {
   const daysSince = options.daysSince ?? null;
-  const byContact = new Map<number, CrmContactVisitHistory>();
   const ids = [...new Set(contactCrmIds)].filter((id) => Number.isFinite(id));
-  if (ids.length === 0) return byContact;
+  if (ids.length === 0) return new Map<number, CrmContactVisitHistory>();
+  // 🔴 COUNTED IN THE DATABASE, ONE ROW PER CONTACT (2026-10-16 Phoenix CRM performance audit). The
+  // List and the planner need one count, one date and one list of days per contact, and this used to
+  // carry every visit of every contact to the app — 50 contacts a request, a page of 1,000 at a time by
+  // OFFSET over the union view, which rebuilt every earlier page for each new one. The function runs the
+  // same filter over the same view (iReports360 rows only) and the fold below in SQL; until it is
+  // applied here, the page walk answers exactly as before.
+  try {
+    return await readContactVisitHistoryCounted(ids, daysSince);
+  } catch (error) {
+    if (!isMissingCrmRpcError(error)) {
+      // A missing mirror costs this one line, as it always did.
+      if (isCrmSchemaMissingError(error)) return new Map<number, CrmContactVisitHistory>();
+      throw toQueryError(error);
+    }
+  }
+  return readContactVisitHistoryPaged(ids, daysSince);
+}
+
+/** Server-side count over the visits door's iReports360 rows (…20261016180202). */
+const CRM_CONTACT_VISIT_HISTORY_RPC = "phx_crm_contact_visit_history";
+
+/**
+ * Contacts per call. One row per contact comes back, so 500 stays well under PostgREST's 1,000-row cap
+ * and the ids travel in the request body, never the URL.
+ */
+const CONTACT_HISTORY_RPC_CHUNK = 500;
+
+async function readContactVisitHistoryCounted(ids: readonly number[], daysSince: string | null): Promise<Map<number, CrmContactVisitHistory>> {
+  const supabase = getSupabaseAdmin();
+  type CountedRow = { contact_crm_id: number | string | null; visits: number | string | null; last_visited_on: string | null; days: string[] | null };
+  const chunks = Array.from({ length: Math.ceil(ids.length / CONTACT_HISTORY_RPC_CHUNK) }, (_unused, index) =>
+    ids.slice(index * CONTACT_HISTORY_RPC_CHUNK, (index + 1) * CONTACT_HISTORY_RPC_CHUNK),
+  );
+  const answers = await mapWithConcurrency(chunks, 4, async (chunk) => {
+    const { data, error } = await supabase.rpc(CRM_CONTACT_VISIT_HISTORY_RPC, { p_contact_crm_ids: chunk, p_days_since: daysSince });
+    if (error) throw error;
+    return (data ?? []) as CountedRow[];
+  });
+  const byContact = new Map<number, CrmContactVisitHistory>();
+  for (const rows of answers) {
+    for (const row of rows) {
+      if (row.contact_crm_id == null) continue;
+      // The same object, in the same key order, the page walk builds: `days` only when asked for and found.
+      const found: CrmContactVisitHistory = { lastVisitedOn: row.last_visited_on, visits: Number(row.visits ?? 0) };
+      if (daysSince !== null && Array.isArray(row.days) && row.days.length > 0) found.days = row.days;
+      byContact.set(Number(row.contact_crm_id), found);
+    }
+  }
+  return byContact;
+}
+
+/** The page walk the count replaced — kept for a database the function has not reached yet. */
+async function readContactVisitHistoryPaged(ids: readonly number[], daysSince: string | null): Promise<Map<number, CrmContactVisitHistory>> {
+  const byContact = new Map<number, CrmContactVisitHistory>();
   const supabase = getSupabaseAdmin();
   const CHUNK = 50;
   const PAGE = 1000;

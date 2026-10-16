@@ -378,12 +378,12 @@ async function loadAreaNames(areaCodes: readonly string[]): Promise<Map<string, 
   const names = new Map<string, string>();
   if (areaCodes.length === 0) return names;
   const supabase = getSupabaseAdmin();
-  for (let from = 0; from < areaCodes.length; from += IN_CHUNK) {
-    const chunk = areaCodes.slice(from, from + IN_CHUNK);
-    const { data, error } = await supabase
-      .from("source_of_sales_areas")
-      .select("area_code, area_name")
-      .in("area_code", chunk);
+  // A few chunks at once, folded in chunk order (2026-10-16 performance audit): the same names, and the
+  // same first failure, as the one-chunk-at-a-time loop gave.
+  const answers = await mapWithConcurrency(inChunks(areaCodes), CHUNK_CONCURRENCY, async (chunk) =>
+    supabase.from("source_of_sales_areas").select("area_code, area_name").in("area_code", chunk),
+  );
+  for (const { data, error } of answers) {
     if (error) throw new Error(`Could not read area names: ${error.message}`);
     for (const row of (data ?? []) as Array<{ area_code: string | null; area_name: string | null }>) {
       const name = (row.area_name ?? "").trim();
@@ -400,12 +400,11 @@ async function loadBrickMeta(
   const meta = new Map<string, { areaCode: string | null; areaName: string | null; name: string }>();
   if (brickIds.length === 0) return meta;
   const supabase = getSupabaseAdmin();
-  for (let from = 0; from < brickIds.length; from += IN_CHUNK) {
-    const chunk = brickIds.slice(from, from + IN_CHUNK);
-    const { data, error } = await supabase
-      .from("source_of_sales_bricks")
-      .select("brick_id, brick_name, area_code, active")
-      .in("brick_id", chunk);
+  // A few chunks at once, folded in chunk order (2026-10-16 performance audit) — see `loadAreaNames`.
+  const answers = await mapWithConcurrency(inChunks(brickIds), CHUNK_CONCURRENCY, async (chunk) =>
+    supabase.from("source_of_sales_bricks").select("brick_id, brick_name, area_code, active").in("brick_id", chunk),
+  );
+  for (const { data, error } of answers) {
     if (error) throw new Error(`Could not read brick names: ${error.message}`);
     for (const row of (data ?? []) as Array<{
       active: boolean | null;
@@ -449,6 +448,8 @@ type CheckinRow = {
   agent_hr_id: string | null;
   check_date: string | null;
   contact_crm_id: number;
+  /** The page cursor's tiebreak only — never carried onto a point. */
+  crm_checkin_id: number;
   lat: number;
   lon: number;
 };
@@ -459,27 +460,41 @@ export async function loadCheckins(contactIds: readonly number[]): Promise<Map<n
   const ids = [...new Set(contactIds)];
   // One chunk's pages, in order. A failed page hands back the pages before it WITH its error rather
   // than throwing, so the fold below meets the error exactly where the old serial loop did.
+  //
+  // 🔴 KEYSET PAGES, NOT OFFSET (2026-10-16 Phoenix CRM performance audit). An OFFSET page over a union
+  // view makes the database build and throw away every row before it, so a contact with years of
+  // check-ins cost more with every page. Each page now starts strictly after the last row of the one
+  // before, on the SAME order — newest first, the check-in id breaking a tie — which is a total order
+  // (crm_checkin_id is unique and check_date is never empty on an iReports360 check-in), so the pages
+  // hold exactly the rows, in exactly the order, the OFFSET walk did.
   const readChunk = async (chunk: number[]): Promise<{ error: { message: string } | null; rows: CheckinRow[] }> => {
     const rows: CheckinRow[] = [];
-    for (let page = 0; ; page += 1) {
-      const { data, error } = await supabase
+    let after: { at: string; id: number } | null = null;
+    for (;;) {
+      let query = supabase
         .from(CRM_CHECKINS_UNIFIED_VIEW)
-        .select("contact_crm_id, agent_crm_id, agent_hr_id, lat, lon, address, check_date")
+        .select("contact_crm_id, agent_crm_id, agent_hr_id, lat, lon, address, check_date, crm_checkin_id")
         // iReports360 check-ins only: these pins reach the rep's own Phoenix CRM List (shared-customers.ts),
         // and a Phoenix visit's position is never shown on a rep's screen (golden rule #1).
         .eq("source", IREPORTS360_VISIT_SOURCE)
         .in("contact_crm_id", chunk)
         .not("lat", "is", null)
-        .not("lon", "is", null)
+        .not("lon", "is", null);
+      if (after) {
+        query = query.or(`check_date.lt."${after.at}",and(check_date.eq."${after.at}",crm_checkin_id.lt.${after.id})`);
+      }
+      const { data, error } = await query
         .order("check_date", { ascending: false })
-        // A stable tiebreak, or two rows sharing a timestamp can swap between pages — which both
-        // duplicates one check-in and drops another, quietly changing the score.
+        // A stable tiebreak, or two rows sharing a timestamp could straddle a page — which would both
+        // duplicate one check-in and drop another, quietly changing the score.
         .order("crm_checkin_id", { ascending: false })
-        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+        .limit(PAGE_SIZE);
       if (error) return { error, rows };
       const pageRows = (data ?? []) as CheckinRow[];
       rows.push(...pageRows);
       if (pageRows.length < PAGE_SIZE) return { error: null, rows };
+      const last = pageRows[pageRows.length - 1];
+      after = { at: String(last.check_date), id: Number(last.crm_checkin_id) };
     }
   };
   const answers = await mapWithConcurrency(inChunks(ids), CHUNK_CONCURRENCY, readChunk);
@@ -694,66 +709,56 @@ export async function getRepsListForAgent(
   }
 
   const contactIds = rows.map((row) => row.contactCrmId);
-  const [brickByContactId, brickByRegionName, checkins, roster] = await Promise.all([
-    loadContactBrickMap(contactIds),
+  // 🔴 EACH READ STARTS THE MOMENT WHAT IT NEEDS IS IN (2026-10-16 Phoenix CRM performance audit). The
+  // brick names need only the two brick mappings, and the other reps' pins need only the company-wide
+  // roster — neither ever needed this rep's check-ins, which are the slowest read here. They used to
+  // wait for all four of the second stage; now each chains on its own inputs, and every answer is the
+  // one the staged reads gave. Each is handled the moment it starts and awaited where it was used.
+  const contactBrickMapRead = loadContactBrickMap(contactIds);
+  const checkinsRead = loadCheckins(contactIds);
+  const metaRead = Promise.all([contactBrickMapRead, regionBrickMapRead]).then(([byContactId, byRegionName]) => {
+    const needed = new Set<string>();
+    for (const row of rows) {
+      const brickId = byContactId.get(row.contactCrmId) ?? byRegionName.get(normalizeRegionKey(row.region));
+      if (brickId) needed.add(brickId);
+    }
+    return loadBrickMeta([...needed]);
+  });
+  const otherPinsRead = rosterRead.then((rosterRows) => {
+    // Narrow the roster to the contacts that could possibly be the same customer BEFORE asking for any
+    // more check-ins. Matching keys come from the roster on both sides so the two halves of a pair are
+    // normalized identically — reading one side off the display row instead would compare a real name
+    // against the `Contact 12345` placeholder a nameless row falls back to.
+    const rosterById = new Map(rosterRows.map((entry) => [entry.contactCrmId, entry]));
+    const mineNameKeys = new Set<string>();
+    const minePhoneKeys = new Set<string>();
+    for (const id of contactIds) {
+      const entry = rosterById.get(id);
+      if (!entry) continue;
+      if (entry.nameKey) mineNameKeys.add(entry.nameKey);
+      if (entry.phoneKey) minePhoneKeys.add(entry.phoneKey);
+    }
+    const mineIds = new Set(contactIds);
+    const candidateIds = rosterRows
+      .filter(
+        (entry) =>
+          entry.repKey !== repKey &&
+          !mineIds.has(entry.contactCrmId) &&
+          ((entry.nameKey !== "" && mineNameKeys.has(entry.nameKey)) ||
+            (entry.phoneKey != null && minePhoneKeys.has(entry.phoneKey))),
+      )
+      .map((entry) => entry.contactCrmId);
+    return loadPinsFor(candidateIds);
+  });
+  for (const read of [contactBrickMapRead, checkinsRead, metaRead, otherPinsRead]) read.catch(() => undefined);
+
+  const [brickByContactId, brickByRegionName, checkins, roster, otherPins] = await Promise.all([
+    contactBrickMapRead,
     regionBrickMapRead,
-    loadCheckins(contactIds),
+    checkinsRead,
     rosterRead,
+    otherPinsRead,
   ]);
-
-  const needed = new Set<string>();
-  for (const row of rows) {
-    const brickId = brickByContactId.get(row.contactCrmId) ?? brickByRegionName.get(normalizeRegionKey(row.region));
-    if (brickId) needed.add(brickId);
-  }
-
-  // Narrow the roster to the contacts that could possibly be the same customer BEFORE asking for any
-  // more check-ins. Matching keys come from the roster on both sides so the two halves of a pair are
-  // normalized identically — reading one side off the display row instead would compare a real name
-  // against the `Contact 12345` placeholder a nameless row falls back to.
-  const rosterById = new Map(roster.map((entry) => [entry.contactCrmId, entry]));
-  const mineNameKeys = new Set<string>();
-  const minePhoneKeys = new Set<string>();
-  for (const id of contactIds) {
-    const entry = rosterById.get(id);
-    if (!entry) continue;
-    if (entry.nameKey) mineNameKeys.add(entry.nameKey);
-    if (entry.phoneKey) minePhoneKeys.add(entry.phoneKey);
-  }
-  const mineIds = new Set(contactIds);
-  const candidateIds = roster
-    .filter(
-      (entry) =>
-        entry.repKey !== repKey &&
-        !mineIds.has(entry.contactCrmId) &&
-        ((entry.nameKey !== "" && mineNameKeys.has(entry.nameKey)) ||
-          (entry.phoneKey != null && minePhoneKeys.has(entry.phoneKey))),
-    )
-    .map((entry) => entry.contactCrmId);
-
-  const [metaByBrickId, otherPins, counterparties] = await Promise.all([
-    loadBrickMeta([...needed]),
-    loadPinsFor(candidateIds),
-    counterpartiesRead,
-  ]);
-
-  // HAS PHOENIX ACTUALLY TRADED WITH THIS ROW? Matched here rather than inside `contact-trade.ts`
-  // because the area a contact sits in is the SAME two-step brick resolution the grouping below
-  // uses, and resolving it twice is how the badge and the group heading come to disagree about
-  // where a doctor is. See that file's header for why the area — not the name — is what makes a
-  // match trustworthy.
-  const tradeByContact = matchContactTrade(
-    rows.map((row) => {
-      const brickId =
-        brickByContactId.get(row.contactCrmId) ?? brickByRegionName.get(normalizeRegionKey(row.region)) ?? null;
-      return {
-        areaCode: brickId ? (metaByBrickId.get(brickId)?.areaCode ?? null) : null,
-        contactCrmId: row.contactCrmId,
-        name: row.name,
-      };
-    }),
-    counterparties,
-  );
 
   const pins = new Map(otherPins);
   for (const [contactCrmId, found] of checkins) pins.set(contactCrmId, { lat: found.seenAt.lat, lon: found.seenAt.lon });
@@ -780,7 +785,30 @@ export async function getRepsListForAgent(
   for (const list of sharedByContact.values()) {
     for (const entry of list) for (const id of entry.contactCrmIds) partnerIds.add(id);
   }
-  const partnerCheckins = partnerIds.size > 0 ? await loadCheckins([...partnerIds]) : new Map<number, ContactCheckins>();
+  // Read beside the brick names and the trade counterparties, which were already on their way.
+  const [partnerCheckins, metaByBrickId, counterparties] = await Promise.all([
+    partnerIds.size > 0 ? loadCheckins([...partnerIds]) : Promise.resolve(new Map<number, ContactCheckins>()),
+    metaRead,
+    counterpartiesRead,
+  ]);
+
+  // HAS PHOENIX ACTUALLY TRADED WITH THIS ROW? Matched here rather than inside `contact-trade.ts`
+  // because the area a contact sits in is the SAME two-step brick resolution the grouping below
+  // uses, and resolving it twice is how the badge and the group heading come to disagree about
+  // where a doctor is. See that file's header for why the area — not the name — is what makes a
+  // match trustworthy.
+  const tradeByContact = matchContactTrade(
+    rows.map((row) => {
+      const brickId =
+        brickByContactId.get(row.contactCrmId) ?? brickByRegionName.get(normalizeRegionKey(row.region)) ?? null;
+      return {
+        areaCode: brickId ? (metaByBrickId.get(brickId)?.areaCode ?? null) : null,
+        contactCrmId: row.contactCrmId,
+        name: row.name,
+      };
+    }),
+    counterparties,
+  );
 
   // WHAT LOOKS WRONG ABOUT EACH ROW. Computed from the roster, the pins and the check-ins that are
   // already loaded above, so it costs no extra round trip. Deliberately built AFTER the sharing

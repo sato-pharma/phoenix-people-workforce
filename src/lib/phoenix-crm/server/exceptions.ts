@@ -14,12 +14,13 @@
  *
  *   1. `phoenix_crm_seat_readiness` for every seat (the RPC already takes an array).
  *   2. This field week's plan headers.
- *   3. Those plans' items, counted per plan.
+ *   3. Those plans' items, counted per plan — in the database (`phoenix_crm_plan_item_counts`).
  *   4. Countable visits over the rolling window, which also answers the last working day.
  *
  * Beside them, one lookup that is not per seat at all: the national holidays (`loadCallRateHolidays`,
- * at most two reads, since it reads per calendar month). It runs FIRST, because it decides which days
- * the window is made of — see `gatherExceptions`.
+ * at most two reads, since it reads per calendar month). It runs before the visits and the leave,
+ * because it decides which days the window is made of — see `gatherExceptions`; 1 and 2 and the names
+ * do not depend on it, so they run beside it.
  *
  * 🔴 The visits read is `phoenix_crm_countable_visits`, never `phoenix_crm_visits`, and it asks that
  * view for `customer_validated = true`. An off-plan visit waiting for approval counts in NOTHING
@@ -54,10 +55,12 @@ import {
 } from "@/lib/phoenix-crm/exceptions";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { readsTeamReports, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { chunk } from "@/lib/phoenix-crm/server/db";
+import { callPhoenixCrm, chunk } from "@/lib/phoenix-crm/server/db";
 import { loadReadiness, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS } from "@/lib/phoenix-crm/server/plan-day-status";
+import { readSeatGroups, shareInFlight, startedEarly } from "@/lib/phoenix-crm/server/reports";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { CallRateHolidays } from "@/lib/crm/call-rate";
@@ -111,6 +114,24 @@ function windowDays(lastDay: string, count: number, holidays: CallRateHolidays):
   return days.reverse();
 }
 
+/**
+ * How many items each plan holds, counted by `phoenix_crm_plan_item_counts`. A plan with none has no
+ * row and reads 0, exactly as an empty tally did. 500 plans a call keeps every answer under PostgREST's
+ * 1,000-row cap (one row per plan), and the calls run four at a time.
+ */
+async function loadPlanItemCounts(planIds: string[]): Promise<Map<string, number>> {
+  const answers = await mapWithConcurrency(chunk(planIds, 500), 4, (part) =>
+    callPhoenixCrm<unknown>("phoenix_crm_plan_item_counts", { p_plan_ids: part }),
+  );
+  const counts = new Map<string, number>();
+  for (const answer of answers) {
+    for (const row of (Array.isArray(answer) ? answer : []) as Row[]) {
+      counts.set(String(row.plan_id), Number(row.items ?? 0));
+    }
+  }
+  return counts;
+}
+
 /** This field week's plan header per seat, how many customers it holds, and its standing returned day. */
 async function loadPlanFacts(
   seatIds: string[],
@@ -137,22 +158,15 @@ async function loadPlanFacts(
   if (planRows.length === 0) return out;
 
   const planIds = planRows.map((row) => String(row.id));
-  const itemCounts = new Map<string, number>();
-  for (const part of chunk(planIds, 150)) {
-    const rows = await fetchAllRowsKeyset<Row>(
-      () => getSupabaseAdmin().from("phoenix_crm_plan_items").select("id, plan_id").in("plan_id", part),
-      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-    );
-    for (const row of rows) {
-      const planId = String(row.plan_id);
-      itemCounts.set(planId, (itemCounts.get(planId) ?? 0) + 1);
-    }
-  }
-
   // 🔴 The STANDING one-day return, through the module's one reader — never `returned_day` raw. A
   // week whose edit request was acknowledged after the return is open to the rep again, so no day of
   // it stands as sent, and `loadPlanDayFacts` is the only thing that knows that.
-  const dayFacts = await loadPlanDayFacts(planRows, isTest);
+  //
+  // Beside it, how many customers each plan holds — COUNTED in the database
+  // (`phoenix_crm_plan_item_counts`, 2026-10-16) rather than every item row carried here to be
+  // counted: a whole company's week was some ten thousand rows in pages of a thousand, one after the
+  // other, to produce one number per plan. The two reads are independent, so they run together.
+  const [dayFacts, itemCounts] = await Promise.all([loadPlanDayFacts(planRows, isTest), loadPlanItemCounts(planIds)]);
 
   for (const row of planRows) {
     const id = String(row.id);
@@ -191,8 +205,9 @@ async function loadVisitTallies(
   const out = new Map<string, VisitTally>();
   if (seatIds.length === 0) return out;
 
-  for (const part of chunk(seatIds, 150)) {
-    const rows = await fetchAllRowsKeyset<Row>(
+  // Groups of territories four at a time, the same rows as one walk per batch of 150 (`readSeatGroups`).
+  const rows = await readSeatGroups(seatIds, 150, (part) =>
+    fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
           .from("phoenix_crm_countable_visits")
@@ -203,17 +218,28 @@ async function loadVisitTallies(
           .lte("visit_date", to)
           .in("seat_id", part),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-    );
-    for (const row of rows) {
-      const seatId = String(row.seat_id);
-      const tally = out.get(seatId) ?? { am: 0, pm: 0, lastDay: 0 };
-      if (row.list_type === "AM") tally.am += 1;
-      else tally.pm += 1;
-      if (String(row.visit_date) === lastDay) tally.lastDay += 1;
-      out.set(seatId, tally);
-    }
+    ),
+  );
+  for (const row of rows) {
+    const seatId = String(row.seat_id);
+    const tally = out.get(seatId) ?? { am: 0, pm: 0, lastDay: 0 };
+    if (row.list_type === "AM") tally.am += 1;
+    else tally.pm += 1;
+    if (String(row.visit_date) === lastDay) tally.lastDay += 1;
+    out.set(seatId, tally);
   }
   return out;
+}
+
+/**
+ * Readiness for every territory, shared with a caller asking for the same territories AT THE SAME
+ * MOMENT — the reports pack opens this board and the adoption report together, and both open with
+ * this call (`shareInFlight`; nothing is kept once it lands). `loadReadiness` answers territory by
+ * territory, so the set is keyed sorted and de-duplicated; both boards only ever `get` from the map.
+ */
+export function sharedReadiness(seatIds: string[]): Promise<Map<string, SeatReadiness>> {
+  const key = `phoenix-crm:readiness|${[...new Set(seatIds)].sort().join(",")}`;
+  return shareInFlight(key, () => loadReadiness(seatIds));
 }
 
 /**
@@ -240,6 +266,18 @@ export async function gatherExceptions(input: {
   const seatIds = seats.map((seat) => seat.seatId);
   const weekStart = fieldWeekStart(input.cairoToday);
 
+  // Readiness, the week's plans and the names depend on nothing the holidays decide, so they start
+  // NOW — beside the holiday and leave reads rather than after them. Their failure is held
+  // (`startedEarly`) and surfaces where it is awaited, below, exactly as it always did.
+  const independent = startedEarly(
+    Promise.all([
+      // Readiness is measured on real entries; in test mode nothing is claimed about a list.
+      isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : sharedReadiness(seatIds),
+      loadPlanFacts(seatIds, isTest, weekStart),
+      loadPeopleNames(seats.map((seat) => seat.occupantHrId)),
+    ]),
+  );
+
   // 🔴 THE HOLIDAYS COME FIRST, because they decide which days the window is even made of. Read
   // over the whole lookback rather than the window, since the window's own length depends on them.
   const holidays = await loadCallRateHolidays(addDaysIso(input.cairoToday, -HOLIDAY_LOOKBACK_DAYS), input.cairoToday);
@@ -251,6 +289,12 @@ export async function gatherExceptions(input: {
   // against: a week with a holiday Thursday in it was never a seven-day obligation.
   const weekWorkingDays = Array.from({ length: 7 }, (_, offset) => addDaysIso(weekStart, offset)).filter((day) =>
     isWorkingDay(day, holidays.dates),
+  );
+
+  // The window's visits, read beside the leave rather than after it. No finished working day means no
+  // window: nothing is read and no rate is claimed.
+  const visitsRead = startedEarly(
+    lastDay ? loadVisitTallies(seatIds, isTest, window[0] as string, lastDay, lastDay) : Promise.resolve(new Map<string, VisitTally>()),
   );
 
   // 🔴 A FAILED LEAVE READ MUST NEVER READ AS "nobody is on leave" — that is the one direction that
@@ -283,14 +327,7 @@ export async function gatherExceptions(input: {
     (fullLeave.get(key) as Set<string>).add(row.day);
   }
 
-  const [readiness, plans, visits, names] = await Promise.all([
-    // Readiness is measured on real entries; in test mode nothing is claimed about a list.
-    isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : loadReadiness(seatIds),
-    loadPlanFacts(seatIds, isTest, weekStart),
-    // No finished working day means no window: nothing is read and no rate is claimed.
-    lastDay ? loadVisitTallies(seatIds, isTest, window[0] as string, lastDay, lastDay) : Promise.resolve(new Map<string, VisitTally>()),
-    loadPeopleNames(seats.map((seat) => seat.occupantHrId)),
-  ]);
+  const [[readiness, plans, names], visits] = await Promise.all([independent, visitsRead]);
 
   const openedOn = new Map(config.lineRollout.map((line) => [line.lineCode, line.opensOn]));
 

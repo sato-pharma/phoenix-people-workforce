@@ -68,6 +68,7 @@ This file is loaded because this session opened a file of this module (or the mo
 
 ### The minute-old company window
 
+- 🔴 **COUNT A CONTACT'S HISTORY IN SQL** — his iReports360 visits and plan days, never by OFFSET pages over a union view (performance audit, 2026-10-16). `readContactVisitHistory` (`reads.ts`) calls `phx_crm_contact_visit_history` and `loadPlanDatesFor` (`shared-customers.ts`) calls `phx_crm_contact_plan_dates` — one row per contact, the same view, source, contacts and window the app used to fold itself. An OFFSET page over `crm_visits_unified` rebuilds every page before it, so the cost grew with the square of the history. The page walk stays ONLY as the PGRST202 fallback for a database without the function. Migration `20261016180202`.
 - 🔴 **ONLY A DISPLAY READER OPTS INTO THE MINUTE-OLD CRM COPY (`reuseRecentWindow: true`).** The owner chose that freshness on 2026-10-16: a dashboard may reuse a copy up to one minute old, and a write the app makes refreshes it at once. Today the SFE Command Center's three reads are the only opt-in. `queryVisits`/`queryCheckins` share only the company-window path, keyed on every input (`src/lib/cache/shared-read.ts`, `src/lib/crm/shared-windows.ts`). A saved Phoenix CRM visit and any poll that wrote rows drop the copy, and every door rule still runs after it. A reader that decides money, a deduction, an approval or a notification never opts in. Pinned by `tests/shared-read-cache.test.ts`, which lists the opt-ins by file.
 
 <!-- module-memory:rules:end -->

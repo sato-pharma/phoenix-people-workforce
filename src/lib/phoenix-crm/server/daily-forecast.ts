@@ -31,6 +31,7 @@ import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { describeTerritory } from "@/lib/phoenix-crm/server/territory";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { applyAchievementAreaMerges, foldAreaCodeForLine } from "@/lib/sales/closing-area-merges";
 import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publication";
 import {
@@ -41,6 +42,7 @@ import {
   loadProductPriceMap,
   type MonthlyTargetRow,
 } from "@/lib/sales/monthly-targets";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -225,33 +227,36 @@ async function sentLinesOn(seatIds: readonly string[], isTest: boolean, from: st
   // seat -> day -> lines
   const bySeat = new Map<string, Map<string, SentLine[]>>();
   if (seatIds.length === 0) return bySeat;
-  for (const part of chunk(seatIds, 100)) {
-    // Paged: a month of a whole line is ~26 territories × 22 days × 7 products, past PostgREST's cap.
-    for (let offset = 0; ; offset += 1000) {
-      const { data, error } = await getSupabaseAdmin()
-        .from("phoenix_crm_daily_forecasts")
-        .select("seat_id, forecast_date, product_code, units, created_at")
-        .in("seat_id", part)
-        .eq("is_test", isTest)
-        .gte("forecast_date", from)
-        .lte("forecast_date", to)
-        .order("id", { ascending: true })
-        .range(offset, offset + 999);
-      throwIfError(error);
-      const rows = (data ?? []) as Row[];
-      for (const row of rows) {
-        const seatId = textOrNull(row.seat_id);
-        const day = textOrNull(row.forecast_date);
-        const productCode = textOrNull(row.product_code);
-        const units = numberOrNull(row.units);
-        if (!seatId || !day || !productCode || units === null) continue;
-        const days = bySeat.get(seatId) ?? new Map<string, SentLine[]>();
-        const lines = days.get(day) ?? [];
-        lines.push({ productCode: productCode.toUpperCase(), units, createdAt: textOrNull(row.created_at) ?? "" });
-        days.set(day, lines);
-        bySeat.set(seatId, days);
-      }
-      if (rows.length < 1000) break;
+  // Paged: a month of a whole line is ~26 territories × 22 days × 7 products, past PostgREST's cap.
+  // KEYSET-paged on the primary key since 2026-10-16 (Phoenix CRM performance audit), the module's rule
+  // for a read that grows with the field: an offset walk re-scans every page it skips and loses a row
+  // when a forecast is sent mid-read, and the seat chunks now read side by side rather than in turn.
+  // Each chunk's rows still come in id order, so every seat's lines are filed in the order they were.
+  const parts = await mapWithConcurrency(chunk([...seatIds], 100), 4, (part) =>
+    fetchAllRowsKeyset<Row>(
+      () =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_daily_forecasts")
+          .select("id, seat_id, forecast_date, product_code, units, created_at")
+          .in("seat_id", part)
+          .eq("is_test", isTest)
+          .gte("forecast_date", from)
+          .lte("forecast_date", to),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    ),
+  );
+  for (const rows of parts) {
+    for (const row of rows) {
+      const seatId = textOrNull(row.seat_id);
+      const day = textOrNull(row.forecast_date);
+      const productCode = textOrNull(row.product_code);
+      const units = numberOrNull(row.units);
+      if (!seatId || !day || !productCode || units === null) continue;
+      const days = bySeat.get(seatId) ?? new Map<string, SentLine[]>();
+      const lines = days.get(day) ?? [];
+      lines.push({ productCode: productCode.toUpperCase(), units, createdAt: textOrNull(row.created_at) ?? "" });
+      days.set(day, lines);
+      bySeat.set(seatId, days);
     }
   }
   return bySeat;
@@ -264,21 +269,35 @@ function firstSentAt(lines: readonly SentLine[]): string | null {
 
 // ── The rep's form ──────────────────────────────────────────────────────────────────────────────
 
-async function buildForm(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): Promise<ForecastFormView> {
+/** The month's targets and working days, which a send has already read for the same month. */
+type FormBasis = {
+  targets: Map<string, Map<string, MonthlyTargetRow>>;
+  days: { workingDays: number; complete: boolean };
+};
+
+async function buildForm(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean, known?: FormBasis): Promise<ForecastFormView> {
   const day = viewer.visitDay;
   const period = periodOfDay(day);
   const area = seatAreaCode(seat);
-  const [targets, days, names, families, published, sent, people] = await Promise.all([
-    cnsTargets(period),
-    workingDaysOf(period),
+  // Last month's closing needs only the published list, so it is read the moment that list is in,
+  // inside the same wave, rather than after the slowest of the other reads (Phoenix CRM performance
+  // audit, 2026-10-16). The month it reads and the rule behind it are unchanged: the newest PUBLISHED
+  // CNS month before this one, or none.
+  const lastMonthRead = publishedCnsPeriods().then(async (published) => {
+    const lastMonthPeriod = published.find((entry) => entry < period) ?? null;
+    return { lastMonthPeriod, closing: lastMonthPeriod ? await loadCnsClosing(lastMonthPeriod) : [] };
+  });
+  // A send has just read this month's targets and working days to check and price the boxes; the form
+  // it hands back reuses them rather than reading the same month twice in one request.
+  const [targets, days, names, families, { lastMonthPeriod, closing }, sent, people] = await Promise.all([
+    known?.targets ?? cnsTargets(period),
+    known?.days ?? workingDaysOf(period),
     loadProductNameMap(),
     loadProductFamilyMap(),
-    publishedCnsPeriods(),
+    lastMonthRead,
     sentLinesOn([seat.seatId], isTest, day, day),
     loadPeopleNames(seat.occupantHrId ? [seat.occupantHrId] : []),
   ]);
-  const lastMonthPeriod = published.find((entry) => entry < period) ?? null;
-  const closing = lastMonthPeriod ? await loadCnsClosing(lastMonthPeriod) : [];
   const closingArea = area && lastMonthPeriod ? foldAreaCodeForLine(FORECAST_LINE_CODE, area, lastMonthPeriod) : null;
   const lastMonth = new Map<string, { actualUnits: number; targetUnits: number }>();
   for (const row of closing) {
@@ -378,7 +397,7 @@ export async function saveForecast(
     { kind: "forecast_sent", org: viewer.org, seat, day: viewer.visitDay, repHrId: seat.occupantHrId ?? viewer.hrId },
     isTest,
   );
-  return buildForm(viewer, seat, isTest);
+  return buildForm(viewer, seat, isTest, { targets, days });
 }
 
 // ── The managers' board ─────────────────────────────────────────────────────────────────────────
@@ -482,23 +501,12 @@ export async function loadForecastBoard(viewer: PhoenixCrmViewer, raw: { day?: u
  * A closed month: what each territory forecast (its average day, carried across the month) against
  * what the PUBLISHED closing credits it with. Scored only for a published month.
  */
-export async function loadForecastAccuracy(viewer: PhoenixCrmViewer, raw: { period?: unknown; test: unknown }): Promise<ForecastAccuracyView> {
-  assertBoardReader(viewer);
-  const isTest = testModeFor(viewer, raw.test);
-  const publishedPeriods = await publishedCnsPeriods();
-  const requested = typeof raw.period === "string" && /^\d{4}-\d{2}$/.test(raw.period) ? raw.period : null;
-  const period = requested ?? publishedPeriods[0] ?? periodOfDay(viewer.cairoToday);
-  const published = publishedPeriods.includes(period);
-  const seats = cnsSeatsInScope(viewer, isTest);
-  if (!published) {
-    return { period, publishedPeriods, published, workingDays: 0, rows: [], isTest };
-  }
-
+/** One month's reads for the accuracy view, all but the closing itself. */
+function accuracyMonthReads(period: string, seats: readonly OrgSeat[], isTest: boolean) {
   const start = monthStartOf(`${period}-01`);
-  const [days, prices, closing, sent, names] = await Promise.all([
+  return Promise.all([
     workingDaysOf(period),
     loadProductPriceMap(period),
-    loadCnsClosing(period),
     sentLinesOn(
       seats.map((seat) => seat.seatId),
       isTest,
@@ -506,6 +514,32 @@ export async function loadForecastAccuracy(viewer: PhoenixCrmViewer, raw: { peri
       monthEndOf(start),
     ),
     loadPeopleNames(seats.flatMap((seat) => (seat.occupantHrId ? [seat.occupantHrId] : []))),
+  ]);
+}
+
+export async function loadForecastAccuracy(viewer: PhoenixCrmViewer, raw: { period?: unknown; test: unknown }): Promise<ForecastAccuracyView> {
+  assertBoardReader(viewer);
+  const isTest = testModeFor(viewer, raw.test);
+  const requested = typeof raw.period === "string" && /^\d{4}-\d{2}$/.test(raw.period) ? raw.period : null;
+  const seats = cnsSeatsInScope(viewer, isTest);
+  // A month asked for by name is one the screen offered from the published list, so its forecasts,
+  // prices, working days and names start reading BESIDE that list rather than after it (Phoenix CRM
+  // performance audit, 2026-10-16). Nothing is scored or shown until the month is confirmed published
+  // below, and the closing — the expensive read, and the one the golden rule governs — still waits for
+  // that confirmation. The `.catch` only stops an early return from leaving a rejection unhandled; the
+  // await further down still throws it.
+  const early = requested ? accuracyMonthReads(requested, seats, isTest) : null;
+  if (early) early.catch(() => undefined);
+  const publishedPeriods = await publishedCnsPeriods();
+  const period = requested ?? publishedPeriods[0] ?? periodOfDay(viewer.cairoToday);
+  const published = publishedPeriods.includes(period);
+  if (!published) {
+    return { period, publishedPeriods, published, workingDays: 0, rows: [], isTest };
+  }
+
+  const [[days, prices, sent, names], closing] = await Promise.all([
+    early ?? accuracyMonthReads(period, seats, isTest),
+    loadCnsClosing(period),
   ]);
 
   const rows: ForecastAccuracyRow[] = seats.map((seat) => {

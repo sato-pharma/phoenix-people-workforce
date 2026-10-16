@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   RETIRED_PILOT_TAB_TARGETS,
+  retiredPilotPortalTarget,
   retiredPilotTabPassThrough,
   retiredPilotTabQuery,
 } from "../src/lib/phoenix-crm/retired-pilot.ts";
@@ -48,9 +49,18 @@ export async function runPhoenixCrmRetiredPilotRedirectTests() {
   const hop = retiredPilotTabPassThrough("kpis").replace(/^\?tab=/, "");
   assert.equal(retiredPilotTabQuery(hop), "?tab=reports");
 
+  // The portal address lands on the module's own page in ONE hop — the chooser's `?tab=` forward was a
+  // second redirect and a second whole portal render (performance audit, 2026-10-16).
+  assert.equal(retiredPilotPortalTarget("visits"), "/employee-portals/field-crm/visits");
+  assert.equal(retiredPilotPortalTarget("planning"), "/employee-portals/field-crm/plan");
+  assert.equal(retiredPilotPortalTarget("kpis"), "/employee-portals/field-crm/reports");
+  for (const other of ["pilot-reps", "plan", "", "__proto__", "x&tab=settings", undefined]) {
+    assert.equal(retiredPilotPortalTarget(other), "/employee-portals/field-crm", `${String(other)} opens the chooser`);
+  }
+
   // ── 2. The two pages are forwards, not the pilot ───────────────────────────────────────────────
   const portal = read(PORTAL_PAGE);
-  assert.match(portal, /redirect\(`\/employee-portals\/field-crm\$\{retiredPilotTabQuery\(\(await searchParams\)\.tab\)\}`\);/);
+  assert.match(portal, /redirect\(retiredPilotPortalTarget\(\(await searchParams\)\.tab\)\);/);
   const admin = read(ADMIN_PAGE);
   assert.match(admin, /redirect\(`\/admin\/field-crm\$\{retiredPilotTabQuery\(params\.tab\)\}`\);/);
   assert.match(

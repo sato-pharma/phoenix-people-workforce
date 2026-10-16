@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { readEvidenceLocationStamp } from "../src/components/outstation/evidence-watermark.ts";
-import { parseEvidenceLocationBody } from "../src/lib/evidence/location-service.ts";
+import {
+  REVERSE_GEOCODE_CELL_DECIMALS,
+  REVERSE_GEOCODE_MAX_ENTRIES,
+  REVERSE_GEOCODE_TTL_MS,
+  memoizeReverseGeocode,
+  parseEvidenceLocationBody,
+  reverseGeocodeCell,
+} from "../src/lib/evidence/location-service.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,7 +54,115 @@ function read(path: string) {
   return stripComments(readFileSync(path, "utf8"));
 }
 
-export function runEvidenceStampBlankCoordinatesTests() {
+type FakeAddress = { area: string | null; city: string | null; formattedAddress: string | null; governorate: string | null; lat: number; lng: number };
+
+function addressAt(location: { lat: number; lng: number }, label: string): FakeAddress {
+  return { area: label, city: "Cairo", formattedAddress: `${label}, Cairo`, governorate: "Cairo", lat: location.lat, lng: location.lng };
+}
+
+/**
+ * The reverse-geocode memo (Phoenix CRM performance audit, 2026-10-16). Every evidence photo asked
+ * Google for the address of where the rep stood, and a rep at the same door asked the same question
+ * again and again. The memo answers a capture in the same ~11 m cell from memory for a few hours —
+ * and each rule below is silent when broken: a remembered failure blanks every later stamp in that
+ * cell, a missing bound grows the process without limit, and a miss that asked for the cell's rounded
+ * corner would give the FIRST capture a different address from the one it always got.
+ */
+async function runReverseGeocodeMemoTests() {
+  assert.equal(REVERSE_GEOCODE_CELL_DECIMALS, 4, "four decimals — about 11 m, inside the error of any phone fix");
+  assert.equal(reverseGeocodeCell(30.04441, 31.23569), "30.0444,31.2357");
+  assert.equal(reverseGeocodeCell(30.04436, 31.23574), "30.0444,31.2357", "two pins a metre apart share a cell");
+  assert.notEqual(reverseGeocodeCell(30.0444, 31.2357), reverseGeocodeCell(30.0454, 31.2357), "a pin ~110 m north is a different cell");
+  assert.ok(REVERSE_GEOCODE_TTL_MS <= 24 * 60 * 60 * 1000, "an address is remembered for hours, never for days");
+  assert.ok(REVERSE_GEOCODE_MAX_ENTRIES > 0 && REVERSE_GEOCODE_MAX_ENTRIES <= 10_000, "and the memo is bounded");
+
+  // Same cell, one call — and the miss asked for the capture's OWN coordinates.
+  {
+    const asked: Array<{ lat: number; lng: number }> = [];
+    const lookup = async (location: { lat: number; lng: number }) => {
+      asked.push(location);
+      return addressAt(location, `call ${asked.length}`);
+    };
+    const memo = memoizeReverseGeocode(lookup, { maxEntries: 10, ttlMs: 1000, now: () => 0 });
+    const first = await memo(30.04441, 31.23569);
+    const second = await memo(30.04436, 31.23574);
+    assert.equal(asked.length, 1, "a second capture in the same cell does not ask Google again");
+    assert.deepEqual(asked[0], { lat: 30.04441, lng: 31.23569 }, "the first capture is looked up at its exact pin, never the cell's corner");
+    assert.equal(second?.formattedAddress, first?.formattedAddress, "and the second gets the first one's address");
+    await memo(30.0454, 31.2357);
+    assert.equal(asked.length, 2, "a different cell asks again");
+  }
+
+  // A missing key (null) and a Google failure (a throw) are never remembered.
+  {
+    let calls = 0;
+    let answer: "null" | "throw" | "address" = "null";
+    const lookup = async (location: { lat: number; lng: number }) => {
+      calls += 1;
+      if (answer === "throw") throw new Error("Google Reverse Geocoding API failed with 503.");
+      return answer === "null" ? null : addressAt(location, "Tahrir");
+    };
+    const memo = memoizeReverseGeocode(lookup, { maxEntries: 10, ttlMs: 1000, now: () => 0 });
+    assert.equal(await memo(30.0444, 31.2357), null);
+    assert.equal(await memo(30.0444, 31.2357), null);
+    assert.equal(calls, 2, "a null answer is asked again — the key may be back on the next capture");
+    answer = "throw";
+    await assert.rejects(memo(30.0444, 31.2357), /503/, "a Google failure still reaches the caller, which turns it into 'lookup unavailable'");
+    answer = "address";
+    assert.equal((await memo(30.0444, 31.2357))?.formattedAddress, "Tahrir, Cairo", "and the capture after a failure asks again and gets the real address");
+    assert.equal(calls, 4);
+  }
+
+  // It expires.
+  {
+    let clock = 0;
+    let calls = 0;
+    const memo = memoizeReverseGeocode(async (location) => addressAt(location, `call ${++calls}`), { maxEntries: 10, ttlMs: 1000, now: () => clock });
+    await memo(30.0444, 31.2357);
+    clock = 999;
+    await memo(30.0444, 31.2357);
+    assert.equal(calls, 1, "inside the window the cell is answered from memory");
+    clock = 1000;
+    assert.equal((await memo(30.0444, 31.2357))?.formattedAddress, "call 2, Cairo", "at the window's end the cell is asked again");
+  }
+
+  // It is bounded, and the least recently USED cell goes first.
+  {
+    let calls = 0;
+    const memo = memoizeReverseGeocode(async (location) => addressAt(location, `call ${++calls}`), { maxEntries: 2, ttlMs: 1000, now: () => 0 });
+    await memo(30.0001, 31.0001); // A
+    await memo(30.0002, 31.0002); // B
+    await memo(30.0001, 31.0001); // A again: from memory, and now the newest
+    assert.equal(calls, 2);
+    await memo(30.0003, 31.0003); // C: over the bound, so B (the least recently used) goes
+    assert.equal(calls, 3);
+    await memo(30.0001, 31.0001); // A: still remembered
+    assert.equal(calls, 3, "the cell used most recently survives the eviction");
+    await memo(30.0002, 31.0002); // B: evicted, so asked again
+    assert.equal(calls, 4, "the least recently used cell was the one evicted");
+  }
+
+  // The stamp still uses the capture's own coordinates — the memo holds only Google's address.
+  const service = read(SERVICE);
+  assert.match(
+    service,
+    /\(options\.reuseNearbyAddress \? reverseGeocodeNearby\(latitude, longitude\) : googleReverseGeocode\(\{ lat: latitude, lng: longitude \}\)\)[\s\S]{0,240}?\.catch\(\(\) => null\)/,
+    "the endpoint still turns any lookup failure into no address, remembered or not",
+  );
+  // Phoenix CRM's captures alone opt in: the marketing capture writes Google's area and governorate into
+  // the customer it creates, so outstation, direct orders and marketing still ask Google every time.
+  assert.match(read("app/api/phoenix-crm/location/route.ts"), /resolveEvidenceLocation\(parsed, \{ reuseNearbyAddress: true \}\)/);
+  assert.match(read("src/lib/phoenix-crm/server/place-location.ts"), /\{ reuseNearbyAddress: true \}/, "and the place save reads the same remembered address its photo was stamped with");
+  for (const route of ["app/api/outstation/reverse-geocode/route.ts", "app/api/direct-orders/reverse-geocode/route.ts", "app/api/marketing-requests/reverse-geocode/route.ts"]) {
+    assert.doesNotMatch(read(route), /reuseNearbyAddress/, `${route} asks Google every time, as before`);
+  }
+  assert.match(service, /const brick = resolveBrickForPoint\(latitude, longitude, centroids\);/, "the brick is resolved from the exact pin");
+  assert.match(service, /\blatitude,\s+longitude,\s+regionName:/, "and the stamp carries the exact pin");
+}
+
+export async function runEvidenceStampBlankCoordinatesTests() {
+  await runReverseGeocodeMemoTests();
+
   // ── The headline: a blank pair is no position, never a pin at 0°N 0°E ────────
   for (const [label, value] of BLANKS) {
     assert.equal(

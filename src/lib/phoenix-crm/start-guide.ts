@@ -5,7 +5,9 @@
  * a scratchpad, which is exactly how a company document rots: the app's wording changes, the guide
  * does not, and a rep is sent looking for a button that was renamed a month ago. Here the guide sits
  * beside the screens it describes, wears the HR premium identity from the module that owns it, and is
- * regenerated on every request.
+ * built from the code that serves it — once per language per server process since 2026-10-16 (the
+ * route keeps the page; a deploy starts a new process, which is the only time the text can change).
+ * That is why this builder must stay a pure function of the language: no clock, no person, no data.
  *
  * 🔴 IT IS UPDATED IN THE SAME PR AS THE FLOW IT DESCRIBES — BOTH LANGUAGES, NEVER ONE (owner,
  * 2026-10-01: "UPDATE AND KEEP ALWAYS UPDATED ARABIC OR EN"). A change to the rep's screens that

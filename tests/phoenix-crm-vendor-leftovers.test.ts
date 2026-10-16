@@ -105,6 +105,9 @@ export function runPhoenixCrmVendorLeftoverTests(): void {
   {
     const loader = source("src/lib/crm/phoenix-vendor-leftovers.ts");
     assert.match(loader, /\.from\("ireports360_visits"\)/, "it reads the raw mirror, which is the only place these rows survive");
+    // 🔴 Paged (2026-10-16): 765 rows that day and growing daily — one read past 1,000 undercounts silently.
+    assert.match(loader, /fetchAllRowsKeyset<[^>]*>\(\s*\(\) =>\s*supabase\s*\.from\("ireports360_visits"\)/, "the mirror read is a keyset walk, never one capped read");
+    assert.ok(loader.includes('getOrLoadShared<LeftoverTally>(VENDOR_LEFTOVERS_CACHE, "company", loadLeftoverTallies'), "one company-wide tally, shared for a minute");
     // 🔴 `queryVisits` selects from `crm_visits_unified`, and from a team's start that view ANTI-JOINS
     // its reps' iReports360 rows out — the owner's rule of 2026-10-02. So the door is built to answer
     // zero to exactly this question, and routing the read through it would look tidy and read wrong.

@@ -100,18 +100,22 @@ export async function runServerFreezeGuardsTests() {
   }
 
   // ── (3) The job register ──────────────────────────────────────────────────
-  drainJobWindow();
+  // The register is one per process, and the suite shares the process: the step-runner test's two
+  // never-settling steps stay registered for good, so a shard that runs it first carries their names
+  // into every window. Read only this test's own names.
+  const drainOwn = () => drainJobWindow().filter((name) => /^job-[abc]$/.test(name));
+  drainOwn();
   const endA = beginJob("job-a");
   await trackJob("job-b", async () => undefined);
-  assert.deepEqual(drainJobWindow(), ["job-a", "job-b"], "a job that FINISHED inside the minute is still named — the culprit has usually ended by the report");
-  assert.deepEqual(drainJobWindow(), ["job-a"], "a job still running is carried into the next window");
+  assert.deepEqual(drainOwn(), ["job-a", "job-b"], "a job that FINISHED inside the minute is still named — the culprit has usually ended by the report");
+  assert.deepEqual(drainOwn(), ["job-a"], "a job still running is carried into the next window");
   endA();
   endA();
-  assert.deepEqual(drainJobWindow(), ["job-a"], "it ended during this window, so this window still names it");
-  assert.deepEqual(drainJobWindow(), [], "and the window after that is empty");
+  assert.deepEqual(drainOwn(), ["job-a"], "it ended during this window, so this window still names it");
+  assert.deepEqual(drainOwn(), [], "and the window after that is empty");
   await assert.rejects(trackJob("job-c", async () => { throw new Error("boom"); }), /boom/, "a failing job's error is passed through untouched");
-  assert.deepEqual(drainJobWindow(), ["job-c"]);
-  assert.deepEqual(drainJobWindow(), [], "a failed job is unregistered too");
+  assert.deepEqual(drainOwn(), ["job-c"]);
+  assert.deepEqual(drainOwn(), [], "a failed job is unregistered too");
 
   const poller = code("src/lib/crm/live-poller.ts");
   assert.match(poller, /trackJob\("crm:live-poll", tick\)/, "RED every poller tick must register itself");

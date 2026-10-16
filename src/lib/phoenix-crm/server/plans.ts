@@ -32,6 +32,7 @@
  */
 
 import { addDaysIso } from "@/lib/crm/dates";
+import { afterResponse } from "@/lib/http/after-response";
 import { conflictError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import {
@@ -92,9 +93,11 @@ import {
   loadReference,
   loadTerritoryCustomers,
   mapTimings,
+  type ListPlace,
 } from "@/lib/phoenix-crm/server/list";
+import type { SavedWeekBoard } from "@/lib/phoenix-crm/server/monthly-plans";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
-import { loadSharedPlaceIdsByPlace, loadSharedPlaceNames } from "@/lib/phoenix-crm/server/shared-places";
+import { loadSharedPlaceNames } from "@/lib/phoenix-crm/server/shared-places";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import {
   loadPlanActivities,
@@ -111,6 +114,7 @@ import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib
 import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { effectiveListType, type PlannerCustomer, type PlannerInsight, type PlannerPlace } from "@/lib/phoenix-crm/suggestions";
 import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -143,6 +147,15 @@ export const ITEM_COLUMNS =
   "id, plan_id, plan_date, customer_id, place_id, list_type, receives, start_minute, exception_type, exception_note, " +
   "customer:phoenix_crm_customers!customer_id(name, grade, speciality, status), " +
   "place:phoenix_crm_places!place_id(label, brick_name, zone, lat, lon, timings, status)";
+
+/**
+ * What a SEND re-reads of its whole week (`transitionPlan`): the item's day and list for the AM/PM caps,
+ * the customer's and the place's status for the stale test (`isStaleItem`), and the venue the place sits
+ * in for the venue cap — on the item's own place, so the send no longer reads the places a second time.
+ */
+const SEND_ITEM_COLUMNS =
+  "id, plan_date, place_id, list_type, " +
+  "customer:phoenix_crm_customers!customer_id(status), place:phoenix_crm_places!place_id(status, shared_place_id)";
 
 export const REVIEW_ITEM_COLUMNS =
   "id, plan_id, plan_date, customer_id, list_type, receives, " +
@@ -214,16 +227,22 @@ export function mapPlan(row: Row, names: PeopleNames, people?: { repName: string
   };
 }
 
+/** How many chunked reads one loader keeps in flight at once (2026-10-16 speed audit). */
+export const PLAN_READ_CONCURRENCY = 4;
+
+/**
+ * Every item of these plans, in chunks of 50 plans — read a few chunks at a time rather than one after
+ * another (2026-10-16 speed audit: a review list over many territories waited on each chunk in turn).
+ * The rows come back in chunk order, exactly as the one-at-a-time loop returned them.
+ */
 export async function loadPlanItemRows(planIds: ReadonlyArray<string>, columns: string): Promise<Row[]> {
-  const rows: Row[] = [];
-  for (const part of chunk([...new Set(planIds)], 50)) {
-    const page = await fetchAllRowsKeyset<Row>(
+  const pages = await mapWithConcurrency(chunk([...new Set(planIds)], 50), PLAN_READ_CONCURRENCY, (part) =>
+    fetchAllRowsKeyset<Row>(
       () => getSupabaseAdmin().from("phoenix_crm_plan_items").select(columns).in("plan_id", part),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-    );
-    rows.push(...page);
-  }
-  return rows;
+    ),
+  );
+  return pages.flat();
 }
 
 /**
@@ -236,6 +255,15 @@ export function isStaleItem(row: Row): boolean {
   // He has no place, so there is no place to have been removed.
   if (row.place === null || row.place === undefined) return false;
   return record(row.place).status !== "active";
+}
+
+/**
+ * The building each seated place sits in, by name, so the plan can say WHICH polyclinic or centre a
+ * customer is in (owner, 2026-10-10). Wording only: no cap ever depends on this read. The week planner,
+ * the month board and the save all ask it of the same places, so it is asked one way.
+ */
+export function venueNamesOf(placesByCustomer: ReadonlyMap<string, ReadonlyArray<Pick<ListPlace, "sharedPlaceId">>>) {
+  return loadSharedPlaceNames([...placesByCustomer.values()].flatMap((list) => list.map((place) => place.sharedPlaceId ?? null)));
 }
 
 export type TerritoryReadiness = { ready: boolean; total: number; open: number; dropPending: number };
@@ -461,6 +489,7 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   // Every answer is the one the waves gave. The mint's own failure is still the one that surfaces,
   // first, and every read started early is handled the moment it starts.
   const ensured = ensureReferenceCustomers(seat, isTest);
+  const viewerIsRep = canWriteAsRep(viewer, seat, isTest);
   const planRowsRead = (async () => {
     const planRowsResult = await getSupabaseAdmin()
       .from("phoenix_crm_plans")
@@ -473,13 +502,22 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   })();
   const planPartsRead = planRowsRead.then(async (planRows) => {
     const planRow = planRows.find((row) => String(row.week_start) === weekStart) ?? null;
-    const [itemRows, names, activities, starts] = await Promise.all([
+    // One week at a time (owner, 2026-10-01): the week's requests answer the same question the server
+    // asks of a save or a send. A week returned for ONE day reads its requests too: an acknowledged edit
+    // after the return opens all of it. Known from the plan row alone, so read beside the items rather
+    // than after the whole wave (2026-10-16 speed audit).
+    const planStatus = planRow ? statusOf(planRow.status) : null;
+    const readsEdit =
+      planRow !== null && ((viewerIsRep && planStatus === "draft") || (planStatus === "returned" && Boolean(textOrNull(planRow.returned_day))));
+    const [itemRows, names, activities, starts, editState] = await Promise.all([
       planRow ? loadPlanItemRows([String(planRow.id)], ITEM_COLUMNS) : Promise.resolve([] as Row[]),
       loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...planPeople(planRows)]),
       loadPlanActivities(planRow ? [String(planRow.id)] : []),
       loadPlanDayStarts(planRow ? [String(planRow.id)] : []),
+      readsEdit && planRow ? loadPlanEditState([String(planRow.id)], isTest, { names: false }) : Promise.resolve(null),
     ]);
-    return { planRows, planRow, itemRows, names, activities, starts };
+    const edit = planRow && editState ? (editState.get(String(planRow.id)) ?? null) : null;
+    return { planRows, planRow, itemRows, names, activities, starts, edit };
   });
   const customersRead = ensured.then(() => loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }));
   const wave = Promise.all([
@@ -497,11 +535,15 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     loadSeatDaysOff(seat, { from: weekStart, to: addDaysIso(weekStart, 5) }),
     // Leave he has asked for and nobody has decided: named on the plan, never a day off (owner, 2026-10-08).
     loadSeatPendingLeave(seat, { from: weekStart, to: addDaysIso(weekStart, 5) }),
+    // The building each seated place sits in, by name, so the plan can say WHICH polyclinic or centre a
+    // customer is in (owner, 2026-10-10). Wording only: the cap never depends on this read. It needs the
+    // places alone, so it follows the customer list inside the wave, never after it (2026-10-16).
+    customersRead.then(({ placesByCustomer }) => venueNamesOf(placesByCustomer)),
   ]);
   wave.catch(() => undefined);
   await ensured;
   const [
-    { planRows, planRow, itemRows, names, activities, starts },
+    { planRows, planRow, itemRows, names, activities, starts, edit },
     { customers, placesByCustomer },
     visitCounts,
     readiness,
@@ -510,6 +552,7 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     insights,
     leave,
     pendingLeave,
+    venueNames,
   ] = await wave;
 
   const settings = viewer.config.settings;
@@ -517,10 +560,6 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   const territory = describeTerritory(viewer.org, seat, names);
   const plan = planRow ? mapPlan(planRow, names, territory) : null;
   const weekDays = buildDays({ weekStart, cairoToday: today, itemRows, farApartKm: settings.farApartKm, isRamadan, activities, starts, holidays, leave, pendingLeave });
-
-  // The building each seated place sits in, by name, so the plan can say WHICH polyclinic or centre a
-  // customer is in (owner, 2026-10-10). Wording only: the cap never depends on this read.
-  const venueNames = await loadSharedPlaceNames([...placesByCustomer.values()].flatMap((list) => list.map((place) => place.sharedPlaceId ?? null)));
 
   const plannerCustomers: PlannerCustomer[] = customers.flatMap((row) => {
     const customerId = String(row.id);
@@ -556,14 +595,11 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   });
   plannerCustomers.sort((left, right) => left.listType.localeCompare(right.listType) || left.name.localeCompare(right.name));
 
-  const viewerIsRep = canWriteAsRep(viewer, seat, isTest);
   const viewerIsReviewer = canReviewTerritory(viewer, seat, isTest);
   const weekOpen = weeks.includes(weekStart) && editablePlanDays(weekStart, today).length > 0;
   const status = plan?.status ?? null;
-  // One week at a time (owner, 2026-10-01): the same answer the server gives a save or a send. A week
-  // returned for ONE day reads its requests too: an acknowledged edit after the return opens all of it.
-  const readsEdit = planRow !== null && ((viewerIsRep && status === "draft") || (status === "returned" && Boolean(plan?.returnedDay)));
-  const edit = readsEdit && planRow ? ((await loadPlanEditState([String(planRow.id)], isTest, { names: false })).get(String(planRow.id)) ?? null) : null;
+  // One week at a time (owner, 2026-10-01): the same answer the server gives a save or a send — `edit`
+  // is the week's requests, read with its items above.
   const repState = viewerIsRep ? repStateOf({ weekStart, cairoToday: today, status, edit }) : "closed";
   // Only that day is the rep's to change (owner, 2026-10-02) — the same days `savePlan` accepts.
   const returnedDay = standingReturnedDay({
@@ -634,7 +670,27 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
 
 // ── Saving ──────────────────────────────────────────────────────────────────────────────────────
 
-export type SavedPlan = { planId: string; status: PhoenixCrmPlanStatus; version: number; itemCount: number };
+/**
+ * What a save answers. `board` is there only when the save was asked for it (`boardMonth`, from the
+ * rep's own board as it saves itself): the week it just saved and the month's meters, as the month board
+ * draws them (monthly-plans.ts `loadMonthlyWeekAfterSave`), so the board reads nothing again after a
+ * save. Absent or null, the board reads itself again exactly as before.
+ */
+export type SavedPlan = { planId: string; status: PhoenixCrmPlanStatus; version: number; itemCount: number; board?: SavedWeekBoard | null };
+
+/**
+ * What a save already read on its way — handed to the board's answer after it, so none of it is read a
+ * second time. SERVER-SIDE ONLY: it carries the territory's customer rows, and is never sent.
+ */
+export type PlanSaveReads = {
+  seat: OrgSeat;
+  isTest: boolean;
+  weekStart: string;
+  customers: Row[];
+  placesByCustomer: Map<string, ListPlace[]>;
+  holidays: Map<string, string>;
+  leave: Map<string, string>;
+};
 
 function lineCodeOf(seat: OrgSeat): string {
   if (!seat.lineCode) throw validationError("This territory has no line in the organogram, so it cannot be planned.");
@@ -644,8 +700,11 @@ function lineCodeOf(seat: OrgSeat): string {
 /**
  * Saves the days of a week that have not passed. The phone sends every item of those days; an item it
  * leaves out is taken off the plan. The days that have passed keep what was saved.
+ *
+ * `keep`, when a caller passes one, is handed what the save read (`PlanSaveReads`) once the save has
+ * landed — the route's way to answer with the board without reading any of it again.
  */
-export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<SavedPlan> {
+export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown, keep?: { reads: PlanSaveReads | null }): Promise<SavedPlan> {
   const body = record(raw);
   const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
   const lineCode = lineCodeOf(seat);
@@ -655,6 +714,23 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
   }
   const weekStart = body.weekStart;
   if (editablePlanDays(weekStart, today).length === 0) throw conflictError("This week has passed. Reload the planner.");
+
+  // 🔴 READ BESIDE THE GUARD, NEVER AFTER IT (2026-10-16 speed audit). The list, the week's holidays and
+  // his leave do not depend on the guard's answer — only what is done with them does — so they start
+  // now, and are awaited only once every refusal below has had its turn: the guard's own refusal still
+  // surfaces first, then the item checks, then a failed read. The venue names need the places alone, so
+  // they follow the list rather than waiting for the whole first wave.
+  const customersRead = loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true });
+  const reads = Promise.all([
+    customersRead,
+    loadPlanHolidays(weekStart, addDaysIso(weekStart, 5)),
+    loadSeatDaysOff(seat, { from: weekStart, to: addDaysIso(weekStart, 5) }),
+    // Three visits a day inside one polyclinic (owner, 2026-10-09) — the names only, so the refusal can
+    // say "Nile Polyclinic". The COUNT is off the plan's own items, so this read can never widen the cap.
+    customersRead.then(({ placesByCustomer }) => venueNamesOf(placesByCustomer)),
+  ]);
+  reads.catch(() => undefined);
+
   // 🔴 One week at a time (owner, 2026-10-01): the week he plans now, or one his manager returned or
   // an edit request reopened. A week ahead, a passed one, or a sent one is refused here as well as
   // greyed on the board. Its answer is the ONLY list of days this save may touch: every day from today
@@ -666,8 +742,9 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
   }
 
   // Stamps the territory ready the first time its list is complete; it then stays ready. It is a
-  // progress mark for the manager's Team tab, and it has never refused a plan since 2026-09-22.
-  if (!isTest) await territoryReadiness(seat.seatId, false, true);
+  // progress mark for the manager's Team tab, it has never refused a plan since 2026-09-22, and nothing
+  // the save answers reads it — so it runs once the answer has gone (2026-10-16 speed audit).
+  if (!isTest) await afterResponse("phoenix_crm_plan_save_readiness_stamp", () => territoryReadiness(seat.seatId, false, true));
 
   const drafts = parsePlanItems(body.items);
   if (!drafts.ok) throw validationError(drafts.error);
@@ -680,11 +757,7 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
     );
   }
 
-  const [{ customers, placesByCustomer }, holidays, leave] = await Promise.all([
-    loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }),
-    loadPlanHolidays(weekStart, addDaysIso(weekStart, 5)),
-    loadSeatDaysOff(seat, { from: weekStart, to: addDaysIso(weekStart, 5) }),
-  ]);
+  const [{ customers, placesByCustomer }, holidays, leave, planVenues] = await reads;
   const ruleCustomers = new Map<string, PlanRuleCustomer>(
     customers.flatMap((row): Array<[string, PlanRuleCustomer]> => {
       const customerId = String(row.id);
@@ -709,11 +782,6 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
         ],
       ];
     }),
-  );
-  // Three visits a day inside one polyclinic (owner, 2026-10-09) — the names only, so the refusal can
-  // say "Nile Polyclinic". The COUNT is off the plan's own items, so this read can never widen the cap.
-  const planVenues = await loadSharedPlaceNames(
-    [...ruleCustomers.values()].flatMap((customer) => customer.places.map((place) => place.sharedPlaceId ?? null)),
   );
   const resolved = resolvePlanItems({
     weekStart,
@@ -755,28 +823,38 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
     },
   });
   // The day's other activities ride on the same save, once the plan row exists. A caller that sends
-  // none (one release behind) leaves them exactly as they were.
-  if (Array.isArray(body.activities)) {
-    await savePlanActivities({
-      seatId: seat.seatId,
-      actorHrId: viewer.hrId,
-      isTest,
-      weekStart,
-      editableDays,
-      activities: parsePlanActivities(body.activities, open),
-    });
-  }
-  // So do its Start AM / Start PM, on the same terms: a caller that sends none leaves them as they were.
-  if (Array.isArray(body.starts)) {
-    await savePlanDayStarts({
-      seatId: seat.seatId,
-      actorHrId: viewer.hrId,
-      isTest,
-      weekStart,
-      editableDays,
-      starts: parsePlanDayStarts(body.starts, open),
-    });
-  }
+  // none (one release behind) leaves them exactly as they were. So do its Start AM / Start PM, on the
+  // same terms: a caller that sends none leaves them as they were.
+  //
+  // The two are sent TOGETHER (2026-10-16 speed audit): different tables, each its own function under
+  // the week's own lock, so the database still takes them one after the other — the phone just stops
+  // waiting for one answer before it asks the second. A refusal reads exactly as before: the
+  // activities' first, then the starts'.
+  const [activitiesSaved, startsSaved] = await Promise.allSettled([
+    Array.isArray(body.activities)
+      ? savePlanActivities({
+          seatId: seat.seatId,
+          actorHrId: viewer.hrId,
+          isTest,
+          weekStart,
+          editableDays,
+          activities: parsePlanActivities(body.activities, open),
+        })
+      : Promise.resolve(null),
+    Array.isArray(body.starts)
+      ? savePlanDayStarts({
+          seatId: seat.seatId,
+          actorHrId: viewer.hrId,
+          isTest,
+          weekStart,
+          editableDays,
+          starts: parsePlanDayStarts(body.starts, open),
+        })
+      : Promise.resolve(null),
+  ]);
+  if (activitiesSaved.status === "rejected") throw activitiesSaved.reason;
+  if (startsSaved.status === "rejected") throw startsSaved.reason;
+  if (keep) keep.reads = { seat, isTest, weekStart, customers, placesByCustomer, holidays, leave };
   return {
     planId: String(result.plan_id),
     status: statusOf(result.status),
@@ -817,7 +895,9 @@ export async function transitionPlan(
     // `decided_by_hr_id` / `decided_by_role` are read for ONE reason: a send has to know whether the
     // SFE Manager is the person who returned this week, so he can be told it came back (2026-10-08).
     // They must be read BEFORE the transition — `submit` clears the decision off the row.
-    .select("id, seat_id, week_start, status, is_test, decided_by_hr_id, decided_by_role")
+    // `returned_day` / `decided_at` are what the one-week guard reads (plan-edits.ts
+    // `assertRepMayChangeWeek`), so a send hands it this row instead of reading the plan twice.
+    .select("id, seat_id, week_start, status, is_test, decided_by_hr_id, decided_by_role, returned_day, decided_at")
     .eq("id", planId)
     .maybeSingle();
   throwIfError(error);
@@ -847,15 +927,20 @@ export async function transitionPlan(
     if (editablePlanDays(String(planRow.week_start), today).length === 0) {
       throw conflictError("This week has passed. Reload the planner.");
     }
-    const access = await assertRepMayChangeWeek(viewer, seat, isTest, String(planRow.week_start));
+    // 🔴 THE WEEK'S OWN ITEMS, NOT THE LAST SAVE'S PAYLOAD. `savePlan` checks the caps against the
+    // items one save carries, which covers only the days that save touched — so a day written by an
+    // earlier path, or under an earlier cap, was never counted and the send promoted it to the
+    // manager unchecked (production, 2026-10-03: an approved week holding 18 PM against a cap of 15).
+    // Read every row ONCE, and never narrow this read back to the changeable days: the stale test
+    // below wants only those, the cap re-check wants the whole week.
+    //
+    // Started BESIDE the one-week guard (2026-10-16 speed audit): the rows do not depend on its answer,
+    // only what is done with them does, and its refusal still surfaces first.
+    const allRowsRead = loadPlanItemRows([planId], SEND_ITEM_COLUMNS);
+    allRowsRead.catch(() => undefined);
+    const access = await assertRepMayChangeWeek(viewer, seat, isTest, String(planRow.week_start), planRow);
     if (action === "submit") {
-      // 🔴 THE WEEK'S OWN ITEMS, NOT THE LAST SAVE'S PAYLOAD. `savePlan` checks the caps against the
-      // items one save carries, which covers only the days that save touched — so a day written by an
-      // earlier path, or under an earlier cap, was never counted and the send promoted it to the
-      // manager unchecked (production, 2026-10-03: an approved week holding 18 PM against a cap of 15).
-      // Read every row ONCE, and never narrow this read back to the changeable days: the stale test
-      // below wants only those, the cap re-check wants the whole week.
-      const allRows = await loadPlanItemRows([planId], ITEM_COLUMNS);
+      const allRows = await allRowsRead;
       // Only the days he could change answer to this check: a day his manager returned alone is his to
       // fix, and the days left exactly as he sent them are not (owner, 2026-10-02).
       const changeable = new Set(access.editableDays);
@@ -876,20 +961,25 @@ export async function transitionPlan(
       if (overCap) throw conflictError(overCap);
       // 🔴 AND THE VENUE CAP ON THE SAME WHOLE WEEK (owner, 2026-10-09: it bites at the plan AND at
       // the door). A stored item carries a `place_id` and nothing about the building behind it, so the
-      // venue is read off the places; `onlyDays` is the days he can still change, for the reason the
-      // AM/PM re-check above gives — an over-cap day that has passed would deadlock the week.
-      const venueOfPlace = await loadSharedPlaceIdsByPlace(allRows.map((row) => textOrNull(row.place_id)));
-      const overVenue = sharedPlanCapRefusal({
+      // venue rides on the item's own place (`SEND_ITEM_COLUMNS`); `onlyDays` is the days he can still
+      // change, for the reason the AM/PM re-check above gives — an over-cap day that has passed would
+      // deadlock the week.
+      const venueCheck = {
         cap: viewer.config.settings.sharedPlaceDailyCap,
         dayLabel: planDayLabel,
         forSend: true,
         items: allRows.map((row) => ({
           planDate: String(row.plan_date),
-          sharedPlaceId: venueOfPlace.get(String(row.place_id ?? "")) ?? null,
+          sharedPlaceId: textOrNull(record(row.place).shared_place_id),
         })),
         onlyDays: access.editableDays,
-        venues: await loadSharedPlaceNames([...new Set(venueOfPlace.values())]),
-      });
+      };
+      // Whether a day is over is the COUNT alone; the names only word the refusal. So they are read
+      // only when there is a refusal to word (2026-10-16 speed audit) — the sentence is the same one.
+      const overVenue =
+        sharedPlanCapRefusal({ ...venueCheck, venues: new Map() }) === null
+          ? null
+          : sharedPlanCapRefusal({ ...venueCheck, venues: await loadSharedPlaceNames(venueCheck.items.map((item) => item.sharedPlaceId)) });
       if (overVenue) throw conflictError(overVenue);
     }
   } else if (action === "approve") {
@@ -1022,8 +1112,9 @@ export async function loadPlanReviews(viewer: PhoenixCrmViewer, raw: { test: unk
   if ((isTest && viewer.isSuperAdmin) || viewer.basis === "all") {
     planRows = await planQuery(null);
   } else {
-    planRows = [];
-    for (const part of chunk([...territoryById.keys()], 100)) planRows.push(...(await planQuery(part)));
+    // A few chunks of territories at a time, never one after another (2026-10-16 speed audit); the rows
+    // keep chunk order, as the loop gave them.
+    planRows = (await mapWithConcurrency(chunk([...territoryById.keys()], 100), PLAN_READ_CONCURRENCY, (part) => planQuery(part))).flat();
   }
   planRows = planRows.filter((row) => territoryById.has(String(row.seat_id)));
 

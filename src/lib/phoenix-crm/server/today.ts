@@ -11,7 +11,7 @@ import { loadPlannerReferences, loadTerritoryCustomers } from "@/lib/phoenix-crm
 import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
 import { windowsForWeekday } from "@/lib/phoenix-crm/timings";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
-import { canEnterVisits, loadVisitRowsForDay, plannedCustomersOn } from "@/lib/phoenix-crm/server/visits";
+import { canEnterVisits, loadVisitRowsForDay, loadWeekPlanRow, plannedCustomersOn } from "@/lib/phoenix-crm/server/visits";
 import { loadWeekProgress } from "@/lib/phoenix-crm/server/week-progress";
 import type { WeekProgress } from "@/lib/phoenix-crm/week-progress";
 import {
@@ -83,8 +83,18 @@ export async function loadPhoenixCrmToday(
   // his landing page as well as here). The territory's names read nothing but the org chart, so they no
   // longer wait for every read below; and the references need only the list and the plan, so they start
   // the moment those two land instead of after the whole first wave. Every answer is the one before.
-  const customersRead = loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true });
-  const plannedRead = plannedCustomersOn(seat.seatId, isTest, date);
+  //
+  // 🔴 ONE PLAN ROW, AND ONLY THE PLANNED CUSTOMERS (2026-10-16 Phoenix CRM performance audit). The
+  // day's stops, its planned activities and his week each asked for the same week's plan row; it is now
+  // read once and handed to all three. And the stops are the day's APPROVED planned customers and nobody
+  // else, so the list is read for those customers alone — not the whole territory and every place in it
+  // — the moment the plan says who they are. Same filters, so a planned customer who has left the list
+  // is still not a stop.
+  const planRowRead = loadWeekPlanRow(seat.seatId, isTest, date);
+  const plannedRead = plannedCustomersOn(seat.seatId, isTest, date, { planRow: planRowRead });
+  const customersRead = plannedRead.then((planned) =>
+    loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true, customerIds: planned.status === "approved" ? planned.customerIds : [] }),
+  );
   const plannedStopsRead = Promise.all([customersRead, plannedRead]).then(async ([{ customers }, planned]) => {
     const byId = new Map(customers.map((row) => [String(row.id), row]));
     // 🔴 THE APPROVED PLAN ONLY (owner, 2026-09-30). A plan still waiting on someone shows no stops at
@@ -106,12 +116,12 @@ export async function loadPhoenixCrmToday(
       customersRead,
       plannedRead,
       loadVisitRowsForDay(seat.seatId, isTest, date, { sight: locationSight(viewer, seat), org: viewer.org }),
-      loadPlannedActivitiesOn(seat.seatId, isTest, date),
+      loadPlannedActivitiesOn(seat.seatId, isTest, date, { planRow: planRowRead }),
       loadDayActivityOn(seat.seatId, isTest, date),
       plannedStopsRead,
       loadPeopleNames(territoryPeople(viewer.org, [seat])),
       // His own week, planned against done (owner, 2026-10-02) — in the same wave, never after it.
-      loadWeekProgress(seat.seatId, isTest, date),
+      loadWeekProgress(seat.seatId, isTest, date, { planRow: planRowRead }),
     ]);
   const stops: PlannedStop[] = [];
   for (const customerId of approvedIds) {

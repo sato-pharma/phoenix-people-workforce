@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { afterResponse } from "@/lib/http/after-response";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { capacityMonthsOffered } from "@/lib/phoenix-crm/capacity-board";
 import { reportFileSlug } from "@/lib/phoenix-crm/report-guide";
@@ -97,9 +98,15 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "phoenix_crm", "read");
-    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:phoenix-crm:reports" });
-
-    const viewer = await resolvePhoenixCrmViewer(access);
+    // The limiter and the viewer are read together — neither needs the other — and the limiter's
+    // refusal still answers first, exactly as when it ran alone. No section is loaded until both are in.
+    const [limit, viewerRead] = await Promise.allSettled([
+      assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:phoenix-crm:reports" }),
+      resolvePhoenixCrmViewer(access),
+    ]);
+    if (limit.status === "rejected") throw limit.reason;
+    if (viewerRead.status === "rejected") throw viewerRead.reason;
+    const viewer = viewerRead.value;
     const search = searchOf(request);
     const filters: ReportFilterInput = {
       seatId: search.get("seatId"),
@@ -131,12 +138,14 @@ export async function GET(request: Request) {
         scopeText: "Your products, company-wide",
         viewerName: nameOf(ownNames, viewer.hrId),
       });
-      await writeAuditLog({
-        actorLoginId: access.loginId ?? null,
-        entityId: null,
-        entityType: "phoenix_crm_reports_export",
-        summary: `Exported what the field heard about their own products (${ownHeard.period.from} to ${ownHeard.period.to})`,
-      });
+      await afterResponse("phoenix_crm_reports_export_audit", () =>
+        writeAuditLog({
+          actorLoginId: access.loginId ?? null,
+          entityId: null,
+          entityType: "phoenix_crm_reports_export",
+          summary: `Exported what the field heard about their own products (${ownHeard.period.from} to ${ownHeard.period.to})`,
+        }),
+      );
       return xlsxResponse(heardBuffer, `phoenix-crm-${reportFileSlug("heard")}-${ownHeard.period.from}-to-${ownHeard.period.to}.xlsx`);
     }
 
@@ -254,16 +263,20 @@ export async function GET(request: Request) {
     });
 
     // A workbook naming individual employees and their work leaves the building, so the fact that it
-    // was taken is recorded — including WHICH sheets it held, since that is what it discloses.
-    await writeAuditLog({
-      actorLoginId: access.loginId ?? null,
-      entityId: null,
-      entityType: "phoenix_crm_reports_export",
-      summary:
-        `Exported the Phoenix CRM reports pack (${visits.period.from} to ${visits.period.to}, `
-        + `${scope.territories.length} territories, manager sections ${managerSections ? "included" : "withheld"}, `
-        + `daily plan ${dailyPlan ? `of ${dailyPlan.territory?.name} ${dailyPlan.period.from} to ${dailyPlan.period.to}` : "not included"})`,
-    });
+    // was taken is recorded — including WHICH sheets it held, since that is what it discloses. The row
+    // is written once the file has gone: `writeAuditLog` already swallows its own failure, so the
+    // download never depended on it, and the person no longer waits for the insert.
+    await afterResponse("phoenix_crm_reports_export_audit", () =>
+      writeAuditLog({
+        actorLoginId: access.loginId ?? null,
+        entityId: null,
+        entityType: "phoenix_crm_reports_export",
+        summary:
+          `Exported the Phoenix CRM reports pack (${visits.period.from} to ${visits.period.to}, `
+          + `${scope.territories.length} territories, manager sections ${managerSections ? "included" : "withheld"}, `
+          + `daily plan ${dailyPlan ? `of ${dailyPlan.territory?.name} ${dailyPlan.period.from} to ${dailyPlan.period.to}` : "not included"})`,
+      }),
+    );
 
     return xlsxResponse(buffer, `phoenix-crm-reports-${visits.period.from}-to-${visits.period.to}.xlsx`);
   } catch (error) {

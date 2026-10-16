@@ -29,6 +29,8 @@ import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { describeTerritory } from "@/lib/phoenix-crm/server/territory";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import type { PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -57,42 +59,51 @@ export async function loadReversibleItems(viewer: PhoenixCrmViewer, isTest: bool
   const lastLiveWeek = addDaysIso(viewer.cairoToday, -5);
   const db = getSupabaseAdmin();
 
-  const requests: Row[] = [];
-  const visits: Row[] = [];
-  const edits: Row[] = [];
-  for (const part of chunk([...new Set(seatIds)], 100)) {
-    const [requestPage, visitPage, editPage] = await Promise.all([
-      db
-        .from("phoenix_crm_list_requests")
-        .select("id, seat_id, kind, customer_name, requested_by_hr_id, decided_at")
-        .in("seat_id", part)
-        .eq("is_test", false)
-        .eq("status", "approved")
-        .not("customer_id", "is", null)
-        .gte("decided_at", since),
-      db
-        .from("phoenix_crm_unplanned_visits")
-        .select("visit_id, seat_id, rep_hr_id, visit_date, version, decided_at, customer:phoenix_crm_customers!customer_id(name)")
-        .in("seat_id", part)
-        .eq("is_test", false)
-        .eq("status", "approved")
-        .gte("decided_at", since),
-      db
-        .from("phoenix_crm_plan_edit_requests")
-        .select("id, seat_id, week_start, rep_hr_id, version, reopened_plan_version, decided_at, plan:phoenix_crm_plans!plan_id(status, version)")
-        .in("seat_id", part)
-        .eq("is_test", false)
-        .eq("status", "reopened")
-        .gte("week_start", lastLiveWeek)
-        .gte("decided_at", since),
-    ]);
-    throwIfError(requestPage.error);
-    throwIfError(visitPage.error);
-    throwIfError(editPage.error);
-    requests.push(...((requestPage.data ?? []) as unknown as Row[]));
-    visits.push(...((visitPage.data ?? []) as unknown as Row[]));
-    edits.push(...((editPage.data ?? []) as unknown as Row[]));
-  }
+  // Each batch's three reads run together, and the batches four at a time, handed back in batch order.
+  // Every read is a keyset walk, so a busy fortnight on a national scope is never cut short at
+  // PostgREST's silent 1,000 rows; the list is sorted by decision time below, as it always was.
+  const batches = await mapWithConcurrency(chunk([...new Set(seatIds)], 100), 4, (part) =>
+    Promise.all([
+      fetchAllRowsKeyset<Row>(
+        () =>
+          db
+            .from("phoenix_crm_list_requests")
+            .select("id, seat_id, kind, customer_name, requested_by_hr_id, decided_at")
+            .in("seat_id", part)
+            .eq("is_test", false)
+            .eq("status", "approved")
+            .not("customer_id", "is", null)
+            .gte("decided_at", since),
+        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+      ),
+      fetchAllRowsKeyset<Row>(
+        () =>
+          db
+            .from("phoenix_crm_unplanned_visits")
+            .select("visit_id, seat_id, rep_hr_id, visit_date, version, decided_at, customer:phoenix_crm_customers!customer_id(name)")
+            .in("seat_id", part)
+            .eq("is_test", false)
+            .eq("status", "approved")
+            .gte("decided_at", since),
+        { cursorColumn: "visit_id", cursorOf: (row) => String(row.visit_id) },
+      ),
+      fetchAllRowsKeyset<Row>(
+        () =>
+          db
+            .from("phoenix_crm_plan_edit_requests")
+            .select("id, seat_id, week_start, rep_hr_id, version, reopened_plan_version, decided_at, plan:phoenix_crm_plans!plan_id(status, version)")
+            .in("seat_id", part)
+            .eq("is_test", false)
+            .eq("status", "reopened")
+            .gte("week_start", lastLiveWeek)
+            .gte("decided_at", since),
+        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+      ),
+    ]),
+  );
+  const requests: Row[] = batches.flatMap(([requestRows]) => requestRows);
+  const visits: Row[] = batches.flatMap(([, visitRows]) => visitRows);
+  const edits: Row[] = batches.flatMap(([, , editRows]) => editRows);
 
   // A reopened week still exactly as the reopening left it: a draft at the version it made.
   const untouched = edits.filter((row) => {

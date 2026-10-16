@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { crmPost, crmUrl, useCrmAction, useCrmGet } from "@/components/phoenix-crm/api";
@@ -371,15 +370,17 @@ function DetailForm({
 export function VisitDetailEdit({
   hasDetail,
   isTest,
+  onWrittenUp,
   seatId,
   visitId,
 }: {
   hasDetail: boolean;
   isTest: boolean;
+  /** Re-reads the day the visit sits in, so its card reads as written up. */
+  onWrittenUp: () => void;
   seatId: string;
   visitId: string;
 }) {
-  const router = useRouter();
   const [opened, setOpened] = useState(false);
   const [saved, setSaved] = useState<SavedVisitDetail | null>(null);
   const form = useCrmGet<VisitDetailForm>(opened ? crmUrl("/api/phoenix-crm/visit-detail", { seatId, test: isTest, visitId }) : null, "form");
@@ -426,8 +427,10 @@ export function VisitDetailEdit({
           onSaved={(result) => {
             setSaved(result);
             setOpened(false);
-            // The day above is the server's page: re-read it so the visit reads as written up.
-            router.refresh();
+            // The day above is the Visits tab's own read, held in the browser, so `router.refresh()` never
+            // reached it: it re-rendered the whole page on the server and left the card as it was. Re-read
+            // that day instead, so the visit reads as written up (performance audit, 2026-10-16).
+            onWrittenUp();
           }}
           seatId={seatId}
         />
