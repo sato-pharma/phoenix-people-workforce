@@ -44,6 +44,7 @@ import {
 } from "@/lib/phoenix-crm/scope";
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import { PHOENIX_CRM_ADMINISTRATOR_HR_ID, type PlanEditStage } from "@/lib/phoenix-crm/plan-edit-rules";
+import { isVisitAskAskableRole } from "@/lib/phoenix-crm/visit-ask-rules";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import type { PhoenixCrmRequestStage } from "@/lib/phoenix-crm/types";
 import type { UnplannedVisitStage } from "@/lib/phoenix-crm/unplanned-rules";
@@ -721,6 +722,28 @@ export function readsTeamPlaceChecks(viewer: PhoenixCrmViewer): boolean {
 export function teamPlaceChecksSeats(viewer: PhoenixCrmViewer): OrgSeat[] {
   if (!readsTeamPlaceChecks(viewer)) return [];
   return viewer.scopeTerritories.filter((seat) => !isLocationBlind(viewer, seat));
+}
+
+/** How the viewer reads the Double visit requests report: "scope" — the territories he reads; "own" — only what is addressed to him. */
+export type DoubleVisitReportAudience = "scope" | "own";
+
+/**
+ * Who opens the Double visit requests report (owner, 2026-10-16: "all managers must have access on this
+ * report as per their scope up to the CEO"). The Super Admin, the CEO and the SFE Manager read every
+ * territory in their scope (`basis` "all"); every manager who holds a seat reads the territories beneath
+ * him; a product manager, a group product manager and the Marketing Manager — people who hold NO seat
+ * but whom a rep can ask — read the requests addressed to them. Null for everyone else: a rep reads his
+ * own requests on his customer's page, never here.
+ *
+ * It lives here, beside the other sidebar predicates, because the portal sidebar asks it on every page
+ * and must not pull the whole request service in to do so. The page, the routes and the sidebar flag all
+ * read this one function.
+ */
+export function doubleVisitReportAudience(viewer: PhoenixCrmViewer): DoubleVisitReportAudience | null {
+  if (viewer.basis === "all") return "scope";
+  if (viewer.managerSeats.length > 0) return "scope";
+  if (isVisitAskAskableRole(viewer.role)) return "own";
+  return null;
 }
 
 /**

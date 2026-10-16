@@ -371,6 +371,7 @@ function buildEmployeePortalSections({
   showMyVisitsTab = true,
   showPhoenixCrmTab = false,
   showTeamPlaceChecksTab = false,
+  showDoubleVisitRequestsTab = false,
   showDailyForecastTab = false,
   showDeductionsTab = true,
   showMyCoachingTab: _showMyCoachingTab = false,
@@ -469,6 +470,12 @@ function buildEmployeePortalSections({
         // two seat tiers (`readsTeamVisitReport` is `readsTeamPlaceChecks`'s twin), so no fourth argument has
         // to be threaded through every caller of the sidebar. The page gates again (`canReadVisitReport`).
         ...(showTeamPlaceChecksTab ? [{ href: "/employee-portals/visit-report", label: "Visit report", icon: ClipboardList }] : []),
+        // Double visit requests — what the reps ask their managers and product managers for, and every
+        // person's answer (owner, 2026-10-16: "a new sidebar report … all managers must have access on this
+        // report as per their scope upto ceo"). Its own flag, because the audience is wider than the
+        // district manager's: `doubleVisitReportAudience` through `phoenixCrmSidebarEntries`, never a role
+        // list here; the page gates again. No `highlight` — the Phoenix CRM row is the band's one standout.
+        ...(showDoubleVisitRequestsTab ? [{ href: "/employee-portals/double-visit-requests", label: "Double visit requests", icon: UsersRound }] : []),
       ],
     },
     {

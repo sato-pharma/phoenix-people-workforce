@@ -844,6 +844,18 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // relrowsecurity TRUE with no anon or authenticated grant; storage bucket phoenix-crm-recordings
   // reads file_size_limit 16777216, public false. Re-applying it is a no-op.
   "20261016103900_phoenix_crm_visit_recording.sql",
+  // 2026-10-16, applied to staging and then production with `node scripts/apply-sql-file.mjs <file>
+  // <env>` (production with PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com) after the
+  // staging MCP answered {"status":"declined"} on this SQL. That route writes NO ledger row, so the
+  // absence here is the apply route and not a missed migration.
+  // Verified by digest on production (ozucdzovmcqvepbozvqf), not by presence: md5(pg_proc.prosrc) for
+  // phoenix_crm_raise_double_visit_request reads 6cc5e91484f72310193ac5ccff22e110 (4,198 chars),
+  // phoenix_crm_edit_double_visit_request_days d16fbea5bb39b49bea3c274782af8c0b (3,029) and
+  // phoenix_crm_answer_double_visit_request 1b39d494445e031d878e1e9bbd206dfd (2,402) — each md5-equal
+  // to the dollar-quoted body in this file (as-is LF), and this file is each one's ONLY definer. All
+  // three `prosecdef` true and not executable by anon; both new tables read relrowsecurity TRUE and
+  // authenticated holds no select. Re-applying it is a no-op (`if not exists` / `create or replace`).
+  "20261016133000_phoenix_crm_double_visit_requests.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
