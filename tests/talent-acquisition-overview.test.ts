@@ -22,16 +22,19 @@ import {
   offerStartKey,
   kpi,
   KPI_WINDOW_DAYS,
+  kpiWindowFromIso,
+  liveLetterKeys,
   longDayLabel,
   orderTodaysInterviews,
   rateMeterPercent,
   RECRUITING_TASK_KEYS,
   startClockParts,
+  startedOfferIds,
   TALENT_ACQUISITION_SEAT,
   TALENT_KEPT_BUILDER_TILE_KEYS,
 } from "../src/lib/hr/talent-acquisition-logic.ts";
 import type { OfferRecord } from "../src/lib/offers/types.ts";
-import { countDistinctPeople } from "../src/lib/recruitment/interview-volume.ts";
+import { countDistinctPeople, countOfferedPeople } from "../src/lib/recruitment/interview-volume.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -80,6 +83,7 @@ function codeOf(file: string): string {
 
 /** An offer with only the fields these builders read. The rest of OfferRecord is prose and money. */
 function offer(input: {
+  candidateEmail?: string;
   createdAt?: string | null;
   employeeHrId?: string | null;
   id: string;
@@ -87,6 +91,7 @@ function offer(input: {
   status: "accepted" | "declined" | "draft" | "sent" | "withdrawn";
 }) {
   return {
+    candidateEmail: input.candidateEmail ?? "",
     candidateName: `Candidate ${input.id}`,
     // `in`, not `??` — an explicit `createdAt: null` is the UNDATED letter this page must count OUT
     // of the window, and a `??` default would quietly turn it into a dated one and prove nothing.
@@ -576,6 +581,7 @@ function testTheTodayPanelsNeverDrawAFailureAsAQuietDay() {
 
 // ── 2. Her handbook's two KPI families count what their captions say ──────────────────────────
 function testTheOfferConversionFamilyCountsAnsweredOffersOnly() {
+  const fromIso = "2026-07-15T00:00:00.000Z";
   const offers = [
     offer({ employeeHrId: "B-99", id: "a1", status: "accepted" }),
     offer({ id: "a2", status: "accepted" }),
@@ -588,7 +594,7 @@ function testTheOfferConversionFamilyCountsAnsweredOffersOnly() {
     offer({ id: "dr1", status: "draft" }),
   ];
 
-  const [acceptance, offerToJoin] = buildOfferConversionKpis(offers);
+  const [acceptance, offerToJoin] = buildOfferConversionKpis(offers, { fromIso, started: new Set(["a1"]) });
 
   assert.equal(
     acceptance.denominator,
@@ -608,22 +614,53 @@ function testTheOfferConversionFamilyCountsAnsweredOffersOnly() {
   assert.equal(
     offerToJoin.numerator,
     1,
-    "and its numerator is the accepted offers carrying an employee record from the joining form. " +
-      "Measured against production on 2026-10-13 that was 2 of 26, because HR records most " +
-      "acceptances by hand — so the caption must say the figure counts the FORM, not the joining",
+    "and its numerator is the accepted offers whose person has STARTED — an active employee whose " +
+      "first day has arrived. It used to count the employee records the joining form created, " +
+      "which read 22 of 22 while four of those people had not yet had a first day",
   );
-  // Twice, because the caption has to do two things: say what the top half counts, and say what a
-  // LOW figure actually means. Breaking only the first mention left a one-match assertion green.
-  assert.equal(
-    (offerToJoin.caption.match(/joining form/g) ?? []).length,
-    2,
-    "the offer-to-join caption must name the joining form where it defines the numerator AND where " +
-      "it explains a low reading. The gap it measures is a RECORDING gap — measured 2026-10-13, 2 " +
-      "of 26 accepted offers carry an employee record — and a reader who took 8% for a joining " +
-      "rate would be reading a crisis that is not there",
+  assert.equal(offerToJoin.numeratorLabel, "employee started", "the label says what it counts");
+  assert.doesNotMatch(
+    offerToJoin.caption,
+    /joining form/,
+    "the card no longer counts the form, so its caption must not tell a reader it does — only 3 of " +
+      "22 accepted letters came through the form, the rest were Add Employee",
+  );
+  assert.match(offerToJoin.caption, /first day/, "the caption says a started person is one whose first day has arrived");
+
+  // BOTH CARDS COUNT THE SAME WINDOW (owner, 2026-10-16: "window all three"). They had read the
+  // newest 200 letters with no date filter beneath a "Last 90 days" header.
+  const aged = [
+    offer({ createdAt: "2026-01-02T10:00:00.000Z", id: "old-yes", status: "accepted" }),
+    offer({ createdAt: "2026-01-03T10:00:00.000Z", id: "old-no", status: "declined" }),
+    // Undated: counted OUT, because it cannot be shown to belong to the window.
+    offer({ createdAt: null, id: "undated", status: "accepted" }),
+    offer({ createdAt: "2026-10-01T10:00:00.000Z", id: "new-yes", status: "accepted" }),
+    offer({ createdAt: "2026-10-02T10:00:00.000Z", id: "new-no", status: "declined" }),
+  ];
+  const [windowedAcceptance, windowedJoin] = buildOfferConversionKpis(aged, {
+    fromIso,
+    started: new Set(["old-yes", "undated", "new-yes"]),
+  });
+  assert.deepEqual(
+    [windowedAcceptance.numerator, windowedAcceptance.denominator],
+    [1, 2],
+    "offer acceptance counts only the letters written inside the window — a January answer is not this quarter's",
+  );
+  assert.deepEqual(
+    [windowedJoin.numerator, windowedJoin.denominator],
+    [1, 1],
+    "offer-to-join windows the same way, and a started person whose letter is outside it is not counted",
   );
 
-  for (const measure of buildOfferConversionKpis([])) {
+  // Without the Employee Master there is no way to know who started: the card is ABSENT, never 0 of N.
+  assert.deepEqual(
+    buildOfferConversionKpis(offers, { fromIso, started: null }).map((one) => one.key),
+    ["offer-acceptance"],
+    "an unavailable directory leaves the join card out — 0 of 3 would say nobody arrived",
+  );
+  assert.deepEqual(buildOfferConversionKpis(undefined, { fromIso, started: new Set() }), [], "no offers read, no cards");
+
+  for (const measure of buildOfferConversionKpis([], { fromIso, started: new Set() })) {
     assert.equal(
       measure.rate,
       null,
@@ -633,25 +670,55 @@ function testTheOfferConversionFamilyCountsAnsweredOffersOnly() {
   }
 }
 
-function testHiringQualityWindowsBothHalvesAndNullsTheUndecided() {
+function testWhoHasStartedIsAnActiveEmployeeWhoseFirstDayHasArrived() {
+  const accepted = (id: string, employeeHrId: string | null, startDate?: string) =>
+    offer({ employeeHrId, id, startDate, status: "accepted" });
+  const offers = [
+    accepted("started", "PD-0001"),
+    accepted("later", "PD-0002"),
+    accepted("left", "PD-0003"),
+    accepted("no-record", null),
+    accepted("from-letter", "PD-0005", "9 October 2026"),
+    accepted("no-date", "PD-0006", ""),
+    // The mixed-case spelling production really stores must still find the employee.
+    accepted("mixed-case", "pd-0007"),
+    // A letter that is only SENT has no employee record that counts, even if one is pointed at it.
+    offer({ employeeHrId: "PD-0008", id: "sent", status: "sent" }),
+  ];
+  const started = startedOfferIds(offers, {
+    activeHrIds: new Set(["pd-0001", "pd-0002", "pd-0005", "pd-0006", "pd-0007", "pd-0008"]),
+    hireDateByHrId: new Map([
+      ["pd-0001", "2026-10-01"],
+      ["pd-0002", "2026-10-18"],
+      ["pd-0007", "2026-10-16"],
+    ]),
+    todayKey: "2026-10-16",
+  });
+  assert.deepEqual(
+    [...started].sort(),
+    ["from-letter", "mixed-case", "started"],
+    "started = accepted, an ACTIVE employee, and a first day on or before today. 'later' has a record " +
+      "but its first day is the 18th; 'left' is not active; 'no-record' has no employee at all; " +
+      "'from-letter' has no hire date on the Master so the letter's own date (9 October) stands; " +
+      "'no-date' has no first day anywhere, so none has arrived; and 'sent' is not an acceptance",
+  );
+  assert.equal(
+    startedOfferIds(offers, { activeHrIds: new Set(), hireDateByHrId: undefined, todayKey: "2026-10-16" }).size,
+    0,
+    "no active employee, nobody started",
+  );
+}
+
+function testHiringQualityCountsTheSamePeopleOnBothSides() {
   const volume = {
     fromIso: "2026-07-15T00:00:00.000Z",
     interviews: 63,
+    offered: 15,
     people: 58,
     truncated: false,
   };
-  const offers = [
-    offer({ createdAt: "2026-09-20T10:00:00.000Z", id: "in-1", status: "sent" }),
-    offer({ createdAt: "2026-10-01T10:00:00.000Z", id: "in-2", status: "accepted" }),
-    // BEFORE the window. The letters in this system predate the interview calendar by eleven days,
-    // so a lifetime numerator over a windowed denominator is the defect this excludes.
-    offer({ createdAt: "2026-01-02T10:00:00.000Z", id: "out-1", status: "accepted" }),
-    // No timestamp at all. Counted OUT rather than in: an undated letter cannot be shown to belong
-    // to the window, and assuming it does inflates the only half the seat is measured on.
-    offer({ createdAt: null, id: "out-2", status: "accepted" }),
-  ];
 
-  const [ratio] = buildHiringQualityKpis({ offers, volume });
+  const [ratio] = buildHiringQualityKpis({ volume });
   assert.equal(
     ratio.denominator,
     58,
@@ -660,33 +727,124 @@ function testHiringQualityWindowsBothHalvesAndNullsTheUndecided() {
   );
   assert.equal(
     ratio.numerator,
-    2,
-    "and its numerator counts only the offer letters written INSIDE the same window. Both halves " +
-      "on one window is the whole rule: production holds offers from eleven days before the " +
-      "calendar existed, so a lifetime numerator would divide them by 90 days of interviews",
+    15,
+    "and its numerator is how many OF THOSE PEOPLE hold a live offer letter — the same people, not " +
+      "every letter written in the window. The old figure read 66% against a like-for-like 22% on " +
+      "2026-10-16 because it counted withdrawn letters, test letters and people never on the calendar",
   );
+  assert.equal(ratio.numeratorLabel, "holding an offer letter", "the label names the people, not the letters");
   assert.match(
     ratio.caption,
     new RegExp(String(KPI_WINDOW_DAYS)),
     "the caption must name the window in days. An unnamed window is the defect the owner caught on " +
       "the Hired tile when he asked how it could read what it read",
   );
+  assert.doesNotMatch(
+    ratio.caption,
+    /Above 100%/,
+    "a subset cannot pass 100%, so the apology the old caption carried is gone",
+  );
 
   // The owner removed probation retention from her overview on 2026-10-16 — the band holds the
   // interview-to-offer ratio and nothing else.
   assert.deepEqual(
-    buildHiringQualityKpis({ offers, volume }).map((one) => one.key),
+    buildHiringQualityKpis({ volume }).map((one) => one.key),
     ["interview-to-offer"],
     "the hiring-quality band is the interview-to-offer ratio alone — probation retention was " +
       "removed from her overview on the owner's word and must not come back",
   );
 
-  // A read that failed contributes NO measure rather than a zero one.
+  // A read that failed contributes NO measure rather than a zero one — whether the interviews
+  // could not be read or the letters to match them to were not available.
   assert.deepEqual(
-    buildHiringQualityKpis({ offers, volume: null }).map((one) => one.key),
+    buildHiringQualityKpis({ volume: null }).map((one) => one.key),
     [],
-    "with neither source loaded the band must be empty. A card for a measure whose source refused " +
+    "with no interview count the band must be empty. A card for a measure whose source refused " +
       "would be a figure invented out of a failure",
+  );
+  assert.deepEqual(
+    buildHiringQualityKpis({ volume: { ...volume, offered: null } }).map((one) => one.key),
+    [],
+    "with the interviews read but no letters to match them to, the card is left out and not drawn as 0%",
+  );
+  assert.equal(kpiWindowFromIso(new Date("2026-10-16T12:00:00.000Z")), "2026-07-18T12:00:00.000Z", "the window is 90 days back from the instant");
+}
+
+function testAnInterviewedPersonIsMatchedToALetterByPointerOrAddressNeverByName() {
+  const letters = liveLetterKeys([
+    offer({ candidateEmail: "Mona@Example.com ", id: "L-sent", status: "sent" }),
+    offer({ candidateEmail: "sara@example.com", id: "L-accepted", status: "accepted" }),
+    offer({ candidateEmail: "hend@example.com", id: "L-declined", status: "declined" }),
+    // A withdrawn letter was pulled and a draft was never written to anyone: neither is an offer
+    // the person holds, so neither may lift the ratio.
+    offer({ candidateEmail: "withdrawn@example.com", id: "L-withdrawn", status: "withdrawn" }),
+    offer({ candidateEmail: "draft@example.com", id: "L-draft", status: "draft" }),
+  ]);
+  assert.deepEqual([...letters.ids].sort(), ["L-accepted", "L-declined", "L-sent"], "live = sent, accepted or declined");
+  assert.ok(letters.emails.has("mona@example.com"), "an address is trimmed and lower-cased before it is compared");
+  assert.ok(!letters.emails.has("withdrawn@example.com") && !letters.emails.has("draft@example.com"), "and a pulled or unwritten letter holds nobody");
+
+  const candidates = new Map([
+    ["c-pointer", { email: null, offerId: "L-accepted" }],
+    ["c-email", { email: " HEND@example.com", offerId: null }],
+    ["c-withdrawn", { email: "withdrawn@example.com", offerId: "L-withdrawn" }],
+    ["c-nothing", { email: "nobody@example.com", offerId: null }],
+    ["c-twice", { email: null, offerId: "L-sent" }],
+  ]);
+  const rows = [
+    { candidate_id: "c-pointer", external_name: null },
+    { candidate_id: "c-email", external_name: null },
+    { candidate_id: "c-withdrawn", external_name: null },
+    { candidate_id: "c-nothing", external_name: null },
+    // Two rounds for one person: one person, offered once.
+    { candidate_id: "c-twice", external_name: null },
+    { candidate_id: "c-twice", external_name: null },
+    // An outside person is matched on the address typed on the booking, and never on the name.
+    { candidate_id: null, external_email: "MONA@example.com", external_name: "Mona" },
+    { candidate_id: null, external_email: "other@example.com", external_name: "Sara" },
+    // A booking naming nobody is no person at all.
+    { candidate_id: null, external_name: "  " },
+  ];
+  assert.equal(
+    countOfferedPeople(rows, candidates, letters),
+    4,
+    "offered = the pointer (c-pointer), the record's address (c-email), one person across two rounds " +
+      "(c-twice) and the outside address (Mona). The withdrawn letter, the stranger and a name that " +
+      "happens to match another letter's do not count",
+  );
+  assert.ok(
+    countOfferedPeople(rows, candidates, letters) <= countDistinctPeople(rows),
+    "the top half is a subset of the bottom half by construction, so the ratio can never pass 100%",
+  );
+  assert.equal(
+    countOfferedPeople(rows, new Map(), { emails: new Set(), ids: new Set() }),
+    0,
+    "no letters, no offered people",
+  );
+}
+
+function testTheLoaderHandsTheConversionCardsTheLettersAndTheMaster() {
+  const data = codeOf(DATA);
+  assert.match(
+    data,
+    /countInterviewVolume\(KPI_WINDOW_DAYS, now, loaded\.offers \? liveLetterKeys\(loaded\.offers\) : undefined\)/,
+    "the interview count is handed the live letters it matches its people against; without offers it gets none and the card is left out",
+  );
+  assert.match(data, /buildHiringQualityKpis\(\{ volume \}\)/, "the ratio is built from the matched count alone, not from a second, wider list of letters");
+  assert.match(
+    data,
+    /buildOfferConversionKpis\(loaded\.offers, \{\s*fromIso: volume\?\.fromIso \?\? kpiWindowFromIso\(now\),\s*started: startedOffers,/,
+    "both conversion cards are cut at the same window start as the interview count",
+  );
+  assert.match(
+    data,
+    /startedOffers = loaded\.directory\s*\?\s*startedOfferIds\(/,
+    "who has started comes from the directory the page already loaded, and is null without it",
+  );
+  assert.match(
+    data,
+    /isActiveLifecycleStatus\(employee\.employmentStatus\)/,
+    "started asks the lifecycle status only, not the organogram's visibility test — a new hire not drawn there yet has still started",
   );
 }
 
@@ -1340,7 +1498,10 @@ export function runTalentAcquisitionOverviewTests() {
   testTheRebuiltPagesPureHelpers();
   testTheTodayPanelsNeverDrawAFailureAsAQuietDay();
   testTheOfferConversionFamilyCountsAnsweredOffersOnly();
-  testHiringQualityWindowsBothHalvesAndNullsTheUndecided();
+  testWhoHasStartedIsAnActiveEmployeeWhoseFirstDayHasArrived();
+  testHiringQualityCountsTheSamePeopleOnBothSides();
+  testAnInterviewedPersonIsMatchedToALetterByPointerOrAddressNeverByName();
+  testTheLoaderHandsTheConversionCardsTheLettersAndTheMaster();
   testDistinctPeopleCollapsesRoundsAndKeepsOutsiders();
   testOnlyAnAcceptedOfferDrawsAJoiningDay();
   testAGivenUpReadIsNamedNeverDrawnAsAnAllClear();

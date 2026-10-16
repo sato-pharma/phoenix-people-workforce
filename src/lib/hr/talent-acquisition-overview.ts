@@ -62,7 +62,11 @@ import { HR_ROLE_BUNDLES, type HrBundleName } from "@/lib/auth/hr-functions";
 import { hrefOutsideSeatFence } from "@/lib/auth/seat-page-fences";
 import { buildMonthGrid } from "@/lib/calendar/logic";
 import { getCompanyCalendarWorkspace } from "@/lib/calendar/service";
-import { getEmployeeDirectory, isActiveDirectoryEmployee } from "@/lib/employees/employee-directory";
+import {
+  getEmployeeDirectory,
+  isActiveDirectoryEmployee,
+  isActiveLifecycleStatus,
+} from "@/lib/employees/employee-directory";
 import {
   buildRecruitingTiles,
   describeWindow,
@@ -86,7 +90,10 @@ import {
   joinersArriving,
   joinersBetween,
   KPI_WINDOW_DAYS,
+  kpiWindowFromIso,
+  liveLetterKeys,
   RECRUITING_TASK_KEYS,
+  startedOfferIds,
   TALENT_ACQUISITION_SEAT,
   TALENT_KEPT_BUILDER_TILE_KEYS,
   toTalentInterview,
@@ -370,7 +377,9 @@ export async function getTalentAcquisitionOverview(
 
   // The calendar waits for the offers, because the joining days on it come from the accepted ones.
   const [volume, personal, { calendar, failedMonthWeeks, today }, cvToday, cvsReceived] = await Promise.all([
-    countInterviewVolume(KPI_WINDOW_DAYS, now).catch(() => {
+    // The letters ride along so the top half of Interview to offer is counted among the SAME people
+    // the bottom half names. No offers loaded means no matched count, and the card is left out.
+    countInterviewVolume(KPI_WINDOW_DAYS, now, loaded.offers ? liveLetterKeys(loaded.offers) : undefined).catch(() => {
       pageUnavailable.push("Interviews held");
       return null;
     }),
@@ -401,6 +410,22 @@ export async function getTalentAcquisitionOverview(
         return null;
       }),
   ]);
+  // WHO HAS ACTUALLY STARTED, for the Offer to join card: an active employee record whose first day has
+  // arrived. Null without the directory, so the card is left out and not drawn as nobody arriving.
+  // Only the lifecycle status is asked here, not the organogram's own visibility test: a new hire not
+  // drawn on the organogram yet has still started.
+  const startedOffers = loaded.directory
+    ? startedOfferIds(loaded.offers ?? [], {
+        activeHrIds: new Set(
+          loaded.directory.employees
+            .filter((employee) => isActiveLifecycleStatus(employee.employmentStatus))
+            .map((employee) => canonicalHrIdKey(employee.hrId))
+            .filter((key): key is string => Boolean(key)),
+        ),
+        hireDateByHrId: hireDates,
+        todayKey: calendar.todayKey,
+      })
+    : null;
   // The week is the real calendar component and reads itself, so what this page can still fail to
   // get is her ROLE on it (no role, no week at all) and her OWN agenda. Either one is named here,
   // because the unavailable-sources line is the page's one honest account of what it could not read.
@@ -438,12 +463,12 @@ export async function getTalentAcquisitionOverview(
         ),
       ]),
     },
-    hiringQuality: buildHiringQualityKpis({
-      offers: loaded.offers,
-      volume,
-    }),
+    hiringQuality: buildHiringQualityKpis({ volume }),
     joiners: joinersArriving(loaded.offers, calendar.todayKey, undefined, hireDates),
-    offerConversion: buildOfferConversionKpis(loaded.offers),
+    offerConversion: buildOfferConversionKpis(loaded.offers, {
+      fromIso: volume?.fromIso ?? kpiWindowFromIso(now),
+      started: startedOffers,
+    }),
     onVacationToday: loaded.vacationsToday ?? null,
     personal,
     seat,
