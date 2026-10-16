@@ -80,13 +80,18 @@ export async function loadPlanHistory(
   const reference = await loadReference(seat.seatId, isTest);
   const source = reference[0] ?? null;
   if (!source?.source_hr_id) return base;
-  const names = await loadPeopleNames([source.source_hr_id]);
+  // The source's name and his plan need only his hr id, so they are read together (2026-10-16 speed
+  // audit). A failed plan read still fails the panel exactly as before, and a missing mirror still
+  // degrades to "no reference".
+  const [names, rows] = await Promise.all([
+    loadPeopleNames([source.source_hr_id]),
+    getAgentPlanEntriesForWindow(source.source_hr_id, historyStart, historyEnd),
+  ]);
   base.sourceName = nameOf(names, source.source_hr_id, "") || null;
   base.sourceIsCurrent = source.source_is_current;
 
   const referenceByContact = new Map(reference.map((row) => [Number(row.contact_crm_id), row]));
 
-  const rows = await getAgentPlanEntriesForWindow(source.source_hr_id, historyStart, historyEnd);
   if (rows === null) return base; // mirror unavailable — no reference, not an error
 
   type Aggregate = { weekdays: Set<number>; dated: number; frequency: number; ampm: string | null; grade: string | null; name: string | null; speciality: string | null };
