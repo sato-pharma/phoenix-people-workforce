@@ -60,6 +60,32 @@ export function requisitionOptionLabel(option: OpenRequisitionOption): string {
   return [option.jobTitle, option.areaName, option.lineName ?? option.regionName].filter(Boolean).join(" · ");
 }
 
+/**
+ * Area names that are the COMPANY, not a territory.
+ *
+ * The seat queue places a CV by asking whether the area they named is the seat's area, so a seat
+ * whose "area" is the whole country or the head office itself can never be matched that way: nobody
+ * taps "Egypt" on WhatsApp, and no CV's governorate reads "Head office". Such a seat is exactly the
+ * placeless one the rules below already handle — decided by the job alone — it simply arrives
+ * carrying a name instead of a null, so it never reached that branch.
+ *
+ * Measured on production 2026-10-16, of the 44 seats the screening page offers: Product Manager
+ * (area "Egypt"), Office Coordinator and Training Manager (area "Head office"). The two District
+ * Sales Manager seats whose area merely repeats their region — "Cairo" and "Alex-BHR" — are REAL
+ * places and are deliberately not on this list: blanking those would offer a Cairo seat to a
+ * candidate from anywhere, which is the precision the WhatsApp answer exists to protect.
+ */
+const COMPANY_WIDE_AREA_NAMES = new Set(["egypt", "head office", "head-office", "headoffice"]);
+
+function isCompanyWideArea(areaName: string | null | undefined): boolean {
+  return COMPANY_WIDE_AREA_NAMES.has(String(areaName ?? "").trim().toLowerCase());
+}
+
+/** The seat as the matching rules must see it: a company-wide "area" is no place at all. */
+function asPlaceForMatching(seat: VacancyOption): VacancyOption {
+  return isCompanyWideArea(seat.areaName) ? { ...seat, areaName: null } : seat;
+}
+
 /** The requisitions as seats `suggestPositions` can rank. Seatless ones get a negative id of their own. */
 function asSeats(
   requisitions: readonly OpenRequisitionOption[],
@@ -73,13 +99,13 @@ function asSeats(
     if (real) {
       if (seen.has(real.id)) return;
       seen.add(real.id);
-      out.push({ requisition, seat: real });
+      out.push({ requisition, seat: asPlaceForMatching(real) });
       return;
     }
     out.push({
       requisition,
       seat: {
-        areaName: requisition.areaName,
+        areaName: isCompanyWideArea(requisition.areaName) ? null : requisition.areaName,
         id: -(index + 1),
         jobTitle: requisition.jobTitle,
         lineName: requisition.lineName,
