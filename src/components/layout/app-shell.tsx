@@ -121,15 +121,21 @@ export async function AppShell({
   // applied), an unreadable row, a layout written by a future version — and null means the sidebar
   // renders exactly as the code defines it. A cosmetic preference must never be able to break
   // navigation for someone trying to do their job.
-  const { layout: personalLayout } = await loadEffectiveLayout(layoutOwnerKey(access));
-
-  const viewer = showTopbar
-    ? await resolveViewerIdentityFromPage(access)
-    : {
-        displayName: access.loginId || formatHrIdForDisplay(access.hrId) || "User",
-        initials: "US",
-        roleLabel: displayTitleForAccount(access.hrId, access.role),
-      };
+  //
+  // 🔴 ASKED BESIDE THE TOPBAR'S IDENTITY, NOT BEFORE IT (Phoenix CRM performance audit, 2026-10-16).
+  // Neither needs the other's answer, and both were awaited one after the other on every admin page
+  // render — two Atlantic round trips where one will do. The layout read still never throws, so
+  // running it alongside changes nothing about what renders when either is slow or missing.
+  const [{ layout: personalLayout }, viewer] = await Promise.all([
+    loadEffectiveLayout(layoutOwnerKey(access)),
+    showTopbar
+      ? resolveViewerIdentityFromPage(access)
+      : Promise.resolve({
+          displayName: access.loginId || formatHrIdForDisplay(access.hrId) || "User",
+          initials: "US",
+          roleLabel: displayTitleForAccount(access.hrId, access.role),
+        }),
+  ]);
   // The `/hr` namespace decides the shell, and it decides it HERE rather than in the route-group
   // layout so that EVERY AppShell render honours it — including the handful of dual-mode pages
   // (/payslips, /leave-management, /marketing-requests/[id]) that sit outside the (admin) group and
