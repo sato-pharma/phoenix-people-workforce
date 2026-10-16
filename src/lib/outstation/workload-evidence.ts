@@ -2,6 +2,23 @@ import type { DoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-anal
 import type { RepVisitWorkload } from "@/lib/crm/visit-workload";
 
 /**
+ * The match statuses `outstation_expense_requests.workload_match_status` accepts
+ * (`outstation_workload_match_status_check`). `unmapped` is NOT one of them.
+ */
+export type StoredWorkloadMatchStatus = "manual" | "matched" | "partial" | "no_activity" | "manual_override" | "stale_import";
+
+/**
+ * A rep with no CRM id and no visits under his HR id reads `unmapped` — his visits can't be matched,
+ * which is not evidence he did nothing. The column's check constraint refuses that word, and the
+ * refusal surfaced to the rep on submit as "violates check constraint
+ * outstation_workload_match_status_check". It is stored as `manual` (nothing was judged, a person
+ * reads the trip); the evidence snapshot beside it still carries `unmapped` and its label.
+ */
+export function storedWorkloadMatchStatus(status: DoubleVisitExpenseWorkloadEvidence["matchStatus"]): StoredWorkloadMatchStatus {
+  return status === "unmapped" ? "manual" : status;
+}
+
+/**
  * Combines the two workload sources the outstation decision engine needs.
  *
  * They answer different questions and MUST NOT be conflated:

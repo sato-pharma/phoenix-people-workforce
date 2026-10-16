@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mergeWorkloadEvidence } from "../src/lib/outstation/workload-evidence.ts";
+import { mergeWorkloadEvidence, storedWorkloadMatchStatus } from "../src/lib/outstation/workload-evidence.ts";
 import type { DoubleVisitExpenseWorkloadEvidence } from "../src/lib/double-visit-analytics/types.ts";
 import type { RepVisitWorkload } from "../src/lib/crm/visit-workload.ts";
 
@@ -90,4 +90,15 @@ export function runOutstationWorkloadEvidenceTests() {
     doubleVisit,
     "when the CRM read fails we keep the previous evidence unchanged rather than blocking an expense submission",
   );
+
+  // --- a rep with no CRM id and no visits reads `unmapped`, which the column's CHECK refuses ---
+
+  assert.equal(
+    storedWorkloadMatchStatus("unmapped"),
+    "manual",
+    "`unmapped` is not an allowed outstation_workload_match_status_check value — storing it made the rep's submit fail with a raw constraint error",
+  );
+  for (const status of ["manual", "matched", "partial", "no_activity", "stale_import"] as const) {
+    assert.equal(storedWorkloadMatchStatus(status), status, `${status} is already a stored value and passes through unchanged`);
+  }
 }
