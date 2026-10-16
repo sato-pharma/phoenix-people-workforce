@@ -81,6 +81,8 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/place-checks": { icon: "location-outline", section: "Phoenix CRM" },
   // The district manager's Visit report rides the same flag and band as Place checks.
   "/employee-portals/visit-report": { icon: "clipboard-outline", section: "Phoenix CRM" },
+  // The Double visit requests report rides the same band, with its own flag (owner, 2026-10-16).
+  "/employee-portals/double-visit-requests": { icon: "people-outline", section: "Phoenix CRM" },
   // ── My Workspace ──────────────────────────────────────────────────────────────────────────────
   "/employee-portals/interview-calendar": { icon: "videocam-outline", section: "My Workspace" },
   "/employee-portals/organogram": { icon: "business-outline", section: "My Workspace" },

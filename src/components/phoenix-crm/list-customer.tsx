@@ -35,6 +35,7 @@ import { CustomerPhoneLink } from "@/components/phoenix-crm/customer-phone";
 import { CustomerTimeline } from "@/components/phoenix-crm/customer-timeline";
 import { DirectionsLink } from "@/components/phoenix-crm/directions-link";
 import { PharmacyLocationFacts } from "@/components/phoenix-crm/pharmacy-details";
+import { CustomerDoubleVisitRequests } from "@/components/phoenix-crm/double-visit-requests";
 import { CustomerVisitAsks } from "@/components/phoenix-crm/visit-asks";
 import { cairoStamp, plural } from "@/components/phoenix-crm/format";
 import {
@@ -454,6 +455,16 @@ export function CustomerScreen({
         customerId={customer.customerId}
         customerName={customer.name}
         key={`asks:${seatId}:${customer.customerId}`}
+        seatId={seatId}
+        test={test}
+      />
+
+      {/* A double visit the rep asked for in his last answer of Add visit (owner, 2026-10-16): who was
+          asked and how each answered, with a way to change the days and none to cancel. Drawn only
+          when the customer has one. */}
+      <CustomerDoubleVisitRequests
+        customerId={customer.customerId}
+        key={`double:${seatId}:${customer.customerId}`}
         seatId={seatId}
         test={test}
       />

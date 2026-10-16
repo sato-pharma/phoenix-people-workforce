@@ -60,6 +60,7 @@ import { crmStepBackClassName, crmStepNextClassName } from "@/components/phoenix
 import { customerDirectionsUrl, PlaceWindows } from "@/components/phoenix-crm/visit-customer-picker";
 import { DirectionsLink } from "@/components/phoenix-crm/directions-link";
 import { CompanyPicker, type CompanyPerson } from "@/components/phoenix-crm/visit-company-picker";
+import { DoubleVisitQuestion, NO_DOUBLE_VISIT, type DoubleVisitAnswerDraft } from "@/components/phoenix-crm/double-visit-question";
 import {
   CrmBackBar,
   CrmBlock,
@@ -74,6 +75,7 @@ import {
   type CrmChoiceOption,
 } from "@/components/phoenix-crm/ui";
 import { deviceInstallId } from "@/lib/phoenix-crm/device-install";
+import { CHOOSE_A_DAY, CHOOSE_A_PERSON, isDoubleVisitCustomer } from "@/lib/phoenix-crm/double-visit-request-rules";
 import { appendDictated } from "@/lib/phoenix-crm/dictation";
 import {
   NO_FIX_FOR_A_VISIT,
@@ -142,6 +144,7 @@ const STEP_REASON = "phoenix-crm-visit-reason";
 const STEP_WHO = "phoenix-crm-visit-who";
 const STEP_PRODUCTS = "phoenix-crm-visit-products";
 const STEP_COMMENT = "phoenix-crm-visit-comment";
+const STEP_DOUBLE = "phoenix-crm-visit-double";
 
 type StepMark = "required" | "done" | "optional";
 
@@ -416,6 +419,9 @@ export function VisitLogForm({
   // with a single product is never a group, so it is never in here; the rest start collapsed.
   const [openFamilies, setOpenFamilies] = useState<Set<string>>(() => new Set());
   const [comment, setComment] = useState("");
+  // The LAST question (owner, 2026-10-16): "Do you need a double visit with this customer?". It starts
+  // on No, and No asks nothing more.
+  const [doubleVisit, setDoubleVisit] = useState<DoubleVisitAnswerDraft>(NO_DOUBLE_VISIT);
   // What he took away from the visit. Both start unanswered and both may stay that way: nothing here
   // gates the save, and a rep who taps neither loses nothing.
   const [nextStep, setNextStep] = useState<VisitNextStep | null>(null);
@@ -497,6 +503,11 @@ export function VisitLogForm({
   const whoDone = kind === "single" || (company ? company.ok : who.manager !== null && (kind !== "chain" || who.senior !== null));
   const productsDone = products.length > 0;
   const commentDone = commentLength > 0;
+  // The last question is asked of an AM or PM customer when the rep records his own visit, and only
+  // where there is somebody to ask and a day to offer. A Yes with nobody or no day ticked is the one
+  // thing in it the save refuses.
+  const asksDoubleVisit = form.enteredAs === "rep" && !atPharmacy && isDoubleVisitCustomer(customer) && who.offers.length > 0 && form.doubleVisitDays.length > 0;
+  const doubleVisitDone = !asksDoubleVisit || !doubleVisit.wanted || (doubleVisit.hrIds.length > 0 && doubleVisit.days.length > 0);
   // A customer already visited today is refused before any step, and there is no box that answers it.
   const openStep = customer.visitedToday
     ? null
@@ -508,7 +519,9 @@ export function VisitLogForm({
           ? STEP_PRODUCTS
           : !commentDone
             ? STEP_COMMENT
-            : null;
+            : !doubleVisitDone
+              ? STEP_DOUBLE
+              : null;
   const lastProducts = customer.lastVisit?.products ?? [];
 
   /** Bring a step into view — mid-screen, clear of the bar held at the bottom. */
@@ -639,6 +652,11 @@ export function VisitLogForm({
     if (products.length === 0) return { ok: false, problem: "Choose the products you discussed." };
     // Required (owner, 2026-09-30): typed, or spoken — the spoken words land in the same box.
     if (!comment.trim()) return { ok: false, problem: VISIT_COMMENT_REQUIRED };
+    // The last question: a Yes names at least one person and at least one day, or it is not a request.
+    if (asksDoubleVisit && doubleVisit.wanted) {
+      if (doubleVisit.hrIds.length === 0) return { ok: false, problem: CHOOSE_A_PERSON };
+      if (doubleVisit.days.length === 0) return { ok: false, problem: CHOOSE_A_DAY };
+    }
     return {
       ok: true,
       customerName: customer.name,
@@ -676,6 +694,8 @@ export function VisitLogForm({
         // The conversation itself, for a rep the Super Admin switched on. It dates nothing either.
         recordingPath: visitRecording?.path ?? null,
         recordingSeconds: visitRecording?.seconds ?? null,
+        // The last question. Null on No; the server raises the request after the visit is saved.
+        doubleVisit: asksDoubleVisit && doubleVisit.wanted ? { wanted: true, hrIds: doubleVisit.hrIds, days: doubleVisit.days } : null,
       },
     };
   }
@@ -803,6 +823,15 @@ export function VisitLogForm({
               />
             ) : null}
             {leftLines.length > 0 ? <SummaryLine label="What you left" value={leftLines.join(", ")} /> : null}
+            {asksDoubleVisit && doubleVisit.wanted ? (
+              <SummaryLine
+                label="Double visit asked"
+                value={`${doubleVisit.hrIds.map((hrId) => who.offers.find((person) => person.hrId === hrId)?.name).filter(Boolean).join(", ")} · ${[...doubleVisit.days]
+                  .sort()
+                  .map((day) => dayLabel(day))
+                  .join(" or ")}`}
+              />
+            ) : null}
             {objectionLabel || nextStepLabel ? (
               <SummaryLine label="What you took away" value={[objectionLabel, nextStepLabel].filter(Boolean).join(" · ")} />
             ) : null}
@@ -1209,6 +1238,25 @@ export function VisitLogForm({
         />
         {isFollowUp(nextStep) ? <p className="mt-2 text-xs font-semibold text-slate-500">It comes back to you at this customer&apos;s door next time.</p> : null}
       </CrmBlock>
+
+      {/* THE LAST QUESTION (owner, 2026-10-16). Not a numbered step: it is asked of an AM or PM customer
+          only, so the numbering the phone's form shares never changes for a pharmacy or a manager. It
+          starts on No and a No asks nothing more. */}
+      {asksDoubleVisit ? (
+        <CrmBlock actions={stepMark("optional")} className="border-t border-slate-100" title="Do you need a double visit with this customer?">
+          <DoubleVisitQuestion
+            cairoToday={form.cairoToday}
+            dayChoices={form.doubleVisitDays}
+            disabled={saving}
+            offers={who.offers}
+            onChange={(next) => {
+              setProblem(null);
+              setDoubleVisit(next);
+            }}
+            value={doubleVisit}
+          />
+        </CrmBlock>
+      ) : null}
         </>
       )}
 

@@ -73,7 +73,8 @@ import {
   isVisitObjection,
   type LastNextStep,
 } from "@/lib/phoenix-crm/visit-outcome";
-import { raisesVisitAsk } from "@/lib/phoenix-crm/visit-ask-rules";
+import { doubleVisitDayChoices, doubleVisitSavedNote } from "@/lib/phoenix-crm/double-visit-request-rules";
+import { raisesVisitAsk, visitAskLastDay } from "@/lib/phoenix-crm/visit-ask-rules";
 import { visitDetailEditable } from "@/lib/phoenix-crm/visit-detail-edit-rules";
 import { PHOENIX_VISIT_KIND_LABELS } from "@/lib/phoenix-crm/visit-kind-labels";
 import { describeDayWindows, isPlanSentForReview, isUuid, planDayStatus } from "@/lib/phoenix-crm/plan-rules";
@@ -110,6 +111,8 @@ import {
   loadRecordingSecondsByVisit,
 } from "@/lib/phoenix-crm/server/visit-recordings";
 import { lineProductsByFamily, type LineProductFamily } from "@/lib/phoenix-crm/server/products";
+import { prepareDoubleVisitRequest, raiseDoubleVisitRequestFromVisit } from "@/lib/phoenix-crm/server/double-visit-requests";
+import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import { loadLineProductManagers, raiseVisitAskFromVisit, visitAskSavedNote } from "@/lib/phoenix-crm/server/visit-asks";
 import { describeTerritory, personSeatTitle, seatTierTitle, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
@@ -678,6 +681,12 @@ export type VisitFormView = {
    * (`loadLineProductManagers`). Empty where the line has none, and the list then holds managers only.
    */
   productManagers: VisitProductManager[];
+  /**
+   * The days the LAST question may offer (owner, 2026-10-16: "do you need a double visit with this
+   * customer?"): today and every field day of the next four weeks, never a Friday or a public holiday.
+   * Empty when a manager enters the visit, who asks nothing of anybody.
+   */
+  doubleVisitDays: string[];
   /** The line's discussed choices — the family names — for "Products discussed". */
   products: string[];
   /** The same products grouped by family, for the finer per-product pharmacy-stock check. */
@@ -931,6 +940,9 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     loadOffPlanRows([seat.seatId], isTest, offPlanWeekWindow(today)),
     // Whether the Super Admin requires this rep to record the visit (owner, 2026-10-16).
     enteredAs === "rep" ? isRecordingRequired(viewer.hrId) : Promise.resolve(false),
+    // The days the LAST question may offer (owner, 2026-10-16): only a rep's own entry asks it, so a
+    // manager's form never pays for the holiday read.
+    enteredAs === "rep" ? loadPlanHolidays(viewer.cairoToday, visitAskLastDay(viewer.cairoToday)) : Promise.resolve(new Map<string, string>()),
   ]);
   // Handled at once: if the mint fails, `await ensured` below throws its error and the wave is dropped.
   wave.catch(() => undefined);
@@ -948,6 +960,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     lineProductManagers,
     offPlanRows,
     recordingRequired,
+    doubleVisitHolidays,
   ] = await wave;
   // The SENT set, and only it, is what the picker offers and what the ordering follows — a draft is the
   // rep's own to edit today, so counting one would let him place the doctor at the door and never be off
@@ -1048,6 +1061,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     blockedReason,
     offPlan: offPlanAllowance({ rows: offPlanRows, day: today, caps: settings }),
     recordingRequired,
+    doubleVisitDays: enteredAs === "rep" ? doubleVisitDayChoices(viewer.cairoToday, doubleVisitHolidays) : [],
   });
 }
 
@@ -1072,6 +1086,11 @@ export type SavedVisit = {
    * when there was nobody to ask — the ask is HIS request, so its words are his to read.
    */
   visitAskNote: string | null;
+  /**
+   * What became of the double visit his LAST question asked for (owner, 2026-10-16): who is asked, or
+   * that it was already asked. Null when he answered No, or the customer is not an AM or PM account.
+   */
+  doubleVisitNote: string | null;
   /**
    * What became of a pharmacy (owner, 2026-10-03): a pharmacy visit's own "no plan, no approval", or
    * that the pharmacy he named on this visit is logged as a pharmacy visit too. Null otherwise.
@@ -1156,6 +1175,17 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     productManagers: visit.productManagerHrId ? await loadLineProductManagers(seat) : [],
   });
   if (!participants.ok) throw validationError(participants.error);
+
+  // The LAST question of the form (owner, 2026-10-16): "Do you need a double visit with this customer?".
+  // Read and checked BEFORE the save, so a person or a day that was never offered is refused while the
+  // visit is still on the rep's screen. Null on No, and for every visit a manager or the Super Admin
+  // entered. The request itself is raised after the save (below).
+  const doubleVisitRequest = await prepareDoubleVisitRequest(viewer, {
+    seat,
+    enteredAs,
+    repHrId: participants.value.repHrId ?? viewer.hrId,
+    raw: body.doubleVisit,
+  });
 
   const productFamilies = await lineProductsByFamily(seat.lineName);
   const allowedFamilies = new Set(productFamilies.map((entry) => entry.family));
@@ -1433,6 +1463,22 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
           wishedOn: visit.outcome.nextStepOn,
         })
       : null;
+  // The double visit the LAST question asked for (owner, 2026-10-16): raised once per visit, after the
+  // save, and never costing the visit. Only an AM or PM customer can be asked about, so the list the
+  // save returned decides, not the phone. A duplicate save asks again on purpose: the database keys the
+  // request on the visit id, so a save retried after a dropped connection finishes what the first began.
+  const doubleVisit =
+    doubleVisitRequest
+      ? await raiseDoubleVisitRequestFromVisit(viewer, {
+          seat,
+          isTest,
+          visitId,
+          customerId: visit.customerId,
+          repHrId: participants.value.repHrId ?? viewer.hrId,
+          listType: textOrNull(result.list_type),
+          prepared: doubleVisitRequest,
+        })
+      : null;
   // The rep is told his visit is saved and nothing about where he was (Golden Rule #1); a manager who
   // entered it reads the distance only (owner, 2026-10-02).
   const location = visitLocationFor(locationSight(viewer, seat), flag, distance, visit.accuracyMeters);
@@ -1455,6 +1501,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
             unplannedVisitRepNote(unplannedFirstStatus(reviewer !== null, reviewerOnTheVisit), false)
           : null,
     visitAskNote: visitAskSavedNote(visitAsk),
+    doubleVisitNote: doubleVisitSavedNote(doubleVisit),
     pharmacyNote: savedPharmacyNote(result),
   };
 }

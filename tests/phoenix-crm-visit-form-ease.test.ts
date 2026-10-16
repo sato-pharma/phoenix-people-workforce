@@ -106,8 +106,8 @@ export function runPhoenixCrmVisitFormEaseTests(): void {
     const jump = /const openStep = ([\s\S]*?);\n/.exec(form)?.[1]?.replace(/\s+/g, " ") ?? "";
     assert.equal(
       jump,
-      "customer.visitedToday ? null : !reasonDone ? STEP_REASON : !whoDone ? STEP_WHO : !productsDone ? STEP_PRODUCTS : !commentDone ? STEP_COMMENT : null",
-      "the step the bar points at follows the draft's own order",
+      "customer.visitedToday ? null : !reasonDone ? STEP_REASON : !whoDone ? STEP_WHO : !productsDone ? STEP_PRODUCTS : !commentDone ? STEP_COMMENT : !doubleVisitDone ? STEP_DOUBLE : null",
+      "the step the bar points at follows the draft's own order, and the double visit question is the LAST stop",
     );
     for (const [step, anchor] of [
       ["the reason", "id={STEP_REASON}"],

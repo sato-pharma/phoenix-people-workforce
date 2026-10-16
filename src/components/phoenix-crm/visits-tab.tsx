@@ -516,6 +516,8 @@ function SavedNote({ onOpenList, saved }: { onOpenList?: () => void; saved: Save
       {visit.unplannedNote ? <span className="mt-1 block">{visit.unplannedNote}</span> : null}
       {/* "Arrange a double visit" asked his manager by itself (owner, 2026-10-02) — his own request. */}
       {visit.visitAskNote ? <span className="mt-1 block break-words">{visit.visitAskNote}</span> : null}
+      {/* The LAST question: the people asked for a double visit (owner, 2026-10-16). Their answers show on the customer's page. */}
+      {visit.doubleVisitNote ? <span className="mt-1 block break-words">{visit.doubleVisitNote}</span> : null}
       {/* A pharmacy's own visit needs no plan and no approval; a pharmacy he named is logged too. */}
       {visit.pharmacyNote ? (
         <span className="mt-1 block break-words" dir="auto">

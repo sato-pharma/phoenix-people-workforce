@@ -228,6 +228,13 @@ const REFUSALS: Record<string, Refusal> = {
   visit_ask_answered: { status: 409, message: "This ask was already answered. Reload the page." },
   visit_ask_cancelled: { status: 409, message: "The rep cancelled this ask. Reload the page." },
   visit_ask_bad_day: { status: 409, message: "Choose one of the days offered: today or a field day in the next four weeks, never a Friday. Reload the page." },
+  // A rep's request for a double visit (owner, 2026-10-16): raised from the visit's last question, its days edited, answered. No cancel.
+  double_visit_bad_days: { status: 409, message: "Choose one to three days from the list offered: today or a field day in the next four weeks, never a Friday. Reload the page." },
+  double_visit_not_requestable: { status: 409, message: "A double visit can be asked for an AM or PM customer on your list only." },
+  double_visit_not_found: { status: 404, message: "This request is no longer there. Reload the page." },
+  double_visit_not_yours: { status: 403, message: "Only the rep who raised this request changes its days." },
+  double_visit_not_asked: { status: 403, message: "Only a person asked answers this request." },
+  double_visit_bad_day: { status: 409, message: "Choose one of the days the rep offered that has not passed. Reload the page." },
   // The same-seat duplicate merge (owner, 2026-10-08). Only the one-off script reaches these — the
   // function is service-role only — so the reader is whoever runs it, and each names the pair it skips.
   keeper_is_loser: { status: 400, message: "A customer cannot be merged into itself. Choose two different records." },
