@@ -36,6 +36,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { candidateAlertIdempotencyKey } from "@/lib/recruitment/candidate-alert-key";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { writeApplicationEvent } from "@/lib/recruitment/db";
+import { boardsForManager } from "@/lib/recruitment/district-manager-folders";
+import { loadDistrictSeatRows } from "@/lib/recruitment/folder-holders";
+import { managerFolderShelves } from "@/lib/recruitment/manager-cv-folders";
 import { recordManagerSends } from "@/lib/recruitment/manager-sends";
 import type { SentForPosition } from "@/lib/recruitment/types";
 
@@ -91,6 +94,12 @@ export type HiringManagerOption = {
    * instead of alphabetically by job title.
    */
   seatTier: string | null;
+  /**
+   * The folders on this manager's shelf a CV can be filed in — one per area beneath him, from the
+   * organogram (owner, 2026-10-16). Empty or absent for a manager who holds none (head office), and
+   * the send dialogs then offer no folder choice. "Other CVs" is not listed: the picker adds it.
+   */
+  folders?: string[];
 };
 
 /**
@@ -245,6 +254,9 @@ export type NotifiedManagerContext = {
 export async function listHiringManagerOptions(): Promise<HiringManagerOption[]> {
   // The organogram is read FIRST, because it decides who is on the list as well as how they read.
   const orgSeats = await loadOrgSeatsByHrId();
+  // The folders each manager holds, for the folder choice in the send dialogs. A failed organogram
+  // read gives no folders, so the dialogs simply offer no choice and the server picks as before.
+  const shelves = managerFolderShelves(await loadDistrictSeatRows());
 
   // ── WHO IS OFFERED ────────────────────────────────────────────────────────────────────────────
   // Two sources unioned, and the union is the fix rather than a belt-and-braces.
@@ -345,6 +357,9 @@ export async function listHiringManagerOptions(): Promise<HiringManagerOption[]>
         // is not this feature's business.
         // The acting seat's own name wins over the employment title — see ACTING_SEAT_TITLES.
         jobTitle: actingTitle ?? (orgAcronymCase(String(row.job_title ?? "").trim()) || "Manager"),
+        folders: boardsForManager(shelves, hrId).flatMap((board) =>
+          board.folders.filter((folder) => folder.kind === "area").map((folder) => folder.areaName),
+        ),
         lineName: seat?.lineName ?? null,
         name: resolveEmployeeDisplayName(String(row.full_name), row.nickname ?? null),
         regionName: seatKnowsWhere ? seat?.regionName ?? null : String(row.region_name ?? "").trim() || null,

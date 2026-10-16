@@ -220,4 +220,6 @@ export type WorkspaceManager = {
   regionName: string | null;
   lineName: string | null;
   seatTier: string | null;
+  /** Folders on the manager's shelf; see `HiringManagerOption.folders`. */
+  folders?: string[];
 };
