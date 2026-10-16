@@ -78,6 +78,7 @@ import {
   resolveOutstationCapturedLocation,
 } from "@/lib/outstation/captured-location";
 import { captureOutstationTripWorkload } from "@/lib/outstation/workload-capture";
+import { storedWorkloadMatchStatus } from "@/lib/outstation/workload-evidence";
 import { capturedWorkloadMatchStatus } from "@/lib/outstation/workload-rollup";
 import {
   allowanceRowDates,
@@ -415,7 +416,7 @@ async function resolveOutstationWorkloadPayload(params: {
     pharmacy_workload: evidence.pharmacyWorkload ?? 0,
     pm_workload: evidence.pmWorkload,
     workload_evidence_snapshot: evidence,
-    workload_match_status: evidence.matchStatus,
+    workload_match_status: storedWorkloadMatchStatus(evidence.matchStatus),
     workload_matched_at: new Date().toISOString(),
     workload_source: evidence.source,
     workload_source_import_id: evidence.importId,
