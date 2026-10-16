@@ -670,7 +670,17 @@ function runRouteTests() {
   const exportRoute = stripComments(read(EXPORT_ROUTE));
   assert.ok(exportRoute.includes('assertPermission(access, "phoenix_crm", "read")'), "the export is a read");
   assert.ok(exportRoute.includes("assertExportRateLimit("), "an export is rate-limited per person");
+  // Asked beside the viewer since 2026-10-16, but still answered BEFORE the heavy read it protects.
+  assert.ok(
+    exportRoute.indexOf("assertExportRateLimit(") < exportRoute.indexOf("loadIntegrityBoard(viewer)"),
+    "the rate limit must refuse before the board is loaded",
+  );
   assert.ok(exportRoute.includes("writeAuditLog("), "who took the board, and how much of it, is on the record");
+  // Written after the file has gone — never dropped: the best-effort insert is handed to afterResponse.
+  assert.ok(
+    /afterResponse\("phoenix-crm-integrity-export-audit", \(\) =>\s*writeAuditLog\(/.test(exportRoute),
+    "the audit row is deferred past the response, not removed",
+  );
   assert.ok(exportRoute.includes("phoenixCrmFailure(error"), "the refusal is the module's — a 404, not a 403");
   // 🔴 THE ONE LINE OF ITS TEMPLATE THAT MUST NOT BE HERE. `app/api/admin/activity/export/route.ts`
   // ends in an `isForbiddenError` branch answering 403 with the resource named; on this board that
