@@ -169,7 +169,7 @@ function testAutopilotPlan() {
   assert.equal(vacancySeatKey({}), null);
 }
 
-const vacancy = (id: number, areaName: string, lineName: string, jobTitle = "Medical Representative"): VacancyOption => ({
+const vacancy = (id: number, areaName: string, lineName: string | null, jobTitle = "Medical Representative"): VacancyOption => ({
   areaName,
   id,
   jobTitle,
