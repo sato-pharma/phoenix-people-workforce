@@ -467,8 +467,27 @@ function SentCandidateCard({
   const [candidate, setCandidate] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hidden, setHidden] = useState(false);
   // A CV sent to this manager is fully his — number, file, everything (owner, 2026-10-16).
   const call = useCandidateCall(initial, initialClaim, viewerHrId, true);
+
+  /**
+   * Hide this CV from HIS folders — one press, no reason (owner, 2026-10-16: "make district manager
+   * able to hide the CV if he received him"). The server ends his hold, so the CV also leaves his
+   * "Sent to you" list and the hourly reminder; Talent Acquisition keeps it and can send it again.
+   */
+  const hide = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await sendJson(`/api/recruitment/hiring-manager/candidates/${candidate.id}/hide`, "POST", {});
+      setHidden(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Failed to hide that CV.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const notified = candidate.managerNotified;
   // Only an untouched candidate still needs an answer. Once the manager (or the recruiter) has
@@ -522,6 +541,14 @@ function SentCandidateCard({
       setBusy(false);
     }
   };
+
+  if (hidden) {
+    return (
+      <Card className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-slate-500 shadow-[0_1px_3px_rgba(15,23,42,0.08)]" id={`candidate-${candidate.id}`}>
+        {candidate.fullName} is hidden from your folders. The recruitment team still has the CV.
+      </Card>
+    );
+  }
 
   return (
     <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6" id={`candidate-${candidate.id}`}>
@@ -589,6 +616,11 @@ function SentCandidateCard({
           filing={filing}
           onChanged={(next) => onFilingChanged(candidate.id, next)}
         />
+        {/* Hide: the CV leaves HIS folders and stops reminding him, with no reason asked. It is not
+            an answer to the recruiter (that is Skip) and it rejects nobody. */}
+        <Button disabled={busy} onClick={() => void hide()} size="sm" variant="outline">
+          Hide
+        </Button>
       </div>
 
       {error ? <p className="text-xs text-rose-600">{error}</p> : null}
