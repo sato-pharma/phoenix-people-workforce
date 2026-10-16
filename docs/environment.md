@@ -504,6 +504,7 @@ copies directly with no variable fallback, so deleting the secret copies would s
 | NEXT_PUBLIC_ONESIGNAL_APP_ID | OneSignal app id (client-side) |
 | ONESIGNAL_REST_API_KEY | OneSignal REST API key (server-side push) |
 | SENTRY_DSN | Sentry (sentry.io) project DSN, read at runtime by `instrumentation.ts`. Production only: ignored unless `APP_ENV=production` |
+| SENTRY_WEBHOOK_SECRET | Client secret of the Sentry internal integration that posts alerts to `/api/webhooks/sentry`. Unset means the route refuses every call; the alert only reaches the owner's Telegram |
 | NEXT_PUBLIC_SENTRY_DSN | The same DSN for the browser. Build-time (a Dockerfile `ARG`), used only when the page is served from the production host; also adds the DSN's origin to the CSP `connect-src` |
 
 ### Scheduling & agents

@@ -86,8 +86,8 @@ async function pingHealthchecks(jobSlug: string, outcome: HealthchecksSignal, de
 
 /**
  * The third half: Sentry cron monitoring, a check-in per run. Inert unless Sentry is on (production plus a DSN),
- * and it carries no schedule: Sentry only records a check-in for a monitor somebody created there, so a job with
- * no monitor costs nothing. The SDK is reached by dynamic import for the same edge-safety reason as everywhere else.
+ * and it carries the monitor's schedule from the register of scheduled jobs, so Sentry creates the monitor on
+ * the job's first check-in. A job the register does not declare sends none and creates nothing. The SDK is reached by dynamic import for the same edge-safety reason as everywhere else.
  */
 async function checkInSentry(jobSlug: string, outcome: DeadMansSwitchOutcome): Promise<void> {
   try {

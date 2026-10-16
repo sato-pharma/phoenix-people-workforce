@@ -197,6 +197,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/dev-auth/candidates", permission: null, guard: "domain-helper" }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/resend", reason: "Resend webhook signature/secret protected." }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/brevo", reason: "Brevo transactional webhook is protected by a shared secret token (?token= / x-brevo-token) verified against BREVO_WEBHOOK_SECRET." }),
+  tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/sentry", reason: "Sentry alert webhook is protected by the HMAC-SHA256 signature in sentry-hook-signature, verified against SENTRY_WEBHOOK_SECRET; it only forwards a short error summary to the owner's Telegram." }),
   tokenApi({ authMode: "webhook-secret", methods: ["GET", "POST"], pattern: "/api/webhooks/whatsapp", reason: "GET is Meta's one-time verify-token handshake; POST is protected by the X-Hub-Signature-256 HMAC verified against WHATSAPP_APP_SECRET. Recruitment inbound CV intake." }),
   // Completes WhatsApp coexistence onboarding started on the public /whatsapp-connect page. Public
   // by design: no Phoenix session exists (the owner runs it on a phone), and the credential is Meta's

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 import {
+  SENTRY_PAGE_SURVEY_ENDS_AT_MS,
   SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE,
   SENTRY_REPLAY_SESSION_SAMPLE_RATE,
   SENTRY_TRACES_SAMPLE_RATE,
@@ -16,6 +17,10 @@ import {
   sentryServerStatus,
   sentryTracesSampler,
 } from "../src/lib/observability/sentry-policy.ts";
+import { sentryMonitorConfigFor } from "../src/lib/observability/sentry-cron-monitor.ts";
+import { buildSentryAlertMessage, verifySentrySignature } from "../src/lib/observability/sentry-alert-webhook.ts";
+import { createHmac } from "node:crypto";
+import { JOB_SCHEDULES } from "../src/lib/observability/job-schedule.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -100,13 +105,29 @@ function nextConfigSource(): string {
 
 function beyondErrorsTests() {
   // Sampling: a fixed small rate, nothing for the probe or the reporter's own endpoint, a parent's decision wins.
-  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll" }), SENTRY_TRACES_SAMPLE_RATE);
+  const afterSurvey = SENTRY_PAGE_SURVEY_ENDS_AT_MS + 1;
+  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll" }, afterSurvey), SENTRY_TRACES_SAMPLE_RATE);
   assert.ok(SENTRY_TRACES_SAMPLE_RATE > 0 && SENTRY_TRACES_SAMPLE_RATE <= 0.1, "a free quota is spent per span");
   for (const name of ["GET /api/healthz", "GET /api/errors/client", "GET /_next/static/chunks/app.js", "GET /favicon.ico"]) {
-    assert.equal(sentryTracesSampler({ name }), 0, `${name} says nothing and is never traced`);
+    assert.equal(sentryTracesSampler({ name }, afterSurvey), 0, `${name} says nothing and is never traced`);
+    assert.equal(sentryTracesSampler({ name }, SENTRY_PAGE_SURVEY_ENDS_AT_MS - 1), 0, `${name} stays quiet during the page survey`);
   }
-  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll", parentSampled: true }), 1);
-  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll", parentSampled: false }), 0);
+  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll", parentSampled: true }, afterSurvey), 1);
+  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll", parentSampled: false }, afterSurvey), 0);
+
+  // The page survey (owner, 2026-10-16: "measure all pages, every single page"): every page request is traced until
+  // midnight Cairo on 2026-10-19, API calls and bare "RSC GET" / "middleware GET" stay at the fixed rate, and after
+  // that instant everything is back to the fixed rate by itself.
+  const duringSurvey = SENTRY_PAGE_SURVEY_ENDS_AT_MS - 1;
+  assert.equal(SENTRY_PAGE_SURVEY_ENDS_AT_MS, Date.parse("2026-10-20T00:00:00+03:00"), "the window ends at midnight Cairo");
+  for (const name of ["GET /admin/payroll", "GET /employee-portals/plans", "/admin/reps-list"]) {
+    assert.equal(sentryTracesSampler({ name }, duringSurvey), 1, `${name} is a page and is traced during the survey`);
+    assert.equal(sentryTracesSampler({ name }, SENTRY_PAGE_SURVEY_ENDS_AT_MS), SENTRY_TRACES_SAMPLE_RATE, `${name} drops back when the survey ends`);
+  }
+  for (const name of ["GET /api/messages", "POST /admin/payroll", "RSC GET", "middleware GET"]) {
+    assert.equal(sentryTracesSampler({ name }, duringSurvey), SENTRY_TRACES_SAMPLE_RATE, `${name} is not a page request`);
+  }
+  assert.equal(sentryTracesSampler({ name: "GET /admin/payroll", parentSampled: false }, duringSurvey), 0, "a parent's decision still wins");
   assert.equal(SENTRY_REPLAY_SESSION_SAMPLE_RATE, 0, "an ordinary session is never recorded");
   assert.equal(SENTRY_REPLAY_ON_ERROR_SAMPLE_RATE, 1, "the lead-up to an error is");
 
@@ -148,6 +169,28 @@ function beyondErrorsTests() {
   assert.equal(log.attributes?.route, "/api/leave/:id");
 }
 
+function cronMonitorTests() {
+  // A declared cron job becomes a crontab monitor in Africa/Cairo, with the register's own grace as the margin.
+  const daily = sentryMonitorConfigFor("phoenix-notify-daily");
+  assert.deepEqual(daily?.schedule, { type: "crontab", value: "36 6 * * *" });
+  assert.equal(daily?.checkinMargin, 60, "a one-hour grace is a sixty-minute margin");
+  assert.equal(daily?.timezone, "Africa/Cairo", "the register is Cairo local; UTC would put every window hours off");
+  assert.equal(daily?.failureIssueThreshold, 2);
+  assert.equal(daily?.recoveryThreshold, 1);
+  // A job on a plain interval becomes an interval monitor.
+  assert.deepEqual(sentryMonitorConfigFor("phoenix-ireports360-live-poll")?.schedule, { type: "interval", value: 5, unit: "minute" });
+  // A job the register never declared sends no config, so Sentry ignores its check-in and creates nothing.
+  assert.equal(sentryMonitorConfigFor("not-a-declared-job"), undefined);
+  assert.equal(sentryMonitorConfigFor(""), undefined);
+  // Every declaration yields a usable monitor, and none has a margin of zero.
+  for (const job of JOB_SCHEDULES) {
+    const config = sentryMonitorConfigFor(job.slug);
+    assert.ok(config, `${job.slug} must produce a monitor config`);
+    assert.ok(config.checkinMargin >= 1, `${job.slug} needs a margin of at least a minute`);
+    assert.ok(config.schedule.type === "crontab" ? config.schedule.value.split(" ").length === 5 : config.schedule.value >= 1, `${job.slug} needs a real schedule`);
+  }
+}
+
 function wiringTests() {
   // instrumentation.ts is bundled for both runtimes: it may import the pure policy statically and the
   // SDK only dynamically, inside a nodejs guard that the policy has already cleared.
@@ -175,7 +218,7 @@ function wiringTests() {
   assert.match(server, /tracesSampler: \(context\) => sentryTracesSampler\(context\)/, "sampling goes through the policy, never a literal rate");
   assert.match(server, /levels: \["warn", "error"\]/, "only warn and error console lines become logs");
   assert.ok(!/tracesSampleRate|profilesSampleRate|replaysSessionSampleRate/.test(server), "rates live in sentry-policy.ts only");
-  assert.ok(!/monitorConfig/.test(server), "a cron check-in never creates a monitor — that is billed per monitor and decided in Sentry's own screen");
+  assert.match(server, /captureCheckIn\(\{ monitorSlug: jobSlug, status \}, sentryMonitorConfigFor\(jobSlug\)\)/, "the monitor is built from the register of scheduled jobs, never written by hand in Sentry");
 
   const client = code("src/lib/observability/sentry-client.ts");
   assert.ok(!/from\s+["']@sentry\//.test(client), "the browser SDK is imported lazily, never statically");
@@ -212,6 +255,8 @@ function wiringTests() {
     assert.notEqual((error as { code?: string }).code, "ERR_PACKAGE_PATH_NOT_EXPORTED", "the installed package must export ./config");
   }
   assert.match(nextConfigSource(), /telemetry: false/);
+  assert.match(nextConfigSource(), /deploy: \{ env: "production" \}/, "each release is marked as a production deploy");
+  assert.match(nextConfigSource(), /setCommits: \{ repo: "Gawish-1997\/phoenix-people-workforce", commit: release, ignoreMissing: true \}/, "commits are named explicitly and a missing integration is tolerated");
   for (const switchName of ["autoInstrumentServerFunctions", "autoInstrumentMiddleware", "autoInstrumentAppDirectory", "automaticVercelMonitors"]) {
     assert.match(nextConfigSource(), new RegExp(`${switchName}: false`), `${switchName} stays off`);
   }
@@ -244,9 +289,63 @@ function wiringTests() {
   assert.match(dockerfile, /^ENV NEXT_PUBLIC_SENTRY_DSN=\$NEXT_PUBLIC_SENTRY_DSN$/m);
 }
 
+function alertWebhookTests() {
+  // The signature: HMAC-SHA256 of the raw body, hex, under the integration's client secret.
+  const body = JSON.stringify({ action: "triggered", data: { event: { title: "TypeError: x" } } });
+  const good = createHmac("sha256", "s3cret").update(body, "utf8").digest("hex");
+  assert.equal(verifySentrySignature(body, good, "s3cret"), true);
+  assert.equal(verifySentrySignature(body, good.toUpperCase(), "s3cret"), true, "hex case does not matter");
+  assert.equal(verifySentrySignature(body + " ", good, "s3cret"), false, "a changed body fails");
+  assert.equal(verifySentrySignature(body, good, "other"), false, "another secret fails");
+  assert.equal(verifySentrySignature(body, "", "s3cret"), false, "no signature fails");
+  assert.equal(verifySentrySignature(body, null, "s3cret"), false);
+  assert.equal(verifySentrySignature(body, good, ""), false, "an empty secret never verifies");
+
+  // The message: an alert or a new issue becomes a short text, anything else is ignored, and identifiers are scrubbed.
+  const alert = buildSentryAlertMessage("event_alert", {
+    action: "triggered",
+    data: {
+      event: {
+        title: "TypeError: Cannot read properties of undefined for B-10",
+        culprit: "GET /admin/employees/B-10",
+        level: "error",
+        web_url: "https://phoenix-crm.sentry.io/issues/1/events/2/",
+      },
+      triggered_rule: "New production error",
+    },
+  });
+  assert.ok(alert, "an event alert is forwarded");
+  assert.doesNotMatch(alert.message, /B-10/, "HR ids never reach the message");
+  assert.match(alert.message, /TypeError/);
+  assert.match(alert.message, /Rule: New production error/);
+  assert.equal(alert.url, "https://phoenix-crm.sentry.io/issues/1/events/2/");
+  const created = buildSentryAlertMessage("issue", { action: "created", data: { issue: { title: "Boom", level: "fatal" } } });
+  assert.ok(created && /Boom/.test(created.message), "a created issue is forwarded");
+  assert.equal(buildSentryAlertMessage("issue", { action: "resolved", data: { issue: { title: "Boom" } } }), null, "a resolved issue is not an alert");
+  assert.equal(buildSentryAlertMessage("installation", { action: "created" }), null, "other resources are ignored");
+  assert.equal(buildSentryAlertMessage("event_alert", { data: { event: {} } }), null, "an alert with no title says nothing");
+  assert.equal(
+    buildSentryAlertMessage("event_alert", { data: { event: { title: "x", web_url: "https://evil.example/phish" } } })?.url,
+    null,
+    "only a sentry.io link is ever put in the message",
+  );
+  assert.ok((buildSentryAlertMessage("event_alert", { data: { event: { title: "y".repeat(2000) } } })?.message.length ?? 0) <= 400, "a long title is cut");
+
+  // The wiring: a signed, CSRF-exempt, registered route that refuses everything when its secret is unset.
+  const route = code("app/api/webhooks/sentry/route.ts");
+  assert.match(route, /process\.env\.SENTRY_WEBHOOK_SECRET/);
+  assert.match(route, /status: 500/, "no secret configured means refuse");
+  assert.match(route, /verifySentrySignature\(body, request\.headers\.get\("sentry-hook-signature"\), secret\)[\s\S]*?status: 401/, "a bad signature is a 401 before anything is read");
+  assert.ok(route.indexOf("verifySentrySignature(") < route.indexOf("JSON.parse(body)"), "the body is parsed only after it is verified");
+  assert.match(code("proxy.ts"), /pathname === "\/api\/webhooks\/sentry"/, "the webhook is CSRF-exempt like the other provider webhooks");
+  assert.match(code("src/lib/security/access-registry.ts"), /pattern: "\/api\/webhooks\/sentry"/, "the route is in the access registry");
+}
+
 export function runSentryProductionOnlyTests() {
   gateTests();
   scrubTests();
   beyondErrorsTests();
+  cronMonitorTests();
+  alertWebhookTests();
   wiringTests();
 }

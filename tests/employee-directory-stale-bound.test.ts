@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { mayServeStaleDirectory, STALE_CACHE_MAX_AGE } from "../src/lib/employees/employee-directory.ts";
+import {
+  DIRECTORY_REFRESH_BEHIND_MS,
+  directoryCacheDisposition,
+  mayServeStaleDirectory,
+  STALE_CACHE_MAX_AGE,
+} from "../src/lib/employees/employee-directory.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,6 +31,8 @@ import { stripComments } from "./support/comment-strip.ts";
 // timestamp. This test pins the age rule behaviourally and pins the two structural facts that
 // stop either defect walking back in.
 // ─────────────────────────────────────────────────────────────────────────────
+
+const CACHE_TTL_MS = 30_000; // the module's CACHE_TTL, restated so a change to it fails here
 
 const MODULE_URL = new URL("../src/lib/employees/employee-directory.ts", import.meta.url);
 
@@ -110,7 +117,45 @@ export async function runEmployeeDirectoryStaleBoundTests() {
   // refuses a perfectly good fallback.
   assert.match(
     code,
-    /now - directoryCache\.timestamp < CACHE_TTL/,
+    /if \(ageMs < CACHE_TTL\) return "fresh";/,
     "RED the fresh path must still gate on CACHE_TTL — the stale bound is a fallback rule, not a replacement for it",
+  );
+
+  // ── Refresh behind (2026-10-16): a poll just past the TTL is answered, not made to wait ──
+  // The sidebar polls every 30 s, which is also CACHE_TTL, so each poll found the copy one tick expired and waited
+  // out the whole multi-table load (about 2 s at the 95th percentile in Sentry). Within a bounded window past the
+  // TTL the copy is served and a reload runs behind it.
+  assert.equal(directoryCacheDisposition(0), "fresh");
+  assert.equal(directoryCacheDisposition(CACHE_TTL_MS - 1), "fresh");
+  assert.equal(directoryCacheDisposition(CACHE_TTL_MS), "refresh-behind", "the poll that lands exactly on the TTL is the one this exists for");
+  assert.equal(directoryCacheDisposition(CACHE_TTL_MS + DIRECTORY_REFRESH_BEHIND_MS - 1), "refresh-behind");
+  assert.equal(
+    directoryCacheDisposition(CACHE_TTL_MS + DIRECTORY_REFRESH_BEHIND_MS),
+    "reload",
+    "RED past the window the caller waits for a real load — the roster is never served indefinitely stale",
+  );
+  assert.equal(directoryCacheDisposition(6 * 60 * 60 * 1000), "reload");
+  assert.equal(directoryCacheDisposition(-5_000), "fresh", "a clock step backwards reads as age 0");
+  assert.equal(directoryCacheDisposition(Number.NaN), "reload", "an unusable age cannot be proven recent");
+  assert.ok(
+    DIRECTORY_REFRESH_BEHIND_MS <= 2 * 60 * 1000,
+    `RED the refresh-behind window must stay under two minutes — salaries and managers are stated as fact (got ${DIRECTORY_REFRESH_BEHIND_MS}ms)`,
+  );
+
+  // A write drops the copy AND stops a load already running from putting its older answer back.
+  assert.match(code, /directoryGeneration \+= 1;\s*directoryCache = null;/, "RED invalidation must bump the generation before it drops the cache");
+  const stampGuards = [...code.matchAll(/if \(generation === directoryGeneration\)/g)].length;
+  assert.equal(stampGuards, 2, `RED both caches must refuse to stamp a load that began before an invalidation (found ${stampGuards})`);
+  // A pass at probation makes the person payroll-eligible, and payroll reads eligibility from the directory.
+  const probationDecision = stripComments(readFileSync(new URL("../src/lib/probation/intelligence/decision.ts", import.meta.url), "utf8"));
+  assert.match(
+    probationDecision,
+    /payroll_eligible: true[\s\S]*?if \(error\) throw error;\s*invalidateEmployeeDirectoryCache\(\);/,
+    "RED a pass at probation must drop the cached directory, or a payroll draft in the next 90 s leaves the new permanent employee out",
+  );
+  assert.equal(
+    [...code.matchAll(/loadDirectoryShared\(\)\.catch\(\(\) => undefined\)|loadShared\(\)\.catch\(\(\) => undefined\)/g)].length,
+    2,
+    "RED a reload run behind a served copy must swallow its own failure — nobody awaits it and an unhandled rejection kills the process",
   );
 }

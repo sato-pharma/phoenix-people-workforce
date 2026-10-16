@@ -513,6 +513,13 @@ export function runNotificationRecipientIsolationTests() {
   // The in-app read path must filter on the category allowlist (SQL + post-query).
   assert.match(inAppSource, /isPersonalBellCategory\(row\.category\)/, "in-app must drop non-allowlisted categories post-query");
   assert.match(inAppSource, /\.in\("category", allowedCategories\)/, "in-app SQL must restrict to allowlisted categories");
+  // The bell is polled by every open page, and each database round trip costs 300-600 ms (Sentry, 2026-10-16): its
+  // two independent reads (the person's own rows, the rows that list them as a recipient) must run TOGETHER.
+  assert.match(
+    inAppSource,
+    /const \[employeeResult, recipientResult\] = await Promise\.all\(\[[\s\S]*?\.eq\("employee_hr_id"[\s\S]*?\.overlaps\("recipients"/,
+    "in-app must read the person's own rows and the recipient rows in one Promise.all, never one after the other",
+  );
 
   const probationSource = readFileSync(new URL("../src/lib/probation/service.ts", import.meta.url), "utf8");
   assert.match(probationSource, /Submit manager probation feedback\./, "probation reminder must state the required action");

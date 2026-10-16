@@ -422,13 +422,24 @@ export async function listInAppNotificationsForViewer(
 
     const allowedCategories = Array.from(PERSONAL_BELL_CATEGORIES);
 
-    const employeeResult = await supabase
-      .from("notification_events")
-      .select(selectColumns)
-      .eq("employee_hr_id", employeeHrId.toUpperCase())
-      .in("category", allowedCategories)
-      .order("created_at", { ascending: false })
-      .limit(readLimit);
+    // The two reads are independent, so they run together: the bell is polled by every open page and each
+    // round trip to the database costs 300-600 ms (Sentry, 2026-10-16), which the second one used to add on top.
+    const [employeeResult, recipientResult] = await Promise.all([
+      supabase
+        .from("notification_events")
+        .select(selectColumns)
+        .eq("employee_hr_id", employeeHrId.toUpperCase())
+        .in("category", allowedCategories)
+        .order("created_at", { ascending: false })
+        .limit(readLimit),
+      supabase
+        .from("notification_events")
+        .select(selectColumns)
+        .overlaps("recipients", [employeeHrId])
+        .in("category", allowedCategories)
+        .order("created_at", { ascending: false })
+        .limit(readLimit),
+    ]);
 
     if (employeeResult.error) throw employeeResult.error;
 
@@ -437,14 +448,6 @@ export async function listInAppNotificationsForViewer(
       const id = String(row.id ?? "");
       if (id) rowsById.set(id, row);
     }
-
-    const recipientResult = await supabase
-      .from("notification_events")
-      .select(selectColumns)
-      .overlaps("recipients", [employeeHrId])
-      .in("category", allowedCategories)
-      .order("created_at", { ascending: false })
-      .limit(readLimit);
 
     if (!recipientResult.error) {
       for (const row of (recipientResult.data ?? []) as InAppNotificationEventRow[]) {
