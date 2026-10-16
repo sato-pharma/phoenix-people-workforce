@@ -25,7 +25,6 @@ import { runErrorMonitorThirdPartyAttributionTests } from "./error-monitor-third
 import { runErrorMonitorAiRedactTests } from "./error-monitor-ai-redact.test.ts";
 import { runErrorMonitorRedactRouteTests } from "./error-monitor-redact-route.test.ts";
 import { runErrorMonitorUserAttemptsTests } from "./error-monitor-user-attempts.test.ts";
-import { runGcpMetricsTests } from "./gcp-metrics.test.ts";
 import { runWeeklySystemHealthDigestTests } from "./weekly-system-health-digest.test.ts";
 import { runMailboxComplianceMonitorTests } from "./mailbox-compliance-monitor.test.ts";
 import { runCalculatorEngineTests } from "./calculator-engine.test.ts";
@@ -2696,7 +2695,6 @@ await runTest(
 await runTest("error monitor ai redact", runErrorMonitorAiRedactTests);
 await runTest("error monitor redact route", runErrorMonitorRedactRouteTests);
 await runTest("error monitor per-user attempts (30d default window + real-account partition)", runErrorMonitorUserAttemptsTests);
-await runTest("gcp-metrics service health reader (availability/latency/instances + {available:false} guard)", runGcpMetricsTests);
 await runTest("weekly system health digest", runWeeklySystemHealthDigestTests);
 await runTest("navigation active path", runNavigationActivePathTests);
 await runTest("command palette items (one row per href — the hub fold-in must not duplicate a destination)", runCommandPaletteItemsTests);

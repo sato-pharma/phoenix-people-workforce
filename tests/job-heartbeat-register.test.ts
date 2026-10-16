@@ -494,6 +494,16 @@ export async function runJobHeartbeatRegisterTests() {
       sweep.includes("after(async () => {") && sweep.indexOf("fireCronRouteOnLoopback(path)") > sweep.indexOf("after(async () => {"),
       "the run is handed to after() so the 60s sweep does not wait for it",
     );
+    // The stranded finding is a WARNING: logError persists to app_error_events, and a job that stays
+    // stranded wrote that row 96 times a day (955 of the week's 1,401), burying every browser error.
+    assert.ok(
+      sweep.includes('logWarning("Job heartbeat sweep found jobs that have stopped reporting"'),
+      "the stranded finding is logged as a warning so it never lands in the System Issues error table",
+    );
+    assert.ok(
+      !sweep.includes('logError("Job heartbeat sweep found jobs that have stopped reporting"'),
+      "logError would write the same app_error_events row every 15 minutes for as long as a job stays stranded",
+    );
     const refireSource = stripComments(readFileSync(new URL("../src/lib/observability/job-refire.ts", import.meta.url), "utf8"));
     assert.ok(refireSource.includes("if (!isProductionRuntime())"), "the loopback fire is production only");
     assert.ok(refireSource.includes("process.env.CRON_SECRET"), "and needs the shared cron secret, like any cron caller");
