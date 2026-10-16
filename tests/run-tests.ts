@@ -839,6 +839,7 @@ import { runMarketingVenueMergeRouteTests } from "./marketing-venue-merge-route.
 import { runMarketingRoiTrackerTests } from "./marketing-roi-tracker.test.ts";
 import { runMarketingRoiFastAwaitingDataTests } from "./marketing-roi-fast-awaiting-data.test.ts";
 import { runMarketingRoiRefreshScheduleTests } from "./marketing-roi-refresh-schedule.test.ts";
+import { runMarketingRoiRefreshPeriodSkipTests } from "./marketing-roi-refresh-period-skip.test.ts";
 import { runMarketingRoiExplainTests } from "./marketing-roi-explain.test.ts";
 import { runMarketingRoiBusinessReportTests } from "./marketing-roi-business-report.test.ts";
 import { runPharmacyMatchingTests } from "./pharmacy-matching.test.ts";
@@ -4252,6 +4253,10 @@ await runTest(
 await runTest(
   "the ROI fact rebuild is scheduled in a migration — by name, hourly at :20, guarded on pg_cron, refusing a second caller, and calling a function that skips an overlapping run",
   runMarketingRoiRefreshScheduleTests,
+);
+await runTest(
+  "the hourly ROI rebuild lists its distinct valid periods by skipping from one to the next on the partial index, not by aggregating all ~406,000 valid rows — same array, NULL period kept, security and grants unchanged",
+  runMarketingRoiRefreshPeriodSkipTests,
 );
 await runTest("marketing submission capture gates (not_found pharmacy code refused at write time, the portal offers the written-reason override, one shared minimum length)", runMarketingSubmissionCaptureGateTests);
 
