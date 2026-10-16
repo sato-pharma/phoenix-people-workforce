@@ -414,6 +414,16 @@ export async function runHrResourcingSeatTests() {
     ["Employee 360", "Organogram", "Vacancies Report", "CV Lookup"],
     "People holds the people pages only — the request desks have their own heading",
   );
+  assert.deepEqual(
+    rail.find((section) => section.id === "hr-probation")?.items.map((row) => row.label),
+    ["Probation Dashboard", "Probation Analytics"],
+    "her Probation heading holds the two pages she reads — the hub row opened a page of those same two rows and is gone (owner, 2026-10-16)",
+  );
+  assert.equal(
+    rail.some((section) => section.items.some((row) => row.href === "/hr/admin/ceo-probation")),
+    false,
+    "no row on her rail opens the Probation hub",
+  );
   assert.equal(
     railFor("HR Operations").find((section) => section.id === "hr-attendance")?.label,
     "Attendance & Calendars",

@@ -2622,10 +2622,14 @@ const hrNavigationSectionSeeds = [
       // like Returned CVs this page admitted them all along and simply had no row.
       { href: "/hr/probation/dashboard", icon: LayoutDashboard, label: "Probation Dashboard", permissions: [{ resource: "probation" }] },
       // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under
-      // Employee Requests. The tracker row above is fenced for her (src/lib/auth/seat-page-fences.ts), so the hub
-      // takes the label "Probation" it carries in the admin catalogue without two rows reading alike.
+      // Employee Requests. The tracker row above is fenced for her (src/lib/auth/seat-page-fences.ts).
+      //
+      // NO "Probation" HUB ROW FOR HER (owner, 2026-10-16: "fix the Probation hub row"). Until then a
+      // third row, `/hr/admin/ceo-probation`, stood under the two above: a page of three cards whose
+      // tracker card is dropped for her, leaving exactly the Dashboard and Analytics rows already on
+      // her rail — a row that opens a page of the rows directly above it. The page is untouched and
+      // still opens by address; only the duplicate row is gone. Pinned in tests/hr-resourcing-seat.test.ts.
       { href: "/hr/probation/analytics", icon: Activity, label: "Probation Analytics", permissions: [{ resource: "probation", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
-      { href: "/hr/admin/ceo-probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
     ],
     label: "Probation",
   },
