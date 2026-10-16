@@ -156,6 +156,9 @@ const REFUSALS: Record<string, Refusal> = {
   recording_expired: { status: 409, message: "This recording was made more than 6 hours ago. Record the visit again." },
   recording_too_short: { status: 409, message: "A visit recording is at least 30 seconds long. Record the visit again." },
   recording_missing: { status: 409, message: "The recording did not finish uploading. Check your connection and send it again." },
+  // The Administrator's approval of a recorded visit (owner, 2026-10-16). Only his page meets these.
+  recording_review_not_found: { status: 404, message: "This recorded visit is no longer there. Reload the page." },
+  recording_reviewed: { status: 409, message: "This recorded visit was already decided. Reload the page." },
   already_visited: { status: 409, message: "This customer's visit for today is already saved." },
   // The database's own sent-plan test disagreed with the form: the customer was not on a plan this rep
   // had sent for that day, so the visit needs a reason before it can be saved as an off-plan one.

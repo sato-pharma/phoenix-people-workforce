@@ -66,6 +66,7 @@ import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-cr
 import { loadPhoenixCrmDecisionCounts, phoenixCrmReadsDecisions } from "@/lib/phoenix-crm/server/needs-you";
 import { listPendingPrivateCalendarDataDisputes } from "@/lib/private-calendar/disputes";
 import { VALIDATION_REVIEWS_PATH } from "@/lib/phoenix-crm/server/validation-reviews";
+import { VISIT_RECORDING_ADMIN_PATH } from "@/lib/phoenix-crm/visit-recording-rules";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { loadEmployeeSeatDrift } from "@/lib/org/employee-seat-drift";
 import { countDirectOrderPendingValidations } from "@/lib/direct-orders/pharmacy-validation";
@@ -997,6 +998,27 @@ const phoenixCrmDecisions: NeedsYouAdapter = {
         // The module publishes no SLA for a redo, so this board invents no verdict.
         overdue: false,
         note: "The rep has been told why. Until the customer is validated again, a visit there scores nothing.",
+      });
+    }
+
+    // Added 2026-10-16: a recorded visit of any type waits for the Administrator first and counts in
+    // nothing until he decides (owner, 2026-10-16). Nobody else can clear it, so it is his own lane.
+    if (counts.recordedVisits > 0) {
+      items.push({
+        key: "phoenix-crm-decisions:recorded-visits",
+        sourceId: "phoenix-crm-decisions",
+        kind: "approval",
+        lane: "yours",
+        label: `${counts.recordedVisits} recorded ${plural(counts.recordedVisits, "visit is", "visits are")} waiting for your approval`,
+        count: counts.recordedVisits,
+        people: [],
+        // Its own page, by the module's own constant: the Team tab cannot decide one of these.
+        href: VISIT_RECORDING_ADMIN_PATH,
+        externalUrl: null,
+        oldestAt: counts.oldestRecordedVisitAt,
+        ageDays: ageDaysSince(counts.oldestRecordedVisitAt, now),
+        overdue: false,
+        note: "A recorded visit counts in nothing until you approve it, so the rep's figures wait on this.",
       });
     }
 

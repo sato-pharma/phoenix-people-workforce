@@ -73,6 +73,7 @@ import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { offPlanBlock } from "@/lib/phoenix-crm/offplan-cap-rules";
 import { outOfListVisitNote, unplannedKindLabel } from "@/lib/phoenix-crm/unplanned-rules";
 import type { DayActivityRow, SavedVisit, VisitCustomerOption, VisitDayView, VisitFormView, VisitRow } from "@/lib/phoenix-crm/view-types";
+import { recordingReviewRepLabel } from "@/lib/phoenix-crm/visit-recording-rules";
 import { cn } from "@/lib/utils";
 
 /**
@@ -176,12 +177,24 @@ function offPlanStanding(visit: VisitRow): { label: string; tone: PillTone } | n
   return null;
 }
 
+/**
+ * Where a RECORDED visit's approval has got to (owner, 2026-10-16: "show here ur visit is pending admin
+ * approval"). An out-of-plan visit already carries it in its own step pill, so it is not said twice.
+ */
+function recordingStanding(visit: VisitRow): { label: string; tone: PillTone } | null {
+  if (!visit.recordingReview || visit.unplanned) return null;
+  const status = visit.recordingReview;
+  return { label: recordingReviewRepLabel(status), tone: status === "approved" ? "good" : status === "refused" ? "warn" : "orange" };
+}
+
 function StandingPills({ visit }: { visit: VisitRow }) {
   const standing = offPlanStanding(visit);
+  const recording = recordingStanding(visit);
   return (
     <>
       <CrmPill tone={visit.unplannedKind ? "orange" : "neutral"}>{visit.unplannedKind ? unplannedKindLabel(visit.unplannedKind) : "Planned"}</CrmPill>
       {standing ? <CrmPill tone={standing.tone}>{standing.label}</CrmPill> : null}
+      {recording ? <CrmPill tone={recording.tone}>{recording.label}</CrmPill> : null}
     </>
   );
 }
@@ -514,6 +527,8 @@ function SavedNote({ onOpenList, saved }: { onOpenList?: () => void; saved: Save
       {/* The server's own verdict, not what he chose on the first step — so a rep who picked Planned
           for a customer his plan no longer holds finds out here rather than a month later. */}
       {visit.unplannedNote ? <span className="mt-1 block">{visit.unplannedNote}</span> : null}
+      {/* A recorded visit counts once it is approved (owner, 2026-10-16). An off-plan one already says so above. */}
+      {visit.recordingNote && visit.unplannedKind !== "out_of_plan" ? <span className="mt-1 block">{visit.recordingNote}</span> : null}
       {/* "Arrange a double visit" asked his manager by itself (owner, 2026-10-02) — his own request. */}
       {visit.visitAskNote ? <span className="mt-1 block break-words">{visit.visitAskNote}</span> : null}
       {/* The LAST question: the people asked for a double visit (owner, 2026-10-16). Their answers show on the customer's page. */}

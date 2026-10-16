@@ -90,8 +90,12 @@ export const OFFPLAN_DAY_FULL_TEXT =
 export const OFFPLAN_WEEK_FULL_TEXT =
   "You have reached the most customers you can visit out of your plan in one week. Plan this one for next week.";
 
-/** Where an off-plan visit's approval has got to. */
-export type UnplannedVisitStatus = "manager_pending" | "sfe_pending" | "approved" | "refused";
+/**
+ * Where an off-plan visit's approval has got to. `admin_pending` is a RECORDED visit's first step
+ * (owner, 2026-10-16): the Administrator approves the recording first, and only then does the visit
+ * reach the step it was going to start at. It is the one place the Administrator is a step.
+ */
+export type UnplannedVisitStatus = "admin_pending" | "manager_pending" | "sfe_pending" | "approved" | "refused";
 
 /** Which of the two stages a viewer is deciding as. */
 export type UnplannedVisitStage = "manager" | "sfe";
@@ -104,7 +108,7 @@ export const UNPLANNED_REASON_MAX = 500;
 export const UNPLANNED_DECISION_NOTE_MAX = 500;
 
 export function isUnplannedVisitStatus(value: unknown): value is UnplannedVisitStatus {
-  return value === "manager_pending" || value === "sfe_pending" || value === "approved" || value === "refused";
+  return value === "admin_pending" || value === "manager_pending" || value === "sfe_pending" || value === "approved" || value === "refused";
 }
 
 export function isUnplannedVisitStage(value: unknown): value is UnplannedVisitStage {
@@ -113,10 +117,13 @@ export function isUnplannedVisitStage(value: unknown): value is UnplannedVisitSt
 
 /** Still waiting on somebody — so counting in nothing. */
 export function isUnplannedVisitWaiting(status: UnplannedVisitStatus): boolean {
-  return status === "manager_pending" || status === "sfe_pending";
+  return status === "admin_pending" || status === "manager_pending" || status === "sfe_pending";
 }
 
-/** The stage a status is waiting on, or null once it is settled. */
+/**
+ * The manager's or SFE's stage a status is waiting on, or null once it is settled — and null while it
+ * waits for the Administrator, whose step is decided on the Visit Recording page, never here.
+ */
 export function unplannedVisitStageOf(status: UnplannedVisitStatus): UnplannedVisitStage | null {
   if (status === "manager_pending") return "manager";
   if (status === "sfe_pending") return "sfe";
@@ -124,6 +131,7 @@ export function unplannedVisitStageOf(status: UnplannedVisitStatus): UnplannedVi
 }
 
 export function unplannedVisitStatusLabel(status: UnplannedVisitStatus): string {
+  if (status === "admin_pending") return "Pending admin approval";
   if (status === "manager_pending") return "Waiting for your manager";
   if (status === "sfe_pending") return "Waiting for SFE";
   if (status === "approved") return "Approved — it counts";
@@ -141,6 +149,7 @@ export function unplannedVisitStatusLabel(status: UnplannedVisitStatus): string 
  * that can tell pass what is actually on the row.
  */
 export function unplannedVisitRepNote(status: UnplannedVisitStatus, managerStepTaken = true): string {
+  if (status === "admin_pending") return "Off the plan. Your visit is pending admin approval.";
   if (status === "manager_pending") return "Off the plan. It counts once your manager and then SFE approve it.";
   if (status === "sfe_pending") {
     return managerStepTaken

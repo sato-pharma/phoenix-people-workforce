@@ -984,10 +984,12 @@ function runStillPlannedTests(): void {
     // denominator from the day he moved, which is the dropped-customer refusal below in its other
     // shape. Every assertion that follows is about text 20261002221947 wrote and this file kept, so a
     // later definer that quietly dropped any of it fails here. That is the point of reading the last.
+    // 20261016161248 took the place in turn on 2026-10-16, carrying 20261006121846's body forward
+    // VERBATIM plus one rule: a recorded visit counts only once the Administrator has approved it.
     const definers = definersOf("phoenix_crm_report_plan_vs_actual");
     assert.equal(
       definers[definers.length - 1],
-      "20261006121846_phoenix_crm_move_customer.sql",
+      "20261016161248_phoenix_crm_recorded_visit_waits_for_the_administrator.sql",
       "the fix is the LAST definer, so it is the body the database runs",
     );
     const report = functionSql(sqlOf(`supabase/migrations/${definers[definers.length - 1]}`), "phoenix_crm_report_plan_vs_actual");

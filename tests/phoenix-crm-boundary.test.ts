@@ -351,6 +351,8 @@ const ROUTE_GATES: RouteGate[] = [
   post("recording/admin", "update"),
   { route: "recording/admin/download", method: "POST", action: "update", audit: "access-read", auditRequired: true },
   post("recording/admin/delete", "update"),
+  // The Administrator approves or refuses a recorded visit (owner, 2026-10-16); the service asks canAdminister again.
+  post("recording/admin/review", "approve"),
   // The place stamp burned into a live photo: same gate as taking the photo; it persists nothing.
   { route: "location", method: "POST", action: "create", audit: "access-read", auditRequired: false },
   // The touch trail (owner, 2026-10-03: "anything touches him, automatically saved"). `read`, and
@@ -854,6 +856,10 @@ const LATER_MIGRATIONS = [
   // A rep's request for a double visit (owner, 2026-10-16). Two brand-new tables and three brand-new
   // functions — raise, edit the days, answer — and deliberately no fourth: there is no cancel.
   "supabase/migrations/20261016133000_phoenix_crm_double_visit_requests.sql",
+  // A recorded visit of any type waits for the Administrator first (owner, 2026-10-16). One brand-new
+  // review function, one brand-new trigger function, and the two report functions REPLACED — so it must
+  // come after every earlier definer of those two, which is why it is last.
+  "supabase/migrations/20261016161248_phoenix_crm_recorded_visit_waits_for_the_administrator.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

@@ -46,6 +46,8 @@ import { UNPLANNED_DECISION_NOTE_MAX, type UnplannedVisitStatus } from "@/lib/ph
 import type { TeamUnplannedVisit } from "@/lib/phoenix-crm/view-types";
 
 const STATUS: Record<UnplannedVisitStatus, { label: string; tone: PillTone; accent: string }> = {
+  // A recorded visit: the Administrator approves it first, on the Visit Recording page (owner, 2026-10-16).
+  admin_pending: { label: "Waiting for the Administrator", tone: "warn", accent: "border-l-amber-500" },
   manager_pending: { label: "Waiting for the manager", tone: "warn", accent: "border-l-amber-500" },
   sfe_pending: { label: "Waiting for SFE", tone: "warn", accent: "border-l-amber-500" },
   approved: { label: "Approved — it counts", tone: "good", accent: "border-l-emerald-500" },

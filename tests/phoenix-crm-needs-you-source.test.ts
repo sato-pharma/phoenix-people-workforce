@@ -196,7 +196,8 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     }
     // And no item is produced at zero: the four pushes are each behind a `> 0`.
     // Six since 2026-10-08: a refused place not yet captured again is the sixth.
-    assert.equal((block.match(/> 0\) \{/g) ?? []).length, 6, "each of the six counts produces an item only when it is non-zero");
+    // Seven since 2026-10-16: a recorded visit waiting for the Administrator.
+    assert.equal((block.match(/> 0\) \{/g) ?? []).length, 7, "each of the seven counts produces an item only when it is non-zero");
 
     // 🔴 THE WEEKLY PLANS ARE ON THE BOARD (2026-10-08). The module's own badge always counted them;
     // this board did not, so a district manager read 0 here while weeks sat on his desk — the
@@ -379,6 +380,36 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     });
     const board = buildNeedsYouBoard(withPhoenixCrm([waiting]), NOW);
     assert.equal(board.yours.some((entry) => entry.key === "phoenix-crm-decisions:reopened-waiting"), false, "never in his own lane");
+  }
+
+  // ── 🔴 A RECORDED VISIT WAITING FOR THE ADMINISTRATOR — his alone, his own lane, its own page ──
+  // Added 2026-10-16: a recorded visit of any type counts in nothing until he approves it, so a rep's
+  // figures wait on him by name. Asked only when `canAdminister` is true.
+  {
+    const crmNeedsYou = source("src/lib/phoenix-crm/server/needs-you.ts");
+    assert.match(
+      crmNeedsYou,
+      /canAdminister\(viewer\) \? countRecordedVisitsWaiting\(\) : Promise\.resolve\(\{ count: 0, oldestAt: null \}\)/,
+      "asked only for the Administrator, a true zero with no query for everyone else",
+    );
+    const adapterSource = source("src/lib/needs-you/sources.ts");
+    const block = adapterSource.slice(adapterSource.indexOf('key: "phoenix-crm-decisions:recorded-visits"'));
+    const rowSource = block.slice(0, block.indexOf("});"));
+    assert.ok(rowSource.length > 0, "the recorded-visit row could not be located");
+    assert.ok(rowSource.includes('lane: "yours"'), "his own lane — nobody else can clear it");
+    assert.ok(rowSource.includes("href: VISIT_RECORDING_ADMIN_PATH"), "it opens the page that decides it, by the module's own constant");
+    assert.ok(rowSource.includes("overdue: false"), "no SLA upstream, so no verdict");
+
+    const waiting = item({
+      key: "phoenix-crm-decisions:recorded-visits",
+      label: "2 recorded visits are waiting for your approval",
+      href: "/admin/field-crm/visit-recording",
+      oldestAt: "2026-10-02T06:00:00.000Z",
+      ageDays: 1,
+    });
+    const board = buildNeedsYouBoard(withPhoenixCrm([waiting]), NOW);
+    assert.ok(board.yours.some((entry) => entry.key === "phoenix-crm-decisions:recorded-visits"), "in his own lane");
+    assert.equal(board.allClearProvable, false, "a waiting recorded visit can never sit under the all-clear");
   }
 
   console.log("phoenix-crm on the needs-you board: OK");

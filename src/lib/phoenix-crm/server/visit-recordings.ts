@@ -31,16 +31,22 @@ import crypto from "node:crypto";
 
 import { ApiError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import {
+  canAdminister,
   readTestFlag,
   territoryForVisit,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, selectByIds, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { managerChain, personKey, TERRITORY_TIER, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import {
+  isRecordingReviewStatus,
+  RECORDING_REVIEW_NOTE_MAX,
   recordingDownloadName,
   type RecordingListRow,
+  type RecordingReviewStatus,
   type RecordingRepRow,
   type VisitRecordingAdminView,
   VISIT_RECORDING_MAX_SECONDS,
@@ -162,8 +168,8 @@ export async function claimRequiredRecording(input: {
   isTest: boolean;
   visitId: string;
   raw: unknown;
-}): Promise<void> {
-  if (!(await isRecordingRequired(input.viewer.hrId))) return;
+}): Promise<boolean> {
+  if (!(await isRecordingRequired(input.viewer.hrId))) return false;
   const claim = readRecordingClaim(input.raw);
   if (!claim) {
     throw new ApiError(409, VISIT_RECORDING_REQUIRED_CODE, "Record the visit first. The visit can be logged once the recording is sent.");
@@ -180,6 +186,8 @@ export async function claimRequiredRecording(input: {
     // The recorder stops itself at fifteen minutes; a minute of slack covers a slow last chunk.
     p_seconds: Math.min(claim.seconds, VISIT_RECORDING_MAX_SECONDS + 60),
   });
+  // A recording now stands on the visit, so it waits for the Administrator first (owner, 2026-10-16).
+  return true;
 }
 
 // ── Who hears it ───────────────────────────────────────────────────────────────────────────────
@@ -190,14 +198,22 @@ export function hearsVisitRecording(viewer: PhoenixCrmViewer, seat: OrgSeat): bo
   return managerChain(viewer.org, seat.seatId).some((member) => member.hrId === viewer.hrId);
 }
 
-/** The length of each visit's recording, for the visits a viewer may hear. Deleted recordings are absent. */
-export async function loadRecordingSecondsByVisit(visitIds: ReadonlyArray<string>): Promise<Map<string, number>> {
-  const rows = await selectByIds<Row>("phoenix_crm_visit_recordings", "path, visit_id, seconds, deleted_at", "visit_id", visitIds);
-  const out = new Map<string, number>();
+/**
+ * Each recorded visit's recording: its length — null once the file is deleted — and where the
+ * Administrator's approval stands. A visit with no recording is absent.
+ */
+export async function loadRecordingsByVisit(
+  visitIds: ReadonlyArray<string>,
+): Promise<Map<string, { seconds: number | null; reviewStatus: RecordingReviewStatus }>> {
+  const rows = await selectByIds<Row>("phoenix_crm_visit_recordings", "path, visit_id, seconds, deleted_at, review_status", "visit_id", visitIds);
+  const out = new Map<string, { seconds: number | null; reviewStatus: RecordingReviewStatus }>();
   for (const row of rows) {
     const visitId = textOrNull(row.visit_id);
-    const seconds = numberOrNull(row.seconds);
-    if (visitId && seconds !== null && row.deleted_at === null) out.set(visitId, seconds);
+    if (!visitId) continue;
+    out.set(visitId, {
+      seconds: row.deleted_at === null ? numberOrNull(row.seconds) : null,
+      reviewStatus: isRecordingReviewStatus(row.review_status) ? row.review_status : "pending",
+    });
   }
   return out;
 }
@@ -254,13 +270,24 @@ export type { RecordingListRow, RecordingRepRow, VisitRecordingAdminView } from 
 /** How far back the page lists recordings. Older ones stay stored; nothing here deletes them. */
 const LIST_DAYS = 90;
 
+const RECORDING_COLUMNS =
+  "path, visit_id, seat_id, issued_to_hr_id, claimed_at, seconds, bytes, deleted_at, review_status, reviewed_by_hr_id, reviewed_at, review_note";
+
+/** What the visit was, in the words the decision needs. A pharmacy first: it is never off-plan. */
+function visitTypeLabel(visit: Row): string {
+  const customer = record(visit.customer);
+  if (textOrNull(customer.list_type) === "Pharmacy") return "Pharmacy";
+  if (visit.is_unplanned !== true) return "Planned";
+  return textOrNull(visit.unplanned_kind) === "out_of_list" ? "Out of list" : "Out of plan";
+}
+
 export async function loadVisitRecordingAdmin(viewer: PhoenixCrmViewer): Promise<VisitRecordingAdminView> {
   assertManager(viewer);
   const supabase = getSupabaseAdmin();
   const sinceDate = new Date(Date.now() - LIST_DAYS * 24 * 60 * 60 * 1000);
   const since = sinceDate.toISOString();
 
-  const [requiredRows, recordingRows] = await Promise.all([
+  const [requiredRows, recordingRows, waitingRows] = await Promise.all([
     fetchAllRowsKeyset<Row>(() => supabase.from("phoenix_crm_recording_required").select("hr_id, set_by_hr_id, set_at"), {
       cursorColumn: "hr_id",
       cursorOf: (row) => String(row.hr_id),
@@ -269,11 +296,23 @@ export async function loadVisitRecordingAdmin(viewer: PhoenixCrmViewer): Promise
       () =>
         supabase
           .from("phoenix_crm_visit_recordings")
-          .select("path, visit_id, seat_id, issued_to_hr_id, claimed_at, seconds, bytes")
+          .select(RECORDING_COLUMNS)
           .eq("is_test", false)
           .is("deleted_at", null)
           .not("visit_id", "is", null)
           .gte("claimed_at", since),
+      { cursorColumn: "path", cursorOf: (row) => String(row.path) },
+    ),
+    // 🔴 EVERY recorded visit still waiting for him, whatever its age and whether or not its file was
+    // deleted: until he decides, the visit counts in nothing, so an old one must never fall off the list.
+    fetchAllRowsKeyset<Row>(
+      () =>
+        supabase
+          .from("phoenix_crm_visit_recordings")
+          .select(RECORDING_COLUMNS)
+          .eq("is_test", false)
+          .eq("review_status", "pending")
+          .not("visit_id", "is", null),
       { cursorColumn: "path", cursorOf: (row) => String(row.path) },
     ),
   ]);
@@ -288,18 +327,20 @@ export async function loadVisitRecordingAdmin(viewer: PhoenixCrmViewer): Promise
     seatsByPerson.set(seat.occupantHrId, held);
   }
 
+  const allRecordingRows = [...recordingRows, ...waitingRows];
   const visits = await selectByIds<Row>(
     "phoenix_crm_visits",
-    "id, visit_date, captured_at, rep_hr_id, customer:phoenix_crm_customers!customer_id(name)",
+    "id, visit_date, captured_at, rep_hr_id, is_unplanned, unplanned_kind, customer:phoenix_crm_customers!customer_id(name, list_type)",
     "id",
-    recordingRows.map((row) => textOrNull(row.visit_id)),
+    allRecordingRows.map((row) => textOrNull(row.visit_id)),
   );
   const visitById = new Map(visits.map((row) => [String(row.id), row]));
 
   const names = await loadPeopleNames([
     ...seatsByPerson.keys(),
     ...requiredRows.map((row) => textOrNull(row.set_by_hr_id)),
-    ...recordingRows.map((row) => textOrNull(row.issued_to_hr_id)),
+    ...allRecordingRows.map((row) => textOrNull(row.issued_to_hr_id)),
+    ...allRecordingRows.map((row) => textOrNull(row.reviewed_by_hr_id)),
   ]);
 
   const joinDistinct = (values: Array<string | null | undefined>) => [...new Set(values.filter((value): value is string => Boolean(value)))].join(" · ");
@@ -333,31 +374,134 @@ export async function loadVisitRecordingAdmin(viewer: PhoenixCrmViewer): Promise
   }
   reps.sort((left, right) => left.lineName.localeCompare(right.lineName) || left.areaName.localeCompare(right.areaName) || left.name.localeCompare(right.name));
 
-  const recordings: RecordingListRow[] = recordingRows
-    .map((row) => {
-      const visitId = String(row.visit_id);
-      const visit = visitById.get(visitId);
-      // A claim whose visit was never written (the save failed after the claim) is not a visit's recording.
-      if (!visit) return null;
-      const seat = viewer.org.seats.get(String(row.seat_id));
-      const customer = record(visit.customer);
-      return {
-        path: String(row.path),
-        visitId,
-        visitDate: String(visit.visit_date),
-        capturedAt: String(visit.captured_at),
-        repName: nameOf(names, textOrNull(row.issued_to_hr_id)),
-        customerName: textOrNull(customer.name) ?? "Customer",
-        lineName: seat?.lineName ?? "No line",
-        areaName: seat?.areaName ?? "No area",
-        seconds: numberOrNull(row.seconds),
-        bytes: numberOrNull(row.bytes),
-      };
-    })
+  const toListRow = (row: Row): RecordingListRow | null => {
+    const visitId = String(row.visit_id);
+    const visit = visitById.get(visitId);
+    // A claim whose visit was never written (the save failed after the claim) is not a visit's recording.
+    if (!visit) return null;
+    const seat = viewer.org.seats.get(String(row.seat_id));
+    const customer = record(visit.customer);
+    const reviewStatus: RecordingReviewStatus = isRecordingReviewStatus(row.review_status) ? row.review_status : "pending";
+    const reviewer = textOrNull(row.reviewed_by_hr_id);
+    return {
+      path: String(row.path),
+      visitId,
+      visitDate: String(visit.visit_date),
+      capturedAt: String(visit.captured_at),
+      repName: nameOf(names, textOrNull(row.issued_to_hr_id)),
+      customerName: textOrNull(customer.name) ?? "Customer",
+      lineName: seat?.lineName ?? "No line",
+      areaName: seat?.areaName ?? "No area",
+      seconds: numberOrNull(row.seconds),
+      bytes: numberOrNull(row.bytes),
+      visitTypeLabel: visitTypeLabel(visit),
+      reviewStatus,
+      reviewedByName: reviewer ? nameOf(names, reviewer) : null,
+      reviewedAt: textOrNull(row.reviewed_at),
+      reviewNote: textOrNull(row.review_note),
+      deleted: row.deleted_at !== null && row.deleted_at !== undefined,
+    };
+  };
+
+  const recordings = recordingRows
+    .map(toListRow)
     .filter((row): row is RecordingListRow => row !== null)
     .sort((left, right) => right.capturedAt.localeCompare(left.capturedAt));
+  // Oldest first: the visit that has waited longest is the one a rep's figures have waited on longest.
+  const waiting = waitingRows
+    .map(toListRow)
+    .filter((row): row is RecordingListRow => row !== null)
+    .sort((left, right) => left.capturedAt.localeCompare(right.capturedAt));
 
-  return { reps, recordings, since: since.slice(0, 10) };
+  return { reps, waiting, recordings, since: since.slice(0, 10), canReview: canAdminister(viewer) };
+}
+
+/**
+ * The Administrator approves or refuses one recorded visit (owner, 2026-10-16). His alone — `canAdminister`,
+ * the same person every Phoenix CRM "Administrator" is. A refusal carries a note. On a recorded off-plan
+ * visit his yes hands it to the step it was going to start at, and that step is told then, not before.
+ */
+export async function reviewRecordedVisit(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ visitId: string; reviewStatus: RecordingReviewStatus }> {
+  assertManager(viewer);
+  if (!canAdminister(viewer)) throw forbiddenError("Only the Administrator approves a recorded visit.");
+  const body = record(raw);
+  if (!isUuid(body.visitId)) throw validationError("Choose the visit. Reload the page.");
+  const visitId = String(body.visitId).toLowerCase();
+  const decision = body.decision === "approve" ? "approve" : body.decision === "refuse" ? "refuse" : null;
+  if (!decision) throw validationError("Choose approve or refuse.");
+  const note = String(body.note ?? "").trim().replace(/\s+/g, " ") || null;
+  if (note !== null && note.length > RECORDING_REVIEW_NOTE_MAX) {
+    throw validationError(`Keep the note under ${RECORDING_REVIEW_NOTE_MAX} characters.`);
+  }
+  if (decision === "refuse" && note === null) throw validationError("Write a note explaining why.");
+
+  const result = await callPhoenixCrm<Row>("phoenix_crm_review_visit_recording", {
+    p: { visit_id: visitId, decision, actor_hr_id: viewer.hrId, actor_role: "administrator", note },
+  });
+  const reviewStatus: RecordingReviewStatus = isRecordingReviewStatus(result.review_status) ? result.review_status : "pending";
+
+  // His yes on an off-plan visit puts it in front of its district manager (or SFE) for the first time,
+  // so that step is told now — the notice the save held back. It never throws (notifications.ts).
+  const unplannedStatus = textOrNull(result.unplanned_status);
+  const seat = viewer.org.seats.get(String(result.seat_id));
+  if (seat && result.is_test !== true && (unplannedStatus === "manager_pending" || unplannedStatus === "sfe_pending")) {
+    const { data, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_unplanned_visits")
+      .select("clarification, customer:phoenix_crm_customers!customer_id(name)")
+      .eq("visit_id", visitId)
+      .maybeSingle();
+    throwIfError(error);
+    const row = record(data);
+    await notifyPhoenixCrm(
+      {
+        kind: "unplanned_visit_raised",
+        org: viewer.org,
+        seat,
+        visitId,
+        repHrId: String(result.rep_hr_id),
+        customerName: textOrNull(record(Array.isArray(row.customer) ? row.customer[0] : row.customer).name) ?? "a customer",
+        visitDate: String(result.visit_date),
+        clarification: textOrNull(row.clarification) ?? "",
+      },
+      false,
+    );
+  }
+  return { visitId, reviewStatus };
+}
+
+/**
+ * How many recorded visits are waiting on the Administrator, and when the oldest was recorded — the
+ * figure the central Needs You board asks of this queue. Real entries only, the same rows the page's
+ * "Waiting for your approval" section lists.
+ *
+ * 🔴 A CLAIM WHOSE VISIT WAS NEVER WRITTEN IS NOT COUNTED. The claim stamps `visit_id` before the save
+ * runs, so a save that failed afterwards leaves a pending row with no visit behind it; the page drops
+ * it, and so must this, or his lane carries a row the page cannot show. The rows are few (each is a
+ * visit still waiting on him), so they are paged and checked against the visits table.
+ *
+ * It THROWS on a failed read: the board turns a rejection into its amber "could not be read" row.
+ */
+export async function countRecordedVisitsWaiting(): Promise<{ count: number; oldestAt: string | null }> {
+  const supabase = getSupabaseAdmin();
+  const waiting = await fetchAllRowsKeyset<Row>(
+    () =>
+      supabase
+        .from("phoenix_crm_visit_recordings")
+        .select("path, visit_id, claimed_at")
+        .eq("is_test", false)
+        .eq("review_status", "pending")
+        .not("visit_id", "is", null),
+    { cursorColumn: "path", cursorOf: (row) => String(row.path) },
+  );
+  if (waiting.length === 0) return { count: 0, oldestAt: null };
+  const visits = await selectByIds<Row>("phoenix_crm_visits", "id", "id", waiting.map((row) => textOrNull(row.visit_id)));
+  const saved = new Set(visits.map((row) => String(row.id)));
+  const real = waiting.filter((row) => saved.has(String(row.visit_id)));
+  const oldestAt = real.map((row) => textOrNull(row.claimed_at)).filter((value): value is string => Boolean(value)).sort()[0] ?? null;
+  return { count: real.length, oldestAt };
 }
 
 /** Switch a rep on or off. Only a person who holds or held a rep seat can be switched on. */

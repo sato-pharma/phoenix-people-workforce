@@ -109,8 +109,9 @@ import {
   claimRequiredRecording,
   hearsVisitRecording,
   isRecordingRequired,
-  loadRecordingSecondsByVisit,
+  loadRecordingsByVisit,
 } from "@/lib/phoenix-crm/server/visit-recordings";
+import { RECORDED_VISIT_REP_NOTE, type RecordingReviewStatus } from "@/lib/phoenix-crm/visit-recording-rules";
 import { lineProductsByFamily, type LineProductFamily } from "@/lib/phoenix-crm/server/products";
 import { prepareDoubleVisitRequest, raiseDoubleVisitRequestFromVisit } from "@/lib/phoenix-crm/server/double-visit-requests";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
@@ -217,6 +218,12 @@ export type VisitRow = {
    * visit with no recording. The audio itself is signed one visit at a time.
    */
   recordingSeconds?: number | null;
+  /**
+   * Where a RECORDED visit's approval has got to (owner, 2026-10-16) — for EVERY reader, the rep
+   * included: it is his own approval, shown on his own list as "Pending admin approval" until the
+   * Administrator decides. It carries no length and no audio. Absent on a visit with no recording.
+   */
+  recordingReview?: RecordingReviewStatus;
   locationFlag: VisitLocationFlag;
   locationLabel: string;
   clockOff: boolean;
@@ -527,17 +534,22 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
     loadDayStartOn(seat.seatId, isTest, date),
   ]);
   const sight = locationSight(viewer, seat);
-  // The visit recordings, for a reader who may hear them — read only then, so the rep's own day never
-  // even asks whether one exists.
-  const recordings = hearsVisitRecording(viewer, seat) ? await loadRecordingSecondsByVisit(rows.map((row) => String(row.id))) : null;
+  // The visit recordings. Their LENGTH (what draws the player) goes only to a reader who may hear them;
+  // the Administrator's approval is read for every reader, because a recorded visit he has not approved
+  // counts in nothing (owner, 2026-10-16) and `countsInKpi` must say what the countable view says.
+  const recordings = await loadRecordingsByVisit(rows.map((row) => String(row.id)));
+  const hears = hearsVisitRecording(viewer, seat);
   return {
     territory: describeTerritory(viewer.org, seat, names),
     isTest,
     date,
     visits: rows.map((row) => {
       const visit = mapVisitRow(row, names, { sight, org: viewer.org, productManagerRoles, actorHrId: viewer.hrId });
-      const seconds = recordings?.get(visit.visitId);
-      return seconds === undefined ? visit : { ...visit, recordingSeconds: seconds };
+      const recording = recordings.get(visit.visitId);
+      if (!recording) return visit;
+      const countsInKpi = visit.countsInKpi && recording.reviewStatus === "approved";
+      const reviewed = { ...visit, countsInKpi, recordingReview: recording.reviewStatus };
+      return hears && recording.seconds !== null ? { ...reviewed, recordingSeconds: recording.seconds } : reviewed;
     }),
     canAdd: date === today && canEnterVisits(viewer, seat.seatId, isTest),
     dayActivity: activity,
@@ -1097,6 +1109,8 @@ export type SavedVisit = {
    * that the pharmacy he named on this visit is logged as a pharmacy visit too. Null otherwise.
    */
   pharmacyNote: string | null;
+  /** A recorded visit's own line (owner, 2026-10-16): it counts once it is approved. Null otherwise. */
+  recordingNote: string | null;
 };
 
 /**
@@ -1290,9 +1304,11 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
   // the visit's own id — so a chosen rep's visit can never exist without its recording, and a save sent
   // again claims the same recording for the same visit. Only the rep's own save is asked: a manager
   // entering a double visit and the Super Admin recording a missed one are never on that list's path.
-  if (enteredAs === "rep") {
-    await claimRequiredRecording({ viewer, seat, isTest, visitId, raw: body });
-  }
+  //
+  // 🔴 AND A RECORDED VISIT WAITS FOR THE ADMINISTRATOR FIRST, WHATEVER ITS TYPE (owner, 2026-10-16).
+  // The database does the waiting — the countable view leaves it out and an off-plan one starts at
+  // `admin_pending` — so here it only holds back the manager's notice and tells the rep it waits.
+  const recorded = enteredAs === "rep" ? await claimRequiredRecording({ viewer, seat, isTest, visitId, raw: body }) : false;
   const result = await callPhoenixCrm<Row>("phoenix_crm_save_visit", {
     p: {
       id: visitId,
@@ -1416,7 +1432,9 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
   // approval of its own — its CUSTOMER's add request is what the district manager decides. A repeat
   // save is skipped — the first one already raised it, and the notice's idempotency key would drop
   // the second anyway.
-  if (unplannedKind === "out_of_plan" && result.duplicate !== true) {
+  // A RECORDED off-plan visit tells nobody yet: it reaches its manager only once the Administrator has
+  // approved it, and that approval sends this same notice (`reviewRecordedVisit`).
+  if (unplannedKind === "out_of_plan" && result.duplicate !== true && !recorded) {
     await notifyPhoenixCrm(
       {
         kind: "unplanned_visit_raised",
@@ -1504,8 +1522,11 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
           ? // No manager has decided anything the instant the visit saves, so the note must not claim
             // one did — which is what `sfe_pending` would otherwise say to a rep whose manager step
             // was never available.
-            unplannedVisitRepNote(unplannedFirstStatus(reviewer !== null, reviewerOnTheVisit), false)
+            unplannedVisitRepNote(recorded ? "admin_pending" : unplannedFirstStatus(reviewer !== null, reviewerOnTheVisit), false)
           : null,
+    // Every recorded visit, of every type, waits for approval before it counts. Said once, plainly,
+    // with no person and no check named (Golden Rule #1).
+    recordingNote: recorded ? RECORDED_VISIT_REP_NOTE : null,
     visitAskNote: visitAskSavedNote(visitAsk),
     doubleVisitNote: doubleVisitSavedNote(doubleVisit),
     pharmacyNote: savedPharmacyNote(result),

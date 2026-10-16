@@ -56,8 +56,8 @@ pressing it is the step.
 - **Who hears it.**
   - `hearsVisitRecording` allows the Super Admin, an SFE manager, or anyone in the territory's
     `managerChain`.
-  - The rep never hears it: `loadVisitDay` does not even ask whether a recording exists for the rep,
-    and `recording/play` answers 404 to anybody else.
+  - The rep never hears it: `loadVisitDay` sends the recording's length only to a reader who may hear
+    it, and `recording/play` answers 404 to anybody else. He does see its approval (below).
 - **Who manages it.** `canManageVisitRecording` allows the Super Admin, never a test persona. It is
   checked on the page and inside every admin service. Delete goes through the Storage API, then stamps
   `deleted_at` and `deleted_by_hr_id` on the row, so the visit reads as recorded and then deleted.
@@ -68,8 +68,66 @@ pressing it is the step.
   the claim function.
 - `src/lib/phoenix-crm/visit-recording-rules.ts`: pure; the bounds, wording and view types.
 - `src/lib/phoenix-crm/server/visit-recordings.ts`: the only file that opens the bucket.
-- `app/api/phoenix-crm/recording/**`: five POST routes.
+- `app/api/phoenix-crm/recording/**`: six POST routes (the sixth, `admin/review`, is below).
 - `src/components/phoenix-crm/visit-recording-gate.tsx`, `visit-recording-store.ts`,
   `visit-recording-admin.tsx`.
 - `app/(admin)/admin/field-crm/visit-recording/page.tsx`.
 - Pinned by `tests/phoenix-crm-visit-recording.test.ts` and `tests/phoenix-crm-boundary.test.ts`.
+
+## A recorded visit waits for the Administrator first
+
+Added the same day, 2026-10-16:
+
+> "any visit any type which is recorder must go for adminstarator approval first even if in plan"
+
+So every recorded visit of every type now waits for the Administrator's approval before it counts:
+planned, out of plan, out of list, or a pharmacy visit. The Administrator is `canAdminister`, the same
+person every other Phoenix CRM "Administrator" line names. This is the one place in the module where
+he is an approval step; everywhere else he only takes a step in the holder's place.
+
+How it works:
+
+- **The decision lives on the recording row.** `phoenix_crm_visit_recordings` gained `review_status`
+  (`pending`, `approved`, `refused`), `reviewed_by_hr_id`, `reviewed_at` and `review_note`. Every
+  recording starts at `pending`.
+- **It counts in nothing until he approves it.**
+  - `phoenix_crm_countable_visits` leaves out any visit whose recording is not `approved`, so every KPI
+    that reads the view waits on his decision.
+  - `phoenix_crm_report_visits_by_day` and `phoenix_crm_report_plan_vs_actual` count such a visit as
+    waiting, and a refused one as refused.
+  - The visit day turns `countsInKpi` false until it is approved, for every reader.
+- **A recorded off-plan visit goes to him before its manager.**
+  - A before-insert trigger, `phoenix_crm_unplanned_waits_for_the_administrator`, moves a recorded
+    off-plan row from the step it would have started at to `admin_pending`, and keeps that step in
+    `after_admin_status`.
+  - Approving it moves it on to that step, and only then is the district manager (or SFE) told. The
+    save itself sends that notice for an unrecorded visit only.
+  - Refusing it ends it: the visit is refused.
+  - The manager's and SFE's decide path refuses an `admin_pending` visit outright.
+- **He decides on the Visit Recording page.** A "Waiting for your approval" section comes first, oldest
+  first, with the player. Approve is one press; Refuse needs a note. `POST
+  /api/phoenix-crm/recording/admin/review` asks `phoenix_crm` approve, and the service asks
+  `canAdminister` again before calling `phoenix_crm_review_visit_recording`, which locks the row and
+  refuses a second decision.
+- **The Needs You board carries the count** to his own lane, linking to the Visit Recording page, and
+  asks for it only when `canAdminister` is true.
+- **The rep sees "Your visit is pending admin approval"** — the owner's own words, the same day ("but
+  she can do the next visit if i not appriove yet but all keeps in pending until i confirm and hsow here
+  ur visit is pending admin approval"). It is in the saved note and on the visit's own row on his list
+  (`recordingReview`, sent to every reader, never the length or the audio), and the row changes to
+  "Approved — it counts" or "Not approved — it does not count" once he decides. An out-of-plan visit
+  says it in its step pill instead, so it is never said twice. It names a role, never a person and
+  never a check (Golden Rule #1).
+- **It never blocks the next visit.** The recorder resets after every save, each visit records its own
+  conversation, and nothing in the save path reads an earlier visit's approval — every one stays
+  pending until he decides.
+
+Decisions made without asking him, each easy to change:
+
+- The Administrator decides first, then the usual off-plan chain runs.
+- His refusal refuses the visit outright.
+- The rep is not sent a notice of his decision; his list shows it.
+
+Files: `supabase/migrations/20261016161248_phoenix_crm_recorded_visit_waits_for_the_administrator.sql`,
+`app/api/phoenix-crm/recording/admin/review/route.ts`, plus the changes in `visit-recordings.ts`,
+`visits.ts`, `unplanned.ts`, `unplanned-rules.ts`, `needs-you.ts` and `visit-recording-admin.tsx`.
