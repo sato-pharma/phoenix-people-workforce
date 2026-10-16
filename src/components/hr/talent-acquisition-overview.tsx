@@ -19,7 +19,7 @@
  *   2. The command rail                            Needs attention (+ overdue) · the Hired window
  *   3. The key cards, ONE container
  *        Conversion                                interview to offer · offer acceptance · offer to join
- *        Seats · Candidates · Outcomes             the eight figures, in THREE LABELLED GROUPS
+ *        Seats · Candidates · Outcomes             the six figures, in THREE LABELLED GROUPS
  *   4. Today                                      today's interviews · joiners in 14 days · CVs today
  *   5. The calendar                               the real interview calendar, unchanged
  *   6. On a vacation today · My record            unchanged
@@ -205,7 +205,7 @@ const KPI_ICONS: Record<string, LucideIcon> = {
 };
 
 /**
- * One of the eight recruiting figures, standing eight across (owner, 2026-10-16).
+ * One of the six recruiting figures, standing six across (owner, 2026-10-16; cut from eight the same day).
  *
  * REBUILT ON HIS OWN DASHBOARD'S CARD after he called the dressed version "awful" the same evening
  * (five different tone bars across one row, a wash on every card, a medallion over every label and a
@@ -498,10 +498,10 @@ export function TalentAcquisitionOverview({
           className="pointer-events-none absolute inset-0 opacity-[0.35] [background-image:linear-gradient(rgba(148,163,184,.12)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,.12)_1px,transparent_1px)] [background-size:32px_32px] [mask-image:linear-gradient(180deg,transparent_0%,black_30%,black_70%,transparent_100%)]"
         />
         <div className="relative grid gap-5">
-          {/* ── 3b. THE EIGHT FIGURES, IN THREE LABELLED GROUPS (owner, 2026-10-16: "Three labelled
+          {/* ── 3b. THE SIX FIGURES, IN THREE LABELLED GROUPS (owner, 2026-10-16: "Three labelled
               groups"): Seats · Candidates · Outcomes. Stacked group by group below 1120px of
               container, and every card in ONE ROW from there, each group spanning one column per
-              card so all eight are the same width. ── */}
+              card so all six are the same width. ── */}
           {groups.length > 0 ? (
             <div className={`grid grid-cols-1 gap-x-2 gap-y-4 ${GROUP_GRID_BY_TOTAL[groupedTotal] ?? ""}`}>
               {groups.map((group) => (

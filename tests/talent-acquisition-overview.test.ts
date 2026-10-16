@@ -6,7 +6,9 @@ import { sourcesFor } from "../src/lib/hr/command-center.ts";
 import {
   addDaysToKey,
   breakdownBarPercent,
+  buildCvsReceivedTile,
   buildHiringQualityKpis,
+  buildLineVacancyTiles,
   buildMonthMarks,
   buildOfferConversionKpis,
   cairoMinutesNow,
@@ -25,6 +27,7 @@ import {
   RECRUITING_TASK_KEYS,
   startTimeLabel,
   TALENT_ACQUISITION_SEAT,
+  TALENT_KEPT_BUILDER_TILE_KEYS,
 } from "../src/lib/hr/talent-acquisition-logic.ts";
 import type { OfferRecord } from "../src/lib/offers/types.ts";
 import { countDistinctPeople } from "../src/lib/recruitment/interview-volume.ts";
@@ -233,12 +236,12 @@ function testARateIsNeverDrawnAsZero() {
     "the page reads top to bottom: identity strip (conversion beside the portrait), command rail, the three groups, today, the calendar",
   );
 
-  // THE EIGHT FIGURES IN THREE LABELLED GROUPS (owner, 2026-10-16, "Three labelled groups"), every
+  // THE SIX FIGURES IN THREE LABELLED GROUPS (owner, 2026-10-16, "Three labelled groups"), every
   // card the same width in ONE ROW once the container holds 1120px — one column per card.
   assert.match(component, /groupRecruitingTiles\(data\.field\.tiles\)/, "the figures are grouped by the pure helper");
   assert.ok(
-    component.includes('8: "@min-[1120px]:grid-cols-8"'),
-    "all eight figures share ONE row once their CONTAINER holds 1120px, whatever the window is",
+    component.includes('6: "@min-[1120px]:grid-cols-6"'),
+    "all six figures share ONE row once their CONTAINER holds 1120px, whatever the window is",
   );
   assert.ok(component.includes('3: "@min-[1120px]:col-span-3"'), "a group of three spans three of those columns");
   assert.ok(component.includes('2: "@min-[1120px]:col-span-2"'), "and a group of two spans two");
@@ -316,12 +319,10 @@ function testTheRebuiltPagesPureHelpers() {
 
   // The three groups, and NOTHING DROPPED.
   const keys = [
-    "open-requisitions",
-    "seats-unrecruited",
-    "requisitions-stale",
-    "awaiting-review",
-    "with-managers",
-    "active-candidates",
+    "vacants-pedia",
+    "vacants-anti-infective",
+    "vacants-cns",
+    "cvs-received",
     "hired",
     "offers-sent",
   ];
@@ -329,11 +330,11 @@ function testTheRebuiltPagesPureHelpers() {
   assert.deepEqual(
     grouped.map((group) => [group.label, group.tiles.map((tile) => tile.key)]),
     [
-      ["Seats", ["open-requisitions", "seats-unrecruited", "requisitions-stale"]],
-      ["Candidates", ["awaiting-review", "with-managers", "active-candidates"]],
+      ["Seats", ["vacants-pedia", "vacants-anti-infective", "vacants-cns"]],
+      ["Candidates", ["cvs-received"]],
       ["Outcomes", ["hired", "offers-sent"]],
     ],
-    "the eight figures sort into Seats, Candidates and Outcomes, in his reading order",
+    "the six figures sort into Seats, Candidates and Outcomes, in his reading order",
   );
   assert.deepEqual(
     groupRecruitingTiles([...keys, "a-ninth-figure"].map((key) => ({ key })))
@@ -343,18 +344,41 @@ function testTheRebuiltPagesPureHelpers() {
     "a figure no group names joins the LAST group — a figure the builder emits is never silently dropped",
   );
   assert.deepEqual(
-    groupRecruitingTiles([{ key: "awaiting-review" }]).map((group) => group.key),
+    groupRecruitingTiles([{ key: "cvs-received" }]).map((group) => group.key),
     ["candidates"],
     "a group with no figures is left out, so no caption sits over an empty row",
   );
-  // The builder's own keys are the contract the groups are written against.
+  // The shared builder's own keys are the contract for the two figures kept from it.
   const builder = codeOf("src/lib/hr/command-center.ts");
-  for (const key of keys) {
+  assert.deepEqual([...TALENT_KEPT_BUILDER_TILE_KEYS], ["hired", "offers-sent"], "her page keeps exactly Hired and Offers Out from the shared builder");
+  for (const key of TALENT_KEPT_BUILDER_TILE_KEYS) {
     assert.ok(
       builder.includes(`tile("${key}"`),
       `command-center.ts no longer emits the "${key}" figure — the group it belongs to would lose it silently`,
     );
   }
+
+  // Vacants by line: the figure is the line's empty seats, the caption is actual against total.
+  const lineTiles = buildLineVacancyTiles({
+    activeLineNames: [...Array(35).fill("Pedia"), ...Array(37).fill("Anti Infective"), ...Array(33).fill("CNS"), "Head Office", null],
+    openSeatLineNames: ["Pedia", "Anti Infective", "Anti Infective", "CNS", "CNS", "CNS", "Head Office"],
+  });
+  assert.deepEqual(
+    lineTiles.map((tile) => [tile.key, tile.label, tile.value, tile.sub]),
+    [
+      ["vacants-pedia", "Vacants · Pedia", 1, "35 of 36 seats filled"],
+      ["vacants-anti-infective", "Vacants · Anti Infective", 2, "37 of 39 seats filled"],
+      ["vacants-cns", "Vacants · CNS", 3, "33 of 36 seats filled"],
+    ],
+    "Pedia, Anti Infective, CNS in his order, each counting only its own line (Head Office and a line-less row are in none)",
+  );
+  assert.equal(
+    buildLineVacancyTiles({ activeLineNames: ["Pedia"], openSeatLineNames: [] })[0]?.tone,
+    "emerald",
+    "a line with no empty seat reads as good, not amber",
+  );
+  const cvTile = buildCvsReceivedTile(163, "in October");
+  assert.deepEqual([cvTile.key, cvTile.value, cvTile.sub], ["cvs-received", 163, "received in October"]);
 
   // Today's interviews: ENDED once the END has passed, NEXT is the first not ended.
   const interview = (id: string, startMinutes: number) => ({
