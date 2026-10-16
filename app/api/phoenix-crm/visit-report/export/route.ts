@@ -9,6 +9,7 @@ import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { fieldsOfView, loadVisitReport } from "@/lib/phoenix-crm/server/visit-report";
 import { buildVisitReportWorkbook } from "@/lib/phoenix-crm/server/visit-report-workbook";
+import { describeVisitReportFilter, narrowVisitReportView, readVisitReportFilter } from "@/lib/phoenix-crm/visit-report-filters";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
@@ -24,7 +25,9 @@ function slug(text: string): string {
 
 // GET = the Visit report as ONE workbook tab, in the house identity: exactly the chosen fields for exactly
 //       the visits the same filter returns on the screen (owner, 2026-10-15). The fields travel as a
-//       comma-separated `fields` parameter, because a download is a link.
+//       comma-separated `fields` parameter, because a download is a link. The result filters (who, day,
+//       planned, position) travel the same way and narrow the visits through the SAME matcher as the screen
+//       (`narrowVisitReportView`, 2026-10-16), so a narrowed page downloads as the same narrowed file.
 //
 // The rate limit runs BEFORE any load: a quarter of visits with every side table is a heavy read, and a
 // limiter that fires afterwards has protected nothing. It is the same loader as the screen's, so the file
@@ -38,17 +41,22 @@ export async function GET(request: Request) {
 
     const viewer = await resolvePhoenixCrmViewer(access);
     const search = searchOf(request);
-    const view = await loadVisitReport(viewer, {
+    const loaded = await loadVisitReport(viewer, {
       fields: (search.get("fields") ?? "").split(",").map((key) => key.trim()).filter(Boolean),
       from: search.get("from"),
       id: search.get("id"),
       kind: search.get("kind"),
       to: search.get("to"),
     });
+    const filter = readVisitReportFilter((key) => search.get(key));
+    const fields = fieldsOfView(loaded);
+    const view = narrowVisitReportView(loaded, filter, fields);
+    const narrowedTo = describeVisitReportFilter(filter);
 
     const names = await loadPeopleNames([viewer.hrId]);
     const buffer = await buildVisitReportWorkbook({
-      fields: fieldsOfView(view),
+      fields,
+      narrowedTo,
       view,
       viewerName: nameOf(names, viewer.hrId),
     });
@@ -61,7 +69,7 @@ export async function GET(request: Request) {
       entityType: "phoenix_crm_visit_report_export",
       summary:
         `Exported the Visit report for ${view.target.name} (${view.period.from} to ${view.period.to}, `
-        + `${view.total} visits, ${view.selected.length} fields)`,
+        + `${view.total} visits, ${view.selected.length} fields${narrowedTo ? `, only ${narrowedTo}` : ""})`,
     });
 
     return new NextResponse(buffer as unknown as ArrayBuffer, {

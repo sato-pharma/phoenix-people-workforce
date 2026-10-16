@@ -162,7 +162,7 @@ export function VisitReportTable({
           <thead>
             <tr>
               <th className={crmThClassName}>When</th>
-              <th className={crmThClassName}>Rep</th>
+              <th className={crmThClassName}>Who</th>
               <th className={crmThClassName}>Customer</th>
               <th className={crmThClassName}>Visit</th>
               <th className={crmThClassName}>Place</th>

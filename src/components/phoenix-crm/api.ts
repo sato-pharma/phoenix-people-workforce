@@ -67,6 +67,11 @@ export function crmPost<T>(path: string, payload: unknown, key: string, options:
   );
 }
 
+/** A DELETE, answered like a save: the value under `key`, or a refusal with the server's sentence. */
+export function crmDelete<T>(url: string, key: string): Promise<T> {
+  return request<T>(url, { method: "DELETE" }, key, "Phoenix could not delete this. Try again.");
+}
+
 /** A GET path with its query. Empty, null and false values are left out (a flag is on only when sent). */
 export function crmUrl(path: string, params: Record<string, string | number | boolean | null | undefined> = {}): string {
   const search = new URLSearchParams();
