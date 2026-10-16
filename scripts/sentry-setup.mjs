@@ -5,6 +5,7 @@
 // Usage:
 //   node scripts/sentry-setup.mjs            read the account and print what it WOULD change (writes nothing)
 //   node scripts/sentry-setup.mjs --apply    make those changes
+//   node scripts/sentry-setup.mjs --probe    read only: print which alert and issue endpoints the account answers
 //   --url <base>                             API host; default https://de.sentry.io (the EU region)
 //
 // Needs SENTRY_AUTH_TOKEN in the environment: a personal token from sentry.io -> User settings -> Personal
@@ -30,8 +31,12 @@ import {
 refuseUnknownFlags({
   name: "sentry-setup",
   entry: import.meta.url,
-  known: ["--apply", "--url"],
-  hints: ["dry run (default): node scripts/sentry-setup.mjs", "make the changes:   node scripts/sentry-setup.mjs --apply"],
+  known: ["--apply", "--url", "--probe"],
+  hints: [
+    "dry run (default): node scripts/sentry-setup.mjs",
+    "make the changes:   node scripts/sentry-setup.mjs --apply",
+    "which endpoints answer: node scripts/sentry-setup.mjs --probe",
+  ],
 });
 
 const TOKEN_HELP = [
@@ -84,15 +89,21 @@ async function main() {
   const org = pickOrg(orgs);
   if (!org) {
     console.error(`sentry-setup: cannot decide the organisation — the token sees ${orgs.length}: ${orgs.map((o) => o.slug).join(", ") || "none"}`);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   const projects = await api("GET", `/organizations/${org.slug}/projects/`);
   const project = pickProject(projects);
   if (!project) {
     console.error(`sentry-setup: cannot decide the project in ${org.slug}: ${projects.map((p) => p.slug).join(", ") || "none"}`);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   console.log(`  organisation  ${org.slug}\n  project       ${project.slug}`);
+  if (argv.includes("--probe")) {
+    await probe(base, token, org.slug, project.slug, project.id);
+    return;
+  }
 
   // 1 · organisation-wide scrubbing
   const orgDetail = await api("GET", `/organizations/${org.slug}/`);
@@ -106,44 +117,95 @@ async function main() {
     console.log(`  scrubbing     WOULD SET ${Object.keys(patch).join(", ")}`);
   }
 
+  // A step that Sentry's API refuses is reported and the rest still runs: one retired endpoint must not
+  // leave the scrubbing and the cleanup undone. The run then ends non-zero so it is never read as complete.
+  const unfinished = [];
+  async function step(label, work) {
+    try {
+      await work();
+    } catch (error) {
+      if (error.status === 404 || error.status === 405) {
+        unfinished.push(label);
+        console.log(`  ${label.padEnd(13)} NOT DONE — Sentry's API answered HTTP ${error.status} for this step (${error.message.split(" -> ")[0]})`);
+        return;
+      }
+      throw error;
+    }
+  }
+
   // 2 · the email alert
   const rulesPath = `/projects/${org.slug}/${project.slug}/rules/`;
-  const rules = await api("GET", rulesPath);
-  if (findRuleByName(rules, SENTRY_ALERT_NAME)) {
-    console.log(`  alert         "${SENTRY_ALERT_NAME}" already exists`);
-  } else if (apply) {
-    const created = await api("POST", rulesPath, buildAlertRulePayload());
-    console.log(`  alert         CREATED "${created?.name ?? SENTRY_ALERT_NAME}" (email on every new production issue, at most once per 30 minutes)`);
-  } else {
-    console.log(`  alert         WOULD CREATE "${SENTRY_ALERT_NAME}"`);
-  }
-  for (const rule of otherEmailRules(rules)) {
-    console.log(`  note          another rule already emails: "${rule.name}" — keep it or delete it in Sentry; this script never deletes a rule`);
-  }
+  let alertChecked = false;
+  await step("alert", async () => {
+    const rules = await api("GET", rulesPath);
+    if (findRuleByName(rules, SENTRY_ALERT_NAME)) {
+      console.log(`  alert         "${SENTRY_ALERT_NAME}" already exists`);
+      alertChecked = true;
+    } else if (apply) {
+      const created = await api("POST", rulesPath, buildAlertRulePayload());
+      console.log(`  alert         CREATED "${created?.name ?? SENTRY_ALERT_NAME}" (email on every new production issue, at most once per 30 minutes)`);
+      alertChecked = true;
+    } else {
+      console.log(`  alert         WOULD CREATE "${SENTRY_ALERT_NAME}"`);
+    }
+    for (const rule of otherEmailRules(rules)) {
+      console.log(`  note          another rule already emails: "${rule.name}" — keep it or delete it in Sentry; this script never deletes a rule`);
+    }
+  });
 
   // 3 · the deliberate test issue
-  const issues = await api("GET", `/projects/${org.slug}/${project.slug}/issues/?statsPeriod=14d&query=${encodeURIComponent("is:unresolved")}`);
-  const stale = testIssues(issues);
-  if (stale.length === 0) {
-    console.log("  test issue    none open");
-  } else if (apply) {
-    const ids = stale.map((issue) => `id=${encodeURIComponent(issue.id)}`).join("&");
-    await api("PUT", `/projects/${org.slug}/${project.slug}/issues/?${ids}`, { status: "resolved" });
-    console.log(`  test issue    RESOLVED ${stale.length}`);
-  } else {
-    console.log(`  test issue    WOULD RESOLVE ${stale.length}`);
-  }
+  const issuesPath = `/organizations/${org.slug}/issues/`;
+  await step("test issue", async () => {
+    const issues = await api("GET", `${issuesPath}?project=${encodeURIComponent(project.id)}&statsPeriod=14d&query=${encodeURIComponent("is:unresolved")}`);
+    const stale = testIssues(issues);
+    if (stale.length === 0) {
+      console.log("  test issue    none open");
+    } else if (apply) {
+      const ids = stale.map((issue) => `id=${encodeURIComponent(issue.id)}`).join("&");
+      await api("PUT", `${issuesPath}?project=${encodeURIComponent(project.id)}&${ids}`, { status: "resolved" });
+      console.log(`  test issue    RESOLVED ${stale.length}`);
+    } else {
+      console.log(`  test issue    WOULD RESOLVE ${stale.length}`);
+    }
+  });
 
   // 4 · read it back, so "created" is never taken on the response's word
-  if (apply) {
+  if (apply && alertChecked) {
     const after = await api("GET", rulesPath);
     if (!findRuleByName(after, SENTRY_ALERT_NAME)) {
       console.error(`sentry-setup: the alert "${SENTRY_ALERT_NAME}" is NOT in the project after creating it`);
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
     console.log(`  verified      "${SENTRY_ALERT_NAME}" is present on ${project.slug}`);
   }
+  if (unfinished.length > 0) {
+    console.log(`sentry-setup: finished, but NOT DONE: ${unfinished.join(", ")}. Run:  node scripts/sentry-setup.mjs --probe  and send the output.`);
+    process.exitCode = 3;
+    return;
+  }
   console.log("sentry-setup: finished");
+}
+
+// Reads only. Prints which of Sentry's alert and issue endpoints this account answers, so a retired path can be
+// replaced by one that works. No token, no secret and no issue content leaves this function: status and size.
+async function probe(base, token, orgSlug, projectSlug, projectId) {
+  const paths = [
+    `/organizations/${orgSlug}/`,
+    `/projects/${orgSlug}/${projectSlug}/rules/`,
+    `/projects/${orgSlug}/${projectSlug}/`,
+    `/organizations/${orgSlug}/combined-rules/?project=${projectId}`,
+    `/organizations/${orgSlug}/alert-rules/`,
+    `/organizations/${orgSlug}/workflows/`,
+    `/organizations/${orgSlug}/detectors/`,
+    `/organizations/${orgSlug}/issues/?project=${projectId}&statsPeriod=14d&query=is%3Aunresolved`,
+    `/projects/${orgSlug}/${projectSlug}/issues/?statsPeriod=14d`,
+  ];
+  for (const path of paths) {
+    const response = await fetch(`${base}/api/0${path}`, { headers: { Authorization: `Bearer ${token}` } });
+    const text = await response.text();
+    console.log(`  GET /api/0${path.split("?")[0]}  ->  HTTP ${response.status}  (${text.length} bytes)  ${response.ok ? "" : text.slice(0, 120)}`);
+  }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
@@ -152,6 +214,6 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     if (error.status === 401 || error.status === 403) {
       console.error("  the token was rejected or is missing a scope (org:read org:write project:read project:write alerts:write event:admin)");
     }
-    process.exit(1);
+    process.exitCode = 1;
   });
 }

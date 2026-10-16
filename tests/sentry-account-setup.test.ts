@@ -86,9 +86,11 @@ function pureTests() {
 function sourceTests() {
   const script = code("scripts/sentry-setup.mjs");
   assert.match(script, /const apply = argv\.includes\("--apply"\);/, "writes happen only on an explicit --apply");
-  assert.match(script, /refuseUnknownFlags\(\{[\s\S]*?known: \["--apply", "--url"\]/, "a mistyped --aply must not fall through to a run");
+  assert.match(script, /refuseUnknownFlags\(\{[\s\S]*?known: \["--apply", "--url", "--probe"\]/, "a mistyped --aply must not fall through to a run");
   assert.match(script, /process\.env\.SENTRY_AUTH_TOKEN/, "the token comes from the environment");
-  assert.equal((script.match(/\$\{token\}/g) ?? []).length, 1, "the token is interpolated exactly once: the Authorization header");
+  const interpolations = (script.match(/\$\{token\}/g) ?? []).length;
+  const headerUses = (script.match(/Authorization: `Bearer \$\{token\}`/g) ?? []).length;
+  assert.ok(headerUses >= 1 && interpolations === headerUses, "the token is interpolated only into an Authorization header, nowhere else");
   assert.match(script, /Authorization: `Bearer \$\{token\}`/);
   const logLines = script
     .replace(/describeToken\(token\)/g, "")
@@ -103,7 +105,7 @@ function sourceTests() {
 type Seen = { method: string; path: string; auth: string | undefined; body: unknown };
 
 async function withFakeSentry<T>(
-  options: { status?: number } | undefined,
+  options: { status?: number; rulesStatus?: number } | undefined,
   run: (base: string, seen: Seen[]) => Promise<T>,
 ): Promise<T> {
   const seen: Seen[] = [];
@@ -131,22 +133,23 @@ async function withFakeSentry<T>(
     };
     if (options?.status) return send(options.status, { detail: "rejected" });
     if (method === "GET" && path === "/api/0/organizations/") return send(200, [{ id: "11", slug: "sato" }]);
-    if (method === "GET" && path === "/api/0/organizations/sato/projects/") return send(200, [{ slug: "phoenix-workforce" }]);
+    if (method === "GET" && path === "/api/0/organizations/sato/projects/") return send(200, [{ id: "77", slug: "phoenix-workforce" }]);
     if (method === "GET" && path === "/api/0/organizations/sato/") return send(200, { dataScrubber: true, dataScrubberDefaults: false, scrubIPAddresses: false });
     if (method === "PUT" && path === "/api/0/organizations/sato/") return send(200, {});
+    if (options?.rulesStatus && path.startsWith("/api/0/projects/sato/phoenix-workforce/rules/")) return send(options.rulesStatus, null);
     if (method === "GET" && path === "/api/0/projects/sato/phoenix-workforce/rules/") return send(200, rules);
     if (method === "POST" && path === "/api/0/projects/sato/phoenix-workforce/rules/") {
       const created = body as { name: string; actions: unknown[] };
       rules.push({ name: created.name, actions: created.actions });
       return send(200, created);
     }
-    if (method === "GET" && path.startsWith("/api/0/projects/sato/phoenix-workforce/issues/")) {
+    if (method === "GET" && path.startsWith("/api/0/organizations/sato/issues/?project=77")) {
       return send(200, [
         { id: "501", title: `Error: ${TEST_ISSUE_TEXT} 2026-10-16`, status: "unresolved" },
         { id: "502", title: "TypeError: a real failure", status: "unresolved" },
       ]);
     }
-    if (method === "PUT" && path.startsWith("/api/0/projects/sato/phoenix-workforce/issues/")) return send(200, {});
+    if (method === "PUT" && path.startsWith("/api/0/organizations/sato/issues/?project=77")) return send(200, {});
     return send(404, { detail: `unexpected ${method} ${path}` });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -224,6 +227,27 @@ async function behaviourTests() {
     assert.deepEqual(resolved?.body, { status: "resolved" });
 
     assert.deepEqual([...new Set(seen.map((r) => r.method))].sort(), ["GET", "POST", "PUT"], "no DELETE, ever");
+  });
+
+  // The rules endpoint answering 404 (as it did on the owner's account, 2026-10-16) must not stop the scrubbing or
+  // the cleanup: they are still done, the alert is reported NOT DONE, and the run ends non-zero.
+  await withFakeSentry({ rulesStatus: 404 }, async (base, seen) => {
+    const result = await runScript(["--apply", "--url", base], { SENTRY_AUTH_TOKEN: TOKEN });
+    assert.equal(result.code, 3, result.out);
+    assert.match(result.out, /alert\s+NOT DONE/);
+    assert.match(result.out, /scrubbing\s+SET/, "the scrubbing is still applied");
+    assert.match(result.out, /test issue\s+RESOLVED 1/, "the cleanup is still done");
+    assert.match(result.out, /--probe/);
+    assert.ok(!seen.some((r) => r.method === "POST"), "no alert is created through an endpoint that said 404");
+  });
+
+  // --probe reads only, and says which endpoints answer.
+  await withFakeSentry(undefined, async (base, seen) => {
+    const result = await runScript(["--probe", "--url", base], { SENTRY_AUTH_TOKEN: TOKEN });
+    assert.equal(result.code, 0, result.out);
+    assert.match(result.out, /GET \/api\/0\/projects\/sato\/phoenix-workforce\/rules\/\s+->\s+HTTP 200/);
+    assert.deepEqual([...new Set(seen.map((r) => r.method))], ["GET"], "a probe makes only GET requests");
+    assert.ok(!result.out.includes(TOKEN));
   });
 
   // A rejected token explains itself and exits non-zero.
