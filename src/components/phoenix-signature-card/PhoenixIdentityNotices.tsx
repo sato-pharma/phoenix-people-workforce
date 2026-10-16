@@ -644,6 +644,8 @@ export function PhoenixIdentityNotices({
       body: JSON.stringify({ id }),
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
+      // Same reason as the bell's markRead: survive a navigation that unloads the page.
+      keepalive: true,
       method: "PATCH",
     }).catch(() => {});
   };

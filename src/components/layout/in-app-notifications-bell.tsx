@@ -188,6 +188,10 @@ export function InAppNotificationsBell({
     await fetch("/api/notifications/in-app", {
       body: JSON.stringify({ id }),
       headers: { "Content-Type": "application/json" },
+      // A notification row is a Link: the tap that fires this also navigates, and when that
+      // navigation becomes a full document load (e.g. the client build is older than the server's)
+      // WebKit aborts any in-flight fetch with "TypeError: Load failed". keepalive lets it finish.
+      keepalive: true,
       method: "PATCH",
     }).catch(() => undefined);
   }
@@ -197,6 +201,7 @@ export function InAppNotificationsBell({
     await fetch("/api/notifications/in-app", {
       body: JSON.stringify({ markAll: true }),
       headers: { "Content-Type": "application/json" },
+      keepalive: true,
       method: "PATCH",
     }).catch(() => undefined);
   }
@@ -206,6 +211,7 @@ export function InAppNotificationsBell({
     await fetch("/api/notifications/in-app", {
       body: JSON.stringify({ clearAll: true }),
       headers: { "Content-Type": "application/json" },
+      keepalive: true,
       method: "PATCH",
     }).catch(() => undefined);
   }
