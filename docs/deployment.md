@@ -739,7 +739,6 @@ and bearer unchanged and read back):
 | `phoenix-process-notifications` | `8200914` | `/api/notifications/process?limit=50` |
 | `phoenix-inbound-intake` | `8200920` | `/api/cron/inbound-intake` |
 | `phoenix-recruitment-email-intake` | `8200919` | `/api/cron/recruitment-email-intake` |
-| `Phoenix — interview reminders` | `8478976` | `/api/cron/interview-reminders` (on the website its run reached the 30-second cut) |
 | `phoenix-crm-contact-lists` | `8344730` | `/api/cron/crm-contact-lists` (runs 05:00–05:55 only, so its first run on the worker was 17 Oct) |
 
 Every other job, `job-heartbeat-sweep` included, still calls `https://phoenix-hr.satopharma.com`.

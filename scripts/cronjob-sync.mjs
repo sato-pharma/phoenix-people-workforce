@@ -155,8 +155,8 @@ const JOBS = {
   },
   "interview-reminders": {
     title: "Phoenix — interview reminders",
-    // On the worker since 2026-10-16: on the website its run reached cron-job.org's 30-second cut.
-    base: WORKER,
+    // Back on the website since 2026-10-16 (owner): it ran on the worker for an evening while its run
+    // reached cron-job.org's 30-second cut, and the run now answers in about three seconds.
     path: "/api/cron/interview-reminders",
     // Every ten minutes on :03, around the clock — matching docs/observability.md and JOB_SCHEDULES.
     // Ten because the one-hour-before reminder lands in the ten-minute window before the hour
@@ -165,8 +165,9 @@ const JOBS = {
     // guard, so a red execution names one job. Silent on almost every fire: an idempotency key means a
     // repeat tells nobody twice.
     schedule: { hours: [-1], minutes: [3, 13, 23, 33, 43, 53], mdays: [-1], months: [-1], wdays: [-1] },
-    // One indexed read of the next few days' interviews, then at most a handful of notifications.
-    // Nowhere near the 30s platform cut. 300 matches the rest of the account.
+    // One read of the interviews, one bulk read of what was already delivered, then only the
+    // reminders with something left to send. Measured 2.4 to 4.5 s, against 28 to 30 s before the
+    // already-delivered ones were skipped. 300 matches the rest of the account.
     requestTimeout: 300,
   },
   "recruitment-requisition-autopilot": {
