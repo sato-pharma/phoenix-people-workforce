@@ -73,12 +73,13 @@ export function runGcloudMigrationHardeningTests() {
     "strict Supabase-bridge enforcement must remain opt-in",
   );
 
-  // CSP must not reference the removed Sentry ingest hosts.
+  // CSP must not hard-code a Sentry ingest host. (Sentry came back on 2026-10-16, production only; its browser
+  // host is read from the build's own NEXT_PUBLIC_SENTRY_DSN, so nothing is written into this file.)
   const nextConfigSource = readFileSync("next.config.ts", "utf8");
   assert.doesNotMatch(
     nextConfigSource,
     /ingest\.sentry\.io|ingest\.us\.sentry\.io|ingest\.de\.sentry\.io/,
-    "connect-src CSP must not whitelist Sentry after its removal",
+    "connect-src CSP must not hard-code a Sentry ingest host",
   );
 
   // Synthetic-journey environment classification must NOT recognise a Cloud Run host at all.

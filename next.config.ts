@@ -157,10 +157,26 @@ const managedPlayCsp = contentSecurityPolicy
 // fingerprints the base template literal) is unaffected.
 const milestonePreviewCsp = contentSecurityPolicy.concat("; frame-src 'self' blob:");
 
+// Sentry (sentry.io) browser reports need their ingest host in connect-src, and ONLY when this build
+// carries a DSN — the origin is read from NEXT_PUBLIC_SENTRY_DSN itself rather than written here, so the
+// region (us / de) is whatever the account's DSN says and a build without one gains no new host. Applied
+// to the site-wide header only; the derived whatsapp/hiring/play/milestone policies above stay as they are.
+const sentryIngestOrigin = (() => {
+  try {
+    const dsn = new URL(String(process.env.NEXT_PUBLIC_SENTRY_DSN ?? "").trim());
+    return dsn.protocol === "https:" && dsn.username ? dsn.origin : null;
+  } catch {
+    return null;
+  }
+})();
+const siteContentSecurityPolicy = sentryIngestOrigin
+  ? contentSecurityPolicy.replace("connect-src 'self'", `connect-src 'self' ${sentryIngestOrigin}`)
+  : contentSecurityPolicy;
+
 const securityHeaders = [
   {
     key: "Content-Security-Policy",
-    value: contentSecurityPolicy,
+    value: siteContentSecurityPolicy,
   },
   {
     key: "Referrer-Policy",

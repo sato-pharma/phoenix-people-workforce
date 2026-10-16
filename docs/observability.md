@@ -1,7 +1,7 @@
 # Observability
 
 _Phoenix Workforce runs on **Railway** (moved off GCP Cloud Run 2026-08-01). Sentry was retired
-2026-07-31. What still works today: the `app_error_events` table (server errors via
+2026-07-31 and came back 2026-10-16 as a production-only, errors-only add-on (see "Sentry" below). What still works today: the `app_error_events` table (server errors via
 `instrumentation.ts`'s `onRequestError` → `/api/errors/client`; client errors via
 `reportClientError` → the same endpoint), structured JSON logging (`src/lib/observability/log.ts`,
 readable with `railway logs`), the health probes, and the Healthchecks.io dead-man's-switch on the
@@ -28,6 +28,16 @@ project is therefore gone, including the pieces that used to page the owner:
 problem currently depends on someone looking at `/admin/system-issues`, `railway logs`, or a
 Healthchecks notification for a cron that stopped pinging. Replacing the alerting layer is open
 work, not a solved problem.
+
+## Sentry (sentry.io) — production only, errors only
+
+Back since 2026-10-16, as a second sink beside `app_error_events`, never instead of it.
+
+- **Where it runs is decided by the deployment name, not the build mode.** `src/lib/observability/sentry-policy.ts`: the server needs `APP_ENV=production` AND a valid `SENTRY_DSN`; the browser needs a valid `NEXT_PUBLIC_SENTRY_DSN` AND to be served from the production host. Staging, the Hetzner previews and a laptop are off by construction — a Phoenix build is `NODE_ENV=production` on all of them, so `isProductionRuntime()` is NOT the gate.
+- **What it sends:** server request errors (`onRequestError` → `captureRequestError`), uncaught exceptions and rejections in the Node process, and every browser failure `reportClientError` already sees. **What it does not:** no tracing, profiling, session replay, OpenTelemetry provider or load-time module rewriting (`enableOpenTelemetrySetup: false`, `enableRuntimeChannelInjection: false`), no tunnel route, no sourcemap upload.
+- **Nothing identifying leaves:** `scrubSentryEvent` (SDK 11 has no `sendDefaultPii` switch) drops the user, cookies, request bodies, query strings and session/role headers from every event.
+- **Turn it on:** put the project DSN in `SENTRY_DSN` and `NEXT_PUBLIC_SENTRY_DSN` on the production Railway service (the browser one is a build argument, so it needs a redeploy). Turn it off by removing either.
+- **Pinned by** `tests/sentry-production-only.test.ts`.
 
 ## Error capture
 

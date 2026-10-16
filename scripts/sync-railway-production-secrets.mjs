@@ -91,6 +91,7 @@ const variables = [
     { railway: "LOCATIONIQ_API_KEY", github: ["LOCATIONIQ_API_KEY"], required: false },
     { railway: "NEXT_PUBLIC_ONESIGNAL_APP_ID", github: ["NEXT_PUBLIC_ONESIGNAL_APP_ID"], required: false },
     { railway: "ONESIGNAL_REST_API_KEY", github: ["ONESIGNAL_REST_API_KEY"], required: false },
+    { railway: "NEXT_PUBLIC_SENTRY_DSN", github: ["NEXT_PUBLIC_SENTRY_DSN", "SENTRY_DSN"], required: false },
     { railway: "SENTRY_DSN", github: ["SENTRY_DSN"], required: false },
     { railway: "SENTRY_AUTH_TOKEN", github: ["SENTRY_AUTH_TOKEN"], required: false },
 

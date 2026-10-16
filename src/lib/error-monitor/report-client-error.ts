@@ -7,6 +7,7 @@
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { describeDomRewriters } from "@/lib/error-monitor/dom-rewriter";
 import { DOM_GUARD_COUNTER_KEY, domGuardMarker } from "@/lib/error-monitor/dom-translate-guard";
+import { captureClientErrorInSentry } from "@/lib/observability/sentry-client";
 
 export type ReportClientErrorInput = {
   error: unknown;
@@ -155,6 +156,9 @@ export function reportClientError({ error, route, digest, componentStack, contex
       route: resolvedRoute,
       stack,
     });
+
+    // Sentry sees the same report, on the production host only (sentry-client.ts decides). Fire and forget.
+    captureClientErrorInSentry({ componentStack, context: clientContext, digest, error, route: resolvedRoute });
 
     void fetch("/api/errors/client", {
       body: payload,

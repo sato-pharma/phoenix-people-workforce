@@ -503,6 +503,8 @@ copies directly with no variable fallback, so deleting the secret copies would s
 | TELEGRAM_BOT_TOKEN | Telegram Bot API token |
 | NEXT_PUBLIC_ONESIGNAL_APP_ID | OneSignal app id (client-side) |
 | ONESIGNAL_REST_API_KEY | OneSignal REST API key (server-side push) |
+| SENTRY_DSN | Sentry (sentry.io) project DSN, read at runtime by `instrumentation.ts`. Production only: ignored unless `APP_ENV=production` |
+| NEXT_PUBLIC_SENTRY_DSN | The same DSN for the browser. Build-time (a Dockerfile `ARG`), used only when the page is served from the production host; also adds the DSN's origin to the CSP `connect-src` |
 
 ### Scheduling & agents
 | Secret | Purpose |
@@ -532,7 +534,7 @@ copies directly with no variable fallback, so deleting the secret copies would s
 |---|---|
 | RAILWAY_TOKEN | Auth for `sync-railway-production-secrets.yml`'s Railway CLI calls |
 | CLOUDFLARE_API_TOKEN | Not currently consumed by any workflow or app code — held for future Cloudflare DNS/cache automation |
-| SENTRY_AUTH_TOKEN | Build-time only — sourcemap upload for the Sentry Next.js plugin, never read at runtime |
+| SENTRY_AUTH_TOKEN | Reserved for sourcemap upload. Nothing reads it today — no Sentry build plugin is wired (see docs/observability.md, "Sentry") |
 
 ### CI / testing
 | Secret | Purpose |
