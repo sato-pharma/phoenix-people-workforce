@@ -3,6 +3,11 @@
  * the owner chose for exactly the visits the filter returned (owner, 2026-10-15: "one master sheet with
  * one tab only", "only the chosen and filtered data").
  *
+ * 🔴 EXCEPT THE FIRST THREE COLUMNS, WHICH ARE ALWAYS THE DATE, WHO VISITED AND THE CUSTOMER (owner,
+ * 2026-10-16: "Always lead with them"), ticked or not, so every line of the file says whose visit it was.
+ * A ticked one is not printed twice. The result filters narrow the visits through the same matcher as
+ * the screen (`narrowVisitReportView`), and the subtitle says what the file was narrowed to.
+ *
  * It lives under server/ for the same reason `reports-workbook.ts` does: it imports ExcelJS and the
  * loader's view type, and the phone bundle may touch neither.
  *
@@ -36,9 +41,12 @@ import {
 } from "@/lib/export/house-xlsx-identity";
 import { HOUSE_DOCUMENT_STANDARD, HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 import {
+  VISIT_REPORT_LEAD_KEYS,
   visitReportCategoryOf,
+  visitReportField,
   type VisitReportField,
   type VisitReportFormat,
+  type VisitReportRow,
   type VisitReportValue,
   type VisitReportView,
 } from "@/lib/phoenix-crm/visit-report-fields";
@@ -100,11 +108,36 @@ export function visitReportCellValue(format: VisitReportFormat, value: VisitRepo
 
 export type VisitReportWorkbookInput = {
   view: VisitReportView;
-  /** The chosen fields in the catalogue's order — the workbook's columns, left to right. */
+  /** The chosen fields in the catalogue's order — the columns after the three lead ones. */
   fields: ReadonlyArray<VisitReportField>;
   /** The reader's NAME, never an HR id. */
   viewerName: string;
+  /** What the result filters narrowed the visits to, in words; absent when nothing was narrowed. */
+  narrowedTo?: string | null;
 };
+
+/** The band over the three lead columns. */
+const LEAD_BAND = "The visit";
+
+/** The workbook's columns, left to right: the date, who visited and the customer, then the chosen rest. */
+export function visitReportWorkbookColumns(fields: ReadonlyArray<VisitReportField>): VisitReportField[] {
+  const lead = VISIT_REPORT_LEAD_KEYS.flatMap((key) => {
+    const field = visitReportField(key);
+    return field ? [field] : [];
+  });
+  const leadKeys = new Set(VISIT_REPORT_LEAD_KEYS);
+  return [...lead, ...fields.filter((field) => !leadKeys.has(field.key))];
+}
+
+/** A lead column's value: the chosen field's when it was ticked, else the row's own head, which every row carries. */
+function leadValue(row: VisitReportRow, key: string): VisitReportValue {
+  const chosen = row.values[key];
+  if (chosen !== null && chosen !== undefined && chosen !== "") return chosen;
+  if (key === "visitDate") return row.visitDate || null;
+  if (key === "repName") return row.repName || null;
+  if (key === "customerName") return row.customerName || null;
+  return null;
+}
 
 /** The sheet's tab name — also what the test reads back. */
 export const VISIT_REPORT_SHEET = "Visits";
@@ -112,7 +145,11 @@ export const VISIT_REPORT_SHEET = "Visits";
 const HEADER_ROW = 5;
 
 export async function buildVisitReportWorkbook(input: VisitReportWorkbookInput): Promise<Buffer> {
-  const { view, fields, viewerName } = input;
+  const { view, fields, viewerName, narrowedTo } = input;
+  const columns = visitReportWorkbookColumns(fields);
+  const leadCount = VISIT_REPORT_LEAD_KEYS.length;
+  const lead = new Set(VISIT_REPORT_LEAD_KEYS);
+  const bandOf = (index: number): string => (index < leadCount ? LEAD_BAND : visitReportCategoryOf(columns[index].category).label);
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Phoenix Workforce";
   workbook.created = new Date(view.generatedAtIso);
@@ -122,28 +159,30 @@ export async function buildVisitReportWorkbook(input: VisitReportWorkbookInput):
   const sheet = workbook.addWorksheet(VISIT_REPORT_SHEET, {
     properties: { defaultRowHeight: 18, tabColor: { argb: HOUSE_XLSX_COLORS.blue } },
   });
-  fields.forEach((field, index) => {
+  columns.forEach((field, index) => {
     sheet.getColumn(index + 1).width = Math.max(field.width, MIN_WIDTH[field.format] ?? 0);
   });
 
-  const columns = Math.max(1, fields.length);
   writeHouseMasthead(workbook, sheet, {
-    columns,
+    columns: Math.max(1, columns.length),
     provenance: [houseGeneratedAt(view.generatedAtIso), `Prepared for ${viewerName}`, `${view.total.toLocaleString("en-US")} visits`],
-    subtitle: `${view.target.name} · ${view.period.from} to ${view.period.to} · ${fields.length} field${fields.length === 1 ? "" : "s"} chosen`,
+    subtitle:
+      `${view.target.name} · ${view.period.from} to ${view.period.to} · ${fields.length} field${fields.length === 1 ? "" : "s"} chosen`
+      + (narrowedTo ? ` · Only ${narrowedTo}` : ""),
     title: "Visit report",
   });
 
-  // Row 4 — the category band: each run of one category's columns, named, under a Brand Blue rule.
+  // Row 4 — the category band: the lead three under "The visit", then each run of one category's columns,
+  // named, under a Brand Blue rule.
   const bandRow = sheet.getRow(4);
   bandRow.height = 30;
   let start = 0;
-  while (start < fields.length) {
+  while (start < columns.length) {
     let end = start;
-    while (end + 1 < fields.length && fields[end + 1].category === fields[start].category) end += 1;
+    while (end + 1 < columns.length && bandOf(end + 1) === bandOf(start)) end += 1;
     if (end > start) sheet.mergeCells(4, start + 1, 4, end + 1);
     const cell = sheet.getCell(4, start + 1);
-    cell.value = visitReportCategoryOf(fields[start].category).label;
+    cell.value = bandOf(start);
     cell.font = { bold: true, color: { argb: HOUSE_XLSX_COLORS.deep }, name: HOUSE_XLSX_FONT, size: 10 };
     cell.alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
     for (let column = start + 1; column <= end + 1; column += 1) {
@@ -155,18 +194,18 @@ export async function buildVisitReportWorkbook(input: VisitReportWorkbookInput):
   // Row 5 — the field headings, the house header.
   const headerRow = sheet.getRow(HEADER_ROW);
   headerRow.height = 44;
-  fields.forEach((field, index) => {
+  columns.forEach((field, index) => {
     const cell = headerRow.getCell(index + 1);
     cell.value = field.label;
     houseHeaderStyle(cell, { size: 9.5 });
   });
 
-  // The data — one row per visit, only the chosen fields.
+  // The data — one row per visit: the lead three, then only the chosen fields.
   view.rows.forEach((row, rowIndex) => {
     const excelRow = sheet.getRow(HEADER_ROW + 1 + rowIndex);
-    fields.forEach((field, index) => {
+    columns.forEach((field, index) => {
       const cell = excelRow.getCell(index + 1);
-      const value = visitReportCellValue(field.format, row.values[field.key]);
+      const value = visitReportCellValue(field.format, lead.has(field.key) ? leadValue(row, field.key) : row.values[field.key]);
       cell.value = value === null ? "" : value;
       const numFormat = NUMBER_FORMATS[field.format];
       if (numFormat && value !== null && typeof value !== "string") cell.numFmt = numFormat;
@@ -182,8 +221,8 @@ export async function buildVisitReportWorkbook(input: VisitReportWorkbookInput):
 
   const lastDataRow = HEADER_ROW + view.rows.length;
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: HEADER_ROW }];
-  if (view.rows.length > 0 && fields.length > 0) {
-    sheet.autoFilter = { from: { column: 1, row: HEADER_ROW }, to: { column: fields.length, row: lastDataRow } };
+  if (view.rows.length > 0 && columns.length > 0) {
+    sheet.autoFilter = { from: { column: 1, row: HEADER_ROW }, to: { column: columns.length, row: lastDataRow } };
   }
 
   // On paper: landscape A3, the category band and headings repeated on every page, and a few columns wide
@@ -191,7 +230,7 @@ export async function buildVisitReportWorkbook(input: VisitReportWorkbookInput):
   sheet.pageSetup = {
     fitToHeight: 0,
     fitToPage: true,
-    fitToWidth: Math.max(1, Math.ceil(fields.length / 14)),
+    fitToWidth: Math.max(1, Math.ceil(columns.length / 14)),
     horizontalCentered: true,
     margins: { bottom: 0.7, footer: 0.3, header: 0.3, left: 0.4, right: 0.4, top: 0.5 },
     orientation: "landscape",
@@ -205,8 +244,8 @@ export async function buildVisitReportWorkbook(input: VisitReportWorkbookInput):
 
   // Reading notes, beneath the data: what is blank and why, and how the save-time fields are read.
   const notes: string[] = [];
-  if (view.rows.length === 0) notes.push("No visits were saved in this period.");
-  for (const field of fields) {
+  if (view.rows.length === 0) notes.push(narrowedTo ? "No visits match what the report was narrowed to." : "No visits were saved in this period.");
+  for (const field of columns) {
     if (field.hint) notes.push(`${field.label} — ${field.hint}`);
     if (field.sparse) notes.push(`${field.label} — recorded on ${view.filled[field.key] ?? 0} of ${view.total} visits; a blank means the rep recorded nothing.`);
   }

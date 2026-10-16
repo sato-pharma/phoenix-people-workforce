@@ -63,6 +63,24 @@ function numberValues(rows: ReadonlyArray<VisitReportRow>, key: string): number[
   });
 }
 
+/** For each sparse chosen field, how many of these visits carry a value — the "recorded on X of Y" count. */
+export function countVisitReportFilled(rows: ReadonlyArray<VisitReportRow>, fields: ReadonlyArray<VisitReportField>): Record<string, number> {
+  const filled: Record<string, number> = {};
+  for (const field of fields) {
+    if (!field.sparse) continue;
+    filled[field.key] = rows.filter((row) => {
+      const value = row.values[field.key];
+      return value !== null && value !== undefined && value !== "";
+    }).length;
+  }
+  return filled;
+}
+
+/** The days these visits fall on, in order. */
+export function visitReportDays(rows: ReadonlyArray<VisitReportRow>): string[] {
+  return [...new Set(rows.map((row) => row.visitDate))].sort();
+}
+
 export function buildVisitReportDashboard(input: {
   rows: ReadonlyArray<VisitReportRow>;
   fields: ReadonlyArray<VisitReportField>;
@@ -83,9 +101,9 @@ export function buildVisitReportDashboard(input: {
   const tiles: VisitReportDashboardTile[] = [
     { label: "Visits", value: total.toLocaleString("en-US"), hint: `${days.length} day${days.length === 1 ? "" : "s"} with visits` },
     {
-      label: "Visits per rep per working day",
+      label: "Visits per person per working day",
       value: repDays.size === 0 ? "—" : (total / repDays.size).toFixed(1),
-      hint: `${reps.size} rep${reps.size === 1 ? "" : "s"}, over the days each logged any visit`,
+      hint: `${reps.size} ${reps.size === 1 ? "person" : "people"}, over the days each logged any visit`,
     },
     { label: "On the plan", value: percent(planned, total), hint: `${planned} of ${total}` },
     { label: "With a manager or product manager", value: percent(notSingle, total), hint: `${notSingle} of ${total}` },
@@ -131,7 +149,7 @@ export function buildVisitReportDashboard(input: {
   barsOf("entry-route", "when", "How the visit was entered", "entryRoute", textValues(rows, "entryRoute"));
 
   if (chosen.has("repName") && reps.size > 1) {
-    add("per-rep", "org", "Visits per rep", "bars", tally(rows.map((row) => row.repName), 12));
+    add("per-rep", "org", "Visits per person", "bars", tally(rows.map((row) => row.repName), 12));
   }
 
   barsOf("list-type", "customer", "AM, PM or pharmacy", "listType", textValues(rows, "listType"));

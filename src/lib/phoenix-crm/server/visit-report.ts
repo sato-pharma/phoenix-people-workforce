@@ -28,20 +28,21 @@
 
 import { notFoundError, validationError } from "@/lib/http/api-errors";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
-import { canReadVisitReport, isLocationBlind, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canReadVisitReport, isLocationBlind, readsLocationDetail, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dedupeIds, selectByIds, seatScoped, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { readDoubleVisitPlansForReport } from "@/lib/phoenix-crm/server/double-visit-plans";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS, PLAN_STATUSES_WITH_SENT_DAYS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadVisitReportEvidence, type VisitReportEvidence } from "@/lib/phoenix-crm/server/integrity-board";
-import { buildVisitReportValues, locationFlagLabel, type Row, type VisitReportContext } from "@/lib/phoenix-crm/server/visit-report-values";
+import { buildVisitReportValues, visitLocationFlagLabel, type Row, type VisitReportContext } from "@/lib/phoenix-crm/server/visit-report-values";
+import { personOnTheVisit } from "@/lib/phoenix-crm/location-integrity";
 import { leaveDayKey } from "@/lib/phoenix-crm/plan-leave";
 import { managerChain, territoriesBelow, TERRITORY_TIER, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { VISIT_ASK_KIND_LABELS } from "@/lib/phoenix-crm/visit-ask-rules";
 import { phoenixVisitKindLabel } from "@/lib/phoenix-crm/visit-kind-labels";
 import { addDays, computeVisitSequence, firstDayOfPreviousMonth, monthKey, type SequenceInput } from "@/lib/phoenix-crm/visit-report-compute";
-import { buildVisitReportDashboard } from "@/lib/phoenix-crm/visit-report-dashboard";
+import { buildVisitReportDashboard, countVisitReportFilled, visitReportDays } from "@/lib/phoenix-crm/visit-report-dashboard";
 import {
   resolveVisitReportPeriod,
   resolveVisitReportSelection,
@@ -69,7 +70,7 @@ function assertReader(viewer: PhoenixCrmViewer): void {
 }
 
 /** What this viewer is, for the catalogue's sight: the Super Admin, the SFE Manager, or a district manager. */
-function visitReportTierOf(viewer: PhoenixCrmViewer): VisitReportReaderTier {
+export function visitReportTierOf(viewer: PhoenixCrmViewer): VisitReportReaderTier {
   if (viewer.isSuperAdmin) return "superAdmin";
   return viewer.isSfeManager ? "sfe" : "manager";
 }
@@ -214,6 +215,16 @@ function groupBy<T extends Row>(rows: ReadonlyArray<T>, key: (row: T) => string 
 }
 
 const idOf = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null);
+
+/**
+ * Whose visit it is: the rep, or the manager on his own visit with no rep on it — the integrity board's
+ * own rule (`personOnTheVisit`), never the seat's occupant. 🔴 Falling back to the occupant printed a
+ * district manager's own call under the rep whose territory it was on (13 visits on production,
+ * 2026-10-16) and as "Unknown rep" on a vacant seat (12 more), and slotted it into that rep's day.
+ */
+function whoseVisit(visit: Row): string | null {
+  return personOnTheVisit({ managerHrId: textOrNull(visit.manager_hr_id), repHrId: textOrNull(visit.rep_hr_id) });
+}
 
 /** Sort rows by a timestamp column: `newest` first, or `oldest` first so a thread reads in the order it was written. */
 const byTime =
@@ -437,8 +448,9 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
               fixAtMs: fix ? Date.parse(fix) : null,
               lat: typeof visit.lat === "number" ? visit.lat : null,
               lon: typeof visit.lon === "number" ? visit.lon : null,
+              // Nobody named at all (none on production) keeps the seat, so it is still a day of its own.
+              person: whoseVisit(visit) ?? `seat:${String(visit.seat_id)}`,
               savedAtMs: Date.parse(String(visit.captured_at)),
-              seatId: String(visit.seat_id),
               visitDate: String(visit.visit_date),
               visitId: String(visit.id),
             };
@@ -506,6 +518,8 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
   };
 
   // ── The rows ──
+  // 🔴 A district manager reads the distance only (owner, 2026-10-02): a weak reading reads as at the place.
+  const detail = readsLocationDetail(viewer);
   const rows: VisitReportRow[] = visits.map((visit) => {
     const seat = seatById.get(String(visit.seat_id)) ?? null;
     const visitId = String(visit.id);
@@ -515,6 +529,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
     const customer = customerId ? customerById.get(customerId) ?? null : null;
     const place = placeId ? placeById.get(placeId) ?? null : null;
     const dayKey = `${String(visit.seat_id)}|${visitDate}`;
+    const personHrId = whoseVisit(visit);
     const chain = chainBySeat.get(String(visit.seat_id)) ?? [];
     const activities = activitiesByKey.get(dayKey) ?? [];
     const doubles = (doublesByKey.get(dayKey) ?? []).map((plan) => {
@@ -533,6 +548,8 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
       editedAt: editedByVisit.get(visitId) ?? null,
       evidence: evidence.byVisit.get(visitId) ?? null,
       names: people,
+      personHrId,
+      readsLocationDetail: detail,
       onLeave: needsDay && has("onLeave") && !leave.unread ? leave.days.has(leaveDayKey(String(visit.seat_id), visitDate)) : null,
       place,
       placeNotes: (placeId ? notesByPlace.get(placeId) ?? [] : []).map((row) => String(row.body ?? "").trim()).filter(Boolean),
@@ -552,17 +569,16 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
     const values: Record<string, VisitReportValue> = {};
     for (const field of fields) values[field.key] = all[field.key] ?? null;
 
-    const repHrId = textOrNull(visit.rep_hr_id) ?? seat?.occupantHrId ?? null;
     return {
       customerName: String(customer?.name ?? "").trim() || "Unknown customer",
       distanceMeters: typeof visit.distance_meters === "number" ? visit.distance_meters : null,
       listType: String(visit.list_type ?? ""),
-      locationFlag: locationFlagLabel(visit.location_flag),
+      locationFlag: visitLocationFlagLabel(visit, detail),
       placeLabel: textOrNull(place?.label),
       placeLat: typeof place?.lat === "number" ? place.lat : null,
       placeLon: typeof place?.lon === "number" ? place.lon : null,
       planned: visit.is_unplanned !== true,
-      repName: nameOf(people, repHrId, "Unknown rep"),
+      repName: nameOf(people, personHrId, "Unknown person"),
       savedAtIso: String(visit.captured_at ?? ""),
       values,
       visitDate,
@@ -573,15 +589,9 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
     };
   });
 
-  const filled: Record<string, number> = {};
-  for (const field of fields) {
-    if (!field.sparse) continue;
-    filled[field.key] = rows.filter((row) => {
-      const value = row.values[field.key];
-      return value !== null && value !== undefined && value !== "";
-    }).length;
-  }
-  const days = [...new Set(rows.map((row) => row.visitDate))].sort();
+  // The same two helpers the screen's filters use, so a narrowed screen and a narrowed file count alike.
+  const filled = countVisitReportFilled(rows, fields);
+  const days = visitReportDays(rows);
 
   return {
     dashboard: buildVisitReportDashboard({ days, fields, filled, rows }),
@@ -595,7 +605,10 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
       id: String(input.id),
       kind: target.kind,
       name: target.name,
-      reps: [...new Set(rows.map((row) => row.repName))].sort((left, right) => left.localeCompare(right)),
+      // The REPS among them — a manager's own call is in the rows under his name, and is not a rep.
+      reps: [
+        ...new Set(visits.flatMap((visit) => (textOrNull(visit.rep_hr_id) ? [nameOf(people, textOrNull(visit.rep_hr_id), "Unknown rep")] : []))),
+      ].sort((left, right) => left.localeCompare(right)),
     },
     total: rows.length,
   };

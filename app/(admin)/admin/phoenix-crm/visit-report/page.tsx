@@ -8,6 +8,7 @@ import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canReadVisitReport, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadVisitReportScope } from "@/lib/phoenix-crm/server/visit-report";
+import { visitReportFieldsFor } from "@/lib/phoenix-crm/visit-report-fields";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,7 @@ export default async function PhoenixCrmVisitReportPage({
   return (
     <div className="space-y-5">
       <AdminPageHero
-        description="Choose a rep or a district and a period, then the fields you want from the 113 a visit can carry. The dashboard, the map, the visits and the Excel file are all built from exactly that choice. The rep is never shown that this exists."
+        description={`Choose a rep or a district and a period, then the fields you want from the ${visitReportFieldsFor(scope.sight).length} you can choose. The dashboard, the map, the visits and the Excel file are all built from exactly that choice. The rep is never shown that this exists.`}
         eyebrow="CRM"
         icon={<ClipboardList className="h-3.5 w-3.5" />}
         title="Visit report"

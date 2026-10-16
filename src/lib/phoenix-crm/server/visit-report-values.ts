@@ -11,6 +11,7 @@
 
 import { dayActivityLabel, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { formatPhoenixDateTime } from "@/lib/i18n/format";
+import { isEnteredForRep } from "@/lib/phoenix-crm/missed-records";
 import { exceptionLabel } from "@/lib/phoenix-crm/plan-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { VisitReportCaseFacts } from "@/lib/phoenix-crm/server/integrity-board";
@@ -19,6 +20,7 @@ import { formatClockMinute, weekTimingsText } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 import { unplannedKindLabel, type UnplannedKind } from "@/lib/phoenix-crm/unplanned-rules";
 import { phoenixVisitKindLabel } from "@/lib/phoenix-crm/visit-kind-labels";
+import { MISSED_VISIT_LOCATION_LABEL } from "@/lib/phoenix-crm/visit-location-words";
 import { dayOfWeekName, monthLabel, type SequenceFacts } from "@/lib/phoenix-crm/visit-report-compute";
 import type { VisitReportValue } from "@/lib/phoenix-crm/visit-report-fields";
 
@@ -30,6 +32,20 @@ export type VisitReportContext = {
   place: Row | null;
   sharedPlace: Row | null;
   seat: OrgSeat | null;
+  /**
+   * Whose visit it is — the rep, or the manager on his own visit with no rep on it — resolved by the
+   * loader through `personOnTheVisit`. 🔴 NEVER THE SEAT'S OCCUPANT: a district manager's own call on a
+   * rep's territory was printed under that rep's name (13 visits on production, 2026-10-16), and under
+   * "Unknown rep" on a vacant seat (12 more).
+   */
+  personHrId: string | null;
+  /**
+   * Whether this reader is shown the measurement behind a distance (`readsLocationDetail`: the Super Admin
+   * and the SFE Manager). 🔴 A district manager reads the distance only (owner, 2026-10-02), so a weak
+   * reading reads to him as at the place, as on every other screen — this report printed "Weak signal"
+   * to him on 7 visits until 2026-10-16.
+   */
+  readsLocationDetail: boolean;
   names: PeopleNames;
   /** The manager chain above the seat, by role: names only. */
   districtManagerHrId: string | null;
@@ -98,6 +114,27 @@ const LOCATION_FLAG_LABELS: Record<string, string> = {
 export function locationFlagLabel(flag: unknown): string | null {
   const key = text(flag);
   return key ? LOCATION_FLAG_LABELS[key] ?? humanise(key) : null;
+}
+
+/**
+ * A visit's position wording. A visit the Super Admin entered later for a rep carries no reading at all,
+ * so it says so in the words every other screen uses — its stored `no_place` flag would otherwise read as
+ * "No validated place", a sentence about the customer's place rather than about the missing reading.
+ *
+ * `readsDetail` is required, so every caller says who is reading: below the Super Admin and the SFE
+ * Manager a weak reading is never far (far beats weak, geo.ts) and reads as at the place — the rule
+ * `offPlanLocationFlag` applies on the approval cards and `loadVisitLocationReport` on the place report.
+ */
+export function visitLocationFlagLabel(visit: Row, readsDetail: boolean): string | null {
+  const enteredLater = isEnteredForRep({
+    enteredBy: visit.entered_by_hr_id,
+    manager: visit.manager_hr_id,
+    rep: visit.rep_hr_id,
+    senior: visit.senior_hr_id,
+  });
+  if (enteredLater) return MISSED_VISIT_LOCATION_LABEL;
+  const flag = text(visit.location_flag);
+  return locationFlagLabel(!readsDetail && flag === "weak_gps" ? "ok" : flag);
 }
 
 const POINT_SOURCE_LABELS: Record<string, string> = {
@@ -205,7 +242,6 @@ function decisionText(names: PeopleNames, by: unknown, at: unknown, note: unknow
 export function buildVisitReportValues(context: VisitReportContext): Record<string, VisitReportValue> {
   const { visit, customer, place, sharedPlace, seat, names, provenance, evidence, sequence, planItem, review, unplanned } = context;
   const visitDate = String(visit.visit_date ?? "");
-  const repHrId = text(visit.rep_hr_id) ?? seat?.occupantHrId ?? null;
   const fixAge = num(provenance?.fix_age_seconds);
   const planned = planItem !== null;
 
@@ -236,7 +272,7 @@ export function buildVisitReportValues(context: VisitReportContext): Record<stri
     syncedAt: iso(visit.synced_at),
 
     // ── Who and where in the org ──
-    repName: person(names, repHrId),
+    repName: person(names, context.personHrId),
     repSeat: seat ? territoryName(seat) : null,
     line: seat?.lineName ?? null,
     district: seat?.regionName ?? null,
@@ -300,7 +336,7 @@ export function buildVisitReportValues(context: VisitReportContext): Record<stri
     visitLon: num(visit.lon),
     visitAccuracy: num(visit.accuracy_meters),
     distanceFromPlace: num(visit.distance_meters),
-    locationFlag: locationFlagLabel(visit.location_flag),
+    locationFlag: visitLocationFlagLabel(visit, context.readsLocationDetail),
     photoLat: num(visit.photo_lat),
     photoLon: num(visit.photo_lon),
     photoAccuracy: num(visit.photo_accuracy_meters),

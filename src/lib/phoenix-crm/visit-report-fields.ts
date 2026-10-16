@@ -139,7 +139,11 @@ export const VISIT_REPORT_FIELDS: ReadonlyArray<VisitReportField> = [
   F("when", "syncedAt", "Synced at (Cairo time)", "datetime", 20),
 
   // ── Who and where in the org (10) ──
-  F("org", "repName", "Rep name", "text", 24),
+  // 🔴 "Who visited", never "Rep name": a district manager's own call on a rep's territory carries no rep,
+  // and printing his name under "Rep" is false about a real person (the integrity board's "Who", 2026-10-13).
+  F("org", "repName", "Who visited", "text", 24, {
+    hint: "The rep, or the manager when it was a manager's own visit with no rep on it.",
+  }),
   F("org", "repSeat", "Rep seat", "text", 28),
   F("org", "line", "Line", "text", 16),
   F("org", "district", "Team / district", "text", 22),
@@ -286,6 +290,81 @@ export function visitReportCategoryOf(id: VisitReportCategoryId): VisitReportCat
   return VISIT_REPORT_CATEGORIES.find((category) => category.id === id) ?? VISIT_REPORT_CATEGORIES[0];
 }
 
+// ── The lead columns and the ready-made sets ─────────────────────────────────────────────────────
+
+/**
+ * 🔴 THE WORKBOOK ALWAYS STARTS WITH THE DATE, WHO VISITED AND THE CUSTOMER, ticked or not (owner,
+ * 2026-10-16, reversing the 15 Oct "only the chosen data" for these three alone). A file of distances or
+ * approval notes with no date and no name on each line cannot be read on its own. A ticked lead field is
+ * not printed twice: it moves to the front.
+ */
+export const VISIT_REPORT_LEAD_KEYS: ReadonlyArray<string> = ["visitDate", "repName", "customerName"];
+
+export type VisitReportStarterSet = { id: string; label: string; blurb: string; keys: ReadonlyArray<string> };
+
+/**
+ * Three ready-made choices a reader starts from instead of ticking a hundred boxes (owner, 2026-10-16).
+ * Each is cut to the reader's own sight by `visitReportStarterFields`, so a set may name a field a
+ * district manager is never offered and it is simply left out.
+ */
+export const VISIT_REPORT_STARTER_SETS: ReadonlyArray<VisitReportStarterSet> = [
+  {
+    blurb: "Who saw which customer, when, and what was said",
+    id: "daily",
+    keys: [
+      "visitDate", "dayOfWeek", "savedAt", "visitType", "plannedOrNot",
+      "repName", "managerOnVisit", "productManagerOnVisit",
+      "customerName", "listType", "speciality", "grade",
+      "placeLabel", "brick",
+      "productsDetailed", "samplesGiven", "comment",
+      "plannedThatDay", "dayActivity", "visitsThatDay",
+    ],
+    label: "Daily activity",
+  },
+  {
+    blurb: "Where each visit was saved against the place",
+    id: "location",
+    keys: [
+      "visitDate", "repName", "customerName",
+      "placeLabel", "placeAddress", "brick", "governorate", "placeLat", "placeLon", "placeAccuracy", "pointSource",
+      "visitLat", "visitLon", "visitAccuracy", "distanceFromPlace", "locationFlag",
+      "photoAccuracy", "integrityDetectors", "integrityStrength", "mockDevice",
+    ],
+    label: "Location",
+  },
+  {
+    blurb: "Every visit off the plan, the reason and who decided",
+    id: "offPlan",
+    keys: [
+      "visitDate", "repName", "customerName", "plannedOrNot", "unplannedKind", "offPlanReason",
+      "approvalStatus", "managerDecidedBy", "managerDecidedAt", "managerNote",
+      "sfeDecidedBy", "sfeDecidedAt", "sfeNote", "superAdminDecision",
+    ],
+    label: "Off-plan approvals",
+  },
+];
+
+/** A ready-made set as THIS reader may have it: the catalogue's order, nothing above the reader's sight. */
+export function visitReportStarterFields(set: VisitReportStarterSet, tier: VisitReportReaderTier): VisitReportField[] {
+  return resolveVisitReportSelection(set.keys, tier);
+}
+
+// ── Saved views ──────────────────────────────────────────────────────────────────────────────────
+
+/** How many saved views one person may keep, and how long a view's name may be. */
+export const VISIT_REPORT_SAVED_VIEWS_MAX = 20;
+export const VISIT_REPORT_VIEW_NAME_MAX = 60;
+
+/** One saved choice of fields — its owner's alone (owner, 2026-10-16: "Only its owner", "Fields only"). */
+export type VisitReportSavedView = { id: string; name: string; fields: string[] };
+
+/** A view's name, cleaned: spaces collapsed and trimmed; null when nothing is left or it is too long. */
+export function cleanVisitReportViewName(value: unknown): string | null {
+  const name = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+  if (!name || name.length > VISIT_REPORT_VIEW_NAME_MAX) return null;
+  return name;
+}
+
 // ── The period ───────────────────────────────────────────────────────────────────────────────────
 
 /** One rep may be read over a quarter; a district is several reps' worth of rows, so a month. */
@@ -335,6 +414,7 @@ export type VisitReportRow = {
   visitId: string;
   visitDate: string;
   savedAtIso: string;
+  /** Whose visit it is: the rep, or the manager on his own visit — never the seat's occupant. */
   repName: string;
   customerName: string;
   listType: string;
