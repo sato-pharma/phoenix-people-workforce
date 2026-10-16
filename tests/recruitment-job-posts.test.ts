@@ -63,7 +63,13 @@ function applyBands(html: string): number {
 
 export function runRecruitmentJobPostsTests() {
   // ── Every template carries every word ──────────────────────────────────────────────────────────
-  assert.equal(JOB_POST_TEMPLATES.length, 5, "the owner approved five templates");
+  assert.equal(JOB_POST_TEMPLATES.length, 6, "the owner's five approved templates, plus Brand Brief for product managers (2026-10-16)");
+
+  // Brand Brief prints the title row's headline as its KEY MESSAGE — and nothing at all when there is none.
+  const brief = renderJobPostHtml(post({ headline: "Own the brand.\nLead the launch." }), "brand-brief", ASSETS);
+  assert.ok(brief.includes('<div class="k">Key message</div><p><span>Own the brand.</span><span class="l2">Lead the launch.</span></p>'), "brand-brief: the headline's two lines are the key message");
+  assert.ok(!renderJobPostHtml(post(), "brand-brief", ASSETS).includes("Key message"), "brand-brief: no headline, no key message — a template never invents copy");
+  assert.ok(brief.includes('<div class="abname">01 &mdash; Medical Representative</div>'), "brand-brief: the artboard carries the job title as its name");
 
   for (const { key } of JOB_POST_TEMPLATES) {
     const html = renderJobPostHtml(post({ areas: AREAS }), key, ASSETS);

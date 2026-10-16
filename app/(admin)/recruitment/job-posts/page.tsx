@@ -14,7 +14,7 @@ import { NEW_CHANNEL_APPLY_WHATSAPP_NUMBER } from "@/lib/recruitment/outreach/jo
 
 export const dynamic = "force-dynamic";
 
-// Job Posts — pick or add a job title, write what the job is, choose one of the five post templates
+// Job Posts — pick or add a job title, write what the job is, choose one of the six post templates
 // and download the picture (owner, 2026-10-15: "I choose the job title … I write the requirements
 // and the needs … I choose the template I want to use and then download").
 //
@@ -56,7 +56,7 @@ export default async function JobPostsPage() {
     <div className="mx-auto max-w-7xl p-4 sm:p-6">
       <PremiumHero
         kicker="Recruitment"
-        subtitle="Choose a job title and its wording is ready — what you will do and what you need. Adjust it, pick one of five designs, and download the post. Changes you save stay with the title."
+        subtitle="Choose a job title and its wording is ready — what you will do and what you need. Adjust it, pick one of six designs, and download the post. Changes you save stay with the title."
         title="Job Posts"
       />
       <div className="pt-5">
