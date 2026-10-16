@@ -126,8 +126,23 @@ export const VISIT_RECORDING_ADMIN_PATH = "/admin/field-crm/visit-recording";
 /** The refusal note's ceiling — the database's own (500). */
 export const RECORDING_REVIEW_NOTE_MAX = 500;
 
-/** What the rep reads once a recorded visit is saved. It names no person and no check (Golden Rule #1). */
-export const RECORDED_VISIT_REP_NOTE = "Recorded. The visit counts once it is approved.";
+/**
+ * What the rep reads once a recorded visit is saved, in the owner's own words (2026-10-16: "show here ur
+ * visit is pending admin approval"). It names a role, never a person and never a check (Golden Rule #1).
+ * It never stops his next visit: every one waits on its own, and all of them stay pending until the
+ * Administrator decides.
+ */
+export const RECORDED_VISIT_REP_NOTE = "Your visit is pending admin approval. It counts once it is approved.";
+
+/**
+ * Where a recorded visit's approval has got to, on the rep's OWN visit list — his own approval, shown so
+ * he knows it is not counting yet, the same way an off-plan visit shows its step.
+ */
+export function recordingReviewRepLabel(status: RecordingReviewStatus): string {
+  if (status === "approved") return "Approved — it counts";
+  if (status === "refused") return "Not approved — it does not count";
+  return "Pending admin approval";
+}
 
 export function recordingReviewLabel(status: RecordingReviewStatus): string {
   if (status === "approved") return "Approved — it counts";

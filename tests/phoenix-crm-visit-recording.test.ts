@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   isUnplannedVisitStatus,
   isUnplannedVisitWaiting,
+  unplannedVisitStatusLabel,
   unplannedVisitRepNote,
   unplannedVisitStageOf,
 } from "../src/lib/phoenix-crm/unplanned-rules.ts";
@@ -16,6 +17,7 @@ import {
   RECORDING_REVIEW_NOTE_MAX,
   recordingDownloadName,
   recordingReviewLabel,
+  recordingReviewRepLabel,
   VISIT_RECORDING_ADMIN_PATH,
   VISIT_RECORDING_MAX_BYTES,
   VISIT_RECORDING_MAX_SECONDS,
@@ -138,7 +140,7 @@ export function runPhoenixCrmVisitRecordingTests(): void {
   assert.match(visits, /const hears = hearsVisitRecording\(viewer, seat\);/, "the day asks who may hear the recordings");
   assert.match(
     visits,
-    /return hears && recording\.seconds !== null \? \{ \.\.\.visit, countsInKpi, recordingSeconds: recording\.seconds \} : \{ \.\.\.visit, countsInKpi \};/,
+    /return hears && recording\.seconds !== null \? \{ \.\.\.reviewed, recordingSeconds: recording\.seconds \} : reviewed;/,
     "the recording's length — what draws the player — goes only to a reader who may hear it",
   );
   const sign = service.slice(service.indexOf("export async function signVisitRecording("));
@@ -209,11 +211,23 @@ export function runPhoenixCrmVisitRecordingTests(): void {
   assert.equal(recordingReviewLabel("pending"), "Waiting for your approval");
   assert.equal(VISIT_RECORDING_ADMIN_PATH, "/admin/field-crm/visit-recording", "the board links to the page that decides it");
 
-  // The rep's wording names no person and no check (Golden Rule #1).
-  for (const note of [RECORDED_VISIT_REP_NOTE, unplannedVisitRepNote("admin_pending")]) {
-    assert.match(note, /counts once it is approved/, "the rep is told it counts once approved");
+  // The rep is told, in the owner's own words, that his visit is pending admin approval (2026-10-16:
+  // "show here ur visit is pending admin approval") — a role, never a person, never a check.
+  for (const note of [RECORDED_VISIT_REP_NOTE, unplannedVisitRepNote("admin_pending"), recordingReviewRepLabel("pending")]) {
+    assert.match(note, /pending admin approval/i, "the rep reads that his visit is pending admin approval");
     assert.doesNotMatch(note, /Administrator|checked|reviewed|Omar/i, "and never who approves it or that it is checked");
   }
+  assert.equal(recordingReviewRepLabel("approved"), "Approved — it counts");
+  assert.equal(recordingReviewRepLabel("refused"), "Not approved — it does not count");
+
+  // It shows on his OWN visit list, for every reader, and an out-of-plan visit says it once, in its step pill.
+  assert.match(visits, /const reviewed = \{ \.\.\.visit, countsInKpi, recordingReview: recording\.reviewStatus \};/, "the day carries the approval to every reader, the rep included");
+  assert.match(tab, /if \(!visit\.recordingReview \|\| visit\.unplanned\) return null;/, "an out-of-plan visit is not told twice");
+  assert.match(tab, /\{recording \? <CrmPill tone=\{recording\.tone\}>\{recording\.label\}<\/CrmPill> : null\}/, "the pill is drawn on the visit's own row");
+  assert.equal(unplannedVisitStatusLabel("admin_pending"), "Pending admin approval");
+
+  // 🔴 It never stops his next visit: the save path asks nothing about an earlier visit's approval.
+  assert.doesNotMatch(save.slice(0, save.indexOf('"phoenix_crm_save_visit"')), /review_status|reviewStatus/, "a pending visit never blocks the next one");
 
   // An off-plan recorded visit's first step is the Administrator's, and it is still WAITING.
   assert.equal(isUnplannedVisitStatus("admin_pending"), true);

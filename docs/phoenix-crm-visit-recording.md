@@ -56,8 +56,8 @@ pressing it is the step.
 - **Who hears it.**
   - `hearsVisitRecording` allows the Super Admin, an SFE manager, or anyone in the territory's
     `managerChain`.
-  - The rep never hears it: `loadVisitDay` does not even ask whether a recording exists for the rep,
-    and `recording/play` answers 404 to anybody else.
+  - The rep never hears it: `loadVisitDay` sends the recording's length only to a reader who may hear
+    it, and `recording/play` answers 404 to anybody else. He does see its approval (below).
 - **Who manages it.** `canManageVisitRecording` allows the Super Admin, never a test persona. It is
   checked on the page and inside every admin service. Delete goes through the Storage API, then stamps
   `deleted_at` and `deleted_by_hr_id` on the row, so the visit reads as recorded and then deleted.
@@ -111,14 +111,22 @@ How it works:
   refuses a second decision.
 - **The Needs You board carries the count** to his own lane, linking to the Visit Recording page, and
   asks for it only when `canAdminister` is true.
-- **The rep reads one plain line:** "Recorded. The visit counts once it is approved." It names no
-  person and no check (Golden Rule #1). He is not told the decision.
+- **The rep sees "Your visit is pending admin approval"** — the owner's own words, the same day ("but
+  she can do the next visit if i not appriove yet but all keeps in pending until i confirm and hsow here
+  ur visit is pending admin approval"). It is in the saved note and on the visit's own row on his list
+  (`recordingReview`, sent to every reader, never the length or the audio), and the row changes to
+  "Approved — it counts" or "Not approved — it does not count" once he decides. An out-of-plan visit
+  says it in its step pill instead, so it is never said twice. It names a role, never a person and
+  never a check (Golden Rule #1).
+- **It never blocks the next visit.** The recorder resets after every save, each visit records its own
+  conversation, and nothing in the save path reads an earlier visit's approval — every one stays
+  pending until he decides.
 
 Decisions made without asking him, each easy to change:
 
 - The Administrator decides first, then the usual off-plan chain runs.
 - His refusal refuses the visit outright.
-- The rep is not notified of his decision.
+- The rep is not sent a notice of his decision; his list shows it.
 
 Files: `supabase/migrations/20261016161248_phoenix_crm_recorded_visit_waits_for_the_administrator.sql`,
 `app/api/phoenix-crm/recording/admin/review/route.ts`, plus the changes in `visit-recordings.ts`,

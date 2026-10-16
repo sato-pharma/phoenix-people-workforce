@@ -110,7 +110,7 @@ import {
   isRecordingRequired,
   loadRecordingsByVisit,
 } from "@/lib/phoenix-crm/server/visit-recordings";
-import { RECORDED_VISIT_REP_NOTE } from "@/lib/phoenix-crm/visit-recording-rules";
+import { RECORDED_VISIT_REP_NOTE, type RecordingReviewStatus } from "@/lib/phoenix-crm/visit-recording-rules";
 import { lineProductsByFamily, type LineProductFamily } from "@/lib/phoenix-crm/server/products";
 import { prepareDoubleVisitRequest, raiseDoubleVisitRequestFromVisit } from "@/lib/phoenix-crm/server/double-visit-requests";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
@@ -217,6 +217,12 @@ export type VisitRow = {
    * visit with no recording. The audio itself is signed one visit at a time.
    */
   recordingSeconds?: number | null;
+  /**
+   * Where a RECORDED visit's approval has got to (owner, 2026-10-16) — for EVERY reader, the rep
+   * included: it is his own approval, shown on his own list as "Pending admin approval" until the
+   * Administrator decides. It carries no length and no audio. Absent on a visit with no recording.
+   */
+  recordingReview?: RecordingReviewStatus;
   locationFlag: VisitLocationFlag;
   locationLabel: string;
   clockOff: boolean;
@@ -541,7 +547,8 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
       const recording = recordings.get(visit.visitId);
       if (!recording) return visit;
       const countsInKpi = visit.countsInKpi && recording.reviewStatus === "approved";
-      return hears && recording.seconds !== null ? { ...visit, countsInKpi, recordingSeconds: recording.seconds } : { ...visit, countsInKpi };
+      const reviewed = { ...visit, countsInKpi, recordingReview: recording.reviewStatus };
+      return hears && recording.seconds !== null ? { ...reviewed, recordingSeconds: recording.seconds } : reviewed;
     }),
     canAdd: date === today && canEnterVisits(viewer, seat.seatId, isTest),
     dayActivity: activity,

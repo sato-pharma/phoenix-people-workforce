@@ -131,7 +131,7 @@ export function unplannedVisitStageOf(status: UnplannedVisitStatus): UnplannedVi
 }
 
 export function unplannedVisitStatusLabel(status: UnplannedVisitStatus): string {
-  if (status === "admin_pending") return "Waiting for approval";
+  if (status === "admin_pending") return "Pending admin approval";
   if (status === "manager_pending") return "Waiting for your manager";
   if (status === "sfe_pending") return "Waiting for SFE";
   if (status === "approved") return "Approved — it counts";
@@ -149,7 +149,7 @@ export function unplannedVisitStatusLabel(status: UnplannedVisitStatus): string 
  * that can tell pass what is actually on the row.
  */
 export function unplannedVisitRepNote(status: UnplannedVisitStatus, managerStepTaken = true): string {
-  if (status === "admin_pending") return "Off the plan. It counts once it is approved.";
+  if (status === "admin_pending") return "Off the plan. Your visit is pending admin approval.";
   if (status === "manager_pending") return "Off the plan. It counts once your manager and then SFE approve it.";
   if (status === "sfe_pending") {
     return managerStepTaken
