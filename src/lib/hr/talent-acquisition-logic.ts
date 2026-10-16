@@ -21,7 +21,8 @@ import type { HrBundleName } from "@/lib/auth/hr-functions";
 import type { HrCommandTile } from "@/lib/hr/command-center";
 import type { CalendarGridDay, CalendarItem } from "@/lib/calendar/logic";
 import type { InterviewBooking, InterviewCalendarRole } from "@/lib/recruitment/interview-calendar-types";
-import { formatTimeRange } from "@/lib/recruitment/interview-calendar-week";
+import { formatTimeOfDay, formatTimeRange } from "@/lib/recruitment/interview-calendar-week";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { isIsoDate, parseLetterDate } from "@/lib/offers/dates";
 import type { OfferRecord } from "@/lib/offers/types";
 import type { DailyCvDigest } from "@/lib/recruitment/inbound/daily-cv-digest";
@@ -186,6 +187,11 @@ export type TalentCalendar = {
   /** FALSE when the company calendar did not answer — the grid then carries only her own two kinds. */
   monthItemsLoaded: boolean;
   /**
+   * The instant the server built this page, in ms. It changes on every 60-second re-read, which is
+   * what tells the embedded week grid (that fetches its own data) to read its week again.
+   */
+  refreshedAt?: number;
+  /**
    * Today, in Cairo, as the SERVER saw it.
    *
    * Carried rather than computed in the component, because the month grid marks today whatever week
@@ -261,6 +267,27 @@ export function offerStartKey(startDate: string | null | undefined): string {
 }
 
 /**
+ * Where a joining row leads: the Job Offers list. The page reads no `?open=<id>` (it takes no search
+ * params at all), so a row that carried one only LOOKED like a deep link to that offer.
+ */
+const OFFERS_HREF = "/hr/offers";
+
+/**
+ * The day an accepted offer's person walks in. Once the offer has an employee record, THAT record's
+ * hire date wins — it is the date attendance and payroll run from, and HR can move it after the
+ * letter went out (measured 2026-10-16: a letter said 17 October while the employee record said
+ * 24 October). Until there is a record, the letter's own start date stands.
+ */
+function joiningDayKey(
+  offer: OfferRecord,
+  hireDateByHrId: ReadonlyMap<string, string> | undefined,
+): string {
+  const key = canonicalHrIdKey(offer.employeeHrId);
+  const hired = key ? (hireDateByHrId?.get(key) ?? "") : "";
+  return isIsoDate(hired) ? hired : offerStartKey(offer.startDate);
+}
+
+/**
  * The joining days inside a span, from the offers that were ACCEPTED.
  *
  * `OfferFields.startDate` is the date the letter itself names, which is the date she onboards
@@ -272,14 +299,15 @@ export function joinersBetween(
   offers: readonly OfferRecord[],
   fromKey: string,
   toKey: string,
+  hireDateByHrId?: ReadonlyMap<string, string>,
 ): TalentJoiner[] {
   return offers
     .filter((offer) => offer.status === "accepted")
-    .map((offer) => ({ offer, start: offerStartKey(offer.startDate) }))
+    .map((offer) => ({ offer, start: joiningDayKey(offer, hireDateByHrId) }))
     .filter(({ start }) => Boolean(start) && start >= fromKey && start <= toKey)
     .map(({ offer, start }) => ({
       dateKey: start,
-      href: `/hr/offers?open=${encodeURIComponent(offer.id)}`,
+      href: OFFERS_HREF,
       id: offer.id,
       name: offer.candidateName,
       title: offer.title,
@@ -693,11 +721,14 @@ export function orderTodaysInterviews(
   }));
 }
 
-/** "10:00" — the start alone, for the time column; the full range stays in `timeLabel`. */
-export function startTimeLabel(startMinutes: number): string {
-  const hours = Math.floor(startMinutes / 60);
-  const minutes = startMinutes % 60;
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+/**
+ * "2:00" and "PM" — the start alone, for the time column, in the Interview Calendar's own 12-hour
+ * reading. The week grid, the "mine" list and every row's accessible name already say "2:00 PM", so
+ * the Today panel saying "14:00" put two clocks on one page.
+ */
+export function startClockParts(startMinutes: number): { suffix: string; time: string } {
+  const [time = "", suffix = ""] = formatTimeOfDay(startMinutes).split(" ");
+  return { suffix, time };
 }
 
 /** Minutes past midnight in Cairo for an instant — the clock `orderTodaysInterviews` reads. */
@@ -750,12 +781,13 @@ export function joinersArriving(
   offers: readonly OfferRecord[] | undefined,
   todayKey: string,
   windowDays: number = JOINERS_WINDOW_DAYS,
+  hireDateByHrId?: ReadonlyMap<string, string>,
 ): TalentJoiners {
   const toKey = addDaysToKey(todayKey, windowDays);
   return {
     fromKey: todayKey,
     loaded: offers !== undefined,
-    rows: offers ? joinersBetween(offers, todayKey, toKey) : [],
+    rows: offers ? joinersBetween(offers, todayKey, toKey, hireDateByHrId) : [],
     toKey,
   };
 }

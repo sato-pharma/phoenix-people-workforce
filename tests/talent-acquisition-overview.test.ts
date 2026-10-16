@@ -26,7 +26,7 @@ import {
   orderTodaysInterviews,
   rateMeterPercent,
   RECRUITING_TASK_KEYS,
-  startTimeLabel,
+  startClockParts,
   TALENT_ACQUISITION_SEAT,
   TALENT_KEPT_BUILDER_TILE_KEYS,
 } from "../src/lib/hr/talent-acquisition-logic.ts";
@@ -198,7 +198,12 @@ function testARateIsNeverDrawnAsZero() {
     "the Conversion band never shrinks below its own text",
   );
   assert.match(keyCard, /title=\{kpi\.caption\}/, "the caption stays reachable on the card as its tooltip");
-  assert.match(keyCard, /aria-label=\{`\$\{kpi\.label\}\. \$\{kpi\.caption\}/, "and in its accessible name");
+  assert.match(
+    keyCard,
+    /aria-label=\{`\$\{kpi\.label\}: \$\{spokenFigure\}\. \$\{kpi\.caption\}/,
+    "and in its accessible name, which also says the figure and both halves — an aria-label replaces the card's content, so a screen reader would otherwise never hear the percentage",
+  );
+  assert.match(keyCard, /whitespace-nowrap[^"]*text-\[2rem\]/, "the percentage never wraps its % onto a second line");
   assert.doesNotMatch(keyCard, /<figure|<figcaption/, "the large captioned figure is gone");
   // The meter reads the rate through the one helper that returns NULL for a null rate, and is drawn
   // only when that helper gave a number — so a measure with nothing to divide by draws no bar.
@@ -269,8 +274,8 @@ function testARateIsNeverDrawnAsZero() {
   );
   assert.match(
     component,
-    /flex min-h-\[23px\] items-center/,
-    "a figure's label sits in a two-line box, so a wrapped label and a one-line label put their figures on the same line",
+    /flex min-h-\[34px\] items-center[^"]*@min-\[480px\]:min-h-\[23px\]/,
+    "a figure's label sits in a box as tall as its longest wrap (three lines on a phone, two from 480px), so a wrapped label and a one-line label put their figures on the same line",
   );
   assert.ok(component.includes("@container relative overflow-hidden border-b"), "the cards and today share ONE container");
 
@@ -428,7 +433,9 @@ function testTheRebuiltPagesPureHelpers() {
     orderTodaysInterviews([interview("a", 540)], 1_000).every((one) => one.done && !one.next),
     "after the last interview nothing is next",
   );
-  assert.equal(startTimeLabel(540), "09:00");
+  assert.deepEqual(startClockParts(540), { suffix: "AM", time: "9:00" }, "the Today panel reads the calendar's own 12-hour clock");
+  assert.deepEqual(startClockParts(14 * 60 + 30), { suffix: "PM", time: "2:30" });
+  assert.deepEqual(startClockParts(12 * 60), { suffix: "PM", time: "12:00" }, "noon is 12:00 PM, not 0:00");
   assert.equal(
     cairoMinutesNow(new Date("2026-10-16T07:30:00.000Z")),
     10 * 60 + 30,
@@ -482,6 +489,39 @@ function testTheRebuiltPagesPureHelpers() {
     ],
     "a letter-date start reads as its real day; one already started, one past day fourteen, one that cannot be read and a blank one are not on the panel",
   );
+  // Once an offer has an employee record, THAT record's hire date is the day: a letter said 17
+  // October while the employee record said 24 October (measured 2026-10-16), and 24 is the day
+  // attendance and payroll start. The id is matched through the canonical key, so case never hides it.
+  const hired = joinersArriving(
+    [
+      {
+        ...offer({ id: "moved", startDate: "17 October 2026", status: "accepted" }),
+        employeeHrId: "PD-0028",
+      } as unknown as OfferRecord,
+      offer({ id: "no-record", startDate: "18 October 2026", status: "accepted" }),
+    ],
+    "2026-10-16",
+    undefined,
+    new Map([["pd-0028", "2026-10-24"]]),
+  );
+  assert.deepEqual(
+    hired.rows.map((row) => [row.id, row.dateKey]),
+    [
+      ["no-record", "2026-10-18"],
+      ["moved", "2026-10-24"],
+    ],
+    "an offer WITH an employee record joins on that record's hire date; one without keeps the letter's",
+  );
+  assert.equal(
+    joinersArriving(
+      [offer({ id: "far", startDate: "17 October 2026", status: "accepted" })],
+      "2026-10-16",
+      undefined,
+      new Map([["x-1", "2026-10-24"]]),
+    ).rows.length,
+    1,
+    "an unrelated hire date changes nothing",
+  );
   assert.equal(offerStartKey("1 november 2026"), "2026-11-01", "a bare day and any capitalisation read");
   assert.equal(offerStartKey("2026-10-18"), "2026-10-18", "an ISO start date still reads");
 }
@@ -516,7 +556,11 @@ function testTheTodayPanelsNeverDrawAFailureAsAQuietDay() {
   );
   assert.match(data, /buildTodaysCvDigest\(now\)/, "and counted by the 18:00 summary's own builder, so the two never disagree");
   assert.match(data, /listInterviewCalendarDay\(caller, todayKey\)/, "today's interviews come through the calendar's own day reader and gate");
-  assert.match(data, /joinersArriving\(loaded\.offers, calendar\.todayKey\)/, "the joiners are the offers already loaded — no new read");
+  assert.match(
+    data,
+    /joinersArriving\(loaded\.offers, calendar\.todayKey, undefined, hireDates\)/,
+    "the joiners are the offers and the directory already loaded — no new read, and the Employee Master's start date wins over the letter's",
+  );
   for (const line of [
     'pageUnavailable.push("CVs received today")',
     'if (!today.loaded) pageUnavailable.push("Today\'s interviews")',
@@ -1257,6 +1301,38 @@ function testTheOpenPageRefreshesItsOwnFigures() {
     /clearInterval\(timer\)[\s\S]*removeEventListener\("visibilitychange"/,
     "and both are released when the page unmounts",
   );
+
+  // THE EMBEDDED WEEK GRID FETCHES ITSELF, so `router.refresh()` alone never reached it: a booking
+  // added at 14:30 arrived in Today and on the month within a minute and not on the week.
+  const calendar = codeOf(CALENDAR_COMPONENT);
+  assert.match(calendar, /refreshToken=\{calendar\.refreshedAt\}/, "the week grid is handed the server's refresh instant");
+  assert.match(
+    codeOf("src/components/recruitment/interview-calendar/interview-calendar-view.tsx"),
+    /\}, \[api, refreshToken, weekStart\]\);/,
+    "and its fetch effect re-reads the week when that instant changes",
+  );
+  assert.match(codeOf(DATA), /refreshedAt: now\.getTime\(\)/, "the loader stamps every render with it");
+}
+
+// ── 15. A read that gave up is NAMED, never drawn as a calm answer ────────────────────────────────
+function testAGivenUpReadIsNamedNeverDrawnAsAnAllClear() {
+  const data = codeOf(DATA);
+  assert.match(
+    data,
+    /openVacancyReadFailed\(\)[\s\S]*pageUnavailable\.push\("Vacant seats"\)/,
+    "the open-vacancy read returns [] on a timeout, so the page asks whether it did and names 'Vacant seats' rather than printing '0 vacant, every seat filled' in green",
+  );
+  assert.match(data, /loaded\.directory && !vacanciesUnreadable/, "and the vacancy tiles are left out in that case");
+  assert.match(
+    data,
+    /failedMonthWeeks > 0\) pageUnavailable\.push\("Month interviews"\)/,
+    "a month week that refused takes its interviews off the grid, and says so",
+  );
+  assert.match(
+    codeOf("src/lib/employees/vacancy-closer.ts"),
+    /vacancyReadState\(\)\.failed = true/,
+    "the closer records the failure instead of swallowing it silently",
+  );
 }
 
 export function runTalentAcquisitionOverviewTests() {
@@ -1267,6 +1343,7 @@ export function runTalentAcquisitionOverviewTests() {
   testHiringQualityWindowsBothHalvesAndNullsTheUndecided();
   testDistinctPeopleCollapsesRoundsAndKeepsOutsiders();
   testOnlyAnAcceptedOfferDrawsAJoiningDay();
+  testAGivenUpReadIsNamedNeverDrawnAsAnAllClear();
   testAMultiDayHolidayIsMarkedOnEveryDayItCovers();
   testEmployeeRequestsIsOffThePageAndStillInHerSeat();
   testTheTwoDuplicateChartsAreNeitherBuiltNorDrawn();

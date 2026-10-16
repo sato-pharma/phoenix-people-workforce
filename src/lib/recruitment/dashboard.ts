@@ -119,8 +119,18 @@ export function resolveHiredWindow(
   now: Date = new Date(),
 ): HiredWindow {
   const fallback = currentCairoMonthWindow(now);
-  const clean = (value?: string | null) =>
-    typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim()) ? value.trim() : null;
+  // A REAL calendar day, not just the right shape: "2026-13-45" matches a digit pattern, rolls over
+  // inside the Cairo conversion without an error, and then fails far from here ("Invalid time
+  // value") and takes the whole page down. `2026-02-31` would silently have become 3 March.
+  const clean = (value?: string | null) => {
+    const text = typeof value === "string" ? value.trim() : "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+    const [year, month, day] = text.split("-").map(Number);
+    const check = new Date(Date.UTC(year, month - 1, day));
+    return check.getUTCFullYear() === year && check.getUTCMonth() === month - 1 && check.getUTCDate() === day
+      ? text
+      : null;
+  };
 
   const from = clean(input.from) ?? fallback.fromIso;
   const to = clean(input.to) ?? fallback.toIso;

@@ -8,7 +8,9 @@
  *
  * ONLY AN ACCEPTED OFFER IS SOMEBODY ARRIVING. The rows are `joinersBetween` over the offers the page
  * already loaded — the same rule the month grid draws its joining days with — so a sent letter with
- * a proposed start date never appears here. Every row opens that offer (`/hr/offers?open=<id>`).
+ * a proposed start date never appears here. A row leads to the Job Offers list (the page takes no
+ * `?open=<id>`, so a row never pretended to open one offer), and once the offer has an employee record
+ * the day is that record's hire date.
  *
  * A FAILED READ IS SAID. The offers not loading draws the amber notice, never "nobody is joining".
  */
@@ -23,7 +25,7 @@ import {
   type TalentJoiners,
 } from "@/lib/hr/talent-acquisition-logic";
 
-import { TaChip, TaCouldNotLoad, TaEmpty, TaPanel, TaQuietLink } from "./panel";
+import { TA_ROW_LINK_CLASS, TaChip, TaCouldNotLoad, TaEmpty, TaPanel, TaQuietLink } from "./panel";
 
 const OFFERS_HREF = "/hr/offers";
 
@@ -87,7 +89,7 @@ export function TaJoinersArriving({
               <li key={row.id}>
                 <Link
                   aria-label={`${row.name}, ${row.title}, joins ${daysUntilLabel(joiners.fromKey, row.dateKey)}`}
-                  className="group/row flex items-center gap-3 px-4 py-3 transition-colors hover:bg-orange-50/40 focus-visible:bg-orange-50/60 focus-visible:outline-none"
+                  className={`${TA_ROW_LINK_CLASS} items-center`}
                   href={row.href}
                 >
                   {/* The date block: weekday, day, month — a calendar leaf, square, the day the
@@ -101,7 +103,7 @@ export function TaJoinersArriving({
                     }`}
                   >
                     <span
-                      className={`text-[8px] font-black uppercase tracking-[0.14em] ${soon ? "text-orange-700" : "text-slate-400"}`}
+                      className={`text-[10px] font-black uppercase tracking-[0.1em] ${soon ? "text-orange-700" : "text-slate-500"}`}
                     >
                       {block.weekday}
                     </span>
@@ -111,13 +113,16 @@ export function TaJoinersArriving({
                       {block.day}
                     </span>
                     <span
-                      className={`text-[8px] font-black uppercase tracking-[0.14em] ${soon ? "text-orange-700" : "text-slate-400"}`}
+                      className={`text-[10px] font-black uppercase tracking-[0.1em] ${soon ? "text-orange-700" : "text-slate-500"}`}
                     >
                       {block.month}
                     </span>
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block break-words text-[13px] font-bold leading-snug text-slate-900 group-hover/row:text-orange-800">
+                    <span
+                      className="block break-words text-[13px] font-bold leading-snug text-slate-900 group-hover/row:text-orange-800"
+                      dir="auto"
+                    >
                       {row.name}
                     </span>
                     <span className="mt-0.5 block break-words text-[11px] font-semibold text-slate-500">

@@ -97,6 +97,8 @@ import {
   type TalentToday,
 } from "@/lib/hr/talent-acquisition-logic";
 import { buildHrTodayTasks, openWorkforceSeats, type HrTask } from "@/lib/hr/today-tasks";
+import { openVacancyReadFailed } from "@/lib/employees/vacancy-closer";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { listOffers } from "@/lib/offers/service";
 import type { OfferRecord } from "@/lib/offers/types";
@@ -117,6 +119,7 @@ import {
 } from "@/lib/recruitment/interview-calendar";
 import {
   cairoDateKey,
+  isDateKey,
   upcomingWeekStart,
   weekStartFor,
 } from "@/lib/recruitment/interview-calendar-week";
@@ -152,11 +155,20 @@ export type TalentAcquisitionOverviewData = {
   unavailableSources: string[];
 };
 
+/** What a re-pointed button is called, by where it now leads — it must not name the page it left. */
+const REPOINTED_LABELS: Readonly<Record<string, string>> = {
+  "/hr/recruitment": "Open Recruitment",
+};
+
 /** Re-point a link at a page the seat can actually open, or drop it. The rule the tiles follow. */
 function fenced<T extends { href: string }>(seat: HrBundleName, rows: readonly T[]): T[] {
   return rows.flatMap((row) => {
     const href = hrefOutsideSeatFence(seat, row.href);
-    return href ? [{ ...row, href }] : [];
+    if (!href) return [];
+    // A button that read "Open CV Database" and landed on Recruitment (her seat is fenced off the
+    // CV Database) said one thing and did another.
+    const label = href !== row.href ? REPOINTED_LABELS[href] : undefined;
+    return [label && "hrefLabel" in row ? { ...row, href, hrefLabel: label } : { ...row, href }];
   });
 }
 
@@ -174,7 +186,11 @@ async function listMonthInterviews(caller: InterviewCalendarCaller, weekStarts: 
   const results = await Promise.all(
     weekStarts.map((start) => listInterviewCalendarWeek(caller, start).catch(() => null)),
   );
-  return results.flatMap((result) => (result?.bookings ?? []).map(toTalentInterview));
+  return {
+    // A week that refused takes its interviews off the grid, so the page has to SAY that happened.
+    failedWeeks: results.filter((result) => result === null).length,
+    interviews: results.flatMap((result) => (result?.bookings ?? []).map(toTalentInterview)),
+  };
 }
 
 /**
@@ -193,8 +209,13 @@ async function listMonthInterviews(caller: InterviewCalendarCaller, weekStarts: 
 async function loadCalendar(
   access: AccessContext,
   offers: readonly OfferRecord[] | undefined,
-  options: { month?: { month: number; year: number } | null; now: Date; week?: string | null },
-): Promise<{ calendar: TalentCalendar; today: TalentToday }> {
+  options: {
+    hireDates?: ReadonlyMap<string, string>;
+    month?: { month: number; year: number } | null;
+    now: Date;
+    week?: string | null;
+  },
+): Promise<{ calendar: TalentCalendar; failedMonthWeeks: number; today: TalentToday }> {
   const now = options.now;
   const todayKey = cairoDateKey(now);
   // THE SAME WEEK THE REAL CALENDAR PAGE OPENS ON — `upcomingWeekStart`, not the week today sits in.
@@ -203,7 +224,7 @@ async function loadCalendar(
   // weekend on a week that is over, with the next one a click away and nothing saying so. A deep
   // link (`?taWeek=`) still wins — it is somebody asking for a particular week by name.
   const weekStart =
-    options.week && /^\d{4}-\d{2}-\d{2}$/.test(options.week)
+    options.week && isDateKey(options.week)
       ? weekStartFor(options.week)
       : upcomingWeekStart(now);
   const { year, month } = options.month ?? currentCairoDateParts();
@@ -237,11 +258,14 @@ async function loadCalendar(
         .map((date) => weekStartFor(date)),
     ),
   ];
-  const monthInterviews = caller ? await listMonthInterviews(caller, monthWeekStarts) : [];
+  const { failedWeeks: failedMonthWeeks, interviews: monthInterviews } = caller
+    ? await listMonthInterviews(caller, monthWeekStarts)
+    : { failedWeeks: 0, interviews: [] };
   const monthJoiners = joinersBetween(
     offers ?? [],
     gridDates[0] ?? `${year}-${String(month).padStart(2, "0")}-01`,
     gridDates[gridDates.length - 1] ?? gridDates[0] ?? "",
+    options.hireDates,
   );
   const calendar: TalentCalendar = {
     interviewCalendar: role ? { abilities, canRequest, role, zoomConnected: isZoomConfigured() } : null,
@@ -259,11 +283,13 @@ async function loadCalendar(
       year,
     },
     monthItemsLoaded: workspace !== null && workspace.schemaReady,
+    refreshedAt: now.getTime(),
     todayKey,
     weekStart,
   };
   return {
     calendar,
+    failedMonthWeeks,
     today: {
       interviews: (todays?.bookings ?? []).map(toTalentInterview),
       loaded: todays !== null,
@@ -333,14 +359,24 @@ export async function getTalentAcquisitionOverview(
    */
   const pageUnavailable: string[] = [];
 
+  // An offer that already has an employee record joins on THAT record's hire date (HR can move it
+  // after the letter went out). Keyed by canonical hr id, so a mixed-case id still matches.
+  const hireDates = new Map<string, string>();
+  for (const employee of loaded.directory?.employees ?? []) {
+    const key = canonicalHrIdKey(employee.hrId);
+    const hired = (employee.hireDate ?? "").slice(0, 10);
+    if (key && hired) hireDates.set(key, hired);
+  }
+
   // The calendar waits for the offers, because the joining days on it come from the accepted ones.
-  const [volume, personal, { calendar, today }, cvToday, cvsReceived] = await Promise.all([
+  const [volume, personal, { calendar, failedMonthWeeks, today }, cvToday, cvsReceived] = await Promise.all([
     countInterviewVolume(KPI_WINDOW_DAYS, now).catch(() => {
       pageUnavailable.push("Interviews held");
       return null;
     }),
     personalPromise,
     loadCalendar(access, loaded.offers, {
+      hireDates,
       month: options.month ?? null,
       now,
       week: options.week ?? null,
@@ -372,6 +408,12 @@ export async function getTalentAcquisitionOverview(
   if (!calendar.mineLoaded) pageUnavailable.push("Your own interviews");
   if (!calendar.monthItemsLoaded) pageUnavailable.push("Company calendar");
   if (!today.loaded) pageUnavailable.push("Today's interviews");
+  if (failedMonthWeeks > 0) pageUnavailable.push("Month interviews");
+  // The open-vacancy read gives up as "no vacancies" so the directory still loads. Here that would
+  // print "0 vacant, every seat filled" in green — the false all-clear — so the tiles are left out
+  // and the read is named instead.
+  const vacanciesUnreadable = openVacancyReadFailed();
+  if (vacanciesUnreadable) pageUnavailable.push("Vacant seats");
 
   return {
     calendar,
@@ -381,7 +423,7 @@ export async function getTalentAcquisitionOverview(
       tiles: fenced(seat, [
         // Vacants by line, absent when the directory did not load: a 0 there would say "every seat
         // is filled", the false all-clear the seat tiles have always refused to print.
-        ...(loaded.directory
+        ...(loaded.directory && !vacanciesUnreadable
           ? buildLineVacancyTiles({
               activeLineNames: loaded.directory.employees
                 .filter((employee) => isActiveDirectoryEmployee(employee))
@@ -400,7 +442,7 @@ export async function getTalentAcquisitionOverview(
       offers: loaded.offers,
       volume,
     }),
-    joiners: joinersArriving(loaded.offers, calendar.todayKey),
+    joiners: joinersArriving(loaded.offers, calendar.todayKey, undefined, hireDates),
     offerConversion: buildOfferConversionKpis(loaded.offers),
     onVacationToday: loaded.vacationsToday ?? null,
     personal,
