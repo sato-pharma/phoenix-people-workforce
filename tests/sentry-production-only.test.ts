@@ -236,6 +236,8 @@ function wiringTests() {
     assert.notEqual((error as { code?: string }).code, "ERR_PACKAGE_PATH_NOT_EXPORTED", "the installed package must export ./config");
   }
   assert.match(nextConfigSource(), /telemetry: false/);
+  assert.match(nextConfigSource(), /deploy: \{ env: "production" \}/, "each release is marked as a production deploy");
+  assert.match(nextConfigSource(), /setCommits: \{ repo: "Gawish-1997\/phoenix-people-workforce", commit: release, ignoreMissing: true \}/, "commits are named explicitly and a missing integration is tolerated");
   for (const switchName of ["autoInstrumentServerFunctions", "autoInstrumentMiddleware", "autoInstrumentAppDirectory", "automaticVercelMonitors"]) {
     assert.match(nextConfigSource(), new RegExp(`${switchName}: false`), `${switchName} stays off`);
   }
