@@ -66,5 +66,10 @@ The owner asked for a deep audit of the report on 16 Oct 2026 and then for five 
   and 97 for a district manager. A visit the Super Admin entered later for a rep (`isEnteredForRep`, 18 on
   production) reads *No location: entered later by the Super Admin*, the wording every other screen uses,
   instead of "No validated place".
+- **A district manager never reads "Weak signal".** Under the 2 Oct 2026 distance-only ruling, anyone below
+  the Super Admin and the SFE Manager reads a weak reading as *At the place*, as on the approval cards and
+  the place report (`readsLocationDetail`). The report had printed "Weak signal" to district managers on 7
+  visits, in the table, the location field and the dashboard. The owner added this fix to the same PR the
+  same night.
 
 Pinned by `tests/phoenix-crm-visit-report.test.ts`.

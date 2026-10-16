@@ -39,6 +39,13 @@ export type VisitReportContext = {
    * "Unknown rep" on a vacant seat (12 more).
    */
   personHrId: string | null;
+  /**
+   * Whether this reader is shown the measurement behind a distance (`readsLocationDetail`: the Super Admin
+   * and the SFE Manager). 🔴 A district manager reads the distance only (owner, 2026-10-02), so a weak
+   * reading reads to him as at the place, as on every other screen — this report printed "Weak signal"
+   * to him on 7 visits until 2026-10-16.
+   */
+  readsLocationDetail: boolean;
   names: PeopleNames;
   /** The manager chain above the seat, by role: names only. */
   districtManagerHrId: string | null;
@@ -113,15 +120,21 @@ export function locationFlagLabel(flag: unknown): string | null {
  * A visit's position wording. A visit the Super Admin entered later for a rep carries no reading at all,
  * so it says so in the words every other screen uses — its stored `no_place` flag would otherwise read as
  * "No validated place", a sentence about the customer's place rather than about the missing reading.
+ *
+ * `readsDetail` is required, so every caller says who is reading: below the Super Admin and the SFE
+ * Manager a weak reading is never far (far beats weak, geo.ts) and reads as at the place — the rule
+ * `offPlanLocationFlag` applies on the approval cards and `loadVisitLocationReport` on the place report.
  */
-export function visitLocationFlagLabel(visit: Row): string | null {
+export function visitLocationFlagLabel(visit: Row, readsDetail: boolean): string | null {
   const enteredLater = isEnteredForRep({
     enteredBy: visit.entered_by_hr_id,
     manager: visit.manager_hr_id,
     rep: visit.rep_hr_id,
     senior: visit.senior_hr_id,
   });
-  return enteredLater ? MISSED_VISIT_LOCATION_LABEL : locationFlagLabel(visit.location_flag);
+  if (enteredLater) return MISSED_VISIT_LOCATION_LABEL;
+  const flag = text(visit.location_flag);
+  return locationFlagLabel(!readsDetail && flag === "weak_gps" ? "ok" : flag);
 }
 
 const POINT_SOURCE_LABELS: Record<string, string> = {
@@ -323,7 +336,7 @@ export function buildVisitReportValues(context: VisitReportContext): Record<stri
     visitLon: num(visit.lon),
     visitAccuracy: num(visit.accuracy_meters),
     distanceFromPlace: num(visit.distance_meters),
-    locationFlag: visitLocationFlagLabel(visit),
+    locationFlag: visitLocationFlagLabel(visit, context.readsLocationDetail),
     photoLat: num(visit.photo_lat),
     photoLon: num(visit.photo_lon),
     photoAccuracy: num(visit.photo_accuracy_meters),

@@ -171,6 +171,7 @@ function context(overrides: Partial<VisitReportContext> = {}): VisitReportContex
     names: new Map(),
     onLeave: null,
     personHrId: null,
+    readsLocationDetail: true,
     place: { label: "Pharmacy One, Faisal", status: "validated" },
     placeNotes: [],
     planItem: null,
@@ -239,6 +240,17 @@ function checkValues(): void {
     context({ visit: { ...context().visit, entered_by_hr_id: "B-1", location_flag: "no_place", rep_hr_id: "B-1" } }),
   );
   assert.equal(ownSave.locationFlag, "No validated place", "a rep's own save keeps its real wording");
+
+  // 🔴 A DISTRICT MANAGER READS THE DISTANCE ONLY (owner, 2026-10-02): a weak reading reads to him as at the
+  // place, as on every other screen. The Super Admin and the SFE Manager still read the verdict.
+  const weak = { ...context().visit, distance_meters: 40, location_flag: "weak_gps" };
+  assert.equal(
+    buildVisitReportValues(context({ readsLocationDetail: false, visit: weak })).locationFlag,
+    "At the place",
+    "a district manager never reads a weak-signal verdict",
+  );
+  assert.equal(buildVisitReportValues(context({ readsLocationDetail: true, visit: weak })).locationFlag, "Weak signal", "the SFE Manager and the Super Admin still do");
+  assert.equal(buildVisitReportValues(context({ readsLocationDetail: false })).locationFlag, "Far from the place", "far stays far for everybody");
 }
 
 function checkSequence(): void {
@@ -436,7 +448,9 @@ function checkSource(): void {
   assert.match(loader, /personOnTheVisit\(\{/, "the loader names a visit's person with the integrity board's rule");
   assert.ok(!loader.includes("seat?.occupantHrId"), "and never falls back to whoever holds the seat");
   assert.match(loader, /person: whoseVisit\(visit\)/, "a day's order is per person, not per seat");
-  assert.match(loader, /locationFlag: visitLocationFlagLabel\(visit\)/, "the row head says when the Super Admin entered a visit later");
+  assert.match(loader, /locationFlag: visitLocationFlagLabel\(visit, detail\)/, "the row head says when the Super Admin entered a visit later, in the reader's own sight");
+  assert.match(loader, /const detail = readsLocationDetail\(viewer\);/, "and that sight is the one every other screen asks");
+  assert.match(loader, /readsLocationDetail: detail,/, "the values get the same sight as the row head");
 
   const route = source("app/api/phoenix-crm/visit-report/route.ts");
   assert.ok(route.indexOf("assertSameOriginMutation(request)") < route.indexOf("resolveAccessContext(request)"), "the POST checks the origin before anything else");

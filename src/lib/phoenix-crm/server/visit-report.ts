@@ -28,7 +28,7 @@
 
 import { notFoundError, validationError } from "@/lib/http/api-errors";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
-import { canReadVisitReport, isLocationBlind, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canReadVisitReport, isLocationBlind, readsLocationDetail, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dedupeIds, selectByIds, seatScoped, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { readDoubleVisitPlansForReport } from "@/lib/phoenix-crm/server/double-visit-plans";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS, PLAN_STATUSES_WITH_SENT_DAYS } from "@/lib/phoenix-crm/server/plan-day-status";
@@ -518,6 +518,8 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
   };
 
   // ── The rows ──
+  // 🔴 A district manager reads the distance only (owner, 2026-10-02): a weak reading reads as at the place.
+  const detail = readsLocationDetail(viewer);
   const rows: VisitReportRow[] = visits.map((visit) => {
     const seat = seatById.get(String(visit.seat_id)) ?? null;
     const visitId = String(visit.id);
@@ -547,6 +549,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
       evidence: evidence.byVisit.get(visitId) ?? null,
       names: people,
       personHrId,
+      readsLocationDetail: detail,
       onLeave: needsDay && has("onLeave") && !leave.unread ? leave.days.has(leaveDayKey(String(visit.seat_id), visitDate)) : null,
       place,
       placeNotes: (placeId ? notesByPlace.get(placeId) ?? [] : []).map((row) => String(row.body ?? "").trim()).filter(Boolean),
@@ -570,7 +573,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
       customerName: String(customer?.name ?? "").trim() || "Unknown customer",
       distanceMeters: typeof visit.distance_meters === "number" ? visit.distance_meters : null,
       listType: String(visit.list_type ?? ""),
-      locationFlag: visitLocationFlagLabel(visit),
+      locationFlag: visitLocationFlagLabel(visit, detail),
       placeLabel: textOrNull(place?.label),
       placeLat: typeof place?.lat === "number" ? place.lat : null,
       placeLon: typeof place?.lon === "number" ? place.lon : null,
