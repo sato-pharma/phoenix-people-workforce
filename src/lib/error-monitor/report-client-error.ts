@@ -6,6 +6,7 @@
 
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { describeDomRewriters } from "@/lib/error-monitor/dom-rewriter";
+import { DOM_GUARD_COUNTER_KEY, domGuardMarker } from "@/lib/error-monitor/dom-translate-guard";
 
 export type ReportClientErrorInput = {
   error: unknown;
@@ -112,6 +113,11 @@ function collectClientContext(): string | null {
       htmlLang: document.documentElement.lang || "",
     });
     if (domRewriters.length > 0) parts.push(`domRewriter=${domRewriters.join(",")}`);
+
+    // How many DOM calls the translate guard (app/layout.tsx) redirected on this page before the
+    // error. A crash that still happens with a count here was not one the guard could absorb.
+    const domGuard = domGuardMarker((window as unknown as Record<string, unknown>)[DOM_GUARD_COUNTER_KEY]);
+    if (domGuard) parts.push(domGuard);
 
     const connection = (navigator as Navigator & { connection?: NetworkInformationLike }).connection;
     if (connection) {

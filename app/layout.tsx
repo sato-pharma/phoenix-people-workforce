@@ -5,6 +5,7 @@ import { PhxLiveBanner } from "@/components/layout/phx-live-banner";
 import { ReportingErrorBoundary } from "@/components/layout/reporting-error-boundary";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { systemIdentity } from "@/config/system-settings";
+import { DOM_TRANSLATE_GUARD_BOOT_SCRIPT } from "@/lib/error-monitor/dom-translate-guard";
 import {
   DEFAULT_DISPLAY_SCALE,
   DISPLAY_SCALE_CSS_VAR,
@@ -122,6 +123,11 @@ export default function RootLayout({
     that is left.
 
     The remaining #418 on that page is NOT explained by this removal and is still open.
+
+    WHAT KEEPS A TRANSLATED PAGE ALIVE INSTEAD is DOM_TRANSLATE_GUARD_BOOT_SCRIPT below: a
+    translation that has moved a node React is about to remove or insert beside no longer
+    unmounts the tree ("Failed to execute 'insertBefore' on 'Node'", 88 rows in the 30 days to
+    2026-10-16, mostly Arabic readers on /login). The translate offer stays.
   */
   return (
     <html lang="en" className="h-full antialiased" suppressHydrationWarning>
@@ -129,6 +135,9 @@ export default function RootLayout({
         {/* FIRST, and before anything renders — see DISPLAY_SCALE_BOOT_SCRIPT. Moving this below
             the shell reintroduces the paint-at-100%-then-snap flash it exists to prevent. */}
         <script dangerouslySetInnerHTML={{ __html: DISPLAY_SCALE_BOOT_SCRIPT }} />
+        {/* Also before any bundle: React's first DOM write must already see the guarded prototype.
+            See src/lib/error-monitor/dom-translate-guard.ts. */}
+        <script dangerouslySetInnerHTML={{ __html: DOM_TRANSLATE_GUARD_BOOT_SCRIPT }} />
         {/* React 19 / Next.js hoists <style> to <head> automatically */}
         <style dangerouslySetInnerHTML={{ __html: SCRIPT_FONT_CSS }} />
         <GlobalErrorReporter />

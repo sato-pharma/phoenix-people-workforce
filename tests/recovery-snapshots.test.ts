@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 
+import { stripSqlComments } from "./support/comment-strip.ts";
+
 /**
  * The hourly recovery undo log for the money tables.
  *
@@ -19,16 +21,29 @@ export function runRecoverySnapshotTests() {
   const store = read("20260929200500_recovery_snapshot_store.sql");
   const caps = read("20260929201500_recovery_per_table_version_cap.sql");
   const order = read("20260929203100_recovery_total_order_on_snapshots.sql");
+  const streamed = read("20261016103901_recovery_snapshot_streamed_fingerprint.sql");
 
-  // Both files explain at length WHY they avoid certain shapes, so the prose mentions the very
+  // Every file explains at length WHY it avoids certain shapes, so the prose mentions the very
   // words the checks below hunt for. Only executable SQL counts. (The first version of this test
   // failed on its own migration's comment saying "TRUNCATE ignores deferred foreign keys".)
-  const stripComments = (sql: string) =>
-    sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ");
+  const storeSql = stripSqlComments(store);
+  const capsSql = stripSqlComments(caps);
+  const orderSql = stripSqlComments(order);
+  const streamedSql = stripSqlComments(streamed);
 
-  const storeSql = stripComments(store);
-  const capsSql = stripComments(caps);
-  const orderSql = stripComments(order);
+  // One function's body: from its `create or replace function` to the close of the dollar quote
+  // that follows it. Read by the quote, not by the next statement, so a body is never cut short by
+  // a `grant` or `revoke` written inside a string.
+  const bodyOf = (sql: string, fn: string): string => {
+    const head = new RegExp(`create or replace function recovery\\.${fn}\\b`, "i").exec(sql);
+    assert.ok(head, `recovery.${fn} is not defined in the SQL handed to bodyOf`);
+    const opener = /\$(?:[A-Za-z_]\w*)?\$/.exec(sql.slice(head.index));
+    assert.ok(opener, `recovery.${fn} has no dollar-quoted body`);
+    const start = head.index + opener.index + opener[0].length;
+    const end = sql.indexOf(opener[0], start);
+    assert.ok(end > start, `recovery.${fn}'s body never closes its ${opener[0]} quote`);
+    return sql.slice(start, end);
+  };
 
   // ---------------------------------------------------------------- it is unreachable
 
@@ -38,10 +53,12 @@ export function runRecoverySnapshotTests() {
     "anon and authenticated must have no USAGE on the recovery schema");
   assert.match(store, /revoke all on all tables in schema recovery from public, anon, authenticated/i,
     "and no table grants either");
-  assert.ok(
-    !/grant\s+(select|all)[^;]*\bto\b[^;]*\b(anon|authenticated)\b/i.test(storeSql),
-    "nothing in the recovery schema may be granted to a browser role",
-  );
+  for (const [file, sql] of [["the store", storeSql], ["the streamed fingerprint", streamedSql]]) {
+    assert.ok(
+      !/grant\s+(select|all|execute)[^;]*\bto\b[^;]*\b(anon|authenticated|public)\b/i.test(sql),
+      `nothing in the recovery schema may be granted to a browser role (${file})`,
+    );
+  }
 
   // The one object placed in `public` is the health RPC, and it must be service-role only.
   assert.match(store, /revoke execute on function public\.phx_ci_recovery_health\(\) from public, anon, authenticated/i);
@@ -76,6 +93,81 @@ export function runRecoverySnapshotTests() {
   // The whole cost model depends on this: unchanged tables must write nothing.
   assert.match(storeSql, /if v_prev_hash is distinct from v_hash then/,
     "a snapshot is written only when the content hash changed");
+
+  // ---------------------------------------------------------------- an unchanged hour builds nothing
+
+  // 🔴 The store's first body answered "has it changed?" by BUILDING the table's whole JSON copy
+  // and hashing its text. monthly_closing_locks reached 28,457,501 bytes by 2026-10-16, so every
+  // :05 held a ~28 MB jsonb plus two ~28 MB strings in one backend on a 2 GB compute, and the runs
+  // that took 36-50 s were the minutes production's renders timed out (the account is in
+  // docs/security/recovery-snapshots.md, "The streamed fingerprint"). The check is now a streamed
+  // fingerprint, and the copy is built only for a table whose fingerprint moved.
+  const take = bodyOf(streamedSql, "take_snapshots");
+  const fingerprint = bodyOf(streamedSql, "fingerprint_table");
+  const payloadFingerprint = bodyOf(streamedSql, "payload_fingerprint");
+
+  assert.match(take, /if v_prev_hash is distinct from v_hash then/,
+    "the streamed body must still write a snapshot only when the fingerprint changed");
+
+  // The check reads count, size and fingerprint — and nothing table-sized.
+  const checkCall = /select f\.fp_rows, f\.fp_bytes, f\.fp_hash\s+into v_rows, v_bytes, v_hash\s+from recovery\.fingerprint_table\(v_row\.source_schema, v_row\.source_table, v_row\.pk_columns\) f/i;
+  assert.match(take, checkCall,
+    "the hourly check must call fingerprint_table WITHOUT the payload flag");
+
+  // The copy, and the count, size and fingerprint stored beside it, come out of ONE statement, so
+  // what is stored always describes the copy even if the table moved since the check.
+  const payloadCall = /select f\.fp_rows, f\.fp_bytes, f\.fp_hash, f\.fp_payload\s+into v_rows, v_bytes, v_hash, v_payload\s+from recovery\.fingerprint_table\([^)]*, true\) f/i;
+  assert.match(take, payloadCall,
+    "the payload must be read together with the count, size and fingerprint stored beside it");
+
+  // Built only on change: the payload call sits inside the change branch, and nothing before the
+  // branch reads a payload.
+  const payloadBuiltOnlyOnChange = (body: string): boolean => {
+    const branch = body.search(/if v_prev_hash is distinct from v_hash then/i);
+    const build = body.search(/fingerprint_table\([^)]*, true\)/i);
+    const firstPayloadRead = body.search(/\bfp_payload\b|canonical_payload\s*\(/i);
+    return branch >= 0 && build > branch && firstPayloadRead > branch;
+  };
+  assert.ok(payloadBuiltOnlyOnChange(take),
+    "the full copy must be built only inside the changed-table branch — building it to answer "
+      + "the question is exactly the cost this replaced");
+
+  assert.ok(!/canonical_payload\s*\(/i.test(take),
+    "take_snapshots must not call canonical_payload(): fingerprint_table's payload is the copy");
+  assert.ok(!/::\s*text\b/i.test(take),
+    "take_snapshots must never cast a payload to text — that is two more table-sized strings");
+
+  // The fingerprint itself: one md5 per row, joined in primary-key order, under the 'r2:' scheme.
+  assert.match(fingerprint, /''r2:''\s*\|\|\s*md5\(coalesce\(string_agg\(md5\(r\.recovery_row_text\), '''' order by %1\$s\), ''''\)\)/i,
+    "the fingerprint must be 'r2:' || md5 of the row md5s aggregated in primary-key order");
+  assert.ok((fingerprint.match(/\boffset 0\b/gi) ?? []).length >= 2,
+    "both OFFSET 0 fences must stay — without them the planner evaluates to_jsonb(t) and its text "
+      + "once per reference, doubling the work");
+  assert.match(fingerprint, /when count\(\*\) = 0 then 2\s+else 2 \+ sum\(octet_length\(r\.recovery_row_text\)\) \+ 2 \* \(count\(\*\) - 1\) end/i,
+    "the size must be the row texts plus the array's own '[', ']' and ', ' — byte-identical to "
+      + "octet_length(payload::text), so the 64 MB ceiling still means what it did");
+  assert.match(fingerprint, /case when p_with_payload/i,
+    "the payload is aggregated only when the caller asks for it");
+
+  // The stored payload re-fingerprints to the same value, in the same order.
+  assert.match(payloadFingerprint, /'r2:' \|\| md5\(coalesce\(string_agg\(md5\(x\.element_text\), '' order by e\.ord\), ''\)\)/i,
+    "payload_fingerprint must hash the stored elements in their stored (primary-key) order");
+  assert.match(payloadFingerprint, /with ordinality as e\(value, ord\)/i);
+
+  // A version stored before the scheme moved is upgraded once, in place — never re-captured, which
+  // would evict real history from a table that keeps only twelve versions.
+  assert.match(take, /if v_prev_id is not null and v_prev_hash not like 'r2:%' then/i,
+    "a legacy hash must be recognised by its missing 'r2:' prefix");
+  assert.match(take, /update recovery\.table_snapshots s\s+set content_hash = v_prev_hash\s+where s\.id = v_prev_id/i,
+    "the upgraded fingerprint must be written onto that one newest row");
+
+  // The helpers are reached only through take_snapshots(), which runs as its owner.
+  for (const helper of ["fingerprint_table\\(text, text, text\\[\\], boolean\\)", "payload_fingerprint\\(jsonb\\)"]) {
+    assert.match(streamed, new RegExp(`revoke execute on function recovery\\.${helper} from public, anon, authenticated`, "i"),
+      `recovery.${helper.replace(/\\/g, "")} must be revoked from public, anon and authenticated`);
+  }
+  assert.match(streamed, /revoke execute on function recovery\.take_snapshots\(\) from public, anon, authenticated/i);
+  assert.match(streamed, /grant execute on function recovery\.take_snapshots\(\) to service_role/i);
 
   // ---------------------------------------------------------------- the restore is guarded
 
@@ -133,21 +225,39 @@ export function runRecoverySnapshotTests() {
   // rebuilds itself straight back into the bug, with every test still green.
   // Read the directory rather than comparing literals: a test that compares two hardcoded names
   // can never fail, and the whole point is to catch a RENAME.
+  //
+  // Asked PER FUNCTION, of the function's own body, since 20261016103901 replaced take_snapshots()
+  // a third time: whichever migration defines each of the three LAST is the one a fresh database
+  // ends up running, so that body must carry the id tiebreak and no untied ordering. A tie-break
+  // migration replayed too early, or a later redefinition that drops the tiebreak, both leave a
+  // last definer without it.
   const migDir = new URL("../supabase/migrations/", import.meta.url);
   const all = readdirSync(migDir).filter((f) => f.endsWith(".sql")).sort();
-  const withTiebreak = all.filter((f) =>
-    /order by [a-z]\.taken_at (?:desc|asc), [a-z]\.id/i.test(
-      stripComments(readFileSync(new URL(f, migDir), "utf8"))));
-  assert.equal(withTiebreak.length, 1,
-    `exactly one migration should introduce the id tiebreak; found ${withTiebreak.join(", ") || "none"}`);
+  const tiedOrdering = /order by [a-z]\.taken_at (?:desc|asc), [a-z]\.id (?:desc|asc)/i;
+  const untiedOrdering = /order by [a-z]\.taken_at (?:desc|asc)(?!,)/i;
 
-  const defines = all.filter((f) =>
-    /create or replace function recovery\.(purge_snapshots|take_snapshots|restore_table)/i.test(
-      stripComments(readFileSync(new URL(f, migDir), "utf8"))));
-  const lastDefiner = defines[defines.length - 1];
-  assert.equal(lastDefiner, withTiebreak[0],
-    "the tie-break migration must be the LAST one to define these functions — replayed earlier, "
-      + "a later migration overwrites it and the database rebuilds itself back into the bug");
+  let definersSeen = 0;
+  for (const fn of ["purge_snapshots", "take_snapshots", "restore_table"]) {
+    const head = new RegExp(`create or replace function recovery\\.${fn}\\b`, "i");
+    const definers = all
+      .map((f) => [f, stripSqlComments(readFileSync(new URL(f, migDir), "utf8"))] as const)
+      .filter(([, sql]) => head.test(sql));
+    assert.ok(definers.length >= 2,
+      `recovery.${fn} should be defined by the store and at least one later fix; found `
+        + `${definers.map(([f]) => f).join(", ") || "none"} — the directory read is broken`);
+    definersSeen += definers.length;
+
+    const [lastFile, lastSql] = definers[definers.length - 1];
+    const body = bodyOf(lastSql, fn);
+    assert.match(body, tiedOrdering,
+      `${lastFile} is the LAST migration to define recovery.${fn}, so its body is what a fresh `
+        + "database runs — and it ranks snapshots without the id tiebreak");
+    assert.ok(!untiedOrdering.test(body),
+      `${lastFile}'s recovery.${fn} still ranks on taken_at alone somewhere`);
+  }
+  // 3 + 3 + 2 on 2026-10-16: the store's three, the version cap's purge, the tie-break's three and
+  // the streamed take_snapshots. A sweep that finds fewer has stopped reading the directory.
+  assert.ok(definersSeen >= 8, `found only ${definersSeen} definitions of the three functions`);
 
   // ---------------------------------------------------------------- negative controls
 
@@ -178,4 +288,38 @@ export function runRecoverySnapshotTests() {
     !/order by r\.taken_at asc, r\.id asc/i.test(wrongWayTiebreak),
     "the ascending-tiebreak detector must reject a tiebreak that runs the other way",
   );
+
+  // The old body's shape — build the copy, then hash its text — must trip every streamed check.
+  const buildThenHash = `
+      v_payload := recovery.canonical_payload(v_row.source_schema, v_row.source_table, v_row.pk_columns);
+      v_hash := md5(v_payload::text);
+      if v_prev_hash is distinct from v_hash then
+        insert into recovery.table_snapshots (payload) values (v_payload);
+      end if;`;
+  assert.ok(!payloadBuiltOnlyOnChange(buildThenHash),
+    "the built-only-on-change detector must reject a body that builds the copy to answer the question");
+  assert.ok(/canonical_payload\s*\(/i.test(buildThenHash), "the canonical_payload detector must fire on the old body");
+  assert.ok(/::\s*text\b/i.test(buildThenHash), "the text-cast detector must fire on the old body");
+
+  // A payload read hoisted above the branch, even through fingerprint_table, is the same cost.
+  const hoisted = `
+      select f.fp_rows, f.fp_bytes, f.fp_hash, f.fp_payload into v_rows, v_bytes, v_hash, v_payload
+      from recovery.fingerprint_table(v_row.source_schema, v_row.source_table, v_row.pk_columns, true) f;
+      if v_prev_hash is distinct from v_hash then
+        insert into recovery.table_snapshots (payload) values (v_payload);
+      end if;`;
+  assert.ok(!payloadBuiltOnlyOnChange(hoisted),
+    "the built-only-on-change detector must reject a payload read placed before the change test");
+
+  // An unordered aggregate hashes the rows in whatever order the scan returns them, so an unchanged
+  // table could read as changed — the order clause is the part that must be present.
+  const unordered = "''r2:'' || md5(coalesce(string_agg(md5(r.recovery_row_text), ''''), ''''))";
+  assert.ok(
+    !/''r2:''\s*\|\|\s*md5\(coalesce\(string_agg\(md5\(r\.recovery_row_text\), '''' order by %1\$s\), ''''\)\)/i.test(unordered),
+    "the ordered-fingerprint detector must reject an aggregate with no primary-key order",
+  );
+
+  const oneFence = "from (select a.*, a.recovery_row_json::text as recovery_row_text from (select t.id, to_jsonb(t) as recovery_row_json from x t offset 0) a) r";
+  assert.ok((oneFence.match(/\boffset 0\b/gi) ?? []).length < 2,
+    "the fence counter must notice when one of the two OFFSET 0 fences is gone");
 }
