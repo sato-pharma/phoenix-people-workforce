@@ -153,6 +153,7 @@ export const DELETE_PLAN: readonly Step[] = [
   { table: "phoenix_crm_touch_trail", by: "flag", where: "is_test" },
   { table: "phoenix_crm_photo_uploads", by: "flag", where: "is_test" },
   { table: "phoenix_crm_voice_uploads", by: "flag", where: "is_test" },
+  { table: "phoenix_crm_visit_recordings", by: "flag", where: "is_test" },
   { table: "phoenix_crm_day_starts", by: "flag", where: "is_test" },
   { table: "phoenix_crm_day_activities", by: "flag", where: "is_test" },
   { table: "phoenix_crm_daily_forecasts", by: "flag", where: "is_test" },

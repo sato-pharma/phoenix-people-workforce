@@ -15,7 +15,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { visitDetailEditedText } from "@/components/phoenix-crm/visit-detail-panel";
 import { EditVisit } from "@/components/phoenix-crm/visit-edit-panel";
-import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
+import { CrmVisitRecordingPlayer, CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
 import { awaitingValidationNote } from "@/lib/crm/call-rate";
 import { DAY_START_READ_LABEL, dayStartReadLine } from "@/lib/phoenix-crm/day-start-rules";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
@@ -218,6 +218,9 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
                     ) : null}
                     {visit.voiceNotePath ? (
                       <CrmVoiceNotePlayer path={visit.voiceNotePath} seconds={visit.voiceNoteSeconds} />
+                    ) : null}
+                    {typeof visit.recordingSeconds === "number" ? (
+                      <CrmVisitRecordingPlayer seconds={visit.recordingSeconds} visitId={visit.visitId} />
                     ) : null}
                     {/* What the rep came back and wrote up afterwards, and when (owner, 2026-10-15).
                         It sits BESIDE the door comment above, never instead of it. */}

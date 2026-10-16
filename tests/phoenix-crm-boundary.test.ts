@@ -330,6 +330,17 @@ const ROUTE_GATES: RouteGate[] = [
   // own (Firefox). `create` because it writes into the visit the rep is entering, and audited as a
   // read because what it discloses is the recording's contents — the same disclosure as voice/sign.
   { route: "voice/transcribe", method: "POST", action: "create", audit: "access-read", auditRequired: true },
+  // The visit recording the Super Admin requires of the reps chosen on one page (owner, 2026-10-16).
+  // The slot is the voice note's gate; the service narrows it to the territory's own rep.
+  post("recording/upload-slot", "create"),
+  // Playback, audited as the voice note's is: hearing a visit's conversation is a disclosure. The
+  // service narrows it to the Super Admin, the SFE managers and the managers above the territory.
+  { route: "recording/play", method: "POST", action: "read", audit: "access-read", auditRequired: true },
+  // The Super Admin's own page — the switch, a download, a delete. `update` at the route; every service
+  // behind them refuses anybody but the Super Admin (`canManageVisitRecording`).
+  post("recording/admin", "update"),
+  { route: "recording/admin/download", method: "POST", action: "update", audit: "access-read", auditRequired: true },
+  post("recording/admin/delete", "update"),
   // The place stamp burned into a live photo: same gate as taking the photo; it persists nothing.
   { route: "location", method: "POST", action: "create", audit: "access-read", auditRequired: false },
   // The touch trail (owner, 2026-10-03: "anything touches him, automatically saved"). `read`, and
@@ -827,6 +838,9 @@ const LATER_MIGRATIONS = [
   // table, no column, and it replaces nothing, so its position cannot disturb the replacement
   // ordering above and it appends safely at the end.
   "supabase/migrations/20261015220318_phoenix_crm_restore_shared_place.sql",
+  // Visit recording for the reps the Super Admin chooses (owner, 2026-10-16). Two brand-new tables, a
+  // private bucket and ONE brand-new function; it replaces nothing, so it appends safely at the end.
+  "supabase/migrations/20261016103900_phoenix_crm_visit_recording.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
@@ -1081,7 +1095,13 @@ function runMigrationTests() {
     // than as "either of ours": the two hold different kinds of evidence — a photo says somebody was
     // there, a recording says nothing about where it was made — and a file that could open both is a
     // file that could quietly file a recording where the photos are read from.
-    const bucketFor = file.endsWith("/voice-notes.ts") ? "PHOENIX_CRM_VOICE_BUCKET" : "PHOENIX_CRM_PHOTO_BUCKET";
+    // The visit recording (2026-10-16) is a third kind again — the whole conversation, kept for the
+    // Super Admin — so it has a bucket of its own and one file that opens it.
+    const bucketFor = file.endsWith("/voice-notes.ts")
+      ? "PHOENIX_CRM_VOICE_BUCKET"
+      : file.endsWith("/visit-recordings.ts")
+        ? "PHOENIX_CRM_RECORDING_BUCKET"
+        : "PHOENIX_CRM_PHOTO_BUCKET";
     for (const match of source.matchAll(/\.storage\.from\(\s*([^)]*)\)/g)) {
       assert.equal(match[1].trim(), bucketFor, `${file} opens a bucket other than the one it owns`);
     }
@@ -1090,6 +1110,10 @@ function runMigrationTests() {
   assert.ok(rpcUses >= 12, `found only ${rpcUses} function calls in the services`);
   assert.match(readFileSync("src/lib/phoenix-crm/server/photos.ts", "utf8"), /export const PHOENIX_CRM_PHOTO_BUCKET = "phoenix-crm-photos";/);
   assert.match(readFileSync("src/lib/phoenix-crm/server/voice-notes.ts", "utf8"), /export const PHOENIX_CRM_VOICE_BUCKET = "phoenix-crm-voice";/);
+  assert.match(
+    readFileSync("src/lib/phoenix-crm/server/visit-recordings.ts", "utf8"),
+    /export const PHOENIX_CRM_RECORDING_BUCKET = "phoenix-crm-recordings";/,
+  );
 
   // The voice note's own rule, and the reason it is asserted rather than written down: a recording
   // carries no authority over when a visit happened, so phoenix_crm_take_voice returns void where its

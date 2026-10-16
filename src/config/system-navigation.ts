@@ -54,6 +54,7 @@ import {
   MailPlus,
   MailX,
   Medal,
+  Mic,
   MousePointerClick,
   MapPinCheck,
   MapPinOff,
@@ -4590,6 +4591,17 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin"],
   },
   {
+    // The reps who must record each visit before logging it (owner, 2026-10-16: "this only works to who
+    // the admin choose not everyone"). The Super Admin's ALONE: `canManageVisitRecording` is the
+    // enforcing gate inside the page and every route; this card only draws the link.
+    href: "/admin/field-crm/visit-recording",
+    icon: Mic,
+    label: "Visit Recording",
+    description: "Choose the reps who record the conversation before logging a visit, and listen to, download or delete any recording.",
+    permissions: [{ resource: "phoenix_crm", action: "update" }],
+    roles: ["Super Admin"],
+  },
+  {
     // Load a territory's customer list from a sheet — the SFE's third route onto a list (the owner's
     // ask, 2026-10-02): he sends the rep a sheet, the rep fills it in, he uploads it.
     //
@@ -5219,6 +5231,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           // Beside it, and in the same band for the same reason: the raw evidence under those
           // integrity rows, and the Super Admin's alone.
           "/admin/field-crm/touch-trail",
+          // The visit recordings a chosen rep makes: field evidence like the trail, the Super Admin's alone.
+          "/admin/field-crm/visit-recording",
           // Beside the duplicates row: both are the SFE's work ON a rep's list rather than a board
           // that measures him, and a card left out of every band is appended to the FIRST one under a
           // heading nobody chose (tests/nav-hub-promotion catches that, and caught the row below).

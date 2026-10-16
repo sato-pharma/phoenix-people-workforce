@@ -149,6 +149,13 @@ const REFUSALS: Record<string, Refusal> = {
   voice_used: { status: 409, message: "This recording is already on a visit. Record a new note." },
   voice_expired: { status: 409, message: "This recording was made more than 2 hours ago. Record it again." },
   voice_missing: { status: 409, message: "The recording did not finish uploading. Check your connection and record it again." },
+  // The visit recording the Super Admin requires of chosen reps (owner, 2026-10-16). Each one sends the
+  // rep back to the recorder: the screen drops the recording it holds when it reads any of these codes.
+  recording_not_issued: { status: 400, message: "This recording was not made in Phoenix CRM. Record the visit again." },
+  recording_used: { status: 409, message: "This recording is already on another visit. Record this visit again." },
+  recording_expired: { status: 409, message: "This recording was made more than 6 hours ago. Record the visit again." },
+  recording_too_short: { status: 409, message: "A visit recording is at least 30 seconds long. Record the visit again." },
+  recording_missing: { status: 409, message: "The recording did not finish uploading. Check your connection and send it again." },
   already_visited: { status: 409, message: "This customer's visit for today is already saved." },
   // The database's own sent-plan test disagreed with the form: the customer was not on a plan this rep
   // had sent for that day, so the visit needs a reason before it can be saved as an off-plan one.

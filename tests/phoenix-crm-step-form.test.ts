@@ -145,7 +145,9 @@ export function runPhoenixCrmStepFormTests(): void {
     // optional — reached from that pharmacy's row in the picker and returning to it, so it is a tenth
     // SCREEN of step 2 and not a fifth step. The labels assertion above is what holds the four steps;
     // this one holds that no screen is ever drawn outside the frame, which is the rule he gave.
-    assert.equal((tab.match(/return shell\(/g) ?? []).length, 10, "every screen of Add visit sits inside the step form");
+    // ELEVEN since 2026-10-16: the visit recorder a rep the Super Admin switched on meets first
+    // (owner: "required to open the voice recorder before visit") — a screen of step 1, inside the frame.
+    assert.equal((tab.match(/return shell\(/g) ?? []).length, 11, "every screen of Add visit sits inside the step form");
     assert.equal(/CrmStepNext/.test(tab), false, "no Next on a step whose answer is a choice — a tap moves him on");
     assert.ok(tab.includes("footer={n >= 3 ? undefined : <CrmStepFooter back={back} />}"), "steps 1 and 2 have Back only");
     assert.ok(tab.includes("canJump={(target) => target < n && (n < 3 || target >= 3)}"), "the rail only goes back, and never out of the visit form past its own exit");
