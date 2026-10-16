@@ -366,16 +366,14 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   //                              READ of the company-wide board. Confirming a fortnight stays with
   //                              each District Manager; she holds no early_birds write action.
   //   private-calendar/logic.ts  the company-wide private-calendar viewer, which he ticked.
-  //   needs-you/page.tsx, whatsapp-inbox/access.ts, crm/doctor-coverage-roles.ts
+  //   whatsapp-inbox/access.ts, crm/doctor-coverage-roles.ts
   //                              the owner's own answers in chat the same day ("Open all four",
-  //                              "Give her KPIs"). Needs You shows her only the queues she holds a
-  //                              rung on — the owner-only ones (closings, salary flags, stranded
-  //                              requests) answer "not yours" — and carries no money figure. The
-  //                              WhatsApp Inbox is messaging she was given by name, deliberately.
-  //                              KPIs places her with the company seats and opens the KPIs board only;
-  //                              Reps List keeps its own role list.
+  //                              "Give her KPIs"). The WhatsApp Inbox is messaging she was given by
+  //                              name, deliberately. KPIs places her with the company seats and opens
+  //                              the KPIs board only; Reps List keeps its own role list. Needs You
+  //                              was one of the four and was TAKEN BACK on 2026-10-16 ("remove needs
+  //                              you and hide from ta account") — its page no longer names her.
   "app/(admin)/admin/ceo-probation/page.tsx",
-  "app/(admin)/admin/needs-you/page.tsx",
   "src/lib/crm/doctor-coverage-roles.ts",
   "src/lib/whatsapp-inbox/access.ts",
   "app/(admin)/admin/company-calendar/page.tsx",

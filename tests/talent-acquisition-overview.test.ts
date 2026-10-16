@@ -211,7 +211,7 @@ function testHiringQualityWindowsBothHalvesAndNullsTheUndecided() {
     offer({ createdAt: null, id: "out-2", status: "accepted" }),
   ];
 
-  const [ratio] = buildHiringQualityKpis({ offers, probation: null, volume });
+  const [ratio] = buildHiringQualityKpis({ offers, volume });
   assert.equal(
     ratio.denominator,
     58,
@@ -232,29 +232,18 @@ function testHiringQualityWindowsBothHalvesAndNullsTheUndecided() {
       "the Hired tile when he asked how it could read what it read",
   );
 
-  // Production's real probation shape on 2026-10-13: 36 cases, NONE decided.
-  const [, retention] = buildHiringQualityKpis({
-    offers,
-    probation: { passCount: 0, total: 0 },
-    volume,
-  });
-  assert.equal(
-    retention.rate,
-    null,
-    "probation retention must be null when nothing has been decided. `rollupOutcomes` returns " +
-      "passRate: 0 on exactly that input, and production had 36 open cases and 0 verdicts on the " +
-      "day this page was built — reading passRate here instead of deriving it is the bug",
-  );
-  assert.match(
-    retention.emptyLabel,
-    /decided/,
-    "and its empty label must say a window has not been DECIDED — not that there are no cases, " +
-      "which would be false with 36 of them running",
+  // The owner removed probation retention from her overview on 2026-10-16 — the band holds the
+  // interview-to-offer ratio and nothing else.
+  assert.deepEqual(
+    buildHiringQualityKpis({ offers, volume }).map((one) => one.key),
+    ["interview-to-offer"],
+    "the hiring-quality band is the interview-to-offer ratio alone — probation retention was " +
+      "removed from her overview on the owner's word and must not come back",
   );
 
   // A read that failed contributes NO measure rather than a zero one.
   assert.deepEqual(
-    buildHiringQualityKpis({ offers, probation: null, volume: null }).map((one) => one.key),
+    buildHiringQualityKpis({ offers, volume: null }).map((one) => one.key),
     [],
     "with neither source loaded the band must be empty. A card for a measure whose source refused " +
       "would be a figure invented out of a failure",
@@ -797,22 +786,21 @@ function testTheRouteServesTheNewPageToHerSeatAlone() {
   );
 }
 
-// ── 12. The two sources workforce_context gained are declared, not assumed ────────────────────
-function testTheProbationAndVacationSourcesAreDeclaredOnHerBundle() {
+// ── 12. The vacation source is declared, not assumed; the probation read is gone ───────────────
+function testTheVacationSourceIsDeclaredOnHerBundleAndProbationIsNotRead() {
   const sources = sourcesFor(TALENT_ACQUISITION_SEAT);
-  for (const source of ["probationOutcomes", "vacationsToday"] as const) {
-    assert.ok(
-      sources.includes(source),
-      `${source} must be declared by one of her functions. This page reads it for the probation ` +
-        "KPI and the vacation panel, and a page doing work under her session that the permission " +
-        "catalogue never granted is the thing sourcesFor exists to prevent",
-    );
-  }
-  assert.match(
-    codeOf(DATA),
-    /canViewProbationAnalytics\(access\)/,
-    "and the probation read must additionally pass the same predicate the Outcomes analytics page " +
-      "passes — `getProbationOutcomesAnalytics` takes no AccessContext and asserts nothing itself",
+  assert.ok(
+    sources.includes("vacationsToday"),
+    "vacationsToday must be declared by one of her functions. This page reads it for the vacation " +
+      "panel, and a page doing work under her session that the permission catalogue never granted " +
+      "is the thing sourcesFor exists to prevent",
+  );
+  const data = codeOf(DATA);
+  assert.doesNotMatch(
+    data,
+    /getProbationOutcomesAnalytics|probationOutcomes/,
+    "her overview no longer reads probation outcomes — the owner removed the Probation retention " +
+      "card on 2026-10-16 (\"remove this section from ta overview\")",
   );
 }
 
@@ -850,6 +838,32 @@ function testThePendingsPanelIsOneDisclosureWiredToItsButton() {
   );
 }
 
+// ── 14. The open page re-reads itself ─────────────────────────────────────────────────────────
+function testTheOpenPageRefreshesItsOwnFigures() {
+  const component = codeOf(PAGE_COMPONENT);
+  assert.match(
+    component,
+    /window\.setInterval\(refreshIfVisible, OVERVIEW_REFRESH_MS\)/,
+    "the overview must re-read its server data on a timer — she leaves it open all day, and the " +
+      "route is force-dynamic, so without this every figure is frozen at the moment she opened it",
+  );
+  assert.match(
+    component,
+    /addEventListener\("visibilitychange", refreshIfVisible\)/,
+    "and it must refresh the moment she comes back to the tab, not wait out the interval",
+  );
+  assert.match(
+    component,
+    /visibilityState === "visible"/,
+    "a hidden tab must not keep polling the database",
+  );
+  assert.match(
+    component,
+    /clearInterval\(timer\)[\s\S]*removeEventListener\("visibilitychange"/,
+    "and both are released when the page unmounts",
+  );
+}
+
 export function runTalentAcquisitionOverviewTests() {
   testARateIsNeverDrawnAsZero();
   testTheOfferConversionFamilyCountsAnsweredOffersOnly();
@@ -865,6 +879,7 @@ export function runTalentAcquisitionOverviewTests() {
   testTheMonthGridDrawsEveryRuleOnce();
   testAFailedCalendarReadIsStatedRatherThanDrawnEmpty();
   testTheRouteServesTheNewPageToHerSeatAlone();
-  testTheProbationAndVacationSourcesAreDeclaredOnHerBundle();
+  testTheVacationSourceIsDeclaredOnHerBundleAndProbationIsNotRead();
   testThePendingsPanelIsOneDisclosureWiredToItsButton();
+  testTheOpenPageRefreshesItsOwnFigures();
 }

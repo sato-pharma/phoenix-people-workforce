@@ -41,7 +41,10 @@ import type { HrCommandSources } from "@/lib/hr/command-center";
 import { currentCairoDateOnlyIso, formatDateValue } from "@/lib/i18n/format";
 import { listUnoccupiedWorkforceSeats } from "@/lib/platform/metrics";
 import { isProbationDecisionOutstanding } from "@/lib/probation/service";
-import { isUnreviewedCandidateStatus } from "@/lib/recruitment/candidate-status";
+import {
+  isUnreviewedCandidateStatus,
+  normalizeCandidateStatus,
+} from "@/lib/recruitment/candidate-status";
 import { applicationStageLabels } from "@/lib/recruitment/labels";
 
 /** How many named rows a task shows before it says how many more there are. */
@@ -291,6 +294,12 @@ function task(input: {
 
 /** The stages that are waiting on HER to read a CV, not on a candidate or a manager to reply. */
 const SCREENING_STAGES = new Set(["application_received", "cv_screening", "phone_screening"]);
+
+/** The two candidate statuses that end a person's pipeline: no interview is waiting on either. */
+function isClosedCandidateStatus(status: string | null | undefined): boolean {
+  const normalized = normalizeCandidateStatus(status);
+  return normalized === "rejected" || normalized === "hired";
+}
 
 /** Stages where an interview is booked or under way. */
 const INTERVIEW_STAGES = new Set([
@@ -666,7 +675,16 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
       }),
     );
 
-    const interviews = applications.filter((row) => INTERVIEW_STAGES.has(row.stage));
+    // Same defect as the screening list above: the application's stage is never moved by the
+    // screens that decide on a person, so a candidate rejected or hired stays "at interview" on the
+    // application for ever. Only those two are CLOSED — shortlisted, backup and with-a-manager are
+    // still live piles, so a person there who is genuinely mid-interview stays on the list. A row
+    // with no candidate record cannot be judged, so it stays.
+    const interviews = applications.filter(
+      (row) =>
+        INTERVIEW_STAGES.has(row.stage) &&
+        (!row.candidate || !isClosedCandidateStatus(row.candidate.status)),
+    );
     tasks.push(
       task({
         action: "Move",

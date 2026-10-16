@@ -628,4 +628,44 @@ export async function runHrTodayTasksTests() {
       "only an application whose candidate is still undecided is waiting on a CV read — a decided candidate (shortlisted, rejected, hired, with a manager, backup) must never read as 'waiting 61 days', and a row with no candidate record cannot be judged so it stays rather than vanishing",
     );
   }
+
+  // ── 8. A rejected or hired candidate is not waiting at an interview ────────
+  {
+    // Same defect as §7, on the interview list: no decision screen moves the application's stage.
+    // Only rejected and hired END a pipeline; shortlisted, backup and with-a-manager stay live, so
+    // a person genuinely mid-interview is never hidden.
+    const longAgo = new Date(Date.now() - 62 * 86_400_000).toISOString();
+    const application = (id: string, stage: string, candidate: { status: string } | null) => ({
+      candidate: candidate && { fullName: id, ...candidate },
+      id,
+      lastStageChangedAt: longAgo,
+      requisition: { jobTitle: "Medical Representative" },
+      stage,
+    });
+    const sources = {
+      recruitment: {
+        applications: [
+          application("shortlisted", "hr_interview", { status: "shortlisted" }),
+          application("new", "interview_scheduling", { status: "new" }),
+          application("with-manager", "hiring_manager_interview", { status: "sent_to_manager" }),
+          application("backup", "hr_interview", { status: "backup" }),
+          application("no-candidate-row", "hr_interview", null),
+          application("rejected", "hr_interview", { status: "rejected" }),
+          application("hired", "hiring_manager_interview", { status: "hired" }),
+          application("rejected-screening", "cv_screening", { status: "rejected" }),
+        ],
+        requisitions: [],
+      },
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- literal fixtures, not fetches
+    const interviews = buildHrTodayTasks(sources as any, "HR Resourcing").find(
+      (item) => item.key === "advance-interviews",
+    );
+    assert.ok(interviews, "the interviews task was not built");
+    assert.deepEqual(
+      interviews.items.map((item) => item.id).sort(),
+      ["backup", "new", "no-candidate-row", "shortlisted", "with-manager"],
+      "a rejected or hired candidate must never read as an interview waiting 62 days; every live pile and a row with no candidate record stays",
+    );
+  }
 }

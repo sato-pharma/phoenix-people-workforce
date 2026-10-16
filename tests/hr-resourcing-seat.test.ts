@@ -234,27 +234,45 @@ export async function runHrResourcingSeatTests() {
     assert.match(source(reader), /recruitmentAlertRoles/, `${reader} reads the alert audience`);
     assert.doesNotMatch(source(reader), /recruitmentManageRoles/, `${reader} must not fall back to the managers' list`);
   }
-  // "Open all four": Needs You, WhatsApp Inbox, Milestones and Spotlight.
+  // "Open all four": Needs You, WhatsApp Inbox, Milestones and Spotlight — Needs You was TAKEN BACK
+  // on 2026-10-16 ("remove needs you and hide from ta account"), the other three stand.
   assert.deepEqual([...(grants.spotlight ?? [])], ["read", "export"], "Spotlight, as the Super Admin holds it");
   assert.deepEqual([...(grants.milestones ?? [])], ["read", "export"], "Milestones, as the Super Admin holds it");
   assert.equal(canUseWhatsAppInbox(her), true, "the WhatsApp Inbox admits her");
   for (const other of ["HR Operations", "CEO"] as PhoenixRole[]) {
     assert.equal(canUseWhatsAppInbox(accessFor(other)), false, `the WhatsApp Inbox still refuses ${other}`);
   }
+  // Needs You: the owner took it back from her on 2026-10-16. The page's own gate is the security
+  // boundary (the sidebar is UX only), so it must not name her, and neither sidebar catalogue may
+  // offer her a row for it.
+  const needsYouPage = source("app/(admin)/admin/needs-you/page.tsx");
+  assert.doesNotMatch(needsYouPage, /HR Resourcing/, "the Needs You page no longer admits her");
   assert.match(
-    source("app/(admin)/admin/needs-you/page.tsx"),
-    /!canAccessSystemAdministratorWorkspace\(access\) && access\.role !== "HR Resourcing"/,
-    "the Needs You page admits her beside the Super Admin",
+    needsYouPage,
+    /if \(!canAccessSystemAdministratorWorkspace\(access\)\) \{\s*redirect\("\/admin"\);/,
+    "the Needs You page is the system administrator's alone and redirects everyone else",
   );
-  const needsYouSources = source("src/lib/needs-you/sources.ts");
-  for (const queue of ["monthlyClosings", "salaryFlags", "orphanedRequests"]) {
-    const body = needsYouSources.slice(needsYouSources.indexOf(`const ${queue}: NeedsYouAdapter`));
-    assert.match(
-      body.slice(0, 600),
-      /ownerOnlyQueue\(access,/,
-      `${queue} reads company-wide state with no permission of its own, so it must answer "not yours" to her`,
-    );
-  }
+  const navigation = source("src/config/system-navigation.ts");
+  assert.doesNotMatch(navigation, /href: "\/hr\/admin\/needs-you"/, "the HR sidebar offers her no Needs You row");
+  assert.match(
+    navigation,
+    /href: "\/admin\/needs-you", icon: BellRing, label: "Needs You", roles: \["Super Admin"\]/,
+    "the admin sidebar's Needs You row is the Super Admin's alone",
+  );
+  // Her rail's one-row section (Overview) is an ORDINARY row: owner, 2026-10-16, "make the overview
+  // button in her sidebar … its appearance is diff than others" — the hub arrow and tint made it read
+  // as a different kind of button from every row around it. The HR shell draws one-row sections plain.
+  const sidebarSource = source("src/components/layout/sidebar.tsx");
+  assert.match(
+    sidebarSource,
+    /plainSingleRow=\{mode === "hr"\}/,
+    "the HR shell tells every section block to draw a one-row section as an ordinary row",
+  );
+  assert.match(
+    sidebarSource,
+    /standalone=\{!flatSidebar && !plainSingleRow\}/,
+    "a one-row section in the HR shell carries no hub arrow and no hub tint",
+  );
   // KPIs: "Give her KPIs" — a company seat, admin shell, not the portal.
   assert.equal(canSeeDoctorCoverage(SEAT), true, "the KPIs board admits her");
   assert.ok(!DOCTOR_COVERAGE_PORTAL_ROLES.includes(SEAT), "she reaches KPIs in the admin shell, not the portal");

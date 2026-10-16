@@ -60,7 +60,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { HrCommandCharts } from "@/components/hr/hr-command-charts";
 import { HrMyRecord } from "@/components/hr/hr-my-record";
@@ -375,6 +375,9 @@ function HiredWindowPicker({ window: current }: { window: { fromIso: string; toI
   );
 }
 
+/** How often the open overview re-reads its figures from the server while the tab is in front. */
+const OVERVIEW_REFRESH_MS = 60_000;
+
 export function TalentAcquisitionOverview({
   data,
   identity,
@@ -388,6 +391,23 @@ export function TalentAcquisitionOverview({
   identity: TalentAcquisitionIdentity;
 }) {
   const [showPendings, setShowPendings] = useState(false);
+
+  // The page is rendered fresh on every load, but she leaves it open all day. Every figure on it —
+  // the tiles, the pendings, the offers — is re-read from the server once a minute while the tab is
+  // in front, and the moment she comes back to it. `router.refresh()` keeps what she has open (the
+  // pendings panel, the calendar tab) and swaps only the server data.
+  const refreshRouter = useRouter();
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") refreshRouter.refresh();
+    };
+    const timer = window.setInterval(refreshIfVisible, OVERVIEW_REFRESH_MS);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
+  }, [refreshRouter]);
 
   // One answer to "does anything need me", across every tile on the page — the same count the
   // generic page shows, reusing each tile's own tone rather than forming a second opinion on it.

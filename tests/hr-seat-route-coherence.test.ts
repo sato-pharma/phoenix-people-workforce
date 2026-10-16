@@ -282,10 +282,6 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
   "/hr/probation/analytics":
     "canViewProbationAnalytics(access) — TRUE for all three seats through canReadAllProbation; offered " +
     "to HR Resourcing only. Read-only outcomes; the export gate (canExportProbation) is not hers",
-  "/hr/admin/needs-you":
-    "canAccessSystemAdministratorWorkspace(access) || role === \"HR Resourcing\" — TRUE for HR " +
-    "Resourcing, the only seat offered it, FALSE for Advisory and Operations. Every queue on the board " +
-    "runs through her own access; the owner-only ones answer not-applicable (ownerOnlyQueue)",
   "/hr/recruitment/whatsapp-inbox":
     "canUseWhatsAppInbox(access) — Super Admin or HR Resourcing: TRUE for HR Resourcing, the only seat " +
     "offered it, FALSE for Advisory and Operations. Every /api/whatsapp-inbox route asks the same rule",

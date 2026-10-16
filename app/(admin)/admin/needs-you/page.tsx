@@ -9,9 +9,9 @@
  * THE GATE IS THE SECURITY BOUNDARY, and the sidebar is not. `system-navigation.ts` hiding the row
  * from every other role is UX only; what actually keeps anyone else out is the redirect below, which
  * runs server-side before a byte of the board is read. `canAccessSystemAdministratorWorkspace` is
- * `scope === "system" || role === "Super Admin"`; the Talent Acquisition seat (HR Resourcing) joined
- * on 2026-10-08 at the owner's own answer. She sees the queues she holds a rung on — every source
- * runs through her access, and the owner-only ones answer "not yours" (src/lib/needs-you/sources.ts).
+ * `scope === "system" || role === "Super Admin"`. The Talent Acquisition seat was
+ * admitted on 2026-10-08 and refused again on 2026-10-16 at the owner's word ("remove needs you and
+ * hide from ta account"): she is redirected here exactly like every other non-admin seat.
  *
  * NO NEW `PermissionResource`. Adding one would need 17 `permissionMatrix` rows and a `MODULE_LABELS`
  * entry, and — the reason that settles it — it would make this board LOCKABLE. A module lock on the
@@ -48,7 +48,7 @@ export default async function NeedsYouPage() {
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals");
   }
-  if (!canAccessSystemAdministratorWorkspace(access) && access.role !== "HR Resourcing") {
+  if (!canAccessSystemAdministratorWorkspace(access)) {
     redirect("/admin");
   }
 
