@@ -52,6 +52,7 @@ import {
   PHARMACY_NAME_MAX,
   PLACE_TEXT_MAX,
   placePoint,
+  PRODUCT_AVAILABILITY_MAX,
   type PharmacyPinDraft,
   type PlaceDraft,
   type PotentialGrade,
@@ -880,6 +881,12 @@ export type PharmacyFeedback = {
   pharmacyName: string;
   productAvailability: Record<string, ProductAvailability>;
   capturedAt: string;
+  /**
+   * How many visits this row stands for — 1 when absent. The List reads only the rows that can change a
+   * card (phoenix_crm_customer_pharmacy_feedback) and the database carries each stored name's whole
+   * count on its newest row, 0 on the others, so the count is the same as reading every visit.
+   */
+  visits?: number;
 };
 
 type PharmacyAggregate = {
@@ -918,7 +925,7 @@ export function groupCustomerPharmacies(feedback: PharmacyFeedback[], max: numbe
     const aggregate = pharmacies.get(key) ?? { name, lastFeedbackAt: row.capturedAt, visits: 0, products: new Map() };
     aggregate.name = name;
     aggregate.lastFeedbackAt = row.capturedAt;
-    aggregate.visits += 1;
+    aggregate.visits += row.visits ?? 1;
     for (const [product, answer] of Object.entries(row.productAvailability)) {
       aggregate.products.set(product, { answer, at: row.capturedAt });
     }
@@ -944,18 +951,50 @@ export function groupCustomerPharmacies(feedback: PharmacyFeedback[], max: numbe
   return result;
 }
 
-/** The pharmacies each doctor's feedback came from, from this territory's visits. */
+/** True when the database has no such function yet — a migration not applied here (PostgREST PGRST202). */
+function isMissingFunction(error: unknown): boolean {
+  const code = String((error as { code?: unknown } | null)?.code ?? "");
+  return code === "PGRST202" || code === "42883";
+}
+
+/**
+ * The pharmacies each doctor's feedback came from, from this territory's visits.
+ *
+ * 🔴 ONLY THE VISITS THAT CAN CHANGE A CARD (2026-10-16 Phoenix CRM performance audit). This read every
+ * visit the territory ever saved that named a pharmacy — its whole history, on every open of the List.
+ * phoenix_crm_customer_pharmacy_feedback returns, in the same id order, only each stored name's and each
+ * answered product's earliest and latest second (and any row over the answer cap), with each name's
+ * whole count on its newest row; the grouping below adds those counts. Every card — its name, last
+ * feedback, count, answers and order — is the one the whole history gave; the rule is argued in the
+ * migration (20261016180201) and replayed against the full grouping in
+ * tests/phoenix-crm-doctor-pharmacies.test.ts. NOT bounded by date: a pharmacy named seven months ago
+ * still shows, with its true count. Until the function is applied, the whole-history read answers.
+ */
 export async function loadCustomerPharmacies(seatId: string, isTest: boolean): Promise<Map<string, CustomerPharmacy[]>> {
-  const rows = await fetchAllRowsKeyset<Row>(
-    () =>
-      getSupabaseAdmin()
-        .from("phoenix_crm_visits")
-        .select("id, customer_id, pharmacy_name, product_availability, captured_at")
-        .eq("seat_id", seatId)
-        .eq("is_test", isTest)
-        .not("pharmacy_name", "is", null),
-    { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-  );
+  let rows: Row[];
+  try {
+    rows = await fetchAllRowsKeyset<Row>(
+      () =>
+        getSupabaseAdmin().rpc("phoenix_crm_customer_pharmacy_feedback", {
+          p_seat_id: seatId,
+          p_is_test: isTest,
+          p_product_max: PRODUCT_AVAILABILITY_MAX,
+        }),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    );
+  } catch (error) {
+    if (!isMissingFunction(error)) throw error;
+    rows = await fetchAllRowsKeyset<Row>(
+      () =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_visits")
+          .select("id, customer_id, pharmacy_name, product_availability, captured_at")
+          .eq("seat_id", seatId)
+          .eq("is_test", isTest)
+          .not("pharmacy_name", "is", null),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    );
+  }
   const feedback: PharmacyFeedback[] = [];
   for (const row of rows) {
     const name = text(row.pharmacy_name);
@@ -965,6 +1004,8 @@ export async function loadCustomerPharmacies(seatId: string, isTest: boolean): P
       pharmacyName: name,
       productAvailability: parseProductAvailability(row.product_availability),
       capturedAt: String(row.captured_at),
+      // The whole-history read carries no weight: each of its rows is one visit.
+      visits: row.visits === undefined || row.visits === null ? 1 : Number(row.visits),
     });
   }
   return groupCustomerPharmacies(feedback);
