@@ -1238,8 +1238,13 @@ live before the merge, and use `/admin/dev-preview` (Dev Preview — Real Data) 
 any real person — but with the server on the Hetzner box, because the local one costs ~4–6 GB and
 stalled the laptop. `phx-preview` stays as it is: pushed branches only, staging data.
 
-**How it runs.** `phx-live` in his PowerShell (`~/.claude/scripts/phx-live.ps1`; `-Folder`,
+**How it runs.** `phx-live` in his PowerShell (`~/.claude/scripts/phx-live.ps1`; `-Folder`, `-Dev`,
 `-DevAuth`, `-Resync`, `-Stop`, `-InstallEnv`) opens `http://localhost:3000`.
+
+🔴 **TWO MODES SINCE 2026-10-16 — plain `phx-live` is a PRODUCTION BUILD, `phx-live -Dev` is the old
+`next dev`.** See "Production-build mode" below for why: `next dev` measured 2.5–3 minutes a page on
+this box. Dev-preview and `-DevAuth` work only under `-Dev` (`-DevAuth` implies it), because both
+gates demand `NODE_ENV=development`.
 
 - `phx-live-sync.mjs` watches the folder and sends each saved file over ssh as `phxlive`, whose
   forced command is `/opt/phx-live/live-receiver.mjs`. The receiver refuses any path outside the
@@ -1247,10 +1252,12 @@ stalled the laptop. `phx-preview` stays as it is: pushed branches only, staging 
   reconciles against a hash manifest every 60 s and does a full resync when `HEAD` moves.
 - The browser reaches the server through an ssh tunnel as `phxtunnel` (`permitopen="127.0.0.1:3100"`,
   no shell). The `Host` header is `localhost`, so `/admin/dev-preview`'s loopback gate passes.
-- The server is `next dev` in `phx-preview-3100.scope` as `phxlive` (no sudo), capped at
-  `MemoryHigh=5G MemoryMax=5632M MemorySwapMax=2G`. `/home/phx/live-ctl.sh` controls it (`prepare`,
-  `serve`, `stop`, `status`, `install-env`, `install-env-staging`). The base checkout comes from the
-  read-only mirror.
+- The server runs in `phx-preview-3100.scope` as `phxlive` (no sudo). Under `-Dev` it is `next dev`,
+  capped at `MemoryHigh=5G MemoryMax=5632M MemorySwapMax=2G`; in the default mode it is
+  `/opt/phx-live/live-fast.sh`, capped at `MemoryHigh=6G MemoryMax=6656M MemorySwapMax=2G`.
+  `/home/phx/live-ctl.sh` controls it (`prepare`, `serve <devauth> <fast|dev>`, `stop`, `status`,
+  `install-env`, `install-env-staging`); `status` ends `mode=… build=…`. The base checkout comes from
+  the read-only mirror.
 - `PHX_LIVE=1` puts the red **PRODUCTION DATA — emails & notifications NOT sent** strip on every page
   (`src/components/layout/phx-live-banner.tsx`). Production and staging never set it, which
   `tests/phx-live-banner.test.ts` pins.
@@ -1265,7 +1272,7 @@ stalled the laptop. `phx-preview` stays as it is: pushed branches only, staging 
 | 4 | The **service-role key** sits on the box. A compromised box means the whole database. | The env is an allowlist, mode 600, owned by `phxlive` (no sudo). `ufw` opens SSH only. The only code that runs is his own files. If compromise is suspected, rotate the production secret key in Supabase, then update it in Railway, the GitHub secrets and the laptop `.env.local` copies. |
 | 5 | The GitHub runner runs as `phx`, which has sudo. With `CI_SELF_HOSTED` on, PR code could read the env. | `phx-live` refuses to start unless `gh variable get CI_SELF_HOSTED` is `off`. Do not switch it on while the production env is on the box, unless the runner first moves to a user with no sudo. |
 | 6 | Production's `PHOENIX_AUTH_SECRET` on the box would let anyone forge sessions on the real site. | The box gets its own random secret from `openssl rand`. The cost: a password-reset code made from phx-live does not work on production, so **do not do password resets from phx-live**. |
-| 7 | The box has 7.7 GB. phx-live (≤5.5 GB) plus a preview (≤4 GB) plus a remote-check build (~7.4 GB) means an OOM. | Every scope is capped. `remote-check`'s busy probe counts `phx-preview-3100.scope` as a run (`PHX_LIVE_RUN_ID`, pinned in `tests/remote-check.test.ts` 7b), so no build starts beside it. If the server is killed, the laptop side restarts it. |
+| 7 | The box has 7.7 GB. phx-live (≤7 GB in the default mode, ≤5.5 GB under `-Dev`) plus a preview (≤4.5 GB) plus a remote-check build (~7.4 GB) means an OOM. | Every scope is capped, and phx-live sits in its OWN `phx-live.slice` since 2026-10-16 (see "Production-build mode"). `remote-check`'s busy probe counts `phx-preview-3100.scope` as a run by its unit name (`PHX_LIVE_RUN_ID`, pinned in `tests/remote-check.test.ts` 7b), so no build starts beside it. A preview beside phx-live is absorbed by the box's 8 GB of swap, slowly. If the server is killed, the laptop side restarts it. |
 | 8 | No internet, or the box is down, means no dev server at all. | Fallback: `node scripts/dev-server.mjs --port 3000` locally, as before (heavy, but it works). |
 | 9 | Sync drift: `fs.watch` can miss events (a git checkout, a mass rename). | The 60 s manifest reconcile, a full resync on a `HEAD` change, and `-Resync` by hand. |
 | 10 | It serves one folder at a time. | `-Folder` switches it. The start line says which folder it is syncing. |
@@ -1273,7 +1280,8 @@ stalled the laptop. `phx-preview` stays as it is: pushed branches only, staging 
 | 12 | Errors raised in phx-live land in production `app_error_events`. | The same as before. `APP_ENV=development` keeps them separable in the Error Monitor. |
 | 13 | Dev-preview drops the real session (by design, `app/api/dev-auth/preview/route.ts`) and writes an audit row to production. | By design, as before. Log in again after a preview. |
 | 14 | With `-DevAuth` on, any request to the port can become any role. | It is off by default. The port is firewalled (#3). The window says so when it is on. |
-| 15 | A page's first compile is slow (30–60 s on the laptop). | Measured on the box 2026-10-12: `/api/healthz` answers **6 s** after `serve`, a cold `/login` through the tunnel is **1.2 s** and a warm one **0.22 s**, because `.next` survives a restart. `dev-preview` also has a replay guard for this. |
+| 15 | A page's first compile is slow (30–60 s on the laptop). | Measured on the box 2026-10-12: `/api/healthz` answers **6 s** after `serve`, a cold `/login` through the tunnel is **1.2 s** and a warm one **0.22 s**, because `.next` survives a restart. `dev-preview` also has a replay guard for this. 🔴 **That measurement did not survive real use** — see "Production-build mode": by 2026-10-16 `next dev` here took 2.5–3 min a page. |
+| 16 | In the default mode a saved edit is not on the page until the box has rebuilt (about 4 min). | The sync window prints "rebuilding" and then "✅ SERVING your latest edits — reload the page"; a failed build keeps the previous build serving and prints its error. Instant edits are `phx-live -Dev`. |
 
 **The env.** `phx-live -InstallEnv` reads his `.env.local` and sends it on stdin to
 `live-ctl.sh install-env`. That keeps only the Supabase URL, the anon, publishable and service-role
@@ -1286,7 +1294,42 @@ OneSignal, OpenAI, the mailbox, iReports360, cron-job, Cloudflare, Action1 or th
 
 **Idle stop.** `/home/phx/preview-idle-reaper.sh` maps port 3100 to `/home/phx/live.log`, and stops
 phx-live like any preview: after 60 minutes with no request and no connection. It writes
-`/home/phx/preview-state/3100.stopped`, and the laptop side then does not restart it.
+`/home/phx/preview-state/3100.stopped`, and the laptop side then does not restart it. A built server
+logs nothing per request, so in the default mode `live-fast.sh` prints "in use" every 10 minutes
+while a connection is open, which keeps the log fresh.
+
+### Production-build mode — the default since 2026-10-16 (owner: "phx live is … slow not acceptable")
+
+**What was measured** (2026-10-16, 03:45 Cairo, `next dev`): the HR Command Center took 15.6 s, then
+**2.5 min**; interview-calendar and messages calls took **2.3 min** and failed 500; memory pressure
+(`/proc/pressure/memory`, full) read **75–83%**: the server was stalled waiting for memory most of the
+time. 🔴 **The cap that bit was not the scope's.** `phx-preview-3100.scope` said 5.5 GB, but it ran
+inside `phx-previews.slice` (`MemoryHigh=4608M MemoryMax=5G MemorySwapMax=2G`, sized for the two
+phx-preview servers together), and a parent cgroup's limit wins — so `next dev`, which wants ~7 GB on
+this app, had 4.5 GB and 2 GB of swap, both full. Turbopack is not the way out: it wedged on Linux
+(the `sessions` module rule on `dev-server.mjs`).
+
+**The choice.** Offered a free whole-box squeeze or a production-build mode, he chose production
+build. (He will not buy a bigger box — memory note `no-hardware-purchase-for-the-ci-box`; never offer
+one.)
+
+**How it works.** `live-ctl.sh serve 0 fast` runs `/opt/phx-live/live-fast.sh` as `phxlive` in
+`phx-preview-3100.scope`, in its own `phx-live.slice`, capped at `MemoryHigh=6800M MemoryMax=7G
+MemorySwapMax=5G`. It runs `next build` in `/home/phxlive/live` (the synced tree), copies the source
+(minus `node_modules`, `.next`, `.git`, `xlsx`, `mobile`) and the fresh `.next` into
+`/home/phxlive/serve` with `node_modules` linked back, and runs `next start` there — so a rebuild
+never disturbs the server answering the browser. Then it polls the tree every 2 s
+(`find -newer`, skipping `next-env.d.ts`, which a build rewrites); a change waits 3 quiet seconds,
+rebuilds, stops the server, copies the new `.next` in and starts it again. State is in
+`/home/phxlive/live-state/fast-state` (`building`, `serving`, `serving-old`, `failed`), and
+`live-ctl.sh status` ends `mode=… build=…`. `next start` prints a warning about
+`output: "standalone"` and serves normally; the trade is accepted so that `node_modules` is the full
+install, not standalone's traced subset.
+
+**Measured on the first run** (03:55 Cairo): the first build took **230 s** (compiled in 3.2 min,
+page data on 3 workers), peaking at **6.9 GB RAM + 2.5 GB swap**. The swap-in took ~10 s and `next
+start` was ready in 131 ms. Then `/api/healthz` answered in **7 ms** on the box and `/login` in
+**0.18–0.28 s** through the tunnel, against 10.0 s and 10.3 s under `next dev` an hour earlier.
 
 ### Installed and proven on the box, 2026-10-12 (owner: "install phx-live on the Hetzner box")
 
