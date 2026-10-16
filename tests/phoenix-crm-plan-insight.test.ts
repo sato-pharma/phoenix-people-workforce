@@ -485,6 +485,12 @@ export function runPhoenixCrmPlanInsightTests(): void {
     assert.match(loader, /visitsRead\.catch\(\(\) => undefined\);/, "a read started early is handled the moment it starts");
     assert.match(
       loader,
+      /options\.visitsRead\.then\(\(rows\) => rows\.filter\(\(row\) => String\(row\.visit_date \?\? ""\) >= lastSeenSince\)\)/,
+      "rows a caller hands over (call prep) are cut back to this read's own window",
+    );
+    assert.match(loader, /const lastSeenSince = addDaysIso\(today, -LAST_SEEN_WINDOW_DAYS\);/, "the same window");
+    assert.match(
+      loader,
       /loadVisitHistoryFor\(contactIds, \{ daysSince: addDaysIso\(today, -USUAL_DAYS_WINDOW_DAYS\) \}\)/,
       "iReports360 is read through the List's own door, the same read, asked for the recent days too",
     );

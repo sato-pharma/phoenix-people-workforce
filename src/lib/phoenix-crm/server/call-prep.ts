@@ -11,13 +11,14 @@
  *   - tomorrow's stops — `plannedCustomersOn(seat, isTest, tomorrow)`, which answers the DAY's own
  *     status (`planDayStatus`), so a week returned for one OTHER day still stands as sent on this one;
  *   - the names and list types — `loadTerritoryCustomers(..., { onListOnly: true })`, the planner's own
- *     customer read;
+ *     customer read, asked for the day's stops alone once the plan names them;
  *   - when he was last seen — `loadPlannerInsights`, the plan board's own insight. It is the read that
  *     folds iReports360's history in beside his Phoenix visits, which matters most for exactly the
  *     customers this screen is for: a carried-over doctor he has not logged in Phoenix yet still has a
  *     last visit, and the Phoenix read alone would print "never seen" over it;
- *   - what was said last time — one visits read over the SAME six-month window the visit form uses,
- *     carrying products, the next step and the objection together.
+ *   - what was said last time — over the SAME six-month window the visit form uses, carrying products,
+ *     the next step and the objection together. It and the insight's own Phoenix visits are ONE read
+ *     (`loadPrepVisits`), each cut back to its own window.
  *
  * 🔴 THE GATE IS THE REP'S OWN SEAT (`territoryForRepWrite`), ON A READ — the same boundary, and the
  * same reasoning, as `server/commitments.ts`: Golden rule #1's line is WHOSE WORK IT IS. His plan and
@@ -29,6 +30,7 @@
  * said. The visit form's own `loadLastVisits` reads the raw table for exactly this reason.
  */
 
+import { addDaysIso } from "@/lib/crm/dates";
 import { logError } from "@/lib/observability/log";
 import {
   buildCallPrep,
@@ -41,6 +43,7 @@ import {
 } from "@/lib/phoenix-crm/call-prep";
 import { VISIT_PRODUCTS_MAX } from "@/lib/phoenix-crm/entry-rules";
 import { pickLastVisitProducts, type LastVisitProducts } from "@/lib/phoenix-crm/last-visit-products";
+import { LAST_SEEN_WINDOW_DAYS } from "@/lib/phoenix-crm/plan-insight";
 import { isPlanSentForReview } from "@/lib/phoenix-crm/plan-rules";
 import { readTestFlag, territoryForRepWrite, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { textOrNull } from "@/lib/phoenix-crm/server/db";
@@ -87,6 +90,30 @@ export type CallPrepView = {
 };
 
 /**
+ * His visits, ONCE, for both things this screen says about them (2026-10-16 Phoenix CRM performance
+ * audit — it used to read the same table twice, side by side): "what was said last time" over the
+ * six-month window, and "last seen" over `LAST_SEEN_WINDOW_DAYS`. The read starts at the EARLIER of
+ * the two first days and has no upper bound, because "last seen" never had one; each consumer cuts its
+ * own window back out of these rows (`loadLastSaid` below, `loadPlannerInsights` through its
+ * `visitsRead` option), so each answers exactly what its own read answered. The columns are the two
+ * selects' together.
+ */
+function loadPrepVisits(seatId: string, isTest: boolean, today: string): Promise<Row[]> {
+  const lastSaidSince = monthsBackFrom(today, CALL_PREP_LAST_VISIT_MONTHS);
+  const lastSeenSince = addDaysIso(today, -LAST_SEEN_WINDOW_DAYS);
+  return fetchAllRowsKeyset<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_visits")
+        .select("id, customer_id, visit_date, captured_at, products, next_step, next_step_on, objection")
+        .eq("seat_id", seatId)
+        .eq("is_test", isTest)
+        .gte("visit_date", lastSaidSince < lastSeenSince ? lastSaidSince : lastSeenSince),
+    { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+  );
+}
+
+/**
  * What was said at the last visit per customer: the products, the still-open next step and the
  * objection, from ONE read.
  *
@@ -96,29 +123,24 @@ export type CallPrepView = {
  * would lose both.
  */
 async function loadLastSaid(
-  seatId: string,
-  isTest: boolean,
   today: string,
+  visitsRead: Promise<Row[]>,
   lineProductsRead: Promise<readonly string[]>,
 ): Promise<{
   products: Map<string, LastVisitProducts>;
   nextSteps: Map<string, LastNextStep>;
   objections: Map<string, VisitObjection>;
 }> {
-  const rows = await fetchAllRowsKeyset<Row>(
-    () =>
-      getSupabaseAdmin()
-        .from("phoenix_crm_visits")
-        .select("id, customer_id, visit_date, captured_at, products, next_step, next_step_on, objection")
-        .eq("seat_id", seatId)
-        .eq("is_test", isTest)
-        // `.lte` and not `.lt`: this prepares TOMORROW, so today's own visits are the freshest thing
-        // he knows about a doctor he is seeing again. (The visit form uses `.lt` because a second
-        // visit on the same day must not prefill itself from the first.)
-        .lte("visit_date", today)
-        .gte("visit_date", monthsBackFrom(today, CALL_PREP_LAST_VISIT_MONTHS)),
-    { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-  );
+  const since = monthsBackFrom(today, CALL_PREP_LAST_VISIT_MONTHS);
+  // The six-month window, cut out of the one visits read (`loadPrepVisits`) in the order it came back.
+  // An ISO day compares as text exactly as the date column does, and a row with no day is one the
+  // date filters would never have returned. `<= today` and not `< today`: this prepares TOMORROW, so
+  // today's own visits are the freshest thing he knows about a doctor he is seeing again. (The visit
+  // form uses `.lt` because a second visit on the same day must not prefill itself from the first.)
+  const rows = (await visitsRead).filter((row) => {
+    const day = String(row.visit_date ?? "");
+    return day >= since && day <= today;
+  });
   const base = rows.map((row) => ({
     customerId: String(row.customer_id ?? ""),
     visitDate: String(row.visit_date ?? ""),
@@ -153,17 +175,32 @@ export async function loadCallPrep(viewer: PhoenixCrmViewer, raw: { seatId: unkn
   // Started together, each the moment it can be: only the insight waits on the customer list, and the
   // product names are handed over as a PROMISE because only the pick below needs them (the visit
   // form's own shape).
-  const customersRead = loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true });
+  //
+  // 🔴 THE CUSTOMER LIST IS READ FOR THE DAY'S STOPS ALONE (2026-10-16 Phoenix CRM performance audit),
+  // the moment the plan says who they are — Today's own shape. Nothing on this screen names anyone
+  // else: the stops are looked up by id, and the insight is read only to be read back for them, so
+  // reading the whole territory (and iReports360's history behind every customer on it) bought rows
+  // nobody saw. Same filters, so a planned customer who has left the list is still not a stop, and a
+  // day that is not sent reads nobody — it shows no stops either way.
+  const plannedRead = plannedCustomersOn(seat.seatId, isTest, date);
+  const customersRead = plannedRead.then((planned) =>
+    loadTerritoryCustomers(seat.seatId, isTest, {
+      onListOnly: true,
+      customerIds: isPlanSentForReview(planned.status) ? planned.customerIds : [],
+    }),
+  );
   const lineProductsRead = lineProductsByFamily(seat.lineName).then((families) => families.map((entry) => entry.family));
   lineProductsRead.catch(() => undefined);
+  const visitsRead = loadPrepVisits(seat.seatId, isTest, today);
+  visitsRead.catch(() => undefined);
 
   const [planned, { customers }, lastSaid, insights, names] = await Promise.all([
-    plannedCustomersOn(seat.seatId, isTest, date),
+    plannedRead,
     customersRead,
-    loadLastSaid(seat.seatId, isTest, today, lineProductsRead),
+    loadLastSaid(today, visitsRead, lineProductsRead),
     // A NICETY NEVER TAKES THE SCREEN DOWN: `loadPlannerInsights` logs and answers an empty map rather
     // than throwing, so a failed iReports360 read costs the "last seen" fact and nothing else.
-    insightsOrEmpty(seat.seatId, isTest, today, customersRead),
+    insightsOrEmpty(seat.seatId, isTest, today, customersRead, visitsRead),
     loadPeopleNames(territoryPeople(viewer.org, [seat])),
   ]);
 
@@ -205,9 +242,10 @@ async function insightsOrEmpty(
   isTest: boolean,
   today: string,
   customersRead: Promise<{ customers: Row[]; placesByCustomer: Map<string, ListPlace[]> }>,
+  visitsRead: Promise<Row[]>,
 ): Promise<ReadonlyMap<string, { lastSeenOn: string | null }>> {
   try {
-    return await loadPlannerInsights(seatId, isTest, today, customersRead);
+    return await loadPlannerInsights(seatId, isTest, today, customersRead, { visitsRead });
   } catch (error) {
     logError("Phoenix CRM call prep could not read when each customer was last seen", {
       error,
