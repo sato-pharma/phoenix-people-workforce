@@ -30,9 +30,13 @@
 
 ## Inbox — new notes land here
 
-- [Job-post module spec, before build](job-post-module-spec-before-build.md) - title picker, saved duties/needs, 5 templates in `F:\Hiring Posts\2026-10-15 Job Post Templates\`; multi-area: one area = one rep (no counts), download = all-areas image AND one per area, line optional.
 
-- [The Premium letter's micro-text rails stay faint](the-premium-micro-text-rails-stay-faint.md) - owner ruling 2026-10-15, measured 1.82-2.59:1 on white; a security pattern, never an accessibility defect, never darkened.
+
+- [TA handbook Part Two page 8 = three illustrated policies](ta-handbook-part-two-page-8-is-three-illustrated-policies.md) - attendance, leave, salary (2 parts vs 1); no title page, no Phoenix chapter; page by page, he confirms.
+
+- [Recruitment automation spec, before build](recruitment-automation-spec-before-build.md) - seat empties → requisition auto-opens (no approval, owner Yomna); filled → auto-closes; CVs get Attach or Keep only, NEVER a reject recommendation; area from WhatsApp answers, CV governorate fallback.
+
+- [Moving a desktop chat between his accounts](moving-a-desktop-chat-between-accounts-is-copying-its-record.md) - copy its `local_<id>.json` record between the two account folders, never overwrite; allowed by his 2026-10-16 settings grant.
 
 
 
