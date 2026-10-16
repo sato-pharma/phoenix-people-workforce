@@ -180,7 +180,9 @@ function testARateIsNeverDrawnAsZero() {
   );
   // PHOENIX TONES ONLY (owner, 2026-10-16: "too much like this, stick to phx identity" — the four-hue
   // version was shown and refused). No decorative second hue on any part of the page.
-  for (const file of [PAGE_COMPONENT, ...NEW_PARTS]) {
+  // The month grid is covered too: it kept sky, fuchsia, indigo and green marks after the rest of the
+  // page was re-toned, and the owner's ruling is about the page, not the parts that were rebuilt.
+  for (const file of [PAGE_COMPONENT, CALENDAR_COMPONENT, ...NEW_PARTS]) {
     const code = codeOf(file);
     for (const hue of [/\b(?:bg|text|border|from|to|via)-(?:sky|blue|indigo|violet|purple|fuchsia|cyan|teal)-\d/, /#0A527D|#0A6BA6|#1482C2|#06121F/i]) {
       assert.ok(!hue.test(code), `${file} paints a second hue (${hue}) — her page wears the Phoenix identity only`);

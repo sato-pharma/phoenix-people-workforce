@@ -103,7 +103,7 @@ import {
   type TalentKpi,
   type TalentToday,
 } from "@/lib/hr/talent-acquisition-logic";
-import { buildHrTodayTasks, openWorkforceSeats, type HrTask } from "@/lib/hr/today-tasks";
+import { buildHrTodayTasks, ITEM_PREVIEW_LIMIT, openWorkforceSeats, type HrTask } from "@/lib/hr/today-tasks";
 import { openVacancyReadFailed } from "@/lib/employees/vacancy-closer";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { currentCairoDateParts } from "@/lib/i18n/format";
@@ -331,7 +331,11 @@ export async function getTalentAcquisitionOverview(
 
   await Promise.all([
     needed.has("recruitment")
-      ? safe("recruitment", () => getRecruitmentDashboard(access, { hiredWindow }), failures).then(
+      ? safe(
+          "recruitment",
+          () => getRecruitmentDashboard(access, { awaitingReviewLimit: ITEM_PREVIEW_LIMIT, hiredWindow }),
+          failures,
+        ).then(
           (value) => {
             loaded.recruitment = value;
           },

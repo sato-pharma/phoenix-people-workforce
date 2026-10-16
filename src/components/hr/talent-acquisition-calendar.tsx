@@ -108,18 +108,23 @@ const TAB_OFF = `text-slate-500 ${CONTROL_SKIN}`;
  *
  * ONE PLACE, because the grid draws a mark twice — as a dot at 375px and as a named row from `sm`
  * up — and a dot whose colour disagreed with the row underneath it would be worse than either.
+ *
+ * PHOENIX TONES ONLY (owner, 2026-10-16: "stick to phx identity", and the month grid was the one part
+ * of her page still painting sky, fuchsia, indigo and green). The kinds are told apart by lightness
+ * within the Phoenix palette — ink, ember, orange, amber, slate — and by the named legend and the
+ * titled rows beside every dot, so no kind depends on its hue alone.
  */
 const MARK_STYLES: Record<
   TalentMonthMark["kind"],
   { dot: string; icon: LucideIcon; label: string; text: string }
 > = {
-  birthday: { dot: "bg-fuchsia-400", icon: CakeSlice, label: "Birthday", text: "text-fuchsia-700" },
-  event: { dot: "bg-sky-400", icon: CalendarDays, label: "Event", text: "text-sky-700" },
-  holiday: { dot: "bg-emerald-500", icon: PartyPopper, label: "Holiday", text: "text-emerald-700" },
+  birthday: { dot: "bg-orange-300", icon: CakeSlice, label: "Birthday", text: "text-orange-600" },
+  event: { dot: "bg-slate-500", icon: CalendarDays, label: "Event", text: "text-slate-700" },
+  holiday: { dot: "bg-slate-900", icon: PartyPopper, label: "Holiday", text: "text-slate-900" },
   interview: { dot: "bg-orange-500", icon: Users, label: "Interview", text: "text-orange-700" },
-  joining: { dot: "bg-indigo-500", icon: UserRoundCheck, label: "Joining", text: "text-indigo-700" },
+  joining: { dot: "bg-orange-800", icon: UserRoundCheck, label: "Joining", text: "text-orange-900" },
   leave: { dot: "bg-amber-400", icon: Plane, label: "On leave", text: "text-amber-700" },
-  plan: { dot: "bg-slate-400", icon: Target, label: "Plan", text: "text-slate-600" },
+  plan: { dot: "bg-slate-300", icon: Target, label: "Plan", text: "text-slate-600" },
 };
 
 /** The order the legend and each day's marks read in — the company's facts before her own. */

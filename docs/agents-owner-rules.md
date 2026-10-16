@@ -8175,6 +8175,18 @@ were the recommended option, asked in chat as multiple choice).
 - *CVs received* keeps counting people HR added by hand from the interview calendar (3 on 15 October,
   33 of 1,432 lifetime) — his answer: keep counting them. The 18:00 CV summary is unchanged.
 
+**His other answers the same day.** *Screen* counts the candidate pool's New pile (754 that day) —
+it read 0 because it counted applications against a requisition. The vacancy cards stay as they are:
+his rule "if hired then exclude from vacants" already holds, because a hired person's seat is closed
+(all 14 sent or accepted letters that point at a seat were checked: every accepted one is `filled`,
+the only open one is a letter still awaiting a reply). Parked seats were not decided and are not
+flagged. One sent letter (Zahraa Hamdy Sobeih, District Sales Manager) carries 12 October as both its
+start date and its validity date, and he says her real date is 1 November 2026, so no "past its
+validity" flag was added to Offers Out. The month grid wears Phoenix tones only: ink for holidays,
+ember for joinings, orange for interviews and birthdays, amber for leave, slate for events and plans,
+told apart by lightness and the named legend, pinned by the hue ban in
+`tests/talent-acquisition-overview.test.ts`.
+
 ## The rep ranking workbook's admin button — owner, 2026-10-13
 
 He had just merged the rep ranking workbook into the Anti Infective employee portal (#5867) and
