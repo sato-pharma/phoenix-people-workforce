@@ -464,7 +464,7 @@ export async function runJobHeartbeatRegisterTests() {
     triggered.length = 0;
     const second = await refireStrandedJobs(stranded, { claim: async () => false, trigger: (path) => { triggered.push(path); } }, now);
     assert.deepEqual(second.results, [{ outcome: "already_refired_today", slug: NOTIFY }]);
-    assert.deepEqual(triggered, [], "a lost claim starts nothing - this is what stops a second sweep firing it again");
+    assert.equal(triggered.length, 0, "a lost claim starts nothing - this is what stops a second sweep firing it again");
 
     const unclaimable = await refireStrandedJobs(
       stranded,
@@ -472,7 +472,7 @@ export async function runJobHeartbeatRegisterTests() {
       now,
     );
     assert.equal(unclaimable.results[0]?.outcome, "not_started");
-    assert.deepEqual(triggered, [], "if the claim cannot be made nothing is fired - it fails closed");
+    assert.equal(triggered.length, 0, "if the claim cannot be made nothing is fired - it fails closed");
 
     const triggerFails = await refireStrandedJobs(
       stranded,
