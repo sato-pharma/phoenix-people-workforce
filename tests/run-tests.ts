@@ -1908,6 +1908,7 @@ import { runPhoenixCrmVendorLeftoverTests } from "./phoenix-crm-vendor-leftovers
 import { runPhoenixCrmBlindPayloadTests } from "./phoenix-crm-blind-payloads.test.ts";
 import { runPhoenixCrmVisitReportTests } from "./phoenix-crm-visit-report.test.ts";
 import { runPhoenixCrmVisitDetailEditTests } from "./phoenix-crm-visit-detail-edit.test.ts";
+import { runPhoenixCrmVisitRecordingTests } from "./phoenix-crm-visit-recording.test.ts";
 import { runPhoenixCrmVisitProductManagerTests } from "./phoenix-crm-visit-product-manager.test.ts";
 import { runPhoenixCrmVisitCompanyTests } from "./phoenix-crm-visit-company.test.ts";
 import { runPhoenixCrmManagerValidatesTests } from "./phoenix-crm-manager-validates.test.ts";
@@ -6895,6 +6896,11 @@ await runTest(
 await runTest(
   "PHOENIX CRM: the rep writes up his OWN saved visit afterwards (owner, 2026-10-15 — a rep walks from door to door with no time between two of them for the company's full report, so logging stays one tap, the location and the time, and the soft detail is written later; his three answers that day: ANY TIME with no deadline, the pharmacy name ADD-ONLY, and only the rep). Six things move — the detailed comment, the objection and its note, the next step and the day he means to do it, what he left, the pharmacy stock — and an unknown chip value is DROPPED with its dependants rather than costing him the paragraph he just typed; the door comment is read back above the box and never edited, because that is his own wording; the SQL update is read column by column so the customer, the day, the time, the location, the photo, the voice note, AM/PM, who was on the visit and the products cannot move, those three staying the Super Admin's separate door; the gate is the territory's own rep in TypeScript and `rep_hr_id = actor` again in SQL, under the same per-seat lock the save takes, with the linked pharmacy visit sent back to the visit that filed it; the before-image is written BEFORE the update and a no-op writes no row at all; the read names no measurement, the card and the table print the same write-up and the same \"Edited · <Cairo date and time>\" marker, the door carries no day condition, and nothing notifies anybody in either direction",
   runPhoenixCrmVisitDetailEditTests,
+);
+
+await runTest(
+  "PHOENIX CRM: the visit recording the Super Admin requires of the reps chosen on one page (owner, 2026-10-16 — \"this only works to who the admin choose not everyone\"). The server claims the recording BEFORE the save writes anything, for the territory's own rep only, and a failed read of the switch throws rather than letting a visit through unrecorded; only a switched-on rep's Add visit opens with the recorder; the Super Admin, the SFE managers and the territory's own managers hear it and the rep never does; the page, the five routes and every service refuse everybody but the Super Admin; the bounds are 30 seconds to 15 minutes, a blocked microphone says how to allow it, a download is named after the rep, the customer and the day, and a delete goes through the Storage API and keeps who and when",
+  runPhoenixCrmVisitRecordingTests,
 );
 
 await runTest(

@@ -830,6 +830,20 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // phoenixVendorHandedOver 0 — the nine October hires' lists opened, nobody else's touched.
   // Re-applying it is a no-op on all four live bodies.
   "20261015215500_a_vendorless_reps_phoenix_list_opens.sql",
+  // Applied on 2026-10-16 by the session that wrote it, to STAGING at 05:16 Cairo and PRODUCTION at
+  // 05:16:58 Cairo, both through `node scripts/apply-sql-file.mjs <file> <env>` (production with
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com) — the standing route, because BOTH
+  // MCP doors answered {"status":"declined"} on this exact SQL and a live read straight after showed
+  // nothing had landed on either project. That route writes NO ledger row, so ZERO rows on either
+  // project carry this version or name, read in the same minute.
+  // Verified by digest on BOTH projects, not by presence: public.phoenix_crm_claim_visit_recording
+  // reads md5(prosrc) 2770d3ffb63c16f3a279a7f16388d93f over 2,321 chars, and md5 of this file's own
+  // dollar-quoted body (as-is LF) is the same hash at the same length. This file is the function's
+  // ONLY definer. `prosecdef` true, `proconfig` {search_path=public}, proacl
+  // {postgres=X/postgres,service_role=X/postgres} (the REVOKE landed); both new tables carry
+  // relrowsecurity TRUE with no anon or authenticated grant; storage bucket phoenix-crm-recordings
+  // reads file_size_limit 16777216, public false. Re-applying it is a no-op.
+  "20261016103900_phoenix_crm_visit_recording.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

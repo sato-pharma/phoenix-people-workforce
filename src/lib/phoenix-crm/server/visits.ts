@@ -103,6 +103,12 @@ import { loadPlanDayFacts, PLAN_DAY_COLUMNS } from "@/lib/phoenix-crm/server/pla
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
 import { readTimeAnchor } from "@/lib/phoenix-crm/server/time-anchor";
+import {
+  claimRequiredRecording,
+  hearsVisitRecording,
+  isRecordingRequired,
+  loadRecordingSecondsByVisit,
+} from "@/lib/phoenix-crm/server/visit-recordings";
 import { lineProductsByFamily, type LineProductFamily } from "@/lib/phoenix-crm/server/products";
 import { loadLineProductManagers, raiseVisitAskFromVisit, visitAskSavedNote } from "@/lib/phoenix-crm/server/visit-asks";
 import { describeTerritory, personSeatTitle, seatTierTitle, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
@@ -200,6 +206,13 @@ export type VisitRow = {
   /** The spoken note, if the rep left one. Null is the normal case: a visit never required one. */
   voiceNotePath: string | null;
   voiceNoteSeconds: number | null;
+  /**
+   * The length of the visit's RECORDING — the conversation the Super Admin requires of the reps he
+   * chooses (owner, 2026-10-16) — present only for a reader who may hear it (`hearsVisitRecording`):
+   * the Super Admin, an SFE manager, a manager above the territory. Absent for the rep, and for every
+   * visit with no recording. The audio itself is signed one visit at a time.
+   */
+  recordingSeconds?: number | null;
   locationFlag: VisitLocationFlag;
   locationLabel: string;
   clockOff: boolean;
@@ -510,11 +523,18 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
     loadDayStartOn(seat.seatId, isTest, date),
   ]);
   const sight = locationSight(viewer, seat);
+  // The visit recordings, for a reader who may hear them — read only then, so the rep's own day never
+  // even asks whether one exists.
+  const recordings = hearsVisitRecording(viewer, seat) ? await loadRecordingSecondsByVisit(rows.map((row) => String(row.id))) : null;
   return {
     territory: describeTerritory(viewer.org, seat, names),
     isTest,
     date,
-    visits: rows.map((row) => mapVisitRow(row, names, { sight, org: viewer.org, productManagerRoles, actorHrId: viewer.hrId })),
+    visits: rows.map((row) => {
+      const visit = mapVisitRow(row, names, { sight, org: viewer.org, productManagerRoles, actorHrId: viewer.hrId });
+      const seconds = recordings?.get(visit.visitId);
+      return seconds === undefined ? visit : { ...visit, recordingSeconds: seconds };
+    }),
     canAdd: date === today && canEnterVisits(viewer, seat.seatId, isTest),
     dayActivity: activity,
     canSetDayActivity: date === today && canWriteAsRep(viewer, seat, isTest),
@@ -691,6 +711,12 @@ export type VisitFormView = {
    * enforces it either way (`phoenix_crm_visits_offplan_cap`).
    */
   offPlan: OffPlanAllowance;
+  /**
+   * Whether this rep must record the conversation before the visit form opens (owner, 2026-10-16). True
+   * only for the territory's own rep, and only when the Super Admin has switched that rep on; a manager
+   * entering a visit is never asked. The save refuses a chosen rep's visit with no recording either way.
+   */
+  recordingRequired: boolean;
 };
 
 /**
@@ -903,12 +929,26 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     loadLineProductManagers(seat),
     // The out-of-plan doctors of this field week, for the allowance on the unplanned steps.
     loadOffPlanRows([seat.seatId], isTest, offPlanWeekWindow(today)),
+    // Whether the Super Admin requires this rep to record the visit (owner, 2026-10-16).
+    enteredAs === "rep" ? isRecordingRequired(viewer.hrId) : Promise.resolve(false),
   ]);
   // Handled at once: if the mint fails, `await ensured` below throws its error and the wave is dropped.
   wave.catch(() => undefined);
   await ensured;
-  const [{ customers, placesByCustomer }, visitCounts, planDay, visitRows, productFamilies, pharmacies, lastVisits, names, plannedOtherDays, lineProductManagers, offPlanRows] =
-    await wave;
+  const [
+    { customers, placesByCustomer },
+    visitCounts,
+    planDay,
+    visitRows,
+    productFamilies,
+    pharmacies,
+    lastVisits,
+    names,
+    plannedOtherDays,
+    lineProductManagers,
+    offPlanRows,
+    recordingRequired,
+  ] = await wave;
   // The SENT set, and only it, is what the picker offers and what the ordering follows — a draft is the
   // rep's own to edit today, so counting one would let him place the doctor at the door and never be off
   // plan (plan-rules.ts `isPlanSentForReview`). The count he has SAVED rides beside it, for the sentence.
@@ -1007,6 +1047,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     planToday: { status: planDay.status, saved: planDay.customerIds.length },
     blockedReason,
     offPlan: offPlanAllowance({ rows: offPlanRows, day: today, caps: settings }),
+    recordingRequired,
   });
 }
 
@@ -1213,6 +1254,14 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     participants.value.seniorHrId,
     participants.value.productManagerHrId,
   ]);
+  // 🔴 THE VISIT RECORDING (owner, 2026-10-16): a rep the Super Admin switched on records the
+  // conversation before the visit can be logged. Claimed HERE, before the save writes anything, under
+  // the visit's own id — so a chosen rep's visit can never exist without its recording, and a save sent
+  // again claims the same recording for the same visit. Only the rep's own save is asked: a manager
+  // entering a double visit and the Super Admin recording a missed one are never on that list's path.
+  if (enteredAs === "rep") {
+    await claimRequiredRecording({ viewer, seat, isTest, visitId, raw: body });
+  }
   const result = await callPhoenixCrm<Row>("phoenix_crm_save_visit", {
     p: {
       id: visitId,
