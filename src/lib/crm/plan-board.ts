@@ -560,25 +560,32 @@ export async function getAgentPlanEntriesForWindow(
 ): Promise<AgentPlanEntryRow[] | null> {
   const supabase = getSupabaseAdmin();
   const rows: AgentPlanEntryRow[] = [];
-  let offset = 0;
+  // 🔴 KEYSET-PAGED ON THE MIRROR'S OWN KEY, never by offset (2026-10-16 speed audit). An offset page
+  // with no order is not a stable slice — a row can land on two pages or on none — and each later page
+  // re-reads every row before it. `crm_plan_entry_id` is unique within the iReports360 source this read
+  // is narrowed to, and the day-sliced scan above pages on it the same way.
+  let cursor: number | string | null = null;
   for (;;) {
-    const { data, error } = await supabase
+    let query = supabase
       .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
-      .select("contact_crm_id, ampm, contact_grade, contact_name, speciality, plan_date, plan_frequency")
+      .select("crm_plan_entry_id, contact_crm_id, ampm, contact_grade, contact_name, speciality, plan_date, plan_frequency")
       // The rep's iReports360 plan only — "Copy last month" replays the vendor's reference plan; since
       // 2026-10-02 the view also carries a started team's own Phoenix plans (crm/phoenix-team-starts.ts).
       .eq("source", IREPORTS360_VISIT_SOURCE)
       .ilike("agent_hr_id", agentHrId)
-      .or(`and(plan_date.gte.${start},plan_date.lte.${end}),and(plan_month.eq.${Number(start.slice(5, 7))},plan_year.eq.${Number(start.slice(0, 4))})`)
-      .range(offset, offset + PAGE_SIZE - 1);
+      .or(`and(plan_date.gte.${start},plan_date.lte.${end}),and(plan_month.eq.${Number(start.slice(5, 7))},plan_year.eq.${Number(start.slice(0, 4))})`);
+    if (cursor !== null) query = query.gt("crm_plan_entry_id", cursor);
+    const { data, error } = await query.order("crm_plan_entry_id", { ascending: true }).limit(PAGE_SIZE);
     if (error) {
       if (isPlanSchemaMissing(error)) return null;
       throw new Error(error.message);
     }
-    const page = (data ?? []) as unknown as AgentPlanEntryRow[];
+    // The key rides along as the cursor; the one caller (plan-history.ts) reads the named fields only.
+    const page = (data ?? []) as unknown as Array<AgentPlanEntryRow & { crm_plan_entry_id: number | string | null }>;
     rows.push(...page);
-    if (page.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
+    const last = page[page.length - 1]?.crm_plan_entry_id ?? null;
+    if (page.length < PAGE_SIZE || last === null || last === cursor) break;
+    cursor = last;
   }
   return rows;
 }

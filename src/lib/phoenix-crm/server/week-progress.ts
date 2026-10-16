@@ -32,7 +32,13 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
 
-export async function loadWeekProgress(seatId: string, isTest: boolean, visitDay: string): Promise<WeekProgress> {
+/** `planRow`: the same week's plan row already being read — Today reads it once for all its readers. */
+export async function loadWeekProgress(
+  seatId: string,
+  isTest: boolean,
+  visitDay: string,
+  options: { planRow?: Promise<Row | null> } = {},
+): Promise<WeekProgress> {
   const weekStart = fieldWeekStart(visitDay);
   const supabase = getSupabaseAdmin();
   // Started beside the plan's own read, never after it: neither needs the other.
@@ -51,15 +57,20 @@ export async function loadWeekProgress(seatId: string, isTest: boolean, visitDay
   // one as an unhandled rejection. Its own failure still surfaces through the await below.
   visitsRead.catch(() => undefined);
 
-  const { data: plan, error } = await supabase
-    .from("phoenix_crm_plans")
-    .select(`id, ${PLAN_DAY_COLUMNS}`)
-    .eq("seat_id", seatId)
-    .eq("is_test", isTest)
-    .eq("week_start", weekStart)
-    .maybeSingle();
-  throwIfError(error);
-  const planRow = plan as Row | null;
+  let planRow: Row | null;
+  if (options.planRow) {
+    planRow = await options.planRow;
+  } else {
+    const { data: plan, error } = await supabase
+      .from("phoenix_crm_plans")
+      .select(`id, ${PLAN_DAY_COLUMNS}`)
+      .eq("seat_id", seatId)
+      .eq("is_test", isTest)
+      .eq("week_start", weekStart)
+      .maybeSingle();
+    throwIfError(error);
+    planRow = (plan as Row | null) ?? null;
+  }
   let plannedListTypes: Array<string | null> = [];
   let anyDaySent = false;
   if (planRow) {

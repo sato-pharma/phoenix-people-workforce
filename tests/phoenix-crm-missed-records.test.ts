@@ -323,6 +323,23 @@ export async function runPhoenixCrmMissedRecordsTests(): Promise<void> {
     // visit day (tests/phoenix-crm-day-activities pins that), and this is the Super Admin's entry of a
     // day the rep missed, behind the gate above.
     assert.match(service, /activity_date: entry\.activityDate,/);
+
+    // Speed (Phoenix CRM performance audit, 2026-10-16). The form's reads start BESIDE the mint and only
+    // the customer list waits on it — the mint can add customers, and nothing else can name one minted a
+    // moment ago — and the mint's own failure is still the one that surfaces, first.
+    const formAt = service.indexOf("export async function loadMissedRecordForm(");
+    const form = service.slice(formAt, service.indexOf("\n}\n", formAt));
+    assert.match(form, /ensured\.then\(\(\) => loadTerritoryCustomers\(seat\.seatId, isTest, \{ onListOnly: true \}\)\)/, "the customer list is read after the mint");
+    const mintAwaitedAt = form.indexOf("await ensured;");
+    const waveAwaitedAt = form.indexOf("= await wave;");
+    assert.ok(mintAwaitedAt > 0 && waveAwaitedAt > mintAwaitedAt, "the mint is awaited before the wave, so its failure is the one he reads");
+    // The day activity he saves is shaped from the save's own answer, not read back: the function stores
+    // `actor_hr_id` as the entered-by and `rep_hr_id` as the rep, verbatim, and returns neither.
+    assert.match(
+      service,
+      /mapDayActivityRow\(\{ \.\.\.saved, entered_by_hr_id: viewer\.hrId, rep_hr_id: repHrId \}\)/,
+      "the 'entered for him' mark is the one a read-back would compute",
+    );
   }
 
   // ── 8 · An entered visit has NO location, and nothing that judges a rep reads it as one ────────

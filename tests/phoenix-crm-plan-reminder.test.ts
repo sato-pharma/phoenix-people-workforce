@@ -146,6 +146,45 @@ export function runPhoenixCrmPlanReminderTests() {
     assert.ok(runner.includes("seat.occupantHrId))"), "a vacant territory has nobody to remind and is never raised");
   }
 
+  // ── The module's scheduled senders deliver several people at once (Phoenix CRM performance audit, 2026-10-16) ──
+  //
+  // One person at a time made a run as slow as its slowest Telegram round trip times the people on
+  // it. Four at once keeps three things exactly as they were: every send is counted once, delivered
+  // or failed; one failure never costs anybody else; and one person's own notices still go in their
+  // order (a rep who also reviews another territory gets two reminders, and they must not swap).
+  {
+    for (const [path, item] of [
+      ["src/lib/phoenix-crm/server/plan-reminder.ts", "notice"],
+      ["src/lib/phoenix-crm/server/daily-digest.ts", "digest"],
+      ["src/lib/phoenix-crm/server/approval-nudge.ts", "notice"],
+      ["src/lib/phoenix-crm/server/visit-rollup.ts", "rollup"],
+    ] as const) {
+      const sender = source(path);
+      assert.ok(sender.includes("const DELIVERIES_AT_ONCE = 4;"), `${path}: four people at once`);
+      assert.match(
+        sender,
+        new RegExp(
+          `await mapWithConcurrency\\(\\[\\.\\.\\.perPerson\\.values\\(\\)\\], DELIVERIES_AT_ONCE, async \\(theirs\\) => \\{\\s*for \\(const ${item} of theirs\\) \\{\\s*try \\{\\s*await send\\(${item}\\);\\s*delivered \\+= 1;\\s*\\} catch \\(error\\) \\{\\s*failed \\+= 1;`,
+        ),
+        `${path}: grouped per person, one person's notices in order, each in its own try and counted once`,
+      );
+      assert.match(sender, new RegExp(`perPerson\\.set\\(${item}\\.hrId, `), `${path}: grouped by the person it is addressed to`);
+    }
+    // The weekly scan is one entry per person by construction (a map keyed on the HR id), so it needs no
+    // grouping — and it still starts them in the same sorted order.
+    const scan = source("src/lib/phoenix-crm/server/fraud-scan.ts");
+    assert.match(scan, /const recipients = \[\.\.\.tierByHrId\]\.sort\(\(left, right\) => left\[0\]\.localeCompare\(right\[0\]\)\);/);
+    assert.match(scan, /await mapWithConcurrency\(recipients, DELIVERIES_AT_ONCE, async \(\[hrId, tier\]\) => \{\s*try \{/);
+
+    // The reminder's two gates do not wait for each other, and the live-team gate still filters.
+    const reminder = source("src/lib/phoenix-crm/server/plan-reminder.ts");
+    assert.match(
+      reminder,
+      /const \[started, live\] = await Promise\.all\(\[seatsWithRealActivity\(staffed\.map\(\(seat\) => seat\.seatId\)\), loadLiveTeamSeatIds\(cairoToday\)\]\);/,
+      "who has started and which teams are live are asked at once",
+    );
+  }
+
   // ── The job is declared, scheduled and registered in one sitting ────────────────────────────────
   {
     const declared = JOB_SCHEDULES.find((entry) => entry.slug === PLAN_REMINDER_JOB_SLUG);

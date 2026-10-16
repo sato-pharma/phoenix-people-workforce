@@ -11,6 +11,7 @@ import {
   type TelegramTemplateButtonType,
 } from "@/lib/notifications/telegram-template-placeholders";
 import { TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
+import { forgetNotificationTemplates } from "@/lib/notifications/templates";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type TelegramTemplateWorkflowKey =
@@ -667,6 +668,8 @@ export async function saveTelegramTemplate(access: AccessContext, input: Telegra
       updated_at: now,
     }, { onConflict: "template_key" });
   if (error) throw error;
+  // The senders hold template wording for half a minute; a save reaches the very next send.
+  forgetNotificationTemplates();
 
   await writeAuditLog({
     actorLoginId: actor(access),

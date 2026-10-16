@@ -38,7 +38,11 @@ export type DayActivityRow = {
 /** Who wrote the day and for whom ride along, so the row can say it was entered for him. */
 const DAY_ACTIVITY_COLUMNS = "activity_date, activity_type, half_day, note, entered_by_hr_id, rep_hr_id";
 
-function mapRow(row: Row): DayActivityRow | null {
+/**
+ * One stored day activity, as every screen reads it. Exported for the Super Admin's missed-record save,
+ * which shapes the row the save function hands back rather than reading the day a second time.
+ */
+export function mapDayActivityRow(row: Row): DayActivityRow | null {
   const activityType = textOrNull(row.activity_type);
   const activityDate = textOrNull(row.activity_date);
   if (!activityType || !activityDate) return null;
@@ -67,7 +71,7 @@ export async function loadDayActivityOn(seatId: string, isTest: boolean, date: s
     .eq("activity_date", date)
     .maybeSingle();
   throwIfError(error);
-  return data ? mapRow(data as Row) : null;
+  return data ? mapDayActivityRow(data as Row) : null;
 }
 
 /**
@@ -99,7 +103,7 @@ export async function loadSeatDayActivities(
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     );
     for (const row of rows) {
-      const activity = mapRow(row);
+      const activity = mapDayActivityRow(row);
       const seatId = textOrNull(row.seat_id);
       if (activity && seatId) out.set(`${seatId}|${activity.activityDate.slice(0, 10)}`, activity);
     }
@@ -126,7 +130,7 @@ export async function loadDayActivities(
     .order("activity_date", { ascending: false });
   throwIfError(error);
 
-  return { rows: ((data ?? []) as Row[]).flatMap((row) => mapRow(row) ?? []) };
+  return { rows: ((data ?? []) as Row[]).flatMap((row) => mapDayActivityRow(row) ?? []) };
 }
 
 /**
@@ -175,5 +179,5 @@ export async function saveDayActivity(
     },
   })) as Row;
 
-  return { cleared: false, activity: mapRow(result) };
+  return { cleared: false, activity: mapDayActivityRow(result) };
 }

@@ -61,9 +61,13 @@ import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { loadPhoenixCrmConfig, openLineCodes } from "@/lib/phoenix-crm/server/settings";
 import { isManagerTier, territoriesBelow, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 
 /** The digest reads the single previous WORKING day — see the header. */
 const DIGEST_WINDOW_WORKING_DAYS = 1;
+
+/** How many managers are being sent their morning message at once. */
+const DELIVERIES_AT_ONCE = 4;
 
 /**
  * Every manager who holds territories, with the seats beneath him.
@@ -236,20 +240,27 @@ export async function runPhoenixCrmDailyDigest(
   const recipients = digestRecipientsFrom(org, (hrId) => nameOf(names, hrId));
   const digests = planPhoenixCrmDigest(board.rows, recipients, day, formatPhoenixLongDate(day));
 
+  // Several managers at once rather than one after another (Phoenix CRM performance audit,
+  // 2026-10-16); anyone sent more than one still gets his in their order. Every send is still
+  // counted once, delivered or failed.
+  const perPerson = new Map<string, PhoenixCrmDigest[]>();
+  for (const digest of digests) perPerson.set(digest.hrId, [...(perPerson.get(digest.hrId) ?? []), digest]);
   let delivered = 0;
   let failed = 0;
-  for (const digest of digests) {
-    try {
-      await send(digest);
-      delivered += 1;
-    } catch (error) {
-      failed += 1;
-      logError("Phoenix CRM digest delivery failed", {
-        labels: { event: "phoenix_crm_digest_failed", job: "phoenix-crm-daily-digest" },
-        error,
-      });
+  await mapWithConcurrency([...perPerson.values()], DELIVERIES_AT_ONCE, async (theirs) => {
+    for (const digest of theirs) {
+      try {
+        await send(digest);
+        delivered += 1;
+      } catch (error) {
+        failed += 1;
+        logError("Phoenix CRM digest delivery failed", {
+          labels: { event: "phoenix_crm_digest_failed", job: "phoenix-crm-daily-digest" },
+          error,
+        });
+      }
     }
-  }
+  });
 
   return {
     day,

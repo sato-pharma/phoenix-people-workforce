@@ -25,6 +25,8 @@
 
 import { unstable_cache } from "next/cache";
 
+import { getOrLoadShared, sharedReadKey } from "@/lib/cache/shared-read";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { singleFlight } from "@/lib/utils/single-flight";
@@ -223,6 +225,12 @@ export async function loadBrickCentroids(): Promise<BrickCentroid[]> {
 /** The brick's display name and its area's name, resolved from the SoS master by brick id. */
 export type BrickNameMeta = { areaName: string | null; brickName: string };
 
+/** The shared copy `loadBrickNames` serves: master data, keyed by the exact id set asked about. */
+const BRICK_NAMES_SHARED = "crm-brick-names";
+const BRICK_NAMES_SHARED_LIMITS = { maxEntries: 200, maxRowsTotal: 50_000 };
+
+type BrickNameRow = { brickId: string; brickName: string; areaName: string | null };
+
 /**
  * Brick name and area for a set of brick ids — the "known brick" a customer sits in before any
  * check-in gives him coordinates. The SoS master gives the name; this is where the code→name
@@ -238,6 +246,21 @@ export type BrickNameMeta = { areaName: string | null; brickName: string };
 export async function loadBrickNames(brickIds: readonly string[]): Promise<Map<string, BrickNameMeta>> {
   const ids = [...new Set(brickIds)].filter((id): id is string => Boolean(id));
   if (ids.length === 0) return new Map();
+  // MASTER DATA, SHARED FOR A MINUTE (2026-10-16 Phoenix CRM performance audit). The List, its board,
+  // Today and the planners each asked for the same territory's bricks on every open — two dependent
+  // round trips a time — though the SoS master behind them changes only on an import. Keyed by the
+  // exact id set, so a caller only ever receives the bricks it asked about; a copy is at most
+  // `SHARED_READ_TTL_MS` old, the window the owner chose for shared reads that day. A failed read is
+  // never stored, and throws exactly as before.
+  const key = sharedReadKey({ ids: [...ids].sort() });
+  const { rows } = await getOrLoadShared(BRICK_NAMES_SHARED, key, () => readBrickNames(ids), BRICK_NAMES_SHARED_LIMITS);
+  const meta = new Map<string, BrickNameMeta>();
+  for (const row of rows ?? []) meta.set(row.brickId, { areaName: row.areaName, brickName: row.brickName });
+  return meta;
+}
+
+/** The live read behind `loadBrickNames`: bricks then their areas, each four chunks at a time. */
+async function readBrickNames(ids: readonly string[]): Promise<BrickNameRow[]> {
   const supabase = getSupabaseAdmin();
   const chunk = <T>(items: readonly T[], size: number): T[][] => {
     const out: T[][] = [];
@@ -245,14 +268,19 @@ export async function loadBrickNames(brickIds: readonly string[]): Promise<Map<s
     return out;
   };
 
-  const byBrick = new Map<string, { areaCode: string | null; brickName: string }>();
-  for (const part of chunk(ids, 150)) {
+  // The chunks are read four at a time and folded in chunk order — the rows each id sees, and the
+  // order they are seen in, are exactly the one-chunk-at-a-time loop's.
+  const brickPages = await mapWithConcurrency(chunk(ids, 150), 4, async (part) => {
     const { data, error } = await supabase
       .from("source_of_sales_bricks")
       .select("brick_id, brick_name, area_code, active")
       .in("brick_id", part);
     if (error) throw error;
-    for (const row of (data ?? []) as Array<{ active: boolean | null; area_code: string | null; brick_id: string | null; brick_name: string | null }>) {
+    return (data ?? []) as Array<{ active: boolean | null; area_code: string | null; brick_id: string | null; brick_name: string | null }>;
+  });
+  const byBrick = new Map<string, { areaCode: string | null; brickName: string }>();
+  for (const page of brickPages) {
+    for (const row of page) {
       const name = (row.brick_name ?? "").trim();
       if (!row.brick_id || !name) continue;
       // A retired row never overwrites an active one already seen for the same id.
@@ -262,21 +290,24 @@ export async function loadBrickNames(brickIds: readonly string[]): Promise<Map<s
   }
 
   const areaCodes = [...new Set([...byBrick.values()].map((entry) => entry.areaCode).filter((code): code is string => Boolean(code)))];
-  const areaNames = new Map<string, string>();
-  for (const part of chunk(areaCodes, 150)) {
+  const areaPages = await mapWithConcurrency(chunk(areaCodes, 150), 4, async (part) => {
     const { data, error } = await supabase.from("source_of_sales_areas").select("area_code, area_name").in("area_code", part);
     if (error) throw error;
-    for (const row of (data ?? []) as Array<{ area_code: string | null; area_name: string | null }>) {
+    return (data ?? []) as Array<{ area_code: string | null; area_name: string | null }>;
+  });
+  const areaNames = new Map<string, string>();
+  for (const page of areaPages) {
+    for (const row of page) {
       const name = (row.area_name ?? "").trim();
       if (row.area_code && name && !areaNames.has(row.area_code)) areaNames.set(row.area_code, name);
     }
   }
 
-  const meta = new Map<string, BrickNameMeta>();
-  for (const [brickId, entry] of byBrick) {
-    meta.set(brickId, { areaName: entry.areaCode ? areaNames.get(entry.areaCode) ?? null : null, brickName: entry.brickName });
-  }
-  return meta;
+  return [...byBrick].map(([brickId, entry]) => ({
+    brickId,
+    brickName: entry.brickName,
+    areaName: entry.areaCode ? areaNames.get(entry.areaCode) ?? null : null,
+  }));
 }
 
 /**

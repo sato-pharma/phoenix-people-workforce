@@ -773,7 +773,12 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // a263a7a883ec47435bdcbf43ccb9c2d2 (2,264) and phoenix_crm_customers_no_double_add at
   // 95f5e87958a026df409acefc9c0d5634 (555). Its trigger phoenix_crm_customers_no_double_add is
   // present and enabled (tgenabled 'O') on public.phoenix_crm_customers, which is the guard the
-  // file exists to install. Nothing here is superseded.
+  // file exists to install.
+  // 🔴 SUPERSEDED IN PART since 2026-10-16: phoenix_crm_seat_reference's LAST definer is now
+  // 20261016180200_phoenix_crm_seat_reference_joins_once.sql (production a8ad88167cbdf3d77468ad781b15c2fd,
+  // applied through apply_migration, so it carries its own ledger row). Re-applying THIS file would
+  // revert that function to the per-entry lateral; the other two functions and the trigger are
+  // still this file's.
   "20261012200000_phoenix_crm_a_doctor_is_on_a_seat_once.sql",
   // A pure DROP, so the end state is the evidence and there is nothing to digest: ZERO relations
   // named v_active_organogram exist in production's pg_class at ANY relkind, which is this file's
@@ -874,6 +879,19 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // policies and constraints). Same trigger, same table, same function: that statement was run on
   // staging and still reads trigger_count 1, so the file and both databases agree.
   "20261016161248_phoenix_crm_recorded_visit_waits_for_the_administrator.sql",
+  // 2026-10-16, applied to staging and then production (18:10 Cairo) with `node
+  // scripts/apply-sql-file.mjs <file> <env>` (production with
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com) after the staging MCP answered
+  // {"status":"declined"} on this SQL — its body contains the plan's own `delete` of dropped items. That
+  // route writes NO ledger row, so ZERO rows on either project carry this version or name.
+  // Verified by digest on BOTH projects, not by presence: md5(pg_proc.prosrc) for
+  // phoenix_crm_save_plan reads ddd6eba3f763fabdd54d0d5af247d1c3 over 6,732 chars, md5-equal to the
+  // dollar-quoted body in this file (as-is LF), and this file is the function's LAST definer (the
+  // pre-image was 20261010180118's body, daa8205f6cf06d69724f008af2d83218). `prosecdef` true and
+  // EXECUTE held by service_role only. Its effect was measured on staging inside a rolled-back block:
+  // a second save of identical items left both rows at the same ctid, and changing one item rewrote
+  // that row alone. Re-applying it is a no-op (`create or replace`).
+  "20261016180100_phoenix_crm_save_plan_writes_only_changed_items.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

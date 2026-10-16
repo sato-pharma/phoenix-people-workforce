@@ -58,6 +58,22 @@ function runScopeTests() {
   // Everyone else reads their own subtree, which territoriesInScope already resolves downward.
   assert.match(doctors, /return viewer\.scopeTerritories;/, "a viewer who is not a directory role reads the territories beneath him only");
 
+  // Speed (Phoenix CRM performance audit, 2026-10-16): the customers and the place counts read side by
+  // side, the names start the moment the customers land, and each read's seat chunks run four at a
+  // time — a company role's directory spans every territory, which used to be one chunk after another.
+  assert.match(
+    doctors,
+    /await Promise\.all\(\[customersRead, loadPlaceCounts\(seatIds, isTest\), namesRead\]\)/,
+    "the customers, the place counts and the names are one wave, not three reads in a row",
+  );
+  assert.match(doctors, /const namesRead = customersRead\.then\(/, "the names wait only on the customers they name");
+  assert.equal(
+    (doctors.match(/mapWithConcurrency\(chunk\(seatIds, 100\), SEAT_CHUNKS_AT_ONCE,/g) ?? []).length,
+    2,
+    "both seat-chunked reads run their chunks side by side",
+  );
+  assert.match(doctors, /const SEAT_CHUNKS_AT_ONCE = 4;/, "four at a time, the module's usual allowance");
+
   // 3. Scope is settled on the server. The component is handed rows, never a rule.
   const tab = source("src/components/phoenix-crm/doctors-tab.tsx");
   for (const leaked of [/Super Admin/, /SFE Manager/, /Training Manager/, /scopeTerritories/]) {

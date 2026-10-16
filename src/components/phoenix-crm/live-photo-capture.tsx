@@ -447,9 +447,15 @@ export function LivePhotoCapture({
     // would guarantee a null on every capture.
     setStage("stamping");
 
+    // The stamp's place name is looked up from the CAMERA's running reading (below), never from the
+    // shutter's, so the lookup starts NOW and runs while the shutter reading is taken (Phoenix CRM
+    // performance audit, 2026-10-16) — the two waits used to stack, up to 8 s and then the lookup.
+    // `fetchEvidenceLocation` never throws, so starting it early cannot leave a rejection unhandled.
+    const stampLookup = fetchEvidenceLocation(LOCATION_ENDPOINT, usedFix.lat, usedFix.lon, null);
+
     // The photo’s OWN reading, taken now rather than reused from the watch. Awaited, unlike the
-    // marketing camera, because this path already blocks on reverse-geocoding a line below - so it
-    // adds no wait the rep can perceive. Capped at 8s by the shared reader and never throwing: a
+    // marketing camera, because this path already waits for the place-name lookup started above - so
+    // it adds no wait the rep can perceive. Capped at 8s by the shared reader and never throwing: a
     // refusal or a timeout leaves it null and the visit saves exactly as before.
     const shutterFix = await readShutterFix();
     stopLocation();
@@ -469,7 +475,7 @@ export function LivePhotoCapture({
     // and the SFE Manager read). The accuracy itself still travels in the saved place, untouched.
     // It burns the CAMERA's running reading with that reading's OWN time beside the shutter time, so
     // the gap between them is legible on the image itself (pinned by capture-trust).
-    const payload = await fetchEvidenceLocation(LOCATION_ENDPOINT, usedFix.lat, usedFix.lon, null);
+    const payload = await stampLookup;
     const stamp = readEvidenceLocationStamp(payload, usedFix.lat, usedFix.lon, null);
     const detail = payload?.location && typeof payload.location === "object" ? (payload.location as Record<string, unknown>) : null;
     const components = detail?.components && typeof detail.components === "object" ? (detail.components as Record<string, unknown>) : null;

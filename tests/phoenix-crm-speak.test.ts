@@ -269,7 +269,7 @@ export function runPhoenixCrmSpeakTests() {
   //    fallback existed to hand its recording to.
   assert.match(
     control,
-    /useCrmGet<\{ available: boolean \}>\(browser\.audio \? TRANSCRIBE_URL : null/,
+    /useCrmGet<\{ available: boolean \}>\(browser\.audio && transcriptionAnswer === null \? TRANSCRIBE_URL : null/,
     `${CONTROL} asks whether the words can be written out wherever a recording might have to be — not only where the browser admits it has no engine`,
   );
   // 2. Whether a phrase actually landed is remembered, and only a phrase with something in it counts.

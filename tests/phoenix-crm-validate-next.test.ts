@@ -378,6 +378,17 @@ function checkValidateFirstIn(): void {
   const board = stripComments(readFileSync("src/components/phoenix-crm/customer-list-board.tsx", "utf8"));
   assert.match(board, /variant === "pending" \? validateFirstIn\(neighbourhoods\.rows\)/, "To validate orders each brick through validateFirstIn");
   assert.match(board, /border-l-rose-500/, "and a capture-again row carries the rose rail");
+  // 2026-10-16 performance audit: the grouping and ordering is worked out once per list and filter,
+  // never again on a redraw that changes neither (folding a brick, opening the phone's filters).
+  const arrangedAt = board.indexOf("const arranged = useMemo(");
+  assert.ok(arrangedAt > 0, "the board keeps each group's order and marks between redraws");
+  const arrangedBody = board.slice(arrangedAt, board.indexOf("[variant, visible],", arrangedAt) + "[variant, visible],".length);
+  assert.ok(
+    arrangedBody.includes("const neighbourhoods = neighbourhoodsIn(rawEntry.rows);") && arrangedBody.includes("validateFirstIn(neighbourhoods.rows)"),
+    "the neighbours and the validate-first order are what it keeps",
+  );
+  assert.ok(arrangedBody.endsWith("[variant, visible],"), "and they are worked out again whenever the shown rows or the section change");
+  assert.match(board, /\{arranged\.map\(\(\{ entry, neighbourhoods, markedForValidating, captureAgain \}\) => \{/, "the groups are drawn from what it kept");
 }
 
 export function runPhoenixCrmValidateNextTests(): void {

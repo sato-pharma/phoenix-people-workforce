@@ -241,6 +241,14 @@ export function runPhoenixCrmDuplicatePhotosTests(): void {
     assert.ok(/failure = "the object is missing or empty"/.test(sweep), "a photo that could not be read is recorded as NOT CHECKED");
     assert.ok(sweep.includes("await import(\"sharp\")"), "sharp is loaded lazily — a top-level import of it has 500'd a whole page here before");
     assert.ok(sweep.includes("downloadPhoto"), "and the bucket is opened by photos.ts, never here");
+    // Phoenix CRM performance audit, 2026-10-16: the photos are read a few at a time, each still in
+    // its own try, and the rows are built back in the candidates' own order.
+    assert.ok(sweep.includes("mapWithConcurrency(candidates, PHOTO_READS_AT_ONCE, async (candidate) => {"), "the photos are read a few at a time");
+    assert.ok(sweep.includes("const PHOTO_READS_AT_ONCE = 4;"), "four at once — each holds one photo's bytes while sharp reads it");
+    assert.ok(
+      sweep.includes("for (const [position, candidate] of candidates.entries()) {"),
+      "and the fingerprint rows are written in the candidates' own order, as the one-at-a-time walk wrote them",
+    );
 
     const migration = sql(MIGRATION);
     // 🔴 Anchored on the absence of `desc`, not on the presence of the clause: "order by

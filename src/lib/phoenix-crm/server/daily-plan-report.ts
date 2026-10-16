@@ -198,7 +198,26 @@ export async function loadDailyPlanReport(viewer: PhoenixCrmViewer, raw: ReportF
     loadSeatLeaveDays([seat], period),
   ]);
   const planIds = planRows.map((row) => String(row.id));
-  const [itemRows, events] = await Promise.all([loadPlanItemRows(planIds, DAILY_PLAN_ITEM_COLUMNS), loadPlanEvents(planIds)]);
+
+  // One world at a time. The activity and start-time readers key a day by its DATE alone, which is
+  // unique only within one world — a territory holds one plan a week, and a test one beside it.
+  const worlds = (includeTest ? [false, true] : [false])
+    .map((isTest) => {
+      const worldPlans = planRows.filter((row) => (row.is_test === true) === isTest);
+      return { isTest, worldPlans, worldIds: new Set(worldPlans.map((row) => String(row.id))) };
+    })
+    .filter((world) => world.worldPlans.length > 0);
+  // Each world's activities and start times hang on its plan ids alone, so they are read beside the
+  // items and the events rather than after them; only the sales-master references wait for the items,
+  // since they are looked up for the customers those items name.
+  const [[itemRows, events], worldDays] = await Promise.all([
+    Promise.all([loadPlanItemRows(planIds, DAILY_PLAN_ITEM_COLUMNS), loadPlanEvents(planIds)]),
+    Promise.all(worlds.map((world) => Promise.all([loadPlanActivities([...world.worldIds]), loadPlanDayStarts([...world.worldIds])]))),
+  ]);
+  const worldItemsOf = worlds.map((world) => itemRows.filter((row) => world.worldIds.has(String(row.plan_id))));
+  const worldReferences = await Promise.all(
+    worlds.map((world, index) => loadPlannerReferences(seat.seatId, world.isTest, pendingCustomers(worldItemsOf[index]))),
+  );
 
   const settings = viewer.config.settings;
   const isRamadan = (isoDay: string) => isRamadanDay(isoDay, viewer.config.ramadanOverrides);
@@ -208,18 +227,11 @@ export async function loadDailyPlanReport(viewer: PhoenixCrmViewer, raw: ReportF
   const activities: DailyPlanSourceActivity[] = [];
   const starts: DailyPlanSourceStarts[] = [];
 
-  // One world at a time. The activity and start-time readers key a day by its DATE alone, which is
-  // unique only within one world — a territory holds one plan a week, and a test one beside it.
-  for (const isTest of includeTest ? [false, true] : [false]) {
-    const worldPlans = planRows.filter((row) => (row.is_test === true) === isTest);
-    if (worldPlans.length === 0) continue;
-    const worldIds = new Set(worldPlans.map((row) => String(row.id)));
-    const worldItems = itemRows.filter((row) => worldIds.has(String(row.plan_id)));
-    const [activitiesByDay, startsByDay, references] = await Promise.all([
-      loadPlanActivities([...worldIds]),
-      loadPlanDayStarts([...worldIds]),
-      loadPlannerReferences(seat.seatId, isTest, pendingCustomers(worldItems)),
-    ]);
+  for (let index = 0; index < worlds.length; index += 1) {
+    const { isTest, worldPlans } = worlds[index];
+    const worldItems = worldItemsOf[index];
+    const [activitiesByDay, startsByDay] = worldDays[index];
+    const references = worldReferences[index];
 
     for (const planRow of worldPlans) {
       const planId = String(planRow.id);

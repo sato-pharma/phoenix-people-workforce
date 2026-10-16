@@ -74,7 +74,11 @@ export async function resolvePinGeography(
     // Best-effort, exactly as the watermark treats it: a pin in the desert, a refused lookup or a
     // spent map quota leaves the clean address null. The coordinates, the photo and the brick are
     // the proof; the address is the courtesy on top of them, and a validation is never blocked on it.
-    resolveEvidenceLocation({ accuracyMeters: point.accuracyMeters, latitude: point.lat, longitude: point.lon }).catch(() => null),
+    // The same remembered address the photo's stamp was given, so the address saved is the one on the picture.
+    resolveEvidenceLocation(
+      { accuracyMeters: point.accuracyMeters, latitude: point.lat, longitude: point.lon },
+      { reuseNearbyAddress: true },
+    ).catch(() => null),
   ]);
   // The seat's own area breaks a near tie, inside the SAME trust radius the match is judged by — so a
   // capture is never dragged into a territory it is further than `BRICK_TRUST_KM` from.

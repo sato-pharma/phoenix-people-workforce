@@ -875,21 +875,18 @@ export async function loadVisitRowsForDay(seatId: string, isTest: boolean, date:
  * returned — sent, or approved — and only the returned day reads `returned` (owner, 2026-10-02,
  * "Still planned"). Planned visit, Today and the Super Admin's missed record all read it from here, so
  * they ask one rule — the one phoenix_crm_save_visit stamps the visit with.
+ *
+ * `planRow` is the week's plan row already being read (`loadWeekPlanRow`) — Today reads it once and
+ * hands the same row to each of its readers, rather than asking for one row three times over.
  */
 export async function plannedCustomersOn(
   seatId: string,
   isTest: boolean,
   date: string,
+  options: { planRow?: Promise<Row | null> } = {},
 ): Promise<{ status: PhoenixCrmPlanStatus | null; customerIds: string[] }> {
   const supabase = getSupabaseAdmin();
-  const { data: plan, error } = await supabase
-    .from("phoenix_crm_plans")
-    .select(`id, ${PLAN_DAY_COLUMNS}`)
-    .eq("seat_id", seatId)
-    .eq("is_test", isTest)
-    .eq("week_start", fieldWeekStart(date))
-    .maybeSingle();
-  throwIfError(error);
+  const plan = await (options.planRow ?? loadWeekPlanRow(seatId, isTest, date));
   if (!plan) return { status: null, customerIds: [] };
   const planId = String((plan as Row).id);
   const [facts, items] = await Promise.all([
@@ -902,6 +899,22 @@ export async function plannedCustomersOn(
     status: day ? planDayStatus({ ...day, date }) : null,
     customerIds: ((items.data ?? []) as Row[]).map((row) => String(row.customer_id)),
   };
+}
+
+/**
+ * The plan row of the field week holding `date`, with every column the day rule reads — or null when
+ * no plan exists. One read Today shares between the day's stops, its planned activities and its week.
+ */
+export async function loadWeekPlanRow(seatId: string, isTest: boolean, date: string): Promise<Row | null> {
+  const { data: plan, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_plans")
+    .select(`id, ${PLAN_DAY_COLUMNS}`)
+    .eq("seat_id", seatId)
+    .eq("is_test", isTest)
+    .eq("week_start", fieldWeekStart(date))
+    .maybeSingle();
+  throwIfError(error);
+  return (plan as Row | null) ?? null;
 }
 
 export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unknown; test: unknown }): Promise<VisitFormView> {

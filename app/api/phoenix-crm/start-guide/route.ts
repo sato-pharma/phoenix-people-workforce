@@ -2,10 +2,29 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { validationError } from "@/lib/http/api-errors";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
-import { buildPhoenixCrmStartGuide, isStartGuideLanguage } from "@/lib/phoenix-crm/start-guide";
+import { buildPhoenixCrmStartGuide, isStartGuideLanguage, type StartGuideLanguage } from "@/lib/phoenix-crm/start-guide";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * Each language's page, built once per server process (Phoenix CRM performance audit, 2026-10-16).
+ *
+ * `buildPhoenixCrmStartGuide` is a pure function of the language: it reads no person, no figure, no
+ * clock and no environment, so every request for one language produced the same page byte for byte.
+ * Production is one long-lived Node process, and every deploy starts a new one — the only moment the
+ * guide's text can change — so a page held here is never older than the code serving it. The
+ * permission check still runs on every request; only the string is kept.
+ */
+const builtGuides = new Map<StartGuideLanguage, string>();
+
+function startGuideHtml(language: StartGuideLanguage): string {
+  const kept = builtGuides.get(language);
+  if (kept !== undefined) return kept;
+  const html = buildPhoenixCrmStartGuide(language);
+  builtGuides.set(language, html);
+  return html;
+}
 
 /**
  * GET = the one-page start guide a District Manager sends a rep, in English or Arabic.
@@ -40,7 +59,7 @@ export async function GET(request: Request) {
       throw validationError("The start guide is available in English (en) and Arabic (ar).");
     }
 
-    return new Response(buildPhoenixCrmStartGuide(language), {
+    return new Response(startGuideHtml(language), {
       headers: {
         "Cache-Control": "no-store, max-age=0",
         "Content-Type": "text/html; charset=utf-8",

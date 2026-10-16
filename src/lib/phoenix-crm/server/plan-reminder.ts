@@ -47,7 +47,11 @@ import {
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { loadPhoenixCrmConfig, openLineCodes } from "@/lib/phoenix-crm/server/settings";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+/** How many people are being sent their reminder at once. */
+const DELIVERIES_AT_ONCE = 4;
 
 export type PlanReminderRun = {
   /** Null when today is not a reminder day; the run then reads nothing and sends nothing. */
@@ -146,10 +150,10 @@ export async function runPhoenixCrmPlanReminder(
   const openLines = openLineCodes(config.lineRollout, cairoToday);
   // A vacant territory has nobody to plan it, and a vacancy is never raised as a finding.
   const staffed = org.territories.filter((seat) => Boolean(seat.lineCode && openLines.has(seat.lineCode) && seat.occupantHrId));
-  const started = await seatsWithRealActivity(staffed.map((seat) => seat.seatId));
   // Only a LIVE team is reminded (owner, 2026-10-08): activity alone — a Super Admin's try-out, a rep who
-  // opened the app early — is not a start. An unreadable gate fails open (live-teams.ts).
-  const live = await loadLiveTeamSeatIds(cairoToday);
+  // opened the app early — is not a start. An unreadable gate fails open (live-teams.ts). The two
+  // questions do not depend on each other, so they are asked at once.
+  const [started, live] = await Promise.all([seatsWithRealActivity(staffed.map((seat) => seat.seatId)), loadLiveTeamSeatIds(cairoToday)]);
   const seats = territoriesOfStartedTeams(org, staffed, started).filter((seat) => !live || seatIsInLiveTeam(seat, live));
   const statuses = await loadWeekStatuses(
     seats.map((seat) => seat.seatId),
@@ -198,20 +202,27 @@ export async function runPhoenixCrmPlanReminder(
     notices.push(notice);
   }
 
+  // Several people at once rather than one after another (Phoenix CRM performance audit, 2026-10-16).
+  // A rep who also reviews another territory gets two notices, and his own two still go in their
+  // order. Every send is still counted once, delivered or failed.
+  const perPerson = new Map<string, PlanReminderNotice[]>();
+  for (const notice of notices) perPerson.set(notice.hrId, [...(perPerson.get(notice.hrId) ?? []), notice]);
   let delivered = 0;
   let failed = 0;
-  for (const notice of notices) {
-    try {
-      await send(notice);
-      delivered += 1;
-    } catch (error) {
-      failed += 1;
-      logError("Phoenix CRM plan reminder could not be delivered", {
-        error,
-        labels: { event: "phoenix_crm_plan_reminder_failed", hrId: notice.hrId },
-      });
+  await mapWithConcurrency([...perPerson.values()], DELIVERIES_AT_ONCE, async (theirs) => {
+    for (const notice of theirs) {
+      try {
+        await send(notice);
+        delivered += 1;
+      } catch (error) {
+        failed += 1;
+        logError("Phoenix CRM plan reminder could not be delivered", {
+          error,
+          labels: { event: "phoenix_crm_plan_reminder_failed", hrId: notice.hrId },
+        });
+      }
     }
-  }
+  });
 
   return {
     weekStart: day.weekStart,

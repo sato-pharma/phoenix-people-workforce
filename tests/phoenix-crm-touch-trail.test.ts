@@ -208,6 +208,12 @@ function runBlindTests() {
   assert.match(writer, /console\.error/, "a failed insert is LOGGED");
   assert.doesNotMatch(stripComments(writer), /\bthrow\b/, "and never thrown — the rep is not waiting on this and must never pay for it");
   assert.match(writer, /Promise<void>/, "the writer returns void, like every other evidence writer in this module");
+  // Rule 3 (Phoenix CRM performance audit, 2026-10-16): the module's busiest call no longer holds the
+  // request open for its insert — the 204 goes first, and the insert runs after it.
+  const writerCode = stripComments(writer);
+  const afterAt = writerCode.indexOf('afterResponse("phoenix_crm_touch_trail", async () => {');
+  const insertAt = writerCode.indexOf('.from("phoenix_crm_touch_trail").insert(rows)');
+  assert.ok(afterAt > 0 && insertAt > afterAt, "the insert runs inside the after-response task, never before the reply");
 
   const route = source(ROUTE);
   const routeCode = stripComments(route);

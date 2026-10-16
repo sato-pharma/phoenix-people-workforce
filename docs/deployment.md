@@ -10,6 +10,7 @@ retirement).
 | Component | Service | Notes |
 |---|---|---|
 | Application hosting (production) | **Railway** | Project `Phoenix-HR-Workforce`, service `phoenix-people-workforce`, region `europe-west4-drams3a` (Amsterdam, EU West) — colocated with the Frankfurt Supabase project on purpose; **must stay in Europe** if re-platformed |
+| Background jobs (production) | **Railway** | Service `phoenix-workforce-worker`, same project, same image, `europe-west4-drams3a`, one replica — `https://phoenix-workforce-worker-production.up.railway.app`. Runs the live CRM poller and the cron routes that do heavy work, so the website never freezes under them. See "The worker service" below |
 | Application hosting (staging) | **Railway** | Same project and service, environment `staging` — `https://phoenix-people-workforce-staging.up.railway.app`, also `europe-west4-drams3a`. Tracks `main` and uses the staging Supabase project; see "Staging Environment" below |
 | Database + Auth | Supabase | Separate production (`ozucdzovmcqvepbozvqf`) and staging (`cifwmndunmlxjhyjugxa`) projects |
 | Scheduled jobs | **cron-job.org** (third-party, outside this repo) | See "Cron Jobs" below |
@@ -705,6 +706,49 @@ See docs/migrations.md for the migration policy — there is no scripted product
 pipeline (the prior phase28-36 scripts were retired 2026-07-11); applies go through the Supabase
 MCP/CLI directly with explicit approval, and a daily CI job
 (`.github/workflows/migration-drift-check.yml`) catches anything merged but never actually applied.
+
+## The worker service
+
+**Why it exists.** Until 16 Oct 2026 one process answered every page AND ran the background work.
+Node runs JavaScript on one thread, so a heavy job froze every page in flight: three 4.3-second
+freezes in three and a half hours, each straight after the biggest slice of the hourly doctor-list
+scrape. The owner chose a separate worker service (16 Oct 2026, "Separate worker service").
+
+**How the two processes differ — one variable, `PHOENIX_PROCESS_ROLE`** (`src/lib/platform/process-role.ts`):
+
+| Service | `PHOENIX_PROCESS_ROLE` | `PHOENIX_LIVE_CRM_POLL` | Runs |
+|---|---|---|---|
+| `phoenix-people-workforce` (the website) | `web` | — | Pages and API only. Its log says `[process-role] web` and `[crm:live-poll] not started: …` at boot |
+| `phoenix-workforce-worker` | `worker` | `true` | The live poller and its deep runs, the Early Birds close, CRM housekeeping, and the moved cron routes |
+
+Unset means `all`, today's single-process behaviour, so removing the variable from the website is the
+whole rollback for the in-process jobs. 🔴 **Never let two processes run the poller:** its state lives
+in memory, so two would double every sync. Turn it on in one place only, and only after the other
+place's log says it did not start.
+
+**Every other variable on the worker is a Railway reference to the website's own**
+(`${{phoenix-people-workforce.NAME}}`), so the GitHub → Railway secret sync, which writes the website,
+reaches the worker with nothing to keep in step. Its source is `main` with "Wait for CI" on, the same
+gate as the website, and its healthcheck is `/api/readyz`. Both are in `.railway/railway.ts`.
+
+**Which cron-job.org jobs call the worker** (moved 16 Oct 2026, the address only; schedule, switch
+and bearer unchanged and read back):
+
+| Job | cron-job.org id | Path |
+|---|---|---|
+| `phoenix-process-notifications` | `8200914` | `/api/notifications/process?limit=50` |
+| `phoenix-inbound-intake` | `8200920` | `/api/cron/inbound-intake` |
+| `phoenix-recruitment-email-intake` | `8200919` | `/api/cron/recruitment-email-intake` |
+| `Phoenix — interview reminders` | `8478976` | `/api/cron/interview-reminders` (on the website its run reached the 30-second cut) |
+| `phoenix-crm-contact-lists` | `8344730` | `/api/cron/crm-contact-lists` (runs 05:00–05:55 only, so its first run on the worker was 17 Oct) |
+
+Every other job, `job-heartbeat-sweep` included, still calls `https://phoenix-hr.satopharma.com`.
+
+🔴 **A job declared in `scripts/cronjob-sync.mjs` that runs on the worker carries `base: WORKER`.**
+The script matches a live job by its full URL, so a moved job declared without it reads as MISSING,
+and `--apply` would create a second copy on the website. To move another job, change only its URL in
+cron-job.org (one job at a time; the account allows 100 API requests a day), wait for its next run
+to answer 200 on the worker, then add `base: WORKER` to its declaration if it has one, and a row here.
 
 ## Cron Jobs (cron-job.org)
 

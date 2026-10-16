@@ -72,17 +72,30 @@ export async function loadPlanActivities(planIds: readonly string[]): Promise<Ma
  * 🔴 A LIST, NEVER `maybeSingle()`. This read asked for one row while a day could hold only one; once a
  * day holds several, a single-row read ERRORS rather than picking one, and Today would fail to open on
  * exactly the days the rep planned most carefully.
+ *
+ * `planRow` is the same week's plan row already being read — Today reads it once for all its readers.
  */
-export async function loadPlannedActivitiesOn(seatId: string, isTest: boolean, date: string): Promise<PlannedActivityRow[]> {
+export async function loadPlannedActivitiesOn(
+  seatId: string,
+  isTest: boolean,
+  date: string,
+  options: { planRow?: Promise<Row | null> } = {},
+): Promise<PlannedActivityRow[]> {
   const supabase = getSupabaseAdmin();
-  const { data: plan, error } = await supabase
-    .from("phoenix_crm_plans")
-    .select("id")
-    .eq("seat_id", seatId)
-    .eq("is_test", isTest)
-    .eq("week_start", fieldWeekStart(date))
-    .maybeSingle();
-  throwIfError(error);
+  let plan: Row | null;
+  if (options.planRow) {
+    plan = await options.planRow;
+  } else {
+    const { data, error } = await supabase
+      .from("phoenix_crm_plans")
+      .select("id")
+      .eq("seat_id", seatId)
+      .eq("is_test", isTest)
+      .eq("week_start", fieldWeekStart(date))
+      .maybeSingle();
+    throwIfError(error);
+    plan = (data as Row | null) ?? null;
+  }
   if (!plan) return [];
   const { data, error: activityError } = await supabase
     .from("phoenix_crm_plan_activities")

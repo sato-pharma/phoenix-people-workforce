@@ -591,6 +591,34 @@ export function CustomerListBoard({
     [activity, allGroups, brick, grade, listType, needle, speciality],
   );
 
+  // Each shown group's order and marks, worked out ONCE per list and filter (2026-10-16 Phoenix CRM
+  // performance audit). Folding a brick, opening the phone's Filters or anything else that redraws the
+  // board used to compare every doctor in every group against every other again; the answer depends
+  // on the shown rows and the section alone, so it is kept until one of them changes.
+  const arranged = useMemo(
+    () =>
+      visible.map((rawEntry) => {
+        // 🔴 Gather the doctors who stand together, colour each block, and put a block's rows
+        // under each other (owner, 2026-09-30). Scoped to THIS group, so numbering — and
+        // therefore colour — restarts in every brick, and a comparison never crosses a heading.
+        const neighbourhoods = neighbourhoodsIn(rawEntry.rows);
+        // 🔴 Only the few with the MOST visits waiting are marked, per brick (owner, 2026-09-30:
+        // "mark only the ones with the most visits waiting, not all 88"). A brick whose
+        // candidates all carry the same count marks none — there is no "most" to point at.
+        // 🔴 AND A CUSTOMER WAITING TO BE CAPTURED AGAIN COMES BEFORE ALL OF THEM, oldest wait
+        // first, in rose (owner, 2026-10-08) — `validateFirstIn`. His own "Validate again" pill
+        // says why; the rose rail only puts him where the rep looks first.
+        const waitingFirst = variant === "pending" ? validateFirstIn(neighbourhoods.rows) : null;
+        return {
+          entry: { ...rawEntry, rows: waitingFirst?.rows ?? neighbourhoods.rows },
+          neighbourhoods,
+          markedForValidating: waitingFirst?.marked ?? EMPTY_MARKS,
+          captureAgain: waitingFirst?.again ?? EMPTY_MARKS,
+        };
+      }),
+    [variant, visible],
+  );
+
   const shownCount = visible.reduce((sum, entry) => sum + entry.rows.length, 0);
   const brickCount = visible.filter((entry) => entry.group.mapped).length;
   const localityCount = visible.length - brickCount;
@@ -754,22 +782,8 @@ export function CustomerListBoard({
         </div>
       ) : (
         <div className="border border-slate-200">
-          {visible.map((rawEntry) => {
-            const isCollapsed = collapsed.has(rawEntry.group.key);
-            // 🔴 Gather the doctors who stand together, colour each block, and put a block's rows
-            // under each other (owner, 2026-09-30). Scoped to THIS group, so numbering — and
-            // therefore colour — restarts in every brick, and a comparison never crosses a heading.
-            const neighbourhoods = neighbourhoodsIn(rawEntry.rows);
-            // 🔴 Only the few with the MOST visits waiting are marked, per brick (owner, 2026-09-30:
-            // "mark only the ones with the most visits waiting, not all 88"). A brick whose
-            // candidates all carry the same count marks none — there is no "most" to point at.
-            // 🔴 AND A CUSTOMER WAITING TO BE CAPTURED AGAIN COMES BEFORE ALL OF THEM, oldest wait
-            // first, in rose (owner, 2026-10-08) — `validateFirstIn`. His own "Validate again" pill
-            // says why; the rose rail only puts him where the rep looks first.
-            const waitingFirst = variant === "pending" ? validateFirstIn(neighbourhoods.rows) : null;
-            const entry = { ...rawEntry, rows: waitingFirst?.rows ?? neighbourhoods.rows };
-            const markedForValidating = waitingFirst?.marked ?? EMPTY_MARKS;
-            const captureAgain = waitingFirst?.again ?? EMPTY_MARKS;
+          {arranged.map(({ entry, neighbourhoods, markedForValidating, captureAgain }) => {
+            const isCollapsed = collapsed.has(entry.group.key);
             return (
               <div key={entry.group.key}>
                 <GroupHeading

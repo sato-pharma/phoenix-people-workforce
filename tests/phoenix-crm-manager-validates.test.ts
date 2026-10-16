@@ -200,6 +200,17 @@ export function runPhoenixCrmManagerValidatesTests(): void {
       "the place photo slot matches validateCustomer's own gate — with the narrower one the manager gets a button whose camera is refused",
     );
     assert.doesNotMatch(photos, /territoryForRepWrite/, "and the old gate is gone from this file, not merely unused");
+
+    // The shutter's wait (Phoenix CRM performance audit, 2026-10-16). The slot row and its signed URL are
+    // asked for together — settled, never raced, so the ROW's error is read first and a URL for a path
+    // with no slot behind it is never handed out.
+    assert.match(photos, /return issuePhotoSlot\(photoSlotInput\(viewer, raw\)\);/, "the browser's slot door asks the shared gate");
+    const issue = photos.slice(photos.indexOf("export async function issuePhotoSlot("), photos.indexOf("function photoSlotInput("));
+    assert.match(issue, /await Promise\.allSettled\(\[\s*insertSlotRow\(input, path, issuedAt\),\s*getSupabaseAdmin\(\)\.storage\.from\(PHOENIX_CRM_PHOTO_BUCKET\)\.createSignedUploadUrl\(path\),/);
+    assert.ok(
+      issue.indexOf("throwIfError(slot.value.error);") < issue.indexOf("const { data, error } = signing.value;"),
+      "a failed slot row answers before the signed URL is even looked at",
+    );
   }
 
   console.log("phoenix-crm a manager validates: OK");

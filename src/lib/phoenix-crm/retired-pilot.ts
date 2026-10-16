@@ -7,6 +7,8 @@
  * default tab. Pure, so a test can call it.
  */
 
+import { isPhoenixCrmModuleKey, PHOENIX_CRM_PORTAL_BASE, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
+
 export const RETIRED_PILOT_TAB_TARGETS: ReadonlyMap<string, string> = new Map([
   ["visits", "visits"],
   ["planning", "plan"],
@@ -28,4 +30,15 @@ export function retiredPilotTabPassThrough(value: string | string[] | undefined)
 export function retiredPilotTabQuery(value: string | string[] | undefined): string {
   const target = RETIRED_PILOT_TAB_TARGETS.get(firstValue(value));
   return target ? `?tab=${target}` : "";
+}
+
+/**
+ * Where the portal pilot address lands, in ONE hop: a mapped tab opens its module's own page, anything
+ * else the chooser. Going by `/field-crm?tab=` cost a second redirect — and a second whole portal
+ * render — before the page (Phoenix CRM performance audit, 2026-10-16). The module page sends an
+ * admin-shell viewer on to his own twin exactly as the chooser did.
+ */
+export function retiredPilotPortalTarget(value: string | string[] | undefined): string {
+  const target = RETIRED_PILOT_TAB_TARGETS.get(firstValue(value));
+  return isPhoenixCrmModuleKey(target) ? phoenixCrmModulePath(PHOENIX_CRM_PORTAL_BASE, target) : PHOENIX_CRM_PORTAL_BASE;
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { stripComments } from "./support/comment-strip.ts";
+import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 import { followUpText, lastSeenText, plannerRowInsight, usualDaysText } from "../src/components/phoenix-crm/labels.ts";
 import {
@@ -485,6 +485,12 @@ export function runPhoenixCrmPlanInsightTests(): void {
     assert.match(loader, /visitsRead\.catch\(\(\) => undefined\);/, "a read started early is handled the moment it starts");
     assert.match(
       loader,
+      /options\.visitsRead\.then\(\(rows\) => rows\.filter\(\(row\) => String\(row\.visit_date \?\? ""\) >= lastSeenSince\)\)/,
+      "rows a caller hands over (call prep) are cut back to this read's own window",
+    );
+    assert.match(loader, /const lastSeenSince = addDaysIso\(today, -LAST_SEEN_WINDOW_DAYS\);/, "the same window");
+    assert.match(
+      loader,
       /loadVisitHistoryFor\(contactIds, \{ daysSince: addDaysIso\(today, -USUAL_DAYS_WINDOW_DAYS\) \}\)/,
       "iReports360 is read through the List's own door, the same read, asked for the recent days too",
     );
@@ -494,10 +500,29 @@ export function runPhoenixCrmPlanInsightTests(): void {
 
     const door = functionBody(read("src/lib/crm/reads.ts"), "export async function readContactVisitHistory(");
     assert.match(door, /options: \{ daysSince\?: string \} = \{\}/, "the read door takes the window as an option");
+    // Since 2026-10-16 the door counts in the database (phx_crm_contact_visit_history) and keeps the page
+    // walk only for a database the function has not reached; both hand back days only when asked.
+    assert.match(door, /return await readContactVisitHistoryCounted\(ids, daysSince\);/, "the door asks the database for the counts");
+    assert.match(door, /return readContactVisitHistoryPaged\(ids, daysSince\);/, "and walks the pages only when the function is missing");
+    const counted = functionBody(read("src/lib/crm/reads.ts"), "async function readContactVisitHistoryCounted(");
+    assert.match(counted, /p_days_since: daysSince/, "the window travels to the database as it is");
     assert.match(
-      door,
+      counted,
+      /if \(daysSince !== null && Array\.isArray\(row\.days\) && row\.days\.length > 0\) found\.days = row\.days;/,
+      "and days come back only when asked, never as an empty list",
+    );
+    assert.match(
+      functionBody(read("src/lib/crm/reads.ts"), "async function readContactVisitHistoryPaged("),
       /if \(daysSince !== null && row\.visit_date && row\.visit_date >= daysSince\) \(found\.days \?\?= \[\]\)\.push\(row\.visit_date\);/,
-      "and hands back days only when asked",
+      "and the page walk the same",
+    );
+    const historySql = stripSqlComments(
+      readFileSync("supabase/migrations/20261016180202_crm_contact_history_and_plan_dates_counted_in_sql.sql", "utf8").replace(/\r\n/g, "\n"),
+    );
+    assert.match(
+      historySql,
+      /when p_days_since is null then null\s+else array_agg\(v\.visit_date order by v\.visit_date desc\) filter \(where v\.visit_date >= p_days_since\)/,
+      "the database hands back the days on or after the window, newest first, and none when not asked",
     );
     assert.match(read("src/lib/phoenix-crm/server/list.ts"), /loadVisitHistoryFor\(sharedKeys\),/, "the List asks for none, so its answer to the phone is unchanged");
   }

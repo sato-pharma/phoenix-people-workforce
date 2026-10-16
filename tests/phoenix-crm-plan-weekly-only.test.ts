@@ -173,7 +173,8 @@ export function runPhoenixCrmPlanWeeklyOnlyTests(): void {
       /if \(action === "reopen"\) \{\s*throw conflictError\("A sent week is no longer taken back\. Open it and press Ask to edit this week\."\);/,
       "a rep's take-back is refused with what to press instead",
     );
-    assert.match(transition, /await assertRepMayChangeWeek\(viewer, seat, isTest, String\(planRow\.week_start\)\);/, "a send checks the rep's one week too");
+    // Handed the plan row the send already read, so the guard does not read it again (2026-10-16).
+    assert.match(transition, /await assertRepMayChangeWeek\(viewer, seat, isTest, String\(planRow\.week_start\), planRow\);/, "a send checks the rep's one week too");
 
     const edits = raw("src/lib/phoenix-crm/server/plan-edits.ts");
     const guard = edits.slice(edits.indexOf("export async function assertRepMayChangeWeek("), edits.indexOf("// ── The rep asks"));

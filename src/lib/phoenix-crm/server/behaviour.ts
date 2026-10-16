@@ -40,6 +40,7 @@ import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadClosingBrickSales, upperCode } from "@/lib/sales/closing-brick-sales";
 import { lineName } from "@/lib/sales/monthly-targets";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { SALES_HISTORY_FLOOR, loadUploadedPeriodsInRange } from "@/lib/sales/vs-target";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -59,6 +60,9 @@ export const SEAT_ROW_READ_MAX = 100_000;
 
 /** Strong position and photo cases in one month. A company-wide month cannot approach this. */
 export const STRONG_CASE_READ_MAX = 20_000;
+
+/** How many lines' closing sales are read at once. The company has three. */
+const LINES_AT_ONCE = 4;
 
 const JUDGED_VISIT_COLUMNS =
   "id, seat_id, line_code, customer_id, visit_date, captured_at, rep_hr_id, manager_hr_id, entered_by_hr_id, form_open_seconds, objection, is_test";
@@ -103,8 +107,10 @@ function personOf(row: Row): string {
  * that saw anything, so no figure survives this function.
  */
 async function salesByLine(lines: string[], month: string): Promise<Map<string, { areas: Set<string>; sold: boolean }>> {
-  const out = new Map<string, { areas: Set<string>; sold: boolean }>();
-  for (const code of lines) {
+  // The lines are asked side by side rather than one after another (Phoenix CRM performance audit,
+  // 2026-10-16). Each keeps its own failure: one line the closing cannot answer for is still that
+  // line alone, and the answers are filed in the lines' own order.
+  const answers = await mapWithConcurrency(lines, LINES_AT_ONCE, async (code) => {
     try {
       const rows = await loadClosingBrickSales(lineName(code), month);
       const areas = new Set<string>();
@@ -115,13 +121,15 @@ async function salesByLine(lines: string[], month: string): Promise<Map<string, 
         const area = upperCode(row.areaCode);
         if (area) areas.add(area);
       }
-      out.set(code, { areas, sold });
+      return { areas, sold };
     } catch {
       // A line the closing could not answer for is a line this month says nothing about. Recording
       // it as "sold nothing" would flag every rep on it for a read that failed.
-      out.set(code, { areas: new Set<string>(), sold: false });
+      return { areas: new Set<string>(), sold: false };
     }
-  }
+  });
+  const out = new Map<string, { areas: Set<string>; sold: boolean }>();
+  for (const [position, code] of lines.entries()) out.set(code, answers[position]!);
   return out;
 }
 

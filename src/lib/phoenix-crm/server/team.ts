@@ -76,6 +76,7 @@ import {
 } from "@/lib/phoenix-crm/team-today";
 import { sortVendorLeftovers, type VendorLeftoverRep } from "@/lib/phoenix-crm/vendor-leftovers";
 import type { PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type TeamTerritoryRow = {
@@ -142,10 +143,13 @@ function withClock(
  */
 async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, date: string): Promise<Map<string, TeamTodayFigures>> {
   const supabase = getSupabaseAdmin();
-  const seatsWithPlan = new Set<string>();
-  const planned: TeamTodayPlanned[] = [];
-  const visits: TeamTodayVisit[] = [];
-  for (const part of chunks(seatIds, SEAT_CHUNK)) {
+  // The batches run four at a time rather than one after another — an SFE Manager's whole company is
+  // four batches of three steps each — and are folded back in batch order below, so the figures are
+  // summed from the same rows in the same order as before.
+  const parts = await mapWithConcurrency(chunks(seatIds, SEAT_CHUNK), 4, async (part) => {
+    const seatsWithPlan: string[] = [];
+    const planned: TeamTodayPlanned[] = [];
+    const visits: TeamTodayVisit[] = [];
     const [plans, dayVisits] = await Promise.all([
       supabase
         .from("phoenix_crm_plans")
@@ -170,7 +174,7 @@ async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, da
       const plan = facts.get(String(row.id));
       if (!plan || !isPlanDaySent({ ...plan, date })) continue;
       seatByPlan.set(String(row.id), String(row.seat_id));
-      seatsWithPlan.add(String(row.seat_id));
+      seatsWithPlan.push(String(row.seat_id));
     }
     if (seatByPlan.size > 0) {
       const items = await supabase
@@ -190,6 +194,16 @@ async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, da
       if (visitListType === null) continue;
       visits.push({ seatId: String(row.seat_id), customerId: String(row.customer_id), listType: visitListType, capturedAt: String(row.captured_at) });
     }
+    return { seatsWithPlan, planned, visits };
+  });
+
+  const seatsWithPlan = new Set<string>();
+  const planned: TeamTodayPlanned[] = [];
+  const visits: TeamTodayVisit[] = [];
+  for (const part of parts) {
+    for (const seatId of part.seatsWithPlan) seatsWithPlan.add(seatId);
+    planned.push(...part.planned);
+    visits.push(...part.visits);
   }
   return summarizeTeamToday({ seatIds, seatsWithPlan, planned, visits });
 }
@@ -333,6 +347,16 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
   const seats: OrgSeat[] = testReadSeats(viewer, isTest, viewer.scopeTerritories);
   const seatIds = seats.map((seat) => seat.seatId);
 
+  // The Administrator's list of decisions he can still take back depends on nothing below, so it
+  // starts first and is collected last. Its failure was already caught into null — the tab still opens.
+  const reversibleRead = loadReversibleItems(viewer, isTest).catch((error: unknown) => {
+    logError("Phoenix CRM could not read the reversible decisions for the Team tab", {
+      error,
+      labels: { event: "phoenix_crm_reversible_items_failed" },
+    });
+    return null;
+  });
+
   const [readiness, requestRows, unplannedRows, planEditRows, todayBySeat, dayStartBySeat, visitAsks, vendorLeftovers] =
     await Promise.all([
       isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : loadReadiness(seatIds),
@@ -345,8 +369,9 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
       // the whole scope, beside the figures rather than inside them — it is a different table.
       loadDayStartsBySeat(seatIds, isTest, viewer.visitDay),
       visitAskSummaryOrNull(viewer, isTest),
-      // The vendor mirror knows nothing of test entries, so test mode asks it nothing.
-      isTest ? Promise.resolve(new Map<string, VendorLeftoverRep[]>()) : loadVendorLeftoversBySeat(),
+      // The vendor mirror knows nothing of test entries, so test mode asks it nothing. Asked for THIS
+      // scope's territories: only their rows are ever read off the answer.
+      isTest ? Promise.resolve(new Map<string, VendorLeftoverRep[]>()) : loadVendorLeftoversBySeat({ seatIds }),
     ]);
 
   const pendingBySeat = new Map<string, number>();
@@ -366,7 +391,8 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     ? seats.filter((seat) => pendingBySeat.has(seat.seatId) || unplannedSeats.has(seat.seatId) || workedToday(seat.seatId))
     : seats;
   // The day each waiting off-plan visit was moved from rides beside the names: it needs only the rows.
-  const [names, movedFrom] = await Promise.all([
+  // So does where each one's rep stands on the out-of-plan allowance (it catches its own failure).
+  const [names, movedFrom, offPlanStandingsRead] = await Promise.all([
     loadPeopleNames([
       ...territoryPeople(viewer.org, rowSeats),
       ...requestPeople(requestRows),
@@ -374,14 +400,14 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
       ...planEditPeople(planEditRows),
     ]),
     loadMovedFromDays(unplannedRows.map(unplannedVisitRef), isTest),
+    loadWaitingOffPlanStandings(
+      unplannedRows.map((row) => ({ seatId: String(row.seat_id), day: String(row.visit_date) })),
+      isTest,
+      viewer.config.settings,
+    ),
   ]);
 
   const summaries = new Map(rowSeats.map((seat) => [seat.seatId, describeTerritory(viewer.org, seat, names)]));
-  const offPlanStandingsRead = await loadWaitingOffPlanStandings(
-    unplannedRows.map((row) => ({ seatId: String(row.seat_id), day: String(row.visit_date) })),
-    isTest,
-    viewer.config.settings,
-  );
   const territories = rowSeats.map(
     (seat): TeamTerritoryRow => ({
       territory: summaries.get(seat.seatId) as TerritorySummary,
@@ -463,13 +489,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.raisedAt.localeCompare(right.raisedAt));
 
   const realRows = territories.filter((row) => row.readiness);
-  const reversible = await loadReversibleItems(viewer, isTest).catch((error: unknown) => {
-    logError("Phoenix CRM could not read the reversible decisions for the Team tab", {
-      error,
-      labels: { event: "phoenix_crm_reversible_items_failed" },
-    });
-    return null;
-  });
+  const reversible = await reversibleRead;
   return {
     isTest,
     viewerHrId: viewer.hrId,

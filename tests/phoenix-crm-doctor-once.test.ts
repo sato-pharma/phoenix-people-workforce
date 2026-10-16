@@ -64,5 +64,27 @@ export function runPhoenixCrmDoctorOnceTests(): void {
   const db = readFileSync("src/lib/phoenix-crm/server/db.ts", "utf8");
   assert.match(db, /doctor_already_on_list: \{ status: 409,/, "the refusal reaches the rep as a 409 with words, not 'could not be saved'");
 
+  // 4. The LIVE definition (2026-10-16 performance audit) keeps the same match and the same pick, set at a
+  //    time: one DISTINCT ON per (seat, id) over the lateral's own four ordering keys, joined on the
+  //    entry's contact id — and the pending drop as two joined key sets, never an EXISTS per entry.
+  const JOINS_ONCE = "supabase/migrations/20261016180200_phoenix_crm_seat_reference_joins_once.sql";
+  const live = functionBody(stripSqlComments(readFileSync(JOINS_ONCE, "utf8").replace(/\r\n/g, "\n")), "phoenix_crm_seat_reference");
+  assert.match(
+    live,
+    /select distinct on \(c\.seat_id, coalesce\(c\.reference_contact_crm_id, c\.own_contact_crm_id\)\)/,
+    "the customer behind an entry is still found by the id the assignment carries — his own id when he has no vendor id",
+  );
+  assert.match(
+    live,
+    /\(c\.status <> 'dropped'\) desc,\s+\(c\.status = 'active'\) desc,\s+c\.created_at asc,\s+c\.id asc\s+\)/,
+    "a pair still resolves to the live row, then the active one, then the earliest",
+  );
+  assert.match(live, /customer\.contact_crm_id = a\.contact_crm_id/, "each entry joins its one customer on its contact id");
+  assert.match(live, /drop_by_customer\.customer_id = customer\.id/, "a pending drop naming the customer still reads drop_pending");
+  assert.match(live, /drop_by_contact\.reference_contact_crm_id = a\.contact_crm_id/, "and so does one naming only the contact of an entry never minted");
+  assert.doesNotMatch(live, /left join lateral/, "no per-entry lookup of the seat's customers");
+  assert.doesNotMatch(live, /when exists \(/, "no per-entry EXISTS over the requests");
+  assert.match(live, /\n\s*security definer\n\s*set search_path to 'public'\n/, "still SECURITY DEFINER with its search path pinned");
+
   console.log("phoenix-crm doctor on a seat once: OK");
 }

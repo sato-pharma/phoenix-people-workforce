@@ -46,10 +46,14 @@ import {
 } from "@/lib/phoenix-crm/server/notifications";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPhoenixCrmConfig, openLineCodes } from "@/lib/phoenix-crm/server/settings";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
+
+/** How many approvers are being sent their nudge at once. */
+const DELIVERIES_AT_ONCE = 4;
 
 export type ApprovalNudgeRun = {
   /** Waiting more than a day at their step, real entries in open lines or not. */
@@ -189,20 +193,27 @@ export async function runPhoenixCrmApprovalNudge(
   const sfeHrIds = items.some((item) => item.stage === "sfe") ? await sfeManagerHrIds() : [];
   const plan = composeApprovalNudges({ org, items, sfeHrIds, openLines: openLineCodes(config.lineRollout, cairoToday), now, cairoToday });
 
+  // Several approvers at once rather than one after another (Phoenix CRM performance audit,
+  // 2026-10-16); anyone sent more than one still gets his in their order. Every send is still
+  // counted once, delivered or failed.
+  const perPerson = new Map<string, ApprovalNudgeNotice[]>();
+  for (const notice of plan.notices) perPerson.set(notice.hrId, [...(perPerson.get(notice.hrId) ?? []), notice]);
   let delivered = 0;
   let failed = 0;
-  for (const notice of plan.notices) {
-    try {
-      await send(notice);
-      delivered += 1;
-    } catch (error) {
-      failed += 1;
-      logError("Phoenix CRM approval nudge could not be delivered", {
-        error,
-        labels: { event: "phoenix_crm_approval_nudge_failed", hrId: notice.hrId },
-      });
+  await mapWithConcurrency([...perPerson.values()], DELIVERIES_AT_ONCE, async (theirs) => {
+    for (const notice of theirs) {
+      try {
+        await send(notice);
+        delivered += 1;
+      } catch (error) {
+        failed += 1;
+        logError("Phoenix CRM approval nudge could not be delivered", {
+          error,
+          labels: { event: "phoenix_crm_approval_nudge_failed", hrId: notice.hrId },
+        });
+      }
     }
-  }
+  });
 
   return { overdue: plan.overdue, unaddressed: plan.unaddressed, approvers: plan.notices.length, delivered, failed };
 }

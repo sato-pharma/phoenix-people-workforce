@@ -99,7 +99,63 @@ export async function readPlaceSchedule(input: {
    */
   reusedTimetable?: boolean;
 }): Promise<PhoenixCrmScheduleCheck> {
-  if (!hasOpenAiApiKey()) return unjudged("no_api_key");
+  return judgeScheduleBoard(await readScheduleBoard(input), input.customerName);
+}
+
+/**
+ * What one photograph of a board SAYS, before anybody's name is held against it — or the verdict that
+ * stands for every name when it could not be read.
+ *
+ * 🔴 THE QUESTION PUT TO THE MODEL NAMES NOBODY (2026-10-16 Phoenix CRM performance audit). It asks who
+ * is on the schedule and at what hours; the customer's name is used only by `judgeSchedule`, afterwards.
+ * So a building's board is read ONCE however many doctors are seated behind its door, and each one is
+ * judged against that one reading (`judgeScheduleBoard`) — where it used to download, crop and send the
+ * same image to the model once per doctor.
+ */
+export type ScheduleBoardReading =
+  | { kind: "unread"; check: PhoenixCrmScheduleCheck }
+  | {
+      kind: "read";
+      croppedFraction: number;
+      hoursRead: string | null;
+      note: string | null;
+      personNames: string[];
+      schedulePresent: boolean | null;
+      scheduleText: string | null;
+    };
+
+/** One customer's verdict on a board already read. Never throws, as `readPlaceSchedule` never did. */
+export function judgeScheduleBoard(board: ScheduleBoardReading, customerName: string): PhoenixCrmScheduleCheck {
+  if (board.kind === "unread") return { ...board.check };
+  try {
+    return judgeSchedule({
+      croppedFraction: board.croppedFraction,
+      customerName,
+      hoursRead: board.hoursRead,
+      note: board.note,
+      personNames: board.personNames,
+      schedulePresent: board.schedulePresent,
+      scheduleText: board.scheduleText,
+    });
+  } catch {
+    // Swallowed on purpose. A partial verdict on evidence is worse than none, because the board would
+    // render it as though it had been read.
+    return unjudged("call_failed", board.croppedFraction);
+  }
+}
+
+/**
+ * Read a board's photograph: the scoped download, the crop and the one model call `readPlaceSchedule`
+ * makes, without the name. Never throws — every absence is an `unread` reading naming WHY.
+ */
+export async function readScheduleBoard(input: {
+  photoPath: string;
+  seatId: string;
+  repHrId: string;
+  isTest: boolean;
+  reusedTimetable?: boolean;
+}): Promise<ScheduleBoardReading> {
+  if (!hasOpenAiApiKey()) return { kind: "unread", check: unjudged("no_api_key") };
 
   const bytes = await (input.reusedTimetable
     ? downloadVenueTimetablePhoto({ isTest: input.isTest, path: input.photoPath, seatId: input.seatId })
@@ -110,10 +166,10 @@ export async function readPlaceSchedule(input: {
         seatId: input.seatId,
       })
   ).catch(() => null);
-  if (!bytes) return unjudged("no_bytes");
+  if (!bytes) return { kind: "unread", check: unjudged("no_bytes") };
 
   const cropped = await cropStampBand(bytes);
-  if (!cropped) return unjudged("call_failed");
+  if (!cropped) return { kind: "unread", check: unjudged("call_failed") };
 
   try {
     const response = await createOpenAiResponseText({
@@ -143,19 +199,19 @@ export async function readPlaceSchedule(input: {
     });
 
     const parsed = parseAiJson(response.outputText);
-    return judgeSchedule({
+    return {
+      kind: "read",
       croppedFraction: cropped.croppedFraction,
-      customerName: input.customerName,
       hoursRead: text(parsed.hours_read),
       note: text(parsed.note),
       personNames: names(parsed.person_names),
       schedulePresent: typeof parsed.schedule_present === "boolean" ? parsed.schedule_present : null,
       scheduleText: text(parsed.schedule_text),
-    });
+    };
   } catch {
     // Swallowed on purpose. A partial verdict on evidence is worse than none, because the board would
     // render it as though it had been read.
-    return unjudged("call_failed", cropped.croppedFraction);
+    return { kind: "unread", check: unjudged("call_failed", cropped.croppedFraction) };
   }
 }
 

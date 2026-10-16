@@ -190,10 +190,32 @@ export function runPhoenixCrmAdoptionTests(): void {
       service.includes("...viewer.scopeTerritories, ...viewer.waitingScopeTerritories"),
       "the report reads the viewer's waiting territories too — otherwise the unopened half is invisible",
     );
-    assert.ok(service.includes("phoenix_crm_countable_visits"), "the first visit comes from the countable view, never the raw table");
-    assert.ok(service.includes("phoenix_crm_territory_readiness"), "and the ready date from the readiness table");
+    // Since 2026-10-16 the first visit and the count are COUNTED in the database, not read row by row:
+    // the whole visit history, a thousand rows a page in series, for two numbers per territory.
+    assert.ok(
+      service.includes('callPhoenixCrm<unknown>("phoenix_crm_seat_visit_firsts", { p_seat_ids: part, p_is_test: isTest })'),
+      "the first visit and the count come from one function per batch of territories",
+    );
+    assert.equal(service.includes('.from("phoenix_crm_visits")'), false, "never the raw table");
+    {
+      const sql = readFileSync(new URL("supabase/migrations/20261016180300_phoenix_crm_report_count_reads.sql", ROOT), "utf8").replace(/--.*$/gm, "");
+      const start = sql.indexOf("create or replace function public.phoenix_crm_seat_visit_firsts(");
+      assert.notEqual(start, -1, "the function is defined");
+      const body = sql.slice(start, sql.indexOf("\n$$;", start));
+      assert.match(body, /from public\.phoenix_crm_countable_visits v/, "the first visit comes from the countable view, never the raw table");
+      assert.match(body, /min\(v\.visit_date\)/, "the EARLIEST visit, as the old loop kept");
+      assert.match(body, /count\(\*\)::integer/, "and every countable visit, as the old loop counted");
+      assert.match(body, /where v\.seat_id = any\(p_seat_ids\)\s+and v\.is_test = p_is_test\s+group by v\.seat_id/, "the seat and the world, and nothing else");
+      // 🔴 The one board that counts a visit to a customer nobody has validated — it asks whether a
+      //    territory has STARTED, so the function must not filter on validation either.
+      assert.doesNotMatch(body, /customer_validated/, "no validation filter, deliberately, in the database as in the service");
+    }
+    // The ready date is the one readiness already carries — `phoenix_crm_seat_readiness` answers it
+    // from `phoenix_crm_territory_readiness` when it is not asked to stamp — never a second read of it.
+    assert.ok(service.includes("readyAt: list?.readyAt ?? null,"), "the ready date comes off the readiness answer");
+    assert.ok(service.includes(": sharedReadiness(seatIds),"), "readiness shared with the exceptions board when the pack opens both");
 
-    // Four reads for the whole company, not three per seat.
+    // Few reads for the whole company, not three per seat.
     const gather = service.slice(service.indexOf("export async function gatherAdoption"), service.indexOf("export async function loadAdoptionReport"));
     assert.equal((gather.match(/await Promise\.all\(\[/g) ?? []).length, 1, "the facts are gathered in ONE Promise.all");
     assert.equal(/for \(const seat of seats\)[\s\S]{0,200}await /.test(gather), false, "and never one query per seat");

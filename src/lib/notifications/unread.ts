@@ -40,6 +40,9 @@ type EventRow = {
 
 type StateRow = { archived_at?: string | null; notification_event_id?: string | null; read_at?: string | null };
 
+/** Event ids per `notification_user_states` read — well inside a URL, however many unread there are. */
+const STATE_ID_CHUNK = 150;
+
 function seatIdOf(metadata: unknown): string | null {
   if (!metadata || typeof metadata !== "object") return null;
   const seatId = (metadata as { seatId?: unknown }).seatId;
@@ -79,12 +82,21 @@ export async function listUnreadModuleNotices(
   const ids = rows.map((row) => String(row.id ?? "")).filter(Boolean);
   if (ids.length === 0) return [];
 
-  let stateQuery = supabase.from("notification_user_states").select("notification_event_id,read_at,archived_at").in("notification_event_id", ids);
-  stateQuery = identity.userId ? stateQuery.or(`user_id.eq.${identity.userId},hr_id.eq.${identity.hrId}`) : stateQuery.eq("hr_id", identity.hrId);
-  const { data: states, error: stateError } = await stateQuery;
-  if (stateError) throw stateError;
+  // Up to 300 ids: one `.in()` that long is a ~11 KB URL, so the states are asked in chunks of
+  // STATE_ID_CHUNK, all at once — every chunk is the same viewer's, and none depends on another.
+  const chunks: string[][] = [];
+  for (let index = 0; index < ids.length; index += STATE_ID_CHUNK) chunks.push(ids.slice(index, index + STATE_ID_CHUNK));
+  const stateReads = await Promise.all(
+    chunks.map(async (chunk) => {
+      let stateQuery = supabase.from("notification_user_states").select("notification_event_id,read_at,archived_at").in("notification_event_id", chunk);
+      stateQuery = identity.userId ? stateQuery.or(`user_id.eq.${identity.userId},hr_id.eq.${identity.hrId}`) : stateQuery.eq("hr_id", identity.hrId);
+      const { data: states, error: stateError } = await stateQuery;
+      if (stateError) throw stateError;
+      return (states ?? []) as StateRow[];
+    }),
+  );
   const settled = new Set(
-    ((states ?? []) as StateRow[]).filter((state) => state.read_at || state.archived_at).map((state) => String(state.notification_event_id ?? "")),
+    stateReads.flat().filter((state) => state.read_at || state.archived_at).map((state) => String(state.notification_event_id ?? "")),
   );
 
   return rows

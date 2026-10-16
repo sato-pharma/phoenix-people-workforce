@@ -42,9 +42,13 @@ import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-c
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import type { PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
+
+/** How many batches of requests one read keeps in flight at once (2026-10-16 speed audit). */
+const PLAN_EDIT_READ_CONCURRENCY = 4;
 
 function record(raw: unknown): Row {
   return (raw && typeof raw === "object" ? raw : {}) as Row;
@@ -145,10 +149,10 @@ export function canDecidePlanEditRow(viewer: PhoenixCrmViewer, seat: OrgSeat, is
  */
 export async function loadPlanEditRows(seatIds: ReadonlyArray<string>, isTest: boolean, cairoToday: string): Promise<Row[]> {
   if (seatIds.length === 0) return [];
-  const rows: Row[] = [];
   // The earliest Saturday whose week still has a day from today on (its Thursday is today or later).
   const lastLiveWeek = addDaysIso(cairoToday, -5);
-  for (const batch of chunk([...seatIds])) {
+  // A few batches at a time, never one after another (2026-10-16 speed audit); sorted below either way.
+  const pages = await mapWithConcurrency(chunk([...seatIds]), PLAN_EDIT_READ_CONCURRENCY, async (batch) => {
     const { data, error } = await getSupabaseAdmin()
       .from("phoenix_crm_plan_edit_requests")
       .select(REQUEST_COLUMNS)
@@ -157,9 +161,9 @@ export async function loadPlanEditRows(seatIds: ReadonlyArray<string>, isTest: b
       .in("status", [...PLAN_EDIT_WAITING_STATUSES])
       .gte("week_start", lastLiveWeek);
     throwIfError(error);
-    rows.push(...((data ?? []) as unknown as Row[]));
-  }
-  return rows.sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)));
+    return (data ?? []) as unknown as Row[];
+  });
+  return pages.flat().sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)));
 }
 
 /** Per plan: the request a week's own panel shows — the one on its way, else the latest settled. */
@@ -172,16 +176,17 @@ export async function loadPlanEditState(
 ): Promise<Map<string, PlanEditState>> {
   const state = new Map<string, PlanEditState>();
   if (planIds.length === 0) return state;
-  const rows: Row[] = [];
-  for (const batch of chunk([...planIds])) {
+  // A few batches at a time, never one after another (2026-10-16 speed audit), in batch order.
+  const pages = await mapWithConcurrency(chunk([...planIds]), PLAN_EDIT_READ_CONCURRENCY, async (batch) => {
     const { data, error } = await getSupabaseAdmin()
       .from("phoenix_crm_plan_edit_requests")
       .select(REQUEST_COLUMNS)
       .in("plan_id", batch)
       .eq("is_test", isTest);
     throwIfError(error);
-    rows.push(...((data ?? []) as unknown as Row[]));
-  }
+    return (data ?? []) as unknown as Row[];
+  });
+  const rows = pages.flat();
   // The people who decided are the screen's to name; the server's own check needs no names.
   const names: PeopleNames = rows.length > 0 && options.names !== false ? await loadPeopleNames(planEditPeople(rows)) : new Map();
   rows.sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)));
@@ -237,17 +242,33 @@ export type RepWeekAccess = {
  * opens that day alone, and `savePlan` hands the database nothing else to touch — so the days left as
  * he sent them are refused on the server, not merely greyed on his board.
  */
-export async function assertRepMayChangeWeek(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean, weekStart: string): Promise<RepWeekAccess> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("phoenix_crm_plans")
-    .select("id, status, returned_day, decided_at")
-    .eq("seat_id", seat.seatId)
-    .eq("is_test", isTest)
-    .eq("week_start", weekStart)
-    .maybeSingle();
-  throwIfError(error);
-  const planRow = data as Row | null;
+export async function assertRepMayChangeWeek(
+  viewer: PhoenixCrmViewer,
+  seat: OrgSeat,
+  isTest: boolean,
+  weekStart: string,
+  /**
+   * The week's own plan row, when the caller has just read it — carrying at least `id, status,
+   * returned_day, decided_at`. A send reads the plan by its id a moment before (plans.ts
+   * `transitionPlan`), so it hands that row over rather than reading the same row again (2026-10-16
+   * speed audit). Left out, the guard reads it itself, as it always has.
+   */
+  readRow?: Row,
+): Promise<RepWeekAccess> {
+  let planRow: Row | null;
+  if (readRow) {
+    planRow = readRow;
+  } else {
+    const { data, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_plans")
+      .select("id, status, returned_day, decided_at")
+      .eq("seat_id", seat.seatId)
+      .eq("is_test", isTest)
+      .eq("week_start", weekStart)
+      .maybeSingle();
+    throwIfError(error);
+    planRow = data as Row | null;
+  }
   const status = planRow ? planStatusOf(planRow.status) : null;
   const storedDay = planRow && status === "returned" ? textOrNull(planRow.returned_day) : null;
   let edit: PlanEditState | null = null;

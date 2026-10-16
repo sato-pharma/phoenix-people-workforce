@@ -174,7 +174,11 @@ export function runPhoenixCrmPlanCapOnSendTests(): void {
 
     // 🔴 The read must be the WHOLE week's rows. Narrowing it back to the changeable days is the hole
     // this closes, so the unfiltered read and the filter that feeds the STALE test are pinned apart.
-    assert.match(transition, /const allRows = await loadPlanItemRows\(\[planId\], ITEM_COLUMNS\);/, "every item row of the week is read, unfiltered");
+    // Started beside the one-week guard and awaited after it (2026-10-16 speed audit), with the narrow
+    // columns a send reads — the venue rides on the item's own place.
+    assert.match(transition, /const allRowsRead = loadPlanItemRows\(\[planId\], SEND_ITEM_COLUMNS\);/, "every item row of the week is read, unfiltered");
+    assert.match(transition, /const allRows = await allRowsRead;/, "and used whole");
+    assert.match(plans, /place:phoenix_crm_places!place_id\(status, shared_place_id\)"/, "the send's rows carry the place's status and its building");
     assert.match(transition, /const openRows = allRows\.filter\(\(row\) => changeable\.has\(String\(row\.plan_date\)\)\);/, "the stale test keeps its own narrower view");
     assert.equal(
       (transition.match(/loadPlanItemRows\(/g) ?? []).length,
@@ -182,7 +186,7 @@ export function runPhoenixCrmPlanCapOnSendTests(): void {
       "read once, used twice — not a second round trip",
     );
     assert.ok(
-      !/loadPlanItemRows\(\[planId\], ITEM_COLUMNS\)\)\.filter/.test(transition),
+      !/loadPlanItemRows\(\[planId\], (?:SEND_)?ITEM_COLUMNS\)\)\.filter/.test(transition) && !/allRowsRead\)\.filter/.test(transition),
       "the item read is never filtered in place again: that filter is what hid the untouched day",
     );
 

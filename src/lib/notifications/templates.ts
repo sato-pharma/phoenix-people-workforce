@@ -194,7 +194,41 @@ export function selectTemplateRow<Row extends { event_type?: string | null; is_a
   return active.find((row) => row.event_type === eventType) ?? active.find((row) => row.event_type === "*") ?? null;
 }
 
+/**
+ * The template rows, held for TEMPLATE_TTL_MS per (module, channel, event) — Phoenix CRM performance
+ * audit, 2026-10-16. Every recipient of every notice read them again, once per channel, one after
+ * another, for wording an admin edits a few times a month: a plan reminder paid it hundreds of times in
+ * one run. Only the WORDING is held — who is told, and on which channel, is decided elsewhere and read
+ * fresh. A template saved on this process is seen at once (`forgetNotificationTemplates`, called by the
+ * one writer); another process sees it within TEMPLATE_TTL_MS. A failed read is never held.
+ */
+const TEMPLATE_TTL_MS = 30_000;
+const heldTemplates = new Map<string, { rows: Promise<Array<NotificationTemplateRow & { event_type?: string | null }> | null>; readAt: number }>();
+
+/** A template was saved: every send after this reads the stored wording again. */
+export function forgetNotificationTemplates(): void {
+  heldTemplates.clear();
+}
+
 async function loadTemplate(input: NotificationTemplateRenderInput) {
+  const key = `${input.module}\u0000${input.channel}\u0000${input.eventType}`;
+  const now = Date.now();
+  let entry = heldTemplates.get(key);
+  if (!entry || now - entry.readAt >= TEMPLATE_TTL_MS) {
+    const fresh = { rows: readTemplateRows(input), readAt: now };
+    entry = fresh;
+    heldTemplates.set(key, fresh);
+    fresh.rows.catch(() => {
+      if (heldTemplates.get(key) === fresh) heldTemplates.delete(key);
+    });
+  }
+  const rows = await entry.rows;
+  return rows === null ? null : selectTemplateRow(rows, input.eventType);
+}
+
+async function readTemplateRows(
+  input: NotificationTemplateRenderInput,
+): Promise<Array<NotificationTemplateRow & { event_type?: string | null }> | null> {
   try {
     // Exact (module, eventType) wins; otherwise the module-wide "*" template applies.
     // The "*" default is what lets a single admin-edited template govern every event of
@@ -207,7 +241,7 @@ async function loadTemplate(input: NotificationTemplateRenderInput) {
       .eq("channel", input.channel)
       .in("event_type", [input.eventType, "*"]);
     if (error) throw error;
-    return selectTemplateRow((data ?? []) as Array<NotificationTemplateRow & { event_type?: string | null }>, input.eventType);
+    return (data ?? []) as Array<NotificationTemplateRow & { event_type?: string | null }>;
   } catch (error) {
     if (schemaMissing(error)) return null;
     throw error;

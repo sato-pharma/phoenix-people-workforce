@@ -196,7 +196,8 @@ export function runCrmReportsReadPhoenixTests() {
     );
     const repsList = readFileSync("src/lib/crm/reps-list.ts", "utf8");
     assert.ok(
-      repsList.includes('.select("contact_crm_id, agent_crm_id, agent_hr_id, lat, lon, address, check_date")'),
+      // `crm_checkin_id` rides along since 2026-10-16 as the keyset page cursor's tiebreak only.
+      repsList.includes('.select("contact_crm_id, agent_crm_id, agent_hr_id, lat, lon, address, check_date, crm_checkin_id")'),
       "check-ins carry the HR id, or a rep with no CRM account never counts as a second observer",
     );
     assert.ok(

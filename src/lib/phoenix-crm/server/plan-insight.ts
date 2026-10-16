@@ -37,23 +37,35 @@ type Row = Record<string, unknown>;
  * Every on-list customer's insight, by customer id. `customersRead` is the planner's own customer read,
  * handed over as a PROMISE (the visit form's `loadLastVisits` takes its products the same way): the
  * Phoenix visits are asked for before it lands, and only the iReports360 half waits for it.
+ *
+ * `options.visitsRead` is for a caller that already reads this seat's raw visits with these columns,
+ * with NO upper bound and from a day at or before this window's first (call prep, whose "what was said
+ * last time" reads the same table — 2026-10-16 Phoenix CRM performance audit). Its rows are cut back
+ * to this window here, so the answer is exactly the one this read's own query gives, from one read
+ * instead of two.
  */
 export async function loadPlannerInsights(
   seatId: string,
   isTest: boolean,
   today: string,
   customersRead: Promise<{ customers: Row[]; placesByCustomer: Map<string, ListPlace[]> }>,
+  options: { visitsRead?: Promise<Row[]> } = {},
 ): Promise<Map<string, PlannerInsight>> {
-  const visitsRead = fetchAllRowsKeyset<Row>(
-    () =>
-      getSupabaseAdmin()
-        .from("phoenix_crm_visits")
-        .select("id, customer_id, visit_date, captured_at, next_step, next_step_on")
-        .eq("seat_id", seatId)
-        .eq("is_test", isTest)
-        .gte("visit_date", addDaysIso(today, -LAST_SEEN_WINDOW_DAYS)),
-    { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-  );
+  const lastSeenSince = addDaysIso(today, -LAST_SEEN_WINDOW_DAYS);
+  const visitsRead = options.visitsRead
+    ? // The `.gte` below, applied to the rows the caller read: an ISO day compares as text exactly as
+      // the date column does, and a row with no day is one `.gte` would never have returned.
+      options.visitsRead.then((rows) => rows.filter((row) => String(row.visit_date ?? "") >= lastSeenSince))
+    : fetchAllRowsKeyset<Row>(
+        () =>
+          getSupabaseAdmin()
+            .from("phoenix_crm_visits")
+            .select("id, customer_id, visit_date, captured_at, next_step, next_step_on")
+            .eq("seat_id", seatId)
+            .eq("is_test", isTest)
+            .gte("visit_date", addDaysIso(today, -LAST_SEEN_WINDOW_DAYS)),
+        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+      );
   // Handled the moment it starts: it is awaited only once the customer list is in, and a failure
   // landing first must never be an UNHANDLED rejection. The `await` below still receives it.
   visitsRead.catch(() => undefined);

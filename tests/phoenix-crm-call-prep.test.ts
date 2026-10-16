@@ -207,6 +207,31 @@ export function runPhoenixCrmCallPrepTests(): void {
       "what the doctor said at a visit waiting on its approval is still what the doctor said",
     );
     assert.ok(server.includes("fetchAllRowsKeyset"), "the visits read is paged");
+    // 2026-10-16 performance audit: "what was said last time" and "last seen" are ONE visits read, from
+    // the earlier of their two first days with no upper bound, and each cuts its own window back out.
+    assert.equal(server.split('.from("phoenix_crm_visits")').length - 1, 1, "the screen reads the visits table once");
+    assert.match(
+      server,
+      /\.select\("id, customer_id, visit_date, captured_at, products, next_step, next_step_on, objection"\)/,
+      "with both reads' columns",
+    );
+    assert.match(
+      server,
+      /\.gte\("visit_date", lastSaidSince < lastSeenSince \? lastSaidSince : lastSeenSince\),/,
+      "from the earlier of the two windows",
+    );
+    assert.ok(!/\.lte\("visit_date"/.test(server), "and no upper bound, because last seen never had one");
+    assert.match(server, /return day >= since && day <= today;/, "the six months, today included, cut back out for what was said");
+    assert.match(
+      server,
+      /loadPlannerInsights\(seatId, isTest, today, customersRead, \{ visitsRead \}\)/,
+      "and the same rows handed to the insight, which cuts its own window",
+    );
+    assert.match(
+      server,
+      /customerIds: isPlanSentForReview\(planned\.status\) \? planned\.customerIds : \[\],/,
+      "the customer list is read for the day's stops alone, and for nobody on a day that is not sent",
+    );
     // Reuse, not re-derivation: all three picks are the module's own rules.
     for (const reused of ["pickLastVisitProducts(", "pickLastNextStep(", "pickLastObjection(", "loadPlannerInsights(", "buildCallPrep("]) {
       assert.ok(server.includes(reused), `the read composes ${reused} rather than restating it`);

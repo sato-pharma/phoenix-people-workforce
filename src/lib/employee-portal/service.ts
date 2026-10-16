@@ -803,7 +803,25 @@ const resolveDirectManagerName = cache(async (employeeHrId: string | null | unde
   if (!target) return null;
   const supabase = getSupabaseAdmin();
   // Live lookup of the CURRENT manager_hr_id (the cached directory can be stale
-  // right after a manager change), then the manager's display name.
+  // right after a manager change) AND the manager's display name, in ONE read through the
+  // `employees_manager_hr_id_fkey` self-reference (Phoenix CRM performance audit, 2026-10-16: the two
+  // reads below ran one after the other on every portal page's first load). Should the embed ever be
+  // refused, the two-read path below answers exactly as before.
+  const { data: joined, error: joinError } = await supabase
+    .from("employees")
+    .select("manager_hr_id, manager:manager_hr_id(full_name,nickname)")
+    .eq("hr_id", target)
+    .maybeSingle();
+  if (!joinError) {
+    const row = joined as { manager_hr_id?: string | null; manager?: unknown } | null;
+    if (!String(row?.manager_hr_id ?? "").trim()) return null;
+    const embedded = (Array.isArray(row?.manager) ? row?.manager[0] : row?.manager) as
+      | { full_name?: string | null; nickname?: string | null }
+      | null
+      | undefined;
+    const embeddedName = embedded?.full_name;
+    return embeddedName ? resolveEmployeeDisplayName(String(embeddedName), embedded?.nickname) : null;
+  }
   const { data: self } = await supabase
     .from("employees")
     .select("manager_hr_id")

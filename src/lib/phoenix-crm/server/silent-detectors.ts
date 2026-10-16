@@ -76,11 +76,39 @@ import {
   fileVisitPhotographGap,
   fileVisitRosterFlags,
 } from "@/lib/phoenix-crm/server/location-integrity";
-import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
+import { readEveryPage, type PagedRead } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPhoenixCrmConfig } from "@/lib/phoenix-crm/server/settings";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
+
+/**
+ * How many findings are filed at once (Phoenix CRM performance audit, 2026-10-16).
+ *
+ * Each is still its own upsert on its own (subject_kind, subject_id, source) — the filers are
+ * unchanged — so a finding lands exactly as it did when they were filed one after another. Every pass
+ * files each subject once, except the cadence pass, where two people can share one customer; that
+ * pass keeps a customer's filings in their own order (see `runRosterAndCadence`).
+ */
+const FILINGS_AT_ONCE = 4;
+
+/**
+ * A read one pass made WHOLE — the ceiling never reached — that the fifth pass may reuse rather than
+ * read again; null when it stopped at the ceiling, and the fifth pass then reads for itself.
+ *
+ * 🔴 ONLY A WHOLE READ IS SHARED, and that is what keeps the fifth pass's findings exactly what they
+ * were. The fifth pass asks a NARROWER question of the same window (visits with a reading, places with
+ * a photograph fix). Below the ceiling those are simply the matching rows of the wider read, in the
+ * same order; at the ceiling the wider read stops sooner than the narrower one would, so the fifth
+ * pass would see fewer rows than its own read — so there it reads for itself, as it always did.
+ */
+type WholeRead = Row[] | null;
+
+/** The narrower read the fifth pass would have made, answered out of a wider read that was whole. */
+function narrowedFrom(rows: Row[], keep: (row: Row) => boolean): PagedRead<Row> {
+  return { rows: rows.filter(keep), error: null, capped: false };
+}
 
 /**
  * How far back each night looks, in days.
@@ -159,8 +187,12 @@ function fixOf(lat: unknown, lon: unknown, accuracy: unknown, at: unknown): Capt
  *
  * ONE READ FOR BOTH, deliberately: they ask different questions of the same rows, and the roster
  * lookups (leave, day activities) are per rep-and-date whichever question is being answered.
+ *
+ * And since 2026-10-16 the same read serves the fifth pass too: it also carries each visit's own
+ * reading (`lat`, `lon`, `accuracy_meters`), and the window comes back for the photograph check
+ * whenever it was read whole (`WholeRead`).
  */
-async function runRosterAndCadence(todayIso: string, result: SilentSweepResult): Promise<void> {
+async function runRosterAndCadence(todayIso: string, result: SilentSweepResult): Promise<WholeRead> {
   const supabase = getSupabaseAdmin();
   const fromIso = isoDaysBefore(todayIso, SILENT_SWEEP_DAYS);
 
@@ -168,7 +200,7 @@ async function runRosterAndCadence(todayIso: string, result: SilentSweepResult):
     () =>
       supabase
         .from("phoenix_crm_visits")
-        .select("id, seat_id, rep_hr_id, customer_id, visit_date, captured_at, is_test, manager_hr_id, senior_hr_id, product_manager_hr_id")
+        .select("id, seat_id, rep_hr_id, customer_id, visit_date, captured_at, is_test, manager_hr_id, senior_hr_id, product_manager_hr_id, lat, lon, accuracy_meters")
         .eq("is_test", false)
         .gte("visit_date", fromIso)
         .lte("visit_date", todayIso)
@@ -180,8 +212,9 @@ async function runRosterAndCadence(todayIso: string, result: SilentSweepResult):
   throwIfError(read.error);
   if (read.capped) result.capped = true;
   const visits = read.rows;
+  const whole: WholeRead = read.capped ? null : visits;
   result.visits = visits.length;
-  if (visits.length === 0) return;
+  if (visits.length === 0) return whole;
 
   // Everybody whose roster matters: the rep who saved each visit AND whoever is named beside him.
   const people = new Set<string>();
@@ -241,6 +274,9 @@ async function runRosterAndCadence(todayIso: string, result: SilentSweepResult):
 
   // ── Pass 1: the roster, visit by visit ──────────────────────────────────────────────────────
   const cadence = new Map<string, { customerId: string; repHrId: string; seatId: string; days: string[]; lastCapturedAt: Date; lastDate: string }>();
+  // Gathered on the walk and filed after it, a few at a time — one finding per visit, so no two
+  // filings share a subject and their order cannot change what lands.
+  const rosterFilings: Parameters<typeof fileVisitRosterFlags>[0][] = [];
   for (const visit of visits) {
     // Whose visit it is — the rep, or the MANAGER on his own single visit, where `rep_hr_id` is null
     // by design (`personOnTheVisit` carries the rule and the production count). Reading the rep
@@ -269,7 +305,7 @@ async function runRosterAndCadence(todayIso: string, result: SilentSweepResult):
     });
     if (flags.length > 0) {
       const capturedAt = new Date(Date.parse(String(visit.captured_at ?? "")) || Date.parse(`${visitDate}T12:00:00Z`));
-      await fileVisitRosterFlags({
+      rosterFilings.push({
         visitId: String(visit.id),
         seatId: String(visit.seat_id ?? ""),
         repHrId,
@@ -306,11 +342,18 @@ async function runRosterAndCadence(todayIso: string, result: SilentSweepResult):
     }
   }
 
+  await mapWithConcurrency(rosterFilings, FILINGS_AT_ONCE, (filing) => fileVisitRosterFlags(filing));
+
   // ── Pass 2: the cadence, per rep and customer ───────────────────────────────────────────────
+  // 🔴 GROUPED BY CUSTOMER, because the customer is the subject and two people can each have called
+  // the same one (a rep and his manager on a visit of his own): both findings upsert ONE row, and the
+  // later one in this walk is the one that stands. A customer's filings therefore go one after
+  // another in walk order, exactly as before; only different customers are filed side by side.
+  const cadenceByCustomer = new Map<string, Parameters<typeof fileCustomerCadenceFlag>[0][]>();
   for (const entry of cadence.values()) {
     const flags = judgeRevisitCadence(entry.days);
     if (flags.length === 0) continue;
-    await fileCustomerCadenceFlag({
+    const filing = {
       customerId: entry.customerId,
       seatId: entry.seatId,
       repHrId: entry.repHrId,
@@ -322,9 +365,14 @@ async function runRosterAndCadence(todayIso: string, result: SilentSweepResult):
         visitDays: [...new Set(entry.days)].sort(),
         windowDays: REVISIT_WINDOW_DAYS,
       },
-    });
+    };
+    cadenceByCustomer.set(entry.customerId, [...(cadenceByCustomer.get(entry.customerId) ?? []), filing]);
     result.cadenceFlagged += 1;
   }
+  await mapWithConcurrency([...cadenceByCustomer.values()], FILINGS_AT_ONCE, async (filings) => {
+    for (const filing of filings) await fileCustomerCadenceFlag(filing);
+  });
+  return whole;
 }
 
 /**
@@ -333,13 +381,18 @@ async function runRosterAndCadence(todayIso: string, result: SilentSweepResult):
  * The whole table and not a window: a place's distance from its brick does not change with time, and
  * a place validated last month is as wrongly filed today as it was then. The upsert key means a place
  * already filed is re-stamped rather than duplicated.
+ *
+ * Since 2026-10-16 the read also carries each place's photograph fix and path, and the active places
+ * come back for the fifth pass whenever they were read whole (`WholeRead`).
  */
-async function runCoverage(result: SilentSweepResult): Promise<void> {
+async function runCoverage(result: SilentSweepResult): Promise<WholeRead> {
   const read = await readEveryPage<Row>(
     () =>
       getSupabaseAdmin()
         .from("phoenix_crm_places")
-        .select("id, seat_id, customer_id, created_by_hr_id, lat, lon, accuracy_meters, captured_at, brick_distance_km, brick_lookup, is_test, status")
+        .select(
+          "id, seat_id, customer_id, created_by_hr_id, lat, lon, accuracy_meters, captured_at, brick_distance_km, brick_lookup, is_test, status, photo_lat, photo_lon, photo_accuracy_meters, photo_captured_at, photo_path",
+        )
         .eq("is_test", false)
         .eq("status", "active")
         .order("id", { ascending: true }),
@@ -349,6 +402,8 @@ async function runCoverage(result: SilentSweepResult): Promise<void> {
   if (read.capped) result.capped = true;
   result.placesRead = read.rows.length;
 
+  // One finding per place, so no two filings share a subject; filed a few at a time after the walk.
+  const filings: Parameters<typeof filePlaceCoverageFlag>[0][] = [];
   for (const place of read.rows) {
     const raw = place.brick_distance_km;
     const distance = raw === null || raw === undefined || raw === "" ? null : Number(raw);
@@ -359,7 +414,7 @@ async function runCoverage(result: SilentSweepResult): Promise<void> {
     if (flags.length === 0) continue;
     const capturedAt = new Date(Date.parse(String(place.captured_at ?? "")) || Date.now());
     const accuracy = place.accuracy_meters === null || place.accuracy_meters === undefined ? null : Number(place.accuracy_meters);
-    await filePlaceCoverageFlag({
+    filings.push({
       placeId: String(place.id),
       seatId: String(place.seat_id ?? ""),
       // The rep who captured the place: the row has no other person on it, and the board prints his
@@ -378,6 +433,8 @@ async function runCoverage(result: SilentSweepResult): Promise<void> {
     });
     result.coverageFlagged += 1;
   }
+  await mapWithConcurrency(filings, FILINGS_AT_ONCE, (filing) => filePlaceCoverageFlag(filing));
+  return read.capped ? null : read.rows;
 }
 
 /**
@@ -404,6 +461,8 @@ async function runSharedVenues(result: SilentSweepResult): Promise<void> {
   if (read.capped) result.capped = true;
   result.venuesRead = read.rows.length;
 
+  // One filing per venue, so no two share a subject; filed a few at a time after the walk.
+  const filings: Parameters<typeof filePlaceCaptureTrust>[0][] = [];
   for (const venue of read.rows) {
     const pinFix = fixOf(venue.pin_lat, venue.pin_lon, venue.pin_accuracy_meters, venue.captured_at);
     const photoFix = fixOf(venue.photo_lat, venue.photo_lon, venue.photo_accuracy_meters, venue.photo_captured_at);
@@ -413,7 +472,7 @@ async function runSharedVenues(result: SilentSweepResult): Promise<void> {
     const capturedAt = new Date(Date.parse(String(venue.captured_at ?? "")) || Date.now());
     const accuracy = venue.accuracy_meters === null || venue.accuracy_meters === undefined ? null : Number(venue.accuracy_meters);
     result.venuesMeasured += 1;
-    await filePlaceCaptureTrust({
+    filings.push({
       placeId: String(venue.id),
       subjectKind: "shared_place",
       seatId: String(venue.seat_id ?? ""),
@@ -431,6 +490,7 @@ async function runSharedVenues(result: SilentSweepResult): Promise<void> {
       },
     });
   }
+  await mapWithConcurrency(filings, FILINGS_AT_ONCE, (filing) => filePlaceCaptureTrust(filing));
 }
 
 /**
@@ -457,8 +517,17 @@ async function runSharedVenues(result: SilentSweepResult): Promise<void> {
  *
  * The flags are weak, nobody is told, nothing is refused and nothing is held — this file's four
  * rules hold for this pass exactly as they do for the others.
+ *
+ * `wholeReads` carries the window's visits and the active places as passes 1 and 3 read them, when
+ * each was read whole — the same rows, already in hand, so they are narrowed here rather than read
+ * twice (`WholeRead` says why only a whole read is reused). A read that stopped at its ceiling is
+ * null, and the pass then reads for itself exactly as it always did.
  */
-async function runVisitPhotographGap(todayIso: string, result: SilentSweepResult): Promise<void> {
+async function runVisitPhotographGap(
+  todayIso: string,
+  result: SilentSweepResult,
+  wholeReads: { visits: WholeRead; places: WholeRead },
+): Promise<void> {
   const supabase = getSupabaseAdmin();
   const fromIso = isoDaysBefore(todayIso, SILENT_SWEEP_DAYS);
 
@@ -468,35 +537,41 @@ async function runVisitPhotographGap(todayIso: string, result: SilentSweepResult
   const farMeters = config.settings.visitFarMeters;
 
   const [visitRead, placeRead] = await Promise.all([
-    readEveryPage<Row>(
-      () =>
-        supabase
-          .from("phoenix_crm_visits")
-          .select("id, seat_id, rep_hr_id, manager_hr_id, customer_id, visit_date, captured_at, lat, lon, accuracy_meters")
-          .eq("is_test", false)
-          .gte("visit_date", fromIso)
-          .lte("visit_date", todayIso)
-          // A visit with no reading has nothing to measure: one the Super Admin entered for a rep who
-          // missed logging it carries none by design, and it accuses nobody.
-          .not("lat", "is", null)
-          .order("visit_date", { ascending: true })
-          .order("id", { ascending: true }),
-      { maxRows: SILENT_READ_MAX, whenFull: "stop", what: "Phoenix CRM visits for the photograph check", uniqueBy: (row) => String(row.id) },
-    ),
-    readEveryPage<Row>(
-      () =>
-        supabase
-          .from("phoenix_crm_places")
-          .select("id, seat_id, customer_id, captured_at, photo_lat, photo_lon, photo_accuracy_meters, photo_captured_at, photo_path")
-          .eq("is_test", false)
-          .eq("status", "active")
-          // Only a place whose photograph carries its own fix can be an anchor. One captured before
-          // the shutter reading shipped has no photograph reading at all, and an absent anchor is
-          // never a finding.
-          .not("photo_lat", "is", null)
-          .order("id", { ascending: true }),
-      { maxRows: SILENT_READ_MAX, whenFull: "stop", what: "Phoenix CRM places for the photograph check", uniqueBy: (row) => String(row.id) },
-    ),
+    // Pass 1's window, kept to the visits with a reading — the `.not("lat", "is", null)` below.
+    wholeReads.visits
+      ? narrowedFrom(wholeReads.visits, (visit) => visit.lat !== null && visit.lat !== undefined)
+      : readEveryPage<Row>(
+          () =>
+            supabase
+              .from("phoenix_crm_visits")
+              .select("id, seat_id, rep_hr_id, manager_hr_id, customer_id, visit_date, captured_at, lat, lon, accuracy_meters")
+              .eq("is_test", false)
+              .gte("visit_date", fromIso)
+              .lte("visit_date", todayIso)
+              // A visit with no reading has nothing to measure: one the Super Admin entered for a rep who
+              // missed logging it carries none by design, and it accuses nobody.
+              .not("lat", "is", null)
+              .order("visit_date", { ascending: true })
+              .order("id", { ascending: true }),
+          { maxRows: SILENT_READ_MAX, whenFull: "stop", what: "Phoenix CRM visits for the photograph check", uniqueBy: (row) => String(row.id) },
+        ),
+    // Pass 3's active places, kept to those whose photograph carries a fix — the `.not("photo_lat", …)` below.
+    wholeReads.places
+      ? narrowedFrom(wholeReads.places, (place) => place.photo_lat !== null && place.photo_lat !== undefined)
+      : readEveryPage<Row>(
+          () =>
+            supabase
+              .from("phoenix_crm_places")
+              .select("id, seat_id, customer_id, captured_at, photo_lat, photo_lon, photo_accuracy_meters, photo_captured_at, photo_path")
+              .eq("is_test", false)
+              .eq("status", "active")
+              // Only a place whose photograph carries its own fix can be an anchor. One captured before
+              // the shutter reading shipped has no photograph reading at all, and an absent anchor is
+              // never a finding.
+              .not("photo_lat", "is", null)
+              .order("id", { ascending: true }),
+          { maxRows: SILENT_READ_MAX, whenFull: "stop", what: "Phoenix CRM places for the photograph check", uniqueBy: (row) => String(row.id) },
+        ),
   ]);
   throwIfError(visitRead.error);
   throwIfError(placeRead.error);
@@ -513,6 +588,8 @@ async function runVisitPhotographGap(todayIso: string, result: SilentSweepResult
     placesFor.set(key, [...(placesFor.get(key) ?? []), place]);
   }
 
+  // One finding per visit, so no two filings share a subject; filed a few at a time after the walk.
+  const filings: Parameters<typeof fileVisitPhotographGap>[0][] = [];
   for (const visit of visitRead.rows) {
     // The rep, or the manager whose own single visit this is — the header's second rule.
     const repHrId = personOnTheVisit({
@@ -559,7 +636,7 @@ async function runVisitPhotographGap(todayIso: string, result: SilentSweepResult
     if (nearest.flags.length === 0) continue;
 
     const capturedAt = new Date(Date.parse(capturedAtIso) || Date.parse(`${visitDate}T12:00:00Z`));
-    await fileVisitPhotographGap({
+    filings.push({
       visitId: String(visit.id),
       seatId: String(visit.seat_id ?? ""),
       repHrId,
@@ -589,11 +666,16 @@ async function runVisitPhotographGap(todayIso: string, result: SilentSweepResult
     });
     result.visitPhotoFlagged += 1;
   }
+  await mapWithConcurrency(filings, FILINGS_AT_ONCE, (filing) => fileVisitPhotographGap(filing));
 }
 
 /**
  * Run all five passes. Sequential on purpose: they share the cron's window with the photo, signboard
  * and behaviour passes, and four concurrent full-table walks on a 16 GB box is how a night gets reaped.
+ *
+ * Still sequential, in the same order, since 2026-10-16 — what changed is that the fifth pass is
+ * handed the window's visits and the active places that passes 1 and 3 already read, instead of
+ * walking both tables a second time (only when they were read whole: see `WholeRead`).
  */
 export async function runPhoenixCrmSilentSweep(options: { today?: string } = {}): Promise<SilentSweepResult> {
   const result: SilentSweepResult = {
@@ -609,9 +691,9 @@ export async function runPhoenixCrmSilentSweep(options: { today?: string } = {})
     capped: false,
   };
   const todayIso = options.today && /^\d{4}-\d{2}-\d{2}$/.test(options.today) ? options.today : cairoBusinessDay(new Date());
-  await runRosterAndCadence(todayIso, result);
-  await runCoverage(result);
+  const windowVisits = await runRosterAndCadence(todayIso, result);
+  const activePlaces = await runCoverage(result);
   await runSharedVenues(result);
-  await runVisitPhotographGap(todayIso, result);
+  await runVisitPhotographGap(todayIso, result, { visits: windowVisits, places: activePlaces });
   return result;
 }

@@ -70,6 +70,7 @@ import { loadLineProductManagers } from "@/lib/phoenix-crm/server/visit-asks";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { visitAskDayChoices, visitAskLastDay } from "@/lib/phoenix-crm/visit-ask-rules";
 import type { CompanyOffer } from "@/lib/phoenix-crm/visit-company";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -90,6 +91,9 @@ const REPORT_DAYS = 60;
 
 /** At most this many requests of one customer travel to his page, newest first. */
 const CUSTOMER_REQUESTS_MAX = 20;
+
+/** The report's chunks of seats or requests are read this many at a time, never one after another. */
+const REPORT_READ_CONCURRENCY = 4;
 
 // ── Who may be asked ────────────────────────────────────────────────────────────────────────────
 
@@ -387,8 +391,12 @@ export async function loadDoubleVisitCustomerView(
   const rows = await loadCustomerRequestRows(seat.seatId, customerId, isTest);
   const canEdit = canWriteAsRep(viewer, seat, isTest);
   const today = viewer.cairoToday;
+  // The days he may offer and the names on the requests need only the rows, so they are read together
+  // (2026-10-16 speed audit), and a failure still surfaces in the order it always did.
+  const namesRead = loadPeopleNames(requestPeople(rows));
+  namesRead.catch(() => undefined);
   const holidays = canEdit && rows.length > 0 ? await loadPlanHolidays(today, visitAskLastDay(today)) : new Map<string, string>();
-  const names = await loadPeopleNames(requestPeople(rows));
+  const names = await namesRead;
   return {
     isTest,
     customerId,
@@ -416,6 +424,11 @@ export async function editDoubleVisitRequestDays(viewer: PhoenixCrmViewer, raw: 
   const body = record(raw);
   const requestId = typeof body.requestId === "string" ? body.requestId.trim().toLowerCase() : "";
   if (!isUuid(requestId)) throw validationError("Choose the request. Reload the page.");
+  const today = viewer.cairoToday;
+  // The days he may offer do not depend on the request, so they are read beside it (2026-10-16 speed
+  // audit); every refusal below still comes first.
+  const holidaysRead = loadPlanHolidays(today, visitAskLastDay(today));
+  holidaysRead.catch(() => undefined);
   const row = await loadRequestRow(requestId);
   if (!row) throw notFoundError("This request is no longer there. Reload the page.", "phoenix_crm_double_visit_not_found");
   const rowIsTest = row.is_test === true;
@@ -424,8 +437,7 @@ export async function editDoubleVisitRequestDays(viewer: PhoenixCrmViewer, raw: 
   if (isTest !== rowIsTest) throw forbiddenError("This is a test login: it works on test entries only. Real entries stay as they are.");
   if (!isSamePerson(viewer.hrId, textOrNull(row.rep_hr_id))) throw forbiddenError("Only the rep who raised this request changes its days.");
 
-  const today = viewer.cairoToday;
-  const holidays = await loadPlanHolidays(today, visitAskLastDay(today));
+  const holidays = await holidaysRead;
   const days = resolveDoubleVisitDays({ days: body.days, cairoToday: today, holidays });
   if (!days.ok) throw validationError(days.error);
 
@@ -433,9 +445,12 @@ export async function editDoubleVisitRequestDays(viewer: PhoenixCrmViewer, raw: 
     p: { request_id: requestId, seat_id: seat.seatId, actor_hr_id: viewer.hrId, days: days.days, is_test: isTest },
   });
   if (result.changed === true) {
-    const after = await loadRequestRow(requestId);
     const waiting = peopleOf(result).filter((person) => person.status === "waiting");
     if (waiting.length > 0) {
+      // The count is read AFTER the edit, never added to the one read before it: two edits landing
+      // together would otherwise both name the same version and the second notice would be taken for a
+      // repeat of the first. Only read when somebody is still waiting to be told.
+      const after = await loadRequestRow(requestId);
       await notifyPhoenixCrm(
         {
           kind: "double_visit_request",
@@ -530,24 +545,24 @@ export type DoubleVisitReport = {
   totals: { requests: number; waiting: number; accepted: number; declined: number };
 };
 
-/** Requests on these territories in one world, raised since `since`. A keyset page per chunk of seats. */
+/**
+ * Requests on these territories in one world, raised since `since`. A keyset page per chunk of seats,
+ * a few chunks at a time (2026-10-16 speed audit), in chunk order.
+ */
 async function loadScopeRequestRows(seatIds: ReadonlyArray<string>, isTest: boolean, since: string): Promise<Row[]> {
-  const rows: Row[] = [];
-  for (const part of chunk([...seatIds], 100)) {
-    rows.push(
-      ...(await fetchAllRowsKeyset<Row>(
-        () =>
-          getSupabaseAdmin()
-            .from("phoenix_crm_double_visit_requests")
-            .select(REQUEST_COLUMNS)
-            .in("seat_id", part)
-            .eq("is_test", isTest)
-            .gte("created_at", `${since}T00:00:00Z`),
-        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-      )),
-    );
-  }
-  return rows;
+  const pages = await mapWithConcurrency(chunk([...seatIds], 100), REPORT_READ_CONCURRENCY, (part) =>
+    fetchAllRowsKeyset<Row>(
+      () =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_double_visit_requests")
+          .select(REQUEST_COLUMNS)
+          .in("seat_id", part)
+          .eq("is_test", isTest)
+          .gte("created_at", `${since}T00:00:00Z`),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    ),
+  );
+  return pages.flat();
 }
 
 /** The requests addressed to one person, in one world: his rows on the people table, then their requests. */
@@ -557,21 +572,19 @@ async function loadAddressedRequestRows(hrId: string, isTest: boolean, since: st
     { cursorColumn: "id", cursorOf: (row) => String(row.id) },
   );
   const requestIds = [...new Set(people.map((row) => String(row.request_id)))];
-  const rows: Row[] = [];
-  for (const part of chunk(requestIds, 100)) {
-    rows.push(
-      ...(await fetchAllRowsKeyset<Row>(
-        () =>
-          getSupabaseAdmin()
-            .from("phoenix_crm_double_visit_requests")
-            .select(REQUEST_COLUMNS)
-            .in("id", part)
-            .gte("created_at", `${since}T00:00:00Z`),
-        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-      )),
-    );
-  }
-  return rows;
+  // A few chunks at a time, never one after another (2026-10-16 speed audit), in chunk order.
+  const pages = await mapWithConcurrency(chunk(requestIds, 100), REPORT_READ_CONCURRENCY, (part) =>
+    fetchAllRowsKeyset<Row>(
+      () =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_double_visit_requests")
+          .select(REQUEST_COLUMNS)
+          .in("id", part)
+          .gte("created_at", `${since}T00:00:00Z`),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    ),
+  );
+  return pages.flat();
 }
 
 /** GET: the double-visit requests the viewer answers or reads — the managers' sidebar report. */
@@ -581,8 +594,13 @@ export async function loadDoubleVisitReport(viewer: PhoenixCrmViewer, raw: { tes
   if (!audience) throw forbiddenError("Double visit requests are for managers, product managers and SFE. A rep reads their own requests on the customer's page.");
   const since = addDaysIso(viewer.cairoToday, -REPORT_DAYS);
 
+  // The requests in his scope and the ones addressed to him are independent, so they are read together
+  // (2026-10-16 speed audit); a failure of the addressed read still surfaces first, as it always did.
+  const scopedRead =
+    audience === "scope" ? loadScopeRequestRows(testReadSeats(viewer, isTest, viewer.scopeTerritories).map((seat) => seat.seatId), isTest, since) : Promise.resolve<Row[]>([]);
+  scopedRead.catch(() => undefined);
   const addressed = await loadAddressedRequestRows(viewer.hrId, isTest, since);
-  const scoped = audience === "scope" ? await loadScopeRequestRows(testReadSeats(viewer, isTest, viewer.scopeTerritories).map((seat) => seat.seatId), isTest, since) : [];
+  const scoped = await scopedRead;
   const byId = new Map<string, Row>();
   for (const row of [...scoped, ...addressed]) byId.set(String(row.id), row);
   const rows = [...byId.values()];

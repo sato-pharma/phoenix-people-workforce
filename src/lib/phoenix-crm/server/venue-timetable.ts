@@ -19,8 +19,9 @@ import { validationError } from "@/lib/http/api-errors";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { readTestFlag, territoryForValidation, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, throwIfError } from "@/lib/phoenix-crm/server/db";
-import { readPlaceSchedule, recordPlaceSchedule } from "@/lib/phoenix-crm/server/schedule-check";
+import { judgeScheduleBoard, readScheduleBoard, recordPlaceSchedule } from "@/lib/phoenix-crm/server/schedule-check";
 import { signboardNameIsUsable } from "@/lib/phoenix-crm/signboard-rules";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -56,18 +57,25 @@ export async function settleVenueTimetable(input: {
       throwIfError(customers.error);
       for (const row of (customers.data ?? []) as Row[]) names.set(String(row.id), String(row.name ?? ""));
     }
-    for (const place of places) {
-      const name = names.get(String(place.customer_id)) ?? "";
-      if (!signboardNameIsUsable(name)) continue;
-      const check = await readPlaceSchedule({
-        customerName: name,
+    // 🔴 THE BOARD IS READ ONCE, NOT ONCE PER DOCTOR (2026-10-16 Phoenix CRM performance audit). The
+    // question put to the model names nobody — "who is on this schedule, and at what hours" — so every
+    // doctor seated behind this door is judged against the ONE reading, his own name held against it
+    // exactly as `readPlaceSchedule` holds it. It used to download, crop and send the same photograph
+    // once per doctor, one after another, while the rep waited at the board. Nothing is read when no
+    // seated doctor has a usable name, as before, and each verdict is still kept on his own row.
+    const judged = places
+      .map((place) => ({ place, name: names.get(String(place.customer_id)) ?? "" }))
+      .filter(({ name }) => signboardNameIsUsable(name));
+    if (judged.length > 0) {
+      const board = await readScheduleBoard({
         isTest,
         photoPath: schedulePhotoPath,
         repHrId: viewer.hrId,
         reusedTimetable: true,
         seatId,
       });
-      await recordPlaceSchedule(String(place.id), check);
+      // Each write is its own row and never throws (`recordPlaceSchedule`), so they go a few at a time.
+      await mapWithConcurrency(judged, 4, ({ place, name }) => recordPlaceSchedule(String(place.id), judgeScheduleBoard(board, name)));
     }
   }
   const result = await callPhoenixCrm<Row>("phoenix_crm_settle_venue_timetable", {

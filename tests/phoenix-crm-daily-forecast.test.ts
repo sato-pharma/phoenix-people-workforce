@@ -282,4 +282,34 @@ export function runPhoenixCrmDailyForecastTests(): void {
   {
     assert.equal(PHOENIX_CRM_MODULE_KEYS[PHOENIX_CRM_MODULE_KEYS.indexOf("plan") + 1], "forecast", "the forecast sits after the Plan, in the rep's day");
   }
+
+  // ── 10. The reads behind the three views (Phoenix CRM performance audit, 2026-10-16) ────────────
+  {
+    const service = source("src/lib/phoenix-crm/server/daily-forecast.ts");
+    // A month of a whole line's forecasts is keyset-paged on the primary key — an offset walk re-scans
+    // every page it skips and drops a row when a forecast lands mid-read — and the seat chunks read
+    // side by side, four at a time.
+    const sentStart = service.indexOf("async function sentLinesOn(");
+    const sentEnd = service.indexOf("function firstSentAt(");
+    assert.ok(sentStart >= 0 && sentEnd > sentStart, "the forecasts read was found");
+    const sentRead = service.slice(sentStart, sentEnd);
+    assert.match(sentRead, /mapWithConcurrency\(chunk\(\[\.\.\.seatIds\], 100\), 4,/, "the seat chunks read four at a time");
+    assert.match(sentRead, /fetchAllRowsKeyset<Row>\(/, "every chunk is keyset-paged");
+    assert.match(sentRead, /\{ cursorColumn: "id", cursorOf: \(row\) => String\(row\.id\) \}/, "on the forecast's own id");
+    assert.match(sentRead, /\.select\("id, seat_id, forecast_date, product_code, units, created_at"\)/, "which the read selects");
+    assert.doesNotMatch(sentRead, /\.range\(/, "and no offset page is left");
+
+    // The form a send hands back reuses the month the send itself just read.
+    const save = service.slice(service.indexOf("export async function saveForecast("), service.indexOf("function assertBoardReader("));
+    assert.match(save, /return buildForm\(viewer, seat, isTest, \{ targets, days \}\);/, "the send's own targets and working days ride into the form");
+
+    // 🔴 The accuracy view may START its other reads early, but the CLOSING is read only for a month
+    // confirmed published: the early return comes first, and the closing is read after it.
+    const accuracy = service.slice(service.indexOf("export async function loadForecastAccuracy("));
+    const refusedAt = accuracy.indexOf("if (!published) {");
+    const closingAt = accuracy.indexOf("loadCnsClosing(period)");
+    assert.ok(refusedAt > 0 && closingAt > refusedAt, "an unpublished month returns before its closing is ever read");
+    const earlyReads = service.slice(service.indexOf("function accuracyMonthReads("), service.indexOf("export async function loadForecastAccuracy("));
+    assert.doesNotMatch(earlyReads, /loadCnsClosing|loadMonthlyAchievement/, "and the reads that may start early carry no closing");
+  }
 }

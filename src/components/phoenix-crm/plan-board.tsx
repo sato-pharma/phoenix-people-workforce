@@ -86,6 +86,7 @@ import {
 import { monthKeyOf } from "@/lib/phoenix-crm/calendar";
 import type { PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { setPlannedStart, type PlanDayStarts, type PlannedDayStart } from "@/lib/phoenix-crm/plan-day-starts";
+import { withSavedBoards, type SavedWeekBoard } from "@/lib/phoenix-crm/plan-board-answer";
 import { EMPTY_DOCTOR_FILTER, plannerBricks, plannerGrades, plannerSpecialities, plannerVenues, type DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
 import { isPlanEditable, planTurnSentence, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import { monthPlacements, suggestDay } from "@/lib/phoenix-crm/plan-suggest";
@@ -280,17 +281,35 @@ export function PlanBoard({
   const [selfSaveFailure, setSelfSaveFailure] = useState<SelfSaveFailure | null>(null);
   const [selfSavedOnce, setSelfSavedOnce] = useState(false);
   const [quietRead, setQuietRead] = useState(false);
+  // What his board's saves answered with — the weeks they saved and the month's meters — waiting to be
+  // put on the board they were saved from (2026-10-16 speed audit: no more whole-month read per save).
+  const [savedBoards, setSavedBoards] = useState<{ url: string; boards: SavedWeekBoard[] } | null>(null);
   // Set the moment a save of his board leaves, before any render can say so: two can never cross.
   const selfSaveFlight = useRef(false);
   const stepRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const weekRef = useRef<HTMLDivElement>(null);
 
-  const resource = useCrmGet<MonthlyPlannerView>(crmUrl("/api/phoenix-crm/monthly-plans", { seatId, test, month }), "planner");
+  const planUrl = crmUrl("/api/phoenix-crm/monthly-plans", { seatId, test, month });
+  const resource = useCrmGet<MonthlyPlannerView>(planUrl, "planner");
   const view = resource.data;
   const locked = busy !== null || resource.loading;
   // The read after a save of his board has come back (or failed): the next read locks as every read does.
   if (quietRead && !resource.loading) setQuietRead(false);
+  // His saves answered with the weeks they saved and the month's meters: put in place once no read is on
+  // its way, on the board they were saved from and only there — answered while rendering, like the rest
+  // of this board's state. One that does not fit (another month on screen, a week the board does not
+  // hold) reads the board again, QUIETLY, exactly as every save did before.
+  if (savedBoards !== null && !resource.loading) {
+    setSavedBoards(null);
+    const answered = view && savedBoards.url === planUrl ? withSavedBoards(view, savedBoards.boards) : null;
+    if (answered) {
+      resource.replace(answered);
+    } else {
+      setQuietRead(true);
+      resource.reload();
+    }
+  }
 
   // "+ Make weekly plan" asked again: answered while rendering, from the value seen last time — state
   // derived from a prop, never an effect. It goes back to the rep's one week (owner, 2026-10-01): the
@@ -632,6 +651,13 @@ export function PlanBoard({
     if (selfSaveWeeks.length === 0 || (selfSaveFailed && !options.retry)) return;
     const key = selfSaveAt;
     const customersNow = view.customers;
+    // The month on screen: a save that names it is answered with the week it saved and the month's
+    // meters, so the board does not read the whole month again after it. A save sent as the page goes
+    // asks for nothing back — the board reads itself again, as before, if the page is still there.
+    const boardMonth = options.keepalive ? undefined : view.monthStart;
+    const boardUrl = planUrl;
+    const boards: SavedWeekBoard[] = [];
+    let unanswered = false;
     selfSaveFlight.current = true;
     setSelfSaving(true);
     let landed = false;
@@ -640,7 +666,7 @@ export function PlanBoard({
       for (const state of selfSaveWeeks) {
         const sentFrom = state.draft;
         if (!sentFrom) continue;
-        const payload = buildWeekSavePayload({ seatId, test, week: state.week, draft: sentFrom, customers: customersNow });
+        const payload = { ...buildWeekSavePayload({ seatId, test, week: state.week, draft: sentFrom, customers: customersNow }), boardMonth };
         let saved: SavedPlan;
         try {
           saved = await crmPost<SavedPlan>("/api/phoenix-crm/plans", payload, "plan", { keepalive: options.keepalive });
@@ -650,6 +676,8 @@ export function PlanBoard({
           break;
         }
         landed = true;
+        if (saved.board) boards.push(saved.board);
+        else unanswered = true;
         setDrafts((previous) => ({
           ...previous,
           [state.scope]: settleSavedDraft({ current: previous[state.scope] ?? sentFrom, week: state.week, saved, sent: payload, customers: customersNow }),
@@ -663,11 +691,21 @@ export function PlanBoard({
     }
     if (!landed) return;
     setSelfSavedOnce(true);
-    // The meters and the week's own status read what is saved, so the board reads itself again — QUIETLY,
-    // his ticks open throughout. A refusal has already asked for its own read, which locks as reads do.
+    // The meters and the week's own status read what is saved. Every save answered with its week and the
+    // month's meters: they are put in place and nothing is read again. Otherwise the board reads itself
+    // again — QUIETLY, his ticks open throughout. A refusal has already asked for its own read, which
+    // locks as reads do.
     if (!refused) {
-      setQuietRead(true);
-      resource.reload();
+      if (!unanswered && boards.length > 0) {
+        // Two of his saves answered before the first could be put in place: both go on, in the order they
+        // landed — unless they came from two different boards, and then the board reads itself again.
+        setSavedBoards((previous) =>
+          previous === null ? { url: boardUrl, boards } : { url: previous.url === boardUrl ? boardUrl : "", boards: [...previous.boards, ...boards] },
+        );
+      } else {
+        setQuietRead(true);
+        resource.reload();
+      }
     }
   }
 

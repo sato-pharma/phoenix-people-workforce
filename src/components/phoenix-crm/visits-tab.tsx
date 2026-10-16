@@ -320,8 +320,11 @@ function DetailLines({ visit }: { visit: VisitRow }) {
   );
 }
 
-/** Whose seat and which world, for the rep's own write-up door. Null for every other reader. */
-type DetailDoor = { seatId: string; isTest: boolean } | null;
+/**
+ * Whose seat and which world, for the rep's own write-up door, and how to re-read the day once he has
+ * written one up. Null for every other reader.
+ */
+type DetailDoor = { seatId: string; isTest: boolean; reload: () => void } | null;
 
 function VisitDetails({ visit }: { visit: VisitRow }) {
   const people = visitPeople(visit);
@@ -370,7 +373,7 @@ function VisitCard({ detail, visit }: { detail: DetailDoor; visit: VisitRow }) {
       <VisitDetails visit={visit} />
       {detail && visit.detailEditable ? (
         <div className="mt-2">
-          <VisitDetailEdit hasDetail={visit.detailComment !== null} isTest={detail.isTest} seatId={detail.seatId} visitId={visit.visitId} />
+          <VisitDetailEdit hasDetail={visit.detailComment !== null} isTest={detail.isTest} onWrittenUp={detail.reload} seatId={detail.seatId} visitId={visit.visitId} />
         </div>
       ) : null}
     </CrmCard>
@@ -475,7 +478,7 @@ function VisitTable({ detail, visits }: { detail: DetailDoor; visits: ReadonlyAr
                 ) : null}
                 {detail && visit.detailEditable ? (
                   <span className="mt-1.5 block">
-                    <VisitDetailEdit hasDetail={visit.detailComment !== null} isTest={detail.isTest} seatId={detail.seatId} visitId={visit.visitId} />
+                    <VisitDetailEdit hasDetail={visit.detailComment !== null} isTest={detail.isTest} onWrittenUp={detail.reload} seatId={detail.seatId} visitId={visit.visitId} />
                   </span>
                 ) : null}
               </td>
@@ -1193,7 +1196,7 @@ export function VisitsTab({
   // 🔴 THE WRITE-UP DOOR CARRIES NO DAY CONDITION, unlike `ownDay` above: the owner was asked and
   // answered "any time", so a visit he logged last week is still his to write up. Which visits offer
   // it is the row's own `detailEditable` — his own visit, and not the pharmacy visit another filed.
-  const detailDoor = view?.canAddVisitDetail === true ? { seatId: view.territory.seatId, isTest: view.isTest } : null;
+  const detailDoor = view?.canAddVisitDetail === true ? { seatId: view.territory.seatId, isTest: view.isTest, reload: day.reload } : null;
 
   return (
     <div className="grid min-w-0 gap-4">

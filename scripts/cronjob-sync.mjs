@@ -63,6 +63,13 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const API = "https://api.cron-job.org";
 const TZ = "Africa/Cairo";
 const PROD = "https://phoenix-hr.satopharma.com";
+/**
+ * The worker service: same code as PROD, running the background jobs so the page server never freezes
+ * under them (owner, 2026-10-16, "Separate worker service"). A job whose route does heavy work is called
+ * HERE, and its declaration says so with `base: WORKER`. Jobs are matched on the full URL, so a moved
+ * job declared without it reads as MISSING and `--apply` would create a duplicate on the website.
+ */
+const WORKER = "https://phoenix-workforce-worker-production.up.railway.app";
 
 const APPLY = process.argv.includes("--apply");
 /**
@@ -148,6 +155,8 @@ const JOBS = {
   },
   "interview-reminders": {
     title: "Phoenix — interview reminders",
+    // On the worker since 2026-10-16: on the website its run reached cron-job.org's 30-second cut.
+    base: WORKER,
     path: "/api/cron/interview-reminders",
     // Every ten minutes on :03, around the clock — matching docs/observability.md and JOB_SCHEDULES.
     // Ten because the one-hour-before reminder lands in the ten-minute window before the hour
@@ -509,7 +518,7 @@ async function main() {
   const live = Array.isArray(listed.jobs) ? listed.jobs : [];
 
   for (const [name, spec] of wanted) {
-    const url = `${PROD}${spec.path}`;
+    const url = `${spec.base ?? PROD}${spec.path}`;
     // Matched on URL, never on title: a title is cosmetic and gets edited in the web UI, while the
     // URL is what actually determines which route runs. Two jobs on one URL is the duplicate this
     // avoids creating.

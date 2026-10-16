@@ -114,6 +114,15 @@ export function runPhoenixCrmVisitRecordingTests(): void {
     /export async function isRecordingRequired\([^)]*\)[^{]*\{[\s\S]{0,400}throwIfError\(error\)/,
     "a failed read of the switch THROWS — answering 'not required' would let the visit through unrecorded",
   );
+  // The slot row and its signed URL are asked for together (Phoenix CRM performance audit, 2026-10-16) —
+  // settled, never raced, and the ROW's error is read first, so a URL for a path with no slot behind it
+  // is never handed out: the claim would refuse such a path.
+  const slotFn = service.slice(service.indexOf("export async function requestRecordingSlot("), service.indexOf("export function readRecordingClaim("));
+  assert.match(slotFn, /await Promise\.allSettled\(\[\s*insertSlot\(\),\s*supabase\.storage\.from\(PHOENIX_CRM_RECORDING_BUCKET\)\.createSignedUploadUrl\(path\),/);
+  assert.ok(
+    slotFn.indexOf("throwIfError(slot.value.error);") > 0 && slotFn.indexOf("throwIfError(slot.value.error);") < slotFn.indexOf("const { data, error } = signing.value;"),
+    "a failed slot row answers before the signed URL is even looked at",
+  );
 
   // ── 2. Only a switched-on rep is ever shown the recorder ──────────────────────────────────────
   assert.match(

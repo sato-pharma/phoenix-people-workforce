@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { groupSameRepDuplicates } from "../src/lib/phoenix-crm/server/duplicate-customers.ts";
+import { customerIdSlices, groupSameRepDuplicates } from "../src/lib/phoenix-crm/server/duplicate-customers.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -122,4 +122,41 @@ export function runPhoenixCrmDuplicateCustomerTests() {
     /integrity|violation|suspicio|fraud|cheat|caught/i,
     "a clerical double-entry must never be worded as an integrity case",
   );
+
+  // ── The reads are faster and see exactly what they saw (Phoenix CRM performance audit, 2026-10-16) ──
+  //
+  // 🔴 THE SIXTEEN SLICES COVER THE WHOLE uuid SPACE, ONCE, IN ORDER. The company's lists are read as
+  // sixteen keyset walks side by side; a gap between two slices would hide a doctor's second row, an
+  // overlap would invent one, and an out-of-order slice would change which row a group lists first.
+  const slices = customerIdSlices();
+  assert.equal(slices.length, 16, "one slice per leading hex digit");
+  assert.equal(slices[0]?.from, null, "the first slice is open below");
+  assert.equal(slices[15]?.below, null, "and the last open above");
+  for (let index = 1; index < slices.length; index += 1) {
+    assert.equal(slices[index]?.from, slices[index - 1]?.below, `slice ${index} starts exactly where slice ${index - 1} stops`);
+    assert.ok(String(slices[index - 1]?.from ?? "") < String(slices[index]?.from), "the slices ascend, so laid end to end they are id order");
+  }
+  for (const slice of slices) {
+    for (const bound of [slice.from, slice.below]) {
+      if (bound !== null) assert.match(bound, /^[0-9a-f]0000000-0000-0000-0000-000000000000$/, "every cut is a lowercase uuid, as Postgres orders them");
+    }
+  }
+  assert.match(service, /mapWithConcurrency\(customerIdSlices\(\), SLICES_AT_ONCE,/, "the slices are read a few at a time and kept in their order");
+  assert.match(service, /fetchAllRowsKeyset<Row>\(/, "each slice is keyset-paged — never an offset walk over a table the field app writes to");
+  assert.doesNotMatch(service, /\.range\(/, "no offset page remains");
+  assert.match(service, /return slices\.flat\(\);/, "the slices are laid end to end in their own order");
+
+  // The keep rule's three counts are the database's own now — the same rows, counted once.
+  assert.match(
+    service,
+    /callPhoenixCrm<[^(]*>\("phoenix_crm_customer_merge_counts", \{\s*p_customer_ids: \[\.\.\.new Set\(ids\)\],?\s*\}\)/,
+    "the merge counts are one aggregate call, never every visit row fetched to be added up",
+  );
+  // SQL comments removed first: the header explains the is_test decision in words.
+  const counts = readFileSync("supabase/migrations/20261016180401_phoenix_crm_customer_merge_counts.sql", "utf8").replace(/--.*$/gm, "");
+  assert.match(counts, /returns jsonb/, "one object, never a set of rows the 1,000-row cap could cut");
+  assert.match(counts, /from public\.phoenix_crm_places p\s+where p\.customer_id = any \(p_customer_ids\)\s+and p\.status = 'active'/, "active places only, as the row read asked");
+  assert.match(counts, /from public\.phoenix_crm_visits v\s+where v\.customer_id = any \(p_customer_ids\)\s+group by/, "every visit, as the row read counted — no narrowing it never had");
+  assert.match(counts, /from public\.phoenix_crm_customer_moves m\s+where m\.customer_id = any \(p_customer_ids\)\s+group by/, "every move");
+  assert.doesNotMatch(counts, /is_test/, "no is_test narrowing — the row reads never had one, so adding it would change a keeper");
 }

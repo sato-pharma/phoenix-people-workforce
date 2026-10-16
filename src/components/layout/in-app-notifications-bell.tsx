@@ -41,6 +41,8 @@ const pendingStatuses = new Set(["pending", "scheduled", "awaiting", "action_req
 /** Panel width, and the breathing room kept either side of it on a phone. */
 const NOTIFICATION_PANEL_WIDTH = 380;
 const NOTIFICATION_PANEL_GUTTER = 12;
+/** A tab shown again within this long of its last read keeps the list it has. */
+const BELL_RETURN_GAP_MS = 15_000;
 
 /** Cairo wall-clock, whatever zone the device is on — the instant is one this app stamped. */
 function formatNotificationTime(value: string | null) {
@@ -154,13 +156,29 @@ export function InAppNotificationsBell({
 
   useEffect(() => {
     const signal = { aborted: false };
+    let lastLoadAt = 0;
+    const load = () => {
+      lastLoadAt = Date.now();
+      void loadNotifications(signal);
+    };
     // Defer the first load so we don't call setState synchronously inside the effect.
-    const initial = window.setTimeout(() => void loadNotifications(signal), 0);
-    const interval = window.setInterval(() => void loadNotifications(signal), 60_000);
+    const initial = window.setTimeout(load, 0);
+    // A tab in the background skips its poll — nobody can see its bell, and every open tab cost the
+    // server a full read each minute (Phoenix CRM performance audit, 2026-10-16; the badge store's
+    // own rule, src/lib/nav-badge-store.ts). It reads the moment the tab is shown again, so a returning
+    // viewer never reads a stale list — unless it read moments ago.
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== "hidden") load();
+    }, 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && Date.now() - lastLoadAt >= BELL_RETURN_GAP_MS) load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       signal.aborted = true;
       window.clearTimeout(initial);
       window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [loadNotifications]);
 

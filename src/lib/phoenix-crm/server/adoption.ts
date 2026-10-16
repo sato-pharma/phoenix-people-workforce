@@ -12,14 +12,16 @@
  * is being told the system is watching him begin (Golden Rule #1's blind half), and a rep seeing a
  * colleague's name on it is worse.
  *
- * ## Four reads for the whole company, whatever the scope
+ * ## Three reads for the whole company, whatever the scope
  *
- * The same shape as the exceptions board: readiness in one call, and each of the other three facts
- * chunked over the seat ids rather than asked per seat. ~140 territories must not be ~420 queries.
+ * The same shape as the exceptions board: readiness in one call (which also carries the date each
+ * list was stamped ready), and the other two facts chunked over the seat ids rather than asked per
+ * seat. ~140 territories must not be ~420 queries.
  *
  * 🔴 **The first visit and the visit count come from `phoenix_crm_countable_visits`**, the module's
  * one predicate for whether a visit counts — an off-plan visit still waiting for its two approvals
- * has not adopted anything yet.
+ * has not adopted anything yet. Since 2026-10-16 the view is counted in the database
+ * (`phoenix_crm_seat_visit_firsts`) rather than read here row by row.
  */
 
 import { forbiddenError } from "@/lib/http/api-errors";
@@ -31,12 +33,12 @@ import {
 } from "@/lib/phoenix-crm/adoption-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { readsTeamReports, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { chunk } from "@/lib/phoenix-crm/server/db";
-import { loadReadiness, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
+import { callPhoenixCrm, chunk } from "@/lib/phoenix-crm/server/db";
+import { sharedReadiness } from "@/lib/phoenix-crm/server/exceptions";
+import type { SeatReadiness } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { openLineCodes } from "@/lib/phoenix-crm/server/settings";
-import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 
 type Row = Record<string, unknown>;
 
@@ -64,47 +66,32 @@ type VisitFirsts = { firstVisitOn: string | null; visitsEver: number };
  * him on the "never touched it" list for doing the work — and would read as truest at the moment it
  * is most wrong, in the first weeks, when almost nobody is validated yet.
  */
+//
+// 🔴 COUNTED IN THE DATABASE SINCE 2026-10-16 (`phoenix_crm_seat_visit_firsts`), over the same view,
+// with the same two filters (the seat, the world) and nothing else. "Ever" is every visit the company
+// has made: it was read here row by row — the whole history, in pages of 1,000, one after another —
+// to produce two numbers per territory, and it grew by some six hundred rows a working day. The
+// function answers one row per territory that has any visit: the earliest `visit_date` (MIN skips a
+// missing date, as the old loop did) and how many rows there are (count(*), dated or not, as before).
+// 150 territories a call keeps the answer far under PostgREST's 1,000-row cap; four calls at a time.
 async function loadVisitFirsts(seatIds: string[], isTest: boolean): Promise<Map<string, VisitFirsts>> {
   const out = new Map<string, VisitFirsts>();
   if (seatIds.length === 0) return out;
 
-  for (const part of chunk(seatIds, 150)) {
-    const rows = await fetchAllRowsKeyset<Row>(
-      () =>
-        getSupabaseAdmin()
-          .from("phoenix_crm_countable_visits")
-          .select("id, seat_id, visit_date")
-          .eq("is_test", isTest)
-          .in("seat_id", part),
-      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-    );
-    for (const row of rows) {
+  const answers = await mapWithConcurrency(chunk(seatIds, 150), 4, (part) =>
+    callPhoenixCrm<unknown>("phoenix_crm_seat_visit_firsts", { p_seat_ids: part, p_is_test: isTest }),
+  );
+  for (const answer of answers) {
+    for (const row of (Array.isArray(answer) ? answer : []) as Row[]) {
       const seatId = String(row.seat_id ?? "");
       if (!seatId) continue;
-      const date = typeof row.visit_date === "string" ? row.visit_date : null;
+      // Folded in as the old loop folded rows, so a territory asked about in two batches adds up the same.
+      const date = typeof row.first_visit_on === "string" ? row.first_visit_on : null;
       const current = out.get(seatId) ?? { firstVisitOn: null, visitsEver: 0 };
       out.set(seatId, {
         firstVisitOn: date === null ? current.firstVisitOn : current.firstVisitOn === null || date < current.firstVisitOn ? date : current.firstVisitOn,
-        visitsEver: current.visitsEver + 1,
+        visitsEver: current.visitsEver + Number(row.visits_ever ?? 0),
       });
-    }
-  }
-  return out;
-}
-
-/** When each territory's carried-over list was stamped finished. */
-async function loadReadyAt(seatIds: string[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  if (seatIds.length === 0) return out;
-  for (const part of chunk(seatIds, 150)) {
-    const { data, error } = await getSupabaseAdmin()
-      .from("phoenix_crm_territory_readiness")
-      .select("seat_id, ready_at")
-      .in("seat_id", part);
-    if (error) throw new Error(error.message);
-    for (const row of (data ?? []) as Row[]) {
-      const seatId = String(row.seat_id ?? "");
-      if (seatId && typeof row.ready_at === "string") out.set(seatId, row.ready_at);
     }
   }
   return out;
@@ -119,11 +106,13 @@ export async function gatherAdoption(input: {
   const { config, isTest, seats } = input;
   const seatIds = seats.map((seat) => seat.seatId);
 
-  const [readiness, firsts, readyAt, names] = await Promise.all([
-    // Readiness is measured on real entries; in test mode nothing is claimed about a list.
-    isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : loadReadiness(seatIds),
+  const [readiness, firsts, names] = await Promise.all([
+    // Readiness is measured on real entries; in test mode nothing is claimed about a list. It also
+    // carries the date each list was stamped finished: `phoenix_crm_seat_readiness` answers it
+    // straight from `phoenix_crm_territory_readiness` when it is not asked to stamp, so the second
+    // read of that table this board used to make is gone and the date is the same one.
+    isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : sharedReadiness(seatIds),
     loadVisitFirsts(seatIds, isTest),
-    isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, string>()) : loadReadyAt(seatIds),
     loadPeopleNames(seats.map((seat) => seat.occupantHrId)),
   ]);
 
@@ -144,7 +133,7 @@ export async function gatherAdoption(input: {
       readiness: list
         ? { total: list.total, validated: list.validated, dropped: list.dropped, dropPending: list.dropPending, ready: list.ready }
         : null,
-      readyAt: readyAt.get(seat.seatId) ?? null,
+      readyAt: list?.readyAt ?? null,
       firstVisitOn: visits.firstVisitOn,
       visitsEver: visits.visitsEver,
     };

@@ -36,6 +36,7 @@ import { isDirectoryCompanyRole } from "@/lib/phoenix-crm/server/doctors";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { countVisitAsksWaitingForYou } from "@/lib/phoenix-crm/server/visit-asks";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -175,13 +176,14 @@ async function countPlanEdits(statuses: PlanEditStatus[], isTest: boolean, seatI
     throwIfError(error);
     return total ?? 0;
   }
-  let total = 0;
-  for (const part of chunk(seatIds, 100)) {
+  // An SFE Manager's whole company is a few batches; their head counts run four at a time and are
+  // added up in batch order — the same sum, without waiting for each in turn.
+  const parts = await mapWithConcurrency(chunk(seatIds, 100), 4, async (part) => {
     const { count: partCount, error } = await count(part);
     throwIfError(error);
-    total += partCount ?? 0;
-  }
-  return total;
+    return partCount ?? 0;
+  });
+  return parts.reduce((total, partCount) => total + partCount, 0);
 }
 
 /**

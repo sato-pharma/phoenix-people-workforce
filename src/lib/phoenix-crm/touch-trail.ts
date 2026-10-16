@@ -73,8 +73,15 @@ export type TouchTrailBatch = {
   events: TouchTrailEvent[];
 };
 
-/** Flush on a timer as well as on a full buffer, so a quiet screen still files what it saw. */
-export const FLUSH_EVERY_MS = 5_000;
+/**
+ * Flush on a timer as well as on a full buffer, so a quiet screen still files what it saw.
+ *
+ * 30 s, not the 5 s it shipped with (Phoenix CRM performance audit, 2026-10-16): the trail was the
+ * module's busiest request — every few seconds from every rep's phone — for rows nobody reads live.
+ * Nothing is lost by waiting: a busy screen still sends at `FLUSH_AT_EVENTS`, and hiding or leaving
+ * the page sends at once (the collector's `visibilitychange` and `pagehide`).
+ */
+export const FLUSH_EVERY_MS = 30_000;
 /** And flush early once the buffer reaches this, so a busy screen does not hold a minute of evidence. */
 export const FLUSH_AT_EVENTS = 40;
 /** The most one request may carry. A bigger buffer is split across requests, never trimmed. */
