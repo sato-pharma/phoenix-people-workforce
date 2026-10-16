@@ -449,6 +449,8 @@ type CheckinRow = {
   agent_hr_id: string | null;
   check_date: string | null;
   contact_crm_id: number;
+  /** The page cursor's tiebreak only — never carried onto a point. */
+  crm_checkin_id: number;
   lat: number;
   lon: number;
 };
@@ -459,27 +461,41 @@ export async function loadCheckins(contactIds: readonly number[]): Promise<Map<n
   const ids = [...new Set(contactIds)];
   // One chunk's pages, in order. A failed page hands back the pages before it WITH its error rather
   // than throwing, so the fold below meets the error exactly where the old serial loop did.
+  //
+  // 🔴 KEYSET PAGES, NOT OFFSET (2026-10-16 Phoenix CRM performance audit). An OFFSET page over a union
+  // view makes the database build and throw away every row before it, so a contact with years of
+  // check-ins cost more with every page. Each page now starts strictly after the last row of the one
+  // before, on the SAME order — newest first, the check-in id breaking a tie — which is a total order
+  // (crm_checkin_id is unique and check_date is never empty on an iReports360 check-in), so the pages
+  // hold exactly the rows, in exactly the order, the OFFSET walk did.
   const readChunk = async (chunk: number[]): Promise<{ error: { message: string } | null; rows: CheckinRow[] }> => {
     const rows: CheckinRow[] = [];
-    for (let page = 0; ; page += 1) {
-      const { data, error } = await supabase
+    let after: { at: string; id: number } | null = null;
+    for (;;) {
+      let query = supabase
         .from(CRM_CHECKINS_UNIFIED_VIEW)
-        .select("contact_crm_id, agent_crm_id, agent_hr_id, lat, lon, address, check_date")
+        .select("contact_crm_id, agent_crm_id, agent_hr_id, lat, lon, address, check_date, crm_checkin_id")
         // iReports360 check-ins only: these pins reach the rep's own Phoenix CRM List (shared-customers.ts),
         // and a Phoenix visit's position is never shown on a rep's screen (golden rule #1).
         .eq("source", IREPORTS360_VISIT_SOURCE)
         .in("contact_crm_id", chunk)
         .not("lat", "is", null)
-        .not("lon", "is", null)
+        .not("lon", "is", null);
+      if (after) {
+        query = query.or(`check_date.lt."${after.at}",and(check_date.eq."${after.at}",crm_checkin_id.lt.${after.id})`);
+      }
+      const { data, error } = await query
         .order("check_date", { ascending: false })
-        // A stable tiebreak, or two rows sharing a timestamp can swap between pages — which both
-        // duplicates one check-in and drops another, quietly changing the score.
+        // A stable tiebreak, or two rows sharing a timestamp could straddle a page — which would both
+        // duplicate one check-in and drop another, quietly changing the score.
         .order("crm_checkin_id", { ascending: false })
-        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+        .limit(PAGE_SIZE);
       if (error) return { error, rows };
       const pageRows = (data ?? []) as CheckinRow[];
       rows.push(...pageRows);
       if (pageRows.length < PAGE_SIZE) return { error: null, rows };
+      const last = pageRows[pageRows.length - 1];
+      after = { at: String(last.check_date), id: Number(last.crm_checkin_id) };
     }
   };
   const answers = await mapWithConcurrency(inChunks(ids), CHUNK_CONCURRENCY, readChunk);

@@ -860,9 +860,22 @@ function runNoDoubleCountTests(code: string): void {
 
   // The Phoenix CRM List's "iReports360 history" reads vendor rows only, so the visits it already shows
   // as "saved here" are never counted a second time beside them.
+  // Since 2026-10-16 it is counted in the database (phx_crm_contact_visit_history) and the page walk
+  // answers only where that function has not been applied — both read vendor rows only.
   const reads = stripComments(read("src/lib/crm/reads.ts"));
-  const history = reads.slice(reads.indexOf("export async function readContactVisitHistory"), reads.indexOf("\n}\n", reads.indexOf("export async function readContactVisitHistory")));
+  const history = reads.slice(reads.indexOf("async function readContactVisitHistoryPaged("), reads.indexOf("\n}\n", reads.indexOf("async function readContactVisitHistoryPaged(")));
   assert.match(history, /\.eq\("source", IREPORTS360_VISIT_SOURCE\)/, "the List's iReports360 history reads iReports360 rows only");
+  const countedHistory = flat(
+    stripSqlComments(read("supabase/migrations/20261016180202_crm_contact_history_and_plan_dates_counted_in_sql.sql")),
+  );
+  assert.ok(
+    countedHistory.includes("from public.crm_visits_unified v where v.source = 'ireports360' and v.contact_crm_id = any (p_contact_crm_ids)"),
+    "and the count in the database reads iReports360 rows only",
+  );
+  assert.ok(
+    countedHistory.includes("from public.crm_plan_entries_unified p where p.source = 'ireports360' and p.contact_crm_id = any (p_contact_crm_ids)"),
+    "and so do the reference plan days the List's pattern is read from",
+  );
   assert.equal(IREPORTS360_VISIT_SOURCE, "ireports360");
   assert.equal(PHOENIX_VISIT_SOURCE, "phoenix");
 }

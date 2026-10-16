@@ -3,7 +3,7 @@ import { logError } from "@/lib/observability/log";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { CRM_PLAN_ENTRIES_UNIFIED_VIEW } from "@/lib/crm/tables";
 import { IREPORTS360_VISIT_SOURCE } from "@/lib/crm/phoenix-team-starts";
-import { readContactVisitHistory, type CrmContactVisitHistory } from "@/lib/crm/reads";
+import { isMissingCrmRpcError, readContactVisitHistory, type CrmContactVisitHistory } from "@/lib/crm/reads";
 import { averageCheckinPoint, type ObservedPoint } from "@/lib/crm/checkin-location";
 
 /** Contact ids per `in(...)` filter, and rows per page — the figures the rest of this module uses. */
@@ -41,9 +41,59 @@ import { loadCheckins, loadContactRoster, loadPinsFor } from "@/lib/crm/reps-lis
  */
 export async function loadPlanDatesFor(contactCrmIds: readonly number[], fromIsoDay: string): Promise<Map<number, string[]>> {
   if (contactCrmIds.length === 0) return new Map();
+  const ids = [...new Set(contactCrmIds)];
+  // 🔴 GATHERED IN THE DATABASE, ONE ROW PER CONTACT (2026-10-16 Phoenix CRM performance audit). The
+  // List needs each doctor's plan days and nothing else, and this used to carry every plan row of every
+  // doctor to the app — fifty doctors a request, a page of 1,000 at a time by OFFSET over the union
+  // view. The function runs the same filter over the same view and hands back the same days, newest
+  // first; until it is applied here, the page walk answers exactly as before.
+  const counted = await loadPlanDatesCounted(ids, fromIsoDay);
+  return counted ?? loadPlanDatesPaged(ids, fromIsoDay);
+}
+
+/** Server-side gathering over the plan door's iReports360 rows (…20261016180202). */
+const CRM_CONTACT_PLAN_DATES_RPC = "phx_crm_contact_plan_dates";
+
+/**
+ * Contacts per call. One row per contact comes back, so 500 stays well under PostgREST's 1,000-row cap
+ * and the ids travel in the request body, never the URL.
+ */
+const PLAN_DATES_RPC_CHUNK = 500;
+
+/** `null` when the function has not reached this database yet — the caller then walks the pages. */
+async function loadPlanDatesCounted(ids: readonly number[], fromIsoDay: string): Promise<Map<number, string[]> | null> {
+  const supabase = getSupabaseAdmin();
+  type PlanDatesRow = { contact_crm_id: number | string | null; plan_dates: string[] | null };
+  const chunks = Array.from({ length: Math.ceil(ids.length / PLAN_DATES_RPC_CHUNK) }, (_unused, index) =>
+    ids.slice(index * PLAN_DATES_RPC_CHUNK, (index + 1) * PLAN_DATES_RPC_CHUNK),
+  );
+  const answers = await mapWithConcurrency(chunks, CHUNK_CONCURRENCY, async (chunk) => {
+    const { data, error } = await supabase.rpc(CRM_CONTACT_PLAN_DATES_RPC, { p_contact_crm_ids: chunk, p_from: fromIsoDay });
+    return { error: error as unknown, rows: (data ?? []) as PlanDatesRow[] };
+  });
+  const byContact = new Map<number, string[]>();
+  for (const { error, rows } of answers) {
+    if (error && isMissingCrmRpcError(error)) return null;
+    for (const row of rows) {
+      if (row.contact_crm_id == null || !Array.isArray(row.plan_dates) || row.plan_dates.length === 0) continue;
+      byContact.set(Number(row.contact_crm_id), row.plan_dates);
+    }
+    if (error) {
+      // A missing or unreadable plan mirror costs this one column and nothing else — as it always did.
+      logError("Phoenix CRM list: the reference plan dates could not be read", {
+        error,
+        labels: { event: "phoenix_crm_plan_pattern_failed" },
+      });
+      return byContact;
+    }
+  }
+  return byContact;
+}
+
+/** The page walk the gathering replaced — kept for a database the function has not reached yet. */
+async function loadPlanDatesPaged(ids: readonly number[], fromIsoDay: string): Promise<Map<number, string[]>> {
   const supabase = getSupabaseAdmin();
   const byContact = new Map<number, string[]>();
-  const ids = [...new Set(contactCrmIds)];
   type PlanDateRow = { contact_crm_id: number | null; plan_date: string | null };
   // One chunk's pages, in order; a failed page hands back the pages before it WITH its error.
   const readChunk = async (chunk: number[]): Promise<{ error: unknown; rows: PlanDateRow[] }> => {

@@ -152,14 +152,36 @@ export function runPortalRepNavigationSpeedTests(): void {
       ["src/lib/crm/reps-list.ts", "async function loadContactBrickMap("],
       ["src/lib/crm/reps-list.ts", "export async function loadCheckins("],
       ["src/lib/crm/reps-list.ts", "export async function loadPinsFor("],
-      ["src/lib/crm/shared-customers.ts", "export async function loadPlanDatesFor("],
-      ["src/lib/crm/reads.ts", "export async function readContactVisitHistory("],
+      // Since 2026-10-16 these two are gathered in the database, with the page walk kept for a database
+      // the function has not reached — both halves read their chunks a few at a time.
+      ["src/lib/crm/shared-customers.ts", "async function loadPlanDatesCounted("],
+      ["src/lib/crm/shared-customers.ts", "async function loadPlanDatesPaged("],
+      ["src/lib/crm/reads.ts", "async function readContactVisitHistoryCounted("],
+      ["src/lib/crm/reads.ts", "async function readContactVisitHistoryPaged("],
     ];
     for (const [path, declaration] of chunked) {
       const body = functionBody(source(path), declaration);
       assert.match(body, /mapWithConcurrency\(/, `${declaration} reads its chunks a few at a time`);
       assert.doesNotMatch(body, /for \(let from = 0;/, `${declaration} has no one-chunk-at-a-time loop left`);
     }
+
+    // The check-ins page by KEYSET on their own total order, never by OFFSET over the union view.
+    const checkins = functionBody(source("src/lib/crm/reps-list.ts"), "export async function loadCheckins(");
+    assert.doesNotMatch(checkins, /\.range\(/, "loadCheckins never pages by OFFSET");
+    assert.match(checkins, /\.limit\(PAGE_SIZE\)/, "loadCheckins pages a thousand at a time");
+    assert.ok(
+      checkins.includes('query.or(`check_date.lt."${after.at}",and(check_date.eq."${after.at}",crm_checkin_id.lt.${after.id})`)'),
+      "each page starts strictly after the last row of the one before, on the order the walk reads in",
+    );
+    assertBefore(checkins, '.order("check_date", { ascending: false })', '.order("crm_checkin_id", { ascending: false })', "newest first, the check-in id breaking a tie");
+
+    // The plan days and the iReports360 history are gathered in the database first, the walk kept behind.
+    const planDates = functionBody(source("src/lib/crm/shared-customers.ts"), "export async function loadPlanDatesFor(");
+    assert.match(planDates, /const counted = await loadPlanDatesCounted\(ids, fromIsoDay\);/, "the plan days are gathered in the database");
+    assert.match(planDates, /return counted \?\? loadPlanDatesPaged\(ids, fromIsoDay\);/, "and walked only where the function is missing");
+    const planCounted = functionBody(source("src/lib/crm/shared-customers.ts"), "async function loadPlanDatesCounted(");
+    assert.match(planCounted, /if \(error && isMissingCrmRpcError\(error\)\) return null;/, "only a missing function falls back to the walk");
+    assert.match(planCounted, /phoenix_crm_plan_pattern_failed/, "any other failure costs the one column, logged as it always was");
 
     // The loader's rep-independent reads start with the rep's list, not after it.
     const loader = functionBody(source("src/lib/crm/reps-list.ts"), "export async function getRepsListForAgent(");
