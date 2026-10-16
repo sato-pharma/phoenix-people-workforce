@@ -649,7 +649,19 @@ function withOptionalSentry(config: NextConfig): NextConfig {
     telemetry: false,
     widenClientFileUpload: true,
     sourcemaps: { deleteSourcemapsAfterUpload: true },
-    ...(release ? { release: { name: release } } : {}),
+    // The release is the commit sha. It is also marked as a production deploy, so Sentry shows when each release went
+    // out and which errors first appeared in it. setCommits names the repository explicitly (the Docker build has no
+    // .git to read) and ignores a missing integration, so it only starts working once the GitHub integration is
+    // installed in Sentry and is silent until then.
+    ...(release
+      ? {
+          release: {
+            name: release,
+            deploy: { env: "production" },
+            setCommits: { repo: "Gawish-1997/phoenix-people-workforce", commit: release, ignoreMissing: true },
+          },
+        }
+      : {}),
     autoInstrumentServerFunctions: false,
     autoInstrumentMiddleware: false,
     autoInstrumentAppDirectory: false,

@@ -198,6 +198,9 @@ function securityProxy(request: NextRequest): NextResponse | null {
       // Brevo transactional webhook: the provider POSTs cross-origin; a shared secret token
       // (?token= / x-brevo-token, verified in the route) authorises it, so it is CSRF-exempt.
       request.nextUrl.pathname === "/api/webhooks/brevo" ||
+      // Sentry alert webhook: Sentry POSTs cross-origin with no session; the route verifies the HMAC signature
+      // of the body against SENTRY_WEBHOOK_SECRET itself, so it is CSRF-exempt by the same shared-secret pattern.
+      request.nextUrl.pathname === "/api/webhooks/sentry" ||
       // WhatsApp Cloud API webhook: Meta POSTs cross-origin with no Origin/Referer header,
       // so it always fail-closed here (403) even with a correct X-Hub-Signature-256 — the
       // route verifies that signature itself, so this is CSRF-exempt by the same shared-secret

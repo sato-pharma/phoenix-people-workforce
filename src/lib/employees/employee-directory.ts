@@ -406,6 +406,30 @@ let inFlightDirectory: Promise<EmployeeDirectoryData> | null = null;
 const CACHE_TTL = 30000; // 30 seconds
 
 /**
+ * After CACHE_TTL a copy is not thrown away at once: for this much longer it is still handed to the caller while a
+ * fresh load runs behind it. The total age any caller can see is therefore CACHE_TTL + this (90 s) — a roster that is
+ * a minute and a half old at worst, against 30 s before, and never the multi-second wait of a cold load on a poll.
+ * A write in this process (`invalidateEmployeeDirectoryCache`) still drops the copy, so every writer that changes a
+ * field payroll or an approval chain reads must call it (a pass at probation does). A caller that joins a load already
+ * running when the write lands can still be handed its older answer once; it is just never saved into the cache.
+ */
+export const DIRECTORY_REFRESH_BEHIND_MS = 60000;
+
+export type DirectoryCacheDisposition = "fresh" | "refresh-behind" | "reload";
+
+/** What to do with a cached directory of this age: serve it, serve it and reload behind it, or reload and wait. */
+export function directoryCacheDisposition(ageMs: number): DirectoryCacheDisposition {
+  if (Number.isNaN(ageMs)) return "reload";
+  if (ageMs < CACHE_TTL) return "fresh";
+  if (ageMs < CACHE_TTL + DIRECTORY_REFRESH_BEHIND_MS) return "refresh-behind";
+  return "reload";
+}
+
+// Bumped by every invalidation, so a load that STARTED before a write cannot stamp its older answer over the
+// invalidated cache when it finishes.
+let directoryGeneration = 0;
+
+/**
  * How old a cached directory may be and still be served when a fresh load FAILS.
  *
  * The fresh path has always been bounded by CACHE_TTL. The failure paths were not bounded at all:
@@ -476,6 +500,7 @@ function isClassifiedActiveEmployee(employee: EmployeeDirectoryRow) {
 }
 
 export function invalidateEmployeeDirectoryCache() {
+  directoryGeneration += 1;
   directoryCache = null;
   directoryRowsCache.clear();
 }
@@ -1027,32 +1052,46 @@ async function loadResidenceByHrId(hrIds: string[]) {
   }
 }
 
-export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
-  const now = Date.now();
-  if (directoryCache && now - directoryCache.timestamp < CACHE_TTL) {
-    return directoryCache.data;
-  }
-
-  // De-duplicate concurrent loads: callers that arrive while a fetch is already
-  // running share the same promise instead of each issuing their own full
-  // directory query. This is what collapses the parallel command-center widget
-  // fan-out (~10 reference-table reads per widget) down to a single load.
+// De-duplicate concurrent loads: callers that arrive while a fetch is already
+// running share the same promise instead of each issuing their own full
+// directory query. This is what collapses the parallel command-center widget
+// fan-out (~10 reference-table reads per widget) down to a single load.
+function loadDirectoryShared(): Promise<EmployeeDirectoryData> {
   if (!inFlightDirectory) {
+    const generation = directoryGeneration;
     inFlightDirectory = fetchEmployeeDirectory()
       .then((result) => {
-        directoryCache = {
-          data: result,
-          timestamp: Date.now(),
-        };
+        // A write that invalidated the cache while this load was running must not be undone by it.
+        if (generation === directoryGeneration) {
+          directoryCache = {
+            data: result,
+            timestamp: Date.now(),
+          };
+        }
         return result;
       })
       .finally(() => {
         inFlightDirectory = null;
       });
   }
+  return inFlightDirectory;
+}
+
+export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
+  const now = Date.now();
+  if (directoryCache) {
+    const disposition = directoryCacheDisposition(now - directoryCache.timestamp);
+    if (disposition === "fresh") return directoryCache.data;
+    if (disposition === "refresh-behind") {
+      // Answer now from the copy that is only seconds past its TTL and reload for the NEXT caller. A sidebar poll
+      // every 30 s used to land just after the 30 s TTL expired and wait out the whole multi-table load itself.
+      loadDirectoryShared().catch(() => undefined);
+      return directoryCache.data;
+    }
+  }
 
   try {
-    return await inFlightDirectory;
+    return await loadDirectoryShared();
   } catch (error) {
     // The ONE place that decides whether a stale copy may answer for a failed load.
     //
@@ -1815,28 +1854,40 @@ export async function getEmployeeDirectoryRows(
   const includeInactive = options.includeInactive ?? false;
   const now = Date.now();
   const cached = directoryRowsCache.get(includeInactive);
-  if (cached && now - cached.timestamp < CACHE_TTL) {
-    return cached.data;
-  }
 
   // Same de-dupe rationale as inFlightDirectory above: concurrent callers requesting the
   // SAME includeInactive value share one in-flight fetch instead of each issuing their own
   // full paginated directory query.
-  let inFlight = inFlightDirectoryRows.get(includeInactive);
-  if (!inFlight) {
-    inFlight = fetchEmployeeDirectoryRows(includeInactive)
-      .then((result) => {
-        directoryRowsCache.set(includeInactive, { data: result, timestamp: Date.now() });
-        return result;
-      })
-      .finally(() => {
-        inFlightDirectoryRows.delete(includeInactive);
-      });
-    inFlightDirectoryRows.set(includeInactive, inFlight);
+  const loadShared = (): Promise<EmployeeDirectoryRow[]> => {
+    let inFlight = inFlightDirectoryRows.get(includeInactive);
+    if (!inFlight) {
+      const generation = directoryGeneration;
+      inFlight = fetchEmployeeDirectoryRows(includeInactive)
+        .then((result) => {
+          if (generation === directoryGeneration) {
+            directoryRowsCache.set(includeInactive, { data: result, timestamp: Date.now() });
+          }
+          return result;
+        })
+        .finally(() => {
+          inFlightDirectoryRows.delete(includeInactive);
+        });
+      inFlightDirectoryRows.set(includeInactive, inFlight);
+    }
+    return inFlight;
+  };
+
+  if (cached) {
+    const disposition = directoryCacheDisposition(now - cached.timestamp);
+    if (disposition === "fresh") return cached.data;
+    if (disposition === "refresh-behind") {
+      loadShared().catch(() => undefined);
+      return cached.data;
+    }
   }
 
   try {
-    return await inFlight;
+    return await loadShared();
   } catch (error) {
     // Same rule as getEmployeeDirectory, same bound. This read is keyed by includeInactive, so the
     // age test applies to the entry for THIS key — the two result sets must never stand in for one
