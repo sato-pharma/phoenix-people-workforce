@@ -840,7 +840,7 @@ const LATER_MIGRATIONS = [
   "supabase/migrations/20261015220318_phoenix_crm_restore_shared_place.sql",
   // Visit recording for the reps the Super Admin chooses (owner, 2026-10-16). Two brand-new tables, a
   // private bucket and ONE brand-new function; it replaces nothing, so it appends safely at the end.
-  "supabase/migrations/20261016103743_phoenix_crm_visit_recording.sql",
+  "supabase/migrations/20261016103900_phoenix_crm_visit_recording.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

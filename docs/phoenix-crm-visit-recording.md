@@ -64,7 +64,7 @@ pressing it is the step.
 
 ## Files
 
-- `supabase/migrations/20261016103743_phoenix_crm_visit_recording.sql`: the two tables, the bucket and
+- `supabase/migrations/20261016103900_phoenix_crm_visit_recording.sql`: the two tables, the bucket and
   the claim function.
 - `src/lib/phoenix-crm/visit-recording-rules.ts`: pure; the bounds, wording and view types.
 - `src/lib/phoenix-crm/server/visit-recordings.ts`: the only file that opens the bucket.

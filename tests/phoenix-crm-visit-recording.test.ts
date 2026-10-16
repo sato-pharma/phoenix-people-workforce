@@ -170,7 +170,7 @@ export function runPhoenixCrmVisitRecordingTests(): void {
   assert.doesNotMatch(admin, /overflow-x|min-w-\[|truncate|line-clamp/, "no sideways scroll and no ellipsis");
 
   // ── The database half: the claim function is the service role's alone ───────────────────────
-  const sql = stripSqlComments(readFileSync("supabase/migrations/20261016103743_phoenix_crm_visit_recording.sql", "utf8"));
+  const sql = stripSqlComments(readFileSync("supabase/migrations/20261016103900_phoenix_crm_visit_recording.sql", "utf8"));
   assert.match(sql, /create table if not exists public\.phoenix_crm_recording_required/);
   assert.match(sql, /create table if not exists public\.phoenix_crm_visit_recordings/);
   assert.match(
