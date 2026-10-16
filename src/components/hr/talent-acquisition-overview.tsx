@@ -546,7 +546,7 @@ export function TalentAcquisitionOverview({
 
       {/* ── 6. Who is on a vacation today, by name (owner, 2026-09-29). Renders nothing at all
           when the source did not answer; see hr-on-vacation-today.tsx. ── */}
-      <HrOnVacationToday rows={data.onVacationToday} />
+      <HrOnVacationToday linked={false} rows={data.onVacationToday} />
 
       {/* ── 7. Her own record — the same card every HR seat carries since 2026-09-01. ── */}
       <HrMyRecord record={data.personal} />

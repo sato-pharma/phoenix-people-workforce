@@ -247,6 +247,25 @@ function testARateIsNeverDrawnAsZero() {
   assert.ok(component.includes('2: "@min-[1120px]:col-span-2"'), "and a group of two spans two");
   assert.match(component, /<TaCaption caption=\{group\.caption\} label=\{group\.label\} \/>/, "each group wears its caption");
   assert.equal(component.split("<MetricTile ").length - 1, 1, "the figures are drawn once, inside their groups");
+
+  // Her "On a vacation today" panel carries NO links (owner, 2026-10-16, option "hide the link and
+  // the row links, keep the panel"): the Vacation Report scopes her seat to her own leave, so the
+  // button and every row link landed her on a page that could not show the person named above it.
+  assert.ok(
+    component.includes("<HrOnVacationToday linked={false} rows={data.onVacationToday} />"),
+    "her page mounts the absence panel with its links switched off",
+  );
+  const absencePanel = codeOf("src/components/hr/hr-on-vacation-today.tsx");
+  const reportButtonAt = absencePanel.indexOf("Open the Vacation Report");
+  const linkedGuardAt = absencePanel.lastIndexOf("{linked ? (", reportButtonAt);
+  assert.ok(
+    reportButtonAt > -1 && linkedGuardAt > -1 && absencePanel.slice(linkedGuardAt, reportButtonAt).includes("<div"),
+    "the Open the Vacation Report button sits inside the linked guard, so it exists only when the panel is linked",
+  );
+  assert.ok(
+    absencePanel.includes("<RowShell href={linked ? row.href : null}>"),
+    "a row is a link only when the panel is linked",
+  );
   assert.match(
     component,
     /flex min-h-\[23px\] items-center/,
