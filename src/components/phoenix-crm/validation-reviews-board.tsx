@@ -26,13 +26,14 @@
  * mirrors removed in 2026-08 are the repo's own account of that.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type KeyboardEvent } from "react";
 
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
 import { CrmSurfaceProvider } from "@/components/phoenix-crm/surface";
 import { cn } from "@/lib/utils";
 import { CrmButton, CrmField, CrmPill, CrmSearchField, CrmSelect } from "@/components/phoenix-crm/ui";
 import { ReopenedCustomerList } from "@/components/phoenix-crm/reopened-customer-list";
+import { PlaceMatchBoardView } from "@/components/phoenix-crm/place-match-board";
 import { SharedPlaceList } from "@/components/phoenix-crm/shared-place-list";
 import { ValidatedPlaceList } from "@/components/phoenix-crm/validated-place-list";
 import { ValidationReviewQueue } from "@/components/phoenix-crm/validation-review-queue";
@@ -74,8 +75,13 @@ const PERIOD_LABELS: Record<ValidationReviewPeriod, string> = {
  * The two kinds of check (owner, 2026-10-17: "separate the polyclinics/hospitals checks than normal
  * clinic steps"). A single clinic is judged on its own sign; a polyclinic or hospital is judged as a
  * building with a timetable and the customers seated behind it.
+ *
+ * The third kind is not a kind of place but a comparison (owner, 2026-10-17: "a place validated by more
+ * than a rep … put the validations beside each other"): the SAME place seen by two or more reps. It is
+ * the Super Admin's alone — a manager's board never draws the tab — and its data is read when the tab is
+ * first opened, not with the page.
  */
-type PlaceCheckView = "clinics" | "polyclinics";
+type PlaceCheckView = "clinics" | "polyclinics" | "samePlace";
 
 /** A row the shared filters can read, for a reopened customer who has no place on file any more. */
 function filterableReopened(row: ReopenedCustomerRow): ValidationReviewFilterable {
@@ -108,6 +114,9 @@ export function ValidationReviewsBoard({
 }) {
   const [filters, setFilters] = useState<ValidationReviewFilters>(EMPTY_VALIDATION_REVIEW_FILTERS);
   const [view, setView] = useState<PlaceCheckView>("clinics");
+  // The comparison reads every validated place, so it starts on the tab's first opening and then stays
+  // mounted — switching tabs must not read it again.
+  const [samePlaceOpened, setSamePlaceOpened] = useState(false);
   const set = <Key extends keyof ValidationReviewFilters>(key: Key, value: ValidationReviewFilters[Key]) =>
     setFilters((current) => ({ ...current, [key]: value }));
 
@@ -203,6 +212,27 @@ export function ValidationReviewsBoard({
   // The filter signature remounts the paged validated list so "Show more" starts over when a filter
   // changes, rather than keeping a page offset from the wider set.
   const validatedKey = `${filters.outcome}|${filters.rep}|${filters.line}|${filters.region}|${filters.area}|${filters.list}|${filters.period}|${filters.text}`;
+
+  // 🔴 THE COMPARISON TAB IS THE SUPER ADMIN'S ALONE: a manager's board is `mode="team"` and is never
+  // handed the tab, the panel or the read (the route refuses a manager as well).
+  const tabs: ReadonlyArray<{ key: PlaceCheckView; label: string; count: number | null; open: number }> = [
+    { key: "clinics", label: "Clinics", count: clinicsShown, open: clinicsOpen },
+    { key: "polyclinics", label: "Polyclinics and hospitals", count: filteredVenueGroups.length, open: polyclinicsOpen },
+    ...(team ? [] : [{ key: "samePlace" as const, label: "Same place, several reps", count: null, open: 0 }]),
+  ];
+  const selectView = (key: PlaceCheckView) => {
+    setView(key);
+    if (key === "samePlace") setSamePlaceOpened(true);
+  };
+  const moveTab = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const last = tabs.length - 1;
+    const next =
+      event.key === "ArrowRight" ? (index === last ? 0 : index + 1) : event.key === "ArrowLeft" ? (index === 0 ? last : index - 1) : event.key === "Home" ? 0 : event.key === "End" ? last : null;
+    if (next === null) return;
+    event.preventDefault();
+    selectView(tabs[next].key);
+    document.getElementById(`vr-tab-${tabs[next].key}`)?.focus();
+  };
 
   return (
     <CrmSurfaceProvider surface="admin">
@@ -313,27 +343,25 @@ export function ValidationReviewsBoard({
         ) : null}
 
         <div aria-label="Kind of place" className="flex min-w-0 flex-wrap border-b border-slate-200" role="tablist">
-          {(
-            [
-              ["clinics", "Clinics", clinicsShown, clinicsOpen],
-              ["polyclinics", "Polyclinics and hospitals", filteredVenueGroups.length, polyclinicsOpen],
-            ] as const
-          ).map(([key, label, count, open]) => (
+          {tabs.map(({ key, label, count, open }, index) => (
             <button
               key={key}
-              aria-controls={`vr-panel-${key}`}
+              aria-controls={view === key ? `vr-panel-${key}` : undefined}
               aria-selected={view === key}
               className={cn(
-                "inline-flex min-h-11 min-w-0 flex-wrap items-center gap-2 border-b-2 px-4 py-2.5 text-left text-sm font-black",
-                view === key ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700",
+                "-mb-px inline-flex min-h-11 min-w-0 flex-wrap items-center gap-2 rounded-none border-b-2 px-4 py-2.5 text-left text-sm font-black",
+                view === key ? "border-orange-500 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700",
               )}
               id={`vr-tab-${key}`}
-              onClick={() => setView(key)}
+              onClick={() => selectView(key)}
+              onKeyDown={(event) => moveTab(event, index)}
               role="tab"
+              tabIndex={view === key ? 0 : -1}
               type="button"
             >
               <span className="break-words">
-                {label} ({count})
+                {label}
+                {count === null ? "" : ` (${count})`}
               </span>
               {open > 0 ? <CrmPill tone="warn">{open} {team ? "being checked" : "waiting"}</CrmPill> : null}
             </button>
@@ -458,6 +486,11 @@ export function ValidationReviewsBoard({
                 <SharedPlaceList groups={filteredVenueGroups} mode={mode} noteIndex={noteIndex} />
               )}
             </AdminTableShell>
+          </div>
+        ) : null}
+        {!team && samePlaceOpened ? (
+          <div aria-labelledby="vr-tab-samePlace" hidden={view !== "samePlace"} id="vr-panel-samePlace" role="tabpanel">
+            <PlaceMatchBoardView filters={filters} />
           </div>
         ) : null}
       </div>

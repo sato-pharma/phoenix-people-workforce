@@ -911,6 +911,11 @@ const LATER_MIGRATIONS = [
   // earlier definer is 20261017000000, above it, and adds columns and widens CHECKs on that migration's
   // own tables — no new table and no new function, so it appends safely at the end.
   "supabase/migrations/20261017120000_phoenix_crm_manager_asks_second_approval.sql",
+  // The Super Admin's answer to "are these two validations the same place?" (owner, 2026-10-17, the third
+  // tab of Place checks). ONE brand-new table and NOTHING else — no function, no column on anything that
+  // exists, and it replaces nothing, so it appends safely at the end. Its keys are text on purpose: a
+  // validation is a place OR a polyclinic, and an answer about one that is gone is inert.
+  "supabase/migrations/20261017150000_phoenix_crm_place_match_answers.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

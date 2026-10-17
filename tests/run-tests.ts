@@ -1861,6 +1861,7 @@ import { runPhoenixCrmCaptureTrustPlaceTests } from "./phoenix-crm-capture-trust
 import { runPhoenixCrmValidationFeedbackTests } from "./phoenix-crm-validation-feedback.test.ts";
 import { runPhoenixCrmSharedPlaceTests } from "./phoenix-crm-shared-place.test.ts";
 import { runPhoenixCrmSharedPlaceGroupsTests } from "./phoenix-crm-shared-place-groups.test.ts";
+import { runPhoenixCrmPlaceMatchGroupsTests } from "./phoenix-crm-place-match-groups.test.ts";
 import { runPhoenixCrmValidateStepsTests } from "./phoenix-crm-validate-steps.test.ts";
 import { runPhoenixCrmOffplanCapTests } from "./phoenix-crm-offplan-cap.test.ts";
 import { runPhoenixCrmPlaceBrickLookupTests } from "./phoenix-crm-place-brick-lookup.test.ts";
@@ -7019,6 +7020,11 @@ await runTest(
 await runTest(
   "Phoenix CRM Place checks polyclinic groups (owner, 2026-10-17): the polyclinics and hospitals are their own tab, apart from the single clinics, and each building is one group — the sign on its door, its one timetable, and the customers seated in it with what the timetable says about each; a customer the timetable does not name can be rejected on their own row on the timetable's reasons, through the existing review or refuse route, without touching the building or anyone else; a manager's board shows the evidence and no decision control; a row is taken out of the clinics view only when its building is on the board; and Rejected shows a rejected building again",
   runPhoenixCrmSharedPlaceGroupsTests,
+);
+
+await runTest(
+  "Phoenix CRM Place checks, the same place several reps validated (owner, 2026-10-17): the Super Admin's third tab sets two or more reps' validations of one place side by side — confident pairs are grouped with no question, clearly different ones are never shown, and only the in-between pairs are asked, never two differently named customers; the most accurate is named only when it clearly beats the next, and a tie says too close to call; a group is tight, never a chain, though his own same answer is never capped; an answer is kept on the ordered pair so nothing is asked twice and can be taken back; a seated customer is never a subject; and a manager's board never draws the tab",
+  runPhoenixCrmPlaceMatchGroupsTests,
 );
 
 await runTest(

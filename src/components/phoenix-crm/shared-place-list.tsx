@@ -83,7 +83,10 @@ function readingText(label: string, reading: SharedPlaceBoardRow["pin"]): string
   return `${label}: ${reading.lat.toFixed(5)}, ${reading.lon.toFixed(5)} (${accuracy})`;
 }
 
-function Venue({ row }: { row: SharedPlaceBoardRow }) {
+/** Which of the two layouts a venue control is drawn in — the phone block and the table are BOTH in the page, so an id must say which. */
+type VenueScope = "cards" | "table";
+
+function Venue({ mode, row }: { mode: PlaceCheckNotesMode; row: SharedPlaceBoardRow }) {
   return (
     <div className="min-w-0 space-y-1">
       <p className="break-words text-sm font-black text-slate-900" dir="auto">
@@ -97,7 +100,7 @@ function Venue({ row }: { row: SharedPlaceBoardRow }) {
         <CrmPill tone={row.seated === 0 ? "neutral" : "info"}>
           {row.seated === 0 ? "Nobody seated yet" : `${row.seated} ${row.seated === 1 ? "customer seated" : "customers seated"}`}
         </CrmPill>
-        {row.status === "held" ? <CrmPill tone="warn">Waiting for you</CrmPill> : null}
+        {row.status === "held" ? <CrmPill tone="warn">{mode === "team" ? "Being checked" : "Waiting for you"}</CrmPill> : null}
         {row.isTest ? <CrmPill>Test entry</CrmPill> : null}
       </div>
     </div>
@@ -172,7 +175,7 @@ function Cost({ row }: { row: SharedPlaceBoardRow }) {
  * server might not do — a customer whose timetable still cannot answer for him stays under To
  * validate, and the answer says so by name.
  */
-function RestoreVenue({ row }: { row: SharedPlaceBoardRow }) {
+function RestoreVenue({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope }) {
   const router = useRouter();
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -200,13 +203,13 @@ function RestoreVenue({ row }: { row: SharedPlaceBoardRow }) {
         Bringing it back makes the building live again and gives every customer it retired their place back. One whose timetable still cannot
         answer for them stays under To validate.
       </p>
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`restore-venue-note-${row.sharedPlaceId}`}>
+      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`restore-venue-note-${scope}-${row.sharedPlaceId}`}>
         {VALIDATION_NOTE_LABEL}
       </label>
       <textarea
         className={crmTextareaClassName}
         disabled={saving}
-        id={`restore-venue-note-${row.sharedPlaceId}`}
+        id={`restore-venue-note-${scope}-${row.sharedPlaceId}`}
         maxLength={500}
         onChange={(event) => setNote(event.target.value)}
         rows={2}
@@ -220,7 +223,7 @@ function RestoreVenue({ row }: { row: SharedPlaceBoardRow }) {
   );
 }
 
-function Decision({ row }: { row: SharedPlaceBoardRow }) {
+function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope }) {
   const router = useRouter();
   const [note, setNote] = useState("");
   const [reason, setReason] = useState<ValidationRefusalReason | "">("");
@@ -249,7 +252,7 @@ function Decision({ row }: { row: SharedPlaceBoardRow }) {
   // approve/reject pair again: rejecting a retired venue is what the database refuses, and the Cost
   // lines below describe a cost that has already been paid.
   if (row.restorable) {
-    return <RestoreVenue row={row} />;
+    return <RestoreVenue row={row} scope={scope} />;
   }
 
   return (
@@ -264,17 +267,17 @@ function Decision({ row }: { row: SharedPlaceBoardRow }) {
       <Cost row={row} />
       <RefusalReasonField
         disabled={saving !== null}
-        id={`shared-place-reason-${row.sharedPlaceId}`}
+        id={`shared-place-reason-${scope}-${row.sharedPlaceId}`}
         onChange={setReason}
         value={reason}
       />
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`shared-place-note-${row.sharedPlaceId}`}>
+      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`shared-place-note-${scope}-${row.sharedPlaceId}`}>
         {VALIDATION_NOTE_LABEL}
       </label>
       <textarea
         className={crmTextareaClassName}
         disabled={saving !== null}
-        id={`shared-place-note-${row.sharedPlaceId}`}
+        id={`shared-place-note-${scope}-${row.sharedPlaceId}`}
         maxLength={500}
         onChange={(event) => setNote(event.target.value)}
         rows={2}
@@ -303,11 +306,11 @@ function Decision({ row }: { row: SharedPlaceBoardRow }) {
  * decision on this page, and the Super Admin's alone. A manager reads the venue, comments on it and
  * recommends; whether it was already approved, and by whom, is not on his screen (owner, 2026-10-13).
  */
-function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: SharedPlaceBoardRow }) {
+function LastColumn({ mode, noteIndex, row, scope }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: SharedPlaceBoardRow; scope: VenueScope }) {
   const key = placeNoteSubjectKey("shared_place", row.sharedPlaceId);
   return (
     <div className="min-w-0 space-y-2">
-      {mode === "team" ? null : <Decision row={row} />}
+      {mode === "team" ? null : <Decision row={row} scope={scope} />}
       <PlaceCheckNotes
         integrity={noteIndex.integrity[key] ?? []}
         mode={mode}
@@ -372,13 +375,13 @@ const VENUE_ACTIONS: ReadonlyArray<BulkAction<SharedPlaceBoardRow>> = [
  */
 function VenuePhotos({ row }: { row: SharedPlaceBoardRow }) {
   return (
-    <div className="min-w-0 space-y-3">
+    <div className="w-28 min-w-0 max-w-full shrink-0 space-y-3">
       <div className="min-w-0 space-y-1">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">The sign on the building</p>
+        <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">The sign on the building</p>
         <CrmPhotoThumb alt={`Sign photo for ${row.name}`} className="h-28 w-28" path={row.photoPath} />
       </div>
       <div className="min-w-0 space-y-1">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">The timetable inside</p>
+        <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">The timetable inside</p>
         {row.schedulePhotoPath ? (
           <>
             <CrmPhotoThumb alt={`Timetable photo for ${row.name}`} className="h-28 w-28" path={row.schedulePhotoPath} />
@@ -420,10 +423,10 @@ export function SharedPlaceList({
               {bulk ? <BulkPick picks={picks} row={row} /> : null}
               <div className="flex min-w-0 gap-3">
                 <VenuePhotos row={row} />
-                <Venue row={row} />
+                <Venue mode={mode} row={row} />
               </div>
               <Where row={row} />
-              <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
+              <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="cards" />
             </div>
             <div className="border-t border-slate-100 bg-slate-50/60 pb-2">
               <SeatedCustomers customers={customers} layout="cards" mode={mode} noteIndex={noteIndex} total={total} venueTimetablePath={row.schedulePhotoPath} />
@@ -431,7 +434,7 @@ export function SharedPlaceList({
           </div>
         ))}
       </CrmCardsOnPhone>
-      <CrmTable columns={["18%", "22%", "32%", "28%"]}>
+      <CrmTable columns={["20%", "22%", "30%", "28%"]}>
         <thead>
           <tr>
             <th className={crmThClassName}>Photos</th>
@@ -441,7 +444,7 @@ export function SharedPlaceList({
           </tr>
         </thead>
         {groups.map(({ customers, total, venue: row }) => (
-          <tbody key={row.sharedPlaceId} className="border-t-4 border-slate-200">
+          <tbody key={row.sharedPlaceId} className="border-t-4 border-slate-200 first-of-type:border-t-0">
             <tr>
               <td className={crmTdClassName}>
                 <div className="min-w-0 space-y-2">
@@ -450,13 +453,13 @@ export function SharedPlaceList({
                 </div>
               </td>
               <td className={crmTdClassName}>
-                <Venue row={row} />
+                <Venue mode={mode} row={row} />
               </td>
               <td className={crmTdClassName}>
                 <Where row={row} />
               </td>
               <td className={crmTdClassName}>
-                <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
+                <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="table" />
               </td>
             </tr>
             <tr>

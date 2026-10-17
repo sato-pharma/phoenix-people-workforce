@@ -50,6 +50,18 @@ function defaultReason(customer: SeatedCustomer): ValidationRefusalReason {
   return customer.timetable?.verdict === "no_schedule" ? "schedule_missing" : "schedule_other_name";
 }
 
+/**
+ * The reason a waiting row starts on: only what the system itself read. A row the timetable named
+ * (or one with no timetable in the photo) opens on that reason; a customer the system could not read,
+ * or read as named, opens on NOTHING, so a reject is never one click away from telling a rep that
+ * the timetable does not name him when it may have.
+ */
+function evidenceReason(customer: SeatedCustomer): ValidationRefusalReason | "" {
+  if (customer.timetable?.verdict === "other_name") return "schedule_other_name";
+  if (customer.timetable?.verdict === "no_schedule") return "schedule_missing";
+  return "";
+}
+
 /** Whether a decision can be made on this customer's review row — the route that keeps the evidence. */
 function decidesOnReview(customer: SeatedCustomer): boolean {
   return customer.reviewId !== null && (customer.state === "waiting" || customer.refusable);
@@ -114,7 +126,7 @@ function Timetable({ customer, venueTimetablePath }: { customer: SeatedCustomer;
           {customer.timetable.scheduleText}
         </p>
       ) : null}
-      {customer.state === "rejected" && customer.reasonLabel ? <p className="break-words text-xs text-slate-600">Refused: {customer.reasonLabel}</p> : null}
+      {customer.state === "rejected" && customer.reasonLabel ? <p className="break-words text-xs text-slate-600">The rep was told: {customer.reasonLabel}.</p> : null}
       {own ? <CrmPhotoThumb alt={`Timetable photo for ${customer.customerName}`} path={own} /> : null}
     </div>
   );
@@ -215,7 +227,7 @@ function RejectNotOnTimetable({ customer, scope }: { customer: SeatedCustomer; s
       <RefusalNoteHint />
       {armed ? (
         <div className="space-y-2">
-          <CrmNote tone="warn">This retires their seat and cannot be undone here — the rep captures the customer again from their own list.</CrmNote>
+          <CrmNote tone="warn">This retires their seat — the rep captures the customer again from their own list. You can approve it after all from this row.</CrmNote>
           <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
             <CrmButton busy={saving} disabled={saving} onClick={() => void reject()} variant="danger">
               {saving ? "Rejecting…" : "Yes, reject them"}
@@ -251,7 +263,7 @@ function RejectNotOnTimetable({ customer, scope }: { customer: SeatedCustomer; s
 function WaitingDecision({ customer, scope }: { customer: SeatedCustomer; scope: string }) {
   const router = useRouter();
   const [note, setNote] = useState("");
-  const [reason, setReason] = useState<ValidationRefusalReason | "">(defaultReason(customer));
+  const [reason, setReason] = useState<ValidationRefusalReason | "">(evidenceReason(customer));
   const [saving, setSaving] = useState<"approve" | "reject" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -426,7 +438,7 @@ export function SeatedCustomers({
         </CrmCardsOnPhone>
       ) : null}
       {layout !== "cards" ? (
-        <CrmTable columns={["26%", "38%", "36%"]}>
+        <CrmTable columns={["42%", "30%", "28%"]}>
           <thead>
             <tr>
               <th className={crmThClassName}>Customer and rep</th>
