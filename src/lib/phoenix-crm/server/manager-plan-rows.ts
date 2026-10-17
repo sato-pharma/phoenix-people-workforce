@@ -1,5 +1,6 @@
 /**
- * Phoenix CRM — the district manager's weekly plan as it is stored: the row shapes and the plain reads.
+ * Phoenix CRM — the manager's weekly plan as it is stored: the row shapes and the plain reads. A district
+ * manager's since 2026-10-16; a regional, national or product manager's too since 2026-10-17.
  *
  * 🔴 NO NOTICE SENDER IS IMPORTED HERE, AND NONE MAY BE. The Approvals Hub reads these rows
  * (`manager-plan-queue.ts`), and the Hub's own reader is imported by the notification layer's actionable
@@ -10,9 +11,11 @@
 import { weeklyPlanDueOn } from "@/lib/phoenix-crm/calendar";
 import {
   isManagerHalf,
+  isManagerPlannerKind,
   isManagerPlanStatus,
   isManagerSlotKind,
   type ManagerHalf,
+  type ManagerPlannerKind,
   type ManagerPlanStage,
   type ManagerPlanStatus,
   type ManagerSlotKind,
@@ -38,7 +41,10 @@ function dayOf(value: unknown): string | null {
 export type ManagerPlanRow = {
   planId: string;
   managerHrId: string;
-  managerSeatId: string;
+  /** Null only for a product manager, who holds no seat (owner, 2026-10-17). */
+  managerSeatId: string | null;
+  /** Who plans the week: "dm" for every week written before 2026-10-17. */
+  plannerKind: ManagerPlannerKind;
   lineCode: string | null;
   weekStart: string;
   status: ManagerPlanStatus;
@@ -58,11 +64,13 @@ export type ManagerPlanRow = {
   decisionNote: string | null;
   returnedDay: string | null;
   returnedStage: ManagerPlanStage | null;
+  /** HR acknowledged the approved week by itself — never on a district manager's. */
+  hrAcknowledgedAt: string | null;
   isTest: boolean;
 };
 
 export const MANAGER_PLAN_COLUMNS =
-  "id, manager_hr_id, manager_seat_id, line_code, week_start, status, version, due_on, submitted_at, submitted_late, first_approver_hr_id, second_approver_hr_id, first_decided_at, first_decided_by_hr_id, first_decided_role, first_decision_note, decided_at, decided_by_hr_id, decided_by_role, decision_note, returned_day, returned_stage, is_test";
+  "id, manager_hr_id, manager_seat_id, planner_kind, line_code, week_start, status, version, due_on, submitted_at, submitted_late, first_approver_hr_id, second_approver_hr_id, first_decided_at, first_decided_by_hr_id, first_decided_role, first_decision_note, decided_at, decided_by_hr_id, decided_by_role, decision_note, returned_day, returned_stage, hr_acknowledged_at, is_test";
 
 export function managerPlanRowOf(raw: unknown): ManagerPlanRow | null {
   const row = record(raw);
@@ -74,7 +82,8 @@ export function managerPlanRowOf(raw: unknown): ManagerPlanRow | null {
   return {
     planId,
     managerHrId,
-    managerSeatId: textOrNull(row.manager_seat_id) ?? "",
+    managerSeatId: textOrNull(row.manager_seat_id),
+    plannerKind: isManagerPlannerKind(row.planner_kind) ? row.planner_kind : "dm",
     lineCode: textOrNull(row.line_code),
     weekStart,
     status: isManagerPlanStatus(row.status) ? row.status : "draft",
@@ -94,6 +103,7 @@ export function managerPlanRowOf(raw: unknown): ManagerPlanRow | null {
     decisionNote: textOrNull(row.decision_note),
     returnedDay: dayOf(row.returned_day),
     returnedStage: stage,
+    hrAcknowledgedAt: textOrNull(row.hr_acknowledged_at),
     isTest: row.is_test === true,
   };
 }
@@ -146,10 +156,15 @@ export type ManagerSlotRow = {
   areaSeatId: string | null;
   areaCode: string | null;
   areaName: string | null;
+  /** The district manager seat he picked for this half — a regional, national or product manager only. */
+  scopeDmSeatId: string | null;
+  /** That district's line, or the line a product manager picked with no district manager. */
+  scopeLineCode: string | null;
   note: string | null;
 };
 
-const SLOT_COLUMNS = "id, plan_id, plan_date, half, kind, rep_seat_id, rep_hr_id, activity_type, area_seat_id, area_code, area_name, note";
+const SLOT_COLUMNS =
+  "id, plan_id, plan_date, half, kind, rep_seat_id, rep_hr_id, activity_type, area_seat_id, area_code, area_name, scope_dm_seat_id, scope_line_code, note";
 
 function slotRowOf(raw: unknown): ManagerSlotRow | null {
   const row = record(raw);
@@ -169,6 +184,8 @@ function slotRowOf(raw: unknown): ManagerSlotRow | null {
     areaSeatId: textOrNull(row.area_seat_id),
     areaCode: textOrNull(row.area_code),
     areaName: textOrNull(row.area_name),
+    scopeDmSeatId: textOrNull(row.scope_dm_seat_id),
+    scopeLineCode: textOrNull(row.scope_line_code),
     note: textOrNull(row.note),
   };
 }

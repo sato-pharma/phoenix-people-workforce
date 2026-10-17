@@ -351,11 +351,12 @@ export function runApprovalsHubTests() {
   // ── "Company Plans" tab: CEO + Super Admin, ALL roles (pending + decided), no action buttons ──
   // getCompanyPlanRequests and getCompanyDistrictManagerPlanRequests (the read-only "District
   // Manager Plans" tab) share one query via fetchCompanyPlanRequestItems -- the auth gate and
-  // the field-force-inclusion property below live there now, not in either thin wrapper.
+  // the field-force-inclusion property below live there now, not in either thin wrapper. Since 2026-10-17
+  // it also merges the regional, national and product managers' Phoenix CRM weeks beside the legacy ones.
   assert.match(
     svc,
-    /export async function getCompanyPlanRequests[\s\S]*?return fetchCompanyPlanRequestItems\(access\);/,
-    "getCompanyPlanRequests must delegate to the shared fetchCompanyPlanRequestItems helper",
+    /export async function getCompanyPlanRequests[\s\S]*?fetchCompanyPlanRequestItems\(access\),\s*\n\s*fetchCrmManagerPlanRequestItems\(access, null, "others"\),[\s\S]*?return mergeCompanyPlanFeeds\(legacy, crm\);/,
+    "getCompanyPlanRequests must delegate to the shared fetchCompanyPlanRequestItems helper, with the non-DM Phoenix CRM weeks merged beside it",
   );
   assert.match(
     svc,

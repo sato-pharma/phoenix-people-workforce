@@ -27,14 +27,14 @@ export async function GET(request: Request) {
   }
 }
 
-// POST = a customer he adds. `create`, narrowed in the service to the district manager himself. No
-// validation step (his ruling): the managers are trusted.
+// POST = a customer he adds. `read`, narrowed in the service to the manager who plans the week himself
+// (`assertManagerPlanWriter`). No validation step (his ruling): the managers are trusted.
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "phoenix_crm", "create");
+    await assertPermission(access, "phoenix_crm", "read");
     const viewer = await resolvePhoenixCrmViewer(access);
     const body = (await request.json()) as unknown;
     const customer = await addManagerCustomer(viewer, body);

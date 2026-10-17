@@ -1,8 +1,10 @@
 "use client";
 
 /**
- * Phoenix CRM — "My single visits": the district manager's own visits, alone (owner, 2026-10-16: "he is
- * submitting single visits if he is alone … with medical rep, the medical rep … submits him").
+ * Phoenix CRM — "My single visits": a manager's own visits, alone (owner, 2026-10-16: "he is submitting
+ * single visits if he is alone … with medical rep, the medical rep … submits him"). A district manager's,
+ * and since 2026-10-17 the regional, national and product managers' too — a product manager holds no
+ * territory, so this is his whole Visits tab.
  *
  * Today's planned single-visit customers, each with Log; and "Log an unplanned customer" for one he did
  * not plan — shown apart in his report. Location optional, NO photo, products optional, comment optional.
@@ -233,7 +235,7 @@ function FindCustomer({
       </CrmField>
       {error ? <CrmNote tone="bad">{error}</CrmNote> : null}
       {matches !== null && matches.length === 0 ? (
-        <CrmNote tone="neutral">No customer of your district goes by that name. Add the customer to Manager&apos;s own list from Team first.</CrmNote>
+        <CrmNote tone="neutral">No customer of the districts you plan in goes by that name. Add the customer to Manager&apos;s own list from Team first.</CrmNote>
       ) : null}
       {(matches ?? []).map((match) => (
         <CrmCard

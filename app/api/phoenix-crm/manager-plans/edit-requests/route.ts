@@ -10,14 +10,14 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST = he asks to edit a week he already sent. `create`, narrowed in the service to his OWN week; his
-// RSM/NSM decides it at edit-requests/decide.
+// POST = he asks to edit a week he already sent. `read`, narrowed in the service to his OWN week
+// (`assertManagerPlanWriter`); its approvers decide it at edit-requests/decide.
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "phoenix_crm", "create");
+    await assertPermission(access, "phoenix_crm", "read");
     const viewer = await resolvePhoenixCrmViewer(access);
     const body = (await request.json()) as unknown;
     const ask = await raiseManagerPlanEdit(viewer, body);

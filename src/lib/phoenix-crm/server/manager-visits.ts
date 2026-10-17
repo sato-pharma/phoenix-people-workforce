@@ -21,7 +21,9 @@ import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
-import { assertManagerPlanWriter, managerDistrictSeats } from "@/lib/phoenix-crm/server/manager-plan-reach";
+import type { ManagerPlanWriter } from "@/lib/phoenix-crm/manager-plan-rules";
+import { assertManagerPlanWriter } from "@/lib/phoenix-crm/server/manager-plan-reach";
+import { managerWriterReach } from "@/lib/phoenix-crm/server/manager-plan-writers";
 import { loadManagerCustomerRow, loadManagerCustomers, type ManagerCustomerView } from "@/lib/phoenix-crm/server/manager-customers";
 import { loadManagerSlotCustomers, loadManagerSlotRows, MANAGER_PLAN_COLUMNS, managerPlanRowOf } from "@/lib/phoenix-crm/server/manager-plan-rows";
 import { lineProductsByFamily } from "@/lib/phoenix-crm/server/products";
@@ -130,6 +132,18 @@ async function lineProductNames(lineName: string | null | undefined): Promise<st
   return (await lineProductsByFamily(lineName)).map((entry) => entry.family);
 }
 
+/**
+ * The product families a planner may name: his seat's line, or — a product manager, who sits on no seat —
+ * every line he plans in (Pedia and Anti Infective).
+ */
+async function writerProductNames(viewer: Pick<PhoenixCrmViewer, "org">, writer: ManagerPlanWriter): Promise<string[]> {
+  const lineNames = writer.seat
+    ? [writer.seat.lineName]
+    : writer.lineCodes.map((code) => viewer.org.territories.find((seat) => seat.lineCode === code && seat.lineName)?.lineName ?? null);
+  const lists = await Promise.all(dedupeIds(lineNames.filter((name): name is string => Boolean(name))).map(lineProductNames));
+  return [...new Set(lists.flat())];
+}
+
 /** Customer names for the visits he logged on rep customers. */
 async function loadRepCustomerNames(customerIds: ReadonlyArray<string>): Promise<Map<string, { name: string; speciality: string | null }>> {
   const ids = dedupeIds(customerIds);
@@ -145,7 +159,7 @@ async function loadRepCustomerNames(customerIds: ReadonlyArray<string>): Promise
 
 /** GET: his single visits of the visit day — planned (from today's single-visit half-days) and unplanned. */
 export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<ManagerTodayView> {
-  const seat = assertManagerPlanWriter(viewer);
+  const writer = assertManagerPlanWriter(viewer);
   const isTest = testModeFor(viewer, raw.test);
   const day = viewer.visitDay;
   const weekStart = fieldWeekStart(day);
@@ -162,7 +176,7 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
     ),
     loadManagerVisits([viewer.hrId], { from: day, to: day }, isTest),
     loadManagerCustomers(viewer.hrId, isTest),
-    lineProductNames(seat.lineName),
+    writerProductNames(viewer, writer),
   ]);
   const plan = planRows.length > 0 ? managerPlanRowOf(planRows[0]) : null;
   const slots = plan ? (await loadManagerSlotRows([plan.planId])).filter((slot) => slot.date === day && slot.kind === "single_visit") : [];
@@ -221,7 +235,7 @@ function productsOf(value: unknown): string[] {
  * own list. One visit per customer and day: a second save answers that it is already logged.
  */
 export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise<ManagerTodayView> {
-  const seat = assertManagerPlanWriter(viewer);
+  const writer = assertManagerPlanWriter(viewer);
   const body = record(raw);
   const isTest = testModeFor(viewer, body.test);
   const clientRef = typeof body.clientRef === "string" ? body.clientRef.trim() : "";
@@ -234,14 +248,15 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
   if (comment && comment.length > MANAGER_VISIT_COMMENT_MAX) throw validationError(`Keep the comment under ${MANAGER_VISIT_COMMENT_MAX} characters.`);
   const products = productsOf(body.products);
   if (products.length > 0) {
-    const allowed = new Set(await lineProductNames(seat.lineName));
+    const allowed = new Set(await writerProductNames(viewer, writer));
     if (products.some((product) => !allowed.has(product))) throw validationError("Choose the products from your line's products. Reload the page.");
   }
   const day = viewer.visitDay;
 
-  // Whose customer: a rep's of his district, or one of his own list — in his world.
+  // Whose customer: a rep's of a district he plans in, or one of his own list — in his world.
+  let customerLineCode: string | null = null;
   if (customerId) {
-    const district = new Set(managerDistrictSeats(viewer, viewer.hrId).map((entry) => entry.seatId));
+    const district = new Set((await managerWriterReach(viewer, writer)).map((entry) => entry.seatId));
     const rows = await fetchAllRowsKeyset<Row>(
       () => getSupabaseAdmin().from("phoenix_crm_customers").select("id, seat_id, status, is_test").eq("id", customerId),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
@@ -250,7 +265,10 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
     if (!row || row.is_test !== isTest || (row.status !== "active" && row.status !== "pending")) {
       throw notFoundError("This customer is no longer on the list. Reload the page.");
     }
-    if (!district.has(String(row.seat_id ?? ""))) throw forbiddenError("Log a visit to a customer of your own district.");
+    if (!district.has(String(row.seat_id ?? ""))) {
+      throw forbiddenError(writer.kind === "dm" ? "Log a visit to a customer of your own district." : "Log a visit to a customer of a district you plan in.");
+    }
+    customerLineCode = viewer.org.seats.get(String(row.seat_id))?.lineCode ?? null;
   } else if (managerCustomerId) {
     const own = await loadManagerCustomerRow(managerCustomerId);
     if (!own || own.managerHrId !== viewer.hrId || own.isTest !== isTest || own.status === "removed") {
@@ -300,8 +318,9 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
     .from("phoenix_crm_manager_visits")
     .insert({
       manager_hr_id: viewer.hrId,
-      manager_seat_id: seat.seatId,
-      line_code: seat.lineCode,
+      // A product manager sits on no seat: his visit carries the line of the customer's territory.
+      manager_seat_id: writer.seat?.seatId ?? null,
+      line_code: writer.seat?.lineCode ?? customerLineCode,
       plan_slot_id: slotId,
       is_unplanned: slotId === null,
       visit_date: day,

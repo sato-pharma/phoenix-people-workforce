@@ -45,6 +45,8 @@ import {
   type ScopeBasis,
 } from "@/lib/phoenix-crm/scope";
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
+import { PRODUCT_MANAGER_PLAN_ROLES } from "@/lib/phoenix-crm/manager-plan-rules";
+import { loadProductManagerRoster, type ProductManagerPlanner } from "@/lib/phoenix-crm/server/manager-plan-writers";
 import { PHOENIX_CRM_ADMINISTRATOR_HR_ID, type PlanEditStage } from "@/lib/phoenix-crm/plan-edit-rules";
 import { isVisitAskAskableRole } from "@/lib/phoenix-crm/visit-ask-rules";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
@@ -89,6 +91,14 @@ export type PhoenixCrmViewer = {
    */
   waitingScopeTerritories: OrgSeat[];
   managerSeats: OrgSeat[];
+  /**
+   * He plans a manager's week as a product manager (owner, 2026-10-17): the Product Manager or Group
+   * Product Manager role, held by a current employee. A product manager sits on no seat, so the organogram
+   * cannot answer this.
+   */
+  plansAsProductManager: boolean;
+  /** Every product manager who plans a week here, with the manager his HR record names — the readers' half. */
+  productManagers: ReadonlyArray<ProductManagerPlanner>;
 };
 
 const COMPANY_ROLES = new Set<PhoenixRole>(["Super Admin", "CEO", "SFE Manager"]);
@@ -105,12 +115,13 @@ export const resolvePhoenixCrmViewer = cache(buildPhoenixCrmViewer);
 async function buildPhoenixCrmViewer(access: AccessContext): Promise<PhoenixCrmViewer> {
   const hrId = personKey(access.hrId);
   if (!hrId) throw forbiddenError("Your account is not linked to an HR record.");
-  const [org, config, canCreate, canApprove, canUpdate] = await Promise.all([
+  const [org, config, canCreate, canApprove, canUpdate, productManagers] = await Promise.all([
     loadPhoenixCrmOrg(),
     loadPhoenixCrmConfig(),
     canAccess(access, "phoenix_crm", "create"),
     canAccess(access, "phoenix_crm", "approve"),
     canAccess(access, "phoenix_crm", "update"),
+    loadProductManagerRoster(),
   ]);
   const cairoToday = currentCairoDateOnlyIso();
   const openLines = openLineCodes(config.lineRollout, cairoToday);
@@ -141,6 +152,11 @@ async function buildPhoenixCrmViewer(access: AccessContext): Promise<PhoenixCrmV
     scopeTerritories: isSuperAdmin ? scope : scope.filter(isOpen),
     waitingScopeTerritories: isSuperAdmin ? [] : scope.filter((seat) => !isOpen(seat)),
     managerSeats: heldManagerSeats(org, hrId),
+    // A test account mirrors a current product manager, so its role is enough; a real login also needs a
+    // current HR record — a resigned product manager's login can still be active.
+    plansAsProductManager:
+      PRODUCT_MANAGER_PLAN_ROLES.has(access.role) && (Boolean(access.testPersona) || productManagers.some((entry) => entry.hrId === hrId)),
+    productManagers,
   };
 }
 

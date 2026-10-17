@@ -10,14 +10,14 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST = taking a customer off his own list, approved or refused. `approve`, narrowed in the service to the
-// approver stored on the ask, or the Administrator in his place.
+// POST = taking a customer off his own list, approved or refused. `read`, narrowed in the service to the
+// approver stored on the ask for its step (`managerAskDeciderRole`), or the Administrator in his place.
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "phoenix_crm", "approve");
+    await assertPermission(access, "phoenix_crm", "read");
     const viewer = await resolvePhoenixCrmViewer(access);
     const body = (await request.json()) as unknown;
     const customer = await decideManagerCustomerRemoval(viewer, body);
