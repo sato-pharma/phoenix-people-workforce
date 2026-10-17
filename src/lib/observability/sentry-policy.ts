@@ -1,4 +1,5 @@
-// Where Sentry (sentry.io) may run, and what may leave in an event. Pure and import-free on purpose:
+// Where Sentry (sentry.io) may run, and what may leave in an event. Pure on purpose (its one import is another
+// zero-import module, error-monitor/supabase-unreachable.ts):
 // instrumentation.ts is bundled for BOTH runtimes and imports this statically, so nothing here may pull
 // in the SDK, a Node module or the Supabase stack. The SDK itself lives in sentry-server.ts (loaded
 // dynamically, only when this file says yes) and sentry-client.ts (same, in the browser).
@@ -9,6 +10,13 @@
 // looked like production (APP_ENV unset, 2026-08). `APP_ENV` must be literally `production`, AND the
 // DSN must be present: a staging service that never receives the variables is off by construction, and a
 // staging service that somehow did receive them is still off because its APP_ENV is not `production`.
+
+import {
+  SUPABASE_UNREACHABLE_FINGERPRINT,
+  SUPABASE_UNREACHABLE_TITLE,
+  classifySupabaseUnreachable,
+  type SupabaseUnreachable,
+} from "@/lib/error-monitor/supabase-unreachable";
 
 export const SENTRY_ENVIRONMENT = "production";
 
@@ -67,6 +75,12 @@ export type ScrubbableSentryEvent = {
     query_string?: unknown;
   };
   user?: unknown;
+  // What a Supabase outage page is renamed through (see `foldSupabaseUnreachable`).
+  message?: unknown;
+  logentry?: { message?: unknown };
+  exception?: { values?: Array<{ type?: unknown; value?: unknown }> };
+  fingerprint?: string[];
+  tags?: Record<string, unknown>;
 };
 
 // Headers that identify a session or a person. Phoenix's session cookie, the dev-auth role headers and
@@ -93,7 +107,41 @@ export function scrubSentryEvent<T extends ScrubbableSentryEvent>(event: T): T {
       }
     }
   }
+  foldSupabaseUnreachable(scrubbable);
   return event;
+}
+
+/**
+ * A Supabase outage is ONE issue, named "Supabase unreachable" (owner, 2026-10-17, after a single restart filed
+ * four). Cloudflare answers for the database with an HTML page, and Sentry would otherwise title an issue with
+ * that page and split it by route and by stack. On a match the event gets one fingerprint, a readable type and
+ * value, and the code as a tag; the page itself is replaced, not kept. An event that is not that page is not
+ * touched at all, and nothing is ever dropped.
+ */
+function foldSupabaseUnreachable(event: ScrubbableSentryEvent): void {
+  const chain = event.exception?.values;
+  const values = Array.isArray(chain) ? chain : [];
+  let found: SupabaseUnreachable | null = null;
+  for (const entry of values) {
+    const match = classifySupabaseUnreachable(entry?.value);
+    if (!match) continue;
+    found ??= match;
+    entry.type = SUPABASE_UNREACHABLE_TITLE;
+    entry.value = match.summary;
+  }
+  const fromMessage = classifySupabaseUnreachable(event.message);
+  if (fromMessage) {
+    found ??= fromMessage;
+    event.message = fromMessage.line;
+  }
+  const fromLogEntry = classifySupabaseUnreachable(event.logentry?.message);
+  if (fromLogEntry && event.logentry) {
+    found ??= fromLogEntry;
+    event.logentry.message = fromLogEntry.line;
+  }
+  if (!found) return;
+  event.fingerprint = [...SUPABASE_UNREACHABLE_FINGERPRINT];
+  event.tags = { ...event.tags, supabase_edge_status: String(found.status) };
 }
 
 // ──────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -240,7 +288,11 @@ const SENSITIVE_LOG_KEY = /(email|name|phone|salary|wage|amount|token|cookie|aut
 
 /** `beforeSendLog`: the message is scrubbed like a span name, a sensitive attribute is dropped, the rest is scrubbed. */
 export function scrubSentryLog<T extends { message: unknown; attributes?: AttributeBag }>(log: T): T {
-  if (typeof log.message === "string") (log as { message: unknown }).message = scrubSentryText(log.message);
+  if (typeof log.message === "string") {
+    // A console line that carries the whole Cloudflare page becomes the one readable line, not a megabyte of markup.
+    const outage = classifySupabaseUnreachable(log.message);
+    (log as { message: unknown }).message = scrubSentryText(outage ? outage.line : log.message);
+  }
   const attributes = log.attributes;
   if (attributes) {
     for (const key of Object.keys(attributes)) {
