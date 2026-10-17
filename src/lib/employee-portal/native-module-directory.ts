@@ -88,6 +88,7 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/organogram": { icon: "business-outline", section: "My Workspace" },
   "/employee-portals/employee-360": { icon: "id-card-outline", section: "My Workspace" },
   "/employee-portals/business-cards": { icon: "id-card-outline", section: "Social" },
+  "/employee-portals/email-signature": { icon: "mail-outline", section: "Social" },
   "/employee-portals/milestones": { icon: "ribbon-outline", section: "Social" },
   "/employee-portals/business-review": { icon: "analytics-outline", section: "My Workspace" },
   "/employee-portals/plans": { icon: "calendar-outline", section: "My Workspace" },
