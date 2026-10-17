@@ -38,7 +38,7 @@ import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-s
 import { CrmSurfaceProvider } from "@/components/phoenix-crm/surface";
 import { cn } from "@/lib/utils";
 import { CrmButton, CrmCheck, CrmField, CrmPill, CrmSearchField, CrmSelect } from "@/components/phoenix-crm/ui";
-import { PlaceCheckScorecard } from "@/components/phoenix-crm/place-check-scorecard";
+import { PlaceCheckScorecard, type ScoreTarget } from "@/components/phoenix-crm/place-check-scorecard";
 import { ReopenedCustomerList } from "@/components/phoenix-crm/reopened-customer-list";
 import { PlaceMatchBoardView } from "@/components/phoenix-crm/place-match-board";
 import { SharedPlaceList } from "@/components/phoenix-crm/shared-place-list";
@@ -124,6 +124,24 @@ function chipTakes(chip: UnconfirmedChip, row: ValidatedPlaceRow): boolean {
   if (row.reviewed) return false;
   const standing = standingOfPlaceInUse(row);
   return chip === "open" ? standing !== "confirmed" : standing === chip;
+}
+
+/**
+ * Where a scorecard count's own rows are (owner, 2026-10-17: "make me see what is the unreadable — the
+ * photos"): a photo problem or a sign never read is that standing's narrowing of Not confirmed, a place
+ * waiting is Needs you, a customer sent back is History, and the timetable count is the buildings.
+ */
+function placeOfTarget(target: ScoreTarget): { view: PlaceCheckView; chip: UnconfirmedChip | null } {
+  switch (target) {
+    case "waiting":
+      return { view: "needs", chip: null };
+    case "sentBack":
+      return { view: "history", chip: null };
+    case "timetable":
+      return { view: "polyclinics", chip: null };
+    default:
+      return { view: "unconfirmed", chip: target };
+  }
 }
 
 /** A row the shared filters can read, for a reopened customer who has no place on file any more. */
@@ -279,6 +297,20 @@ export function ValidationReviewsBoard({
     [clinicValidated, filters, cutoff],
   );
   const filteredValidated = useMemo(() => inUse.filter((row) => chipTakes(chip, row)), [inUse, chip]);
+  // 🔴 THE SCORECARD COUNTS A CUSTOMER SEATED IN A POLYCLINIC TOO, AND THIS LIST IS THE SINGLE CLINICS — so
+  // a count tapped through to here can hold more than the list shows. Those customers' photo is their
+  // building's one timetable, drawn once on its card, so they are named and pointed to, never repeated.
+  const seatedInChip = useMemo(() => {
+    const clinics = new Set(clinicValidated.map((row) => row.placeId));
+    return validated.filter(
+      (row) =>
+        !clinics.has(row.placeId) &&
+        chipTakes(chip, row) &&
+        validatedPassesOutcome(row, filters.outcome) &&
+        matchesValidationReviewFilters(row, filters) &&
+        withinValidationReviewPeriod(row.validatedAt, cutoff),
+    ).length;
+  }, [validated, clinicValidated, chip, filters, cutoff]);
   const filteredReopened = useMemo(
     () =>
       clinicReopened.filter(
@@ -360,6 +392,15 @@ export function ValidationReviewsBoard({
   const selectView = (key: PlaceCheckView) => {
     setView(key);
     if (key === "samePlace") setSamePlaceOpened(true);
+  };
+  // A tapped count opens exactly its rows: that rep (or every rep), the tab and narrowing that hold them,
+  // and every outcome — the scorecard never reads the outcome selector, so its counts would not match.
+  const openScore = (rep: string, target: ScoreTarget) => {
+    const place = placeOfTarget(target);
+    setFilters((current) => ({ ...current, rep, outcome: "all" }));
+    if (place.chip) setChip(place.chip);
+    selectView(place.view);
+    window.setTimeout(() => document.getElementById(`vr-tab-${place.view}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
   const moveTab = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const last = tabs.length - 1;
@@ -481,6 +522,7 @@ export function ValidationReviewsBoard({
 
         <PlaceCheckScorecard
           mode={mode}
+          onOpen={openScore}
           onPickRep={(rep) => set("rep", rep)}
           pickedRep={filters.rep}
           reps={scorecard.reps}
@@ -590,6 +632,17 @@ export function ValidationReviewsBoard({
                 );
               })}
             </div>
+            {seatedInChip > 0 ? (
+              <div className="flex min-w-0 flex-wrap items-center gap-3 border-l-4 border-orange-500 bg-white px-4 py-3">
+                <p className="min-w-0 flex-1 basis-60 break-words text-sm text-slate-700">
+                  {seatedInChip} more {seatedInChip === 1 ? "is a customer" : "are customers"} seated in a polyclinic. Their photo is the
+                  building&apos;s timetable, shown once on its card.
+                </p>
+                <CrmButton onClick={() => selectView("polyclinics")} size="sm">
+                  Open Polyclinics and hospitals
+                </CrmButton>
+              </div>
+            ) : null}
             {showValidated ? (
               <AdminTableShell
                 title={`${CHIP_TITLES[chip]} (${filteredValidated.length})`}
