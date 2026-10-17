@@ -96,6 +96,12 @@ export function captureClientErrorInSentry(report: SentryClientReport): void {
     const productionHost = new URL(systemDeployment.productionUrl).hostname;
     if (!sentryClientStatus({ dsn, hostname: window.location.hostname, productionHost }).enabled) return;
     if (isBrowserNoiseMessage(describeThrown(report.error))) return;
+    // A production server-render failure reaches the browser as Next's opaque placeholder with a
+    // digest only. The server already reported the real error through onRequestError, so a browser
+    // copy is a duplicate with no cause in it (PHOENIX-WORKFORCE-9).
+    if (report.digest && describeThrown(report.error).includes("An error occurred in the Server Components render")) {
+      return;
+    }
 
     void loadSdk(dsn as string).then((Sentry) => {
       if (!Sentry) return;

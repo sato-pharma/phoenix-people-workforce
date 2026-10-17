@@ -51,6 +51,43 @@ function isLocalDevelopment() {
   return process.env.NODE_ENV === "development";
 }
 
+const SESSION_BUNDLE_RETRY_DELAY_MS = 500;
+
+/** Gateway / edge statuses that mean the request never got a real answer from PostgREST. */
+const TRANSIENT_BUNDLE_STATUSES = new Set([502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 530]);
+
+type BundleSettled =
+  | { ok: true; value: { error: unknown; status?: number } }
+  | { ok: false; error: unknown };
+
+/**
+ * True when the session bundle call failed for an infrastructure reason rather than a database
+ * verdict: a thrown transport error, a client-side timeout, or an edge/gateway answer. postgrest-js
+ * reports both a timed-out fetch ("AbortError: Supabase request timed out.") and a non-JSON edge page
+ * as an error with an EMPTY code; every real PostgREST/Postgres error carries one (PGRST…, 42…, …).
+ */
+function isTransientBundleFailure(settled: BundleSettled): boolean {
+  if (!settled.ok) return true;
+  const error = settled.value.error;
+  if (!error) return false;
+  if (typeof settled.value.status === "number" && TRANSIENT_BUNDLE_STATUSES.has(settled.value.status)) return true;
+  const record = typeof error === "object" ? (error as Record<string, unknown>) : {};
+  const code = typeof record.code === "string" ? record.code.trim() : "";
+  const message = typeof record.message === "string" ? record.message.toLowerCase() : String(error).toLowerCase();
+  return code === "" || message.includes("timed out") || message.includes("<!doctype html");
+}
+
+/** A short, non-identifying description of a bundle failure for the log line. */
+function describeBundleFailure(error: unknown): string {
+  const message =
+    error instanceof Error
+      ? `${error.name}: ${error.message}`
+      : typeof error === "object" && error !== null && typeof (error as { message?: unknown }).message === "string"
+        ? String((error as { message: string }).message)
+        : String(error);
+  return message.toLowerCase().includes("<!doctype html") ? "edge error page (html)" : message.slice(0, 200);
+}
+
 function isLocalHostname(value: string | null | undefined) {
   const hostname = String(value ?? "")
     .trim()
@@ -325,18 +362,38 @@ export async function resolveSessionState(
   // the same expression effectiveHrId uses below. Handing it the token's hr_id as a fallback
   // made the two keys disagree on 203 of 823 real production sessions (admin accounts whose
   // app_auth_users.hr_id is NULL) for no change in the decision -- see the migration.
-  const bundleSettled = await supabase
-    .rpc("phx_auth_session_bundle", {
-      p_sid: payload.sid,
-      p_login_id: payload.loginId,
-    })
-    .then(
-      (value) => ({ ok: true as const, value }),
-      (error: unknown) => ({ ok: false as const, error }),
-    );
+  const callBundle = () =>
+    supabase
+      .rpc("phx_auth_session_bundle", {
+        p_sid: payload.sid,
+        p_login_id: payload.loginId,
+      })
+      .then(
+        (value) => ({ ok: true as const, value }),
+        (error: unknown) => ({ ok: false as const, error }),
+      );
 
-  // A thrown transport error propagates exactly as the app_sessions read's did: first, before
-  // any other check. A PostgREST-level error on the call is thrown for the same reason.
+  // A TRANSIENT failure (timeout, transport error, Cloudflare edge page) is retried ONCE — the RPC
+  // is read-only, so a repeat is safe. If it still fails, it is raised as
+  // SessionVerificationUnavailableError rather than the raw PostgREST error object: "could not
+  // reach the database" is not a verdict on the session (see that class), and a plain object
+  // thrown into a server render surfaced only as Next's opaque digest error (PHOENIX-WORKFORCE-9,
+  // 2026-10-17: field-crm renders failing with "Supabase request timed out.").
+  let bundleSettled = await callBundle();
+  if (isTransientBundleFailure(bundleSettled)) {
+    await new Promise((resolve) => setTimeout(resolve, SESSION_BUNDLE_RETRY_DELAY_MS));
+    bundleSettled = await callBundle();
+  }
+  if (isTransientBundleFailure(bundleSettled)) {
+    const cause = bundleSettled.ok ? bundleSettled.value.error : bundleSettled.error;
+    logError("Session verification unavailable — session bundle could not be read", {
+      labels: { event: "session_verification_unavailable", loginId: payload.loginId },
+      context: { sessionId: payload.sid, reason: describeBundleFailure(cause) },
+    });
+    throw new SessionVerificationUnavailableError({ cause });
+  }
+
+  // A non-transient PostgREST-level error is still thrown first, before any other check.
   if (!bundleSettled.ok) throw bundleSettled.error;
   if (bundleSettled.value.error) throw bundleSettled.value.error;
   const bundle = parseAuthSessionBundle(bundleSettled.value.data);

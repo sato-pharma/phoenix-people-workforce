@@ -1218,8 +1218,29 @@ GC-looping, i.e. HALF of all CPU actually in use. That one server ending took th
 **626 MB free / 52% CPU to 4,782 MB / 15%**. The same server on the box costs this laptop **12 MB
 and no measurable CPU** — an ssh tunnel, nothing more.
 
-The owner starts it with `phx-preview [branch]` (`~/.claude/scripts/phx-preview.ps1`, aliased in his
-PowerShell profile, `-Stop` to end it); a session ASKS HIM to run it instead of starting a local
+🔴 **`phx-preview` IS RETIRED — 2026-10-17, owner: *"make phx-live work like pnpm run dev by default
+and retire phx-preview"*.** He wanted ONE thing exactly like his old `pnpm run dev`, not two. The box
+look now goes through **`phx-live`** (next section), and `phx-live -Folder <worktree>` replaces
+`phx-preview <branch>`. His profile's `phx-preview` function only prints that it is retired
+(previous profile: `Microsoft.PowerShell_profile.ps1.pre-retire-phx-preview-20261017`).
+
+**Its leftovers were REMOVED the same day** (owner: *"remove the phx-preview leftovers from the
+box"*): the box's `preview-start.sh`, `preview-b.sh`, `preview-stop.sh`, `preview-sync.sh`, their
+backups and logs, `phxpreview`'s two checkouts (5 GB) and private env copy, and `phx-previews.slice`.
+Every removed script and log is in `/home/phx/retired/phx-preview-20261017.tar.gz`; the laptop's
+`phx-preview.ps1` and a copy of that archive are in `~/.claude/backups/retired-phx-preview-20261017/`.
+🔴 **KEPT because phx-live uses them — never retire these as preview leftovers:** `preview-scope.sh`
+(`live-ctl.sh` sources it for `refresh_preview_mirror` and the scope stoppers), the mirror
+`/srv/phx-preview-mirror.git`, the `phxpreview` user and group (`phxlive` reads the mirror through
+that group), `/home/phx/preview-state/`, `preview-idle-reaper.sh` with its `phx-preview-idle.timer`
+(it stops phx-live after 60 idle minutes), and `~phx/secure/.env.local` (`live-ctl.sh
+install-env-staging`). phx-live's own scope is still named `phx-preview-3100.scope`, and
+`remote-check` finds it by that name. What is lost: the STAGING-data sandbox, so a dev-auth header
+walk now runs on `phx-live -DevAuth`, against production. The paragraphs below are the record of how
+it ran.
+
+The owner started it with `phx-preview [branch]` (`~/.claude/scripts/phx-preview.ps1`, aliased in his
+PowerShell profile, `-Stop` to end it); a session ASKED HIM to run it instead of starting a local
 server.
 
 **It serves PUSHED branches only** — the box clones from GitHub and cannot see uncommitted edits, so
@@ -1236,10 +1257,22 @@ Telegram or OpenAI.
 **What it is for** (owner, 2026-10-12): the old `pnpm run dev` in the main folder — edit, see it
 live before the merge, and use `/admin/dev-preview` (Dev Preview — Real Data) to open the system as
 any real person — but with the server on the Hetzner box, because the local one costs ~4–6 GB and
-stalled the laptop. `phx-preview` stays as it is: pushed branches only, staging data.
+stalled the laptop. Since 2026-10-17 it is the ONLY dev server — `phx-preview` is retired (section
+above).
 
-**How it runs.** `phx-live` in his PowerShell (`~/.claude/scripts/phx-live.ps1`; `-Folder`,
+**How it runs.** `phx-live` in his PowerShell (`~/.claude/scripts/phx-live.ps1`; `-Folder`, `-Build`,
 `-DevAuth`, `-Resync`, `-Stop`, `-InstallEnv`) opens `http://localhost:3000`.
+
+🔴 **Plain `phx-live` is `next dev` — the old `pnpm run dev` — since 2026-10-17** (owner, the same
+words as the retirement above). A save shows in seconds; a page's FIRST open compiles it, measured on
+the box that morning at **31 s** (`/employee-portals/plans`), then **0.7–3.2 s** — the laptop's old
+first compile was 30–60 s. **`-Build`** is the production-build mode (`live-ctl.sh serve … fast`,
+`/opt/phx-live/live-fast.sh`): fast pages, but a save shows only after a ~3 min rebuild. It was the
+default 2026-10-16..17, chosen when `next dev` measured 2.5–3 MINUTES a page; that figure was phx-live
+sitting inside `phx-previews.slice`, whose 4.5 GB cap beat its own scope's, and it was fixed the same
+day by moving it to `phx-live.slice` (7 GB) — which is what makes `next dev` the right default again.
+`-Dev` is still accepted and does nothing; `-DevAuth` always means `next dev`. Rollback:
+`~/.claude/scripts/phx-live.ps1.pre-dev-default-20261017`.
 
 - `phx-live-sync.mjs` watches the folder and sends each saved file over ssh as `phxlive`, whose
   forced command is `/opt/phx-live/live-receiver.mjs`. The receiver refuses any path outside the
@@ -1327,7 +1360,8 @@ there is exactly one.** The owner authorised the shared-file edit on 2026-10-12 
 mirror-group guard to preview-scope.sh"); it had been refused before that as a shared-resource
 change, which left phx-preview protected only as a side effect of somebody having run phx-live.
 Sitting in `refresh_preview_mirror` covers **every** caller: `preview-start.sh` (3000),
-`preview-b.sh` (3001) and `live-ctl.sh prepare` (3100). The two `find`s end in `|| true`
+`preview-b.sh` (3001) and `live-ctl.sh prepare` (3100) — since 2026-10-17 only the last, the other
+two retired with phx-preview. The two `find`s end in `|| true`
 deliberately — each caller runs under `set -e`, and a preview that cannot be re-grouped must still
 start. Proved by break-and-watch the same evening: planting the exact defect git creates (a
 `drwxr-x--- phx:phx` object directory) left `phxpreview` unable to read it, `refresh_preview_mirror`
@@ -1348,7 +1382,7 @@ AGENTS.md loads on every request and again after every compaction, so on 2026-10
 
 - **A worktree session WRITING into the primary checkout is now denied mechanically** - `.claude/hooks/primary-write-guard.mjs`, PreToolUse on Write/Edit/NotebookEdit, live 2026-09-17. It refuses an edit into the primary or another session's worktree, never a READ; before it, that write SUCCEEDED silently and stranded the change in the shared primary. **A `_wt-<task>` this session made with `new-session.mjs` is its OWN** - edit it with Edit/Write, never a Bash write. `PHX_PRIMARY_GUARD_OFF=1` stands it down; a session in the primary never sees it.
 - **Never `pnpm install`, `pnpm run` or `pnpm exec` inside a worktree** — they purge the `node_modules` junction, and `pnpm exec` fails silent-shaped. Invoke `node scripts/…`; dev server: `node scripts/dev-server.mjs --port 3000` — it caps the server's heap at 4 GB where a raw `next dev` takes half of RAM, and refuses a second server; `bash-guard.mjs` C7 DENIES a raw `next dev` everywhere (2026-09-21). **Mechanical since 2026-09-16:** `bash-guard.mjs` C6 DENIES every pnpm form here and names the node equivalent — a deny because `Bash(pnpm run *)` and `Bash(pnpm exec *)` auto-approve it, so no prompt was ever coming.
-- 🔴 **A BROWSER LOOK AT PUSHED CODE GOES ON THE HETZNER PREVIEW BOX, NOT A LOCAL DEV SERVER** — a local `next dev` costs ~4 GB and half the CPU (measured 2026-09-30), the box costs this laptop an ssh tunnel. The owner runs `phx-preview [branch]`; a session ASKS HIM rather than starting a local server. **It serves PUSHED branches only** — read `git status --porcelain` and `git rev-list --count origin/<branch>..HEAD` FIRST and say whether the preview would show the work; a local server stays right only for uncommitted edits, a dev-auth role sweep, or local files, and is stopped as soon as the look is done. Account: `docs/agents-worktree-and-machine-limits.md`, "A browser look at pushed code goes on the Hetzner preview box".
+- 🔴 **ONE DEV SERVER: `phx-live` ON THE HETZNER BOX — `phx-preview` IS RETIRED (owner, 2026-10-17)** — a local `next dev` costs ~4 GB and half the CPU (measured 2026-09-30), the box costs this laptop an ssh tunnel. The owner runs `phx-live` (plain = `next dev` on production data, his old `pnpm run dev`; `-Folder <worktree>` for a branch); a session ASKS HIM rather than starting a local server, and never proposes `phx-preview`. A local server is only the fallback when the box is unreachable, and is stopped as soon as the look is done. Account: `docs/agents-worktree-and-machine-limits.md`, "A browser look at pushed code goes on the Hetzner preview box" and "phx-live".
 - **A dev server a SESSION opened dies with it** (`dev-server-reaper.mjs`, that one only); one you started yourself is nobody's child — **stop it by PORT, not by task:** `Get-NetTCPConnection -LocalPort 3000 -State Listen`, then `Stop-Process -Id <OwningProcess> -Force`. Only a curl of `000` proves the port is free. 🔴 **"NEVER CLOSE THE DEV UNTIL I TELL U" is now SCOPED, not repealed** (owner, 2026-09-28 — *"allow me to stop dev servers I start myself"*): one YOUR session started is yours to stop; one HE or another session started still waits for his word. **`TaskStop` does NOT free the memory** — it kills the wrapper and leaves the child holding the port. Check the PID's start time matches when you started it, and read free RAM TWICE: a compile spiked 3,056 MB → 134 MB and recovered to 1,675 MB by itself. `i-may-stop-a-dev-server-i-started-myself`
 
 ### §5 — Worktree payload, and the machine limits
