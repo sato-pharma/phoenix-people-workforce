@@ -497,6 +497,17 @@ function checkNameSpelling(): void {
   assert.equal(pm("أ.د. محمد علي", ["الأستاذ الدكتور محمد علي"]), true);
   assert.equal(pm("محمد علي", ["الاستاذة الدكتورة محمد علي"]), true);
 
+  // 6 · 🔴 A FAMILY NAME WITH AND WITHOUT ITS ال IS ONE NAME. Three clear plates the re-read of 18 Oct
+  //      2026 found unmatched, as the strong reader returned them.
+  assert.equal(pm("ايمن بدوي", ["مركز الدكتور أيمن البدوى"]), true, "البدوى on the plate is بدوي on the list");
+  assert.equal(pm("عبير الراوي", ["دكتورة عبير محمد راوي"]), true, "and the other way round");
+  assert.equal(pm("إبراهيم عفيفي", ["دكتور إبراهيم عبد الله العفيفي"]), true, "a three-word plate keeps the allowance it had");
+  //      Only the ال: a letter the reader got wrong is another name, and الله never sheds it.
+  assert.equal(pm("محمد ابو العنيين", ["مجدي أبو العينين"]), false, "مجدي is not محمد, and العينين is not العنيين");
+  assert.equal(pm("احمد البدري", ["أحمد البدوي"]), false, "البدري is not البدوي");
+  assert.equal(pm("حمدي نوفل", ["مجدي أمين نوفل"]), false, "a surname alone is not the name");
+  assert.equal(pm("علي الحج", ["علي حج"]), false, "a word left with two letters is not a name");
+
   // 5 · A facility name is untouched: its quorum is the stemmed distinctive words, as before.
   assert.equal(
     signNamesCustomer({ customerName: "مستشفى ابو كبير المركزي", listType: "AM", personNames: [], placeNames: ["مستشفى أبو كبير"], signText: null }).matches,

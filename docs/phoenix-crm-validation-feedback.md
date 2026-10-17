@@ -248,6 +248,19 @@ him to settle. The place axis is untouched — its quorum is `distinctiveWords`,
 and joining there would take the allowance off `مستشفى ابو كبير المركزي`. Pinned by
 `checkNameSpelling` in `tests/phoenix-crm-signboard-check.test.ts`, each half broken and seen to fail.
 
+**The ال of a family name (2026-10-18).** Re-reading the places the door had left unconfirmed, the
+strong reader read three plates CLEARLY in the first 153 that named the customer and were still not
+matched, because one side wrote the article and the other did not: `أيمن البدوى` for `ايمن بدوي`,
+`عبير محمد راوي` for `عبير الراوي`, `إبراهيم عبد الله العفيفي` for `إبراهيم عفيفي`. A plain word now
+answers for the same word with `ال` in front, either way round, on the PERSON axis only, and only
+where the word keeps three letters without it. A one-letter skeleton rule (the dots the reader most
+often misplaces) was scored on the same reads and REFUSED: of its three extra matches one was plainly
+another doctor — `محمد ابو العنيين` on a plate reading `مجدي أبو العينين`, the first name lost to a
+three-word name's allowance — and one, `النجار` against `البحار`, is two real surnames. Those near
+misses stay unmatched and go to the Super Admin's Approve on Not confirmed. Pinned by
+`checkNameSpelling` part 6, broken twice (the rule off; the three-letter floor lowered) and seen to fail
+on its own assertion each time.
+
 - **The refusal reason** (`validation-feedback.ts`). Six closed reasons: no signboard in the photo;
   the sign is not this customer; too dark or blurred to read; not taken at the entrance; a photo of
   paper, not a building; the location is not where the photo was taken. The free note stays on the

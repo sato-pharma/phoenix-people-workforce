@@ -277,6 +277,19 @@ function personNameWords(text: string): NameWord[] {
   return groups.map((parts) => ({ word: parts.join(""), core: parts.length > 1 ? compoundCore(parts) : null }));
 }
 
+// 🔴 A FAMILY NAME IS WRITTEN WITH AND WITHOUT ITS ال, AND THAT IS STILL ONE NAME. Re-reading the
+// places the door left unconfirmed, 18 Oct 2026, the strong reader read three plates clearly that
+// named the customer and were not matched: "أيمن البدوى" for ايمن بدوي, "عبير محمد راوي" for عبير
+// الراوي, "إبراهيم عبد الله العفيفي" for إبراهيم عفيفي. So a plain word answers for the same word
+// with ال in front, either way round. Only ال, and only on a word that keeps three letters without
+// it: a letter the reader got wrong is NOT forgiven — "محمد ابو العنيين" on a plate reading "مجدي أبو
+// العينين" is another doctor, and a guided reader handed a near-miss copied it 8 times in 40.
+
+/** A word without the ال in front of it, when what is left is still a name. */
+function withoutArticle(word: string): string {
+  return word.startsWith("ال") && word.length >= 5 ? word.slice(2) : word;
+}
+
 /** Is this word of the customer's name among the words read off one candidate? */
 function nameWordIsThere(wanted: NameWord, read: readonly NameWord[]): boolean {
   return read.some(
@@ -285,7 +298,9 @@ function nameWordIsThere(wanted: NameWord, read: readonly NameWord[]): boolean {
       // The reader dropped the head or the tail: "الله عفيفي" for عبد الله عفيفي.
       (wanted.core !== null && candidate.core === null && candidate.word === wanted.core) ||
       // The list dropped it: اسامه العيلة for a plate reading "اسامة ابراهيم ابو العيلة".
-      (wanted.core === null && candidate.core === wanted.word),
+      (wanted.core === null && candidate.core === wanted.word) ||
+      // One side wrote the ال and the other did not: البدوى on the plate, بدوي on the list.
+      (wanted.core === null && candidate.core === null && withoutArticle(candidate.word) === withoutArticle(wanted.word)),
   );
 }
 
