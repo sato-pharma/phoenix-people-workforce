@@ -1,8 +1,15 @@
 "use client";
 
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { RouteErrorState } from "@/components/ui/route-error-state";
 import { isStaleDeployChunkError, recoverFromStaleDeployOnce } from "@/lib/utils/stale-deploy-recovery";
+
+// A server-render failure (it carries a `digest`) is almost always a brief database blip — the
+// session check or a page read timing out (PHOENIX-WORKFORCE-9). Re-render ONCE per digest after a
+// short pause before showing the error card; a second failure with the same digest shows the card.
+const SERVER_RENDER_RETRY_DELAY_MS = 3000;
+const retriedDigests = new Set<string>();
 
 export default function EmployeePortalsError({
   error,
@@ -11,11 +18,24 @@ export default function EmployeePortalsError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const router = useRouter();
+
   useEffect(() => {
     if (isStaleDeployChunkError(error)) {
       recoverFromStaleDeployOnce();
+      return;
     }
-  }, [error]);
+
+    const digest = error.digest;
+    if (!digest || retriedDigests.has(digest)) return;
+    retriedDigests.add(digest);
+
+    const timer = window.setTimeout(() => {
+      router.refresh();
+      reset();
+    }, SERVER_RENDER_RETRY_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [error, reset, router]);
 
   return (
     <RouteErrorState
