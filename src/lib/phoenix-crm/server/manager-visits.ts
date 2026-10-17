@@ -25,6 +25,7 @@ import type { ManagerPlanWriter } from "@/lib/phoenix-crm/manager-plan-rules";
 import { assertManagerPlanWriter } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { managerWriterReach } from "@/lib/phoenix-crm/server/manager-plan-writers";
 import { loadManagerCustomerRow, loadManagerCustomers, type ManagerCustomerView } from "@/lib/phoenix-crm/server/manager-customers";
+import { assertSingleVisitLogFits } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
 import { loadManagerSlotCustomers, loadManagerSlotRows, MANAGER_PLAN_COLUMNS, managerPlanRowOf } from "@/lib/phoenix-crm/server/manager-plan-rows";
 import { lineProductsByFamily } from "@/lib/phoenix-crm/server/products";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -300,6 +301,12 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
     }
     slotId = slot.slotId;
     half = slot.half;
+  }
+
+  // An unplanned visit opens a half-day of single visits nobody planned, and a district manager has four of
+  // them a week at most (owner, 2026-10-17). A planned one answers a half-day the plan already holds.
+  if (slotId === null && writer.kind === "dm") {
+    await assertSingleVisitLogFits({ managerHrId: viewer.hrId, weekStart: fieldWeekStart(day), date: day, isTest });
   }
 
   let pin: Row = {};

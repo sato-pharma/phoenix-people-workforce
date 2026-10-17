@@ -79,6 +79,37 @@ export const MANAGER_SLOT_CUSTOMER_MAX = 60;
 export const MANAGER_PLAN_NOTE_MAX = 500;
 export const MANAGER_PLAN_REASON_MAX = 500;
 
+/**
+ * 🔴 A DISTRICT SALES MANAGER HAS TWO DAYS OF SINGLE VISITS A WEEK AT MOST — FOUR HALF-DAYS, ANY MIX (owner,
+ * 2026-10-17: "they cannot submit … in the same week more than two days single visits"; asked how the
+ * halves add up he answered "four halves or 2 full days"; and the limit covers the visits he logs, not only
+ * the plan). A morning on Saturday and an afternoon on Monday are one day together. It binds the district
+ * manager only — a regional, national or product manager's single visits are not limited.
+ */
+export const DM_SINGLE_VISIT_HALF_DAYS_MAX = 4;
+
+/** One half-day of one date, the unit the limit counts. */
+export function singleVisitHalfKey(date: string, half: ManagerHalf): string {
+  return `${date}|${half}`;
+}
+
+/** The half an unplanned visit falls in, from the Cairo hour it was logged: before noon is the morning. */
+export function singleVisitHalfOfHour(cairoHour: number): ManagerHalf {
+  return cairoHour < 12 ? "AM" : "PM";
+}
+
+/**
+ * Whether one more half-day of single visits fits the week. `used` holds the half-days the week already
+ * spends on them (planned ones and visits already logged); one that is among them is no new half-day.
+ * Null when it fits, else the words he is shown.
+ */
+export function dmSingleVisitCapError(used: ReadonlySet<string>, next: string, what: "plan" | "visit"): string | null {
+  if (used.has(next) || used.size < DM_SINGLE_VISIT_HALF_DAYS_MAX) return null;
+  return what === "plan"
+    ? "A district manager has two days of single visits a week at most, which is four half-days. Your week already holds four, so this half-day cannot be a single visit."
+    : "A district manager has two days of single visits a week at most, which is four half-days. Your week already holds four, so this visit cannot be logged.";
+}
+
 /** The grades he gives a customer he adds himself (owner, 2026-10-16: "A/B/C and potential grade"). */
 export const MANAGER_CUSTOMER_GRADES = ["A", "B", "C"] as const;
 export const MANAGER_CUSTOMER_POTENTIAL_GRADES = ["AA", "AB", "AC", "BA", "BB", "BC"] as const;
