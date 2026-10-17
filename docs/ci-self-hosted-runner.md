@@ -1445,7 +1445,9 @@ What survives the reversal, and is why the safety rules above are not now dead l
 `github.event_name == 'pull_request'` clause is the ONLY thing keeping `main` hosted, and `main`'s CI
 is the production deploy gate; the same-repo clause is what stops a fork PR executing arbitrary code
 on his box; and the hardware refusal stands (*"I WILL NOT BUY THIS"*, of two CPX32s at
-€70.98/month — he bought ONE box himself). The box keeps serving `phx-preview`.
+€70.98/month — he bought ONE box himself). The box keeps serving previews — since 2026-10-17 only
+`phx-live`, because he retired `phx-preview` that day (`docs/agents-worktree-and-machine-limits.md`,
+"phx-live").
 
 ## Turning it off
 
