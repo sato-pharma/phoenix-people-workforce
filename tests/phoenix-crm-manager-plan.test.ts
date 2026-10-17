@@ -10,7 +10,9 @@ import { PHOENIX_CRM_EMAIL_EVENT_TYPES, PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES } f
 import {
   ceoHrIdOf,
   countsAsPlannersVisitWithRep,
+  DM_SINGLE_VISIT_HALF_DAYS_MAX,
   dmPlansInPhoenixCrmFor,
+  dmSingleVisitCapError,
   flagManagerCustomer,
   halfOfListType,
   isManagerDayOpen,
@@ -30,6 +32,8 @@ import {
   PRODUCT_MANAGER_PLAN_LINES,
   PRODUCT_MANAGER_PLAN_ROLES,
   seniorPlanSeats,
+  singleVisitHalfKey,
+  singleVisitHalfOfHour,
   managerPlanStatusLine,
   managerPlanSummaryText,
   managerPlanWeeks,
@@ -1041,6 +1045,30 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(board, /function ScopePicker\(/, "the board picks the district manager first");
   assert.match(board, /Another district manager for this half/, "once per day, a half on request");
   assert.match(board, /Once it is approved, HR acknowledges it automatically\./, "the send step names HR's automatic acknowledgement");
+
+  // ── A district manager's single visits: two days a week, four half-days (owner, 2026-10-17) ───
+
+  assert.equal(DM_SINGLE_VISIT_HALF_DAYS_MAX, 4, "two full days of single visits a week are four half-days");
+  const fourUsed = new Set([
+    singleVisitHalfKey("2026-10-24", "AM"),
+    singleVisitHalfKey("2026-10-24", "PM"),
+    singleVisitHalfKey("2026-10-26", "AM"),
+    singleVisitHalfKey("2026-10-28", "AM"),
+  ]);
+  assert.equal(dmSingleVisitCapError(new Set(), singleVisitHalfKey("2026-10-24", "AM"), "plan"), null, "an empty week takes one");
+  assert.equal(dmSingleVisitCapError(new Set([...fourUsed].slice(0, 3)), singleVisitHalfKey("2026-10-29", "AM"), "plan"), null, "the fourth half-day still fits");
+  assert.match(dmSingleVisitCapError(fourUsed, singleVisitHalfKey("2026-10-29", "AM"), "plan") ?? "", /four half-days/, "the fifth half-day is refused");
+  assert.match(dmSingleVisitCapError(fourUsed, singleVisitHalfKey("2026-10-27", "PM"), "visit") ?? "", /cannot be logged/, "a visit that opens a fifth half-day is refused");
+  assert.equal(dmSingleVisitCapError(fourUsed, singleVisitHalfKey("2026-10-26", "AM"), "visit"), null, "a half-day the week already spends on single visits is no new one");
+  assert.equal(singleVisitHalfOfHour(11), "AM", "before noon is the morning");
+  assert.equal(singleVisitHalfOfHour(12), "PM", "from noon is the afternoon");
+  assert.equal(/\b(he|his|him|doctors?|accounts?)\b/i.test(dmSingleVisitCapError(fourUsed, "x|AM", "plan") ?? ""), false, "the words say you and customers, never he or doctors");
+
+  const capSource = source("src/lib/phoenix-crm/server/manager-single-visit-cap.ts");
+  assert.match(functionBody(source("src/lib/phoenix-crm/server/manager-plans.ts"), "export async function saveManagerPlanSlot("), /draft\.kind === "single_visit" && own\) \{\s*await assertSingleVisitPlanFits\(/, "a district manager's plan save asks the limit");
+  assert.match(functionBody(source("src/lib/phoenix-crm/server/manager-visits.ts"), "export async function logManagerVisit("), /slotId === null && writer\.kind === "dm"\) \{\s*await assertSingleVisitLogFits\(/, "an unplanned visit he logs asks the limit");
+  assert.match(capSource, /\.from\("phoenix_crm_manager_visits"\)[\s\S]*singleVisitHalfOfHour\(cairoHourOf\(visit\.created_at\)\)/, "the visits he logged count, an unplanned one by the Cairo half it was logged in");
+  assert.match(capSource, /slot\.kind === "single_visit"\) used\.add/, "the single-visit half-days of his plan count");
 
   // ── The words on his screens ─────────────────────────────────────────────────────────────────
 

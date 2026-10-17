@@ -158,6 +158,25 @@ The report is read by:
 
 A rep can never read it.
 
+## The district manager's single-visit limit
+
+Owner, 2026-10-17: a district sales manager may not submit more than two days of single visits in a week,
+counted as **four half-days in any mix** (his answer to how the halves add up was "four halves or 2 full
+days"), and the limit covers **the visits he logs** as well as his plan.
+
+- **Planning.** `saveManagerPlanSlot` refuses a Single visit half when the week already holds four other
+  single-visit half-days. Re-saving a half he already planned as a single visit is no new half-day.
+- **Logging.** `logManagerVisit` refuses an unplanned visit that would open a fifth half-day. A planned
+  visit answers a half-day the plan already holds, so it is never refused. An unplanned visit falls in the
+  morning or the afternoon of the Cairo time it was logged, before noon being the morning.
+- **Who.** The district manager only. A regional, national or product manager's single visits are not
+  limited.
+- **On screen.** The Single visit part tells a district manager the limit and how many of the four
+  half-days the week holds.
+- **Where it lives.** `server/manager-single-visit-cap.ts` counts; the rule is
+  `dmSingleVisitCapError` in `manager-plan-rules.ts`. There is no database constraint, so two saves sent
+  at the same instant could both pass the count.
+
 ## Screens outside Phoenix CRM
 
 Six readers showed a DM's legacy plan. Each now reads his Phoenix CRM week through the one adapter,
