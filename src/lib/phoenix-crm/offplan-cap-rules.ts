@@ -29,7 +29,17 @@ export type OffPlanAllowance = {
   dayDoctors: string[];
   /** The doctors already counted in the week: they stay open to him once `week` is full. */
   weekDoctors: string[];
+  /**
+   * The customers that fall under a named exception (owner, 2026-10-17: Mostafa Mahmoud Mohamed Ali at مستشفي
+   * الجوي التخصصي) — the day and the week never block them and never count them. Absent means none.
+   */
+  exemptCustomerIds?: string[];
+  /** The exception's own names, for the one sentence that tells him — "no daily or weekly limit at <venue>". */
+  exemptLabels?: string[];
 };
+
+/** The customers a seat's named exceptions cover, and what they are called. */
+export type OffPlanExemptions = { customerIds: string[]; labels: string[] };
 
 /** The two numbers, as the settings carry them. */
 export type OffPlanCaps = { offPlanDailyCap: number; offPlanWeeklyCap: number };
@@ -46,7 +56,12 @@ export function offPlanWeekWindow(isoDay: string): { from: string; to: string } 
 }
 
 /** The rep's allowance on a visit day, from the out-of-plan rows of his week. */
-export function offPlanAllowance(input: { rows: ReadonlyArray<OffPlanRow>; day: string; caps: OffPlanCaps }): OffPlanAllowance {
+export function offPlanAllowance(input: {
+  rows: ReadonlyArray<OffPlanRow>;
+  day: string;
+  caps: OffPlanCaps;
+  exemptions?: OffPlanExemptions;
+}): OffPlanAllowance {
   const week = fieldWeekStart(input.day);
   const dayDoctors = new Set<string>();
   const weekDoctors = new Set<string>();
@@ -60,6 +75,9 @@ export function offPlanAllowance(input: { rows: ReadonlyArray<OffPlanRow>; day: 
     week: { used: weekDoctors.size, cap: input.caps.offPlanWeeklyCap },
     dayDoctors: [...dayDoctors],
     weekDoctors: [...weekDoctors],
+    ...(input.exemptions && input.exemptions.customerIds.length > 0
+      ? { exemptCustomerIds: input.exemptions.customerIds, exemptLabels: input.exemptions.labels }
+      : {}),
   };
 }
 
@@ -91,6 +109,7 @@ export function offPlanStandingKey(seatId: string, day: string): string {
 
 /** Why this doctor cannot be taken out of plan now: the day is full, or the week is and he is not in it. */
 export function offPlanBlock(allowance: OffPlanAllowance, customerId: string): "day" | "week" | null {
+  if (allowance.exemptCustomerIds?.includes(customerId)) return null;
   if (allowance.dayDoctors.includes(customerId)) return null;
   if (allowance.day.used >= allowance.day.cap) return "day";
   if (allowance.week.used >= allowance.week.cap && !allowance.weekDoctors.includes(customerId)) return "week";
@@ -127,6 +146,20 @@ export function offPlanAllowanceSentence(allowance: OffPlanAllowance, voice: "re
   }
   return `${voice === "rep" ? "You" : "The rep"} can take ${customers(dayLeft)} more out of plan today.`;
 }
+
+/**
+ * The one line that tells the rep, and the card that shows it, about a named exception — nothing when he
+ * has none. An allowance he is given, never a check on him (golden rule #1).
+ */
+export function offPlanExemptionSentence(allowance: OffPlanAllowance): string | null {
+  const labels = allowance.exemptLabels ?? [];
+  if (labels.length === 0) return null;
+  return `At ${labels.join(" and ")} there is no daily or weekly limit on unplanned visits. They do not use up your numbers above.`;
+}
+
+/** What a manager reads on an off-plan visit that fell under a named exception. */
+export const OFF_PLAN_EXEMPT_CARD_TEXT =
+  "Hospital exception: the owner lifted the daily and weekly out-of-plan limit for this rep at this hospital. Decide it as usual.";
 
 /** What a manager reads beside a rep's off-plan day: "Out of plan that day 2 of 2 · that week 5 of 8". */
 export function offPlanStandingLine(standing: OffPlanStanding): string {

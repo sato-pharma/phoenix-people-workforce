@@ -100,7 +100,7 @@ import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
 import { ensureReferenceCustomers, loadListedPharmacies, loadMonthVisitCounts, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPlannedOtherDays } from "@/lib/phoenix-crm/server/offplan-day";
-import { loadOffPlanRows } from "@/lib/phoenix-crm/server/offplan-cap";
+import { loadOffPlanExemptions, loadOffPlanRows } from "@/lib/phoenix-crm/server/offplan-cap";
 import { offPlanAllowance, offPlanWeekWindow, type OffPlanAllowance } from "@/lib/phoenix-crm/offplan-cap-rules";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS } from "@/lib/phoenix-crm/server/plan-day-status";
@@ -977,6 +977,8 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     // The days the LAST question may offer (owner, 2026-10-16): only a rep's own entry asks it, so a
     // manager's form never pays for the holiday read.
     enteredAs === "rep" ? loadPlanHolidays(viewer.cairoToday, visitAskLastDay(viewer.cairoToday)) : Promise.resolve(new Map<string, string>()),
+    // The customers a named exception covers (owner, 2026-10-17): the day and the week never block them.
+    loadOffPlanExemptions(seat.seatId),
   ]);
   // Handled at once: if the mint fails, `await ensured` below throws its error and the wave is dropped.
   wave.catch(() => undefined);
@@ -995,6 +997,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     offPlanRows,
     recordingRequired,
     doubleVisitHolidays,
+    offPlanExemptions,
   ] = await wave;
   // The SENT set, and only it, is what the picker offers and what the ordering follows — a draft is the
   // rep's own to edit today, so counting one would let him place the doctor at the door and never be off
@@ -1094,7 +1097,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     todayVisits: visitRows.map((row) => mapVisitRow(row, names, { sight, org: viewer.org, productManagerRoles })),
     planToday: { status: planDay.status, saved: planDay.customerIds.length },
     blockedReason,
-    offPlan: offPlanAllowance({ rows: offPlanRows, day: today, caps: settings }),
+    offPlan: offPlanAllowance({ rows: offPlanRows, day: today, caps: settings, exemptions: offPlanExemptions }),
     recordingRequired,
     doubleVisitDays: enteredAs === "rep" ? doubleVisitDayChoices(viewer.cairoToday, doubleVisitHolidays) : [],
   });
