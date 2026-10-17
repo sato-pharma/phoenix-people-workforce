@@ -3,6 +3,7 @@ import { assertPermission, hrIdsMatch, normalizeHrIdForAccess } from "@/lib/auth
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { loadManagerPlanHalfDays, managerHalfDayText, managerPlanLegacyStatus } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { monthBounds, rangesOverlap, buildMonthGrid } from "@/lib/calendar/logic";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
@@ -269,7 +270,13 @@ async function loadHolidayItems(year: number, month: number, start: string, end:
   }
 }
 
-async function loadSubmittedPlanItems(start: string, end: string): Promise<{
+/** The legacy plans' items and the district managers' Phoenix CRM half-days, read side by side. */
+async function loadSubmittedPlanItems(start: string, end: string): ReturnType<typeof loadLegacySubmittedPlanItems> {
+  const [legacy, halfDays] = await Promise.all([loadLegacySubmittedPlanItems(start, end), readManagerPlanHalfDays(start, end)]);
+  return { ...legacy, items: [...legacy.items, ...managerPlanCalendarItems(halfDays, legacy.directoryByHrId)] };
+}
+
+async function loadLegacySubmittedPlanItems(start: string, end: string): Promise<{
   directoryByHrId: Map<string, EmployeeDirectoryRow>;
   hasMoreHeaders: boolean;
   hasMoreItems: boolean;
@@ -390,6 +397,70 @@ async function loadSubmittedPlanItems(start: string, end: string): Promise<{
     loadedHeaderCount: headers.length,
     loadedItemCount: rows.length,
   };
+}
+
+/**
+ * A district manager's Phoenix CRM week, half-day by half-day (owner, 2026-10-16: it REPLACES his legacy
+ * plan once his team is live). Read beside the legacy items so the calendar keeps showing him the week he
+ * switches: a half-day "with a rep" books that rep exactly as a legacy Double Visit does, so the
+ * same-line conflict check and `getSameLinePlanBookings` see it. Only weeks gone for review or approved.
+ *
+ * A database that has not had the plan's tables yet (a staging project mid-migration) contributes
+ * nothing rather than failing the month; any other failure throws like the legacy read does.
+ */
+type ManagerHalfDays = Awaited<ReturnType<typeof loadManagerPlanHalfDays>>;
+
+async function readManagerPlanHalfDays(start: string, end: string): Promise<ManagerHalfDays> {
+  try {
+    return await loadManagerPlanHalfDays({ from: start, to: end });
+  } catch (error) {
+    const text = error instanceof Error ? error.message : JSON.stringify(error);
+    if (/phoenix_crm_manager_plan|PGRST205|42P01/i.test(text)) return [];
+    throw error;
+  }
+}
+
+function managerPlanCalendarItems(halfDays: ManagerHalfDays, directoryByHrId: Map<string, EmployeeDirectoryRow>): PlanningCalendarPlanItem[] {
+  return halfDays.flatMap((halfDay) => {
+    const employee = directoryByHrId.get(normalizeHrId(halfDay.managerHrId));
+    // Same rule as the legacy rows: someone no longer in the directory drops off the shared calendar.
+    if (!employee) return [];
+    const lineName = employee.lineName ?? null;
+    const rep = halfDay.repHrId ? directoryByHrId.get(normalizeHrId(halfDay.repHrId)) : undefined;
+    const medicalRepHrId = halfDay.kind === "with_rep" ? halfDay.repHrId : null;
+    const medicalRepName = medicalRepHrId ? (rep?.fullName ?? null) : null;
+    const medicalRepDisplayName = medicalRepHrId ? (rep?.displayName || medicalRepName) : null;
+    const activityTitle = managerHalfDayText(halfDay, medicalRepDisplayName);
+    const area = halfDay.kind === "single_visit" ? halfDay.areaName : null;
+    const employeeDisplayName = employee.displayName || employee.fullName;
+    const item: PlanningCalendarPlanItem = {
+      activityTitle,
+      activityType: halfDay.legacyType,
+      area,
+      conflictKey: planningConflictKey(halfDay.date, lineName, medicalRepHrId),
+      conflictWarning: null,
+      employeeHrId: halfDay.managerHrId,
+      employeeJobTitle: employee.jobTitle ?? "District Manager",
+      employeeName: employee.fullName,
+      employeeDisplayName,
+      endDate: halfDay.date,
+      id: `crm-plan-${halfDay.slotId}`,
+      lineName,
+      medicalRepHrId,
+      medicalRepName,
+      medicalRepDisplayName,
+      notes: halfDay.note,
+      planId: halfDay.planId,
+      planKind: "weekly",
+      region: null,
+      source: "plan",
+      startDate: halfDay.date,
+      status: managerPlanLegacyStatus(halfDay.status),
+      time: halfDay.half,
+      title: planningCalendarTitle(employeeDisplayName, null, area, activityTitle),
+    };
+    return [item];
+  });
 }
 
 export async function getSharedPlanningCalendarWorkspace(

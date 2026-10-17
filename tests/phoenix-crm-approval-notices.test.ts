@@ -193,8 +193,10 @@ export function runPhoenixCrmApprovalNoticeTests() {
       // cannot mail him instead.
       // `validation_not_confirmed` joined on 2026-10-08 and LEFT the same day: the owner, asked about it by name,
       // chose email and the other channels for it too, so it is no longer "in-app and Telegram only".
-      ["activity_mirror", "crm_daily_digest", "crm_fraud_scan", "crm_visit_rollup", "day_start_seen", "plan_edit_expired", "plan_resent"],
-      "the notices he has called in-app-and-Telegram-only: the 06:55 digest, the plan-edit expiry, the SFE's copy of a rep's day start, the NSM/SFE activity mirror, the hourly visit rollup, the weekly fraud scan, and the SFE's copy of a re-send",
+      // `manager_plan_edit_expired` joined on 2026-10-16: the district manager's ask to edit his own week,
+      // ended unanswered with the week — the same daily expiry pass as the rep's, so the same two channels.
+      ["activity_mirror", "crm_daily_digest", "crm_fraud_scan", "crm_visit_rollup", "day_start_seen", "manager_plan_edit_expired", "plan_edit_expired", "plan_resent"],
+      "the notices he has called in-app-and-Telegram-only: the 06:55 digest, the plan-edit expiry (the rep's and the district manager's), the SFE's copy of a rep's day start, the NSM/SFE activity mirror, the hourly visit rollup, the weekly fraud scan, and the SFE's copy of a re-send",
     );
     // Behaviour, not source: the re-send's own channel list, filtered.
     assert.deepEqual(

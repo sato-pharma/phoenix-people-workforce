@@ -163,6 +163,14 @@ export const API_REACHABILITY_BACKLOG: readonly ApiReachabilityGap[] = [
       "The sync behind /admin/rep-doctor-lists, retired by the same 2026-08-28 ruling. Its only remaining mentions are tests/crm-cutover.test.ts and tests/crm-rep-doctor-lists.test.ts — assertions about it, not callers of it.",
     recorded: "2026-10-08",
   },
+  {
+    route: "/api/phoenix-crm/double-visit-plans",
+    authMode: "session",
+    kind: "delisted-by-ruling",
+    reason:
+      "The district manager's double-visit planner, replaced on 2026-10-16 by his weekly plan in Phoenix CRM (the owner's ruling: it REPLACES the old district-manager plan). Its screen, src/components/phoenix-crm/double-visit-plan-section.tsx, was deleted in that change; POST now answers 410 and GET stays so the one week already filed can still be read. The Visit report reads those rows server-side (readDoubleVisitPlansForReport in src/lib/phoenix-crm/server/double-visit-plans.ts, called from visit-report.ts), never through this route.",
+    recorded: "2026-10-17",
+  },
 
   // ── a GET beside a server page that imports the very same service ────────────────────────────
   {

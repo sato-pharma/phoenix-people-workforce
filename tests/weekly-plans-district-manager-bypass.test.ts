@@ -262,11 +262,12 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
 
   // 10. Approvals Hub needs its own read-only "District Manager Plans" tab: the CEO's
   // "awaiting" bucket never includes DM plans (#5/#8), so without a dedicated feed the CEO has
-  // no page in Approvals Hub that surfaces them at all.
+  // no page in Approvals Hub that surfaces them at all. Since 2026-10-16 the same feed also carries the
+  // weeks a district manager plans in Phoenix CRM, merged beside the legacy ones (docs/phoenix-crm-manager-plan.md).
   assert.match(
     approvalsHubSource,
-    /export async function getCompanyDistrictManagerPlanRequests\(access: AccessContext\): Promise<CompanyRequestItem\[\]> \{\s*\n\s*return fetchCompanyPlanRequestItems\(access, \{ districtManagersOnly: true \}\);/,
-    "approvals-hub must expose a District-Manager-filtered company plan feed",
+    /export async function getCompanyDistrictManagerPlanRequests\(access: AccessContext\): Promise<CompanyRequestItem\[\]> \{\s*\n\s*const \[legacy, crm\] = await Promise\.all\(\[\s*\n\s*fetchCompanyPlanRequestItems\(access, \{ districtManagersOnly: true \}\),\s*\n\s*fetchCrmManagerPlanRequestItems\(access, null\),\s*\n\s*\]\);\s*\n\s*return mergeCompanyPlanFeeds\(legacy, crm\);/,
+    "approvals-hub must expose a District-Manager-filtered company plan feed, with the Phoenix CRM manager weeks merged beside it",
   );
   assert.match(
     approvalsHubSource,

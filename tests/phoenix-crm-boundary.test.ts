@@ -259,6 +259,24 @@ const ROUTE_GATES: RouteGate[] = [
   // (and the Super Admin's test mode). SFE holds no `create`, so it reads and never writes.
   get("double-visit-plans"),
   post("double-visit-plans", "create"),
+  // The district manager's weekly plan (owner, 2026-10-16). He writes his own week, his own list and his
+  // own single visits (`create`, narrowed in the service to him); the approver stored on the row — or the
+  // Administrator in his place — decides (`approve`). The name match is a read sent as a POST.
+  get("manager-plans"),
+  post("manager-plans", "create"),
+  post("manager-plans/submit", "create"),
+  post("manager-plans/decide", "approve"),
+  post("manager-plans/edit-requests", "create"),
+  post("manager-plans/edit-requests/decide", "approve"),
+  get("manager-plans/customers"),
+  post("manager-plans/customers", "create"),
+  get("manager-plans/customers/area"),
+  { route: "manager-plans/customers/match", method: "POST", action: "create", audit: "access-read", auditRequired: true },
+  post("manager-plans/customers/removal", "create"),
+  post("manager-plans/customers/removal/decide", "approve"),
+  get("manager-plans/visits"),
+  post("manager-plans/visits", "create"),
+  get("manager-plans/report"),
   // A rep's ask for a visit with somebody (owner, 2026-10-02) — his manager, a product manager of his
   // line, or a chain visit with his district manager and the manager above. A SEPARATE workflow from
   // the double-visit plan above, which the rep never sees. The customer's page reads its asks through
@@ -881,6 +899,11 @@ const LATER_MIGRATIONS = [
   // The List's doctor-pharmacy cards read only the visits that can change them (same audit). One
   // brand-new read function over phoenix_crm_visits; it replaces nothing.
   "supabase/migrations/20261016180201_phoenix_crm_customer_pharmacy_feedback.sql",
+  // The district manager's weekly plan (owner, 2026-10-16). Seven brand-new tables and seven brand-new
+  // functions, and ONE replacement: phoenix_crm_merge_duplicate_customer, re-pointing the two new tables
+  // that name a customer. That function's earlier definer (20261008120000) is not on this list, so no
+  // ordering above can be disturbed; it appends at the end.
+  "supabase/migrations/20261017000000_phoenix_crm_manager_plan.sql",
   // The Visit report's saved views (owner, 2026-10-16). ONE brand-new table and NOTHING else — no
   // function, no column on anything that exists, and it replaces nothing, so it appends safely at the end.
   "supabase/migrations/20261017001000_phoenix_crm_visit_report_views.sql",

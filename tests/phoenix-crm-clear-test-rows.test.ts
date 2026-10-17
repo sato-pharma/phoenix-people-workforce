@@ -15,7 +15,9 @@
 // the sweep fail halfway through, so `planProblems` is the check and this file is what proves the
 // check WORKS — not merely that today's plan passes it. KNOWN_EDGES is the foreign-key graph exactly
 // as production (`ozucdzovmcqvepbozvqf`) answered `pg_constraint` on 2026-10-09: 22 edges, every one
-// of them from one CRM table to another, which is why the sweep is self-contained.
+// of them from one CRM table to another, which is why the sweep is self-contained. The district
+// manager's weekly plan (20261017000000) added nine more, read from staging's `pg_constraint` on
+// 2026-10-17 after the migration applied there.
 
 import { strict as assert } from "node:assert";
 
@@ -59,6 +61,17 @@ const KNOWN_EDGES: readonly FkEdge[] = [
   { child: "phoenix_crm_unplanned_visit_events", parent: "phoenix_crm_unplanned_visits", onDelete: "a" },
   { child: "phoenix_crm_unplanned_visits", parent: "phoenix_crm_visits", onDelete: "a" },
   { child: "phoenix_crm_visits", parent: "phoenix_crm_visits", onDelete: "c" },
+  // The district manager's weekly plan. Two of its tables reference phoenix_crm_customers with no
+  // cascade, so they must go before the spine; the header's own children cascade.
+  { child: "phoenix_crm_manager_plan_customers", parent: "phoenix_crm_customers", onDelete: "a" },
+  { child: "phoenix_crm_manager_visits", parent: "phoenix_crm_customers", onDelete: "a" },
+  { child: "phoenix_crm_manager_plan_customers", parent: "phoenix_crm_manager_customers", onDelete: "a" },
+  { child: "phoenix_crm_manager_visits", parent: "phoenix_crm_manager_customers", onDelete: "a" },
+  { child: "phoenix_crm_manager_plan_customers", parent: "phoenix_crm_manager_plan_slots", onDelete: "c" },
+  { child: "phoenix_crm_manager_visits", parent: "phoenix_crm_manager_plan_slots", onDelete: "n" },
+  { child: "phoenix_crm_manager_plan_edit_requests", parent: "phoenix_crm_manager_plans", onDelete: "c" },
+  { child: "phoenix_crm_manager_plan_events", parent: "phoenix_crm_manager_plans", onDelete: "c" },
+  { child: "phoenix_crm_manager_plan_slots", parent: "phoenix_crm_manager_plans", onDelete: "c" },
 ];
 
 const stepFor = (table: string): Step => {
@@ -123,7 +136,26 @@ export async function runCrmClearTestRowsTests(): Promise<void> {
     `${COUNTABLE_VISITS_VIEW} is a VIEW over the visits — a delete against it errors, and its rows clear themselves`,
   );
 
-  // ── The seven tables with no is_test column of their own ──────────────────────────────────────
+  // ── The district manager's plan must be swept before the customers it references ─────────────
+  // Without his ticked customers and his own visits in the plan, Guard 2 aborts every sweep the
+  // moment the migration is live, because both reference phoenix_crm_customers with no cascade.
+  const withoutManagerPlan = DELETE_PLAN.filter(
+    (step) => step.table !== "phoenix_crm_manager_plan_customers" && step.table !== "phoenix_crm_manager_visits",
+  );
+  const managerProblems = planProblems(KNOWN_EDGES, withoutManagerPlan);
+  for (const child of ["phoenix_crm_manager_plan_customers", "phoenix_crm_manager_visits"]) {
+    assert.ok(
+      managerProblems.some((problem) => problem.startsWith(`${child} references phoenix_crm_customers`)),
+      `${child} references the customers this clears, so the plan must clear it first`,
+    );
+  }
+  assert.ok(
+    DELETE_PLAN.findIndex((step) => step.table === "phoenix_crm_manager_customers") <
+      DELETE_PLAN.findIndex((step) => step.table === "phoenix_crm_customers"),
+    "Manager's own list goes with the rest of his plan, before the spine",
+  );
+
+  // ── The ten tables with no is_test column of their own ────────────────────────────────────────
   for (const table of FLAGLESS_CHILDREN) {
     const step = stepFor(table);
     assert.equal(step.by, "parent", `${table} has no is_test column, so its rows must be reached through a parent`);

@@ -151,11 +151,18 @@ function testEveryModuleCarriesTheDecidersWords() {
     text.includes("decisionNote(row.decision_note)"),
     "the marketing step must read its decision_note",
   );
+  // The district manager's Phoenix CRM week (owner, 2026-10-16) replaced the legacy plan once that
+  // team went live, so its first-approver decision is a fifth row and carries its decider's words too.
+  assert.ok(
+    text.includes("decidedNote: decisionNote(decision.note)"),
+    "the district manager's Phoenix CRM week must carry its decider's note",
+  );
   const carried = text.split("decidedNote:").length - 1;
   assert.equal(
     carried,
-    5,
-    `expected 4 module rows to carry decidedNote plus the type declaration; found ${carried}`,
+    6,
+    `expected 5 module rows (leave, excuse, weekly plan, the district manager's Phoenix CRM week, ` +
+      `marketing) to carry decidedNote plus the type declaration; found ${carried}`,
   );
 
   // Each team-module SELECT must request the comment column it then reads.

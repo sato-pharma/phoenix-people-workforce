@@ -41,6 +41,9 @@ export const PHOENIX_CRM_EMAIL_EVENT_TYPES: readonly string[] = [];
 export const PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES: readonly string[] = [
   "crm_daily_digest",
   "plan_edit_expired",
+  // The district manager's ask to edit his week, ended unanswered with the week (owner, 2026-10-16): the
+  // same daily expiry pass as the rep's, so the same two channels.
+  "manager_plan_edit_expired",
   // The SFE Manager's copy of a rep's day start (owner, 2026-10-03): in-app and Telegram, nothing
   // else. It is on THIS list rather than merely absent from the email list because the
   // Telegram-failure fallback re-sends as `["email", "in_app"]` and an unlinked Telegram is the

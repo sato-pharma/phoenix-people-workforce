@@ -325,6 +325,28 @@ export const MODULES = [
     keywords: ["refused reading", "refused readings", "blocked permission", "location blocked", "camera blocked", "off listing", "off_listing", "rough location"],
     tables: ["phoenix_crm_refused_readings"],
   },
+  // 🔴 NEW 2026-10-17, its own module from birth: the district manager's weekly plan is a separate table
+  // family with its own approval chain, its own visits that count in HIS report only, and Manager's own
+  // list. Its rules are the owner's five rounds of 2026-10-16, and none of them binds a rep's plan, so they
+  // must not grow `phoenix-crm`'s pointer. `phoenix-crm` keeps every glob it had, so a file here loads the
+  // pair and nothing that used to arrive stops arriving.
+  {
+    id: "phoenix-crm-manager-plan",
+    title: "Phoenix CRM — the district manager's weekly plan",
+    scope: "The district manager's own week in Phoenix CRM: with a rep, Admin or a single visit per half-day, Manager's own list, his single visits, the RSM/NSM approval in the Approvals Hub, the actual-versus-planned report, and the switch that retires his legacy Weekly Plan.",
+    globs: [
+      "src/lib/phoenix-crm/manager-plan-rules.ts",
+      "src/lib/phoenix-crm/server/manager-*.ts",
+      "src/components/phoenix-crm/manager-*.tsx",
+      "src/components/approvals-hub/manager-plan-*.tsx",
+      "src/lib/workforce/plan-second-approver.ts",
+      "app/api/phoenix-crm/manager-plans/**",
+      "supabase/migrations/*phoenix_crm_manager_plan*",
+      "tests/phoenix-crm-manager-plan*",
+    ],
+    keywords: ["manager plan", "manager's plan", "manager's own list", "district manager plan", "district manager's plan", "dm plan", "single visits"],
+    tables: ["phoenix_crm_manager_"],
+  },
   // 🔴 SPLIT, 2026-10-08, BEFORE `phoenix-crm` OR `phoenix-crm-boards` COULD CROSS THE POINTER MARGIN: the
   // photo-validation audit taught seven rules at once (the signboard check, the closed refusal reasons, the
   // "Validate again" notice, the validate-first order, the Place checks reader, the same-seat merge and the

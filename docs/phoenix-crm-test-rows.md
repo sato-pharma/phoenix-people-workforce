@@ -32,6 +32,9 @@ is a real failure:
 2. **Seven child tables carry no `is_test` column at all** and must be reached through a parent:
    `plan_items` (**316** rows), `plan_events` (45), `plan_edit_request_events` (6),
    `plan_activities`, `plan_day_starts`, `monthly_plan_events`, `unplanned_visit_events` (1).
+   The district manager's weekly plan (migration `20261017000000`) added three more —
+   `manager_plan_slots`, `manager_plan_customers` and `manager_plan_events`, all reached through
+   `phoenix_crm_manager_plans` — so the list is ten.
 3. **Two of those are spelled unexpectedly**, and each spelling cost a real error against production
    while the first statement was being written by hand:
    - `column "plan_edit_request_id" does not exist` — `phoenix_crm_plan_edit_request_events` is keyed
@@ -51,6 +54,12 @@ can be orphaned by it. All 22 are `NO ACTION` except two:
 - `phoenix_crm_customer_moves.customer_id` — **RESTRICT**, so the moves must go before the customers.
 - `phoenix_crm_visits.linked_from_visit_id` — **CASCADE**, which carries a chained visit away with
   its parent inside a single statement.
+
+**The district manager's weekly plan added nine edges** (staging `pg_constraint`, 2026-10-17). Five
+are inside his own tables and cascade or set null from the plan header and its slots. The four that
+matter are `manager_plan_customers` and `manager_visits`, each referencing **both**
+`phoenix_crm_customers` and `phoenix_crm_manager_customers` with `NO ACTION`. Both must therefore be
+cleared before the spine, or Guard 2 aborts every sweep naming them.
 
 ## Why a script, and why it emits SQL instead of connecting
 

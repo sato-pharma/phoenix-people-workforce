@@ -392,7 +392,183 @@ export type PhoenixCrmNotice =
        * `withdrawValidationNotConfirmed` clears by untouched.
        */
       attempt?: string | null;
-    };
+    }
+  | ManagerPlanNotice;
+
+/**
+ * The district manager's weekly plan (owner, 2026-10-16) — each step told to the ONE person it concerns:
+ * a week, an ask to edit it or an own-list removal waiting goes to whoever decides it, and the answer goes
+ * back to the district manager. 🔴 NEVER THE REP — the plan is the district manager's alone and the rep
+ * never learns it exists — and never the activity mirror (`activityMirrorDelivery` returns null for it):
+ * the managers above him are the ones deciding. The live-team gate reads `seat`, his own seat.
+ */
+export type ManagerPlanNotice = {
+  kind: "manager_plan";
+  seat: OrgSeat;
+  step:
+    | "waiting"
+    | "approved"
+    | "returned"
+    | "edit_waiting"
+    | "edit_reopened"
+    | "edit_refused"
+    | "edit_expired"
+    | "removal_waiting"
+    | "removal_decided";
+  recipientHrId: string;
+  managerHrId: string;
+  /** Who took the step — null for the system (an expired ask). */
+  actorHrId: string | null;
+  /** The plan, the ask to edit, or the own-list customer the step is about. */
+  recordId: string;
+  planId: string | null;
+  weekStart: string | null;
+  /** Keys a step that can happen again on the same record (a week sent, returned and sent again). */
+  version: number | null;
+  note: string | null;
+  customerName: string | null;
+  byAdministrator: boolean;
+  returnedDay?: string | null;
+  /** The removal was approved (true) or refused (false). */
+  approved?: boolean;
+  /** The week reached its approver after its Thursday deadline. */
+  late?: boolean;
+};
+
+/** The Approvals Hub page a waiting district-manager step opens on. */
+export function managerPlanHubPath(recordId: string): string {
+  return `/employee-portals/approvals/plan/${encodeURIComponent(recordId)}`;
+}
+
+/** Every notice raised about one district-manager plan record, of every step. */
+export function managerPlanNoticeKeyPrefix(recordId: string): string {
+  return `phoenix_crm:manager_plan:${recordId}:`;
+}
+
+/** The deliveries of one district-manager plan step, given the people's names. Pure, so who is told and the keys are tested. */
+export function managerPlanDeliveries(notice: ManagerPlanNotice, names: PeopleNames): Delivery[] {
+  const manager = nameOf(names, notice.managerHrId, "A district manager");
+  const actor = notice.byAdministrator ? "The Administrator" : notice.actorHrId ? nameOf(names, notice.actorHrId, "Your manager") : "The system";
+  const week = notice.weekStart ? `the week starting ${formatPhoenixLongDate(notice.weekStart)}` : "your week";
+  const note = notice.note ? ` Note: ${notice.note}` : "";
+  const key = `${managerPlanNoticeKeyPrefix(notice.recordId)}${notice.step}:${notice.version ?? 0}:${personKey(notice.recipientHrId) ?? notice.recipientHrId}`;
+  const toHub = { recordId: notice.recordId, path: managerPlanHubPath(notice.recordId), tab: "plan" as const };
+  const toPlan = { recordId: notice.recordId, tab: "plan" as const };
+  const base = { recipients: [notice.recipientHrId], idempotencyKey: key, subjectHrId: notice.managerHrId };
+  const planMeta = notice.planId ? { planId: notice.planId } : undefined;
+  const customer = notice.customerName ? bidiIsolate(notice.customerName) : "a customer";
+
+  switch (notice.step) {
+    case "waiting":
+      return [
+        {
+          ...base,
+          ...toHub,
+          eventType: "manager_plan_waiting",
+          title: `Weekly plan to approve: ${manager}`,
+          message: `${manager} sent ${week} for your approval${notice.late ? ", after the Thursday deadline" : ""}. Approve it or return it in the Approvals Hub.`,
+          metadata: planMeta,
+        },
+      ];
+    case "approved":
+      return [
+        {
+          ...base,
+          ...toPlan,
+          eventType: "manager_plan_approved",
+          title: "Your weekly plan is approved",
+          message: `${actor} approved ${week}.${note}`,
+          metadata: planMeta,
+        },
+      ];
+    case "returned":
+      return [
+        {
+          ...base,
+          ...toPlan,
+          eventType: "manager_plan_returned",
+          title: notice.returnedDay ? `One day of your weekly plan was returned` : "Your weekly plan was returned",
+          message: notice.returnedDay
+            ? `${actor} returned ${formatPhoenixLongDate(notice.returnedDay)} of ${week}. Change it and send the week again.${note}`
+            : `${actor} returned ${week}. Change it and send it again.${note}`,
+          metadata: planMeta,
+        },
+      ];
+    case "edit_waiting":
+      return [
+        {
+          ...base,
+          ...toHub,
+          eventType: "manager_plan_edit_waiting",
+          title: `Ask to edit a weekly plan: ${manager}`,
+          message: `${manager} asks to edit ${week}, already sent.${note} Reopen it or refuse in the Approvals Hub.`,
+          metadata: { requestId: notice.recordId, ...(planMeta ?? {}) },
+        },
+      ];
+    case "edit_reopened":
+      return [
+        {
+          ...base,
+          ...toPlan,
+          eventType: "manager_plan_edit_reopened",
+          title: "Your weekly plan is open to edit",
+          message: `${actor} reopened ${week}. Change it and send it again.${note}`,
+          metadata: planMeta,
+        },
+      ];
+    case "edit_refused":
+      return [
+        {
+          ...base,
+          ...toPlan,
+          eventType: "manager_plan_edit_refused",
+          title: "Your ask to edit was refused",
+          message: `${actor} refused your ask to edit ${week}. It stays as it was sent.${note}`,
+          metadata: planMeta,
+        },
+      ];
+    case "edit_expired":
+      return [
+        {
+          ...base,
+          ...toPlan,
+          eventType: "manager_plan_edit_expired",
+          title: "Your ask to edit ended with its week",
+          message: `Nobody answered your ask to edit ${week} before the week ended, so it stays as it was sent.`,
+          metadata: planMeta,
+        },
+      ];
+    case "removal_waiting":
+      return [
+        {
+          ...base,
+          ...toHub,
+          eventType: "manager_list_removal_waiting",
+          title: `Take a customer off Manager's own list: ${manager}`,
+          message: `${manager} asks to take ${customer} off Manager's own list.${note} Approve or refuse it in the Approvals Hub.`,
+          metadata: { requestId: notice.recordId },
+        },
+      ];
+    case "removal_decided":
+      return [
+        {
+          ...base,
+          recordId: notice.recordId,
+          tab: "team",
+          eventType: "manager_list_removal_decided",
+          title: notice.approved ? "A customer came off your own list" : "Your customer stays on your own list",
+          message: notice.approved
+            ? `${actor} approved taking ${customer} off Manager's own list.${note}`
+            : `${actor} refused taking ${customer} off Manager's own list.${note}`,
+        },
+      ];
+  }
+}
+
+async function describeManagerPlan(notice: ManagerPlanNotice): Promise<Delivery[]> {
+  const names = await loadPeopleNames([notice.managerHrId, notice.actorHrId, notice.recipientHrId]);
+  return managerPlanDeliveries(notice, names);
+}
 
 type Delivery = {
   recipients: string[];
@@ -902,6 +1078,7 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
   const territory = territoryName(notice.seat);
 
   if (notice.kind === "plan_edit") return describePlanEdit(notice);
+  if (notice.kind === "manager_plan") return describeManagerPlan(notice);
   if (notice.kind === "double_visit_request") return describeDoubleVisitRequest(notice);
   if (notice.kind === "first_visit") return describeFirstVisit(notice);
   if (notice.kind === "day_start") return describeDayStart(notice);
@@ -1361,6 +1538,9 @@ function activityMirrorLine(notice: PhoenixCrmNotice, names: PeopleNames): Mirro
   switch (notice.kind) {
     case "first_visit":
       return null;
+    // The district manager's plan is decided by the managers above him: nothing to mirror to them.
+    case "manager_plan":
+      return null;
     // A return is a step between SFE and one rep: not a feed line for the NSM, and SFE did it himself.
     case "request_returned":
     case "request_answered":
@@ -1667,7 +1847,7 @@ export function buildActivityMirrorDelivery(
 
 /** Resolve the people and org the mirror needs, then build its one delivery (null when nobody is left). */
 async function activityMirrorDelivery(notice: PhoenixCrmNotice, nativeDeliveries: Delivery[]): Promise<Delivery | null> {
-  if (notice.kind === "first_visit") return null;
+  if (notice.kind === "first_visit" || notice.kind === "manager_plan") return null;
   const org = (notice as { org?: OrgIndex }).org ?? (await loadPhoenixCrmOrg());
   const [sfe, names] = await Promise.all([sfeManagerHrIds(), loadPeopleNames(activityMirrorPeopleIds(notice))]);
   const nativeRecipientKeys = new Set(

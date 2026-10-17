@@ -9,6 +9,9 @@
 
 import { queryVisits } from "@/lib/crm/reads";
 import { hrIdLookupKeys } from "@/lib/hr-id";
+import { currentCairoDateOnlyIso, formatDateValue } from "@/lib/i18n/format";
+import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
+import { managerPlanAdherence } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   buildPlanAdherenceHistory,
@@ -379,7 +382,11 @@ export type PortalPlanAdherence = {
 export async function loadPortalPlanAdherence(
   employeeHrId: string | null | undefined,
 ): Promise<PortalPlanAdherence | null> {
-  const history = await loadPlanAdherenceHistory(employeeHrId, { limit: 12 });
+  const [legacy, crmWeeks] = await Promise.all([
+    loadPlanAdherenceHistory(employeeHrId, { limit: 12 }),
+    loadPhoenixCrmManagerWeeks(employeeHrId),
+  ]);
+  const history = crmWeeks.length > 0 ? buildPlanAdherenceHistory([...legacy.entries, ...crmWeeks]) : legacy;
   if (history.entries.length === 0) return null;
   return {
     averagePct: history.averagePct,
@@ -387,4 +394,31 @@ export async function loadPortalPlanAdherence(
     measuredPeriods: history.measuredPeriods,
     totalPeriods: history.entries.length,
   };
+}
+
+/**
+ * A district manager's Phoenix CRM weeks, scored for the same card (owner, 2026-10-16: his Phoenix CRM
+ * week REPLACES the legacy plan once his team is live). A customer he planned counts once his day has
+ * closed — kept when the rep logged the visit naming him (with a rep) or he logged it himself (a single
+ * visit); admin half-days are not checkable. The card links to the Approvals Hub's plan page, which opens
+ * a Phoenix CRM plan id too. A failed read adds nothing: the legacy weeks still show.
+ */
+async function loadPhoenixCrmManagerWeeks(employeeHrId: string | null | undefined): Promise<PlanAdherenceHistoryEntry[]> {
+  if (!employeeHrId?.trim()) return [];
+  try {
+    const weeks = await managerPlanAdherence(employeeHrId, { cairoToday: currentCairoDateOnlyIso(), visitDay: cairoBusinessDay(new Date()) });
+    return weeks.map((week) => ({
+      checkable: week.checkable,
+      kept: week.kept,
+      measurable: week.checkable > 0,
+      periodEndDate: week.weekEnd,
+      periodKey: `Week of ${formatDateValue(week.weekStart)}`,
+      periodStartDate: week.weekStart,
+      planId: week.planId,
+      scorePct: week.scorePct,
+      status: week.status,
+    }));
+  } catch {
+    return [];
+  }
 }

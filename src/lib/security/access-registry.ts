@@ -984,6 +984,28 @@ export const accessRegistry = [
   // on his own plan, and by the Super Admin only in test mode.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/double-visit-plans", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/double-visit-plans", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // The district manager's weekly plan in Phoenix CRM (owner, 2026-10-16), which replaces the double-visit
+  // plan above for every district manager whose team is live. The rep never sees any of it. He builds and
+  // sends his own week, keeps Manager's own list and logs his single visits (`create`, narrowed in the
+  // service to the district manager himself); his RSM/NSM — and for Hany Saad's district managers Ali
+  // Mohamed Ali — decides the week, an ask to edit it and an own-list removal (`approve`, narrowed to the
+  // approver STORED on the row, or the Administrator in his place). Reads are narrowed to him, the
+  // managers above him, SFE, the CEO and the Super Admin. The name match is a read sent as a POST.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/manager-plans", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/manager-plans", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/manager-plans/submit", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/manager-plans/decide", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/manager-plans/edit-requests", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/manager-plans/edit-requests/decide", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/manager-plans/customers", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/manager-plans/customers", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/manager-plans/customers/area", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/manager-plans/customers/match", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/manager-plans/customers/removal", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/manager-plans/customers/removal/decide", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/manager-plans/visits", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/manager-plans/visits", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/manager-plans/report", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // A rep's ask for a visit with somebody (owner, 2026-10-02): his manager, a product manager of his
   // line, or a chain visit with his district manager and the manager above. The customer's page reads
   // the asks through the list's own seat gate (`read`); the rep raises and cancels his own (`create`,

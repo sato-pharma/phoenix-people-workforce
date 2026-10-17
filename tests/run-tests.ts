@@ -1894,6 +1894,7 @@ import { runPhoenixCrmAdministratorTests } from "./phoenix-crm-administrator.tes
 import { runPhoenixCrmPlanEditRequestTests } from "./phoenix-crm-plan-edit-requests.test.ts";
 import { runPhoenixCrmApprovalNoticeTests } from "./phoenix-crm-approval-notices.test.ts";
 import { runPhoenixCrmDoubleVisitPlanTests } from "./phoenix-crm-double-visit-plan.test.ts";
+import { runPhoenixCrmManagerPlanTests } from "./phoenix-crm-manager-plan.test.ts";
 import { runPhoenixCrmVisitAsksTests } from "./phoenix-crm-visit-asks.test.ts";
 import { runPhoenixCrmPlanDayEdgesTests } from "./phoenix-crm-plan-day-edges.test.ts";
 import { runPhoenixCrmPlanReviewTests } from "./phoenix-crm-plan-review.test.ts";
@@ -7202,6 +7203,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's double-visit plan is the district manager's own and the rep never sees it (owner, 2026-10-02): he plans which of his reps he joins on which day, AM or PM — this week from today on and the coming week, one rep a half-day, Thursday a morning, never a Friday or a public holiday, never a vacant seat, another district's rep or himself — and a day that has passed stays read-only; a planned half-day is done by the manager report's own rule, judged only once the day's visits have closed, and the week reads Planned 3 · done 2; the rep, another district manager, a national manager and the CEO are refused, SFE reads every plan and writes none, the Super Admin writes only in the test world, a test account only as its district manager; the table is RLS-locked to the service role with is_test in its key and the Cairo day stated, a half-day changed on another screen is refused, nothing the rep touches reads it, and nothing about it notifies anyone",
   runPhoenixCrmDoubleVisitPlanTests,
+);
+
+await runTest(
+  "Phoenix CRM's district manager plans his own week (owner, 2026-10-16): each half-day is with a rep, admin or a single visit, read strictly; the coming Saturday's week only, Thursday a morning, never a Friday or a holiday; his RSM or NSM approves, Hany Saad's district managers then Ali Mohamed Ali, and the Administrator may act in place; a rep's draft customer reads not sent and a dropped one stays flagged; the rep is refused everywhere, the acting district manager files both weeks and her own rep seat is never one of her reps; every table is RLS-locked to the service role, nothing outside the module reads them and his visits reach no KPI; no notice emails, the Hub counts each week once; a switched district manager loses the legacy form and the Plans tab and keeps the calendar; and his old My own visit is closed",
+  runPhoenixCrmManagerPlanTests,
 );
 
 await runTest(

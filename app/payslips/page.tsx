@@ -79,6 +79,7 @@ export default async function PayslipsPage() {
     phoenixCrm.forecast,
     phoenixCrm.placeChecks,
     phoenixCrm.doubleVisitRequests,
+    phoenixCrm.managerPlans,
   );
 
   if (navigationMode === "admin") {

@@ -21,8 +21,8 @@ import { useId, useRef, useState, type ReactNode } from "react";
 
 import { AdministratorReversalsPanel } from "@/components/phoenix-crm/administrator-reversals-panel";
 import { crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
-import { DoubleVisitPlanSection } from "@/components/phoenix-crm/double-visit-plan-section";
 import { cairoDayOf, cairoStamp, countText, dayLabel, dayLabelWithYear, plural, weekLabel } from "@/components/phoenix-crm/format";
+import { ManagerOwnListSection, ManagerPlansSection } from "@/components/phoenix-crm/manager-plan-team";
 import { matchesWords, PENDING_PILL } from "@/components/phoenix-crm/labels";
 import { PlanBoard } from "@/components/phoenix-crm/plan-board";
 import { PlanEditCard } from "@/components/phoenix-crm/plan-edit-card";
@@ -84,7 +84,7 @@ import type {
 } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
-type TeamSection = "plans" | "edits" | "months" | "unplanned" | "requests" | "lists" | "double" | "decided";
+type TeamSection = "plans" | "edits" | "months" | "unplanned" | "requests" | "lists" | "own_list" | "manager_plans" | "double" | "decided";
 type ReviewFilter = "waiting" | "not_sent" | "approved" | "all";
 type ListFilter = "not_ready" | "ready" | "vacant" | "all";
 type TeamNotice = { tone: NoteTone; title: string; message?: ReactNode };
@@ -140,6 +140,20 @@ function reviewerText(territory: TerritorySummary, viewerHrId: string | null): s
 /** A card's one-line meta: the rep, and the reviewer when he is not the person reading. */
 function metaText(territory: TerritorySummary, viewerHrId: string | null, test: boolean): string {
   return [repText(territory), test ? null : reviewerText(territory, viewerHrId)].filter(Boolean).join(" · ");
+}
+
+/**
+ * The "Look at" picker holds four to ten sections depending on who is reading, so its last row is often
+ * short — the ragged row the owner called unfinished on the List (2026-09-30). The last tile spans the
+ * hole: two across on a phone, three from sm (`CrmChoice` columns 3), two across everywhere for a test
+ * persona (columns 2). The class names are written out whole so Tailwind sees each one.
+ */
+function lookAtLastTile(count: number, wide: boolean): string {
+  const phone = count % 2 === 1 ? "[&>*:last-child]:col-span-2" : "";
+  if (!wide) return phone;
+  const rest = count % 3;
+  const fromSm = rest === 1 ? "sm:[&>*:last-child]:col-span-3" : rest === 2 ? "sm:[&>*:last-child]:col-span-2" : "sm:[&>*:last-child]:col-span-1";
+  return cn(phone, fromSm);
 }
 
 /**
@@ -490,28 +504,31 @@ export function TeamTab({
       note: summary ? `${countText(summary.ready)} of ${countText(summary.ready + summary.notReady)} ready` : undefined,
     });
   }
-  // A rep's asks for a visit with somebody (owner, 2026-10-02) live in the same section, apart from the
-  // plan below them: "Asked by your reps" for the people asked and told, every ask for SFE and the
-  // Super Admin. A manager who holds no plan of his own — a national manager a vacant district's asks
-  // reach, the manager above told of a chain visit — is offered the section for them alone.
+  // The district manager's weekly plan (owner, 2026-10-16), which REPLACED the double-visit planner this
+  // section held since 2026-10-02: "Manager plans" — his week planned against done — and "Manager's own
+  // list", beside Customer lists. Offered to the district manager himself, his RSM/NSM, SFE, the CEO and
+  // the Super Admin, by the server's own reach (`managerPlanReach`). Never the rep.
+  const managerPlans = team.data?.managerPlans ?? null;
+  if (managerPlans) {
+    sectionOptions.push(
+      {
+        value: "own_list",
+        label: "Manager's own list",
+        note: managerPlans.mode === "own" ? "The customers you visit alone" : "Each district manager's own customers",
+      },
+      {
+        value: "manager_plans",
+        label: "Manager plans",
+        note: managerPlans.mode === "own" ? "Your week, planned against done" : "The district managers' weeks",
+      },
+    );
+  }
+  // A rep's asks for a visit with somebody (owner, 2026-10-02): "Asked by your reps" for the people asked
+  // and told, every ask for SFE and the Super Admin. The double-visit planner that sat below them was
+  // retired for the weekly plan above (owner, 2026-10-16); the asks stay here.
   const visitAsks = team.data?.visitAsks ?? null;
   const asksWaiting = visitAsks?.waitingForYou ?? 0;
-  // The district manager's double-visit plan (owner, 2026-10-02) — offered only to the people its
-  // route serves: the district manager himself, SFE and the Super Admin. Never the rep.
-  const doubleVisits = team.data?.doubleVisits ?? null;
-  if (doubleVisits) {
-    sectionOptions.push({
-      value: "double",
-      label: "Double visits",
-      note:
-        asksWaiting > 0
-          ? `${countText(asksWaiting)} asked of you`
-          : doubleVisits.mode === "own"
-            ? "Which rep you join, and when"
-            : "The district managers' plans",
-    });
-  }
-  if (!doubleVisits && visitAsks?.anyToRead) {
+  if (visitAsks?.anyToRead) {
     sectionOptions.push({
       value: "double",
       label: "Double visits",
@@ -578,7 +595,14 @@ export function TeamTab({
 
           {current ? (
             <CrmBlock className="border-t border-slate-100" title="Look at">
-              <CrmChoice columns={test ? 2 : 3} label="Look at" onChange={chooseSection} options={sectionOptions} value={current} />
+              <CrmChoice
+                className={lookAtLastTile(sectionOptions.length, !test)}
+                columns={test ? 2 : 3}
+                label="Look at"
+                onChange={chooseSection}
+                options={sectionOptions}
+                value={current}
+              />
             </CrmBlock>
           ) : null}
 
@@ -632,11 +656,12 @@ export function TeamTab({
 
           {current === "lists" && team.data ? <ListsSection idPrefix={idPrefix} onOpenList={onOpenList} team={team.data} /> : null}
 
-          {/* What the reps asked of this manager, apart from — and above — his own plan, which the rep
-              never sees. Answering one refreshes the counts on the page. */}
-          {current === "double" && visitAsks ? <VisitAskInbox cairoToday={cairoToday} onChanged={refresh} place="team" test={test} /> : null}
+          {current === "own_list" && managerPlans ? <ManagerOwnListSection test={test} /> : null}
 
-          {current === "double" && doubleVisits ? <DoubleVisitPlanSection cairoToday={cairoToday} test={test} /> : null}
+          {current === "manager_plans" && managerPlans ? <ManagerPlansSection test={test} /> : null}
+
+          {/* What the reps asked of this manager. Answering one refreshes the counts on the page. */}
+          {current === "double" && visitAsks ? <VisitAskInbox cairoToday={cairoToday} onChanged={refresh} place="team" test={test} /> : null}
         </CrmPanel>
       )}
     </div>
