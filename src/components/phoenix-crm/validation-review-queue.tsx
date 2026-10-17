@@ -21,7 +21,9 @@ import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/compone
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
+import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, CrmTable, crmTdClassName, crmTextareaClassName, crmThClassName } from "@/components/phoenix-crm/ui";
+import { adviseOnReview } from "@/lib/phoenix-crm/place-check-advice";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { VALIDATION_NOTE_LABEL, VALIDATION_REASON_REQUIRED, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
 import type { PlaceNoteIndex, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
@@ -230,7 +232,8 @@ function Restore({ row }: { row: ValidationReviewRow }) {
 function RejectAfterApproval({ row }: { row: ValidationReviewRow }) {
   const router = useRouter();
   const [note, setNote] = useState("");
-  const [reason, setReason] = useState<ValidationRefusalReason | "">("");
+  // Opens on the reason the system's own confident reading gives, and on nothing otherwise.
+  const [reason, setReason] = useState<ValidationRefusalReason | "">(() => adviseOnReview(row).refusal ?? "");
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -309,7 +312,8 @@ function Settled({ row }: { row: ValidationReviewRow }) {
 function Decision({ row }: { row: ValidationReviewRow }) {
   const router = useRouter();
   const [note, setNote] = useState("");
-  const [reason, setReason] = useState<ValidationRefusalReason | "">("");
+  // Opens on the reason the system's own confident reading gives, and on nothing otherwise.
+  const [reason, setReason] = useState<ValidationRefusalReason | "">(() => adviseOnReview(row).refusal ?? "");
   const [saving, setSaving] = useState<"approve" | "reject" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -389,6 +393,8 @@ function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteI
   const key = placeNoteSubjectKey("place", row.placeId);
   return (
     <div className="min-w-0 space-y-2">
+      {/* The system's recommendation and its reason (owner, 2026-10-17) — the Super Admin's board only. */}
+      {mode === "team" ? null : <SystemAdvice advice={adviseOnReview(row)} />}
       {mode === "team" ? <Settled row={row} /> : <Decision row={row} />}
       <PlaceCheckNotes
         integrity={noteIndex.integrity[key] ?? []}
@@ -488,6 +494,8 @@ export function ValidationReviewQueue({
       {bulk ? (
         <BulkDecideBar
           actions={section === "waiting" ? WAITING_ACTIONS : DECIDED_ACTIONS}
+          // Only the waiting rows: a settled row's quick pick would tick rows no action can answer.
+          adviceOf={section === "waiting" ? (row) => adviseOnReview(row).kind : undefined}
           kind={kind}
           nameOf={(row) => row.customerName}
           picks={picks}
@@ -498,7 +506,7 @@ export function ValidationReviewQueue({
           <div key={row.reviewId} className="space-y-3 px-4 py-4">
             {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
             <div className="flex min-w-0 gap-3">
-              <CrmPhotoThumb alt={photoAlt(row)} path={row.photoPath} />
+              <CrmPhotoThumb alt={photoAlt(row)} className="h-32 w-32" lazy path={row.photoPath} rotatable />
               <Who row={row} />
             </div>
             <Evidence row={row} />
@@ -520,7 +528,7 @@ export function ValidationReviewQueue({
             <tr key={row.reviewId} className="even:bg-slate-50/60">
               <td className={crmTdClassName}>
                 <div className="min-w-0 space-y-2">
-                  <CrmPhotoThumb alt={photoAlt(row)} path={row.photoPath} />
+                  <CrmPhotoThumb alt={photoAlt(row)} className="h-32 w-32 max-w-full" lazy path={row.photoPath} rotatable />
                   {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
                 </div>
               </td>

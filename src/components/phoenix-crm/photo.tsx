@@ -128,6 +128,7 @@ export function CrmPhotoThumb({
   className,
   lazy,
   path,
+  rotatable,
 }: {
   alt: string;
   caption?: string | null;
@@ -135,6 +136,11 @@ export function CrmPhotoThumb({
   /** For a long list: the picture is fetched when it nears the screen, not when the page opens. */
   lazy?: boolean;
   path: string | null;
+  /**
+   * Place checks only: the photo is shown WHOLE (never cropped to the tile) with ↺ ↻ on it, because a
+   * timetable photographed sideways cannot be read until it is turned. Every other screen leaves it off.
+   */
+  rotatable?: boolean;
 }) {
   const state = usePhotoLink(path);
   const box = cn("relative block h-24 w-24 shrink-0 overflow-hidden rounded-none border border-slate-200 bg-slate-100", className);
@@ -145,8 +151,9 @@ export function CrmPhotoThumb({
         <ZoomablePhoto
           alt={alt}
           caption={caption ?? alt}
-          className="h-full w-full object-cover"
+          className={rotatable ? undefined : "h-full w-full object-cover"}
           lazy={lazy}
+          rotatable={rotatable}
           onError={() => {
             // An expired link (the phone slept past ten minutes) is signed again; a fresh link that
             // still fails is a file that never arrived.

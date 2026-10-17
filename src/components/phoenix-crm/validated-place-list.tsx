@@ -30,6 +30,7 @@ import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/compone
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
+import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import {
   CrmButton,
   CrmCardsOnPhone,
@@ -43,6 +44,7 @@ import {
   crmTextareaClassName,
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
+import { adviseOnPlaceInUse } from "@/lib/phoenix-crm/place-check-advice";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
 import type { PlaceNoteIndex, ValidatedPlaceRow } from "@/lib/phoenix-crm/view-types";
@@ -220,7 +222,8 @@ function Cost({ row }: { row: ValidatedPlaceRow }) {
 function Refuse({ row }: { row: ValidatedPlaceRow }) {
   const router = useRouter();
   const [note, setNote] = useState("");
-  const [reason, setReason] = useState<ValidationRefusalReason | "">("");
+  // Opens on the reason the system's own confident reading gives, and on nothing otherwise.
+  const [reason, setReason] = useState<ValidationRefusalReason | "">(() => adviseOnPlaceInUse(row).refusal ?? "");
   const [armed, setArmed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -308,6 +311,8 @@ function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteI
   const key = placeNoteSubjectKey("place", row.placeId);
   return (
     <div className="min-w-0 space-y-2">
+      {/* The system's recommendation and its reason (owner, 2026-10-17) — the Super Admin's board only. */}
+      {mode === "team" ? null : <SystemAdvice advice={adviseOnPlaceInUse(row)} />}
       {mode === "team" ? null : <Refuse row={row} />}
       <PlaceCheckNotes
         integrity={noteIndex.integrity[key] ?? []}
@@ -394,13 +399,22 @@ export function ValidatedPlaceList({
         </div>
       ) : (
         <>
-          {bulk ? <BulkDecideBar actions={REFUSE_ACTIONS} kind={kind} nameOf={(row) => row.customerName} picks={picks} /> : null}
+          {bulk ? (
+            <BulkDecideBar
+              actions={REFUSE_ACTIONS}
+              // Refusing is the one action here, so only the rows the system recommends rejecting are offered.
+              adviceOf={(row) => (adviseOnPlaceInUse(row).kind === "reject" ? "reject" : null)}
+              kind={kind}
+              nameOf={(row) => row.customerName}
+              picks={picks}
+            />
+          ) : null}
           <CrmCardsOnPhone>
             {shown.map((row) => (
               <div key={row.placeId} className="space-y-3 px-4 py-4">
                 {bulk ? <BulkPick picks={picks} row={row} /> : null}
                 <div className="flex min-w-0 gap-3">
-                  <CrmPhotoThumb alt={photoAlt(row)} path={row.photoPath} />
+                  <CrmPhotoThumb alt={photoAlt(row)} className="h-32 w-32" lazy path={row.photoPath} rotatable />
                   <Who row={row} />
                 </div>
                 <Place row={row} />
@@ -422,7 +436,7 @@ export function ValidatedPlaceList({
                 <tr key={row.placeId} className="even:bg-slate-50/60">
                   <td className={crmTdClassName}>
                     <div className="min-w-0 space-y-2">
-                      <CrmPhotoThumb alt={photoAlt(row)} path={row.photoPath} />
+                      <CrmPhotoThumb alt={photoAlt(row)} className="h-32 w-32 max-w-full" lazy path={row.photoPath} rotatable />
                       {bulk ? <BulkPick picks={picks} row={row} /> : null}
                     </div>
                   </td>

@@ -168,7 +168,7 @@ function Reading({ subject }: { subject: MatchSubject }) {
   return (
     <div className="flex min-w-0 gap-3">
       <div className="w-20 shrink-0">
-        <CrmPhotoThumb alt={`Sign photo: ${subject.title}, validated by ${subject.repName}`} className="h-20 w-20" lazy path={subject.photoPath} />
+        <CrmPhotoThumb alt={`Sign photo: ${subject.title}, validated by ${subject.repName}`} className="h-20 w-20" lazy path={subject.photoPath} rotatable />
       </div>
       <div className="min-w-0 flex-1 space-y-1">
         <p className="break-words text-sm font-black text-slate-950">{subject.title}</p>

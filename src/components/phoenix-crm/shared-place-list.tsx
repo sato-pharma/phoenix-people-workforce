@@ -32,6 +32,7 @@ import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { SeatedCustomers } from "@/components/phoenix-crm/shared-place-customers";
+import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import {
   CrmButton,
   CrmCardsOnPhone,
@@ -47,7 +48,9 @@ import {
   VALIDATION_REASON_REQUIRED,
   type ValidationRefusalReason,
 } from "@/lib/phoenix-crm/validation-feedback";
+import { adviseOnBuilding } from "@/lib/phoenix-crm/place-check-advice";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
+import { cn } from "@/lib/utils";
 import type { VenueGroup } from "@/lib/phoenix-crm/shared-place-groups";
 import type { PlaceNoteIndex, SharedPlaceBoardRow } from "@/lib/phoenix-crm/view-types";
 
@@ -86,23 +89,111 @@ function readingText(label: string, reading: SharedPlaceBoardRow["pin"]): string
 /** Which of the two layouts a venue control is drawn in — the phone block and the table are BOTH in the page, so an id must say which. */
 type VenueScope = "cards" | "table";
 
-function Venue({ mode, row }: { mode: PlaceCheckNotesMode; row: SharedPlaceBoardRow }) {
+/**
+ * Where the building stands, in one pill. A manager's board never says a decision waits on anybody, or
+ * that somebody rejected it (owner, 2026-10-13) — it says what is true of the building.
+ */
+function VenueStatus({ mode, row }: { mode: PlaceCheckNotesMode; row: SharedPlaceBoardRow }) {
+  if (row.status === "held") return <CrmPill tone="warn">{mode === "team" ? "Being checked" : "Waiting for you"}</CrmPill>;
+  if (row.status === "retired") return <CrmPill tone="bad">{mode === "team" ? "No longer in use" : "Rejected"}</CrmPill>;
+  return <CrmPill tone="good">In use</CrmPill>;
+}
+
+/**
+ * The building, read first and read whole (owner, 2026-10-17: "every polyclinic should crystal clear
+ * show me the name of the polyclinic and its data"): its name large, what kind of building it is and
+ * where it stands, who captured it and when, and where it is.
+ */
+function VenueHeader({ mode, row }: { mode: PlaceCheckNotesMode; row: SharedPlaceBoardRow }) {
+  const where = [row.address, row.brickName, row.areaName].filter(Boolean).join(" · ");
   return (
-    <div className="min-w-0 space-y-1">
-      <p className="break-words text-sm font-black text-slate-900" dir="auto">
+    <div className="min-w-0 flex-1 space-y-1.5">
+      <h3 className="break-words text-lg font-black leading-tight text-slate-950" dir="auto">
         {row.name}
-      </p>
-      <p className="break-words text-xs font-semibold text-slate-500">{row.kindLabel}</p>
-      <p className="break-words text-sm text-slate-700">{row.repName}</p>
-      <p className="break-words text-xs text-slate-500">{row.territory}</p>
-      <p className="break-words text-xs text-slate-500">Captured {row.capturedAtText}</p>
-      <div className="flex min-w-0 flex-wrap gap-1">
+      </h3>
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <CrmPill>{row.kindLabel}</CrmPill>
+        <VenueStatus mode={mode} row={row} />
         <CrmPill tone={row.seated === 0 ? "neutral" : "info"}>
           {row.seated === 0 ? "Nobody seated yet" : `${row.seated} ${row.seated === 1 ? "customer seated" : "customers seated"}`}
         </CrmPill>
-        {row.status === "held" ? <CrmPill tone="warn">{mode === "team" ? "Being checked" : "Waiting for you"}</CrmPill> : null}
         {row.isTest ? <CrmPill>Test entry</CrmPill> : null}
       </div>
+      <p className="break-words text-sm font-semibold text-slate-700">
+        {row.repName} · {row.territory} · Captured {row.capturedAtText}
+      </p>
+      {where ? (
+        <p className="break-words text-sm text-slate-500" dir="auto">
+          {where}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** A photograph's own heading — drawn on the phone, where no table header names the column. */
+function PhotoHeading({ children }: { children: string }) {
+  return <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{children}</p>;
+}
+
+/** The sign on the building's own door, large, with what the reader saw on it. */
+function SignPhoto({ headed, row }: { headed: boolean; row: SharedPlaceBoardRow }) {
+  return (
+    <div className="min-w-0 space-y-1.5">
+      {headed ? <PhotoHeading>The sign on the building</PhotoHeading> : null}
+      <CrmPhotoThumb alt={`Sign photo for ${row.name}`} className="h-64 w-full" lazy path={row.photoPath} rotatable />
+      {row.signboard ? (
+        <CrmPill tone={row.signboard.verdict === "match" ? "good" : row.signboard.verdict === "unjudged" ? "neutral" : "warn"}>
+          {signboardText(row.signboard)}
+        </CrmPill>
+      ) : (
+        <p className="break-words text-xs text-slate-500">The sign has not been read yet.</p>
+      )}
+      {row.signboard?.signText ? (
+        <p className="break-words text-xs text-slate-700" dir="auto">
+          Read on it: {row.signboard.signText}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The ONE timetable photographed inside for everybody seated there, large, with what the reader found on
+ * it. The building is read once and every customer is judged against that one reading, so the text is
+ * the same on every customer's row; it is taken from the first that carries it. A building with
+ * customers seated in it and no timetable on file is the fault the owner named first ("no timetables"),
+ * so that empty frame says so in rose rather than in grey.
+ */
+function TimetablePhoto({ customers, headed, row }: { customers: VenueGroup["customers"]; headed: boolean; row: SharedPlaceBoardRow }) {
+  const read = customers.find((customer) => customer.timetable?.scheduleText)?.timetable?.scheduleText ?? null;
+  return (
+    <div className="min-w-0 space-y-1.5">
+      {headed ? <PhotoHeading>The timetable inside</PhotoHeading> : null}
+      {row.schedulePhotoPath ? (
+        <>
+          <CrmPhotoThumb alt={`Timetable photo for ${row.name}`} className="h-64 w-full" lazy path={row.schedulePhotoPath} rotatable />
+          {row.schedulePhotoCapturedAtText ? <p className="break-words text-xs text-slate-500">Photographed {row.schedulePhotoCapturedAtText}</p> : null}
+          {read ? (
+            <p className="break-words text-xs text-slate-700" dir="auto">
+              Read on it: {read}
+            </p>
+          ) : null}
+        </>
+      ) : (
+        <div
+          className={cn(
+            "flex h-64 w-full items-center justify-center border border-dashed px-4 text-center text-sm font-black",
+            row.seated > 0 ? "border-rose-300 bg-rose-50 text-rose-800" : "border-slate-300 bg-slate-50 text-slate-500",
+          )}
+        >
+          <span className="break-words">
+            {row.seated > 0
+              ? `No timetable on file, and ${row.seated === 1 ? "1 customer is" : `${row.seated} customers are`} seated here.`
+              : "No timetable yet. The first customer seated here brings it."}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -110,11 +201,7 @@ function Venue({ mode, row }: { mode: PlaceCheckNotesMode; row: SharedPlaceBoard
 function Where({ row }: { row: SharedPlaceBoardRow }) {
   const readings = [readingText("Photo", row.photo), readingText("Capture location", row.pin)].filter((line): line is string => line !== null);
   return (
-    <div className="min-w-0 space-y-0.5 text-sm text-slate-700">
-      {row.address ? <p className="break-words text-xs text-slate-500">{row.address}</p> : null}
-      {row.brickName || row.areaName ? (
-        <p className="break-words text-xs text-slate-500">{[row.brickName, row.areaName].filter(Boolean).join(" · ")}</p>
-      ) : null}
+    <div className="min-w-0 space-y-1 text-sm text-slate-700">
       {readings.map((line) => (
         <p key={line} className="break-words text-xs text-slate-500">
           {line}
@@ -123,23 +210,9 @@ function Where({ row }: { row: SharedPlaceBoardRow }) {
       <a className="inline-block text-xs font-black text-orange-700 underline underline-offset-2" href={row.mapsLink} rel="noreferrer" target="_blank">
         Open the building in Google Maps
       </a>
-      <div className="space-y-0.5 border-t border-slate-100 pt-1">
-        {row.signboard ? (
-          <CrmPill tone={row.signboard.verdict === "match" ? "good" : row.signboard.verdict === "unjudged" ? "neutral" : "warn"}>
-            {signboardText(row.signboard)}
-          </CrmPill>
-        ) : (
-          <p className="text-xs text-slate-500">The sign has not been read yet.</p>
-        )}
-        {row.signboard?.signText ? (
-          <p className="break-words text-xs text-slate-700" dir="auto">
-            {row.signboard.signText}
-          </p>
-        ) : null}
-        <p className="break-words text-xs text-slate-500">
-          This building is not looked up in Google: the check reads a customer&apos;s own name, and a polyclinic has none.
-        </p>
-      </div>
+      <p className="break-words border-t border-slate-100 pt-1 text-xs text-slate-500">
+        This building is not looked up in Google: the check reads a customer&apos;s own name, and a polyclinic has none.
+      </p>
     </div>
   );
 }
@@ -226,7 +299,8 @@ function RestoreVenue({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueSc
 function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope }) {
   const router = useRouter();
   const [note, setNote] = useState("");
-  const [reason, setReason] = useState<ValidationRefusalReason | "">("");
+  // Opens on the reason the system's own confident reading gives, and on nothing otherwise.
+  const [reason, setReason] = useState<ValidationRefusalReason | "">(() => adviseOnBuilding(row).refusal ?? "");
   const [saving, setSaving] = useState<"approve" | "reject" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -310,6 +384,8 @@ function LastColumn({ mode, noteIndex, row, scope }: { mode: PlaceCheckNotesMode
   const key = placeNoteSubjectKey("shared_place", row.sharedPlaceId);
   return (
     <div className="min-w-0 space-y-2">
+      {/* The system's recommendation and its reason (owner, 2026-10-17) — the Super Admin's board only. */}
+      {mode === "team" ? null : <SystemAdvice advice={adviseOnBuilding(row)} />}
       {mode === "team" ? null : <Decision row={row} scope={scope} />}
       <PlaceCheckNotes
         integrity={noteIndex.integrity[key] ?? []}
@@ -368,38 +444,12 @@ const VENUE_ACTIONS: ReadonlyArray<BulkAction<SharedPlaceBoardRow>> = [
 ];
 
 /**
- * The two photographs a building is judged on (owner, 2026-10-17: "showing the polyclinic itself photo
- * validation and the timetable"): the sign on its door, which names the BUILDING, and the one timetable
- * photographed inside it for everybody seated there. A building nobody has been seated in has no
- * timetable yet — the next customer to receive there is the rep who photographs it.
- */
-function VenuePhotos({ row }: { row: SharedPlaceBoardRow }) {
-  return (
-    <div className="w-28 min-w-0 max-w-full shrink-0 space-y-3">
-      <div className="min-w-0 space-y-1">
-        <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">The sign on the building</p>
-        <CrmPhotoThumb alt={`Sign photo for ${row.name}`} className="h-28 w-28" path={row.photoPath} />
-      </div>
-      <div className="min-w-0 space-y-1">
-        <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">The timetable inside</p>
-        {row.schedulePhotoPath ? (
-          <>
-            <CrmPhotoThumb alt={`Timetable photo for ${row.name}`} className="h-28 w-28" path={row.schedulePhotoPath} />
-            {row.schedulePhotoCapturedAtText ? <p className="break-words text-xs text-slate-500">Photographed {row.schedulePhotoCapturedAtText}</p> : null}
-          </>
-        ) : (
-          <p className="break-words text-xs text-slate-500">No timetable on file yet.</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * The polyclinics and centres, each as ONE group: the building's own sign check, its timetable, and the
- * customers seated in it with what that timetable says about each (owner, 2026-10-17). The customers are
- * drawn by `SeatedCustomers`, directly under their building, so a polyclinic is never read apart from
- * the people behind its door.
+ * The polyclinics and centres, each as ONE group: the building's name and where it is, the sign on its
+ * door and its timetable side by side and large enough to read (owner, 2026-10-17: "every polyclinic
+ * should crystal clear show me the name of the polyclinic and its data and the customer the rep added to
+ * this polyclinic and the captured timetable crystal clear"), then the customers seated in it with what
+ * that timetable says about each. The customers are drawn by `SeatedCustomers`, directly under their
+ * building, so a polyclinic is never read apart from the people behind its door.
  */
 export function SharedPlaceList({
   groups,
@@ -415,15 +465,25 @@ export function SharedPlaceList({
   const picks = useRowPicks<SharedPlaceBoardRow>(bulk ? rows : [], (row) => row.sharedPlaceId);
   return (
     <>
-      {bulk ? <BulkDecideBar actions={VENUE_ACTIONS} nameOf={(row) => row.name} picks={picks} /> : null}
+      {bulk ? (
+        <BulkDecideBar
+          actions={VENUE_ACTIONS}
+          adviceOf={(row) => (row.restorable ? null : adviseOnBuilding(row).kind)}
+          nameOf={(row) => row.name}
+          picks={picks}
+        />
+      ) : null}
       <CrmCardsOnPhone>
         {groups.map(({ customers, total, venue: row }) => (
           <div key={row.sharedPlaceId} className="space-y-3 border-t-4 border-slate-200 first:border-t-0">
-            <div className="space-y-3 px-4 pt-4">
-              {bulk ? <BulkPick picks={picks} row={row} /> : null}
-              <div className="flex min-w-0 gap-3">
-                <VenuePhotos row={row} />
-                <Venue mode={mode} row={row} />
+            <div className="space-y-4 px-4 pt-4">
+              <div className="flex min-w-0 items-start gap-3">
+                {bulk ? <BulkPick picks={picks} row={row} /> : null}
+                <VenueHeader mode={mode} row={row} />
+              </div>
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <SignPhoto headed row={row} />
+                <TimetablePhoto customers={customers} headed row={row} />
               </div>
               <Where row={row} />
               <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="cards" />
@@ -434,11 +494,11 @@ export function SharedPlaceList({
           </div>
         ))}
       </CrmCardsOnPhone>
-      <CrmTable columns={["20%", "22%", "30%", "28%"]}>
+      <CrmTable columns={["27%", "27%", "18%", "28%"]}>
         <thead>
           <tr>
-            <th className={crmThClassName}>Photos</th>
-            <th className={crmThClassName}>The polyclinic</th>
+            <th className={crmThClassName}>The sign on the building</th>
+            <th className={crmThClassName}>The timetable inside</th>
             <th className={crmThClassName}>Where it was captured</th>
             <th className={crmThClassName}>{mode === "team" ? "Your comment" : "Decision"}</th>
           </tr>
@@ -446,14 +506,19 @@ export function SharedPlaceList({
         {groups.map(({ customers, total, venue: row }) => (
           <tbody key={row.sharedPlaceId} className="border-t-4 border-slate-200 first-of-type:border-t-0">
             <tr>
-              <td className={crmTdClassName}>
-                <div className="min-w-0 space-y-2">
-                  <VenuePhotos row={row} />
+              <td className={cn(crmTdClassName, "border-b-0 bg-white pb-1 pt-4")} colSpan={4}>
+                <div className="flex min-w-0 items-start gap-3">
                   {bulk ? <BulkPick picks={picks} row={row} /> : null}
+                  <VenueHeader mode={mode} row={row} />
                 </div>
               </td>
+            </tr>
+            <tr>
               <td className={crmTdClassName}>
-                <Venue mode={mode} row={row} />
+                <SignPhoto headed={false} row={row} />
+              </td>
+              <td className={crmTdClassName}>
+                <TimetablePhoto customers={customers} headed={false} row={row} />
               </td>
               <td className={crmTdClassName}>
                 <Where row={row} />
