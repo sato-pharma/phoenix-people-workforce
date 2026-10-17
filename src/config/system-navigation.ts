@@ -84,6 +84,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Stethoscope,
+  StickyNote,
   Sunrise,
   Store,
   Tablet,
@@ -2473,6 +2474,9 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", permissions: [{ resource: "employees", action: "update" }] },
       { href: "/hr/attendance/policies", icon: CalendarClock, label: "Attendance Policies", permissions: [{ resource: "employees", action: "update" }] },
       { href: "/hr/hr-calendar", icon: CalendarDays, label: "Company Calendar", permissions: [{ resource: "hr_calendar" }] },
+      // The HR team's shared notes (2026-10-17) — both HR seats write and read them, so the row carries
+      // no roles gate and follows the hr_reminders grant alone (src/lib/auth/permissions.ts).
+      { href: "/hr/hr-reminders", icon: StickyNote, label: "HR Reminders", permissions: [{ resource: "hr_reminders" }] },
       // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under
       // Employee Requests. "Events Calendar" because "Company Calendar" above is already /hr/hr-calendar; this
       // is the admin host of the portal events calendar (events, holidays, leave and birthdays).
@@ -3498,6 +3502,13 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "HR Calendar",
     description: "Company-wide events, holidays, and leave calendar.",
     permissions: [{ resource: "hr_calendar" }],
+  },
+  {
+    href: "/hr-reminders",
+    icon: StickyNote,
+    label: "HR Reminders",
+    description: "Shared notes for the HR team, drawn as a list, a week and a month, with a conversation under each one.",
+    permissions: [{ resource: "hr_reminders" }],
   },
   {
     href: "/admin/company-calendar",
@@ -5084,6 +5095,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
         sectionId: "attendance-management-calendars",
         hrefs: [
           "/hr-calendar",
+          "/hr-reminders",
           "/admin/company-calendar",
           "/admin/private-calendars",
           "/attendance/holiday-calendar",

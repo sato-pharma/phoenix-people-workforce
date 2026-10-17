@@ -2037,6 +2037,20 @@ export const accessRegistry = [
   sessionApi({ methods: readOnly, pattern: "/api/retention", permission: { resource: "retention", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/retention", permission: { resource: "retention", action: "create" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/retention", permission: { resource: "retention", action: "update" }, csrfRequired: true }),
+  // HR Reminders (owner, 2026-10-17): shared notes, a week calendar and a month calendar for the HR
+  // team. The matrix key is the coarse gate — it is held by the HR Manager (Super Admin), HR
+  // Operations and HR Resourcing — and the fine gate is the service: an item is visible to its
+  // author, to whoever it was shared with, and always to the HR Manager, and only its AUTHOR may
+  // change it. A request for an item the caller cannot see is answered 404, never 403. The tables
+  // are service-role only, so this service is the boundary. Nothing here sends mail; a comment rings
+  // the in-app bell only. Not audit-required: soft delete, `done_by_hr_id` and the comment thread are
+  // the record, and an `audit_logs` row per sticky note would drown the Operations page.
+  sessionApi({ methods: ["GET"], pattern: "/api/hr-reminders", permission: { resource: "hr_reminders", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/hr-reminders", permission: { resource: "hr_reminders", action: "create" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["PATCH"], pattern: "/api/hr-reminders/:id", permission: { resource: "hr_reminders", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["DELETE"], pattern: "/api/hr-reminders/:id", permission: { resource: "hr_reminders", action: "delete" }, csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/hr-reminders/:id/comments", permission: { resource: "hr_reminders", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/hr-reminders/:id/comments", permission: { resource: "hr_reminders", action: "create" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/weekly-plans", permission: { resource: "weekly_plans", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/weekly-plans", permission: { resource: "weekly_plans", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/weekly-plans/export", permission: { resource: "weekly_plans", action: "read" }, guard: "domain-helper" }),
