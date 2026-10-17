@@ -743,6 +743,7 @@ async function tellSeatedRepsValidateAgain(viewer: PhoenixCrmViewer, result: Row
 export type SharedPlaceRefusalForCustomer = {
   /** The rep who photographed the TIMETABLE — his capture is the one that was retired. */
   repHrId: string | null;
+  sharedPlaceId: string;
   sharedPlaceName: string;
   /** A key from `VALIDATION_REFUSAL_REASON_KEYS`, as chosen on the venue. */
   refusalReason: string | null;
@@ -791,6 +792,7 @@ export async function loadSharedPlaceRefusalsForCustomers(
     if (!venue || venue.status !== "retired") continue;
     byCustomer.set(customerId, {
       repHrId: text(place.created_by_hr_id),
+      sharedPlaceId: String(venue.id),
       sharedPlaceName: String(venue.name ?? "A polyclinic or centre"),
       refusalReason: text(venue.refusal_reason),
     });

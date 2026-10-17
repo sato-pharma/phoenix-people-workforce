@@ -338,6 +338,13 @@ export type ValidationReviewRow = {
   photoKind: ValidationPhotoKind;
   /** The polyclinic or centre the customer is seated in — set on a timetable hold only. */
   sharedPlaceName: string | null;
+  /**
+   * The venue this place is seated in, read off the PLACE row and so set whatever the hold was about
+   * (owner, 2026-10-17: group every polyclinic with the customers in it). `sharedPlaceName` above
+   * rides the hold's record and is null on a review that is not a timetable hold; this is how the
+   * Place checks board files every such row under its building instead of among the single clinics.
+   */
+  sharedPlaceId: string | null;
   /** The hours read beside this customer's name on the timetable, as written. Evidence, never parsed. */
   hoursRead: string | null;
   /** What the system read on the signboard — or on the timetable — verbatim. */
@@ -445,7 +452,7 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
     selectByIds<Row>("phoenix_crm_customers", "id, name, list_type, speciality", "id", customerIds),
     selectByIds<Row>(
       "phoenix_crm_places",
-      "id, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, status",
+      "id, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, status, shared_place_id",
       "id",
       placeIds,
     ),
@@ -502,6 +509,7 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
       // is about the photo that was taken, which does not change when the point does.
       photoKind: schedule ? "schedule" : "signboard",
       sharedPlaceName: venue ? text(venue.name) : null,
+      sharedPlaceId: text(place.shared_place_id),
       hoursRead: schedule ? text(google.hoursRead) : null,
       signText: signboard || schedule ? text(signboard ? google.signText : google.scheduleText) : null,
       signNames,
@@ -715,6 +723,8 @@ export type ValidatedPlaceRow = {
   photoKind: ValidationPhotoKind;
   /** The polyclinic or centre this place sits in, when it is seated in one. */
   sharedPlaceName: string | null;
+  /** That venue's id, so the board files this place under its building (owner, 2026-10-17). */
+  sharedPlaceId: string | null;
   /** What the system read on the timetable: null when this place is not seated or was not read. */
   schedule: { verdict: "match" | "other_name" | "no_schedule" | "unjudged"; scheduleText: string | null; hoursRead: string | null } | null;
 };
@@ -824,6 +834,7 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
         signboard: signboardOf(row.signboard_check),
         photoKind: text(row.shared_place_id) ? "schedule" : "signboard",
         sharedPlaceName: venues.get(String(row.shared_place_id ?? ""))?.name ?? null,
+        sharedPlaceId: text(row.shared_place_id),
         schedule: scheduleOf(row.schedule_check),
       };
     });
@@ -948,6 +959,8 @@ export type ReopenedCustomerRow = {
    * ordinary refusal of his own place, which is every row this list held before 2026-10-09.
    */
   sharedPlaceName: string | null;
+  /** That venue's id, so the board files him under his building (owner, 2026-10-17). */
+  sharedPlaceId: string | null;
 };
 
 /**
@@ -1030,6 +1043,7 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
       waitingHours: Number.isNaN(at) ? 0 : Math.max(0, Math.floor((now - at) / 3_600_000)),
       reasonLabel: validationRefusalLabel(review ? text(review.refusal_reason) : (venue?.refusalReason ?? null)),
       sharedPlaceName: venue?.sharedPlaceName ?? null,
+      sharedPlaceId: venue?.sharedPlaceId ?? null,
     };
   });
   return { rows, capped: read.capped };

@@ -23,7 +23,7 @@
  * scroller); a phone draws the same rows as cards. Square corners throughout.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
@@ -31,6 +31,7 @@ import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/compone
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
+import { SeatedCustomers } from "@/components/phoenix-crm/shared-place-customers";
 import {
   CrmButton,
   CrmCardsOnPhone,
@@ -47,6 +48,7 @@ import {
   type ValidationRefusalReason,
 } from "@/lib/phoenix-crm/validation-feedback";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
+import type { VenueGroup } from "@/lib/phoenix-crm/shared-place-groups";
 import type { PlaceNoteIndex, SharedPlaceBoardRow } from "@/lib/phoenix-crm/view-types";
 
 /** What the system read on the sign of the BUILDING. A verdict on the venue's own name, never on a person's. */
@@ -81,7 +83,10 @@ function readingText(label: string, reading: SharedPlaceBoardRow["pin"]): string
   return `${label}: ${reading.lat.toFixed(5)}, ${reading.lon.toFixed(5)} (${accuracy})`;
 }
 
-function Venue({ row }: { row: SharedPlaceBoardRow }) {
+/** Which of the two layouts a venue control is drawn in — the phone block and the table are BOTH in the page, so an id must say which. */
+type VenueScope = "cards" | "table";
+
+function Venue({ mode, row }: { mode: PlaceCheckNotesMode; row: SharedPlaceBoardRow }) {
   return (
     <div className="min-w-0 space-y-1">
       <p className="break-words text-sm font-black text-slate-900" dir="auto">
@@ -95,7 +100,7 @@ function Venue({ row }: { row: SharedPlaceBoardRow }) {
         <CrmPill tone={row.seated === 0 ? "neutral" : "info"}>
           {row.seated === 0 ? "Nobody seated yet" : `${row.seated} ${row.seated === 1 ? "customer seated" : "customers seated"}`}
         </CrmPill>
-        {row.status === "held" ? <CrmPill tone="warn">Waiting for you</CrmPill> : null}
+        {row.status === "held" ? <CrmPill tone="warn">{mode === "team" ? "Being checked" : "Waiting for you"}</CrmPill> : null}
         {row.isTest ? <CrmPill>Test entry</CrmPill> : null}
       </div>
     </div>
@@ -170,7 +175,7 @@ function Cost({ row }: { row: SharedPlaceBoardRow }) {
  * server might not do — a customer whose timetable still cannot answer for him stays under To
  * validate, and the answer says so by name.
  */
-function RestoreVenue({ row }: { row: SharedPlaceBoardRow }) {
+function RestoreVenue({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope }) {
   const router = useRouter();
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -198,13 +203,13 @@ function RestoreVenue({ row }: { row: SharedPlaceBoardRow }) {
         Bringing it back makes the building live again and gives every customer it retired their place back. One whose timetable still cannot
         answer for them stays under To validate.
       </p>
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`restore-venue-note-${row.sharedPlaceId}`}>
+      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`restore-venue-note-${scope}-${row.sharedPlaceId}`}>
         {VALIDATION_NOTE_LABEL}
       </label>
       <textarea
         className={crmTextareaClassName}
         disabled={saving}
-        id={`restore-venue-note-${row.sharedPlaceId}`}
+        id={`restore-venue-note-${scope}-${row.sharedPlaceId}`}
         maxLength={500}
         onChange={(event) => setNote(event.target.value)}
         rows={2}
@@ -218,7 +223,7 @@ function RestoreVenue({ row }: { row: SharedPlaceBoardRow }) {
   );
 }
 
-function Decision({ row }: { row: SharedPlaceBoardRow }) {
+function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope }) {
   const router = useRouter();
   const [note, setNote] = useState("");
   const [reason, setReason] = useState<ValidationRefusalReason | "">("");
@@ -247,7 +252,7 @@ function Decision({ row }: { row: SharedPlaceBoardRow }) {
   // approve/reject pair again: rejecting a retired venue is what the database refuses, and the Cost
   // lines below describe a cost that has already been paid.
   if (row.restorable) {
-    return <RestoreVenue row={row} />;
+    return <RestoreVenue row={row} scope={scope} />;
   }
 
   return (
@@ -262,17 +267,17 @@ function Decision({ row }: { row: SharedPlaceBoardRow }) {
       <Cost row={row} />
       <RefusalReasonField
         disabled={saving !== null}
-        id={`shared-place-reason-${row.sharedPlaceId}`}
+        id={`shared-place-reason-${scope}-${row.sharedPlaceId}`}
         onChange={setReason}
         value={reason}
       />
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`shared-place-note-${row.sharedPlaceId}`}>
+      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`shared-place-note-${scope}-${row.sharedPlaceId}`}>
         {VALIDATION_NOTE_LABEL}
       </label>
       <textarea
         className={crmTextareaClassName}
         disabled={saving !== null}
-        id={`shared-place-note-${row.sharedPlaceId}`}
+        id={`shared-place-note-${scope}-${row.sharedPlaceId}`}
         maxLength={500}
         onChange={(event) => setNote(event.target.value)}
         rows={2}
@@ -301,11 +306,11 @@ function Decision({ row }: { row: SharedPlaceBoardRow }) {
  * decision on this page, and the Super Admin's alone. A manager reads the venue, comments on it and
  * recommends; whether it was already approved, and by whom, is not on his screen (owner, 2026-10-13).
  */
-function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: SharedPlaceBoardRow }) {
+function LastColumn({ mode, noteIndex, row, scope }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: SharedPlaceBoardRow; scope: VenueScope }) {
   const key = placeNoteSubjectKey("shared_place", row.sharedPlaceId);
   return (
     <div className="min-w-0 space-y-2">
-      {mode === "team" ? null : <Decision row={row} />}
+      {mode === "team" ? null : <Decision row={row} scope={scope} />}
       <PlaceCheckNotes
         integrity={noteIndex.integrity[key] ?? []}
         mode={mode}
@@ -362,63 +367,108 @@ const VENUE_ACTIONS: ReadonlyArray<BulkAction<SharedPlaceBoardRow>> = [
   },
 ];
 
+/**
+ * The two photographs a building is judged on (owner, 2026-10-17: "showing the polyclinic itself photo
+ * validation and the timetable"): the sign on its door, which names the BUILDING, and the one timetable
+ * photographed inside it for everybody seated there. A building nobody has been seated in has no
+ * timetable yet — the next customer to receive there is the rep who photographs it.
+ */
+function VenuePhotos({ row }: { row: SharedPlaceBoardRow }) {
+  return (
+    <div className="w-28 min-w-0 max-w-full shrink-0 space-y-3">
+      <div className="min-w-0 space-y-1">
+        <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">The sign on the building</p>
+        <CrmPhotoThumb alt={`Sign photo for ${row.name}`} className="h-28 w-28" path={row.photoPath} />
+      </div>
+      <div className="min-w-0 space-y-1">
+        <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">The timetable inside</p>
+        {row.schedulePhotoPath ? (
+          <>
+            <CrmPhotoThumb alt={`Timetable photo for ${row.name}`} className="h-28 w-28" path={row.schedulePhotoPath} />
+            {row.schedulePhotoCapturedAtText ? <p className="break-words text-xs text-slate-500">Photographed {row.schedulePhotoCapturedAtText}</p> : null}
+          </>
+        ) : (
+          <p className="break-words text-xs text-slate-500">No timetable on file yet.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The polyclinics and centres, each as ONE group: the building's own sign check, its timetable, and the
+ * customers seated in it with what that timetable says about each (owner, 2026-10-17). The customers are
+ * drawn by `SeatedCustomers`, directly under their building, so a polyclinic is never read apart from
+ * the people behind its door.
+ */
 export function SharedPlaceList({
+  groups,
   mode,
   noteIndex,
-  rows,
 }: {
+  groups: VenueGroup[];
   mode: PlaceCheckNotesMode;
   noteIndex: PlaceNoteIndex;
-  rows: SharedPlaceBoardRow[];
 }) {
   const bulk = mode === "company";
+  const rows = useMemo(() => groups.map((group) => group.venue), [groups]);
   const picks = useRowPicks<SharedPlaceBoardRow>(bulk ? rows : [], (row) => row.sharedPlaceId);
   return (
     <>
       {bulk ? <BulkDecideBar actions={VENUE_ACTIONS} nameOf={(row) => row.name} picks={picks} /> : null}
       <CrmCardsOnPhone>
-        {rows.map((row) => (
-          <div key={row.sharedPlaceId} className="space-y-3 px-4 py-4">
-            {bulk ? <BulkPick picks={picks} row={row} /> : null}
-            <div className="flex min-w-0 gap-3">
-              <CrmPhotoThumb alt={`Sign photo for ${row.name}`} path={row.photoPath} />
-              <Venue row={row} />
+        {groups.map(({ customers, total, venue: row }) => (
+          <div key={row.sharedPlaceId} className="space-y-3 border-t-4 border-slate-200 first:border-t-0">
+            <div className="space-y-3 px-4 pt-4">
+              {bulk ? <BulkPick picks={picks} row={row} /> : null}
+              <div className="flex min-w-0 gap-3">
+                <VenuePhotos row={row} />
+                <Venue mode={mode} row={row} />
+              </div>
+              <Where row={row} />
+              <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="cards" />
             </div>
-            <Where row={row} />
-            <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
+            <div className="border-t border-slate-100 bg-slate-50/60 pb-2">
+              <SeatedCustomers customers={customers} layout="cards" mode={mode} noteIndex={noteIndex} total={total} venueTimetablePath={row.schedulePhotoPath} />
+            </div>
           </div>
         ))}
       </CrmCardsOnPhone>
-      <CrmTable columns={["12%", "24%", "36%", "28%"]}>
+      <CrmTable columns={["20%", "22%", "30%", "28%"]}>
         <thead>
           <tr>
-            <th className={crmThClassName}>Photo</th>
+            <th className={crmThClassName}>Photos</th>
             <th className={crmThClassName}>The polyclinic</th>
             <th className={crmThClassName}>Where it was captured</th>
             <th className={crmThClassName}>{mode === "team" ? "Your comment" : "Decision"}</th>
           </tr>
         </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.sharedPlaceId} className="even:bg-slate-50/60">
+        {groups.map(({ customers, total, venue: row }) => (
+          <tbody key={row.sharedPlaceId} className="border-t-4 border-slate-200 first-of-type:border-t-0">
+            <tr>
               <td className={crmTdClassName}>
                 <div className="min-w-0 space-y-2">
-                  <CrmPhotoThumb alt={`Sign photo for ${row.name}`} path={row.photoPath} />
+                  <VenuePhotos row={row} />
                   {bulk ? <BulkPick picks={picks} row={row} /> : null}
                 </div>
               </td>
               <td className={crmTdClassName}>
-                <Venue row={row} />
+                <Venue mode={mode} row={row} />
               </td>
               <td className={crmTdClassName}>
                 <Where row={row} />
               </td>
               <td className={crmTdClassName}>
-                <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
+                <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="table" />
               </td>
             </tr>
-          ))}
-        </tbody>
+            <tr>
+              <td className="border-b border-slate-200 bg-slate-50/60 p-0" colSpan={4}>
+                <SeatedCustomers customers={customers} layout="table" mode={mode} noteIndex={noteIndex} total={total} venueTimetablePath={row.schedulePhotoPath} />
+              </td>
+            </tr>
+          </tbody>
+        ))}
       </CrmTable>
     </>
   );

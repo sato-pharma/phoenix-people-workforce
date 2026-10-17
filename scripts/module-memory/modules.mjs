@@ -358,17 +358,38 @@ export const MODULES = [
     title: "Phoenix CRM — validating a place: the signboard, the refusal, the merge",
     scope: "What turns a captured place into a validated one — the signboard read, capture trust, the shared place a rep captures once and seats customers in, the timetable read, the Place checks page, the closed refusal reasons the rep is told, the customers waiting to be captured again, the validate-first order, the brick lookup and the same-seat duplicate merge.",
     globs: [
-      "src/lib/phoenix-crm/{signboard-rules,schedule-rules,shared-place-rules,validation-feedback,duplicate-merge-rules,validation-review-filters}.ts",
-      "src/lib/phoenix-crm/server/{venue-timetable,signboard-check,signboard-sweep,schedule-check,shared-places,place-location,validation-reviews}.ts",
-      "src/components/phoenix-crm/{seat-in-venue-screen,venue-timetable-screen,refusal-reason-field,reopened-customer-list,shared-place-list,shared-place-screens,validated-place-list,validation-review-queue,validation-reviews-board}.tsx",
+      "src/lib/phoenix-crm/{signboard-rules,schedule-rules,shared-place-rules,shared-place-groups,place-match-groups,validation-feedback,duplicate-merge-rules,validation-review-filters}.ts",
+      "src/lib/phoenix-crm/server/{venue-timetable,signboard-check,signboard-sweep,schedule-check,shared-places,place-location,place-match-groups,validation-reviews}.ts",
+      "src/components/phoenix-crm/{seat-in-venue-screen,venue-timetable-screen,refusal-reason-field,reopened-customer-list,shared-place-customers,shared-place-list,shared-place-screens,place-match-board,validated-place-list,validation-review-queue,validation-reviews-board}.tsx",
       "app/**/field-crm/validation-reviews/**",
       "app/api/phoenix-crm/{shared-places,validation-reviews}/**",
       "app/api/phoenix-crm/list/places/seat/**",
       "scripts/phoenix-crm-merge-same-seat-duplicates.ts",
-      "tests/phoenix-crm-{seat-in-venue,signboard-check,capture-trust-place,validation-feedback,place-brick-lookup,place-location-frozen,shared-place,duplicate-merge,refuse-validation,validation-review-filters,place-checks-in-overflow}*",
+      "tests/phoenix-crm-{seat-in-venue,signboard-check,capture-trust-place,validation-feedback,place-brick-lookup,place-location-frozen,place-match-groups,shared-place,duplicate-merge,refuse-validation,validation-review-filters,place-checks-in-overflow}*",
     ],
-    keywords: ["signboard", "refusal reason", "validate again", "duplicate merge", "place checks", "capture trust", "brick lookup", "shared place", "polyclinic", "timetable"],
+    keywords: ["signboard", "refusal reason", "validate again", "duplicate merge", "place checks", "capture trust", "brick lookup", "shared place", "polyclinic", "timetable", "same place", "place match"],
     tables: [],
+  },
+  // 🔴 SPLIT, 2026-10-17, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `phoenix-crm-validation`
+  // measured a 4,160-byte pointer against the 4,000 margin `tests/module-memory.test.ts` holds, the moment
+  // the same-place comparison taught its rule. What the Place checks PAGE draws and how the Super Admin
+  // decides on it — the polyclinic groups, the bulk answers, the rejections taken back, the comments and
+  // the same-place comparison — is one family, so it moves together. `phoenix-crm-validation` KEEPS EVERY
+  // GLOB IT HAD, so a Place checks file loads the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "phoenix-crm-place-checks",
+    title: "Phoenix CRM — the Place checks page: groups, the same-place comparison and the decisions",
+    scope: "What the Place checks page draws and how the Super Admin decides on it — the polyclinics tab and its groups, the same-place comparison between reps, the bulk answers, a rejection taken back, the comments and a district manager's read-only board.",
+    globs: [
+      "src/lib/phoenix-crm/{shared-place-groups,place-match-groups,validation-review-filters}.ts",
+      "src/lib/phoenix-crm/server/{place-match-groups,validation-reviews}.ts",
+      "src/components/phoenix-crm/{place-match-board,shared-place-customers,shared-place-list,validated-place-list,validation-review-queue,validation-reviews-board,reopened-customer-list}.tsx",
+      "app/**/field-crm/validation-reviews/**",
+      "app/api/phoenix-crm/validation-reviews/**",
+      "tests/phoenix-crm-{place-match-groups,shared-place-groups,refuse-validation,validation-review-filters,place-checks-in-overflow}*",
+    ],
+    keywords: ["place checks", "same place", "place match", "polyclinic group", "bulk answer", "reject a customer", "approve after rejection", "district manager place checks"],
+    tables: ["phoenix_crm_place_match_answers"],
   },
   // 🔴 SPLIT, 2026-10-09, FOR THE SAME REASON AS THE THREE ABOVE: `phoenix-crm` reached 33 rules and its
   // injected pointer measured 4,064 bytes against the 4,000 margin `tests/module-memory.test.ts` holds, the
