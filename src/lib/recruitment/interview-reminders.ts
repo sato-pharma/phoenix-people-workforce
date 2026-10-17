@@ -47,7 +47,7 @@ const SEARCH_AHEAD_DAYS = 4;
  * Recording any outcome removes the interview from the reminder source, so the pump stops at once; this
  * bound only keeps a truly-abandoned interview from nagging forever.
  */
-export const AWAITING_PUMP_MAX_DAYS = 30;
+export const AWAITING_PUMP_MAX_DAYS = 14;
 /** Not before this hour (Cairo) does the daily "record what happened" nag go out. */
 export const AWAITING_PUMP_MINUTES = 9 * 60;
 
@@ -336,7 +336,7 @@ export async function runInterviewReminders(
   );
   const plan = planInterviewReminders(interviews, now);
   // The "record what happened" nag is planned afresh on every ten-minute run for every unrecorded
-  // interview of the last 30 days, and almost all of it was delivered hours ago. Re-sending an
+  // interview of the last 14 days, and almost all of it was delivered hours ago. Re-sending an
   // already-delivered key re-reads the person's profile and preferences, rewrites the notice and
   // its audit row and re-claims three channels — about ten round trips for nothing — so only the
   // reminders with something left to deliver are sent, and those a few at a time.
