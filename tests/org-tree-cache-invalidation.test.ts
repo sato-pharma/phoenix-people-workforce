@@ -109,4 +109,23 @@ export function runOrgTreeCacheInvalidationTests() {
       "the seat transfer must invalidate with the employees/vacancies modules so the shared org-tree branch fires",
     );
   }
+
+  // ── The hub imports no tag, because every cache-busting write imports the hub (2026-10-17) ───────
+  // It took two tags from closing-store-split-net.ts and company-vacation-report.ts until then, and
+  // each import dragged its module's whole service graph into every route that busts a cache — a
+  // dev server compiled the closing engine for a vacation write. The tags are declared here now and
+  // the two modules re-export them.
+  {
+    const imports = invalidation.match(/^import[^;]*;/gm) ?? [];
+    assert.ok(imports.length > 0, "the hub's import lines must be readable for this check to mean anything");
+    for (const line of imports) {
+      assert.doesNotMatch(
+        line,
+        /from\s+"@\/lib\/(?:sales|vacation)\//,
+        `the invalidation hub must import nothing from a module's services — it is imported everywhere (${line})`,
+      );
+    }
+    assert.match(invalidation, /export const CLOSING_STORE_SPLIT_CACHE_TAG = "closing-store-split";/);
+    assert.match(invalidation, /export const COMPANY_VACATION_REPORT_CACHE_TAG = "company-vacation-report";/);
+  }
 }

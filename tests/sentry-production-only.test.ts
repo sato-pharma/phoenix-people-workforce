@@ -270,8 +270,17 @@ function wiringTests() {
   );
   assert.match(
     instrumentation,
-    /async function forwardRequestErrorToSentry[\s\S]*?NEXT_RUNTIME !== "nodejs"\) return;[\s\S]*?\.enabled\) return;[\s\S]*?await import\("@\/lib\/observability\/sentry-server"\)/,
-    "the request-error hook checks the runtime and the policy before it loads the SDK",
+    /async function forwardRequestErrorToSentry[^{]*\{\s*if \(process\.env\.NEXT_RUNTIME === "nodejs"\) \{\s*if \(process\.env\.NODE_ENV === "production"\) \{\s*if \(!sentryServerStatus\([^)]*\)\.enabled\) return;[\s\S]*?await import\("@\/lib\/observability\/sentry-server"\)/,
+    "the request-error hook checks the runtime, the build and the policy before it loads the SDK",
+  );
+  // 🔴 COMPILE-TIME GATES (2026-10-17). Webpack drops a dynamic import only inside a BLOCK whose test Next
+  // inlines to a literal; code after an early `return` is compiled anyway. The runtime check was an early
+  // return until then, and the edge bundle carried the whole SDK (6 MB) and every `next dev` compiled it.
+  assert.doesNotMatch(instrumentation, /NEXT_RUNTIME !== "nodejs"\) return;/, "an early return on the runtime prunes nothing from the edge bundle");
+  assert.match(
+    instrumentation,
+    /\} else if \(process\.env\.NODE_ENV === "production"\) \{\s*const \{ initSentryServer \} = await import\("@\/lib\/observability\/sentry-server"\);/,
+    "the boot import of the SDK sits inside a production-build block, so a dev server never compiles it",
   );
 
   // Only these two files may name the SDK; sentry-client loads it lazily so a staging browser never downloads it.
@@ -303,6 +312,11 @@ function wiringTests() {
   const switchSource = code("src/lib/observability/dead-mans-switch.ts");
   assert.match(switchSource, /checkInSentry\(jobSlug, outcome\)/);
   assert.match(switchSource, /sentryServerStatus\(\{ appEnv: process\.env\.APP_ENV, dsn: process\.env\.SENTRY_DSN \}\)\.enabled\) return/);
+  assert.match(
+    switchSource,
+    /async function checkInSentry[^{]*\{\s*if \(process\.env\.NODE_ENV === "production"\) \{[\s\S]*?await import\("@\/lib\/observability\/sentry-server"\)/,
+    "the 44 routes that import the switch compile the SDK only in a production build",
+  );
 
   // Source maps and the release: the build plugin runs only when a build token exists, and keeps the maps off the wire.
   assert.match(nextConfigSource(), /if \(!authToken\) return config/, "a build without a token exports the plain config");

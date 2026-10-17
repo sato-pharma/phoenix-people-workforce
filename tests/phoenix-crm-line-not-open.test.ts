@@ -91,7 +91,7 @@ export function runPhoenixCrmLineNotOpenTests(): void {
 
   // ── The two halves are resolved in one place ────────────────────────────────────────────────────
   {
-    const page = stripComments(source("src/lib/phoenix-crm/server/page.ts"));
+    const page = stripComments(source("src/lib/phoenix-crm/server/sidebar-entries.ts"));
     assert.ok(
       /const crm = phoenixCrmHasSomethingToSay\(viewer\);/.test(page),
       "phoenixCrmSidebarEntries (which phoenixCrmEntryAvailable reads) must delegate to the predicate rather than re-testing the lengths itself — two copies of this rule is how the manager was lost",

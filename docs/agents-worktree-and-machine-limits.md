@@ -1210,6 +1210,81 @@ tribal knowledge unless the prompt carries that knowledge. Practically: a cloud 
 the facts, the files, and the exact outcome, and never assumes the session can see local state, the
 standing rules, or memory.
 
+## The dev server is the laptop's `pnpm run dev` again — 2026-10-17
+
+🔴 **Owner's choice, 2026-10-17 ~18:24 Cairo, asked in chat as multiple choice: "Laptop + lighter
+compile".** He had said that he used to run `pnpm run dev` freely in any folder or branch and it
+worked, and that phx-live now worked nowhere. So: `pnpm run dev` on this laptop is the dev server again,
+in every folder and branch; phx-live was stopped (18:25 Cairo); and one PR stops `next dev` compiling
+start-up code it can never run (next section), which lightens the laptop's server too.
+
+**Why phx-live had stopped working.** Measured on the box that afternoon: 252 MB free, 3.5 GB in swap,
+`/admin` taking 88 s, and Next restarting itself on low memory. `next dev --webpack` on this app needs
+~6.5–7 GB while it compiles, on a 7.7 GB box; a 4 GB heap cap and jemalloc were both tried that day and
+neither changed it (memory note `phx-preview-is-retired-phx-live-is-the-one-dev-server`). The box is
+not replaced and a bigger one is never proposed.
+
+**How `pnpm run dev` works in a worktree.** His PowerShell profile
+(`OneDrive\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1`, ASCII-only for PowerShell 5.1)
+wraps `pnpm`: `pnpm run dev` and `pnpm dev` run `node scripts/dev-server.mjs` from the nearest folder
+holding that script, extra words passed through (`pnpm run dev --port 3001`), and EVERY other pnpm
+command goes to the real pnpm untouched. The reason is §5's: in a worktree, pnpm's dependency check
+finds the `node_modules` junction and offers to delete it — the PRIMARY's install. Backup:
+`Microsoft.PowerShell_profile.ps1.pre-pnpm-dev-wrapper-20261017`. A session's own guards are unchanged:
+`bash-guard.mjs` C6 still refuses pnpm in a worktree and C7 a raw `next dev`, so a session invokes
+`node scripts/dev-server.mjs` itself.
+
+**What a session does now.** For a browser look it starts `node scripts/dev-server.mjs --port 3000` in
+its own worktree only when live free RAM allows (one dev server on the machine — `dev-server.mjs`
+refuses a second, and his own counts), under §5's rule for which server a session may stop. It does
+not ask him to run phx-live. **phx-live stays installed and OPTIONAL** — his to run when he wants the box; a
+session never proposes it as the default.
+
+## What `next dev` compiles before its first page — 2026-10-17
+
+Measured on the box's own `.next/dev/server` output (phx-live, base `f72f4149c`, after compiling only
+`/login`): **108 MB** of compiled server code. **56 MB** of it was the start-up hook
+(`instrumentation.ts`): the CRM live poller, CRM housekeeping and Early Birds close scheduler chunks —
+**465 repo files** — plus a 6 MB edge copy that was almost all Sentry. Another **~20 MB** was the
+Sentry SDK's vendor chunks. The login page itself was 3 MB. None of it can run under `next dev`: the
+three schedulers refuse a non-production build (`resolveInProcessHostRefusal`), process-health returns
+on `NODE_ENV`, and Sentry is gated on `APP_ENV=production` plus a DSN.
+
+🔴 **Why the guards did not prune it.** Next replaces `process.env.NODE_ENV` and
+`process.env.NEXT_RUNTIME` with literals while it compiles, and webpack drops a dynamic `import()` only
+inside a BLOCK whose test is then a literal. Code after an early `return` is compiled anyway, and a
+runtime guard (`sentryServerStatus(...)`, `PHOENIX_LIVE_CRM_POLL`) prunes nothing. The proof was in the
+same output: the block-form `if (NEXT_RUNTIME === "nodejs") {…}` kept the schedulers out of the edge
+bundle, while `forwardRequestErrorToSentry`'s `if (NEXT_RUNTIME !== "nodejs") return;` let the whole SDK
+into it.
+
+**The fix (one PR).**
+- `instrumentation.ts`: the Sentry boot import, the three schedulers and process-health sit inside
+  `if (process.env.NODE_ENV === "production") { … }` blocks; the request-error hook's two tests are
+  nested blocks, never early returns.
+- `src/lib/observability/dead-mans-switch.ts`: `checkInSentry`'s import sits in the same block, so the
+  44 files that import the switch stop compiling the SDK in dev.
+- The portal sidebar's Phoenix CRM gate moved to `src/lib/phoenix-crm/server/sidebar-entries.ts`, which
+  never imports `loadPhoenixCrmOverview` (227 files the gate never calls); `page.ts` re-exports it.
+- `src/lib/dashboard/invalidation.ts` declares the closing store-split and company vacation tags as bare
+  strings and their owners re-export them, so the hub imports nothing from sales or vacation.
+
+Production is unchanged: it is always a production build, so every block is `if (true)` there and the
+policy checks inside still decide. Pinned by `tests/sentry-production-only.test.ts`,
+`tests/process-health.test.ts`, `tests/phoenix-crm-portal-sidebar.test.ts` (3a) and
+`tests/org-tree-cache-invalidation.test.ts`; each new assertion was watched failing against its own
+break.
+
+**Projected, from a static import graph of the repo — NOT measured:** start-up 465 → 24 repo files and
+no Sentry SDK; the portal layout 728 → 475 files; the navigation route 675 → 422; 1,167 of 1,616
+pages, routes and layouts smaller, 14.9% fewer files summed. It was not measured on the box because
+another session restarted phx-live there at 18:33 Cairo for its own branch, and that server was not
+this work's to stop; the laptop had 1.3 GB free. The control to compare against, same six requests on
+the box before the change: peak 6,802 MB, 514 MemoryHigh hits, `/login` cold 10.7 s, the navigation
+route 23.2 s, the approvals hub 4.6 s. The proof that needs no measurement: a dev boot prints
+`[schedulers] not started: not a production build`, and production's boot log still prints its
+`[crm:live-poll]` and `[sentry]` lines.
+
 ## A browser look at pushed code goes on the Hetzner preview box, not a local dev server
 
 A local `next dev` is the single heaviest thing that runs on this 16 GB machine — measured
@@ -1257,8 +1332,9 @@ Telegram or OpenAI.
 **What it is for** (owner, 2026-10-12): the old `pnpm run dev` in the main folder — edit, see it
 live before the merge, and use `/admin/dev-preview` (Dev Preview — Real Data) to open the system as
 any real person — but with the server on the Hetzner box, because the local one costs ~4–6 GB and
-stalled the laptop. Since 2026-10-17 it is the ONLY dev server — `phx-preview` is retired (section
-above).
+stalled the laptop. `phx-preview` is retired (section above). 🔴 **Since 2026-10-17 ~18:24 Cairo
+phx-live is OPTIONAL — the laptop's `pnpm run dev` is the default again** ("The dev server is the
+laptop's `pnpm run dev` again", above); what follows is how it runs when he chooses it.
 
 **How it runs.** `phx-live` in his PowerShell (`~/.claude/scripts/phx-live.ps1`; `-Folder`, `-Build`,
 `-DevAuth`, `-Resync`, `-Stop`, `-InstallEnv`) opens `http://localhost:3000`.
@@ -1382,7 +1458,7 @@ AGENTS.md loads on every request and again after every compaction, so on 2026-10
 
 - **A worktree session WRITING into the primary checkout is now denied mechanically** - `.claude/hooks/primary-write-guard.mjs`, PreToolUse on Write/Edit/NotebookEdit, live 2026-09-17. It refuses an edit into the primary or another session's worktree, never a READ; before it, that write SUCCEEDED silently and stranded the change in the shared primary. **A `_wt-<task>` this session made with `new-session.mjs` is its OWN** - edit it with Edit/Write, never a Bash write. `PHX_PRIMARY_GUARD_OFF=1` stands it down; a session in the primary never sees it.
 - **Never `pnpm install`, `pnpm run` or `pnpm exec` inside a worktree** — they purge the `node_modules` junction, and `pnpm exec` fails silent-shaped. Invoke `node scripts/…`; dev server: `node scripts/dev-server.mjs --port 3000` — it caps the server's heap at 4 GB where a raw `next dev` takes half of RAM, and refuses a second server; `bash-guard.mjs` C7 DENIES a raw `next dev` everywhere (2026-09-21). **Mechanical since 2026-09-16:** `bash-guard.mjs` C6 DENIES every pnpm form here and names the node equivalent — a deny because `Bash(pnpm run *)` and `Bash(pnpm exec *)` auto-approve it, so no prompt was ever coming.
-- 🔴 **ONE DEV SERVER: `phx-live` ON THE HETZNER BOX — `phx-preview` IS RETIRED (owner, 2026-10-17)** — a local `next dev` costs ~4 GB and half the CPU (measured 2026-09-30), the box costs this laptop an ssh tunnel. The owner runs `phx-live` (plain = `next dev` on production data, his old `pnpm run dev`; `-Folder <worktree>` for a branch); a session ASKS HIM rather than starting a local server, and never proposes `phx-preview`. A local server is only the fallback when the box is unreachable, and is stopped as soon as the look is done. Account: `docs/agents-worktree-and-machine-limits.md`, "A browser look at pushed code goes on the Hetzner preview box" and "phx-live".
+- 🔴 **THE DEV SERVER IS THE LAPTOP'S `pnpm run dev` AGAIN, IN EVERY FOLDER — `phx-live` IS OPTIONAL, `phx-preview` IS RETIRED (owner, 2026-10-17 ~18:24 Cairo: "Laptop + lighter compile")** — phx-live had stopped working anywhere on the 7.7 GB box. His PowerShell profile routes `pnpm run dev` to `node scripts/dev-server.mjs`, so a worktree's junctioned `node_modules` is never offered for deletion. A session starts `node scripts/dev-server.mjs` in its own worktree only when free RAM allows, never asks him to run phx-live, and never proposes `phx-preview`. Account: "The dev server is the laptop's `pnpm run dev` again" and "phx-live", in this file.
 - **A dev server a SESSION opened dies with it** (`dev-server-reaper.mjs`, that one only); one you started yourself is nobody's child — **stop it by PORT, not by task:** `Get-NetTCPConnection -LocalPort 3000 -State Listen`, then `Stop-Process -Id <OwningProcess> -Force`. Only a curl of `000` proves the port is free. 🔴 **"NEVER CLOSE THE DEV UNTIL I TELL U" is now SCOPED, not repealed** (owner, 2026-09-28 — *"allow me to stop dev servers I start myself"*): one YOUR session started is yours to stop; one HE or another session started still waits for his word. **`TaskStop` does NOT free the memory** — it kills the wrapper and leaves the child holding the port. Check the PID's start time matches when you started it, and read free RAM TWICE: a compile spiked 3,056 MB → 134 MB and recovered to 1,675 MB by itself. `i-may-stop-a-dev-server-i-started-myself`
 
 ### §5 — Worktree payload, and the machine limits

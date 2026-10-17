@@ -88,6 +88,14 @@ export function runProcessHealthTests() {
     /^import[^\n]*process-health/m,
     "process-health must never be a static import of instrumentation.ts — that hook is bundled for the edge runtime too",
   );
+  // 🔴 The three schedulers and process-health compile ONLY in a production build (2026-10-17): each
+  // refuses a non-production build at run time anyway, and under `next dev` they were 465 repo files and
+  // 52 MB of compiled code that never ran. Only a BLOCK-form NODE_ENV test prunes the dynamic imports.
+  assert.match(
+    instrumentation,
+    /if \(process\.env\.NODE_ENV === "production"\) \{\s*try \{\s*const \{ startLiveCrmPoller \} = await import\("@\/lib\/crm\/live-poller"\);[\s\S]*?await import\("@\/lib\/early-birds\/close-scheduler"\)[\s\S]*?await import\("@\/lib\/crm\/housekeeping-scheduler"\)[\s\S]*?await import\("@\/lib\/observability\/process-health"\)[\s\S]*?\} else \{\s*console\.log\("\[schedulers\] not started: not a production build/,
+    "the schedulers and process-health sit inside one production-build block, so a dev server never compiles them",
+  );
 
   const timings = read("src/lib/observability/timings.ts");
   assert.doesNotMatch(
