@@ -30,6 +30,7 @@
 --   Nothing existing is rewritten or deleted by this migration, so there is no pre-image to take.
 
 begin;
+set local lock_timeout = '5s';
 
 create table if not exists public.phoenix_crm_offplan_exemptions (
   id uuid primary key default gen_random_uuid(),
@@ -48,6 +49,9 @@ create index if not exists phoenix_crm_offplan_exemptions_seat_idx
   on public.phoenix_crm_offplan_exemptions (seat_id) where ended_at is null;
 
 alter table public.phoenix_crm_offplan_exemptions enable row level security;
+drop policy if exists phoenix_crm_offplan_exemptions_service_role on public.phoenix_crm_offplan_exemptions;
+create policy phoenix_crm_offplan_exemptions_service_role
+  on public.phoenix_crm_offplan_exemptions for all to service_role using (true) with check (true);
 revoke all on table public.phoenix_crm_offplan_exemptions from public, anon, authenticated;
 grant all on table public.phoenix_crm_offplan_exemptions to service_role;
 
@@ -239,6 +243,12 @@ where c.id = '01850dd5-8346-40fc-86ab-211825063ee6'
     select 1 from public.phoenix_crm_offplan_exemptions e
     where e.seat_id = 'SEAT-CNS-REP-CA2' and e.customer_id = c.id and e.ended_at is null
   );
+
+-- The two caps replaced above keep their ACL on a CREATE OR REPLACE; stated again so this file is complete on its own.
+revoke execute on function public.phoenix_crm_offplan_visit_cap() from public, anon, authenticated;
+grant execute on function public.phoenix_crm_offplan_visit_cap() to service_role;
+revoke execute on function public.phoenix_crm_shared_place_day_cap() from public, anon, authenticated;
+grant execute on function public.phoenix_crm_shared_place_day_cap() to service_role;
 
 notify pgrst, 'reload schema';
 
