@@ -709,6 +709,7 @@ import { runWeeklyTrackedLinesScopeTests } from "./weekly-tracked-lines-scope.te
 import { runWeeklySummaryReportTests } from "./weekly-summary-report.test.ts";
 import { runWeeklyStockKpiMonthsTests } from "./weekly-stock-kpi-months.test.ts";
 import { runWeeklyNsmDsmWorkbookTests } from "./weekly-nsm-dsm-workbook.test.ts";
+import { runWeeklyPortalNsmDsmExportTests } from "./weekly-portal-nsm-dsm-export.test.ts";
 import { runWeeklyNsmDsmBeigeLookTests } from "./weekly-nsm-dsm-beige-look.test.ts";
 import { runWeeklyNsmDsmStockByBranchTests } from "./weekly-nsm-dsm-stock-by-branch.test.ts";
 import { runWeeklyMonthTargetScopeTests } from "./weekly-month-target-scope.test.ts";
@@ -4155,6 +4156,10 @@ await runTest(
   runWeeklyStockKpiMonthsTests,
 );
 await runTest("weekly NSM/DSM export (column arithmetic, date header)", runWeeklyNsmDsmWorkbookTests);
+await runTest(
+  "weekly NSM/DSM export from the portal (the two seats the owner named, the month as the only input, the viewer's own scope, and a regional manager's own name on the masthead)",
+  runWeeklyPortalNsmDsmExportTests,
+);
 await runTest("weekly NSM/DSM export keeps the beige look (exempt from the house identity)", runWeeklyNsmDsmBeigeLookTests);
 await runTest("weekly NSM/DSM Stock by branch (reporting distributors, no apportioned stock)", runWeeklyNsmDsmStockByBranchTests);
 await runTest("weekly tracked-line scope (golden rule: CNS / Anti Infective / Pedia)", runWeeklyTrackedLinesScopeTests);

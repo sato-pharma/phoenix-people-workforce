@@ -37,6 +37,7 @@ const SCOPE: PortalWeeklyScopeView = {
   visibility: { month: true, weekNumber: true, line: false, region: true, product: true, distributor: true },
   scopeSummary: "Anti Infective · every region",
   isSingleRegion: false,
+  canDownloadNsmDsmExport: true,
 };
 
 /** The sample dashboard (two products) narrowed to ONE product, as the service returns it. */

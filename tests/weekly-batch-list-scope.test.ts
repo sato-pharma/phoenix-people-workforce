@@ -209,7 +209,7 @@ export function runWeeklyBatchListScopeTests() {
   }
 
   // ── No third caller can send the uncut list anywhere ─────────────────────────────────────────────
-  // The two exports only read the newest upload's period tags to pick a default; they print no total.
+  // The three exports only read the newest upload's period tags to pick a default; they print no total.
   {
     const callers = callersOfListWeeklyBatches();
     assert.deepEqual(
@@ -219,6 +219,7 @@ export function runWeeklyBatchListScopeTests() {
         "app/api/sales/weekly/batches/route.ts",
         "app/api/sales/weekly/nsm-dsm-export/route.ts",
         "app/api/sales/weekly/summary-export/route.ts",
+        "src/lib/sales/weekly/portal-nsm-dsm-export.ts",
         "src/lib/sales/weekly/service.ts",
       ],
       "a new caller of listWeeklyBatches must cut its list with scopeWeeklyBatchesForViewer, or read only period tags",
@@ -226,6 +227,9 @@ export function runWeeklyBatchListScopeTests() {
     for (const periodOnly of [
       "app/api/sales/weekly/nsm-dsm-export/route.ts",
       "app/api/sales/weekly/summary-export/route.ts",
+      // The portal NSM/DSM download: it reads the list for ONE thing, the latest validated upload's
+      // cycle MONTH, when the manager named no month. Nothing from an upload's header reaches him.
+      "src/lib/sales/weekly/portal-nsm-dsm-export.ts",
     ]) {
       const source = code(read(periodOnly));
       for (const figure of WEEKLY_BATCH_HIDDEN_FIGURES) {

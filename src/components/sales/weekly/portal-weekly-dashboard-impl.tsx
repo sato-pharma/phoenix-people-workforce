@@ -36,6 +36,7 @@ import {
   Users,
 } from "lucide-react";
 
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 import { MultiSelectFilter, type MultiSelectFilterMode } from "@/components/ui/multi-select-filter";
 import { PortalWeeklyFieldForceView } from "@/components/sales/weekly/portal-weekly-field-force-view";
 import { WeeklyProductUnitsView } from "@/components/sales/weekly/weekly-product-units-view";
@@ -48,6 +49,7 @@ import type {
 } from "@/lib/sales/weekly/portal-weekly-dashboard";
 import type { PortalWeeklyFieldForce } from "@/lib/sales/weekly/portal-weekly-field-force";
 import type { WeeklyDashboard, WeeklyRanked } from "@/lib/sales/weekly/types";
+import { cn } from "@/lib/utils";
 import {
   weeklyCutUnits,
   weeklyCutUnitsOf,
@@ -152,6 +154,14 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
     distributors: "include",
   });
 
+  // The NSM/DSM workbook's own month, and nothing else (owner, 2026-10-17: "they only choose the
+  // month"). Deliberately NOT the page's Month filter: that one is multi-select and sits beside a Week
+  // filter, and a week-filtered book collapses its W1..Wn grid to one column and prints a month total
+  // that is really one week's sales. null means "the latest uploaded month", which the server resolves.
+  const [nsmDsmMonth, setNsmDsmMonth] = useState<string | null>(null);
+  const [downloadingNsmDsm, setDownloadingNsmDsm] = useState(false);
+  const [nsmDsmError, setNsmDsmError] = useState<string | null>(null);
+
   const [view, setView] = useState<DetailView>(scope.isSingleRegion ? "product" : "product");
   // The "Units for" pick (WeeklyDashboardUnitView). null until the viewer picks: the server then shows the
   // top product by value. It rides on the feed request only, never on the filters, the export or the
@@ -245,6 +255,43 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
     cacheRef.current.clear();
     setRefreshTick((tick) => tick + 1);
   };
+
+  // Fetched rather than linked, so a 403 or a 429 says so on the page instead of replacing it with a
+  // JSON error document — this book takes seconds to build and has its own rate-limit budget.
+  const downloadNsmDsm = useCallback(async () => {
+    if (downloadingNsmDsm) return;
+    setDownloadingNsmDsm(true);
+    setNsmDsmError(null);
+    try {
+      const params = new URLSearchParams();
+      if (nsmDsmMonth) params.set("month", nsmDsmMonth);
+      const response = await fetch(`/api/employee-portals/weekly-sales/nsm-dsm-export?${params.toString()}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        setNsmDsmError(
+          response.status === 429
+            ? "Too many downloads just now — try again in a minute."
+            : "The NSM/DSM export could not be generated.",
+        );
+        return;
+      }
+      const blob = await response.blob();
+      const match = (response.headers.get("Content-Disposition") ?? "").match(/filename="([^"]+)"/);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = match?.[1] ?? "phoenix-weekly-nsm-dsm.xlsx";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setNsmDsmError("The NSM/DSM export could not be generated.");
+    } finally {
+      setDownloadingNsmDsm(false);
+    }
+  }, [downloadingNsmDsm, nsmDsmMonth]);
 
   const toggleFilter = (key: MultiKey, code: string | undefined) => {
     if (!code) return;
@@ -430,6 +477,51 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* The NSM/DSM workbook, for the manager it is about: one month, his own scope, nothing else
+              to pick. The month sits on the button rather than taking the page's Month filter — see
+              nsmDsmMonth above for why a week-filtered book is the wrong book. The select wears the
+              house field token at dense height, as every filter control on a toolbar does. */}
+          {scope.canDownloadNsmDsmExport && monthOptions.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <label className="sr-only" htmlFor="nsm-dsm-month">
+                Month for the NSM/DSM export
+              </label>
+              <select
+                id="nsm-dsm-month"
+                value={nsmDsmMonth ?? monthOptions[0].code}
+                onChange={(event) => {
+                  setNsmDsmMonth(event.target.value);
+                  setNsmDsmError(null);
+                }}
+                className={cn(phxSelectClassName, "h-8 w-auto max-w-[11rem]")}
+              >
+                {monthOptions.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={downloadNsmDsm}
+                disabled={downloadingNsmDsm}
+                title="Download the field-manager workbook for that month, scoped to your own areas: sales by area, branch and distributor week by week in units, branches ranked, stock with no sales, and full details"
+                className="inline-flex h-8 items-center gap-1.5 border border-orange-500 bg-white px-2.5 text-phx-2xs font-black uppercase tracking-wide text-orange-600 transition hover:bg-orange-50 disabled:opacity-50"
+              >
+                {downloadingNsmDsm ? (
+                  <RefreshCw className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Users className="h-3 w-3" />
+                )}
+                {downloadingNsmDsm ? "Preparing…" : "NSM/DSM Export"}
+              </button>
+            </div>
+          ) : null}
+          {nsmDsmError ? (
+            <span className="break-words text-phx-2xs font-bold uppercase tracking-wide text-rose-600">
+              {nsmDsmError}
+            </span>
+          ) : null}
           <button
             type="button"
             onClick={refresh}
