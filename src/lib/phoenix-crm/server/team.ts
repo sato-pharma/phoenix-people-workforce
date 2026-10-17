@@ -43,7 +43,7 @@ import { loadDayStartsBySeat } from "@/lib/phoenix-crm/server/day-start";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { managerPlanReach } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { loadReadiness, loadRequestRows, mapRequestRow, requestPeople, requestRights, type ListRequest, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
-import { loadOffPlanRows } from "@/lib/phoenix-crm/server/offplan-cap";
+import { loadExemptVisitIds, loadOffPlanRows } from "@/lib/phoenix-crm/server/offplan-cap";
 import { loadMovedFromDays } from "@/lib/phoenix-crm/server/offplan-day";
 import {
   offPlanStandingKey,
@@ -257,6 +257,8 @@ export type TeamUnplannedVisit = UnplannedVisitView & {
    * Counted from EVERY out-of-plan doctor visit, not only the ones waiting.
    */
   repOffPlan: OffPlanStanding;
+  /** The visit fell under a named exception to the out-of-plan limit (owner, 2026-10-17); it is decided as usual. */
+  offPlanExempt: boolean;
 };
 
 /** A rep's request to edit a sent week (owner, 2026-10-01), with whether THIS viewer acts at its step. */
@@ -391,7 +393,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     : seats;
   // The day each waiting off-plan visit was moved from rides beside the names: it needs only the rows.
   // So does where each one's rep stands on the out-of-plan allowance (it catches its own failure).
-  const [names, movedFrom, offPlanStandingsRead] = await Promise.all([
+  const [names, movedFrom, offPlanStandingsRead, exemptVisitIds] = await Promise.all([
     loadPeopleNames([
       ...territoryPeople(viewer.org, rowSeats),
       ...requestPeople(requestRows),
@@ -404,6 +406,8 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
       isTest,
       viewer.config.settings,
     ),
+    // Which waiting visits fell under a named out-of-plan exception, so the card can say so (owner, 2026-10-17).
+    loadExemptVisitIds(unplannedRows.map((row) => String(row.visit_id))),
   ]);
 
   const summaries = new Map(rowSeats.map((seat) => [seat.seatId, describeTerritory(viewer.org, seat, names)]));
@@ -469,6 +473,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
         canOverride: canOverrideDecision(viewer, isTest),
         plannedFor: movedFrom.get(view.visitId) ?? [],
         repOffPlan: offPlanStandingsRead.get(offPlanStandingKey(view.seatId, view.visitDate)) ?? emptyOffPlanStanding(viewer.config.settings),
+        offPlanExempt: exemptVisitIds.has(view.visitId),
       };
     })
     .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.raisedAt.localeCompare(right.raisedAt));

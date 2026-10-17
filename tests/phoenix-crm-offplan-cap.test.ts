@@ -141,7 +141,7 @@ function checkAllowanceDisplay(): void {
   const team = readFileSync("src/lib/phoenix-crm/server/team.ts", "utf8");
   assert.ok(team.includes("repOffPlan: offPlanStandingsRead.get(offPlanStandingKey(view.seatId, view.visitDate))"), "each waiting off-plan visit carries where its rep stood");
   const visits = readFileSync("src/lib/phoenix-crm/server/visits.ts", "utf8");
-  assert.ok(visits.includes("offPlan: offPlanAllowance({ rows: offPlanRows, day: today, caps: settings })"), "the visit form carries the allowance");
+  assert.ok(visits.includes("offPlan: offPlanAllowance({ rows: offPlanRows, day: today, caps: settings, exemptions: offPlanExemptions })"), "the visit form carries the allowance");
   const card = readFileSync("src/components/phoenix-crm/unplanned-visit-card.tsx", "utf8");
   assert.ok(card.includes("<OffPlanStandingStrip standing={day.visits[0].repOffPlan} />"), "the managers' card shows it");
   const start = readFileSync("src/components/phoenix-crm/visit-start.tsx", "utf8");

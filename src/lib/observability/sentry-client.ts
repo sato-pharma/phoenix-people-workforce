@@ -13,6 +13,7 @@
 // sentry-policy.ts, and the replay masks all text, all inputs and all media: Phoenix's screens are payroll.
 
 import { systemDeployment } from "@/config/system-settings";
+import { isBrowserNoiseMessage } from "@/lib/error-monitor/browser-noise";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import {
   SENTRY_ENVIRONMENT,
@@ -94,6 +95,7 @@ export function captureClientErrorInSentry(report: SentryClientReport): void {
     const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
     const productionHost = new URL(systemDeployment.productionUrl).hostname;
     if (!sentryClientStatus({ dsn, hostname: window.location.hostname, productionHost }).enabled) return;
+    if (isBrowserNoiseMessage(describeThrown(report.error))) return;
 
     void loadSdk(dsn as string).then((Sentry) => {
       if (!Sentry) return;

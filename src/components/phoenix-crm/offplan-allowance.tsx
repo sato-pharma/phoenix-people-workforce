@@ -14,6 +14,7 @@
 
 import {
   offPlanAllowanceSentence,
+  offPlanExemptionSentence,
   offPlanLeft,
   offPlanStandingFull,
   offPlanStandingLine,
@@ -85,6 +86,8 @@ export function OffPlanAllowanceCard({
   voice?: "rep" | "manager";
 }) {
   const full = offPlanLeft(allowance.day) === 0 || offPlanLeft(allowance.week) === 0;
+  // A named exception (owner, 2026-10-17) is told to the rep as a gift, and to a manager in his own voice.
+  const exemption = voice === "rep" ? offPlanExemptionSentence(allowance) : null;
   return (
     <section
       aria-label="Out-of-plan allowance"
@@ -101,6 +104,7 @@ export function OffPlanAllowanceCard({
       <p className={cn("mt-2.5 break-words text-xs font-semibold leading-5", full ? "text-amber-900" : "text-slate-600")}>
         {offPlanAllowanceSentence(allowance, voice)}
       </p>
+      {exemption ? <p className="mt-1.5 break-words text-xs font-bold leading-5 text-emerald-800">{exemption}</p> : null}
     </section>
   );
 }

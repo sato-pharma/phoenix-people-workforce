@@ -10,6 +10,7 @@ import type { Instrumentation } from "next";
 // `isBenignClientDisconnect` is the reason an aborted request does not reach it at all.
 import { isBenignClientDisconnect } from "@/lib/error-monitor/benign-disconnect";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
+import { isModuleLockRefusal } from "@/lib/error-monitor/expected-refusal";
 // Import-free as well. The SDK itself is only ever loaded dynamically, from inside the nodejs guards below.
 import { sentryServerStatus } from "@/lib/observability/sentry-policy";
 
@@ -201,6 +202,7 @@ async function forwardRequestErrorToSentry(
 export async function onRequestError(...args: Parameters<Instrumentation.onRequestError>) {
   const [error, request, context] = args;
   if (isBenignClientDisconnect(error)) return;
+  if (isModuleLockRefusal(error)) return;
   await forwardRequestErrorToSentry(error, request, context);
   await forwardServerErrorToIngestion(error, request, context);
 }

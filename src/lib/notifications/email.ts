@@ -16,6 +16,7 @@ import { renderPhoenixMetadataTable, renderPhoenixMetadataTableText } from "@/em
 import { EMPLOYEE_LINE_SELECT, resolveEmployeeLineName } from "@/lib/employees/employee-org-labels";
 import { RetryableEmailError, sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
+import { readEmailPolicies } from "@/lib/notifications/email-policy-snapshot";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
 import { passwordResetCodeMetricLabel } from "@/lib/auth/password-reset-code";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
@@ -565,8 +566,13 @@ export async function getEmailNotificationPolicies(): Promise<EmailNotificationP
   }
 }
 
+/**
+ * The delivery path's read: inside a drain run (`withEmailPolicySnapshot`) the table is read once and
+ * shared by every email of that run; anywhere else it is a plain fresh read. `getEmailNotificationPolicies`
+ * itself stays unwrapped — the admin screens and `saveEmailNotificationPolicy` must always see the table as it is.
+ */
 async function getEmailNotificationPolicy(type: EmailNotificationType) {
-  const policies = await getEmailNotificationPolicies();
+  const policies = await readEmailPolicies(getEmailNotificationPolicies);
   return policies.find((policy) => policy.type === type) ?? defaultPolicyForType(type);
 }
 
@@ -586,7 +592,9 @@ export async function saveEmailNotificationPolicy(
   const fallback = defaultPolicyForType(type);
   if (!fallback) throw new Error("Unsupported email notification type.");
 
-  const before = (await getEmailNotificationPolicy(type)) ?? fallback;
+  // A save compares against the table as it is NOW, never a run's snapshot.
+  const before =
+    (await getEmailNotificationPolicies()).find((policy) => policy.type === type) ?? fallback;
 
   const policy: EmailNotificationPolicy = {
     ...fallback,
