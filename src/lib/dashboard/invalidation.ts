@@ -1,7 +1,15 @@
 import { revalidatePath, revalidateTag } from "next/cache.js";
 
-import { CLOSING_STORE_SPLIT_CACHE_TAG } from "@/lib/sales/closing-store-split-net";
-import { COMPANY_VACATION_REPORT_CACHE_TAG } from "@/lib/vacation/company-vacation-report";
+/**
+ * The Closing-Matrix store-split overlay's tag (src/lib/sales/closing-store-split-net.ts) and the Company
+ * Vacation Report's (src/lib/vacation/company-vacation-report.ts), declared HERE as bare strings and
+ * re-exported by their owners, for the same reason as FINANCE_DASHBOARD_CACHE_TAG below. This module is
+ * imported by the employee directory, which nearly every page and route reaches, and until 2026-10-17 it
+ * took these two strings FROM their owners — so 79 modules of sales and vacation code (4 MB compiled)
+ * rode into about 1,160 of the app's 1,616 pages and routes for two words. Never import a tag here.
+ */
+export const CLOSING_STORE_SPLIT_CACHE_TAG = "closing-store-split";
+export const COMPANY_VACATION_REPORT_CACHE_TAG = "company-vacation-report";
 
 export type ExecutiveDashboardModule =
   | "employees"

@@ -35,6 +35,7 @@
 
 import { unstable_cache } from "next/cache.js";
 
+import { CLOSING_STORE_SPLIT_CACHE_TAG } from "@/lib/dashboard/invalidation";
 import {
   isBulkAllocationActive,
   isBulkAllocationLine,
@@ -57,7 +58,8 @@ import {
   type StoreSplitAreaMovement,
 } from "@/lib/sales/store-sales-city-split";
 
-export const CLOSING_STORE_SPLIT_CACHE_TAG = "closing-store-split";
+// Declared as a bare string in dashboard/invalidation.ts (its comment says why) and re-exported here.
+export { CLOSING_STORE_SPLIT_CACHE_TAG };
 
 type NetCell = { qty: number; value: number };
 

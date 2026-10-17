@@ -10,7 +10,7 @@ import { getContactListAvailability } from "@/lib/crm/contact-lists/service";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
 import { getVacationDayRequestAvailability } from "@/lib/crm/native-visits/vacation-days";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { phoenixCrmEntryAvailable } from "@/lib/phoenix-crm/server/page";
+import { phoenixCrmEntryAvailable } from "@/lib/phoenix-crm/server/sidebar-entries";
 import { isWithinManagerHierarchy, reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { fetchMyCheckins, fetchMyDoubleVisits, fetchMyVisits, fetchTeamVisits } from "@/lib/employee-portal/my-crm-visits";
 import { logPortalFailure } from "@/lib/observability/portal-logging";

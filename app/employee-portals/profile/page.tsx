@@ -34,7 +34,7 @@ import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
-import { NO_PHOENIX_CRM_ENTRIES, phoenixCrmSidebarEntries, type PhoenixCrmSidebarEntries } from "@/lib/phoenix-crm/server/page";
+import { NO_PHOENIX_CRM_ENTRIES, phoenixCrmSidebarEntries, type PhoenixCrmSidebarEntries } from "@/lib/phoenix-crm/server/sidebar-entries";
 import { hasInterviewCalendarAccess } from "@/lib/recruitment/interview-calendar";
 
 export const dynamic = "force-dynamic";

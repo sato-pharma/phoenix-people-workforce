@@ -136,7 +136,7 @@ export function runPhoenixCrmPortalSidebarTests() {
     const text = source(path);
     assert.match(
       text,
-      /import \{ NO_PHOENIX_CRM_ENTRIES, phoenixCrmSidebarEntries(?:, type PhoenixCrmSidebarEntries)? \} from "@\/lib\/phoenix-crm\/server\/page";/,
+      /import \{ NO_PHOENIX_CRM_ENTRIES, phoenixCrmSidebarEntries(?:, type PhoenixCrmSidebarEntries)? \} from "@\/lib\/phoenix-crm\/server\/sidebar-entries";/,
       `${path} asks the module's own gate rather than inventing a second one`,
     );
     assert.match(
@@ -155,6 +155,22 @@ export function runPhoenixCrmPortalSidebarTests() {
       /phoenixCrm\.crm,\s*phoenixCrm\.forecast,\s*phoenixCrm\.placeChecks,\s*phoenixCrm\.doubleVisitRequests,\s*phoenixCrm\.managerPlans,\s*$/,
       `${path} passes all five of the gate's answers through, last and in order, or its sidebar loses a row`,
     );
+  }
+
+  // ── 3a. The sidebar gate's own module never reaches the overview loader (2026-10-17) ─────────────
+  // Every portal page draws the sidebar, so whatever sidebar-entries.ts imports is compiled into all
+  // of them. Its functions lived in page.ts beside loadPhoenixCrmOverview — 227 files the gate never
+  // calls — until they moved; one import of page.ts here, direct or through overview, undoes it.
+  {
+    const imports = source("src/lib/phoenix-crm/server/sidebar-entries.ts").match(/^import[^;]*;/gm) ?? [];
+    assert.ok(imports.length > 0, "sidebar-entries.ts's import lines must be readable for this check to mean anything");
+    for (const line of imports) {
+      assert.doesNotMatch(
+        line,
+        /from\s+"@\/lib\/phoenix-crm\/server\/(?:page|overview)"/,
+        `the sidebar gate must not import the page loader or the overview — every portal page would compile them (${line})`,
+      );
+    }
   }
 
   // ── 3b. The Daily Forecast row under Forecast & Target (owner, 2026-10-01) ────────────────────

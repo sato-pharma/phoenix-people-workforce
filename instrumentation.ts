@@ -44,14 +44,22 @@ export async function register() {
     // the DSN, so staging, the previews and a laptop never load the SDK. Second, so a scheduler that
     // throws while starting below is already covered by its process handlers. Own try: Sentry must never
     // be the reason Phoenix does not boot.
+    //
+    // The SDK import also sits inside a BLOCK-form NODE_ENV test — a compile-time gate, not a policy
+    // one. Next replaces process.env.NODE_ENV with a literal while it compiles, so under `next dev` the
+    // branch is `if (false)` and webpack never compiles the SDK at all (~20 MB of it per dev server);
+    // a runtime test such as status.enabled prunes nothing. Production is always a production build,
+    // so who runs Sentry is unchanged: the policy above still decides.
     try {
       const status = sentryServerStatus({ appEnv: process.env.APP_ENV, dsn: process.env.SENTRY_DSN });
-      if (status.enabled) {
+      if (!status.enabled) {
+        console.log(`[sentry] not started: ${status.reason}`);
+      } else if (process.env.NODE_ENV === "production") {
         const { initSentryServer } = await import("@/lib/observability/sentry-server");
         initSentryServer(process.env.SENTRY_DSN as string);
         console.log("[sentry] started: production errors are forwarded to sentry.io");
       } else {
-        console.log(`[sentry] not started: ${status.reason}`);
+        console.log("[sentry] not started: not a production build");
       }
     } catch (error) {
       console.error("[sentry] failed to start:", error);
@@ -80,44 +88,55 @@ export async function register() {
       console.error("[process-role] failed to resolve:", error);
     }
 
-    try {
-      const { startLiveCrmPoller } = await import("@/lib/crm/live-poller");
-      const result = startLiveCrmPoller();
-      if (!result.started) console.log(`[crm:live-poll] not started: ${result.reason}`);
-    } catch (error) {
-      console.error("[crm:live-poll] failed to start:", error);
-    }
+    // 🔴 THE THREE SCHEDULERS AND PROCESS-HEALTH ARE COMPILED ONLY IN A PRODUCTION BUILD. Each refuses a
+    // non-production build at run time anyway (resolveInProcessHostRefusal: "not a production build";
+    // startProcessHealthReporter returns on NODE_ENV), so under `next dev` they were compiled and never
+    // run: 465 repo files and 52 MB of emitted code, more than half of everything a dev server compiled
+    // before its first page (measured on the Hetzner box, 2026-10-17). A BLOCK-form NODE_ENV test is the
+    // only shape webpack prunes — Next inlines the value, so the branch is `if (false)` in dev — and the
+    // nodejs block above is the proof: it keeps all four out of the edge bundle the same way.
+    if (process.env.NODE_ENV === "production") {
+      try {
+        const { startLiveCrmPoller } = await import("@/lib/crm/live-poller");
+        const result = startLiveCrmPoller();
+        if (!result.started) console.log(`[crm:live-poll] not started: ${result.reason}`);
+      } catch (error) {
+        console.error("[crm:live-poll] failed to start:", error);
+      }
 
-    // The Early Birds fortnight close runs on its own timer, started separately and in its own try:
-    // it needs the poller's host guards but NOT the iReports360 credentials, so a poller that refuses
-    // to start (or fails to) must not take the close down with it.
-    try {
-      const { startEarlyBirdsCloseScheduler } = await import("@/lib/early-birds/close-scheduler");
-      const result = startEarlyBirdsCloseScheduler();
-      if (!result.started) console.log(`[early-birds:close] not started: ${result.reason}`);
-    } catch (error) {
-      console.error("[early-birds:close] failed to start:", error);
-    }
+      // The Early Birds fortnight close runs on its own timer, started separately and in its own try:
+      // it needs the poller's host guards but NOT the iReports360 credentials, so a poller that refuses
+      // to start (or fails to) must not take the close down with it.
+      try {
+        const { startEarlyBirdsCloseScheduler } = await import("@/lib/early-birds/close-scheduler");
+        const result = startEarlyBirdsCloseScheduler();
+        if (!result.started) console.log(`[early-birds:close] not started: ${result.reason}`);
+      } catch (error) {
+        console.error("[early-birds:close] failed to start:", error);
+      }
 
-    // The CRM housekeeping timer keeps the probation double-visit capture running after the CRM
-    // cutover stands the poller and the vendor crons down. Same host guards, no vendor credentials,
-    // and its own try for the same reason as the close above.
-    try {
-      const { startCrmHousekeepingScheduler } = await import("@/lib/crm/housekeeping-scheduler");
-      const result = startCrmHousekeepingScheduler();
-      if (!result.started) console.log(`[crm:housekeeping] not started: ${result.reason}`);
-    } catch (error) {
-      console.error("[crm:housekeeping] failed to start:", error);
-    }
+      // The CRM housekeeping timer keeps the probation double-visit capture running after the CRM
+      // cutover stands the poller and the vendor crons down. Same host guards, no vendor credentials,
+      // and its own try for the same reason as the close above.
+      try {
+        const { startCrmHousekeepingScheduler } = await import("@/lib/crm/housekeeping-scheduler");
+        const result = startCrmHousekeepingScheduler();
+        if (!result.started) console.log(`[crm:housekeeping] not started: ${result.reason}`);
+      } catch (error) {
+        console.error("[crm:housekeeping] failed to start:", error);
+      }
 
-    // One process-health line a minute (event-loop delay, heap, RSS, request timings). Production
-    // only by its own guard; dynamic for the same edge-safety reason as the three above, and its
-    // own try so telemetry can never take a scheduler down with it.
-    try {
-      const { startProcessHealthReporter } = await import("@/lib/observability/process-health");
-      startProcessHealthReporter();
-    } catch (error) {
-      console.error("[process-health] failed to start:", error);
+      // One process-health line a minute (event-loop delay, heap, RSS, request timings). Production
+      // only by its own guard; dynamic for the same edge-safety reason as the three above, and its
+      // own try so telemetry can never take a scheduler down with it.
+      try {
+        const { startProcessHealthReporter } = await import("@/lib/observability/process-health");
+        startProcessHealthReporter();
+      } catch (error) {
+        console.error("[process-health] failed to start:", error);
+      }
+    } else {
+      console.log("[schedulers] not started: not a production build (next dev does not compile them)");
     }
   }
 }
@@ -178,16 +197,24 @@ async function forwardServerErrorToIngestion(
 
 // The Sentry half of onRequestError. Reached only in the nodejs runtime AND only when the policy says
 // production, so on every other deployment this is a no-op that never imports the SDK. Never throws.
+//
+// 🔴 The two build-time tests are BLOCKS, never early returns. They were `if (… !== "nodejs") return;`
+// until 2026-10-17, and webpack does not drop code after a return: the edge bundle carried the whole
+// SDK (6 MB of edge-instrumentation.js) and every `next dev` compiled it. Inside a block whose test
+// Next inlines to a literal, the import is never compiled where it cannot run.
 async function forwardRequestErrorToSentry(
   ...args: Parameters<Instrumentation.onRequestError>
 ): Promise<void> {
-  if (process.env.NEXT_RUNTIME !== "nodejs") return;
-  if (!sentryServerStatus({ appEnv: process.env.APP_ENV, dsn: process.env.SENTRY_DSN }).enabled) return;
-  try {
-    const { captureRequestErrorInSentry } = await import("@/lib/observability/sentry-server");
-    captureRequestErrorInSentry(...args);
-  } catch (sentryError) {
-    console.error("Failed to forward request error to Sentry:", sentryError);
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    if (process.env.NODE_ENV === "production") {
+      if (!sentryServerStatus({ appEnv: process.env.APP_ENV, dsn: process.env.SENTRY_DSN }).enabled) return;
+      try {
+        const { captureRequestErrorInSentry } = await import("@/lib/observability/sentry-server");
+        captureRequestErrorInSentry(...args);
+      } catch (sentryError) {
+        console.error("Failed to forward request error to Sentry:", sentryError);
+      }
+    }
   }
 }
 

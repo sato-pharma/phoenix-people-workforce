@@ -356,7 +356,7 @@ function checkTheTab(): void {
   assert.ok(!/canDecideValidationReviews|decideValidationReview|refuseValidatedPlace/.test(page), "it imports no decision path at all");
 
   // One gate, asked of the module, never a second role list in the navigation helper.
-  const crmPage = read("src/lib/phoenix-crm/server/page.ts");
+  const crmPage = read("src/lib/phoenix-crm/server/sidebar-entries.ts");
   assert.match(crmPage, /placeChecks: readsTeamPlaceChecks\(viewer\)/, "the sidebar row asks the page's own predicate");
   assert.match(
     crmPage,
