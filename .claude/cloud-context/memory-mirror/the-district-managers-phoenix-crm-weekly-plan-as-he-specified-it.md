@@ -1,11 +1,11 @@
 ---
 name: the-district-managers-phoenix-crm-weekly-plan-as-he-specified-it
-description: "The DM's weekly plan in Phoenix CRM — the rep's numbered form inverted (pick a REP, tick that rep's doctors per half-day, or Admin, or a Single visit); the owner's rulings of 2026-10-16, BUILT on branch claude/district-manager-weekly-plan-69415c on 2026-10-17 as seven phoenix_crm_manager_* tables; migration applied to staging and production 2026-10-17, merge waiting."
+description: "The DM's weekly plan in Phoenix CRM — the rep's numbered form inverted (pick a REP, tick that rep's doctors per half-day, or Admin, or a Single visit); the owner's rulings of 2026-10-16, BUILT on branch claude/district-manager-weekly-plan-69415c on 2026-10-17 as seven phoenix_crm_manager_* tables; migration applied to staging and production 2026-10-17; merged as #6025 at 11:12 Cairo the same day and live since about 11:23; his 'never skip the NSM after a regional manager' rule (week, edit asks, removals) merged as #6032 at 12:20 Cairo, its migration 20261017120000 on production since 12:06."
 metadata:
   node_type: memory
   type: project
   originSessionId: 551fda9a-c5f4-4b2d-b228-a1f47c253abd
-  modified: 2026-10-16T22:20:59.759Z
+  modified: 2026-10-17T09:20:57.146Z
 ---
 
 Owner, **2026-10-16**, specifying the managers' weekly plan starting with the district manager:
@@ -15,8 +15,8 @@ medical reps, will appear the medical reps and the bricks they are going to toda
 and where they are going this day. If I select the medical rep of Nasr City, then my plan as a
 district manager for this day is Nasr City."* Every ruling below is his own word, given in chat over
 five rounds that day. **Built 2026-10-17** on branch `claude/district-manager-weekly-plan-69415c`
-(module memory `phoenix-crm-manager-plan`, account `docs/phoenix-crm-manager-plan.md`); the merge
-waits for his word. The migration `20261017000000_phoenix_crm_manager_plan.sql` is applied on BOTH
+(module memory `phoenix-crm-manager-plan`, account `docs/phoenix-crm-manager-plan.md`); merged on his
+word as #6025 at 11:12 Cairo. The migration `20261017000000_phoenix_crm_manager_plan.sql` is applied on BOTH
 databases — production on 2026-10-17 about 01:14 Cairo, on his words "apply the district manager plan
 migration to production", via `scripts/apply-sql-file.mjs` after the MCP declined it (the merge
 function body holds `delete`s). No ledger row on either; all eight function digests equal the file
@@ -39,7 +39,16 @@ function body holds `delete`s). No ledger row on either; all eight function dige
    doctor he types** — name, **Capture location optional but available** (the pin resolves address,
    area and brick server-side), specialty, contact info, optional comment.
 7. **Send → his RSM / NSM, as today** (Hany Saad's DMs → Hany → Ali Mohamed Ali). **No HR
-   acknowledge, no SFE step.**
+   acknowledge, no SFE step.** 🔴 **Widened 2026-10-17 about 11:20 Cairo, his words: "if regional manager
+   applicable then after the rm approve the nsm also must approve never skip"** — after ANY RSM, the
+   NSM above that seat approves too, read from the organogram (`managerPlanApprovers`), not a named
+   pair. About 11:30 the same day he answered the two follow-ups in chat: scope **"Week + edit asks +
+   removals"** — his ask to reopen a sent week and his ask to remove an own-list customer get the same
+   RSM → NSM steps — and an empty NSM seat above a regional manager → **"The CEO"**. Migration
+   `20261017120000` applied to staging about 11:45 and to PRODUCTION at 12:06 Cairo on his words
+   "apply the manager asks second-approval migration to production" (apply-sql-file, no ledger row);
+   the code merged as #6032 at 12:20 Cairo the same day on "merge the never-skip regional manager PR
+   when green", opened early on his "open the never-skip regional manager PR now with the hold override".
 
 **The rules he set around it**
 
