@@ -7024,6 +7024,10 @@ await runTest(
 await runTest(
   "Phoenix CRM off-plan cap (owner, 2026-10-10): at most two doctors a day and eight a week OUT OF PLAN — settings read live, enforced by a before-insert trigger on out-of-plan AM and PM visits only, counting distinct doctors per seat over the field week Saturday to Thursday, refused to the rep in words that name no number and no check",
   runPhoenixCrmOffplanCapTests,
+);
+
+await runTest(
+  "Phoenix CRM off-plan exception (owner, 2026-10-17): Mostafa Mahmoud Mohamed Ali has no daily or weekly out-of-plan limit at the Air Force Specialised Hospital — a named seat-and-customer row, never a raised cap, stamped by the door and counted nowhere, every other customer keeping the limit",
   runPhoenixCrmOffplanExemptionTests,
 );
 
