@@ -1102,6 +1102,33 @@ export function heldSignboardOutcome(check: PhoenixCrmSignboardCheck, readsSoFar
 }
 
 /**
+ * Did a held place's re-read READ anything — or did the reader never answer?
+ *
+ * 🔴 A LOST CALL IS NO READ, AND SPENDING ONE ON IT EMPTIES THE WHOLE QUEUE ONTO THE SUPER ADMIN. On
+ * 18 Oct 2026 at 01:00 Cairo the AI account ran out of credit mid-way through the night's re-read of
+ * the unreadable places — 241 of them came back `call_failed`, and production's own calls failed from
+ * the same minute. Counted as reads, every place the door held that day would have spent its four in
+ * the after-reply read and three hourly runs, been filed "every read spent", and paged him once each,
+ * for photographs nobody had looked at — and then never been read again once the credit was back. So
+ * a lost call, like a missing key, spends nothing and the place waits; the photo that cannot be opened
+ * at all is `no_bytes`, which is a read that answered, and spends one.
+ */
+export function heldSignboardReadHappened(check: PhoenixCrmSignboardCheck): boolean {
+  return !(check.verdict === "unjudged" && (check.reason === "call_failed" || check.reason === "no_api_key"));
+}
+
+/** Unread places, with not one read answering, after which the hourly run stops: the reader is down. */
+export const HELD_SIGNBOARD_READER_DOWN_AFTER = 3;
+
+/**
+ * Is the reader down, on this run's evidence? Only when NOTHING has answered: one photo whose every call
+ * times out must not stop the queue behind it, and a reader that answered once is up.
+ */
+export function heldSignboardReaderIsDown(run: { unread: number; answered: number }): boolean {
+  return run.answered === 0 && run.unread >= HELD_SIGNBOARD_READER_DOWN_AFTER;
+}
+
+/**
  * The check kept on the place row after a held re-read: the read itself, its count, and — on the last
  * read of a frame nobody could read — the terminal `unreadable_final`, so the row says "every read was
  * spent" in words a human can see (`SIGNBOARD_UNJUDGED_TEXT` on the board).

@@ -688,7 +688,9 @@ export async function rereadHeldPlaceSignboard(input: {
   const bytes = await downloadPhoto(input.photoPath).catch(() => null);
   if (!bytes) return unjudged("no_bytes");
   const cropped = await cropStampBand(bytes);
-  if (!cropped) return unjudged("call_failed");
+  // A photo that cannot be opened is a read that answered — it never gets better — so it is `no_bytes`
+  // here, never the `call_failed` that spends nothing (`heldSignboardReadHappened`).
+  if (!cropped) return unjudged("no_bytes");
 
   const deadline = Date.now() + PHOENIX_CRM_SIGNBOARD_HELD_BUDGET_MS;
   const remaining = (): number => deadline - Date.now();

@@ -35,6 +35,8 @@ import { notifyValidationReviewWaiting, withdrawValidationReviewWaiting } from "
 import {
   heldSignboardCheckToKeep,
   heldSignboardOutcome,
+  heldSignboardReaderIsDown,
+  heldSignboardReadHappened,
   SIGNBOARD_HELD_MAX_READS,
   signboardApplies,
   signboardNameIsUsable,
@@ -73,14 +75,15 @@ export type HeldSignboardPlace = {
   readsSoFar: number;
 };
 
-export type HeldSignboardSettlement = "approved" | "again" | "done" | "lost";
+export type HeldSignboardSettlement = "approved" | "again" | "done" | "lost" | "unread";
 
 /**
  * Read one held place once more and act on what the read says. Never throws: it runs after a rep's
  * reply and inside a cron, and the place is already saved and held whatever happens here.
  *
  * `lost` is a place whose decision raced the Super Admin's own (he approved or rejected it first, and
- * the RPC answered `review_decided`) — his decision stands and nothing more is done.
+ * the RPC answered `review_decided`) — his decision stands and nothing more is done. `unread` is a read
+ * the reader never answered (`heldSignboardReadHappened`): nothing is written and nothing is spent.
  */
 export async function settleHeldSignboard(
   place: HeldSignboardPlace,
@@ -92,8 +95,9 @@ export async function settleHeldSignboard(
       listType: place.listType,
       photoPath: place.photoPath,
     });
-    // No key in this environment is no read at all: nothing is spent, and the place waits for a key.
-    if (read.verdict === "unjudged" && read.reason === "no_api_key") return "again";
+    // No key, or a reader that never answered (out of credit, down, timing out), is no read at all:
+    // nothing is spent, and the place waits for the next run.
+    if (!heldSignboardReadHappened(read)) return "unread";
     const reads = place.readsSoFar + 1;
     const outcome = heldSignboardOutcome(read, reads);
     await recordPlaceSignboard(place.placeId, heldSignboardCheckToKeep(read, reads, outcome));
@@ -207,7 +211,9 @@ export type HeldSignboardRecheckResult = {
   /** Places that spent their last read this run and are now the Super Admin's. */
   done: number;
   moreWaiting: boolean;
-  skipped: "no_api_key" | null;
+  /** Places the reader never answered; none of their reads was spent. */
+  unread: number;
+  skipped: "no_api_key" | "reader_unavailable" | null;
 };
 
 /**
@@ -218,7 +224,7 @@ export type HeldSignboardRecheckResult = {
 export async function runHeldSignboardRecheck(
   options: { limit?: number; budgetMs?: number } = {},
 ): Promise<HeldSignboardRecheckResult> {
-  const result: HeldSignboardRecheckResult = { approved: 0, done: 0, moreWaiting: false, read: 0, skipped: null };
+  const result: HeldSignboardRecheckResult = { approved: 0, done: 0, moreWaiting: false, read: 0, skipped: null, unread: 0 };
   if (!hasOpenAiApiKey()) return { ...result, skipped: "no_api_key" };
   const limit = Math.max(1, Math.min(options.limit ?? HELD_SIGNBOARD_RECHECK_LIMIT, 50));
   const deadline = Date.now() + (options.budgetMs ?? HELD_SIGNBOARD_RECHECK_BUDGET_MS);
@@ -234,9 +240,19 @@ export async function runHeldSignboardRecheck(
         result.moreWaiting = true;
         return;
       }
+      // The reader is down (out of credit, say): stop asking it, and spend no place's reads on it.
+      if (heldSignboardReaderIsDown({ answered: result.read, unread: result.unread })) {
+        result.moreWaiting = true;
+        result.skipped = "reader_unavailable";
+        return;
+      }
       const place = queue[next];
       next += 1;
       const settled = await settleHeldSignboard(place, { seat: org.seats.get(place.seatId) });
+      if (settled === "unread") {
+        result.unread += 1;
+        continue;
+      }
       result.read += 1;
       if (settled === "approved") result.approved += 1;
       if (settled === "done") result.done += 1;

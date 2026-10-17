@@ -350,8 +350,8 @@ that read only "صيدلية" would otherwise confirm whatever name the guided r
   riding the visit roll-up's fire: `rereadHeldPlaceSignboard` reads blind with the strong model (mini
   behind it when a call fails), then guided with a blind spot check, inside a 45 s budget and a 20 s
   cap per call — the fallback the owner asked for when the reading service is down. Four reads in all
-  (`SIGNBOARD_HELD_MAX_READS`), counted on the place's own `signboard_check.attempts`; a missing key
-  spends none. A confirmed match is **approved by the system** through the same
+  (`SIGNBOARD_HELD_MAX_READS`), counted on the place's own `signboard_check.attempts`; a read the
+  reader never answered spends none (below). A confirmed match is **approved by the system** through the same
   `phoenix_crm_decide_validation_review` approve his own button runs, as the actor `SYSTEM`, and the
   board says "The system". Every read spent with nothing confirmed: the last unreadable read is kept as
   `unreadable_final` and he is told then.
@@ -364,6 +364,26 @@ that read only "صيدلية" would otherwise confirm whatever name the guided r
   nothing. Needs you shows "The system is still reading this sign" while reads are left.
 
 Pinned by `tests/phoenix-crm-held-signboard.test.ts` and `tests/phoenix-crm-signboard-check.test.ts`.
+
+### A reader that never answered read nothing (2026-10-18)
+
+Re-reading the 1,217 places production had filed unreadable, the AI account ran out of credit at
+about place 900 (01:00 Cairo, 18 Oct 2026): the remaining 241 calls came back HTTP 429 "no credits",
+and the CV reader failed the same way at 01:00 and 01:06. As built, the held re-read counted only a
+missing key as no read; a `call_failed` counted. So an outage would spend every held place's four
+reads within hours and page the Super Admin once for each place, about a photograph nobody looked at.
+
+- `heldSignboardReadHappened` (`signboard-rules.ts`): a check `unjudged` for `call_failed` or
+  `no_api_key` is no read. `settleHeldSignboard` returns `unread`, and writes nothing and spends
+  nothing; the place waits for the next run.
+- `heldSignboardReaderIsDown`: three unread places with none answered stop the hourly run
+  (`skipped: "reader_unavailable"`, `moreWaiting`), so a reader that is down is not asked twelve times
+  an hour. One answered read means the reader is up, and the run carries on past a single bad call.
+- A photo that cannot be cropped is `no_bytes`, not `call_failed`: it never gets better, so it is a
+  read that answered and it spends one, or that place would wait for ever.
+
+Every door capture is still held while the reader is down. That is the ruling ("If you couldn't read
+them, then hold for manual review"); the holds wait and are read when credit returns.
 
 ## The same-seat duplicate merge
 

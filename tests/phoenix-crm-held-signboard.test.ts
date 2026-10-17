@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import {
   heldSignboardCheckToKeep,
   heldSignboardOutcome,
+  heldSignboardReaderIsDown,
+  heldSignboardReadHappened,
   judgeSignboards,
   SIGNBOARD_HELD_MAX_READS,
   signboardDoorHolds,
@@ -83,6 +85,21 @@ function checkTheReReads(): void {
   assert.equal(heldSignboardCheckToKeep(check("unjudged", "unreadable"), 2, "again").reason, "unreadable", "not before it");
   assert.equal(heldSignboardCheckToKeep(check("unjudged", "call_failed"), 4, "done").reason, "call_failed", "a lost call is never called unreadable");
 
+  // 🔴 A READER THAT NEVER ANSWERED READ NOTHING (18 Oct 2026, 01:00 Cairo: the AI account ran out of
+  //    credit and 241 re-reads came back `call_failed`). Counted, every held place would spend its four
+  //    reads in a few hours and page him once each for a photograph nobody looked at.
+  assert.equal(heldSignboardReadHappened(check("unjudged", "call_failed")), false, "a lost call spends no read");
+  assert.equal(heldSignboardReadHappened(check("unjudged", "no_api_key")), false, "nor does a missing key");
+  for (const reason of ["unreadable", "no_bytes", "unconfirmed"] as const) {
+    assert.equal(heldSignboardReadHappened(check("unjudged", reason)), true, `unjudged / ${reason} is a read that answered`);
+  }
+  assert.equal(heldSignboardReadHappened(check("other_name", "sign_other_name")), true);
+  assert.equal(heldSignboardReadHappened(check("match", null)), true);
+  // The run stops asking a reader that is down — but never because one photo's calls keep failing.
+  assert.equal(heldSignboardReaderIsDown({ answered: 0, unread: 3 }), true, "three unread and nothing answered: the reader is down");
+  assert.equal(heldSignboardReaderIsDown({ answered: 0, unread: 2 }), false, "two may be two bad photographs");
+  assert.equal(heldSignboardReaderIsDown({ answered: 1, unread: 9 }), false, "a reader that answered once is up");
+
   const still = { isTest: false, pending: true, signboardHold: true, stored: { attempts: 2 } };
   assert.equal(signboardHoldStillReading(still), true, "a held sign with reads left is still being read");
   assert.equal(signboardHoldStillReading({ ...still, stored: { attempts: 4 } }), false, "not once every read is spent");
@@ -136,9 +153,23 @@ function checkTheSystemOnlyApproves(): void {
   assert.ok(!holds.includes("phoenix_crm_shared_places"), "never a building");
   assert.ok(holds.includes('.eq("google->>verdict", "signboard")'), "only a SIGNBOARD hold — never a Google or a timetable one");
   assert.ok(holds.includes('.eq("is_test", false)'), "real entries only on the hourly pass");
+  const unreadAt = holds.indexOf('if (!heldSignboardReadHappened(read)) return "unread";');
+  assert.ok(unreadAt > 0 && unreadAt < holds.indexOf("const reads = place.readsSoFar + 1"), "a lost call or a missing key spends no read");
+  const breakerAt = holds.indexOf("heldSignboardReaderIsDown({ answered: result.read, unread: result.unread })");
   assert.ok(
-    holds.indexOf('read.reason === "no_api_key") return "again"') < holds.indexOf("const reads = place.readsSoFar + 1"),
-    "a missing key spends no read",
+    breakerAt > 0 && breakerAt < holds.indexOf("const settled = await settleHeldSignboard(place"),
+    "the hourly run asks whether the reader is down before every place",
+  );
+  const unreadCountAt = holds.indexOf('if (settled === "unread")');
+  assert.ok(
+    unreadCountAt > 0 && unreadCountAt < holds.indexOf("result.read += 1"),
+    "and an unread place is never counted as a read that answered",
+  );
+  const reader = stripComments(read("src/lib/phoenix-crm/server/signboard-check.ts"));
+  const held = reader.slice(reader.indexOf("export async function rereadHeldPlaceSignboard("));
+  assert.ok(
+    held.includes('if (!cropped) return unjudged("no_bytes");'),
+    "a photo that cannot be opened is a read that answered — it never gets better",
   );
   assert.ok(/if \(outcome === "done" && !place\.isTest && context\.seat\)/.test(holds), "he is told only when every read is spent");
 
