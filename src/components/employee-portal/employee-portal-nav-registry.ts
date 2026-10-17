@@ -22,6 +22,7 @@ import {
   Headphones,
   Home,
   IdCard,
+  Mail,
   Inbox,
   type LucideIcon,
   MapPinCheck,
@@ -122,6 +123,8 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "360", fullLabel: "Employee 360", href: "/employee-portals/employee-360", icon: IdCard, permission: { resource: "employee_profile", action: "read" } },
   // Every employee's own business card — view, correct name/number, request print from HR.
   { label: "Cards", fullLabel: "Business Cards", href: "/employee-portals/business-cards", icon: IdCard, permission: { resource: "business_card_requests", action: "create" } },
+  // Every employee's own email signature — one picture built from their record, with the paste steps (owner, 2026-10-17). Gated like the page: employee_profile:read.
+  { label: "Signature", fullLabel: "Email Signature", href: "/employee-portals/email-signature", icon: Mail, permission: { resource: "employee_profile", action: "read" } },
   // My Milestones — the rep's own keepsake cards, self-scoped (owner, 2026-09-30). No `permission`:
   // the page gates by role predicate (canUseEmployeePortalMilestones), not a matrix permission.
   { label: "Milestones", fullLabel: "My Milestones", href: "/employee-portals/milestones", icon: Award, flags: ["showMilestonesTab"] },

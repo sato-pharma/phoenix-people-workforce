@@ -55,6 +55,7 @@ import {
   FlaskConical,
   Gift,
   IdCard,
+  Mail,
   CalendarDays,
   Headphones,
   Lock,
@@ -509,6 +510,8 @@ function buildEmployeePortalSections({
       items: [
         // Open to every employee: their own business card, editable name/number, and a request to HR.
         { href: "/employee-portals/business-cards", label: "Business Cards", icon: IdCard },
+        // Email Signature — every employee's own Sato Pharma + Phoenix signature, built from their record as ONE picture (owner, 2026-10-17).
+        { href: "/employee-portals/email-signature", label: "Email Signature", icon: Mail },
         // My Milestones — the rep's own service-anniversary and Sato-Pharma birthday keepsake cards,
         // self-scoped and downloadable by him. Medical-Rep only.
         ...(showMilestonesTab ? [{ href: "/employee-portals/milestones", label: "My Milestones", icon: Award }] : []),
