@@ -567,7 +567,8 @@ export function resolveEmployeePortalNavVisibility(
   hasPhoenixCrmForecast?: boolean,
   hasTeamPlaceChecks?: boolean,
   hasDoubleVisitRequests?: boolean,
-  plansInPhoenixCrm?: boolean,
+  // Kept so every caller still passes it: the Plans tab no longer depends on it (owner, 2026-10-17).
+  _plansInPhoenixCrm?: boolean,
 ): EmployeePortalNavVisibility {
   const resolvedRole = resolvePortalRole(roleLabel, accessRole);
   const normalizedLine = String(employeeLineName ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -838,10 +839,11 @@ export function resolveEmployeePortalNavVisibility(
     // the builder refuses her — QPPV is not in WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES and the
     // Manager role holds no `weekly_plans:create`, so submitting was always Forbidden. She keeps
     // the read-only Planning Calendar above, which is the half that ever worked.
-    // A district manager whose Phoenix CRM team is live plans his week THERE (owner, 2026-10-16), so the
-    // legacy builder row goes — the form itself refuses him too. The Planning Calendar above stays: it
-    // reads his Phoenix CRM week beside everyone's legacy plans.
-    showPlansTab: showPlansTab && !isPortalHrOfficeStaff && plansInPhoenixCrm !== true,
+    // A manager whose Phoenix CRM team is live plans his week THERE (owner, 2026-10-16), and the tab
+    // stays to READ the plans he filed on this form before (owner, 2026-10-17: "make it unhidden, but
+    // make them not able to submit … only able to see their historical plans"). The page shows him
+    // that history only, and the form refuses him a new plan, an edit ask, a cancel and visit details.
+    showPlansTab: showPlansTab && !isPortalHrOfficeStaff,
     // Regional Manager included: canReadProbationEmployee already has an RM branch that walks the
     // full management subtree (probation/service.ts), so an RM sees every med rep under every DSM
     // in their region — the tab was the only thing missing.

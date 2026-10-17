@@ -407,6 +407,11 @@ export type EmployeePlansWorkspace = {
   canPlanMarketingDoubleVisit: boolean;
   canSubmitPlans: boolean;
   hasMorePlans: boolean;
+  /**
+   * His week is planned in Phoenix CRM now (`dmPlansInPhoenixCrm`), so this page is his HISTORY: every plan
+   * he filed on this form before, to read only (owner, 2026-10-17). False for everyone else.
+   */
+  plansInPhoenixCrm: boolean;
   /** Who a Marketing Double Visit can be with: active PMs, GPMs and the Marketing Manager, never the owner. */
   marketingDoubleVisitPartners: MarketingDoubleVisitPartner[];
   /**
@@ -2444,13 +2449,15 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
   const directoryByHrId = new Map(directory.employees.map((item) => [normalizeHrId(item.hrId), item]));
   const viewerHrId = normalizeHrId(access.hrId);
   const employee = directory.employees.find((item) => normalizeHrId(item.hrId) === viewerHrId) ?? null;
-  // A district manager whose Phoenix CRM team is live plans his week THERE now (owner, 2026-10-16), so
-  // this form offers him no new plan; what he already filed stays readable and decidable.
+  // A manager whose Phoenix CRM team is live plans his week THERE now (owner, 2026-10-16), so this form
+  // offers him no new plan — it is his history, to read only (owner, 2026-10-17: "make them only able to
+  // see their historical plans, which they submitted on the old module").
+  const movedToPhoenixCrm = employee ? await plansInPhoenixCrm(access) : false;
   const canSubmitPlans = Boolean(
     employee &&
+      !movedToPhoenixCrm &&
       canSubmitFromEmployee(employee, access.role) &&
-      await canAccess(access, "weekly_plans", "create") &&
-      !(await plansInPhoenixCrm(access)),
+      await canAccess(access, "weekly_plans", "create"),
   );
   const canAcknowledgeHr = isHrReviewer(access, employee);
   // Mirrors moveWeeklyPlanToPeriod exactly: HR/Super-Admin AND the approve grant. A flag carrying
@@ -2489,8 +2496,12 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
     const loadedRows = (data ?? []) as PlanHeaderRow[];
     const hasMorePlans = loadedRows.length > WORKSPACE_PLAN_LIMIT;
     const cappedRows = loadedRows.slice(0, WORKSPACE_PLAN_LIMIT);
+    // His history is EVERY plan he filed here, never only the ones inside the company-wide window above.
+    const ownHistoryRows = movedToPhoenixCrm && employee ? await loadOwnPlanRows(employee.hrId) : [];
+    const loadedIds = new Set(cappedRows.map((row) => row.id));
+    const workspaceRows = [...cappedRows, ...ownHistoryRows.filter((row) => !loadedIds.has(row.id))];
     const viewerScope = resolvePlanViewerScope(access, directory.employees);
-    const visible = cappedRows.filter((plan) => canViewPlan(access, employee, plan, viewerScope));
+    const visible = workspaceRows.filter((plan) => canViewPlan(access, employee, plan, viewerScope));
     const mapped = visible.map(mapPlan).map((plan) => ({
       ...plan,
       employeeDisplayName: directoryByHrId.get(normalizeHrId(plan.employeeHrId))?.displayName || plan.employeeName,
@@ -2517,6 +2528,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       canPlanMarketingDoubleVisit: marketingDoubleVisit.allowed,
       secondApproverManagerHrIds: managerHrIdsForSecondApprover(access.hrId),
       canSubmitPlans,
+      plansInPhoenixCrm: movedToPhoenixCrm,
       currentEmployee: employee
         ? {
             areaName: employee.areaName,
@@ -2552,6 +2564,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       canPlanMarketingDoubleVisit: marketingDoubleVisit.allowed,
       secondApproverManagerHrIds: managerHrIdsForSecondApprover(access.hrId),
       canSubmitPlans,
+      plansInPhoenixCrm: movedToPhoenixCrm,
       currentEmployee: employee
         ? {
             areaName: employee.areaName,
@@ -3436,6 +3449,18 @@ async function assertPlansOnThisForm(access: AccessContext): Promise<void> {
   if (await plansInPhoenixCrm(access)) throw new Error(DM_PLANS_IN_PHOENIX_CRM);
 }
 
+/** Every plan one person filed on this form, newest first — a switched manager's history. */
+async function loadOwnPlanRows(employeeHrId: string): Promise<PlanHeaderRow[]> {
+  const ids = [...new Set([employeeHrId, employeeHrId.toUpperCase()])];
+  const { data, error } = await getSupabaseAdmin()
+    .from("employee_plan_headers")
+    .select(planSelect)
+    .in("employee_hr_id", ids)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as PlanHeaderRow[];
+}
+
 export async function createEmployeePlan(access: AccessContext, input: {
   anchorDate: string;
   items: EmployeePlanItemInput[];
@@ -4203,6 +4228,7 @@ export async function requestVisitDetails(access: AccessContext, planId: string)
 }
 
 export async function submitVisitDetails(access: AccessContext, planId: string, details: VisitDetailInput[]) {
+  await assertPlansOnThisForm(access);
   const plan = await loadPlanRow(planId);
   if (!hrIdsMatch(access.hrId, plan.employee_hr_id) && access.role !== "Super Admin") {
     throw new Error("Forbidden: only the employee can submit visit details.");
@@ -4234,6 +4260,7 @@ export async function submitVisitDetails(access: AccessContext, planId: string, 
 
 export async function cancelEmployeePlan(access: AccessContext, planId: string, comment?: string | null) {
   await assertPermission(access, "weekly_plans", "update");
+  await assertPlansOnThisForm(access);
   const plan = await loadPlanRow(planId);
   assertPlanOwner(access, plan);
   await rpcCancelPlan({ access, comment, expectedRevision: plan.revision, planId });
@@ -4340,6 +4367,7 @@ async function notifyEmployeeEditRequestDecision(
 
 export async function requestEditEmployeePlan(access: AccessContext, planId: string) {
   await assertPermission(access, "weekly_plans", "update");
+  await assertPlansOnThisForm(access);
   const plan = await loadPlanRow(planId);
   assertPlanOwner(access, plan);
   if (plan.status !== "submitted") {
