@@ -71,8 +71,8 @@ Put each new memory note's pointer here, one line. The fold (`node scripts/modul
 
 
 
-- [phx-preview's dev server cannot compile a page at its 2048 MB heap](the-phx-preview-dev-server-cannot-compile-a-page-at-its-2048-mb-heap.md) - admin and portal pages OOM it cold; the pane then says "denied or failed"; walk a role with dev-auth HEADERS against API routes instead.
 
-- [A source-count regex with an unescaped bracket counts zero](a-source-count-regex-with-an-unescaped-bracket-counts-zero.md) - `/.eq("x", y)/g` is a GROUP, not the call; count with `split(text).length - 1`, and break each fix alone when one check holds several assertions.
 
-- [The district manager's Phoenix CRM weekly plan, as he specified it](the-district-managers-phoenix-crm-weekly-plan-as-he-specified-it.md) - his 2026-10-16 rulings; BUILT 2026-10-17 on `claude/district-manager-weekly-plan-69415c` as seven `phoenix_crm_manager_*` tables; migration LIVE on staging and production since 2026-10-17 01:14 Cairo (apply-sql-file, no ledger row).
+
+
+- [An email signature's animated picture must be a GIF, never an animated PNG](an-email-signatures-animated-picture-must-be-a-gif-never-an-animated-png.md) - Gmail and Outlook for Windows show only the first frame of an APNG; a GIF pixel is on or off, so the glow is dotted at 8x (150 KB) and stays transparent on any ground; the PNG stays only as the dark-mode source.
