@@ -38,7 +38,7 @@ function note(advice: PlaceCheckAdvice): PlaceCheckAdvice {
   return advice;
 }
 
-function held(overrides: Partial<HeldRowEvidence> & { evidence?: Partial<HeldRowEvidence["evidence"]> }): HeldRowEvidence {
+function held(overrides: Omit<Partial<HeldRowEvidence>, "evidence"> & { evidence?: Partial<HeldRowEvidence["evidence"]> }): HeldRowEvidence {
   const { evidence, ...rest } = overrides;
   return {
     photoKind: "signboard",
