@@ -17,8 +17,8 @@
  * him; this plan is what he intends, read against what happened in the "Manager plans" report.
  *
  * 🔴 THE REP NEVER SEES ANY OF IT — no screen, no notice. It is sent to his RSM or NSM and decided in the
- * Approvals Hub (Approve, Return the week, Return one day); for Hany Saad's district managers the week
- * then goes to Ali Mohamed Ali.
+ * Approvals Hub (Approve, Return the week, Return one day); after a regional manager approves, the week
+ * always goes on to the national sales manager above him.
  *
  * One half-day saves itself about 1.5 seconds after his last change, like the rep's board — the same
  * version check, so a change made on another screen first is refused rather than written over, and his
@@ -1033,7 +1033,13 @@ function SendStep({
         )
       ) : null}
 
-      {plan?.state === "asked" ? <CrmNote tone="info">{`Your ask to edit waits for ${plan.firstApproverName ?? "your manager"}.`}</CrmNote> : null}
+      {plan?.state === "asked" ? (
+        <CrmNote tone="info">
+          {plan.editAsk?.status === "first_approved"
+            ? `${plan.firstApproverName ?? "Your manager"} approved your ask to edit. It now waits for ${plan.editAsk.waitingOnName ?? "the second approver"}.`
+            : `Your ask to edit waits for ${plan.editAsk?.waitingOnName ?? plan.firstApproverName ?? "your manager"}.`}
+        </CrmNote>
+      ) : null}
       {plan?.state === "closed" ? <CrmNote tone="neutral">This week is closed.</CrmNote> : null}
     </div>
   );

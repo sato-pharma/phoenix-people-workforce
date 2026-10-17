@@ -3,7 +3,13 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 
 import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import { ManagerPlanDecisionActions } from "@/components/approvals-hub/manager-plan-decision-actions";
-import type { ManagerHubDetail, ManagerHubPlanDetail, ManagerHubRemovalDetail, ManagerHubStepState } from "@/lib/phoenix-crm/server/manager-plan-hub";
+import type {
+  ManagerHubDetail,
+  ManagerHubPlanDetail,
+  ManagerHubRemovalDetail,
+  ManagerHubStep,
+  ManagerHubStepState,
+} from "@/lib/phoenix-crm/server/manager-plan-hub";
 
 /**
  * The Approvals Hub page of a district manager's Phoenix CRM week (owner, 2026-10-16): the week day by
@@ -18,6 +24,8 @@ const STEP_TONE: Record<ManagerHubStepState, { dot: string; text: string; label:
   current: { dot: "bg-orange-500", text: "text-orange-700", label: "Waiting" },
   waiting: { dot: "bg-slate-300", text: "text-slate-500", label: "Later" },
   returned: { dot: "bg-amber-500", text: "text-amber-700", label: "Returned" },
+  refused: { dot: "bg-rose-500", text: "text-rose-700", label: "Refused" },
+  closed: { dot: "bg-slate-400", text: "text-slate-600", label: "Closed when the week ended" },
 };
 
 const headerText = "text-phx-xs font-black uppercase tracking-[0.14em] text-white";
@@ -39,14 +47,15 @@ function Fact({ label, value }: { label: string; value: string | null | undefine
   );
 }
 
-function Tracker({ detail }: { detail: ManagerHubPlanDetail }) {
+function Tracker({ title, steps }: { title: string; steps: ManagerHubStep[] }) {
+  if (steps.length === 0) return null;
   return (
     <section className={adminPanelClassName}>
       <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
-        <h3 className={headerText}>Approval tracker</h3>
+        <h3 className={headerText}>{title}</h3>
       </header>
       <ol className="space-y-3 px-4 py-4">
-        {detail.steps.map((step) => {
+        {steps.map((step) => {
           const tone = STEP_TONE[step.state];
           return (
             <li key={step.label} className="flex gap-3">
@@ -167,34 +176,25 @@ function PlanDetail({ detail, backHref, plannerHref }: { detail: ManagerHubPlanD
               <dl className="px-4 py-2">
                 <Fact label="Why" value={ask.reason} />
                 <Fact label="Asked" value={ask.askedAt} />
-                <Fact
-                  label="Stands"
-                  value={
-                    ask.status === "pending"
-                      ? "Waiting for a decision"
-                      : ask.status === "reopened"
-                        ? "Reopened for editing"
-                        : ask.status === "expired"
-                          ? "Closed when the week ended"
-                          : "Refused — the week stays as sent"
-                  }
-                />
+                <Fact label="Stands" value={ask.statusLabel} />
                 {ask.decisionNote ? <Fact label="Note" value={ask.decisionNote} /> : null}
               </dl>
             </section>
           ) : null}
 
-          <Tracker detail={detail} />
+          {ask ? <Tracker title="Ask to edit tracker" steps={ask.steps} /> : null}
+
+          <Tracker title="Approval tracker" steps={detail.steps} />
 
           {ask?.decideAs ? (
             <ManagerPlanDecisionActions
-              target={{ kind: "edit", requestId: ask.requestId, version: ask.version }}
+              target={{ kind: "edit", requestId: ask.requestId, version: ask.version, stage: ask.stage, thenName: ask.thenName }}
               byAdministrator={ask.decideAs === "administrator"}
               backHref={backHref}
             />
           ) : detail.decideAs ? (
             <ManagerPlanDecisionActions
-              target={{ kind: "plan", planId: detail.planId, version: detail.version, returnableDays: detail.returnableDays }}
+              target={{ kind: "plan", planId: detail.planId, version: detail.version, returnableDays: detail.returnableDays, thenName: detail.thenName }}
               byAdministrator={detail.decideAs === "administrator"}
               backHref={backHref}
             />
@@ -232,17 +232,19 @@ function RemovalDetail({ detail, backHref }: { detail: ManagerHubRemovalDetail; 
             <Fact label="Grade · potential" value={grades} />
             <Fact label="Area" value={detail.areaName} />
             <Fact label="Why it is asked" value={detail.reason} />
-            <Fact label="Decided by" value={detail.approverName} />
             {detail.decisionNote ? <Fact label="Note" value={detail.decisionNote} /> : null}
           </dl>
         </section>
-        {detail.decideAs ? (
-          <ManagerPlanDecisionActions
-            target={{ kind: "removal", customerId: detail.customerId, requestedAt: detail.requestedAt }}
-            byAdministrator={detail.decideAs === "administrator"}
-            backHref={backHref}
-          />
-        ) : null}
+        <div className="space-y-4">
+          <Tracker title="Approval tracker" steps={detail.steps} />
+          {detail.decideAs ? (
+            <ManagerPlanDecisionActions
+              target={{ kind: "removal", customerId: detail.customerId, requestedAt: detail.requestedAt, stage: detail.stage, thenName: detail.thenName }}
+              byAdministrator={detail.decideAs === "administrator"}
+              backHref={backHref}
+            />
+          ) : null}
+        </div>
       </div>
     </div>
   );

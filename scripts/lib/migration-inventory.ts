@@ -958,6 +958,35 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // authenticated privilege — read in the same query. Re-applying it is a no-op (`if not exists`,
   // `create or replace`, `drop policy if exists`).
   "20261017000000_phoenix_crm_manager_plan.sql",
+  // 2026-10-17, the second approval on a district manager's asks — after a regional manager agrees to
+  // reopen a sent week or to take a customer off Manager's own list, the NSM above him decides too
+  // (owner, about 11:20 and 11:30 Cairo: "if regional manager applicable then after the rm approve the
+  // nsm also must approve never skip", scope "Week + edit asks + removals"). Applied to staging
+  // (cifwmndunmlxjhyjugxa) about 11:45 Cairo with `node scripts/apply-sql-file.mjs <file> staging` —
+  // the standing route, because the staging MCP answered {"status":"declined"} on this SQL: the five
+  // replaced bodies contain `update` statements. Then PRODUCTION (ozucdzovmcqvepbozvqf) at 12:06 Cairo
+  // the same day, on the owner's own words "apply the manager asks second-approval migration to
+  // production", by the same route with PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com —
+  // before the PR that reads the new columns merged. That route writes NO ledger row, so no row on
+  // either project carries this version or name (production read 0 rows for 20261017% after the apply).
+  // Production's pre-image, read the minute before: all five bodies at 20261017000000's digests, all
+  // four phoenix_crm_manager_* tables it touches at 0 rows, and none of the ten columns present.
+  // Verified on BOTH projects by digest, not by presence: md5(pg_proc.prosrc) is md5-equal to this file's
+  // dollar-quoted bodies (as-is LF) for all five functions it replaces —
+  // phoenix_crm_raise_manager_plan_edit d487b727a85c1b67dd7e4573837f371f,
+  // phoenix_crm_decide_manager_plan_edit ed3d6b906dee579b07ea4bdbd5867428,
+  // phoenix_crm_expire_manager_plan_edit_requests cabf3f0b91ade9c6e6cee87490f0399d,
+  // phoenix_crm_request_manager_customer_removal 72d693e938faba908c74d8cadfa3633f, and
+  // phoenix_crm_decide_manager_customer_removal baeff82b022e7b13fee4bc2c02bf5914 — and this file is
+  // each one's LAST definer. All five are SECURITY DEFINER with no anon or authenticated EXECUTE and
+  // search_path=public, the ten columns, the widened status CHECKs and the one-open-ask index on
+  // ('pending', 'first_approved') are live — read in the same query on each project. The same fifteen
+  // transitions were run on each inside a DO block raised to roll back, on is_test rows, with identical
+  // outcomes, and all four tables held 0 rows afterwards on both. The rollback is 20261017000000's five
+  // bodies (its digests are above). Re-applying it
+  // is a no-op (`add column if not exists`, the CHECKs dropped `if exists` before they are re-added,
+  // `create or replace`).
+  "20261017120000_phoenix_crm_manager_asks_second_approval.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

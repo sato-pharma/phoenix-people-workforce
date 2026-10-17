@@ -241,14 +241,24 @@ export async function loadManagerSlotCustomers(slotIds: ReadonlyArray<string>): 
   return out;
 }
 
+export type ManagerEditAskStatus = "pending" | "first_approved" | "reopened" | "refused" | "expired";
+
 export type ManagerEditAskRow = {
   requestId: string;
   planId: string;
   managerHrId: string;
   weekStart: string;
   approverHrId: string;
+  /** The national sales manager who decides after a regional approver (owner, 2026-10-17); null: one step. */
+  secondApproverHrId: string | null;
   reason: string;
-  status: "pending" | "reopened" | "refused" | "expired";
+  /** "first_approved": the regional manager agreed, and it waits on the second approver. */
+  status: ManagerEditAskStatus;
+  firstDecidedAt: string | null;
+  firstDecidedByHrId: string | null;
+  firstDecidedRole: string | null;
+  firstDecisionNote: string | null;
+  decidedAt: string | null;
   decidedByHrId: string | null;
   decidedRole: string | null;
   decisionNote: string | null;
@@ -258,7 +268,9 @@ export type ManagerEditAskRow = {
 };
 
 export const EDIT_ASK_COLUMNS =
-  "id, plan_id, manager_hr_id, week_start, approver_hr_id, reason, status, decided_by_hr_id, decided_role, decision_note, version, is_test, created_at";
+  "id, plan_id, manager_hr_id, week_start, approver_hr_id, second_approver_hr_id, reason, status, first_decided_at, first_decided_by_hr_id, first_decided_role, first_decision_note, decided_at, decided_by_hr_id, decided_role, decision_note, version, is_test, created_at";
+
+const EDIT_ASK_STATUSES: ReadonlySet<unknown> = new Set(["pending", "first_approved", "reopened", "refused", "expired"]);
 
 export function editAskRowOf(raw: unknown): ManagerEditAskRow | null {
   const row = record(raw);
@@ -267,17 +279,22 @@ export function editAskRowOf(raw: unknown): ManagerEditAskRow | null {
   const managerHrId = personKey(textOrNull(row.manager_hr_id));
   const approverHrId = personKey(textOrNull(row.approver_hr_id));
   const weekStart = dayOf(row.week_start);
-  const status = row.status;
   if (!requestId || !planId || !managerHrId || !approverHrId || !weekStart) return null;
-  if (status !== "pending" && status !== "reopened" && status !== "refused" && status !== "expired") return null;
+  if (!EDIT_ASK_STATUSES.has(row.status)) return null;
   return {
     requestId,
     planId,
     managerHrId,
     weekStart,
     approverHrId,
+    secondApproverHrId: personKey(textOrNull(row.second_approver_hr_id)),
     reason: textOrNull(row.reason) ?? "",
-    status,
+    status: row.status as ManagerEditAskStatus,
+    firstDecidedAt: textOrNull(row.first_decided_at),
+    firstDecidedByHrId: personKey(textOrNull(row.first_decided_by_hr_id)),
+    firstDecidedRole: textOrNull(row.first_decided_role),
+    firstDecisionNote: textOrNull(row.first_decision_note),
+    decidedAt: textOrNull(row.decided_at),
     decidedByHrId: personKey(textOrNull(row.decided_by_hr_id)),
     decidedRole: textOrNull(row.decided_role),
     decisionNote: textOrNull(row.decision_note),

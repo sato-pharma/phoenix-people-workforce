@@ -16,6 +16,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { addDaysIso } from "@/lib/crm/dates";
 import { formatPhoenixDateTime, formatPhoenixLongDate } from "@/lib/i18n/format";
 import {
+  managerAskStage,
   managerPlanStage,
   managerPlanStatusLabel,
   returnStageOfApproved,
@@ -30,7 +31,8 @@ import { loadEditAskRow, loadEditAsks, loadManagerPlanRow, type ManagerEditAskRo
 import { loadManagerPlanBoardFor, type ManagerPlanBoardView } from "@/lib/phoenix-crm/server/manager-plans";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 
-export type ManagerHubStepState = "done" | "current" | "waiting" | "returned";
+/** "closed": an ask that ended with its week, undecided at that step. */
+export type ManagerHubStepState = "done" | "current" | "waiting" | "returned" | "refused" | "closed";
 
 export type ManagerHubStep = { label: string; who: string; state: ManagerHubStepState; at: string | null };
 
@@ -39,9 +41,16 @@ export type ManagerHubAsk = {
   reason: string;
   askedAt: string | null;
   status: ManagerEditAskRow["status"];
+  statusLabel: string;
   decisionNote: string | null;
-  /** The viewer decides it now: its approver, or the Administrator. */
-  decideAs: "first" | "administrator" | null;
+  /** The step it waits on — sent back with the decision, so a step already taken is never taken twice. */
+  stage: ManagerPlanStage | null;
+  /** Asked, the regional manager (or NSM), then the NSM above a regional manager (owner, 2026-10-17). */
+  steps: ManagerHubStep[];
+  /** The viewer decides this step now: its holder, or the Administrator. */
+  decideAs: ManagerPlanDeciderRole | null;
+  /** At the first step, the NSM who approves after it — the reopening waits for him too. */
+  thenName: string | null;
   version: number;
 };
 
@@ -61,6 +70,8 @@ export type ManagerHubPlanDetail = {
   board: ManagerPlanBoardView;
   /** The viewer decides the week now (approve, return the week, return one day). */
   decideAs: ManagerPlanDeciderRole | null;
+  /** At the first step, the NSM who approves the week after it. */
+  thenName: string | null;
   version: number;
   /** The days a return may name. */
   returnableDays: Array<{ date: string; dateText: string }>;
@@ -82,11 +93,17 @@ export type ManagerHubRemovalDetail = {
   reason: string | null;
   /** When this ask was raised — sent back with the decision, so a re-raised ask is never decided unread. */
   requestedAt: string | null;
-  status: "pending" | "removed" | "refused" | "active";
+  /** "first_approved": the regional manager agreed, and the NSM above him decides next. */
+  status: "pending" | "first_approved" | "removed" | "refused" | "active";
   statusLabel: string;
   decisionNote: string | null;
   approverName: string | null;
-  decideAs: "first" | "administrator" | null;
+  /** The step it waits on — sent back with the decision. */
+  stage: ManagerPlanStage | null;
+  steps: ManagerHubStep[];
+  decideAs: ManagerPlanDeciderRole | null;
+  /** At the first step, the NSM who approves after it — the customer stays on the list until then. */
+  thenName: string | null;
   isOwner: boolean;
 };
 
@@ -146,10 +163,83 @@ function planSteps(plan: ManagerPlanRow, names: PeopleNames): ManagerHubStep[] {
   return steps;
 }
 
+/** An ask (to edit a week, or to take a customer off his own list) as the tracker reads it. */
+type AskTrack = {
+  askedLabel: string;
+  askerHrId: string;
+  askedAt: string | null;
+  /** "open" waits on the first step, "first_approved" on the second; "approved" is the last approval. */
+  status: "open" | "first_approved" | "approved" | "refused" | "expired";
+  approverHrId: string | null;
+  secondApproverHrId: string | null;
+  firstDecidedByHrId: string | null;
+  firstDecidedRole: string | null;
+  firstDecidedAt: string | null;
+  decidedByHrId: string | null;
+  decidedRole: string | null;
+  decidedAt: string | null;
+};
+
+/**
+ * The tracker of an ask: asked, the regional manager (or the NSM), then — where one was stored — the NSM
+ * above a regional manager (owner, 2026-10-17: "Week + edit asks + removals"). A refusal at the first
+ * step closes it there; a refusal at the second leaves the first step done.
+ */
+export function askSteps(ask: AskTrack, names: PeopleNames): ManagerHubStep[] {
+  const hasSecond = ask.secondApproverHrId !== null;
+  const firstTaken = ask.firstDecidedAt !== null;
+  const steps: ManagerHubStep[] = [{ label: ask.askedLabel, who: nameOf(names, ask.askerHrId), state: "done", at: at(ask.askedAt) }];
+  const approverName = ask.approverHrId ? nameOf(names, ask.approverHrId) : "The approver";
+  const finalWho = who(names, ask.decidedByHrId, ask.decidedRole, "The approver");
+
+  if (ask.status === "open") steps.push({ label: "Manager approval", who: approverName, state: "current", at: null });
+  else if (firstTaken) steps.push({ label: "Manager approval", who: who(names, ask.firstDecidedByHrId, ask.firstDecidedRole, approverName), state: "done", at: at(ask.firstDecidedAt) });
+  else if (ask.status === "approved") steps.push({ label: "Manager approval", who: finalWho, state: "done", at: at(ask.decidedAt) });
+  else if (ask.status === "refused") steps.push({ label: "Manager approval", who: finalWho, state: "refused", at: at(ask.decidedAt) });
+  else steps.push({ label: "Manager approval", who: approverName, state: "closed", at: at(ask.decidedAt) });
+
+  // The second step shows while it can still be reached, or once it was; an ask closed at the first step
+  // never reached it, so it is not drawn as still to come.
+  if (hasSecond && (ask.status === "open" || firstTaken)) {
+    const secondName = nameOf(names, ask.secondApproverHrId);
+    if (ask.status === "open") steps.push({ label: "Second approval", who: secondName, state: "waiting", at: null });
+    else if (ask.status === "first_approved") steps.push({ label: "Second approval", who: secondName, state: "current", at: null });
+    else if (ask.status === "approved") steps.push({ label: "Second approval", who: finalWho, state: "done", at: at(ask.decidedAt) });
+    else if (ask.status === "refused") steps.push({ label: "Second approval", who: finalWho, state: "refused", at: at(ask.decidedAt) });
+    else steps.push({ label: "Second approval", who: secondName, state: "closed", at: at(ask.decidedAt) });
+  }
+  return steps;
+}
+
+function editAskTrack(ask: ManagerEditAskRow): AskTrack {
+  return {
+    askedLabel: "Asked to edit",
+    askerHrId: ask.managerHrId,
+    askedAt: ask.createdAt,
+    status: ask.status === "pending" ? "open" : ask.status === "reopened" ? "approved" : ask.status,
+    approverHrId: ask.approverHrId,
+    secondApproverHrId: ask.secondApproverHrId,
+    firstDecidedByHrId: ask.firstDecidedByHrId,
+    firstDecidedRole: ask.firstDecidedRole,
+    firstDecidedAt: ask.firstDecidedAt,
+    decidedByHrId: ask.decidedByHrId,
+    decidedRole: ask.decidedRole,
+    decidedAt: ask.decidedAt,
+  };
+}
+
+function editAskStatusLabel(ask: ManagerEditAskRow, names: PeopleNames): string {
+  if (ask.status === "pending") return `Waiting for ${nameOf(names, ask.approverHrId)}`;
+  if (ask.status === "first_approved") return `Waiting for ${ask.secondApproverHrId ? nameOf(names, ask.secondApproverHrId) : "the second approver"}`;
+  if (ask.status === "reopened") return "Reopened for editing";
+  if (ask.status === "expired") return "Closed when the week ended";
+  return "Refused — the week stays as sent";
+}
+
 async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId: string | null): Promise<ManagerHubDetail> {
   const asks = await loadEditAsks([plan.planId]);
-  const ask = (askId ? asks.find((entry) => entry.requestId === askId) : asks.find((entry) => entry.status === "pending")) ?? null;
-  if (!mayOpen(viewer, plan.managerHrId, [plan.firstApproverHrId, plan.secondApproverHrId, ask?.approverHrId ?? null])) return NOT_FOUND;
+  const ask = (askId ? asks.find((entry) => entry.requestId === askId) : asks.find((entry) => managerAskStage(entry.status) !== null)) ?? null;
+  if (!mayOpen(viewer, plan.managerHrId, [plan.firstApproverHrId, plan.secondApproverHrId, ask?.approverHrId ?? null, ask?.secondApproverHrId ?? null])) return NOT_FOUND;
 
   const [board, names] = await Promise.all([
     loadManagerPlanBoardFor(viewer, plan.managerHrId, plan.weekStart, plan.isTest),
@@ -159,8 +249,13 @@ async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId:
       plan.secondApproverHrId,
       plan.firstDecidedByHrId,
       plan.decidedByHrId,
+      ask?.approverHrId,
+      ask?.secondApproverHrId,
+      ask?.firstDecidedByHrId,
+      ask?.decidedByHrId,
     ]),
   ]);
+  const askStage = ask ? managerAskStage(ask.status) : null;
   const hasSecond = plan.secondApproverHrId !== null;
   const stage: ManagerPlanStage | null = plan.status === "approved" ? returnStageOfApproved(hasSecond) : managerPlanStage(plan.status);
   const decideAs =
@@ -184,6 +279,7 @@ async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId:
     steps: planSteps(plan, names),
     board,
     decideAs: weekOpen ? decideAs : null,
+    thenName: plan.status === "submitted" && plan.secondApproverHrId ? nameOf(names, plan.secondApproverHrId) : null,
     version: plan.version,
     returnableDays: board.days.filter((day) => day.halves.length > 0).map((day) => ({ date: day.date, dateText: day.dateText })),
     ask: ask
@@ -192,8 +288,14 @@ async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId:
           reason: ask.reason,
           askedAt: at(ask.createdAt),
           status: ask.status,
-          decisionNote: ask.decisionNote,
-          decideAs: ask.status === "pending" ? managerAskDeciderRole(viewer, { approverHrId: ask.approverHrId, isTest: ask.isTest }) : null,
+          statusLabel: editAskStatusLabel(ask, names),
+          decisionNote: ask.decisionNote ?? ask.firstDecisionNote,
+          stage: askStage,
+          steps: askSteps(editAskTrack(ask), names),
+          decideAs: askStage
+            ? managerAskDeciderRole(viewer, { stage: askStage, approverHrId: ask.approverHrId, secondApproverHrId: ask.secondApproverHrId, isTest: ask.isTest })
+            : null,
+          thenName: askStage === "first" && ask.secondApproverHrId ? nameOf(names, ask.secondApproverHrId) : null,
           version: ask.version,
         }
       : null,
@@ -204,18 +306,31 @@ async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId:
 async function removalDetail(viewer: PhoenixCrmViewer, id: string): Promise<ManagerHubDetail> {
   const row = await loadManagerCustomerRow(id);
   if (!row || row.isTest !== viewer.isTestPersona) return NOT_FOUND;
-  if (!mayOpen(viewer, row.managerHrId, [row.approverHrId])) return NOT_FOUND;
-  const names = await loadPeopleNames([row.managerHrId, row.approverHrId]);
-  const refused = row.status === "active" && row.removalDecisionNote !== null;
-  const status: ManagerHubRemovalDetail["status"] = row.status === "removal_pending" ? "pending" : row.status === "removed" ? "removed" : refused ? "refused" : "active";
+  if (!mayOpen(viewer, row.managerHrId, [row.approverHrId, row.secondApproverHrId])) return NOT_FOUND;
+  const names = await loadPeopleNames([row.managerHrId, row.approverHrId, row.secondApproverHrId, row.firstDecidedByHrId, row.decidedByHrId]);
+  // A refusal puts the customer back to active; its decision stamp tells it from one never asked.
+  const refused = row.status === "active" && row.decidedAt !== null;
+  const status: ManagerHubRemovalDetail["status"] =
+    row.status === "removal_pending"
+      ? "pending"
+      : row.status === "removal_first_approved"
+        ? "first_approved"
+        : row.status === "removed"
+          ? "removed"
+          : refused
+            ? "refused"
+            : "active";
   const statusLabel =
     status === "pending"
       ? `Waiting for ${row.approverHrId ? nameOf(names, row.approverHrId) : "the approver"}`
-      : status === "removed"
-        ? "Removed from Manager's own list"
-        : status === "refused"
-          ? "Refused — it stays on Manager's own list"
-          : "On Manager's own list";
+      : status === "first_approved"
+        ? `Waiting for ${row.secondApproverHrId ? nameOf(names, row.secondApproverHrId) : "the second approver"}`
+        : status === "removed"
+          ? "Removed from Manager's own list"
+          : status === "refused"
+            ? "Refused — it stays on Manager's own list"
+            : "On Manager's own list";
+  const stage = managerAskStage(row.status);
   return {
     kind: "removal",
     isTest: row.isTest,
@@ -232,7 +347,31 @@ async function removalDetail(viewer: PhoenixCrmViewer, id: string): Promise<Mana
     statusLabel,
     decisionNote: row.removalDecisionNote,
     approverName: row.approverHrId ? nameOf(names, row.approverHrId) : null,
-    decideAs: status === "pending" ? managerAskDeciderRole(viewer, { approverHrId: row.approverHrId, isTest: row.isTest }) : null,
+    stage,
+    steps:
+      status === "active" || !row.removalRequestedAt
+        ? []
+        : askSteps(
+            {
+              askedLabel: "Asked to remove",
+              askerHrId: row.managerHrId,
+              askedAt: row.removalRequestedAt,
+              status: status === "pending" ? "open" : status === "first_approved" ? "first_approved" : status === "removed" ? "approved" : "refused",
+              approverHrId: row.approverHrId,
+              secondApproverHrId: row.secondApproverHrId,
+              firstDecidedByHrId: row.firstDecidedByHrId,
+              firstDecidedRole: row.firstDecidedRole,
+              firstDecidedAt: row.firstDecidedAt,
+              decidedByHrId: row.decidedByHrId,
+              decidedRole: row.decidedRole,
+              decidedAt: row.decidedAt,
+            },
+            names,
+          ),
+    decideAs: stage
+      ? managerAskDeciderRole(viewer, { stage, approverHrId: row.approverHrId, secondApproverHrId: row.secondApproverHrId, isTest: row.isTest })
+      : null,
+    thenName: stage === "first" && row.secondApproverHrId ? nameOf(names, row.secondApproverHrId) : null,
     isOwner: row.managerHrId === viewer.hrId,
   };
 }

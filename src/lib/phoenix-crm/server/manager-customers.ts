@@ -19,6 +19,7 @@ import { parseCapturedFix, parseCustomerPhone } from "@/lib/phoenix-crm/entry-ru
 import {
   isManagerCustomerGrade,
   isManagerCustomerPotentialGrade,
+  managerAskStage,
   managerPlanApprovers,
   matchCustomerName,
   MANAGER_PLAN_NOTE_MAX,
@@ -59,7 +60,8 @@ function cleanText(value: unknown, max: number, field: string): string | null {
 
 // ── Manager's own list ──────────────────────────────────────────────────────────────────────────
 
-export type ManagerCustomerStatus = "active" | "removal_pending" | "removed";
+/** "removal_first_approved": his regional manager agreed, and the NSM above him decides next (owner, 2026-10-17). */
+export type ManagerCustomerStatus = "active" | "removal_pending" | "removal_first_approved" | "removed";
 
 export type ManagerCustomerView = {
   id: string;
@@ -83,23 +85,61 @@ export type ManagerCustomerView = {
 };
 
 const OWN_COLUMNS =
-  "id, manager_hr_id, line_code, name, speciality, phone, contact_note, grade, potential_grade, comment, area_seat_id, area_code, area_name, pin_lat, pin_lon, pin_address, pin_brick_name, status, removal_reason, removal_requested_at, removal_approver_hr_id, removal_decision_note, is_test, created_at";
+  "id, manager_hr_id, line_code, name, speciality, phone, contact_note, grade, potential_grade, comment, area_seat_id, area_code, area_name, pin_lat, pin_lon, pin_address, pin_brick_name, status, removal_reason, removal_requested_at, removal_approver_hr_id, removal_second_approver_hr_id, removal_first_decided_at, removal_first_decided_by_hr_id, removal_first_decided_role, removal_decided_at, removal_decided_by_hr_id, removal_decided_role, removal_decision_note, is_test, created_at";
 
 function statusLabelOf(status: ManagerCustomerStatus): string {
   if (status === "removal_pending") return "Waiting to come off the list";
+  if (status === "removal_first_approved") return "Waiting for the second approval to come off the list";
   if (status === "removed") return "Off the list";
   return "On the list";
 }
 
-export function managerCustomerOf(
-  raw: unknown,
-): (ManagerCustomerView & { managerHrId: string; approverHrId: string | null; isTest: boolean; removalRequestedAt: string | null }) | null {
+/** A removal still waiting on someone: with the regional manager, or with the NSM above him. */
+export function isRemovalOpen(status: ManagerCustomerStatus): boolean {
+  return status === "removal_pending" || status === "removal_first_approved";
+}
+
+/** The fields a removal's deciders and the Hub read, beyond what Manager's own list shows. */
+type ManagerCustomerRemoval = {
+  managerHrId: string;
+  approverHrId: string | null;
+  secondApproverHrId: string | null;
+  firstDecidedAt: string | null;
+  firstDecidedByHrId: string | null;
+  firstDecidedRole: string | null;
+  decidedAt: string | null;
+  decidedByHrId: string | null;
+  decidedRole: string | null;
+  isTest: boolean;
+  removalRequestedAt: string | null;
+};
+
+function viewOf(row: ManagerCustomerView & ManagerCustomerRemoval): ManagerCustomerView {
+  const {
+    managerHrId: _manager,
+    approverHrId: _approver,
+    secondApproverHrId: _second,
+    firstDecidedAt: _firstAt,
+    firstDecidedByHrId: _firstBy,
+    firstDecidedRole: _firstRole,
+    decidedAt: _at,
+    decidedByHrId: _by,
+    decidedRole: _role,
+    isTest: _test,
+    removalRequestedAt: _requested,
+    ...view
+  } = row;
+  return view;
+}
+
+export function managerCustomerOf(raw: unknown): (ManagerCustomerView & ManagerCustomerRemoval) | null {
   const row = record(raw);
   const id = textOrNull(row.id);
   const managerHrId = personKey(textOrNull(row.manager_hr_id));
   const name = textOrNull(row.name);
   if (!id || !managerHrId || !name) return null;
-  const status: ManagerCustomerStatus = row.status === "removal_pending" || row.status === "removed" ? row.status : "active";
+  const status: ManagerCustomerStatus =
+    row.status === "removal_pending" || row.status === "removal_first_approved" || row.status === "removed" ? row.status : "active";
   return {
     id,
     managerHrId,
@@ -121,6 +161,13 @@ export function managerCustomerOf(
     removalRequestedAt: textOrNull(row.removal_requested_at),
     removalDecisionNote: textOrNull(row.removal_decision_note),
     approverHrId: personKey(textOrNull(row.removal_approver_hr_id)),
+    secondApproverHrId: personKey(textOrNull(row.removal_second_approver_hr_id)),
+    firstDecidedAt: textOrNull(row.removal_first_decided_at),
+    firstDecidedByHrId: personKey(textOrNull(row.removal_first_decided_by_hr_id)),
+    firstDecidedRole: textOrNull(row.removal_first_decided_role),
+    decidedAt: textOrNull(row.removal_decided_at),
+    decidedByHrId: personKey(textOrNull(row.removal_decided_by_hr_id)),
+    decidedRole: textOrNull(row.removal_decided_role),
     isTest: row.is_test === true,
   };
 }
@@ -140,7 +187,7 @@ export async function loadManagerCustomers(managerHrId: string, isTest: boolean)
   return rows
     .map(managerCustomerOf)
     .filter((row): row is NonNullable<ReturnType<typeof managerCustomerOf>> => row !== null)
-    .map(({ managerHrId: _manager, approverHrId: _approver, isTest: _test, removalRequestedAt: _requested, ...view }) => view)
+    .map(viewOf)
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
@@ -413,13 +460,16 @@ export async function addManagerCustomer(viewer: PhoenixCrmViewer, raw: unknown)
   if (error) throw error;
   const added = managerCustomerOf(data);
   if (!added) throw conflictError("The customer could not be added. Reload the page and try again.");
-  const { managerHrId: _manager, approverHrId: _approver, isTest: _test, removalRequestedAt: _requested, ...view } = added;
-  return view;
+  return viewOf(added);
 }
 
 // ── Taking one off his own list ─────────────────────────────────────────────────────────────────
 
-/** POST: he asks to take a customer off his own list; his RSM/NSM decides (owner, 2026-10-16). */
+/**
+ * POST: he asks to take a customer off his own list; his RSM/NSM decides (owner, 2026-10-16). 🔴 After a
+ * regional manager agrees, the national sales manager above him approves too (owner, 2026-10-17,
+ * "Week + edit asks + removals"), so the second approver is stored on the ask as on the week.
+ */
 export async function requestManagerCustomerRemoval(viewer: PhoenixCrmViewer, raw: unknown): Promise<ManagerCustomerView> {
   const seat = assertManagerPlanWriter(viewer);
   const body = record(raw);
@@ -430,9 +480,17 @@ export async function requestManagerCustomerRemoval(viewer: PhoenixCrmViewer, ra
   if (!row || row.managerHrId !== viewer.hrId || row.isTest !== isTest) throw notFoundError("This customer is no longer on Manager's own list. Reload the page.");
   const reason = cleanText(body.reason, MANAGER_PLAN_REASON_MAX, "The reason");
   if (!reason || reason.length < 3) throw validationError("Write why the customer should come off your list.");
-  const approver = managerPlanApprovers(viewer.org, seat.seatId).first;
+  const approvers = managerPlanApprovers(viewer.org, seat.seatId);
+  const approver = approvers.first;
   await callPhoenixCrm<Row>("phoenix_crm_request_manager_customer_removal", {
-    p: { manager_customer_id: id, actor_hr_id: viewer.hrId, approver_hr_id: approver?.hrId ?? null, reason, is_test: isTest },
+    p: {
+      manager_customer_id: id,
+      actor_hr_id: viewer.hrId,
+      approver_hr_id: approver?.hrId ?? null,
+      second_approver_hr_id: approvers.secondHrId,
+      reason,
+      is_test: isTest,
+    },
   });
   if (approver) {
     await notifyPhoenixCrm(
@@ -456,11 +514,15 @@ export async function requestManagerCustomerRemoval(viewer: PhoenixCrmViewer, ra
   }
   const updated = await loadManagerCustomerRow(id);
   if (!updated) throw notFoundError("This customer is no longer on Manager's own list. Reload the page.");
-  const { managerHrId: _manager, approverHrId: _approver, isTest: _test, removalRequestedAt: _requested, ...view } = updated;
-  return view;
+  return viewOf(updated);
 }
 
-/** POST: his RSM/NSM — or the Administrator — approves or refuses taking a customer off his list. */
+/**
+ * POST: the holder of the removal's step — his regional manager first, then the national sales manager
+ * stored on the ask — or the Administrator in place of either, approves (or passes it on) or refuses
+ * taking a customer off his list. The page names the step it showed, so a step already decided is never
+ * decided again as the next one.
+ */
 export async function decideManagerCustomerRemoval(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ id: string; status: ManagerCustomerStatus }> {
   const body = record(raw);
   const decision = body.decision;
@@ -470,8 +532,16 @@ export async function decideManagerCustomerRemoval(viewer: PhoenixCrmViewer, raw
   const isTest = testModeFor(viewer, body.test);
   const row = await loadManagerCustomerRow(id);
   if (!row || row.isTest !== isTest) throw notFoundError("This customer is no longer on Manager's own list. Reload the page.");
-  const role = managerAskDeciderRole(viewer, { approverHrId: row.approverHrId, isTest });
-  if (!role) throw forbiddenError("This removal is decided by the manager above the district manager.");
+  const stage = managerAskStage(row.status);
+  if (!stage || (body.stage !== undefined && body.stage !== stage)) throw conflictError("This ask has already moved on. Reload the page.");
+  const role = managerAskDeciderRole(viewer, { stage, approverHrId: row.approverHrId, secondApproverHrId: row.secondApproverHrId, isTest });
+  if (!role) {
+    throw forbiddenError(
+      stage === "second"
+        ? "This removal is waiting for its second approver, who decides this step."
+        : "This removal is decided by the manager above the district manager.",
+    );
+  }
   // The decision is on the ask the approver read. A refused ask raised again is a NEW ask with its own
   // time, so a page left open on the old one cannot approve the new one unread.
   const requestedAt = textOrNull(body.requestedAt);
@@ -482,11 +552,34 @@ export async function decideManagerCustomerRemoval(viewer: PhoenixCrmViewer, raw
   if (decision === "refuse" && !note) throw validationError("Write why the customer stays on the list.");
   const result = record(
     await callPhoenixCrm<Row>("phoenix_crm_decide_manager_customer_removal", {
-      p: { manager_customer_id: id, decision, actor_hr_id: viewer.hrId, actor_role: role, note, is_test: isTest },
+      p: { manager_customer_id: id, decision, actor_hr_id: viewer.hrId, actor_role: role, stage, note, is_test: isTest },
     }),
   );
   const seat = managerPlanSeatOf(viewer, row.managerHrId);
-  if (seat) {
+  const passedOn = result.status === "removal_first_approved";
+  if (seat && passedOn && row.secondApproverHrId) {
+    // The regional manager agreed: the national sales manager decides next. The customer stays on the
+    // list, and the district manager is told nothing yet — his own requests list says who it waits on.
+    await notifyPhoenixCrm(
+      {
+        kind: "manager_plan",
+        seat,
+        step: "removal_waiting",
+        recipientHrId: row.secondApproverHrId,
+        managerHrId: row.managerHrId,
+        actorHrId: viewer.hrId,
+        recordId: id,
+        planId: null,
+        weekStart: null,
+        version: Date.now(),
+        note: row.removalReason,
+        customerName: row.name,
+        byAdministrator: role === "administrator",
+        secondStep: true,
+      },
+      isTest,
+    );
+  } else if (seat) {
     await notifyPhoenixCrm(
       {
         kind: "manager_plan",
@@ -507,6 +600,6 @@ export async function decideManagerCustomerRemoval(viewer: PhoenixCrmViewer, raw
       isTest,
     );
   }
-  const status: ManagerCustomerStatus = result.status === "removed" ? "removed" : "active";
+  const status: ManagerCustomerStatus = result.status === "removed" ? "removed" : passedOn ? "removal_first_approved" : "active";
   return { id, status };
 }
