@@ -27,7 +27,7 @@ import WordExtractor from "word-extractor";
 import type { AccessContext } from "@/lib/auth/permissions";
 import {
   createOpenAiResponseText,
-  hasOpenAiApiKey,
+  hasAiApiKey,
   OPENAI_COPILOT_DEFAULT_MODEL,
   OPENAI_NANO_MODEL,
   OPENAI_ROUTE_BUDGET_MS,
@@ -814,7 +814,7 @@ export async function extractCvFieldsFromBytes(input: {
     return { fields, isCv: true, model: OCR_EXTRACTION_MODEL, positionKey: schema.positionKey };
   };
 
-  if (!hasOpenAiApiKey()) {
+  if (!hasAiApiKey()) {
     // Unchanged for every caller that has no usable rule result; what is new is that a CV the rules
     // DID read is no longer thrown away just because the model is unavailable.
     if (rule && rule.isCv) return ruleOnly();

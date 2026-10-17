@@ -1,4 +1,4 @@
-import { createOpenAiResponseText, hasOpenAiApiKey, resolveOpenAiCopilotModel } from "@/lib/ai/openai-client";
+import { createOpenAiResponseText, hasAiApiKey, resolveOpenAiCopilotModel } from "@/lib/ai/openai-client";
 import { logError } from "@/lib/observability/log";
 
 import { COPILOT_OVERRIDE_FIELDS, type ProposedAction } from "./types.ts";
@@ -276,7 +276,7 @@ async function parseWithLlm(text: string, context: ParseContext): Promise<Propos
 export async function parseCeoReply(text: string, context: ParseContext): Promise<ProposedAction[]> {
   const trimmed = text.trim();
   if (!trimmed) return [];
-  if (hasOpenAiApiKey()) {
+  if (hasAiApiKey()) {
     try {
       const actions = await parseWithLlm(trimmed, context);
       if (actions.length > 0) return actions;

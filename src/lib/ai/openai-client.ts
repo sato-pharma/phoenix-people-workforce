@@ -1,5 +1,11 @@
 import OpenAI from "openai";
 
+import {
+  AnthropicRequestError,
+  callAnthropicMessages,
+  hasAnthropicApiKey,
+  resolveAnthropicModel,
+} from "@/lib/ai/anthropic-fallback";
 import { recordAiCall, type AiCallComponent } from "@/lib/observability/ai-metrics";
 import { logError } from "@/lib/observability/log";
 
@@ -65,6 +71,65 @@ export function resolveOpenAiEmailModel(env: OpenAiEnv = process.env) {
 
 export function hasOpenAiApiKey(env: OpenAiEnv = process.env) {
   return Boolean(env.OPENAI_API_KEY?.trim());
+}
+
+// Which provider answers. `AI_PROVIDER=openai|anthropic` pins one; anything else (or unset) is "auto":
+// OpenAI first, Anthropic as the second resort once OpenAI says its account is dead.
+export type AiProviderMode = "anthropic" | "auto" | "openai";
+export type AiProviderName = "anthropic" | "openai";
+
+export function resolveAiProviderMode(env: OpenAiEnv = process.env): AiProviderMode {
+  const raw = env.AI_PROVIDER?.trim().toLowerCase();
+  return raw === "openai" || raw === "anthropic" ? raw : "auto";
+}
+
+/**
+ * Whether ANY AI provider is configured — the gate every feature asks before it offers AI. This is the
+ * answer to "is AI available", which `hasOpenAiApiKey` stopped being the day Anthropic became a second
+ * provider (2026-10-18): a feature gated on the OpenAI key alone would have switched itself off with
+ * a perfectly good Anthropic key sitting beside it.
+ */
+export function hasAiApiKey(env: OpenAiEnv = process.env) {
+  const mode = resolveAiProviderMode(env);
+  if (mode === "openai") return hasOpenAiApiKey(env);
+  if (mode === "anthropic") return hasAnthropicApiKey(env);
+  return hasOpenAiApiKey(env) || hasAnthropicApiKey(env);
+}
+
+// OpenAI answering "out of credit" or "bad key" does not heal on its own, so once it has said so the
+// next calls go straight to Anthropic instead of each paying for a failed OpenAI round trip first. The
+// window is per process and short on purpose: a top-up is noticed within ten minutes with no deploy.
+export const OPENAI_UNAVAILABLE_WINDOW_MS = 10 * 60_000;
+let openAiUnavailableUntilMs = 0;
+
+export function noteOpenAiUnavailable(nowMs = Date.now()) {
+  openAiUnavailableUntilMs = nowMs + OPENAI_UNAVAILABLE_WINDOW_MS;
+}
+
+export function resetOpenAiAvailability() {
+  openAiUnavailableUntilMs = 0;
+}
+
+/** The providers to try, in order. Only an environment with BOTH keys ever gets a second entry. */
+export function planAiProviders(
+  env: OpenAiEnv = process.env,
+  nowMs = Date.now(),
+  unavailableUntilMs = openAiUnavailableUntilMs,
+): AiProviderName[] {
+  const mode = resolveAiProviderMode(env);
+  if (mode === "openai") return ["openai"];
+  if (mode === "anthropic") return ["anthropic"];
+  const openAi = hasOpenAiApiKey(env);
+  const anthropic = hasAnthropicApiKey(env);
+  if (!anthropic) return ["openai"];
+  if (!openAi) return ["anthropic"];
+  return nowMs < unavailableUntilMs ? ["anthropic", "openai"] : ["openai", "anthropic"];
+}
+
+// The two failures that mean the ACCOUNT is dead — a retry, a wait or another model would not help, but
+// another provider would. A timeout or a rate limit stays with the provider that gave it.
+export function shouldFailOverToNextProvider(code: PhoenixOpenAiErrorCode) {
+  return code === "quota_exceeded" || code === "auth_failed";
 }
 
 export function sanitizeOpenAiLogMessage(message: string) {
@@ -169,7 +234,7 @@ function openAiClient(
   });
 }
 
-export async function createOpenAiResponseText(params: {
+export type CreateResponseTextParams = {
   // A plain string (the common case — text-only prompts) or a structured content-parts
   // array (role + input_text/input_image parts) for multimodal calls, e.g. CV extraction's
   // scanned-image path (src/lib/recruitment/cv-extraction.ts). Reuses the SDK's own type
@@ -206,8 +271,101 @@ export async function createOpenAiResponseText(params: {
    * passes 0: the signboard read at the door budgeted 8 s and waited 16.4 s, five times in three days.
    */
   maxRetries?: number;
-}) {
-  const model = params.model?.trim() || resolveOpenAiEmailModel();
+};
+
+/**
+ * One AI text call, answered by whichever provider `planAiProviders` names first and — only when that
+ * provider's ACCOUNT is dead (out of credit, key rejected) — by the next. The name predates Anthropic and
+ * is kept: renaming it would touch every AI feature and a dozen source-pinning tests for no behaviour.
+ * What comes back is the same `{ model, outputText, requestId }` whichever provider answered.
+ */
+export async function createOpenAiResponseText(params: CreateResponseTextParams) {
+  const requestedModel = params.model?.trim() || resolveOpenAiEmailModel();
+  const plan = planAiProviders();
+
+  for (const [index, provider] of plan.entries()) {
+    try {
+      return provider === "anthropic"
+        ? await runAnthropicResponse(params, requestedModel)
+        : await runOpenAiResponse(params, requestedModel);
+    } catch (error) {
+      const failure = normalizeOpenAiError(error, params.purpose);
+      if (provider === "openai" && shouldFailOverToNextProvider(failure.code) && hasAnthropicApiKey()) {
+        noteOpenAiUnavailable();
+      }
+      if (index === plan.length - 1 || !shouldFailOverToNextProvider(failure.code)) throw failure;
+    }
+  }
+
+  // Unreachable: `plan` is never empty and its last entry always throws above. Present for the compiler.
+  throw new PhoenixOpenAiError("failed", "No AI provider was attempted.");
+}
+
+async function runAnthropicResponse(params: CreateResponseTextParams, requestedModel: string) {
+  const component = params.component ?? "openai_client";
+  const model = resolveAnthropicModel(requestedModel);
+  const startedAt = Date.now();
+
+  try {
+    if (!hasAnthropicApiKey()) {
+      throw new PhoenixOpenAiError("not_configured", "ANTHROPIC_API_KEY is not configured.");
+    }
+    const reply = await callAnthropicMessages({
+      format: params.text.format,
+      input: params.input,
+      instructions: params.instructions,
+      maxOutputTokens: params.maxOutputTokens ?? OPENAI_EMAIL_MAX_OUTPUT_TOKENS,
+      maxRetries: params.maxRetries ?? OPENAI_MAX_RETRIES,
+      model,
+      timeoutMs: params.timeoutMs ?? OPENAI_EMAIL_TIMEOUT_MS,
+    });
+
+    recordAiCall({
+      component,
+      inputTokens: reply.inputTokens,
+      latencyMs: Date.now() - startedAt,
+      model: reply.model,
+      outputTokens: reply.outputTokens,
+      purpose: params.purpose,
+      status: "success",
+    });
+
+    return { model: reply.model, outputText: reply.outputText, requestId: reply.requestId };
+  } catch (error) {
+    const normalized = normalizeAnthropicError(error, params.purpose);
+    recordAiCall({
+      component,
+      errorCode: normalized.code,
+      latencyMs: Date.now() - startedAt,
+      model,
+      purpose: params.purpose,
+      status: "error",
+    });
+    throw normalized;
+  }
+}
+
+// The Anthropic twin of `normalizeOpenAiError`: one PhoenixOpenAiError out, the key redacted from what
+// is logged, and nothing but status / request id / code in the labels.
+function normalizeAnthropicError(error: unknown, context: string) {
+  if (error instanceof PhoenixOpenAiError) return error;
+  const failure = error instanceof AnthropicRequestError ? error : null;
+  const detail = sanitizeOpenAiLogMessage(messageFrom(error));
+  logError(`Anthropic request failed: ${detail}`, {
+    labels: {
+      event: "anthropic_request_failed",
+      context,
+      status: failure?.status ?? null,
+      requestId: failure?.requestId ?? null,
+    },
+  });
+  return new PhoenixOpenAiError(failure?.code ?? "failed", detail, {
+    requestId: failure?.requestId,
+    status: failure?.status,
+  });
+}
+
+async function runOpenAiResponse(params: CreateResponseTextParams, model: string) {
   const component = params.component ?? "openai_client";
   const startedAt = Date.now();
 

@@ -14,7 +14,7 @@
  *    answer must all degrade to "the rules' answer, unchanged".
  */
 
-import { createOpenAiResponseText, hasOpenAiApiKey, PhoenixOpenAiError } from "@/lib/ai/openai-client";
+import { createOpenAiResponseText, hasAiApiKey, PhoenixOpenAiError } from "@/lib/ai/openai-client";
 import { logError } from "@/lib/observability/log";
 import { type CampaignAssistReading } from "@/lib/crm/campaign-note";
 import { acceptAssistRow } from "@/lib/crm/campaign-note-assist";
@@ -112,7 +112,7 @@ export async function assistCampaignFragments(
     if (!pending.includes(fragment)) pending.push(fragment);
   }
 
-  if (pending.length === 0 || !hasOpenAiApiKey()) return resolved;
+  if (pending.length === 0 || !hasAiApiKey()) return resolved;
 
   const batch = pending.slice(0, MAX_SEGMENTS_PER_CALL);
 

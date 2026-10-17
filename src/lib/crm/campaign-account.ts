@@ -10,7 +10,7 @@
 // vendor-supplied one. Internal metrics still record the call (recordAiCall), because hiding it is
 // for users, not for the audit trail.
 
-import { createOpenAiResponseText, hasOpenAiApiKey, PhoenixOpenAiError } from "@/lib/ai/openai-client";
+import { createOpenAiResponseText, hasAiApiKey, PhoenixOpenAiError } from "@/lib/ai/openai-client";
 import { logError } from "@/lib/observability/log";
 
 /** A model answer longer than this is the whole note back, not a name. */
@@ -162,7 +162,7 @@ export async function extractCampaignAccounts(comments: readonly string[]): Prom
     if (!pending.includes(note)) pending.push(note);
   }
 
-  if (pending.length === 0 || !hasOpenAiApiKey()) return resolved;
+  if (pending.length === 0 || !hasAiApiKey()) return resolved;
 
   const batch = pending.slice(0, MAX_COMMENTS_PER_CALL);
 

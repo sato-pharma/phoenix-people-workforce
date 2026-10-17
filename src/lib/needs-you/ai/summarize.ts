@@ -22,7 +22,7 @@
  * digest with no garnish. Every arm returns a verdict, and every refusal carries a reason the
  * digest prints — silent degradation is what hid the masked-key defect for days on 2026-09-02.
  */
-import { OPENAI_ROUTE_BUDGET_MS, createOpenAiResponseText, hasOpenAiApiKey } from "@/lib/ai/openai-client";
+import { OPENAI_ROUTE_BUDGET_MS, createOpenAiResponseText, hasAiApiKey } from "@/lib/ai/openai-client";
 import { logStructured } from "@/lib/observability/log";
 
 import {
@@ -60,7 +60,7 @@ export async function summarizeNeedsYouBoard(board: NeedsYouBoard): Promise<Summ
   if (facts.notProvenCount > 0 || facts.items.length === 0) {
     return attachableSummary(facts, null);
   }
-  if (!hasOpenAiApiKey()) {
+  if (!hasAiApiKey()) {
     return { lead: null, because: "the AI account is not configured on this runtime" };
   }
 

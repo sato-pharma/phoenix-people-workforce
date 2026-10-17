@@ -1,4 +1,4 @@
-import { createOpenAiResponseText, hasOpenAiApiKey } from "@/lib/ai/openai-client";
+import { createOpenAiResponseText, hasAiApiKey } from "@/lib/ai/openai-client";
 import { parseAiJson } from "@/lib/ai/parse-ai-json";
 import {
   judgeSchedule,
@@ -198,7 +198,7 @@ export async function readScheduleBoard(input: {
     const stored = await storedBoardReading(input.photoPath, input.isTest);
     if (stored) return stored;
   }
-  if (!hasOpenAiApiKey()) return { kind: "unread", check: unjudged("no_api_key") };
+  if (!hasAiApiKey()) return { kind: "unread", check: unjudged("no_api_key") };
 
   const bytes = await (input.reusedTimetable
     ? downloadVenueTimetablePhoto({ isTest: input.isTest, path: input.photoPath, seatId: input.seatId })
