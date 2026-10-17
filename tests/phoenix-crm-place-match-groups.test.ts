@@ -293,7 +293,7 @@ export function runPhoenixCrmPlaceMatchGroupsTests(): void {
   assert.ok(server.includes("allPlaces.filter((row) => !text(row.shared_place_id))"), "🔴 a customer seated in a building is never a subject — they sit on the building's own point");
   assert.ok(server.includes("seatedByVenue"), "the building says how many are seated in it");
   assert.ok(server.includes('"phoenix_crm_customers", "id, name, list_type, speciality"'), "the customer's name comes from the customer");
-  assert.ok(server.includes("const SUBJECT_KEY = /^(place|venue):"), "an answer's keys are validated by shape");
+  assert.ok(server.includes("function isSubjectKey(key: string)") && server.includes("isUuid(key.slice(colon + 1))") && server.includes('import { isUuid } from "@/lib/http/uuid"'), "an answer's keys are validated by shape, through the shared isUuid");
   assert.ok(server.includes('{ onConflict: "subject_a,subject_b" }'), "an answer is an upsert on the ordered pair");
   assert.ok(server.includes("decided_by_hr_id: viewer.hrId"), "stamped with who answered");
   assert.ok(server.includes('.delete().eq("subject_a", low).eq("subject_b", high)'), "and taking one back deletes the pair");

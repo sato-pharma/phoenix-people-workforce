@@ -18,6 +18,7 @@
  */
 
 import { forbiddenError, validationError } from "@/lib/http/api-errors";
+import { isUuid } from "@/lib/http/uuid";
 import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { normalizeContactName } from "@/lib/crm/campaign-contact-match";
 import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
@@ -231,7 +232,10 @@ export async function loadPlaceMatchBoard(viewer: PhoenixCrmViewer): Promise<Pla
 // ── What he says ────────────────────────────────────────────────────────────────────────────────
 
 /** `place:<uuid>` or `venue:<uuid>` — nothing else is ever stored under an answer. */
-const SUBJECT_KEY = /^(place|venue):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+function isSubjectKey(key: string): boolean {
+  const colon = key.indexOf(":");
+  return colon > 0 && (key.slice(0, colon) === "place" || key.slice(0, colon) === "venue") && isUuid(key.slice(colon + 1));
+}
 
 export type PlaceMatchAnswerResult = { answer: "same" | "different" | "forget"; pairs: number };
 
@@ -256,7 +260,7 @@ export async function answerPlaceMatch(viewer: PhoenixCrmViewer, raw: unknown): 
     if (!Array.isArray(entry) || entry.length !== 2) throw validationError("That answer does not name a pair of validations.");
     const first = String(entry[0] ?? "");
     const second = String(entry[1] ?? "");
-    if (!SUBJECT_KEY.test(first) || !SUBJECT_KEY.test(second) || first === second) throw validationError("That answer does not name a pair of validations.");
+    if (!isSubjectKey(first) || !isSubjectKey(second) || first === second) throw validationError("That answer does not name a pair of validations.");
     const [low, high] = orderedPair(first, second);
     const id = `${low}|${high}`;
     if (seen.has(id)) continue;
