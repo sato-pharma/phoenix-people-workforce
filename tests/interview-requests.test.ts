@@ -11,6 +11,7 @@ import {
   type InterviewCalendarCaller,
 } from "../src/lib/recruitment/interview-calendar.ts";
 import type { InterviewCalendarPerson, InterviewCalendarRole } from "../src/lib/recruitment/interview-calendar-types.ts";
+import { requestDayHasPassed } from "../src/lib/recruitment/interview-calendar-week.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 const read = (relative: string) => readFileSync(join(process.cwd(), relative), "utf8");
@@ -145,4 +146,20 @@ export async function runInterviewRequestTests() {
   // ── mayReadSessions no longer leaks group sessions to the own-only tier. ────────────────────────
   const calendar = stripComments(read("src/lib/recruitment/interview-calendar.ts"));
   assert.match(calendar, /role !== null && role !== "interviewer" && role !== "requester"/, "sessions stay with Viewer-and-up, never a requester");
+
+  // ── A request whose day has gone does not stay in "waiting for a time" (owner, 2026-10-17). ─────
+  assert.equal(requestDayHasPassed("2026-10-15", "2026-10-17"), true, "a day before today has passed");
+  assert.equal(requestDayHasPassed("2026-10-17", "2026-10-17"), false, "today can still be booked");
+  assert.equal(requestDayHasPassed("2026-10-20", "2026-10-17"), false, "a day ahead can be booked");
+  const panels = stripComments(read("src/components/recruitment/interview-calendar/requests-inbox.tsx"));
+  assert.match(panels, /const inboxWaiting = inboxOpen\.filter\(\(request\) => !requestDayHasPassed\(request\.requestedDay, todayKey\)\)/, "the waiting list holds only days still to come");
+  assert.match(panels, /const inboxMissed = inboxOpen\.filter\(\(request\) => requestDayHasPassed\(request\.requestedDay, todayKey\)\)/, "a passed day with an unbooked CV is grouped apart, not dropped");
+  assert.match(panels, /whose day passed without a time/, "and that group says why");
+  assert.match(panels, /const mineEarlier = /, "a requester's earlier requests are folded away too");
+  assert.match(panels, /dayPassed && request\.status !== "cancelled" \? \(\s*<span[^>]*>Day passed/, "no Book time button is offered on a day that has gone");
+  assert.match(panels, /const isSettled = \(request: InterviewRequest\) => request\.status !== "cancelled" && request\.pendingItemCount === 0;/, "a request with a slot on the calendar is settled on ANY day, not only a passed one");
+  assert.doesNotMatch(panels, /fully booked \{|inboxDone/, "and there is no fully-booked group any more — a settled request leaves the inbox");
+  assert.match(panels, /const mineUpcoming = .*!isSettled\(request\)/, "it leaves the requester's list too — the interview stays on the calendar");
+  assert.match(panels, /const mineEarlier = .*!isSettled\(request\)/, "earlier requests drop it as well");
+  assert.match(panels, /request\.items\.filter\(\(item\) => !item\.booked\)\.map/, "and a card lists only the CVs still to book — a booked CV is on the calendar");
 }
