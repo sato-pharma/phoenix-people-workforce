@@ -3,6 +3,7 @@ import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib
 import { getBlockedIps, type BlockedIp } from "@/lib/auth/ip-blocklist";
 import { deriveAppErrorStatus, getCurrentReleaseTag, shouldPersistErrorEvents, signatureKey, type IssueStatus } from "@/lib/error-monitor/derived-status";
 import { redactSecretsFromRoute } from "@/lib/error-monitor/redact-route";
+import { classifySupabaseUnreachable } from "@/lib/error-monitor/supabase-unreachable";
 import { logError } from "@/lib/observability/log";
 import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 
@@ -142,6 +143,10 @@ export async function logAppError(input: LogAppErrorInput): Promise<void> {
     return;
   }
 
+  // Cloudflare's whole "521: Web server is down" page is what a Supabase outage used to leave in this column —
+  // thousands of characters of markup per row. It is stored as the one readable line the Sentry issue carries.
+  const message = classifySupabaseUnreachable(input.message)?.line ?? input.message;
+
   try {
     const supabase = getSupabaseAdmin();
     const { error } = await supabase.from("app_error_events").insert({
@@ -151,7 +156,7 @@ export async function logAppError(input: LogAppErrorInput): Promise<void> {
       environment: input.environment ?? currentEnvironmentLabel(),
       hr_id: input.hrId ?? null,
       login_id: input.loginId ?? null,
-      message: truncate(input.message, MAX_TEXT_LENGTH) ?? "Unknown error",
+      message: truncate(message, MAX_TEXT_LENGTH) ?? "Unknown error",
       module_key: input.moduleKey ?? "other",
       module_label: input.moduleLabel ?? "Other",
       release: input.release ?? getCurrentReleaseTag(),

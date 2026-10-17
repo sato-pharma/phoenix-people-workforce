@@ -24,6 +24,8 @@ import {
 } from "@/lib/security/api-rate-limit";
 import { isSessionVerificationUnavailable } from "@/lib/auth/session-lifecycle";
 import { isSupabaseTimeout } from "@/lib/reports/vacancies";
+import { describeThrown } from "@/lib/error-monitor/describe-thrown";
+import { classifySupabaseUnreachable } from "@/lib/error-monitor/supabase-unreachable";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,7 +69,13 @@ export async function POST(request: Request) {
     // 503, never 401: the client signs the person out on a 401 alone, so answering 401 because the
     // database was briefly unreachable signs out everyone who happens to be working. The session
     // cookies are deliberately left untouched — the next heartbeat retries about a minute later.
-    if (isSupabaseTimeout(error) || isSessionVerificationUnavailable(error)) {
+    // A Cloudflare 52x page is the same outage as a timeout, seen from the other side: Supabase answered
+    // through the edge that it was down. It used to be rethrown here as an unhandled 500.
+    if (
+      isSupabaseTimeout(error) ||
+      isSessionVerificationUnavailable(error) ||
+      classifySupabaseUnreachable(describeThrown(error))
+    ) {
       return NextResponse.json(
         { error: "db_timeout", message: "Session service temporarily unavailable." },
         { status: 503 },
