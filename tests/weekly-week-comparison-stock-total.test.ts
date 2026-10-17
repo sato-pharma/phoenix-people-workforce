@@ -23,6 +23,7 @@ const SCOPE: PortalWeeklyScopeView = {
   visibility: { month: true, weekNumber: true, line: false, region: true, product: true, distributor: true },
   scopeSummary: "Anti Infective · every region",
   isSingleRegion: false,
+  canDownloadNsmDsmExport: true,
 };
 
 const HEADER_ROW = 3;

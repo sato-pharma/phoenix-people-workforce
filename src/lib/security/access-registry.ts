@@ -2299,6 +2299,11 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/employee-portals/source-of-sales/export", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/weekly-sales", permission: { resource: "sales", action: "read" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/employee-portals/weekly-sales/export", permission: { resource: "sales", action: "read" } }),
+  // The NSM/DSM field-manager workbook, taken by the manager it is about (owner, 2026-10-17). Narrower
+  // than the managers' Weekly Sales gate — mayDownloadPortalNsmDsmExport admits a national sales
+  // manager, a regional manager, the CEO and Super Admin — and `month` is its only query input, so the
+  // scope is entirely the session's.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/employee-portals/weekly-sales/nsm-dsm-export", permission: { resource: "sales", action: "read" } }),
   // Weekly Sales Depot Detail. The managers' pair keeps the managers' Weekly Sales gate (a Medical Rep is
   // refused); the rep's pair admits a Medical Rep only and returns his own area's share and nothing wider.
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/weekly-sales/depot-detail", permission: { resource: "sales", action: "read" } }),

@@ -89,6 +89,14 @@ export type NsmDsmWorkbookInput = {
   productAxis?: string[];
   /** Region codes the viewer actually asked for - whose book this is, regardless of split spill. */
   regionFilter?: string[];
+  /**
+   * Whose book this is when the CALLER already knows the reader's seat, rather than inferring it
+   * from how many regions the rows span. The portal download is taken by one named manager and is
+   * already narrowed to his own scope, so his own seat names the masthead: a regional manager
+   * covering three regions used to be handed a book headed with the NATIONAL manager's name.
+   * Omitted on the admin export, which keeps the region-count rule unchanged.
+   */
+  viewerSeat?: "nsm" | "rsm";
   /** e.g. "August 2026" — the period the figures cover, for the big date beside the title. */
   periodLabel: string;
   generatedAt: string;
@@ -1923,10 +1931,24 @@ function buildTabSet(
   const bucket = sample
     ? resolveWeeklyManager(input.managerIndex, sample.line, sample.regionCode, sample.areaCode)
     : null;
-  const who =
+  // When the caller knows the reader's seat (the portal download — one named manager, already
+  // narrowed to his own scope) his OWN seat names the masthead. Only the region COUNT was available
+  // before, which named the national manager over a regional manager's own numbers, and the
+  // district manager of whichever region a single-region book happened to cover.
+  const coverage =
     regions.length === 1
-      ? scopeWho(bucket?.managerName ?? null, "District Manager", `${regions[0]} only`)
-      : scopeWho(bucket?.nsmName ?? null, "National Sales Manager", "all regions");
+      ? `${regions[0]} only`
+      : regions.length <= 4
+        ? regions.join(", ")
+        : `${regions.length} regions`;
+  const who =
+    input.viewerSeat === "rsm"
+      ? scopeWho(bucket?.rsmName ?? null, "Regional Sales Manager", coverage)
+      : input.viewerSeat === "nsm"
+        ? scopeWho(bucket?.nsmName ?? null, "National Sales Manager", regions.length === 1 ? coverage : "all regions")
+        : regions.length === 1
+          ? scopeWho(bucket?.managerName ?? null, "District Manager", `${regions[0]} only`)
+          : scopeWho(bucket?.nsmName ?? null, "National Sales Manager", "all regions");
   const scopeLine = [lineLabel ? lineLabel.toUpperCase() : "ALL TRACKED LINES", who].join("   ·   ");
 
   // A product-by-week grid wider than ~120 columns cannot be read on paper. Drop the weeks rather

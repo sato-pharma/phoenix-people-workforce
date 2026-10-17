@@ -56,6 +56,31 @@ export function isPortalWeeklyRole(role: PhoenixRole): boolean {
   return PORTAL_WEEKLY_ROLE_SET.has(role);
 }
 
+/**
+ * Who may download the NSM/DSM workbook from the PORTAL (owner, 2026-10-17): a national sales
+ * manager and a regional manager, each scoped to his own numbers, choosing nothing but the month.
+ *
+ * A NARROWER list than PORTAL_WEEKLY_ROLES on purpose — it is the two seats he named. A district
+ * manager keeps the Depot Detail and Field Force downloads he already has; a product or marketing
+ * manager is scoped by PRODUCT, and this book is laid out by area, branch and manager, so it would
+ * read as a territory book with most of its territory missing.
+ */
+export const PORTAL_NSM_DSM_EXPORT_ROLES = [
+  "National Sales Manager",
+  "Regional Manager",
+] as const satisfies readonly PhoenixRole[];
+
+const PORTAL_NSM_DSM_EXPORT_ROLE_SET = new Set<PhoenixRole>(PORTAL_NSM_DSM_EXPORT_ROLES);
+
+/**
+ * CEO and Super Admin are admitted alongside them: they already hold this button on the admin Field
+ * Sales page, and without them the control would be invisible on the portal page to the only two
+ * accounts that can check it.
+ */
+export function mayDownloadPortalNsmDsmExport(role: PhoenixRole): boolean {
+  return PORTAL_NSM_DSM_EXPORT_ROLE_SET.has(role) || role === "CEO" || role === "Super Admin";
+}
+
 /** Which filters the client should render for this viewer. */
 export type PortalWeeklyFilterVisibility = {
   /** Always true. */
@@ -106,6 +131,12 @@ export type PortalWeeklyScopeView = {
    * the "By Region" chart, and defaults the breakdown view to "product".
    */
   isSingleRegion: boolean;
+  /**
+   * Whether to offer the NSM/DSM workbook download (mayDownloadPortalNsmDsmExport). Decided here, on
+   * the server, so the control is not shown to someone the route would then refuse — and the route
+   * re-asks the same question rather than trusting this flag.
+   */
+  canDownloadNsmDsmExport: boolean;
 };
 
 export function toPortalWeeklyScopeView(scope: PortalWeeklyScope): PortalWeeklyScopeView {
@@ -114,6 +145,7 @@ export function toPortalWeeklyScopeView(scope: PortalWeeklyScope): PortalWeeklyS
     visibility: scope.visibility,
     scopeSummary: scope.scopeSummary,
     isSingleRegion: scope.isSingleRegion,
+    canDownloadNsmDsmExport: mayDownloadPortalNsmDsmExport(scope.role),
   };
 }
 
