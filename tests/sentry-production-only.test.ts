@@ -18,6 +18,9 @@ import {
   sentryServerStatus,
   sentryTracesSampler,
 } from "../src/lib/observability/sentry-policy.ts";
+import { isBrowserNoiseMessage } from "../src/lib/error-monitor/browser-noise.ts";
+import { CROSS_ORIGIN_MASKED_DISPLAY } from "../src/lib/error-monitor/cross-origin-masked.ts";
+import { isModuleLockRefusal } from "../src/lib/error-monitor/expected-refusal.ts";
 import { sentryMonitorConfigFor } from "../src/lib/observability/sentry-cron-monitor.ts";
 import { buildSentryAlertMessage, verifySentrySignature } from "../src/lib/observability/sentry-alert-webhook.ts";
 import { createHmac } from "node:crypto";
@@ -407,7 +410,31 @@ function sentryCheckPageTests() {
   assert.match(code("src/lib/security/access-registry.ts"), /pattern: "\/api\/admin\/sentry-check"/, "the route is in the access registry");
 }
 
+function expectedNoiseTests() {
+  // A locked module refusing a page is an answer: skipped by the request-error hook, exact wording only.
+  assert.equal(isModuleLockRefusal(new Error("Forbidden: incentive is temporarily locked by the system administrator.")), true);
+  assert.equal(isModuleLockRefusal(new Error("Forbidden: sales is temporarily locked by the system administrator.")), true);
+  assert.equal(isModuleLockRefusal(new Error("Forbidden: Employee cannot read payroll.")), false, "a real refusal still reaches both stores");
+  assert.equal(isModuleLockRefusal(new Error("Connection closed.")), false);
+  assert.equal(isModuleLockRefusal("Forbidden: incentive is temporarily locked by the system administrator."), false, "only a thrown error object counts");
+  assert.match(code("instrumentation.ts"), /if \(isModuleLockRefusal\(error\)\) return;\s*await forwardRequestErrorToSentry/, "the lock refusal is skipped before either store is written");
+
+  // The browser's own network-failure wording and its injected-script placeholder stay out of Sentry.
+  for (const message of ["Load failed", "Failed to fetch", "Error in input stream", "network error", CROSS_ORIGIN_MASKED_DISPLAY]) {
+    assert.equal(isBrowserNoiseMessage(message), true, `${message} is the browser talking, not Phoenix`);
+  }
+  assert.equal(isBrowserNoiseMessage("Connection closed."), false, "'Connection closed.' was once a REAL Supabase failure and must stay visible");
+  assert.equal(isBrowserNoiseMessage("TypeError: Cannot read properties of undefined"), false);
+  assert.equal(isBrowserNoiseMessage("Failed to fetch the incentive table"), false, "the match is exact, never a substring");
+  assert.match(
+    code("src/lib/observability/sentry-client.ts"),
+    /isBrowserNoiseMessage\(describeThrown\(report\.error\)\)\) return;/,
+    "the browser Sentry path drops the noise; the error table still records it",
+  );
+}
+
 export async function runSentryProductionOnlyTests() {
+  expectedNoiseTests();
   sentryCheckPageTests();
   gateTests();
   scrubTests();
