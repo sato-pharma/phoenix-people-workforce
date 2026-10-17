@@ -40,9 +40,18 @@ import {
   managerWeekState,
   managerAskStage,
   matchCustomerName,
+  missingManagerCustomerField,
   nextManagerPlanStatus,
   parseManagerSlotDraft,
 } from "../src/lib/phoenix-crm/manager-plan-rules.ts";
+import {
+  isOldCrmPlanAction,
+  oldCrmActionToVerification,
+  oldCrmApprovalOptions,
+  oldCrmHalfOf,
+  oldCrmPlanOf,
+  oldCrmStatusLabel,
+} from "../src/lib/phoenix-crm/old-crm-plan-rules.ts";
 import { buildOrgIndex, heldManagerSeats, ownTerritories, personKey, territoriesInScope, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 import type { PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
 import { askSteps } from "../src/lib/phoenix-crm/server/manager-plan-hub.ts";
@@ -621,7 +630,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   const withRepPart = functionBody(board, "function WithRepPart(");
   assert.match(withRepPart, /const disabled = !canEdit \|\| \(nothingToTick && rep\.seatId !== keptSeatId\);/, "the rep he already ticked customers of stays selectable");
   assert.match(withRepPart, /\{chosen \|\| dropped\.length > 0 \? \(/, "the dropped customers are shown even when the rep's half is empty");
-  assert.match(withRepPart, /disabled=\{repCustomers\.length === 0\}/, "Mark all is off when the rep has nobody on that half");
+  assert.match(withRepPart, /disabled=\{tickable\.length === 0\}/, "Mark all is off when the rep has nobody on that half he can tick");
   assert.match(board, /useEffect\(\(\) => \(\) => onHidden\(\), \[\]\);/, "an edit made just before the board leaves the screen is sent on the way out");
 
   // The Team tab's pickers stay on screen while the next report or list loads.
@@ -1031,14 +1040,14 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
 
   // The routes: every writer reaches them with read — the writer rule decides, never the create grant.
   const routeFiles = filesUnder("app/api/phoenix-crm/manager-plans").filter((file) => file.endsWith("/route.ts"));
-  assert.equal(routeFiles.length, 12, "the twelve manager-plan routes");
+  assert.equal(routeFiles.length, 14, "the fourteen manager-plan routes");
   for (const file of routeFiles) {
     const text = source(file);
     assert.match(text, /assertPermission\(access, "phoenix_crm", "read"\)/, `${file} asks read`);
     assert.equal(/assertPermission\(access, "phoenix_crm", "(create|approve|update)"\)/.test(text), false, `${file} never asks a grant only a district manager holds`);
   }
   const registry = source("src/lib/security/access-registry.ts").split("\n").filter((line) => line.includes('pattern: "/api/phoenix-crm/manager-plans'));
-  assert.equal(registry.length, 15, "fifteen declarations across the twelve routes");
+  assert.equal(registry.length, 17, "seventeen declarations across the fourteen routes");
   for (const line of registry) assert.ok(line.includes('permission: { resource: "phoenix_crm", action: "read" }'), `declared on read: ${line.trim().slice(0, 120)}`);
 
   // The board: the scope picker, the half-day override, and the HR line on a non-district manager's send.
@@ -1070,9 +1079,134 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(capSource, /\.from\("phoenix_crm_manager_visits"\)[\s\S]*singleVisitHalfOfHour\(cairoHourOf\(visit\.created_at\)\)/, "the visits he logged count, an unplanned one by the Cairo half it was logged in");
   assert.match(capSource, /slot\.kind === "single_visit"\) used\.add/, "the single-visit half-days of his plan count");
 
+  // ── A rep still in the OLD CRM: his plan on the board, and his week approved (owner, 2026-10-17) ───
+
+  // The old plan names a day and no morning or afternoon, so a contact goes where his LIST puts him.
+  assert.equal(oldCrmHalfOf({ matched: true, listType: "AM", speciality: "Cardiology" }), "AM", "an AM-list customer is the morning");
+  assert.equal(oldCrmHalfOf({ matched: true, listType: "PM", speciality: "Cardiology" }), "PM", "a PM-list customer is the afternoon");
+  assert.equal(oldCrmHalfOf({ matched: true, listType: "Pharmacy", speciality: "Pharmacy" }), null, "a pharmacy on the list is never planned with a rep");
+  assert.equal(oldCrmHalfOf({ matched: false, listType: null, speciality: "Pharmacy" }), null, "an unmatched pharmacy is left out by its speciality");
+  assert.equal(oldCrmHalfOf({ matched: false, listType: null, speciality: "Cardiology" }), "PM", "an unmatched customer shows in the afternoon, where the customers sit");
+
+  // The plan a week stands on: the newest plan id, at the LOWEST status it carries.
+  const oldEntries = [
+    { crmPlanId: 27460, status: 1, id: "a" },
+    { crmPlanId: 27500, status: 1, id: "b" },
+    { crmPlanId: 27500, status: 0, id: "c" },
+  ];
+  const oldPlan = oldCrmPlanOf(oldEntries);
+  assert.equal(oldPlan?.crmPlanId, 27500, "the newest plan of the week");
+  assert.deepEqual(oldPlan?.entries.map((entry) => entry.id), ["b", "c"], "only its own rows");
+  assert.equal(oldPlan?.status, 0, "a half-approved plan reads as waiting, never as signed");
+  assert.equal(oldCrmPlanOf([]), null, "no rows, no plan");
+
+  // What may be pressed is the vendor's own rule, so this screen and the admin board never disagree.
+  assert.deepEqual(oldCrmApprovalOptions(0), { canApprove: true, canTakeBack: false }, "waiting: approve");
+  assert.deepEqual(oldCrmApprovalOptions(1), { canApprove: false, canTakeBack: true }, "approved by the district manager: take it back");
+  assert.deepEqual(oldCrmApprovalOptions(2), { canApprove: false, canTakeBack: false }, "an area manager's signature is never overwritten or cleared");
+  assert.deepEqual(oldCrmApprovalOptions(null), { canApprove: false, canTakeBack: false }, "no status, nothing to press");
+  assert.equal(oldCrmActionToVerification("approve"), "verify");
+  assert.equal(oldCrmActionToVerification("take_back"), "unverify");
+  assert.equal(isOldCrmPlanAction("approve") && isOldCrmPlanAction("take_back"), true);
+  assert.equal(isOldCrmPlanAction("verify") || isOldCrmPlanAction("return") || isOldCrmPlanAction(undefined), false, "a typo is refused, never promoted into a write");
+  for (const status of [0, 1, 2, null]) {
+    assert.equal(/\b(he|his|him|doctors?|accounts?|verified|pending)\b/i.test(oldCrmStatusLabel(status)), false, `the label for ${status} is in Phoenix's words`);
+  }
+
+  const boardServer = source("src/lib/phoenix-crm/server/manager-plans.ts");
+  const loadRepWeeksBody = functionBody(boardServer, "export async function loadRepWeeks(");
+  assert.match(loadRepWeeksBody, /oldCrmReps\.filter\(\(rep\) => weeks\.get\(rep\.seatId\)\?\.state === "no_plan"\)/, "only a rep with NO Phoenix plan is read from the old CRM");
+  assert.match(loadRepWeeksBody, /week\.state = "old_crm"/, "his week is marked as the old CRM's");
+  assert.match(boardServer, /repWeekSent: repWeek\?\.state === "sent" \|\| repWeek\?\.state === "old_crm"/, "a plan filed in the old CRM is a filed plan, not a draft");
+  assert.match(functionBody(boardServer, "async function assertOnTheRepsHalf("), /oldCrmRepsOf\(\[\{ seatId: input\.repSeatId, hrId: input\.repHrId \}\]\)/, "the server's tick check reads the old plan too");
+  const oldWeeks = source("src/lib/phoenix-crm/server/manager-old-crm-weeks.ts");
+  assert.match(oldWeeks, /if \(input\.isTest \|\| input\.reps\.length === 0\) return weeks;/, "the test world holds no vendor plan");
+  assert.match(oldWeeks, /own_contact_crm_id\.in\.\(\$\{list\}\),reference_contact_crm_id\.in\.\(\$\{list\}\)/, "a contact is matched through either id the carry-over kept");
+  assert.match(oldWeeks, /\.in\("seat_id", \[\.\.\.seatIds\]\)/, "only on the rep's own seat");
+  assert.match(oldWeeks, /customerId: customer \? String\(customer\.id\) : null/, "an unmatched contact shows and cannot be ticked");
+  const planBoardDoor = source("src/lib/crm/plan-board.ts");
+  assert.match(functionBody(planBoardDoor, "export async function getAgentsWeekPlanEntries("), /\.eq\("source", IREPORTS360_VISIT_SOURCE\)[\s\S]*\.eq\("plan_kind", "weekly"\)/, "the old plan only, weekly, never a started team's own Phoenix plan");
+
+  const approval = source("src/lib/phoenix-crm/server/old-crm-plan-approval.ts");
+  const decideBody = functionBody(approval, "export async function decideOldCrmPlan(");
+  assert.match(decideBody, /viewer\.isSuperAdmin\) \{\s*throw forbiddenError/, "the Super Admin approves no rep's week");
+  assert.match(decideBody, /canAccessPlanVerification\(viewer\.access\)[\s\S]*assertPermission\(viewer\.access, "crm_plans", "approve"\)/, "the admin board's role list and its crm_plans grant");
+  assert.match(decideBody, /resolveVendorSyncStandDown\(\)/, "nothing is written into a retired vendor");
+  assert.match(decideBody, /scope = await getPlanVerificationScope\(viewer\.access\)/, "the reach is resolved from the live access, never from the body");
+  assert.match(decideBody, /action: oldCrmActionToVerification\(action\)/, "the one write is the vendor's own supervisor approval");
+  assert.equal(/status:\s*1\b/.test(approval), false, "the status number is the vendor rule's to choose, never written here");
+  assert.match(functionBody(source("src/lib/phoenix-crm/server/plans.ts"), "export async function loadPlanReviews("), /oldCrm: plan \? null : \(oldCrmPlans\.get\(seat\.seatId\) \?\? null\)/, "a rep's Phoenix week is never replaced by his old one");
+  assert.match(source("src/lib/security/access-registry.ts"), /pattern: "\/api\/phoenix-crm\/plans\/old-crm\/decide"[^\n]*csrfRequired: true/, "the new route is declared, with CSRF");
+  assert.match(source("app/api/phoenix-crm/plans/old-crm/decide/route.ts"), /assertSameOriginMutation\(request\)[\s\S]*assertPermission\(access, "phoenix_crm", "approve"\)/, "same-origin and the module grant first");
+  const teamTab = source("src/components/phoenix-crm/team-tab.tsx");
+  assert.match(teamTab, /if \(!row\.plan && row\.oldCrm\) \{\s*return <OldCrmActions/, "his old week is approved here, not opened as an empty Phoenix plan");
+  const boardScreen = source("src/components/phoenix-crm/manager-plan-board.tsx");
+  assert.match(boardScreen, /Not on the rep&apos;s Phoenix list/, "an unmatched customer says why it cannot be ticked");
+  for (const text of [teamTab, boardScreen, approval]) {
+    const oldCrmLines = text.split("\n").filter((line) => /old CRM/i.test(line));
+    assert.equal(oldCrmLines.some((line) => /\bdoctors?\b/i.test(line)), false, "the old-CRM words say customers, never doctors");
+  }
+
   // ── The words on his screens ─────────────────────────────────────────────────────────────────
 
   for (const screen of ["src/components/approvals-hub/manager-plan-request-detail.tsx", "src/components/approvals-hub/manager-plan-decision-actions.tsx"]) {
     assert.equal(/\b(doctors?|accounts?)\b/i.test(source(screen)), false, `${screen} says customers, never doctors or accounts`);
   }
+  // ── A customer he adds: only the name, grades and an area are needed; the area → brick drop-lists cascade ─
+  // Owner, 2026-10-17: "must enter his speciality, his name, his phone number, and either fill the address,
+  // brick and area manually, or capture the location and the capture fills these fields" — then, the same
+  // night: "make all optional … make the area and brick drop-list cascading … make everything we did now optional".
+
+  const baseCustomer = { name: "Samir Adel", areaChosen: true, grade: "A", potentialGrade: "AA" };
+  assert.equal(missingManagerCustomerField(baseCustomer), null, "a name, a grade, a potential grade and an area are enough — the rest is optional");
+  for (const [broken, pattern] of [
+    [{ ...baseCustomer, name: null }, /name/],
+    [{ ...baseCustomer, grade: null }, /grade/],
+    [{ ...baseCustomer, potentialGrade: "ZZ" }, /potential grade/],
+    [{ ...baseCustomer, areaChosen: false }, /area/],
+  ] as const) {
+    const lacking = missingManagerCustomerField(broken);
+    assert.match(lacking ?? "", pattern, `a customer short of ${pattern} is refused`);
+    assert.equal(/\b(he|his|him|doctors?|accounts?)\b/i.test(lacking ?? ""), false, "the sentence says customer, never he or doctor");
+  }
+  const customerRules = source("src/lib/phoenix-crm/manager-plan-rules.ts");
+  assert.equal(/Write the customer's (speciality|phone)|Write the (address|brick)/.test(customerRules), false, "no rule asks for the speciality, the phone, the address or the brick");
+
+  const customerServer = source("src/lib/phoenix-crm/server/manager-customers.ts");
+  const addBody = functionBody(customerServer, "export async function addManagerCustomer(");
+  assert.match(addBody, /missingManagerCustomerField\(\{ name, areaChosen: true, grade: body\.grade, potentialGrade: body\.potentialGrade \}\)/, "the add asks for the name, the grades and the area — nothing else");
+  assert.match(addBody, /if \(lacking\) throw validationError\(lacking\);/, "a customer short of those is refused");
+  assert.match(addBody, /pin_address: address,\s*pin_brick_id: brick\?\.id \?\? null,\s*pin_brick_name: brick\?\.name \?\? null,/, "the address he saw and the brick he picked are what is saved — or nothing");
+  assert.equal(/pin_address: geography|pin_brick_id: geography|pin_brick_name: geography/.test(addBody), false, "the resolver never overwrites what he saw");
+  assert.match(addBody, /\(await activeBricksOfArea\(area\.areaCode\)\)\.find\(\(entry\) => entry\.id === brickId\)/, "a brick must be one of the chosen area's own");
+  assert.match(addBody, /Choose a brick of the area you chose\./, "a brick of another area is refused in plain words");
+  const bricksOfArea = functionBody(customerServer, "async function activeBricksOfArea(");
+  assert.match(bricksOfArea, /await loadBrickCentroids\(\)/, "the bricks come from the index the capture resolver reads, so the two never disagree");
+  assert.match(bricksOfArea, /brick\.areaCode === areaCode/, "the bricks of ONE area");
+  const areaBricksBody = functionBody(customerServer, "export async function loadAreaBricks(");
+  assert.match(areaBricksBody, /district\.find\(\(seat\) => seat\.seatId === raw\.area\)[\s\S]*throw forbiddenError\(outsideReach\(writer\)\)/, "only an area of his own reach lists its bricks");
+  const locateBody = functionBody(customerServer, "export async function locateManagerCustomer(");
+  assert.match(locateBody, /resolvePinGeography\(fix, territoryOfSeat\(chosen \?\? \{\}\)\)/, "the capture fills the fields from the same resolver the add uses");
+  assert.match(locateBody, /const brickId = inReach && geography\.brickId \? geography\.brickId : null;/, "the capture offers a brick only when it sits in an area of his reach");
+  assert.equal(/\.insert\(|\.update\(|\.delete\(/.test(locateBody), false, "locating a capture writes nothing");
+  const locateRoute = source("app/api/phoenix-crm/manager-plans/customers/locate/route.ts");
+  assert.match(locateRoute, /assertSameOriginMutation\(request\)[\s\S]*assertPermission\(access, "phoenix_crm", "read"\)[\s\S]*locateManagerCustomer\(viewer, body\)/, "same-origin, then the module grant, then the located fields");
+  const bricksRoute = source("app/api/phoenix-crm/manager-plans/customers/bricks/route.ts");
+  assert.match(bricksRoute, /export async function GET[\s\S]*assertPermission\(access, "phoenix_crm", "read"\)[\s\S]*loadAreaBricks\(viewer, \{ area: search\.get\("area"\) \}\)/, "the bricks of an area: the module grant, then his reach");
+
+  const customerForm = source("src/components/phoenix-crm/manager-customer-form.tsx");
+  assert.match(customerForm, /missingManagerCustomerField\(\{ name: name\.trim\(\) \|\| null, areaChosen: Boolean\(areaSeatId\), grade, potentialGrade \}\)/, "the form asks the same question before it sends");
+  assert.match(customerForm, /\/api\/phoenix-crm\/manager-plans\/customers\/locate/, "Capture location fills the address, area and brick");
+  assert.match(customerForm, /useCrmGet<ManagerAreaBricks>\(areaSeatId \? crmUrl\(BRICKS, \{ area: areaSeatId \}\) : null, "bricks"\)/, "the brick drop-list is read for the area chosen above it");
+  assert.match(customerForm, /setAreaSeatId\(event\.target\.value\);\s*setBrickId\(""\);/, "a new area empties the brick: a brick belongs to one area");
+  assert.match(customerForm, /setAreaSeatId\(found\.areaSeatId\);\s*setBrickId\(found\.brickId \?\? ""\);/, "the capture selects the area, then the brick in it");
+  assert.match(customerForm, /<CrmSelect disabled=\{bricks\.loading \|\| brickList\.length === 0\} id=\{`\$\{idPrefix\}-brick`\}/, "the brick is a drop-list, not a typed word");
+  assert.equal(/brickName/.test(customerForm), false, "the form no longer types a brick");
+  assert.match(customerForm, /address: address\.trim\(\) \|\| null,\s*brickId: brickId \|\| null,/, "the address and the brick id go as they stand, or as nothing");
+  for (const label of ["Speciality", "Phone", "Address", "Brick"]) {
+    assert.match(customerForm, new RegExp(`label="${label}"`), `${label} carries no star: it is optional`);
+  }
+  assert.match(customerForm, /label="Area \*"/, "the area stays chosen");
+  assert.equal(/areas\.length > 1/.test(customerForm), false, "the area drop-list is always shown: the brick cascades from it");
+  assert.equal(/\b(doctors?|accounts?)\b/i.test(customerForm), false, "the form says customers, never doctors or accounts");
 }

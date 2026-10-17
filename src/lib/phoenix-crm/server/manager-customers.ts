@@ -4,8 +4,10 @@
  * Owner, 2026-10-16: "the district manager should have two lists. The list which is of all his medical
  * reps and a separate list that he did the single visits before." The two are NEVER merged: a customer
  * he adds himself lives in `phoenix_crm_manager_customers`, graded by him (A/B/C and the potential
- * grade), with NO validation step ("there will not be validation because they are managers") and an
- * optional Capture location whose address, area and brick are resolved here, server-side. A name he
+ * grade), with NO validation step ("there will not be validation because they are managers"). Its
+ * speciality, phone, address and brick are optional (owner, 2026-10-18): filled in by hand, or by Capture
+ * location, whose address, area and brick are resolved here, server-side. The area and the brick are
+ * cascading drop-lists over the region he plans in. A name he
  * types that is already on one of the lists is OFFERED first — namesakes are real, so he may still say it
  * is a different person. Taking a customer off his own list waits for his RSM/NSM's approval.
  *
@@ -18,13 +20,14 @@
  * rate, frequency or target.
  */
 
+import { loadBrickCentroids } from "@/lib/crm/brick-geo";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { parseCapturedFix, parseCustomerPhone } from "@/lib/phoenix-crm/entry-rules";
 import {
-  isManagerCustomerGrade,
-  isManagerCustomerPotentialGrade,
   managerAskStage,
   matchCustomerName,
+  missingManagerCustomerField,
+  MANAGER_CUSTOMER_ADDRESS_MAX,
   MANAGER_PLAN_NOTE_MAX,
   MANAGER_PLAN_REASON_MAX,
   type ManagerPlanWriter,
@@ -410,49 +413,129 @@ export async function matchManagerCustomer(viewer: PhoenixCrmViewer, raw: unknow
 
 const EGYPT = { latMin: 21.5, latMax: 32, lonMin: 24, lonMax: 37.5 };
 
+/** The captured fix he sent, read and held to Egypt, or null when he sent none. */
+function readCapturedFix(body: Row): { lat: number; lon: number; accuracyMeters: number | null } | null {
+  const rawPin = record(body.pin);
+  if (rawPin.lat === undefined && rawPin.lon === undefined) return null;
+  const fix = parseCapturedFix(rawPin, "The location could not be read. Press Capture location again, or type the address, brick and area.");
+  if (!fix.ok) throw validationError(fix.error);
+  const { lat, lon, accuracyMeters } = fix.value;
+  if (lat < EGYPT.latMin || lat > EGYPT.latMax || lon < EGYPT.lonMin || lon > EGYPT.lonMax) {
+    throw validationError("This location is outside Egypt. Capture it again at the customer, or type the address, brick and area.");
+  }
+  return { lat, lon, accuracyMeters };
+}
+
+export type ManagerCustomerLocated = {
+  address: string | null;
+  /** The brick the capture fell in, when it is a brick of an area he plans in — the form selects it. */
+  brickId: string | null;
+  brickName: string | null;
+  areaName: string | null;
+  /** The area of his reach the capture fell in, when it fell in one of them; null leaves his choice as it is. */
+  areaSeatId: string | null;
+};
+
+/** The bricks of one area he plans in — the second drop-list of the area → brick cascade. */
+export type ManagerAreaBricks = { bricks: Array<{ id: string; name: string }> };
+
 /**
- * POST: a customer he adds to his own list. Name, speciality, phone or contact, the grade and the
- * potential grade, an area of his district, an optional comment, and an optional captured location —
- * NO accuracy gate and no photo ("he is a manager, not a rep at a door"), resolved to an address, area
- * and brick here. Never a validation step.
+ * The active bricks of one area code, by name. Read through the brick index the capture resolver already
+ * uses (`loadBrickCentroids`: only bricks that still exist and are active, shared across requests for five
+ * minutes), so the drop-list and the capture can never disagree about which bricks an area has.
+ */
+async function activeBricksOfArea(areaCode: string | null | undefined): Promise<Array<{ id: string; name: string }>> {
+  if (!areaCode) return [];
+  const seen = new Map<string, string>();
+  for (const brick of await loadBrickCentroids()) {
+    if (brick.areaCode === areaCode && !seen.has(brick.brickId)) seen.set(brick.brickId, brick.brickName ?? brick.brickId);
+  }
+  return [...seen].map(([id, name]) => ({ id, name })).sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/**
+ * GET: the bricks of one area he plans in, for the brick drop-list under the area drop-list (owner,
+ * 2026-10-18: "based on his region make the area and brick drop-list cascading"). The area must be one of
+ * his own reach — the district for a district manager, the districts he plans in for the others.
+ */
+export async function loadAreaBricks(viewer: PhoenixCrmViewer, raw: { area: unknown }): Promise<ManagerAreaBricks> {
+  const writer = assertManagerPlanWriter(viewer);
+  const district = await managerWriterReach(viewer, writer);
+  const chosen = district.find((seat) => seat.seatId === raw.area) ?? null;
+  if (!chosen) throw forbiddenError(outsideReach(writer));
+  return { bricks: await activeBricksOfArea(chosen.areaCode) };
+}
+
+/**
+ * POST: where a captured location is — the address, the area and the brick — so the form can fill them in
+ * the moment he presses Capture location (owner, 2026-10-17: "capture the location and the capture fills
+ * these fields"). The same resolver and the same territory the add itself uses, so what he sees filled in is
+ * what the add would have resolved. The brick comes back only when it sits in an area of his reach, because
+ * the form selects it from that area's drop-list. Writes nothing; whatever the capture could not read stays
+ * as it was, for him to fill in or leave empty.
+ */
+export async function locateManagerCustomer(viewer: PhoenixCrmViewer, raw: unknown): Promise<ManagerCustomerLocated> {
+  const writer = assertManagerPlanWriter(viewer);
+  const body = record(raw);
+  const fix = readCapturedFix(body);
+  if (!fix) throw validationError("The location could not be read. Press Capture location again, or fill the address, area and brick in yourself.");
+  const district = await managerWriterReach(viewer, writer);
+  const chosen = district.find((entry) => entry.seatId === body.areaSeatId) ?? null;
+  const geography = await resolvePinGeography(fix, territoryOfSeat(chosen ?? {}));
+  const inReach = geography.areaCode ? district.find((entry) => entry.areaCode === geography.areaCode) : undefined;
+  const brickId = inReach && geography.brickId ? geography.brickId : null;
+  return {
+    address: geography.address,
+    brickId,
+    brickName: brickId ? geography.brickName : null,
+    areaName: geography.areaName,
+    areaSeatId: inReach?.seatId ?? null,
+  };
+}
+
+/**
+ * POST: a customer he adds to his own list. The name, the grade and the potential grade and an area of his
+ * region are what it needs; the speciality, the phone, the address and the brick are all OPTIONAL (owner,
+ * 2026-10-18: "make everything we did optional"), as are a contact note and a comment. The brick is one of the
+ * chosen area's own bricks, picked from the drop-list, never typed. NO accuracy gate and no photo ("he is a
+ * manager, not a rep at a door"). Never a validation step.
+ *
+ * What he saw is what is saved: the address he sees (typed, or filled in by Capture location) is stored as
+ * it stands, and the brick is the one he picked. Typed or captured, they live in `pin_address`,
+ * `pin_brick_id` and `pin_brick_name` (a row with no `pin_lat` was filled in by hand).
  */
 export async function addManagerCustomer(viewer: PhoenixCrmViewer, raw: unknown): Promise<ManagerCustomerView> {
   const writer = assertManagerPlanWriter(viewer);
   const body = record(raw);
   const isTest = testModeFor(viewer, body.test);
   const name = cleanText(body.name, 200, "The name");
-  if (!name) throw validationError("Write the customer's name.");
   const speciality = cleanText(body.speciality, 120, "The speciality");
+  const address = cleanText(body.address, MANAGER_CUSTOMER_ADDRESS_MAX, "The address");
+  const brickId = cleanText(body.brickId, 40, "The brick");
   const contactNote = cleanText(body.contactNote, 300, "The contact note");
   const comment = cleanText(body.comment, MANAGER_PLAN_NOTE_MAX, "The comment");
   const phone = parseCustomerPhone(body.phone);
   if (!phone.ok) throw validationError(phone.error);
-  if (!isManagerCustomerGrade(body.grade)) throw validationError("Choose the grade: A, B or C.");
-  if (!isManagerCustomerPotentialGrade(body.potentialGrade)) throw validationError("Choose the potential grade.");
+  const lacking = missingManagerCustomerField({ name, areaChosen: true, grade: body.grade, potentialGrade: body.potentialGrade });
+  if (lacking) throw validationError(lacking);
   const district = await managerWriterReach(viewer, writer);
   const area = district.find((entry) => entry.seatId === body.areaSeatId) ?? null;
   if (!area) throw validationError(writer.kind === "dm" ? "Choose the area of your district the customer is in." : "Choose the area the customer is in.");
+  const brick = brickId ? ((await activeBricksOfArea(area.areaCode)).find((entry) => entry.id === brickId) ?? null) : null;
+  if (brickId && !brick) throw validationError("Choose a brick of the area you chose.");
 
   let pin: Row = {};
-  const rawPin = record(body.pin);
-  if (rawPin.lat !== undefined || rawPin.lon !== undefined) {
-    const fix = parseCapturedFix(rawPin, "The location could not be read. Press Capture location again, or add the customer without it.");
-    if (!fix.ok) throw validationError(fix.error);
-    const { lat, lon, accuracyMeters } = fix.value;
-    if (lat < EGYPT.latMin || lat > EGYPT.latMax || lon < EGYPT.lonMin || lon > EGYPT.lonMax) {
-      throw validationError("This location is outside Egypt. Capture it again at the customer, or add the customer without it.");
-    }
+  const fix = readCapturedFix(body);
+  if (fix) {
+    const { lat, lon, accuracyMeters } = fix;
     const geography = await resolvePinGeography({ lat, lon, accuracyMeters }, territoryOfSeat(area));
     pin = {
       pin_lat: lat,
       pin_lon: lon,
       pin_accuracy_meters: accuracyMeters,
-      pin_address: geography.address,
       pin_governorate: geography.governorate,
       pin_area_code: geography.areaCode,
       pin_area_name: geography.areaName,
-      pin_brick_id: geography.brickId,
-      pin_brick_name: geography.brickName,
       pin_brick_distance_km: geography.brickDistanceKm,
       pin_brick_lookup: geography.brickLookup,
       pinned_at: new Date().toISOString(),
@@ -475,6 +558,9 @@ export async function addManagerCustomer(viewer: PhoenixCrmViewer, raw: unknown)
       area_seat_id: area.seatId,
       area_code: area.areaCode ?? null,
       area_name: area.areaName ?? territoryName(area),
+      pin_address: address,
+      pin_brick_id: brick?.id ?? null,
+      pin_brick_name: brick?.name ?? null,
       ...pin,
       status: "active",
       created_by_hr_id: viewer.hrId,
