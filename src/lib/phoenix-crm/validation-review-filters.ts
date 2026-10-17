@@ -136,13 +136,17 @@ export function matchesSharedPlaceFilters(
  * Which outcomes show a venue. `held` is the one waiting for a decision; `active` is in use, whether he
  * approved it or the system never questioned it.
  *
- * 🔴 "Rejected" shows NONE, and that is not an omission: rejecting a venue retires it, so it is not in
- * the board read at all — the customers it sent back are in "Waiting to be captured again".
+ * 🔴 A REJECTED VENUE IS ON THE BOARD AGAIN (owner, 2026-10-15: "approve validation after rejection" —
+ * `loadSharedPlaceBoard` reads a retired venue for 90 days so it can be taken back), so "Rejected" shows
+ * exactly the retired ones and every other outcome hides them. Before that this answered `false` for
+ * "Rejected" on the strength of the venue not being read at all, and the Polyclinics section vanished
+ * under the very outcome that now holds its rejected buildings.
  */
 export function sharedPlacePassesOutcome(
   row: { status: "active" | "held" | "retired"; decidedAtText: string | null },
   outcome: ValidationReviewOutcome,
 ): boolean {
+  if (row.status === "retired") return outcome === "all" || outcome === "rejected";
   if (outcome === "pending") return row.status === "held";
   if (outcome === "approved") return row.status === "active" && row.decidedAtText !== null;
   if (outcome === "rejected") return false;

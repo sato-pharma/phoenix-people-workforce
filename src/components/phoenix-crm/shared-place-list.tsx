@@ -23,7 +23,7 @@
  * scroller); a phone draws the same rows as cards. Square corners throughout.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
@@ -31,6 +31,7 @@ import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/compone
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
+import { SeatedCustomers } from "@/components/phoenix-crm/shared-place-customers";
 import {
   CrmButton,
   CrmCardsOnPhone,
@@ -47,6 +48,7 @@ import {
   type ValidationRefusalReason,
 } from "@/lib/phoenix-crm/validation-feedback";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
+import type { VenueGroup } from "@/lib/phoenix-crm/shared-place-groups";
 import type { PlaceNoteIndex, SharedPlaceBoardRow } from "@/lib/phoenix-crm/view-types";
 
 /** What the system read on the sign of the BUILDING. A verdict on the venue's own name, never on a person's. */
@@ -362,48 +364,88 @@ const VENUE_ACTIONS: ReadonlyArray<BulkAction<SharedPlaceBoardRow>> = [
   },
 ];
 
+/**
+ * The two photographs a building is judged on (owner, 2026-10-17: "showing the polyclinic itself photo
+ * validation and the timetable"): the sign on its door, which names the BUILDING, and the one timetable
+ * photographed inside it for everybody seated there. A building nobody has been seated in has no
+ * timetable yet — the next customer to receive there is the rep who photographs it.
+ */
+function VenuePhotos({ row }: { row: SharedPlaceBoardRow }) {
+  return (
+    <div className="min-w-0 space-y-3">
+      <div className="min-w-0 space-y-1">
+        <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">The sign on the building</p>
+        <CrmPhotoThumb alt={`Sign photo for ${row.name}`} className="h-28 w-28" path={row.photoPath} />
+      </div>
+      <div className="min-w-0 space-y-1">
+        <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">The timetable inside</p>
+        {row.schedulePhotoPath ? (
+          <>
+            <CrmPhotoThumb alt={`Timetable photo for ${row.name}`} className="h-28 w-28" path={row.schedulePhotoPath} />
+            {row.schedulePhotoCapturedAtText ? <p className="break-words text-xs text-slate-500">Photographed {row.schedulePhotoCapturedAtText}</p> : null}
+          </>
+        ) : (
+          <p className="break-words text-xs text-slate-500">No timetable on file yet.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The polyclinics and centres, each as ONE group: the building's own sign check, its timetable, and the
+ * customers seated in it with what that timetable says about each (owner, 2026-10-17). The customers are
+ * drawn by `SeatedCustomers`, directly under their building, so a polyclinic is never read apart from
+ * the people behind its door.
+ */
 export function SharedPlaceList({
+  groups,
   mode,
   noteIndex,
-  rows,
 }: {
+  groups: VenueGroup[];
   mode: PlaceCheckNotesMode;
   noteIndex: PlaceNoteIndex;
-  rows: SharedPlaceBoardRow[];
 }) {
   const bulk = mode === "company";
+  const rows = useMemo(() => groups.map((group) => group.venue), [groups]);
   const picks = useRowPicks<SharedPlaceBoardRow>(bulk ? rows : [], (row) => row.sharedPlaceId);
   return (
     <>
       {bulk ? <BulkDecideBar actions={VENUE_ACTIONS} nameOf={(row) => row.name} picks={picks} /> : null}
       <CrmCardsOnPhone>
-        {rows.map((row) => (
-          <div key={row.sharedPlaceId} className="space-y-3 px-4 py-4">
-            {bulk ? <BulkPick picks={picks} row={row} /> : null}
-            <div className="flex min-w-0 gap-3">
-              <CrmPhotoThumb alt={`Sign photo for ${row.name}`} path={row.photoPath} />
-              <Venue row={row} />
+        {groups.map(({ customers, total, venue: row }) => (
+          <div key={row.sharedPlaceId} className="space-y-3 border-t-4 border-slate-200 first:border-t-0">
+            <div className="space-y-3 px-4 pt-4">
+              {bulk ? <BulkPick picks={picks} row={row} /> : null}
+              <div className="flex min-w-0 gap-3">
+                <VenuePhotos row={row} />
+                <Venue row={row} />
+              </div>
+              <Where row={row} />
+              <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
             </div>
-            <Where row={row} />
-            <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
+            <div className="border-t border-slate-100 bg-slate-50/60 pb-2">
+              <SeatedCustomers customers={customers} layout="cards" mode={mode} noteIndex={noteIndex} total={total} venueTimetablePath={row.schedulePhotoPath} />
+            </div>
           </div>
         ))}
       </CrmCardsOnPhone>
-      <CrmTable columns={["12%", "24%", "36%", "28%"]}>
+      <CrmTable columns={["18%", "22%", "32%", "28%"]}>
         <thead>
           <tr>
-            <th className={crmThClassName}>Photo</th>
+            <th className={crmThClassName}>Photos</th>
             <th className={crmThClassName}>The polyclinic</th>
             <th className={crmThClassName}>Where it was captured</th>
             <th className={crmThClassName}>{mode === "team" ? "Your comment" : "Decision"}</th>
           </tr>
         </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.sharedPlaceId} className="even:bg-slate-50/60">
+        {groups.map(({ customers, total, venue: row }) => (
+          <tbody key={row.sharedPlaceId} className="border-t-4 border-slate-200">
+            <tr>
               <td className={crmTdClassName}>
                 <div className="min-w-0 space-y-2">
-                  <CrmPhotoThumb alt={`Sign photo for ${row.name}`} path={row.photoPath} />
+                  <VenuePhotos row={row} />
                   {bulk ? <BulkPick picks={picks} row={row} /> : null}
                 </div>
               </td>
@@ -417,8 +459,13 @@ export function SharedPlaceList({
                 <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
               </td>
             </tr>
-          ))}
-        </tbody>
+            <tr>
+              <td className="border-b border-slate-200 bg-slate-50/60 p-0" colSpan={4}>
+                <SeatedCustomers customers={customers} layout="table" mode={mode} noteIndex={noteIndex} total={total} venueTimetablePath={row.schedulePhotoPath} />
+              </td>
+            </tr>
+          </tbody>
+        ))}
       </CrmTable>
     </>
   );

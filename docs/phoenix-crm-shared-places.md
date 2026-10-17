@@ -441,3 +441,25 @@ Applied 2026-10-14 to staging (`cifwmndunmlxjhyjugxa`) and production (`ozucdzov
 `apply_migration`; read back from `pg_proc` on both (`prosecdef` true, grantees `{postgres,service_role}`, digest equal
 to the file). On production a transaction that always rolls back called the function against a real held venue and got
 past the old refusal as far as the insert, then failed on the test row's own empty timings; nothing was written.
+
+## Polyclinics on their own tab — owner, 2026-10-17
+
+His words, in chat: *"in place checks separate the polyclinics/hospitals checks than normal clinic steps and make sure every polyclinic is grouped with the drs in it and showing the polyclinic itself photo validation and the drs timetable and make the option for the admin to reject a dr not in the time table"*.
+
+**What the Place checks page did before.** A polyclinic was one section of the page, a flat table of buildings. The customers seated in it were scattered through the other sections among the single clinics — the held ones under "Waiting for your decision", the rest under "Validations the system did not question" — each showing "Seated in <building>" as a line of text, so nobody could read a building and the people behind its door together. The building's timetable photograph (`SharedPlaceRow.schedulePhotoPath`) was loaded and never drawn.
+
+**What it does now.**
+
+- Two tabs under the filter bar: **Clinics** (every set it had, minus the seated rows) and **Polyclinics and hospitals**. The shared filters apply to both, and each tab says how many rows it holds and how many of them are still open.
+- On the Polyclinics tab each building is one block: the sign on its door and the timetable inside it, side by side, with the sign's own verdict, then the building's decision column, then **the customers seated in it** with what the timetable says about each (names them, names somebody else, no timetable in the photo, could not be read) and the hours read beside them.
+- **Rejecting a customer who is not on the timetable** is one button on that customer's row, "Reject — not on the timetable". It opens already pointed at `schedule_other_name` ("The timetable does not name this customer"), or `schedule_missing` when the timetable read was "no timetable in the photo"; the reason list is the timetable's own (`reasonsFor("schedule")`), the note is optional, and the rejection is confirmed before it is sent. A customer the system is still checking also gets Approve; a rejected one that can be taken back gets "Approve it after all".
+
+**There is no new decision path.** A customer with a review row is rejected through `POST /api/phoenix-crm/validation-reviews` (`decision: "reject"`, which works on a pending review and on an approved one and keeps the evidence); one the system never questioned goes through `POST /api/phoenix-crm/validation-reviews/refuse`, exactly as the single clinics' list does. The rep is told the one closed-list sentence about their photo and never that a person looked. Rejecting a customer retires their seat only — the building and everybody else seated in it are not touched; rejecting the building is still its own button and still retires them all.
+
+**Where a row goes is decided by one test.** `withoutSeated` takes a row out of the Clinics view only when its `sharedPlaceId` is a building the board holds. The venue read keeps a rejected building for 90 days; a customer whose building has aged out of it, or whose place names a building that was never read, stays among the clinics where they can still be found. `ValidationReviewRow`, `ValidatedPlaceRow` and `ReopenedCustomerRow` now carry `sharedPlaceId` (the review read selects `shared_place_id` from the place row, which is why it is set whatever the hold was about).
+
+**Two corrections that came with it.** (1) Customers seated in a **held** building count as waiting with it under the Waiting outcome: nobody behind a held building counts in any KPI until the building is approved. (2) `sharedPlacePassesOutcome` answered `false` for "Rejected" because a rejected venue was not read at all; since 2026-10-15 it is read for 90 days, so "Rejected" now shows exactly the retired ones and the board no longer hides the whole section under that outcome.
+
+**A district manager's board** (`mode="team"`) draws the same groups and the same evidence and **none** of the decision controls: no Reject, no Approve, no sentence about who decides. Comments and recommendations hang off the seated customer's place as they do on the single clinics.
+
+Pinned by `tests/phoenix-crm-shared-place-groups.test.ts` (the grouping, narrowing and outcome rules, and the source the board and the lists are wired from).

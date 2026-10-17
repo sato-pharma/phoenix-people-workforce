@@ -358,9 +358,9 @@ export const MODULES = [
     title: "Phoenix CRM — validating a place: the signboard, the refusal, the merge",
     scope: "What turns a captured place into a validated one — the signboard read, capture trust, the shared place a rep captures once and seats customers in, the timetable read, the Place checks page, the closed refusal reasons the rep is told, the customers waiting to be captured again, the validate-first order, the brick lookup and the same-seat duplicate merge.",
     globs: [
-      "src/lib/phoenix-crm/{signboard-rules,schedule-rules,shared-place-rules,validation-feedback,duplicate-merge-rules,validation-review-filters}.ts",
+      "src/lib/phoenix-crm/{signboard-rules,schedule-rules,shared-place-rules,shared-place-groups,validation-feedback,duplicate-merge-rules,validation-review-filters}.ts",
       "src/lib/phoenix-crm/server/{venue-timetable,signboard-check,signboard-sweep,schedule-check,shared-places,place-location,validation-reviews}.ts",
-      "src/components/phoenix-crm/{seat-in-venue-screen,venue-timetable-screen,refusal-reason-field,reopened-customer-list,shared-place-list,shared-place-screens,validated-place-list,validation-review-queue,validation-reviews-board}.tsx",
+      "src/components/phoenix-crm/{seat-in-venue-screen,venue-timetable-screen,refusal-reason-field,reopened-customer-list,shared-place-customers,shared-place-list,shared-place-screens,validated-place-list,validation-review-queue,validation-reviews-board}.tsx",
       "app/**/field-crm/validation-reviews/**",
       "app/api/phoenix-crm/{shared-places,validation-reviews}/**",
       "app/api/phoenix-crm/list/places/seat/**",
