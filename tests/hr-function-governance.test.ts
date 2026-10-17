@@ -266,6 +266,12 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/employees/employee-cv.ts",
   "src/lib/excuses/service.ts",
   "src/lib/hiring-documents/service.ts",
+  // Names HR Operations and HR Resourcing in REMINDER_TEAM_ROLES, added 2026-10-17. Reviewed verdict: it
+  // GRANTS no reach. It only names who is on the HR team for the shared-notes page, and the page's
+  // access is the `hr_reminders` grant both seats' bundles carry through `team_reminders`; the file adds
+  // the one thing the matrix cannot say, which teammates a note may be shared WITH. Nothing a job
+  // description withholds is handed over: a note is private until its author shares it.
+  "src/lib/hr-reminders/access.ts",
   // src/lib/payroll/payslip-center.ts left this list on 2026-10-08: it named only the retired HR Advisory seat.
   // Names HR Advisory in managerCvEngagementRoles, added 2026-09-01. Reviewed verdict: it GRANTS
   // reach, by the owner's own amendment — the list was his, verbatim, and read "NOT SFE, NOT HR"

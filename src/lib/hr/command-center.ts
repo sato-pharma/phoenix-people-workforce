@@ -354,6 +354,8 @@ const SOURCES_BY_FUNCTION: Record<HrFunctionKey, readonly SourceKey[]> = {
   workforce_context: ["probationOutcomes", "vacationsToday"],
   // Recognition is two pages to open and print from, not a queue: it loads nothing.
   recognition: [],
+  // HR Reminders is the team's own notes page, not a backlog: it loads nothing here.
+  team_reminders: [],
 };
 
 /** The seat's functions, straight from the permission bundle. Never a second hand-kept list. */
@@ -764,6 +766,8 @@ const TILES_BY_FUNCTION: Record<
   workforce_context: () => [],
   // NONE. Spotlight and Milestones are sheets she prints, not a backlog.
   recognition: () => [],
+  // NONE. The reminders page is the team's own notes, not a queue this dashboard counts.
+  team_reminders: () => [],
   // NONE, and for `cv_lookup` this is the privacy decision recorded in SOURCES_BY_FUNCTION rather
   // than "nothing to count": any figure counting candidates would put the size of the pool on the
   // landing page of the one seat the pool is withheld from. Returning an empty array drops the group
@@ -931,6 +935,7 @@ const CHARTS_BY_FUNCTION: Record<
   hiring_paperwork: () => [],
   workforce_context: () => [],
   recognition: () => [],
+  team_reminders: () => [],
 
   /**
    * The HR support desk as a fortnight rather than three totals — the Talent Acquisition seat's

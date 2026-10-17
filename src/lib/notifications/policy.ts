@@ -134,6 +134,12 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // Owner rule 2026-08-09: in-app and Telegram only, never email. The hard guarantee is
   // early-birds-channel-guard.ts — this row is the intent, that filter is the enforcement.
   "early_birds.*": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  // HR team reminders (owner, 2026-10-17): a comment under a teammate's note. IN-APP ONLY — no
+  // email, no Telegram, no push: a note between four colleagues is not worth an inbox entry, and
+  // the call site passes the same single channel, which is what actually binds. Recipients are
+  // supplied explicitly (the note's author, the people it is shared with and everyone already in
+  // the conversation), hence "cc".
+  "hr_reminders.*": { actionUrlRequired: true, channels: ["in_app"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"] },
   "employee_import.*": { channels: ["in_app", "email", "push"], permissionAction: "import", permissionResource: "imports", recipientStrategy: ["permission_based"] },
   "expenses.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["direct_manager"] },
   "excuse.*": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["direct_manager"], telegramAllowed: true },

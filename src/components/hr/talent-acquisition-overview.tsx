@@ -66,6 +66,7 @@ import {
   Mail,
   Network,
   ShieldCheck,
+  StickyNote,
   TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
@@ -133,6 +134,7 @@ const TASK_ICONS: Record<HrFunctionKey, LucideIcon> = {
   recognition: Award,
   recruiting: BriefcaseBusiness,
   time_attendance: Fingerprint,
+  team_reminders: StickyNote,
   workforce_context: Network,
   workforce_insight: Network,
 };

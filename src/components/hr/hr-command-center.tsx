@@ -61,6 +61,7 @@ import {
   Network,
   Search,
   ShieldCheck,
+  StickyNote,
   TriangleAlert,
   UserRound,
   X,
@@ -104,6 +105,7 @@ const GROUP_ICONS: Record<HrFunctionKey, LucideIcon> = {
   hiring_paperwork: FileSignature,
   workforce_context: Network,
   recognition: Award,
+  team_reminders: StickyNote,
 };
 
 /**
