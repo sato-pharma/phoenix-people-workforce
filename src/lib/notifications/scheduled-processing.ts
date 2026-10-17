@@ -4,6 +4,7 @@ import {
   processNotificationOutbox,
   reapStaleProcessingOutboxRows,
 } from "@/lib/notifications/email";
+import { withEmailPolicySnapshot } from "@/lib/notifications/email-policy-snapshot";
 import { assessDrainHealth, readDrainQueueBacklog } from "@/lib/notifications/drain-health";
 import { notifyDrainStranded } from "@/lib/notifications/drain-health-alert";
 import { createStepBudget, runStep, summarizeTimings, type StepTiming } from "@/lib/notifications/step-runner";
@@ -29,7 +30,16 @@ const TOTAL_BUDGET_MS = 240_000;
 const OVERLAP_LOCK_MS = 290_000;
 let inFlightStartedAt: number | null = null;
 
-export async function runScheduledNotificationProcessing(limit = 10) {
+/**
+ * Every email the outbox drain resolves reads the same email-policy table, so the whole run shares ONE
+ * read of it (10 s at most — see email-policy-snapshot.ts) instead of one per email: the N+1 Sentry
+ * reported on GET /api/notifications/process. Nothing outside this run ever sees the shared copy.
+ */
+export function runScheduledNotificationProcessing(limit = 10) {
+  return withEmailPolicySnapshot(() => runNotificationProcessingSteps(limit));
+}
+
+async function runNotificationProcessingSteps(limit: number) {
   const enteredAt = Date.now();
   // Same instant as `enteredAt`, for the drain-health probe: "due before this run started" is
   // measured against it, which is what keeps a row inserted mid-run from reading as stranded.
