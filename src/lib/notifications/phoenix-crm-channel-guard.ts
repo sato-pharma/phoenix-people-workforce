@@ -21,8 +21,18 @@ import type { SystemNotificationChannel } from "@/lib/notifications/system";
 
 const PHOENIX_CRM_MODULE = "phoenix_crm";
 
-/** Event types that may still email. EMPTY since 2026-10-13 (owner) — Phoenix CRM never emails. */
-export const PHOENIX_CRM_EMAIL_EVENT_TYPES: readonly string[] = [];
+/**
+ * Event types that may email. Phoenix CRM emailed nothing from 2026-10-13 (owner), and exactly one notice
+ * has been given its email back, by his own word:
+ *
+ *   recorded_visit_decided — owner, 2026-10-17: the Administrator's approval or refusal of a recorded
+ *   visit, with his comment, "goes email and telegram to the rep and his manager and his manager of
+ *   manager". It rides beside in-app, Telegram and the phone, as every notice here does.
+ *
+ * A further exception is a deliberate one-line change here, the policy row, and the pinned list in
+ * `tests/phoenix-crm-email-block.test.ts` — with his word.
+ */
+export const PHOENIX_CRM_EMAIL_EVENT_TYPES: readonly string[] = ["recorded_visit_decided"];
 
 /**
  * The notices the owner has said are "in-app and Telegram ONLY", which on this module means they are

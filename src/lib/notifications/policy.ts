@@ -292,6 +292,9 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "phoenix_crm.unplanned_visit_approved": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.unplanned_visit_refused": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.unplanned_visit_moved_on": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
+  // The Administrator's decision on a recorded visit, with his comment (owner, 2026-10-17): the ONE
+  // Phoenix CRM notice that emails — see PHOENIX_CRM_EMAIL_EVENT_TYPES.
+  "phoenix_crm.recorded_visit_decided": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.visit_ask_waiting": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.visit_ask_accepted": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.visit_ask_declined": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },

@@ -122,7 +122,7 @@ export function VisitRecordingAdmin({ view }: { view: VisitRecordingAdminView })
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [refusing, setRefusing] = useState<string | null>(null);
+  const [deciding, setDeciding] = useState<{ visitId: string; decision: "approve" | "refuse" } | null>(null);
   const [note, setNote] = useState("");
 
   const reps = useMemo(() => view.reps.filter((rep) => matches(query, [rep.name, rep.lineName, rep.areaName, rep.regionName])), [query, view.reps]);
@@ -170,14 +170,14 @@ export function VisitRecordingAdmin({ view }: { view: VisitRecordingAdminView })
 
   async function review(row: RecordingListRow, decision: "approve" | "refuse") {
     if (decision === "refuse" && !note.trim()) {
-      setError("Write a note explaining why, then refuse.");
+      setError("Write a comment explaining why, then refuse.");
       return;
     }
     setBusy(`review:${row.visitId}`);
     setError(null);
     try {
-      await crmPost("/api/phoenix-crm/recording/admin/review", { visitId: row.visitId, decision, note: decision === "refuse" ? note : "" }, "reviewed");
-      setRefusing(null);
+      await crmPost("/api/phoenix-crm/recording/admin/review", { visitId: row.visitId, decision, note }, "reviewed");
+      setDeciding(null);
       setNote("");
       router.refresh();
     } catch (failure) {
@@ -192,29 +192,44 @@ export function VisitRecordingAdmin({ view }: { view: VisitRecordingAdminView })
       return <p className="break-words text-xs font-semibold text-slate-500">Only the Administrator approves a recorded visit.</p>;
     }
     const working = busy === `review:${row.visitId}`;
-    if (refusing === row.visitId) {
-      const noteId = `recording-refuse-${row.visitId}`;
+    if (deciding?.visitId === row.visitId) {
+      const refuse = deciding.decision === "refuse";
+      const noteId = `recording-decision-${row.visitId}`;
       return (
         <div className="grid min-w-0 gap-2">
-          <CrmField hint="Needed to refuse. The visit then counts in nothing." htmlFor={noteId} label="Why it is refused">
+          <CrmField
+            hint={
+              refuse
+                ? "Needed to refuse. The visit then counts in nothing. Sent by email and Telegram to the rep, the rep's manager and that manager's manager."
+                : "Optional. Sent by email and Telegram to the rep, the rep's manager and that manager's manager."
+            }
+            htmlFor={noteId}
+            label={refuse ? "Why it is refused" : "Comment"}
+          >
             <textarea
               className={crmTextareaClassName}
               disabled={working}
               id={noteId}
               maxLength={RECORDING_REVIEW_NOTE_MAX}
               onChange={(event) => setNote(event.target.value)}
-              rows={2}
+              rows={3}
               value={note}
             />
           </CrmField>
           <div className="flex min-w-0 flex-wrap gap-2">
-            <CrmButton busy={working} disabled={busy !== null} onClick={() => void review(row, "refuse")} size="sm" variant="danger">
-              Refuse
+            <CrmButton
+              busy={working}
+              disabled={busy !== null}
+              onClick={() => void review(row, deciding.decision)}
+              size="sm"
+              variant={refuse ? "danger" : "primary"}
+            >
+              {refuse ? "Refuse and send" : "Approve and send"}
             </CrmButton>
             <CrmButton
               disabled={working}
               onClick={() => {
-                setRefusing(null);
+                setDeciding(null);
                 setNote("");
               }}
               size="sm"
@@ -228,14 +243,22 @@ export function VisitRecordingAdmin({ view }: { view: VisitRecordingAdminView })
     }
     return (
       <div className="flex min-w-0 flex-wrap gap-2">
-        <CrmButton busy={working} disabled={busy !== null} onClick={() => void review(row, "approve")} size="sm" variant="primary">
-          {working ? null : <Check aria-hidden className="h-3.5 w-3.5 shrink-0" />}
+        <CrmButton
+          disabled={busy !== null}
+          onClick={() => {
+            setDeciding({ visitId: row.visitId, decision: "approve" });
+            setNote("");
+          }}
+          size="sm"
+          variant="primary"
+        >
+          <Check aria-hidden className="h-3.5 w-3.5 shrink-0" />
           Approve
         </CrmButton>
         <CrmButton
           disabled={busy !== null}
           onClick={() => {
-            setRefusing(row.visitId);
+            setDeciding({ visitId: row.visitId, decision: "refuse" });
             setNote("");
           }}
           size="sm"

@@ -14,6 +14,7 @@ import {
   isRecordingReviewStatus,
   isVisitRecordingRefusal,
   RECORDED_VISIT_REP_NOTE,
+  RECORDED_VISIT_DECISION_MANAGER_LEVELS,
   RECORDING_REVIEW_NOTE_MAX,
   recordingDownloadName,
   recordingReviewLabel,
@@ -25,6 +26,10 @@ import {
   VISIT_RECORDING_REQUIRED_CODE,
   visitRecordingMicrophoneProblem,
 } from "../src/lib/phoenix-crm/visit-recording-rules.ts";
+import { PHOENIX_CRM_EMAIL_EVENT_TYPES, phoenixCrmChannels } from "../src/lib/notifications/phoenix-crm-channel-guard.ts";
+import { resolveNotificationPolicy } from "../src/lib/notifications/policy.ts";
+import { buildOrgIndex, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
+import { phoenixCrmVisitNoticeKeyPrefix, recordedVisitDecisionDeliveries } from "../src/lib/phoenix-crm/server/notifications.ts";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 /**
@@ -312,4 +317,119 @@ export function runPhoenixCrmVisitRecordingTests(): void {
     /revoke execute on function public\.phoenix_crm_review_visit_recording\(jsonb\) from public, anon, authenticated;/,
     "the decision is never callable with the browser key",
   );
+
+  // ── 7. The Administrator's decision, with his comment, reaches the rep and two managers ───────
+  // Owner, 2026-10-17: "reject or approve with a comment and this comment goes email and telegram to
+  // the rep and his manager and his manager of manager".
+  assert.equal(RECORDED_VISIT_DECISION_MANAGER_LEVELS, 2, "his manager and his manager's manager — two seats, not the whole chain");
+
+  const seatOf = (overrides: Partial<OrgSeat> & Pick<OrgSeat, "seatId" | "tier" | "path">): OrgSeat => ({
+    parentSeatId: overrides.path.length > 1 ? overrides.path[overrides.path.length - 2] : null,
+    occupantHrId: null,
+    lineCode: "pedia",
+    lineName: "Pedia",
+    areaName: null,
+    regionName: null,
+    seatLabel: null,
+    ...overrides,
+  });
+  const ceo = seatOf({ seatId: "S-CEO", tier: "CEO", path: ["S-CEO"], occupantHrId: "B-2", lineCode: null, lineName: null });
+  const nsm = seatOf({ seatId: "S-NSM", tier: "NSM", path: ["S-CEO", "S-NSM"], occupantHrId: "A-12" });
+  const rsm = seatOf({ seatId: "S-RSM", tier: "RSM", path: [...nsm.path, "S-RSM"], occupantHrId: "B-60" });
+  const dm = seatOf({ seatId: "S-DM", tier: "DM", path: [...rsm.path, "S-DM"], occupantHrId: "B-61" });
+  const rep = seatOf({ seatId: "S-REP", tier: "REP", path: [...dm.path, "S-REP"], occupantHrId: "B-62", areaName: "Minia 1" });
+  const emptyDm = seatOf({ seatId: "S-DM-EMPTY", tier: "DM", path: [...nsm.path, "S-DM-EMPTY"], occupantHrId: null });
+  const repUnderEmpty = seatOf({ seatId: "S-REP-2", tier: "REP", path: [...emptyDm.path, "S-REP-2"], occupantHrId: "B-80", areaName: "Dokki" });
+  const org = buildOrgIndex([ceo, nsm, rsm, dm, rep, emptyDm, repUnderEmpty]);
+  const names = new Map([
+    ["B-62", "Mohamed Sami"],
+    ["B-80", "Nour Hassan"],
+  ]);
+  const decided = (overrides: Record<string, unknown> = {}) =>
+    ({
+      kind: "recorded_visit_decided" as const,
+      org,
+      seat: rep,
+      visitId: "8f1b2c3d-0000-4000-8000-00000000abcd",
+      repHrId: "B-62",
+      customerName: "Dr Hani Farouk",
+      visitDate: "2026-10-17",
+      decision: "refused" as const,
+      deciderHrId: "B-10",
+      note: "The visit does not match the plan.",
+      ...overrides,
+    }) as Parameters<typeof recordedVisitDecisionDeliveries>[0];
+
+  {
+    const [toRep, toManagers, ...rest] = recordedVisitDecisionDeliveries(decided(), names);
+    assert.equal(rest.length, 0, "two messages: one for the rep, one for the managers above him");
+    assert.deepEqual(toRep.recipients, ["B-62"], "the rep is told his own visit was decided");
+    assert.deepEqual(
+      toManagers.recipients,
+      ["B-61", "B-60"],
+      "his district manager and the regional manager above him — his manager and his manager's manager; the national manager above that is not told",
+    );
+    assert.match(toRep.message, /The Administrator did not approve your visit to .*Dr Hani Farouk.* so it does not count\. Comment: .*The visit does not match the plan\./);
+    assert.match(toManagers.message, /did not approve Mohamed Sami's visit to .*Dr Hani Farouk/);
+    assert.match(toManagers.message, /Comment: .*The visit does not match the plan\./, "the managers read the same comment the rep does");
+    assert.equal(toRep.eventType, "recorded_visit_decided");
+    assert.equal(toManagers.eventType, "recorded_visit_decided");
+    assert.notEqual(toRep.idempotencyKey, toManagers.idempotencyKey, "one key per audience, so neither upserts over the other");
+    for (const delivery of [toRep, toManagers]) {
+      assert.ok(
+        delivery.idempotencyKey.startsWith(phoenixCrmVisitNoticeKeyPrefix("8f1b2c3d-0000-4000-8000-00000000abcd")),
+        "keyed under the visit, so a removed visit withdraws it",
+      );
+      assert.doesNotMatch(delivery.message, /record|listen|heard|check|Omar/i, "Golden Rule #1: it names a role and a decision, never a recording or a check");
+    }
+  }
+  {
+    const [toRep, toManagers] = recordedVisitDecisionDeliveries(decided({ decision: "approved", note: null }), names);
+    assert.match(toRep.message, /^The Administrator approved your visit to .*Dr Hani Farouk.* on .*\. It counts\.$/, "an approval with no comment says only that it counts");
+    assert.doesNotMatch(toRep.message + toManagers.message, /Comment:/, "no comment, no empty Comment: line");
+    const [approvedWithNote] = recordedVisitDecisionDeliveries(decided({ decision: "approved", note: "Well done." }), names);
+    assert.match(approvedWithNote.message, /It counts\. Comment: .*Well done\./, "an approval may carry a comment too");
+    const [refusedRep] = recordedVisitDecisionDeliveries(decided(), names);
+    assert.notEqual(approvedWithNote.idempotencyKey, refusedRep.idempotencyKey, "an approval and a refusal never share a key");
+  }
+  {
+    const [toRep, toManagers] = recordedVisitDecisionDeliveries(decided({ seat: repUnderEmpty, repHrId: "B-80" }), names);
+    assert.deepEqual(toManagers.recipients, ["A-12"], "a vacant district passes upward: the national manager is then his manager");
+    assert.deepEqual(toRep.recipients, ["B-80"]);
+    const onlyDecider = recordedVisitDecisionDeliveries(decided({ seat: repUnderEmpty, repHrId: "B-80", deciderHrId: "A-12" }), names);
+    assert.equal(onlyDecider.length, 1, "the decider is never told his own decision");
+    assert.deepEqual(onlyDecider[0].recipients, ["B-80"]);
+  }
+  {
+    // 🔴 An acting district manager holds a manager seat AND a rep seat: he is told once, as the rep.
+    const acting = seatOf({ seatId: "S-ADM", tier: "ACTING_DM", path: [...nsm.path, "S-ADM"], occupantHrId: "B-1" });
+    const actingRep = seatOf({ seatId: "S-ADM-REP", tier: "REP", path: [...acting.path, "S-ADM-REP"], occupantHrId: "B-1" });
+    const actingOrg = buildOrgIndex([ceo, nsm, acting, actingRep]);
+    const deliveries = recordedVisitDecisionDeliveries(decided({ org: actingOrg, seat: actingRep, repHrId: "B-1" }), new Map());
+    const everyone = deliveries.flatMap((delivery) => delivery.recipients);
+    assert.equal(everyone.filter((hrId) => hrId === "B-1").length, 1, "nobody is named twice, the rep least of all");
+  }
+
+  // The notice EMAILS — the one Phoenix CRM notice that does — beside in-app, Telegram and the phone.
+  assert.deepEqual([...PHOENIX_CRM_EMAIL_EVENT_TYPES], ["recorded_visit_decided"], "his word, 2026-10-17: the single email exception");
+  assert.deepEqual(phoenixCrmChannels("recorded_visit_decided"), ["in_app", "email", "telegram", "push"]);
+  assert.deepEqual(phoenixCrmChannels("recorded_visit_decided", true), ["in_app"], "a test entry stays in the app");
+  assert.deepEqual(
+    resolveNotificationPolicy({ module: "phoenix_crm", eventType: "recorded_visit_decided" }).channels,
+    ["in_app", "email", "telegram", "push"],
+    "the policy row is the intent and agrees with the guard",
+  );
+
+  // The wiring: the decision notifies, and the screen sends the comment on BOTH decisions.
+  {
+    const service = read("src/lib/phoenix-crm/server/visit-recordings.ts");
+    const review = service.slice(service.indexOf("export async function reviewRecordedVisit("));
+    assert.match(review, /kind: "recorded_visit_decided"/, "a saved decision tells the rep and the two managers");
+    assert.match(review, /decision: decision === "approve" \? "approved" : "refused",\s*deciderHrId: viewer\.hrId,\s*note,/, "with the comment he wrote");
+    assert.ok(review.indexOf('kind: "recorded_visit_decided"') > review.indexOf('"phoenix_crm_review_visit_recording"'), "only AFTER the decision is saved");
+    assert.match(review, /result\.is_test !== true/, "a test world's entry tells nobody");
+    const screen = read("src/components/phoenix-crm/visit-recording-admin.tsx");
+    assert.match(screen, /\{ visitId: row\.visitId, decision, note \}/, "the comment travels with an approval as well as a refusal");
+    assert.match(screen, /Approve and send/, "and the approve button offers the comment box");
+  }
 }

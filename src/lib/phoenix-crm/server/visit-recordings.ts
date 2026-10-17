@@ -431,8 +431,10 @@ export async function loadVisitRecordingAdmin(viewer: PhoenixCrmViewer): Promise
 
 /**
  * The Administrator approves or refuses one recorded visit (owner, 2026-10-16). His alone — `canAdminister`,
- * the same person every Phoenix CRM "Administrator" is. A refusal carries a note. On a recorded off-plan
- * visit his yes hands it to the step it was going to start at, and that step is told then, not before.
+ * the same person every Phoenix CRM "Administrator" is. A refusal carries a note; an approval may. The
+ * rep and the two managers above him are told the decision with that comment (owner, 2026-10-17). On a
+ * recorded off-plan visit his yes hands it to the step it was going to start at, and that step is told
+ * then, not before.
  */
 export async function reviewRecordedVisit(
   viewer: PhoenixCrmViewer,
@@ -455,6 +457,35 @@ export async function reviewRecordedVisit(
     p: { visit_id: visitId, decision, actor_hr_id: viewer.hrId, actor_role: "administrator", note },
   });
   const reviewStatus: RecordingReviewStatus = isRecordingReviewStatus(result.review_status) ? result.review_status : "pending";
+
+  // His decision, with his comment, is told to the rep and the two managers above him (owner,
+  // 2026-10-17) — by email, Telegram, in-app and the phone. It never throws (notifications.ts), so a
+  // notice that cannot be delivered cannot undo the decision just saved.
+  const decidedSeat = viewer.org.seats.get(String(result.seat_id));
+  if (decidedSeat && result.is_test !== true) {
+    // A failed name read is NOT thrown: the decision is already saved, and the notice reads "a customer"
+    // rather than turning a saved decision into an error on his screen.
+    const { data: customerRow } = await getSupabaseAdmin()
+      .from("phoenix_crm_customers")
+      .select("name")
+      .eq("id", String(result.customer_id))
+      .maybeSingle();
+    await notifyPhoenixCrm(
+      {
+        kind: "recorded_visit_decided",
+        org: viewer.org,
+        seat: decidedSeat,
+        visitId,
+        repHrId: String(result.rep_hr_id),
+        customerName: textOrNull(record(customerRow).name) ?? "a customer",
+        visitDate: String(result.visit_date),
+        decision: decision === "approve" ? "approved" : "refused",
+        deciderHrId: viewer.hrId,
+        note,
+      },
+      false,
+    );
+  }
 
   // His yes on an off-plan visit puts it in front of its district manager (or SFE) for the first time,
   // so that step is told now — the notice the save held back. It never throws (notifications.ts).

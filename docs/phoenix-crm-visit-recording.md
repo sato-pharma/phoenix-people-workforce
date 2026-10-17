@@ -126,8 +126,40 @@ Decisions made without asking him, each easy to change:
 
 - The Administrator decides first, then the usual off-plan chain runs.
 - His refusal refuses the visit outright.
-- The rep is not sent a notice of his decision; his list shows it.
+- ~~The rep is not sent a notice of his decision; his list shows it.~~ **Reversed 2026-10-17**, see below.
 
 Files: `supabase/migrations/20261016161248_phoenix_crm_recorded_visit_waits_for_the_administrator.sql`,
 `app/api/phoenix-crm/recording/admin/review/route.ts`, plus the changes in `visit-recordings.ts`,
 `visits.ts`, `unplanned.ts`, `unplanned-rules.ts`, `needs-you.ts` and `visit-recording-admin.tsx`.
+
+## His decision carries a comment, and it is told by email and Telegram
+
+Added 2026-10-17, his words:
+
+> "i want to be able to reject or approve with a comment and this comment goes email and telegram to
+> the rep and his manager and his manager of manager"
+
+What changed:
+
+- **The comment.** On the Visit Recording page, Approve and Refuse both open the comment box.
+  A refusal still needs one (the database refuses a refusal with no note); an approval may carry one.
+  The comment is the recording row's `review_note`, which the database already accepted on an approval,
+  so there is no migration.
+- **Who is told.** `recordedVisitDecisionDeliveries` in `server/notifications.ts`: the rep, and the
+  two occupied manager seats nearest above him in `managerChain` (RECORDED_VISIT_DECISION_MANAGER_LEVELS = 2) —
+  his manager and his manager's manager. A vacant district passes upward, the chain never reaches the
+  CEO, nobody is named twice, and the decider is not told his own decision. Where the second seat is the
+  national manager (a line with no regional manager) he is told as the manager's manager; where there is
+  a regional manager, the national manager above that is not.
+- **How.** In-app, Telegram, the phone, and **email**. Email is the module's one exception to his
+  2026-10-13 ban: `recorded_visit_decided` is the only entry of `PHOENIX_CRM_EMAIL_EVENT_TYPES`, with its
+  own `phoenix_crm.recorded_visit_decided` policy row. Every other Phoenix CRM notice stays email-free.
+- **Golden Rule #1.** The rep reads "The Administrator approved / did not approve your visit to …" and the
+  comment — a decision and a role, never that it was recorded, listened to or checked. His list already
+  showed the decision; this adds the comment.
+- **It runs after the decision is saved and never throws**, so a failed send cannot undo it, and only
+  for a live team (the same gate as every Phoenix CRM notice).
+
+Decisions made without asking him, each easy to change: the approval comment is optional; "his manager's
+manager" is the second occupied seat in the chain, not the whole chain; the phone is included, as for every
+other Phoenix CRM notice.
