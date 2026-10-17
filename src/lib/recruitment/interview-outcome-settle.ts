@@ -13,7 +13,8 @@
 //      DECISION_WINDOW_DAYS of it and before the candidate's next interview → that word is the outcome.
 //   2. The candidate was moved to hired after the interview, or an offer was drawn up for them after the
 //      interview started, before their next interview → "attended" (they came; the verdict above it is
-//      somebody else's to give).
+//      somebody else's to give). A hire beats an earlier shortlist or rejection; an offer beats an earlier
+//      shortlist or back-up.
 // WHAT NEVER COUNTS: a later interview being booked (it can follow a no-show), a comment, a status that
 // predates the interview, a move made by a batch actor, and an outside person with no candidate record.
 //
@@ -71,17 +72,26 @@ export function inferInterviewOutcome(evidence: SettleEvidence): InferredOutcome
     .filter((event) => Number.isFinite(event.at) && event.at >= end && before(event.at))
     .sort((a, b) => a.at - b.at);
 
-  for (const event of events) {
-    const personMade = Boolean(event.actorHrId) && !isBatchActor(event.actorHrId);
-    if (personMade && event.toStatus in DECISION_WORDS && event.at - end <= DECISION_WINDOW_DAYS * DAY_MS) {
-      return { outcome: DECISION_WORDS[event.toStatus], reason: `the candidate was ${DECISION_LABELS[event.toStatus]} after it` };
-    }
-    if (event.toStatus === "hired") return { outcome: "attended", reason: "the candidate was hired after it" };
-  }
+  // A HIRE is the end of the road and beats any earlier shortlisting or rejection (owner, 2026-10-17: a
+  // candidate shortlisted and then hired is hired, not "shortlisted").
+  if (events.some((event) => event.toStatus === "hired")) return { outcome: "attended", reason: "the candidate was hired after it" };
 
+  const decision = events.find(
+    (event) =>
+      Boolean(event.actorHrId) &&
+      !isBatchActor(event.actorHrId) &&
+      event.toStatus in DECISION_WORDS &&
+      event.at - end <= DECISION_WINDOW_DAYS * DAY_MS,
+  );
+  // An offer drawn up after the interview outranks a shortlist or a back-up (it is further along), but not a
+  // rejection: an offer may have been drawn up before the candidate was turned down.
   const offer = evidence.offerCreatedAt ? Date.parse(evidence.offerCreatedAt) : Number.NaN;
-  if (Number.isFinite(offer) && offer >= start && before(offer)) {
+  const offered = Number.isFinite(offer) && offer >= start && before(offer);
+  if (offered && (!decision || decision.toStatus !== "rejected")) {
     return { outcome: "attended", reason: "a job offer was drawn up for the candidate after it" };
+  }
+  if (decision) {
+    return { outcome: DECISION_WORDS[decision.toStatus], reason: `the candidate was ${DECISION_LABELS[decision.toStatus]} after it` };
   }
   return null;
 }
