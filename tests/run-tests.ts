@@ -2351,6 +2351,7 @@ import { runInterviewCalendarTests } from "./interview-calendar.test.ts";
 import { runInterviewCalendarApplicationTests } from "./interview-calendar-application.test.ts";
 import { runScreeningDownloadApplicationTests } from "./screening-download-application.test.ts";
 import { runInterviewReminderTests } from "./interview-reminders.test.ts";
+import { runInterviewOutcomeSettleTests } from "./interview-outcome-settle.test.ts";
 import { runRecruitmentAutomationTests } from "./recruitment-automation.test.ts";
 import { runRecruitmentManagerCvFoldersTests } from "./recruitment-manager-cv-folders.test.ts";
 import { runInterviewTier3Tests } from "./interview-tier3.test.ts";
@@ -9126,6 +9127,11 @@ await runTest(
 await runTest(
   "interview reminders go to the chosen interviewer only, District Manager and above, by in-app, email and Telegram: the evening before from 5:00 PM Cairo with the day's list and one hour before each interview, each sent once by its key",
   runInterviewReminderTests,
+);
+
+await runTest(
+  "a finished interview whose outcome the record already proves settles itself: a person's shortlist, back-up or rejection after it, or a hire or offer after it, becomes the outcome across all time, never from a batch sweep, a status that predates it or a decision after the candidate's next interview, and the ten-minute cron settles before it nags",
+  runInterviewOutcomeSettleTests,
 );
 
 await runTest(
