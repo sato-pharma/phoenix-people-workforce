@@ -65,14 +65,14 @@ Put each new memory note's pointer here, one line. The fold (`node scripts/modul
 
 
 
-- [Phoenix merge guards fire on another repo's PR](phoenix-merge-guards-fire-on-another-repos-pr.md) - `gh pr merge --repo <other repo>` trips C10/C18 and reads "no checks" as not green; `PHX_MERGE_OK=1` is the stand-down.
 
-- [selectByIds seeks on id; visit recordings have none](selectbyids-seeks-on-id-and-visit-recordings-has-none.md) - a table with no `id` must pass its key (`path`) or every visits day 42703s; "only test accounts broken" was a Friday with no real visits.
 
-- [A careers card's English title routes its Apply form](a-careers-cards-english-title-routes-the-apply-form.md) - `/district\s*manager/i` and friends test the TITLE; "District Sales Manager" silently falls back to email.
 
-- [A slow Railway day is measured from the build log, not GitHub's status](a-slow-railway-day-is-measured-from-the-build-log-not-the-github-status.md) - `Healthcheck succeeded` is go-live; GitHub's `success` lagged 17 min; baseline Railway build 2.84 min (+1.06 with Sentry source maps), push-to-serving 8.5 min.
 
-- [A restart wipes table stats; index-only scans fall back to the heap](a-restart-wipes-table-stats-and-index-only-scans-fall-back-to-the-heap.md) - `Heap Fetches` in the thousands = check `relallvisible/relpages`; `VACUUM (ANALYZE)` took `source_of_sales_import_rows` 77% to 100% visible (205 to 164 ms); six more big tables vacuumed to 100% on 2026-10-16 - a later restart wipes it again.
 
-- [Statement baseline, 2026-10-16 20:44 Cairo, for measuring the slowness fixes](statement-baseline-2026-10-16-2044-cairo-for-measuring-the-slowness-fixes.md) - full `pg_stat_statements` capture (4,048 statements) on production; the note holds the delta query. Cumulative stats still carry pre-fix calls.
+
+- [phx-preview's dev server cannot compile a page at its 2048 MB heap](the-phx-preview-dev-server-cannot-compile-a-page-at-its-2048-mb-heap.md) - admin and portal pages OOM it cold; the pane then says "denied or failed"; walk a role with dev-auth HEADERS against API routes instead.
+
+- [A source-count regex with an unescaped bracket counts zero](a-source-count-regex-with-an-unescaped-bracket-counts-zero.md) - `/.eq("x", y)/g` is a GROUP, not the call; count with `split(text).length - 1`, and break each fix alone when one check holds several assertions.
+
+- [The district manager's Phoenix CRM weekly plan, as he specified it](the-district-managers-phoenix-crm-weekly-plan-as-he-specified-it.md) - his 2026-10-16 rulings; BUILT 2026-10-17 on `claude/district-manager-weekly-plan-69415c` as seven `phoenix_crm_manager_*` tables; migration LIVE on staging and production since 2026-10-17 01:14 Cairo (apply-sql-file, no ledger row).
