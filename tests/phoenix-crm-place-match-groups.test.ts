@@ -340,7 +340,7 @@ export function runPhoenixCrmPlaceMatchGroupsTests(): void {
   assert.ok(shell.includes("aria-controls={view === key ? `vr-panel-${key}` : undefined}"), "and names a panel only when it is on the page");
 
   // ── The migration ─────────────────────────────────────────────────────────────────────────────
-  const migration = read("supabase/migrations/20261017150000_phoenix_crm_place_match_answers.sql");
+  const migration = read("supabase/migrations/20261017160000_phoenix_crm_place_match_answers.sql");
   assert.ok(migration.includes("create table if not exists public.phoenix_crm_place_match_answers"), "one new table");
   assert.ok(migration.includes("check (subject_a < subject_b)"), "stored as an ordered pair, so 'A with B' and 'B with A' are one row");
   assert.ok(migration.includes("answer in ('same', 'different')"), "with two answers");
