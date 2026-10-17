@@ -953,7 +953,6 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(hubSource, /if \(plan\.plannerKind !== "dm"\) \{\s*steps\.push\(\{\s*label: "HR acknowledgement",\s*who: "HR, automatically",/, "the tracker shows HR's step on every week but a district manager's");
 
   // Who reads whom: Ali reads Hany's week; a product manager's week is read by the manager on his record.
-  const ali = viewerFor("A-12", "National Sales Manager", { canCreate: false });
   assert.equal(readsManagerPlanOf(ali, "PD-0001"), true, "Ali reads the regional manager's week below him");
   assert.equal(readsManagerPlanOf(hany, "A-12"), false, "and never the other way up");
   const roster = [{ hrId: personKey("B-155"), managerHrId: personKey("B-150") }, { hrId: personKey("B-156"), managerHrId: personKey("B-155") }];
