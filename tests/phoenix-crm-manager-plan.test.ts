@@ -40,6 +40,7 @@ import {
   managerWeekState,
   managerAskStage,
   matchCustomerName,
+  missingManagerCustomerField,
   nextManagerPlanStatus,
   parseManagerSlotDraft,
 } from "../src/lib/phoenix-crm/manager-plan-rules.ts";
@@ -1031,14 +1032,14 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
 
   // The routes: every writer reaches them with read — the writer rule decides, never the create grant.
   const routeFiles = filesUnder("app/api/phoenix-crm/manager-plans").filter((file) => file.endsWith("/route.ts"));
-  assert.equal(routeFiles.length, 12, "the twelve manager-plan routes");
+  assert.equal(routeFiles.length, 13, "the thirteen manager-plan routes");
   for (const file of routeFiles) {
     const text = source(file);
     assert.match(text, /assertPermission\(access, "phoenix_crm", "read"\)/, `${file} asks read`);
     assert.equal(/assertPermission\(access, "phoenix_crm", "(create|approve|update)"\)/.test(text), false, `${file} never asks a grant only a district manager holds`);
   }
   const registry = source("src/lib/security/access-registry.ts").split("\n").filter((line) => line.includes('pattern: "/api/phoenix-crm/manager-plans'));
-  assert.equal(registry.length, 15, "fifteen declarations across the twelve routes");
+  assert.equal(registry.length, 16, "sixteen declarations across the thirteen routes");
   for (const line of registry) assert.ok(line.includes('permission: { resource: "phoenix_crm", action: "read" }'), `declared on read: ${line.trim().slice(0, 120)}`);
 
   // The board: the scope picker, the half-day override, and the HR line on a non-district manager's send.
@@ -1075,4 +1076,56 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   for (const screen of ["src/components/approvals-hub/manager-plan-request-detail.tsx", "src/components/approvals-hub/manager-plan-decision-actions.tsx"]) {
     assert.equal(/\b(doctors?|accounts?)\b/i.test(source(screen)), false, `${screen} says customers, never doctors or accounts`);
   }
+  // ── A customer he adds carries speciality, phone, address, brick and area (owner, 2026-10-17) ───────
+  // "must enter his speciality, his name, his phone number, and either fill the address, brick and area
+  // manually, or capture the location and the capture fills these fields."
+
+  const completeCustomer = {
+    name: "Samir Adel",
+    speciality: "Cardiology",
+    phone: "+201001234567",
+    address: "12 Tahrir Street, Dokki",
+    brickName: "Dokki",
+    areaChosen: true,
+    grade: "A",
+    potentialGrade: "AA",
+  };
+  assert.equal(missingManagerCustomerField(completeCustomer), null, "a customer with everything lacks nothing");
+  for (const [field, pattern] of [
+    ["name", /name/],
+    ["speciality", /speciality/],
+    ["phone", /phone number/],
+    ["address", /address/],
+    ["brickName", /brick/],
+  ] as const) {
+    const lacking = missingManagerCustomerField({ ...completeCustomer, [field]: null });
+    assert.match(lacking ?? "", pattern, `a customer with no ${field} is refused`);
+    assert.equal(/\b(he|his|him|doctors?|accounts?)\b/i.test(lacking ?? ""), false, `the ${field} sentence says customer, never he or doctor`);
+  }
+  assert.match(missingManagerCustomerField({ ...completeCustomer, areaChosen: false }) ?? "", /area/, "a customer with no area is refused");
+  assert.match(missingManagerCustomerField({ ...completeCustomer, grade: null }) ?? "", /grade/, "the grade is still required");
+  assert.match(missingManagerCustomerField({ ...completeCustomer, potentialGrade: "ZZ" }) ?? "", /potential grade/, "the potential grade is still required");
+
+  const customerServer = source("src/lib/phoenix-crm/server/manager-customers.ts");
+  const addBody = functionBody(customerServer, "export async function addManagerCustomer(");
+  assert.match(addBody, /missingManagerCustomerField\(\{[\s\S]*speciality,[\s\S]*phone: phone\.value,[\s\S]*address,[\s\S]*brickName,/, "the add asks for the speciality, the phone, the address and the brick");
+  assert.match(addBody, /if \(lacking\) throw validationError\(lacking\);/, "a customer short of any of them is refused");
+  assert.match(addBody, /pin_address: address,\s*pin_brick_name: brickName,/, "what he saw — typed, or filled in by the capture — is what is saved");
+  assert.equal(/pin_address: geography/.test(addBody), false, "the resolver never overwrites the address he saw");
+  assert.match(addBody, /pin_brick_id: sameBrick\(brickName, geography\.brickName\) \? geography\.brickId : null/, "the resolver's brick id is kept only for the brick he is looking at");
+  const locateBody = functionBody(customerServer, "export async function locateManagerCustomer(");
+  assert.match(locateBody, /resolvePinGeography\(fix, territoryOfSeat\(chosen \?\? \{\}\)\)/, "the capture fills the fields from the same resolver the add uses");
+  assert.equal(/\.insert\(|\.update\(|\.delete\(/.test(locateBody), false, "locating a capture writes nothing");
+  const locateRoute = source("app/api/phoenix-crm/manager-plans/customers/locate/route.ts");
+  assert.match(locateRoute, /assertSameOriginMutation\(request\)[\s\S]*assertPermission\(access, "phoenix_crm", "read"\)[\s\S]*locateManagerCustomer\(viewer, body\)/, "same-origin, then the module grant, then the located fields");
+
+  const customerForm = source("src/components/phoenix-crm/manager-customer-form.tsx");
+  assert.match(customerForm, /missingManagerCustomerField\(\{/, "the form asks the same question before it sends");
+  assert.match(customerForm, /\/api\/phoenix-crm\/manager-plans\/customers\/locate/, "Capture location fills the address, brick and area");
+  assert.match(customerForm, /address: address\.trim\(\),\s*brickName: brickName\.trim\(\),/, "the form sends the address and the brick it shows");
+  for (const label of ["Speciality \\*", "Phone \\*", "Address \\*", "Brick \\*", "Area \\*"]) {
+    assert.match(customerForm, new RegExp(`label="${label}"`), `${label.replace("\\", "")} is marked required`);
+  }
+  assert.equal(/areas\.length > 1/.test(customerForm), false, "the area is one of the three location fields, so it is always shown");
+  assert.equal(/\b(doctors?|accounts?)\b/i.test(customerForm), false, "the form says customers, never doctors or accounts");
 }

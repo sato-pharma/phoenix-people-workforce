@@ -11,7 +11,8 @@
  *     his draft customers, marked not sent; a rep with no plan at all is skipped.
  *   - ADMIN — one of the seven day activities already in Phoenix CRM, and a note.
  *   - SINGLE VISIT — an area of his district, then customers from that area's rep lists, from Manager's
- *     own list, or one he types (grade A/B/C and potential grade, Capture location optional, NO
+ *     own list, or one he types (grade A/B/C and potential grade; speciality, phone, address, brick and
+ *     area all required — typed, or filled in by Capture location; NO
  *     validation step — "there will not be validation because they are managers").
  *
  * Rules around it, every one his own answer that day:
@@ -138,6 +139,43 @@ export function isManagerCustomerGrade(value: unknown): value is ManagerCustomer
 
 export function isManagerCustomerPotentialGrade(value: unknown): value is ManagerCustomerPotentialGrade {
   return typeof value === "string" && (MANAGER_CUSTOMER_POTENTIAL_GRADES as readonly string[]).includes(value);
+}
+
+// ── What a customer he adds must carry (owner, 2026-10-17) ──────────────────────────────────────
+
+export const MANAGER_CUSTOMER_ADDRESS_MAX = 300;
+export const MANAGER_CUSTOMER_BRICK_MAX = 120;
+
+/**
+ * The first thing a customer he is adding still lacks, in his words, or null when it is complete.
+ *
+ * Owner, 2026-10-17: "the customer the DSM is adding while making a plan for a single visit must enter his
+ * speciality, his name, his phone number, and either fill the address, brick and area manually, or capture
+ * the location and the capture fills these fields." So the name, the speciality and a phone are required, and
+ * so are the address and the brick: typed by him, or filled in by Capture location (which he can still
+ * correct). The area is his district's, chosen from the list. `phone` is the number once cleaned
+ * (`parseCustomerPhone`), null when he wrote none. The form asks this before it sends and the server asks it
+ * again, so a customer is never added short of any of them.
+ */
+export function missingManagerCustomerField(input: {
+  name: string | null;
+  speciality: string | null;
+  phone: string | null;
+  address: string | null;
+  brickName: string | null;
+  areaChosen: boolean;
+  grade: unknown;
+  potentialGrade: unknown;
+}): string | null {
+  if (!input.name) return "Write the customer's name.";
+  if (!input.speciality) return "Write the customer's speciality.";
+  if (!input.phone) return "Write the customer's phone number.";
+  if (!input.address) return "Write the address, or press Capture location to fill it in.";
+  if (!input.brickName) return "Write the brick, or press Capture location to fill it in.";
+  if (!input.areaChosen) return "Choose the area.";
+  if (!isManagerCustomerGrade(input.grade)) return "Choose the grade: A, B or C.";
+  if (!isManagerCustomerPotentialGrade(input.potentialGrade)) return "Choose the potential grade.";
+  return null;
 }
 
 // ── Who plans ───────────────────────────────────────────────────────────────────────────────────

@@ -148,7 +148,14 @@ export type {
   ManagerPlanTransitionResult,
   RepDayCustomer,
 } from "@/lib/phoenix-crm/server/manager-plans";
-export type { AreaCustomer, AreaCustomersView, CustomerMatch, ManagerCustomerView, ManagerOwnListView } from "@/lib/phoenix-crm/server/manager-customers";
+export type {
+  AreaCustomer,
+  AreaCustomersView,
+  CustomerMatch,
+  ManagerCustomerLocated,
+  ManagerCustomerView,
+  ManagerOwnListView,
+} from "@/lib/phoenix-crm/server/manager-customers";
 export type { ManagerTodayCustomer, ManagerTodayView } from "@/lib/phoenix-crm/server/manager-visits";
 export type {
   ManagerReport as ManagerPlanReport,

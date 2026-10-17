@@ -13,7 +13,10 @@ reps use", but the other way round. For each half-day the DM does one of three t
 - **Admin.** One of the seven day activities (meeting, training, conference, admin work, travel, health
   day, sales day), plus a note.
 - **Single visit.** An area of his district, vacant rep seats included. Then customers from that
-  area's rep lists, from **Manager's own list**, or a newly typed customer.
+  area's rep lists, from **Manager's own list**, or a newly typed customer. A customer he adds must carry
+  a **name, speciality and phone** and an **address, brick and area**: he types the last three, or presses
+  **Capture location** and the capture fills them in (he can still correct them) — owner, 2026-10-17. The
+  add refuses a customer short of any of them.
 
 AM and PM are each a choice of their own.
 
@@ -59,7 +62,7 @@ Migration `20261017000000_phoenix_crm_manager_plan.sql` adds seven tables:
 | `phoenix_crm_manager_plan_customers` | The customers ticked for a slot: a rep's customer or one from his own list. |
 | `phoenix_crm_manager_plan_events` | The trail, with a snapshot taken on submit. |
 | `phoenix_crm_manager_plan_edit_requests` | His asks to reopen a sent week. |
-| `phoenix_crm_manager_customers` | Manager's own list, with an optional pin and the removal fields. |
+| `phoenix_crm_manager_customers` | Manager's own list: the address and brick (typed, or from the pin, in `pin_address` / `pin_brick_name`; a row with no `pin_lat` was typed), an optional pin and the removal fields. |
 | `phoenix_crm_manager_visits` | His own single visits, planned or unplanned. |
 
 Every table has RLS on and no anon or authenticated access. Every function is SECURITY DEFINER and
