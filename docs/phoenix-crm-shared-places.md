@@ -441,3 +441,57 @@ Applied 2026-10-14 to staging (`cifwmndunmlxjhyjugxa`) and production (`ozucdzov
 `apply_migration`; read back from `pg_proc` on both (`prosecdef` true, grantees `{postgres,service_role}`, digest equal
 to the file). On production a transaction that always rolls back called the function against a real held venue and got
 past the old refusal as far as the insert, then failed on the test row's own empty timings; nothing was written.
+
+## Polyclinics on their own tab — owner, 2026-10-17
+
+His words, in chat: *"in place checks separate the polyclinics/hospitals checks than normal clinic steps and make sure every polyclinic is grouped with the drs in it and showing the polyclinic itself photo validation and the drs timetable and make the option for the admin to reject a dr not in the time table"*.
+
+**What the Place checks page did before.** A polyclinic was one section of the page, a flat table of buildings. The customers seated in it were scattered through the other sections among the single clinics — the held ones under "Waiting for your decision", the rest under "Validations the system did not question" — each showing "Seated in <building>" as a line of text, so nobody could read a building and the people behind its door together. The building's timetable photograph (`SharedPlaceRow.schedulePhotoPath`) was loaded and never drawn.
+
+**What it does now.**
+
+- Two tabs under the filter bar: **Clinics** (every set it had, minus the seated rows) and **Polyclinics and hospitals**. The shared filters apply to both, and each tab says how many rows it holds and how many of them are still open.
+- On the Polyclinics tab each building is one block: the sign on its door and the timetable inside it, side by side, with the sign's own verdict, then the building's decision column, then **the customers seated in it** with what the timetable says about each (names them, names somebody else, no timetable in the photo, could not be read) and the hours read beside them.
+- **Rejecting a customer who is not on the timetable** is one button on that customer's row, "Reject — not on the timetable". It opens already pointed at `schedule_other_name` ("The timetable does not name this customer"), or `schedule_missing` when the timetable read was "no timetable in the photo"; the reason list is the timetable's own (`reasonsFor("schedule")`), the note is optional, and the rejection is confirmed before it is sent. A customer the system is still checking also gets Approve; a rejected one that can be taken back gets "Approve it after all".
+
+**There is no new decision path.** A customer with a review row is rejected through `POST /api/phoenix-crm/validation-reviews` (`decision: "reject"`, which works on a pending review and on an approved one and keeps the evidence); one the system never questioned goes through `POST /api/phoenix-crm/validation-reviews/refuse`, exactly as the single clinics' list does. The rep is told the one closed-list sentence about their photo and never that a person looked. Rejecting a customer retires their seat only — the building and everybody else seated in it are not touched; rejecting the building is still its own button and still retires them all.
+
+**Where a row goes is decided by one test.** `withoutSeated` takes a row out of the Clinics view only when its `sharedPlaceId` is a building the board holds. The venue read keeps a rejected building for 90 days; a customer whose building has aged out of it, or whose place names a building that was never read, stays among the clinics where they can still be found. `ValidationReviewRow`, `ValidatedPlaceRow` and `ReopenedCustomerRow` now carry `sharedPlaceId` (the review read selects `shared_place_id` from the place row, which is why it is set whatever the hold was about).
+
+**Two corrections that came with it.** (1) Customers seated in a **held** building count as waiting with it under the Waiting outcome: nobody behind a held building counts in any KPI until the building is approved. (2) `sharedPlacePassesOutcome` answered `false` for "Rejected" because a rejected venue was not read at all; since 2026-10-15 it is read for 90 days, so "Rejected" now shows exactly the retired ones and the board no longer hides the whole section under that outcome.
+
+**A district manager's board** (`mode="team"`) draws the same groups and the same evidence and **none** of the decision controls: no Reject, no Approve, no sentence about who decides. Comments and recommendations hang off the seated customer's place as they do on the single clinics.
+
+Pinned by `tests/phoenix-crm-shared-place-groups.test.ts` (the grouping, narrowing and outcome rules, and the source the board and the lists are wired from).
+
+## Same place, several reps — owner, 2026-10-17
+
+His words, in chat: *"I want you to make a third tab in the same page … a place validated by more than a rep. I want to put the three validations beside each other and show me insights and show me data to be able to know which one is the most accurate and which one is not. And of course, if a place you are in doubt of, you can make a fourth step asking, but not every place. What is clear and confident, put it direct. What is not clear and confident, in the fourth step, and I'm talking here about the admin only … that you doubt that those two or those three validations are for the same place."*
+
+**What it is.** A third tab on Place checks, **Same place, several reps**, drawn only on the Super Admin's board (`mode="company"`). A district manager's board is handed no tab, no panel and no read, and the route refuses everyone but the Super Admin as well (`canDecideValidationReviews`). The data is read when the tab is **first opened**, not with the page — it pages through every validated place and polyclinic — and the board then stays mounted, so switching tabs does not read it again. The shared filter bar narrows it by rep, line, region, area, list and period; a place stays whole when **any** of its validations passes, so filtering on one rep still shows the others' readings beside theirs. The outcome selector means nothing here and is not read.
+
+**What counts as a validation of a place.** A standalone place a rep validated (`phoenix_crm_places`, active, not test) or a polyclinic a rep captured (`phoenix_crm_shared_places`, active or held). A customer **seated** in a polyclinic is never a subject: they sit on the building's own point, so listing them would put every customer beside the building they are in and call it agreement. The building is the validation, and its seated count is shown on it. A group needs **two seats**: two places one rep validated in the same building are one rep's work, not a comparison.
+
+**The anchor.** The photograph's fix (`photo_lat/lon`, with `photo_accuracy_meters`) — the shutter took it at the door, and a pin can be dragged — falling back to the stored point, then the pin. How far the rep's pin sits from their own photograph is shown as a trust signal ("Pin vs photo"), and more than 50 m is flagged as a moved pin.
+
+**Three answers per pair, never two** (`place-match-groups.ts`, pure). With σ the hypotenuse of the two readings' accuracies (each held to 5–100 m, 25 when none was reported):
+
+| Distance | Answer | What happens |
+| --- | --- | --- |
+| at most σ held to 30–60 m | same | grouped with no question |
+| beyond 3σ held to 100–200 m | different | never shown |
+| in between | unsure | put to the Super Admin — **unless both are places with different customer names** |
+
+The last clause matters: two differently named customers 50 m apart are two doors far more often than one door read twice, and asking about all of them was 261 questions on the live data (almost all neighbours on one street); with the rule it is 29. **A name never settles a pair that has a polyclinic in it** (a building has no customer name) and never settles a pair a few metres apart.
+
+**A group is tight, never a chain.** Joining every "same" pair let a street of customers 40 m apart run into one 24-reading "place" 220 m long. Closest pairs join first and a join is refused when it would make the group wider than 120 m. The Super Admin's own "same" answer is the one join that is never refused.
+
+**Which one is most accurate.** For each member: the distance to the nearest validation by **another** rep; its own error (the phone's reported accuracy combined with the pin-versus-photo gap); and the likely error, the hypotenuse of the two. The best is named **only when it beats the next by a fifth** (`BEST_MARGIN` 0.8) — otherwise the card says *Too close to call*, which is an honest answer and is counted. Flags: *Far from every other rep* (needs **three** reps, at least 30 m, and twice the typical nearest distance — with two reps neither can be called the wrong one), *Weak GPS signal* (over 50 m), *Pin moved from the photo* (over 50 m), and the sign verdicts *names somebody else* / *names nobody*. The per-rep table gives each rep's median distance to the nearest other rep (smaller means the others bear them out), median reported accuracy, median pin gap, places they were clearly the most accurate on, places they were far off on, and signs that matched.
+
+**The questions ("step 4").** Each one shows the readings on either side with their sign photographs, the closest distance, a hint when the same customer name sits on both sides, and two buttons: **Same place** / **Different places**. One answer covers every unsure pair that raised the question, so nothing is asked twice, and a bigger question is sent in pieces of at most 80 pairs (`MAX_ANSWER_PAIRS`). A place he confirmed carries *Take my answer back*; a pair he answered *different* is listed under "Answered as different places" with *Ask me again*. An answer about a validation that is gone is inert — nothing reads a pair whose subject is not on the board.
+
+**Where an answer lives.** `phoenix_crm_place_match_answers` (migration `20261017160000`): one row per **ordered** pair (`subject_a < subject_b`), keys `place:<uuid>` or `venue:<uuid>` held by a CHECK and deliberately no foreign key, because a validation is either a place or a polyclinic and an answer about one that is later retired or merged away is inert. The unique index on `(subject_a, subject_b)` is **plain, not partial**: PostgREST's `on_conflict=` emits column names with no `WHERE`, and Postgres infers a partial index only when the predicate is repeated. RLS on, service role only. Nothing a rep receives reads it. Applied to staging and production on 2026-10-17.
+
+**Measured on production on 2026-10-17 (read-only, the real loader with the real thresholds).** 159 places validated by two or more reps, 619 validations by 27 reps, 29 questions, a median spread of 21 m between a place's readings, 62 places too close to call and 11 with a far-off reading. The largest group holds 21 validations, which is why a place draws six and says "Show 15 more validations of this place". The read takes about 4–6 seconds, which is why it is lazy.
+
+Pinned by `tests/phoenix-crm-place-match-groups.test.ts` (the pair rule and the name rule, the grouping, the diameter cap, the ranking, the outlier, the questions and answers, and the source the server, route, screen, board and migration are wired from).

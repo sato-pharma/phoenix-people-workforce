@@ -182,7 +182,7 @@ function checkHeDecidesNothing(): void {
     const list = read(path);
     assert.match(
       list,
-      new RegExp(`mode === "team" \\? null : <${control} row=\\{row\\} />`),
+      new RegExp(`mode === "team" \\? null : <${control} row=\\{row\\}[^>]*/>`),
       `${path} renders no ${control} control for a manager`,
     );
   }

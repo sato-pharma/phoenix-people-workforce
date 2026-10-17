@@ -509,7 +509,7 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   // ── The administrator's board ─────────────────────────────────────────────────────────────────
   const board = stripComments(readFileSync("src/components/phoenix-crm/validation-reviews-board.tsx", "utf8"));
   assert.ok(board.includes("<SharedPlaceList"), "the Polyclinics section is on the place-checks page");
-  assert.ok(board.includes("filteredSharedPlaces.length"), "and its heading count is the FILTERED count, like every other section");
+  assert.ok(board.includes("filteredVenueGroups.length"), "and its heading count is the FILTERED count, like every other section");
   const page = stripComments(readFileSync("app/(admin)/admin/field-crm/validation-reviews/page.tsx", "utf8"));
   assert.ok(page.includes("loadSharedPlaceBoard(viewer)"), "loaded beside the other three reads");
   assert.ok(page.includes("sharedPlaces: sharedRead.capped"), "and a capped read says so rather than under-reporting");
@@ -549,7 +549,7 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   assert.equal(sharedPlacePassesOutcome(row, "all"), true);
   assert.equal(sharedPlacePassesOutcome(row, "pending"), false, "an active venue is not waiting");
   assert.equal(sharedPlacePassesOutcome({ ...row, status: "held" }, "pending"), true, "a held one is");
-  assert.equal(sharedPlacePassesOutcome(row, "rejected"), false, "a rejected venue is retired and never read");
+  assert.equal(sharedPlacePassesOutcome(row, "rejected"), false, "a live venue is never rejected — only a retired one is (see the polyclinic groups suite)");
   assert.equal(sharedPlacePassesOutcome(row, "unseen"), true, "nobody has decided this one");
   assert.equal(sharedPlacePassesOutcome({ ...row, decidedAtText: "9 Oct 2026, 14:00" }, "unseen"), false);
 
