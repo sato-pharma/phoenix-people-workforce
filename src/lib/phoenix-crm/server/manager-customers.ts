@@ -91,7 +91,9 @@ function statusLabelOf(status: ManagerCustomerStatus): string {
   return "On the list";
 }
 
-export function managerCustomerOf(raw: unknown): (ManagerCustomerView & { managerHrId: string; approverHrId: string | null; isTest: boolean }) | null {
+export function managerCustomerOf(
+  raw: unknown,
+): (ManagerCustomerView & { managerHrId: string; approverHrId: string | null; isTest: boolean; removalRequestedAt: string | null }) | null {
   const row = record(raw);
   const id = textOrNull(row.id);
   const managerHrId = personKey(textOrNull(row.manager_hr_id));
