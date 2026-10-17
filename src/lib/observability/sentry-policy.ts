@@ -169,12 +169,27 @@ const IDENTIFYING_SEGMENT = /^(?:[A-Za-z]{1,3}-?\d{1,8}|\d+|[A-Za-z0-9_-]{24,})$
 const HR_ID_IN_TEXT = /\b[A-Z]-\d{1,6}\b/g;
 const EMAIL_IN_TEXT = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 
+// A PostgREST call is `/rest/v1/<table>` or `/rest/v1/rpc/<function>`: the segments after `/rest/v1/` are SCHEMA names, never
+// data (the values ride in the query string, which is dropped). They must survive, or every outbound database span reads as
+// the same call. Until 2026-10-17 `v1` and any table name of 24+ characters were masked as `:id`, so 100,120 spans in a day
+// read `/rest/:id/:id`, and Sentry raised an "N+1 API Call" issue on a cron that reads thirty different tables.
+const POSTGREST_PATH = /^(\/rest\/v1\/(?:rpc\/)?[A-Za-z_][A-Za-z0-9_]*)(?:\/.*)?$/;
+// The API version after a Supabase service name (`/auth/v1/…`, `/storage/v1/…`) is the same kind of word: `v1` reads like an HR id.
+const SUPABASE_SERVICE_SEGMENT = /^(?:rest|auth|storage|functions|graphql|realtime)$/;
+const API_VERSION_SEGMENT = /^v\d{1,2}$/;
+
 /** One URL path, query and fragment removed and every identifying segment replaced by `:id`. */
 export function scrubSentryPath(path: string): string {
   const withoutQuery = path.split(/[?#]/)[0] ?? "";
-  return withoutQuery
-    .split("/")
-    .map((segment) => (segment && IDENTIFYING_SEGMENT.test(segment) ? ":id" : segment))
+  const postgrest = POSTGREST_PATH.exec(withoutQuery);
+  if (postgrest) return postgrest[1] as string;
+  const segments = withoutQuery.split("/");
+  return segments
+    .map((segment, index) => {
+      if (!segment) return segment;
+      if (API_VERSION_SEGMENT.test(segment) && SUPABASE_SERVICE_SEGMENT.test(segments[index - 1] ?? "")) return segment;
+      return IDENTIFYING_SEGMENT.test(segment) ? ":id" : segment;
+    })
     .join("/");
 }
 

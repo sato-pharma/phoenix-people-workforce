@@ -101,7 +101,18 @@ export async function runSupabaseGatewayRetryTests() {
         abort.name = "AbortError";
         throw abort;
       }) as typeof globalThis.fetch;
-      const { error } = await freshAdminClient().from("employees").select("hr_id").limit(1);
+      const realLog = console.log;
+      const logged: string[] = [];
+      console.log = (line?: unknown) => {
+        logged.push(String(line));
+      };
+      const { error } = await (async () => {
+        try {
+          return await freshAdminClient().from("employees").select("hr_id").eq("hr_id", "B-10").limit(1);
+        } finally {
+          console.log = realLog;
+        }
+      })();
       assert.equal(
         calls,
         1,
@@ -116,6 +127,16 @@ export async function runSupabaseGatewayRetryTests() {
         "the message must still say \"timed out\" — isSupabaseTimeout matches those words and the "
           + "heartbeat's 503 branch depends on it",
       );
+
+      // The timeout also names itself in the log: which table, never the filter that rode in the query string.
+      const timeoutLines = logged.filter((line) => line.includes('"event":"supabase_timeout"'));
+      assert.equal(timeoutLines.length, 1, "one timed-out call writes exactly one supabase_timeout line");
+      const entry = JSON.parse(timeoutLines[0] as string) as { severity: string; context: { method: string; path: string; uptimeS: number } };
+      assert.equal(entry.severity, "WARNING", "WARNING, so it never writes an error row of its own");
+      assert.equal(entry.context.method, "GET");
+      assert.equal(entry.context.path, "/rest/v1/employees", "the table is named");
+      assert.ok(Number.isFinite(entry.context.uptimeS), "the process age is recorded");
+      assert.ok(!timeoutLines[0]?.includes("B-10"), "a filter value never reaches the log");
     }
 
     // ── 2. HEADLINE: a Cloudflare 521 on a read IS retried by this wrapper ─────────────────────
