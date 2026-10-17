@@ -1196,6 +1196,25 @@ function buildTransferredPharmacyCode(customerCode: string | null, customerId: s
 }
 
 /**
+ * Who a transferred venue belongs to on the Direct Order side. "My venues" lists only the venues a
+ * rep CREATED, so a venue stamped with the admin who clicked Transfer is invisible to the rep who
+ * stood in front of the shop (found 2026-10-17: a nursery transferred by the owner never showed in
+ * the capturing rep's list). The capturer owns it; `validated_by_hr_id` is NOT used because it is
+ * the desk reviewer on a `sfe_validated` row and NULL on every `system_validated` one. The admin
+ * who made the transfer owns it only when the capture record names nobody.
+ */
+export function resolveTransferredVenueOwnerHrId(
+  customer: { created_by_hr_id?: unknown; owner_hr_id?: unknown } | null | undefined,
+  actorHrId: string,
+): string {
+  for (const candidate of [customer?.created_by_hr_id, customer?.owner_hr_id]) {
+    const value = typeof candidate === "string" ? candidate.trim() : "";
+    if (value) return hrIdForStorage(value) ?? value;
+  }
+  return hrIdForStorage(actorHrId) ?? actorHrId;
+}
+
+/**
  * Hand a validated marketing customer to the Direct Order validation desk.
  *
  * What it creates, and why in this shape:
@@ -1350,7 +1369,7 @@ export async function transferValidatedCustomerToDirectOrders(
       active: true,
       area_code: geography.areaCode,
       brick_id: brick.brickId,
-      created_by_hr_id: hrIdForStorage(actorHrId),
+      created_by_hr_id: resolveTransferredVenueOwnerHrId(customer, actorHrId),
       // `distributor_code` and `distributor_customer_code` on THIS table are dead columns: nothing
       // in the app or the database reads either, and both are empty on every row. Writing the pair
       // here would also assert a link that the block below deliberately REFUSES to make when the
