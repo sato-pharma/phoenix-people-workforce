@@ -2187,6 +2187,7 @@ import { runDeltaLandedVerdictTests, runRepoDoctorNewestPrTests } from "./repo-d
 import { runSessionLockStalenessIsAgeTests } from "./session-lock-staleness-is-age.test.ts";
 import { runSupabaseAdminClientEnvCacheTests } from "./supabase-admin-client-env-cache.test.ts";
 import { runSupabaseGatewayRetryTests } from "./supabase-gateway-retry.test.ts";
+import { runEmailPolicySnapshotTests } from "./email-policy-snapshot.test.ts";
 import { runRepoDoctorOrphanedFoldersTests } from "./repo-doctor-orphaned-folders.test.ts";
 import { runRepoDoctorXlsxSnapshotTests } from "./repo-doctor-xlsx-snapshot.test.ts";
 import { runRepoDoctorSessionHoldTests } from "./repo-doctor-session-hold.test.ts";
@@ -10208,6 +10209,10 @@ await runTest(
 await runTest(
   "the Monthly Closing's brick and distributor-product reads price each product ONCE through phx_factory_price with the period they were asked for, keep every join, filter and the confidential exclusion they had, keep a priceless product at zero, carry no comment that would change the live body's digest, and stay executable by the service role alone",
   runClosingFunctionsPriceOnceTests,
+);
+await runTest(
+  "the notifications drain reads the email-policy table ONCE per run instead of once per email — five emails resolved inside one run make one select, outside a run every delivery still reads fresh, a failed read is never remembered, a held copy expires at ten seconds, two runs never see each other's copy, a disabled policy still blocks every email, and the cron wraps its whole run in the snapshot while the admin read and the save stay unwrapped",
+  runEmailPolicySnapshotTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
