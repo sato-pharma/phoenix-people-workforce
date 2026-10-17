@@ -83,6 +83,7 @@ import {
   seniorPlanSeatOf,
   type ManagerPlanDeciderRole,
 } from "@/lib/phoenix-crm/server/manager-plan-reach";
+import { assertSingleVisitPlanFits } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
 import { managerApproversFor, managerWriterScopes } from "@/lib/phoenix-crm/server/manager-plan-writers";
 import {
   EDIT_ASK_COLUMNS,
@@ -825,6 +826,11 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
       isTest,
       own ? "A single visit names customers of your own district only." : "A single visit names customers of the district you chose only.",
     );
+  }
+
+  // A district manager's single visits are two days a week at most — four half-days (owner, 2026-10-17).
+  if (draft.kind === "single_visit" && own) {
+    await assertSingleVisitPlanFits({ managerHrId: viewer.hrId, weekStart: fieldWeekStart(draft.date), date: draft.date, half: draft.half, isTest });
   }
 
   const saved = record(await callPhoenixCrm<Row>("phoenix_crm_save_manager_plan_slot", {
