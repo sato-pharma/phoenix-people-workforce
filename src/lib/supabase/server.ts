@@ -21,6 +21,8 @@
 // its own blast radius, not a line to sneak into a security PR. Do it, then add the import.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getRequiredEnv, getOptionalEnv } from "@/lib/env";
+import { logWarning } from "@/lib/observability/log";
+import { scrubSentryPath } from "@/lib/observability/sentry-policy";
 import { recordTiming } from "@/lib/observability/timings";
 
 const supabaseRequestTimeoutMs = 15000;
@@ -76,6 +78,20 @@ function requestMethod(input: RequestInfo | URL, init: RequestInit | undefined):
   if (typeof fromInit === "string" && fromInit.length > 0) return fromInit.toUpperCase();
   if (typeof Request !== "undefined" && input instanceof Request) return input.method.toUpperCase();
   return "GET";
+}
+
+/**
+ * Which call timed out, for the log only: the method and the SCRUBBED path (`/rest/v1/<table>`), never the query string,
+ * which is where every filter value and id rides. Never throws; an unreadable input is simply described as unknown.
+ */
+function describeSupabaseCall(input: RequestInfo | URL, init: RequestInit | undefined): { method: string; path: string } {
+  const method = requestMethod(input, init);
+  try {
+    const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    return { method, path: scrubSentryPath(new URL(raw).pathname) };
+  } catch {
+    return { method, path: "unknown" };
+  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -143,6 +159,16 @@ async function fetchWithTimeout(
       // 1s/2s/4s of backoff between them. One stalled read therefore cost 4 × 15s + 7s ≈ 67
       // seconds — measured here on 2026-10-10 as four fetch attempts for a single
       // `.select()` — which is the page that "hangs" rather than merely being slow.
+      //
+      // A burst of these (11 timeouts across four routes inside ten seconds, 2026-10-17 12:00 Cairo) could not be attributed
+      // afterwards: the error says only that a request timed out. This line names the table and says how old the process is,
+      // so the next burst shows whether one table is slow or a fresh container is still warming. WARNING severity, so it
+      // never writes an error row of its own.
+      const call = describeSupabaseCall(input, init);
+      logWarning("Supabase request timed out", {
+        labels: { event: "supabase_timeout" },
+        context: { ...call, elapsedMs, uptimeS: Math.round(process.uptime()) },
+      });
       const timedOut = new Error("Supabase request timed out.");
       timedOut.name = "AbortError";
       throw timedOut;

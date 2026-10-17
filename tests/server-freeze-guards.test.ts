@@ -147,6 +147,18 @@ export async function runServerFreezeGuardsTests() {
   assert.match(health, /const jobs = drainJobWindow\(\);/, "the line names the jobs of its minute");
   assert.match(health, /\n\s+role,\n/, "the line names the role, so the web and worker logs read apart");
   assert.match(health, /labels: \{ event: "event_loop_stall" \}/, "a stall is its own searchable event");
+  // The 2026-10-17 freezes recurred every exactly 65:00 with no job running; the gap since the last stall and the process age
+  // are what say whether a timer of this process owns that period.
+  assert.match(
+    health,
+    /event: "event_loop_stall" \},\s*context: \{[^}]*sinceLastStallS,[^}]*uptimeS: Math\.round\(process\.uptime\(\)\)/,
+    "the stall warning carries the seconds since the previous stall and the process uptime",
+  );
+  assert.match(
+    health,
+    /const sinceLastStallS = lastStallAtMs == null \? null : Math\.round\(\(nowMs - lastStallAtMs\) \/ 1000\);/,
+    "the gap is measured from the previous stall, null for the first",
+  );
   assert.match(
     health,
     /sentryServerStatus\(\{ appEnv: process\.env\.APP_ENV, dsn: process\.env\.SENTRY_DSN \}\)\.enabled\) return;[\s\S]*?await import\("@\/lib\/observability\/sentry-server"\)/,

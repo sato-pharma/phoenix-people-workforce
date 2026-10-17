@@ -189,6 +189,20 @@ function beyondErrorsTests() {
   assert.equal(scrubSentryPath("/api/leave/4821/approve"), "/api/leave/:id/approve");
   assert.equal(scrubSentryPath("/x/3f2b8c1e-9d4a-4e6b-8a1f-0c2d3e4f5a6b"), "/x/:id");
   assert.equal(scrubSentryPath("/admin/payroll/summary"), "/admin/payroll/summary");
+  // A database call keeps its table (or function) name: they are schema, not data, and masking them made 100,120 spans a day
+  // read the same `/rest/:id/:id` (an "N+1 API Call" issue on a cron that reads thirty different tables). Values ride in the
+  // query string, which is still dropped, and a path that merely resembles one is scrubbed as before.
+  assert.equal(scrubSentryPath("/rest/v1/employees?hr_id=eq.B-10&select=*"), "/rest/v1/employees");
+  assert.equal(scrubSentryPath("/rest/v1/source_of_sales_import_rows_staging_archive?limit=1"), "/rest/v1/source_of_sales_import_rows_staging_archive");
+  assert.equal(scrubSentryPath("/rest/v1/rpc/phx_monthly_achievement"), "/rest/v1/rpc/phx_monthly_achievement");
+  assert.equal(scrubSentryPath("/rest/v1/employees/B-10"), "/rest/v1/employees", "nothing after the table name is ever kept");
+  assert.equal(scrubSentryPath("/auth/v1/user"), "/auth/v1/user");
+  assert.equal(scrubSentryPath("/storage/v1/object/hiring/B-10"), "/storage/v1/object/hiring/:id");
+  assert.equal(scrubSentryPath("/rest/B-10/employees"), "/rest/:id/employees", "a PostgREST shape needs the real /rest/v1/ prefix");
+  assert.equal(
+    scrubSentryText("GET https://ozucdzovmcqvepbozvqf.supabase.co/rest/v1/employees?hr_id=eq.B-10"),
+    "GET https://ozucdzovmcqvepbozvqf.supabase.co/rest/v1/employees",
+  );
   assert.equal(scrubSentryText("GET /admin/employees/B-10?month=2026-10"), "GET /admin/employees/:id");
   assert.equal(scrubSentryText("failed for omar@satopharma.com on B-204"), "failed for [email] on :id");
   assert.equal(scrubSentryText("fetch https://phoenix-hr.satopharma.com/api/leave/4821"), "fetch https://phoenix-hr.satopharma.com/api/leave/:id");
