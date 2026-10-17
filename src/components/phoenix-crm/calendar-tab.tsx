@@ -3,14 +3,14 @@
 import { useMemo, useState } from "react";
 
 import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
-import { CrmBlock, CrmEmpty, CrmLoadError, CrmLoading, CrmNote, CrmPanel, CrmStat, CrmStatGrid, CrmTable } from "@/components/phoenix-crm/ui";
+import { CrmBlock, CrmEmpty, CrmField, CrmLoadError, CrmLoading, CrmNote, CrmPanel, CrmSelect, CrmStat, CrmStatGrid, CrmTable } from "@/components/phoenix-crm/ui";
 import { awaitingValidationNote } from "@/lib/crm/call-rate";
 import { dayActivityLabel } from "@/lib/phoenix-crm/day-activities";
 import { opensForMissedRecords } from "@/lib/phoenix-crm/missed-records";
 import { PHOENIX_CRM_PORTAL_BASE } from "@/lib/phoenix-crm/modules";
 import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
 import type { DayShape, TeamCalendarDay, TeamCalendarRow } from "@/lib/phoenix-crm/team-calendar";
-import type { VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import { emptyVisitCountSplit, mergeVisitCountSplits, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { cn } from "@/lib/utils";
 
 /**
@@ -188,6 +188,9 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
   //    stops choosing.
   const [picked, setPicked] = useState<string | null>(null);
   const [open, setOpen] = useState<{ seatId: string; day: string } | null>(null);
+  // The rep whose calendar is the only one drawn; empty is everyone. It is a SEAT, because a person
+  // can hold two (a district manager who also covers a rep seat) and each has a calendar of its own.
+  const [repSeat, setRepSeat] = useState("");
   const view = useCrmGet<CalendarView>(
     // `crmUrl` drops a false flag, and the server reads "true" — so test mode is on only when sent.
     crmUrl(CALENDAR_PATH, { includeTest: test, month: picked, section: "calendar" }),
@@ -197,7 +200,21 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
   // this month while the first read is still in flight.
   const month = picked ?? view.data?.month ?? cairoToday.slice(0, 7);
 
-  const rows = useMemo(() => view.data?.rows ?? [], [view.data]);
+  const allRows = useMemo(() => view.data?.rows ?? [], [view.data]);
+  // 🔴 A CHOSEN REP WHO IS NOT IN THIS MONTH'S ROWS FALLS BACK TO EVERYONE rather than an empty
+  //    screen: the rows are re-read on every month step, and a seat that left the scope would
+  //    otherwise leave a filter nobody can see and nothing to draw under it.
+  const filtered = repSeat !== "" && allRows.some((row) => row.seatId === repSeat);
+  const rows = useMemo(
+    () => (filtered ? allRows.filter((row) => row.seatId === repSeat) : allRows),
+    [allRows, filtered, repSeat],
+  );
+  // The month's three figures follow whoever is drawn. Unfiltered they are the server's own,
+  // untouched; filtered they are that rep's row totals, summed by the merge the server uses.
+  const totals = useMemo(() => {
+    if (!filtered || !view.data) return view.data?.totals ?? emptyVisitCountSplit();
+    return rows.reduce((sum, row) => mergeVisitCountSplits(sum, row.totals), emptyVisitCountSplit());
+  }, [filtered, rows, view.data]);
   // Visits saved this month that count in nothing yet, because the customer is not validated.
   // Summed here rather than carried on the view: the grid already holds every day it draws.
   const waitingThisMonth = useMemo(
@@ -213,6 +230,8 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
   // manager down to one rep still reads a team, and a count would rename his screen as people
   // join and leave.
   const own = view.data?.scope === "own";
+  // A picker of one is no picker: a rep reads only himself, and a team of one has nobody to choose.
+  const canChooseRep = !own && allRows.length > 1;
   const chosen = useMemo(() => {
     if (!open) return null;
     const row = rows.find((entry) => entry.seatId === open.seatId);
@@ -269,11 +288,30 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
       {view.data && rows.length > 0 ? (
         <>
           <CrmBlock title="The month">
+            {canChooseRep ? (
+              <CrmField className="mb-3 sm:max-w-md" htmlFor="calendar-rep" label="Rep">
+                <CrmSelect
+                  id="calendar-rep"
+                  onChange={(event) => {
+                    setRepSeat(event.target.value);
+                    setOpen(null);
+                  }}
+                  value={filtered ? repSeat : ""}
+                >
+                  <option value="">{`Everyone (${allRows.length})`}</option>
+                  {allRows.map((row) => (
+                    <option key={row.seatId} value={row.seatId}>
+                      {`${row.person} · ${row.territory}`}
+                    </option>
+                  ))}
+                </CrmSelect>
+              </CrmField>
+            ) : null}
             {/* 🔴 Three figures apart, as everywhere. There is no combined total on this screen. */}
             <CrmStatGrid>
-              <CrmStat label="AM" value={view.data.totals.am} />
-              <CrmStat label="PM" value={view.data.totals.pm} />
-              <CrmStat label="Pharmacies" note="Counted apart, never inside AM or PM" value={view.data.totals.pharmacies} />
+              <CrmStat label="AM" value={totals.am} />
+              <CrmStat label="PM" value={totals.pm} />
+              <CrmStat label="Pharmacies" note="Counted apart, never inside AM or PM" value={totals.pharmacies} />
               <CrmStat label="People" note={`${days.length} days each`} value={rows.length} />
             </CrmStatGrid>
             {/* A cell that looks empty because the customer is not validated yet, not because the
