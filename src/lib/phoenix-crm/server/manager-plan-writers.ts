@@ -19,7 +19,9 @@
 
 import { unstable_cache } from "next/cache";
 
+import type { PhoenixRole } from "@/lib/auth/permissions";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
+import { resolveHrIdsForRole } from "@/lib/notifications/role-recipients";
 import { logWarning } from "@/lib/observability/log";
 import { seatIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
 import {
@@ -45,13 +47,16 @@ export type ProductManagerPlanner = { hrId: string; managerHrId: string | null }
 type Row = Record<string, unknown>;
 
 async function readProductManagerRoster(): Promise<ProductManagerPlanner[]> {
-  const { data: logins, error: loginError } = await getSupabaseAdmin()
-    .from("app_auth_users")
-    .select("hr_id, role")
-    .in("role", [...PRODUCT_MANAGER_PLAN_ROLES])
-    .eq("is_active", true);
-  if (loginError) throw loginError;
-  const hrIds = [...new Set(((logins ?? []) as Row[]).map((row) => personKey(textOrNull(row.hr_id))).filter((id): id is string => id !== null))];
+  // The role holders come through the shared resolver, as the SFE Managers do (`notifications.ts`): Phoenix
+  // CRM's services read no login table of their own. It swallows a failed read into a warning, so any
+  // warning is thrown here — the cache never keeps a degraded roster for five minutes.
+  const holders: string[] = [];
+  for (const role of PRODUCT_MANAGER_PLAN_ROLES) {
+    const { hrIds, warnings } = await resolveHrIdsForRole(role as PhoenixRole, "Phoenix CRM — product managers who plan a week");
+    if (warnings.length > 0) throw new Error(warnings.join("; "));
+    holders.push(...hrIds);
+  }
+  const hrIds = [...new Set(holders.map((hrId) => personKey(hrId)).filter((id): id is string => id !== null))];
   if (hrIds.length === 0) return [];
   const { data: people, error: peopleError } = await getSupabaseAdmin()
     .from("employees")
