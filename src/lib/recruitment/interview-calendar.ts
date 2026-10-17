@@ -1054,11 +1054,12 @@ export async function listInterviewCalendarDay(
 /**
  * How far back the calendar asks about a finished interview nobody has answered for.
  *
- * Sixty days rather than for ever: the point is to catch the round being worked on now, and a list
- * that reaches back to the first interview ever booked is a list nobody reads. An older one is not
- * lost — it is still on its own week, with its own flag on the chip.
+ * Fourteen days (owner, 2026-10-17: "age old unanswered interviews off the panel after 14 days"): the
+ * point is to catch the round being worked on now, and a list that reaches back further is a list
+ * nobody reads. An older one is not lost — it keeps its amber flag on its own week, and the automatic
+ * settling (interview-outcome-settle.ts) still answers it, across all time, if a decision arrives.
  */
-export const OUTCOME_PROMPT_LOOKBACK_DAYS = 60;
+export const OUTCOME_PROMPT_LOOKBACK_DAYS = 14;
 /** At most this many are put in front of someone at once; the rest wait their turn. */
 export const OUTCOME_PROMPT_LIMIT = 25;
 

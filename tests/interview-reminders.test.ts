@@ -110,7 +110,7 @@ export async function runInterviewReminderTests() {
   assert.deepEqual(
     kinds(planInterviewReminders([interview("q", "2026-08-01", 11)], at("2026-09-22", 9, 30))),
     [],
-    "past 30 days a truly-abandoned interview stops nagging",
+    "past 14 days a truly-abandoned interview stops nagging",
   );
   assert.deepEqual(
     kinds(planInterviewReminders([interview("r", "2026-09-21", 11, { interviewerHrId: "R-01", interviewerJobTitle: "Medical Representative" })], at("2026-09-22", 9, 30))),
@@ -139,7 +139,7 @@ export async function runInterviewReminderTests() {
   assert.equal(sent.length, 1);
 
   // SPEED (16 Oct 2026: the route ran 30 s against the scheduler's 30 s cut). The daily "record what
-  // happened" nag is re-planned every ten minutes for every unrecorded interview of the last 30 days, and
+  // happened" nag is re-planned every ten minutes for every unrecorded interview of the last 14 days, and
   // all but the first run's were delivered long ago. What is already delivered is not sent again, and the
   // rest goes out a few at a time, not one after another — with every reminder, recipient and key as before.
   const backlog = Array.from({ length: 12 }, (_, index) => interview(`n${index}`, "2026-09-21", 11, { interviewerHrId: `D-${20 + index}` }));
