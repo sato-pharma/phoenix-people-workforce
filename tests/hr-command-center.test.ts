@@ -262,6 +262,8 @@ const FUNCTIONS_WITH_NO_TILES = new Set([
   "hiring_paperwork",
   "workforce_context",
   "recognition",
+  // HR Reminders is the team's own notes page, not a queue this dashboard counts.
+  "team_reminders",
 ]);
 
 export async function runHrCommandCenterTests() {

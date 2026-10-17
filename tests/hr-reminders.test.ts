@@ -422,8 +422,10 @@ export function runHrRemindersTests() {
     for (const [route, method, action, csrf] of expectations) {
       const entry = findAccessRegistryEntry(route, method);
       assert.ok(entry, `${method} ${route} is declared in the access registry`);
-      assert.equal(entry?.permission?.resource, "hr_reminders", `${method} ${route} is gated on hr_reminders`);
-      assert.equal(entry?.permission?.action, action, `${method} ${route} needs ${action}`);
+      const gate = entry?.permission;
+      const requirement = (Array.isArray(gate) ? gate[0] : gate) as { resource?: string; action?: string } | null | undefined;
+      assert.equal(requirement?.resource, "hr_reminders", `${method} ${route} is gated on hr_reminders`);
+      assert.equal(requirement?.action, action, `${method} ${route} needs ${action}`);
       assert.equal(entry?.csrf.required, csrf, `${method} ${route} csrf.required is ${csrf}`);
       assert.equal(entry?.authMode, "session", `${method} ${route} is a signed-in route`);
     }

@@ -83,8 +83,8 @@ export async function runHrResourcingSeatTests() {
   // ── 1. The composition and what it withholds ──────────────────────────────────────────────
   assert.deepEqual(
     [...HR_ROLE_BUNDLES["HR Resourcing"]],
-    ["recruiting", "cv_lookup", "employee_requests", "workforce_context", "recognition"],
-    "the Talent Acquisition seat is the recruiting pipeline, CV lookup, the two request desks and read-only workforce context",
+    ["recruiting", "cv_lookup", "employee_requests", "workforce_context", "recognition", "team_reminders"],
+    "the Talent Acquisition seat is the recruiting pipeline, CV lookup, the two request desks, read-only workforce context, and the HR team's shared reminders (owner, 2026-10-17)",
   );
   assert.equal(HR_SEAT_JOB_TITLES["HR Resourcing"], "Talent Acquisition");
   assert.equal(displayTitleForRole("HR Resourcing"), "Talent Acquisition", "the key never reaches a person");
