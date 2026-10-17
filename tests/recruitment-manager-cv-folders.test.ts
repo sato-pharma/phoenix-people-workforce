@@ -242,7 +242,8 @@ export function runRecruitmentManagerCvFoldersTests(): void {
     // Taking a CV back.
     const recall = read("../src/lib/recruitment/manager-recall.ts");
     assert.ok(recall.includes("deleteManagerSend(candidate.id, input.managerHrId)"), "the recall deletes the send");
-    assert.ok(recall.includes('"shortlisted"'), "and returns a CV nobody holds to the shortlist");
+    assert.ok(recall.includes("returnReleasedCvToShortlist("), "and returns a CV nobody holds to the shortlist");
+    assert.ok(read("../src/lib/recruitment/manager-recall-status.ts").includes('RECALL_RETURN_STATUS = "shortlisted"'), "…which is the shortlist");
     assert.ok(/remaining\.length === 0 && normalizeCandidateStatus\(candidate\.status\) === "sent_to_manager"/.test(recall), "only when nobody else holds it");
     const recallRoute = read("../app/api/recruitment/candidates/[id]/recall-from-manager/route.ts");
     assert.ok(recallRoute.includes('requireRecruitmentAccess(request, "recruitment", "update")'), "only the recruiting seats take a CV back");
