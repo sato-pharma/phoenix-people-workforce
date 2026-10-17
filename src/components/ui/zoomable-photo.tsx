@@ -221,14 +221,15 @@ function PhotoLightbox({
       ref={dialogRef}
       role="dialog"
     >
-      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-white/10 px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-5 sm:pb-3 sm:pt-3">
-        {/* Never an ellipsis, and never clipped: beside a 200px toolbar a phone leaves the caption
-            about 120px, so "Customer · Place · date" WRAPS (where the two rules collide, wrapping
-            wins). The toolbar keeps its own width. */}
-        <p className="min-w-0 flex-1 break-words py-2 text-phx-sm font-black leading-snug text-white/90 sm:text-sm" dir="auto">
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-x-3 border-b border-white/10 px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-5 sm:pb-3 sm:pt-3">
+        {/* Never an ellipsis, and never clipped. With the two turn buttons the toolbar is about 290px,
+            which on a phone left the caption a sliver; so the caption keeps at least 10rem and, when
+            the row cannot hold both, the toolbar drops to its own line on the right (where the two
+            rules collide, wrapping wins). The toolbar keeps its own width. */}
+        <p className="min-w-0 flex-1 basis-40 break-words py-2 text-phx-sm font-black leading-snug text-white/90 sm:text-sm" dir="auto">
           {caption ?? alt}
         </p>
-        <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
           {onTurn ? (
             <>
               <button
@@ -422,11 +423,13 @@ export function ZoomablePhoto({
         // The frame fills the positioned box the caller drew, and is what a turned photo is measured against.
         <span className="absolute inset-0 block overflow-hidden" style={TURNABLE_FRAME_STYLE}>
           {image}
-          <span className="absolute right-1 top-1 flex gap-0.5">
+          {/* On a frame narrower than 8rem (a small thumbnail) the two buttons would cover the photo
+              they turn, so they are not drawn there: tapping opens the zoom view, which turns it. */}
+          <span className="absolute right-1 top-1 hidden gap-0.5 @min-[8rem]:flex">
             {(["left", "right"] as const).map((direction) => (
               <button
                 aria-label={direction === "left" ? "Turn the photo left" : "Turn the photo right"}
-                className="inline-flex h-7 w-7 items-center justify-center bg-slate-900/70 text-white transition hover:bg-slate-900"
+                className="inline-flex h-8 w-8 items-center justify-center bg-slate-900/70 text-white transition hover:bg-slate-900"
                 key={direction}
                 onClick={(event) => {
                   // The photo sits in a card and the button sits on the photo: turning opens nothing.

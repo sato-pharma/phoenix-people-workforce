@@ -436,7 +436,7 @@ export function ValidatedPlaceList({
                 <tr key={row.placeId} className="even:bg-slate-50/60">
                   <td className={crmTdClassName}>
                     <div className="min-w-0 space-y-2">
-                      <CrmPhotoThumb alt={photoAlt(row)} className="h-32 w-32" lazy path={row.photoPath} rotatable />
+                      <CrmPhotoThumb alt={photoAlt(row)} className="h-32 w-32 max-w-full" lazy path={row.photoPath} rotatable />
                       {bulk ? <BulkPick picks={picks} row={row} /> : null}
                     </div>
                   </td>

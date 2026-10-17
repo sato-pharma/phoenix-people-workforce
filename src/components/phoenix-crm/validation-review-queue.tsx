@@ -506,7 +506,7 @@ export function ValidationReviewQueue({
           <div key={row.reviewId} className="space-y-3 px-4 py-4">
             {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
             <div className="flex min-w-0 gap-3">
-              <CrmPhotoThumb alt={photoAlt(row)} className="h-32 w-32" path={row.photoPath} rotatable />
+              <CrmPhotoThumb alt={photoAlt(row)} className="h-32 w-32" lazy path={row.photoPath} rotatable />
               <Who row={row} />
             </div>
             <Evidence row={row} />
@@ -528,7 +528,7 @@ export function ValidationReviewQueue({
             <tr key={row.reviewId} className="even:bg-slate-50/60">
               <td className={crmTdClassName}>
                 <div className="min-w-0 space-y-2">
-                  <CrmPhotoThumb alt={photoAlt(row)} className="h-32 w-32" path={row.photoPath} rotatable />
+                  <CrmPhotoThumb alt={photoAlt(row)} className="h-32 w-32 max-w-full" lazy path={row.photoPath} rotatable />
                   {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
                 </div>
               </td>

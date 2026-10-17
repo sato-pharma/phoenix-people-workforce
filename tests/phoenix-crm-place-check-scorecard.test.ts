@@ -164,8 +164,23 @@ function checkScorecard(): void {
 function checkScreen(): void {
   const screen = read("src/components/phoenix-crm/place-check-scorecard.tsx");
   assert.ok(screen.indexOf("<CrmCardsOnPhone") > -1 && screen.indexOf("<CrmCardsOnPhone") < screen.indexOf("<CrmTable"), "phone cards first, then the table");
-  assert.ok(screen.includes('["Rep", ...columns.map((column) => column.label)].map('), "the header row is mapped from the same columns the rows draw");
-  assert.ok(screen.includes('const widths = ["19%", ...columns.map(() => "9%")];'), "one width per column, and they fit: 19 + 9 x 9 = 100");
+  assert.ok(screen.includes('["Rep", ...TABLE_GROUPS.map((group) => group.label)].map('), "the header row is mapped from the same groups the rows draw");
+  assert.ok(screen.includes('const widths = ["18%", ...TABLE_GROUPS.map((group) => group.width)];'), "one width per column");
+  // 🔴 Nine counts at 9% split CONFIRMED and TIMETABLE mid-word at laptop widths, so the table MERGES —
+  // and a merge must drop nothing: every count the cards show sits in exactly one desktop group.
+  const groupBlock = screen.slice(screen.indexOf("const TABLE_GROUPS"), screen.indexOf("];", screen.indexOf("const TABLE_GROUPS")));
+  const groupWidths = [...groupBlock.matchAll(/width: "(\d+)%"/g)].map((match) => Number(match[1]));
+  assert.equal(18 + groupWidths.reduce((sum, width) => sum + width, 0), 100, "the rep column and the groups fill the table exactly");
+  assert.ok(groupWidths.length <= 5, "at most six columns, so no header word has to split");
+  const grouped = [...groupBlock.matchAll(/keys: \[([^\]]*)\]/g)].flatMap((match) => [...match[1].matchAll(/"(\w+)"/g)].map((key) => key[1]));
+  const cardKeys = [...screen.slice(screen.indexOf("function columnsFor"), screen.indexOf("function valueOf")).matchAll(/key: "(\w+)"/g)]
+    .map((match) => match[1])
+    .filter((key) => key !== "places");
+  assert.deepEqual([...grouped].sort(), [...cardKeys].sort(), "every count but the place count (under the name) is in exactly one group");
+  assert.ok(screen.includes("placesText(score.places)") && screen.includes("placesText(total.places)"), "the place count sits under each name");
+  // The phone draws the table's "Every rep" line too: the same rows, never fewer facts.
+  const cards = screen.slice(screen.indexOf("<CrmCardsOnPhone>"), screen.indexOf("</CrmCardsOnPhone>"));
+  assert.ok(cards.includes("<ScoreFacts columns={columns} score={total} />"), "the phone cards end on the Every rep total");
   assert.ok(screen.includes('mode === "team" ? "Being checked" : "Waiting for you"'), "🔴 a manager's line never says a decision waits on him");
   assert.ok(screen.includes("const FIRST_REPS = 10;") && screen.includes("Show every rep"), "ten reps, then the rest on request");
   assert.doesNotMatch(screen, /\brounded-(?!none\b)|\boverflow-x-auto\b|\btruncate\b|…/, "square, no sideways scroll, no ellipsis");

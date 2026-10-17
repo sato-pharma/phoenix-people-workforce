@@ -141,7 +141,7 @@ function SignPhoto({ headed, row }: { headed: boolean; row: SharedPlaceBoardRow 
   return (
     <div className="min-w-0 space-y-1.5">
       {headed ? <PhotoHeading>The sign on the building</PhotoHeading> : null}
-      <CrmPhotoThumb alt={`Sign photo for ${row.name}`} className="h-64 w-full" path={row.photoPath} rotatable />
+      <CrmPhotoThumb alt={`Sign photo for ${row.name}`} className="h-64 w-full" lazy path={row.photoPath} rotatable />
       {row.signboard ? (
         <CrmPill tone={row.signboard.verdict === "match" ? "good" : row.signboard.verdict === "unjudged" ? "neutral" : "warn"}>
           {signboardText(row.signboard)}
@@ -172,7 +172,7 @@ function TimetablePhoto({ customers, headed, row }: { customers: VenueGroup["cus
       {headed ? <PhotoHeading>The timetable inside</PhotoHeading> : null}
       {row.schedulePhotoPath ? (
         <>
-          <CrmPhotoThumb alt={`Timetable photo for ${row.name}`} className="h-64 w-full" path={row.schedulePhotoPath} rotatable />
+          <CrmPhotoThumb alt={`Timetable photo for ${row.name}`} className="h-64 w-full" lazy path={row.schedulePhotoPath} rotatable />
           {row.schedulePhotoCapturedAtText ? <p className="break-words text-xs text-slate-500">Photographed {row.schedulePhotoCapturedAtText}</p> : null}
           {read ? (
             <p className="break-words text-xs text-slate-700" dir="auto">

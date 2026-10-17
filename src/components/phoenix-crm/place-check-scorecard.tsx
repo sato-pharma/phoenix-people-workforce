@@ -42,6 +42,22 @@ function columnsFor(mode: PlaceCheckNotesMode): Column[] {
   ];
 }
 
+/**
+ * The desktop table's columns. Nine counts at 9% each split CONFIRMED and TIMETABLE mid-word at laptop
+ * widths (the shell sets every header in 0.78rem capitals), so the table MERGES: the three photo problems
+ * share one cell, the two not-yet-settled counts another, and the place count sits under the rep's name.
+ * Every count is still on the line — merged, never dropped — and the phone cards keep all nine apart.
+ */
+type Group = { label: string; width: string; keys: ReadonlyArray<Column["key"]> };
+
+const TABLE_GROUPS: ReadonlyArray<Group> = [
+  { label: "Confirmed", width: "15%", keys: ["confirmed"] },
+  { label: "Photo problems", width: "20%", keys: ["notReadable", "wrongPhoto", "anotherName"] },
+  { label: "Still open", width: "17%", keys: ["notRead", "waiting"] },
+  { label: "Sent back", width: "13%", keys: ["sentBack"] },
+  { label: "Timetable names them", width: "17%", keys: ["timetable"] },
+];
+
 function valueOf(score: RepScore, column: Column): string {
   if (column.key === "timetable") return score.seated === 0 ? "None seated" : `${score.seatedOnTimetable} of ${score.seated}`;
   return String(score[column.key]);
@@ -68,6 +84,44 @@ function RepName({ onPick, picked, score }: { onPick: (rep: string) => void; pic
   );
 }
 
+function placesText(places: number): string {
+  return `${places} ${places === 1 ? "place" : "places"}`;
+}
+
+/** A phone card's counts: all nine, apart. */
+function ScoreFacts({ columns, score }: { columns: Column[]; score: RepScore }) {
+  return (
+    <dl className="grid min-w-0 grid-cols-2 gap-x-3 gap-y-1">
+      {columns.map((column) => (
+        <div key={column.key} className="flex min-w-0 items-baseline justify-between gap-2 border-b border-slate-100 py-0.5">
+          <dt className="min-w-0 break-words text-xs text-slate-500">{column.label}</dt>
+          <dd className={cn("shrink-0 text-sm font-black tabular-nums", isProblem(score, column) ? "text-rose-700" : "text-slate-900")}>
+            {valueOf(score, column)}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** One desktop cell: a single count as it is, a merged group as one line per count, each named. */
+function GroupCell({ columns, group, score, total = false }: { columns: Column[]; group: Group; score: RepScore; total?: boolean }) {
+  const members = columns.filter((column) => group.keys.includes(column.key));
+  const tone = (column: Column) => (total ? "font-black text-slate-900" : isProblem(score, column) ? "font-black text-rose-700" : null);
+  const [only] = members;
+  return (
+    <td className={cn(crmTdClassName, "tabular-nums", members.length === 1 && only ? tone(only) : null)}>
+      {members.length === 1 && only
+        ? valueOf(score, only)
+        : members.map((column) => (
+          <span key={column.key} className={cn("block", tone(column))}>
+            {valueOf(score, column)} {column.label.toLowerCase()}
+          </span>
+        ))}
+    </td>
+  );
+}
+
 export function PlaceCheckScorecard({
   mode,
   onPickRep,
@@ -85,7 +139,7 @@ export function PlaceCheckScorecard({
   const [showAll, setShowAll] = useState(false);
   const columns = columnsFor(mode);
   const shown = showAll ? reps : reps.slice(0, FIRST_REPS);
-  const widths = ["19%", ...columns.map(() => "9%")];
+  const widths = ["18%", ...TABLE_GROUPS.map((group) => group.width)];
 
   if (reps.length === 0) return null;
 
@@ -104,24 +158,20 @@ export function PlaceCheckScorecard({
         {shown.map((score) => (
           <div key={score.repName} className="space-y-2 px-4 py-3">
             <RepName onPick={onPickRep} picked={pickedRep === score.repName} score={score} />
-            <dl className="grid min-w-0 grid-cols-2 gap-x-3 gap-y-1">
-              {columns.map((column) => (
-                <div key={column.key} className="flex min-w-0 items-baseline justify-between gap-2 border-b border-slate-100 py-0.5">
-                  <dt className="min-w-0 break-words text-xs text-slate-500">{column.label}</dt>
-                  <dd className={cn("shrink-0 text-sm font-black tabular-nums", isProblem(score, column) ? "text-rose-700" : "text-slate-900")}>
-                    {valueOf(score, column)}
-                  </dd>
-                </div>
-              ))}
-            </dl>
+            <ScoreFacts columns={columns} score={score} />
           </div>
         ))}
+        {/* The table's "Every rep" line, on a phone too: the same rows, never fewer facts. */}
+        <div className="space-y-2 bg-slate-50 px-4 py-3">
+          <p className="break-words text-sm font-black text-slate-900">{total.repName}</p>
+          <ScoreFacts columns={columns} score={total} />
+        </div>
       </CrmCardsOnPhone>
 
       <CrmTable columns={widths}>
         <thead>
           <tr>
-            {["Rep", ...columns.map((column) => column.label)].map((label) => (
+            {["Rep", ...TABLE_GROUPS.map((group) => group.label)].map((label) => (
               <th key={label} className={cn(crmThClassName, "break-words")}>
                 {label}
               </th>
@@ -133,20 +183,20 @@ export function PlaceCheckScorecard({
             <tr key={score.repName} className={pickedRep === score.repName ? "bg-orange-50/60" : undefined}>
               <td className={crmTdClassName}>
                 <RepName onPick={onPickRep} picked={pickedRep === score.repName} score={score} />
+                <span className="block text-xs font-semibold text-slate-500">{placesText(score.places)}</span>
               </td>
-              {columns.map((column) => (
-                <td key={column.key} className={cn(crmTdClassName, "tabular-nums", isProblem(score, column) ? "font-black text-rose-700" : null)}>
-                  {valueOf(score, column)}
-                </td>
+              {TABLE_GROUPS.map((group) => (
+                <GroupCell key={group.label} columns={columns} group={group} score={score} />
               ))}
             </tr>
           ))}
           <tr className="bg-slate-50">
-            <td className={cn(crmTdClassName, "font-black text-slate-900")}>{total.repName}</td>
-            {columns.map((column) => (
-              <td key={column.key} className={cn(crmTdClassName, "font-black tabular-nums text-slate-900")}>
-                {valueOf(total, column)}
-              </td>
+            <td className={cn(crmTdClassName, "font-black text-slate-900")}>
+              {total.repName}
+              <span className="block text-xs font-semibold text-slate-500">{placesText(total.places)}</span>
+            </td>
+            {TABLE_GROUPS.map((group) => (
+              <GroupCell key={group.label} columns={columns} group={group} score={total} total />
             ))}
           </tr>
         </tbody>
