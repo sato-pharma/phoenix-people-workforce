@@ -22,21 +22,27 @@ export async function GET(request: Request) {
     await assertPermission(access, "phoenix_crm", "read");
     const viewer = await resolvePhoenixCrmViewer(access);
     const search = searchOf(request);
-    const board = await loadManagerPlanBoard(viewer, { week: search.get("week"), manager: search.get("manager"), test: search.get("test") });
+    const board = await loadManagerPlanBoard(viewer, {
+      week: search.get("week"),
+      manager: search.get("manager"),
+      test: search.get("test"),
+      scope: search.get("scope"),
+    });
     return NextResponse.json({ board, success: true });
   } catch (error) {
     return phoenixCrmFailure(error, "Could not load the weekly plan.");
   }
 }
 
-// POST = one half-day set, changed or cleared. `create`, narrowed in the service to the district manager's
-// OWN week (`assertManagerPlanWriter`); the Super Admin plans nobody's week.
+// POST = one half-day set, changed or cleared. `read`, narrowed in the service to the manager's OWN week
+// (`assertManagerPlanWriter`, which also asks a district manager for `create`): a regional, national or
+// product manager plans his week with `read` alone (owner, 2026-10-17). The Super Admin plans nobody's week.
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "phoenix_crm", "create");
+    await assertPermission(access, "phoenix_crm", "read");
     const viewer = await resolvePhoenixCrmViewer(access);
     const body = (await request.json()) as unknown;
     const board = await saveManagerPlanSlot(viewer, body);

@@ -843,7 +843,9 @@ export function PhoenixCrmApp({
   function tabContent(key: TabKey): ReactNode {
     const { cairoToday } = overview;
     // A district manager whose team is live plans HIS week here (owner, 2026-10-16) and logs his own
-    // single visits on Visits. Never a rep's screen: the server sets `planner` for a DM seat holder only.
+    // single visits on Visits; since 2026-10-17 so do the regional, national and product managers (a
+    // product manager, with no territory, gets the single visits as the whole tab). Never a rep's screen:
+    // the server sets `planner` for one of those four writers only.
     const managerPlanner = overview.managerPlans?.planner === true;
     if (key === "plan" && managerPlanner && (!viewer.isRep || planScope === "district")) {
       return (

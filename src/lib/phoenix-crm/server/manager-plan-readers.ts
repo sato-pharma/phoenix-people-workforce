@@ -1,5 +1,10 @@
 /**
- * Phoenix CRM — the district manager's weekly plan, as the screens OUTSIDE the module read it.
+ * Phoenix CRM — the manager's weekly plan, as the screens OUTSIDE the module read it.
+ *
+ * Every reader here is keyed by the MANAGER'S HR id, never by a district seat, so a regional, national or
+ * product manager's week (owner, 2026-10-17) reaches the same screens as a district manager's with no
+ * second door. A product manager files his legacy plan as well (the no-weekly-plan deduction reads it),
+ * so his calendars show both, side by side — each is a plan he sent.
  *
  * Owner, 2026-10-16: the district manager's Phoenix CRM week REPLACES his legacy Weekly/Monthly plan. Six
  * screens showed that legacy plan — the Planning Calendar, his landing page's plan card, the Action Center,
@@ -17,8 +22,14 @@
  */
 
 import { addDaysIso } from "@/lib/crm/dates";
-import { dayActivityLabel, isDayActivity } from "@/lib/phoenix-crm/day-activities";
-import { isManagerPlanSent, type ManagerHalf, type ManagerPlanStatus, type ManagerSlotKind } from "@/lib/phoenix-crm/manager-plan-rules";
+import {
+  isManagerPlanSent,
+  managerAdminActivityLabel,
+  type ManagerHalf,
+  type ManagerPlannerKind,
+  type ManagerPlanStatus,
+  type ManagerSlotKind,
+} from "@/lib/phoenix-crm/manager-plan-rules";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadManagerSlotCustomers, loadManagerSlotRows, MANAGER_PLAN_COLUMNS, managerPlanRowOf, type ManagerPlanRow } from "@/lib/phoenix-crm/server/manager-plan-rows";
 import { personKey } from "@/lib/phoenix-crm/scope";
@@ -45,10 +56,13 @@ export function managerPlanTitle(weekStart: string): string {
  * visit and his manager") — the half-day's own title names the rep, and the booking of that rep is read
  * from `repHrId`, never from this word.
  */
-export type LegacyPlanActivityType = "Field" | "Travel" | "Meeting" | "Training" | "Admin" | "Event";
+export type LegacyPlanActivityType = "Field" | "Office" | "Travel" | "Meeting" | "Training" | "Admin" | "Event";
 
 export function managerHalfLegacyType(kind: ManagerSlotKind, activityType: string | null): LegacyPlanActivityType {
   if (kind === "with_rep" || kind === "single_visit") return "Field";
+  // A regional, national or product manager's Office half-day reads as the legacy plan's own "Office"
+  // (owner, 2026-10-17), the word the attendance policy "office days only" keys on.
+  if (activityType === "office") return "Office";
   if (activityType === "travel") return "Travel";
   if (activityType === "meeting") return "Meeting";
   if (activityType === "training") return "Training";
@@ -65,12 +79,14 @@ export function managerPlanLegacyStatus(status: ManagerPlanStatus): "draft" | "s
   return "draft";
 }
 
-/** One half-day of a district manager's week, as every outside screen reads it. */
+/** One half-day of a manager's week, as every outside screen reads it. */
 export type ManagerPlanHalfDay = {
   slotId: string;
   planId: string;
   managerHrId: string;
-  managerSeatId: string;
+  /** Null only for a product manager, who holds no seat. */
+  managerSeatId: string | null;
+  plannerKind: ManagerPlannerKind;
   weekStart: string;
   status: ManagerPlanStatus;
   date: string;
@@ -154,6 +170,7 @@ export async function loadManagerPlanHalfDays(input: {
       planId: plan.planId,
       managerHrId: plan.managerHrId,
       managerSeatId: plan.managerSeatId,
+      plannerKind: plan.plannerKind,
       weekStart: plan.weekStart,
       status: plan.status,
       date: slot.date,
@@ -162,7 +179,7 @@ export async function loadManagerPlanHalfDays(input: {
       repSeatId: slot.repSeatId,
       repHrId: slot.repHrId,
       activityType: slot.activityType,
-      activityLabel: slot.kind === "admin" ? (isDayActivity(slot.activityType) ? dayActivityLabel(slot.activityType) : "Admin") : null,
+      activityLabel: slot.kind === "admin" ? (managerAdminActivityLabel(slot.activityType) ?? "Admin") : null,
       areaName: slot.areaName,
       note: slot.note,
       customerCount: countBySlot.get(slot.slotId) ?? 0,

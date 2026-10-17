@@ -1,31 +1,41 @@
 "use client";
 
 /**
- * Phoenix CRM — the district manager's weekly plan (owner, 2026-10-16: "exactly like the numbered form
- * that the medical reps use", inverted — his reps appear with the bricks they visit that day).
+ * Phoenix CRM — a manager's weekly plan (owner, 2026-10-16: "exactly like the numbered form that the
+ * medical reps use", inverted — his reps appear with the bricks they visit that day). Planned by a
+ * district manager, and since 2026-10-17 by the regional manager, the national sales managers and the
+ * product managers too ("the only one step extra is that he choose before his scope").
  *
  * The same step form as the rep's plan (step-form.tsx): Week → Day → What I do → Send. Each half-day is
  * exactly ONE of three things, AM and PM each its own choice:
- *   - WITH A REP: his reps, each with where he is going that half-day; he picks one, then ticks some of
- *     that rep's customers or presses Mark all. A rep's draft customers show, marked Not sent; a rep with
- *     no plan at all is skipped.
- *   - ADMIN: one of the seven day activities, and a note.
- *   - SINGLE VISIT: an area of his district, then customers from that area's rep lists, from Manager's own
+ *   - WITH A REP: the reps, each with where the rep is going that half-day; he picks one, then ticks some
+ *     of that rep's customers or presses Mark all. A rep's draft customers show, marked Not sent; a rep
+ *     with no plan at all is skipped.
+ *   - ADMIN: one of the seven day activities, and a note — plus Office for everyone but a district manager.
+ *   - SINGLE VISIT: an area of the district, then customers from that area's rep lists, from Manager's own
  *     list, or a new one he types (an existing name is offered first).
+ *
+ * 🔴 THE EXTRA STEP — a regional, national or product manager first chooses the DISTRICT MANAGER, and the
+ * reps and areas shown are that district manager's. Once per day by default; "Another district manager for
+ * this half" picks one for a single half-day (owner, 2026-10-17: "once per day by default but have the
+ * option to half-day when choosing area"). A product manager chooses the line first — Pedia or Anti
+ * Infective — and may skip the district manager altogether: "Any rep in <line>". A district manager plans
+ * his own district and sees no picker.
  *
  * 🔴 TICKING A REP IS NOT A DOUBLE VISIT. The double visit is counted only when the REP logs it and names
  * him; this plan is what he intends, read against what happened in the "Manager plans" report.
  *
- * 🔴 THE REP NEVER SEES ANY OF IT — no screen, no notice. It is sent to his RSM or NSM and decided in the
- * Approvals Hub (Approve, Return the week, Return one day); after a regional manager approves, the week
- * always goes on to the national sales manager above him.
+ * 🔴 THE REP NEVER SEES ANY OF IT — no screen, no notice. A district manager's week is sent to his RSM or
+ * NSM, and after a regional manager approves it always goes on to the NSM above him; everyone else's goes
+ * to the same people who approve their legacy plan today, and HR then acknowledges it by itself. All of it
+ * is decided in the Approvals Hub (Approve, Return the week, Return one day).
  *
  * One half-day saves itself about 1.5 seconds after his last change, like the rep's board — the same
  * version check, so a change made on another screen first is refused rather than written over, and his
  * edit stays on the page until he chooses again. A half-day still missing something says what and waits.
  */
 
-import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState, type ReactNode } from "react";
 
 import { crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { countText, plural } from "@/components/phoenix-crm/format";
@@ -62,6 +72,7 @@ import type {
   CustomerMatch,
   ManagerBoardDay,
   ManagerBoardRepHalf,
+  ManagerBoardScope,
   ManagerBoardSlot,
   ManagerCustomerView,
   ManagerPlanBoardView,
@@ -86,12 +97,22 @@ type CustomerRef = { key: string; customerId: string | null; managerCustomerId: 
 
 type HalfDraft = {
   kind: ManagerSlotKind | null;
+  /**
+   * The district manager the half-day is planned with — "dm:<seat>", or a product manager's whole line,
+   * "line:<code>". A regional, national or product manager's With a rep and Single visit only; null for a
+   * district manager's own district and for Admin.
+   */
+  scope: string | null;
   repSeatId: string | null;
   activityType: string | null;
   areaSeatId: string | null;
   note: string;
   customers: CustomerRef[];
 };
+
+function emptyDraft(): HalfDraft {
+  return { kind: null, scope: null, repSeatId: null, activityType: null, areaSeatId: null, note: "", customers: [] };
+}
 
 function halfKey(date: string, half: ManagerHalf): string {
   return `${date}|${half}`;
@@ -105,9 +126,15 @@ function ownRef(managerCustomerId: string, name: string): CustomerRef {
   return { key: `m:${managerCustomerId}`, customerId: null, managerCustomerId, name };
 }
 
+/** A half-day that names a district: with a rep, or single visits in one of its areas. */
+function namesADistrict(kind: ManagerSlotKind | null): boolean {
+  return kind === "with_rep" || kind === "single_visit";
+}
+
 function draftFromSlot(slot: ManagerBoardSlot | undefined): HalfDraft {
   return {
     kind: slot?.kind ?? null,
+    scope: slot?.scopeKey ?? null,
     repSeatId: slot?.repSeatId ?? null,
     activityType: slot?.activityType ?? null,
     areaSeatId: slot?.areaSeatId ?? null,
@@ -118,8 +145,14 @@ function draftFromSlot(slot: ManagerBoardSlot | undefined): HalfDraft {
   };
 }
 
+/** A regional, national or product manager: the planner who chooses a district manager first. */
+function choosesADistrict(view: ManagerPlanBoardView | null): boolean {
+  return Boolean(view?.writer && view.writer.kind !== "dm");
+}
+
 /** What a half-day still lacks before it can be saved, or null when it can. */
-function draftProblem(draft: HalfDraft): string | null {
+function draftProblem(draft: HalfDraft, choosesDistrict: boolean): string | null {
+  if (choosesDistrict && namesADistrict(draft.kind) && !draft.scope) return "choose the district manager";
   if (draft.kind === "with_rep") {
     if (!draft.repSeatId) return "choose the rep you go with";
     if (draft.customers.length === 0) return "tick at least one of the rep's customers";
@@ -133,7 +166,13 @@ function draftProblem(draft: HalfDraft): string | null {
   return null;
 }
 
-function draftPayload(date: string, half: ManagerHalf, draft: HalfDraft) {
+/** The scope the server is told: the district manager's seat and its line, or a whole line. */
+function scopeFields(key: string | null, scopes: ReadonlyArray<ManagerBoardScope>): { scopeDmSeatId: string | null; scopeLineCode: string | null } {
+  const found = key ? scopes.find((scope) => scope.key === key) : undefined;
+  return found ? { scopeDmSeatId: found.dmSeatId, scopeLineCode: found.lineCode } : { scopeDmSeatId: null, scopeLineCode: null };
+}
+
+function draftPayload(date: string, half: ManagerHalf, draft: HalfDraft, scopes: ReadonlyArray<ManagerBoardScope>) {
   return {
     date,
     half,
@@ -141,6 +180,7 @@ function draftPayload(date: string, half: ManagerHalf, draft: HalfDraft) {
     repSeatId: draft.kind === "with_rep" ? draft.repSeatId : null,
     activityType: draft.kind === "admin" ? draft.activityType : null,
     areaSeatId: draft.kind === "single_visit" ? draft.areaSeatId : null,
+    ...scopeFields(namesADistrict(draft.kind) ? draft.scope : null, scopes),
     note: draft.note.trim() || null,
     customers:
       draft.kind === "admin" || draft.kind === null
@@ -176,12 +216,20 @@ export function ManagerPlanBoard({
 }) {
   const idPrefix = useId();
   const [week, setWeek] = useState<string | null>(null);
-  const board = useCrmGet<ManagerPlanBoardView>(crmUrl(BOARD, { week, test }), "board");
-  const view = board.data;
+  // The district manager whose reps and areas the board carries — a regional, national or product
+  // manager's only. A new one is a new address, so the board it was chosen FROM stays on screen while it
+  // loads (the Team tab's pickers do the same), never a spinner over the whole week; a different week is
+  // never held over.
+  const [scopeKey, setScopeKey] = useState<string | null>(null);
+  const [chosenFrom, setChosenFrom] = useState<ManagerPlanBoardView | null>(null);
+  const board = useCrmGet<ManagerPlanBoardView>(crmUrl(BOARD, { week, scope: scopeKey, test }), "board");
+  const view = board.data ?? (chosenFrom && (week === null || chosenFrom.weekStart === week) ? chosenFrom : null);
   const [step, setStep] = useState(1);
   const [date, setDate] = useState<string | null>(null);
   const [half, setHalf] = useState<ManagerHalf>("AM");
   const [drafts, setDrafts] = useState<Record<string, HalfDraft>>({});
+  /** The district manager he chose for a whole day; a half-day may still name another. */
+  const [dayScopes, setDayScopes] = useState<Record<string, string>>({});
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
   const saving = useRef(false);
   // The board a save is checked against — the one on screen, or the one the last save answered with.
@@ -189,12 +237,18 @@ export function ManagerPlanBoard({
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
+  // The scope on screen, read by a save that finishes after he moved on.
+  const scopeRef = useRef<string | null>(null);
+  useEffect(() => {
+    scopeRef.current = scopeKey;
+  }, [scopeKey]);
 
   const pending = Object.keys(drafts);
   useEffect(() => {
     onDirtyChange?.(pending.length > 0);
   }, [pending.length, onDirtyChange]);
 
+  const choosesDistrict = choosesADistrict(view);
   const days = view?.days ?? [];
   const day: ManagerBoardDay | null = days.find((entry) => entry.date === date) ?? days.find((entry) => entry.editable) ?? days[0] ?? null;
   const dayHalves = day?.halves ?? [];
@@ -204,10 +258,71 @@ export function ManagerPlanBoard({
   const draft = key ? (drafts[key] ?? draftFromSlot(slot)) : draftFromSlot(undefined);
   const canEdit = Boolean(view?.canWrite && day?.editable);
 
+  function draftOf(target: ManagerBoardDay, targetHalf: ManagerHalf): HalfDraft {
+    return drafts[halfKey(target.date, targetHalf)] ?? draftFromSlot(target.slots.find((entry) => entry.half === targetHalf));
+  }
+
+  /** The district manager of a day: the one he chose for it, else the first one a half-day of it names. */
+  function dayScopeOf(target: ManagerBoardDay): string | null {
+    const chosen = dayScopes[target.date];
+    if (chosen) return chosen;
+    for (const entry of target.halves) {
+      const halfDraft = draftOf(target, entry);
+      if (namesADistrict(halfDraft.kind) && halfDraft.scope) return halfDraft.scope;
+    }
+    return null;
+  }
+
+  /** The district manager a half-day shows: its own, or the day's. */
+  function halfScopeOf(target: ManagerBoardDay, targetHalf: ManagerHalf): string | null {
+    if (!choosesDistrict) return null;
+    const halfDraft = draftOf(target, targetHalf);
+    return namesADistrict(halfDraft.kind) && halfDraft.scope ? halfDraft.scope : dayScopeOf(target);
+  }
+
+  /** Loads another district manager's reps and areas, keeping this board on screen meanwhile. */
+  function showScope(next: string | null) {
+    if (!next || next === scopeKey) return;
+    if (view) setChosenFrom(view);
+    setScopeKey(next);
+  }
+
   function edit(next: HalfDraft) {
     if (!key || !canEdit) return;
     setDrafts((previous) => ({ ...previous, [key]: next }));
     setSaveState({ kind: "idle" });
+  }
+
+  /**
+   * The district manager for the whole day. A half-day of it with nothing chosen yet follows; one that
+   * already holds a rep, an area or customers keeps its own, and says so.
+   */
+  function chooseDayScope(next: string) {
+    if (!day || !canEdit) return;
+    setDayScopes((previous) => ({ ...previous, [day.date]: next }));
+    const moved: Record<string, HalfDraft> = {};
+    let shown = next;
+    for (const entry of day.halves) {
+      const halfDraft = draftOf(day, entry);
+      if (!namesADistrict(halfDraft.kind) || halfDraft.scope === next) continue;
+      const untouched = !halfDraft.repSeatId && !halfDraft.areaSeatId && halfDraft.customers.length === 0;
+      if (untouched) moved[halfKey(day.date, entry)] = { ...halfDraft, scope: next };
+      else if (entry === currentHalf && halfDraft.scope) shown = halfDraft.scope;
+    }
+    if (Object.keys(moved).length > 0) {
+      setDrafts((previous) => ({ ...previous, ...moved }));
+      setSaveState({ kind: "idle" });
+    }
+    showScope(shown);
+  }
+
+  /** Another district manager for this half-day only; what was chosen under the old one is cleared. */
+  function chooseHalfScope(next: string) {
+    if (!day) return;
+    const dayScope = dayScopeOf(day);
+    if (!dayScopes[day.date] && dayScope) setDayScopes((previous) => ({ ...previous, [day.date]: dayScope }));
+    edit({ ...draft, scope: next, repSeatId: null, areaSeatId: null, customers: [] });
+    showScope(next);
   }
 
   /** Saves every half-day that can be saved, one at a time; the rest wait and say why. */
@@ -227,7 +342,7 @@ export function ManagerPlanBoard({
           });
           continue;
         }
-        const problem = draftProblem(waiting);
+        const problem = draftProblem(waiting, choosesADistrict(viewRef.current));
         if (problem) {
           allSaved = false;
           continue;
@@ -236,13 +351,20 @@ export function ManagerPlanBoard({
         try {
           const next = await crmPost<ManagerPlanBoardView>(
             BOARD,
-            { ...draftPayload(waitingDate, waitingHalf, waiting), expectedVersion: viewRef.current?.plan?.version ?? null, test },
+            {
+              ...draftPayload(waitingDate, waitingHalf, waiting, viewRef.current?.scopes ?? []),
+              expectedVersion: viewRef.current?.plan?.version ?? null,
+              scope: scopeRef.current,
+              test,
+            },
             "board",
             { keepalive: options.keepalive },
           );
           if (options.keepalive) continue;
           viewRef.current = next;
-          board.replace(next);
+          // The answer is in the scope on screen; if he moved to another while it saved, read that one.
+          if ((next.scope ?? null) === (scopeRef.current ?? null)) board.replace(next);
+          else board.reload();
           setDrafts((previous) => {
             if (!previous[waitingKey] || !sameDraft(previous[waitingKey], waiting)) return previous;
             const { [waitingKey]: _saved, ...rest } = previous;
@@ -292,6 +414,7 @@ export function ManagerPlanBoard({
     setWeek(next);
     setDate(null);
     setDrafts({});
+    setDayScopes({});
     setStep(2);
   }
 
@@ -305,7 +428,7 @@ export function ManagerPlanBoard({
 
   const plan = view.plan;
   const waitingProblems = Object.entries(drafts).flatMap(([waitingKey, waiting]) => {
-    const problem = waiting.kind === null ? null : draftProblem(waiting);
+    const problem = waiting.kind === null ? null : draftProblem(waiting, choosesDistrict);
     if (!problem) return [];
     const [waitingDate, waitingHalf] = waitingKey.split("|");
     const dayText = days.find((entry) => entry.date === waitingDate)?.dateText ?? waitingDate;
@@ -325,14 +448,46 @@ export function ManagerPlanBoard({
               : null;
 
   function goStep(next: number) {
-    setStep(Math.min(Math.max(next, 1), STEPS.length));
+    const target = Math.min(Math.max(next, 1), STEPS.length);
+    setStep(target);
+    if (target === 3 && day) showScope(halfScopeOf(day, currentHalf));
   }
 
   const chip = view.weeks.find((entry) => entry.weekStart === view.weekStart)?.name ?? "This week";
 
+  // What a With a rep or Single visit half-day shows in place of its reps and areas while they are not the
+  // ones of its district manager yet: the day's choice first, then the load.
+  const halfScope = day ? halfScopeOf(day, currentHalf) : null;
+  let districtGate: ReactNode = null;
+  if (choosesDistrict && namesADistrict(draft.kind)) {
+    if (!halfScope) {
+      districtGate = <CrmNote tone="info">Choose the district manager for this day first.</CrmNote>;
+    } else if (view.scope !== halfScope) {
+      const name = view.scopes.find((entry) => entry.key === halfScope)?.name ?? slot?.scopeName ?? "the district manager";
+      districtGate =
+        scopeKey !== halfScope ? (
+          <div>
+            <CrmButton onClick={() => showScope(halfScope)} size="sm">
+              {`Show ${name}`}
+            </CrmButton>
+          </div>
+        ) : board.error ? (
+          <CrmLoadError message={board.error} onRetry={board.reload} />
+        ) : board.loading ? (
+          <CrmLoading label="Loading the district's reps and areas" />
+        ) : (
+          <CrmNote tone="warn">This district manager is no longer one you plan with. Choose another for this day.</CrmNote>
+        );
+    }
+  }
+
   return (
     <CrmPanel
-      description="Plan each half-day: with a rep, an admin activity, or single visits in an area of your district. Your reps do not see it."
+      description={
+        choosesDistrict
+          ? "Plan each half-day: choose the district manager, then go with one of the reps, make single visits in an area of that district, or record an admin activity or a day in the Office. The reps do not see it."
+          : "Plan each half-day: with a rep, an admin activity, or single visits in an area of your district. Your reps do not see it."
+      }
       eyebrow={view.isTest ? "Plan · test persona" : "Plan"}
       title={view.manager ? `${view.manager.name} · ${view.manager.place}` : "Your week"}
     >
@@ -375,6 +530,8 @@ export function ManagerPlanBoard({
                 setDate(next);
                 setHalf("AM");
                 setStep(3);
+                const nextDay = days.find((entry) => entry.date === next);
+                if (nextDay) showScope(halfScopeOf(nextDay, nextDay.halves[0] ?? "AM"));
               }}
               selected={day?.date ?? null}
             />
@@ -383,11 +540,19 @@ export function ManagerPlanBoard({
             <HalfStep
               canEdit={canEdit}
               day={day}
+              dayScope={choosesDistrict ? dayScopeOf(day) : null}
+              districtGate={districtGate}
               draft={draft}
               half={currentHalf}
               idPrefix={idPrefix}
+              onDayScope={chooseDayScope}
               onDraft={edit}
-              onHalf={setHalf}
+              onHalf={(next) => {
+                setHalf(next);
+                showScope(halfScopeOf(day, next));
+              }}
+              onHalfScope={chooseHalfScope}
+              onScope={showScope}
               slot={slot}
               test={test}
               view={view}
@@ -468,31 +633,180 @@ function DayStep({
   return <CrmChoice columns={2} label="Day" onChange={onDay} options={options} value={selected} />;
 }
 
+// ── The district manager a regional, national or product manager plans with ────────────────────
+
+function scopeOption(scope: ManagerBoardScope, disabled: boolean): CrmChoiceOption<string> {
+  return scope.dmSeatId
+    ? { value: scope.key, label: scope.dmName ?? "No district manager", note: scope.place ?? undefined, disabled }
+    : { value: scope.key, label: `Any rep in ${scope.lineName ?? "the line"}`, note: "Without a district manager", disabled };
+}
+
+/**
+ * The district managers to choose from, grouped as the organogram groups them: a product manager chooses
+ * the line first (Pedia or Anti Infective) and then its district managers or "Any rep in <line>"; a
+ * national sales manager sees the districts under a regional manager grouped under that region.
+ */
+function ScopePicker({
+  byLine,
+  disabled,
+  label,
+  onPick,
+  scopes,
+  value,
+}: {
+  byLine: boolean;
+  disabled: boolean;
+  label: string;
+  onPick: (key: string) => void;
+  scopes: ReadonlyArray<ManagerBoardScope>;
+  value: string | null;
+}) {
+  const [pickedLine, setPickedLine] = useState<string | null>(null);
+  if (scopes.length === 0) return <CrmEmpty message="No district manager is in your reach right now." title="No district managers" />;
+
+  if (byLine) {
+    const lines = new Map<string, string>();
+    for (const scope of scopes) if (!lines.has(scope.lineCode)) lines.set(scope.lineCode, scope.lineName ?? scope.lineCode);
+    const valueLine = value ? (scopes.find((scope) => scope.key === value)?.lineCode ?? null) : null;
+    const line = pickedLine ?? valueLine ?? (lines.size === 1 ? [...lines.keys()][0] : null);
+    const lineOptions: Array<CrmChoiceOption<string>> = [...lines].map(([code, name]) => ({ value: code, label: name, disabled }));
+    return (
+      <div className="grid min-w-0 gap-3">
+        <CrmChoice columns={2} label="Line" onChange={setPickedLine} options={lineOptions} value={line} />
+        {line ? (
+          <CrmChoice
+            columns={2}
+            label={label}
+            onChange={onPick}
+            options={scopes.filter((scope) => scope.lineCode === line).map((scope) => scopeOption(scope, disabled))}
+            value={value}
+          />
+        ) : null}
+      </div>
+    );
+  }
+
+  const groups: Array<{ heading: string | null; scopes: ManagerBoardScope[] }> = [];
+  for (const scope of scopes) {
+    const found = groups.find((group) => group.heading === scope.group);
+    if (found) found.scopes.push(scope);
+    else groups.push({ heading: scope.group, scopes: [scope] });
+  }
+  groups.sort((left, right) => Number(left.heading !== null) - Number(right.heading !== null));
+  return (
+    <div className="grid min-w-0 gap-3">
+      {groups.map((group) => (
+        <div className="grid min-w-0 gap-1.5" key={group.heading ?? "direct"}>
+          {group.heading ? <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{group.heading}</p> : null}
+          <CrmChoice
+            columns={2}
+            label={group.heading ? `${label} · ${group.heading}` : label}
+            onChange={onPick}
+            options={group.scopes.map((scope) => scopeOption(scope, disabled))}
+            value={value}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** "Another district manager for this half" — and, once one is chosen, the way back to the day's. */
+function HalfScopeControl({
+  byLine,
+  dayScope,
+  draftScope,
+  onPick,
+  scopes,
+}: {
+  byLine: boolean;
+  dayScope: string;
+  draftScope: string | null;
+  onPick: (key: string) => void;
+  scopes: ReadonlyArray<ManagerBoardScope>;
+}) {
+  const [open, setOpen] = useState(false);
+  const own = draftScope !== null && draftScope !== dayScope;
+  const ownName = own ? (scopes.find((scope) => scope.key === draftScope)?.name ?? "another district manager") : null;
+  return (
+    <div className="grid min-w-0 gap-2">
+      {ownName ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <p className="min-w-0 break-words text-sm font-bold text-slate-900">{`This half: ${ownName}`}</p>
+          <CrmButton onClick={() => onPick(dayScope)} size="sm" variant="ghost">
+            Same as the day
+          </CrmButton>
+        </div>
+      ) : null}
+      {open ? (
+        <div className="grid min-w-0 gap-3 border border-slate-200 p-3">
+          <ScopePicker
+            byLine={byLine}
+            disabled={false}
+            label="District manager for this half"
+            onPick={(next) => {
+              setOpen(false);
+              onPick(next);
+            }}
+            scopes={scopes}
+            value={draftScope}
+          />
+          <div>
+            <CrmButton onClick={() => setOpen(false)} size="sm" variant="ghost">
+              Cancel
+            </CrmButton>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <CrmButton onClick={() => setOpen(true)} size="sm" variant="ghost">
+            Another district manager for this half
+          </CrmButton>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Step 3 · what he does that day ──────────────────────────────────────────────────────────────
 
 function HalfStep({
   canEdit,
   day,
+  dayScope,
+  districtGate,
   draft,
   half,
   idPrefix,
+  onDayScope,
   onDraft,
   onHalf,
+  onHalfScope,
+  onScope,
   slot,
   test,
   view,
 }: {
   canEdit: boolean;
   day: ManagerBoardDay;
+  /** The day's district manager — a regional, national or product manager's only. */
+  dayScope: string | null;
+  /** Shown in place of the reps and areas until they are the half-day's district manager's. */
+  districtGate: ReactNode;
   draft: HalfDraft;
   half: ManagerHalf;
   idPrefix: string;
+  onDayScope: (key: string) => void;
   onDraft: (next: HalfDraft) => void;
   onHalf: (half: ManagerHalf) => void;
+  onHalfScope: (key: string) => void;
+  onScope: (key: string | null) => void;
   slot: ManagerBoardSlot | undefined;
   test: boolean;
   view: ManagerPlanBoardView;
 }) {
+  const choosesDistrict = choosesADistrict(view);
+  const byLine = view.writer?.kind === "pm";
   const halfOptions: Array<CrmChoiceOption<ManagerHalf>> = day.halves.map((entry) => ({
     value: entry,
     label: entry,
@@ -506,11 +820,25 @@ function HalfStep({
 
   function chooseKind(kind: ManagerSlotKind) {
     if (kind === draft.kind) return;
-    onDraft({ kind, repSeatId: null, activityType: null, areaSeatId: null, note: draft.note, customers: [] });
+    const scope = choosesDistrict && namesADistrict(kind) ? dayScope : null;
+    onDraft({ ...emptyDraft(), kind, scope, note: draft.note });
+    if (scope) onScope(scope);
   }
+
+  const dayScopeName = dayScope ? (view.scopes.find((entry) => entry.key === dayScope)?.name ?? null) : null;
 
   return (
     <div className="grid min-w-0 gap-5">
+      {choosesDistrict ? (
+        <div className="grid min-w-0 gap-2">
+          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{`${day.dateText} · District manager for this day`}</p>
+          {canEdit ? (
+            <ScopePicker byLine={byLine} disabled={false} label="District manager for this day" onPick={onDayScope} scopes={view.scopes} value={dayScope} />
+          ) : (
+            <p className="break-words text-sm font-bold text-slate-900">{dayScopeName ?? "None chosen"}</p>
+          )}
+        </div>
+      ) : null}
       {day.halves.length > 1 ? <CrmChoice columns={2} label="Half-day" onChange={onHalf} options={halfOptions} value={half} /> : null}
       {!canEdit ? (
         <CrmNote tone="neutral">{view.canWrite ? "This day has passed, or is not open to change." : "This week is sent. Ask to edit it from Send."}</CrmNote>
@@ -520,15 +848,33 @@ function HalfStep({
         <CrmChoice columns={3} label="What you do" onChange={chooseKind} options={kindOptions} value={draft.kind} />
       </div>
 
-      {draft.kind === "with_rep" ? <WithRepPart canEdit={canEdit} day={day} draft={draft} half={half} onDraft={onDraft} slot={slot} view={view} /> : null}
-      {draft.kind === "admin" ? <AdminPart canEdit={canEdit} draft={draft} idPrefix={idPrefix} onDraft={onDraft} view={view} /> : null}
-      {draft.kind === "single_visit" ? (
-        <SingleVisitPart canEdit={canEdit} draft={draft} half={half} idPrefix={idPrefix} onDraft={onDraft} slot={slot} test={test} view={view} />
+      {choosesDistrict && canEdit && dayScope && namesADistrict(draft.kind) ? (
+        <HalfScopeControl
+          byLine={byLine}
+          dayScope={dayScope}
+          draftScope={draft.scope}
+          key={halfKey(day.date, half)}
+          onPick={onHalfScope}
+          scopes={view.scopes}
+        />
       ) : null}
+      {choosesDistrict && !canEdit && namesADistrict(draft.kind) && slot?.scopeName ? (
+        <p className="break-words text-sm font-bold text-slate-900">{`This half: ${slot.scopeName}`}</p>
+      ) : null}
+
+      {draft.kind === "with_rep"
+        ? (districtGate ?? <WithRepPart canEdit={canEdit} day={day} draft={draft} half={half} onDraft={onDraft} slot={slot} view={view} />)
+        : null}
+      {draft.kind === "admin" ? <AdminPart canEdit={canEdit} draft={draft} idPrefix={idPrefix} onDraft={onDraft} view={view} /> : null}
+      {draft.kind === "single_visit"
+        ? (districtGate ?? (
+            <SingleVisitPart canEdit={canEdit} draft={draft} half={half} idPrefix={idPrefix} onDraft={onDraft} slot={slot} test={test} view={view} />
+          ))
+        : null}
 
       {canEdit && (draft.kind !== null || slot?.kind) ? (
         <div>
-          <CrmButton onClick={() => onDraft({ kind: null, repSeatId: null, activityType: null, areaSeatId: null, note: "", customers: [] })} size="sm" variant="ghost">
+          <CrmButton onClick={() => onDraft(emptyDraft())} size="sm" variant="ghost">
             Clear this half-day
           </CrmButton>
         </div>
@@ -559,7 +905,9 @@ function WithRepPart({
   slot: ManagerBoardSlot | undefined;
   view: ManagerPlanBoardView;
 }) {
-  if (view.reps.length === 0) return <CrmEmpty message="No rep sits in your team right now." title="No reps" />;
+  if (view.reps.length === 0) {
+    return <CrmEmpty message={choosesADistrict(view) ? "No rep sits in this district right now." : "No rep sits in your team right now."} title="No reps" />;
+  }
   const halves = new Map(day.repHalves.filter((entry) => entry.half === half).map((entry) => [entry.seatId, entry]));
   // The rep this half-day already holds, with customers he ticked: that rep stays selectable even when
   // the rep's own half is now empty, so the customers the rep dropped can still be seen and unticked.
@@ -685,13 +1033,15 @@ function AdminPart({
   view: ManagerPlanBoardView;
 }) {
   const options: Array<CrmChoiceOption<string>> = view.activities.map((entry) => ({ value: entry.key, label: entry.label, disabled: !canEdit }));
+  // Office makes eight (everyone but a district manager): two full rows of four, nothing to span.
+  const withOffice = options.length > 7;
   return (
     <div className="grid min-w-0 gap-4">
       {/* Seven activities: the seven-way grid's two-then-four rows with the last spanning the gap, but never
           seven across — inside the half-day panel a seven-wide row squeezes "Admin work" to one word a line. */}
       <CrmChoice
-        className="lg:grid-cols-4 lg:[&>*:last-child]:col-span-2"
-        columns={7}
+        className={withOffice ? undefined : "lg:grid-cols-4 lg:[&>*:last-child]:col-span-2"}
+        columns={withOffice ? 4 : 7}
         label="Activity"
         onChange={(activityType) => onDraft({ ...draft, activityType })}
         options={options}
@@ -737,7 +1087,9 @@ function SingleVisitPart({
   const [limit, setLimit] = useState(AREA_PAGE);
   const [adding, setAdding] = useState(false);
   const area = useCrmGet<AreaCustomersView>(draft.areaSeatId && canEdit ? crmUrl(AREA, { area: draft.areaSeatId, test }) : null, "area");
-  if (view.areas.length === 0) return <CrmEmpty message="No area of your district is on file yet." title="No areas" />;
+  if (view.areas.length === 0) {
+    return <CrmEmpty message={choosesADistrict(view) ? "No area of this district is on file yet." : "No area of your district is on file yet."} title="No areas" />;
+  }
 
   const areaOptions: Array<CrmChoiceOption<string>> = view.areas.map((entry) => ({
     value: entry.seatId,
@@ -905,6 +1257,9 @@ function SendStep({
   const planned = days.flatMap((day) => day.slots.filter((slot) => slot.kind)).length;
   const fieldHalves = days.reduce((sum, day) => sum + day.halves.length, 0);
   const offRepDay = days.flatMap((day) => day.slots.flatMap((slot) => slot.customers.filter((customer) => customer.flag))).length;
+  // Who decides it, in order — and, for everyone but a district manager, HR's own acknowledgement after.
+  const route = [plan?.firstApproverName, plan?.secondApproverName].filter(Boolean).join(", then ");
+  const hrAcknowledges = choosesADistrict(view);
 
   async function send() {
     setBusy(true);
@@ -975,6 +1330,11 @@ function SendStep({
         {`${countText(planned)} of ${plural(fieldHalves, "half-day", "half-days")} planned`}
         {offRepDay > 0 ? ` · ${plural(offRepDay, "customer is", "customers are")} not on the rep's sent day` : ""}
       </p>
+      {route ? (
+        <p className="text-xs font-semibold leading-5 text-slate-500">
+          {`It goes to ${route}.${hrAcknowledges ? " Once it is approved, HR acknowledges it automatically." : ""}`}
+        </p>
+      ) : null}
 
       {error ? <CrmNote tone="bad">{error}</CrmNote> : null}
 

@@ -8,16 +8,28 @@ import { owesAWeeklyPlan } from "../src/lib/daily-deductions/no-weekly-plan-sele
 import { resolveEmployeePortalNavVisibility } from "../src/lib/employee-portal/navigation.ts";
 import { PHOENIX_CRM_EMAIL_EVENT_TYPES, PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES } from "../src/lib/notifications/phoenix-crm-channel-guard.ts";
 import {
+  ceoHrIdOf,
+  countsAsPlannersVisitWithRep,
   dmPlansInPhoenixCrmFor,
   flagManagerCustomer,
   halfOfListType,
   isManagerDayOpen,
   isManagerPlanSent,
+  legacyStyleApprovers,
+  managerAdminActivities,
   managerDayHalves,
   managerOutcome,
   managerOwnVisitClosed,
   managerPlanApprovers,
+  managerPlannerTitle,
+  managerPlanScopes,
   managerPlanSeats,
+  managerPlanWriterOf,
+  managerScopeTerritories,
+  managerSlotScopeError,
+  PRODUCT_MANAGER_PLAN_LINES,
+  PRODUCT_MANAGER_PLAN_ROLES,
+  seniorPlanSeats,
   managerPlanStatusLine,
   managerPlanSummaryText,
   managerPlanWeeks,
@@ -35,6 +47,7 @@ import {
   assertManagerPlanWriter,
   managerAskDeciderRole,
   managerDistrictSeats,
+  managerPlanChoices,
   managerPlanDeciderRole,
   managerPlanReach,
   managerTeamSeats,
@@ -72,7 +85,13 @@ import { VISIT_REPORT_FIELDS } from "../src/lib/phoenix-crm/visit-report-fields.
  *   9. after a regional manager agrees, the national sales manager above him approves his ask to edit a
  *      week and his ask to remove a customer too (owner, 2026-10-17, "Week + edit asks + removals") — each
  *      step decided only by its holder, the Hub filing it by its step, and the database never letting who
- *      decides close a two-step ask at the first approval.
+ *      decides close a two-step ask at the first approval;
+ *  10. the plan widened to the regional, national and product managers (owner, 2026-10-17: "Now do the same
+ *      for the product managers and the national sales managers and the regional manager") — the four
+ *      kinds of writer, the scope each picks first, the "as today" approvers with HR's automatic
+ *      acknowledgement on every week but a district manager's, Office for everyone but a district
+ *      manager, the product managers filing both forms, the attendance office days, the report's product
+ *      manager slot, the Hub's two feeds, and the routes every writer reaches with `read`.
  */
 
 // ── The organogram the matrix runs on ───────────────────────────────────────────────────────────
@@ -350,17 +369,18 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.deepEqual(managerPlanSeats(org, "B-7"), [], "a rep has no plan seat");
 
   assert.equal(managerPlanReach(rep), null, "a rep never reaches a district manager's plan");
-  assert.throws(() => resolveManagerPlanReader(rep, null), /district manager's weekly plan is read by/, "a rep is refused by name");
-  assert.throws(() => assertManagerPlanWriter(rep), /Only a district manager plans/);
+  assert.throws(() => resolveManagerPlanReader(rep, null), /manager's weekly plan is read by/, "a rep is refused by name");
+  assert.throws(() => assertManagerPlanWriter(rep), /Only a district, regional, national or product manager plans/);
 
   assert.deepEqual(managerPlanReach(dm), { mode: "own", canWrite: true, managers: [] }, "the district manager plans his own week");
-  assert.equal(assertManagerPlanWriter(dm).seatId, DM1.seatId);
-  assert.throws(() => resolveManagerPlanReader(otherDm, "B-12"), /opens only the weekly plan of their own seat/, "another district manager is refused");
+  assert.equal(assertManagerPlanWriter(dm).seat?.seatId, DM1.seatId);
+  assert.equal(assertManagerPlanWriter(dm).kind, "dm", "a district manager plans as one");
+  assert.throws(() => resolveManagerPlanReader(otherDm, "B-12"), /opens only the weekly plans of their own seat/, "another district manager is refused");
   assert.equal(readsManagerPlanOf(otherDm, "B-12"), false);
 
   // Nosiba's shape: an acting district manager who also holds a rep seat files BOTH weeks, and her own rep
   // seat is never one of "her reps". Its area stays in her district for a single visit; so does a vacant one.
-  assert.equal(assertManagerPlanWriter(actingDm).seatId, ADM.seatId, "the acting district manager plans her manager week");
+  assert.equal(assertManagerPlanWriter(actingDm).seat?.seatId, ADM.seatId, "the acting district manager plans her manager week");
   assert.ok(actingDm.ownTerritories.some((entry) => entry.seatId === UE1.seatId), "and she still holds her own rep seat for her rep week");
   assert.deepEqual(managerTeamSeats(actingDm, "B-1").map((entry) => entry.seatId), [UE9.seatId], "her reps: the occupied seats of her district, never her own");
   assert.deepEqual(
@@ -369,11 +389,14 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     "her district's areas include the vacant seat and never her own rep seat",
   );
 
+  // Since 2026-10-17 the NSM plans a week of his own too, and still reads the district managers below him.
   const nsmReach = managerPlanReach(nsm);
-  assert.equal(nsmReach?.mode, "pick", "the NSM picks among the district managers below him");
-  assert.equal(nsmReach?.canWrite, false, "and never writes one");
+  assert.equal(nsmReach?.mode, "own", "the NSM plans his own week");
+  assert.equal(nsmReach?.canWrite, true, "and writes it with read alone — his grants are read and approve");
   assert.deepEqual(nsmReach?.managers.map((entry) => entry.hrId).sort(), [personKey("B-1"), personKey("B-12"), personKey("B-76")].sort(), "his own line's district managers, never Pedia's");
-  assert.throws(() => assertManagerPlanWriter(nsm), /Only a district manager plans/);
+  assert.equal(assertManagerPlanWriter(nsm).kind, "nsm");
+  assert.equal(readsManagerPlanOf(nsm, "B-12"), true, "and opens a district manager's week below him");
+  assert.equal(resolveManagerPlanReader(nsm, "B-12").canWrite, false, "but never writes it");
   assert.equal(readsManagerPlanOf(hany, "PD-0040"), true, "Hany reads his district manager's week");
   assert.equal(readsManagerPlanOf(hany, "B-12"), false, "and no other line's");
 
@@ -562,8 +585,13 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   const switchSource = source("src/lib/phoenix-crm/server/manager-plan-switch.ts");
   assert.match(
     functionBody(switchSource, "export async function dmPlansInPhoenixCrm("),
-    /if \(seats\.length === 0\) return false;\s*if \(await owesTheLegacyWeeklyPlan\(hrId\)\) return false;/,
+    /if \(seats\.length === 0\) return seniorPlansInPhoenixCrm\(org, hrId, options\.cairoToday\);\s*if \(await owesTheLegacyWeeklyPlan\(hrId\)\) return false;/,
     "a seat holder whose title owes the legacy plan is never switched off it",
+  );
+  assert.match(
+    functionBody(switchSource, "async function seniorPlansInPhoenixCrm("),
+    /if \(seats\.length === 0\) return false;\s*if \(await owesTheLegacyWeeklyPlan\(hrId\)\) return false;/,
+    "nor is a regional or national seat holder whose title owes it",
   );
   assert.match(functionBody(switchSource, "async function owesTheLegacyWeeklyPlan("), /owesAWeeklyPlan\(row\.job_title\)/, "read from the job title, exactly as the charge reads it");
 
@@ -586,7 +614,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   // The Team tab's pickers stay on screen while the next report or list loads.
   const team = source("src/components/phoenix-crm/manager-plan-team.tsx");
   assert.match(functionBody(team, "export function ManagerPlansSection("), /const pickers = view \?\? chosenFrom;/, "the week and manager pickers survive a pick");
-  assert.match(functionBody(team, "export function ManagerOwnListSection("), /if \(!chosenFrom \|\| chosenFrom\.mode !== "pick" \|\| !chosenFrom\.managers\) return loading;/, "so does the own-list picker");
+  assert.match(functionBody(team, "export function ManagerOwnListSection("), /if \(!chosenFrom \|\| !chosenFrom\.managers\) return loading;/, "so does the own-list picker");
 
   // The visit form never pre-picks a Double visit on a territory with no rep to go with.
   const visitForm = source("src/components/phoenix-crm/visit-log-form.tsx");
@@ -762,6 +790,249 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.ok(sqlFunction("phoenix_crm_expire_manager_plan_edit_requests").includes("where r.status in ('pending', 'first_approved')"), "an ask closes with its week at either step");
   assert.ok(asksSql.includes("on public.phoenix_crm_manager_plan_edit_requests (plan_id) where status in ('pending', 'first_approved');"), "one ask open per week, at either step");
   assert.ok(asksSql.includes("(status <> 'first_approved' or (second_approver_hr_id is not null and first_decided_at is not null))"), "an ask waits on a second step only when one was stored");
+
+  // ── 10. The regional, national and product managers plan here too (owner, 2026-10-17) ─────────
+
+  // Production's shape on 17 Oct 2026: Hany Saad's region of three under Ali Mohamed Ali, Ali's own
+  // districts beside it (Cairo vacant but live, one vacant and not started), the line's "Others" bucket,
+  // and the Anti Infective and CNS lines with their own national sales managers.
+  const ped = (seatId: string, overrides: Partial<OrgSeat> & Pick<OrgSeat, "tier" | "path">): OrgSeat =>
+    seat({ seatId, lineCode: "pedia", lineName: "Pedia", ...overrides });
+  const wNsm = ped("W-PED-NSM", { tier: "NSM", path: ["SEAT-CEO", "W-PED-NSM"], occupantHrId: "A-12" });
+  const wRsm = ped("W-PED-RSM", { tier: "RSM", path: [...wNsm.path, "W-PED-RSM"], occupantHrId: "PD-0001" });
+  const wAlex = ped("W-PED-DM-ALEX", { tier: "DM", path: [...wRsm.path, "W-PED-DM-ALEX"], occupantHrId: "PD-0040", regionName: "Alex-BHR" });
+  const wDelta1 = ped("W-PED-DM-D1", { tier: "DM", path: [...wRsm.path, "W-PED-DM-D1"], occupantHrId: "PD-0050", regionName: "Delta (1)" });
+  const wDelta2 = ped("W-PED-DM-D2", { tier: "DM", path: [...wRsm.path, "W-PED-DM-D2"], occupantHrId: "PD-0060", regionName: "Delta (2)" });
+  const wGiza = ped("W-PED-DM-GIZA", { tier: "DM", path: [...wNsm.path, "W-PED-DM-GIZA"], occupantHrId: "PD-0070", regionName: "Giza" });
+  const wCairo = ped("W-PED-DM-CAIRO", { tier: "DM", path: [...wNsm.path, "W-PED-DM-CAIRO"], occupantHrId: null, regionName: "Cairo" });
+  const wDark = ped("W-PED-DM-DARK", { tier: "DM", path: [...wNsm.path, "W-PED-DM-DARK"], occupantHrId: null, regionName: "Not started" });
+  const wOthers = ped("W-PED-OTHERS", { tier: "DM", path: [...wNsm.path, "W-PED-OTHERS"], occupantHrId: null, isOtherPseudoDm: true });
+  const wAlexRep = ped("W-PED-REP-ALEX", { tier: "REP", path: [...wAlex.path, "W-PED-REP-ALEX"], occupantHrId: "PD-0041" });
+  const wCairoRep = ped("W-PED-REP-CAIRO", { tier: "REP", path: [...wCairo.path, "W-PED-REP-CAIRO"], occupantHrId: "PD-0081" });
+  const wOthersRep = ped("W-PED-REP-OTHERS", { tier: "REP", path: [...wOthers.path, "W-PED-REP-OTHERS"], occupantHrId: null });
+  const wAifNsm = seat({ seatId: "W-AIF-NSM", tier: "NSM", path: ["SEAT-CEO", "W-AIF-NSM"], occupantHrId: "B-900" });
+  const wAifDm = seat({ seatId: "W-AIF-DM", tier: "DM", path: [...wAifNsm.path, "W-AIF-DM"], occupantHrId: "B-12", regionName: "Delta (1)" });
+  const wAifRep = seat({ seatId: "W-AIF-REP", tier: "REP", path: [...wAifDm.path, "W-AIF-REP"], occupantHrId: "B-7" });
+  const wCnsNsm = seat({ seatId: "W-CNS-NSM", tier: "NSM", path: ["SEAT-CEO", "W-CNS-NSM"], occupantHrId: "B-122", lineCode: "cns", lineName: "CNS" });
+  const wCnsDm = seat({ seatId: "W-CNS-DM", tier: "DM", path: [...wCnsNsm.path, "W-CNS-DM"], occupantHrId: "B-502", lineCode: "cns", lineName: "CNS" });
+  const wide = buildOrgIndex([
+    CEO, wNsm, wRsm, wAlex, wDelta1, wDelta2, wGiza, wCairo, wDark, wOthers, wAlexRep, wCairoRep, wOthersRep, wAifNsm, wAifDm, wAifRep, wCnsNsm, wCnsDm,
+  ]);
+  const liveExceptDark = (entry: OrgSeat) => entry.seatId !== wDark.seatId;
+
+  // The four kinds. A district manager seat comes first, then a national or regional seat, then the
+  // product managers' role — Hossam Reda, the Marketing Manager, is not one of them.
+  const asKind = (hrId: string, productManager = false) => managerPlanWriterOf(wide, hrId, { productManager })?.kind ?? null;
+  assert.equal(asKind("PD-0001"), "rsm", "Hany Saad plans as the regional sales manager");
+  assert.equal(asKind("A-12"), "nsm", "Ali Mohamed Ali as a national sales manager");
+  assert.equal(asKind("B-900"), "nsm");
+  assert.equal(asKind("B-122"), "nsm", "the CNS national sales manager too");
+  assert.equal(asKind("PD-0040"), "dm", "a district manager stays a district manager");
+  assert.equal(asKind("PD-0040", true), "dm", "whatever else he holds");
+  assert.equal(asKind("B-155", true), "pm", "a product manager plans by the role");
+  assert.equal(asKind("B-155"), null, "and nobody plans by a role that is not one of the two");
+  assert.equal(asKind("PD-0041"), null, "a rep never plans a manager's week");
+  assert.equal(asKind("B-2"), null, "the CEO plans none");
+  assert.deepEqual([...PRODUCT_MANAGER_PLAN_ROLES].sort(), ["Group Product Manager", "Product Manager"], "Rasha and Ahmed's two roles, never the Marketing Manager's");
+  const pmWriter = managerPlanWriterOf(wide, "B-155", { productManager: true });
+  assert.equal(pmWriter?.seat, null, "a product manager's week sits on no seat");
+  assert.deepEqual(pmWriter?.lineCodes, ["pedia", "anti_infective"], "and spans his two lines — never CNS");
+  assert.deepEqual([...PRODUCT_MANAGER_PLAN_LINES], ["pedia", "anti_infective"]);
+  assert.deepEqual(seniorPlanSeats(wide, "B-155"), [], "a product manager holds no regional or national seat, so nothing ever switches his legacy form off");
+  assert.equal(managerPlannerTitle("rsm"), "Regional sales manager");
+  assert.equal(managerPlannerTitle("pm"), "Product manager");
+
+  // The scope he picks first. A district manager picks none; Hany his three; Ali every district below him,
+  // Hany's grouped under Hany's region; a product manager a line, then its districts or "any rep".
+  const scopesOf = (hrId: string, productManager = false, live = liveExceptDark) => {
+    const writer = managerPlanWriterOf(wide, hrId, { productManager });
+    assert.ok(writer, `${hrId} plans a week`);
+    return managerPlanScopes(wide, writer, live);
+  };
+  assert.deepEqual(scopesOf("PD-0040"), [], "a district manager's scope is his own district");
+  const hanyScopes = scopesOf("PD-0001");
+  assert.deepEqual(hanyScopes.map((entry) => entry.dmSeatId), [wAlex.seatId, wDelta1.seatId, wDelta2.seatId], "Hany picks among his three district managers");
+  assert.ok(hanyScopes.every((entry) => entry.regionSeatId === null), "his own region is never a group inside his own picker");
+  const aliScopes = scopesOf("A-12");
+  assert.deepEqual(
+    aliScopes.map((entry) => entry.dmSeatId),
+    [wAlex.seatId, wCairo.seatId, wDelta1.seatId, wDelta2.seatId, wGiza.seatId],
+    "Ali picks every district below him: the vacant one whose team is live, never one not started, never Others",
+  );
+  assert.deepEqual(
+    aliScopes.filter((entry) => entry.regionSeatId === wRsm.seatId).map((entry) => entry.dmSeatId),
+    [wAlex.seatId, wDelta1.seatId, wDelta2.seatId],
+    "Hany's three are grouped under Hany's region",
+  );
+  assert.equal(aliScopes.find((entry) => entry.dmSeatId === wDelta1.seatId)?.regionHrId, personKey("PD-0001"));
+  assert.equal(aliScopes.find((entry) => entry.dmSeatId === wCairo.seatId)?.dmHrId, null, "a vacant district names no district manager");
+  assert.equal(
+    scopesOf("A-12", false, () => true).some((entry) => entry.dmSeatId === wOthers.seatId),
+    false,
+    "the per-line Others bucket is never a district, live or not",
+  );
+  const pmScopes = scopesOf("B-155", true);
+  assert.deepEqual(
+    pmScopes.map((entry) => entry.key),
+    [
+      `dm:${wAlex.seatId}`, `dm:${wCairo.seatId}`, `dm:${wDelta1.seatId}`, `dm:${wDelta2.seatId}`, `dm:${wGiza.seatId}`, "line:pedia",
+      `dm:${wAifDm.seatId}`, "line:anti_infective",
+    ],
+    "a product manager picks Pedia or Anti Infective, then its district managers or any rep in the line",
+  );
+  assert.equal(pmScopes.some((entry) => entry.lineCode === "cns"), false, "never CNS");
+  assert.deepEqual(
+    managerScopeTerritories(wide, { dmSeatId: null, lineCode: "pedia" }, "B-155").map((entry) => entry.seatId),
+    [wAlexRep.seatId, wCairoRep.seatId],
+    "any rep in the line: every Pedia territory, a vacant district's included, never one under Others",
+  );
+  assert.deepEqual(managerScopeTerritories(wide, { dmSeatId: wCairo.seatId, lineCode: "pedia" }, "A-12").map((entry) => entry.seatId), [wCairoRep.seatId]);
+
+  // A half-day carries the scope it was planned in, checked against who plans it; Admin carries none.
+  const scoped = parseManagerSlotDraft({
+    date: "2026-10-17", half: "AM", kind: "with_rep", repSeatId: wAlexRep.seatId, customers: [{ customerId: UUID_A }], scopeDmSeatId: wAlex.seatId, scopeLineCode: "pedia",
+  });
+  assert.ok(scoped.ok && scoped.value.scopeDmSeatId === wAlex.seatId && scoped.value.scopeLineCode === "pedia", "a with-a-rep half-day keeps its district manager");
+  const office = parseManagerSlotDraft({ date: "2026-10-17", half: "PM", kind: "admin", activityType: "office", scopeDmSeatId: wAlex.seatId, scopeLineCode: "pedia" });
+  assert.ok(office.ok && office.value.activityType === "office" && office.value.scopeDmSeatId === null, "Office is an Admin half-day, and Admin carries no scope");
+  assert.equal(parseManagerSlotDraft({ date: "2026-10-17", half: "AM", kind: "with_rep", repSeatId: wAlexRep.seatId, customers: [{ customerId: UUID_A }], scopeDmSeatId: wAlex.seatId }).ok, false, "a district manager's seat always names its line");
+  const officeHalf = { kind: "admin" as const, activityType: "office" as const, scopeDmSeatId: null, scopeLineCode: null };
+  assert.match(managerSlotScopeError("dm", officeHalf, []) ?? "", /Office is not one of a district manager's half-days/, "Office is refused a district manager");
+  for (const kind of ["rsm", "nsm", "pm"] as const) assert.equal(managerSlotScopeError(kind, officeHalf, []), null, `Office is a ${kind} planner's`);
+  const withRepHalf = (scopeDmSeatId: string | null, scopeLineCode: string | null) => ({ kind: "with_rep" as const, activityType: null, scopeDmSeatId, scopeLineCode });
+  assert.match(managerSlotScopeError("dm", withRepHalf(wAlex.seatId, "pedia"), []) ?? "", /your own district/, "a district manager's half-day names no other district");
+  assert.match(managerSlotScopeError("rsm", withRepHalf(null, null), hanyScopes) ?? "", /Choose the district manager first/);
+  assert.equal(managerSlotScopeError("rsm", withRepHalf(wDelta1.seatId, "pedia"), hanyScopes), null, "Hany plans in his own region");
+  assert.match(managerSlotScopeError("rsm", withRepHalf(wGiza.seatId, "pedia"), hanyScopes) ?? "", /Choose one of the district managers shown/, "and never in Ali's Giza");
+  assert.equal(managerSlotScopeError("pm", withRepHalf(null, "pedia"), pmScopes), null, "a product manager may skip the district manager");
+  assert.ok(managerSlotScopeError("pm", withRepHalf(null, "cns"), pmScopes), "but never into CNS");
+  assert.equal(managerAdminActivities("dm").some((entry) => entry.key === "office"), false, "a district manager's board offers no Office");
+  for (const kind of ["rsm", "nsm", "pm"] as const) assert.equal(managerAdminActivities(kind)[0]?.key, "office", `the ${kind} board offers Office first`);
+
+  // "As today, HR auto acknowledge": his own manager, then the CEO; one step when that manager IS the CEO.
+  assert.equal(ceoHrIdOf(wide), personKey("B-2"));
+  assert.deepEqual(legacyStyleApprovers({ plannerHrId: "PD-0001", managerHrId: "A-12", ceoHrId: "B-2" }), { firstHrId: personKey("A-12"), secondHrId: personKey("B-2") }, "Hany → Ali → the CEO");
+  assert.deepEqual(legacyStyleApprovers({ plannerHrId: "B-900", managerHrId: "B-2", ceoHrId: "B-2" }), { firstHrId: personKey("B-2"), secondHrId: null }, "a national sales manager → the CEO, in one step");
+  assert.deepEqual(legacyStyleApprovers({ plannerHrId: "B-156", managerHrId: "B-155", ceoHrId: "B-2" }), { firstHrId: personKey("B-155"), secondHrId: personKey("B-2") }, "Ahmed → Rasha → the CEO");
+  assert.deepEqual(legacyStyleApprovers({ plannerHrId: "B-155", managerHrId: "B-150", ceoHrId: "B-2" }), { firstHrId: personKey("B-150"), secondHrId: personKey("B-2") }, "Rasha → Hossam → the CEO");
+  assert.deepEqual(legacyStyleApprovers({ plannerHrId: "B-155", managerHrId: null, ceoHrId: "B-2" }), { firstHrId: personKey("B-2"), secondHrId: null }, "no manager on record → the CEO alone");
+  assert.deepEqual(legacyStyleApprovers({ plannerHrId: "B-155", managerHrId: "b-155", ceoHrId: "B-2" }), { firstHrId: personKey("B-2"), secondHrId: null }, "never his own approver");
+  const writers = source("src/lib/phoenix-crm/server/manager-plan-writers.ts");
+  const approversFor = functionBody(writers, "export async function managerApproversFor(");
+  assert.match(approversFor, /if \(writer\.kind === "dm" && writer\.seat\) \{\s*const approvers = managerPlanApprovers\(org, writer\.seat\.seatId\);/, "a district manager keeps his seat chain");
+  assert.match(approversFor, /return legacyStyleApprovers\(\{ plannerHrId: writer\.hrId, managerHrId: await managerOfRecord\(writer\.hrId\), ceoHrId: ceoHrIdOf\(org\) \}\);/, "everyone else goes where the legacy plan goes");
+  for (const [name, text] of [
+    ["the week", functionBody(plans, "export async function transitionManagerPlan(")],
+    ["the edit ask", functionBody(plans, "export async function raiseManagerPlanEdit(")],
+    ["the removal", functionBody(source("src/lib/phoenix-crm/server/manager-customers.ts"), "export async function requestManagerCustomerRemoval(")],
+  ] as const) {
+    assert.ok(text.includes("managerApproversFor(viewer.org, writer)") || text.includes("managerApproversFor(viewer.org, writer),"), `${name} asks the one approver rule`);
+  }
+
+  // The database: the kind defaults to a district manager's, a seat is required unless a product manager,
+  // Office is refused a district manager, and HR acknowledges every approved week but a district manager's.
+  const widerSql = stripSqlComments(
+    readFileSync(new URL("../supabase/migrations/20261017213000_phoenix_crm_manager_plan_wider_writers.sql", import.meta.url), "utf8"),
+  ).replace(/\r\n/g, "\n");
+  assert.ok(widerSql.includes("add column if not exists planner_kind text not null default 'dm',"), "every week so far reads as a district manager's");
+  assert.ok(widerSql.includes("check (planner_kind in ('dm', 'rsm', 'nsm', 'pm'))"));
+  assert.ok(widerSql.includes("check (planner_kind = 'pm' or manager_seat_id is not null)"), "a seat is required unless a product manager");
+  assert.ok(widerSql.includes("and (hr_acknowledged_at is null or planner_kind <> 'dm')"), "the table itself refuses an HR acknowledgement on a district manager's week");
+  assert.match(widerSql, /if v_activity = 'office' and v_planner = 'dm' then\s*raise exception 'phoenix_crm:manager_plan_bad_kind';/, "the save refuses Office for a district manager");
+  assert.ok(widerSql.includes("if v_action = 'approve' and v_plan.status = 'approved' and v_plan.planner_kind <> 'dm' then"), "the closing approval of any other week is acknowledged by HR");
+  assert.ok(widerSql.includes("values (v_plan.id, 'hr_acknowledged', v_hr_ack, 'system', v_plan.status, v_plan.status, v_plan.version);"), "and the tracker reads that acknowledgement as an event");
+  for (const fn of ["phoenix_crm_save_manager_plan_slot", "phoenix_crm_manager_plan_transition"]) {
+    const at = widerSql.indexOf(`create or replace function public.${fn}(p jsonb)`);
+    assert.ok(at >= 0, `${fn} is replaced`);
+    assert.match(widerSql.slice(at, at + 200), /security definer/, `${fn} stays SECURITY DEFINER`);
+    assert.ok(widerSql.includes(`revoke execute on function public.${fn}(jsonb) from public, anon, authenticated;`), `${fn} stays revoked from the browser roles`);
+    assert.ok(widerSql.includes(`grant execute on function public.${fn}(jsonb) to service_role;`), `${fn} stays the service role's`);
+  }
+  assert.equal(/grant [^;]* to (anon|authenticated)\b/i.test(widerSql), false, "nothing is granted to a browser role");
+  const hubSource = source("src/lib/phoenix-crm/server/manager-plan-hub.ts");
+  assert.match(hubSource, /if \(plan\.plannerKind !== "dm"\) \{\s*steps\.push\(\{\s*label: "HR acknowledgement",\s*who: "HR, automatically",/, "the tracker shows HR's step on every week but a district manager's");
+
+  // Who reads whom: Ali reads Hany's week; a product manager's week is read by the manager on his record.
+  const ali = viewerFor("A-12", "National Sales Manager", { canCreate: false });
+  assert.equal(readsManagerPlanOf(ali, "PD-0001"), true, "Ali reads the regional manager's week below him");
+  assert.equal(readsManagerPlanOf(hany, "A-12"), false, "and never the other way up");
+  const roster = [{ hrId: personKey("B-155"), managerHrId: personKey("B-150") }, { hrId: personKey("B-156"), managerHrId: personKey("B-155") }];
+  const asPlanner = (hrId: string, role: string, plansAsProductManager: boolean) =>
+    ({ ...viewerFor(hrId, role, { canCreate: false }), plansAsProductManager, productManagers: roster }) as unknown as PhoenixCrmViewer;
+  const ahmed = asPlanner("B-156", "Product Manager", true);
+  const rasha = asPlanner("B-155", "Group Product Manager", true);
+  const hossam = asPlanner("B-150", "Marketing Manager", false);
+  assert.equal(assertManagerPlanWriter(ahmed).kind, "pm", "Ahmed plans his own week");
+  assert.equal(managerPlanReach(ahmed)?.canWrite, true, "with read alone");
+  assert.equal(readsManagerPlanOf(rasha, "B-156"), true, "Rasha reads Ahmed's week");
+  assert.equal(readsManagerPlanOf(ahmed, "B-155"), false, "Ahmed never reads Rasha's");
+  assert.equal(readsManagerPlanOf(hossam, "B-155"), true, "Hossam reads Rasha's");
+  assert.equal(managerPlanReach(hossam)?.canWrite, false, "and plans none of his own");
+  assert.throws(() => assertManagerPlanWriter(hossam), /Only a district, regional, national or product manager plans/);
+  assert.equal(managerPlanDeciderRole(ceo, { stage: "second", firstApproverHrId: "A-12", secondApproverHrId: personKey("B-2"), isTest: false }), "second", "the CEO decides the step stored on the week, with read alone");
+  assert.match(
+    functionBody(source("src/lib/phoenix-crm/server/manager-plan-reach.ts"), "export function assertManagerPlanWriter("),
+    /if \(writer\.kind === "dm" && !viewer\.canCreate\) throw forbiddenError\(/,
+    "a district manager still needs create; the other kinds plan by their seat or role",
+  );
+
+  // The Team tab's choices: himself first when he plans too, then everyone he reads; none with nobody to choose.
+  const nsmChoices = managerPlanChoices(nsm, managerPlanReach(nsm) ?? { mode: "own", managers: [] });
+  assert.equal(nsmChoices?.[0]?.hrId, personKey("B-900"), "an NSM who plans sees his own week first");
+  assert.equal(nsmChoices?.[0]?.kind, "nsm");
+  assert.deepEqual(nsmChoices?.slice(1).map((entry) => entry.hrId).sort(), [personKey("B-1"), personKey("B-12"), personKey("B-76")].sort(), "then the district managers below him");
+  assert.equal(managerPlanChoices(dm, managerPlanReach(dm) ?? { mode: "own", managers: [] }), null, "a district manager with nobody below has nothing to choose");
+  const ceoChoices = managerPlanChoices(ceo, managerPlanReach(ceo) ?? { mode: "pick", managers: [] });
+  assert.ok(ceoChoices && ceoChoices.length > 0 && ceoChoices.every((entry) => entry.hrId !== personKey("B-2")), "the CEO picks among everyone, never himself");
+  for (const file of ["src/lib/phoenix-crm/server/manager-plan-report.ts", "src/lib/phoenix-crm/server/manager-customers.ts"]) {
+    assert.match(source(file), /managerPlanChoices\(viewer, /, `${file} lists its managers through the one rule`);
+  }
+
+  // The switch: a regional or national seat switches with the first live team below it; a product
+  // manager never does, and plans here beside his legacy form.
+  const weekHere = functionBody(switchSource, "export async function plansManagerWeekHere(");
+  assert.match(weekHere, /if \(writer\.kind === "pm"\) return true;\s*return dmPlansInPhoenixCrm\(/, "a product manager's board always opens; everyone else's with the switch");
+  assert.match(
+    functionBody(switchSource, "async function seniorPlansInPhoenixCrm("),
+    /liveSeatId !== seat\.seatId && \(org\.seats\.get\(liveSeatId\)\?\.path\.includes\(seat\.seatId\) \?\? false\)/,
+    "a live team below the seat switches it",
+  );
+
+  // Attendance: a switched regional or national manager is judged by the Office half-days of the new
+  // plan; a product manager still by the legacy form he still files.
+  const officeDays = source("src/lib/attendance/plan-office-days.ts");
+  assert.match(officeDays, /statuses: \["approved"\],/, "only an approved week sets an office day");
+  assert.match(officeDays, /if \(halfDay\.plannerKind !== "rsm" && halfDay\.plannerKind !== "nsm"\) continue;/, "the new plan is read for the switched seat holders alone");
+  assert.match(officeDays, /const isOffice = halfDay\.kind === "admin" && halfDay\.activityType === "office";\s*if \(isOffice \|\| !byDate\.has\(halfDay\.date\)\) byDate\.set\(halfDay\.date, isOffice\);/, "any Office half wins the day");
+  assert.equal(managerHalfLegacyType("admin", "office"), "Office", "every calendar reads an Office half-day as the legacy Office");
+
+  // The report: a product manager stands with a rep in the visit's own product manager slot.
+  assert.equal(countsAsPlannersVisitWithRep({ kind: "single", managerHrId: null, seniorHrId: null, productManagerHrId: "b-155" }, "B-155"), true, "the rep's visit naming the product manager counts for him");
+  assert.equal(countsAsPlannersVisitWithRep({ kind: "single", managerHrId: "B-155", seniorHrId: null, productManagerHrId: null }, "B-155"), false, "a single visit in the manager slot is still no double visit");
+  assert.equal(countsAsPlannersVisitWithRep({ kind: "double", managerHrId: "PD-0001", seniorHrId: null, productManagerHrId: null }, "PD-0001"), true);
+  assert.match(source("src/lib/phoenix-crm/server/manager-plan-report.ts"), /readBy\("product_manager_hr_id", part\),/, "the report reads that slot");
+
+  // The Hub: the District Manager tab carries district managers' weeks only; Company Plans the others'.
+  assert.ok(hub.includes('fetchCrmManagerPlanRequestItems(access, null, "dm")'), "the district managers' feed");
+  assert.ok(hub.includes('fetchCrmManagerPlanRequestItems(access, null, "others")'), "the regional, national and product managers' weeks on Company Plans");
+  assert.ok(hub.includes('(row.plannerKind === "dm") === (kinds === "dm")'), "split by the week's own kind");
+
+  // The routes: every writer reaches them with read — the writer rule decides, never the create grant.
+  const routeFiles = filesUnder("app/api/phoenix-crm/manager-plans").filter((file) => file.endsWith("/route.ts"));
+  assert.equal(routeFiles.length, 12, "the twelve manager-plan routes");
+  for (const file of routeFiles) {
+    const text = source(file);
+    assert.match(text, /assertPermission\(access, "phoenix_crm", "read"\)/, `${file} asks read`);
+    assert.equal(/assertPermission\(access, "phoenix_crm", "(create|approve|update)"\)/.test(text), false, `${file} never asks a grant only a district manager holds`);
+  }
+  const registry = source("src/lib/security/access-registry.ts").split("\n").filter((line) => line.includes('pattern: "/api/phoenix-crm/manager-plans'));
+  assert.equal(registry.length, 15, "fifteen declarations across the twelve routes");
+  for (const line of registry) assert.ok(line.includes('permission: { resource: "phoenix_crm", action: "read" }'), `declared on read: ${line.trim().slice(0, 120)}`);
+
+  // The board: the scope picker, the half-day override, and the HR line on a non-district manager's send.
+  assert.match(board, /function ScopePicker\(/, "the board picks the district manager first");
+  assert.match(board, /Another district manager for this half/, "once per day, a half on request");
+  assert.match(board, /Once it is approved, HR acknowledges it automatically\./, "the send step names HR's automatic acknowledgement");
 
   // ── The words on his screens ─────────────────────────────────────────────────────────────────
 

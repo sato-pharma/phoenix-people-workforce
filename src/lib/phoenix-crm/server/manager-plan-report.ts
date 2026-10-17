@@ -4,7 +4,8 @@
  *
  *   - WITH A REP: a ticked customer is DONE when the rep logged a visit on him that day naming this
  *     manager — the double visit's own rule (`countsAsManagersDoubleVisit`, the manager report's), read
- *     from the same countable visits. Ticking a rep is not itself a double visit.
+ *     from the same countable visits; a product manager's when the visit names him as its product manager
+ *     (`countsAsPlannersVisitWithRep`, owner, 2026-10-17). Ticking a rep is not itself a double visit.
  *   - SINGLE VISIT: DONE when he logged it himself (`phoenix_crm_manager_visits`), planned or not.
  *   - ADMIN: never checkable.
  *   - His unplanned single visits are listed APART and never fill a planned row.
@@ -19,10 +20,10 @@ import { addDaysIso } from "@/lib/crm/dates";
 import { validationError } from "@/lib/http/api-errors";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import { fieldWeekStart, repPlanWeek } from "@/lib/phoenix-crm/calendar";
-import { dayActivityLabel, isDayActivity } from "@/lib/phoenix-crm/day-activities";
-import { countsAsManagersDoubleVisit } from "@/lib/phoenix-crm/double-visit-plan-rules";
 import {
+  countsAsPlannersVisitWithRep,
   isManagerPlanSent,
+  managerAdminActivityLabel,
   managerCustomerFlagLabel,
   managerOutcome,
   managerOutcomeLabel,
@@ -38,7 +39,7 @@ import {
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
-import { managerPlace, managerPlanSeatOf, resolveManagerPlanReader } from "@/lib/phoenix-crm/server/manager-plan-reach";
+import { managerPlace, managerPlanChoices, managerPlanWriterFor, resolveManagerPlanReader } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import {
   loadManagerSlotCustomers,
   loadManagerSlotRows,
@@ -103,7 +104,10 @@ export type ManagerReportView = {
   mode: "own" | "pick";
   weekStart: string;
   weeks: Array<{ weekStart: string; name: string }>;
-  /** Every district manager he reads, each with the week in two numbers. Null in "own" mode. */
+  /**
+   * The managers to choose between, each with the week in two numbers — himself first when he plans a week
+   * too (`managerPlanChoices`). Null when there is nobody to choose: a district manager reading his own.
+   */
   managers: Array<{ hrId: string; name: string; place: string; summaryText: string }> | null;
   manager: { hrId: string; name: string; place: string } | null;
   report: ManagerReport | null;
@@ -115,12 +119,12 @@ async function loadWithRepDone(managerHrIds: ReadonlyArray<string>, seatIds: Rea
   const managers = dedupeIds(managerHrIds);
   if (managers.length === 0 || seatIds.length === 0) return done;
   const weekEnd = addDaysIso(weekStart, 5);
-  const readBy = (column: "manager_hr_id" | "senior_hr_id", part: string[]) =>
+  const readBy = (column: "manager_hr_id" | "senior_hr_id" | "product_manager_hr_id", part: string[]) =>
     fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
           .from("phoenix_crm_countable_visits")
-          .select("id, seat_id, customer_id, visit_date, kind, manager_hr_id, senior_hr_id")
+          .select("id, seat_id, customer_id, visit_date, kind, manager_hr_id, senior_hr_id, product_manager_hr_id")
           .in("seat_id", part)
           .eq("is_test", isTest)
           .gte("visit_date", weekStart)
@@ -129,15 +133,20 @@ async function loadWithRepDone(managerHrIds: ReadonlyArray<string>, seatIds: Rea
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     );
   for (const part of chunk(dedupeIds(seatIds), 100)) {
-    const [asManager, asSenior] = await Promise.all([readBy("manager_hr_id", part), readBy("senior_hr_id", part)]);
-    for (const row of [...asManager, ...asSenior]) {
+    // A product manager is on a visit in its own slot (owner, 2026-10-17), so it is read too.
+    const [asManager, asSenior, asProductManager] = await Promise.all([
+      readBy("manager_hr_id", part),
+      readBy("senior_hr_id", part),
+      readBy("product_manager_hr_id", part),
+    ]);
+    for (const row of [...asManager, ...asSenior, ...asProductManager]) {
       const seatId = textOrNull(row.seat_id);
       const customerId = textOrNull(row.customer_id);
       const date = textOrNull(row.visit_date)?.slice(0, 10) ?? null;
       if (!seatId || !customerId || !date) continue;
-      const visit = { kind: row.kind, managerHrId: row.manager_hr_id, seniorHrId: row.senior_hr_id };
+      const visit = { kind: row.kind, managerHrId: row.manager_hr_id, seniorHrId: row.senior_hr_id, productManagerHrId: row.product_manager_hr_id };
       for (const manager of managers) {
-        if (!countsAsManagersDoubleVisit(visit, manager)) continue;
+        if (!countsAsPlannersVisitWithRep(visit, manager)) continue;
         const keys = done.get(manager) ?? new Set<string>();
         keys.add(`${seatId}|${date}|${customerId}`);
         done.set(manager, keys);
@@ -256,7 +265,7 @@ export async function computeManagerReports(
           outcomeLabel: managerOutcomeLabel(outcome),
         };
       });
-      const activity = isDayActivity(slot.activityType) ? dayActivityLabel(slot.activityType) : "Admin";
+      const activity = managerAdminActivityLabel(slot.activityType) ?? "Admin";
       const title =
         slot.kind === "with_rep"
           ? `With ${slot.repHrId ? nameOf(repNames, slot.repHrId) : "a vacant territory"}`
@@ -289,6 +298,7 @@ export async function computeManagerReports(
         secondName: plan?.secondApproverHrId ? personName(plan.secondApproverHrId) : null,
         deciderName: plan?.decidedByHrId ? personName(plan.decidedByHrId) : null,
         byAdministrator: plan?.decidedByRole === "administrator",
+        hrAcknowledged: plan?.hrAcknowledgedAt != null,
       }),
       summary,
       summaryText: managerPlanSummaryText(summary),
@@ -311,10 +321,13 @@ export async function loadManagerPlanReport(
   const weekStart = asked ?? fieldWeekStart(viewer.cairoToday);
   if (!weeks.includes(weekStart)) throw validationError("Choose one of the weeks shown. Reload the page.");
 
-  const pickIds = reader.mode === "pick" ? reader.managers.map((entry) => entry.hrId) : [];
+  const choices = managerPlanChoices(viewer, reader);
+  const pickIds = (choices ?? []).map((entry) => entry.hrId);
+  // He is listed first when he plans a week too.
+  const selfHrId = personKey(viewer.hrId);
   const chosen = reader.managerHrId;
   const all = dedupeIds([...pickIds, chosen]);
-  const seats = new Map(all.map((hrId) => [hrId, managerPlanSeatOf(viewer, hrId)]));
+  const writers = new Map(all.map((hrId) => [hrId, managerPlanWriterFor(viewer, hrId)]));
   const names = await loadPeopleNames(all);
   const reports = await computeManagerReports(viewer, all, weekStart, isTest, names);
 
@@ -323,18 +336,22 @@ export async function loadManagerPlanReport(
     mode: reader.mode,
     weekStart,
     weeks: weeks.map((week) => ({ weekStart: week, name: reportWeekName(week, viewer.cairoToday) })),
-    managers:
-      reader.mode === "pick"
-        ? reader.managers
-            .map((entry) => ({
-              hrId: entry.hrId,
-              name: nameOf(names, entry.hrId),
-              place: managerPlace(entry.seat),
-              summaryText: reports.get(entry.hrId)?.summaryText ?? managerPlanSummaryText({ planned: 0, done: 0, notDone: 0, unplanned: 0 }),
-            }))
-            .sort((left, right) => left.place.localeCompare(right.place) || left.name.localeCompare(right.name))
-        : null,
-    manager: chosen ? { hrId: chosen, name: nameOf(names, chosen), place: managerPlace(seats.get(chosen) ?? null) } : null,
+    managers: choices
+      ? choices
+          .map((entry) => ({
+            hrId: entry.hrId,
+            name: nameOf(names, entry.hrId),
+            place: managerPlace(entry.seat, entry.kind),
+            summaryText: reports.get(entry.hrId)?.summaryText ?? managerPlanSummaryText({ planned: 0, done: 0, notDone: 0, unplanned: 0 }),
+          }))
+          .sort(
+            (left, right) =>
+              Number(right.hrId === selfHrId) - Number(left.hrId === selfHrId) || left.place.localeCompare(right.place) || left.name.localeCompare(right.name),
+          )
+      : null,
+    manager: chosen
+      ? { hrId: chosen, name: nameOf(names, chosen), place: managerPlace(writers.get(chosen)?.seat ?? null, writers.get(chosen)?.kind ?? "dm") }
+      : null,
     report: chosen ? (reports.get(personKey(chosen) ?? chosen) ?? null) : null,
   };
 }

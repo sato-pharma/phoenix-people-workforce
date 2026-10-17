@@ -29,15 +29,34 @@
  *     visit the REP logs naming him, and the single visits HE logs himself, which count in his own
  *     report and nowhere else.
  *   - A rep who later drops a customer he ticked: his row stays and is FLAGGED, never removed.
+ *
+ * 🔴 WIDENED (owner, 2026-10-17): "Now do the same for the product managers and the national sales
+ * managers and the regional manager. The only difference is that he first choose the region or the
+ * district manager, then the areas of this district manager appear." Four kinds of planner now
+ * (`ManagerPlannerKind`): the district manager as above; the regional and the national sales managers,
+ * who first pick one of the district managers below their seat; and the product managers (Rasha Sabry and
+ * Ahmed SharafEldeen), who first pick Pedia or Anti Infective, then a district manager of that line or
+ * "any rep in the line". The district manager is picked once a day by default, a half on request. Their
+ * approvers are "as today, HR auto acknowledge" — their own manager, then the CEO (`legacyStyleApprovers`)
+ * — and only their weeks gain Office, the day their attendance is judged by.
  */
 
 import { addDaysIso } from "@/lib/crm/dates";
 import { normalizeContactName } from "@/lib/crm/campaign-contact-match";
 import { fieldWeekDays, fieldWeekStart, isIsoDay, planDayListTypes, repPlanWeek } from "@/lib/phoenix-crm/calendar";
-import { isDayActivity, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
-import { DOUBLE_VISIT_PLANNER_TIERS } from "@/lib/phoenix-crm/double-visit-plan-rules";
+import { dayActivityLabel, isDayActivity, PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
+import { countsAsManagersDoubleVisit, DOUBLE_VISIT_PLANNER_TIERS } from "@/lib/phoenix-crm/double-visit-plan-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
-import { heldManagerSeats, territoryReviewer, type ChainMember, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import {
+  heldManagerSeats,
+  personKey,
+  TERRITORY_TIER,
+  territoriesBelow,
+  territoryReviewer,
+  type ChainMember,
+  type OrgIndex,
+  type OrgSeat,
+} from "@/lib/phoenix-crm/scope";
 import { secondApproverHrIdForManager } from "@/lib/workforce/plan-second-approver";
 
 // ── The words ───────────────────────────────────────────────────────────────────────────────────
@@ -122,6 +141,201 @@ export const MANAGER_OWN_VISIT_CLOSED =
  */
 export function dmPlansInPhoenixCrmFor(seats: ReadonlyArray<OrgSeat>, liveSeat: (seat: OrgSeat) => boolean): boolean {
   return seats.some((seat) => liveSeat(seat));
+}
+
+// ── The four kinds of planner (owner, 2026-10-17) ───────────────────────────────────────────────
+
+/** dm — a district manager (or acting); rsm — a regional sales manager; nsm — a national sales manager; pm — a product manager. */
+export type ManagerPlannerKind = "dm" | "rsm" | "nsm" | "pm";
+
+export function isManagerPlannerKind(value: unknown): value is ManagerPlannerKind {
+  return value === "dm" || value === "rsm" || value === "nsm" || value === "pm";
+}
+
+/** The app roles that plan as a product manager — Rasha Sabry (Group Product Manager) and Ahmed SharafEldeen. */
+export const PRODUCT_MANAGER_PLAN_ROLES: ReadonlySet<string> = new Set(["Product Manager", "Group Product Manager"]);
+
+/**
+ * 🔴 THE TWO LINES A PRODUCT MANAGER PLANS IN — his own ruling, 2026-10-17: "make him choose between the
+ * 2 lines pedia and anti infective … whever he chooses from both appear its district managers", and
+ * "Both of them" when asked whether it held for Rasha and Ahmed alike. CNS is not one of them.
+ */
+export const PRODUCT_MANAGER_PLAN_LINES: readonly string[] = ["pedia", "anti_infective"];
+
+/** The regional and national seats a person holds — the national one first, since it reaches further. */
+export function seniorPlanSeats(org: OrgIndex, hrId: string | null | undefined): OrgSeat[] {
+  return heldManagerSeats(org, hrId)
+    .filter((seat) => seat.tier === "RSM" || seat.tier === "NSM")
+    .sort((left, right) => (left.tier === right.tier ? left.seatId.localeCompare(right.seatId) : left.tier === "NSM" ? -1 : 1));
+}
+
+export type ManagerPlanWriter = {
+  kind: ManagerPlannerKind;
+  hrId: string;
+  /** The seat the week is filed on; null for a product manager, who holds none. */
+  seat: OrgSeat | null;
+  /** The lines he plans in: his seat's, or the product managers' two. */
+  lineCodes: string[];
+};
+
+/**
+ * Who plans a week here, and as what. A district manager seat comes first — a person on one plans as the
+ * district manager he is, whatever else he holds — then a national or regional seat, then a product
+ * manager's role. `productManager` is the server's answer (the role, held by a current employee).
+ */
+export function managerPlanWriterOf(org: OrgIndex, hrId: string | null | undefined, options: { productManager: boolean }): ManagerPlanWriter | null {
+  const key = personKey(hrId);
+  if (!key) return null;
+  const dmSeat = managerPlanSeats(org, key)[0];
+  if (dmSeat) return { kind: "dm", hrId: key, seat: dmSeat, lineCodes: dmSeat.lineCode ? [dmSeat.lineCode] : [] };
+  const senior = seniorPlanSeats(org, key)[0];
+  if (senior) return { kind: senior.tier === "NSM" ? "nsm" : "rsm", hrId: key, seat: senior, lineCodes: senior.lineCode ? [senior.lineCode] : [] };
+  if (options.productManager) return { kind: "pm", hrId: key, seat: null, lineCodes: [...PRODUCT_MANAGER_PLAN_LINES] };
+  return null;
+}
+
+/** What the screens call him: "District manager", "Regional sales manager", "National sales manager", "Product manager". */
+export function managerPlannerTitle(kind: ManagerPlannerKind): string {
+  if (kind === "rsm") return "Regional sales manager";
+  if (kind === "nsm") return "National sales manager";
+  if (kind === "pm") return "Product manager";
+  return "District manager";
+}
+
+// ── The scope a regional, national or product manager picks first ───────────────────────────────
+
+/**
+ * One choice in the picker: a district manager's seat (and its line), or — a product manager's only —
+ * a whole line, "any rep in the line" with no district manager (owner, 2026-10-17: "make product managers
+ * able to skip district managers and choose a rep with out district manager").
+ */
+export type ManagerPlanScope = {
+  key: string;
+  dmSeatId: string | null;
+  lineCode: string;
+  lineName: string | null;
+  /** The district manager on the seat; null for a vacant district, and for a whole line. */
+  dmHrId: string | null;
+  /** The regional seat a national sales manager's district sits under, so his picker groups it. */
+  regionSeatId: string | null;
+  regionHrId: string | null;
+};
+
+export function managerScopeKey(dmSeatId: string | null, lineCode: string): string {
+  return dmSeatId ? `dm:${dmSeatId}` : `line:${lineCode}`;
+}
+
+/** The district manager seats under a seat — never the per-line "Others" bucket, which holds no reps. */
+function districtSeatsUnder(org: OrgIndex, rootSeatId: string): OrgSeat[] {
+  return [...org.seats.values()]
+    .filter((seat) => DOUBLE_VISIT_PLANNER_TIERS.has(seat.tier) && !seat.isOtherPseudoDm && seat.seatId !== rootSeatId && seat.path.includes(rootSeatId))
+    .sort((left, right) => left.seatId.localeCompare(right.seatId));
+}
+
+function districtSeatsOfLine(org: OrgIndex, lineCode: string): OrgSeat[] {
+  return [...org.seats.values()]
+    .filter((seat) => DOUBLE_VISIT_PLANNER_TIERS.has(seat.tier) && !seat.isOtherPseudoDm && seat.lineCode === lineCode)
+    .sort((left, right) => left.seatId.localeCompare(right.seatId));
+}
+
+function scopeOfDistrict(org: OrgIndex, seat: OrgSeat, writerSeatId: string | null): ManagerPlanScope {
+  const region = seat.path
+    .map((seatId) => org.seats.get(seatId))
+    .find((above): above is OrgSeat => Boolean(above && above.tier === "RSM" && above.seatId !== writerSeatId));
+  return {
+    key: managerScopeKey(seat.seatId, seat.lineCode ?? ""),
+    dmSeatId: seat.seatId,
+    lineCode: seat.lineCode ?? "",
+    lineName: seat.lineName,
+    dmHrId: personKey(seat.occupantHrId),
+    regionSeatId: region?.seatId ?? null,
+    regionHrId: personKey(region?.occupantHrId),
+  };
+}
+
+/**
+ * The scopes a planner picks from. A district manager picks none — his scope is his own district, as
+ * before. A regional or national sales manager: every district below his seat. A product manager: each of
+ * his two lines' districts, then the line itself. A vacant district is offered only while its team is
+ * live (`isLiveSeat`), since only a live team's reps plan here; a filled one always is.
+ */
+export function managerPlanScopes(org: OrgIndex, writer: ManagerPlanWriter, isLiveSeat: (seat: OrgSeat) => boolean = () => true): ManagerPlanScope[] {
+  if (writer.kind === "dm") return [];
+  const offered = (seat: OrgSeat) => Boolean(seat.occupantHrId) || isLiveSeat(seat);
+  if (writer.kind === "pm") {
+    return writer.lineCodes.flatMap((lineCode) => {
+      const districts = districtSeatsOfLine(org, lineCode).filter(offered);
+      const lineName = districts[0]?.lineName ?? org.territories.find((seat) => seat.lineCode === lineCode)?.lineName ?? null;
+      return [
+        ...districts.map((seat) => scopeOfDistrict(org, seat, null)),
+        { key: managerScopeKey(null, lineCode), dmSeatId: null, lineCode, lineName, dmHrId: null, regionSeatId: null, regionHrId: null },
+      ];
+    });
+  }
+  if (!writer.seat) return [];
+  return districtSeatsUnder(org, writer.seat.seatId)
+    .filter(offered)
+    .map((seat) => scopeOfDistrict(org, seat, writer.seat?.seatId ?? null));
+}
+
+/** The scope a half-day names, if it is one the planner may pick. */
+export function findManagerPlanScope(
+  scopes: ReadonlyArray<ManagerPlanScope>,
+  input: { dmSeatId: string | null; lineCode: string | null },
+): ManagerPlanScope | null {
+  if (!input.lineCode && !input.dmSeatId) return null;
+  return scopes.find((scope) => (input.dmSeatId ? scope.dmSeatId === input.dmSeatId : scope.dmSeatId === null && scope.lineCode === input.lineCode)) ?? null;
+}
+
+/** The territories of one scope: under the district manager's seat, or every one of the line. Never the planner's own. */
+export function managerScopeTerritories(org: OrgIndex, scope: Pick<ManagerPlanScope, "dmSeatId" | "lineCode">, plannerHrId: string): OrgSeat[] {
+  const own = personKey(plannerHrId);
+  const seats = scope.dmSeatId
+    ? territoriesBelow(org, [scope.dmSeatId])
+    : org.territories.filter((seat) => seat.lineCode === scope.lineCode && !seatUnderOthers(org, seat));
+  return seats.filter((seat) => seat.tier === TERRITORY_TIER && personKey(seat.occupantHrId) !== own);
+}
+
+function seatUnderOthers(org: OrgIndex, seat: OrgSeat): boolean {
+  return seat.path.some((seatId) => org.seats.get(seatId)?.isOtherPseudoDm === true);
+}
+
+/** Every territory a planner reaches, across all his scopes, once each. A district manager's is his district. */
+export function managerWriterTerritories(org: OrgIndex, writer: ManagerPlanWriter, scopes: ReadonlyArray<ManagerPlanScope>): OrgSeat[] {
+  if (writer.kind === "dm") {
+    const roots = managerPlanSeats(org, writer.hrId).map((seat) => seat.seatId);
+    return territoriesBelow(org, roots).filter((seat) => seat.tier === TERRITORY_TIER && personKey(seat.occupantHrId) !== writer.hrId);
+  }
+  const seen = new Map<string, OrgSeat>();
+  for (const scope of scopes) for (const seat of managerScopeTerritories(org, scope, writer.hrId)) seen.set(seat.seatId, seat);
+  return [...seen.values()].sort((left, right) => left.seatId.localeCompare(right.seatId));
+}
+
+// ── Admin, and Office ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * 🔴 OFFICE IS NEVER A DISTRICT MANAGER'S. The national sales managers and the product managers are judged
+ * on attendance by the days their plan marks Office (`attendance/plan-office-days.ts`), so the plan that
+ * replaces their legacy form must carry it; a district manager's board never offered it, and the database
+ * refuses it for one (`manager_plan_bad_kind`).
+ */
+export type ManagerAdminActivity = PhoenixCrmDayActivity | "office";
+
+export const MANAGER_OFFICE_ACTIVITY = { key: "office", label: "Office" } as const;
+
+export function isManagerAdminActivity(value: unknown): value is ManagerAdminActivity {
+  return value === "office" || isDayActivity(value);
+}
+
+export function managerAdminActivityLabel(value: unknown): string | null {
+  if (value === "office") return MANAGER_OFFICE_ACTIVITY.label;
+  return isDayActivity(value) ? dayActivityLabel(value) : null;
+}
+
+/** The Admin choices a planner is offered: Office first for everyone but a district manager. */
+export function managerAdminActivities(kind: ManagerPlannerKind): Array<{ key: string; label: string }> {
+  const days = PHOENIX_CRM_DAY_ACTIVITIES.map((entry) => ({ key: entry.key, label: entry.label }));
+  return kind === "dm" ? days : [{ key: MANAGER_OFFICE_ACTIVITY.key, label: MANAGER_OFFICE_ACTIVITY.label }, ...days];
 }
 
 // ── The weeks and the days ──────────────────────────────────────────────────────────────────────
@@ -210,8 +424,14 @@ export type ManagerSlotDraft = {
   /** Null clears the half-day. */
   kind: ManagerSlotKind | null;
   repSeatId: string | null;
-  activityType: PhoenixCrmDayActivity | null;
+  activityType: ManagerAdminActivity | null;
   areaSeatId: string | null;
+  /**
+   * The scope this half was planned in — a regional, national or product manager's pick (owner,
+   * 2026-10-17). A district manager's half-day, an Admin one and a cleared one carry none.
+   */
+  scopeDmSeatId: string | null;
+  scopeLineCode: string | null;
   note: string | null;
   customers: ManagerSlotCustomerRef[];
 };
@@ -261,6 +481,9 @@ export function parseManagerSlotDraft(raw: unknown): ManagerRuleResult<ManagerSl
   const repSeatId = textOf(body.repSeatId);
   const areaSeatId = textOf(body.areaSeatId);
   const activity = body.activityType;
+  const scopeDmSeatId = textOf(body.scopeDmSeatId);
+  const scopeLineCode = textOf(body.scopeLineCode);
+  if (scopeDmSeatId && !scopeLineCode) return { ok: false, error: "The district manager you chose could not be read. Reload the page." };
   const draft: ManagerSlotDraft = {
     date,
     half: body.half,
@@ -268,6 +491,8 @@ export function parseManagerSlotDraft(raw: unknown): ManagerRuleResult<ManagerSl
     repSeatId: null,
     activityType: null,
     areaSeatId: null,
+    scopeDmSeatId: null,
+    scopeLineCode: null,
     note,
     customers: [],
   };
@@ -276,15 +501,32 @@ export function parseManagerSlotDraft(raw: unknown): ManagerRuleResult<ManagerSl
     if (!repSeatId) return { ok: false, error: "Choose the rep you go with." };
     if (customers.length === 0) return { ok: false, error: "Tick at least one of the rep's customers, or Mark all." };
     if (customers.some((entry) => "managerCustomerId" in entry)) return { ok: false, error: "With a rep, the customers are the rep's own." };
-    return { ok: true, value: { ...draft, repSeatId, customers } };
+    return { ok: true, value: { ...draft, repSeatId, scopeDmSeatId, scopeLineCode, customers } };
   }
   if (kind === "admin") {
-    if (!isDayActivity(activity)) return { ok: false, error: "Choose what the admin half-day is." };
+    if (!isManagerAdminActivity(activity)) return { ok: false, error: "Choose what the admin half-day is." };
     return { ok: true, value: { ...draft, activityType: activity } };
   }
-  if (!areaSeatId) return { ok: false, error: "Choose the area of your district." };
+  if (!areaSeatId) return { ok: false, error: "Choose the area." };
   if (customers.length === 0) return { ok: false, error: "Choose at least one customer for the single visit." };
-  return { ok: true, value: { ...draft, areaSeatId, customers } };
+  return { ok: true, value: { ...draft, areaSeatId, scopeDmSeatId, scopeLineCode, customers } };
+}
+
+/**
+ * 🔴 A HALF-DAY'S SCOPE AGAINST WHO PLANS IT. A district manager plans his own district, so his half-days
+ * carry none and Office is refused him; everyone else names, on every half-day with a rep or a single
+ * visit, the district (or line) he picked for it — one of HIS scopes. Null: the draft stands.
+ */
+export function managerSlotScopeError(
+  kind: ManagerPlannerKind,
+  draft: Pick<ManagerSlotDraft, "kind" | "activityType" | "scopeDmSeatId" | "scopeLineCode">,
+  scopes: ReadonlyArray<ManagerPlanScope>,
+): string | null {
+  if (draft.kind === "admin" && draft.activityType === "office" && kind === "dm") return "Office is not one of a district manager's half-days.";
+  if (draft.kind !== "with_rep" && draft.kind !== "single_visit") return null;
+  if (kind === "dm") return draft.scopeDmSeatId || draft.scopeLineCode ? "Your half-days are planned in your own district." : null;
+  if (!draft.scopeDmSeatId && !draft.scopeLineCode) return "Choose the district manager first.";
+  return findManagerPlanScope(scopes, { dmSeatId: draft.scopeDmSeatId, lineCode: draft.scopeLineCode }) ? null : "Choose one of the district managers shown. Reload the page.";
 }
 
 // ── Who approves ────────────────────────────────────────────────────────────────────────────────
@@ -325,6 +567,33 @@ function approverAfterRegional(org: OrgIndex, first: ChainMember): string | null
     .map((seatId) => org.seats.get(seatId))
     .filter((seat): seat is OrgSeat => Boolean(seat && seat.occupantHrId && seat.occupantHrId !== first.hrId));
   return (above.find((seat) => seat.tier === "NSM") ?? above.find((seat) => seat.tier === "CEO"))?.occupantHrId ?? null;
+}
+
+/** The two approvers of a week or an ask, by person: whoever the planner's kind sends it to. */
+export type ManagerApproverPair = { firstHrId: string | null; secondHrId: string | null };
+
+/** The CEO: whoever sits on the organogram's CEO seat, or null while it is empty. */
+export function ceoHrIdOf(org: OrgIndex): string | null {
+  for (const seat of org.seats.values()) if (seat.tier === "CEO" && seat.occupantHrId) return personKey(seat.occupantHrId);
+  return null;
+}
+
+/**
+ * 🔴 "AS TODAY, HR AUTO ACKNOWLEDGE" (owner, 2026-10-17) — a regional, national or product manager's week,
+ * his ask to edit it and his ask to take a customer off his own list go where his legacy weekly plan goes:
+ * his own manager (`employees.manager_hr_id`) approves, then the CEO; when that manager IS the CEO, or he
+ * has none, the CEO approves alone, in one step. HR's acknowledgement then follows by itself (the
+ * transition stamps it). Measured on production that day: Hany Saad → Ali Mohamed Ali → the CEO; each
+ * national sales manager → the CEO; Ahmed SharafEldeen → Rasha Sabry → the CEO; Rasha Sabry → Hossam
+ * Reda → the CEO. A district manager's week never comes here — `managerPlanApprovers` keeps his seat chain.
+ */
+export function legacyStyleApprovers(input: { plannerHrId: string; managerHrId: string | null | undefined; ceoHrId: string | null | undefined }): ManagerApproverPair {
+  const planner = personKey(input.plannerHrId);
+  const manager = personKey(input.managerHrId);
+  const ceo = personKey(input.ceoHrId);
+  const ceoApprover = ceo && ceo !== planner ? ceo : null;
+  if (!manager || manager === planner || manager === ceo) return { firstHrId: ceoApprover, secondHrId: null };
+  return { firstHrId: manager, secondHrId: ceoApprover };
 }
 
 /** Whose turn a week is at: the first approver on a sent week, the second once the first approved. */
@@ -384,6 +653,8 @@ export function managerPlanStatusLine(input: {
   deciderName?: string | null;
   /** The decision was the Administrator's, in place of its holder. */
   byAdministrator?: boolean;
+  /** HR acknowledged the approved week by itself — a regional, national or product manager's only. */
+  hrAcknowledged?: boolean;
 }): string {
   const manager = nameOrNull(input.managerName);
   const first = nameOrNull(input.firstName);
@@ -393,9 +664,15 @@ export function managerPlanStatusLine(input: {
   if (input.status === "submitted") return first ? `Waiting for ${first} to approve` : managerPlanStatusLabel("submitted");
   if (input.status === "first_approved") return second ? `Waiting for ${second} to approve` : managerPlanStatusLabel("first_approved");
   if (input.status === "returned") return manager ? `Waiting for ${manager} to edit and resend` : managerPlanStatusLabel("returned");
-  if (input.status === "approved") return decider ? `Approved by ${decider}` : managerPlanStatusLabel("approved");
+  if (input.status === "approved") {
+    const approved = decider ? `Approved by ${decider}` : managerPlanStatusLabel("approved");
+    return input.hrAcknowledged ? `${approved} · ${MANAGER_PLAN_HR_ACK_TEXT}` : approved;
+  }
   return manager ? `Not started — ${manager} drafts it` : managerPlanStatusLabel(null);
 }
+
+/** The tracker's last step on a regional, national or product manager's approved week. */
+export const MANAGER_PLAN_HR_ACK_TEXT = "Acknowledged by HR automatically";
 
 /**
  * What a decision moves the week to — the database's own state machine, written once more so the screen
@@ -471,6 +748,22 @@ export function managerOutcome(input: { kind: ManagerSlotKind; date: string; don
   if (input.date < input.visitDay) return "not_done";
   if (input.date <= input.cairoToday) return "open";
   return "ahead";
+}
+
+/**
+ * 🔴 A REP'S VISIT THAT ANSWERS A MANAGER'S "WITH A REP" HALF-DAY. A district, regional or national sales
+ * manager: the double or chain visit naming him (`countsAsManagersDoubleVisit`, unchanged). A product
+ * manager (owner, 2026-10-17): the rep's visit naming him as its product manager — the slot the visit form
+ * already has for him (`product_manager_hr_id`), never a double visit of anyone else.
+ */
+export function countsAsPlannersVisitWithRep(
+  visit: { kind: unknown; managerHrId: unknown; seniorHrId: unknown; productManagerHrId?: unknown },
+  plannerHrId: string | null | undefined,
+): boolean {
+  if (countsAsManagersDoubleVisit(visit, plannerHrId)) return true;
+  const planner = personKey(plannerHrId);
+  if (!planner || typeof visit.productManagerHrId !== "string") return false;
+  return personKey(visit.productManagerHrId) === planner;
 }
 
 export function managerOutcomeLabel(outcome: ManagerOutcome): string {

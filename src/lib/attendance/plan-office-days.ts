@@ -11,10 +11,20 @@
 // If a day has more than one plan item (e.g. AM/PM split), any "Office" item
 // that day marks it office=true — the employee was expected in the building at
 // least part of the day, so a punch should exist.
+//
+// A regional or national sales manager who plans his week in Phoenix CRM (owner,
+// 2026-10-17) files no legacy plan any more, so his APPROVED Phoenix CRM week is
+// read the same way: an Office half-day marks the day office=true, any other
+// half-day marks it false. Without it he would read "no plan" every day and stop
+// being judged on the office days he still plans. A product manager files BOTH
+// plans, and keeps being judged on his legacy one alone — exactly as before; a
+// district manager plans no Office half and is not read here either.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
 import { isIsoDate } from "@/lib/attendance/working-days";
+import { logWarning } from "@/lib/observability/log";
+import { loadManagerPlanHalfDays } from "@/lib/phoenix-crm/server/manager-plan-readers";
 
 const approvedPlanStatuses = ["final_approved", "hr_acknowledged"] as const;
 
@@ -79,6 +89,32 @@ export async function getPlanOfficeDayMap(input: {
     }
 
     if (byDate.size > 0) officeByEmployee.set(hrId, byDate);
+  }
+
+  // The regional and national sales managers' approved Phoenix CRM weeks, merged by the same
+  // "any Office wins" rule. A failed read degrades like a missing plan table: his days read "no
+  // plan", which skips him — never a wrongful deduction — and the legacy plans above still count.
+  const halfDays = await loadManagerPlanHalfDays({
+    from: input.dateFromIso,
+    to: input.dateToIso,
+    managerHrIds: normalizedHrIds,
+    statuses: ["approved"],
+    isTest: false,
+  }).catch((crmError: unknown) => {
+    logWarning("Plan office-day lookup could not read the Phoenix CRM manager weeks", {
+      labels: { event: "plan_office_days_crm_manager_read_failed" },
+      error: crmError,
+    });
+    return [];
+  });
+  for (const halfDay of halfDays) {
+    if (halfDay.plannerKind !== "rsm" && halfDay.plannerKind !== "nsm") continue;
+    const hrId = normalizeAttendanceHrId(halfDay.managerHrId);
+    if (!hrId || !isIsoDate(halfDay.date)) continue;
+    const byDate = officeByEmployee.get(hrId) ?? new Map<string, boolean>();
+    const isOffice = halfDay.kind === "admin" && halfDay.activityType === "office";
+    if (isOffice || !byDate.has(halfDay.date)) byDate.set(halfDay.date, isOffice);
+    officeByEmployee.set(hrId, byDate);
   }
 
   return officeByEmployee;

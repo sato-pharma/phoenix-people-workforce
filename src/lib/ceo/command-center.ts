@@ -17,6 +17,9 @@ import {
 } from "@/lib/needs-you/types";
 import { isDistrictManagerPlanTitle } from "@/lib/weekly-planning/plan-v1";
 import { planHasSecondApprover } from "@/lib/weekly-planning/second-approver";
+import { ceoHrIdOf } from "@/lib/phoenix-crm/manager-plan-rules";
+import { loadManagerPlanQueue } from "@/lib/phoenix-crm/server/manager-plan-queue";
+import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-command";
 import { getPlatformMetrics, type PlatformMetrics, type UncomputedRate } from "@/lib/platform/metrics";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
@@ -249,15 +252,27 @@ async function getCeoPendingPlansCount(): Promise<number> {
   // Not a head-only count: a District Manager plan resting at manager_approved under a manager with
   // a second approver (second-approver.ts) is waiting on THAT approver, never on the CEO, so it
   // must not be counted here — and only the rows themselves say which plans those are.
-  const { data, error } = await getSupabaseAdmin()
-    .from("employee_plan_headers")
-    .select("id,manager_hr_id,employee_job_title")
-    .eq("status", "manager_approved")
-    .limit(1000);
-  if (error) throw error;
-  return ((data ?? []) as Array<{ manager_hr_id: string | null; employee_job_title: string | null }>).filter(
+  const [legacy, crm] = await Promise.all([
+    getSupabaseAdmin().from("employee_plan_headers").select("id,manager_hr_id,employee_job_title").eq("status", "manager_approved").limit(1000),
+    getCeoCrmManagerPlansWaiting(),
+  ]);
+  if (legacy.error) throw legacy.error;
+  const legacyCount = ((legacy.data ?? []) as Array<{ manager_hr_id: string | null; employee_job_title: string | null }>).filter(
     (row) => !planHasSecondApprover(row.manager_hr_id, isDistrictManagerPlanTitle(row.employee_job_title)),
   ).length;
+  return legacyCount + crm;
+}
+
+/**
+ * The Phoenix CRM manager weeks, asks to edit and own-list removals waiting at the CEO's own step (owner,
+ * 2026-10-17): a regional, national or product manager's week goes to the CEO "as today", where his
+ * legacy plan went. Read by the CEO seat's occupant, the person stored on each row — so it counts what
+ * waits on HIM whoever opens this page. A failed read throws: the tile says it could not be read.
+ */
+async function getCeoCrmManagerPlansWaiting(): Promise<number> {
+  const ceoHrId = ceoHrIdOf(await loadPhoenixCrmOrg());
+  if (!ceoHrId) return 0;
+  return (await loadManagerPlanQueue(ceoHrId, false)).awaiting.length;
 }
 
 function buildCeoHealth(
