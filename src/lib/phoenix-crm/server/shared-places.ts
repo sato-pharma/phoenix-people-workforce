@@ -44,7 +44,7 @@ import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
 import { readPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
-import { signboardHoldRecord, signboardHoldsForReview, type PhoenixCrmSignboardCheck } from "@/lib/phoenix-crm/signboard-rules";
+import { signboardDoorHolds, signboardHoldRecord, type PhoenixCrmSignboardCheck } from "@/lib/phoenix-crm/signboard-rules";
 import {
   parseSeatedPlaceDraft,
   parseSharedPlaceDraft,
@@ -340,10 +340,11 @@ export async function createSharedPlace(viewer: PhoenixCrmViewer, raw: unknown):
       name: draft.value.name.slice(0, SHARED_PLACE_NAME_MAX),
       kind: draft.value.kind,
       signboard_check: signboard,
-      // 🔴 `unjudged` NEVER holds, in any of its reasons (signboardHoldsForReview): the key has run out
-      // of credits twice in this system's life, and a hold on the absence of an answer would have
-      // stopped every capture in the field on both days.
-      ...(signboardHoldsForReview(signboard) ? { hold_review: signboardHoldRecord(signboard, point) } : {}),
+      // 🔴 EVERYTHING BUT A MATCH HOLDS A BUILDING, an unreadable sign included (`signboardDoorHolds`,
+      // owner, 2026-10-17: "how come any unreadable should be not validated"). A building is never
+      // approved by the system — it is the Super Admin's decision alone (server/signboard-holds.ts) —
+      // and a held one can still be chosen and seated in, its customers pending until he approves it.
+      ...(signboardDoorHolds(signboard) ? { hold_review: signboardHoldRecord(signboard, point) } : {}),
       place: {
         photo_path: draft.value.photoPath,
         lat: point.lat,

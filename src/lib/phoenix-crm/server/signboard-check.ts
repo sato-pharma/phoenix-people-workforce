@@ -11,7 +11,9 @@ import {
   chooseSignToReadAgain,
   jsonbSafe,
   judgeSignboards,
+  signboardReadsCustomerName,
   signboardUnjudged as unjudged,
+  signNamesCustomerOnSign,
   stampBandFraction,
   type PhoenixCrmSign,
   type PhoenixCrmSignboardCheck,
@@ -67,7 +69,8 @@ export const PHOENIX_CRM_SIGNBOARD_TIMEOUT_MS = 8_000;
 export const PHOENIX_CRM_SIGNBOARD_SWEEP_BUDGET_MS = 25_000;
 
 /**
- * 🔴 THE NIGHT READS WITH THE STRONG MODEL AND THE DOOR READS WITH THE CHEAP ONE, DELIBERATELY.
+ * 🔴 THE NIGHT READS WITH THE STRONG MODEL AND THE DOOR WITH A CHEAPER ONE, DELIBERATELY (the door's
+ * moved from the cheapest tier to the middle one on 2026-10-17 — `PHOENIX_CRM_SIGNBOARD_DOOR_MODEL`).
  * Of the five places the cheap reader held on its first night (read 2026-10-09), four were held
  * wrongly and three of those were a board it could not read properly — "دكتور أحمد الشرباوي" for
  * الشعراوي, "محمد فريد" for فرج, a room sign for عبدالعال. The door cannot afford this model inside
@@ -78,6 +81,28 @@ export const PHOENIX_CRM_SIGNBOARD_SWEEP_BUDGET_MS = 25_000;
  * the 60 places read on that night, 8%.
  */
 export const PHOENIX_CRM_SIGNBOARD_SWEEP_MODEL = OPENAI_STRONG_MODEL;
+
+/**
+ * 🔴 THE DOOR READS WITH THE MIDDLE TIER SINCE 2026-10-17, AND THE NUMBER IS A MEASUREMENT. 40
+ * production photos captured since 10 October (30 stored "unreadable", 10 stored "match") were
+ * replayed through every tier with this file's own prompt: the cheap model confirmed **1 of the 30**
+ * a person reads at a glance; this one confirmed **12**, at 5.9 s p95 — inside the rep's 8 s. The cheap
+ * one is now only the fallback for a LOST call (owner, 2026-10-17: "fall back on other way"), asked
+ * with whatever time is left. Never move the door back to nano to save money without replaying those
+ * photos first. Account: docs/phoenix-crm-validation-feedback.md, "The door reader and the held re-read".
+ */
+export const PHOENIX_CRM_SIGNBOARD_DOOR_MODEL = "gpt-5.4-mini";
+const DOOR_MODELS = [PHOENIX_CRM_SIGNBOARD_DOOR_MODEL, OPENAI_NANO_MODEL] as const;
+
+/**
+ * A HELD place is re-read by the strong model, falling back to the door's on a lost call, and the
+ * whole re-read of one place — the blind look, its second look, the guided look and its check — gets
+ * this long. Nobody waits on it: it runs after the rep's reply and in the hourly re-check.
+ */
+export const PHOENIX_CRM_SIGNBOARD_HELD_BUDGET_MS = 45_000;
+/** No single call may take the whole re-read, or a hung call would leave no time for the fallback. */
+const HELD_CALL_CAP_MS = 20_000;
+const HELD_MODELS = [OPENAI_STRONG_MODEL, PHOENIX_CRM_SIGNBOARD_DOOR_MODEL] as const;
 
 /** How much of the frame around a sign's own box is kept when the sign is read again on its own. */
 export const SIGNBOARD_CROP_MARGIN = 0.06;
@@ -279,6 +304,7 @@ export async function cropStampBand(
 export async function cropToBox(
   jpeg: Buffer,
   area: NonNullable<PhoenixCrmSign["box"]>,
+  options: { minLongSide?: number } = {},
 ): Promise<Buffer | null> {
   try {
     const { default: sharp } = await import("sharp");
@@ -296,10 +322,17 @@ export async function cropToBox(
     // Nothing legible comes out of a crop this small, and asking costs a whole model call.
     if (keepWidth < 64 || keepHeight < 32) return null;
 
-    return await sharp(jpeg)
-      .extract({ height: keepHeight, left, top, width: keepWidth })
-      .jpeg({ quality: 90 })
-      .toBuffer();
+    let image = sharp(jpeg).extract({ height: keepHeight, left, top, width: keepWidth });
+    // The held re-read's close look enlarges a small plate so its letters are not a few pixels each —
+    // the shape the 2026-10-17 replay was measured with. The night's second look is unchanged.
+    const longSide = Math.max(keepWidth, keepHeight);
+    if (options.minLongSide && longSide < options.minLongSide) {
+      image =
+        keepWidth >= keepHeight
+          ? image.resize({ kernel: "lanczos3", width: options.minLongSide })
+          : image.resize({ height: options.minLongSide, kernel: "lanczos3" });
+    }
+    return await image.jpeg({ quality: 90 }).toBuffer();
   } catch {
     return null;
   }
@@ -373,6 +406,117 @@ const CLOSE_QUESTION =
   "This is one sign from a photograph, on its own. What does it say, and who is named on it?";
 
 /**
+ * The owner's own idea for a sign nobody could read (2026-10-17): *"look at what the rep typed; when
+ * you connect the letters you will know"*. The guided read is told the name — and that is exactly why
+ * its answer is NEVER trusted on its own (`spotCheck` below): replayed on 40 production photos with a
+ * near-miss decoy name, it wrote the decoy it was handed on 8 of 40, among them "مستشفى الأمان" off a
+ * clear "مستشفى الإمام علي" board and "سمير ريحان" off سمير الجزار's plate.
+ */
+const GUIDED_EXTRA =
+  "\n\nTHE REPRESENTATIVE HAS TOLD US WHOSE PLACE THIS IS, and the name is in the question. Use it " +
+  "only to know what to look for — Arabic signboards are often stylised, faded, lit badly or " +
+  "photographed at night, and knowing the name helps you connect letters you can only half see. " +
+  "But you are a witness, not a helper: put in name_as_written ONLY the letters you can actually see " +
+  "on a sign where that name appears, copied from the sign, never copied from the question. Answer " +
+  "name_on_sign \"yes\" only when you can see the name written on a sign (spelling variants, a " +
+  "missing grandfather's name or a title like د/ are fine); \"partly\" when you can see part of it " +
+  "but not enough to be sure it is this person; \"no\" when the signs are readable and this name is " +
+  "not on any of them; \"cannot_tell\" when the signs cannot be read well enough to say either way. " +
+  "Give name_box, the box of the sign where you see the name, as fractions of the image; null when " +
+  "you do not see it. A wrong \"yes\" is the worst possible answer: it would validate a practice " +
+  "that is not this customer's, and the photographs are checked again by a person.";
+
+const GUIDED_TEXT_FORMAT = {
+  format: {
+    name: "phoenix_crm_signboard_guided",
+    schema: {
+      additionalProperties: false,
+      properties: {
+        name_as_written: { type: ["string", "null"] as const },
+        name_box: BOX_SCHEMA,
+        name_on_sign: { enum: ["yes", "partly", "no", "cannot_tell"] as const, type: "string" as const },
+        note: { type: ["string", "null"] as const },
+        sign_present: { type: ["boolean", "null"] as const },
+        signs: { items: SIGN_SCHEMA, type: ["array", "null"] as const },
+      },
+      required: ["sign_present", "signs", "note", "name_on_sign", "name_as_written", "name_box"],
+      strict: true as const,
+      type: "object" as const,
+    },
+    strict: true as const,
+    type: "json_schema" as const,
+  },
+};
+
+type GuidedReading = SignboardReading & { nameAsWritten: string | null; nameBox: PhoenixCrmSign["box"] };
+
+/** The guided look: the name is in the question. Null for every failure, as `readSigns` is. */
+async function readGuided(input: {
+  jpeg: Buffer;
+  model: string;
+  timeoutMs: number;
+  nameGiven: string;
+  listType: PhoenixCrmListType;
+}): Promise<GuidedReading | null> {
+  if (input.timeoutMs <= 0) return null;
+  const asked =
+    `The representative recorded this photograph as the ${input.listType === "PM" ? "practice of" : "facility"}: «${input.nameGiven}». ` +
+    "What signs are in this photograph, what does each say, and is this name written on any of them?";
+  try {
+    const response = await createOpenAiResponseText({
+      component: "phoenix_crm_signboard",
+      input: [
+        {
+          content: [
+            { text: asked, type: "input_text" as const },
+            { detail: "high" as const, image_url: `data:image/jpeg;base64,${input.jpeg.toString("base64")}`, type: "input_image" as const },
+          ],
+          role: "user" as const,
+        },
+      ],
+      instructions: INSTRUCTIONS + GUIDED_EXTRA,
+      maxOutputTokens: 1_800,
+      maxRetries: 0,
+      model: input.model,
+      purpose: "phoenix-crm-signboard",
+      reasoning: { effort: "low" },
+      text: GUIDED_TEXT_FORMAT,
+      timeoutMs: input.timeoutMs,
+    });
+    const parsed = parseAiJson(response.outputText);
+    return {
+      nameAsWritten: text(parsed.name_as_written),
+      nameBox: box(parsed.name_box),
+      note: text(parsed.note),
+      signPresent: typeof parsed.sign_present === "boolean" ? parsed.sign_present : null,
+      signs: signsFrom(parsed.signs),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ask each model in turn until one answers — the owner's "fall back on other way" for a lost call.
+ * Each call gets what is left, capped so one hung call cannot spend the fallback's time too.
+ */
+async function firstAnswer<T>(
+  models: readonly string[],
+  remaining: () => number,
+  capMs: number,
+  ask: (model: string, timeoutMs: number) => Promise<T | null>,
+): Promise<T | null> {
+  for (const model of models) {
+    const left = Math.min(remaining(), capMs);
+    // Under two seconds is not a read, it is a timeout with a model call attached to it.
+    if (left < 2_000) return null;
+    const answer = await ask(model, left);
+    if (answer) return answer;
+  }
+  return null;
+}
+
+/**
  * Read a place photo and judge it.
  *
  * TWO LOOKS ON THE NIGHTLY PASS, ONE AT THE DOOR.
@@ -398,12 +542,39 @@ async function judgeBytes(input: {
   if (!cropped) return unjudged("call_failed");
 
   const atTheDoor = input.mode === "door";
-  const model = atTheDoor ? OPENAI_NANO_MODEL : PHOENIX_CRM_SIGNBOARD_SWEEP_MODEL;
   const deadline =
     Date.now() + (atTheDoor ? PHOENIX_CRM_SIGNBOARD_TIMEOUT_MS : PHOENIX_CRM_SIGNBOARD_SWEEP_BUDGET_MS);
-  const remaining = (): number => deadline - Date.now();
+  return blindRead({
+    cropped,
+    customerName: input.customerName,
+    listType: input.listType,
+    // The door asks the middle tier and falls back to the cheap one on a lost call; the night keeps
+    // its one strong model, whose lost call `signboard-sweep.ts` retries itself.
+    models: atTheDoor ? DOOR_MODELS : [PHOENIX_CRM_SIGNBOARD_SWEEP_MODEL],
+    callCapMs: atTheDoor ? PHOENIX_CRM_SIGNBOARD_TIMEOUT_MS : PHOENIX_CRM_SIGNBOARD_SWEEP_BUDGET_MS,
+    remaining: () => deadline - Date.now(),
+    secondLook: !atTheDoor,
+  });
+}
 
-  const wide = await readSigns({ jpeg: cropped.jpeg, model, question: WIDE_QUESTION, timeoutMs: remaining() });
+/**
+ * The BLIND read — the reader is never told the name — and, off the door, its second look at the sign
+ * that would answer, cropped out of the frame. The night's reader, the held re-read's first half, and
+ * the door's one look (without the second).
+ */
+async function blindRead(input: {
+  cropped: { jpeg: Buffer; croppedFraction: number };
+  customerName: string;
+  listType: PhoenixCrmListType;
+  models: readonly string[];
+  callCapMs: number;
+  remaining: () => number;
+  secondLook: boolean;
+}): Promise<PhoenixCrmSignboardCheck> {
+  const { cropped } = input;
+  const wide = await firstAnswer(input.models, input.remaining, input.callCapMs, (model, timeoutMs) =>
+    readSigns({ jpeg: cropped.jpeg, model, question: WIDE_QUESTION, timeoutMs }),
+  );
   if (!wide) return unjudged("call_failed", cropped.croppedFraction);
 
   const judged = judgeSignboards({
@@ -414,15 +585,17 @@ async function judgeBytes(input: {
     signPresent: wide.signPresent,
     signs: wide.signs,
   });
-  if (atTheDoor || judged.verdict === "match") return judged;
+  if (!input.secondLook || judged.verdict === "match") return judged;
 
   const chosen = chooseSignToReadAgain(wide.signs, input.listType);
   // Under two seconds left is not a read, it is a timeout with a model call attached to it.
-  if (!chosen?.box || remaining() < 2_000) return judged;
+  if (!chosen?.box || input.remaining() < 2_000) return judged;
   const tight = await cropToBox(cropped.jpeg, chosen.box);
   if (!tight) return judged;
 
-  const close = await readSigns({ jpeg: tight, model, question: CLOSE_QUESTION, timeoutMs: remaining() });
+  const close = await firstAnswer(input.models, input.remaining, input.callCapMs, (model, timeoutMs) =>
+    readSigns({ jpeg: tight, model, question: CLOSE_QUESTION, timeoutMs }),
+  );
   if (!close || close.signs.length === 0) return judged;
 
   // 🔴 THE CLOSER READING IS JUDGED WITH THE REST OF THE FRAME, NEVER ON ITS OWN. Judging the crop
@@ -485,6 +658,112 @@ export async function readStoredPlaceSignboard(input: {
   const bytes = await downloadPhoto(input.photoPath).catch(() => null);
   if (!bytes) return unjudged("no_bytes");
   return judgeBytes({ bytes, customerName: input.customerName, listType: input.listType, mode: "sweep" });
+}
+
+/**
+ * Re-read a place the door HELD (owner, 2026-10-17: "hold; re-read; else you decide").
+ *
+ * TWO READERS, AND EACH ONE IS BLIND WHERE IT COUNTS:
+ *
+ *   1. The night's own blind read with its second look — the strong model, never told the name.
+ *   2. Only if that did not find him: the GUIDED read, told the name the rep typed (his own idea), and
+ *      then `spotCheck` — a BLIND close look at the one spot the guided read pointed to, which must
+ *      itself read the name. The guided answer alone decides nothing.
+ *
+ * Measured on the same 40 production photos (2026-10-17): the door's middle tier, this blind read and
+ * the checked guided read together confirmed **16 of 30** photos the cheap reader had filed
+ * "unreadable", with **0** false confirmations against a random and a near-miss decoy name for every
+ * photo — where the guided read on its own reached 19 of 30 but confirmed the wrong name 8 times.
+ *
+ * Never throws: it runs after the rep's reply and in a cron, and every absence is an `unjudged` record.
+ * Read with `downloadPhoto`, which is legitimate here as in the night pass: it runs as the system over
+ * a place row it found itself.
+ */
+export async function rereadHeldPlaceSignboard(input: {
+  photoPath: string;
+  customerName: string;
+  listType: PhoenixCrmListType;
+}): Promise<PhoenixCrmSignboardCheck> {
+  if (!hasOpenAiApiKey()) return unjudged("no_api_key");
+  const bytes = await downloadPhoto(input.photoPath).catch(() => null);
+  if (!bytes) return unjudged("no_bytes");
+  const cropped = await cropStampBand(bytes);
+  if (!cropped) return unjudged("call_failed");
+
+  const deadline = Date.now() + PHOENIX_CRM_SIGNBOARD_HELD_BUDGET_MS;
+  const remaining = (): number => deadline - Date.now();
+  const blind = await blindRead({
+    callCapMs: HELD_CALL_CAP_MS,
+    cropped,
+    customerName: input.customerName,
+    listType: input.listType,
+    models: HELD_MODELS,
+    remaining,
+    secondLook: true,
+  });
+  if (blind.verdict === "match") return blind;
+  const spotted = await spotCheck({ cropped, customerName: input.customerName, listType: input.listType, remaining });
+  return spotted ?? blind;
+}
+
+/**
+ * The guided read, and the blind close look that is the only thing allowed to believe it.
+ *
+ * 🔴 THE STORED EVIDENCE IS THE BLIND LOOK'S, NEVER THE GUIDED TRANSCRIPTION. The guided reader can
+ * copy the name it was given into its own text, so its signs are used to find WHERE to look and are
+ * then thrown away; what is kept is what a reader that was never told the name read at that spot.
+ *
+ * 🔴 AND THE CLOSE LOOK MUST READ THE NAME, NOT MERELY RETURN `match` (`signboardReadsCustomerName`):
+ * the AM rule makes a frame naming no place a match, and a close look that read only "صيدلية" would
+ * otherwise confirm whatever name the guided read was handed.
+ *
+ * Null when nothing was confirmed — the blind read's own verdict then stands.
+ */
+async function spotCheck(input: {
+  cropped: { jpeg: Buffer; croppedFraction: number };
+  customerName: string;
+  listType: PhoenixCrmListType;
+  remaining: () => number;
+}): Promise<PhoenixCrmSignboardCheck | null> {
+  const subject = { customerName: input.customerName, listType: input.listType };
+  const guided = await firstAnswer(HELD_MODELS, input.remaining, HELD_CALL_CAP_MS, (model, timeoutMs) =>
+    readGuided({ jpeg: input.cropped.jpeg, listType: input.listType, model, nameGiven: input.customerName, timeoutMs }),
+  );
+  if (!guided) return null;
+  const claimed: PhoenixCrmSign[] = guided.nameAsWritten
+    ? [
+        {
+          box: guided.nameBox,
+          kind: "medical",
+          legibility: "partial",
+          personNames: input.listType === "PM" ? [guided.nameAsWritten] : [],
+          placeNames: input.listType === "PM" ? [] : [guided.nameAsWritten],
+          text: guided.nameAsWritten,
+        },
+      ]
+    : [];
+  if (!signboardReadsCustomerName([...claimed, ...guided.signs], subject)) return null;
+
+  // Where it says it saw him: its own box for the name, or else the box of a sign it read him on.
+  const spot =
+    guided.nameBox ??
+    guided.signs.find((sign) => sign.box !== null && signNamesCustomerOnSign(sign, subject).matches === true)?.box ??
+    null;
+  if (!spot || input.remaining() < 2_000) return null;
+  const tight = await cropToBox(input.cropped.jpeg, spot, { minLongSide: 1_024 });
+  if (!tight) return null;
+  const close = await firstAnswer(HELD_MODELS, input.remaining, HELD_CALL_CAP_MS, (model, timeoutMs) =>
+    readSigns({ jpeg: tight, model, question: CLOSE_QUESTION, timeoutMs }),
+  );
+  if (!close || !signboardReadsCustomerName(close.signs, subject)) return null;
+  return judgeSignboards({
+    croppedFraction: input.cropped.croppedFraction,
+    customerName: input.customerName,
+    listType: input.listType,
+    note: close.note,
+    signPresent: close.signPresent,
+    signs: close.signs,
+  });
 }
 
 /**

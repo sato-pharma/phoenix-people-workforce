@@ -29,6 +29,7 @@ import { hasOpenAiApiKey } from "@/lib/ai/openai-client";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { filePlaceSignboardFlag } from "@/lib/phoenix-crm/server/location-integrity";
 import { readStoredPlaceSignboard, recordPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
+import { loadHeldSignboardPlaceIds } from "@/lib/phoenix-crm/server/signboard-holds";
 import {
   signboardApplies,
   signboardNameIsUsable,
@@ -263,8 +264,12 @@ export async function runPhoenixCrmSignboardSweep(
 
   const limit = Math.max(1, Math.min(options.limit ?? SIGNBOARD_SWEEP_LIMIT, 500));
   const deadline = Date.now() + (options.budgetMs ?? SIGNBOARD_SWEEP_BUDGET_MS);
-  const backlog = await loadBacklog(limit);
-  result.moreWaiting = backlog.length >= limit;
+  // 🔴 A place the DOOR HELD on its signboard (2026-10-17) is not this pass's: `server/signboard-holds.ts`
+  // re-reads it with its own count and settles the hold. Read here too, its `attempts` would be spent by
+  // a reader that can only flag — and `unreadable_final` written by this pass would end the hold's reads.
+  const [read, held] = await Promise.all([loadBacklog(limit), loadHeldSignboardPlaceIds()]);
+  result.moreWaiting = read.length >= limit;
+  const backlog = read.filter((place) => !held.has(place.placeId));
 
   let next = 0;
   const worker = async (): Promise<void> => {

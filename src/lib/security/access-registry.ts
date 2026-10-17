@@ -909,6 +909,9 @@ export const accessRegistry = [
   // Refusing a validation the check never held — every PM customer, and the AM ones that matched
   // (2026-10-03). The same gate and the same decider; the reject underneath is the one above.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/refuse", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // Confirming a validation the system could not read (owner, 2026-10-17): the same gate and decider
+  // as the refusal, and the same approve underneath it.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/approve", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   // Settling a location-integrity case, and putting a settled one back (owner, 2026-10-09): the Super
   // Admin ALONE — `update` at the route, `canSettleIntegrityCases` in the service, so the SFE Manager
   // reads that board without being able to close a case on it. Neither route deletes anything.

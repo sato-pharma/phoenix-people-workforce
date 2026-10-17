@@ -148,7 +148,11 @@ export function runPhoenixCrmSharedPlaceTests(): void {
     service.includes('listType: "AM"'),
     "and judged in the PLACE-NAME mode: a building signs itself, never the people who hold clinics inside it",
   );
-  assert.ok(service.includes("signboardHoldsForReview(signboard)"), "a sign that did not confirm the venue's name holds it for the administrator");
+  assert.ok(
+    service.includes("signboardDoorHolds(signboard)"),
+    "a sign that did not confirm the venue's name — an unreadable one included, since 2026-10-17 — holds it for the administrator",
+  );
+  assert.ok(!service.includes("signboard-holds"), "and a building is never approved by the system: the held re-read never reaches a venue");
   assert.ok(service.includes("recordRefusedReading("), "a refused capture is recorded before the refusal, as everywhere else");
   assert.ok(service.includes("resolvePlaceLocation("), "one resolver, so brick_lookup keeps its pessimistic default");
   assert.ok(service.includes("territoryForValidation("), "and the rep's own territory is the gate");

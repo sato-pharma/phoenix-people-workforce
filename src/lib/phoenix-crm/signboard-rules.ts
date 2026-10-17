@@ -53,7 +53,10 @@ export type SignboardVerdictKind =
    * nobody — that is a match.
    */
   | "no_name"
-  /** No answer was obtained. NEVER a pass, and never a hold — see the header. */
+  /**
+   * No answer was obtained. NEVER a pass. At the door it HOLDS since 2026-10-17 (`signboardDoorHolds`)
+   * and the system re-reads it; it never holds on the integrity board (`signboardHoldsForReview`).
+   */
   | "unjudged";
 
 export type SignboardCheckReason =
@@ -924,15 +927,114 @@ export function judgeSignboard(input: {
 }
 
 /**
- * Does this verdict hold the place for the owner to look at?
+ * Is this verdict a CONFIDENT NEGATIVE — a sign read clearly that names somebody else, or no person at a
+ * PM door?
  *
- * 🔴 `unjudged` is false here, in every one of its reasons, and that is the whole safety property of
- * this module. The key has run out of credits twice in this system's life, both times silently and
- * both times reading as a retryable rate limit; a hold on the absence of an answer would have held
- * every validation in the field on both days.
+ * 🔴 It was the DOOR's hold until 2026-10-17, and `unjudged` was false here in every one of its reasons:
+ * the key has run out of credits twice in this system's life, and a hold on the absence of an answer
+ * would have stopped every validation in the field. The door asks `signboardDoorHolds` below since the
+ * owner's "Hold; re-read; else you decide"; this stays the narrower question — the verdicts that name a
+ * negative — and an `unjudged` is still never one.
  */
 export function signboardHoldsForReview(check: PhoenixCrmSignboardCheck): boolean {
   return check.verdict === "other_name" || check.verdict === "no_name";
+}
+
+/**
+ * Does the DOOR save this place held, waiting on the system and then on the Super Admin?
+ *
+ * 🔴 EVERYTHING BUT A MATCH, SINCE 2026-10-17 (owner: *"how come any unreadable should be not
+ * validated, should be wait until the system check and I manual approve or reject"*, answered "Hold;
+ * re-read; else you decide"). Before that day an unreadable frame was VALIDATED, and the cheap reader
+ * confirmed 1 of 30 production photos a person reads at a glance — so 79% of the places in use had no
+ * confirmation at all. A lost call and a missing key hold too (his answer for a reading service that is
+ * down: *"try to reread, try to fix, try to fall back on other way. If you couldn't read them, then
+ * hold for manual review"*).
+ *
+ * The 2026-10-08 reason never to hold on an absence — the key ran dry twice and would have held every
+ * validation in the field — is answered by WHAT a hold is now, not by refusing to hold: the rep is
+ * saved and reads "the system is checking", and `server/signboard-holds.ts` re-reads every held place
+ * and approves the confirmed ones itself, so a day with no key is a day of held places that settle once
+ * the key is back. `signboardHoldsForReview` above still answers the narrower question the integrity
+ * board asks (a confident negative).
+ *
+ * A place another check already holds (`held_elsewhere`) is not held twice: one review row, one decision.
+ * A name with nothing to compare (`name_unusable`) is not held either — no reading can ever answer it,
+ * so a hold would only spend every re-read on a question that does not exist.
+ */
+export function signboardDoorHolds(check: PhoenixCrmSignboardCheck): boolean {
+  if (check.verdict === "match") return false;
+  return check.reason !== "held_elsewhere" && check.reason !== "name_unusable";
+}
+
+/**
+ * How many times the system reads a HELD place before it is the Super Admin's alone: the door's read
+ * and three re-reads (owner, 2026-10-17, "re-read up to 3 times"). Counted on the place's own
+ * `signboard_check.attempts`, the door's read being the first.
+ */
+export const SIGNBOARD_HELD_MAX_READS = 4;
+
+/**
+ * Reads recorded on a place's stored `signboard_check`: none is 0, and a check written before the count
+ * existed has had exactly one. The one reading of the count, for the re-read's queue and the board alike.
+ */
+export function signboardReadsRecorded(stored: unknown): number {
+  if (!stored || typeof stored !== "object") return 0;
+  const attempts = Number((stored as Record<string, unknown>).attempts ?? 0);
+  return Number.isFinite(attempts) && attempts > 0 ? attempts : 1;
+}
+
+/**
+ * Is the system still reading this held place — a door signboard hold with reads left? The board says
+ * so on the row, and the Super Admin is told it is his only once it is not (`server/signboard-holds.ts`).
+ */
+export function signboardHoldStillReading(input: { pending: boolean; signboardHold: boolean; isTest: boolean; stored: unknown }): boolean {
+  return input.pending && input.signboardHold && !input.isTest && signboardReadsRecorded(input.stored) < SIGNBOARD_HELD_MAX_READS;
+}
+
+/**
+ * Does any sign in this reading carry the customer's NAME — not merely a verdict of `match`?
+ *
+ * 🔴 THE DIFFERENCE IS THE OWNER'S AM RULE, AND IT MATTERS ONLY WHERE A READING WAS STEERED. An AM
+ * frame whose clear signs name no place at all is a `match` (`judgeSignboards` step 4) — right for a
+ * hospital that signs its departments, and a blind reader cannot be steered into it. The guided read
+ * was TOLD the name, and measured on 40 production photos (2026-10-17) it wrote a decoy name it was
+ * handed on 8 of 40 near-miss decoys, both AM hospitals among them; so its answer is accepted only
+ * when a BLIND close look at the spot it pointed to reads the name itself — and step 4 would accept a
+ * close look that read nothing but "صيدلية".
+ */
+export function signboardReadsCustomerName(
+  signs: readonly PhoenixCrmSign[],
+  input: { customerName: string | null; listType: PhoenixCrmListType },
+): boolean {
+  return signs.some((sign) => signNamesCustomerOnSign(sign, input).matches === true);
+}
+
+/**
+ * What a held place's re-read concludes for the hold (owner, 2026-10-17).
+ *
+ *   approve — a reading confirmed the customer: the system approves the hold itself;
+ *   again    — no confirmation yet, and the place has reads left;
+ *   done     — no confirmation after every read it gets: it is the Super Admin's to decide, and he is
+ *              told now rather than at the door.
+ */
+export function heldSignboardOutcome(check: PhoenixCrmSignboardCheck, readsSoFar: number): "approve" | "again" | "done" {
+  if (check.verdict === "match") return "approve";
+  return readsSoFar >= SIGNBOARD_HELD_MAX_READS ? "done" : "again";
+}
+
+/**
+ * The check kept on the place row after a held re-read: the read itself, its count, and — on the last
+ * read of a frame nobody could read — the terminal `unreadable_final`, so the row says "every read was
+ * spent" in words a human can see (`SIGNBOARD_UNJUDGED_TEXT` on the board).
+ */
+export function heldSignboardCheckToKeep(
+  read: PhoenixCrmSignboardCheck,
+  reads: number,
+  outcome: "approve" | "again" | "done",
+): PhoenixCrmSignboardCheck {
+  const spent = outcome === "done" && read.verdict === "unjudged" && read.reason === "unreadable";
+  return { ...read, attempts: reads, reason: spent ? "unreadable_final" : read.reason };
 }
 
 /** A one-token name is not evidence of anything, here as everywhere else in this repository. */
