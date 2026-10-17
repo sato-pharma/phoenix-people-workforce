@@ -91,6 +91,7 @@ import {
 import type { ReferenceState } from "@/lib/phoenix-crm/coverage";
 import { CUSTOMER_NAME_MAX, DROP_COMMENT_REQUIRED, DROP_REASON_MAX, DROP_REASONS, parseCustomerPhone, type DropReason } from "@/lib/phoenix-crm/entry-rules";
 import { LOCATION_CHECKING_TEXT, LOCATION_CHECKING_TITLE } from "@/lib/phoenix-crm/google-place-rules";
+import { SCHEDULE_RETAKE_CODE, scheduleHeldText, type ScheduleHeldBecause } from "@/lib/phoenix-crm/schedule-rules";
 import { awaitsValidation, listMovesFor, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
 import { SEATED_PLACE_NO_SESSION, SEATED_PLACE_NO_VENUE, SHARED_PLACE_TITLE } from "@/lib/phoenix-crm/shared-place-rules";
 import { receivingDaysLabel, weekTimingsText } from "@/lib/phoenix-crm/timings";
@@ -165,6 +166,12 @@ export type SavedPlace = {
   customerId: string;
   customerName: string;
   listType: PhoenixCrmListType;
+  /**
+   * Why the TIMETABLE scanner held a seating (owner, 2026-10-17: "tell the rep that the dr name is not
+   * in the timetable so held for admin approval"). His ruling for this one photograph; every other
+   * hold still reads as the system checking.
+   */
+  heldBecause?: ScheduleHeldBecause | null;
 };
 
 /** Where the List tab is. Only the screen that took a photo holds it, and "saved" hands it on. */
@@ -518,7 +525,18 @@ function savedFromResult(result: ValidateResult): SavedPlace {
     customerId: result.customerId,
     customerName: result.customerName,
     listType: result.listType,
+    heldBecause: result.heldBecause ?? null,
   };
+}
+
+/**
+ * A timetable photograph the scanner refused (owner, 2026-10-17): discard whatever was sent and open
+ * the camera — even when the refused board was the building's one on file, which carried no photo of
+ * his to discard. Nothing was saved.
+ */
+function retakeTimetable(photo: CapturedPhoto | null) {
+  if (photo) releaseCapturedPhoto(photo);
+  return (current: SeatedDraftState): SeatedDraftState => ({ ...current, photo: null, replacingTimetable: true });
 }
 
 export function ValidateScreen({
@@ -713,7 +731,10 @@ export function ValidateScreen({
         setProblem(UNCHECKED);
         return;
       }
-      if (photo && code?.startsWith("phoenix_crm_photo_")) {
+      if (door === "shared" && code === SCHEDULE_RETAKE_CODE) {
+        setSeated(retakeTimetable(photo));
+        goStep(4);
+      } else if (photo && code?.startsWith("phoenix_crm_photo_")) {
         releaseCapturedPhoto(photo);
         if (door === "shared") setSeated(withoutSeatedPhoto(photo));
         else setDraft(withoutPhoto(photo));
@@ -1171,8 +1192,15 @@ export function SavedScreen({
             The customer is on your list. The visits you save here show as pending, and they count in your KPIs once the polyclinic is confirmed.
           </p>
         ) : null}
+        {/* A TIMETABLE hold says its own reason, by the owner's ruling of 2026-10-17 — on any kind of
+            save, a new customer waiting outside the list included. */}
+        {scheduleHeldText(saved.heldBecause) ? (
+          <CrmNote className="mt-3" title="Held for admin approval" tone="info">
+            {scheduleHeldText(saved.heldBecause)}
+          </CrmNote>
+        ) : null}
         {/* The Google check could not confirm the place: saved, not validated yet — the system's doing. */}
-        {saved.kind === "checking" ? (
+        {saved.kind === "checking" && !scheduleHeldText(saved.heldBecause) ? (
           <CrmNote className="mt-3" title={LOCATION_CHECKING_TITLE} tone="info">
             {LOCATION_CHECKING_TEXT}
           </CrmNote>
@@ -1265,7 +1293,7 @@ export function AddPlaceScreen({
     setSaving(true);
     setProblem(null);
     try {
-      const added = await crmPost<{ held?: boolean } | null>(
+      const added = await crmPost<{ held?: boolean; heldBecause?: ScheduleHeldBecause | null } | null>(
         "/api/phoenix-crm/list/places",
         {
           seatId,
@@ -1279,7 +1307,7 @@ export function AddPlaceScreen({
         "place",
       );
       // A clinic the Google check could not confirm is saved and waits — said as the system's doing.
-      onSaved(added?.held === true ? { ...saved, kind: "checking" } : saved, photo);
+      onSaved(added?.held === true ? { ...saved, kind: "checking", heldBecause: added.heldBecause ?? null } : saved, photo);
     } catch (error) {
       const code = errorCodeOf(error);
       // Never by a reused timetable's path — it would find another doctor's row. ValidateScreen's
@@ -1296,7 +1324,9 @@ export function AddPlaceScreen({
         setProblem(UNCHECKED);
         return;
       }
-      if (photo && code?.startsWith("phoenix_crm_photo_")) {
+      if (door === "shared" && code === SCHEDULE_RETAKE_CODE) {
+        setSeated(retakeTimetable(photo));
+      } else if (photo && code?.startsWith("phoenix_crm_photo_")) {
         releaseCapturedPhoto(photo);
         if (door === "shared") setSeated(withoutSeatedPhoto(photo));
         else setDraft(withoutPhoto(photo));

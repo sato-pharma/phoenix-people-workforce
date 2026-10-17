@@ -495,3 +495,63 @@ The last clause matters: two differently named customers 50 m apart are two door
 **Measured on production on 2026-10-17 (read-only, the real loader with the real thresholds).** 159 places validated by two or more reps, 619 validations by 27 reps, 29 questions, a median spread of 21 m between a place's readings, 62 places too close to call and 11 with a far-off reading. The largest group holds 21 validations, which is why a place draws six and says "Show 15 more validations of this place". The read takes about 4–6 seconds, which is why it is lazy.
 
 Pinned by `tests/phoenix-crm-place-match-groups.test.ts` (the pair rule and the name rule, the grouping, the diameter cap, the ranking, the outlier, the questions and answers, and the source the server, route, screen, board and migration are wired from).
+
+## The timetable scanner, and Place checks as a report — owner, 2026-10-17
+
+His words, in chat: *"their is a disatster in the polyclicnics validation a fucken chaos no timetables employees photgraphing their legs"*, *"i must be be able to see chose photos"*, then *"eyeball the check places full module all tabs and telll me is this a report that really show me data? or its a bunch of chaos … put corrective actions even if we will neeed to rebuild the module from sctach"*, and *"and whatb about the unreadble photos'"*. His rulings, picked from the options put to him: *"3 tries then held to confirmation by admin"*; *"save but hold to me and tell the rep that the dr name is not in the timetable so hheld for admin approval"*; scanner and screen rebuild in ONE PR; *"every polyclicnic should crystal clear show me the name opf the polyclicnic and its data and the customer the repo added to this -poly clicnic and the captured timetable crystal clear … make me able to rotate the picture of validation in place checks bec some timetables are rotated"*; and, later the same afternoon, *"add system recommendations to approve or no on every vlidation"* and *"and the reason of system recommendation"*.
+
+### What was wrong, measured on production that morning
+
+- **0 of 70** customers seated in polyclinics passed the timetable check: 45 judged unreadable, 22 showing no timetable, 3 naming somebody else. An unreadable timetable was `unjudged`, and `unjudged` was accepted as if it matched — so every one of the 45 went through.
+- An eyeballed sample of 18 photographs: all 9 "no timetable" were a street, a pavement, a corridor floor, a door or a building sign; about 7 of the 9 "unreadable" were REAL timetables the reader failed on. Two separate failures — reps photographing the wrong thing, and the reader failing on real boards.
+- 15 photographs carried 48 seatings, and 3 of them came back with contradicting verdicts, because the same board was sent to the model once per customer.
+- The Place checks page drew everything it held: the Clinics tab was 104,455 px tall ("Decided in the last 14 days" alone was 197 rows, 88,288 px and 789 buttons) and the Polyclinics tab drew all 98 buildings, test and rejected ones among the live.
+
+### The door — a scanner, three tries, then a hold
+
+`scheduleDoorAction(check, earlierTries)` (`schedule-rules.ts`) decides, before anything is written:
+
+| What the reader saw | Answer |
+| --- | --- |
+| The customer's name on the board | save |
+| A board read clearly, without the name | save, **held** — the rep is told the customer's name is not on the timetable, so it is held for admin approval |
+| No timetable in the photo, or one that cannot be read, on try 1 or 2 | **refused**: what to fix, and "Try 2 of 3" — nothing saved |
+| The same on the third try | save, **held** — the rep is told it could not be read (or no timetable was found) after 3 tries, so it is held for admin approval |
+| A lost call, no key, no photo bytes | save, as before — never refused, never held (the key has run dry silently twice) |
+
+"Not on it" is said only of a board the reader could see all of; a board read in part is a photograph to retake. Tries are counted **per rep, per building, per Cairo day** in `phoenix_crm_refused_readings` (reasons `timetable_unreadable` / `timetable_missing`, the building in `shared_place_id`, migration `20261017193000`, applied to staging and production on 2026-10-17): the timetable belongs to the building, and a new customer has no id to count against. A refusal is filed before it is raised. The refusal travels as `phoenix_crm_photo_timetable_retake` (`SCHEDULE_RETAKE_CODE`), which the rep's web screen already reads as "back to the photo step"; when the board on file was reused, the camera opens to photograph it again, and a readable new photo replaces the building's board. The exact sentences live in `SCHEDULE_HELD_TEXT` and the retake text beside it — never a second copy.
+
+The reader (`server/schedule-check.ts`) now returns how legible the board is (`clear` / `partial` / `unreadable`) and what is wrong with the photograph (`not_a_timetable`, `too_far`, `blurred`, `glare`, `cut_off`), runs with `maxRetries: 0` so its 8-second budget is real, and **judges a reused board against the reading already stored** when that reading could see it — one photograph, one reading.
+
+**This is his named exception to golden rule #1.** The rep is told, in so many words, that a seating is held for admin approval. Everything else he is told stays what is wrong with the photograph.
+
+### Choosing the model — calibrated on the 40 production photographs, read-only
+
+The 40 distinct photographs behind the 74 production seatings were replayed through the door's own question (`readScheduleBytes`): `gpt-5.4-nano` read about 5; `gpt-5.4-mini` read 17, at a p95 of 6.2 s, inside the 8-second door. `gpt-5.4-mini` is the door's model. At 900 output tokens the stronger readers ran out of room on exactly the photographs that are real boards (a 25-name directory), so the ceiling is 1,600 and the transcription is kept short. Replayed through `scheduleDoorAction` as first tries, the 74 seatings would have been 11 save, 2 hold, 1 lost call (saved), 28 retake for no timetable and 32 retake for an unreadable one.
+
+### The 74 seatings re-read, 2026-10-17 16:44 Cairo
+
+Announced before it ran. Every production seating's timetable was read again with the scanner's reader — each distinct photograph once, every customer judged against that one reading — writing **only** `phoenix_crm_places.schedule_check`. No status, hold or review row was touched; the pre-image of all 74 records was saved first; every written row was read back.
+
+| | Before | After |
+| --- | --- | --- |
+| Names the customer | 0 | 9 |
+| No timetable in the photo | 22 | 29 |
+| Could not be read | 47 | 33 |
+| Names somebody else | 4 | 3 |
+| Lost call | 1 | 0 |
+
+74 written (63 active, 11 retired), 0 failed, 0 differing on read-back, 24 verdicts changed. Legibility: 11 clear, 36 partial, 27 unreadable. The 65 that still do not pass are exactly what the screen below is for.
+
+### Place checks, rebuilt as a report
+
+`validation-reviews-board.tsx`, built from the rows the page already loads — no new read.
+
+- **Each rep's captures on one line** at the top (`place-check-scorecard.ts`, pure): places, confirmed, not readable, no sign or timetable, another name, not read yet, waiting, sent back, and "timetable names them x of y". Every place sits in exactly one column, so a line adds up to its own Places figure. Worst share first, ten shown, then the rest; tapping a name narrows every tab through the board's own Rep filter.
+- **Five tabs:** *Needs you* (on a manager's board, *Being checked*) — the clinics waiting and the buildings with anything open, with one line saying what the system recommends across them; *Not confirmed* — places in use the reader never confirmed and nobody looked at, narrowed by chips (not readable, no sign in the photo, another name, never read, every place in use); *Polyclinics and hospitals* — problem buildings first, a rejected building behind its own switch; *Same place, several reps* (unchanged, Super Admin only); *History* — decided in the last 14 days, and who waits to be captured again.
+- **Only the open tab is drawn, every list is paged** (20 rows, 10 buildings), and **no test entry is drawn** anywhere. The stat cards count what the board draws: no test entry, and no rejected building among the polyclinics.
+- **Every building is one card:** its name large, its kind and where it stands, who captured it and when, its address, brick and area; then the sign on its door and the timetable inside, side by side and large, with what was read on the timetable; then the customers seated in it. A building with customers and no timetable says so in rose.
+- **Every photograph on Place checks turns a quarter at a time** (↺ ↻ on the photo and in the full-screen view, `photo-rotation.ts`). The frame swaps its sides so a turned photo still fits; the stored photograph is never changed; and only Place checks passes `rotatable`, so a rep's screens are exactly as they were.
+- **Every validation carries the system's recommendation and its reason** (`place-check-advice.ts`): approve, reject or look yourself, with the one sentence of evidence behind it. A confident reading opens Reject already on its reason; an unreadable photo never pre-picks one. It decides nothing — the answer is still his press, one row or ticked together — and a district manager's board never draws it.
+
+Pinned by `tests/phoenix-crm-timetable-scanner.test.ts`, `tests/phoenix-crm-place-check-scorecard.test.ts`, `tests/phoenix-crm-place-check-advice.test.ts`, `tests/photo-rotation.test.ts` and `tests/phoenix-crm-shared-place-groups.test.ts`.

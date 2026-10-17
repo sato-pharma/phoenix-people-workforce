@@ -415,12 +415,23 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
     // 🔴 COMMENTS STRIPPED FIRST. The file's own ROLLBACK header quotes the PREVIOUS three-value
     // CHECK verbatim, so an unstripped read matches the rollback and asks the board to recognise a
     // list the database no longer has — which is this test passing on the wrong line.
-    const reasonCheck = /check \(reason = any \(array\[([^\]]+)\]\)\)/.exec(
-      stripSqlComments(read("supabase/migrations/20261013163001_refused_readings_blocked_permission.sql")),
-    );
+    // 🔴 THE NEWEST MIGRATION THAT RE-ADDS THE CHECK IS THE ONE THE DATABASE HOLDS — each one drops
+    // and recreates it — so the test finds it rather than naming a file that a later widening (the
+    // timetable scanner's two reasons, 2026-10-17) silently makes stale.
+    const reasonCheckFile = readdirSync(path.join(process.cwd(), "supabase/migrations"))
+      .filter((name) => name.endsWith(".sql"))
+      .sort()
+      .filter((name) => stripSqlComments(read(`supabase/migrations/${name}`)).includes("add constraint phoenix_crm_refused_readings_reason_check"))
+      .pop();
+    assert.ok(reasonCheckFile, "a migration still defines the reason CHECK");
+    const reasonCheck = /check \(reason = any \(array\[([^\]]+)\]\)\)/.exec(stripSqlComments(read(`supabase/migrations/${reasonCheckFile}`)));
     assert.ok(reasonCheck, "the migration's reason CHECK is still readable, so this test can ask the DATABASE what the reasons are");
     const allowed = [...reasonCheck[1]!.matchAll(/'([a-z_]+)'::text/g)].map((match) => match[1]!);
-    assert.deepEqual([...allowed].sort(), ["blocked", "no_fix", "off_listing", "rough"], "four reasons, and the migration is where that list lives");
+    assert.deepEqual(
+      [...allowed].sort(),
+      ["blocked", "no_fix", "off_listing", "rough", "timetable_missing", "timetable_unreadable"],
+      "six reasons, and the migration is where that list lives",
+    );
     const sentences = new Map<string, string>();
     for (const reason of allowed) {
       assert.equal(parseRefusedReason(reason), reason, `🔴 the reader must recognise '${reason}' — a value the database allows and this function does not know is printed as "too rough"`);
@@ -429,9 +440,14 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
         refusalSentence({ subjectKind: "place", reason: parseRefusedReason(reason), accuracyMeters: 11, photoAccuracyMeters: 14, maxAccuracyMeters: 250, blockedPermission: reason === "blocked" ? "location" : null }),
       );
     }
-    assert.equal(new Set(sentences.values()).size, allowed.length, "and every reason reads as itself: four reasons, four different sentences");
+    assert.equal(new Set(sentences.values()).size, allowed.length, "and every reason reads as itself: one sentence per reason");
     assert.doesNotMatch(sentences.get("off_listing")!, /too rough/, "🔴 the off_listing regression: it must never read as a rough position again");
     assert.doesNotMatch(sentences.get("blocked")!, /too rough/, "nor the blocked one");
+    // The timetable scanner's two (owner, 2026-10-17): a PHOTOGRAPH refused, never a position.
+    for (const reason of ["timetable_unreadable", "timetable_missing"] as const) {
+      assert.doesNotMatch(sentences.get(reason)!, /too rough|\d+ m\b/, `${reason} is about the photograph of the timetable, never a radius`);
+      assert.match(sentences.get(reason)!, /timetable/, `${reason} names the timetable`);
+    }
     assert.equal(parseRefusedReason("something_new"), "rough", "an unrecognised value still returns a reason, because the type admits nothing else — the loop above is what keeps that branch unreachable");
 
     // The coercion itself is gone from the reader, with comments stripped so the comment explaining

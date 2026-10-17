@@ -122,15 +122,28 @@ import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/ser
 import { resolvePinGeography, resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { readPlaceSchedule, recordPlaceSchedule } from "@/lib/phoenix-crm/server/schedule-check";
-import { scheduleHoldRecord, scheduleHoldsForReview, type PhoenixCrmScheduleCheck } from "@/lib/phoenix-crm/schedule-rules";
+import {
+  SCHEDULE_RETAKE_CODE,
+  scheduleDoorAction,
+  scheduleHoldRecord,
+  type PhoenixCrmScheduleCheck,
+  type ScheduleHeldBecause,
+} from "@/lib/phoenix-crm/schedule-rules";
 import {
   canDecideSharedPlaces,
   effectiveSeatedPhoto,
   seatedDraftOf,
   seatedPlacePayload,
   sharedPlaceForSeating,
+  type SeatingVenue,
 } from "@/lib/phoenix-crm/server/shared-places";
-import { countOffListingRefusals, recordOffListingRefusal, recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
+import {
+  countOffListingRefusals,
+  countTimetableRefusals,
+  recordOffListingRefusal,
+  recordRefusedReading,
+  recordTimetableRefusal,
+} from "@/lib/phoenix-crm/server/refused-readings";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import type { PlannerReference } from "@/lib/phoenix-crm/suggestions";
@@ -1778,6 +1791,78 @@ async function judgeCaptureForPlace(
   });
 }
 
+type SeatedSchedule = {
+  /** What the board said about this customer, kept on his row after the save. */
+  check: PhoenixCrmScheduleCheck | null;
+  /** The review row's evidence when the scanner holds the seating; null when it saves. */
+  hold: Record<string, unknown> | null;
+  heldBecause: ScheduleHeldBecause | null;
+};
+
+/**
+ * 🔴 THE TIMETABLE SCANNER AT THE DOOR (owner, 2026-10-17) — ONE HELPER FOR BOTH SEATING PATHS, so
+ * Validate and Add another clinic can never disagree about a photograph. The board is read, the rep's
+ * refused photographs of this building today are counted, and `scheduleDoorAction` decides:
+ *   · save   — the board names him, or no answer was obtained at all (the key, a lost call);
+ *   · retake — not a timetable, or not readable: the refusal is FILED, and the save is refused with the
+ *              words that say what to fix and which try this is. Nothing is written.
+ *   · hold   — the board is read and he is not on it, or the third photograph still fails: saved,
+ *              held for the administrator, and the rep is told why (`heldBecause`).
+ * The rule is pure in `schedule-rules.ts`; this only does the I/O around it.
+ */
+async function scanSeatedTimetable(input: {
+  subject: ValidationSubject | null;
+  venue: SeatingVenue;
+  seatedPhoto: { path: string; reused: boolean };
+  seatId: string;
+  repHrId: string;
+  isTest: boolean;
+}): Promise<SeatedSchedule> {
+  const { subject, venue, seatedPhoto } = input;
+  // `signboardNameIsUsable` is the SAME guard the signboard read is given, deliberately: a name too
+  // short or too generic to match ("Dr", a single initial) judged against a wall of forty names could
+  // only produce noise — and a refusal the rep could never pass.
+  const check =
+    subject && signboardNameIsUsable(subject.name)
+      ? await readPlaceSchedule({
+          customerName: subject.name,
+          isTest: input.isTest,
+          photoPath: seatedPhoto.path,
+          repHrId: input.repHrId,
+          reusedTimetable: seatedPhoto.reused,
+          seatId: input.seatId,
+        })
+      : null;
+  if (!check) return { check: null, hold: null, heldBecause: null };
+  // Counted only when the reading could ask for a retake — a match or a lost call never pays a read.
+  const asksForAPhoto = check.verdict === "no_schedule" || (check.verdict === "unjudged" && check.reason === "unreadable");
+  const earlierTries = asksForAPhoto
+    ? await countTimetableRefusals({ sharedPlaceId: venue.sharedPlaceId, repHrId: input.repHrId, isTest: input.isTest })
+    : 0;
+  const action = scheduleDoorAction(check, earlierTries);
+  if (action.kind === "retake") {
+    await recordTimetableRefusal({
+      reason: action.reason,
+      sharedPlaceId: venue.sharedPlaceId,
+      photoPath: seatedPhoto.path,
+      seatId: input.seatId,
+      repHrId: input.repHrId,
+      customerId: subject?.customerId ?? null,
+      isTest: input.isTest,
+    });
+    throw validationError(action.message, SCHEDULE_RETAKE_CODE);
+  }
+  if (action.kind === "hold") {
+    const held = { ...check, tries: action.tries };
+    return {
+      check: held,
+      hold: scheduleHoldRecord(held, { lat: venue.lat, lon: venue.lon, name: venue.name, sharedPlaceId: venue.sharedPlaceId }, action),
+      heldBecause: action.heldBecause,
+    };
+  }
+  return { check, hold: null, heldBecause: null };
+}
+
 export type ValidateResult = {
   customerId: string;
   customerName: string;
@@ -1797,6 +1882,11 @@ export type ValidateResult = {
    * waits for the Super Admin (owner, 2026-10-03). The rep reads it as the system checking.
    */
   held: boolean;
+  /**
+   * Set only when the TIMETABLE scanner held a seating (owner, 2026-10-17): the rep is told the reason
+   * in the scanner's own words, by his ruling for this one photograph. Null for every other hold.
+   */
+  heldBecause: ScheduleHeldBecause | null;
 };
 
 /**
@@ -2067,6 +2157,7 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
       : await validationSubject(seat.seatId, isTest, mode, body);
   let signboard: { check: PhoenixCrmSignboardCheck; record: Record<string, unknown> } | null = null;
   let schedule: PhoenixCrmScheduleCheck | null = null;
+  let heldBecause: ScheduleHeldBecause | null = null;
   if (seated && venue) {
     // Which photograph this seating is saved against: the one he just took, or the BUILDING's own
     // board, already on file (owner, 2026-10-10 — "ask him for only one timetable, not for every
@@ -2082,38 +2173,20 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     // 2026-10-09: "even if no Google check, he must validate by a live photo and location", the
     // location being the venue's, taken once).
     //
-    // `signboardNameIsUsable` is the SAME guard the signboard read is given, deliberately: a name too
-    // short or too generic to match ("Dr", a single initial) would be judged against a wall of forty
-    // names and could only produce noise. `signboardApplies` is NOT applied — that one answers the
-    // owner's AM/PM rule about whose name a SIGN carries, and a timetable names people whatever list
-    // the customer is on.
+    // `signboardApplies` is NOT applied — that one answers the owner's AM/PM rule about whose name a
+    // SIGN carries, and a timetable names people whatever list the customer is on.
     //
-    // 🔴 THE READ STILL RUNS PER CUSTOMER, on the one shared image: the question is "does this board
-    // name HIM", so three doctors behind one door are three different questions about the same
+    // 🔴 THE VERDICT STILL RUNS PER CUSTOMER, on the one shared reading: the question is "does this
+    // board name HIM", so three doctors behind one door are three different questions about the same
     // photograph — and each one's verdict is kept on his own row.
-    schedule =
-      subject && signboardNameIsUsable(subject.name)
-        ? await readPlaceSchedule({
-            customerName: subject.name,
-            isTest,
-            photoPath: seatedPhoto.path,
-            repHrId: viewer.hrId,
-            reusedTimetable: seatedPhoto.reused,
-            seatId: seat.seatId,
-          })
-        : null;
-    // A timetable that confidently names somebody else, or holds no timetable at all, rides the SAME
-    // atomic `hold_review` a Google or signboard hold rides: the customer stays under To validate, one
-    // review row is raised for the administrator, and the rep reads only that the system is checking.
-    // 🔴 `unjudged` NEVER holds: see scheduleHoldsForReview.
-    if (schedule && scheduleHoldsForReview(schedule)) {
-      payload.hold_review = scheduleHoldRecord(schedule, {
-        lat: venue.lat,
-        lon: venue.lon,
-        name: venue.name,
-        sharedPlaceId: venue.sharedPlaceId,
-      });
-    }
+    //
+    // The scanner (owner, 2026-10-17) refuses a photograph that is not a readable timetable BEFORE
+    // anything is written, and holds what it must hold on the SAME atomic `hold_review` a Google or
+    // signboard hold rides: the customer stays under To validate and one review row is raised.
+    const scanned = await scanSeatedTimetable({ subject, venue, seatedPhoto, seatId: seat.seatId, repHrId: viewer.hrId, isTest });
+    schedule = scanned.check;
+    heldBecause = scanned.heldBecause;
+    if (scanned.hold) payload.hold_review = scanned.hold;
     payload.place = await seatedPlacePayload(venue, seated);
   } else if (place) {
     const google = await googleCheckForSave(subject, place, { seatId: seat.seatId, repHrId: viewer.hrId, isTest });
@@ -2144,6 +2217,9 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     requestId: text(result.request_id),
     requestKind: requestKind ? requestKindOf(requestKind) : null,
     held: result.held === true,
+    // Only when the RPC really held it: a scanner hold always rides `hold_review`, so this is belt and
+    // braces against telling him "held" about a save that was not.
+    heldBecause: result.held === true ? heldBecause : null,
   };
   if (validated.held && !isTest) {
     await notifyValidationReviewWaiting({ customerName: validated.customerName, seat, repHrId: viewer.hrId, reviewId: text(result.review_id) });
@@ -2414,7 +2490,7 @@ export async function setPharmacyDetails(
 export async function addPlace(
   viewer: PhoenixCrmViewer,
   raw: unknown,
-): Promise<{ placeId: string; customerId: string; customerName: string; held: boolean }> {
+): Promise<{ placeId: string; customerId: string; customerName: string; held: boolean; heldBecause: ScheduleHeldBecause | null }> {
   const body = record(raw);
   const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
   if (!isUuid(body.customerId)) throw validationError("Choose the customer this place belongs to.");
@@ -2452,6 +2528,7 @@ export async function addPlace(
   const subject = await subjectRead;
   let signboard: { check: PhoenixCrmSignboardCheck; record: Row } | null = null;
   let schedule: PhoenixCrmScheduleCheck | null = null;
+  let heldBecause: ScheduleHeldBecause | null = null;
   let matched: Row | null = null;
   let holdRecord: Row | null = null;
   if (seated && venue) {
@@ -2459,27 +2536,12 @@ export async function addPlace(
     // full: both are judged on the customer's name at HIS door, and this door is the building's.
     //
     // The timetable is the BUILDING's and is read from the venue, not from the body — the same rule,
-    // and the same one call per customer against the one image.
+    // and the same scanner at the door (owner, 2026-10-17).
     const seatedPhoto = effectiveSeatedPhoto(venue, seated);
-    schedule =
-      subject && signboardNameIsUsable(subject.name)
-        ? await readPlaceSchedule({
-            customerName: subject.name,
-            isTest,
-            photoPath: seatedPhoto.path,
-            repHrId: viewer.hrId,
-            reusedTimetable: seatedPhoto.reused,
-            seatId: seat.seatId,
-          })
-        : null;
-    if (schedule && scheduleHoldsForReview(schedule)) {
-      holdRecord = scheduleHoldRecord(schedule, {
-        lat: venue.lat,
-        lon: venue.lon,
-        name: venue.name,
-        sharedPlaceId: venue.sharedPlaceId,
-      });
-    }
+    const scanned = await scanSeatedTimetable({ subject, venue, seatedPhoto, seatId: seat.seatId, repHrId: viewer.hrId, isTest });
+    schedule = scanned.check;
+    heldBecause = scanned.heldBecause;
+    holdRecord = scanned.hold;
   } else if (place) {
     // Another clinic is checked against Google exactly as the first one is (owner, 2026-10-03). Held, it
     // is saved and waits for the Super Admin; the customer, already validated, is not touched.
@@ -2511,6 +2573,7 @@ export async function addPlace(
     customerId: String(result.customer_id),
     customerName: String(result.customer_name),
     held: result.held === true,
+    heldBecause: result.held === true ? heldBecause : null,
   };
   if (added.held && !isTest) {
     await notifyValidationReviewWaiting({ customerName: added.customerName, seat, repHrId: viewer.hrId, reviewId: text(result.review_id) });

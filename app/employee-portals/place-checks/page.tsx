@@ -72,7 +72,12 @@ export default async function TeamPlaceChecksPage() {
   const [notes, integrity] = await Promise.all([loadPlaceNoteIndex(subjects), loadPlaceCheckIntegrity(viewer, subjects)]);
   const noteIndex = { ...notes, integrity };
   const waiting = rows.filter((row) => row.status === "pending");
-  const seated = sharedPlaces.reduce((total, row) => total + row.seated, 0);
+  // The cards count what the board draws, as on the Super Admin's page: no test entry, and no building
+  // that is no longer in use.
+  const realWaiting = waiting.filter((row) => !row.isTest);
+  const realValidated = validated.filter((row) => !row.isTest);
+  const liveVenues = sharedPlaces.filter((row) => !row.isTest && row.status !== "retired");
+  const seated = liveVenues.reduce((total, row) => total + row.seated, 0);
 
   return (
     <EmployeePortalPageShell
@@ -88,7 +93,7 @@ export default async function TeamPlaceChecksPage() {
             label="Still being checked"
             size="compact"
             tone="orange"
-            value={waiting.length}
+            value={realWaiting.length}
           />
           <AdminStatCard
             description="Every place of yours still in use"
@@ -96,7 +101,7 @@ export default async function TeamPlaceChecksPage() {
             label="Validated, in use"
             size="compact"
             tone="blue"
-            value={validated.length}
+            value={realValidated.length}
           />
           <AdminStatCard
             description="In use, and nobody has looked at it yet"
@@ -104,7 +109,7 @@ export default async function TeamPlaceChecksPage() {
             label="Never looked at"
             size="compact"
             tone="violet"
-            value={validated.filter((row) => !row.reviewed).length}
+            value={realValidated.filter((row) => !row.reviewed).length}
           />
           <AdminStatCard
             description={`${seated} ${seated === 1 ? "customer seated" : "customers seated"} in them`}
@@ -112,7 +117,7 @@ export default async function TeamPlaceChecksPage() {
             label="Polyclinics and centres"
             size="compact"
             tone="blue"
-            value={sharedPlaces.length}
+            value={liveVenues.length}
           />
         </div>
 

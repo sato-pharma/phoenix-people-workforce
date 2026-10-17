@@ -27,6 +27,7 @@ import { afterResponse } from "@/lib/http/after-response";
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import { PLACE_MAX_ACCURACY_METERS, refusedReadingOf, type PlaceDraft } from "@/lib/phoenix-crm/entry-rules";
 import { type BlockedPermission } from "@/lib/phoenix-crm/refused-readings-rules";
+import { type ScheduleRetakeReason } from "@/lib/phoenix-crm/schedule-rules";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type RecordRefusedReadingInput = {
@@ -181,6 +182,92 @@ export async function countOffListingRefusals(input: { seatId: string; repHrId: 
     return count ?? 0;
   } catch (error) {
     console.error("[phoenix-crm] off-listing refusal count failed", { seatId: input.seatId, error });
+    return 0;
+  }
+}
+
+export type TimetableRefusalInput = {
+  reason: ScheduleRetakeReason;
+  /** The BUILDING whose timetable was refused — the count's key, never a customer. */
+  sharedPlaceId: string;
+  /** The refused photograph's own pointer, kept as every refusal here keeps its own. */
+  photoPath: string | null;
+  seatId: string;
+  repHrId: string;
+  /** The customer being seated, when he already has a row. Kept for the board, never counted on. */
+  customerId: string | null;
+  isTest: boolean;
+};
+
+/**
+ * File one timetable photograph the door refused — the reader answered, and what it saw was not a
+ * readable timetable (owner, 2026-10-17: the scanner, "3 tries then held to confirmation by admin").
+ *
+ * 🔴 IT IS COUNTED, LIKE THE OFF-LISTING ONE: the rep's next photograph of the same building today
+ * reads these rows to decide whether to refuse again or save and hold. So it is awaited, and a failed
+ * insert costs him only a try he would otherwise have had — never his refusal message, never a 500.
+ * Unlike the location refusals, the rep IS told what to fix: that is the owner's ruling for this one
+ * photograph, and the words are `scheduleDoorAction`'s.
+ */
+export async function recordTimetableRefusal(input: TimetableRefusalInput): Promise<string | null> {
+  if (!input.sharedPlaceId) return null;
+  try {
+    const refusedAt = new Date();
+    const { data, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_refused_readings")
+      .insert({
+        subject_kind: "place",
+        reason: input.reason,
+        // Paired with the reason by the table's own CHECK (20261017193000): no other reason may
+        // carry a building, and this writer never files a timetable reason without one.
+        shared_place_id: input.sharedPlaceId,
+        seat_id: input.seatId,
+        rep_hr_id: input.repHrId.toUpperCase(),
+        customer_id: input.customerId,
+        refused_at: refusedAt.toISOString(),
+        // The Cairo visit day, ending at 02:00 — the day the tries are counted on.
+        visit_date: cairoBusinessDay(refusedAt),
+        photo_path: input.photoPath,
+        is_test: input.isTest,
+      })
+      .select("id")
+      .maybeSingle();
+    if (error) {
+      console.error("[phoenix-crm] timetable refusal not recorded", { seatId: input.seatId, message: error.message });
+      return null;
+    }
+    const row = (data ?? null) as { id?: unknown } | null;
+    return row && row.id ? String(row.id) : null;
+  } catch (error) {
+    console.error("[phoenix-crm] timetable refusal record failed", { seatId: input.seatId, error });
+    return null;
+  }
+}
+
+/**
+ * How many timetable photographs of this BUILDING this rep has had refused today (Cairo visit day).
+ * Zero on any error: a count the door cannot read asks for another photograph rather than hold on a
+ * number it does not have — the third refusal is still reached on the next try that can count.
+ */
+export async function countTimetableRefusals(input: { sharedPlaceId: string; repHrId: string; isTest: boolean; now?: Date }): Promise<number> {
+  if (!input.sharedPlaceId) return 0;
+  try {
+    const { count, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_refused_readings")
+      .select("id", { count: "exact", head: true })
+      .eq("shared_place_id", input.sharedPlaceId)
+      // HR ids are mixed case in this database, and the recorder upper-cases what it writes.
+      .eq("rep_hr_id", input.repHrId.toUpperCase())
+      .eq("visit_date", cairoBusinessDay(input.now ?? new Date()))
+      .in("reason", ["timetable_unreadable", "timetable_missing"])
+      .eq("is_test", input.isTest);
+    if (error) {
+      console.error("[phoenix-crm] timetable refusal count failed", { sharedPlaceId: input.sharedPlaceId, message: error.message });
+      return 0;
+    }
+    return count ?? 0;
+  } catch (error) {
+    console.error("[phoenix-crm] timetable refusal count failed", { sharedPlaceId: input.sharedPlaceId, error });
     return 0;
   }
 }

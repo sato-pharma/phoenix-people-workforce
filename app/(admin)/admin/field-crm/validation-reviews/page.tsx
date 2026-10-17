@@ -69,10 +69,19 @@ export default async function PhoenixCrmValidationReviewsPage() {
   const noteIndex = { ...notes, integrity };
   const waiting = rows.filter((row) => row.status === "pending");
   const decided = rows.filter((row) => row.status !== "pending");
+  // 🔴 THE CARDS COUNT WHAT THE BOARD DRAWS (owner, 2026-10-17: "is this a report that really shows me
+  // data?"): a test entry is nobody's work and the board never draws one, and a rejected building is not
+  // a polyclinic in use — the card read 98, four of them test entries and 36 rejected.
+  const real = <Row extends { isTest: boolean }>(set: Row[]) => set.filter((row) => !row.isTest);
+  const realWaiting = real(waiting);
+  const realDecided = real(decided);
+  const realValidated = real(validated);
   // Nobody has ever looked at these — no review row of any status (598 of the first 643, 2026-10-08).
-  const unseen = validated.filter((row) => !row.reviewed).length;
-  // Customers seated across every venue. The 3-a-day cap is about the DAY, never about this number.
-  const seated = sharedPlaces.reduce((total, row) => total + row.seated, 0);
+  const unseen = realValidated.filter((row) => !row.reviewed).length;
+  const liveVenues = real(sharedPlaces).filter((row) => row.status !== "retired");
+  // Customers seated across every live venue. The 3-a-day cap is about the DAY, never about this number.
+  const seated = liveVenues.reduce((total, row) => total + row.seated, 0);
+  const venuesWithoutTimetable = liveVenues.filter((row) => row.seated > 0 && !row.schedulePhotoPath).length;
 
   return (
     <div className="space-y-5">
@@ -84,11 +93,11 @@ export default async function PhoenixCrmValidationReviewsPage() {
       />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
-        <AdminStatCard icon={<Hourglass className="h-5 w-5" />} label="Waiting for you" value={waiting.length} description="Saved at the door, not validated yet" tone="orange" size="compact" />
+        <AdminStatCard icon={<Hourglass className="h-5 w-5" />} label="Waiting for you" value={realWaiting.length} description="Saved at the door, not validated yet" tone="orange" size="compact" />
         <AdminStatCard
           icon={<CheckCircle2 className="h-5 w-5" />}
           label="Approved, last 14 days"
-          value={decided.filter((row) => row.status === "approved").length}
+          value={realDecided.filter((row) => row.status === "approved").length}
           description="Validated in the rep's own name"
           tone="emerald"
           size="compact"
@@ -96,7 +105,7 @@ export default async function PhoenixCrmValidationReviewsPage() {
         <AdminStatCard
           icon={<MapPinCheck className="h-5 w-5" />}
           label="Rejected, last 14 days"
-          value={decided.filter((row) => row.status === "rejected").length}
+          value={realDecided.filter((row) => row.status === "rejected").length}
           description="Sent back to To validate"
           tone="rose"
           size="compact"
@@ -104,7 +113,7 @@ export default async function PhoenixCrmValidationReviewsPage() {
         <AdminStatCard
           icon={<MapPinCheck className="h-5 w-5" />}
           label="Validated, in use"
-          value={validated.length}
+          value={realValidated.length}
           description="Every place still in use, and refusable below"
           tone="blue"
           size="compact"
@@ -120,8 +129,10 @@ export default async function PhoenixCrmValidationReviewsPage() {
         <AdminStatCard
           icon={<Building2 className="h-5 w-5" />}
           label="Polyclinics and centres"
-          value={sharedPlaces.length}
-          description={`${seated} ${seated === 1 ? "customer seated" : "customers seated"} in them`}
+          value={liveVenues.length}
+          description={`${seated} ${seated === 1 ? "customer seated" : "customers seated"} in them${
+            venuesWithoutTimetable > 0 ? `; ${venuesWithoutTimetable} with customers and no timetable on file` : ""
+          }`}
           tone="blue"
           size="compact"
         />

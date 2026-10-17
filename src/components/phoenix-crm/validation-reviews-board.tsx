@@ -5,12 +5,18 @@
  * able to filter by rep by line by region by period by field by rejected by accepted by any single
  * thing").
  *
- * The page hands this board all three sets at once — the places waiting for a decision, the ones
- * decided in the last two weeks, and the validations the system never questioned. The filter bar is
- * shared: rep, line, region, area, list and period narrow whichever sections are shown, a free-text box
- * searches the names, and an outcome selector narrows to just the waiting / approved / rejected / in-use
- * rows. Region is the top-level region (Alex-BHR, Cairo, Delta, …); Area is the governorate-level seat
- * below it (Qalubeya, Gharbia 2, …). Every count in a section heading is the filtered count.
+ * The page hands this board every set at once — the places waiting for a decision, the ones decided in
+ * the last two weeks, the validations the system never questioned, the customers sent back, and the
+ * polyclinics. The filter bar is shared: rep, line, region, area, list and period narrow every tab, a
+ * free-text box searches the names, and an outcome selector narrows to just the waiting / approved /
+ * rejected / in-use rows. Every count in a heading is the filtered count.
+ *
+ * 🔴 IT IS A REPORT, NOT A DUMP (owner, 2026-10-17: "is this a report that really shows me data? or it's
+ * a bunch of chaos … put corrective actions even if we will need to rebuild the module from scratch").
+ * The Clinics tab drew every row it held — 197 decided rows, 104,455 px tall — and the polyclinics drew
+ * all 98 buildings with test ones among them. So: a scorecard of each rep's captures at the top; five
+ * tabs, of which only the open one is drawn; every list paged at 20; test entries never drawn; and a
+ * rejected building only behind its own switch.
  *
  * It is an admin screen, so the dropdowns are combo boxes the Super Admin types into (the module's
  * surface rule): the board declares `surface="admin"` around itself, which is what turns `CrmSelect`
@@ -20,18 +26,19 @@
  * board for his own team). `mode="company"` is the Super Admin's — every decision control he has had
  * since 2026-10-03, plus what the managers have written. `mode="team"` renders NO decision control at
  * all and no sentence about one: not "waiting for your decision", not who decided a settled row, not
- * what approving or refusing would do. He comments and he recommends, and his screen says nothing
- * about who decides — his own instruction the same day was "don't show this on the screen". A second
- * board file would have been the easy shape and is exactly how one of two copies drifts; the portal
- * mirrors removed in 2026-08 are the repo's own account of that.
+ * what approving or refusing would do, and not the system's recommendation. He comments and he
+ * recommends, and his screen says nothing about who decides — his own instruction the same day was
+ * "don't show this on the screen". A second board file would have been the easy shape and is exactly
+ * how one of two copies drifts; the portal mirrors removed in 2026-08 are the repo's own account of that.
  */
 
-import { useMemo, useState, type KeyboardEvent } from "react";
+import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
 import { CrmSurfaceProvider } from "@/components/phoenix-crm/surface";
 import { cn } from "@/lib/utils";
-import { CrmButton, CrmField, CrmPill, CrmSearchField, CrmSelect } from "@/components/phoenix-crm/ui";
+import { CrmButton, CrmCheck, CrmField, CrmPill, CrmSearchField, CrmSelect } from "@/components/phoenix-crm/ui";
+import { PlaceCheckScorecard } from "@/components/phoenix-crm/place-check-scorecard";
 import { ReopenedCustomerList } from "@/components/phoenix-crm/reopened-customer-list";
 import { PlaceMatchBoardView } from "@/components/phoenix-crm/place-match-board";
 import { SharedPlaceList } from "@/components/phoenix-crm/shared-place-list";
@@ -50,6 +57,8 @@ import {
   type ValidationReviewOutcome,
   type ValidationReviewPeriod,
 } from "@/lib/phoenix-crm/validation-review-filters";
+import { adviseOnBuilding, adviseOnReview, adviseOnTimetable, type PlaceCheckAdvice } from "@/lib/phoenix-crm/place-check-advice";
+import { placeCheckScorecard, standingOfPlaceInUse, type PlaceStanding } from "@/lib/phoenix-crm/place-check-scorecard";
 import { narrowVenueGroups, seatedCustomersByVenue, venueNeedsDecision, withoutSeated } from "@/lib/phoenix-crm/shared-place-groups";
 import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import type { PlaceNoteIndex, ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
@@ -71,29 +80,114 @@ const PERIOD_LABELS: Record<ValidationReviewPeriod, string> = {
   "30": "Last 30 days",
 };
 
+/** Every list on the board shows this many rows, then "Show more" — no tab draws its whole set at once. */
+const PAGE_ROWS = 20;
+/** A building is a tall card with its customers under it, so the polyclinics page by fewer. */
+const PAGE_BUILDINGS = 10;
+
 /**
- * The two kinds of check (owner, 2026-10-17: "separate the polyclinics/hospitals checks than normal
- * clinic steps"). A single clinic is judged on its own sign; a polyclinic or hospital is judged as a
- * building with a timetable and the customers seated behind it.
- *
- * The third kind is not a kind of place but a comparison (owner, 2026-10-17: "a place validated by more
- * than a rep … put the validations beside each other"): the SAME place seen by two or more reps. It is
- * the Super Admin's alone — a manager's board never draws the tab — and its data is read when the tab is
- * first opened, not with the page.
+ * The five tabs, in the order the work is done (owner, 2026-10-17):
+ * - `needs`       — everything waiting for a decision: a clinic the system held, a building held, a
+ *                   customer seated behind a door whose timetable held them;
+ * - `unconfirmed` — clinics in use that the reader never confirmed and nobody has looked at — the
+ *                   unreadable photographs;
+ * - `polyclinics` — every building, one card each, with its sign, its timetable and the customers in it;
+ * - `samePlace`   — the same place seen by two or more reps, the Super Admin's alone, read when first
+ *                   opened (owner, 2026-10-17: "a place validated by more than a rep");
+ * - `history`     — what was decided in the last 14 days, and who is waiting to be captured again.
  */
-type PlaceCheckView = "clinics" | "polyclinics" | "samePlace";
+type PlaceCheckView = "needs" | "unconfirmed" | "polyclinics" | "samePlace" | "history";
+
+/** The narrowing inside Not confirmed, each one a standing `standingOfPlaceInUse` gives a place. */
+type UnconfirmedChip = "open" | Exclude<PlaceStanding, "confirmed" | "waiting"> | "all";
+
+const CHIP_LABELS: Record<UnconfirmedChip, string> = {
+  open: "Not confirmed",
+  notReadable: "Not readable",
+  wrongPhoto: "No sign in the photo",
+  anotherName: "Another name",
+  notRead: "Never read",
+  all: "Every place in use",
+};
+
+const CHIP_TITLES: Record<UnconfirmedChip, string> = {
+  open: "In use, not confirmed by the reader, and nobody has looked",
+  notReadable: "In use, and the sign could not be read",
+  wrongPhoto: "In use, and no sign in the photo",
+  anotherName: "In use, and the sign names somebody else",
+  notRead: "In use, and the sign was never read",
+  all: "Every clinic in use",
+};
+
+function chipTakes(chip: UnconfirmedChip, row: ValidatedPlaceRow): boolean {
+  if (chip === "all") return true;
+  if (row.reviewed) return false;
+  const standing = standingOfPlaceInUse(row);
+  return chip === "open" ? standing !== "confirmed" : standing === chip;
+}
 
 /** A row the shared filters can read, for a reopened customer who has no place on file any more. */
 function filterableReopened(row: ReopenedCustomerRow): ValidationReviewFilterable {
   return { ...row, speciality: null, placeLabel: null, address: null, brickName: null, areaName: null };
 }
 
+/** A test entry is never drawn on this board: it is nobody's real work and nobody decides on it. */
+function isReal(row: { isTest: boolean }): boolean {
+  return !row.isTest;
+}
+
+/**
+ * A list shown 20 at a time. Keyed by the filters at the call site, so a filter change starts it over
+ * rather than keeping a page offset from the wider set.
+ */
+function Paged<Row>({ children, noun, rows, size }: { children: (shown: Row[]) => ReactNode; noun: string; rows: Row[]; size: number }) {
+  const [limit, setLimit] = useState(size);
+  const shown = rows.length > limit ? rows.slice(0, limit) : rows;
+  const left = rows.length - shown.length;
+  return (
+    <>
+      {children(shown)}
+      {left > 0 ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-3 border-t border-slate-200 px-4 py-3">
+          <CrmButton onClick={() => setLimit((current) => current + size)} size="sm">
+            Show {Math.min(size, left)} more {noun}
+          </CrmButton>
+          <span className="break-words text-xs font-semibold text-slate-500">
+            {shown.length} of {rows.length} shown
+          </span>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/** One line saying what the system recommends across the open decisions — the Super Admin's board only. */
+function AdviceSummary({ advice }: { advice: PlaceCheckAdvice[] }) {
+  if (advice.length === 0) return null;
+  const count = (kind: PlaceCheckAdvice["kind"]) => advice.filter((item) => item.kind === kind).length;
+  const parts = [
+    count("approve") > 0 ? `approving ${count("approve")}` : null,
+    count("reject") > 0 ? `rejecting ${count("reject")}` : null,
+    count("look") > 0 ? `looking yourself at ${count("look")}` : null,
+  ].filter((part): part is string => part !== null);
+  return (
+    <div className="min-w-0 border-l-4 border-orange-500 bg-white px-4 py-3">
+      <p className="break-words text-sm font-black text-slate-900">
+        Of the {advice.length} waiting, the system recommends {parts.join(", ")}.
+      </p>
+      <p className="mt-1 break-words text-xs text-slate-600">
+        Each row says why. Nothing is decided until you press Approve or Reject, one row or ticked together.
+      </p>
+    </div>
+  );
+}
+
 export function ValidationReviewsBoard({
-  pending,
-  decided,
-  validated,
-  reopened,
-  sharedPlaces,
+  pending: pendingRows,
+  decided: decidedRows,
+  validated: validatedRows,
+  reopened: reopenedRows,
+  sharedPlaces: venueRows,
   capped,
   mode,
   noteIndex,
@@ -107,18 +201,26 @@ export function ValidationReviewsBoard({
   validated: ValidatedPlaceRow[];
   /** Customers sent back to To validate and not captured again since — oldest wait first. */
   reopened: ReopenedCustomerRow[];
-  /** Every polyclinic and centre in use or waiting for a decision, newest first. */
+  /** Every polyclinic and centre in use, waiting for a decision, or rejected and still restorable. */
   sharedPlaces: SharedPlaceBoardRow[];
   /** Which reads stopped at their ceiling, so the page says "showing the newest" instead of lying. */
   capped: { reviews: boolean; validated: boolean; reopened: boolean; sharedPlaces: boolean };
 }) {
   const [filters, setFilters] = useState<ValidationReviewFilters>(EMPTY_VALIDATION_REVIEW_FILTERS);
-  const [view, setView] = useState<PlaceCheckView>("clinics");
+  const [view, setView] = useState<PlaceCheckView>("needs");
+  const [chip, setChip] = useState<UnconfirmedChip>("open");
+  const [showRejectedBuildings, setShowRejectedBuildings] = useState(false);
   // The comparison reads every validated place, so it starts on the tab's first opening and then stays
   // mounted — switching tabs must not read it again.
   const [samePlaceOpened, setSamePlaceOpened] = useState(false);
   const set = <Key extends keyof ValidationReviewFilters>(key: Key, value: ValidationReviewFilters[Key]) =>
     setFilters((current) => ({ ...current, [key]: value }));
+
+  const pending = useMemo(() => pendingRows.filter(isReal), [pendingRows]);
+  const decided = useMemo(() => decidedRows.filter(isReal), [decidedRows]);
+  const validated = useMemo(() => validatedRows.filter(isReal), [validatedRows]);
+  const reopened = useMemo(() => reopenedRows.filter(isReal), [reopenedRows]);
+  const sharedPlaces = useMemo(() => venueRows.filter(isReal), [venueRows]);
 
   const everyRow = useMemo<ValidationReviewFilterable[]>(() => [...pending, ...decided, ...validated], [pending, decided, validated]);
   // A venue's own rep, line, region and area belong in the dropdowns too: a rep who has captured a
@@ -166,7 +268,7 @@ export function ValidationReviewsBoard({
       }),
     [clinicDecided, filters, cutoff],
   );
-  const filteredValidated = useMemo(
+  const inUse = useMemo(
     () =>
       clinicValidated.filter(
         (row) =>
@@ -176,6 +278,7 @@ export function ValidationReviewsBoard({
       ),
     [clinicValidated, filters, cutoff],
   );
+  const filteredValidated = useMemo(() => inUse.filter((row) => chipTakes(chip, row)), [inUse, chip]);
   const filteredReopened = useMemo(
     () =>
       clinicReopened.filter(
@@ -188,6 +291,30 @@ export function ValidationReviewsBoard({
     () => narrowVenueGroups({ venues: sharedPlaces, seated, filters, cutoff }),
     [sharedPlaces, seated, filters, cutoff],
   );
+  // 🔴 A REJECTED BUILDING IS BEHIND ITS OWN SWITCH — or the Rejected outcome — so the 36 buildings taken
+  // off the list never again bury the live ones. It is still on the board, and can still be brought back.
+  const buildingGroups = useMemo(
+    () =>
+      showRejectedBuildings || filters.outcome === "rejected"
+        ? filteredVenueGroups
+        : filteredVenueGroups.filter((group) => group.venue.status !== "retired"),
+    [filteredVenueGroups, showRejectedBuildings, filters.outcome],
+  );
+  const rejectedBuildings = filteredVenueGroups.length - filteredVenueGroups.filter((group) => group.venue.status !== "retired").length;
+  const needsGroups = useMemo(() => filteredVenueGroups.filter((group) => venueNeedsDecision(group)), [filteredVenueGroups]);
+
+  // The scorecard reads every rep's places through the same filters, the clinics and the seated alike.
+  const scorecard = useMemo(
+    () =>
+      placeCheckScorecard({
+        waiting: pending.filter((row) => matchesValidationReviewFilters(row, filters) && withinValidationReviewPeriod(row.createdAt, cutoff)),
+        inUse: validated.filter((row) => matchesValidationReviewFilters(row, filters) && withinValidationReviewPeriod(row.validatedAt, cutoff)),
+        reopened: reopened.filter(
+          (row) => matchesValidationReviewFilters(filterableReopened(row), filters) && withinValidationReviewPeriod(row.reopenedAt, cutoff),
+        ),
+      }),
+    [pending, validated, reopened, filters, cutoff],
+  );
 
   const anyFilter = hasActiveValidationReviewFilter(filters);
   // 🔴 EVERY SENTENCE BELOW THAT NAMES A DECISION IS BEHIND THIS FLAG. A manager's board must not say
@@ -198,27 +325,37 @@ export function ValidationReviewsBoard({
   const showDecided = filters.outcome === "all" || filters.outcome === "approved" || filters.outcome === "rejected";
   const showValidated = filters.outcome === "all" || filters.outcome === "validated" || filters.outcome === "unseen";
   const showReopened = filters.outcome === "all" || filters.outcome === "rejected";
-  const movedToPolyclinics = pending.length + decided.length + validated.length + reopened.length - (clinicPending.length + clinicDecided.length + clinicValidated.length + clinicReopened.length);
-  const clinicsShown =
-    (showWaiting ? filteredPending.length : 0) +
-    (showDecided ? filteredDecided.length : 0) +
-    (showReopened ? filteredReopened.length : 0) +
-    (showValidated ? filteredValidated.length : 0);
-  const clinicsOpen = showWaiting ? filteredPending.length : 0;
-  const polyclinicsOpen = filteredVenueGroups.filter((group) => venueNeedsDecision(group)).length;
-  const validatedTitle = filters.outcome === "unseen" ? "Validations nobody has looked at" : "Validations the system did not question";
+
+  // What the system recommends across every open decision on the Needs you tab.
+  const advice = useMemo<PlaceCheckAdvice[]>(() => {
+    if (team) return [];
+    const clinics = showWaiting ? filteredPending.map((row) => adviseOnReview(row)) : [];
+    const buildings = needsGroups.flatMap((group) => [
+      ...(group.venue.status === "held" ? [adviseOnBuilding(group.venue)] : []),
+      ...group.customers.filter((customer) => customer.state === "waiting").map((customer) => adviseOnTimetable(customer.timetable)),
+    ]);
+    return [...clinics, ...buildings];
+  }, [team, showWaiting, filteredPending, needsGroups]);
+
+  const needsCount = (showWaiting ? filteredPending.length : 0) + needsGroups.length;
+  const openCount = (showWaiting ? filteredPending.length : 0) + needsGroups.length;
+  const historyCount = (showDecided ? filteredDecided.length : 0) + (showReopened ? filteredReopened.length : 0);
+  const unconfirmedCount = showValidated ? inUse.filter((row) => chipTakes("open", row)).length : 0;
   const decidedTitle = filters.outcome === "approved" ? "Approved in the last 14 days" : filters.outcome === "rejected" ? "Rejected in the last 14 days" : team ? "Settled in the last 14 days" : "Decided in the last 14 days";
 
-  // The filter signature remounts the paged validated list so "Show more" starts over when a filter
-  // changes, rather than keeping a page offset from the wider set.
-  const validatedKey = `${filters.outcome}|${filters.rep}|${filters.line}|${filters.region}|${filters.area}|${filters.list}|${filters.period}|${filters.text}`;
+  // The filter signature remounts every paged list so "Show more" starts over when a filter changes,
+  // rather than keeping a page offset from the wider set.
+  const filterKey = `${filters.outcome}|${filters.rep}|${filters.line}|${filters.region}|${filters.area}|${filters.list}|${filters.period}|${filters.text}`;
+  const validatedKey = `${filterKey}|${chip}`;
 
   // 🔴 THE COMPARISON TAB IS THE SUPER ADMIN'S ALONE: a manager's board is `mode="team"` and is never
   // handed the tab, the panel or the read (the route refuses a manager as well).
   const tabs: ReadonlyArray<{ key: PlaceCheckView; label: string; count: number | null; open: number }> = [
-    { key: "clinics", label: "Clinics", count: clinicsShown, open: clinicsOpen },
-    { key: "polyclinics", label: "Polyclinics and hospitals", count: filteredVenueGroups.length, open: polyclinicsOpen },
+    { key: "needs", label: team ? "Being checked" : "Needs you", count: needsCount, open: openCount },
+    { key: "unconfirmed", label: "Not confirmed", count: unconfirmedCount, open: 0 },
+    { key: "polyclinics", label: "Polyclinics and hospitals", count: buildingGroups.length, open: 0 },
     ...(team ? [] : [{ key: "samePlace" as const, label: "Same place, several reps", count: null, open: 0 }]),
+    { key: "history", label: "History", count: historyCount, open: 0 },
   ];
   const selectView = (key: PlaceCheckView) => {
     setView(key);
@@ -342,7 +479,15 @@ export function ValidationReviewsBoard({
           </AdminCallout>
         ) : null}
 
-        <div aria-label="Kind of place" className="flex min-w-0 flex-wrap border-b border-slate-200" role="tablist">
+        <PlaceCheckScorecard
+          mode={mode}
+          onPickRep={(rep) => set("rep", rep)}
+          pickedRep={filters.rep}
+          reps={scorecard.reps}
+          total={scorecard.total}
+        />
+
+        <div aria-label="Place checks" className="flex min-w-0 flex-wrap border-b border-slate-200" role="tablist">
           {tabs.map(({ key, label, count, open }, index) => (
             <button
               key={key}
@@ -368,13 +513,9 @@ export function ValidationReviewsBoard({
           ))}
         </div>
 
-        {view === "clinics" ? (
-          <div aria-labelledby="vr-tab-clinics" className="space-y-5" id="vr-panel-clinics" role="tabpanel">
-            {movedToPolyclinics > 0 ? (
-              <p className="break-words text-xs text-slate-500">
-                {movedToPolyclinics} {movedToPolyclinics === 1 ? "row belongs" : "rows belong"} to a polyclinic or hospital and {movedToPolyclinics === 1 ? "is" : "are"} on the Polyclinics and hospitals tab, under their building.
-              </p>
-            ) : null}
+        {view === "needs" ? (
+          <div aria-labelledby="vr-tab-needs" className="space-y-5" id="vr-panel-needs" role="tabpanel">
+            {team ? null : <AdviceSummary advice={advice} />}
             {showWaiting ? (
               <AdminTableShell
                 title={team ? `Still being checked (${filteredPending.length})` : `Waiting for your decision (${filteredPending.length})`}
@@ -397,11 +538,128 @@ export function ValidationReviewsBoard({
                     </AdminCallout>
                   </div>
                 ) : (
-                  <ValidationReviewQueue mode={mode} noteIndex={noteIndex} rows={filteredPending} section="waiting" />
+                  <Paged key={filterKey} noun="places" rows={filteredPending} size={PAGE_ROWS}>
+                    {(rows) => <ValidationReviewQueue mode={mode} noteIndex={noteIndex} rows={rows} section="waiting" />}
+                  </Paged>
                 )}
               </AdminTableShell>
             ) : null}
 
+            <AdminTableShell
+              title={team ? `Polyclinics still being checked (${needsGroups.length})` : `Polyclinics waiting for your decision (${needsGroups.length})`}
+              description={
+                team
+                  ? "A building held at its door, or a customer seated in it whose timetable could not answer for them."
+                  : "A building held at its door, or a customer seated in it whose timetable does not name them or could not be read. Each building is shown whole, with its sign, its timetable and everybody seated in it."
+              }
+            >
+              {needsGroups.length === 0 ? (
+                <div className="px-4 py-4">
+                  <AdminCallout tone="success">
+                    <span>{anyFilter ? "No polyclinic waiting matches these filters." : "No polyclinic or seated customer is waiting."}</span>
+                  </AdminCallout>
+                </div>
+              ) : (
+                <Paged key={filterKey} noun="buildings" rows={needsGroups} size={PAGE_BUILDINGS}>
+                  {(groups) => <SharedPlaceList groups={groups} mode={mode} noteIndex={noteIndex} />}
+                </Paged>
+              )}
+            </AdminTableShell>
+          </div>
+        ) : null}
+
+        {view === "unconfirmed" ? (
+          <div aria-labelledby="vr-tab-unconfirmed" className="space-y-3" id="vr-panel-unconfirmed" role="tabpanel">
+            <div aria-label="Narrow the places in use" className="flex min-w-0 flex-wrap gap-2" role="group">
+              {(Object.keys(CHIP_LABELS) as UnconfirmedChip[]).map((key) => {
+                const total = inUse.filter((row) => chipTakes(key, row)).length;
+                return (
+                  <button
+                    key={key}
+                    aria-pressed={chip === key}
+                    className={cn(
+                      "inline-flex min-h-10 min-w-0 items-center gap-2 rounded-none border px-3 py-1.5 text-left text-xs font-black",
+                      chip === key ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
+                    )}
+                    onClick={() => setChip(key)}
+                    type="button"
+                  >
+                    <span className="break-words">{CHIP_LABELS[key]}</span>
+                    <span className="tabular-nums">{total}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {showValidated ? (
+              <AdminTableShell
+                title={`${CHIP_TITLES[chip]} (${filteredValidated.length})`}
+                description={
+                  team
+                    ? "Single clinics still in use whose photograph the system could not confirm: the sign could not be read, it is not a sign, it names somebody else, or it was never read. Turn a sideways photo with the arrows on it, and open it to zoom."
+                    : "Single clinics still in use whose photograph the system could not confirm, and that nobody has looked at: the sign could not be read, it is not a sign, it names somebody else, or it was never read. Turn a sideways photo with the arrows on it, and open it to zoom. Refusing one retires the place and, when it is the customer's only place, sends them back to To validate; the rep is told what is wrong with the photo and never that a person looked at them."
+                }
+              >
+                {filteredValidated.length === 0 ? (
+                  <div className="px-4 py-4">
+                    <AdminCallout tone="success">
+                      <span>{anyFilter ? "Nothing in use matches these filters." : "Nothing here: every clinic in use has been confirmed by its sign or looked at."}</span>
+                    </AdminCallout>
+                  </div>
+                ) : (
+                  <ValidatedPlaceList key={validatedKey} mode={mode} noteIndex={noteIndex} rows={filteredValidated} showSearch={false} />
+                )}
+              </AdminTableShell>
+            ) : (
+              <AdminCallout tone="neutral">
+                <span>The outcome selected above holds no place in use.</span>
+              </AdminCallout>
+            )}
+          </div>
+        ) : null}
+
+        {view === "polyclinics" ? (
+          <div aria-labelledby="vr-tab-polyclinics" className="space-y-3" id="vr-panel-polyclinics" role="tabpanel">
+            {rejectedBuildings > 0 && filters.outcome !== "rejected" ? (
+              <CrmCheck checked={showRejectedBuildings} onChange={setShowRejectedBuildings}>
+                {team
+                  ? `Show the ${rejectedBuildings} ${rejectedBuildings === 1 ? "building" : "buildings"} no longer in use`
+                  : `Show the ${rejectedBuildings} rejected ${rejectedBuildings === 1 ? "building" : "buildings"}, which can be brought back`}
+              </CrmCheck>
+            ) : null}
+            <AdminTableShell
+              title={`Polyclinics and hospitals (${buildingGroups.length})`}
+              description={
+                team
+                  ? "A polyclinic, medical centre or hospital outpatient suite is validated ONCE, at its own door — a live photo of the sign on the building and both readings inside the place line — and every customer who receives behind that door is then seated in it against the building's one timetable. Each building is one card: its name and where it is, the sign on its door and its timetable, then the customers seated in it with what that timetable says about each. The buildings with something open or wrong come first."
+                  : "A polyclinic, medical centre or hospital outpatient suite is validated ONCE, at its own door — a live photo of the sign on the building and both readings inside the place line — and every customer who receives behind that door is then seated in it against the building's one timetable. Each building is one card: its name and where it is, the sign on its door and its timetable, then the customers seated in it with what that timetable says about each. The buildings with something open or wrong come first. Rejecting a building retires it, retires everybody seated in it, and sends each of them back to To validate. A customer the timetable does not name is rejected on their own row, which leaves the building and everybody else seated in it alone."
+              }
+            >
+              {buildingGroups.length === 0 ? (
+                <div className="px-4 py-4">
+                  <AdminCallout tone="neutral">
+                    <span>{anyFilter || filters.outcome !== "all" ? "No polyclinic or hospital matches these filters." : "No polyclinic or centre has been captured yet."}</span>
+                  </AdminCallout>
+                </div>
+              ) : (
+                <Paged key={`${filterKey}|${showRejectedBuildings}`} noun="buildings" rows={buildingGroups} size={PAGE_BUILDINGS}>
+                  {(groups) => <SharedPlaceList groups={groups} mode={mode} noteIndex={noteIndex} />}
+                </Paged>
+              )}
+            </AdminTableShell>
+            <p className="break-words text-xs text-slate-500">
+              {filteredVenueGroups.length} {filteredVenueGroups.length === 1 ? "building" : "buildings"} on the board in all.
+            </p>
+          </div>
+        ) : null}
+
+        {!team && samePlaceOpened ? (
+          <div aria-labelledby="vr-tab-samePlace" hidden={view !== "samePlace"} id="vr-panel-samePlace" role="tabpanel">
+            <PlaceMatchBoardView filters={filters} />
+          </div>
+        ) : null}
+
+        {view === "history" ? (
+          <div aria-labelledby="vr-tab-history" className="space-y-5" id="vr-panel-history" role="tabpanel">
             {showDecided ? (
               <AdminTableShell
                 title={`${decidedTitle} (${filteredDecided.length})`}
@@ -422,7 +680,9 @@ export function ValidationReviewsBoard({
                     </AdminCallout>
                   </div>
                 ) : (
-                  <ValidationReviewQueue mode={mode} noteIndex={noteIndex} rows={filteredDecided} section="decided" />
+                  <Paged key={filterKey} noun="places" rows={filteredDecided} size={PAGE_ROWS}>
+                    {(rows) => <ValidationReviewQueue mode={mode} noteIndex={noteIndex} rows={rows} section="decided" />}
+                  </Paged>
                 )}
               </AdminTableShell>
             ) : null}
@@ -439,58 +699,12 @@ export function ValidationReviewsBoard({
                     </AdminCallout>
                   </div>
                 ) : (
-                  <ReopenedCustomerList rows={filteredReopened} />
+                  <Paged key={filterKey} noun="customers" rows={filteredReopened} size={PAGE_ROWS}>
+                    {(rows) => <ReopenedCustomerList rows={rows} />}
+                  </Paged>
                 )}
               </AdminTableShell>
             ) : null}
-
-            {showValidated ? (
-              <AdminTableShell
-                title={`${validatedTitle} (${filteredValidated.length})`}
-                description={
-                  team
-                    ? "Only AM customers are checked against Google, and every new place has its signboard read before it is accepted; a place whose sign named the customer is never held. These are your team's places still in use, whenever they were validated, each with what the system read on its signboard and whether anybody has looked at it yet."
-                    : "Only AM customers are checked against Google, and since 8 October every new place has its signboard read before it is accepted; a place whose sign named the customer is not held. These are the places still in use, whenever they were validated, each with what the system read on its signboard and whether anybody has looked at it. Refusing one retires the place and, when it is the customer's only place, sends them back to To validate; the rep is told what is wrong with the photo and never that a person looked at them."
-                }
-              >
-                {filteredValidated.length === 0 ? (
-                  <div className="px-4 py-4">
-                    <AdminCallout tone="neutral">
-                      <span>{anyFilter || filters.outcome === "unseen" ? "Nothing validated matches these filters." : "Nothing is validated and in use."}</span>
-                    </AdminCallout>
-                  </div>
-                ) : (
-                  <ValidatedPlaceList key={validatedKey} mode={mode} noteIndex={noteIndex} rows={filteredValidated} showSearch={false} />
-                )}
-              </AdminTableShell>
-            ) : null}
-          </div>
-        ) : null}
-        {view === "polyclinics" ? (
-          <div aria-labelledby="vr-tab-polyclinics" id="vr-panel-polyclinics" role="tabpanel">
-            <AdminTableShell
-              title={`Polyclinics and hospitals (${filteredVenueGroups.length})`}
-              description={
-                team
-                  ? "A polyclinic, medical centre or hospital outpatient suite is validated ONCE, at its own door — a live photo of the sign on the building and both readings inside the place line — and every customer who receives behind that door is then seated in it without a second capture. Each building is one block here: the sign on its door and its timetable, then the customers seated in it with what that timetable says about each. It is a venue only: it is on nobody's list, takes no visit and counts in no KPI, and the customer seated in it stays the one who is planned, visited and counted. It is not looked up in Google, because that check reads a customer's own name and a building has none."
-                  : "A polyclinic, medical centre, medical tower or hospital outpatient suite is validated ONCE, at its own door — a live photo of the sign on the building and both readings inside the place line — and every customer who receives behind that door is then seated in it without a second capture. Each building is one block here: the sign on its door and its timetable, then the customers seated in it with what that timetable says about each. It is a venue only: it is on nobody's list, takes no visit and counts in no KPI, and the customer seated in it stays the one who is planned, visited and counted. It is not looked up in Google, because that check reads a customer's own name and a building has none. Rejecting a building retires it, retires everybody seated in it, and sends each of them back to To validate. A customer the timetable does not name is rejected on their own row, which leaves the building and everybody else seated in it alone."
-              }
-            >
-              {filteredVenueGroups.length === 0 ? (
-                <div className="px-4 py-4">
-                  <AdminCallout tone="neutral">
-                    <span>{anyFilter || filters.outcome !== "all" ? "No polyclinic or hospital matches these filters." : "No polyclinic or centre has been captured yet."}</span>
-                  </AdminCallout>
-                </div>
-              ) : (
-                <SharedPlaceList groups={filteredVenueGroups} mode={mode} noteIndex={noteIndex} />
-              )}
-            </AdminTableShell>
-          </div>
-        ) : null}
-        {!team && samePlaceOpened ? (
-          <div aria-labelledby="vr-tab-samePlace" hidden={view !== "samePlace"} id="vr-panel-samePlace" role="tabpanel">
-            <PlaceMatchBoardView filters={filters} />
           </div>
         ) : null}
       </div>
