@@ -11,7 +11,8 @@
  *     his draft customers, marked not sent; a rep with no plan at all is skipped.
  *   - ADMIN — one of the seven day activities already in Phoenix CRM, and a note.
  *   - SINGLE VISIT — an area of his district, then customers from that area's rep lists, from Manager's
- *     own list, or one he types (grade A/B/C and potential grade, Capture location optional, NO
+ *     own list, or one he types (grade A/B/C and potential grade; speciality, phone, address and brick
+ *     optional, filled in by hand or by Capture location, the area and brick cascading drop-lists; NO
  *     validation step — "there will not be validation because they are managers").
  *
  * Rules around it, every one his own answer that day:
@@ -138,6 +139,33 @@ export function isManagerCustomerGrade(value: unknown): value is ManagerCustomer
 
 export function isManagerCustomerPotentialGrade(value: unknown): value is ManagerCustomerPotentialGrade {
   return typeof value === "string" && (MANAGER_CUSTOMER_POTENTIAL_GRADES as readonly string[]).includes(value);
+}
+
+// ── What a customer he adds must carry (owner, 2026-10-18) ──────────────────────────────────────
+
+export const MANAGER_CUSTOMER_ADDRESS_MAX = 300;
+
+/**
+ * The first thing a customer he is adding still lacks, in his words, or null when it is complete.
+ *
+ * Owner, 2026-10-17: "the customer the DSM is adding … must enter his speciality, his name, his phone number,
+ * and either fill the address, brick and area manually, or capture the location and the capture fills these
+ * fields" — then, the same night, "make all optional … make everything we did now optional". So only the name,
+ * the grade, the potential grade and an area of his region are needed; the speciality, the phone, the address
+ * and the brick are all optional, and Capture location fills them when he presses it. The form asks this
+ * before it sends and the server asks it again.
+ */
+export function missingManagerCustomerField(input: {
+  name: string | null;
+  areaChosen: boolean;
+  grade: unknown;
+  potentialGrade: unknown;
+}): string | null {
+  if (!input.name) return "Write the customer's name.";
+  if (!isManagerCustomerGrade(input.grade)) return "Choose the grade: A, B or C.";
+  if (!isManagerCustomerPotentialGrade(input.potentialGrade)) return "Choose the potential grade.";
+  if (!input.areaChosen) return "Choose the area.";
+  return null;
 }
 
 // ── Who plans ───────────────────────────────────────────────────────────────────────────────────

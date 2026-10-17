@@ -101,6 +101,7 @@ import {
   type ManagerSlotCustomerRow,
   type ManagerSlotRow,
 } from "@/lib/phoenix-crm/server/manager-plan-rows";
+import { loadOldCrmRepWeeks, type OldCrmRep } from "@/lib/phoenix-crm/server/manager-old-crm-weeks";
 import { dmPlansInPhoenixCrm } from "@/lib/phoenix-crm/server/manager-plan-switch";
 import { notifyPhoenixCrm, type ManagerPlanNotice } from "@/lib/phoenix-crm/server/notifications";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
@@ -135,9 +136,12 @@ export type { ManagerEditAskRow, ManagerPlanRow, ManagerSlotCustomerRow, Manager
 
 // ── The reps' own days ──────────────────────────────────────────────────────────────────────────
 
-/** A customer of a rep's own day, as the district manager ticks him. */
+/**
+ * A customer of a rep's own day, as the district manager ticks him. `customerId` is null for a contact of
+ * a rep's OLD-CRM plan who is not on the rep's Phoenix list: he shows, and cannot be ticked.
+ */
 export type RepDayCustomer = {
-  customerId: string;
+  customerId: string | null;
   name: string;
   grade: string | null;
   speciality: string | null;
@@ -146,20 +150,36 @@ export type RepDayCustomer = {
   listType: "AM" | "PM";
 };
 
-/** sent — his week is with his manager or approved; not_sent — a draft or returned week; no_plan — none at all. */
-export type RepWeekState = "sent" | "not_sent" | "no_plan";
+/**
+ * sent — his week is with his manager or approved; not_sent — a draft or returned week; old_crm — he has no
+ * Phoenix plan but filed this week in the old CRM (owner, 2026-10-17); no_plan — none at all.
+ */
+export type RepWeekState = "sent" | "not_sent" | "old_crm" | "no_plan";
 
 export type RepWeek = {
   seatId: string;
   state: RepWeekState;
   /** "<seat>|<date>|<half>" → the customers of that half, in the order he planned them. */
   halves: Map<string, RepDayCustomer[]>;
+  /** The old-CRM plan the halves were read from (state old_crm only): the vendor's plan id and approval status. */
+  oldCrm: { crmPlanId: number; status: number | null } | null;
 };
 
-/** Each rep's own week — his plan's status and his customers by day and half — for these seats. */
-export async function loadRepWeeks(seatIds: ReadonlyArray<string>, weekStart: string, isTest: boolean): Promise<Map<string, RepWeek>> {
+/**
+ * Each rep's own week — his plan's status and his customers by day and half — for these seats.
+ *
+ * `oldCrmReps` names the reps (seat and HR id) whose old-CRM plan may stand in when Phoenix holds none:
+ * a rep with a customer on a Phoenix plan is always read from it, and only a rep with no Phoenix plan at
+ * all is read from iReports360. The real world only — the test world holds no vendor data.
+ */
+export async function loadRepWeeks(
+  seatIds: ReadonlyArray<string>,
+  weekStart: string,
+  isTest: boolean,
+  oldCrmReps: ReadonlyArray<OldCrmRep> = [],
+): Promise<Map<string, RepWeek>> {
   const weeks = new Map<string, RepWeek>();
-  for (const seatId of seatIds) weeks.set(seatId, { seatId, state: "no_plan", halves: new Map() });
+  for (const seatId of seatIds) weeks.set(seatId, { seatId, state: "no_plan", halves: new Map(), oldCrm: null });
   if (seatIds.length === 0) return weeks;
   const planRows: Row[] = [];
   for (const part of chunk(dedupeIds(seatIds), 100)) {
@@ -218,7 +238,28 @@ export async function loadRepWeeks(seatIds: ReadonlyArray<string>, weekStart: st
   for (const week of weeks.values()) {
     if (week.state !== "no_plan" && week.halves.size === 0) week.state = "no_plan";
   }
+  // A rep with no Phoenix plan who filed the week in the old CRM shows that plan instead (owner, 2026-10-17).
+  const withoutPlan = oldCrmReps.filter((rep) => weeks.get(rep.seatId)?.state === "no_plan");
+  if (withoutPlan.length > 0) {
+    for (const old of (await loadOldCrmRepWeeks({ reps: withoutPlan, weekStart, isTest })).values()) {
+      const week = weeks.get(old.seatId);
+      if (!week || old.halves.size === 0) continue;
+      week.state = "old_crm";
+      week.halves = old.halves;
+      week.oldCrm = { crmPlanId: old.crmPlanId, status: old.status };
+    }
+  }
   return weeks;
+}
+
+/** The reps among these seats who have someone in them — the ones whose old-CRM plan can stand in. */
+function oldCrmRepsOf(entries: ReadonlyArray<{ seatId: string | null; hrId: string | null | undefined }>): OldCrmRep[] {
+  const seen = new Map<string, OldCrmRep>();
+  for (const entry of entries) {
+    if (!entry.seatId || !personKey(entry.hrId)) continue;
+    seen.set(entry.seatId, { seatId: entry.seatId, hrId: String(entry.hrId) });
+  }
+  return [...seen.values()];
 }
 
 /** The bricks of a half, in the order they first appear — where the rep is going. */
@@ -483,7 +524,7 @@ async function buildBoard(
   const repSeatIds = dedupeIds([...team.map((entry) => entry.seatId), ...slots.map((slot) => slot.repSeatId)]);
   const [slotCustomers, repWeeks] = await Promise.all([
     loadManagerSlotCustomers(slots.map((slot) => slot.slotId)),
-    loadRepWeeks(repSeatIds, weekStart, isTest),
+    loadRepWeeks(repSeatIds, weekStart, isTest, oldCrmRepsOf([...team.map((entry) => ({ seatId: entry.seatId, hrId: entry.occupantHrId })), ...slots.map((slot) => ({ seatId: slot.repSeatId, hrId: slot.repHrId }))])),
   ]);
   const scopeSeatOccupants = [...scopes, ...slots.map((slot) => ({ dmSeatId: slot.scopeDmSeatId }))].map((scope) =>
     scope.dmSeatId ? viewer.org.seats.get(scope.dmSeatId)?.occupantHrId : null,
@@ -612,11 +653,13 @@ async function buildBoard(
         };
       }
       const repWeek = slot.repSeatId ? repWeeks.get(slot.repSeatId) : undefined;
-      const onRepDay = new Set((slot.repSeatId ? repWeek?.halves.get(repHalfKey(slot.repSeatId, date, half)) : undefined)?.map((entry) => entry.customerId) ?? []);
+      const onRepDay = new Set(
+        (slot.repSeatId ? repWeek?.halves.get(repHalfKey(slot.repSeatId, date, half)) : undefined)?.flatMap((entry) => (entry.customerId ? [entry.customerId] : [])) ?? [],
+      );
       const customers = (customersBySlot.get(slot.slotId) ?? []).map((row): ManagerBoardSlotCustomer => {
         const flag =
           slot.kind === "with_rep" && row.customerId
-            ? flagManagerCustomer({ onRepDay: onRepDay.has(row.customerId), repWeekSent: repWeek?.state === "sent" })
+            ? flagManagerCustomer({ onRepDay: onRepDay.has(row.customerId), repWeekSent: repWeek?.state === "sent" || repWeek?.state === "old_crm" })
             : null;
         return {
           customerId: row.customerId,
@@ -744,6 +787,8 @@ async function assertDistrictCustomers(
 async function assertOnTheRepsHalf(input: {
   managerHrId: string;
   repSeatId: string;
+  /** The rep's HR id, so a rep who works in the old CRM is read from his old plan too. */
+  repHrId: string | null;
   date: string;
   half: ManagerHalf;
   customerIds: ReadonlyArray<string>;
@@ -752,11 +797,11 @@ async function assertOnTheRepsHalf(input: {
   if (input.customerIds.length === 0) return;
   const weekStart = fieldWeekStart(input.date);
   const [repWeeks, planRows] = await Promise.all([
-    loadRepWeeks([input.repSeatId], weekStart, input.isTest),
+    loadRepWeeks([input.repSeatId], weekStart, input.isTest, oldCrmRepsOf([{ seatId: input.repSeatId, hrId: input.repHrId }])),
     loadWeekPlanRows([input.managerHrId], weekStart, input.isTest),
   ]);
   const onHalf = new Set(
-    (repWeeks.get(input.repSeatId)?.halves.get(repHalfKey(input.repSeatId, input.date, input.half)) ?? []).map((entry) => entry.customerId),
+    (repWeeks.get(input.repSeatId)?.halves.get(repHalfKey(input.repSeatId, input.date, input.half)) ?? []).flatMap((entry) => (entry.customerId ? [entry.customerId] : [])),
   );
   const kept = new Set<string>();
   const plan = planRows[0] ?? null;
@@ -811,6 +856,7 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
     await assertOnTheRepsHalf({
       managerHrId: viewer.hrId,
       repSeatId: repSeat.seatId,
+      repHrId: repSeat.occupantHrId ?? null,
       date: draft.date,
       half: draft.half,
       customerIds: draft.customers.flatMap((entry) => ("customerId" in entry ? [entry.customerId] : [])),

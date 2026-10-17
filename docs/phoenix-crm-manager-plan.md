@@ -13,7 +13,11 @@ reps use", but the other way round. For each half-day the DM does one of three t
 - **Admin.** One of the seven day activities (meeting, training, conference, admin work, travel, health
   day, sales day), plus a note.
 - **Single visit.** An area of his district, vacant rep seats included. Then customers from that
-  area's rep lists, from **Manager's own list**, or a newly typed customer.
+  area's rep lists, from **Manager's own list**, or a newly typed customer. A customer he adds needs
+  a name, the two grades and an area of his region; the **speciality, phone, address and brick are optional**
+  (owner, 2026-10-18). **Area** and **Brick** are cascading drop-lists: the areas of his region, then the bricks
+  of the area he chose. **Capture location** fills the address and selects the area and the brick when it can,
+  and he can still change them.
 
 AM and PM are each a choice of their own.
 
@@ -59,7 +63,7 @@ Migration `20261017000000_phoenix_crm_manager_plan.sql` adds seven tables:
 | `phoenix_crm_manager_plan_customers` | The customers ticked for a slot: a rep's customer or one from his own list. |
 | `phoenix_crm_manager_plan_events` | The trail, with a snapshot taken on submit. |
 | `phoenix_crm_manager_plan_edit_requests` | His asks to reopen a sent week. |
-| `phoenix_crm_manager_customers` | Manager's own list, with an optional pin and the removal fields. |
+| `phoenix_crm_manager_customers` | Manager's own list: the optional address and picked brick (`pin_address` / `pin_brick_id` / `pin_brick_name`; a row with no `pin_lat` was filled in by hand), an optional pin and the removal fields. |
 | `phoenix_crm_manager_visits` | His own single visits, planned or unplanned. |
 
 Every table has RLS on and no anon or authenticated access. Every function is SECURITY DEFINER and
@@ -176,6 +180,47 @@ days"), and the limit covers **the visits he logs** as well as his plan.
 - **Where it lives.** `server/manager-single-visit-cap.ts` counts; the rule is
   `dmSingleVisitCapError` in `manager-plan-rules.ts`. There is no database constraint, so two saves sent
   at the same instant could both pass the count.
+
+## A rep who still works in the old CRM
+
+Owner, 2026-10-17: *"if the district manager's reps are still working on the old CRM … their weekly plans
+on the CRM must appear to the district manager when he is making his weekly plan in Phoenix"* and *"make
+sure the district manager can validate the reps' CRM that are entered and the old CRM."* His answers to
+the two questions put in chat: the board shows **"their old-CRM plan, tickable"**, and validate means
+**"approve the rep's weekly plan"** (not visit confirmation, not customer approval).
+
+All 21 district teams are live, so this is a rep-level question, not a team one: 25 active reps had no
+Phoenix plan for the week of 17 October, under 11 district managers, while the iReports360 sync was still
+running (plans 22:06, visits 22:14) and 42 reps were still logging visits there.
+
+- **The board.** `loadRepWeeks` reads a rep's iReports360 week (`getAgentsWeekPlanEntries`, the CRM door,
+  `source = ireports360`, weekly) only when Phoenix holds no customer of his that week; a Phoenix draft or
+  sent plan is never replaced. His state is `old_crm`, the pill reads "Old CRM plan", and a customer he
+  planned there is flagged like a sent one (it is a filed plan, not a draft).
+- **Which half.** The old weekly plan names a day and no morning or afternoon (`appm`, `startAM` and
+  `startPM` empty on all 16,544 weekly rows since 19 September). A contact goes where his **list** puts him
+  (`halfOfListType`: AM list the morning, PM list the afternoon), as the rep's own Phoenix plan does.
+- **Which customer.** Matched to a customer on the REP's own seat through `own_contact_crm_id` or
+  `reference_contact_crm_id` (1,473 of 1,614 planned calls, 91%, for a sample of old-CRM reps). A matched
+  one can be ticked; an unmatched one is shown "Not on the rep's Phoenix list" and cannot. A pharmacy is
+  left out (never planned with a rep, owner 2026-10-02), and the vendor's catch-all contact is not a customer.
+- **The server holds it too.** `assertOnTheRepsHalf` reads the same old plan, so a tick must still sit on
+  the rep's half, whichever system the rep plans in.
+- **Approving.** The Team tab's Weekly plans list shows such a rep's week with its status and the buttons
+  **Approve the week** and **Take back approval**. It is the vendor's own supervisor approval and nothing
+  else: `setPlanVerification` (the admin Plan Verification board's own service), so
+  `decidePlanVerification` refuses an approval over an area manager's (status 2), a take-back of anything
+  but the district manager's own approval, and an unknown status. The vendor has no "return" and no note,
+  so none is offered.
+- **Who.** Exactly the admin board's reach: the District Manager and Regional Manager roles, the
+  `crm_plans:approve` grant (the CEO stays observational), and the plan's rep inside the viewer's reach. On
+  top of that the Phoenix refusals: the Super Admin decides nothing, and a test login holds no vendor plan.
+- **When the vendor is retired.** The buttons go (`resolveVendorSyncStandDown`); the plan stays readable.
+- **What it does not do.** It writes nothing about a rep's visits, never pulls a plan on demand, and adds no
+  count to the "waiting for you" totals (those count Phoenix weeks); the week's list does count it in its
+  own "Waiting for review" filter.
+- **Where it lives.** `old-crm-plan-rules.ts` (rules), `server/manager-old-crm-weeks.ts` (the board's read),
+  `server/old-crm-plan-approval.ts` (the Team tab's read and the decision), `app/api/phoenix-crm/plans/old-crm/decide`.
 
 ## Screens outside Phoenix CRM
 

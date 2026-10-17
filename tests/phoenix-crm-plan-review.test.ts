@@ -755,7 +755,10 @@ function runNamedStatusTests(): void {
   // A territory with NO plan row has no server-composed label at all, so the Team tab names its rep
   // itself rather than printing a bare "Not started" beside eight named ones.
   const team = source("src/components/phoenix-crm/team-tab.tsx");
-  assert.equal((team.match(/planStatusLine\(\{ status: null, repName: row\.territory\.repName \}\)/g) ?? []).length, 3, "the card, the table row and the monthly card");
+  // The week's card and table row take their pill from `rowPill` (which also reads a week filed in the old CRM), so
+  // the week's named "Not started" is composed once there, and once more on the monthly card.
+  assert.equal((team.match(/planStatusLine\(\{ status: null, repName: row\.territory\.repName \}\)/g) ?? []).length, 2, "the week's pill rule and the monthly card");
+  assert.equal((team.match(/\browPill\(row\)/g) ?? []).length, 2, "the week's card and table row both take their pill from that one rule");
   assert.equal(team.includes('statusLabel ?? "Not started"'), false, "and the bare fallback is gone from all three");
 }
 

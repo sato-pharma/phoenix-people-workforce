@@ -199,6 +199,8 @@ type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved" } | { k
 const REP_WEEK: Record<ManagerBoardRepHalf["weekState"], { label: string; tone: PillTone }> = {
   sent: { label: "Sent", tone: "good" },
   not_sent: { label: "Not sent", tone: "warn" },
+  // A rep who has not moved to Phoenix CRM yet: his plan is the one he filed in the old CRM (owner, 2026-10-17).
+  old_crm: { label: "Old CRM plan", tone: "info" },
   no_plan: { label: "No plan", tone: "neutral" },
 };
 
@@ -916,8 +918,15 @@ function WithRepPart({
   const options: Array<CrmChoiceOption<string>> = view.reps.map((rep) => {
     const repHalf = halves.get(rep.seatId);
     const state = REP_WEEK[repHalf?.weekState ?? rep.weekState];
-    const where = repHalf && repHalf.bricks.length > 0 ? repHalf.bricks.join(", ") : null;
-    const nothingToTick = rep.weekState === "no_plan" || !repHalf || repHalf.customers.length === 0;
+    // A rep's old-CRM plan names no brick, so the half says how many customers it holds instead; a customer
+    // who is not on the rep's Phoenix list cannot be ticked, so a half of only those has nothing to tick.
+    const where =
+      repHalf && repHalf.bricks.length > 0
+        ? repHalf.bricks.join(", ")
+        : repHalf && repHalf.customers.length > 0
+          ? plural(repHalf.customers.length, "customer", "customers")
+          : null;
+    const nothingToTick = rep.weekState === "no_plan" || !repHalf || !repHalf.customers.some((customer) => customer.customerId);
     const disabled = !canEdit || (nothingToTick && rep.seatId !== keptSeatId);
     return {
       value: rep.seatId,
@@ -935,7 +944,10 @@ function WithRepPart({
   });
   const chosen = draft.repSeatId ? halves.get(draft.repSeatId) : undefined;
   const repCustomers = chosen?.customers ?? [];
-  const onDay = new Set(repCustomers.map((customer) => customer.customerId));
+  // The customers he can tick: all of a Phoenix rep's, and the ones of an old-CRM rep's plan that sit on the
+  // rep's Phoenix list. The rest show and wait (`customerId` null).
+  const tickable = repCustomers.flatMap((customer) => (customer.customerId ? [{ customerId: customer.customerId, name: customer.name }] : []));
+  const onDay = new Set(tickable.map((customer) => customer.customerId));
   // A customer he ticked that the rep has since dropped from this half stays, flagged, until he unticks it.
   const dropped = (slot?.repSeatId === draft.repSeatId ? (slot?.customers ?? []) : []).filter(
     (customer) => customer.customerId && !onDay.has(customer.customerId),
@@ -955,7 +967,7 @@ function WithRepPart({
         <div className="grid min-w-0 gap-3 border border-slate-200 p-3">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-black text-slate-900">
-              {`${countText(draft.customers.length)} of ${plural(repCustomers.length + dropped.length, "customer", "customers")} ticked`}
+              {`${countText(draft.customers.length)} of ${plural(tickable.length + dropped.length, "customer", "customers")} ticked`}
               {chosen?.weekState === "not_sent" ? (
                 <CrmPill className="ml-2" tone="warn">
                   Not sent
@@ -965,8 +977,8 @@ function WithRepPart({
             {canEdit ? (
               <div className="flex flex-wrap gap-2">
                 <CrmButton
-                  disabled={repCustomers.length === 0}
-                  onClick={() => onDraft({ ...draft, customers: repCustomers.map((customer) => repRef(customer.customerId, customer.name)) })}
+                  disabled={tickable.length === 0}
+                  onClick={() => onDraft({ ...draft, customers: tickable.map((customer) => repRef(customer.customerId, customer.name)) })}
                   size="sm"
                   variant="primary"
                 >
@@ -981,25 +993,43 @@ function WithRepPart({
           {chosen?.weekState === "not_sent" ? (
             <p className="text-xs font-semibold leading-5 text-amber-800">The rep has not sent this week yet, so these customers may still change.</p>
           ) : null}
+          {chosen?.weekState === "old_crm" ? (
+            <p className="text-xs font-semibold leading-5 text-sky-800">
+              This is the plan the rep filed in the old CRM. A customer who is not on the rep&apos;s Phoenix list is shown but cannot be ticked.
+            </p>
+          ) : null}
           {!chosen ? (
             <p className="text-xs font-semibold leading-5 text-amber-800">The rep has nothing planned this half any more. Untick the customers below, or choose another rep.</p>
           ) : null}
           <div className="grid min-w-0 gap-2 sm:grid-cols-2">
-            {repCustomers.map((customer) => (
-              <CrmCheck
-                checked={ticked.has(`c:${customer.customerId}`)}
-                disabled={!canEdit}
-                key={customer.customerId}
-                onChange={(on) => onDraft(toggle(draft, repRef(customer.customerId, customer.name), on))}
-              >
-                <span className="block break-words" dir="auto">
-                  {customer.name}
-                </span>
-                <span className="block break-words text-xs font-semibold text-slate-500">
-                  {[customer.grade ? `Grade ${customer.grade}` : null, customer.speciality, customer.brickName ?? customer.zone].filter(Boolean).join(" · ")}
-                </span>
-              </CrmCheck>
-            ))}
+            {repCustomers.map((customer, index) => {
+              const details = [customer.grade ? `Grade ${customer.grade}` : null, customer.speciality, customer.brickName ?? customer.zone].filter(Boolean).join(" · ");
+              const customerId = customer.customerId;
+              if (!customerId) {
+                return (
+                  <div className="min-w-0 border border-dashed border-slate-300 p-2.5" key={`off-list-${index}-${customer.name}`}>
+                    <span className="block break-words text-sm font-semibold text-slate-700" dir="auto">
+                      {customer.name}
+                    </span>
+                    <span className="block break-words text-xs font-semibold text-slate-500">{details}</span>
+                    <span className="block text-xs font-bold text-slate-500">Not on the rep&apos;s Phoenix list</span>
+                  </div>
+                );
+              }
+              return (
+                <CrmCheck
+                  checked={ticked.has(`c:${customerId}`)}
+                  disabled={!canEdit}
+                  key={customerId}
+                  onChange={(on) => onDraft(toggle(draft, repRef(customerId, customer.name), on))}
+                >
+                  <span className="block break-words" dir="auto">
+                    {customer.name}
+                  </span>
+                  <span className="block break-words text-xs font-semibold text-slate-500">{details}</span>
+                </CrmCheck>
+              );
+            })}
             {dropped.map((customer) => (
               <CrmCheck
                 checked={ticked.has(`c:${customer.customerId}`)}

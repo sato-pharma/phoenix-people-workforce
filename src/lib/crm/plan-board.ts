@@ -590,6 +590,91 @@ export async function getAgentPlanEntriesForWindow(
   return rows;
 }
 
+/** One planned call of a rep's iReports360 weekly plan — the day, the contact and the plan's approval status. */
+export type AgentWeekPlanEntry = {
+  agentHrId: string;
+  contactCrmId: number;
+  contactGrade: string | null;
+  contactName: string | null;
+  crmPlanId: number;
+  planDate: string;
+  speciality: string | null;
+  status: number | null;
+};
+
+/** `agent_hr_id` goes into a filter string, so only the shapes a real HR id has are let through. */
+const HR_ID_FILTER_SAFE = /^[A-Za-z0-9-]{1,32}$/;
+
+/**
+ * Several reps' iReports360 weekly plans over one field week — the plan a district manager sees for a
+ * rep who is still working in the old CRM (owner, 2026-10-17: "their plans on the CRM must appear to the
+ * district manager when he is making his weekly plan in Phoenix").
+ *
+ * The vendor plan carries a DAY per planned contact and no morning or afternoon (`appm`, `startAM` and
+ * `startPM` are empty on every row measured 2026-10-17), so the caller places a contact by the half of the
+ * list he sits on. The rep's iReports360 plan only: `source = ireports360` keeps a started team's own
+ * Phoenix plans, which the same view carries, out of it. `ilike` with no wildcard is a case-insensitive
+ * exact match, for the mixed-case `agent_hr_id`. A missing plan schema degrades to `null`, never an error.
+ */
+export async function getAgentsWeekPlanEntries(
+  agentHrIds: ReadonlyArray<string>,
+  start: string,
+  end: string,
+): Promise<AgentWeekPlanEntry[] | null> {
+  const ids = [...new Set(agentHrIds.map((id) => id.trim()).filter((id) => HR_ID_FILTER_SAFE.test(id)))];
+  const supabase = getSupabaseAdmin();
+  const found: AgentWeekPlanEntry[] = [];
+  for (let from = 0; from < ids.length; from += IN_CHUNK) {
+    const part = ids.slice(from, from + IN_CHUNK);
+    let cursor: number | string | null = null;
+    for (;;) {
+      let query = supabase
+        .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
+        .select("crm_plan_entry_id, crm_plan_id, agent_hr_id, contact_crm_id, contact_grade, contact_name, speciality, plan_date, plan_status")
+        .eq("source", IREPORTS360_VISIT_SOURCE)
+        .eq("plan_kind", "weekly")
+        .gte("plan_date", start)
+        .lte("plan_date", end)
+        .or(part.map((id) => `agent_hr_id.ilike.${id}`).join(","));
+      if (cursor !== null) query = query.gt("crm_plan_entry_id", cursor);
+      const { data, error } = await query.order("crm_plan_entry_id", { ascending: true }).limit(PAGE_SIZE);
+      if (error) {
+        if (isPlanSchemaMissing(error)) return null;
+        throw new Error(error.message);
+      }
+      const page = (data ?? []) as unknown as Array<{
+        crm_plan_entry_id: number | string | null;
+        crm_plan_id: number | null;
+        agent_hr_id: string | null;
+        contact_crm_id: number | string | null;
+        contact_grade: string | null;
+        contact_name: string | null;
+        speciality: string | null;
+        plan_date: string | null;
+        plan_status: number | null;
+      }>;
+      for (const row of page) {
+        const contactCrmId = row.contact_crm_id == null ? NaN : Number(row.contact_crm_id);
+        if (!row.agent_hr_id || !row.plan_date || row.crm_plan_id == null || !Number.isFinite(contactCrmId)) continue;
+        found.push({
+          agentHrId: row.agent_hr_id,
+          contactCrmId,
+          contactGrade: row.contact_grade,
+          contactName: row.contact_name,
+          crmPlanId: row.crm_plan_id,
+          planDate: row.plan_date.slice(0, 10),
+          speciality: row.speciality,
+          status: row.plan_status,
+        });
+      }
+      const last = page[page.length - 1]?.crm_plan_entry_id ?? null;
+      if (page.length < PAGE_SIZE || last === null || last === cursor) break;
+      cursor = last;
+    }
+  }
+  return found;
+}
+
 /**
  * One plan's identity, read fresh.
  *

@@ -3,9 +3,11 @@
 /**
  * Phoenix CRM — "Add a customer" to a district manager's own list (owner, 2026-10-16).
  *
- * Name, speciality, phone or contact, the grade AND the potential grade, the area of his district, a
- * comment, and an optional Capture location — the server resolves the address, the area and the brick.
- * No photo and NO validation step: "there will not be validation because they are managers".
+ * Name, the grade AND the potential grade, and the area of his region are what it needs. The speciality, the
+ * phone, the address and the brick are OPTIONAL (owner, 2026-10-18: "make everything optional"): he fills
+ * them in, or presses Capture location and the capture fills them in, and he can still correct what it
+ * read. The area and the brick are CASCADING drop-lists — the areas of his region, then the bricks of the
+ * area he chose. No photo and NO validation step: "there will not be validation because they are managers".
  *
  * 🔴 A NAME ALREADY ON A LIST IS OFFERED FIRST, never refused. As he types, the customers of his reps'
  * lists and of his own list under that name are shown, and he picks the one he means. Namesakes are real,
@@ -16,11 +18,21 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
-import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { crmPost, crmUrl, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { CaptureLocation, type CapturedPin } from "@/components/phoenix-crm/capture-location";
 import { CrmButton, CrmCard, CrmChoice, CrmField, CrmNote, CrmPill, CrmSelect, crmInputClassName, crmTextareaClassName } from "@/components/phoenix-crm/ui";
-import { MANAGER_CUSTOMER_GRADES, MANAGER_CUSTOMER_POTENTIAL_GRADES, MANAGER_PLAN_NOTE_MAX } from "@/lib/phoenix-crm/manager-plan-rules";
-import type { CustomerMatch, ManagerCustomerView } from "@/lib/phoenix-crm/view-types";
+import { parseCustomerPhone } from "@/lib/phoenix-crm/entry-rules";
+import {
+  MANAGER_CUSTOMER_ADDRESS_MAX,
+  MANAGER_CUSTOMER_GRADES,
+  MANAGER_CUSTOMER_POTENTIAL_GRADES,
+  MANAGER_PLAN_NOTE_MAX,
+  missingManagerCustomerField,
+} from "@/lib/phoenix-crm/manager-plan-rules";
+import type { CustomerMatch, ManagerAreaBricks, ManagerCustomerLocated, ManagerCustomerView } from "@/lib/phoenix-crm/view-types";
+
+/** The bricks of one area he plans in — the second drop-list of the cascade. */
+const BRICKS = "/api/phoenix-crm/manager-plans/customers/bricks";
 
 /** How long after his last keystroke the name is looked up. */
 const MATCH_DELAY_MS = 500;
@@ -52,11 +64,16 @@ export function ManagerCustomerForm({
   const [potentialGrade, setPotentialGrade] = useState<string | null>(null);
   const [areaSeatId, setAreaSeatId] = useState(defaultAreaSeatId ?? areas[0]?.seatId ?? "");
   const [comment, setComment] = useState("");
+  const [address, setAddress] = useState("");
+  const [brickId, setBrickId] = useState("");
   const [pin, setPin] = useState<CapturedPin | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [located, setLocated] = useState<{ text: string; complete: boolean } | null>(null);
   const [matches, setMatches] = useState<CustomerMatch[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const asked = useRef(0);
+  const bricks = useCrmGet<ManagerAreaBricks>(areaSeatId ? crmUrl(BRICKS, { area: areaSeatId }) : null, "bricks");
 
   useEffect(() => {
     const typed = name.trim();
@@ -77,7 +94,50 @@ export function ManagerCustomerForm({
   }, [name, test]);
 
   const shownMatches = name.trim().length >= MATCH_FROM ? matches : [];
-  const missing = !name.trim() ? "Write the customer's name." : !grade ? "Choose the grade." : !potentialGrade ? "Choose the potential grade." : !areaSeatId ? "Choose the area." : null;
+  const phoneRead = parseCustomerPhone(phone);
+  // A phone is optional, but one he wrote wrongly says so.
+  const missing =
+    missingManagerCustomerField({ name: name.trim() || null, areaChosen: Boolean(areaSeatId), grade, potentialGrade }) ??
+    (phoneRead.ok ? null : "Write the phone as digits — 7 to 15 of them — or leave it empty.");
+  const brickList = bricks.data?.bricks ?? [];
+
+  /**
+   * Capture location fills the address, the area and the brick (owner, 2026-10-17). It only ever fills what
+   * the capture read: a street or brick it could not read is left as he had it, to be filled in by hand.
+   */
+  async function capture(next: CapturedPin | null) {
+    setPin(next);
+    setLocated(null);
+    if (!next) return;
+    setLocating(true);
+    setError(null);
+    try {
+      const found = await crmPost<ManagerCustomerLocated>(
+        "/api/phoenix-crm/manager-plans/customers/locate",
+        { pin: { lat: next.lat, lon: next.lon, accuracyMeters: next.accuracyMeters }, areaSeatId, test },
+        "located",
+      );
+      if (found.address) setAddress(found.address);
+      // The area first, then the brick that sits in it: the brick drop-list loads for the area it is shown under.
+      if (found.areaSeatId) {
+        setAreaSeatId(found.areaSeatId);
+        setBrickId(found.brickId ?? "");
+      }
+      const unread = [found.address ? null : "address", found.areaSeatId && found.brickId ? null : "brick"].filter((part): part is string => part !== null);
+      setLocated(
+        unread.length === 0
+          ? { text: "The address, area and brick were filled in from the location.", complete: true }
+          : {
+              text: `The location was captured, but its ${unread.join(" and ")} could not be read. Choose ${unread.length === 1 ? "it" : "them"} yourself, or leave ${unread.length === 1 ? "it" : "them"} empty.`,
+              complete: false,
+            },
+      );
+    } catch (failure) {
+      setLocated({ text: `The location was captured, but the address and brick could not be read (${messageOf(failure)}). Fill them in yourself, or leave them empty.`, complete: false });
+    } finally {
+      setLocating(false);
+    }
+  }
 
   async function add() {
     if (missing) {
@@ -93,6 +153,8 @@ export function ManagerCustomerForm({
           name: name.trim(),
           speciality: speciality.trim() || null,
           phone: phone.trim() || null,
+          address: address.trim() || null,
+          brickId: brickId || null,
           contactNote: contactNote.trim() || null,
           grade,
           potentialGrade,
@@ -176,17 +238,6 @@ export function ManagerCustomerForm({
           value={potentialGrade}
         />
       </CrmField>
-      {areas.length > 1 ? (
-        <CrmField htmlFor={`${idPrefix}-area`} label="Area *">
-          <CrmSelect id={`${idPrefix}-area`} onChange={(event) => setAreaSeatId(event.target.value)} value={areaSeatId}>
-            {areas.map((area) => (
-              <option key={area.seatId} value={area.seatId}>
-                {area.areaName}
-              </option>
-            ))}
-          </CrmSelect>
-        </CrmField>
-      ) : null}
       <CrmField htmlFor={`${idPrefix}-comment`} label="Comment">
         <textarea
           className={crmTextareaClassName}
@@ -197,13 +248,60 @@ export function ManagerCustomerForm({
           value={comment}
         />
       </CrmField>
-      <CrmField hint="Optional. Stand at the clinic and press it; the address, area and brick are filled in for you." label="Location">
-        <CaptureLocation disabled={saving} onChange={setPin} value={pin} />
-      </CrmField>
+
+      <div className="grid min-w-0 gap-4 border-t border-slate-200 pt-4">
+        <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Where the customer is · optional</p>
+        <CrmField hint="Stand at the customer and press it: the address, area and brick are filled in for you. Or fill them in below." label="Location">
+          <CaptureLocation disabled={saving || locating} onChange={(next) => void capture(next)} value={pin} />
+        </CrmField>
+        {locating ? <CrmNote tone="info">Reading the address, area and brick from the location</CrmNote> : null}
+        {located ? <CrmNote tone={located.complete ? "good" : "warn"}>{located.text}</CrmNote> : null}
+        <CrmField htmlFor={`${idPrefix}-address`} label="Address">
+          <input
+            autoComplete="off"
+            className={crmInputClassName}
+            dir="auto"
+            id={`${idPrefix}-address`}
+            maxLength={MANAGER_CUSTOMER_ADDRESS_MAX}
+            onChange={(event) => setAddress(event.target.value)}
+            value={address}
+          />
+        </CrmField>
+        <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+          <CrmField htmlFor={`${idPrefix}-area`} label="Area *">
+            <CrmSelect
+              id={`${idPrefix}-area`}
+              onChange={(event) => {
+                // A brick belongs to one area, so a new area empties the brick.
+                setAreaSeatId(event.target.value);
+                setBrickId("");
+              }}
+              value={areaSeatId}
+            >
+              {areas.map((area) => (
+                <option key={area.seatId} value={area.seatId}>
+                  {area.areaName}
+                </option>
+              ))}
+            </CrmSelect>
+          </CrmField>
+          <CrmField htmlFor={`${idPrefix}-brick`} label="Brick">
+            <CrmSelect disabled={bricks.loading || brickList.length === 0} id={`${idPrefix}-brick`} onChange={(event) => setBrickId(event.target.value)} value={brickId}>
+              <option value="">{bricks.loading ? "Loading the bricks" : brickList.length === 0 ? "No bricks listed for this area" : "Choose the brick"}</option>
+              {brickList.map((brick) => (
+                <option key={brick.id} value={brick.id}>
+                  {brick.name}
+                </option>
+              ))}
+            </CrmSelect>
+          </CrmField>
+        </div>
+        {bricks.error ? <CrmNote tone="warn">The bricks of this area could not be loaded. You can still add the customer without one.</CrmNote> : null}
+      </div>
 
       {error ? <CrmNote tone="bad">{error}</CrmNote> : null}
       <div className="flex flex-wrap gap-2">
-        <CrmButton busy={saving} onClick={() => void add()} variant="primary">
+        <CrmButton busy={saving} disabled={locating} onClick={() => void add()} variant="primary">
           Add to my list
         </CrmButton>
         <CrmButton disabled={saving} onClick={onCancel} variant="ghost">
