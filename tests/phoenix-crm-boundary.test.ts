@@ -185,6 +185,11 @@ const ROUTE_GATES: RouteGate[] = [
   post("validation-reviews/shared-place", "update"),
   // Approving a venue AFTER rejecting it (owner, 2026-10-15) — its own route, its own rules.
   post("validation-reviews/shared-place/restore", "update"),
+  // The third tab of Place checks (owner, 2026-10-17): places several reps validated, side by side, and
+  // his answer to "are these the same place?". `read` to open it and `update` to answer, the Super Admin
+  // alone — the loader and the service refuse everyone else before a row is read.
+  get("validation-reviews/same-place"),
+  post("validation-reviews/same-place", "update"),
   // The venues themselves: the list a rep standing in one picks from, and the capture at its door.
   // `read` and `create`, the same pair a place has, and `territoryForValidation` narrows the capture
   // in the service exactly as it narrows `list/places`.
