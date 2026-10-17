@@ -75,4 +75,3 @@ Put each new memory note's pointer here, one line. The fold (`node scripts/modul
 
 
 
-- [An email signature's animated picture must be a GIF, never an animated PNG](an-email-signatures-animated-picture-must-be-a-gif-never-an-animated-png.md) - Gmail and Outlook for Windows show only the first frame of an APNG; a GIF pixel is on or off, so the glow is dotted at 8x (150 KB) and stays transparent on any ground; the PNG stays only as the dark-mode source.
