@@ -551,6 +551,15 @@ export function runPhoenixCrmWave2ReportTests(): void {
     assert.match(screen, /The team's month/, "and a manager still reads The team's month");
     assert.doesNotMatch(screen, /rows\.length === 1/, "the title is never decided by counting people");
 
+    // A manager can narrow the month to one rep (owner, 2026-10-17): the picker is the module's own
+    // combo box, never offered to a rep reading only himself, and the month's three figures follow
+    // whoever is drawn rather than keeping the whole team's.
+    assert.match(screen, /const canChooseRep = !own && allRows\.length > 1;/, "a rep, or a team of one, is never offered a picker");
+    assert.match(screen, /<CrmSelect\s+id="calendar-rep"/, "the rep picker is the module's CrmSelect, so an admin gets the combo box");
+    assert.match(screen, /allRows\.filter\(\(row\) => row\.seatId === repSeat\)/, "choosing a rep draws only his row");
+    assert.match(screen, /<CrmStat label="AM" value=\{totals\.am\} \/>/, "the AM figure follows the rep drawn");
+    assert.doesNotMatch(screen, /view\.data\.totals\.(?:am|pm|pharmacies)/, "no figure reads the whole team's total behind the picker's back");
+
     // The module chooser's blurb is ONE static line shown to both readers, so it may not promise
     // a rep other people's work.
     const modules = stripComments(readFileSync("src/lib/phoenix-crm/modules.ts", "utf8"));
