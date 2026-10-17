@@ -1914,6 +1914,7 @@ import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-vi
 import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
 import { runPhoenixCrmRefusedReadingsBoardTests } from "./phoenix-crm-refused-readings-board.test.ts";
 import { runPhoenixCrmTimetableScannerTests } from "./phoenix-crm-timetable-scanner.test.ts";
+import { runPhoenixCrmHeldSignboardTests } from "./phoenix-crm-held-signboard.test.ts";
 import { runPhoenixCrmPlaceCheckAdviceTests } from "./phoenix-crm-place-check-advice.test.ts";
 import { runPhotoRotationTests } from "./photo-rotation.test.ts";
 import { runPhoenixCrmPlaceCheckScorecardTests } from "./phoenix-crm-place-check-scorecard.test.ts";
@@ -6942,6 +6943,11 @@ await runTest(
 await runTest(
   "the Phoenix CRM polyclinic TIMETABLE SCANNER (owner, 2026-10-17: read the timetable on the spot \"like a scanner\", never accept it and call it unreadable afterwards, \"3 tries then held to confirmation by admin\", and a readable board without the name is saved, held, and the rep told why. Measured that morning: 0 of 70 seated customers passed, 45 unreadable photos let through as matches. Pinned: every verdict × every try — a match saves, a clear board without him holds at once, not-a-timetable and unreadable are refused with what to fix and 'Try N of 3' until the third failure is saved and held; a lost call, a missing key or missing bytes never refuse and never hold; 'not on it' is said only of a board the reader could see all of; both seating paths go through one scanner that FILES the refusal before refusing and scans before anything is written; the rep's screens open the camera on a retake and print the hold sentence; the reader has no hidden SDK retry and reuses a stored reading of the same board; and the counter is per building, rep, Cairo day and world)",
   runPhoenixCrmTimetableScannerTests,
+);
+
+await runTest(
+  "the Phoenix CRM HELD SIGNBOARD — a sign the door could not confirm is held, re-read by the system, approved by the system once it reads the name, and the Super Admin's only when it never does (owner, 2026-10-17: \"how come any unreadable should be not validated, should be wait until the system check and I manual approve or reject\", answered \"Hold; re-read; else you decide\", with an Approve of his own on Not confirmed. Measured that day on production photos: the cheap door reader confirmed 1 of 30 a person reads at a glance, the new readers 16 of 30 with no wrong name, where the guided read alone copied the name it was handed 8 times). Pinned: everything but a match holds at the door, an unreadable sign and a lost call included, never a place another check holds or a name with nothing to compare; four reads in all, the count on the row, a missing key spending none, and the last unreadable one says every read was spent; a guided answer counts only where a blind look READ the name, never on the AM rule's empty-frame match; both doors re-read after the reply and after the door's own verdict is recorded, and neither tells him at the door; the system only approves, as SYSTEM, through his own approve, never a building, never a Google or timetable hold, and tells him only when every read is spent; the night's pass leaves held places alone and the hourly re-read rides the roll-up; his own Approve is the Super Admin's alone, leaves a decided place as it is, and a district manager's board approves nothing",
+  runPhoenixCrmHeldSignboardTests,
 );
 
 await runTest(

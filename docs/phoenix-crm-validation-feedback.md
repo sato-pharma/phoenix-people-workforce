@@ -264,6 +264,62 @@ and joining there would take the allowance off `مستشفى ابو كبير ا�
 - **The brick lookup.** A place row records whether a brick was matched, none was nearby, or the
   lookup could not run — so "no brick" is never confused with "never looked".
 
+## The door reader and the held re-read (2026-10-17)
+
+The owner, looking at the photographs Place checks filed "Not readable": *"how come any unreadable
+should be not validated, should be wait until the system check and I manual approve or reject"* — and,
+of the places already validated, *"I can read them. So why you cannot?"* Asked in chat, he chose:
+new validations **hold, are re-read, and are his only when the system cannot read them**; a reading
+service that is down is retried and then held for him (*"try to reread, try to fix, try to fall back
+on other way. If you couldn't read them, then hold for manual review"*); the rep reads **"The system
+is checking this place"**, the wording a Google hold already shows; and he gets an **Approve** of his
+own on Not confirmed, one row or ticked rows.
+
+**Why the door could not read them.** Thirty production photographs a person reads at a glance, all
+filed `unreadable` at the door, were replayed through every reader on 2026-10-17:
+
+| Reader | Confirmed | Wrong name confirmed |
+| --- | --- | --- |
+| The door's reader that day (`gpt-5.4-nano`) | 1 of 30 | 0 |
+| `gpt-5.4-mini` at the door | 12 of 30 | 0 |
+| The strong model, blind | 14 of 30 | 0 |
+| Door + strong blind + guided read confirmed by a blind close look | **16 of 30** | **0** |
+| The guided read on its own (told the name) | 19 of 30 | **8** (on 40 near-miss decoys) |
+| An enhanced (sharpened, contrast-stretched) image | no gain | — |
+
+The guided read is the one that finds the most, and the one that cannot be trusted alone: handed a
+decoy name one letter away from the real one, it wrote the decoy back eight times, two AM hospitals
+among them. So its answer counts only when a BLIND close look at the spot it pointed to reads the name
+itself — and `signboardReadsCustomerName` asks that the name was READ, never merely that the frame is
+a `match`: the AM rule makes a frame whose clear signs name no place at all a match, and a close look
+that read only "صيدلية" would otherwise confirm whatever name the guided read was handed.
+
+**What was built.**
+
+- **The door** reads with `gpt-5.4-mini` (`PHOENIX_CRM_SIGNBOARD_DOOR_MODEL`), nano behind it, one look
+  inside the rep's 8 s. `signboardDoorHolds` holds everything but a match — an unreadable sign, a lost
+  call and a missing key included — except a place another check already holds (`held_elsewhere`, one
+  review row) and a name with nothing to compare (`name_unusable`, no reading can answer it). The
+  Super Admin is NOT told at the door: the system has not finished.
+- **The re-read** (`server/signboard-holds.ts`) runs straight after the rep's reply and then hourly,
+  riding the visit roll-up's fire: `rereadHeldPlaceSignboard` reads blind with the strong model (mini
+  behind it when a call fails), then guided with a blind spot check, inside a 45 s budget and a 20 s
+  cap per call — the fallback the owner asked for when the reading service is down. Four reads in all
+  (`SIGNBOARD_HELD_MAX_READS`), counted on the place's own `signboard_check.attempts`; a missing key
+  spends none. A confirmed match is **approved by the system** through the same
+  `phoenix_crm_decide_validation_review` approve his own button runs, as the actor `SYSTEM`, and the
+  board says "The system". Every read spent with nothing confirmed: the last unreadable read is kept as
+  `unreadable_final` and he is told then.
+- **Never:** the system never rejects; never touches a Google or a timetable hold (only
+  `google->>verdict = 'signboard'`); never a building — a venue is held on the same test but stays his
+  decision alone; and the night's signboard pass leaves every held place to the re-read.
+- **His Approve** (`approveValidatedPlace`, `/api/phoenix-crm/validation-reviews/approve`): the Super
+  Admin alone, an active place, a place already decided left as it is; otherwise the place's one review
+  row is raised or reused as `confirmed_by_admin` and approved. A district manager's board approves
+  nothing. Needs you shows "The system is still reading this sign" while reads are left.
+
+Pinned by `tests/phoenix-crm-held-signboard.test.ts` and `tests/phoenix-crm-signboard-check.test.ts`.
+
 ## The same-seat duplicate merge
 
 A one-off script and a guarded database function, never a feature.
