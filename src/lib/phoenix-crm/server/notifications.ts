@@ -433,6 +433,8 @@ export type ManagerPlanNotice = {
   approved?: boolean;
   /** The week reached its approver after its Thursday deadline. */
   late?: boolean;
+  /** An ask reaching its SECOND approver: the actor is the regional manager who agreed first. */
+  secondStep?: boolean;
 };
 
 /** The Approvals Hub page a waiting district-manager step opens on. */
@@ -457,6 +459,7 @@ export function managerPlanDeliveries(notice: ManagerPlanNotice, names: PeopleNa
   const base = { recipients: [notice.recipientHrId], idempotencyKey: key, subjectHrId: notice.managerHrId };
   const planMeta = notice.planId ? { planId: notice.planId } : undefined;
   const customer = notice.customerName ? bidiIsolate(notice.customerName) : "a customer";
+  const agreedFirst = notice.secondStep ? ` ${actor} approved it first; it needs your approval too.` : "";
 
   switch (notice.step) {
     case "waiting":
@@ -501,7 +504,7 @@ export function managerPlanDeliveries(notice: ManagerPlanNotice, names: PeopleNa
           ...toHub,
           eventType: "manager_plan_edit_waiting",
           title: `Ask to edit a weekly plan: ${manager}`,
-          message: `${manager} asks to edit ${week}, already sent.${note} Reopen it or refuse in the Approvals Hub.`,
+          message: `${manager} asks to edit ${week}, already sent.${note}${agreedFirst} Reopen it or refuse in the Approvals Hub.`,
           metadata: { requestId: notice.recordId, ...(planMeta ?? {}) },
         },
       ];
@@ -545,7 +548,7 @@ export function managerPlanDeliveries(notice: ManagerPlanNotice, names: PeopleNa
           ...toHub,
           eventType: "manager_list_removal_waiting",
           title: `Take a customer off Manager's own list: ${manager}`,
-          message: `${manager} asks to take ${customer} off Manager's own list.${note} Approve or refuse it in the Approvals Hub.`,
+          message: `${manager} asks to take ${customer} off Manager's own list.${note}${agreedFirst} Approve or refuse it in the Approvals Hub.`,
           metadata: { requestId: notice.recordId },
         },
       ];

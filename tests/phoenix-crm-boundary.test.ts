@@ -907,6 +907,10 @@ const LATER_MIGRATIONS = [
   // The Visit report's saved views (owner, 2026-10-16). ONE brand-new table and NOTHING else — no
   // function, no column on anything that exists, and it replaces nothing, so it appends safely at the end.
   "supabase/migrations/20261017001000_phoenix_crm_visit_report_views.sql",
+  // The NSM's step on a district manager's asks (owner, 2026-10-17). It REPLACES five functions whose
+  // earlier definer is 20261017000000, above it, and adds columns and widens CHECKs on that migration's
+  // own tables — no new table and no new function, so it appends safely at the end.
+  "supabase/migrations/20261017120000_phoenix_crm_manager_asks_second_approval.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
@@ -1016,7 +1020,19 @@ function assertMigrationHygiene(sql: string, path: string) {
       assert.match(named, /^phoenix_crm_[a-z_0-9]+$/, `${path} drops the constraint ${named} — it only ever replaces its own`);
       continue;
     }
-    assert.equal(what, "policy", `${path} drops a ${match[1]} — it only ever replaces its own policies and constraints`);
+    // "drop index" rebuilds one of its own indexes on a new predicate — 20261017120000 widens the
+    // one-open-ask index to cover an ask at either step. It must name a phoenix_crm_ index AND create
+    // that same index again in the same file, or it is a drop, not a replacement.
+    if (what === "index") {
+      const named = (sql.slice(match.index).match(/^drop\s+index\s+(?:if\s+exists\s+)?(?:public\.)?([a-z_][a-z_0-9]*)/i) ?? [])[1] ?? "";
+      assert.match(named, /^phoenix_crm_[a-z_0-9]+$/, `${path} drops the index ${named} — it only ever replaces its own`);
+      assert.ok(
+        new RegExp(`\\bcreate\\s+(?:unique\\s+)?index\\s+(?:if\\s+not\\s+exists\\s+)?${named}\\b`, "i").test(sql),
+        `${path} drops the index ${named} and never creates it again — it only ever replaces its own`,
+      );
+      continue;
+    }
+    assert.equal(what, "policy", `${path} drops a ${match[1]} — it only ever replaces its own policies, constraints and indexes`);
   }
 }
 

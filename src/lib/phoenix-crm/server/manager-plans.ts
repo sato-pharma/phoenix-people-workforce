@@ -28,6 +28,7 @@ import {
   isManagerPlanStatus,
   isManagerPlanWeek,
   managerCustomerFlagLabel,
+  managerAskStage,
   managerDayHalves,
   managerPlanApprovers,
   managerPlanStage,
@@ -284,7 +285,14 @@ export type ManagerBoardPlan = {
   decisionNote: string | null;
   state: ManagerWeekState;
   /** His latest ask to edit this week, and how it stands. */
-  editAsk: { requestId: string; status: ManagerEditAskRow["status"]; reason: string; decisionNote: string | null } | null;
+  editAsk: {
+    requestId: string;
+    status: ManagerEditAskRow["status"];
+    reason: string;
+    decisionNote: string | null;
+    /** Who the open ask waits on now: his regional manager, then the NSM above him. */
+    waitingOnName: string | null;
+  } | null;
   /** Who it goes to, or went to: his RSM/NSM, then the second approver where there is one. */
   firstApproverName: string | null;
   secondApproverName: string | null;
@@ -381,11 +389,15 @@ async function buildBoard(
     plan?.secondApproverHrId,
     plan?.decidedByHrId,
     plan?.firstDecidedByHrId,
+    asks[0]?.approverHrId,
+    asks[0]?.secondApproverHrId,
     ...slots.map((slot) => slot.repHrId),
   ]);
 
   const latestAsk = asks[0] ?? null;
-  const editAsked = latestAsk?.status === "pending";
+  // An ask is open at either of its two steps: with the regional manager, then with the NSM above him.
+  const editAsked = latestAsk ? managerAskStage(latestAsk.status) !== null : false;
+  const askWaitingOn = latestAsk ? (latestAsk.status === "pending" ? latestAsk.approverHrId : latestAsk.status === "first_approved" ? latestAsk.secondApproverHrId : null) : null;
   const state = managerWeekState({ weekStart, cairoToday: viewer.cairoToday, status: plan?.status ?? null, editAsked });
   const canWrite = reader.mode === "own" && reader.canWrite && managerHrId === viewer.hrId;
 
@@ -411,7 +423,15 @@ async function buildBoard(
     returnedDay: plan?.returnedDay ?? null,
     decisionNote: plan?.status === "returned" ? plan.decisionNote : null,
     state,
-    editAsk: latestAsk ? { requestId: latestAsk.requestId, status: latestAsk.status, reason: latestAsk.reason, decisionNote: latestAsk.decisionNote } : null,
+    editAsk: latestAsk
+      ? {
+          requestId: latestAsk.requestId,
+          status: latestAsk.status,
+          reason: latestAsk.reason,
+          decisionNote: latestAsk.decisionNote,
+          waitingOnName: askWaitingOn ? nameOf(names, askWaitingOn) : null,
+        }
+      : null,
     firstApproverName: firstApprover ? nameOf(names, firstApprover) : null,
     secondApproverName: secondApprover ? nameOf(names, secondApprover) : null,
   };
@@ -875,8 +895,9 @@ export async function transitionManagerPlan(viewer: PhoenixCrmViewer, raw: unkno
 
 /**
  * POST: he asks to edit a week he sent (owner, 2026-10-16: a rep who sends AFTER him is caught this way,
- * and his RSM/NSM approves the reopening — Hany for Hany's district managers; the week sent again then
- * goes Hany → Ali as before).
+ * and his RSM/NSM approves the reopening). 🔴 After a regional manager agrees, the national sales manager
+ * above him approves the reopening too (owner, 2026-10-17, "Week + edit asks + removals") — the second
+ * approver is stored on the ask, as on the week, and the week sent again goes RSM → NSM as before.
  */
 export async function raiseManagerPlanEdit(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ requestId: string; planId: string }> {
   const body = record(raw);
@@ -888,10 +909,18 @@ export async function raiseManagerPlanEdit(viewer: PhoenixCrmViewer, raw: unknow
   if (!plan || plan.managerHrId !== viewer.hrId) throw notFoundError("This plan is no longer there. Reload the page.");
   const reason = noteOf(body.reason);
   if (!reason || reason.length < 3) throw validationError("Write why you need to change the week.");
-  const approver = managerPlanApprovers(viewer.org, seat.seatId).first;
+  const approvers = managerPlanApprovers(viewer.org, seat.seatId);
+  const approver = approvers.first;
   const result = record(
     await callPhoenixCrm<Row>("phoenix_crm_raise_manager_plan_edit", {
-      p: { plan_id: plan.planId, actor_hr_id: viewer.hrId, approver_hr_id: approver?.hrId ?? null, reason, is_test: isTest },
+      p: {
+        plan_id: plan.planId,
+        actor_hr_id: viewer.hrId,
+        approver_hr_id: approver?.hrId ?? null,
+        second_approver_hr_id: approvers.secondHrId,
+        reason,
+        is_test: isTest,
+      },
     }),
   );
   const requestId = String(result.request_id ?? "");
@@ -906,7 +935,12 @@ export async function raiseManagerPlanEdit(viewer: PhoenixCrmViewer, raw: unknow
   return { requestId, planId: plan.planId };
 }
 
-/** POST: his approver — or the Administrator — reopens the week or refuses the ask. */
+/**
+ * POST: the holder of the ask's step — his regional manager first, then the national sales manager stored
+ * on the ask — or the Administrator in place of either, reopens the week (or passes it on) or refuses the
+ * ask. The step is the ask's own status, and the page names the step it showed, so a page left open on a
+ * step already decided is refused rather than deciding the next one unread.
+ */
 export async function decideManagerPlanEdit(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ requestId: string; status: string; planStatus: string }> {
   const body = record(raw);
   const decision = body.decision;
@@ -916,8 +950,16 @@ export async function decideManagerPlanEdit(viewer: PhoenixCrmViewer, raw: unkno
   const isTest = testModeFor(viewer, body.test);
   const ask = await loadEditAskRow(requestId);
   if (!ask || ask.isTest !== isTest) throw notFoundError("This ask to edit is no longer there. Reload the page.");
-  const role = managerAskDeciderRole(viewer, { approverHrId: ask.approverHrId, isTest });
-  if (!role) throw forbiddenError("This ask is decided by the manager above the district manager.");
+  const stage = managerAskStage(ask.status);
+  if (!stage || (body.stage !== undefined && body.stage !== stage)) throw conflictError("This ask has already moved on. Reload the page.");
+  const role = managerAskDeciderRole(viewer, { stage, approverHrId: ask.approverHrId, secondApproverHrId: ask.secondApproverHrId, isTest });
+  if (!role) {
+    throw forbiddenError(
+      stage === "second"
+        ? "This ask is waiting for its second approver, who decides this step."
+        : "This ask is decided by the manager above the district manager.",
+    );
+  }
   const note = noteOf(body.note);
   if (decision === "refuse" && !note) throw validationError("Write why the week stays as it was sent.");
   const expectedVersion = expectedVersionOf(body.version);
@@ -929,6 +971,7 @@ export async function decideManagerPlanEdit(viewer: PhoenixCrmViewer, raw: unkno
         decision,
         actor_hr_id: viewer.hrId,
         actor_role: role,
+        stage,
         note,
         expected_version: expectedVersion,
         is_test: isTest,
@@ -936,7 +979,26 @@ export async function decideManagerPlanEdit(viewer: PhoenixCrmViewer, raw: unkno
     }),
   );
   const plan = await loadManagerPlanRow(ask.planId, isTest);
-  if (plan) {
+  if (plan && result.status === "first_approved" && ask.secondApproverHrId) {
+    // The regional manager agreed: the national sales manager decides next. The district manager is told
+    // nothing yet — his own requests list says who it waits on.
+    await tellManagerPlan(
+      viewer,
+      plan,
+      {
+        step: "edit_waiting",
+        recipientHrId: ask.secondApproverHrId,
+        actorHrId: viewer.hrId,
+        recordId: requestId,
+        version: ask.version + 1,
+        note: ask.reason,
+        customerName: null,
+        byAdministrator: role === "administrator",
+        secondStep: true,
+      },
+      isTest,
+    );
+  } else if (plan) {
     await tellManagerPlan(
       viewer,
       plan,

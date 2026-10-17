@@ -11,7 +11,7 @@
  *     chain above holds them; the SFE Manager, the CEO and the Super Admin — any district manager, picked
  *     from a list.
  *   - DECIDES: whoever the week was sent to — the first approver stored on it at send, then the second
- *     (Ali Mohamed Ali for Hany Saad's district managers) — and the Administrator in place of either, on
+ *     (the national sales manager above a regional first approver) — and the Administrator in place of either, on
  *     real data only (Phoenix CRM's rule of 2026-10-14, `canOverrideDecision`).
  *   - 🔴 A REP NEVER READS IT. He is refused by every function here, and nothing he opens asks.
  *
@@ -169,14 +169,16 @@ export function managerPlanDeciderRole(
   return null;
 }
 
-/** The decision the viewer takes on a waiting ask (an edit, a removal): its approver, or the Administrator. */
-export function managerAskDeciderRole(viewer: PhoenixCrmViewer, row: { approverHrId: string | null; isTest: boolean }): "first" | "administrator" | null {
-  if (viewer.isTestPersona !== row.isTest) return null;
-  if (viewer.canApprove && row.approverHrId && personKey(row.approverHrId) === viewer.hrId && !(viewer.isSuperAdmin && !viewer.isTestPersona)) {
-    return "first";
-  }
-  if (canOverrideDecision(viewer, row.isTest)) return "administrator";
-  return null;
+/**
+ * The decision the viewer takes on one step of a waiting ask (an edit, a removal): the holder of THAT
+ * step — the regional manager first, then the national sales manager stored on the ask — or the
+ * Administrator in place of either. The same predicate as the week's own.
+ */
+export function managerAskDeciderRole(
+  viewer: PhoenixCrmViewer,
+  row: { stage: ManagerPlanStage; approverHrId: string | null; secondApproverHrId: string | null; isTest: boolean },
+): ManagerPlanDeciderRole | null {
+  return managerPlanDeciderRole(viewer, { stage: row.stage, firstApproverHrId: row.approverHrId, secondApproverHrId: row.secondApproverHrId, isTest: row.isTest });
 }
 
 /** The refusal a decider reads when the step is not his. */

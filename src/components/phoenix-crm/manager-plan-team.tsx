@@ -43,6 +43,11 @@ const OUTCOME_TONE: Record<ManagerOutcome, PillTone> = {
   not_checkable: "neutral",
 };
 
+/** A removal still waiting: on his regional manager, then on the NSM above him (owner, 2026-10-17). */
+function removalWaits(status: ManagerCustomerView["status"]): boolean {
+  return status === "removal_pending" || status === "removal_first_approved";
+}
+
 /** One district manager among those he reads — a choice, never a code. */
 function ManagerPicker({
   label,
@@ -280,7 +285,7 @@ export function ManagerOwnListSection({ test }: { test: boolean }) {
             <div className="grid min-w-0 gap-2">
               {active.map((customer) => (
                 <CrmCard
-                  accent={customer.status === "removal_pending" ? "border-l-amber-500" : "border-l-orange-400"}
+                  accent={removalWaits(customer.status) ? "border-l-amber-500" : "border-l-orange-400"}
                   actions={
                     view.canWrite && customer.status === "active" && removing !== customer.id ? (
                       <CrmButton
@@ -298,7 +303,7 @@ export function ManagerOwnListSection({ test }: { test: boolean }) {
                   }
                   key={customer.id}
                   meta={[`Grade ${customer.grade}`, customer.potentialGrade, customer.speciality, customer.areaName].filter(Boolean).join(" · ")}
-                  status={<CrmPill tone={customer.status === "removal_pending" ? "warn" : "neutral"}>{customer.statusLabel}</CrmPill>}
+                  status={<CrmPill tone={removalWaits(customer.status) ? "warn" : "neutral"}>{customer.statusLabel}</CrmPill>}
                   title={
                     <span className="break-words" dir="auto">
                       {customer.name}
@@ -310,7 +315,7 @@ export function ManagerOwnListSection({ test }: { test: boolean }) {
                       {[customer.phone, customer.address ?? customer.brickName, customer.comment].filter(Boolean).join(" · ")}
                     </p>
                   ) : null}
-                  {customer.status === "removal_pending" && customer.removalReason ? (
+                  {removalWaits(customer.status) && customer.removalReason ? (
                     <p className="mt-1 break-words text-xs font-semibold text-amber-800">{`Asked to remove: ${customer.removalReason}`}</p>
                   ) : null}
                   {removing === customer.id ? (

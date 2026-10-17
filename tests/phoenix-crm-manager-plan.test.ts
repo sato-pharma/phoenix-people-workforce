@@ -22,14 +22,18 @@ import {
   managerPlanSummaryText,
   managerPlanWeeks,
   managerWeekState,
+  managerAskStage,
   matchCustomerName,
   nextManagerPlanStatus,
   parseManagerSlotDraft,
 } from "../src/lib/phoenix-crm/manager-plan-rules.ts";
 import { buildOrgIndex, heldManagerSeats, ownTerritories, personKey, territoriesInScope, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 import type { PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
+import { askSteps } from "../src/lib/phoenix-crm/server/manager-plan-hub.ts";
+import { managerQueuePlace } from "../src/lib/phoenix-crm/server/manager-plan-queue.ts";
 import {
   assertManagerPlanWriter,
+  managerAskDeciderRole,
   managerDistrictSeats,
   managerPlanDeciderRole,
   managerPlanReach,
@@ -38,6 +42,7 @@ import {
   resolveManagerPlanReader,
 } from "../src/lib/phoenix-crm/server/manager-plan-reach.ts";
 import { managerHalfLegacyType } from "../src/lib/phoenix-crm/server/manager-plan-readers.ts";
+import { managerPlanDeliveries } from "../src/lib/phoenix-crm/server/notifications.ts";
 import { VISIT_REPORT_FIELDS } from "../src/lib/phoenix-crm/visit-report-fields.ts";
 
 /**
@@ -63,7 +68,11 @@ import { VISIT_REPORT_FIELDS } from "../src/lib/phoenix-crm/visit-report-fields.
  *   8. the review fixes of 17 Oct 2026 — a with-a-rep half-day is Field and never a Double Visit, a new
  *      tick sits on the rep's own half, a title that still owes the legacy plan keeps it, a re-saved
  *      half-day keeps its visits, only a sent week is judged, every decision names what it read, and the
- *      screens keep a dropped rep's customers and their pickers on screen.
+ *      screens keep a dropped rep's customers and their pickers on screen;
+ *   9. after a regional manager agrees, the national sales manager above him approves his ask to edit a
+ *      week and his ask to remove a customer too (owner, 2026-10-17, "Week + edit asks + removals") — each
+ *      step decided only by its holder, the Hub filing it by its step, and the database never letting who
+ *      decides close a two-step ask at the first approval.
  */
 
 // ── The organogram the matrix runs on ───────────────────────────────────────────────────────────
@@ -93,12 +102,14 @@ const ADM = seat({ seatId: "SEAT-AIF-ADM-UE-1", tier: "ACTING_DM", path: [...NSM
 const UE1 = seat({ seatId: "SEAT-AIF-REP-UE1", tier: "REP", path: [...ADM.path, "SEAT-AIF-REP-UE1"], occupantHrId: "B-1", areaName: "Minia 1" });
 const UE2 = seat({ seatId: "SEAT-AIF-REP-UE2", tier: "REP", path: [...ADM.path, "SEAT-AIF-REP-UE2"], occupantHrId: null, areaName: "Minia 2" });
 const UE9 = seat({ seatId: "SEAT-AIF-REP-UE9", tier: "REP", path: [...ADM.path, "SEAT-AIF-REP-UE9"], occupantHrId: "AI-0012", areaName: "Beni Suef" });
-// Hany Saad's line: his district managers' weeks go on to Ali Mohamed Ali (plan-second-approver.ts).
-const HANY = seat({ seatId: "SEAT-PED-NSM", tier: "NSM", path: ["SEAT-CEO", "SEAT-PED-NSM"], occupantHrId: "PD-0001", lineCode: "pedia", lineName: "Pedia" });
+// Pedia, as production holds it: Hany Saad on the one regional seat, under Ali Mohamed Ali's national
+// seat. A regional manager's approval goes on to the national sales manager above him, always.
+const ALI = seat({ seatId: "SEAT-PED-NSM", tier: "NSM", path: ["SEAT-CEO", "SEAT-PED-NSM"], occupantHrId: "A-12", lineCode: "pedia", lineName: "Pedia" });
+const HANY = seat({ seatId: "SEAT-PED-RSM", tier: "RSM", path: [...ALI.path, "SEAT-PED-RSM"], occupantHrId: "PD-0001", lineCode: "pedia", lineName: "Pedia" });
 const PDM = seat({ seatId: "SEAT-PED-DM-1", tier: "DM", path: [...HANY.path, "SEAT-PED-DM-1"], occupantHrId: "PD-0040", lineCode: "pedia", lineName: "Pedia", regionName: "Alex" });
 const P11 = seat({ seatId: "SEAT-PED-REP-11", tier: "REP", path: [...PDM.path, "SEAT-PED-REP-11"], occupantHrId: "PD-0041", lineCode: "pedia", lineName: "Pedia", areaName: "Smouha" });
 
-const org = buildOrgIndex([CEO, NSM, DM1, D11, D12, DM2, D21, ADM, UE1, UE2, UE9, HANY, PDM, P11]);
+const org = buildOrgIndex([CEO, NSM, DM1, D11, D12, DM2, D21, ADM, UE1, UE2, UE9, ALI, HANY, PDM, P11]);
 
 /** Friday 16 October 2026: the coming week is the week of Saturday 17 October. */
 const FRIDAY = "2026-10-16";
@@ -137,7 +148,7 @@ const dm = viewerFor("B-12", "District Manager");
 const otherDm = viewerFor("B-76", "District Manager");
 const actingDm = viewerFor("B-1", "District Manager");
 const nsm = viewerFor("B-900", "National Sales Manager", { canCreate: false });
-const hany = viewerFor("PD-0001", "National Sales Manager", { canCreate: false });
+const hany = viewerFor("PD-0001", "Regional Manager", { canCreate: false });
 const ceo = viewerFor("B-2", "CEO", { company: true, canCreate: false, canApprove: false });
 const sfe = viewerFor("B-300", "SFE Manager", { sfe: true, canCreate: false });
 const owner = viewerFor("B-10", "Super Admin", { superAdmin: true });
@@ -249,13 +260,39 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.ok(cleared.ok && cleared.value.kind === null, "a null kind clears the half-day");
   assert.equal(parseManagerSlotDraft({ date: "2026-10-17", half: "Noon", kind: "admin", activityType: "meeting" }).ok, false, "AM or PM, nothing else");
 
-  // The chain: his RSM/NSM; Hany Saad's district managers then Ali Mohamed Ali.
+  // The chain: his RSM/NSM; after a regional manager, the national sales manager above him — never skipped.
   const plain = managerPlanApprovers(org, DM1.seatId);
   assert.equal(plain.first?.hrId, personKey("B-900"), "a district manager's first approver is the manager above his seat");
-  assert.equal(plain.secondHrId, null, "and he has no second stage");
+  assert.equal(plain.secondHrId, null, "and with no regional manager above him he has no second stage");
   const hanys = managerPlanApprovers(org, PDM.seatId);
   assert.equal(hanys.first?.hrId, personKey("PD-0001"), "Hany Saad approves first for his district managers");
   assert.equal(personKey(hanys.secondHrId), personKey("A-12"), "then Ali Mohamed Ali");
+  {
+    // The rule is the SEAT, not a named pair: a regional manager on another line, with nobody listed for him.
+    const cnsNsm = seat({ seatId: "SEAT-CNS-NSM", tier: "NSM", path: ["SEAT-CEO", "SEAT-CNS-NSM"], occupantHrId: "B-122", lineCode: "cns", lineName: "CNS" });
+    const cnsRsm = seat({ seatId: "SEAT-CNS-RSM", tier: "RSM", path: [...cnsNsm.path, "SEAT-CNS-RSM"], occupantHrId: "B-501", lineCode: "cns", lineName: "CNS" });
+    const cnsDm = seat({ seatId: "SEAT-CNS-DM-9", tier: "DM", path: [...cnsRsm.path, "SEAT-CNS-DM-9"], occupantHrId: "B-502", lineCode: "cns", lineName: "CNS" });
+    const filled = managerPlanApprovers(buildOrgIndex([CEO, cnsNsm, cnsRsm, cnsDm]), cnsDm.seatId);
+    assert.equal(filled.first?.hrId, personKey("B-501"), "a new regional manager approves first");
+    assert.equal(filled.secondHrId, personKey("B-122"), "and the national sales manager above him always approves after him");
+    const nsmEmpty = managerPlanApprovers(buildOrgIndex([CEO, { ...cnsNsm, occupantHrId: null }, cnsRsm, cnsDm]), cnsDm.seatId);
+    assert.equal(nsmEmpty.secondHrId, personKey("B-2"), "an empty national seat passes the second step up to the CEO, never closes the week at one approval");
+    const rsmEmpty = managerPlanApprovers(buildOrgIndex([CEO, cnsNsm, { ...cnsRsm, occupantHrId: null }, cnsDm]), cnsDm.seatId);
+    assert.equal(rsmEmpty.first?.hrId, personKey("B-122"), "an empty regional seat passes the first step up to the national sales manager");
+    assert.equal(rsmEmpty.secondHrId, null, "who then approves alone — there is no regional approval to follow");
+  }
+  {
+    // The database closes a week at the first approval ONLY when no second approver was stored on send —
+    // never by who decides, so the Administrator acting for the regional manager still passes it on.
+    const migration = stripSqlComments(readFileSync(new URL("../supabase/migrations/20261017000000_phoenix_crm_manager_plan.sql", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+    const approveBranch = migration.slice(migration.indexOf("elsif v_action = 'approve' then"), migration.indexOf("v_event := case when v_plan.status = 'first_approved'"));
+    assert.ok(approveBranch.length > 0, "the approve branch is read");
+    assert.ok(
+      approveBranch.includes("set status = case when pl.second_approver_hr_id is null then 'approved' else 'first_approved' end"),
+      "the first approval passes a two-stage week on, whoever decides it",
+    );
+    assert.ok(!/\b(?:if|when)\s+v_role\b/.test(approveBranch), "no decider's role closes a two-stage week at the first approval");
+  }
 
   // The state machine the screen offers buttons from.
   assert.equal(nextManagerPlanStatus({ action: "submit", status: "draft", stage: null, hasSecond: false }), "submitted");
@@ -517,7 +554,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.equal(/expectedVersionOf\(body\.version\) \?\? /.test(decideEdit), false);
   const decideRemoval = functionBody(source("src/lib/phoenix-crm/server/manager-customers.ts"), "export async function decideManagerCustomerRemoval(");
   assert.match(decideRemoval, /if \(!requestedAt \|\| requestedAt !== row\.removalRequestedAt\) \{\s*throw conflictError\(/, "a re-raised removal ask is never decided on the old one's page");
-  assert.match(source("src/components/approvals-hub/manager-plan-decision-actions.tsx"), /body = \{ id: target\.customerId, requestedAt: target\.requestedAt,/, "the Hub sends the ask it showed");
+  assert.match(source("src/components/approvals-hub/manager-plan-decision-actions.tsx"), /body = \{\s*id: target\.customerId,\s*requestedAt: target\.requestedAt,/, "the Hub sends the ask it showed");
 
   // A title that still owes the legacy weekly plan keeps the legacy form — the no-weekly-plan charge reads it.
   assert.equal(owesAWeeklyPlan("Product Manager"), true);
@@ -557,6 +594,174 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
 
   // His own visit log asks for no photo.
   assert.equal(/\bphoto/i.test(source("src/lib/phoenix-crm/server/manager-visits.ts")), false, "a district manager's single visit takes no photo");
+
+  // ── 9. After a regional manager, the NSM approves his asks too (owner, 2026-10-17) ────────────
+
+  // "Week + edit asks + removals": his ask to reopen a sent week and his ask to take a customer off his
+  // own list follow the week — the regional manager first, then the national sales manager stored on it.
+  assert.equal(managerAskStage("pending"), "first", "an open ask waits on its first approver");
+  assert.equal(managerAskStage("removal_pending"), "first");
+  assert.equal(managerAskStage("first_approved"), "second", "after the regional manager agrees, it waits on the NSM above him");
+  assert.equal(managerAskStage("removal_first_approved"), "second");
+  for (const closed of ["reopened", "refused", "expired", "removed", "active", null]) {
+    assert.equal(managerAskStage(closed), null, `an ask that is ${String(closed)} waits on nobody`);
+  }
+
+  const ali = viewerFor("A-12", "National Sales Manager", { canCreate: false });
+  const askFirst = { stage: "first" as const, approverHrId: personKey("PD-0001"), secondApproverHrId: personKey("A-12"), isTest: false };
+  const askSecond = { ...askFirst, stage: "second" as const };
+  assert.equal(managerAskDeciderRole(hany, askFirst), "first", "the regional manager decides the first step of the ask");
+  assert.equal(managerAskDeciderRole(ali, askFirst), null, "the NSM never takes the regional manager's step");
+  assert.equal(managerAskDeciderRole(ali, askSecond), "second", "the NSM decides the second step");
+  assert.equal(managerAskDeciderRole(hany, askSecond), null, "and the regional manager never decides it");
+  assert.equal(managerAskDeciderRole(owner, askFirst), "administrator", "the Administrator acts in place of either holder");
+  assert.equal(managerAskDeciderRole(owner, askSecond), "administrator");
+  assert.equal(managerAskDeciderRole(nsm, { stage: "first", approverHrId: personKey("B-900"), secondApproverHrId: null, isTest: false }), "first", "with no regional manager, the NSM decides alone");
+  assert.equal(managerAskDeciderRole(testNsm, { stage: "first", approverHrId: personKey("B-900"), secondApproverHrId: null, isTest: false }), null, "never across worlds");
+
+  // The Hub's queue files each open item by its own step: the regional manager's turn, then the NSM's.
+  assert.equal(managerQueuePlace("PD-0001", "first", "PD-0001", "A-12"), "awaiting", "the first step is the regional manager's turn");
+  assert.equal(managerQueuePlace("A-12", "first", "PD-0001", "A-12"), "upcoming", "and is coming to the NSM");
+  assert.equal(managerQueuePlace("A-12", "second", "PD-0001", "A-12"), "awaiting", "once the regional manager agrees it is the NSM's turn");
+  assert.equal(managerQueuePlace("PD-0001", "second", "PD-0001", "A-12"), null, "and off the regional manager's list");
+  assert.equal(managerQueuePlace("A-12", null, "PD-0001", "A-12"), null, "a closed ask waits on nobody");
+  const queue = source("src/lib/phoenix-crm/server/manager-plan-queue.ts");
+  assert.match(functionBody(queue, "async function loadOpenEditAsks("), /\.in\("status", \["pending", "first_approved"\]\)/, "an ask is open at either step");
+  assert.match(functionBody(queue, "async function loadOpenRemovals("), /\.in\("status", \["removal_pending", "removal_first_approved"\]\)/, "so is a removal");
+  const queueBody = functionBody(queue, "export async function loadManagerPlanQueue(");
+  assert.match(queueBody, /managerQueuePlace\(me, stage, ask\.approverHrId, ask\.secondApproverHrId\)/, "an ask is filed by its own step");
+  assert.match(queueBody, /managerQueuePlace\(me, stage, textOrNull\(row\.removal_approver_hr_id\), textOrNull\(row\.removal_second_approver_hr_id\)\)/, "and so is a removal");
+  assert.match(
+    functionBody(hub, "export async function getSecondApproverPlanRequests("),
+    /fetchCrmManagerPlanRequestItems\(access, access\.hrId\)/,
+    "the NSM's feed is every week stored with him as its second approver — the seat, never a named pair",
+  );
+
+  // The tracker: both steps from the moment it is asked, and a closed ask never shows a step it never reached.
+  const stepNames = new Map<string, string>([
+    ["PD-0040", "Mostafa Kamel"],
+    ["PD-0001", "Hany Saad"],
+    ["A-12", "Ali Mohamed Ali"],
+  ]);
+  const asked = {
+    askedLabel: "Asked to edit",
+    askerHrId: "PD-0040",
+    askedAt: "2026-10-17T08:00:00Z",
+    status: "open" as const,
+    approverHrId: "PD-0001",
+    secondApproverHrId: "A-12" as string | null,
+    firstDecidedByHrId: null as string | null,
+    firstDecidedRole: null as string | null,
+    firstDecidedAt: null as string | null,
+    decidedByHrId: null as string | null,
+    decidedRole: null as string | null,
+    decidedAt: null as string | null,
+  };
+  const trackOf = (track: Parameters<typeof askSteps>[0]) => askSteps(track, stepNames).map((step) => `${step.label}: ${step.who} (${step.state})`);
+  assert.deepEqual(
+    trackOf(asked),
+    ["Asked to edit: Mostafa Kamel (done)", "Manager approval: Hany Saad (current)", "Second approval: Ali Mohamed Ali (waiting)"],
+    "both steps show from the moment it is asked",
+  );
+  assert.deepEqual(trackOf({ ...asked, secondApproverHrId: null }), ["Asked to edit: Mostafa Kamel (done)", "Manager approval: Hany Saad (current)"], "one step where no regional manager sits above him");
+  const agreed = { ...asked, status: "first_approved" as const, firstDecidedByHrId: "PD-0001", firstDecidedRole: "first", firstDecidedAt: "2026-10-17T09:00:00Z" };
+  assert.deepEqual(trackOf(agreed).slice(1), ["Manager approval: Hany Saad (done)", "Second approval: Ali Mohamed Ali (current)"], "the regional manager agreed; the NSM decides now");
+  assert.equal(askSteps({ ...agreed, firstDecidedRole: "administrator" }, stepNames)[1]?.who, "The Administrator", "a step the Administrator took says so");
+  const done = { ...agreed, status: "approved" as const, decidedByHrId: "A-12", decidedRole: "second", decidedAt: "2026-10-17T10:00:00Z" };
+  assert.deepEqual(trackOf(done).slice(1), ["Manager approval: Hany Saad (done)", "Second approval: Ali Mohamed Ali (done)"]);
+  assert.deepEqual(
+    trackOf({ ...asked, status: "refused", decidedByHrId: "PD-0001", decidedRole: "first", decidedAt: "2026-10-17T09:00:00Z" }).slice(1),
+    ["Manager approval: Hany Saad (refused)"],
+    "a refusal at the first step closes it there, and the second step is never drawn as still to come",
+  );
+  assert.deepEqual(
+    trackOf({ ...agreed, status: "refused", decidedByHrId: "A-12", decidedRole: "second", decidedAt: "2026-10-17T10:00:00Z" }).slice(1),
+    ["Manager approval: Hany Saad (done)", "Second approval: Ali Mohamed Ali (refused)"],
+    "a refusal at the second step leaves the first step done",
+  );
+  assert.deepEqual(trackOf({ ...agreed, status: "expired", decidedRole: "system", decidedAt: "2026-10-23T00:00:00Z" }).slice(1), [
+    "Manager approval: Hany Saad (done)",
+    "Second approval: Ali Mohamed Ali (closed)",
+  ]);
+
+  // The NSM is told when the regional manager agrees — a notice of its own, naming who agreed first.
+  const notice = {
+    kind: "manager_plan" as const,
+    seat: PDM,
+    managerHrId: "PD-0040",
+    recordId: UUID_A,
+    planId: UUID_B,
+    weekStart: "2026-10-17",
+    note: "A rep sent after me",
+    customerName: null,
+    byAdministrator: false,
+  };
+  for (const step of ["edit_waiting", "removal_waiting"] as const) {
+    const [toHany] = managerPlanDeliveries({ ...notice, step, recipientHrId: "PD-0001", actorHrId: "PD-0040", version: 1 }, stepNames);
+    const [toAli] = managerPlanDeliveries({ ...notice, step, recipientHrId: "A-12", actorHrId: "PD-0001", version: 2, secondStep: true }, stepNames);
+    assert.ok(toHany && toAli, `${step} is delivered at both steps`);
+    assert.equal(toHany.message.includes("approved it first"), false, `${step}: the regional manager reads a plain ask`);
+    assert.ok(toAli.message.includes("Hany Saad approved it first; it needs your approval too."), `${step}: the NSM reads who agreed first`);
+    assert.deepEqual(toAli.recipients, ["A-12"], `${step}: the second notice goes to the NSM alone`);
+    assert.notEqual(toHany.idempotencyKey, toAli.idempotencyKey, `${step}: the second notice is never swallowed as a repeat of the first`);
+  }
+
+  // The server: the ask stores the second approver, a step is decided only by its holder, and the page
+  // names the step it showed.
+  assert.match(functionBody(plans, "export async function raiseManagerPlanEdit("), /second_approver_hr_id: approvers\.secondHrId,/, "his ask to edit stores the NSM above a regional manager");
+  const customers = source("src/lib/phoenix-crm/server/manager-customers.ts");
+  assert.match(functionBody(customers, "export async function requestManagerCustomerRemoval("), /second_approver_hr_id: approvers\.secondHrId,/, "so does his ask to remove a customer");
+  for (const [name, body] of [["the edit ask", decideEdit], ["the removal", decideRemoval]] as const) {
+    assert.match(body, /if \(!stage \|\| \(body\.stage !== undefined && body\.stage !== stage\)\) throw conflictError\(/, `${name}: a page left open on a step already taken is refused`);
+    assert.match(body, /managerAskDeciderRole\(viewer, \{ stage, approverHrId: [a-z]+\.approverHrId, secondApproverHrId: [a-z]+\.secondApproverHrId, isTest \}\)/, `${name}: only that step's holder decides it`);
+    assert.match(body, /secondStep: true,/, `${name}: the NSM is told when the regional manager agrees`);
+  }
+  const actions = source("src/components/approvals-hub/manager-plan-decision-actions.tsx");
+  assert.equal(actions.split("stage: target.stage ?? undefined").length - 1, 2, "the Hub sends the step it showed, for the ask and the removal");
+
+  // The database: the step never depends on who decides, the code running before it keeps working, and an
+  // ask nobody finished deciding closes with its week at either step.
+  const asksSql = stripSqlComments(
+    readFileSync(new URL("../supabase/migrations/20261017120000_phoenix_crm_manager_asks_second_approval.sql", import.meta.url), "utf8"),
+  ).replace(/\r\n/g, "\n");
+  const sqlFunction = (fn: string): string => {
+    const start = asksSql.indexOf(`create or replace function public.${fn}(p jsonb)`);
+    assert.ok(start >= 0, `${fn} is replaced`);
+    return asksSql.slice(start, asksSql.indexOf("\n$$;", start));
+  };
+  for (const fn of [
+    "phoenix_crm_raise_manager_plan_edit",
+    "phoenix_crm_decide_manager_plan_edit",
+    "phoenix_crm_expire_manager_plan_edit_requests",
+    "phoenix_crm_request_manager_customer_removal",
+    "phoenix_crm_decide_manager_customer_removal",
+  ]) {
+    assert.match(sqlFunction(fn).slice(0, 200), /security definer/, `${fn} is SECURITY DEFINER`);
+    assert.ok(asksSql.includes(`revoke execute on function public.${fn}(jsonb) from public, anon, authenticated;`), `${fn} is revoked from the browser roles`);
+    assert.ok(asksSql.includes(`grant execute on function public.${fn}(jsonb) to service_role;`), `${fn} is the service role's`);
+  }
+  assert.equal(/grant [^;]* to (anon|authenticated)\b/i.test(asksSql), false, "nothing is granted to a browser role");
+  const decideEditSql = sqlFunction("phoenix_crm_decide_manager_plan_edit");
+  assert.ok(
+    decideEditSql.includes("v_stage := coalesce(v_stage, case when v_request.status = 'first_approved' then 'second' else 'first' end);"),
+    "a caller that names no step decides the step the ask waits on — the code running before this deploy keeps working",
+  );
+  assert.ok(decideEditSql.includes("(v_role = 'first' and v_stage <> 'first') or (v_role = 'second' and v_stage <> 'second')"), "a holder decides only his own step");
+  assert.ok(decideEditSql.includes("elsif v_stage = 'first' and v_request.second_approver_hr_id is not null then"), "the first approval passes it on whenever a second approver is stored");
+  assert.ok(decideEditSql.indexOf("if v_decision = 'refuse' then") < decideEditSql.indexOf("elsif v_stage = 'first'"), "a refusal at either step closes the ask");
+  const decideRemovalSql = sqlFunction("phoenix_crm_decide_manager_customer_removal");
+  assert.ok(decideRemovalSql.includes("v_stage := coalesce(v_stage, case when v_row.status = 'removal_first_approved' then 'second' else 'first' end);"));
+  assert.ok(decideRemovalSql.includes("if v_decision = 'approve' and v_stage = 'first' and v_row.removal_second_approver_hr_id is not null then"), "the customer stays on the list until the NSM approves too");
+  for (const [name, text] of [["the edit ask", decideEditSql], ["the removal", decideRemovalSql]] as const) {
+    assert.equal(
+      /\b(?:if|elsif|when)\b[^\n]*v_role\s*(?:=|<>|!=|is distinct from|is not distinct from)\s*'administrator'/.test(text),
+      false,
+      `${name}: no decider's role closes a two-step ask at the first approval`,
+    );
+  }
+  assert.ok(sqlFunction("phoenix_crm_expire_manager_plan_edit_requests").includes("where r.status in ('pending', 'first_approved')"), "an ask closes with its week at either step");
+  assert.ok(asksSql.includes("on public.phoenix_crm_manager_plan_edit_requests (plan_id) where status in ('pending', 'first_approved');"), "one ask open per week, at either step");
+  assert.ok(asksSql.includes("(status <> 'first_approved' or (second_approver_hr_id is not null and first_decided_at is not null))"), "an ask waits on a second step only when one was stored");
 
   // ── The words on his screens ─────────────────────────────────────────────────────────────────
 

@@ -1748,7 +1748,8 @@ function crmRequestStatus(
     if (record.status === "returned") return { label: "Returned for changes", tone: "returned" };
     return { label: "Not sent", tone: "neutral" };
   }
-  if (record.status === "pending") return waiting;
+  // An ask or a removal waits at either step: on the regional manager, then on the NSM above him.
+  if (record.status === "pending" || record.status === "first_approved") return waiting;
   if (record.status === "reopened") return { label: "Reopened for editing", tone: "approved" };
   if (record.status === "removed") return { label: "Removed from the list", tone: "approved" };
   if (record.status === "expired") return { label: "Expired with the week", tone: "neutral" };
@@ -2462,13 +2463,13 @@ const CRM_MANAGER_PLAN_STATUS: Record<string, { label: string; tone: CompanyRequ
 
 /**
  * The district managers' Phoenix CRM weeks for the same oversight feeds (owner, 2026-10-16). The caller
- * has already passed the feed's own gate; `firstApproverHrIds` narrows it to the second approver's
- * managers. A failed read costs these rows only, logged.
+ * has already passed the feed's own gate; `secondApproverHrId` narrows it to the weeks stored with that
+ * person as their second approver. A failed read costs these rows only, logged.
  */
-async function fetchCrmManagerPlanRequestItems(access: AccessContext, firstApproverHrIds: string[] | null): Promise<CompanyRequestItem[]> {
+async function fetchCrmManagerPlanRequestItems(access: AccessContext, secondApproverHrId: string | null): Promise<CompanyRequestItem[]> {
   try {
     const [rows, directory] = await Promise.all([
-      loadManagerPlanFeed({ isTest: Boolean(access.testPersona), firstApproverHrIds }),
+      loadManagerPlanFeed(secondApproverHrId === null ? { isTest: Boolean(access.testPersona) } : { isTest: Boolean(access.testPersona), secondApproverHrId }),
       getEmployeeDirectory(),
     ]);
     return rows.map((row) => {
@@ -2506,12 +2507,13 @@ function mergeCompanyPlanFeeds(legacy: CompanyRequestItem[], crm: CompanyRequest
 // existed. Null for everyone who is nobody's second approver, which is nearly everyone.
 export async function getSecondApproverPlanRequests(access: AccessContext): Promise<CompanyRequestItem[] | null> {
   const managerHrIds = managerHrIdsForSecondApprover(access.hrId);
-  if (managerHrIds.length === 0) return null;
   const [legacy, crm] = await Promise.all([
-    fetchCompanyPlanRequestItems(access, { managerHrIds }),
-    // His Phoenix CRM feed is the weeks whose FIRST approver is one of those managers.
-    fetchCrmManagerPlanRequestItems(access, managerHrIds),
+    managerHrIds.length > 0 ? fetchCompanyPlanRequestItems(access, { managerHrIds }) : Promise.resolve([] as CompanyRequestItem[]),
+    // His Phoenix CRM feed is every week stored with HIM as its second approver: the NSM above any
+    // regional manager (owner, 2026-10-17), read from the organogram at the send — not the named pair.
+    access.hrId ? fetchCrmManagerPlanRequestItems(access, access.hrId) : Promise.resolve([] as CompanyRequestItem[]),
   ]);
+  if (managerHrIds.length === 0 && crm.length === 0) return null;
   return mergeCompanyPlanFeeds(legacy, crm);
 }
 

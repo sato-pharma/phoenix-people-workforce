@@ -17,6 +17,7 @@
  * counted in his awaiting bucket, and he reaches it through the company feeds.
  */
 
+import { managerAskStage, managerPlanStage } from "@/lib/phoenix-crm/manager-plan-rules";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import {
@@ -74,7 +75,7 @@ async function loadOpenEditAsks(isTest: boolean): Promise<ManagerEditAskRow[]> {
       getSupabaseAdmin()
         .from("phoenix_crm_manager_plan_edit_requests")
         .select(EDIT_ASK_COLUMNS)
-        .eq("status", "pending")
+        .in("status", ["pending", "first_approved"])
         .eq("is_test", isTest),
     byId,
   );
@@ -86,15 +87,28 @@ async function loadOpenRemovals(isTest: boolean): Promise<Row[]> {
     () =>
       getSupabaseAdmin()
         .from("phoenix_crm_manager_customers")
-        .select("id, manager_hr_id, name, removal_approver_hr_id, removal_requested_at, created_at")
-        .eq("status", "removal_pending")
+        .select("id, manager_hr_id, name, status, removal_approver_hr_id, removal_second_approver_hr_id, removal_requested_at, created_at")
+        .in("status", ["removal_pending", "removal_first_approved"])
         .eq("is_test", isTest),
     byId,
   );
 }
 
 /**
- * What waits on this person now, and what is coming to him: a week still with the first approver whose
+ * Where one open item stands for this person: his turn now ("awaiting"), coming to him once the first
+ * step is taken ("upcoming"), or neither. The same three answers for a week, an ask to edit it and an
+ * own-list removal — after a regional manager agrees, the national sales manager stored on it decides
+ * (owner, 2026-10-17: "Week + edit asks + removals").
+ */
+export function managerQueuePlace(me: string, stage: "first" | "second" | null, firstHrId: string | null, secondHrId: string | null): "awaiting" | "upcoming" | null {
+  if (stage === "first" && sameKey(firstHrId, me)) return "awaiting";
+  if (stage === "second" && sameKey(secondHrId, me)) return "awaiting";
+  if (stage === "first" && sameKey(secondHrId, me)) return "upcoming";
+  return null;
+}
+
+/**
+ * What waits on this person now, and what is coming to him: anything still with the first approver whose
  * second approver he is. Throws on a failed read — the Hub decides what an unread queue costs.
  */
 export async function loadManagerPlanQueue(hrId: string | null | undefined, isTest: boolean): Promise<ManagerQueueBuckets> {
@@ -104,16 +118,28 @@ export async function loadManagerPlanQueue(hrId: string | null | undefined, isTe
 
   const awaiting: ManagerQueueItem[] = [];
   const upcoming: ManagerQueueItem[] = [];
+  const file = (place: "awaiting" | "upcoming" | null, item: ManagerQueueItem) => {
+    if (place === "awaiting") awaiting.push(item);
+    else if (place === "upcoming") upcoming.push(item);
+  };
   for (const plan of plans) {
     if (sameKey(plan.managerHrId, me)) continue;
-    const base = { id: plan.planId, managerHrId: plan.managerHrId, weekStart: plan.weekStart, customerName: null, waitingSince: plan.submittedAt ?? "" };
-    if (plan.status === "submitted" && sameKey(plan.firstApproverHrId, me)) awaiting.push({ ...base, stage: "first" });
-    else if (plan.status === "first_approved" && sameKey(plan.secondApproverHrId, me)) awaiting.push({ ...base, stage: "second" });
-    else if (plan.status === "submitted" && sameKey(plan.secondApproverHrId, me)) upcoming.push({ ...base, stage: "first" });
+    const stage = managerPlanStage(plan.status);
+    const place = managerQueuePlace(me, stage, plan.firstApproverHrId, plan.secondApproverHrId);
+    file(place, {
+      id: plan.planId,
+      // A week's own stage names the Hub's step; one still with the first approver is "first" for him too.
+      stage: place === "awaiting" && stage === "second" ? "second" : "first",
+      managerHrId: plan.managerHrId,
+      weekStart: plan.weekStart,
+      customerName: null,
+      waitingSince: plan.submittedAt ?? "",
+    });
   }
   for (const ask of asks) {
-    if (!sameKey(ask.approverHrId, me) || sameKey(ask.managerHrId, me)) continue;
-    awaiting.push({
+    if (sameKey(ask.managerHrId, me)) continue;
+    const stage = managerAskStage(ask.status);
+    file(managerQueuePlace(me, stage, ask.approverHrId, ask.secondApproverHrId), {
       id: ask.requestId,
       stage: "edit",
       managerHrId: ask.managerHrId,
@@ -125,8 +151,9 @@ export async function loadManagerPlanQueue(hrId: string | null | undefined, isTe
   for (const row of removals) {
     const id = textOrNull(row.id);
     const managerHrId = personKey(textOrNull(row.manager_hr_id));
-    if (!id || !managerHrId || managerHrId === me || !sameKey(textOrNull(row.removal_approver_hr_id), me)) continue;
-    awaiting.push({
+    if (!id || !managerHrId || managerHrId === me) continue;
+    const stage = managerAskStage(row.status);
+    file(managerQueuePlace(me, stage, textOrNull(row.removal_approver_hr_id), textOrNull(row.removal_second_approver_hr_id)), {
       id,
       stage: "removal",
       managerHrId,
@@ -146,7 +173,10 @@ export type ManagerRequestRecord = {
   managerHrId: string;
   weekStart: string | null;
   customerName: string | null;
-  /** The plan's status; for an ask or a removal: pending / reopened / refused / expired / removed. */
+  /**
+   * The plan's status; for an ask or a removal: pending / first_approved (the regional manager agreed,
+   * the NSM above him decides next) / reopened / refused / expired / removed.
+   */
   status: string;
   submittedAt: string;
   decisionNote: string | null;
@@ -177,7 +207,7 @@ export async function loadManagerOwnRequests(hrId: string | null | undefined, is
       () =>
         getSupabaseAdmin()
           .from("phoenix_crm_manager_customers")
-          .select("id, name, status, removal_requested_at, removal_approver_hr_id, removal_decided_at, removal_decision_note")
+          .select("id, name, status, removal_requested_at, removal_approver_hr_id, removal_second_approver_hr_id, removal_decided_at, removal_decision_note")
           .eq("manager_hr_id", me)
           .eq("is_test", isTest)
           .not("removal_requested_at", "is", null),
@@ -210,7 +240,7 @@ export async function loadManagerOwnRequests(hrId: string | null | undefined, is
       status: ask.status,
       submittedAt: ask.createdAt ?? "",
       decisionNote: ask.decisionNote,
-      waitingOnHrId: ask.status === "pending" ? ask.approverHrId : null,
+      waitingOnHrId: ask.status === "pending" ? ask.approverHrId : ask.status === "first_approved" ? ask.secondApproverHrId : null,
     });
   }
   for (const row of removalRows) {
@@ -225,10 +255,15 @@ export async function loadManagerOwnRequests(hrId: string | null | undefined, is
       managerHrId: me,
       weekStart: null,
       customerName: textOrNull(row.name),
-      status: status === "removed" ? "removed" : refused ? "refused" : "pending",
+      status: status === "removed" ? "removed" : refused ? "refused" : status === "removal_first_approved" ? "first_approved" : "pending",
       submittedAt: textOrNull(row.removal_requested_at) ?? "",
       decisionNote: textOrNull(row.removal_decision_note),
-      waitingOnHrId: status === "removal_pending" ? personKey(textOrNull(row.removal_approver_hr_id)) : null,
+      waitingOnHrId:
+        status === "removal_pending"
+          ? personKey(textOrNull(row.removal_approver_hr_id))
+          : status === "removal_first_approved"
+            ? personKey(textOrNull(row.removal_second_approver_hr_id))
+            : null,
     });
   }
   return out.sort((left, right) => right.submittedAt.localeCompare(left.submittedAt));
@@ -256,15 +291,16 @@ export async function loadManagerDecisionsBy(hrId: string | null | undefined, is
           .from("phoenix_crm_manager_plan_events")
           .select("id, plan_id, event_type, details, created_at")
           .eq("actor_hr_id", me)
-          .in("event_type", ["first_approved", "approved", "returned", "reopened", "edit_refused"]),
+          .in("event_type", ["first_approved", "approved", "returned", "edit_first_approved", "reopened", "edit_refused"]),
       { cursorColumn: "id", cursorOf: (row: Row) => Number(row.id) },
     ),
+    // A removal he decided: the last step, or the first step a regional manager agrees to.
     fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
           .from("phoenix_crm_manager_customers")
-          .select("id, manager_hr_id, name, status, removal_decided_at")
-          .eq("removal_decided_by_hr_id", me)
+          .select("id, manager_hr_id, name, status, removal_decided_at, removal_decided_by_hr_id, removal_first_decided_at, removal_first_decided_by_hr_id")
+          .or(`removal_decided_by_hr_id.eq."${me}",removal_first_decided_by_hr_id.eq."${me}"`)
           .eq("is_test", isTest),
       byId,
     ),
@@ -287,7 +323,7 @@ export async function loadManagerDecisionsBy(hrId: string | null | undefined, is
     const type = String(row.event_type ?? "");
     const details = (row.details && typeof row.details === "object" ? row.details : {}) as Row;
     const askId = textOrNull(details.request_id);
-    const isAsk = type === "reopened" || type === "edit_refused";
+    const isAsk = type === "reopened" || type === "edit_refused" || type === "edit_first_approved";
     out.push({
       id: isAsk && askId ? askId : plan.planId,
       kind: isAsk ? "edit" : "plan",
@@ -302,15 +338,13 @@ export async function loadManagerDecisionsBy(hrId: string | null | undefined, is
     const id = textOrNull(row.id);
     const managerHrId = personKey(textOrNull(row.manager_hr_id));
     if (!id || !managerHrId) continue;
-    out.push({
-      id,
-      kind: "removal",
-      managerHrId,
-      weekStart: null,
-      customerName: textOrNull(row.name),
-      decision: row.status === "removed" ? "approved" : "rejected",
-      decidedAt: textOrNull(row.removal_decided_at) ?? "",
-    });
+    const base = { id, kind: "removal" as const, managerHrId, weekStart: null, customerName: textOrNull(row.name) };
+    if (sameKey(textOrNull(row.removal_decided_by_hr_id), me)) {
+      out.push({ ...base, decision: row.status === "removed" ? "approved" : "rejected", decidedAt: textOrNull(row.removal_decided_at) ?? "" });
+    } else if (sameKey(textOrNull(row.removal_first_decided_by_hr_id), me)) {
+      // A first step is only ever an approval: a refusal there closes the ask as its last step.
+      out.push({ ...base, decision: "approved", decidedAt: textOrNull(row.removal_first_decided_at) ?? "" });
+    }
   }
   return out.sort((left, right) => right.decidedAt.localeCompare(left.decidedAt));
 }
@@ -319,16 +353,17 @@ export async function loadManagerDecisionsBy(hrId: string | null | undefined, is
 
 /**
  * Every sent week (pending and decided), newest first: the CEO's and the Administrator's District Manager
- * feed, or — given `firstApproverHrIds` — the second approver's feed over the managers he decides after.
- * The caller proves the reader may see it.
+ * feed, or — given `secondApproverHrId` — the second approver's feed: every week stored with him as its
+ * second approver at the send (owner, 2026-10-17 — the NSM above any regional manager, read from the
+ * organogram, never a named pair). The caller proves the reader may see it.
  */
-export async function loadManagerPlanFeed(input: { isTest: boolean; firstApproverHrIds?: ReadonlyArray<string> | null }): Promise<ManagerPlanRow[]> {
-  const approvers = input.firstApproverHrIds ? dedupeIds(input.firstApproverHrIds.map((id) => personKey(id))) : null;
-  if (approvers && approvers.length === 0) return [];
+export async function loadManagerPlanFeed(input: { isTest: boolean; secondApproverHrId?: string | null }): Promise<ManagerPlanRow[]> {
+  const second = input.secondApproverHrId === undefined ? undefined : personKey(input.secondApproverHrId);
+  if (second === null) return [];
   const rows = await fetchAllRowsKeyset<Row>(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query: any = getSupabaseAdmin().from("phoenix_crm_manager_plans").select(MANAGER_PLAN_COLUMNS).eq("is_test", input.isTest).neq("status", "draft");
-    if (approvers) query = query.in("first_approver_hr_id", approvers);
+    if (second) query = query.eq("second_approver_hr_id", second);
     return query;
   }, byId);
   return rows

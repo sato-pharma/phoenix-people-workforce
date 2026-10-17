@@ -76,8 +76,32 @@ replacement.
 ## Approval
 
 - **First stage:** his RSM or NSM, `territoryReviewer(org, dmSeatId)`.
-- **Second stage, only for Hany Saad's DMs:** Ali Mohamed Ali. This chain is shared with the legacy
-  plan through `src/lib/workforce/plan-second-approver.ts`.
+- **Second stage, after every regional manager:** the National Sales Manager above him. Owner,
+  2026-10-17: *"if regional manager applicable then after the rm approve the nsm also must approve
+  never skip"*. `managerPlanApprovers` reads it from the organogram: when the first approver holds an
+  RSM seat, the second is the NSM seat above it. So a regional seat filled tomorrow gets the step with
+  no list to update. Today that is Hany Saad, then Ali Mohamed Ali — the one named pair in
+  `src/lib/workforce/plan-second-approver.ts`, which the legacy plan still reads and which this rule
+  replaced for the Phoenix CRM week.
+  - **An empty NSM seat** passes the step up to the CEO, the way every vacant seat passes upward. The
+    week never closes on the regional manager's approval alone.
+  - **An empty RSM seat** passes the FIRST step up to the NSM, who then approves alone: there is no
+    regional approval to follow.
+  - **Who decides never changes the stages.** The database closes a week at the first approval only
+    when no second approver was stored on send, so the Administrator acting for the regional manager
+    still passes it on. Pinned in section 1 of `tests/phoenix-crm-manager-plan.test.ts`.
+  - **The same two steps decide his asks.** Asked the same day which approvals the rule covers, he
+    answered *"Week + edit asks + removals"*. His ask to reopen a sent week and his ask to take a
+    customer off Manager's own list store their second approver when they are raised, as the week does
+    on send. The regional manager's approval passes the ask on (`first_approved`,
+    `removal_first_approved`); only the NSM's approval reopens the week or removes the customer, and a
+    refusal at either step closes the ask. The NSM is told when the regional manager agrees; the
+    district manager's own requests list says who the ask waits on.
+  - **Each step is decided by its holder only, and the page names the step it showed** (`stage`), so a
+    page left open on a step already taken is refused rather than deciding the next one unread. When a
+    caller names no step, the database reads it off the ask's own status, so the code running before
+    the change kept working. An ask nobody finished deciding closes with its week at either step.
+    Migration `20261017120000`; pinned in section 9 of `tests/phoenix-crm-manager-plan.test.ts`.
 - **No other stage.** There is no HR acknowledgement and no SFE step.
 - **Where it is decided:** the portal Approvals Hub. The choices are Approve, Return the week and
   Return one day.
@@ -91,7 +115,9 @@ replacement.
 The Hub reads the queue through `server/manager-plan-queue.ts`, merged once into
 `getPlanApprovalsForResponder`. That one merge covers the pending count, the badge, Needs You, the
 overdue check and the bell. The same rows are merged separately into My Requests, History, the CEO's
-feed and Ali's feed.
+feed and the second approver's feed — every week stored with that person as its second approver, read
+by his own id rather than from a named pair. Each open week, ask and removal is filed by its own step
+(`managerQueuePlace`): the regional manager's turn, then coming to the NSM, then the NSM's turn.
 
 ## What counts as the actual
 

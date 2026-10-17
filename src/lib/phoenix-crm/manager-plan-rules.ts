@@ -20,9 +20,10 @@
  *     `repPlanWeek`, `weeklyPlanDueOn`). A late send is accepted and stamped late, and the week he is IN
  *     can still be sent late while he never sent it — the rep's own rule (`repWeekState`).
  *   - Approved by his RSM/NSM — the nearest manager above his seat (`territoryReviewer`) — in the
- *     Approvals Hub, as today. Hany Saad's district managers go on to Ali Mohamed Ali
- *     (`secondApproverHrIdForManager`). No HR acknowledgement and no SFE step. The Administrator may act
- *     in place of whoever holds the step (Phoenix CRM's rule of 2026-10-14).
+ *     Approvals Hub, as today. When that first approver is a REGIONAL manager, the National Sales
+ *     Manager above him approves next, always (owner, 2026-10-17 — `managerPlanApprovers`). No HR
+ *     acknowledgement and no SFE step. The Administrator may act in place of whoever holds the step
+ *     (Phoenix CRM's rule of 2026-10-14).
  *   - 🔴 THE REP NEVER SEES IT. Ticking a rep is NOT a double visit — "the double visit is only counted
  *     when the rep submit and log a visit and choose double visit and his manager". The actual is the
  *     visit the REP logs naming him, and the single visits HE logs himself, which count in his own
@@ -293,25 +294,54 @@ export type ManagerPlanStage = "first" | "second";
 export type ManagerPlanApprovers = {
   /** His RSM/NSM — the nearest occupied manager seat above his. Null when the chain above is vacant. */
   first: ChainMember | null;
-  /** Ali Mohamed Ali for Hany Saad's district managers; null for every other. */
+  /** The National Sales Manager above a regional first approver; null when the first is not regional. */
   secondHrId: string | null;
 };
 
 /**
  * Who approves a district manager's week (owner, 2026-10-16: "approval by his RSM/NSM, as today"). The
  * first approver is read from the organogram above HIS seat — the same tree the legacy plan already
- * agreed with for all 19 seats (measured 2026-10-16: zero drift against the HR record). The second
- * stage is the one data rule the legacy plan already keeps, never a second copy of it.
+ * agreed with for all 19 seats (measured 2026-10-16: zero drift against the HR record).
+ *
+ * 🔴 AFTER A REGIONAL MANAGER APPROVES, THE NATIONAL SALES MANAGER ABOVE HIM APPROVES TOO — NEVER SKIPPED
+ * (owner, 2026-10-17: "if regional manager applicable then after the rm approve the nsm also must
+ * approve never skip"). It is read from the organogram, so it holds for every RSM seat and not only for
+ * Hany Saad → Ali Mohamed Ali, the one named pair it replaces. An EMPTY NSM seat passes the step upward
+ * to the CEO, the way every vacant seat passes upward, so the week never closes on the regional
+ * manager's approval alone. A district manager whose first approver IS the NSM (no regional manager
+ * above him, or that seat empty) has one stage, as before.
  */
 export function managerPlanApprovers(org: OrgIndex, managerSeatId: string): ManagerPlanApprovers {
   const first = territoryReviewer(org, managerSeatId);
-  return { first, secondHrId: first ? secondApproverHrIdForManager(first.hrId) : null };
+  return { first, secondHrId: first ? approverAfterRegional(org, first) : null };
+}
+
+/** The person who approves after a regional manager: the NSM seat above his, else the CEO's; null when he is not regional. */
+function approverAfterRegional(org: OrgIndex, first: ChainMember): string | null {
+  if (first.seat.tier !== "RSM") return secondApproverHrIdForManager(first.hrId);
+  const above = first.seat.path
+    .filter((seatId) => seatId !== first.seat.seatId)
+    .reverse()
+    .map((seatId) => org.seats.get(seatId))
+    .filter((seat): seat is OrgSeat => Boolean(seat && seat.occupantHrId && seat.occupantHrId !== first.hrId));
+  return (above.find((seat) => seat.tier === "NSM") ?? above.find((seat) => seat.tier === "CEO"))?.occupantHrId ?? null;
 }
 
 /** Whose turn a week is at: the first approver on a sent week, the second once the first approved. */
 export function managerPlanStage(status: ManagerPlanStatus | null): ManagerPlanStage | null {
   if (status === "submitted") return "first";
   if (status === "first_approved") return "second";
+  return null;
+}
+
+/**
+ * Whose turn his ask to reopen a sent week, or to take a customer off his own list, is at — read off the
+ * ask's own status. 🔴 The two asks follow the week (owner, 2026-10-17, "Week + edit asks + removals"):
+ * after the regional manager agrees, the national sales manager stored on the ask decides too.
+ */
+export function managerAskStage(status: unknown): ManagerPlanStage | null {
+  if (status === "pending" || status === "removal_pending") return "first";
+  if (status === "first_approved" || status === "removal_first_approved") return "second";
   return null;
 }
 
