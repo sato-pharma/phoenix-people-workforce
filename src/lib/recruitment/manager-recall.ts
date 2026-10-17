@@ -9,10 +9,11 @@
 // `sent_to_manager` status (which counts it as sitting with a manager).
 
 import type { AccessContext } from "@/lib/auth/permissions";
-import { hrIdsMatch } from "@/lib/hr-id";
-import { getCandidate, updateCandidateStatus } from "@/lib/recruitment/candidates";
-import { normalizeCandidateStatus } from "@/lib/recruitment/candidate-status";
+import { hrIdForStorage, hrIdsMatch } from "@/lib/hr-id";
+import { getCandidate } from "@/lib/recruitment/candidates";
+import { CANDIDATE_STATUS_NOTE_MAX_LENGTH, normalizeCandidateStatus } from "@/lib/recruitment/candidate-status";
 import { recruitmentDb } from "@/lib/recruitment/db";
+import { returnReleasedCvToShortlist } from "@/lib/recruitment/manager-recall-status";
 import { deleteManagerSend, listSendsForCandidate, type ManagerSend } from "@/lib/recruitment/manager-sends";
 import { managerLabel } from "@/lib/recruitment/person-labels";
 
@@ -76,6 +77,12 @@ export async function recallCandidateFromManager(
   if (!held && !stampNamesHim) throw new Error("That manager does not hold this CV.");
 
   const managerName = managerLabel(held?.managerName ?? candidate.managerNotified?.name ?? null);
+  // Refused BEFORE the send is deleted: a recall that fails after its first write is the half-done
+  // state this function must never leave behind.
+  const note = input.statusNote ? input.statusNote(managerName) : `Taken back from ${managerName}.`;
+  if (note.length > CANDIDATE_STATUS_NOTE_MAX_LENGTH) {
+    throw new Error(`Keep the note under ${CANDIDATE_STATUS_NOTE_MAX_LENGTH} characters.`);
+  }
   if (held) await deleteManagerSend(candidate.id, input.managerHrId);
 
   const remaining = sends.filter((send) => !hrIdsMatch(send.managerHrId, input.managerHrId));
@@ -90,13 +97,17 @@ export async function recallCandidateFromManager(
 
   let statusReturned = false;
   if (remaining.length === 0 && normalizeCandidateStatus(candidate.status) === "sent_to_manager") {
-    await updateCandidateStatus(
-      access,
-      candidate.id,
-      "shortlisted",
-      input.statusNote ? input.statusNote(managerName) : `Taken back from ${managerName}.`,
-    );
-    statusReturned = true;
+    // Written straight to the table, NOT through updateCandidateStatus: that function is a person's
+    // click and refuses `sent_to_manager → shortlisted` on purpose (statusChangeRefusal) to protect a
+    // CV a manager still holds. His send was deleted above, so nobody does. Going through it threw
+    // after the send was gone and left nine CVs at `sent_to_manager` with nobody holding them
+    // (2026-10-17), the same reason manager-hold-return.ts writes its own return.
+    statusReturned = await returnReleasedCvToShortlist(recruitmentDb(), {
+      actorHrId: hrIdForStorage(access.hrId),
+      candidateId: candidate.id,
+      changedAt: new Date().toISOString(),
+      note,
+    });
   }
   return { candidateName: candidate.fullName, managerName, statusReturned };
 }

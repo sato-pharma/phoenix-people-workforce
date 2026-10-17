@@ -2570,6 +2570,7 @@ import { runSecretDrift404MatcherTests } from "./secret-drift-404-matcher.test.t
 import { runTypecheckNativeCompilerTests } from "./typecheck-native-compiler.test.ts";
 import { runCiSuitePlacementTests } from "./ci-suite-placement.test.ts";
 import { runRecruitmentManagerHoldWindowTests } from "./recruitment-manager-hold-window.test.ts";
+import { runRecruitmentManagerRecallStatusTests } from "./recruitment-manager-recall-status.test.ts";
 import { runRunTestsShardedTests } from "./run-tests-sharded.test.ts";
 import { runCrmDoubleVisitWithDepartedPartnerTests } from "./crm-double-visit-with-departed-partner.test.ts";
 import { runEmployeeNamesByHrIdTests } from "./employees-names-by-hr-id.test.ts";
@@ -10187,6 +10188,11 @@ await runTest(
 await runTest(
   "a CV never stays in a manager's account more than 45 days (owner, 2026-10-06): the window is one number and one `>=` comparison that fails CLOSED on an unreadable date, every route a CV reaches a manager by applies it (the pushed list and its gate, the single-manager stamp, the team picker's count and gate, the district folders and the gate behind them) while the whole-company report path and the engagement report deliberately do not, and the daily return takes a CV back as `shortlisted` under an `ops:` actor only when EVERY manager holding it is past 45 days, before the stale-send check reads the status",
   runRecruitmentManagerHoldWindowTests,
+);
+
+await runTest(
+  "taking a CV back from a manager moves a CV nobody holds from sent_to_manager to shortlisted by writing the table itself, never through updateCandidateStatus, whose person-click guard refuses that exact move and once left nine CVs with their sends deleted and nobody holding them (2026-10-17): the write is guarded on the CV still being sent_to_manager, records one history line by the person who took it back, leaves a CV that already moved alone, survives a lost history line, and a too-long note is refused before the send is deleted",
+  runRecruitmentManagerRecallStatusTests,
 );
 
 await runTest(

@@ -30,6 +30,13 @@ folders of the CVs. The folder pumps notifications and never stops until the CV 
   — **taking a CV back**: deletes the (candidate, manager) send, repoints or clears the legacy
   `manager_notified_*` stamp, and moves a CV nobody holds from `sent_to_manager` back to `shortlisted`.
   Recruiting seats only (`recruitment:update`). The pool row carries an **Undo** control beside Send.
+  The status move is written straight to `ats_candidates` plus one `ats_candidate_status_events` row by
+  `manager-recall-status.ts`, **never through `updateCandidateStatus`**: that function is a person's click
+  and `statusChangeRefusal` refuses `sent_to_manager → shortlisted` to protect a CV a manager still holds.
+  On 2026-10-17 the recall of nine CVs from one manager deleted the nine sends, cleared the stamps, then
+  threw on that refusal and left every CV at `sent_to_manager` with nobody holding it (same path as the pool
+  Undo and the manager's Hide). The note length is checked before the send is deleted, so a recall never
+  fails half done. Pinned by `tests/recruitment-manager-recall-status.test.ts`.
 - `sendCandidatesToManager(…, folderArea?)` and both `notify-manager` routes take an optional
   `folderArea`; the response carries `folders` so the confirmation says which folder the CV landed in.
 - `src/lib/recruitment/manager-cv-reminders.ts` + `GET|POST /api/cron/recruitment-manager-cv-reminders`
