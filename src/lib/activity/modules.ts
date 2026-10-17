@@ -150,6 +150,7 @@ const MODULE_RULES: ModuleRule[] = [
   { prefix: "/fingerprint-report", key: "fingerprint_report", label: "Fingerprint Report" },
   { prefix: "/fingerprint-analytics", key: "fingerprint_report", label: "Fingerprint Report" },
   { prefix: "/hr-calendar", key: "company_calendar", label: "Company Calendar" },
+  { prefix: "/hr-reminders", key: "hr_reminders", label: "HR Reminders" },
   { prefix: "/company-calendar", key: "company_calendar", label: "Company Calendar" },
   { prefix: "/private-calendar", key: "private_calendars", label: "Private Calendars" },
   { prefix: "/private-calendars", key: "private_calendars", label: "Private Calendars" },

@@ -54,7 +54,8 @@ export type HrFunctionKey =
   | "hiring_paperwork"
   | "employee_requests"
   | "workforce_context"
-  | "recognition";
+  | "recognition"
+  | "team_reminders";
 
 export type HrFunction = {
   key: HrFunctionKey;
@@ -546,6 +547,23 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       milestones: READ_EXPORT,
     },
   },
+  {
+    key: "team_reminders",
+    label: "Team Reminders",
+    summary:
+      "Write notes and reminders for the HR team, choose who may see each, view them as a list, a week or a month, and join the conversation under any of them.",
+    // The owner, 2026-10-17: a small shared-notes module for "the HR team, Yasmin, Yomna, and me,
+    // and an office coordinator that will be hired". Held by BOTH working HR seats, so whoever is
+    // given the HR Operations seat — the office coordinator included — joins the team without a
+    // code change. NOT a job-description section, and it says so rather than borrowing one.
+    jdSections: ["owner 2026-10-17 — HR team reminders, shared notes and calendar"],
+    grants: {
+      // `read` opens the page and lets a person comment on what they may see; create / update /
+      // delete act on the person's OWN items only, enforced by the service. No export and no
+      // approve: nothing in this module is a record anyone signs off.
+      hr_reminders: ["read", "create", "update", "delete"],
+    },
+  },
 ] as const;
 
 /**
@@ -585,6 +603,9 @@ export const HR_ROLE_BUNDLES = {
     // (tests/cv-database-recruiting-boundary.test.ts), and what she gains is a search box that
     // answers with the people she searched for and nothing else.
     "cv_lookup",
+    // Added 2026-10-17 (HR team reminders, the owner's request). The office coordinator the owner
+    // is about to hire is expected to take THIS seat, which is why it is not a per-person grant.
+    "team_reminders",
   ],
   // The Talent Acquisition seat, opened 2026-10-08 from the owner's own ticks on the access
   // blueprint. Shown as "Talent Acquisition" (HR_SEAT_JOB_TITLES below); keyed "HR Resourcing" so
@@ -604,6 +625,7 @@ export const HR_ROLE_BUNDLES = {
     "employee_requests",
     "workforce_context",
     "recognition",
+    "team_reminders",
   ],
 } as const satisfies Record<string, readonly HrFunctionKey[]>;
 

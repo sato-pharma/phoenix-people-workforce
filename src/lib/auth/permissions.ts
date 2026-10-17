@@ -181,6 +181,12 @@ export type PermissionResource =
   | "coaching"
   | "communication"
   | "hr_calendar"
+  // HR Reminders (owner, 2026-10-17): the HR team's shared notes, reminders and calendar. `read`
+  // opens the page and lets a person comment on what they may see; `create` / `update` / `delete`
+  // act on the person's OWN items only — the service checks ownership, so no action here ever
+  // reaches a teammate's note. The Super Admin sees every item (the HR Manager's oversight) and
+  // edits none that is not his own.
+  | "hr_reminders"
   | "outstation"
   | "leave"
   | "admin"
@@ -388,6 +394,9 @@ export const permissionResources: PermissionResource[] = [
   // Production Planner. Omitting this would offer the whole raw-material plan — and the prices and
   // costs on it — to every role in the company. Mechanism at the head of this array.
   "production_planning",
+  // HR Reminders. Omitting this would offer the HR team's private notes — and the Super Admin's
+  // view of every one of them — to every role in the company. Mechanism at the head of this array.
+  "hr_reminders",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -1001,6 +1010,8 @@ const defaultPermissionMatrix: PermissionMap = {
     employees: allActions,
     expenses: allActions,
     hr_calendar: allActions,
+    // Reads every HR team item and comments on any; creates, edits and removes only his own.
+    hr_reminders: ["read", "create", "update", "delete"],
     outstation: allActions,
     leave: allActions,
     organogram: allActions,

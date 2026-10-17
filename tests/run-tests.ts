@@ -1008,6 +1008,7 @@ import { runHrJobWorkbookTests } from "./hr-job-workbook.test.ts";
 import { runHrOperationsCompanyScopeTests } from "./hr-operations-company-scope.test.ts";
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
 import { runHrResourcingSeatTests } from "./hr-resourcing-seat.test.ts";
+import { runHrRemindersTests } from "./hr-reminders.test.ts";
 import { runHrSeatSectionDrawersTests } from "./hr-seat-section-drawers.test.ts";
 import { runCvDatabaseRecruitingBoundaryTests } from "./cv-database-recruiting-boundary.test.ts";
 import { runTitlePermissionGovernanceTests } from "./title-permission-governance.test.ts";
@@ -4501,6 +4502,14 @@ await runTest(
   + "no employee documents or payroll, every unticked page fenced in the sidebar, AppShell and the page APIs, "
   + "probation read without export, no recruitment alert audience, and the role open in all three CHECK constraints)",
   runHrResourcingSeatTests,
+);
+await runTest(
+  "HR Reminders (the HR team's shared notes: the team is exactly the roles holding the grant; a note is private, shared "
+  + "with named teammates or with the whole team; the HR Manager reads every note and only its author edits, finishes or "
+  + "removes it; a draft is refused when its day, time, colour or sharing is wrong; a comment tells the people in the "
+  + "conversation and never its own author; the week and month grids and the notes buckets are right; every route asserts "
+  + "its permission and is declared in the registry; and both tables are closed to the browser roles)",
+  runHrRemindersTests,
 );
 await runTest(
   "HR seat section drawers (Talent Acquisition and HR Operations draw each /hr section as its own "
