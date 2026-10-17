@@ -41,6 +41,7 @@ import {
   type ApproveAllOutcome,
   type OffPlanDay,
 } from "@/lib/phoenix-crm/offplan-day";
+import { OFF_PLAN_EXEMPT_CARD_TEXT } from "@/lib/phoenix-crm/offplan-cap-rules";
 import { planDayLabel } from "@/lib/phoenix-crm/plan-rules";
 import { UNPLANNED_DECISION_NOTE_MAX, type UnplannedVisitStatus } from "@/lib/phoenix-crm/unplanned-rules";
 import type { TeamUnplannedVisit } from "@/lib/phoenix-crm/view-types";
@@ -343,6 +344,12 @@ export function OffPlanDayCard({
       ) : null}
       {/* Where the rep stood that day and that week — the same for every visit on the card, so it is read once. */}
       <OffPlanStandingStrip standing={day.visits[0].repOffPlan} />
+      {/* A visit under a named exception to the limit (owner, 2026-10-17) says so, so a long day there reads as expected. */}
+      {day.visits.some((visit) => visit.offPlanExempt) ? (
+        <p className="mb-3 min-w-0 break-words border border-l-4 border-emerald-200 border-l-emerald-600 bg-emerald-50/40 px-3 py-2 text-xs font-bold leading-5 text-emerald-900">
+          {OFF_PLAN_EXEMPT_CARD_TEXT}
+        </p>
+      ) : null}
       <div className="grid min-w-0 divide-y divide-slate-100">
         {day.visits.map((visit) => (
           <OffPlanVisitRow

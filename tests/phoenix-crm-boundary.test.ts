@@ -911,6 +911,9 @@ const LATER_MIGRATIONS = [
   // earlier definer is 20261017000000, above it, and adds columns and widens CHECKs on that migration's
   // own tables — no new table and no new function, so it appends safely at the end.
   "supabase/migrations/20261017120000_phoenix_crm_manager_asks_second_approval.sql",
+  // The out-of-plan exception for one seat at one venue (owner, 2026-10-17). ONE new table, two new
+  // functions, and it REPLACES two caps whose earlier definers sit above it, so it appends at the end.
+  "supabase/migrations/20261017150000_phoenix_crm_offplan_exemptions.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
