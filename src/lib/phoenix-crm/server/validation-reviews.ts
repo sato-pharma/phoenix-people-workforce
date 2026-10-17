@@ -24,6 +24,14 @@ import { cleanText } from "@/lib/phoenix-crm/entry-rules";
 import { distanceMeters, type GeoPoint } from "@/lib/phoenix-crm/geo";
 import type { GoogleListing, LocationCheckState } from "@/lib/phoenix-crm/google-place-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
+import {
+  parseScheduleHeldBecause,
+  parseScheduleLegibility,
+  parseScheduleProblem,
+  type ScheduleHeldBecause,
+  type ScheduleLegibility,
+  type ScheduleProblem,
+} from "@/lib/phoenix-crm/schedule-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { canDecideValidationReviews, placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -347,6 +355,21 @@ export type ValidationReviewRow = {
   sharedPlaceId: string | null;
   /** The hours read beside this customer's name on the timetable, as written. Evidence, never parsed. */
   hoursRead: string | null;
+  /**
+   * The evidence the system's RECOMMENDATION is built from (owner, 2026-10-17: "add system
+   * recommendations to approve or no on every validation … and the reason"): the record's own reason
+   * as written (`unreadable`, `call_failed` …, which the narrower `reason` above drops), why the
+   * timetable scanner held it and how much of the board it could read, and what was read on the
+   * place's own signboard — a Google hold carries no reading of the sign in its record, but the place
+   * row does. See `place-check-advice.ts`.
+   */
+  evidence: {
+    checkReason: string | null;
+    heldBecause: ScheduleHeldBecause | null;
+    legibility: ScheduleLegibility | null;
+    problem: ScheduleProblem | null;
+    signboard: { verdict: "match" | "other_name" | "no_name" | "unjudged"; reason: string | null; signText: string | null } | null;
+  };
   /** What the system read on the signboard — or on the timetable — verbatim. */
   signText: string | null;
   /** The names the system read on it, people and places together, for the Super Admin's eye. */
@@ -452,7 +475,7 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
     selectByIds<Row>("phoenix_crm_customers", "id, name, list_type, speciality", "id", customerIds),
     selectByIds<Row>(
       "phoenix_crm_places",
-      "id, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, status, shared_place_id",
+      "id, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, status, shared_place_id, signboard_check",
       "id",
       placeIds,
     ),
@@ -511,6 +534,13 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
       sharedPlaceName: venue ? text(venue.name) : null,
       sharedPlaceId: text(place.shared_place_id),
       hoursRead: schedule ? text(google.hoursRead) : null,
+      evidence: {
+        checkReason: text(google.reason),
+        heldBecause: schedule ? parseScheduleHeldBecause(google.heldBecause) : null,
+        legibility: schedule ? parseScheduleLegibility(google.legibility) : null,
+        problem: schedule ? parseScheduleProblem(google.problem) : null,
+        signboard: signboardOf(place.signboard_check),
+      },
       signText: signboard || schedule ? text(signboard ? google.signText : google.scheduleText) : null,
       signNames,
       otherSigns,
@@ -725,8 +755,18 @@ export type ValidatedPlaceRow = {
   sharedPlaceName: string | null;
   /** That venue's id, so the board files this place under its building (owner, 2026-10-17). */
   sharedPlaceId: string | null;
-  /** What the system read on the timetable: null when this place is not seated or was not read. */
-  schedule: { verdict: "match" | "other_name" | "no_schedule" | "unjudged"; scheduleText: string | null; hoursRead: string | null } | null;
+  /**
+   * What the system read on the timetable: null when this place is not seated or was not read. The
+   * reason, legibility and problem are the recommendation's evidence (`place-check-advice.ts`).
+   */
+  schedule: {
+    verdict: "match" | "other_name" | "no_schedule" | "unjudged";
+    scheduleText: string | null;
+    hoursRead: string | null;
+    reason?: string | null;
+    legibility?: ScheduleLegibility | null;
+    problem?: ScheduleProblem | null;
+  } | null;
 };
 
 /**
@@ -847,7 +887,14 @@ function scheduleOf(value: unknown): ValidatedPlaceRow["schedule"] {
   const check = value as Row;
   const verdict = check.verdict;
   if (verdict !== "match" && verdict !== "other_name" && verdict !== "no_schedule" && verdict !== "unjudged") return null;
-  return { verdict, scheduleText: text(check.scheduleText), hoursRead: text(check.hoursRead) };
+  return {
+    verdict,
+    scheduleText: text(check.scheduleText),
+    hoursRead: text(check.hoursRead),
+    reason: text(check.reason),
+    legibility: parseScheduleLegibility(check.legibility),
+    problem: parseScheduleProblem(check.problem),
+  };
 }
 
 /** The stored signboard verdict, read defensively: anything unrecognised is "not read yet". */

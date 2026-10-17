@@ -108,6 +108,7 @@ function review(overrides: Partial<ValidationReviewRow>): ValidationReviewRow {
     sharedPlaceName: "Nile Polyclinic",
     sharedPlaceId: "venue-nile",
     hoursRead: "Sat 10-2",
+    evidence: { checkReason: null, heldBecause: null, legibility: "clear", problem: null, signboard: null },
     signText: "Dr Karim, Dr Salma",
     signNames: [],
     otherSigns: [],
@@ -250,7 +251,11 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   const mona = nileRows.find((customer) => customer.customerName === "Mona Said");
   assert.equal(mona?.state, "waiting");
   assert.equal(mona?.reviewId, "review-w", "a waiting customer is decided on his review");
-  assert.deepEqual(mona?.timetable, { verdict: "other_name", scheduleText: "Dr Karim, Dr Salma", hoursRead: "Sat 10-2" }, "the hold's reason says what the timetable read");
+  assert.deepEqual(
+    mona?.timetable,
+    { verdict: "other_name", scheduleText: "Dr Karim, Dr Salma", hoursRead: "Sat 10-2", reason: null, legibility: "clear", problem: null, heldBecause: null },
+    "the hold's reason says what the timetable read, and carries the reader's own evidence for the recommendation",
+  );
   const amr = nileRows.find((customer) => customer.customerName === "Amr Fathy");
   assert.equal(amr?.state, "in_use");
   assert.equal(amr?.reviewId, null, "a customer the system never questioned has no review to decide on");
@@ -371,24 +376,38 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
 
   // ── The server hands the board the building each row is seated in ─────────────────────────────
   const reviews = read("src/lib/phoenix-crm/server/validation-reviews.ts");
-  assert.ok(/photo_path, status, shared_place_id"/.test(reviews), "the review read selects the place's shared_place_id");
+  assert.ok(/photo_path, status, shared_place_id, signboard_check"/.test(reviews), "the review read selects the place's shared_place_id, and its signboard reading for the recommendation");
   assert.ok(reviews.includes("sharedPlaceId: text(place.shared_place_id)"), "and a review row carries it whatever the hold was about");
   assert.ok(reviews.includes("sharedPlaceId: text(row.shared_place_id)"), "as does a validated place");
   assert.ok(reviews.includes("sharedPlaceId: venue?.sharedPlaceId ?? null"), "and a customer sent back by his building's refusal");
   assert.ok(read("src/lib/phoenix-crm/server/shared-places.ts").includes("sharedPlaceId: String(venue.id)"), "the venue refusal read names the building");
 
-  // ── The board: two tabs, the clinics without the seated, the polyclinics grouped ──────────────
+  // ── The board: five tabs, the clinics without the seated, the polyclinics grouped ─────────────
+  // (owner, 2026-10-17: "is this a report that really shows me data? or it's a bunch of chaos")
   const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
-  assert.ok(board.includes('role="tablist"') && board.includes('role="tab"') && board.includes('role="tabpanel"'), "the two kinds of check are a real tab switch");
-  assert.ok(board.includes('"Polyclinics and hospitals"') && board.includes('"Clinics"'), "named for what they hold");
+  assert.ok(board.includes('role="tablist"') && board.includes('role="tab"') && board.includes('role="tabpanel"'), "the checks are a real tab switch");
+  for (const label of ['"Needs you"', '"Being checked"', '"Not confirmed"', '"Polyclinics and hospitals"', '"History"']) {
+    assert.ok(board.includes(label), `a tab named for what it holds: ${label}`);
+  }
+  assert.ok(board.includes('useState<PlaceCheckView>("needs")'), "the board opens on what is waiting for a decision");
   for (const set of ["pending", "decided", "validated", "reopened"]) {
     assert.ok(board.includes(`withoutSeated(${set}, venueIds)`), `the clinics view drops ${set} rows seated in a building on the board`);
   }
   assert.ok(board.includes("narrowVenueGroups({ venues: sharedPlaces, seated, filters, cutoff })"), "the polyclinics are grouped by the pure module");
-  assert.ok(board.includes("<SharedPlaceList groups={filteredVenueGroups}"), "and drawn as groups");
+  assert.ok(board.includes("{(groups) => <SharedPlaceList groups={groups}"), "and drawn as groups, a page at a time");
   assert.ok(board.includes("filteredVenueGroups.length"), "the heading count is the FILTERED count, like every other section");
   assert.ok(!board.includes("showSharedPlaces"), "🔴 Rejected no longer hides the polyclinics");
-  assert.ok(board.includes("<ReopenedCustomerList"), "and the clinics tab still lists who waits to be captured again");
+  assert.ok(board.includes("<ReopenedCustomerList"), "and History still lists who waits to be captured again");
+  // 🔴 NO TAB DRAWS ITS WHOLE SET: the decided list alone was 197 rows and 88,288 px tall.
+  assert.equal((board.match(/<Paged key=/g) ?? []).length, 5, "the five long lists are each drawn 20 (or 10 buildings) at a time");
+  assert.ok(board.includes("const PAGE_ROWS = 20;") && board.includes("const PAGE_BUILDINGS = 10;"), "at a page size a person can read");
+  // 🔴 A TEST ENTRY IS NEVER DRAWN — four test buildings sat among the live ones on production.
+  for (const set of ["pendingRows", "decidedRows", "validatedRows", "reopenedRows", "venueRows"]) {
+    assert.ok(board.includes(`${set}.filter(isReal)`), `${set} loses its test entries before anything else reads it`);
+  }
+  assert.ok(board.includes('group.venue.status !== "retired"'), "a rejected building waits behind its own switch");
+  assert.ok(board.includes("{team ? null : <AdviceSummary advice={advice} />}"), "the recommendation summary is the Super Admin's alone");
+  assert.ok(board.includes("<PlaceCheckScorecard"), "and the board opens with each rep's captures");
 
   // ── The group: the building's sign and timetable, then the customers behind it ────────────────
   const list = read("src/components/phoenix-crm/shared-place-list.tsx");

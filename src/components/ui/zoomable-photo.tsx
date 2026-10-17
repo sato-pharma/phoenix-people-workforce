@@ -1,9 +1,16 @@
 "use client";
 
-import { Maximize2, Minus, Plus, RotateCcw, X } from "lucide-react";
+import { Maximize2, Minus, Plus, RotateCcw, RotateCcwSquare, RotateCwSquare, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import {
+  turnedFillStyle,
+  turnedFitLimits,
+  TURNABLE_FRAME_STYLE,
+  turnPhoto,
+  type QuarterTurns,
+} from "@/components/ui/photo-rotation";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { cn } from "@/lib/utils";
@@ -56,12 +63,17 @@ function PhotoLightbox({
   alt,
   caption,
   onClose,
+  onTurn,
   src,
+  turns,
 }: {
   alt: string;
   caption?: string | null;
   onClose: () => void;
+  /** Present only on a turnable photo: the turn is the THUMBNAIL's, so it follows the photo in and out. */
+  onTurn?: (direction: "left" | "right") => void;
   src: string;
+  turns: QuarterTurns;
 }) {
   const dialogRef = useDialogA11y<HTMLDivElement>({ onClose, open: true });
   const stageRef = useRef<HTMLDivElement>(null);
@@ -217,6 +229,26 @@ function PhotoLightbox({
           {caption ?? alt}
         </p>
         <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+          {onTurn ? (
+            <>
+              <button
+                aria-label="Turn the photo left"
+                className="inline-flex h-10 w-10 items-center justify-center text-white/70 transition hover:bg-white/10 hover:text-white"
+                onClick={() => onTurn("left")}
+                type="button"
+              >
+                <RotateCcwSquare className="h-4 w-4" />
+              </button>
+              <button
+                aria-label="Turn the photo right"
+                className="inline-flex h-10 w-10 items-center justify-center text-white/70 transition hover:bg-white/10 hover:text-white"
+                onClick={() => onTurn("right")}
+                type="button"
+              >
+                <RotateCwSquare className="h-4 w-4" />
+              </button>
+            </>
+          ) : null}
           <button
             aria-label="Zoom out"
             className="inline-flex h-10 w-10 items-center justify-center text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-30"
@@ -269,6 +301,8 @@ function PhotoLightbox({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         ref={stageRef}
+        // The stage is what a turned photo is measured against (see photo-rotation.ts).
+        style={onTurn ? TURNABLE_FRAME_STYLE : undefined}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- signed private-bucket URLs and in-memory blobs; see the file header */}
         <img
@@ -281,7 +315,9 @@ function PhotoLightbox({
           onDoubleClick={handleDoubleClick}
           src={src}
           style={{
-            transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${scale})`,
+            ...turnedFitLimits(turns),
+            // The turn comes LAST, so a pan still moves the photo the way the finger moves.
+            transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${scale})${turns === 0 ? "" : ` rotate(${turns * 90}deg)`}`,
             // No transition: a transform that animates lags a finger during a pinch.
             transformOrigin: "center center",
           }}
@@ -310,6 +346,7 @@ export function ZoomablePhoto({
   lazy,
   onError,
   onLoad,
+  rotatable,
   src,
 }: {
   alt: string;
@@ -331,45 +368,92 @@ export function ZoomablePhoto({
    * than having that caller drop back to a bare <img> and lose the tap-to-zoom.
    */
   onLoad?: (event: { currentTarget: HTMLImageElement }) => void;
+  /**
+   * Draw ↺ ↻ on the photo and in the full-screen view, a quarter turn each (owner, 2026-10-17: some
+   * timetables were photographed sideways). The photo then FILLS its positioned parent, whole, and
+   * `className` no longer sizes it. View only: the stored photograph is never changed. Off by
+   * default, so every screen that does not ask keeps its photo exactly as it was.
+   */
+  rotatable?: boolean;
   src: string;
 }) {
   const [open, setOpen] = useState(false);
+  // The turn belongs to the thumbnail, so a photo turned on the card opens turned and comes back turned.
+  const [turns, setTurns] = useState<QuarterTurns>(0);
   // Portals need a DOM that exists. Rendering the overlay into document.body is what keeps it clear
   // of every `overflow-hidden` card and stacking context it would otherwise be trapped inside.
   // `useHydrated` rather than a setState-in-effect mount flag — the repo's own hook, and the effect
   // form is a lint error here.
   const mounted = useHydrated();
+  const turn = (direction: "left" | "right") => setTurns((current) => turnPhoto(current, direction));
+
+  const image = (
+    // eslint-disable-next-line @next/next/no-img-element -- signed private-bucket URLs and in-memory blobs; see the file header
+    <img
+      alt={alt}
+      aria-hidden={ariaHidden ? "true" : undefined}
+      className={cn(className, "cursor-zoom-in")}
+      loading={lazy ? "lazy" : undefined}
+      onClick={(event) => {
+        // A photo often sits inside a clickable row or a link. Opening the viewer must not also
+        // fire that row's own action.
+        event.preventDefault();
+        event.stopPropagation();
+        setOpen(true);
+      }}
+      onError={onError}
+      onLoad={onLoad}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.stopPropagation();
+        setOpen(true);
+      }}
+      role={ariaHidden ? undefined : "button"}
+      src={src}
+      style={rotatable ? turnedFillStyle(turns) : undefined}
+      tabIndex={ariaHidden ? -1 : 0}
+    />
+  );
 
   return (
     <>
-      {/* eslint-disable-next-line @next/next/no-img-element -- signed private-bucket URLs and in-memory blobs; see the file header */}
-      <img
-        alt={alt}
-        aria-hidden={ariaHidden ? "true" : undefined}
-        className={cn(className, "cursor-zoom-in")}
-        loading={lazy ? "lazy" : undefined}
-        onClick={(event) => {
-          // A photo often sits inside a clickable row or a link. Opening the viewer must not also
-          // fire that row's own action.
-          event.preventDefault();
-          event.stopPropagation();
-          setOpen(true);
-        }}
-        onError={onError}
-        onLoad={onLoad}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          event.stopPropagation();
-          setOpen(true);
-        }}
-        role={ariaHidden ? undefined : "button"}
-        src={src}
-        tabIndex={ariaHidden ? -1 : 0}
-      />
+      {rotatable ? (
+        // The frame fills the positioned box the caller drew, and is what a turned photo is measured against.
+        <span className="absolute inset-0 block overflow-hidden" style={TURNABLE_FRAME_STYLE}>
+          {image}
+          <span className="absolute right-1 top-1 flex gap-0.5">
+            {(["left", "right"] as const).map((direction) => (
+              <button
+                aria-label={direction === "left" ? "Turn the photo left" : "Turn the photo right"}
+                className="inline-flex h-7 w-7 items-center justify-center bg-slate-900/70 text-white transition hover:bg-slate-900"
+                key={direction}
+                onClick={(event) => {
+                  // The photo sits in a card and the button sits on the photo: turning opens nothing.
+                  event.preventDefault();
+                  event.stopPropagation();
+                  turn(direction);
+                }}
+                type="button"
+              >
+                {direction === "left" ? <RotateCcwSquare aria-hidden className="h-3.5 w-3.5" /> : <RotateCwSquare aria-hidden className="h-3.5 w-3.5" />}
+              </button>
+            ))}
+          </span>
+        </span>
+      ) : (
+        image
+      )}
       {open && mounted
         ? createPortal(
-          <PhotoLightbox alt={alt} caption={caption} onClose={() => setOpen(false)} src={src} />,
+          <PhotoLightbox
+            alt={alt}
+            caption={caption}
+            onClose={() => setOpen(false)}
+            onTurn={rotatable ? turn : undefined}
+            src={src}
+            turns={rotatable ? turns : 0}
+          />,
           document.body,
         )
         : null}

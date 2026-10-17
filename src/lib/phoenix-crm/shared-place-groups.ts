@@ -27,6 +27,7 @@ import {
   type ValidationReviewFilters,
   type ValidationReviewOutcome,
 } from "@/lib/phoenix-crm/validation-review-filters";
+import type { ScheduleHeldBecause, ScheduleLegibility, ScheduleProblem } from "@/lib/phoenix-crm/schedule-rules";
 import type { ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 
 /**
@@ -43,6 +44,12 @@ export type SeatedTimetable = {
   verdict: "match" | "other_name" | "no_schedule" | "unjudged";
   scheduleText: string | null;
   hoursRead: string | null;
+  /** The recommendation's evidence (`place-check-advice.ts`): why, how legible, what was wrong. */
+  reason?: string | null;
+  legibility?: ScheduleLegibility | null;
+  problem?: ScheduleProblem | null;
+  /** Set when the scanner held the seating after its tries. */
+  heldBecause?: ScheduleHeldBecause | null;
 };
 
 export type SeatedCustomer = ValidationReviewFilterable & {
@@ -88,9 +95,18 @@ export type VenueGroup = {
 };
 
 function timetableOfReview(row: ValidationReviewRow): SeatedTimetable | null {
-  if (row.reason === "schedule_other_name") return { verdict: "other_name", scheduleText: row.signText, hoursRead: row.hoursRead };
-  if (row.reason === "schedule_missing") return { verdict: "no_schedule", scheduleText: row.signText, hoursRead: row.hoursRead };
-  return row.photoKind === "schedule" && row.signText ? { verdict: "unjudged", scheduleText: row.signText, hoursRead: row.hoursRead } : null;
+  const evidence = {
+    reason: row.evidence.checkReason,
+    legibility: row.evidence.legibility,
+    problem: row.evidence.problem,
+    heldBecause: row.evidence.heldBecause,
+  };
+  if (row.reason === "schedule_other_name") return { verdict: "other_name", scheduleText: row.signText, hoursRead: row.hoursRead, ...evidence };
+  if (row.reason === "schedule_missing") return { verdict: "no_schedule", scheduleText: row.signText, hoursRead: row.hoursRead, ...evidence };
+  // A scanner hold after three unreadable photographs carries no text at all, and is still a timetable verdict.
+  return row.photoKind === "schedule" && (row.signText || row.evidence.heldBecause)
+    ? { verdict: "unjudged", scheduleText: row.signText, hoursRead: row.hoursRead, ...evidence }
+    : null;
 }
 
 function filterableOf(row: ValidationReviewFilterable): ValidationReviewFilterable {
@@ -341,8 +357,23 @@ export function narrowVenueGroups(input: {
   });
 }
 
-/** A building that is itself held comes first, then one with a customer waiting, then everything else. */
+/**
+ * A building worth a look even with nothing open (owner, 2026-10-17: "a fucken chaos no timetables"):
+ * customers are seated in it and no timetable is on file, or a customer in use is one its timetable was
+ * never seen to name. A rejected building has nothing left to look at.
+ */
+export function venueHasProblem(group: Pick<VenueGroup, "venue" | "customers">): boolean {
+  if (group.venue.status === "retired") return false;
+  if (group.venue.seated > 0 && !group.venue.schedulePhotoPath) return true;
+  return group.customers.some((customer) => customer.state === "in_use" && customer.timetable?.verdict !== "match");
+}
+
+/**
+ * A building that is itself held comes first, then one with a customer waiting, then one with a
+ * problem nobody has decided on, then everything else.
+ */
 function urgencyOf(group: Pick<VenueGroup, "venue" | "customers">): number {
   if (group.venue.status === "held") return 0;
-  return venueNeedsDecision(group) ? 1 : 2;
+  if (venueNeedsDecision(group)) return 1;
+  return venueHasProblem(group) ? 2 : 3;
 }

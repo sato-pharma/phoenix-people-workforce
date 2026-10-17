@@ -48,13 +48,21 @@
  * not a gap: there was nothing to read. Nothing a rep sees changes (golden rule #1) — the message is
  * byte-for-byte the one she read before, and this row exists only so somebody can help her.
  */
-export type RefusedReason = "no_fix" | "rough" | "off_listing" | "blocked";
+/**
+ * 🔴 `timetable_unreadable` AND `timetable_missing` ARE THE ONLY TWO A REP IS TOLD ABOUT (owner,
+ * 2026-10-17: the polyclinic timetable is read on the spot "like a scanner", "3 tries then held to
+ * confirmation by admin"). The reader answered, and what it saw was not a readable timetable — a
+ * street, a floor, a board too far away to read. They carry the BUILDING (`shared_place_id`), because
+ * the tries are counted per rep, per building, per Cairo day, and the photograph's pointer. Never a
+ * position: both say nothing about where the rep stood.
+ */
+export type RefusedReason = "no_fix" | "rough" | "off_listing" | "blocked" | "timetable_unreadable" | "timetable_missing";
 export type RefusedSubject = "visit" | "place";
 /** Which permission the browser blocked. Only these two are capable of ending a capture. */
 export type BlockedPermission = "location" | "camera";
 
 /** Every reason the table's own CHECK allows, in the order it was taught them. */
-export const REFUSED_REASONS: readonly RefusedReason[] = ["no_fix", "rough", "off_listing", "blocked"];
+export const REFUSED_REASONS: readonly RefusedReason[] = ["no_fix", "rough", "off_listing", "blocked", "timetable_unreadable", "timetable_missing"];
 
 /**
  * The stored reason, read EXHAUSTIVELY.
@@ -185,6 +193,12 @@ export function refusalSentence(attempt: Pick<RefusedAttempt, "subjectKind" | "r
   }
   if (attempt.reason === "no_fix") {
     return "The phone sent no usable position at all — location permission off, or no fix yet.";
+  }
+  if (attempt.reason === "timetable_missing") {
+    return "The photo seating a customer in a polyclinic did not show the building's timetable, so the rep was asked to photograph it again. The third failed photo of the same building in one day is saved and held for the Super Admin.";
+  }
+  if (attempt.reason === "timetable_unreadable") {
+    return "The photo of the polyclinic's timetable could not be read — too far, blurred, glare or cut off — so the rep was asked to take it again. The third failed photo of the same building in one day is saved and held for the Super Admin.";
   }
   if (attempt.reason === "off_listing") {
     // Never the accuracy radius here: both readings were precise, and printing them would read as a

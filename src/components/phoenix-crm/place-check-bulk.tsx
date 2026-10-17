@@ -28,6 +28,7 @@ import { useRouter } from "next/navigation";
 import { messageOf } from "@/components/phoenix-crm/api";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { CrmButton, CrmCheck, CrmNote, crmTextareaClassName } from "@/components/phoenix-crm/ui";
+import type { PlaceCheckAdviceKind } from "@/lib/phoenix-crm/place-check-advice";
 import {
   VALIDATION_NOTE_LABEL,
   VALIDATION_REASON_REQUIRED,
@@ -67,6 +68,10 @@ export type RowPicks<Row> = {
   isPicked: (row: Row) => boolean;
   toggle: (row: Row, next: boolean) => void;
   pickAll: () => void;
+  /** Tick exactly the rows on screen that pass `test` — what the system's recommendation picks. */
+  pickWhere: (test: (row: Row) => boolean) => void;
+  /** The rows on screen that could be ticked, for counting what `pickWhere` would take. */
+  rows: readonly Row[];
   clear: () => void;
 };
 
@@ -98,6 +103,8 @@ export function useRowPicks<Row>(
       setTicked((current) => (next ? [...current.filter((each) => each !== id), id] : current.filter((each) => each !== id)));
     },
     pickAll: () => setTicked([...onScreen.keys()]),
+    pickWhere: (test) => setTicked([...onScreen.entries()].filter(([, row]) => test(row)).map(([id]) => id)),
+    rows: [...onScreen.values()],
     clear: () => setTicked([]),
   };
 }
@@ -117,11 +124,18 @@ export function BulkPick<Row>({ picks, row }: { picks: RowPicks<Row>; row: Row }
  */
 export function BulkDecideBar<Row>({
   actions,
+  adviceOf,
   kind = "signboard",
   nameOf,
   picks,
 }: {
   actions: ReadonlyArray<BulkAction<Row>>;
+  /**
+   * The system's recommendation per row (owner, 2026-10-17), so the bar can tick every row it
+   * recommends approving, or rejecting, in one press. Ticking decides nothing: the answer is still his
+   * own press of an action button, with the reason he picks.
+   */
+  adviceOf?: (row: Row) => PlaceCheckAdviceKind | null;
   /** Which photo the selection is about, so the pick-list offers only reasons true of it. */
   kind?: ValidationPhotoKind;
   /** How a row names itself, so a failure says which place it was. */
@@ -169,6 +183,11 @@ export function BulkDecideBar<Row>({
 
   if (picks.selectable === 0) return null;
 
+  // How many rows on screen the system recommends each way — the counts on the two quick picks.
+  const recommended = (want: PlaceCheckAdviceKind) => (adviceOf ? picks.rows.filter((row) => adviceOf(row) === want).length : 0);
+  const toApprove = recommended("approve");
+  const toReject = recommended("reject");
+
   return (
     <div className="min-w-0 space-y-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -178,6 +197,16 @@ export function BulkDecideBar<Row>({
         <CrmButton disabled={running !== null} onClick={() => picks.pickAll()} size="sm" variant="ghost">
           Pick all {picks.selectable}
         </CrmButton>
+        {adviceOf && toApprove > 0 ? (
+          <CrmButton disabled={running !== null} onClick={() => picks.pickWhere((row) => adviceOf(row) === "approve")} size="sm" variant="ghost">
+            Pick the {toApprove} the system recommends approving
+          </CrmButton>
+        ) : null}
+        {adviceOf && toReject > 0 ? (
+          <CrmButton disabled={running !== null} onClick={() => picks.pickWhere((row) => adviceOf(row) === "reject")} size="sm" variant="ghost">
+            Pick the {toReject} the system recommends rejecting
+          </CrmButton>
+        ) : null}
         {picked.length > 0 ? (
           <CrmButton disabled={running !== null} onClick={() => picks.clear()} size="sm" variant="ghost">
             Clear

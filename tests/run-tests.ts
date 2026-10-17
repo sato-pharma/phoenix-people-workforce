@@ -1909,6 +1909,10 @@ import { runPhoenixCrmPharmacyCallTests } from "./phoenix-crm-pharmacy-calls.tes
 import { runPhoenixCrmPharmacyVisitLoggedTests } from "./phoenix-crm-pharmacy-visit-logged.test.ts";
 import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-readings.test.ts";
 import { runPhoenixCrmRefusedReadingsBoardTests } from "./phoenix-crm-refused-readings-board.test.ts";
+import { runPhoenixCrmTimetableScannerTests } from "./phoenix-crm-timetable-scanner.test.ts";
+import { runPhoenixCrmPlaceCheckAdviceTests } from "./phoenix-crm-place-check-advice.test.ts";
+import { runPhotoRotationTests } from "./photo-rotation.test.ts";
+import { runPhoenixCrmPlaceCheckScorecardTests } from "./phoenix-crm-place-check-scorecard.test.ts";
 import { runPhoenixCrmTouchTrailTests } from "./phoenix-crm-touch-trail.test.ts";
 import { runPhoenixCrmTouchTrailReaderTests } from "./phoenix-crm-touch-trail-reader.test.ts";
 import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
@@ -6913,6 +6917,26 @@ await runTest(
 await runTest(
   "the Phoenix CRM refused-readings board, the SFE's view of who the location check turned away (owner, 2026-10-03: \"build the refused readings view for the SFE\", the night the table caught its first real case — nine refusals in 67 seconds from one rep whose phone was fine, and nothing but SQL could read them. Pinned: a refusal reads in plain English with BOTH a place's readings and the line it missed, a reading the phone never sent reads 'not reported' and never 0 m; 'got through afterwards' is strict — a save before the refusal proves nothing, another rep's, customer's or kind's does not count, ids compare upper-cased, and a refusal tied to no customer says so; one line per rep with the rep who cannot work before the one who got through, nine retries on one customer being one blocked customer and a later refusal never undoing a save; the audience is the Super Admin and the SFE Manager with a 404 before any database call; the phone's mock-location answer is named in the select only for the Super Admin; only the recorder and this reader name the table; the page asks gate one before the organogram, acts on nothing, fits the screen with a fixed-layout table and phone cards from shared components, uses Cairo time and no accusing words; and its card is in the CRM Data Quality band for exactly the two readers)",
   runPhoenixCrmRefusedReadingsBoardTests,
+);
+
+await runTest(
+  "the Phoenix CRM polyclinic TIMETABLE SCANNER (owner, 2026-10-17: read the timetable on the spot \"like a scanner\", never accept it and call it unreadable afterwards, \"3 tries then held to confirmation by admin\", and a readable board without the name is saved, held, and the rep told why. Measured that morning: 0 of 70 seated customers passed, 45 unreadable photos let through as matches. Pinned: every verdict × every try — a match saves, a clear board without him holds at once, not-a-timetable and unreadable are refused with what to fix and 'Try N of 3' until the third failure is saved and held; a lost call, a missing key or missing bytes never refuse and never hold; 'not on it' is said only of a board the reader could see all of; both seating paths go through one scanner that FILES the refusal before refusing and scans before anything is written; the rep's screens open the camera on a retake and print the hold sentence; the reader has no hidden SDK retry and reuses a stored reading of the same board; and the counter is per building, rep, Cairo day and world)",
+  runPhoenixCrmTimetableScannerTests,
+);
+
+await runTest(
+  "the Phoenix CRM place checks' SYSTEM RECOMMENDATION on every validation, with its reason (owner, 2026-10-17: \"add system recommendations to approve or no on every validation\", then \"and the reason of system recommendation\"). Pinned: a sign or timetable that names the customer recommends approving and quotes what was read; one read clearly naming somebody else, or plainly no sign or no timetable, recommends rejecting AND opens the Reject on that reason; a photo that could not be read recommends rejecting or looking but NEVER pre-picks a reason, and a board read only in part is always a look, never a reject; a Google hold is answered by the sign at the door with Google named beside it in plain metres; a seated customer is judged on the timetable, a polyclinic on its building's name; no reason is a code, an ellipsis or a banned screen word; every screen draws it only on the Super Admin's board; and the bulk bar ticks the recommended rows without ever answering them",
+  runPhoenixCrmPlaceCheckAdviceTests,
+);
+
+await runTest(
+  "a Place checks photo turns a quarter at a time and still fits its frame (owner, 2026-10-17: \"make me able to rotate the picture of validation in place checks bec some timetables are rotated and i cannot read\"). Pinned: on its side the photo is sized to the frame's height by its width, whole and never cropped, and the full-screen view swaps its limits the same way; the turn follows the photo into the full-screen view; a turn button fires nothing on the card under it; the stored photograph is never changed; and every Place checks photograph offers the turn while no other screen does — a rep's screens stay exactly as they were",
+  runPhotoRotationTests,
+);
+
+await runTest(
+  "the Phoenix CRM place checks' REP SCORECARD — each rep's captures on one line, worst first (owner, 2026-10-17: \"is this a report that really shows me data? or it's a bunch of chaos\"; the board drew every row and summed nothing, 104,455 px tall on its Clinics tab). Pinned: every place sits in exactly one of six columns so a line adds up to its own Places figure; a place waiting for a decision is counted there once, never again among the places in use, and a place listed twice is one place; a customer sent back sits beside the sum; a seated customer is judged on the timetable and never on a signboard reading; a lost call is 'not read', never a bad photograph; reps sort by the SHARE of photographs that went wrong, then the count, then the name; the total reads every count a line carries; the phone cards come before the table and the header is mapped from the same columns; a manager's line says 'Being checked', never 'Waiting for you'; and tapping a rep narrows the whole board through its own Rep filter",
+  runPhoenixCrmPlaceCheckScorecardTests,
 );
 
 await runTest(

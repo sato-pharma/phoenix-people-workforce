@@ -31,7 +31,9 @@ import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
+import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, CrmTable, crmTdClassName, crmTextareaClassName, crmThClassName } from "@/components/phoenix-crm/ui";
+import { adviseOnTimetable } from "@/lib/phoenix-crm/place-check-advice";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import type { SeatedCustomer, SeatedTimetable } from "@/lib/phoenix-crm/shared-place-groups";
 import { VALIDATION_NOTE_LABEL, VALIDATION_REASON_REQUIRED, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
@@ -57,9 +59,8 @@ function defaultReason(customer: SeatedCustomer): ValidationRefusalReason {
  * the timetable does not name him when it may have.
  */
 function evidenceReason(customer: SeatedCustomer): ValidationRefusalReason | "" {
-  if (customer.timetable?.verdict === "other_name") return "schedule_other_name";
-  if (customer.timetable?.verdict === "no_schedule") return "schedule_missing";
-  return "";
+  // The recommendation's own refusal, which is set ONLY on a confident reading — the same rule, one home.
+  return adviseOnTimetable(customer.timetable).refusal ?? "";
 }
 
 /** Whether a decision can be made on this customer's review row — the route that keeps the evidence. */
@@ -130,8 +131,8 @@ function Timetable({ customer, venueTimetablePath }: { customer: SeatedCustomer;
         </p>
       ) : null}
       {customer.state === "rejected" && customer.reasonLabel ? <p className="break-words text-xs text-slate-600">The rep was told: {customer.reasonLabel}.</p> : null}
-      {own ? <CrmPhotoThumb alt={`Timetable photo for ${customer.customerName}`} className="h-28 w-28" path={own} /> : null}
-      {sameAsBuilding ? <p className="break-words text-xs text-slate-500">The same photograph as the building's timetable.</p> : null}
+      {own ? <CrmPhotoThumb alt={`Timetable photo for ${customer.customerName}`} className="h-32 w-32" path={own} rotatable /> : null}
+      {sameAsBuilding ? <p className="break-words text-xs text-slate-500">The same photograph as the building&apos;s timetable.</p> : null}
     </div>
   );
 }
@@ -381,6 +382,9 @@ function LastColumn({ customer, mode, noteIndex, scope }: { customer: SeatedCust
   const key = customer.placeId ? placeNoteSubjectKey("place", customer.placeId) : null;
   return (
     <div className="min-w-0 space-y-2">
+      {/* The system's recommendation and its reason (owner, 2026-10-17) — the Super Admin's board only,
+          and never on a customer already sent back, where there is nothing left to decide. */}
+      {mode === "team" || customer.state === "sent_back" ? null : <SystemAdvice advice={adviseOnTimetable(customer.timetable)} />}
       {mode === "team" ? null : <Decision customer={customer} scope={scope} />}
       {customer.placeId && key ? (
         <PlaceCheckNotes
