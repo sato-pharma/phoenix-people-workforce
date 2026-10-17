@@ -88,6 +88,7 @@ import type { PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-cr
 import type { UnplannedVisitStatus } from "@/lib/phoenix-crm/unplanned-rules";
 import { sharedPlaceRefusalRepText, validationRefusalRepText } from "@/lib/phoenix-crm/validation-feedback";
 import type { VisitAskKind } from "@/lib/phoenix-crm/visit-ask-rules";
+import { RECORDED_VISIT_DECISION_MANAGER_LEVELS } from "@/lib/phoenix-crm/visit-recording-rules";
 
 export const PHOENIX_CRM_NOTIFICATION_MODULE = "phoenix_crm";
 export const PHOENIX_CRM_NOTIFICATION_CATEGORY = "phoenix_crm";
@@ -285,6 +286,23 @@ export type PhoenixCrmNotice =
        * the phone's clock — that is the whole reason the save returns it.
        */
       capturedAt: string;
+    }
+  | {
+      /**
+       * The Administrator approved or refused a recorded visit, with his comment (owner, 2026-10-17:
+       * "reject or approve with a comment and this comment goes email and telegram to the rep and his
+       * manager and his manager of manager"). Told to the rep and the two manager seats nearest above him.
+       */
+      kind: "recorded_visit_decided";
+      org: OrgIndex;
+      seat: OrgSeat;
+      visitId: string;
+      repHrId: string;
+      customerName: string;
+      visitDate: string;
+      decision: "approved" | "refused";
+      deciderHrId: string;
+      note: string | null;
     }
   | {
       kind: "visit_ask";
@@ -832,6 +850,77 @@ export function firstVisitDeliveries(
   ];
 }
 
+/**
+ * Who hears the Administrator's decision on a recorded visit, and in what words. Pure, so who it reaches
+ * and what it says are pinned by a test (tests/phoenix-crm-visit-recording.test.ts).
+ *
+ * 🔒 THE REP, HIS MANAGER AND HIS MANAGER'S MANAGER (owner, 2026-10-17) — the two nearest occupied manager
+ * seats of `managerChain`, so a vacant district passes upward exactly as it does for a plan, and the chain
+ * never reaches the CEO. The decider is never told his own decision, and nobody is named twice.
+ *
+ * 🔴 THE REP'S WORDS NAME A ROLE, NEVER A CHECK (Golden Rule #1): "the Administrator approved your visit".
+ * They do not say the visit was recorded, listened to or judged on anything — what he reads is the
+ * decision and the comment, as his own visit list already shows the decision.
+ */
+export function recordedVisitDecisionDeliveries(
+  notice: Extract<PhoenixCrmNotice, { kind: "recorded_visit_decided" }>,
+  names: PeopleNames,
+): Delivery[] {
+  const approved = notice.decision === "approved";
+  const repKey = personKey(notice.repHrId);
+  const deciderKey = personKey(notice.deciderHrId);
+  const taken = new Set<string>(deciderKey ? [deciderKey] : []);
+  const managers: string[] = [];
+  for (const member of managerChain(notice.org, notice.seat.seatId).slice(0, RECORDED_VISIT_DECISION_MANAGER_LEVELS)) {
+    const key = personKey(member.hrId);
+    if (!key || key === repKey || taken.has(key)) continue;
+    taken.add(key);
+    managers.push(key);
+  }
+
+  const day = formatPhoenixLongDate(notice.visitDate);
+  const customer = bidiIsolate(notice.customerName);
+  // The comment is his words, so it is isolated like the customer's name: Arabic inside English text.
+  const comment = notice.note ? ` Comment: ${bidiIsolate(notice.note)}` : "";
+  const prefix = phoenixCrmVisitNoticeKeyPrefix(notice.visitId);
+  const deliveries: Delivery[] = [];
+
+  if (repKey && repKey !== deciderKey) {
+    deliveries.push({
+      recipients: [repKey],
+      eventType: "recorded_visit_decided",
+      title: `${approved ? "Approved" : "Not approved"}: your visit to ${notice.customerName}`,
+      message: approved
+        ? `The Administrator approved your visit to ${customer} on ${day}. It counts.${comment}`
+        : `The Administrator did not approve your visit to ${customer} on ${day}, so it does not count.${comment}`,
+      tab: "visits",
+      recordId: notice.visitId,
+      idempotencyKey: `${prefix}recorded:${notice.decision}:rep`,
+      subjectHrId: notice.repHrId,
+    });
+  }
+  if (managers.length > 0) {
+    const rep = nameOf(names, notice.repHrId, "A rep");
+    deliveries.push({
+      recipients: managers,
+      eventType: "recorded_visit_decided",
+      title: `${approved ? "Approved" : "Not approved"}: ${rep}'s visit to ${notice.customerName}`,
+      message: approved
+        ? `The Administrator approved ${rep}'s visit to ${customer} on ${day} (${territoryName(notice.seat)}). It counts.${comment}`
+        : `The Administrator did not approve ${rep}'s visit to ${customer} on ${day} (${territoryName(notice.seat)}), so it does not count.${comment}`,
+      tab: "team",
+      recordId: notice.visitId,
+      idempotencyKey: `${prefix}recorded:${notice.decision}:managers`,
+      subjectHrId: notice.repHrId,
+    });
+  }
+  return deliveries;
+}
+
+async function describeRecordedVisitDecided(notice: Extract<PhoenixCrmNotice, { kind: "recorded_visit_decided" }>): Promise<Delivery[]> {
+  return recordedVisitDecisionDeliveries(notice, await loadPeopleNames([notice.repHrId]));
+}
+
 async function describeDayStart(notice: Extract<PhoenixCrmNotice, { kind: "day_start" }>): Promise<Delivery[]> {
   const [sfe, names] = await Promise.all([sfeManagerHrIds(), loadPeopleNames([notice.repHrId])]);
   return dayStartDeliveries(notice, names, sfe);
@@ -1084,6 +1173,7 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
   if (notice.kind === "manager_plan") return describeManagerPlan(notice);
   if (notice.kind === "double_visit_request") return describeDoubleVisitRequest(notice);
   if (notice.kind === "first_visit") return describeFirstVisit(notice);
+  if (notice.kind === "recorded_visit_decided") return describeRecordedVisitDecided(notice);
   if (notice.kind === "day_start") return describeDayStart(notice);
   if (notice.kind === "visit_ask") return describeVisitAsk(notice);
 
@@ -1541,6 +1631,9 @@ function activityMirrorLine(notice: PhoenixCrmNotice, names: PeopleNames): Mirro
   switch (notice.kind) {
     case "first_visit":
       return null;
+    // The rep and the two managers above him are told natively; the Administrator's decision is not a feed line.
+    case "recorded_visit_decided":
+      return null;
     // The district manager's plan is decided by the managers above him: nothing to mirror to them.
     case "manager_plan":
       return null;
@@ -1850,7 +1943,7 @@ export function buildActivityMirrorDelivery(
 
 /** Resolve the people and org the mirror needs, then build its one delivery (null when nobody is left). */
 async function activityMirrorDelivery(notice: PhoenixCrmNotice, nativeDeliveries: Delivery[]): Promise<Delivery | null> {
-  if (notice.kind === "first_visit" || notice.kind === "manager_plan") return null;
+  if (notice.kind === "first_visit" || notice.kind === "manager_plan" || notice.kind === "recorded_visit_decided") return null;
   const org = (notice as { org?: OrgIndex }).org ?? (await loadPhoenixCrmOrg());
   const [sfe, names] = await Promise.all([sfeManagerHrIds(), loadPeopleNames(activityMirrorPeopleIds(notice))]);
   const nativeRecipientKeys = new Set(

@@ -458,7 +458,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
 
   // ── 5. No email, and the Hub counts each week once ───────────────────────────────────────────
 
-  assert.deepEqual(PHOENIX_CRM_EMAIL_EVENT_TYPES, [], "Phoenix CRM emails nobody");
+  assert.deepEqual(PHOENIX_CRM_EMAIL_EVENT_TYPES, ["recorded_visit_decided"], "the district manager's plan emails nobody — the one email exception is the recorded-visit decision");
   assert.ok(PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES.includes("manager_plan_edit_expired"), "the expired ask goes in-app and by Telegram only");
   const policy = source("src/lib/notifications/policy.ts");
   const managerPolicies = policy.split("\n").filter((line) => /"phoenix_crm\.manager_(plan|list)_[a-z_]+":/.test(line));

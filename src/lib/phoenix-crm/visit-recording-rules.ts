@@ -123,8 +123,15 @@ export function isRecordingReviewStatus(value: unknown): value is RecordingRevie
 /** The Visit Recording page, where the Administrator approves or refuses a recorded visit. */
 export const VISIT_RECORDING_ADMIN_PATH = "/admin/field-crm/visit-recording";
 
-/** The refusal note's ceiling — the database's own (500). */
+/** The decision note's ceiling — the database's own (500). A refusal needs one; an approval may carry one. */
 export const RECORDING_REVIEW_NOTE_MAX = 500;
+
+/**
+ * How many manager seats above the rep hear the Administrator's decision, with his comment (owner,
+ * 2026-10-17: "the rep and his manager and his manager of manager"). Counted along `managerChain`, so a
+ * vacant seat passes upward and the chain never reaches the CEO.
+ */
+export const RECORDED_VISIT_DECISION_MANAGER_LEVELS = 2;
 
 /**
  * What the rep reads once a recorded visit is saved, in the owner's own words (2026-10-16: "show here ur

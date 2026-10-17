@@ -66,6 +66,13 @@ const FORMERLY_EMAILED_EVENT_TYPES = [
   "validation_not_confirmed",
 ];
 
+/**
+ * The ONE notice that emails (owner, 2026-10-17: the Administrator's approval or refusal of a recorded visit, with his
+ * comment, "goes email and telegram to the rep and his manager and his manager of manager"). It is sent by the
+ * notifier like the others, so the sender scan below must find it, but it is checked on its own: it asks for email.
+ */
+const EMAILING_EVENT_TYPES = ["recorded_visit_decided"];
+
 const EVENT_TYPES = [
   // The CNS daily forecast (owner, 2026-10-01): the district manager hears it is in — IN-APP ONLY.
   "forecast_sent",
@@ -125,7 +132,11 @@ const PUSH_BLOCKED_EVENT_TYPES = [
 ];
 
 export function runPhoenixCrmEmailBlockTests() {
-  assert.deepEqual([...PHOENIX_CRM_EMAIL_EVENT_TYPES], [], "NO Phoenix CRM notice may email — the allowlist is empty (owner, 2026-10-13)");
+  assert.deepEqual(
+    [...PHOENIX_CRM_EMAIL_EVENT_TYPES],
+    [...EMAILING_EVENT_TYPES],
+    "exactly ONE Phoenix CRM notice may email — the Administrator's decision on a recorded visit (owner, 2026-10-17); every other stays email-free since 2026-10-13",
+  );
   assert.deepEqual(
     [...PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES].sort(),
     // crm_daily_digest, crm_visit_rollup and crm_fraud_scan are the cron-only notices here — each
@@ -241,7 +252,7 @@ export function runPhoenixCrmEmailBlockTests() {
     for (const line of `${notify}\n${reminder}\n${nudge}\n${placeCheck}`.split("\n").filter((text) => /^\s*eventType: /.test(text))) {
       for (const match of line.matchAll(/"([a-z_]+)"/g)) sent.add(match[1]);
     }
-    assert.deepEqual([...sent].sort(), [...EVENT_TYPES].sort(), "the notices this test checks are exactly the notices the module sends");
+    assert.deepEqual([...sent].sort(), [...EVENT_TYPES, ...EMAILING_EVENT_TYPES].sort(), "the notices this test checks are exactly the notices the module sends");
 
     // Every notice opens a tab the page really has, on a page that exists.
     const app = readFileSync("src/components/phoenix-crm/phoenix-crm-app.tsx", "utf8");

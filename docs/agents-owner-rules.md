@@ -8532,3 +8532,18 @@ moved with it.
 the `anti_infective` spelling this area's own `au.line_area_map` row carries matches nothing. Every
 set-level assertion passed (they called the helper with the underscore directly) while the
 end-to-end split still divided 290 packs 145/145.
+
+## One email returns — the Administrator's decision on a recorded visit — owner, 2026-10-17
+
+His words: *"i want to be able to reject or approve with a comment and this comment goes email and
+telegram to the rep and his manager and his manager of manager."* On `/admin/field-crm/visit-recording`.
+
+It is the first exception to "Phoenix CRM never emails" (2026-10-13, above), and it is his word, which
+is what that rule asks of any exception. `PHOENIX_CRM_EMAIL_EVENT_TYPES` in
+`src/lib/notifications/phoenix-crm-channel-guard.ts` holds exactly `recorded_visit_decided`, its policy row
+asks for in-app, email, Telegram and the phone, and `tests/phoenix-crm-email-block.test.ts` pins the list to
+that one entry so a second is a visible change. Every other Phoenix CRM notice is unchanged.
+
+Audience: the rep, his manager and his manager's manager (the two nearest occupied manager seats).
+Wording names a role and the decision, never a recording or a check (Golden Rule #1). Account of the
+feature: `docs/phoenix-crm-visit-recording.md`, "His decision carries a comment".
