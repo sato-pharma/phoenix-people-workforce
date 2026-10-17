@@ -14,7 +14,7 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getPayslipPortalData } from "@/lib/employee-portal/service";
-import { NO_PHOENIX_CRM_ENTRIES, phoenixCrmSidebarEntries } from "@/lib/phoenix-crm/server/page";
+import { NO_PHOENIX_CRM_ENTRIES, phoenixCrmSidebarEntries } from "@/lib/phoenix-crm/server/sidebar-entries";
 
 export const dynamic = "force-dynamic";
 

@@ -77,7 +77,7 @@ export function runPhoenixCrmDailyForecastTests(): void {
     // never offer a door the tab then refuses (owner, 2026-10-01: "put it under forecast in sidebar").
     const overview = source("src/lib/phoenix-crm/server/overview.ts");
     assert.match(overview, /forecast: forecastIsOffered\(viewer\),/, "the tab is offered by the shared gate");
-    const entryGate = source("src/lib/phoenix-crm/server/page.ts");
+    const entryGate = source("src/lib/phoenix-crm/server/sidebar-entries.ts");
     assert.match(
       entryGate,
       /forecast: crm && forecastIsOffered\(viewer\)/,

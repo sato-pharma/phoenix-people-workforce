@@ -9,7 +9,7 @@ import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/naviga
 import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
-import { NO_PHOENIX_CRM_ENTRIES, phoenixCrmSidebarEntries } from "@/lib/phoenix-crm/server/page";
+import { NO_PHOENIX_CRM_ENTRIES, phoenixCrmSidebarEntries } from "@/lib/phoenix-crm/server/sidebar-entries";
 import { hasInterviewCalendarAccess } from "@/lib/recruitment/interview-calendar";
 
 export const runtime = "nodejs";

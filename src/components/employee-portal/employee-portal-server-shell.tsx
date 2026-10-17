@@ -17,7 +17,7 @@ import { phoenixNativeClientUserAgentMarker } from "@/lib/auth/native-session";
 import { NATIVE_WEB_APP_SHELL_COOKIE } from "@/lib/auth/native-web-handoff";
 import { PATH_HEADER } from "@/lib/navigation/shell-headers";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
-import { NO_PHOENIX_CRM_ENTRIES, phoenixCrmSidebarEntries } from "@/lib/phoenix-crm/server/page";
+import { NO_PHOENIX_CRM_ENTRIES, phoenixCrmSidebarEntries } from "@/lib/phoenix-crm/server/sidebar-entries";
 import { hasInterviewCalendarAccess } from "@/lib/recruitment/interview-calendar";
 
 type EmployeePortalServerShellProps = {

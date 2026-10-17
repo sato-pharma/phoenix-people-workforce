@@ -300,7 +300,7 @@ export function runPhoenixCrmDoubleVisitRequestsTests(): void {
   assert.match(registryNav, /href: "\/employee-portals\/double-visit-requests", icon: UsersRound, flags: \["showDoubleVisitRequestsTab"\]/);
   assert.match(read("src/lib/employee-portal/native-module-directory.ts"), /"\/employee-portals\/double-visit-requests": \{ icon: "people-outline", section: "Phoenix CRM" \}/);
   assert.match(read("src/lib/employee-portal/navigation.ts"), /showDoubleVisitRequestsTab: hasDoubleVisitRequests === true/);
-  assert.match(read("src/lib/phoenix-crm/server/page.ts"), /doubleVisitRequests: doubleVisitReportAudience\(viewer\) !== null/, "the row asks the same function the page and the routes ask");
+  assert.match(read("src/lib/phoenix-crm/server/sidebar-entries.ts"), /doubleVisitRequests: doubleVisitReportAudience\(viewer\) !== null/, "the row asks the same function the page and the routes ask");
   assert.ok(existsSync("app/employee-portals/double-visit-requests/loading.tsx"), "the portal route has its skeleton");
   assert.ok(existsSync("app/employee-portals/double-visit-requests/page.tsx"));
   assert.ok(existsSync("app/(admin)/admin/phoenix-crm/double-visit-requests/page.tsx"), "the Super Admin, the CEO and the SFE Manager read it on the admin shell");

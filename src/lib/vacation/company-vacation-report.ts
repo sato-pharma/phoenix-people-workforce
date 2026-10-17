@@ -39,6 +39,7 @@
 
 import { unstable_cache } from "next/cache";
 
+import { COMPANY_VACATION_REPORT_CACHE_TAG } from "@/lib/dashboard/invalidation";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import {
@@ -74,7 +75,8 @@ const HISTORICAL_REVALIDATE_SECONDS = 6 * 60 * 60;
 /** Exported so the approve-and-deduct route (app/api/vacation/company-report/approve) can bust
  * this cache immediately after creating a real vacation_requests row — otherwise a newly
  * approved CRM Signal date could sit invisible in the historical cache for up to 6h. */
-export const COMPANY_VACATION_REPORT_CACHE_TAG = "company-vacation-report";
+// Declared as a bare string in dashboard/invalidation.ts (its comment says why) and re-exported here.
+export { COMPANY_VACATION_REPORT_CACHE_TAG };
 const CACHE_TAG = COMPANY_VACATION_REPORT_CACHE_TAG;
 
 /**
