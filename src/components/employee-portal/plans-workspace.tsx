@@ -169,7 +169,7 @@ const dayModeOptions = [
 
 const trainingFormatOptions = ["Zoom", "Physical", "Other"] as const;
 
-const statusLabels: Record<EmployeePlanStatus, string> = {
+export const statusLabels: Record<EmployeePlanStatus, string> = {
   cancelled: "Cancelled",
   ceo_approved: "CEO approved",
   ceo_rejected: "CEO rejected",
@@ -452,7 +452,7 @@ function VirtualList<T>({
 // ---------------------------------------------------------------------------
 // F5 — PlanDecisionTimeline: renders the full decision history of a plan.
 // ---------------------------------------------------------------------------
-function PlanDecisionTimeline({ decisions }: { decisions: EmployeePlanDecision[] }) {
+export function PlanDecisionTimeline({ decisions }: { decisions: EmployeePlanDecision[] }) {
   if (decisions.length === 0) return null;
   return (
     <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
@@ -662,7 +662,7 @@ function dateRange(startDate: string, endDate: string) {
 // plan row's `activity_date`, a `date` column), which `new Date` parses as UTC midnight. UTC here is
 // CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset. None of
 // these is an instant — do not "fix" them to Cairo.
-function formatDate(value: string) {
+export function formatDate(value: string) {
   return new Intl.DateTimeFormat("en", {
     day: "2-digit",
     month: "short",
@@ -685,7 +685,7 @@ function formatMonthYear(value: string) {
   }).format(new Date(`${value}T00:00:00Z`));
 }
 
-function formatDayName(value: string) {
+export function formatDayName(value: string) {
   return new Intl.DateTimeFormat("en", {
     weekday: "short",
     timeZone: "UTC",
@@ -894,7 +894,7 @@ function planCanEdit(plan: EmployeePlan | null) {
   );
 }
 
-function statusTone(status: EmployeePlanStatus) {
+export function statusTone(status: EmployeePlanStatus) {
   if (status.includes("rejected")) return "border-red-200 bg-red-50 text-red-700";
   if (status.includes("returned")) return "border-amber-200 bg-amber-50 text-amber-700";
   if (status === "details_requested") return "border-orange-300 bg-orange-50 text-orange-700";

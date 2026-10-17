@@ -192,9 +192,16 @@ seat holder being charged for a plan he was not allowed to file. When it is true
 
 - **The legacy write paths refuse him.** `createEmployeePlan` and `updateEmployeePlan` refuse, and
   `canSubmitPlans` is false.
-- **His navigation changes.** He loses the Plans tab and keeps the Planning Calendar.
-- **The old address redirects.** `/employee-portals/plans` without `?plan=` sends him to the Phoenix
-  CRM Plan tab. A `?plan=` deep link still opens an old plan.
+- **His Plans tab becomes his history** (owner, 2026-10-17: "make it unhidden, but make them not able
+  to submit … only able to see their historical plans, which they submitted on the old module"). The
+  tab stays, with the Planning Calendar. `/employee-portals/plans` opens `PlansHistory`: every plan he
+  filed on the old form, newest week first, filtered All / Weekly / Monthly, each opening to its days
+  and its decision history. It has no field and no button that writes.
+- **Nothing on the old form writes for him.** Besides create and update, `cancelEmployeePlan`,
+  `requestEditEmployeePlan` and `submitVisitDetails` refuse him too, so a stale page or a hand-built
+  request cannot reopen a plan. His history is loaded by `loadOwnPlanRows`, so an old plan outside the
+  company-wide 250-plan window is still on it.
+- **A link to someone else's plan still opens the review workspace** for the approver it was sent to.
 
 Plans already filed stay readable and decidable.
 
