@@ -393,6 +393,8 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   // ── The group: the building's sign and timetable, then the customers behind it ────────────────
   const list = read("src/components/phoenix-crm/shared-place-list.tsx");
   assert.ok(list.includes("row.schedulePhotoPath") && list.includes("Timetable photo for"), "the building's own timetable photograph is on the board");
+  const rows = read("src/components/phoenix-crm/shared-place-customers.tsx");
+  assert.ok(rows.includes("const own = customer.photoPath;") && !/photoPath !== venueTimetablePath/.test(rows), "🔴 a customer's OWN photograph is always on their row — the checker's 'unreadable' and 'no timetable' are judged by eye, never hidden because it matches the building's");
   assert.ok(list.includes("Sign photo for"), "beside the sign on its door");
   assert.ok((list.match(/<SeatedCustomers/g) ?? []).length === 2, "the customers are drawn under their building on the phone and on the desktop");
   assert.ok(list.includes('layout="cards"') && list.includes('layout="table"'), "once per screen size, so a label points at the control the reader can see");

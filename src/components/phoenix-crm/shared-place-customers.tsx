@@ -92,7 +92,10 @@ function Who({ customer, mode }: { customer: SeatedCustomer; mode: PlaceCheckNot
 }
 
 function Timetable({ customer, venueTimetablePath }: { customer: SeatedCustomer; venueTimetablePath: string | null }) {
-  const own = customer.photoPath && customer.photoPath !== venueTimetablePath ? customer.photoPath : null;
+  // The photograph THIS customer's rep took is always on their row — what the checker called unreadable or
+  // empty must be seen with his own eyes, and it can be the very photograph the building shows above.
+  const own = customer.photoPath;
+  const sameAsBuilding = own !== null && own === venueTimetablePath;
   if (customer.state === "sent_back") {
     return (
       <div className="min-w-0 space-y-0.5 text-sm text-slate-700">
@@ -127,7 +130,8 @@ function Timetable({ customer, venueTimetablePath }: { customer: SeatedCustomer;
         </p>
       ) : null}
       {customer.state === "rejected" && customer.reasonLabel ? <p className="break-words text-xs text-slate-600">The rep was told: {customer.reasonLabel}.</p> : null}
-      {own ? <CrmPhotoThumb alt={`Timetable photo for ${customer.customerName}`} path={own} /> : null}
+      {own ? <CrmPhotoThumb alt={`Timetable photo for ${customer.customerName}`} className="h-28 w-28" path={own} /> : null}
+      {sameAsBuilding ? <p className="break-words text-xs text-slate-500">The same photograph as the building's timetable.</p> : null}
     </div>
   );
 }
