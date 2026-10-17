@@ -180,7 +180,7 @@ function checkScreen(): void {
   assert.ok(screen.includes("placesText(score.places)") && screen.includes("placesText(total.places)"), "the place count sits under each name");
   // The phone draws the table's "Every rep" line too: the same rows, never fewer facts.
   const cards = screen.slice(screen.indexOf("<CrmCardsOnPhone>"), screen.indexOf("</CrmCardsOnPhone>"));
-  assert.ok(cards.includes("<ScoreFacts columns={columns} score={total} />"), "the phone cards end on the Every rep total");
+  assert.ok(cards.includes('<ScoreFacts columns={columns} onOpen={onOpen} rep="" score={total} />'), "the phone cards end on the Every rep total");
   assert.ok(screen.includes('mode === "team" ? "Being checked" : "Waiting for you"'), "🔴 a manager's line never says a decision waits on him");
   assert.ok(screen.includes("const FIRST_REPS = 10;") && screen.includes("Show every rep"), "ten reps, then the rest on request");
   assert.doesNotMatch(screen, /\brounded-(?!none\b)|\boverflow-x-auto\b|\btruncate\b|…/, "square, no sideways scroll, no ellipsis");
@@ -193,8 +193,58 @@ function checkScreen(): void {
   assert.ok(!/useState[^\n]*pickedRep/.test(screen), "the scorecard holds no rep of its own");
 }
 
+/**
+ * 🔴 A COUNT OPENS ITS PHOTOGRAPHS (owner, 2026-10-17: "don't put for me non-readable … make me see what is
+ * the unreadable. The photos, I must be able to see the photos"). What would break silently: a count that
+ * reads as a link and lands on the wrong tab, on every rep instead of this one, or on a list whose outcome
+ * selector hides what was counted; and the photo shrinking back to a square nobody can read.
+ */
+function checkCountsOpenTheirPhotos(): void {
+  const screen = read("src/components/phoenix-crm/place-check-scorecard.tsx");
+  // Every count is drawn through `Count`, on the table and on the phone alike.
+  assert.equal((screen.match(/<Count column=\{/g) ?? []).length, 3, "the phone facts, a single-count cell and each line of a merged cell");
+  assert.ok(!/\{valueOf\(score, (?:only|column)\)\}\s*<\/(?:dd|td)>/.test(screen), "no count is drawn bare beside the button");
+  // The place count and Confirmed open nothing; every other count opens only when it holds a place.
+  const target = screen.slice(screen.indexOf("function targetOf"), screen.indexOf("function Count"));
+  for (const key of ["notReadable", "wrongPhoto", "anotherName", "notRead", "waiting", "sentBack"]) {
+    assert.ok(target.includes(`case "${key}":`), `${key} opens its rows`);
+  }
+  assert.ok(!/case "(?:places|confirmed)":/.test(target), "the place count and Confirmed are plain numbers");
+  assert.ok(target.includes("score[column.key] > 0 ? column.key : null") && target.includes('score.seated > 0 ? "timetable" : null'), "a zero opens nothing");
+  assert.ok(screen.includes('<ScoreFacts columns={columns} onOpen={onOpen} rep={score.repName} score={score} />'), "a rep's count opens that rep's rows");
+  assert.ok(screen.includes('onOpen={onOpen} rep="" score={total} total'), "the Every rep line opens every rep's");
+
+  const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  assert.ok(board.includes("onOpen={openScore}"), "the board answers the scorecard's counts");
+  const place = board.slice(board.indexOf("function placeOfTarget"), board.indexOf("function filterableReopened"));
+  assert.match(place, /case "waiting":\s*return \{ view: "needs", chip: null \}/, "a place waiting is on Needs you");
+  assert.match(place, /case "sentBack":\s*return \{ view: "history", chip: null \}/, "a customer sent back is in History");
+  assert.match(place, /case "timetable":\s*return \{ view: "polyclinics", chip: null \}/, "the timetable count is the buildings");
+  assert.match(place, /default:\s*return \{ view: "unconfirmed", chip: target \}/, "a photo problem is its own narrowing of Not confirmed");
+  const open = board.slice(board.indexOf("const openScore"), board.indexOf("<PlaceCheckScorecard"));
+  assert.ok(open.includes('setFilters((current) => ({ ...current, rep, outcome: "all" }))'), "🔴 the rep is set, and the outcome cleared, so the list holds what was counted");
+  assert.ok(open.includes("if (place.chip) setChip(place.chip);") && open.includes("selectView(place.view);"), "and the tab and narrowing follow");
+  // A seated customer is counted on the scorecard but drawn on his building's card — named, never dropped.
+  assert.ok(board.includes("seatedInChip > 0 ?") && board.includes('onClick={() => selectView("polyclinics")}'), "the customers seated in a polyclinic are pointed to");
+
+  // 🔴 THE PHOTO IS THE ROW: large on both lists, and the refusal form folded behind one button.
+  for (const path of ["src/components/phoenix-crm/validated-place-list.tsx", "src/components/phoenix-crm/validation-review-queue.tsx"]) {
+    const list = read(path);
+    assert.ok(list.includes('const PHOTO_CLASS = "h-80 w-full";'), `${path}: the photograph is 20rem tall across its column`);
+    assert.equal((list.match(/<CrmPhotoThumb alt=\{photoAlt\(row\)\} className=\{PHOTO_CLASS\}/g) ?? []).length, 2, `${path}: on the phone card and the table alike`);
+    assert.ok(!list.includes("h-32 w-32"), `${path}: never the 128-pixel square again`);
+  }
+  const list = read("src/components/phoenix-crm/validated-place-list.tsx");
+  assert.ok(list.includes('<CrmTable columns={["36%", "20%", "24%", "20%"]}>'), "the photo column is the widest on Not confirmed");
+  const refuse = list.slice(list.indexOf("function Refuse("), list.indexOf("function LastColumn"));
+  assert.ok(refuse.indexOf("if (!open)") > -1 && refuse.indexOf("if (!open)") < refuse.indexOf("<RefusalReasonField"), "the reason list opens only after Refuse is pressed");
+  const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
+  assert.ok(queue.includes('<CrmTable columns={["30%", "18%", "28%", "24%"]}>'), "the photo column is the widest on Needs you");
+}
+
 export async function runPhoenixCrmPlaceCheckScorecardTests() {
   checkStanding();
   checkScorecard();
   checkScreen();
+  checkCountsOpenTheirPhotos();
 }

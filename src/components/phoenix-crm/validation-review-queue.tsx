@@ -50,6 +50,12 @@ function evidenceHeading(row: ValidationReviewRow): string {
   return row.reason === "sign_other_name" || row.reason === "sign_no_name" ? "What the signboard says" : "What Google Maps returned";
 }
 
+/**
+ * The photograph, large — the full width of its column and 20rem tall, shown whole and turnable. It was
+ * a 128-pixel square in a 14% column (owner, 2026-10-17: "I must be able to see the photos").
+ */
+const PHOTO_CLASS = "h-80 w-full";
+
 /** What the photo IS, so a blind reader is not told a timetable is a signboard. */
 function photoAlt(row: ValidationReviewRow): string {
   return `${row.photoKind === "schedule" ? "Timetable" : "Signboard"} photo for ${row.customerName}`;
@@ -505,16 +511,14 @@ export function ValidationReviewQueue({
         {rows.map((row) => (
           <div key={row.reviewId} className="space-y-3 px-4 py-4">
             {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
-            <div className="flex min-w-0 gap-3">
-              <CrmPhotoThumb alt={photoAlt(row)} className="h-32 w-32" lazy path={row.photoPath} rotatable />
-              <Who row={row} />
-            </div>
+            <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy path={row.photoPath} rotatable />
+            <Who row={row} />
             <Evidence row={row} />
             <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
           </div>
         ))}
       </CrmCardsOnPhone>
-      <CrmTable columns={["14%", "22%", "40%", "24%"]}>
+      <CrmTable columns={["30%", "18%", "28%", "24%"]}>
         <thead>
           <tr>
             <th className={crmThClassName}>Photo</th>
@@ -528,7 +532,7 @@ export function ValidationReviewQueue({
             <tr key={row.reviewId} className="even:bg-slate-50/60">
               <td className={crmTdClassName}>
                 <div className="min-w-0 space-y-2">
-                  <CrmPhotoThumb alt={photoAlt(row)} className="h-32 w-32 max-w-full" lazy path={row.photoPath} rotatable />
+                  <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy path={row.photoPath} rotatable />
                   {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
                 </div>
               </td>
