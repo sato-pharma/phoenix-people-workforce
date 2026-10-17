@@ -8,6 +8,7 @@ import {
   canTransferValidatedCustomers,
   getValidatedMarketingCustomerDetail,
   listValidatedMarketingCustomers,
+  resolveTransferredVenueOwnerHrId,
   revertValidatedCustomerTransfer,
   transferValidatedCustomerToDirectOrders,
 } from "../src/lib/marketing-requests/validated-customer-transfer.ts";
@@ -305,6 +306,25 @@ function testBlockerDoesNotImplyRefusal() {
   );
 }
 
+function testTransferredVenueBelongsToTheCapturingRep() {
+  assert.equal(
+    resolveTransferredVenueOwnerHrId({ created_by_hr_id: "B-154", owner_hr_id: "B-99" }, "B-10"),
+    "B-154",
+    "the rep who captured the customer owns the venue, not the admin who clicked Transfer",
+  );
+  assert.equal(
+    resolveTransferredVenueOwnerHrId({ created_by_hr_id: null, owner_hr_id: "B-154" }, "B-10"),
+    "B-154",
+    "with no capturer on file the customer's owner is next",
+  );
+  assert.equal(
+    resolveTransferredVenueOwnerHrId({ created_by_hr_id: "  ", owner_hr_id: "" }, "B-10"),
+    "B-10",
+    "the transferring admin owns it only when the capture record names nobody",
+  );
+  assert.equal(resolveTransferredVenueOwnerHrId(null, "B-10"), "B-10");
+}
+
 export async function runValidatedCustomerTransferTests() {
   await testReadGateRefusesNonAdmins();
   await testDetailGateRefusesNonAdmins();
@@ -323,4 +343,5 @@ export async function runValidatedCustomerTransferTests() {
   testDuplicateNameIsSurfacedAsAWarning();
   testEvidencePendingIsAWarningNotABlocker();
   testBlockerDoesNotImplyRefusal();
+  testTransferredVenueBelongsToTheCapturingRep();
 }
