@@ -1862,6 +1862,7 @@ import { runPhoenixCrmValidationFeedbackTests } from "./phoenix-crm-validation-f
 import { runPhoenixCrmSharedPlaceTests } from "./phoenix-crm-shared-place.test.ts";
 import { runPhoenixCrmValidateStepsTests } from "./phoenix-crm-validate-steps.test.ts";
 import { runPhoenixCrmOffplanCapTests } from "./phoenix-crm-offplan-cap.test.ts";
+import { runPhoenixCrmOffplanExemptionTests } from "./phoenix-crm-offplan-exemption.test.ts";
 import { runPhoenixCrmPlaceBrickLookupTests } from "./phoenix-crm-place-brick-lookup.test.ts";
 import { runPhoenixCrmDuplicateMergeTests } from "./phoenix-crm-duplicate-merge.test.ts";
 import { runPhoenixCrmListCustomerFixtureTests } from "./phoenix-crm-list-customer-fixture.test.ts";
@@ -7023,6 +7024,7 @@ await runTest(
 await runTest(
   "Phoenix CRM off-plan cap (owner, 2026-10-10): at most two doctors a day and eight a week OUT OF PLAN — settings read live, enforced by a before-insert trigger on out-of-plan AM and PM visits only, counting distinct doctors per seat over the field week Saturday to Thursday, refused to the rep in words that name no number and no check",
   runPhoenixCrmOffplanCapTests,
+  runPhoenixCrmOffplanExemptionTests,
 );
 
 await runTest(
