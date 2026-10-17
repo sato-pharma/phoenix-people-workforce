@@ -1221,14 +1221,23 @@ and no measurable CPU** — an ssh tunnel, nothing more.
 🔴 **`phx-preview` IS RETIRED — 2026-10-17, owner: *"make phx-live work like pnpm run dev by default
 and retire phx-preview"*.** He wanted ONE thing exactly like his old `pnpm run dev`, not two. The box
 look now goes through **`phx-live`** (next section), and `phx-live -Folder <worktree>` replaces
-`phx-preview <branch>`. His profile's `phx-preview` function only prints that it is retired; the
-script `~/.claude/scripts/phx-preview.ps1` and the box's `preview-start.sh` / `preview-b.sh` stay on
-disk for rollback (restore the profile from
-`Microsoft.PowerShell_profile.ps1.pre-retire-phx-preview-20261017`). **`preview-scope.sh` is NOT
-retired** — `live-ctl.sh` sources it for `refresh_preview_mirror` and the scope stoppers, and
-phx-live's own scope is still named `phx-preview-3100.scope`. What is lost: the STAGING-data sandbox,
-so a dev-auth header walk now runs on `phx-live -DevAuth`, against production. The paragraphs below
-are the record of how it ran.
+`phx-preview <branch>`. His profile's `phx-preview` function only prints that it is retired
+(previous profile: `Microsoft.PowerShell_profile.ps1.pre-retire-phx-preview-20261017`).
+
+**Its leftovers were REMOVED the same day** (owner: *"remove the phx-preview leftovers from the
+box"*): the box's `preview-start.sh`, `preview-b.sh`, `preview-stop.sh`, `preview-sync.sh`, their
+backups and logs, `phxpreview`'s two checkouts (5 GB) and private env copy, and `phx-previews.slice`.
+Every removed script and log is in `/home/phx/retired/phx-preview-20261017.tar.gz`; the laptop's
+`phx-preview.ps1` and a copy of that archive are in `~/.claude/backups/retired-phx-preview-20261017/`.
+🔴 **KEPT because phx-live uses them — never retire these as preview leftovers:** `preview-scope.sh`
+(`live-ctl.sh` sources it for `refresh_preview_mirror` and the scope stoppers), the mirror
+`/srv/phx-preview-mirror.git`, the `phxpreview` user and group (`phxlive` reads the mirror through
+that group), `/home/phx/preview-state/`, `preview-idle-reaper.sh` with its `phx-preview-idle.timer`
+(it stops phx-live after 60 idle minutes), and `~phx/secure/.env.local` (`live-ctl.sh
+install-env-staging`). phx-live's own scope is still named `phx-preview-3100.scope`, and
+`remote-check` finds it by that name. What is lost: the STAGING-data sandbox, so a dev-auth header
+walk now runs on `phx-live -DevAuth`, against production. The paragraphs below are the record of how
+it ran.
 
 The owner started it with `phx-preview [branch]` (`~/.claude/scripts/phx-preview.ps1`, aliased in his
 PowerShell profile, `-Stop` to end it); a session ASKED HIM to run it instead of starting a local
@@ -1351,7 +1360,8 @@ there is exactly one.** The owner authorised the shared-file edit on 2026-10-12 
 mirror-group guard to preview-scope.sh"); it had been refused before that as a shared-resource
 change, which left phx-preview protected only as a side effect of somebody having run phx-live.
 Sitting in `refresh_preview_mirror` covers **every** caller: `preview-start.sh` (3000),
-`preview-b.sh` (3001) and `live-ctl.sh prepare` (3100). The two `find`s end in `|| true`
+`preview-b.sh` (3001) and `live-ctl.sh prepare` (3100) — since 2026-10-17 only the last, the other
+two retired with phx-preview. The two `find`s end in `|| true`
 deliberately — each caller runs under `set -e`, and a preview that cannot be re-grouped must still
 start. Proved by break-and-watch the same evening: planting the exact defect git creates (a
 `drwxr-x--- phx:phx` object directory) left `phxpreview` unable to read it, `refresh_preview_mirror`
