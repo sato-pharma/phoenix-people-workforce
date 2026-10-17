@@ -933,6 +933,31 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // on staging three perturbed scenarios were IDENTICAL too. Re-applying it is a no-op
   // (`create or replace`).
   "20261016233000_crm_contact_master_refresh_skips_idle_work.sql",
+  // 2026-10-17, the district manager's weekly plan in Phoenix CRM, applied to staging (16 Oct) and
+  // then production (17 Oct, about 01:14 Cairo, on the owner's own words "apply the district manager
+  // plan migration to production") with `node scripts/apply-sql-file.mjs <file> <env>` (production
+  // with PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com) — the standing route, because
+  // the production MCP answered {"status":"declined"} on this SQL: the replaced
+  // phoenix_crm_merge_duplicate_customer body contains the merge's own `delete` statements. That
+  // route writes NO ledger row, so ZERO rows on either project carry this version or name (read the
+  // same minute; production's newest row is 20261016211408).
+  // Verified by digest on BOTH projects, not by presence: md5(pg_proc.prosrc) on ozucdzovmcqvepbozvqf
+  // and on cifwmndunmlxjhyjugxa is md5-equal to this file's dollar-quoted bodies (as-is LF) for all
+  // eight functions it defines — phoenix_crm_save_manager_plan_slot 8001428dc75b22ba565674c39b83029f,
+  // phoenix_crm_manager_plan_transition a29033c32db8acb97e2c487e286e21a0,
+  // phoenix_crm_raise_manager_plan_edit 5fe74098409889c444da205732562d7d,
+  // phoenix_crm_decide_manager_plan_edit d6df37ecc29c97582d4e5e1313411033,
+  // phoenix_crm_expire_manager_plan_edit_requests 908026248543d388080e58550380fdfc,
+  // phoenix_crm_request_manager_customer_removal a0c3d5f7ffb29ff9142363f09f4b4bf0,
+  // phoenix_crm_decide_manager_customer_removal d61b4d9cbcb31bb973d683d5283c5abb, and
+  // phoenix_crm_merge_duplicate_customer 6ffc0e4b169f5b39ade188aa017f79f9 (9,205 chars). This file is
+  // the merge function's LAST definer; production carried 20261008120000's body,
+  // 0a599fe2300702ad19faac32b0c3ece6, in the minute before the apply, which makes that file the
+  // rollback for it. All eight are SECURITY DEFINER with EXECUTE for service_role alone, and all seven
+  // phoenix_crm_manager_* tables have RLS on, one service_role policy each, and no anon or
+  // authenticated privilege — read in the same query. Re-applying it is a no-op (`if not exists`,
+  // `create or replace`, `drop policy if exists`).
+  "20261017000000_phoenix_crm_manager_plan.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

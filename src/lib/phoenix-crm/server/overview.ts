@@ -33,6 +33,8 @@ import {
 } from "@/lib/phoenix-crm/server/decision-queues";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { isDirectoryCompanyRole } from "@/lib/phoenix-crm/server/doctors";
+import { managerPlanReach } from "@/lib/phoenix-crm/server/manager-plan-reach";
+import { dmPlansInPhoenixCrm } from "@/lib/phoenix-crm/server/manager-plan-switch";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { countVisitAsksWaitingForYou } from "@/lib/phoenix-crm/server/visit-asks";
@@ -125,6 +127,14 @@ export type PhoenixCrmOverview = {
    * the status could not be read — and then no card is drawn, never one asking a connected person.
    */
   telegram: { connected: boolean } | null;
+  /**
+   * The district manager's weekly plan (owner, 2026-10-16). `planner`: he plans his own week here — a DM
+   * or acting DM seat whose team is live (`dmPlansInPhoenixCrm`), which opens the Plan tab on his board.
+   * `reads`: the Team tab's "Manager plans" report and "Manager's own list" — "own" for the district
+   * manager himself, "pick" for the managers above him, SFE, the CEO and the Super Admin. Null for a rep,
+   * who never reads any of it.
+   */
+  managerPlans: { planner: boolean; reads: "own" | "pick" } | null;
 };
 
 /** Seats, once each, in the order first seen. */
@@ -245,7 +255,8 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     isSfeManager: viewer.isSfeManager,
   });
 
-  const [names, requests, plans, managerEdits, sfeEdits, telegramConnected, visitAsks, offPlanVisits] =
+  const managerReach = managerPlanReach(viewer);
+  const [names, requests, plans, managerEdits, sfeEdits, telegramConnected, visitAsks, offPlanVisits, managerPlanner] =
     await Promise.all([
       loadPeopleNames([viewer.hrId, ...territoryPeople(viewer.org, [...scope, ...viewer.waitingTerritories])]),
       // The list requests at his own step — the reviewer's and the SFE's, summed by the one producer
@@ -275,6 +286,11 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
       // The off-plan visits at his own step — the manager's on the territories he reviews, SFE's across
       // his scope, and both steps in the Super Admin's test world.
       countPhoenixCrmOffPlanVisitsWaitingForYou(decisionSeats),
+      // Only a district manager who plans his own week asks the live-team switch; it fails open, and a test
+      // persona always plans here — the same answer the save's own gate gives (`assertPlansHere`).
+      managerReach?.mode === "own"
+        ? viewer.isTestPersona || dmPlansInPhoenixCrm(viewer.hrId, { org: viewer.org, cairoToday: viewer.cairoToday }).catch(() => true)
+        : false,
     ]);
 
   const territories = scope
@@ -284,7 +300,8 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
   const tabs: PhoenixCrmTabs = {
     visits: hasScope,
     list: hasScope,
-    plan: viewer.isSuperAdmin || ownSeatIds.length > 0,
+    // A district manager whose team is live plans HIS week here too (owner, 2026-10-16), on his own board.
+    plan: viewer.isSuperAdmin || ownSeatIds.length > 0 || managerPlanner,
     // The daily forecast is CNS ONLY (owner, 2026-10-01). A CNS rep has his own territory in scope, a
     // CNS manager (and the CEO and the SFE Manager, who read the company) has CNS territories beneath
     // him; anyone whose scope holds no CNS territory is never offered it.
@@ -340,5 +357,6 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     },
     closedMessage: closedMessage(viewer),
     telegram: telegramConnected === null ? null : { connected: telegramConnected },
+    managerPlans: managerReach ? { planner: managerPlanner, reads: managerReach.mode } : null,
   };
 }

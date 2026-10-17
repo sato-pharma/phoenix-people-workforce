@@ -17,6 +17,8 @@ import {
   type StrandedVacationRow,
 } from "@/lib/vacation/service";
 import { vacationTypeLabel } from "@/lib/vacation/calculations";
+import { formatPhoenixLongDate } from "@/lib/i18n/format";
+import { addDaysIso } from "@/lib/crm/dates";
 import {
   getExcuseRequestForActionCenterDeepLink,
   getManagerPendingExcuses,
@@ -45,6 +47,13 @@ import type { PlanAdherenceHistory, PlanAdherenceScore } from "@/lib/weekly-plan
 import { loadPlanAdherence, loadPlanAdherenceHistory } from "@/lib/weekly-planning/plan-adherence-data";
 import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
 import {
+  loadManagerDecisionsBy,
+  loadManagerOwnRequests,
+  loadManagerPlanFeed,
+  loadManagerPlanQueue,
+  type ManagerQueueItem,
+} from "@/lib/phoenix-crm/server/manager-plan-queue";
+import {
   isDistrictManagerPlanSubmitter,
   isDistrictManagerPlanTitle,
   resolvePlanCeoDecision,
@@ -58,6 +67,7 @@ import type {
   VacationRequestStatus,
 } from "@/lib/vacation/types";
 import type {
+  ActionHubItem,
   HistoricalApprovalItem,
   MyRequestItem,
   WeeklyPlanCalendarItem,
@@ -1407,19 +1417,53 @@ function isPlanHrActor(access: Pick<AccessContext, "role" | "scope">): boolean {
 // on "final_approved", not "ceo_approved" — this was caught by an e2e click-through and fixed here.
 const PLAN_ACTIVE_STATUSES: EmployeePlanStatus[] = ["submitted", "manager_approved", "final_approved", "edit_requested"];
 
-export type PlanApprovalStage = "manager" | "ceo" | "hr" | "edit_request";
+// "list_removal" is the district manager's ask to take a customer off his own Phoenix CRM list.
+export type PlanApprovalStage = "manager" | "ceo" | "hr" | "edit_request" | "list_removal";
 
 export type PlanBucketItem = {
   id: string;
+  // "crm_manager" is the district manager's weekly plan in Phoenix CRM (owner, 2026-10-16): his
+  // RSM/NSM decides it here, beside the legacy plans, so the badge, the bell and Needs You count it.
+  source: "legacy" | "crm_manager";
   employeeName: string;
   employeeHrId: string;
   planKind: EmployeePlanKind;
   periodKey: string;
-  status: EmployeePlanStatus;
+  status: EmployeePlanStatus | "crm_waiting";
   stage: PlanApprovalStage;
   ageDays: number;
   submittedAt: string;
+  // The card's own title, when it is not the legacy "Weekly plan · <period>".
+  title?: string;
 };
+
+function crmManagerPlanTitle(item: Pick<ManagerQueueItem, "stage" | "weekStart" | "customerName">): string {
+  const week = item.weekStart ? formatPhoenixLongDate(item.weekStart) : "";
+  if (item.stage === "removal") return `Remove from Manager's own list · ${item.customerName ?? "a customer"}`;
+  if (item.stage === "edit") return `Ask to edit · week of ${week}`;
+  return `Weekly plan · week of ${week}`;
+}
+
+function crmManagerPlanBucketItem(
+  item: ManagerQueueItem,
+  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+): PlanBucketItem {
+  const stage: PlanApprovalStage =
+    item.stage === "first" ? "manager" : item.stage === "second" ? "ceo" : item.stage === "edit" ? "edit_request" : "list_removal";
+  return {
+    id: item.id,
+    source: "crm_manager",
+    employeeName: liveEmployeeName(employees, item.managerHrId, "A district manager"),
+    employeeHrId: item.managerHrId,
+    planKind: "weekly",
+    periodKey: item.weekStart ?? "",
+    status: "crm_waiting",
+    stage,
+    ageDays: item.waitingSince ? daysSinceCalendar(item.waitingSince) : 0,
+    submittedAt: item.waitingSince,
+    title: crmManagerPlanTitle(item),
+  };
+}
 
 export type PlanApprovalsBuckets = {
   awaiting: PlanBucketItem[];
@@ -1440,7 +1484,7 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
   const isCeo = access.role === "CEO";
   const hrActor = isPlanHrActor(access);
 
-  const [{ data, error }, directory] = await Promise.all([
+  const [{ data, error }, directory, crmQueue] = await Promise.all([
     fetchAllApprovalRows<Record<string, unknown>>(() =>
       getSupabaseAdmin()
         .from("employee_plan_headers")
@@ -1450,6 +1494,15 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
         .order("id", { ascending: true }),
     ),
     getEmployeeDirectory(),
+    // The district manager's weekly plan in Phoenix CRM (owner, 2026-10-16). A failed read costs these
+    // items only, logged, never the legacy plans beside them — the same trade the legacy read makes.
+    loadManagerPlanQueue(hrId, Boolean(access.testPersona)).catch((crmError: unknown) => {
+      logLoadFailure("Approvals hub Phoenix CRM manager plan queue failed", {
+        labels: { event: "approvals_hub_crm_manager_plan_queue_failed", hrId: access.hrId, role: access.role, scope: access.scope },
+        error: crmError,
+      });
+      return null;
+    }),
   ]);
   if (error) {
     logLoadFailure("Approvals hub plan approvals query failed", {
@@ -1470,6 +1523,7 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
     const managerHrId = raw.manager_hr_id ? String(raw.manager_hr_id) : null;
     const base = {
       id: String(raw.id ?? ""),
+      source: "legacy" as const,
       employeeName: liveEmployeeName(directory.employees, employeeHrId, String(raw.employee_name ?? "Unknown")),
       employeeHrId,
       planKind: (String(raw.plan_kind ?? "weekly") === "monthly" ? "monthly" : "weekly") as EmployeePlanKind,
@@ -1526,6 +1580,12 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
     }
   }
 
+  // Phoenix CRM district-manager items: the week (first or second stage), his ask to edit it, and his
+  // ask to take a customer off his own list. Each is counted once — never also by Phoenix CRM's own
+  // Needs You count, which reads the reps' plans only.
+  for (const item of crmQueue?.awaiting ?? []) awaiting.push(crmManagerPlanBucketItem(item, directory.employees));
+  for (const item of crmQueue?.upcoming ?? []) upcoming.push(crmManagerPlanBucketItem(item, directory.employees));
+
   // Overdue-first: the longest-waiting plan surfaces to the top so nothing time-sensitive gets
   // buried (a stale weekly plan is worthless by mid-week). Age derives from submission, so this is
   // most-overdue-first with an oldest-submitted tiebreak.
@@ -1533,6 +1593,45 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
   awaiting.sort(byMostOverdue);
   upcoming.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
   return { awaiting, upcoming };
+}
+
+/**
+ * The Phoenix CRM district-manager items waiting on a person, shaped for the Super Admin's view-as
+ * inbox (`/api/approvals-hub/hub-data`), which reads the legacy plans through getPlansAwaitingAction.
+ * They open on the Hub's own page; the inbox only lists them.
+ */
+export async function getCrmManagerPlanActionItems(access: AccessContext): Promise<ActionHubItem[]> {
+  const [queue, directory] = await Promise.all([
+    loadManagerPlanQueue(access.hrId, Boolean(access.testPersona)),
+    getEmployeeDirectory(),
+  ]);
+  return queue.awaiting.map((item) => {
+    const bucket = crmManagerPlanBucketItem(item, directory.employees);
+    const weekStart = item.weekStart ?? "";
+    return {
+      id: bucket.id,
+      module: "weekly_plan",
+      employeeName: bucket.employeeName,
+      employeeHrId: bucket.employeeHrId,
+      title: bucket.title ?? "Weekly plan",
+      statusLabel: planStageStatusLabel(bucket.stage, false),
+      submittedAt: bucket.submittedAt,
+      urgency: "normal",
+      detail: {
+        module: "weekly_plan",
+        stage: item.stage === "second" ? "ceo" : "manager",
+        planKind: "weekly",
+        periodKey: weekStart,
+        periodStartDate: weekStart,
+        periodEndDate: weekStart ? addDaysIso(weekStart, 5) : "",
+        employeeJobTitle: "District Manager",
+        managerName: null,
+        itemCount: 0,
+        items: [],
+        reviewHref: `/admin/approvals/plan/${encodeURIComponent(item.id)}`,
+      },
+    };
+  });
 }
 
 // True when at least one awaiting plan has breached its SLA (see isVacationAwaitingOverdue).
@@ -1607,21 +1706,85 @@ async function fetchPlanKindsForIds(ids: string[]): Promise<Map<string, string>>
 }
 
 export async function getResponderPlanHistory(access: AccessContext): Promise<ResponderHistoryItem[]> {
-  const all = await getMyApprovalHistory(access).catch(() => [] as HistoricalApprovalItem[]);
+  const [all, crmDecisions, directory] = await Promise.all([
+    getMyApprovalHistory(access).catch(() => [] as HistoricalApprovalItem[]),
+    // The Phoenix CRM district-manager weeks, asks to edit and own-list removals he decided.
+    loadManagerDecisionsBy(access.hrId, Boolean(access.testPersona)).catch(() => []),
+    getEmployeeDirectory(),
+  ]);
   const plans = all.filter((item) => item.module === "weekly_plan");
   const subtypes = await fetchPlanKindsForIds(plans.map((item) => historyRawId(item.id)));
-  return plans.map((item) => ({
+  const legacy: ResponderHistoryItem[] = plans.map((item) => ({
     ...item,
     href: planApprovalHref(access, historyRawId(item.id)),
     subtype: subtypes.get(historyRawId(item.id)) ?? null,
   }));
+  const crm: ResponderHistoryItem[] = crmDecisions.map((decision) => ({
+    id: `crm_manager:${decision.kind}:${decision.id}`,
+    module: "weekly_plan",
+    employeeName: liveEmployeeName(directory.employees, decision.managerHrId, "A district manager"),
+    employeeHrId: decision.managerHrId,
+    title: crmManagerPlanTitle({
+      stage: decision.kind === "plan" ? "first" : decision.kind,
+      weekStart: decision.weekStart,
+      customerName: decision.customerName,
+    }),
+    decision: decision.decision,
+    decidedAt: decision.decidedAt,
+    href: planApprovalHref(access, decision.id),
+    subtype: "Phoenix CRM",
+  }));
+  return [...legacy, ...crm].sort((left, right) => right.decidedAt.localeCompare(left.decidedAt));
+}
+
+function crmRequestStatus(
+  record: Awaited<ReturnType<typeof loadManagerOwnRequests>>[number],
+  waitingOnName: string | null,
+): { label: string; tone: MyRequestItem["statusTone"] } {
+  const waiting = { label: waitingOnName ? `Waiting for ${waitingOnName}` : "Waiting for approval", tone: "pending" as const };
+  if (record.kind === "plan") {
+    if (record.status === "submitted" || record.status === "first_approved") return waiting;
+    if (record.status === "approved") return { label: "Approved", tone: "approved" };
+    if (record.status === "returned") return { label: "Returned for changes", tone: "returned" };
+    return { label: "Not sent", tone: "neutral" };
+  }
+  if (record.status === "pending") return waiting;
+  if (record.status === "reopened") return { label: "Reopened for editing", tone: "approved" };
+  if (record.status === "removed") return { label: "Removed from the list", tone: "approved" };
+  if (record.status === "expired") return { label: "Expired with the week", tone: "neutral" };
+  return { label: "Refused", tone: "rejected" };
 }
 
 export async function getMyPlanRequestItems(access: AccessContext): Promise<MyRequestItem[]> {
-  const all = await getMyRequestItems(access).catch(() => [] as MyRequestItem[]);
-  return all
+  const [all, crmRequests, directory] = await Promise.all([
+    getMyRequestItems(access).catch(() => [] as MyRequestItem[]),
+    // The district manager's own Phoenix CRM weeks, asks to edit and own-list removals.
+    loadManagerOwnRequests(access.hrId, Boolean(access.testPersona)).catch(() => []),
+    getEmployeeDirectory(),
+  ]);
+  const legacy = all
     .filter((item) => item.module === "weekly_plan")
     .map((item) => ({ ...item, href: planApprovalHref(access, historyRawId(item.id)) }));
+  const crm: MyRequestItem[] = crmRequests.map((record) => {
+    const waitingOnName = record.waitingOnHrId ? liveEmployeeName(directory.employees, record.waitingOnHrId, "the approver") : null;
+    const status = crmRequestStatus(record, waitingOnName);
+    return {
+      id: `crm_manager:${record.kind}:${record.id}`,
+      module: "weekly_plan",
+      title: crmManagerPlanTitle({
+        stage: record.kind === "plan" ? "first" : record.kind,
+        weekStart: record.weekStart,
+        customerName: record.customerName,
+      }).replace("Remove from Manager's own list", "Remove from my own list"),
+      statusLabel: status.label,
+      statusTone: status.tone,
+      submittedAt: record.submittedAt,
+      href: planApprovalHref(access, record.id),
+      lines: [{ label: "Where", value: "Phoenix CRM" }],
+      decisionNote: record.decisionNote,
+    };
+  });
+  return [...legacy, ...crm].sort((left, right) => String(right.submittedAt).localeCompare(String(left.submittedAt)));
 }
 
 // ── Per-plan detail (full calendar + stage tracker + per-viewer actions) ──────
@@ -2283,7 +2446,58 @@ export async function getCompanyPlanRequests(access: AccessContext): Promise<Com
 // all. This is a read-only oversight feed, same shape as "Company Plans", filtered to just
 // District Manager submitters.
 export async function getCompanyDistrictManagerPlanRequests(access: AccessContext): Promise<CompanyRequestItem[]> {
-  return fetchCompanyPlanRequestItems(access, { districtManagersOnly: true });
+  const [legacy, crm] = await Promise.all([
+    fetchCompanyPlanRequestItems(access, { districtManagersOnly: true }),
+    fetchCrmManagerPlanRequestItems(access, null),
+  ]);
+  return mergeCompanyPlanFeeds(legacy, crm);
+}
+
+const CRM_MANAGER_PLAN_STATUS: Record<string, { label: string; tone: CompanyRequestStatusTone }> = {
+  submitted: { label: "Waiting for the first approval", tone: "pending" },
+  first_approved: { label: "Waiting for the second approval", tone: "pending" },
+  approved: { label: "Approved", tone: "approved" },
+  returned: { label: "Returned for changes", tone: "returned" },
+};
+
+/**
+ * The district managers' Phoenix CRM weeks for the same oversight feeds (owner, 2026-10-16). The caller
+ * has already passed the feed's own gate; `firstApproverHrIds` narrows it to the second approver's
+ * managers. A failed read costs these rows only, logged.
+ */
+async function fetchCrmManagerPlanRequestItems(access: AccessContext, firstApproverHrIds: string[] | null): Promise<CompanyRequestItem[]> {
+  try {
+    const [rows, directory] = await Promise.all([
+      loadManagerPlanFeed({ isTest: Boolean(access.testPersona), firstApproverHrIds }),
+      getEmployeeDirectory(),
+    ]);
+    return rows.map((row) => {
+      const status = CRM_MANAGER_PLAN_STATUS[row.status] ?? { label: humanizeStatus(row.status), tone: "neutral" as const };
+      return {
+        id: row.planId,
+        href: planApprovalHref(access, row.planId),
+        employeeName: liveEmployeeName(directory.employees, row.managerHrId, "A district manager"),
+        employeeHrId: row.managerHrId,
+        submitterTitle: "District Manager",
+        typeLabel: "Weekly · Phoenix CRM",
+        requestDate: row.weekStart,
+        submittedAt: row.submittedAt ?? "",
+        status: row.status,
+        statusLabel: status.label,
+        statusTone: status.tone,
+      };
+    });
+  } catch (error) {
+    logLoadFailure("Approvals hub Phoenix CRM manager plan feed failed", {
+      labels: { event: "approvals_hub_crm_manager_plan_feed_failed", role: access.role },
+      error,
+    });
+    return [];
+  }
+}
+
+function mergeCompanyPlanFeeds(legacy: CompanyRequestItem[], crm: CompanyRequestItem[]): CompanyRequestItem[] {
+  return [...legacy, ...crm].sort((left, right) => String(right.submittedAt).localeCompare(String(left.submittedAt)));
 }
 
 // Every plan (pending AND decided, every period) of the District Managers reporting to the
@@ -2293,7 +2507,12 @@ export async function getCompanyDistrictManagerPlanRequests(access: AccessContex
 export async function getSecondApproverPlanRequests(access: AccessContext): Promise<CompanyRequestItem[] | null> {
   const managerHrIds = managerHrIdsForSecondApprover(access.hrId);
   if (managerHrIds.length === 0) return null;
-  return fetchCompanyPlanRequestItems(access, { managerHrIds });
+  const [legacy, crm] = await Promise.all([
+    fetchCompanyPlanRequestItems(access, { managerHrIds }),
+    // His Phoenix CRM feed is the weeks whose FIRST approver is one of those managers.
+    fetchCrmManagerPlanRequestItems(access, managerHrIds),
+  ]);
+  return mergeCompanyPlanFeeds(legacy, crm);
 }
 
 // ── Plan workspace (page-ready data for the 4-tab body) ───────────────────────
@@ -2327,6 +2546,7 @@ function planStageStatusLabel(stage: PlanApprovalStage, viewerIsCeo = true): str
   // The second approver of the DMs reporting to Hany Saad holds this stage, not the CEO.
   if (stage === "ceo") return viewerIsCeo ? "Needs CEO approval" : "Needs your approval";
   if (stage === "edit_request") return "Edit request — decide";
+  if (stage === "list_removal") return "Customer removal — decide";
   return "Needs HR acknowledgement";
 }
 
@@ -2350,7 +2570,7 @@ export async function getPlanWorkspaceData(access: AccessContext): Promise<PlanW
     id: item.id,
     href: planApprovalHref(access, item.id),
     employeeName: item.employeeName,
-    title: `${item.planKind === "monthly" ? "Monthly" : "Weekly"} plan · ${item.periodKey}`,
+    title: item.title ?? `${item.planKind === "monthly" ? "Monthly" : "Weekly"} plan · ${item.periodKey}`,
     statusLabel: planStageStatusLabel(item.stage, access.role === "CEO" || access.role === "Super Admin"),
     ageDays: item.ageDays,
   });

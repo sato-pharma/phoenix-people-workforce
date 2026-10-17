@@ -88,6 +88,16 @@ const EVENT_TYPES = [
   "activity_mirror",
   // The SFE Manager's own copy of a re-send, on the week HE returned (2026-10-08). Informational.
   "plan_resent",
+  // The district manager's weekly plan (owner, 2026-10-16) — born after the email ban, so never emailed.
+  "manager_plan_waiting",
+  "manager_plan_approved",
+  "manager_plan_returned",
+  "manager_plan_edit_waiting",
+  "manager_plan_edit_reopened",
+  "manager_plan_edit_refused",
+  "manager_plan_edit_expired",
+  "manager_list_removal_waiting",
+  "manager_list_removal_decided",
   // Every type that once emailed — now ordinary: never email, the phone allowed.
   ...FORMERLY_EMAILED_EVENT_TYPES,
 ];
@@ -98,6 +108,8 @@ const EVENT_TYPES = [
  */
 const PUSH_BLOCKED_EVENT_TYPES = [
   "plan_edit_expired",
+  // The district manager's ask to edit, ended with its week (2026-10-16): the rep's expiry's twin.
+  "manager_plan_edit_expired",
   // The SFE Manager's copy of a rep's day start (2026-10-03). On this list rather than merely off the
   // email list because the Telegram-failure fallback re-sends as email, and an unlinked Telegram is
   // the expected case — so "off the email list" alone would mail him once per rep on exactly the days
@@ -258,6 +270,10 @@ export function runPhoenixCrmEmailBlockTests() {
       "src/lib/phoenix-crm/server/visit-asks.ts",
       // A rep's request for a double visit (owner, 2026-10-16): raised from the visit, re-dated, answered.
       "src/lib/phoenix-crm/server/double-visit-requests.ts",
+      // The district manager's weekly plan (owner, 2026-10-16): sent, decided, an ask to edit it, and an
+      // ask to take a customer off his own list. Every notice goes to him or to whoever decides.
+      "src/lib/phoenix-crm/server/manager-plans.ts",
+      "src/lib/phoenix-crm/server/manager-customers.ts",
     ]) {
       const source = readFileSync(file, "utf8");
       const calls = source.split("notifyPhoenixCrm(").slice(1);

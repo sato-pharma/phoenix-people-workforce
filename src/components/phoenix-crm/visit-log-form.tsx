@@ -226,6 +226,12 @@ function choiceOf(kind: PhoenixCrmVisitKind): VisitCompanyChoice {
   return kind === "double" || kind === "chain" ? kind : "single";
 }
 
+/** A manager entering on this territory has a rep to go with: it has one, and it is not themself. */
+function enteringManagerHasRep(form: VisitFormView): boolean {
+  const me = form.managers.find((person) => person.position === form.viewerPosition) ?? null;
+  return Boolean(form.territory.repHrId && form.territory.repHrId !== me?.hrId);
+}
+
 /**
  * Who can be on the visit, by the same rule the save applies (resolveVisitParticipants). A rep sees ONE
  * list — the managers above his territory and his line's product managers — and ticks one person for
@@ -237,11 +243,15 @@ function participantsOf(form: VisitFormView, seniorHrId: string | null): Partici
   const people = form.managers;
   if (form.enteredAs === "manager") {
     const me = people.find((person) => person.position === form.viewerPosition) ?? null;
-    const rep = form.territory.repHrId && form.territory.repHrId !== me?.hrId ? form.territory.repName : null;
+    const rep = enteringManagerHasRep(form) ? form.territory.repName : null;
     const seniorOptions = me ? people.filter((person) => person.position > me.position) : [];
     return {
       options: [
-        { value: "single", label: "My own visit", note: "Without the rep" },
+        // Closed for a district manager (owner, 2026-10-16): he logs his own visits under My single
+        // visits on the Visits tab, where they count in his own report only.
+        form.ownVisitClosed
+          ? { value: "single", label: "My own visit", note: "Log it under My single visits", disabled: true }
+          : { value: "single", label: "My own visit", note: "Without the rep" },
         { value: "double", label: "Double visit", note: rep ? `With ${rep}` : "This territory has no rep", disabled: !rep },
         {
           value: "chain",
@@ -403,7 +413,10 @@ export function VisitLogForm({
   // The reason box is open when there is no reason yet — including when the server says a visit he
   // chose as planned was not on a plan sent for today, and asks for one.
   const [reasonOpen, setReasonOpen] = useState(initialVisitType === "out_of_plan" && !initialReason);
-  const [kind, setKind] = useState<PhoenixCrmVisitKind>("single");
+  // A district manager entering starts on Double visit: his "My own visit" is closed (owner, 2026-10-16).
+  // Not on a territory with no rep, where Double visit is closed too — the step then says where his
+  // visit goes instead of pre-picking one the save would refuse.
+  const [kind, setKind] = useState<PhoenixCrmVisitKind>(form.ownVisitClosed && enteringManagerHasRep(form) ? "double" : "single");
   // A rep's Double (one) and Chain (two): the people ticked from the one list, in the order ticked.
   const [picked, setPicked] = useState<string[]>([]);
   // A manager entering a chain picks the senior manager above himself — his own box, unchanged.
@@ -946,6 +959,11 @@ export function VisitLogForm({
             options={who.options.map((option) => ({ ...option, disabled: option.disabled || saving }))}
             value={kind}
           />
+          {form.enteredAs === "manager" && form.ownVisitClosed && !enteringManagerHasRep(form) ? (
+            <p className="text-xs font-semibold leading-5 text-amber-800">
+              This territory has no rep to go with. Log a visit you make alone under My single visits on the Visits tab.
+            </p>
+          ) : null}
           {form.enteredAs === "rep" && (kind === "double" || kind === "chain") ? (
             <CompanyPicker
               choice={kind}

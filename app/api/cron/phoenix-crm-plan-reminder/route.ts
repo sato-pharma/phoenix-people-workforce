@@ -4,6 +4,7 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
 import { PLAN_REMINDER_JOB_SLUG } from "@/lib/phoenix-crm/plan-reminder-rules";
+import { runManagerPlanEditExpiry } from "@/lib/phoenix-crm/server/manager-plans";
 import { runPhoenixCrmPlanEditExpiry, type PlanEditExpiryRun } from "@/lib/phoenix-crm/server/plan-edit-expiry";
 import { runPhoenixCrmPlanReminder } from "@/lib/phoenix-crm/server/plan-reminder";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
@@ -43,9 +44,21 @@ export async function GET(request: Request) {
     });
     planEdits = { error: clientSafeErrorMessage(error, "Phoenix CRM plan-edit expiry failed.") };
   }
+  // The same pass for a district manager's ask to edit his own week (owner, 2026-10-16) — its own step,
+  // so one failing never costs the other or the reminder. In-app and Telegram, never email or the phone.
+  let managerPlanEdits: { expired: number; told: number } | { error: string };
+  try {
+    managerPlanEdits = await runManagerPlanEditExpiry();
+  } catch (error) {
+    logError("Phoenix CRM district-manager plan-edit expiry failed", {
+      error,
+      labels: { event: "cron_step_failed", job: PLAN_REMINDER_JOB_SLUG, step: "manager_plan_edit_expiry" },
+    });
+    managerPlanEdits = { error: clientSafeErrorMessage(error, "Phoenix CRM district-manager plan-edit expiry failed.") };
+  }
   try {
     const result = await withDeadMansSwitch(PLAN_REMINDER_JOB_SLUG, () => runPhoenixCrmPlanReminder());
-    return NextResponse.json({ success: true, ...result, planEdits });
+    return NextResponse.json({ success: true, ...result, planEdits, managerPlanEdits });
   } catch (error) {
     logError("Phoenix CRM plan reminder failed", {
       error,

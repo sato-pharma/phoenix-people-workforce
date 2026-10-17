@@ -1,6 +1,8 @@
 import { writeAuditLog } from "@/lib/admin/audit";
 import { normalizeHrIdForAccess, type AccessContext } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { loadManagerPlanHalfDays, managerHalfDayText } from "@/lib/phoenix-crm/server/manager-plan-readers";
+import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
@@ -255,6 +257,37 @@ async function loadPlanItems(access: AccessContext, start: string, end: string):
   }
 }
 
+/**
+ * His own Phoenix CRM weekly plan, half-day by half-day — a district manager's week REPLACES his legacy
+ * plan once his team is live (owner, 2026-10-16), so his calendar keeps showing what he planned. His own
+ * items only, like the legacy read above.
+ */
+async function loadManagerPlanItems(access: AccessContext, start: string, end: string): Promise<CalendarItem[]> {
+  const viewerHrId = normalizeHrId(access.hrId);
+  if (!viewerHrId) return [];
+  try {
+    const halfDays = await loadManagerPlanHalfDays({ from: start, to: end, managerHrIds: [String(access.hrId)], sentOnly: false });
+    if (halfDays.length === 0) return [];
+    const names = await loadPeopleNames(halfDays.map((halfDay) => halfDay.repHrId));
+    return halfDays.map((halfDay) => ({
+      id: `crm-plan-${halfDay.slotId}`,
+      source: "plan" as const,
+      title: `Plan: ${halfDay.half} · ${managerHalfDayText(halfDay, halfDay.repHrId ? nameOf(names, halfDay.repHrId, "a rep") : null)}`,
+      startDate: halfDay.date,
+      endDate: halfDay.date,
+      category: "other" as const,
+      time: null,
+      location: null,
+      scope: "company" as const,
+      lineName: null,
+      description: null,
+      canManage: false,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 async function loadBirthdayItems(access: AccessContext, viewerLineName: string | null, year: number, month: number): Promise<CalendarItem[]> {
   if (!viewerLineName) return [];
   try {
@@ -299,15 +332,16 @@ export async function getCompanyCalendarWorkspace(
   const { start, end } = monthBounds(year, month);
   const viewerLineName = await viewerLine(access);
 
-  const [eventsResult, holidays, leave, plans, birthdays] = await Promise.all([
+  const [eventsResult, holidays, leave, plans, crmPlans, birthdays] = await Promise.all([
     loadCompanyEvents(access, viewerLineName, start, end),
     loadHolidayItems(year, month, start, end),
     loadLeaveItems(access, start, end),
     loadPlanItems(access, start, end),
+    loadManagerPlanItems(access, start, end),
     loadBirthdayItems(access, viewerLineName, year, month),
   ]);
 
-  const items = [...eventsResult.items, ...holidays, ...leave, ...plans, ...birthdays].sort((a, b) =>
+  const items = [...eventsResult.items, ...holidays, ...leave, ...plans, ...crmPlans, ...birthdays].sort((a, b) =>
     `${a.startDate}-${a.title}`.localeCompare(`${b.startDate}-${b.title}`),
   );
 

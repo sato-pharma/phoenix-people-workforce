@@ -135,3 +135,21 @@ export type {
   TouchTrailSessionCard,
   TouchTrailSessionView,
 } from "@/lib/phoenix-crm/server/touch-trail-reader";
+/** The district manager's weekly plan (owner, 2026-10-16): his board, his own list, his single visits, the report. */
+export type {
+  ManagerBoardArea,
+  ManagerBoardDay,
+  ManagerBoardRep,
+  ManagerBoardRepHalf,
+  ManagerBoardSlot,
+  ManagerBoardSlotCustomer,
+  ManagerPlanBoardView,
+  ManagerPlanTransitionResult,
+  RepDayCustomer,
+} from "@/lib/phoenix-crm/server/manager-plans";
+export type { AreaCustomer, AreaCustomersView, CustomerMatch, ManagerCustomerView, ManagerOwnListView } from "@/lib/phoenix-crm/server/manager-customers";
+export type { ManagerTodayCustomer, ManagerTodayView } from "@/lib/phoenix-crm/server/manager-visits";
+export type {
+  ManagerReport as ManagerPlanReport,
+  ManagerReportView as ManagerPlanReportView,
+} from "@/lib/phoenix-crm/server/manager-plan-report";

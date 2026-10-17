@@ -144,6 +144,14 @@ const ACTIONABLE_APPROVAL_NOTIFICATIONS: Record<
   // when the rep re-sent it after a return. Addressed to the territory's reviewer and to nobody
   // else, like the off-plan one above, so there is no awareness copy to tell apart.
   "phoenix_crm:plan_waiting": { domain: "phoenixCrmPlan", idField: "planId" },
+  // 🔴 THE DISTRICT MANAGER'S OWN WEEK IN PHOENIX CRM (owner, 2026-10-16) is decided in the Approvals
+  // Hub, so its three "please decide" notices sit in the PLAN domain — getPlanApprovalsForResponder
+  // lists them — and NEVER in phoenixCrmPlan, whose check reads the reps' plans only and would archive
+  // every one of these on its first read. Each id field is the id the Hub's awaiting item carries: the
+  // week, the ask to edit it, and the own-list customer whose removal waits.
+  "phoenix_crm:manager_plan_waiting": { domain: "plan", idField: "planId" },
+  "phoenix_crm:manager_plan_edit_waiting": { domain: "plan", idField: "requestId" },
+  "phoenix_crm:manager_list_removal_waiting": { domain: "plan", idField: "requestId" },
 };
 
 const VACATION_REQUEST_SUBMITTED_ACTIONABLE_STATUS = "Pending your approval";
