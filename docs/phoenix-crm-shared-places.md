@@ -555,3 +555,21 @@ Announced before it ran. Every production seating's timetable was read again wit
 - **Every validation carries the system's recommendation and its reason** (`place-check-advice.ts`): approve, reject or look yourself, with the one sentence of evidence behind it. A confident reading opens Reject already on its reason; an unreadable photo never pre-picks one. It decides nothing — the answer is still his press, one row or ticked together — and a district manager's board never draws it.
 
 Pinned by `tests/phoenix-crm-timetable-scanner.test.ts`, `tests/phoenix-crm-place-check-scorecard.test.ts`, `tests/phoenix-crm-place-check-advice.test.ts`, `tests/photo-rotation.test.ts` and `tests/phoenix-crm-shared-place-groups.test.ts`.
+
+### A count opens its photographs — owner, 2026-10-17, the evening it went live
+
+Looking at the live page that evening, the owner said: *"don't put for me non-readable … make me see what is the unreadable. The photos, I must be able to see the photos."* Two things stood between him and them:
+
+- **A count went nowhere.** "9 not readable" next to a rep was a number. Now every count except Places and Confirmed is a button. `placeOfTarget` on the board decides where it leads:
+  - it sets that rep (every rep from the total line) and clears the outcome selector, since the scorecard never reads that selector and its counts would not match otherwise;
+  - a photo problem or a sign never read opens its own chip on Not confirmed;
+  - a place waiting opens Needs you;
+  - a customer sent back opens History;
+  - the timetable count opens Polyclinics and hospitals.
+- **Seated customers on Not confirmed.** The scorecard counts customers seated in a polyclinic, but Not confirmed lists single clinics. When a tapped count holds seated customers, a line above the list names how many and opens Polyclinics and hospitals. Their photo is the building's one timetable, so it is shown once on the building's card, never repeated per customer.
+- **The photo was the smallest thing on the row.** On Not confirmed the photograph was a 128-pixel square in a 12% column, beside a refusal form that stood open on every row. Now:
+  - on both Not confirmed and Needs you, the photo is the widest column (36% and 30%), 20rem tall and shown whole;
+  - on a phone, the photo spans the whole card;
+  - the reason list, the note and the cost appear only after "Refuse this validation" is pressed.
+
+Measured on production that evening before the change: Needs you 9,965 px, Not confirmed 14,083 px, Polyclinics 12,741 px and History 14,521 px tall. There was no sideways scroll at a 2,124 px window, no rounded corner, no broken photo and no test entry on any tab.

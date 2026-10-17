@@ -97,6 +97,14 @@ const SCHEDULE_TEXT: Record<NonNullable<ValidatedPlaceRow["schedule"]>["verdict"
 
 const PAGE = 25;
 
+/**
+ * The photograph, large: the full width of its column (a third of the table on a laptop, the whole card
+ * on a phone) and 20rem tall, shown whole and turnable. It was a 128-pixel square, and at that size an
+ * unreadable sign and an unreadable photo of a pavement look the same (owner, 2026-10-17: "I must be
+ * able to see the photos").
+ */
+const PHOTO_CLASS = "h-80 w-full";
+
 /** What the photo IS, so a blind reader is never told a timetable is a signboard. */
 function photoAlt(row: ValidatedPlaceRow): string {
   return `${row.photoKind === "schedule" ? "Timetable" : "Signboard"} photo for ${row.customerName}`;
@@ -219,8 +227,15 @@ function Cost({ row }: { row: ValidatedPlaceRow }) {
   );
 }
 
+/**
+ * 🔴 FOLDED UNTIL HE PRESSES IT (owner, 2026-10-17: "make me see what is the unreadable — the photos, I
+ * must be able to see the photos"). The reason list, the note and the cost stood open on every row, so
+ * the form was most of the row and the photograph a 113-pixel square beside it. Closed, a row is the
+ * photo, who took it, what the reader saw, the system's advice and one button.
+ */
 function Refuse({ row }: { row: ValidatedPlaceRow }) {
   const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   // Opens on the reason the system's own confident reading gives, and on nothing otherwise.
   const [reason, setReason] = useState<ValidationRefusalReason | "">(() => adviseOnPlaceInUse(row).refusal ?? "");
@@ -240,6 +255,14 @@ function Refuse({ row }: { row: ValidatedPlaceRow }) {
       setSaving(false);
       setArmed(false);
     }
+  }
+
+  if (!open) {
+    return (
+      <CrmButton onClick={() => setOpen(true)} variant="danger">
+        Refuse this validation
+      </CrmButton>
+    );
   }
 
   return (
@@ -284,9 +307,14 @@ function Refuse({ row }: { row: ValidatedPlaceRow }) {
           </div>
         </div>
       ) : (
-        <CrmButton disabled={reason === ""} onClick={() => setArmed(true)} variant="danger">
-          Refuse this validation
-        </CrmButton>
+        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
+          <CrmButton disabled={reason === ""} onClick={() => setArmed(true)} variant="danger">
+            Refuse it
+          </CrmButton>
+          <CrmButton disabled={saving} onClick={() => setOpen(false)}>
+            Cancel
+          </CrmButton>
+        </div>
       )}
       {reason === "" && !armed ? <p className="text-xs text-slate-500">Choose what is wrong with the photo first.</p> : null}
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
@@ -413,16 +441,15 @@ export function ValidatedPlaceList({
             {shown.map((row) => (
               <div key={row.placeId} className="space-y-3 px-4 py-4">
                 {bulk ? <BulkPick picks={picks} row={row} /> : null}
-                <div className="flex min-w-0 gap-3">
-                  <CrmPhotoThumb alt={photoAlt(row)} className="h-32 w-32" lazy path={row.photoPath} rotatable />
-                  <Who row={row} />
-                </div>
+                {/* The photograph IS the question on this list, so on a phone it takes the card's whole width. */}
+                <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy path={row.photoPath} rotatable />
+                <Who row={row} />
                 <Place row={row} />
                 <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
               </div>
             ))}
           </CrmCardsOnPhone>
-          <CrmTable columns={["12%", "24%", "34%", "30%"]}>
+          <CrmTable columns={["36%", "20%", "24%", "20%"]}>
             <thead>
               <tr>
                 <th className={crmThClassName}>Photo</th>
@@ -436,7 +463,7 @@ export function ValidatedPlaceList({
                 <tr key={row.placeId} className="even:bg-slate-50/60">
                   <td className={crmTdClassName}>
                     <div className="min-w-0 space-y-2">
-                      <CrmPhotoThumb alt={photoAlt(row)} className="h-32 w-32 max-w-full" lazy path={row.photoPath} rotatable />
+                      <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy path={row.photoPath} rotatable />
                       {bulk ? <BulkPick picks={picks} row={row} /> : null}
                     </div>
                   </td>
