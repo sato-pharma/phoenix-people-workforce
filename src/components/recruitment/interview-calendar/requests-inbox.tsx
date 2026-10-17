@@ -21,7 +21,7 @@ import {
   type InterviewRequest,
   type InterviewRequestItem,
 } from "@/lib/recruitment/interview-calendar-types";
-import { formatDayLong, formatDuration, formatShortDate, formatTimeOfDay, slotStarts } from "@/lib/recruitment/interview-calendar-week";
+import { formatDayLong, formatDuration, formatShortDate, formatTimeOfDay, requestDayHasPassed, slotStarts } from "@/lib/recruitment/interview-calendar-week";
 import { cn } from "@/lib/utils";
 
 import { type CalendarApi, reasonText } from "./calendar-api";
@@ -214,7 +214,10 @@ function RequestCard({
   todayKey: string;
   zoomConnected: boolean;
 }) {
-  const [open, setOpen] = useState(request.pendingItemCount > 0);
+  // A request whose day has gone can no longer be given a time (the booking always lands on the
+  // requested day), so its CVs read "Day passed" rather than offering a Book button that cannot work.
+  const dayPassed = requestDayHasPassed(request.requestedDay, todayKey);
+  const [open, setOpen] = useState(request.pendingItemCount > 0 && !dayPassed);
   const [booking, setBooking] = useState<InterviewRequestItem | null>(null);
   // The CV being read — opened from the request itself, so HR can read it BEFORE phoning the candidate.
   // `previewOpen` is the same idiom every other "View CV" control uses (candidate-cv-actions.tsx), and
@@ -265,7 +268,7 @@ function RequestCard({
             <span aria-hidden>→</span>
             <span className="inline-flex items-center gap-1 font-semibold text-slate-800">{request.interviewerName}</span>
             <span className="inline-flex items-center gap-1">
-              <Users className="h-3 w-3 text-slate-400" /> {request.items.length} {request.items.length === 1 ? "CV" : "CVs"}
+              <Users className="h-3 w-3 text-slate-400" /> {request.status === "cancelled" ? request.items.length : waiting} {(request.status === "cancelled" ? request.items.length : waiting) === 1 ? "CV" : "CVs"}
             </span>
           </span>
         </span>
@@ -274,12 +277,20 @@ function RequestCard({
             "shrink-0 whitespace-nowrap border px-2 py-0.5 text-[11px] font-bold",
             request.status === "cancelled"
               ? "border-slate-300 text-slate-500"
-              : waiting > 0
-                ? "border-orange-300 bg-orange-100 text-orange-800"
-                : "border-emerald-300 bg-emerald-100 text-emerald-800",
+              : waiting > 0 && dayPassed
+                ? "border-slate-300 bg-slate-100 text-slate-700"
+                : waiting > 0
+                  ? "border-orange-300 bg-orange-100 text-orange-800"
+                  : "border-emerald-300 bg-emerald-100 text-emerald-800",
           )}
         >
-          {request.status === "cancelled" ? INTERVIEW_REQUEST_STATUS_LABEL.cancelled : waiting > 0 ? `${waiting} to book` : INTERVIEW_REQUEST_STATUS_LABEL.scheduled}
+          {request.status === "cancelled"
+            ? INTERVIEW_REQUEST_STATUS_LABEL.cancelled
+            : waiting > 0 && dayPassed
+              ? `${waiting} not booked · day passed`
+              : waiting > 0
+                ? `${waiting} to book`
+                : INTERVIEW_REQUEST_STATUS_LABEL.scheduled}
         </span>
       </button>
 
@@ -287,7 +298,7 @@ function RequestCard({
         <div className="border-t border-slate-100 px-3 py-2.5">
           {request.note ? <p className="mb-2 whitespace-pre-wrap break-words border-l-[3px] border-l-slate-300 bg-slate-50 px-3 py-2 text-[12px] text-slate-700">{request.note}</p> : null}
           <ul className="flex flex-col divide-y divide-slate-100 border border-slate-100">
-            {request.items.map((item) => (
+            {request.items.filter((item) => !item.booked).map((item) => (
               <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2" key={item.id}>
                 <span className="min-w-0">
                   <span className="block break-words text-[13px] font-semibold text-slate-900">{item.candidateName}</span>
@@ -312,6 +323,8 @@ function RequestCard({
                   >
                     <CheckCircle2 className="h-3.5 w-3.5" /> Booked
                   </button>
+                ) : dayPassed && request.status !== "cancelled" ? (
+                  <span className="shrink-0 text-[11px] font-semibold text-slate-500">Day passed — never booked</span>
                 ) : canBook && request.status !== "cancelled" ? (
                   <Action onClick={() => setBooking(item)} tone="primary">
                     <Clock3 className="h-3.5 w-3.5" />
@@ -452,8 +465,19 @@ export function InterviewRequestPanels({
     [inbox, mine, onBookingCreated],
   );
 
-  const inboxWaiting = (inbox.requests ?? []).filter((request) => request.status !== "cancelled" && request.pendingItemCount > 0);
-  const inboxDone = (inbox.requests ?? []).filter((request) => request.status !== "cancelled" && request.pendingItemCount === 0);
+  // "Waiting for a time" is only the days still to come. A request whose day went by with a CV never
+  // booked (the owner, 2026-10-17: finished days still crowded the list) moves to its own collapsed
+  // group — kept, not dropped, so HR can still read it or withdraw it.
+  const inboxOpen = (inbox.requests ?? []).filter((request) => request.status !== "cancelled" && request.pendingItemCount > 0);
+  const inboxWaiting = inboxOpen.filter((request) => !requestDayHasPassed(request.requestedDay, todayKey));
+  const inboxMissed = inboxOpen.filter((request) => requestDayHasPassed(request.requestedDay, todayKey));
+  // A request with a slot on the calendar is SETTLED and leaves the requests at once, whatever its day
+  // (the owner, 2026-10-17: "once the request is settled in the calendar it should not be appearing in
+  // the requests anymore"): the interview lives on the calendar, and the card lists only CVs not yet
+  // booked. There is no "fully booked" group any more.
+  const isSettled = (request: InterviewRequest) => request.status !== "cancelled" && request.pendingItemCount === 0;
+  const mineUpcoming = (mine.requests ?? []).filter((request) => !isSettled(request) && !requestDayHasPassed(request.requestedDay, todayKey));
+  const mineEarlier = (mine.requests ?? []).filter((request) => !isSettled(request) && requestDayHasPassed(request.requestedDay, todayKey));
 
   return (
     <>
@@ -494,13 +518,13 @@ export function InterviewRequestPanels({
                 ))}
               </ul>
             )}
-            {inboxDone.length > 0 ? (
+            {inboxMissed.length > 0 ? (
               <details className="mt-3">
                 <summary className="cursor-pointer text-[12px] font-semibold text-slate-500 hover:text-slate-800">
-                  {inboxDone.length} fully booked {inboxDone.length === 1 ? "request" : "requests"}
+                  {inboxMissed.length} {inboxMissed.length === 1 ? "request" : "requests"} whose day passed without a time
                 </summary>
                 <ul className="mt-2 flex flex-col gap-2">
-                  {inboxDone.map((request) => (
+                  {inboxMissed.map((request) => (
                     <RequestCard
                       api={api}
                       canBook={canBook}
@@ -538,21 +562,49 @@ export function InterviewRequestPanels({
             ) : mine.requests.length === 0 ? (
               <p className="px-1 text-[13px] text-slate-500">You have not asked for any interviews yet. Use “Request an interview” above.</p>
             ) : (
-              <ul className="flex flex-col gap-2">
-                {mine.requests.map((request) => (
-                  <RequestCard
-                    api={api}
-                    canBook={false}
-                    key={request.id}
-                    onBooked={onBooked}
-                    onCancelled={mine.remove}
-                    onOpenBooking={onOpenBooking}
-                    request={request}
-                    todayKey={todayKey}
-                    zoomConnected={zoomConnected}
-                  />
-                ))}
-              </ul>
+              <>
+                {mineUpcoming.length === 0 ? (
+                  <p className="px-1 text-[13px] text-slate-500">No requests for the days ahead.</p>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {mineUpcoming.map((request) => (
+                      <RequestCard
+                        api={api}
+                        canBook={false}
+                        key={request.id}
+                        onBooked={onBooked}
+                        onCancelled={mine.remove}
+                        onOpenBooking={onOpenBooking}
+                        request={request}
+                        todayKey={todayKey}
+                        zoomConnected={zoomConnected}
+                      />
+                    ))}
+                  </ul>
+                )}
+                {mineEarlier.length > 0 ? (
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-[12px] font-semibold text-slate-500 hover:text-slate-800">
+                      {mineEarlier.length} earlier {mineEarlier.length === 1 ? "request" : "requests"}
+                    </summary>
+                    <ul className="mt-2 flex flex-col gap-2">
+                      {mineEarlier.map((request) => (
+                        <RequestCard
+                          api={api}
+                          canBook={false}
+                          key={request.id}
+                          onBooked={onBooked}
+                          onCancelled={mine.remove}
+                          onOpenBooking={onOpenBooking}
+                          request={request}
+                          todayKey={todayKey}
+                          zoomConnected={zoomConnected}
+                        />
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+              </>
             )}
           </div>
         </section>

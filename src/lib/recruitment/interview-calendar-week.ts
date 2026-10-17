@@ -248,6 +248,11 @@ export function cairoDateKey(instant: Date): string {
   return cairoWallClock(instant).key;
 }
 
+/** A requested day that is before today (Cairo) — a request on it can no longer be given a time. */
+export function requestDayHasPassed(requestedDay: string, todayKey: string): boolean {
+  return requestedDay < todayKey;
+}
+
 /** Minutes after Cairo midnight for an instant. */
 export function cairoMinutesOfDay(instant: Date): number {
   return cairoWallClock(instant).minutes;
