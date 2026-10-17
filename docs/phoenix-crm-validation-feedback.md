@@ -261,6 +261,38 @@ misses stay unmatched and go to the Super Admin's Approve on Not confirmed. Pinn
 `checkNameSpelling` part 6, broken twice (the rule off; the three-letter floor lowered) and seen to fail
 on its own assertion each time.
 
+**His own name first (2026-10-18).** The same night's re-read wrote every confirmed match, so its
+confirmations were judged again from their own stored readings — no model call — against names that
+are NOT the customer's: 20 other customers of the same list, and near misses built from his own name
+(another given name before his father's and family name; his given name before another surname). Of
+341 confirmations, 106 also matched one. The bag of words had three blind spots. A three-word name may
+lose one word, and it could lose the GIVEN name: `وائل محمد بلحة` passed on a plate reading `احمد محمد
+بلحة`. His given name could stand as another man's father: `محمد الشحري` on `أحمد محمد الشحرى`. And
+the sign's whole text could lend his words from two different names: `مجدى عبد العزيز` was written as a
+match off a pharmacy notice naming `الدكتور مجدى` and, further down, `الدكتور / محمود عبدالعزيز`.
+
+`readsTheCustomersName` in `signboard-rules.ts` closes all three on the PERSON axis. A person name the
+reader split out must open on one of his words — the practice's kind (`مركز`, `عيادة`) and the lone
+letter `أ.د` leaves are skipped, nothing else, since `مي` is a given name — and the whole text must
+carry his words in his order as one run that opens on his given name, at most two other words between
+two of his. The quorum is unchanged. Requiring the given name outright was scored first and refused:
+it lost three plates whose given name was simply unreadable (`د / ... عبد النبي الخولي`), where the
+reader's split name still opens on his father's name.
+
+Replayed on the same 341: 335 stand, and those also matching a decoy fall from 106 to 71 (what is left
+is mostly a plate whose given name is unreadable — the allowance the quorum exists for — and AM place
+names). A confirmation the night wrote that no longer matches is put back exactly as it stood before
+the night, once this rule is live, for the Super Admin's Approve on Not confirmed. The six of the
+341: four plates read in part whose name opens on another given name
+(`مجاهد علي ضاهر` for `محمد على ضاهر`, `سينا ناجح زاخر` for `مينا ناجح زاخر`, `مرسى زاهر متري` for
+`برسيس زاهر متري`, `رجاب يحيى عبد الكريم` for `رباب يحيي عبد الكريم` — misread letters or a
+brother, which a look settles), the notice, and a hospital filed on the PM list. A slower "careful"
+read (high reasoning effort, every unclear sign enlarged and read again) was tried on 11 unresolved
+places the same night and confirmed none, at about three minutes each: the photographs are the limit,
+not how hard the reader looks. Pinned by `checkNameSpelling` part 7, broken four ways (the rule off,
+the text run off, the three-letter floor put back on his words, no lead word skipped) and seen to fail
+each time.
+
 - **The refusal reason** (`validation-feedback.ts`). Six closed reasons: no signboard in the photo;
   the sign is not this customer; too dark or blurred to read; not taken at the entrance; a photo of
   paper, not a building; the location is not where the photo was taken. The free note stays on the

@@ -304,6 +304,64 @@ function nameWordIsThere(wanted: NameWord, read: readonly NameWord[]): boolean {
   );
 }
 
+// 🔴 A THREE-WORD NAME MAY LOSE ONE WORD, AND IT MUST NEVER BE HIS GIVEN NAME LOST BEHIND ANOTHER.
+// Judging the 341 places the strong reader confirmed on 18 Oct 2026 again, from their own readings,
+// against names that are NOT the customer's — 20 strangers, and his surname under other given names —
+// 106 also matched one, in three shapes the bag of words could not see: his
+// father's and family name behind another given name ("وائل محمد بلحة" passed on a plate reading
+// "احمد محمد بلحة"), his given name standing as somebody else's father ("محمد الشحري" on "أحمد محمد
+// الشحرى"), and his words gathered from two names on one notice ("مجدى عبد العزيز" from "الدكتور
+// مجدى" and "الدكتور / محمود عبدالعزيز"). So a person name the reader split out must OPEN on one of
+// his words — it may still have lost the given name to the plate's damage ("د / ... عبد النبي
+// الخولي") — and the sign's whole text must carry his words, in his order, as one run that opens on
+// his given name, with at most two other words between two of his. Requiring the given name outright
+// was scored and refused: it lost three plates whose given name was simply unreadable. Replayed: 335
+// of the 341 stand and the decoys they also match fall from 106 to 71. Of the six that leave, four
+// are plates whose name opens on another given name, read in part ("مجاهد علي ضاهر" for محمد على
+// ضاهر, "سينا ناجح زاخر" for مينا ناجح زاخر), one is the notice above and one a hospital filed on the
+// PM list; each goes to the Super Admin's Approve, as a misread letter does.
+
+/**
+ * Words a plate puts in front of the name that are never a given name: the practice's own kind, and
+ * the lone letter "أ.د" leaves once the fold has taken its د. Nothing else is skipped — "مي" is a
+ * given name of two letters.
+ */
+const PLATE_LEAD_WORDS: ReadonlySet<string> = new Set(["مركز", "عياده", "عيادات", "مستشفي", "مجمع"]);
+
+/**
+ * Does this candidate say HIS name, rather than carrying his words inside somebody else's?
+ *
+ * `customerWords` is every word of the name, a two-letter given name included — the quorum's
+ * three-letter floor would let "مي احمد" open on احمد and take any احمد's plate.
+ */
+function readsTheCustomersName(
+  customerWords: readonly NameWord[],
+  read: readonly NameWord[],
+  allowedMisses: number,
+  isSignText: boolean,
+): boolean {
+  if (customerWords.length === 0) return false;
+  if (!isSignText) {
+    const opening = read.find((word) => word.word.length > 1 && !PLATE_LEAD_WORDS.has(word.word));
+    return opening !== undefined && customerWords.some((name) => nameWordIsThere(name, [opening]));
+  }
+  for (let start = 0; start < read.length; start += 1) {
+    if (!nameWordIsThere(customerWords[0], [read[start]])) continue;
+    let at = start;
+    let missed = 0;
+    for (const name of customerWords.slice(1)) {
+      const step = read.slice(at + 1, at + 4).findIndex((word) => nameWordIsThere(name, [word]));
+      if (step < 0) {
+        missed += 1;
+        continue;
+      }
+      at += 1 + step;
+    }
+    if (missed <= allowedMisses) return true;
+  }
+  return false;
+}
+
 /**
  * Is the customer's name on this signboard?
  *
@@ -358,18 +416,23 @@ export function signNamesCustomer(input: {
   // `wanted` being non-empty already proves the name is there; `?? ""` is what says so to the compiler.
   const wordsOf = (text: string): NameWord[] =>
     placeAxis ? distinctiveWords(text).map((word) => ({ core: null, word })) : personNameWords(text);
-  const wantedWords = wordsOf(input.customerName ?? "").filter((name) => name.word.length >= 3);
+  const customerWords = wordsOf(input.customerName ?? "").filter((name) => name.word.length > 1);
+  const wantedWords = customerWords.filter((name) => name.word.length >= 3);
   if (wantedWords.length === 0) return { matches: null, score: null };
   // A name of three tokens or more survives losing one; two tokens must both be there.
   const allowedMisses = wantedWords.length >= 3 ? 1 : 0;
 
   let best: number | null = null;
   let matched = false;
-  for (const candidate of haystacks) {
+  for (const [index, candidate] of haystacks.entries()) {
     const read = wordsOf(candidate);
     if (read.length === 0) continue;
     const missing = wantedWords.filter((name) => !nameWordIsThere(name, read)).length;
-    if (missing <= allowedMisses) matched = true;
+    // On the person axis the allowance is never spent on his given name standing behind another
+    // man's: a name read off the sign opens on one of HIS words, and the sign's whole text carries
+    // his words as one run that opens on his given name (`readsTheCustomersName`).
+    const isTheName = placeAxis || readsTheCustomersName(customerWords, read, allowedMisses, index >= preferred.length);
+    if (missing <= allowedMisses && isTheName) matched = true;
     const score = jaccardSimilarity(nameTokens(candidate), nameTokens(input.customerName));
     best = best === null ? score : Math.max(best, score);
   }

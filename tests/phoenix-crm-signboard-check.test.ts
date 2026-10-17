@@ -508,6 +508,36 @@ function checkNameSpelling(): void {
   assert.equal(pm("حمدي نوفل", ["مجدي أمين نوفل"]), false, "a surname alone is not the name");
   assert.equal(pm("علي الحج", ["علي حج"]), false, "a word left with two letters is not a name");
 
+  // 7 · 🔴 THE ALLOWANCE IS NEVER HIS GIVEN NAME LOST BEHIND ANOTHER MAN'S. Three shapes the decoy check
+  //      of 18 Oct 2026 found among the strong reader's confirmations.
+  const onSign = (customerName: string, personNames: string[], signText: string) =>
+    signNamesCustomer({ customerName, listType: "PM", personNames, placeNames: [], signText }).matches;
+  assert.equal(pm("وائل محمد بلحة", ["احمد محمد بلحة"]), false, "his father's and family name behind another given name");
+  assert.equal(pm("محمد الشحري", ["أحمد محمد الشحرى"]), false, "his given name standing as somebody else's father");
+  assert.equal(
+    onSign("وائل محمد بلحة", [], "دكتور احمد محمد بلحة استشاري الباطنة"),
+    false,
+    "and the same in the sign's whole text: the run must open on his given name",
+  );
+  assert.equal(
+    onSign(
+      "مجدى عبد العزيز",
+      ["الدكتور مجدى", "الدكتور / محمود عبدالعزيز"],
+      "يرجى من السادة المرضى مراجعة الادوية مع الدكتور مجدى بعد صرف الروشتة من الصيدلية لعدم اعطاء بديل إدارة الدكتور / محمود عبدالعزيز",
+    ),
+    false,
+    "his words gathered from two names on one notice",
+  );
+  //      What stays a match: a given name the plate's damage took, the practice's kind in front, and a
+  //      reader that split the name badly while the text still reads it whole.
+  assert.equal(pm("محمود عبدالنبي الخولي", ["عبد النبي الخولي"]), true, "د / ... عبد النبي الخولي");
+  assert.equal(pm("ايمن بدوي", ["مركز أيمن البدوى"]), true, "مركز is never a given name");
+  assert.equal(pm("محمد علي", ["أ.د/ محمد علي"]), true, "nor the letter أ.د leaves behind");
+  assert.equal(onSign("بسمة احمد", ["أحمد حمدى زكى"], "د/بسمة أحمد حمدى زكى إستشارى طب الأطفال"), true, "the text reads it whole");
+  assert.equal(onSign("عادل البكري", [], "دكتور عادل البكاري البكري استشاري اطفال"), true, "one stray word between two of his");
+  assert.equal(pm("مي احمد", ["مي احمد"]), true, "a two-letter given name is still read");
+  assert.equal(pm("وائل احمد", ["مي احمد"]), false, "and is still another given name");
+
   // 5 · A facility name is untouched: its quorum is the stemmed distinctive words, as before.
   assert.equal(
     signNamesCustomer({ customerName: "مستشفى ابو كبير المركزي", listType: "AM", personNames: [], placeNames: ["مستشفى أبو كبير"], signText: null }).matches,
