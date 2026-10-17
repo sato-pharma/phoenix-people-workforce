@@ -96,6 +96,7 @@ export function startProcessHealthReporter(): void {
   const role = resolveProcessRole(process.env.PHOENIX_PROCESS_ROLE);
   const histogram = monitorEventLoopDelay({ resolution: 20 });
   histogram.enable();
+  let lastStallAtMs: number | null = null;
 
   const timer = setInterval(() => {
     // A throw inside a timer callback is an uncaught exception, which ends the process. Telemetry
@@ -119,9 +120,22 @@ export function startProcessHealthReporter(): void {
       });
       const alert = stallAlertFor({ jobs, maxMs: eventLoopDelayMs.max, role });
       if (alert) {
+        // The 2026-10-17 freezes with no job running recurred every exactly 65:00. Seconds since the previous stall and
+        // since boot say whether a timer of this process owns that period, or the container is being restarted around it.
+        const nowMs = Date.now();
+        const sinceLastStallS = lastStallAtMs == null ? null : Math.round((nowMs - lastStallAtMs) / 1000);
+        lastStallAtMs = nowMs;
         logWarning(alert.message, {
           labels: { event: "event_loop_stall" },
-          context: { jobs, role, stallMs: eventLoopDelayMs.max },
+          context: {
+            heapUsedMb: toMb(memory.heapUsed),
+            jobs,
+            role,
+            rssMb: toMb(memory.rss),
+            sinceLastStallS,
+            stallMs: eventLoopDelayMs.max,
+            uptimeS: Math.round(process.uptime()),
+          },
         });
         void reportStallToSentry(alert);
       }

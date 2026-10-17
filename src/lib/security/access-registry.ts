@@ -291,6 +291,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/pharmacy-search/save", permission: { resource: "sales", action: "import" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/logs", permission: { resource: "admin", action: "read" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/errors", permission: { resource: "admin", action: "read" } }),
+  // The Sentry Check page's server half: Super Admin only (the `admin` resource is hard-locked to that seat), and on
+  // production it throws on purpose so Sentry sees a real request error. It reads and writes nothing of ours.
+  sessionApi({ methods: ["POST"], pattern: "/api/admin/sentry-check", permission: { resource: "admin", action: "read" }, csrfRequired: true }),
   // System Issues dashboard is CEO + Super Admin (checks access.role === "CEO" ||
   // canAccessSystemAdministratorWorkspace(access) directly) rather than the "admin"
   // permission resource, which is hard-locked to Super Admin only.

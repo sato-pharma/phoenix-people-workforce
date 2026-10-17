@@ -18,6 +18,9 @@ import {
   sentryServerStatus,
   sentryTracesSampler,
 } from "../src/lib/observability/sentry-policy.ts";
+import { isBrowserNoiseMessage } from "../src/lib/error-monitor/browser-noise.ts";
+import { CROSS_ORIGIN_MASKED_DISPLAY } from "../src/lib/error-monitor/cross-origin-masked.ts";
+import { isModuleLockRefusal } from "../src/lib/error-monitor/expected-refusal.ts";
 import { sentryMonitorConfigFor } from "../src/lib/observability/sentry-cron-monitor.ts";
 import { buildSentryAlertMessage, verifySentrySignature } from "../src/lib/observability/sentry-alert-webhook.ts";
 import { createHmac } from "node:crypto";
@@ -186,6 +189,20 @@ function beyondErrorsTests() {
   assert.equal(scrubSentryPath("/api/leave/4821/approve"), "/api/leave/:id/approve");
   assert.equal(scrubSentryPath("/x/3f2b8c1e-9d4a-4e6b-8a1f-0c2d3e4f5a6b"), "/x/:id");
   assert.equal(scrubSentryPath("/admin/payroll/summary"), "/admin/payroll/summary");
+  // A database call keeps its table (or function) name: they are schema, not data, and masking them made 100,120 spans a day
+  // read the same `/rest/:id/:id` (an "N+1 API Call" issue on a cron that reads thirty different tables). Values ride in the
+  // query string, which is still dropped, and a path that merely resembles one is scrubbed as before.
+  assert.equal(scrubSentryPath("/rest/v1/employees?hr_id=eq.B-10&select=*"), "/rest/v1/employees");
+  assert.equal(scrubSentryPath("/rest/v1/source_of_sales_import_rows_staging_archive?limit=1"), "/rest/v1/source_of_sales_import_rows_staging_archive");
+  assert.equal(scrubSentryPath("/rest/v1/rpc/phx_monthly_achievement"), "/rest/v1/rpc/phx_monthly_achievement");
+  assert.equal(scrubSentryPath("/rest/v1/employees/B-10"), "/rest/v1/employees", "nothing after the table name is ever kept");
+  assert.equal(scrubSentryPath("/auth/v1/user"), "/auth/v1/user");
+  assert.equal(scrubSentryPath("/storage/v1/object/hiring/B-10"), "/storage/v1/object/hiring/:id");
+  assert.equal(scrubSentryPath("/rest/B-10/employees"), "/rest/:id/employees", "a PostgREST shape needs the real /rest/v1/ prefix");
+  assert.equal(
+    scrubSentryText("GET https://ozucdzovmcqvepbozvqf.supabase.co/rest/v1/employees?hr_id=eq.B-10"),
+    "GET https://ozucdzovmcqvepbozvqf.supabase.co/rest/v1/employees",
+  );
   assert.equal(scrubSentryText("GET /admin/employees/B-10?month=2026-10"), "GET /admin/employees/:id");
   assert.equal(scrubSentryText("failed for omar@satopharma.com on B-204"), "failed for [email] on :id");
   assert.equal(scrubSentryText("fetch https://phoenix-hr.satopharma.com/api/leave/4821"), "fetch https://phoenix-hr.satopharma.com/api/leave/:id");
@@ -390,7 +407,49 @@ function alertWebhookTests() {
   assert.match(code("src/lib/security/access-registry.ts"), /pattern: "\/api\/webhooks\/sentry"/, "the route is in the access registry");
 }
 
+function sentryCheckPageTests() {
+  // The example page: Super Admin only, and the server half throws only after the SAME gate the SDK uses.
+  const page = code("app/(admin)/admin/sentry-check/page.tsx");
+  assert.match(page, /access\.role !== "Super Admin"[\s\S]*?redirect\(/, "the Sentry Check page is the Super Admin's alone");
+  assert.match(page, /sentryServerStatus\(\{ appEnv: process\.env\.APP_ENV, dsn: process\.env\.SENTRY_DSN \}\)/, "the page reads the SDK's own production gate");
+
+  const route = code("app/api/admin/sentry-check/route.ts");
+  assert.match(route, /assertSameOriginMutation\(request\)/);
+  assert.match(route, /access\.role !== "Super Admin"[\s\S]*?status: 403/, "the trigger route refuses everyone but the Super Admin");
+  assert.match(route, /!status\.enabled[\s\S]*?status: 409/, "off production the route refuses instead of throwing");
+  assert.ok(
+    route.indexOf("!status.enabled") < route.indexOf('throw new Error("Sentry Check'),
+    "the deliberate throw comes only after the production gate",
+  );
+  assert.match(code("src/lib/security/access-registry.ts"), /pattern: "\/api\/admin\/sentry-check"/, "the route is in the access registry");
+}
+
+function expectedNoiseTests() {
+  // A locked module refusing a page is an answer: skipped by the request-error hook, exact wording only.
+  assert.equal(isModuleLockRefusal(new Error("Forbidden: incentive is temporarily locked by the system administrator.")), true);
+  assert.equal(isModuleLockRefusal(new Error("Forbidden: sales is temporarily locked by the system administrator.")), true);
+  assert.equal(isModuleLockRefusal(new Error("Forbidden: Employee cannot read payroll.")), false, "a real refusal still reaches both stores");
+  assert.equal(isModuleLockRefusal(new Error("Connection closed.")), false);
+  assert.equal(isModuleLockRefusal("Forbidden: incentive is temporarily locked by the system administrator."), false, "only a thrown error object counts");
+  assert.match(code("instrumentation.ts"), /if \(isModuleLockRefusal\(error\)\) return;\s*await forwardRequestErrorToSentry/, "the lock refusal is skipped before either store is written");
+
+  // The browser's own network-failure wording and its injected-script placeholder stay out of Sentry.
+  for (const message of ["Load failed", "Failed to fetch", "Error in input stream", "network error", CROSS_ORIGIN_MASKED_DISPLAY]) {
+    assert.equal(isBrowserNoiseMessage(message), true, `${message} is the browser talking, not Phoenix`);
+  }
+  assert.equal(isBrowserNoiseMessage("Connection closed."), false, "'Connection closed.' was once a REAL Supabase failure and must stay visible");
+  assert.equal(isBrowserNoiseMessage("TypeError: Cannot read properties of undefined"), false);
+  assert.equal(isBrowserNoiseMessage("Failed to fetch the incentive table"), false, "the match is exact, never a substring");
+  assert.match(
+    code("src/lib/observability/sentry-client.ts"),
+    /isBrowserNoiseMessage\(describeThrown\(report\.error\)\)\) return;/,
+    "the browser Sentry path drops the noise; the error table still records it",
+  );
+}
+
 export async function runSentryProductionOnlyTests() {
+  expectedNoiseTests();
+  sentryCheckPageTests();
   gateTests();
   scrubTests();
   beyondErrorsTests();
