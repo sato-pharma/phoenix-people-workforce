@@ -122,6 +122,38 @@ export async function runInterviewOutcomeSettleTests() {
   );
   assert.equal(first?.outcome, "shortlisted", "the earliest decision after the interview is the outcome");
 
+  // Shortlisted and THEN hired is hired (owner, 2026-10-17: Shahd Ghoniem and Yomna Gamal were labelled
+  // "shortlisted" although both accepted their offers).
+  const shortlistedThenHired = inferInterviewOutcome(
+    evidence({
+      statusEvents: [
+        { actorHrId: "B-10", createdAt: at("2026-09-30", 10), toStatus: "shortlisted" },
+        { actorHrId: null, createdAt: at("2026-10-14", 10), toStatus: "hired" },
+      ],
+    }),
+  );
+  assert.equal(shortlistedThenHired?.outcome, "attended", "a hire after an earlier shortlist is not recorded as 'shortlisted'");
+  assert.equal(
+    inferInterviewOutcome(
+      evidence({
+        offerCreatedAt: at("2026-10-05", 9),
+        statusEvents: [{ actorHrId: "B-10", createdAt: at("2026-09-30", 10), toStatus: "shortlisted" }],
+      }),
+    )?.outcome,
+    "attended",
+    "an offer after an earlier shortlist outranks it",
+  );
+  assert.equal(
+    inferInterviewOutcome(
+      evidence({
+        offerCreatedAt: at("2026-10-05", 9),
+        statusEvents: [{ actorHrId: "B-10", createdAt: at("2026-10-06", 10), toStatus: "rejected" }],
+      }),
+    )?.outcome,
+    "rejected",
+    "a rejection is not overridden by an offer that may have been drawn up before it",
+  );
+
   // Wiring: the ten-minute cron settles BEFORE it nags, a failure there never stops the reminders, and
   // the write only lands where the outcome is still empty, with no setter and no candidate effect.
   const route = stripComments(read("app/api/cron/interview-reminders/route.ts"));
