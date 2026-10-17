@@ -320,8 +320,9 @@ export function runPhoenixCrmPlaceMatchGroupsTests(): void {
   const columns = /<CrmTable columns=\{\[([^\]]*)\]\}/.exec(screen);
   assert.ok(columns, "the per-rep table names its column widths");
   const widths = [...columns[1].matchAll(/"(\d+)%"/g)].map((match) => Number(match[1]));
-  assert.ok(widths.length === 6 && widths.reduce((total, width) => total + width, 0) <= 100, "six columns that fit the panel");
-  assert.equal((screen.match(/<th /g) ?? []).length, 6, "with a header for each");
+  assert.ok(widths.length === 5 && widths.reduce((total, width) => total + width, 0) <= 100, "five columns that fit the panel — a sixth clipped its header on a laptop");
+  assert.equal((screen.match(/<th /g) ?? []).length, 5, "with a header for each");
+  assert.ok(screen.includes('if (answer === "forget") setAnswered(new Set());'), "🔴 a question taken back must be able to return: the hidden-ids set is emptied on a forget");
   assert.ok(screen.includes("anyPasses(group.members, filters, cutoff)"), "🔴 a place stays whole when any of its validations passes the shared filters");
 
   const shell = read("src/components/phoenix-crm/validation-reviews-board.tsx");

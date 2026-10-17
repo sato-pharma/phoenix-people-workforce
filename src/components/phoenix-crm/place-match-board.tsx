@@ -193,7 +193,7 @@ function Reading({ subject }: { subject: MatchSubject }) {
 function MemberCard({ member }: { member: MatchMember }) {
   const best = member.flags.includes("most_accurate");
   return (
-    <div className={`min-w-0 space-y-3 border bg-white p-3 ${best ? "border-emerald-300" : "border-slate-200"}`}>
+    <div className={`min-w-0 space-y-3 border border-l-[3px] border-slate-200 bg-white p-3 ${best ? "border-l-emerald-500" : ""}`}>
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         <span className="inline-flex min-h-6 min-w-6 items-center justify-center border border-slate-300 bg-slate-50 px-1.5 text-xs font-black text-slate-700">
           #{member.rank}
@@ -232,6 +232,7 @@ function QuestionSide({ label, more, subjects }: { label: string; more: number; 
 }
 
 function QuestionCard({ busy, onAnswer, question }: { busy: boolean; onAnswer: (answer: Answer, pairs: ReadonlyArray<[string, string]>) => void; question: MatchQuestion }) {
+  const names = `${question.left[0]?.title ?? "one side"} and ${question.right[0]?.title ?? "the other side"}`;
   return (
     <div className="min-w-0 space-y-3 border-t border-slate-100 px-4 py-4 first:border-t-0">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -243,12 +244,12 @@ function QuestionCard({ busy, onAnswer, question }: { busy: boolean; onAnswer: (
         <QuestionSide label="One side" more={question.moreLeft} subjects={question.left} />
         <QuestionSide label="The other side" more={question.moreRight} subjects={question.right} />
       </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <div aria-busy={busy || undefined} aria-label={`Are these the same place: ${names}`} className="flex min-w-0 flex-wrap items-center gap-2" role="group">
         <span className="break-words text-sm font-black text-slate-800">Are these the same place?</span>
-        <CrmButton disabled={busy} onClick={() => onAnswer("same", question.pairs)} size="sm" variant="primary">
+        <CrmButton aria-label={`Same place: ${names}`} disabled={busy} onClick={() => onAnswer("same", question.pairs)} size="sm" variant="primary">
           Same place
         </CrmButton>
-        <CrmButton disabled={busy} onClick={() => onAnswer("different", question.pairs)} size="sm">
+        <CrmButton aria-label={`Different places: ${names}`} disabled={busy} onClick={() => onAnswer("different", question.pairs)} size="sm">
           Different places
         </CrmButton>
       </div>
@@ -347,15 +348,14 @@ function RepRows({ reps }: { reps: MatchRepAccuracy[] }) {
           </div>
         ))}
       </CrmCardsOnPhone>
-      <CrmTable columns={["24%", "14%", "17%", "21%", "14%", "10%"]}>
+      <CrmTable columns={["27%", "14%", "19%", "22%", "18%"]}>
         <thead>
           <tr>
             <th className={crmThClassName}>Rep</th>
-            <th className={crmThClassName}>Places compared</th>
+            <th className={crmThClassName}>Places</th>
             <th className={crmThClassName}>Nearest other rep</th>
             <th className={crmThClassName}>Phone accuracy · pin vs photo</th>
             <th className={crmThClassName}>Most accurate · far off</th>
-            <th className={crmThClassName}>Signs matching</th>
           </tr>
         </thead>
         <tbody>
@@ -377,8 +377,8 @@ function RepRows({ reps }: { reps: MatchRepAccuracy[] }) {
               <td className={crmTdClassName}>
                 {countText(rep.mostAccurate)} of {countText(rep.groups)}
                 <p className="text-xs font-medium text-slate-500">{countText(rep.outliers)} far off</p>
+                <p className="text-xs font-medium text-slate-500">{signsText(rep)} signs matching</p>
               </td>
-              <td className={crmTdClassName}>{signsText(rep)}</td>
             </tr>
           ))}
         </tbody>
@@ -424,7 +424,8 @@ export function PlaceMatchBoardView({ filters }: { filters: ValidationReviewFilt
       for (let index = 0; index < pairs.length; index += MAX_ANSWER_PAIRS) {
         await crmPost<unknown>(ROUTE, { answer, pairs: pairs.slice(index, index + MAX_ANSWER_PAIRS) }, "saved");
       }
-      if (questionId) setAnswered((current) => new Set(current).add(questionId));
+      if (answer === "forget") setAnswered(new Set());
+      else if (questionId) setAnswered((current) => new Set(current).add(questionId));
       resource.reload();
     } catch (caught) {
       setError(messageOf(caught));
