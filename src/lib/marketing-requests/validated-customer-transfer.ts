@@ -1209,9 +1209,9 @@ export function resolveTransferredVenueOwnerHrId(
 ): string {
   for (const candidate of [customer?.created_by_hr_id, customer?.owner_hr_id]) {
     const value = typeof candidate === "string" ? candidate.trim() : "";
-    if (value) return hrIdForStorage(value);
+    if (value) return hrIdForStorage(value) ?? value;
   }
-  return hrIdForStorage(actorHrId);
+  return hrIdForStorage(actorHrId) ?? actorHrId;
 }
 
 /**
