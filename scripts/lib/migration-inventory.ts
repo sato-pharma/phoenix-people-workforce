@@ -987,6 +987,32 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // is a no-op (`add column if not exists`, the CHECKs dropped `if exists` before they are re-added,
   // `create or replace`).
   "20261017120000_phoenix_crm_manager_asks_second_approval.sql",
+  // 2026-10-17, the manager's weekly plan widened to the regional, national and product managers
+  // (owner, about 18:00 Cairo: "Now do the same for the product managers and the national sales
+  // managers and the regional manager"; approvers "as today, HR auto acknowledge"). Applied to staging
+  // (cifwmndunmlxjhyjugxa) at 18:53 Cairo with `node scripts/apply-sql-file.mjs <file> staging` — the
+  // standing route, because both replaced bodies contain `update` statements the MCP declines. Then
+  // PRODUCTION (ozucdzovmcqvepbozvqf) at 19:48 Cairo the same day, announced first, by the same route
+  // with PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com — before the PR that reads the new
+  // columns merged; it printed {"applied":true,"count":0}. That route writes NO ledger row, so no row on
+  // either project carries this version or name. Production's pre-image, read the minute before: save
+  // 8001428dc75b22ba565674c39b83029f and transition a29033c32db8acb97e2c487e286e21a0 (20261017000000's
+  // digests, above), 1 plan, 3 slots, 1 event, and neither planner_kind nor scope_dm_seat_id present.
+  // Verified on BOTH projects by digest, not by presence: md5(pg_proc.prosrc) is md5-equal to this file's
+  // dollar-quoted bodies (as-is LF) for both functions it replaces —
+  // phoenix_crm_save_manager_plan_slot 15223e65b8efa70cd128bb1786f0714a and
+  // phoenix_crm_manager_plan_transition ce07420c77d4953c73701817894347ee — and this file is each one's
+  // LAST definer. Both are SECURITY DEFINER with no anon or authenticated EXECUTE, and the six CHECKs
+  // (plans_planner_kind, plans_seat_unless_pm, plans_hr_ack, slots_kind, slots_scope, events_type) are
+  // live — read in the same queries on each project. On production the one plan reads planner_kind 'dm'
+  // and its 3 slots and 1 event are untouched. Staging ran the transitions inside a DO block raised to
+  // roll back (a product manager with no seat, Office refused for a district manager, regional →
+  // national → CEO with the HR acknowledgement, national → CEO in one step, a district manager with no
+  // acknowledgement): 16 of 16 intended outcomes. The rollback is 20261017000000's two bodies (its
+  // digests are above) plus the column and CHECK steps in this file's header. Re-applying it is a no-op
+  // (`add column if not exists`, the CHECKs dropped `if exists` before they are re-added,
+  // `create or replace`).
+  "20261017213000_phoenix_crm_manager_plan_wider_writers.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

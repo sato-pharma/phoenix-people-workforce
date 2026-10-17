@@ -138,7 +138,9 @@ function PlanDetail({ detail, backHref, plannerHref }: { detail: ManagerHubPlanD
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-phx-line pb-3">
         <div className="min-w-0">
           <h2 className="break-words text-lg font-black text-slate-900">{detail.managerName}</h2>
-          <p className="text-sm text-slate-600">District manager weekly plan · {detail.weekText}</p>
+          <p className="text-sm text-slate-600">
+            {detail.managerTitle} weekly plan · {detail.weekText}
+          </p>
         </div>
         <span className="border border-slate-300 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-slate-700">{detail.statusLabel}</span>
       </div>
@@ -160,7 +162,7 @@ function PlanDetail({ detail, backHref, plannerHref }: { detail: ManagerHubPlanD
               <h3 className={headerText}>Plan details</h3>
             </header>
             <dl className="px-4 py-2">
-              <Fact label="District manager" value={detail.managerName} />
+              <Fact label={detail.managerTitle} value={detail.managerName} />
               <Fact label="Week" value={detail.weekText} />
               <Fact label="Sent" value={detail.sentAt ? `${detail.sentAt}${detail.sentLate ? " · after the Thursday deadline" : ""}` : "Not sent"} />
               {detail.returnedDayText ? <Fact label="Day returned" value={detail.returnedDayText} /> : null}
@@ -227,7 +229,7 @@ function RemovalDetail({ detail, backHref }: { detail: ManagerHubRemovalDetail; 
             <h3 className={headerText}>The customer</h3>
           </header>
           <dl className="px-4 py-2">
-            <Fact label="District manager" value={detail.managerName} />
+            <Fact label={detail.managerTitle} value={detail.managerName} />
             <Fact label="Speciality" value={detail.speciality} />
             <Fact label="Grade · potential" value={grades} />
             <Fact label="Area" value={detail.areaName} />

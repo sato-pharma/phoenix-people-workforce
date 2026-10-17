@@ -492,11 +492,11 @@ export function runPhoenixCrmDoubleVisitPlanTests(): void {
     assert.deepEqual(
       holding("@/lib/phoenix-crm/double-visit-plan-rules"),
       [
-        // The weekly plan reuses its district-manager list and its "counts as his double visit" rule.
+        // The weekly plan reuses its district-manager list and its "counts as his double visit" rule; since
+        // 2026-10-17 the report reaches that rule through `countsAsPlannersVisitWithRep` in the rules file.
         "src/lib/phoenix-crm/manager-plan-rules.ts",
         "src/lib/phoenix-crm/server/double-visit-plans.ts",
         "src/lib/phoenix-crm/server/manager-plan-reach.ts",
-        "src/lib/phoenix-crm/server/manager-plan-report.ts",
       ],
       "the rules are read by the service and by the weekly plan that replaced it",
     );

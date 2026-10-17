@@ -28,13 +28,14 @@ export async function GET(request: Request) {
   }
 }
 
-// POST = one visit logged. `create`, narrowed in the service to the district manager himself.
+// POST = one visit logged. `read`, narrowed in the service to the manager who plans the week himself
+// (`assertManagerPlanWriter`).
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "phoenix_crm", "create");
+    await assertPermission(access, "phoenix_crm", "read");
     const viewer = await resolvePhoenixCrmViewer(access);
     const body = (await request.json()) as unknown;
     const today = await logManagerVisit(viewer, body);

@@ -77,6 +77,7 @@ import { logError } from "@/lib/observability/log";
 import { minuteClock } from "@/lib/phoenix-crm/day-start-rules";
 import { dropReasonLabel } from "@/lib/phoenix-crm/entry-rules";
 import { LOCATION_NOT_CONFIRMED_TEXT, LOCATION_NOT_CONFIRMED_TITLE } from "@/lib/phoenix-crm/google-place-rules";
+import { managerPlannerTitle, type ManagerPlannerKind } from "@/lib/phoenix-crm/manager-plan-rules";
 import { PHOENIX_CRM_ADMINISTRATOR_HR_ID, planEditStatusLabel, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { seatIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
 import { phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
@@ -419,10 +420,16 @@ export type PhoenixCrmNotice =
  * back to the district manager. 🔴 NEVER THE REP — the plan is the district manager's alone and the rep
  * never learns it exists — and never the activity mirror (`activityMirrorDelivery` returns null for it):
  * the managers above him are the ones deciding. The live-team gate reads `seat`, his own seat.
+ *
+ * Widened (owner, 2026-10-17) to the regional, national and product managers: a regional or national
+ * sales manager's `seat` is his own, and the gate asks for any live team BELOW it; a product manager sits
+ * on no seat (`seat` null) and plans across his lines, so his notices pass the gate.
  */
 export type ManagerPlanNotice = {
   kind: "manager_plan";
-  seat: OrgSeat;
+  seat: OrgSeat | null;
+  /** What the manager plans as — names him in the message ("A regional sales manager") when no name reads. */
+  plannerKind?: ManagerPlannerKind;
   step:
     | "waiting"
     | "approved"
@@ -467,7 +474,7 @@ export function managerPlanNoticeKeyPrefix(recordId: string): string {
 
 /** The deliveries of one district-manager plan step, given the people's names. Pure, so who is told and the keys are tested. */
 export function managerPlanDeliveries(notice: ManagerPlanNotice, names: PeopleNames): Delivery[] {
-  const manager = nameOf(names, notice.managerHrId, "A district manager");
+  const manager = nameOf(names, notice.managerHrId, `A ${managerPlannerTitle(notice.plannerKind ?? "dm").toLowerCase()}`);
   const actor = notice.byAdministrator ? "The Administrator" : notice.actorHrId ? nameOf(names, notice.actorHrId, "Your manager") : "The system";
   const week = notice.weekStart ? `the week starting ${formatPhoenixLongDate(notice.weekStart)}` : "your week";
   const note = notice.note ? ` Note: ${notice.note}` : "";
@@ -1167,10 +1174,11 @@ export function doubleVisitRequestDeliveries(notice: Extract<PhoenixCrmNotice, {
 }
 
 async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[] | null> {
+  // A manager's plan names no territory, and a product manager's has no seat at all.
+  if (notice.kind === "manager_plan") return describeManagerPlan(notice);
   const territory = territoryName(notice.seat);
 
   if (notice.kind === "plan_edit") return describePlanEdit(notice);
-  if (notice.kind === "manager_plan") return describeManagerPlan(notice);
   if (notice.kind === "double_visit_request") return describeDoubleVisitRequest(notice);
   if (notice.kind === "first_visit") return describeFirstVisit(notice);
   if (notice.kind === "recorded_visit_decided") return describeRecordedVisitDecided(notice);
@@ -1627,15 +1635,14 @@ function activityMirrorPeopleIds(notice: PhoenixCrmNotice): string[] {
  * the NSM and SFE already hear of natively (the first visit).
  */
 function activityMirrorLine(notice: PhoenixCrmNotice, names: PeopleNames): MirrorLine | null {
+  // A manager's plan is never mirrored, and a product manager's has no seat to name.
+  if (notice.kind === "manager_plan") return null;
   const territory = territoryName(notice.seat);
   switch (notice.kind) {
     case "first_visit":
       return null;
     // The rep and the two managers above him are told natively; the Administrator's decision is not a feed line.
     case "recorded_visit_decided":
-      return null;
-    // The district manager's plan is decided by the managers above him: nothing to mirror to them.
-    case "manager_plan":
       return null;
     // A return is a step between SFE and one rep: not a feed line for the NSM, and SFE did it himself.
     case "request_returned":
@@ -1915,7 +1922,7 @@ export function buildActivityMirrorDelivery(
   nativeRecipientKeys: ReadonlySet<string>,
 ): Delivery | null {
   const line = activityMirrorLine(notice, names);
-  if (!line) return null;
+  if (!line || notice.kind === "manager_plan") return null;
   const nsm = managerChain(org, notice.seat.seatId).find((member) => member.seat.tier === "NSM")?.hrId ?? null;
   const excluded = new Set(
     [line.subjectHrId, activityMirrorActorHrId(notice)].map((hrId) => personKey(hrId)).filter((key): key is string => key !== null),
@@ -1968,6 +1975,21 @@ async function activityMirrorDelivery(notice: PhoenixCrmNotice, nativeDeliveries
  * same awaited call it always was. A withdrawal that must happen BEFORE the new notice stays an awaited
  * call ahead of this one, so it still lands first.
  */
+/**
+ * The live-team gate for one notice. A territory's notice: its own team. A manager's plan: a district
+ * manager's own team; a regional or national sales manager's — any live team BELOW his seat, the rule that
+ * moved his week here (`seniorPlansInPhoenixCrm`); a product manager's always passes, since he sits on no
+ * seat and his week only exists here once he chose to plan it.
+ */
+async function noticeIsForALiveTeam(notice: PhoenixCrmNotice, live: ReadonlySet<string>): Promise<boolean> {
+  if (notice.kind !== "manager_plan") return seatIsInLiveTeam(notice.seat, live);
+  const seat = notice.seat;
+  if (!seat) return true;
+  if (seat.tier !== "RSM" && seat.tier !== "NSM") return seatIsInLiveTeam(seat, live);
+  const org = await loadPhoenixCrmOrg();
+  return [...live].some((liveSeatId) => liveSeatId !== seat.seatId && (org.seats.get(liveSeatId)?.path.includes(seat.seatId) ?? false));
+}
+
 export async function notifyPhoenixCrm(notice: PhoenixCrmNotice, isTest: boolean): Promise<void> {
   await afterResponse(`phoenix_crm_notify:${notice.kind}`, () => sendPhoenixCrmNotice(notice, isTest));
 }
@@ -1983,7 +2005,7 @@ async function sendPhoenixCrmNotice(notice: PhoenixCrmNotice, isTest: boolean): 
       // never from a cache: a team the Super Admin has just stopped must not be told one more thing.
       if (!isTest) {
         const live = await loadLiveTeamSeatIds();
-        if (live && !seatIsInLiveTeam(notice.seat, live)) return;
+        if (live && !(await noticeIsForALiveTeam(notice, live))) return;
       }
       const described = await describe(notice);
       const deliveries = described === null ? [] : Array.isArray(described) ? described : [described];
@@ -2106,7 +2128,7 @@ async function deliver(notice: PhoenixCrmNotice, delivery: Delivery, isTest: boo
       {
         ...base,
         channels: phoenixCrmChannels(delivery.eventType, delivery.inAppOnly),
-        metadata: { ...(delivery.metadata ?? {}), idempotencyKey: delivery.idempotencyKey, seatId: notice.seat.seatId },
+        metadata: { ...(delivery.metadata ?? {}), idempotencyKey: delivery.idempotencyKey, seatId: notice.seat?.seatId ?? null },
         ...(delivery.inAppOnly ? {} : { telegram: { ctaLabel: "Open Phoenix CRM", ctaUrl: actionUrl } }),
       },
       delivery.recipients,
@@ -2130,7 +2152,7 @@ async function deliver(notice: PhoenixCrmNotice, delivery: Delivery, isTest: boo
         metadata: {
           ...(delivery.metadata ?? {}),
           idempotencyKey: `${delivery.idempotencyKey}:test:${mirror.loginId}`,
-          seatId: notice.seat.seatId,
+          seatId: notice.seat?.seatId ?? null,
         },
         testLoginId: mirror.loginId,
       },

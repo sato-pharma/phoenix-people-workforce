@@ -18,14 +18,20 @@
 
 import { owesAWeeklyPlan } from "@/lib/daily-deductions/no-weekly-plan-select";
 import { seatIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
-import { dmPlansInPhoenixCrmFor, managerOwnVisitClosed, managerPlanSeats } from "@/lib/phoenix-crm/manager-plan-rules";
+import {
+  dmPlansInPhoenixCrmFor,
+  managerOwnVisitClosed,
+  managerPlanSeats,
+  managerPlanWriterOf,
+  seniorPlanSeats,
+} from "@/lib/phoenix-crm/manager-plan-rules";
 import type { OrgIndex } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadLiveTeamSeatIdsForDisplay } from "@/lib/phoenix-crm/server/live-teams";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export const DM_PLANS_IN_PHOENIX_CRM = "Forbidden: district managers plan in Phoenix CRM now. Open Phoenix CRM, then Plan.";
+export const DM_PLANS_IN_PHOENIX_CRM = "Forbidden: your week is planned in Phoenix CRM now. Open Phoenix CRM, then Plan.";
 
 /**
  * 🔴 Whoever still OWES a legacy weekly plan keeps the legacy form, whatever seat he holds. The
@@ -41,16 +47,48 @@ async function owesTheLegacyWeeklyPlan(hrId: string): Promise<boolean> {
   return ((data ?? []) as Array<{ job_title: string | null }>).some((row) => owesAWeeklyPlan(row.job_title));
 }
 
-/** He plans his week in Phoenix CRM: a DM or acting DM seat whose team is live — unless his title still owes the legacy plan. */
+/**
+ * He plans his week in Phoenix CRM: a DM or acting DM seat whose team is live, or a regional or national
+ * seat with a live team below it (owner, 2026-10-17) — unless his title still owes the legacy plan.
+ */
 export async function dmPlansInPhoenixCrm(hrId: string | null | undefined, options: { org?: OrgIndex; cairoToday?: string } = {}): Promise<boolean> {
   if (!hrId) return false;
   const org = options.org ?? (await loadPhoenixCrmOrg());
   const seats = managerPlanSeats(org, hrId);
-  if (seats.length === 0) return false;
+  if (seats.length === 0) return seniorPlansInPhoenixCrm(org, hrId, options.cairoToday);
   if (await owesTheLegacyWeeklyPlan(hrId)) return false;
   const live = await loadLiveTeamSeatIdsForDisplay(options.cairoToday);
   if (live === null) return true;
   return dmPlansInPhoenixCrmFor(seats, (seat) => seatIsInLiveTeam(seat, live));
+}
+
+/**
+ * 🔴 A REGIONAL OR NATIONAL SALES MANAGER SWITCHES ONCE ANY TEAM BELOW HIS SEAT IS LIVE (owner, 2026-10-17:
+ * "Now do the same for … the national sales managers and the regional manager") — his week is planned on
+ * the teams below him, so it moves with the first of them. A product manager NEVER switches: the
+ * no-weekly-plan deduction still reads his legacy form (`owesAWeeklyPlan`), so he files both, and the
+ * legacy title rule below keeps that true whatever seat he holds. An unreadable start table fails open.
+ */
+async function seniorPlansInPhoenixCrm(org: OrgIndex, hrId: string, cairoToday: string | undefined): Promise<boolean> {
+  const seats = seniorPlanSeats(org, hrId);
+  if (seats.length === 0) return false;
+  if (await owesTheLegacyWeeklyPlan(hrId)) return false;
+  const live = await loadLiveTeamSeatIdsForDisplay(cairoToday);
+  if (live === null) return true;
+  return seats.some((seat) => [...live].some((liveSeatId) => liveSeatId !== seat.seatId && (org.seats.get(liveSeatId)?.path.includes(seat.seatId) ?? false)));
+}
+
+/**
+ * He has a manager's week to plan on the Phoenix CRM board: a district, regional or national sales manager
+ * once his switch is on (`dmPlansInPhoenixCrm`), and a product manager ALWAYS — he files both (owner,
+ * 2026-10-17), so his board opens beside the legacy form instead of replacing it, and the legacy form's
+ * refusal, which asks `dmPlansInPhoenixCrm`, never reaches him.
+ */
+export async function plansManagerWeekHere(viewer: Pick<PhoenixCrmViewer, "org" | "hrId" | "cairoToday" | "plansAsProductManager">): Promise<boolean> {
+  const writer = managerPlanWriterOf(viewer.org, viewer.hrId, { productManager: viewer.plansAsProductManager === true });
+  if (!writer) return false;
+  if (writer.kind === "pm") return true;
+  return dmPlansInPhoenixCrm(viewer.hrId, { org: viewer.org, cairoToday: viewer.cairoToday });
 }
 
 /**

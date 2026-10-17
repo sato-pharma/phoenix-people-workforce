@@ -53,6 +53,7 @@ import {
   loadManagerPlanQueue,
   type ManagerQueueItem,
 } from "@/lib/phoenix-crm/server/manager-plan-queue";
+import { managerPlannerTitle } from "@/lib/phoenix-crm/manager-plan-rules";
 import {
   isDistrictManagerPlanSubmitter,
   isDistrictManagerPlanTitle,
@@ -1000,6 +1001,17 @@ function liveEmployeeName(
   return resolveEmployeeRecordName(employee ? employeeRecordName(employee) : null, hrId, rawName);
 }
 
+/** The job title his HR record carries — "Group Product Manager", not the plan's own kind — or the fallback. */
+function liveEmployeeTitle(
+  employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+  hrId: string | null | undefined,
+  fallback: string,
+): string {
+  if (!hrId) return fallback;
+  const title = employees.find((e) => hrIdsMatch(e.hrId, hrId))?.jobTitle?.trim();
+  return title || fallback;
+}
+
 /**
  * Every decided leave request company-wide, regardless of who decided it — Super Admin /
  * system-scope oversight only (never called for any other role; the page also gates the tab's
@@ -1453,7 +1465,7 @@ function crmManagerPlanBucketItem(
   return {
     id: item.id,
     source: "crm_manager",
-    employeeName: liveEmployeeName(employees, item.managerHrId, "A district manager"),
+    employeeName: liveEmployeeName(employees, item.managerHrId, "A manager"),
     employeeHrId: item.managerHrId,
     planKind: "weekly",
     periodKey: item.weekStart ?? "",
@@ -1624,7 +1636,7 @@ export async function getCrmManagerPlanActionItems(access: AccessContext): Promi
         periodKey: weekStart,
         periodStartDate: weekStart,
         periodEndDate: weekStart ? addDaysIso(weekStart, 5) : "",
-        employeeJobTitle: "District Manager",
+        employeeJobTitle: liveEmployeeTitle(directory.employees, item.managerHrId, "Manager"),
         managerName: null,
         itemCount: 0,
         items: [],
@@ -1722,7 +1734,7 @@ export async function getResponderPlanHistory(access: AccessContext): Promise<Re
   const crm: ResponderHistoryItem[] = crmDecisions.map((decision) => ({
     id: `crm_manager:${decision.kind}:${decision.id}`,
     module: "weekly_plan",
-    employeeName: liveEmployeeName(directory.employees, decision.managerHrId, "A district manager"),
+    employeeName: liveEmployeeName(directory.employees, decision.managerHrId, "A manager"),
     employeeHrId: decision.managerHrId,
     title: crmManagerPlanTitle({
       stage: decision.kind === "plan" ? "first" : decision.kind,
@@ -2438,8 +2450,15 @@ async function fetchCompanyPlanRequestItems(
   return items;
 }
 
+// Company Plans also carries the Phoenix CRM weeks of the regional, national and product managers (owner,
+// 2026-10-17): their legacy plans were on this tab, and the District Manager tab below is for district
+// managers only.
 export async function getCompanyPlanRequests(access: AccessContext): Promise<CompanyRequestItem[]> {
-  return fetchCompanyPlanRequestItems(access);
+  const [legacy, crm] = await Promise.all([
+    fetchCompanyPlanRequestItems(access),
+    fetchCrmManagerPlanRequestItems(access, null, "others"),
+  ]);
+  return mergeCompanyPlanFeeds(legacy, crm);
 }
 
 // District Manager plans never reach a CEO decision (they cascade via their manager's
@@ -2449,7 +2468,7 @@ export async function getCompanyPlanRequests(access: AccessContext): Promise<Com
 export async function getCompanyDistrictManagerPlanRequests(access: AccessContext): Promise<CompanyRequestItem[]> {
   const [legacy, crm] = await Promise.all([
     fetchCompanyPlanRequestItems(access, { districtManagersOnly: true }),
-    fetchCrmManagerPlanRequestItems(access, null),
+    fetchCrmManagerPlanRequestItems(access, null, "dm"),
   ]);
   return mergeCompanyPlanFeeds(legacy, crm);
 }
@@ -2462,24 +2481,30 @@ const CRM_MANAGER_PLAN_STATUS: Record<string, { label: string; tone: CompanyRequ
 };
 
 /**
- * The district managers' Phoenix CRM weeks for the same oversight feeds (owner, 2026-10-16). The caller
- * has already passed the feed's own gate; `secondApproverHrId` narrows it to the weeks stored with that
- * person as their second approver. A failed read costs these rows only, logged.
+ * The managers' Phoenix CRM weeks for the same oversight feeds (owner, 2026-10-16; widened 2026-10-17).
+ * The caller has already passed the feed's own gate; `secondApproverHrId` narrows it to the weeks stored
+ * with that person as their second approver, and `kinds` to the district managers' weeks ("dm") or the
+ * regional, national and product managers' ("others"). A failed read costs these rows only, logged.
  */
-async function fetchCrmManagerPlanRequestItems(access: AccessContext, secondApproverHrId: string | null): Promise<CompanyRequestItem[]> {
+async function fetchCrmManagerPlanRequestItems(
+  access: AccessContext,
+  secondApproverHrId: string | null,
+  kinds: "dm" | "others" | "all" = "all",
+): Promise<CompanyRequestItem[]> {
   try {
-    const [rows, directory] = await Promise.all([
+    const [feed, directory] = await Promise.all([
       loadManagerPlanFeed(secondApproverHrId === null ? { isTest: Boolean(access.testPersona) } : { isTest: Boolean(access.testPersona), secondApproverHrId }),
       getEmployeeDirectory(),
     ]);
+    const rows = kinds === "all" ? feed : feed.filter((row) => (row.plannerKind === "dm") === (kinds === "dm"));
     return rows.map((row) => {
       const status = CRM_MANAGER_PLAN_STATUS[row.status] ?? { label: humanizeStatus(row.status), tone: "neutral" as const };
       return {
         id: row.planId,
         href: planApprovalHref(access, row.planId),
-        employeeName: liveEmployeeName(directory.employees, row.managerHrId, "A district manager"),
+        employeeName: liveEmployeeName(directory.employees, row.managerHrId, "A manager"),
         employeeHrId: row.managerHrId,
-        submitterTitle: "District Manager",
+        submitterTitle: liveEmployeeTitle(directory.employees, row.managerHrId, managerPlannerTitle(row.plannerKind)),
         typeLabel: "Weekly · Phoenix CRM",
         requestDate: row.weekStart,
         submittedAt: row.submittedAt ?? "",

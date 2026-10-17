@@ -1,17 +1,21 @@
 "use client";
 
 /**
- * Phoenix CRM — the Team tab's two district-manager sections (owner, 2026-10-16).
+ * Phoenix CRM — the Team tab's two manager-plan sections (owner, 2026-10-16; widened 2026-10-17 from the
+ * district managers to the regional manager, the national sales managers and the product managers).
  *
- * "Manager plans" — a district manager's week, planned against what happened ("separate report …
- * actual versus planned"). A customer ticked with a rep reads Done only when the REP logged the visit and
- * named him (the double visit's own rule); a single-visit customer reads Done when he logged it himself.
- * Admin half-days are not checkable. Visits he made without a plan are listed apart. Read by him, his RSM,
- * his NSM, SFE, the CEO and the Super Admin ("him rsm dsm sfe nsm admin ceo") — never a rep.
+ * "Manager plans" — a manager's week, planned against what happened ("separate report … actual versus
+ * planned"). A customer ticked with a rep reads Done only when the REP logged the visit and named him (the
+ * double visit's own rule); a single-visit customer reads Done when he logged it himself. Admin half-days
+ * are not checkable. Visits he made without a plan are listed apart. Read by him, the managers above him,
+ * SFE, the CEO and the Super Admin ("him rsm dsm sfe nsm admin ceo") — never a rep.
  *
- * "Manager's own list" — the customers he visits alone, kept apart from his reps' lists and never merged
- * into them. He adds one himself (no validation step); taking one off needs his RSM/NSM's approval, in
+ * "Manager's own list" — the customers he visits alone, kept apart from the reps' lists and never merged
+ * into them. He adds one himself (no validation step); taking one off needs his approvers' approval, in
  * the Approvals Hub.
+ *
+ * A manager who plans a week AND reads others' (an NSM reads the regional manager's and his district
+ * managers') chooses among them with himself listed first; the server sends the list (`managerPlanChoices`).
  */
 
 import { useId, useState } from "react";
@@ -48,7 +52,7 @@ function removalWaits(status: ManagerCustomerView["status"]): boolean {
   return status === "removal_pending" || status === "removal_first_approved";
 }
 
-/** One district manager among those he reads — a choice, never a code. */
+/** One manager among those he reads — a choice, never a code. */
 function ManagerPicker({
   label,
   managers,
@@ -60,7 +64,7 @@ function ManagerPicker({
   onPick: (hrId: string) => void;
   value: string | null;
 }) {
-  if (managers.length === 0) return <CrmEmpty message="No district manager sits beneath you right now." title="No district managers" />;
+  if (managers.length === 0) return <CrmEmpty message="No manager who plans a week sits beneath you right now." title="No managers" />;
   const options: Array<CrmChoiceOption<string>> = managers.map((manager) => ({
     value: manager.hrId,
     label: manager.name,
@@ -83,7 +87,7 @@ export function ManagerPlansSection({ test }: { test: boolean }) {
   const pickers = view ?? chosenFrom;
 
   if (!pickers) {
-    return report.error ? <CrmLoadError message={report.error} onRetry={report.reload} /> : <CrmLoading label="Loading the district managers' plans" />;
+    return report.error ? <CrmLoadError message={report.error} onRetry={report.reload} /> : <CrmLoading label="Loading the managers' plans" />;
   }
   const weekOptions: Array<CrmChoiceOption<string>> = pickers.weeks.map((entry) => ({ value: entry.weekStart, label: entry.name }));
   const pickWeek = (next: string) => {
@@ -100,10 +104,10 @@ export function ManagerPlansSection({ test }: { test: boolean }) {
       <CrmBlock className="border-t border-slate-100" title="Week">
         <CrmChoice columns={3} label="Week" onChange={pickWeek} options={weekOptions} value={view ? view.weekStart : (week ?? pickers.weekStart)} />
       </CrmBlock>
-      {pickers.mode === "pick" && pickers.managers ? (
-        <CrmBlock className="border-t border-slate-100" title="District manager">
+      {pickers.managers ? (
+        <CrmBlock className="border-t border-slate-100" title="Manager">
           <ManagerPicker
-            label="District manager"
+            label="Manager"
             managers={pickers.managers}
             onPick={pickManager}
             value={view ? (view.manager?.hrId ?? null) : (manager ?? pickers.manager?.hrId ?? null)}
@@ -207,11 +211,11 @@ export function ManagerOwnListSection({ test }: { test: boolean }) {
 
   if (!view) {
     const loading = list.error ? <CrmLoadError message={list.error} onRetry={list.reload} /> : <CrmLoading label="Loading Manager's own list" />;
-    if (!chosenFrom || chosenFrom.mode !== "pick" || !chosenFrom.managers) return loading;
+    if (!chosenFrom || !chosenFrom.managers) return loading;
     return (
       <>
-        <CrmBlock className="border-t border-slate-100" title="District manager">
-          <ManagerPicker label="District manager" managers={chosenFrom.managers} onPick={setManager} value={manager} />
+        <CrmBlock className="border-t border-slate-100" title="Manager">
+          <ManagerPicker label="Manager" managers={chosenFrom.managers} onPick={setManager} value={manager} />
         </CrmBlock>
         <CrmBlock className="border-t border-slate-100">{loading}</CrmBlock>
       </>
@@ -241,9 +245,9 @@ export function ManagerOwnListSection({ test }: { test: boolean }) {
 
   return (
     <>
-      {view.mode === "pick" && view.managers ? (
-        <CrmBlock className="border-t border-slate-100" title="District manager">
-          <ManagerPicker label="District manager" managers={view.managers} onPick={pickManager} value={view.manager?.hrId ?? null} />
+      {view.managers ? (
+        <CrmBlock className="border-t border-slate-100" title="Manager">
+          <ManagerPicker label="Manager" managers={view.managers} onPick={pickManager} value={view.manager?.hrId ?? null} />
         </CrmBlock>
       ) : null}
       {view.manager ? (

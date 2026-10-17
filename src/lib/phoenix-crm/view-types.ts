@@ -141,6 +141,7 @@ export type {
   ManagerBoardDay,
   ManagerBoardRep,
   ManagerBoardRepHalf,
+  ManagerBoardScope,
   ManagerBoardSlot,
   ManagerBoardSlotCustomer,
   ManagerPlanBoardView,

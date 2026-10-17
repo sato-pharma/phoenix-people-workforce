@@ -9,6 +9,10 @@
  * types that is already on one of the lists is OFFERED first — namesakes are real, so he may still say it
  * is a different person. Taking a customer off his own list waits for his RSM/NSM's approval.
  *
+ * Widened (owner, 2026-10-17) to the regional, national and product managers: each keeps a list of his
+ * own the same way, its areas are every area he plans in (`managerWriterReach`), and a removal goes to the
+ * people his week goes to (`managerApproversFor`).
+ *
  * 🔴 NOTHING HERE TOUCHES A REP'S LIST. No row is written to `phoenix_crm_customers` or
  * `phoenix_crm_places`, and nothing in his own list counts in a rep's or the district's coverage, call
  * rate, frequency or target.
@@ -20,10 +24,10 @@ import {
   isManagerCustomerGrade,
   isManagerCustomerPotentialGrade,
   managerAskStage,
-  managerPlanApprovers,
   matchCustomerName,
   MANAGER_PLAN_NOTE_MAX,
   MANAGER_PLAN_REASON_MAX,
+  type ManagerPlanWriter,
   type NameCandidate,
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
@@ -32,12 +36,13 @@ import { callPhoenixCrm, chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/
 import {
   assertManagerPlanWriter,
   managerAskDeciderRole,
-  managerDistrictSeats,
   managerPlace,
-  managerPlanSeatOf,
+  managerPlanChoices,
+  managerPlanWriterFor,
   readsManagerPlanOf,
   resolveManagerPlanReader,
 } from "@/lib/phoenix-crm/server/manager-plan-reach";
+import { managerApproversFor, managerWriterReach } from "@/lib/phoenix-crm/server/manager-plan-writers";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { resolvePinGeography, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
@@ -203,43 +208,57 @@ export async function loadManagerCustomerRow(id: string) {
 export type ManagerOwnListView = {
   isTest: boolean;
   mode: "own" | "pick";
-  /** "pick" mode: every district manager he reads, to choose whose list. Null in "own" mode. */
+  /** The managers to choose whose list — himself first when he keeps one too. Null when there is nobody to choose. */
   managers: Array<{ hrId: string; name: string; place: string }> | null;
   canWrite: boolean;
   manager: { hrId: string; name: string } | null;
-  /** The areas of his district, for Add a customer. */
+  /** The areas he plans in, for Add a customer. */
   areas: Array<{ seatId: string; areaName: string }>;
   customers: ManagerCustomerView[];
-  /** Who decides a removal: his RSM/NSM. */
+  /** Who decides a removal: the first person his week goes to. */
   approverName: string | null;
 };
 
-/** GET: Manager's own list — his own, or a district manager's a reader above him picked. */
+/** May he change his own list on screen? A district manager needs `create`; the others plan by seat or role. */
+function writesOwnList(viewer: PhoenixCrmViewer, writer: ManagerPlanWriter | null, asked: string): boolean {
+  if (!writer || asked !== viewer.hrId || (viewer.isSuperAdmin && !viewer.isTestPersona)) return false;
+  return writer.kind === "dm" ? viewer.canCreate : true;
+}
+
+/** GET: Manager's own list — his own, or the list of a manager a reader above him picked. */
 export async function loadManagerOwnList(viewer: PhoenixCrmViewer, raw: { manager: unknown; test: unknown }): Promise<ManagerOwnListView> {
   const isTest = testModeFor(viewer, raw.test);
   const reader = resolveManagerPlanReader(viewer, raw.manager);
-  const pickNames = reader.mode === "pick" ? await loadPeopleNames(reader.managers.map((entry) => entry.hrId)) : new Map<string, string>();
-  const managers =
-    reader.mode === "pick"
-      ? reader.managers
-          .map((entry) => ({ hrId: entry.hrId, name: nameOf(pickNames, entry.hrId), place: managerPlace(entry.seat) }))
-          .sort((left, right) => left.place.localeCompare(right.place) || left.name.localeCompare(right.name))
-      : null;
+  // The managers to choose between — himself first when he keeps a list of his own too.
+  const choices = managerPlanChoices(viewer, reader);
+  const selfHrId = personKey(viewer.hrId);
+  const pickNames = choices ? await loadPeopleNames(choices.map((entry) => entry.hrId)) : new Map<string, string>();
+  const managers = choices
+    ? choices
+        .map((entry) => ({ hrId: entry.hrId, name: nameOf(pickNames, entry.hrId), place: managerPlace(entry.seat, entry.kind) }))
+        .sort(
+          (left, right) =>
+            Number(right.hrId === selfHrId) - Number(left.hrId === selfHrId) || left.place.localeCompare(right.place) || left.name.localeCompare(right.name),
+        )
+    : null;
   const asked = reader.managerHrId;
   if (!asked) return { isTest, mode: reader.mode, managers, canWrite: false, manager: null, areas: [], customers: [], approverName: null };
-  if (!readsManagerPlanOf(viewer, asked)) throw forbiddenError("Manager's own list is read by that district manager and the managers above that seat.");
-  const seat = managerPlanSeatOf(viewer, asked);
-  const approver = seat ? managerPlanApprovers(viewer.org, seat.seatId).first : null;
-  const [customers, names] = await Promise.all([loadManagerCustomers(asked, isTest), loadPeopleNames([asked, approver?.hrId])]);
+  if (!readsManagerPlanOf(viewer, asked)) throw forbiddenError("Manager's own list is read by that manager and the managers above.");
+  const writer = managerPlanWriterFor(viewer, asked);
+  const [approvers, reach] = writer
+    ? await Promise.all([managerApproversFor(viewer.org, writer), managerWriterReach(viewer, writer)])
+    : [null, [] as OrgSeat[]];
+  const approverHrId = approvers?.firstHrId ?? null;
+  const [customers, names] = await Promise.all([loadManagerCustomers(asked, isTest), loadPeopleNames([asked, approverHrId])]);
   return {
     isTest,
     mode: reader.mode,
     managers,
-    canWrite: asked === viewer.hrId && viewer.canCreate && !viewer.isSuperAdmin && seat !== null,
+    canWrite: writesOwnList(viewer, writer, asked),
     manager: { hrId: asked, name: nameOf(names, asked) },
-    areas: areasOf(managerDistrictSeats(viewer, asked)),
+    areas: areasOf(reach),
     customers,
-    approverName: approver ? nameOf(names, approver.hrId) : null,
+    approverName: approverHrId ? nameOf(names, approverHrId) : null,
   };
 }
 
@@ -294,16 +313,21 @@ export type AreaCustomersView = {
   ownList: ManagerCustomerView[];
 };
 
+/** "Choose an area of your own district." — or, for a manager who picks a scope, of the district he picked. */
+function outsideReach(writer: ManagerPlanWriter): string {
+  return writer.kind === "dm" ? "Choose an area of your own district." : "Choose an area of a district you plan in.";
+}
+
 /**
- * GET: the customers he chooses from for a single visit in one area of his district — that area's rep
- * lists (every territory of the area, a vacant one included) and Manager's own list. His own only.
+ * GET: the customers he chooses from for a single visit in one area he plans in — that area's rep lists
+ * (every territory of the area, a vacant one included) and Manager's own list. His own only.
  */
 export async function loadAreaCustomers(viewer: PhoenixCrmViewer, raw: { area: unknown; test: unknown }): Promise<AreaCustomersView> {
-  assertManagerPlanWriter(viewer);
+  const writer = assertManagerPlanWriter(viewer);
   const isTest = testModeFor(viewer, raw.test);
-  const district = managerDistrictSeats(viewer, viewer.hrId);
+  const district = await managerWriterReach(viewer, writer);
   const chosen = district.find((seat) => seat.seatId === raw.area) ?? null;
-  if (!chosen) throw forbiddenError("Choose an area of your own district.");
+  if (!chosen) throw forbiddenError(outsideReach(writer));
   const areaKey = chosen.areaCode ?? chosen.areaName ?? chosen.seatId;
   const seats = district.filter((seat) => (seat.areaCode ?? seat.areaName ?? seat.seatId) === areaKey);
   const [rows, ownList, names] = await Promise.all([
@@ -348,12 +372,12 @@ export type CustomerMatch = NameCandidate & { detail: string };
  * names. An offer, never a decision: namesakes are real.
  */
 export async function matchManagerCustomer(viewer: PhoenixCrmViewer, raw: unknown): Promise<CustomerMatch[]> {
-  assertManagerPlanWriter(viewer);
+  const writer = assertManagerPlanWriter(viewer);
   const body = record(raw);
   const isTest = testModeFor(viewer, body.test);
   const typed = cleanText(body.name, 200, "The name");
   if (!typed) return [];
-  const district = managerDistrictSeats(viewer, viewer.hrId);
+  const district = await managerWriterReach(viewer, writer);
   const [rows, own, names] = await Promise.all([
     loadRepListCustomers(district.map((seat) => seat.seatId), isTest),
     loadManagerCustomers(viewer.hrId, isTest),
@@ -393,7 +417,7 @@ const EGYPT = { latMin: 21.5, latMax: 32, lonMin: 24, lonMax: 37.5 };
  * and brick here. Never a validation step.
  */
 export async function addManagerCustomer(viewer: PhoenixCrmViewer, raw: unknown): Promise<ManagerCustomerView> {
-  const seat = assertManagerPlanWriter(viewer);
+  const writer = assertManagerPlanWriter(viewer);
   const body = record(raw);
   const isTest = testModeFor(viewer, body.test);
   const name = cleanText(body.name, 200, "The name");
@@ -405,9 +429,9 @@ export async function addManagerCustomer(viewer: PhoenixCrmViewer, raw: unknown)
   if (!phone.ok) throw validationError(phone.error);
   if (!isManagerCustomerGrade(body.grade)) throw validationError("Choose the grade: A, B or C.");
   if (!isManagerCustomerPotentialGrade(body.potentialGrade)) throw validationError("Choose the potential grade.");
-  const district = managerDistrictSeats(viewer, viewer.hrId);
+  const district = await managerWriterReach(viewer, writer);
   const area = district.find((entry) => entry.seatId === body.areaSeatId) ?? null;
-  if (!area) throw validationError("Choose the area of your district the customer is in.");
+  if (!area) throw validationError(writer.kind === "dm" ? "Choose the area of your district the customer is in." : "Choose the area the customer is in.");
 
   let pin: Row = {};
   const rawPin = record(body.pin);
@@ -439,7 +463,8 @@ export async function addManagerCustomer(viewer: PhoenixCrmViewer, raw: unknown)
     .from("phoenix_crm_manager_customers")
     .insert({
       manager_hr_id: viewer.hrId,
-      line_code: seat.lineCode,
+      // A product manager sits on no seat: the customer carries the line of the area he is in.
+      line_code: writer.seat?.lineCode ?? area.lineCode ?? null,
       name,
       speciality,
       phone: phone.value,
@@ -471,7 +496,7 @@ export async function addManagerCustomer(viewer: PhoenixCrmViewer, raw: unknown)
  * "Week + edit asks + removals"), so the second approver is stored on the ask as on the week.
  */
 export async function requestManagerCustomerRemoval(viewer: PhoenixCrmViewer, raw: unknown): Promise<ManagerCustomerView> {
-  const seat = assertManagerPlanWriter(viewer);
+  const writer = assertManagerPlanWriter(viewer);
   const body = record(raw);
   const isTest = testModeFor(viewer, body.test);
   const id = textOrNull(body.id);
@@ -480,25 +505,26 @@ export async function requestManagerCustomerRemoval(viewer: PhoenixCrmViewer, ra
   if (!row || row.managerHrId !== viewer.hrId || row.isTest !== isTest) throw notFoundError("This customer is no longer on Manager's own list. Reload the page.");
   const reason = cleanText(body.reason, MANAGER_PLAN_REASON_MAX, "The reason");
   if (!reason || reason.length < 3) throw validationError("Write why the customer should come off your list.");
-  const approvers = managerPlanApprovers(viewer.org, seat.seatId);
-  const approver = approvers.first;
+  const approvers = await managerApproversFor(viewer.org, writer);
+  const approverHrId = approvers.firstHrId;
   await callPhoenixCrm<Row>("phoenix_crm_request_manager_customer_removal", {
     p: {
       manager_customer_id: id,
       actor_hr_id: viewer.hrId,
-      approver_hr_id: approver?.hrId ?? null,
+      approver_hr_id: approverHrId,
       second_approver_hr_id: approvers.secondHrId,
       reason,
       is_test: isTest,
     },
   });
-  if (approver) {
+  if (approverHrId && (writer.seat || writer.kind === "pm")) {
     await notifyPhoenixCrm(
       {
         kind: "manager_plan",
-        seat,
+        seat: writer.seat,
+        plannerKind: writer.kind,
         step: "removal_waiting",
-        recipientHrId: approver.hrId,
+        recipientHrId: approverHrId,
         managerHrId: viewer.hrId,
         actorHrId: viewer.hrId,
         recordId: id,
@@ -539,7 +565,7 @@ export async function decideManagerCustomerRemoval(viewer: PhoenixCrmViewer, raw
     throw forbiddenError(
       stage === "second"
         ? "This removal is waiting for its second approver, who decides this step."
-        : "This removal is decided by the manager above the district manager.",
+        : "This removal is decided by the manager it was sent to.",
     );
   }
   // The decision is on the ask the approver read. A refused ask raised again is a NEW ask with its own
@@ -555,15 +581,19 @@ export async function decideManagerCustomerRemoval(viewer: PhoenixCrmViewer, raw
       p: { manager_customer_id: id, decision, actor_hr_id: viewer.hrId, actor_role: role, stage, note, is_test: isTest },
     }),
   );
-  const seat = managerPlanSeatOf(viewer, row.managerHrId);
+  // The seat the notice is filed on: the manager's own (none for a product manager, who still is told).
+  const owner = managerPlanWriterFor(viewer, row.managerHrId);
+  const seat = owner?.seat ?? null;
+  const tells = owner !== null && (seat !== null || owner.kind === "pm");
   const passedOn = result.status === "removal_first_approved";
-  if (seat && passedOn && row.secondApproverHrId) {
-    // The regional manager agreed: the national sales manager decides next. The customer stays on the
-    // list, and the district manager is told nothing yet — his own requests list says who it waits on.
+  if (owner && tells && passedOn && row.secondApproverHrId) {
+    // The first approver agreed: the second decides next. The customer stays on the list, and the
+    // manager is told nothing yet — his own requests list says who it waits on.
     await notifyPhoenixCrm(
       {
         kind: "manager_plan",
         seat,
+        plannerKind: owner.kind,
         step: "removal_waiting",
         recipientHrId: row.secondApproverHrId,
         managerHrId: row.managerHrId,
@@ -579,11 +609,12 @@ export async function decideManagerCustomerRemoval(viewer: PhoenixCrmViewer, raw
       },
       isTest,
     );
-  } else if (seat) {
+  } else if (owner && tells) {
     await notifyPhoenixCrm(
       {
         kind: "manager_plan",
         seat,
+        plannerKind: owner.kind,
         step: "removal_decided",
         recipientHrId: row.managerHrId,
         managerHrId: row.managerHrId,

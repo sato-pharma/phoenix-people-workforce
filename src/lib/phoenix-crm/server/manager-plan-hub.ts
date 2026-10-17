@@ -1,10 +1,12 @@
 /**
- * Phoenix CRM — one district manager's week, his ask to edit it, or his ask to take a customer off his own
- * list, as the Approvals Hub's plan page shows it (owner, 2026-10-16: "decided in the Approvals Hub, as
- * today"). The Hub's page falls through to this when the id is not a legacy plan.
+ * Phoenix CRM — one manager's week, his ask to edit it, or his ask to take a customer off his own list, as
+ * the Approvals Hub's plan page shows it (owner, 2026-10-16: "decided in the Approvals Hub, as today"). A
+ * district manager's since 2026-10-16; a regional, national or product manager's since 2026-10-17. The
+ * Hub's page falls through to this when the id is not a legacy plan.
  *
- * Who may open it: whoever reads that district manager's plan (`readsManagerPlanOf` — he himself, the
- * managers above him, SFE, the CEO and the Super Admin), plus the approver stored on the row. Who may decide
+ * Who may open it: whoever reads that manager's plan (`readsManagerPlanOf` — he himself, the managers above
+ * him, SFE, the CEO and the Super Admin), plus the approver stored on the row — the CEO and the Marketing
+ * Manager open a regional, national or product manager's week this way. Who may decide
  * it: the approver stored for the step, or the Administrator in his place — the same predicates the write
  * routes enforce, so a button is never shown that the server would refuse.
  *
@@ -17,6 +19,7 @@ import { addDaysIso } from "@/lib/crm/dates";
 import { formatPhoenixDateTime, formatPhoenixLongDate } from "@/lib/i18n/format";
 import {
   managerAskStage,
+  managerPlannerTitle,
   managerPlanStage,
   managerPlanStatusLabel,
   returnStageOfApproved,
@@ -26,7 +29,13 @@ import {
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadManagerCustomerRow } from "@/lib/phoenix-crm/server/manager-customers";
-import { managerAskDeciderRole, managerPlanDeciderRole, readsManagerPlanOf, type ManagerPlanDeciderRole } from "@/lib/phoenix-crm/server/manager-plan-reach";
+import {
+  managerAskDeciderRole,
+  managerPlanDeciderRole,
+  managerPlanWriterFor,
+  readsManagerPlanOf,
+  type ManagerPlanDeciderRole,
+} from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { loadEditAskRow, loadEditAsks, loadManagerPlanRow, type ManagerEditAskRow, type ManagerPlanRow } from "@/lib/phoenix-crm/server/manager-plan-rows";
 import { loadManagerPlanBoardFor, type ManagerPlanBoardView } from "@/lib/phoenix-crm/server/manager-plans";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
@@ -59,6 +68,8 @@ export type ManagerHubPlanDetail = {
   isTest: boolean;
   planId: string;
   managerName: string;
+  /** "District manager", "Regional sales manager", "National sales manager", "Product manager". */
+  managerTitle: string;
   weekText: string;
   status: ManagerPlanStatus;
   statusLabel: string;
@@ -85,6 +96,7 @@ export type ManagerHubRemovalDetail = {
   isTest: boolean;
   customerId: string;
   managerName: string;
+  managerTitle: string;
   customerName: string;
   speciality: string | null;
   grade: string | null;
@@ -158,6 +170,16 @@ function planSteps(plan: ManagerPlanRow, names: PeopleNames): ManagerHubStep[] {
       who: secondDone || secondReturned ? who(names, plan.decidedByHrId, plan.decidedByRole, "The second approver") : nameOf(names, plan.secondApproverHrId),
       state: secondDone ? "done" : secondReturned ? "returned" : plan.status === "first_approved" ? "current" : "waiting",
       at: secondDone || secondReturned ? at(plan.decidedAt) : null,
+    });
+  }
+  // A regional, national or product manager's week is acknowledged by HR on its own once approved, as his
+  // legacy plan is (owner, 2026-10-17: "as today HR auto acknowledge"); a district manager's has no HR step.
+  if (plan.plannerKind !== "dm") {
+    steps.push({
+      label: "HR acknowledgement",
+      who: "HR, automatically",
+      state: plan.hrAcknowledgedAt ? "done" : "waiting",
+      at: at(plan.hrAcknowledgedAt),
     });
   }
   return steps;
@@ -269,6 +291,7 @@ async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId:
     isTest: plan.isTest,
     planId: plan.planId,
     managerName: nameOf(names, plan.managerHrId),
+    managerTitle: managerPlannerTitle(plan.plannerKind),
     weekText: `Week of ${formatPhoenixLongDate(plan.weekStart)}`,
     status: plan.status,
     statusLabel: managerPlanStatusLabel(plan.status),
@@ -336,6 +359,7 @@ async function removalDetail(viewer: PhoenixCrmViewer, id: string): Promise<Mana
     isTest: row.isTest,
     customerId: row.id,
     managerName: nameOf(names, row.managerHrId),
+    managerTitle: managerPlannerTitle(managerPlanWriterFor(viewer, row.managerHrId)?.kind ?? "dm"),
     customerName: row.name,
     speciality: row.speciality,
     grade: row.grade || null,

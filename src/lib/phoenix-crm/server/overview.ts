@@ -34,7 +34,7 @@ import {
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { isDirectoryCompanyRole } from "@/lib/phoenix-crm/server/doctors";
 import { managerPlanReach } from "@/lib/phoenix-crm/server/manager-plan-reach";
-import { dmPlansInPhoenixCrm } from "@/lib/phoenix-crm/server/manager-plan-switch";
+import { plansManagerWeekHere } from "@/lib/phoenix-crm/server/manager-plan-switch";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { countVisitAsksWaitingForYou } from "@/lib/phoenix-crm/server/visit-asks";
@@ -129,7 +129,8 @@ export type PhoenixCrmOverview = {
   telegram: { connected: boolean } | null;
   /**
    * The district manager's weekly plan (owner, 2026-10-16). `planner`: he plans his own week here — a DM
-   * or acting DM seat whose team is live (`dmPlansInPhoenixCrm`), which opens the Plan tab on his board.
+   * or acting DM seat whose team is live, a regional or national sales manager with a live team below
+   * him, or a product manager (`plansManagerWeekHere`), which opens the Plan tab on his board.
    * `reads`: the Team tab's "Manager plans" report and "Manager's own list" — "own" for the district
    * manager himself, "pick" for the managers above him, SFE, the CEO and the Super Admin. Null for a rep,
    * who never reads any of it.
@@ -286,10 +287,11 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
       // The off-plan visits at his own step — the manager's on the territories he reviews, SFE's across
       // his scope, and both steps in the Super Admin's test world.
       countPhoenixCrmOffPlanVisitsWaitingForYou(decisionSeats),
-      // Only a district manager who plans his own week asks the live-team switch; it fails open, and a test
-      // persona always plans here — the same answer the save's own gate gives (`assertPlansHere`).
+      // Only a manager who plans his own week asks the live-team switch; it fails open, a product manager
+      // always plans here (he files both), and a test persona always does — the same answer the save's own
+      // gate gives (`assertPlansHere`).
       managerReach?.mode === "own"
-        ? viewer.isTestPersona || dmPlansInPhoenixCrm(viewer.hrId, { org: viewer.org, cairoToday: viewer.cairoToday }).catch(() => true)
+        ? viewer.isTestPersona || plansManagerWeekHere(viewer).catch(() => true)
         : false,
     ]);
 
@@ -298,15 +300,20 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     .sort((left, right) => left.name.localeCompare(right.name));
   const hasScope = viewer.isSuperAdmin || scope.length > 0;
   const tabs: PhoenixCrmTabs = {
-    visits: hasScope,
+    // A manager who plans his week here logs his single visits on this tab — a product manager too, who
+    // holds no territory (owner, 2026-10-17).
+    visits: hasScope || managerPlanner,
     list: hasScope,
-    // A district manager whose team is live plans HIS week here too (owner, 2026-10-16), on his own board.
+    // A district manager whose team is live plans HIS week here too (owner, 2026-10-16), on his own board;
+    // since 2026-10-17 so do the regional, national and product managers.
     plan: viewer.isSuperAdmin || ownSeatIds.length > 0 || managerPlanner,
     // The daily forecast is CNS ONLY (owner, 2026-10-01). A CNS rep has his own territory in scope, a
     // CNS manager (and the CEO and the SFE Manager, who read the company) has CNS territories beneath
     // him; anyone whose scope holds no CNS territory is never offered it.
     forecast: forecastIsOffered(viewer),
-    team: viewer.isSuperAdmin || (scope.length > 0 && (viewer.managerSeats.length > 0 || viewer.basis === "all")),
+    // A manager-plan reader with no territory — a product manager, the Marketing Manager who approves one —
+    // opens the Team tab for "Manager plans" and "Manager's own list" alone.
+    team: viewer.isSuperAdmin || (scope.length > 0 && (viewer.managerSeats.length > 0 || viewer.basis === "all")) || managerReach !== null,
     // 🔴 THE CALENDAR LEFT THE TEAM TAB'S PREDICATE ON 2026-10-01, at the owner's instruction:
     // "I want the medical rep to have also his team calendar seeing only himself". It is now the
     // one month view a rep is given, so it can no longer ride Team's rule — and it reads the

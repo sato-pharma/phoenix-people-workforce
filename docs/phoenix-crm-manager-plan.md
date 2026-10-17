@@ -102,7 +102,9 @@ replacement.
     caller names no step, the database reads it off the ask's own status, so the code running before
     the change kept working. An ask nobody finished deciding closes with its week at either step.
     Migration `20261017120000`; pinned in section 9 of `tests/phoenix-crm-manager-plan.test.ts`.
-- **No other stage.** There is no HR acknowledgement and no SFE step.
+- **No other stage for a district manager.** There is no HR acknowledgement and no SFE step. The
+  regional, national and product managers who plan here since 2026-10-17 are approved differently —
+  see the last section.
 - **Where it is decided:** the portal Approvals Hub. The choices are Approve, Return the week and
   Return one day.
 - **The Administrator** may act in place of any holder at any stage. The decision is recorded and shown
@@ -206,3 +208,101 @@ district".
 `phoenix_crm_customers`, because they reference it with no cascade: `manager_plan_customers` and
 `manager_visits`. Three of the tables carry no `is_test` flag and are reached through the plan header.
 `docs/phoenix-crm-test-rows.md` has the foreign-key graph.
+
+## Widened to the regional, national and product managers (2026-10-17)
+
+His request, about 18:00 Cairo: *"Now do the same for the product managers and the national sales
+managers and the regional manager. The only difference is that he first choose the region or the
+district manager, then the areas of this district manager appear."* His answers, in chat the same
+evening, recommended options first:
+
+- **Approvers:** *"as today HR auto acknowledge"* — the same people who approve each one's legacy plan
+  today, and then HR acknowledges by itself.
+- **When the district manager is chosen:** *"once per day by default but have the option to half-day
+  when choosing area"*.
+- **Which product managers:** Rasha Sabry and Ahmed SharafEldeen. Their legacy form stays, because the
+  no-weekly-plan deduction reads it. Hossam Reda (Marketing Manager) is out — he has never filed a plan.
+- **A product manager's scope:** *"make him choose between the 2 lines pedia and anti infective
+  whever he he chooses from both appear its district managers and make product managers able to skip
+  districyt managers and choose a rep with out district manager"*; asked whether that held for both,
+  *"Both of them"*.
+
+### Who plans, and as what
+
+`managerPlanWriterOf` answers one of four kinds. A district manager seat comes first, so a person on
+one still plans as the district manager he is; then a national or regional seat; then the Product
+Manager or Group Product Manager role (`plansAsProductManager`, read from the live roster in
+`server/manager-plan-writers.ts`).
+
+| Kind | Production, 17 Oct | Chooses from |
+| --- | --- | --- |
+| Regional sales manager | Hany Saad (Pedia) | the three district managers below his seat |
+| National sales manager | Ali Mohamed Ali (Pedia), Amr Mohamed Naguib (CNS), Magdy El Senosey (Anti Infective) | every district below his seat; those under a regional manager are grouped under "Hany Saad's region" |
+| Product manager | Rasha Sabry, Ahmed SharafEldeen | the line first (Pedia or Anti Infective), then its district managers, or "Any rep in the line" |
+
+A vacant district is offered by its place, reading "No district manager". The per-line "Others"
+buckets are never offered: they hold no reps.
+
+### The extra step
+
+- **Per day by default.** Step 3 opens with "District manager for this day". Both halves use it.
+- **Per half on request.** Inside With a rep and Single visit, "Another district manager for this
+  half" picks one for that half only; "Same as the day" goes back. Admin needs none.
+- **Stored per half.** `phoenix_crm_manager_plan_slots.scope_dm_seat_id` / `scope_line_code`, both
+  null on an Admin half and on every district manager's half. The day default is the screen's
+  convenience, not a column.
+- **Loaded per choice.** The board's GET takes `scope` (`dm:<seat>` or `line:<code>`) and answers with
+  that district's reps, areas and rep half-days. A save answers in the scope the screen sends.
+
+### Approval and HR
+
+- **District managers are unchanged** — the seat chain, and never skipping the NSM after a regional
+  manager.
+- **Everyone else: "as today".** `legacyStyleApprovers` — the first approver is the manager his HR
+  record names; when that is the CEO, or nobody, the CEO approves alone; otherwise the CEO approves
+  second. Hany Saad → Ali Mohamed Ali → the CEO; each NSM → the CEO; Ahmed SharafEldeen → Rasha Sabry →
+  the CEO; Rasha Sabry → Hossam Reda → the CEO. The week, the edit asks and the own-list removals all
+  store the same pair, so #6032's two-step machinery is reused unchanged.
+- **HR acknowledges by itself.** When the last approval lands on a non-district-manager week, the
+  transition writes an `hr_acknowledged` event and stamps `hr_acknowledged_at` as `SYSTEM-AUTO-HR-ACK`,
+  as the legacy plan does. A district manager's week never gets one — his own ruling for them.
+- **The routes moved to `read`.** The CEO, the NSMs, the regional manager and the product managers
+  hold `read` (and some `approve`) on Phoenix CRM, never `create`, so the ten manager-plan POST routes
+  gate on `read` and the service narrows: `assertManagerPlanWriter` (a district manager still needs
+  `create`) and the approver stored on the week or ask.
+
+### Office, and the attendance day
+
+Ali Mohamed Ali, Amr Mohamed Naguib, Rasha Sabry and Ahmed SharafEldeen are judged on "office days
+only": the Day-by-Day Report counts only the days their plan marks Office. Office was the largest
+legacy item for these managers (the NSMs: 59 of 120 half-days). So Admin offers **Office** to everyone
+but a district manager (the database refuses it for one), and `attendance/plan-office-days.ts` reads
+the approved halves of a regional or national manager who has switched: any Office half makes it an
+office day; any other planned half makes it not one; a failed read is logged and judges nobody. A
+product manager keeps filing the legacy form, so his attendance still reads that.
+
+### What stays as it is
+
+- **The no-weekly-plan deduction** still reads the legacy form only. Changing what it reads is a
+  payroll decision for the owner, never taken in chat.
+- **A product manager files both forms.** `plansManagerWeekHere` is always true for him, and the
+  legacy form never refuses him.
+- **A regional or national manager switches off the legacy form** once a live team sits below his
+  seat, the way a district manager does once his own team is live.
+
+### Readers
+
+- **The Approvals Hub.** The district-manager feed keeps district managers only; the Company Plans
+  feed gains everyone else's weeks, labelled by the real title; the CEO's pending count adds the weeks
+  and asks at his step.
+- **The Team tab.** A manager who plans a week and also reads others (an NSM reads the regional
+  manager's week and his district managers') chooses among them with himself listed first
+  (`managerPlanChoices`). Before this he read them as a "pick" reader; planning his own week would
+  otherwise have hidden them.
+- **The report** counts a rep's `product_manager` double visit that names a product manager, as it
+  counts `manager_hr_id` and `senior_hr_id` for the others.
+- **The calendars and Decided for me** read every writer through `server/manager-plan-readers.ts`;
+  Office reads as the legacy "Office".
+
+Migration `20261017213000` (staging and production, 17 Oct). Pinned in section 10 of
+`tests/phoenix-crm-manager-plan.test.ts`.

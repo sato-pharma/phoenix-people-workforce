@@ -264,23 +264,25 @@ const ROUTE_GATES: RouteGate[] = [
   // (and the Super Admin's test mode). SFE holds no `create`, so it reads and never writes.
   get("double-visit-plans"),
   post("double-visit-plans", "create"),
-  // The district manager's weekly plan (owner, 2026-10-16). He writes his own week, his own list and his
-  // own single visits (`create`, narrowed in the service to him); the approver stored on the row — or the
-  // Administrator in his place — decides (`approve`). The name match is a read sent as a POST.
+  // The manager's weekly plan (owner, 2026-10-16; the regional, national and product managers since
+  // 2026-10-17). Every route is `read` at the door — those planners, the CEO and the Marketing Manager hold
+  // `read` alone — and the service narrows a write to the manager who plans the week
+  // (`assertManagerPlanWriter`, which still asks a district manager for `create`) and a decision to the
+  // approver stored on the row, or the Administrator in his place. The name match is a read sent as a POST.
   get("manager-plans"),
-  post("manager-plans", "create"),
-  post("manager-plans/submit", "create"),
-  post("manager-plans/decide", "approve"),
-  post("manager-plans/edit-requests", "create"),
-  post("manager-plans/edit-requests/decide", "approve"),
+  post("manager-plans", "read"),
+  post("manager-plans/submit", "read"),
+  post("manager-plans/decide", "read"),
+  post("manager-plans/edit-requests", "read"),
+  post("manager-plans/edit-requests/decide", "read"),
   get("manager-plans/customers"),
-  post("manager-plans/customers", "create"),
+  post("manager-plans/customers", "read"),
   get("manager-plans/customers/area"),
-  { route: "manager-plans/customers/match", method: "POST", action: "create", audit: "access-read", auditRequired: true },
-  post("manager-plans/customers/removal", "create"),
-  post("manager-plans/customers/removal/decide", "approve"),
+  { route: "manager-plans/customers/match", method: "POST", action: "read", audit: "access-read", auditRequired: true },
+  post("manager-plans/customers/removal", "read"),
+  post("manager-plans/customers/removal/decide", "read"),
   get("manager-plans/visits"),
-  post("manager-plans/visits", "create"),
+  post("manager-plans/visits", "read"),
   get("manager-plans/report"),
   // A rep's ask for a visit with somebody (owner, 2026-10-02) — his manager, a product manager of his
   // line, or a chain visit with his district manager and the manager above. A SEPARATE workflow from
@@ -924,6 +926,10 @@ const LATER_MIGRATIONS = [
   // exists, and it replaces nothing, so it appends safely at the end. Its keys are text on purpose: a
   // validation is a place OR a polyclinic, and an answer about one that is gone is inert.
   "supabase/migrations/20261017160000_phoenix_crm_place_match_answers.sql",
+  // The manager weekly plan widened to the regional, national and product managers (owner, 2026-10-17).
+  // It REPLACES two functions whose earlier definer is 20261017000000, above it, and adds columns and
+  // CHECKs on that migration's own tables — no new table and no new function, so it appends at the end.
+  "supabase/migrations/20261017213000_phoenix_crm_manager_plan_wider_writers.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

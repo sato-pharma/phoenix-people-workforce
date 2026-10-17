@@ -506,20 +506,21 @@ export function TeamTab({
   }
   // The district manager's weekly plan (owner, 2026-10-16), which REPLACED the double-visit planner this
   // section held since 2026-10-02: "Manager plans" — his week planned against done — and "Manager's own
-  // list", beside Customer lists. Offered to the district manager himself, his RSM/NSM, SFE, the CEO and
-  // the Super Admin, by the server's own reach (`managerPlanReach`). Never the rep.
+  // list", beside Customer lists. Offered to the manager himself (district, regional, national or product,
+  // since 2026-10-17), the managers above him, SFE, the CEO and the Super Admin, by the server's own reach
+  // (`managerPlanReach`). Never the rep.
   const managerPlans = team.data?.managerPlans ?? null;
   if (managerPlans) {
     sectionOptions.push(
       {
         value: "own_list",
         label: "Manager's own list",
-        note: managerPlans.mode === "own" ? "The customers you visit alone" : "Each district manager's own customers",
+        note: managerPlans.mode === "own" ? "The customers you visit alone" : "Each manager's own customers",
       },
       {
         value: "manager_plans",
         label: "Manager plans",
-        note: managerPlans.mode === "own" ? "Your week, planned against done" : "The district managers' weeks",
+        note: managerPlans.mode === "own" ? "Your week, planned against done" : "The managers' weeks",
       },
     );
   }
