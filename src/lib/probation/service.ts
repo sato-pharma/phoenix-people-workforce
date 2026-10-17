@@ -117,6 +117,54 @@ async function resolveActiveHrApproverHrIds(): Promise<string[]> {
     .filter(Boolean) as string[];
 }
 
+type FeedbackAuthUser = { hr_id?: string | null; role?: string | null };
+
+/** The role list the probation reminders address. Null when the read failed (callers treat that as "nobody"). */
+async function loadFeedbackAuthUsers(): Promise<FeedbackAuthUser[] | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("hr_id, role")
+    .in("role", ["National Sales Manager", "Training Manager", "Product Manager", "Group Product Manager"])
+    .eq("is_active", true);
+  if (error) return null;
+  return (data ?? []) as FeedbackAuthUser[];
+}
+
+/**
+ * The two role reads every probation reminder needs, shared across ONE processing run. Reading them per
+ * employee made the cron's step an N+1 (Sentry PHOENIX-WORKFORCE-4: 30 identical `app_auth_users`
+ * selects in one request — the page shows them as "GET [Filtered]" because Sentry hides any URL naming
+ * "auth"). The copy lives only inside the run that created it. A failed read is never kept, so one
+ * blip costs the employees it hit and not every employee left in the run: an empty approver list falls
+ * back to a fresh read, and a failed role read is asked again by the next employee.
+ */
+type ProbationRecipientLookups = {
+  feedbackAuthUsers: () => Promise<FeedbackAuthUser[] | null>;
+  hrApproverHrIds: () => Promise<string[]>;
+};
+
+export function createProbationRecipientLookups(hrApproverHrIds: string[]): ProbationRecipientLookups {
+  let held: Promise<FeedbackAuthUser[] | null> | null = null;
+  return {
+    feedbackAuthUsers: () => {
+      if (held) return held;
+      const read = loadFeedbackAuthUsers();
+      held = read;
+      read.then(
+        (rows) => {
+          if (rows === null && held === read) held = null;
+        },
+        () => {
+          if (held === read) held = null;
+        },
+      );
+      return read;
+    },
+    // A Super Admin always exists, so an empty list means the read failed — ask again rather than share it.
+    hrApproverHrIds: async () => (hrApproverHrIds.length > 0 ? hrApproverHrIds : resolveActiveHrApproverHrIds()),
+  };
+}
+
 async function activeHrIdsByRole(roles: string[]): Promise<string[]> {
   const { data, error } = await getSupabaseAdmin()
     .from("app_auth_users")
@@ -791,19 +839,14 @@ function probationWorkflowApproverHrIds(employee: EmployeeScopeRow, directory: E
   ].filter(Boolean)));
 }
 
-async function resolveFeedbackExtraRecipients(
+export async function resolveFeedbackExtraRecipients(
   employee: EmployeeScopeRow,
   directory: EmployeeScopeRow[],
+  lookups?: ProbationRecipientLookups,
 ): Promise<{ nsmHrIds: string[]; tmHrIds: string[]; pmGpmHrIds: string[] }> {
   const isCns = (employee.lineName ?? "").toLowerCase() === "cns";
 
-  const { data } = await getSupabaseAdmin()
-    .from("app_auth_users")
-    .select("hr_id, role")
-    .in("role", ["National Sales Manager", "Training Manager", "Product Manager", "Group Product Manager"])
-    .eq("is_active", true);
-
-  const authUsers = (data ?? []) as Array<{ hr_id?: string | null; role?: string | null }>;
+  const authUsers = (lookups ? await lookups.feedbackAuthUsers() : await loadFeedbackAuthUsers()) ?? [];
 
   const nsmAuthHrIds = new Set(
     authUsers
@@ -857,13 +900,17 @@ function probationRecipientRoles(employee: EmployeeScopeRow, directory: Employee
   ].filter((recipient): recipient is { hr_id: string; role: string } => Boolean(recipient?.hr_id));
 }
 
-async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directory: EmployeeScopeRow[]) {
+async function ensureProbationReminderEvents(
+  employee: EmployeeScopeRow,
+  directory: EmployeeScopeRow[],
+  lookups?: ProbationRecipientLookups,
+) {
   const schedule = getProbationReminderSchedule(employee.hireDate);
   if (schedule.length === 0) return;
 
   const now = new Date().toISOString();
-  const hrApproverHrIds = await resolveActiveHrApproverHrIds();
-  const { nsmHrIds, tmHrIds, pmGpmHrIds } = await resolveFeedbackExtraRecipients(employee, directory);
+  const hrApproverHrIds = await (lookups ? lookups.hrApproverHrIds() : resolveActiveHrApproverHrIds());
+  const { nsmHrIds, tmHrIds, pmGpmHrIds } = await resolveFeedbackExtraRecipients(employee, directory, lookups);
   const workflowApproverHrIds = probationWorkflowApproverHrIds(employee, directory, hrApproverHrIds);
   const recipientRoles = probationRecipientRoles(employee, directory, hrApproverHrIds);
 
@@ -987,6 +1034,7 @@ async function ensureOverdueProbationReminderEvents(
   employee: EmployeeScopeRow,
   row: Pick<ProbationRow, "workflow" | "probation_end_date">,
   directory: EmployeeScopeRow[],
+  lookups?: ProbationRecipientLookups,
 ) {
   const probationEndDate = row.probation_end_date ?? canonicalProbationEndDate(employee.hireDate);
   const plan = planOverdueProbationReminder({
@@ -996,8 +1044,8 @@ async function ensureOverdueProbationReminderEvents(
   });
   if (!plan.create || !probationEndDate) return;
 
-  const hrApproverHrIds = await resolveActiveHrApproverHrIds();
-  const { nsmHrIds } = await resolveFeedbackExtraRecipients(employee, directory);
+  const hrApproverHrIds = await (lookups ? lookups.hrApproverHrIds() : resolveActiveHrApproverHrIds());
+  const { nsmHrIds } = await resolveFeedbackExtraRecipients(employee, directory, lookups);
   const workflowApproverHrIds = probationWorkflowApproverHrIds(employee, directory, hrApproverHrIds);
   const recipientRoles = probationRecipientRoles(employee, directory, hrApproverHrIds);
   const dmNormalized = normalizeHrId(managerOf(employee, directory)?.hrId);
@@ -1118,15 +1166,17 @@ export async function processDueProbationReminderEvents(limit = 25) {
   const rows = await getProbationRows(systemAccessContext);
   const activeRows = new Map(rows.map((row) => [normalizeHrId(row.hr_id), row]));
   const employeesByHrId = new Map(employees.map((employee) => [normalizeHrId(employee.hrId), employee]));
+  // One read of the role lists for the whole run, not two to four per employee on probation.
+  const lookups = createProbationRecipientLookups(hrApproverHrIds);
 
   await Promise.all(
     rows.map(async (row) => {
       const employee = employeesByHrId.get(normalizeHrId(row.hr_id));
       if (!employee) return;
       // The three scheduled reminders (pre-deadline) …
-      await ensureProbationReminderEvents(employee, employees);
+      await ensureProbationReminderEvents(employee, employees, lookups);
       // … plus the weekly overdue escalation once the 90 days lapse with no decision recorded.
-      await ensureOverdueProbationReminderEvents(employee, row, employees);
+      await ensureOverdueProbationReminderEvents(employee, row, employees, lookups);
     }),
   );
 
