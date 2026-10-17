@@ -673,6 +673,97 @@ function pnpmAdvice(command, root) {
   return run && !PNPM_AT_COMMAND_POSITION.test(run) ? { run } : null;
 }
 
+/**
+ * C1 — which recursive greps hang. Measured 15–17 Oct 2026 over 50 sessions: the old blanket refusal
+ * stopped 124 commands, and about 70 of them named one small tracked folder (`src` 3,460 files,
+ * `app` 1,808, `tests` 2,470, `scripts` 287, `supabase` 1,442, `docs` 173) that cannot hang. What
+ * hangs is a walk from the repo root, `.`, `node_modules` or `.claude/worktrees` (~346k entries).
+ * So a recursive grep passes ONLY when every path is under one of these folders; anything else —
+ * no path, `.`, `..`, an absolute path, a glob or variable, a flag it cannot place — is refused.
+ */
+const GREP_SAFE_ROOTS = new Set(['src', 'app', 'tests', 'scripts', 'supabase', 'docs', 'public']);
+/** Short flags whose value follows them (`-e PATTERN`, `-m 5`, `-A 3`); the rest of a cluster is that value. */
+const GREP_VALUE_SHORT = new Set(['e', 'f', 'm', 'A', 'B', 'C', 'd', 'D']);
+const GREP_VALUE_LONG = new Set([
+  '--regexp', '--file', '--max-count', '--include', '--exclude', '--exclude-dir', '--include-dir',
+  '--after-context', '--before-context', '--context', '--label', '--binary-files', '--directories', '--devices',
+]);
+
+/** The words of one command segment, quotes removed — `grep -rn "a b" src` is four words. */
+function shellWords(segment) {
+  const words = [];
+  let current = null;
+  let quote = null;
+  for (const ch of segment) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      else current += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      current ??= '';
+    } else if (/\s/.test(ch)) {
+      if (current !== null) words.push(current);
+      current = null;
+    } else {
+      current = (current ?? '') + ch;
+    }
+  }
+  if (current !== null) words.push(current);
+  return words;
+}
+
+/**
+ * Judge one command segment. null = not a recursive grep (not this clause's business);
+ * true = a recursive grep that is safe; false = one that walks somewhere it must not.
+ */
+function recursiveGrepIsSafe(segment) {
+  const words = shellWords(segment);
+  if (!words.length || !/^(?:e|f)?grep$/.test(words[0])) return null;
+  let recursive = false;
+  let patternGiven = false;
+  const operands = [];
+  for (let i = 1; i < words.length; i++) {
+    const word = words[i];
+    // A redirection is not an operand: `2>`, `>out.txt`, `< in`. The `&` of `2>&1` already split the segment.
+    if (/^(?:\d*|&)?(?:>>?|<)/.test(word)) {
+      if (/^(?:\d*|&)?(?:>>?|<)$/.test(word)) i++;
+      continue;
+    }
+    if (word === '--') {
+      operands.push(...words.slice(i + 1));
+      break;
+    }
+    if (word.startsWith('--')) {
+      const name = word.split('=')[0];
+      if (name === '--recursive' || name === '--dereference-recursive') recursive = true;
+      if (name === '--regexp' || name === '--file') patternGiven = true;
+      if (GREP_VALUE_LONG.has(name) && !word.includes('=')) i++;
+      continue;
+    }
+    if (word.length > 1 && word.startsWith('-')) {
+      for (let c = 1; c < word.length; c++) {
+        const letter = word[c];
+        if (letter === 'r' || letter === 'R') recursive = true;
+        if (GREP_VALUE_SHORT.has(letter)) {
+          if (letter === 'e' || letter === 'f') patternGiven = true;
+          if (c === word.length - 1) i++; // the value is the next word; otherwise the rest of this one
+          break;
+        }
+      }
+      continue;
+    }
+    operands.push(word);
+  }
+  if (!recursive) return null;
+  const paths = patternGiven ? operands : operands.slice(1);
+  if (!paths.length) return false;
+  return paths.every((path) => {
+    if (/[*?[\]${}~`]/.test(path)) return false;
+    const parts = path.replace(/\\/g, '/').replace(/^(?:\.\/)+/, '').replace(/\/+$/, '').split('/');
+    return !parts.includes('..') && GREP_SAFE_ROOTS.has(parts[0]);
+  });
+}
+
 try {
   const input = JSON.parse(readFileSync(0, 'utf8') || '{}');
   // PowerShell too: a `Bash` matcher never fires for the PowerShell tool, so until 2026-09-12 the
@@ -681,14 +772,17 @@ try {
   const cmd = String(input?.tool_input?.command ?? '');
   if (!cmd) process.exit(0);
 
-  // C1 — recursive grep at a command position (start / after | ; & ( && ||).
+  // C1 — recursive grep at a command position (start / after | ; & ( && ||), unless every path is a
+  // named tracked folder (see GREP_SAFE_ROOTS). A quoted mention is data, not a command: the
+  // segments are split quote-aware, with heredoc and here-string bodies removed first.
   // `git grep` and `rg` are NOT matched (git grep honours .gitignore; rg isn't grep).
-  const recursiveGrep =
-    /(?:^|[|&;(]|&&|\|\|)\s*(?:e|f)?grep\b[^|&;\n]*?\s(?:-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)\b/;
-  if (recursiveGrep.test(cmd) || /\balias\s+grep=/.test(cmd)) {
+  const grepSegments = commandSegments(withoutHereStringBodies(withoutHeredocBodies(cmd)));
+  if (grepSegments.some((segment) => recursiveGrepIsSafe(segment) === false) || /\balias\s+grep=/.test(cmd)) {
     deny(
-      'Recursive grep hangs in this repo (~346k path entries get scanned; 10-40s+). ' +
-        'Use `git grep` (in the shell) or the Grep tool — both honour .gitignore and stay fast. ' +
+      'Recursive grep hangs from the repo root, `.`, `..`, `node_modules` or `.claude/worktrees` ' +
+        '(~346k path entries get scanned; 10-40s+). A recursive grep over NAMED folders is fine — e.g. ' +
+        '`grep -rn "x" src tests` (src, app, tests, scripts, supabase, docs, public; no globs or variables). ' +
+        'Anywhere else use `git grep` (in the shell) or the Grep tool — both honour .gitignore and stay fast. ' +
         '(`rg`/`gg` are not reliably on the shell PATH here. Never `alias grep=rg`.)',
     );
   }

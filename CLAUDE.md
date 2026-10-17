@@ -67,25 +67,15 @@ say so and push. Never a poll loop (bash-guard
 **C14**), never a foreground run (**C15**), never a sleep on a task output file (**C16**). The push guard only reads a recorded verdict for the exact sha, starts nothing, and says the new-test-file rule back without ever refusing over the suite (owner, 2026-10-04: "no guard"). Rule and
 account: `.claude/rules/engineering.md` (Validation), `docs/testing.md`.
 
-**CI is the gate. Do not run a local full validation** — no "quick subset" of lint + typecheck
-before pushing, no `pnpm run ci` as a pre-push ritual; `remote-check` runs on the box, not here. Push
-the branch and let the PR's two required checks answer, and **read `branches/main/protection/required_status_checks` live rather than trusting
-any list**: it has rotted five times, and `lint`, `typecheck` and `test` are STEPS, not check names.
-Migrations and production deploys are the two things CI never sees.
-
-🔴 **A LOCAL TYPECHECK IS DENIED, not discouraged** — `.claude/hooks/bash-guard.mjs` clause **C8**
-refuses every spelling, because the rule alone could not hold: a reaped run prints nothing and exits
-non-zero, which a session cannot tell from a typo, so it tries the next spelling.
-`PHX_TYPECHECK_OK=1 <cmd>` (`$env:PHX_TYPECHECK_OK=1; <cmd>` in PowerShell) stands it down for one
-command you will sit and watch. **Push the branch — the PR's typecheck is cold, clean and under a
-minute** since the gate moved to TypeScript 7 (`typescript-native`, an `npm:typescript@7` alias;
-`typescript` 5 stays for the editor, Next and typescript-eslint). It is `--checkers 1` in both
-callers deliberately: nothing else names a version, and TypeScript 5 refuses that flag, so a lost
-alias fails loudly instead of quietly restoring the 3-minute compiler.
-
-Both in full — the required-check rotation, the retired `check:harden` and `check:edit`, the
-per-change validation matrix, and the measured reason a cold `tsc` no longer fits this machine:
-[AGENTS.md §7](AGENTS.md).
+**CI is the gate, and a local typecheck is denied** (`bash-guard.mjs` C8; `PHX_TYPECHECK_OK=1 <cmd>`
+stands it down for one command you will sit and watch) — the full rule, the required-check rotation,
+the retired `check:harden` and `check:edit`, the per-change validation matrix and the measured reason a
+cold `tsc` no longer fits this machine are in [AGENTS.md §7](AGENTS.md), loaded with this file.
+**Push the branch — the PR's typecheck is cold, clean and under a minute** since the gate moved to
+TypeScript 7 (`typescript-native`, an `npm:typescript@7` alias; `typescript` 5 stays for the editor,
+Next and typescript-eslint). It is `--checkers 1` in both callers deliberately: nothing else names a
+version, and TypeScript 5 refuses that flag, so a lost alias fails loudly instead of quietly restoring
+the 3-minute compiler.
 
 ## The two rules that apply to every change
 

@@ -38,8 +38,19 @@ file holding the full account, under
 
 **Shell and tooling**
 
-- **`grep -r` hangs on this checkout — use `git grep` or `rg`.** Worktree payload is ~1.9M paths; tools
-  honouring `.gitignore` never see it. `shell-grep-unusable-use-git-grep-or-rg`
+- **`grep -r` hangs from the repo root, `.` or `node_modules` — use `git grep` or `rg` there; over a
+  NAMED folder (`src`, `app`, `tests`, `scripts`, `supabase`, `docs`) it takes under 5 s and
+  `bash-guard.mjs` C1 allows it.** Worktree payload is ~1.9M paths; tools honouring `.gitignore` never
+  see it. `shell-grep-unusable-use-git-grep-or-rg`. 🔴 **The blanket refusal was too wide** (2026-10-17,
+  a `/doctor` pass over 50 sessions): C1 stopped 124 commands, about 70 of them naming one small tracked
+  folder, plus a few that only QUOTED `grep -r` inside a search pattern — each a wasted round trip.
+  Timed on this box the same day, warm, searching text that is not there: `docs` 0.1 s, `scripts` 0.3 s,
+  `supabase` 1.5 s, `app` 2.7 s, `tests` 3.7 s, `src` 4.5 s (the memory note's old "9 ms a file" figure
+  no longer holds). C1 now judges each command segment (quote-aware, heredoc and here-string bodies
+  removed): a recursive grep passes ONLY when every path is under `src`, `app`, `tests`, `scripts`,
+  `supabase`, `docs` or `public`, and no path, `.`, `..`, an absolute path, a glob, a variable,
+  `node_modules`, `.claude` or anything the parser cannot place is still refused. Pinned by
+  `tests/bash-grep-guard.test.ts` (allow and deny matrices, each half broken and watched to fire).
 - **`pnpm run <script>` tries to PURGE `node_modules`** when the lockfile has moved, destroying the
   install before the script runs. Invoke directly: `node scripts/repo-doctor.mjs`.
   `pnpm-run-tries-to-purge-node-modules-when-the-lockfile-moved`
@@ -2911,7 +2922,7 @@ it for the hook's wording. Which memory backs which hook:
 
 **Shell and tooling**
 
-- **`grep -r` hangs on this checkout — use `git grep` or `rg`.**
+- **`grep -r` hangs from the repo root, `.` or `node_modules` — use `git grep` or `rg` there; over a NAMED folder (`src`, `app`, `tests`, `scripts`, `supabase`, `docs`) it takes under 5 s and `bash-guard.mjs` C1 allows it.**
 - **MSYS mangles paths silently, four ways:** `git show <ref>:<path>` returns EMPTY; `grep -c $'\r'` matches EVERY line of a pure-LF file; a `git grep`/`rg` PATTERN holding a leading-slash path matches NOTHING — 41 hits read as 0, i.e. *the code is clean*; and **a NATIVE Windows binary cannot resolve `/tmp` at all** (it is `C:/Users/<you>/AppData/Local/Temp`) — bash writes the file and `wc`/`grep` read it, while `rg` says *cannot find the path* and `curl -o` exits 23. Export `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'` first; save with `>` rather than `-o`; never quote a count without it.
 - **`git grep -E` is POSIX ERE, where a backslash inside `[...]` is a LITERAL BACKSLASH — so a character class written for `rg` silently matches NOTHING.** Same pattern, same file, measured: `-E` **0**, `-P` **9**, `rg` **9**. The 0 reads as *the code is clean*, and the pattern looks right because it IS right everywhere else. Use `-P`, or keep the class free of `\[`/`\]`.
 - **`TZ=Africa/Cairo date` silently returns UTC in MSYS — 3h early, no error**, so recent work reads as old. The tell is a Cairo reading at `+0000`; the clock is ALREADY `+0300`, so use plain `date` or node, never `TZ=`. `tz-africa-cairo-silently-returns-utc-in-msys`
