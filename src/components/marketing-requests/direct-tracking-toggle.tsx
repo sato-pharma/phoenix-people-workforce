@@ -65,7 +65,7 @@ export function DirectTrackingToggle({ requestId }: { requestId: string }) {
       <div className="min-w-0">
         <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink">Track direct-order sales</p>
         <p className="mt-0.5 text-phx-xs font-semibold text-phx-ink-soft">
-          Super Admin only — also credit approved Direct Order sales at this campaign&apos;s pharmacies to its ROI.
+          On by default — approved Direct Order sales at this campaign&apos;s pharmacies count in its ROI. Only a Super Admin can switch it off.
         </p>
         {error ? <p className="mt-1 text-phx-xs font-semibold text-[#DC2626]">{error}</p> : null}
       </div>
