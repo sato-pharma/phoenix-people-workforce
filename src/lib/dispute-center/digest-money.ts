@@ -144,7 +144,7 @@ export async function applyDigestRevisionToDeduction(input: {
       const decision = await recordDecision({
         actor: input.actor,
         candidateId: candidate.id,
-        decisionReason: `Weekly attendance dispute revised to upheld: ${input.note}`,
+        decisionReason: `Weekly attendance dispute revised to upheld${input.note ? `: ${input.note}` : ""}`,
         decisionStatus: "Do Not Take Action",
         hrNote: input.note,
       });
@@ -204,7 +204,7 @@ export async function applyDigestRevisionToDeduction(input: {
     const decision = await recordDecision({
       actor: input.actor,
       candidateId: candidate.id,
-      decisionReason: `Weekly attendance dispute revised to rejected; deducted from salary: ${input.note}`,
+      decisionReason: `Weekly attendance dispute revised to rejected; deducted from salary${input.note ? `: ${input.note}` : ""}`,
       decisionStatus: "Approved for Payroll",
       hrNote: input.note,
     });

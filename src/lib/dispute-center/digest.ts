@@ -460,8 +460,8 @@ export async function decideDigestDispute(
   if (!participant.isReviewer) throw new Error("Forbidden: only a dispute reviewer can decide this day.");
   const reviewerHrId = participant.viewerHrId;
   if (!reviewerHrId) throw new Error("Your employee profile is not linked. Contact HR.");
+  // The note is OPTIONAL (owner, 2026-10-18).
   const note = tidyDisputeText(input.note);
-  if (!note) throw validationError("Write what you decided and why — the employee reads it.");
 
   const { head, row } = await loadLineOrThrow(input.lineId);
 
@@ -642,8 +642,8 @@ export async function decideDigestReopen(
 ): Promise<void> {
   const participant = await resolveCaseParticipant(access, "digest", String(input.lineId));
   if (!participant.isReviewer) throw new Error("Forbidden: only a dispute reviewer can reopen this day.");
+  // The note is OPTIONAL (owner, 2026-10-18).
   const note = tidyDisputeText(input.note);
-  if (!note) throw validationError("Say what you are telling the employee.");
   const { head, row } = await loadLineOrThrow(input.lineId);
   if (row.action !== "dispute_upheld" && row.action !== "dispute_rejected") throw conflictError("This day is not decided.");
 
@@ -667,9 +667,10 @@ export async function decideDigestReopen(
     employeeHrId: head.employeeHrId,
     eventKey: `${input.grant ? "reopened" : "reopen_declined"}:${new Date().toISOString()}`,
     kind: "digest",
-    message: input.grant
+    message: (input.grant
       ? `${dayLabel(row.work_date)} is being looked at again. ${note}`
-      : `The decision on ${dayLabel(row.work_date)} stands. ${note}`,
+      : `The decision on ${dayLabel(row.work_date)} stands. ${note}`
+    ).trim(),
     recipientHrIds: [head.employeeHrId],
     ref: String(input.lineId),
     title: input.grant

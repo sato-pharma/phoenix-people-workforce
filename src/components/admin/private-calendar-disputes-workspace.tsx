@@ -162,10 +162,6 @@ export function PrivateCalendarDisputesWorkspace({
 
   async function decide(disputeId: string, decision: "accept" | "reject") {
     const note = (noteById[disputeId] ?? "").trim();
-    if (!note) {
-      setError("A decision note is required.");
-      return;
-    }
     setError(null);
     setSubmittingId(disputeId);
     try {
@@ -300,7 +296,7 @@ export function PrivateCalendarDisputesWorkspace({
                   <textarea
                     className={cn(phxTextareaClassName, "mt-2")}
                     onChange={(event) => setNoteById((current) => ({ ...current, [dispute.id]: event.target.value }))}
-                    placeholder="Decision note (required — what you found when you checked)"
+                    placeholder="Decision note (optional — what you found when you checked)"
                     rows={2}
                     value={noteById[dispute.id] ?? ""}
                   />

@@ -339,7 +339,7 @@ export async function decideCalendarReopen(
   const note = tidyDisputeText(input.note);
 
   if (!input.grant) {
-    if (!note) throw new Error("Validation: say why it is not being looked at again.");
+    // The note is OPTIONAL (owner, 2026-10-18).
     await recordCaseEvent({
       actorHrId: participant.viewerHrId,
       actorRole: access.role,
@@ -355,7 +355,7 @@ export async function decideCalendarReopen(
       employeeHrId: dispute.employeeHrId,
       eventKey: `reopen_declined:${new Date().toISOString()}`,
       kind: "calendar",
-      message: `The decision on ${dayLabel(dispute.disputeDate)} stands. ${note}`,
+      message: `The decision on ${dayLabel(dispute.disputeDate)} stands. ${note}`.trim(),
       recipientHrIds: [dispute.employeeHrId],
       ref: input.disputeId,
       title: `Decision stands — calendar ${dayLabel(dispute.disputeDate)}`,

@@ -294,6 +294,29 @@ export async function runDisputeCenterRefundsTests() {
     "a REDUCE decision charges the days he typed, through the deductions module's own charge rule",
   );
 
+  // The decision note is OPTIONAL (owner, 2026-10-18) — approve, reduce or reject with or without words.
+  assert.ok(
+    !/if \(!note\) throw/.test(decide) && decide.includes("noteSuffix"),
+    "a deduction dispute decision never refuses an empty note",
+  );
+  const panel = readFileSync("src/components/disputes/dispute-decision-panel.tsx", "utf8");
+  assert.ok(
+    !panel.includes("!note.trim()"),
+    "no decision or reopen button in the dispute panel waits for a note",
+  );
+  for (const file of [
+    "src/lib/dispute-center/deduction.ts",
+    "src/lib/dispute-center/calendar.ts",
+    "src/lib/dispute-center/digest.ts",
+    "src/lib/private-calendar/disputes.ts",
+  ]) {
+    assert.ok(!/if \(!note\) throw/.test(readFileSync(file, "utf8")), `${file} never refuses an empty decision or reopen note`);
+  }
+  assert.ok(
+    !readFileSync("src/components/admin/private-calendar-disputes-workspace.tsx", "utf8").includes("decision note is required"),
+    "the calendar disputes workspace does not demand a note either",
+  );
+
   // Every money figure in the decision comes from payrollCharge, and the LINE is never the basis.
   assert.ok(
     decide.includes("const before = payrollCharge(candidate, decisionBefore);") &&
