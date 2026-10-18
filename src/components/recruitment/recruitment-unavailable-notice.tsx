@@ -26,13 +26,17 @@ export function RecruitmentUnavailableNotice({
   sources: ReadonlyArray<RecruitmentReadSource>;
 }) {
   if (sources.length === 0) return null;
+  // With the dashboard and the candidate pool both missing there is no working "rest" to point at.
+  const restIsWorking = !(sources.includes("dashboard") && sources.includes("pool"));
   return (
     <AdminCallout tone="warning">
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-      <div className="min-w-0 flex-1 space-y-2">
+      <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+      <div className="min-w-0 flex-1 space-y-2" role="status">
         <div className="space-y-1">
           <p className="font-medium">Some recruitment information is temporarily unavailable.</p>
-          <p>Not loaded: {describeUnavailable(sources)}. The rest of this page is working.</p>
+          <p>
+            Not loaded: {describeUnavailable(sources)}.{restIsWorking ? " The rest of this page is working." : ""}
+          </p>
         </div>
         <Button size="sm" variant="secondary" disabled={pending} onClick={onRetry}>
           {pending ? "Trying again" : "Try again"}
@@ -46,7 +50,7 @@ export function RecruitmentUnavailableNotice({
 export function RecruitmentTabUnavailable({ what }: { what: string }) {
   return (
     <AdminCallout tone="warning">
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+      <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
       <p className="min-w-0 flex-1">{what} is temporarily unavailable. Use Try again above.</p>
     </AdminCallout>
   );

@@ -1184,6 +1184,8 @@ export function RecruitmentWorkspace(props: Props) {
   const workspacePathname = usePathname();
   const linkedCandidateId = workspaceParams.get("candidate");
   const [pending, startTransition] = useTransition();
+  // Its own transition, so "Trying again" shows only for a retry -- never because a save is under way.
+  const [retrying, startRetry] = useTransition();
   // Candidates, not Pipeline. Production on 2026-08-15: the pipeline held 7 applications ever while
   // 152 CVs arrived that week — so the module opened on its emptiest screen and put the work two
   // clicks away, behind a tab labelled with someone else's vocabulary.
@@ -1228,7 +1230,7 @@ export function RecruitmentWorkspace(props: Props) {
 
   // Asking the server for the page again re-runs every read, which is the whole remedy for a slow moment.
   const tryAgain = () =>
-    startTransition(() => {
+    startRetry(() => {
       router.refresh();
     });
 
@@ -1246,7 +1248,7 @@ export function RecruitmentWorkspace(props: Props) {
 
       {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
       {notice ? <AdminCallout tone="success">{notice}</AdminCallout> : null}
-      <RecruitmentUnavailableNotice onRetry={tryAgain} pending={pending} sources={unavailableSources} />
+      <RecruitmentUnavailableNotice onRetry={tryAgain} pending={retrying} sources={unavailableSources} />
 
       {/*
         These four count CVs, not requisitions. The previous set — open requisitions, active
