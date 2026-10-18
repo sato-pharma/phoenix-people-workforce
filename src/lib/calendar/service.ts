@@ -226,6 +226,8 @@ async function loadPlanItems(access: AccessContext, start: string, end: string):
       .from("employee_plan_headers")
       .select("id")
       .eq("employee_hr_id", dbHrId)
+      // A plan replaced by its approved revision is cancelled, and its rows stay behind — they must not draw beside the revision's.
+      .neq("status", "cancelled")
       .limit(50);
     if (headerError) throw headerError;
     const ids = ((headers ?? []) as Array<{ id: string }>).map((row) => row.id);

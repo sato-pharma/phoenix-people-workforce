@@ -347,7 +347,7 @@ export function PlanDecisionActions({
               disabled={busy}
               className="bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-60"
             >
-              {busy ? "Submitting…" : `Confirm ${SIMPLE_LABEL[action].split(" ")[0]}`}
+              {busy ? "Submitting…" : `Confirm ${SIMPLE_LABEL[action]}`}
             </button>
             <button
               type="button"

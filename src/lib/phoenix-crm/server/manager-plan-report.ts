@@ -21,15 +21,19 @@ import { validationError } from "@/lib/http/api-errors";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import { fieldWeekStart, repPlanWeek } from "@/lib/phoenix-crm/calendar";
 import {
+  countManagerOutcomes,
   countsAsPlannersVisitWithRep,
   isManagerPlanSent,
   managerAdminActivityLabel,
   managerCustomerFlagLabel,
+  managerEvidenceKey,
   managerOutcome,
   managerOutcomeLabel,
   managerPlanStatusLine,
   managerPlanSummaryText,
   managerSlotKindLabel,
+  managerVisitWindow,
+  type ManagerCountRow,
   type ManagerHalf,
   type ManagerOutcome,
   type ManagerPlanStatus,
@@ -125,7 +129,7 @@ async function loadWithRepDone(
   const managers = dedupeIds(managerHrIds);
   if (managers.length === 0 || seatIds.length === 0) return done;
   const productManagers = dedupeIds(productManagerHrIds);
-  const weekEnd = addDaysIso(weekStart, 5);
+  const weekEnd = managerVisitWindow(weekStart).to;
   const readBy = (column: "manager_hr_id" | "senior_hr_id" | "product_manager_hr_id", part: string[]): Promise<Row[]> => {
     // The product manager's own slot is asked of the managers who plan as one, and not at all when none does.
     const ids = column === "product_manager_hr_id" ? productManagers : managers;
@@ -203,7 +207,7 @@ export async function computeManagerReports(
   const slots = await loadManagerSlotRows(planRows.filter((plan) => isManagerPlanSent(plan.status)).map((plan) => plan.planId));
   const [slotCustomers, visits, withRepDone] = await Promise.all([
     loadManagerSlotCustomers(slots.map((slot) => slot.slotId)),
-    loadManagerVisits(managers, { from: weekStart, to: addDaysIso(weekStart, 5) }, isTest),
+    loadManagerVisits(managers, managerVisitWindow(weekStart), isTest),
     loadWithRepDone(
       managers,
       slots.flatMap((slot) => (slot.kind === "with_rep" && slot.repSeatId ? [slot.repSeatId] : [])),
@@ -247,7 +251,7 @@ export async function computeManagerReports(
 
   for (const managerHrId of managers) {
     const plan = planOf.get(managerHrId) ?? null;
-    const summary: ManagerPlanSummary = { planned: 0, done: 0, notDone: 0, unplanned: 0 };
+    const countRows: ManagerCountRow[] = [];
     const daysByDate = new Map<string, ManagerReportHalf[]>();
     const plannedKeys = new Set<string>();
     const mySlots = slots
@@ -264,11 +268,19 @@ export async function computeManagerReports(
           done = visitedBy.get(managerHrId)?.has(key) ?? false;
         }
         const outcome = managerOutcome({ kind: slot.kind, date: slot.date, done, cairoToday: viewer.cairoToday, visitDay: viewer.visitDay });
-        if (outcome !== "not_checkable") {
-          summary.planned += 1;
-          if (outcome === "done") summary.done += 1;
-          if (outcome === "not_done") summary.notDone += 1;
-        }
+        // Every row is listed; `countManagerOutcomes` decides what it adds to the counts (a customer who has left
+        // the list adds nothing, and one visit answers a customer once however many halves he is ticked in).
+        countRows.push({
+          outcome,
+          gone: row.gone,
+          evidenceKey: managerEvidenceKey({
+            kind: slot.kind,
+            repSeatId: slot.repSeatId,
+            date: slot.date,
+            customerId: row.customerId,
+            managerCustomerId: row.managerCustomerId,
+          }),
+        });
         return {
           name: row.name,
           own: row.managerCustomerId !== null,
@@ -299,7 +311,7 @@ export async function computeManagerReports(
         own: visit.managerCustomerId !== null,
       }))
       .sort((left, right) => left.date.localeCompare(right.date) || left.name.localeCompare(right.name));
-    summary.unplanned = unplanned.length;
+    const summary: ManagerPlanSummary = { ...countManagerOutcomes(countRows), unplanned: unplanned.length };
     reports.set(managerHrId, {
       managerHrId,
       status: plan?.status ?? null,

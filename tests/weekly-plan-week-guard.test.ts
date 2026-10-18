@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { pickedPeriodIsShown } from "../src/lib/weekly-planning/plan-editor-state.ts";
 import {
   buildEmployeePlanPeriod,
   isPastPlanWeek,
@@ -9,6 +10,7 @@ import {
   FIELD_WORKWEEK,
   HEAD_OFFICE_WORKWEEK,
 } from "../src/lib/weekly-planning/plan-v1.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // THE WRONG-WEEK GUARD (owner, 2026-09-26): "make the week not auto selected — make a droplist
 // unselected and he manual select, and mark submitted weeks green in the droplist, and if [he]
@@ -104,5 +106,75 @@ export function runWeeklyPlanWeekGuardTests() {
   assert.ok(
     /add column if not exists off_window_flagged boolean not null default false/i.test(MIGRATION_SOURCE),
     "the migration must add employee_plan_headers.off_window_flagged, defaulting false",
+  );
+
+  runPeriodPickTests();
+}
+
+// ── Picking the week that is already on screen ───────────────────────────────
+// The picker called resetRows unconditionally, so choosing the week already shown (the usual way to
+// "confirm" a fresh weekly plan's default week) replaced every row with the bare defaults. The
+// approved-leave and holiday rows are re-added only by the prefill effect, which does not re-run
+// because nothing it depends on changed - while the "Auto-synced into this plan" banner kept
+// claiming they were there. The same hole sat behind Reset working days and Discard draft.
+function runPeriodPickTests() {
+  const fieldWeek = buildEmployeePlanPeriod("weekly", "2026-10-21", FIELD_WORKWEEK);
+  assert.equal(fieldWeek.periodStartDate, "2026-10-17", "sanity: the Field Force week shown starts Saturday 17 Oct");
+  for (const picked of ["2026-10-17", "2026-10-19", "2026-10-22"]) {
+    assert.equal(
+      pickedPeriodIsShown({ kind: "weekly", pickedAnchorDate: picked, shownPeriodStartDate: fieldWeek.periodStartDate, workweek: FIELD_WORKWEEK }),
+      true,
+      `${picked} is inside the week already shown`,
+    );
+  }
+  for (const picked of ["2026-10-10", "2026-10-24", "2026-10-31"]) {
+    assert.equal(
+      pickedPeriodIsShown({ kind: "weekly", pickedAnchorDate: picked, shownPeriodStartDate: fieldWeek.periodStartDate, workweek: FIELD_WORKWEEK }),
+      false,
+      `${picked} is another week`,
+    );
+  }
+  // The same date can be a different week for a different workweek (Head Office starts Sunday).
+  assert.equal(
+    pickedPeriodIsShown({ kind: "weekly", pickedAnchorDate: "2026-10-17", shownPeriodStartDate: "2026-10-18", workweek: HEAD_OFFICE_WORKWEEK }),
+    false,
+    "Saturday 17 Oct belongs to the Head Office week that began Sunday 11 Oct, not the one starting 18 Oct",
+  );
+  assert.equal(
+    pickedPeriodIsShown({ kind: "monthly", pickedAnchorDate: "2026-10-17", shownPeriodStartDate: "2026-10-01", workweek: FIELD_WORKWEEK }),
+    true,
+    "any day of the month shown is that month",
+  );
+  assert.equal(
+    pickedPeriodIsShown({ kind: "monthly", pickedAnchorDate: "2026-11-01", shownPeriodStartDate: "2026-10-01", workweek: FIELD_WORKWEEK }),
+    false,
+    "the first of the next month is another month",
+  );
+
+  // The component wiring, sliced to the functions so a match elsewhere cannot satisfy it.
+  const workspace = stripComments(readFileSync("src/components/employee-portal/plans-workspace.tsx", "utf8"));
+  const pickStart = workspace.indexOf("function onAnchorChange(");
+  assert.ok(pickStart >= 0, "onAnchorChange must exist - this test slices it by marker");
+  const pick = workspace.slice(pickStart, workspace.indexOf("\n  }\n", pickStart));
+  const sameWeekAt = pick.indexOf("pickedPeriodIsShown(");
+  const resetAt = pick.indexOf("resetRows(activeKind, nextAnchorDate)");
+  assert.ok(sameWeekAt >= 0 && resetAt > sameWeekAt, "onAnchorChange must test for the week already shown BEFORE it resets the rows");
+  assert.match(
+    pick.slice(sameWeekAt, resetAt),
+    /setWeekChosen\(true\);\s*return;/,
+    "picking the week already shown only confirms the choice and returns without touching the rows",
+  );
+  assert.ok(
+    pick.indexOf("window.confirm(") >= 0 && pick.indexOf("window.confirm(") < sameWeekAt,
+    "the past-week confirmation still comes first",
+  );
+
+  const resetStart = workspace.indexOf("function resetRows(");
+  assert.ok(resetStart >= 0, "resetRows must exist - this test slices it by marker");
+  const reset = workspace.slice(resetStart, workspace.indexOf("\n  }\n", resetStart));
+  assert.match(
+    reset,
+    /prefillState\.scopeKey === freshScopeKey \? mergePrefillIntoRows\(fresh, prefillState\.items\) : fresh/,
+    "a reset onto the period already on screen re-adds the approved-leave and holiday rows the prefill already fetched",
   );
 }

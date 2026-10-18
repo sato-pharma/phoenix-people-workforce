@@ -1,5 +1,7 @@
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
 
+import { incompleteDaysHeading } from "../src/lib/weekly-planning/plan-editor-state.ts";
 import {
   buildEmployeePlanPeriod,
   employeePlanActivityTypes,
@@ -99,4 +101,30 @@ export function runPlanWorkweekLinkageTests() {
   // --- New activity types ---------------------------------------------------
   assert.ok((employeePlanActivityTypes as readonly string[]).includes("National Vacation"));
   assert.ok((employeePlanActivityTypes as readonly string[]).includes("Excuse"));
+
+  // --- The incomplete-days banner's heading ---------------------------------
+  // The half-day planner's server check (planDayGapText "half") accepts the morning OR the afternoon,
+  // so "Finish every working day" asked a Group Product Manager for more than the server does.
+  assert.equal(
+    incompleteDaysHeading(planWorkweekAllowsHalfDays(GROUP_PRODUCT_MANAGER_WORKWEEK)),
+    "Plan at least the morning or the afternoon of every working day before submitting",
+  );
+  assert.equal(
+    incompleteDaysHeading(planWorkweekAllowsHalfDays(HEAD_OFFICE_WORKWEEK)),
+    "Finish every working day before submitting",
+    "everyone else keeps the copy they always had",
+  );
+  assert.equal(incompleteDaysHeading(planWorkweekAllowsHalfDays(FIELD_WORKWEEK)), "Finish every working day before submitting");
+
+  // The banner's heading wraps: a nowrap line in a flex row with no min-width forced the row (and the
+  // page) wider than a 375px phone. Read from the emitted JSX, comments excluded.
+  const workspace = readFileSync("src/components/employee-portal/plans-workspace.tsx", "utf8");
+  const bannerAt = workspace.indexOf("{incompleteDaysHeading(allowHalfDays)}");
+  assert.ok(bannerAt >= 0, "the banner must render incompleteDaysHeading(allowHalfDays)");
+  const bannerLine = workspace.slice(workspace.lastIndexOf("<p", bannerAt), bannerAt);
+  assert.ok(
+    !bannerLine.includes("whitespace-nowrap"),
+    "the incomplete-days heading must be allowed to wrap, or it overflows a phone",
+  );
+  assert.ok(bannerLine.includes("min-w-0"), "and it needs min-w-0 to shrink inside its flex row");
 }

@@ -64,7 +64,11 @@ export type ManagerPlanRow = {
   decisionNote: string | null;
   returnedDay: string | null;
   returnedStage: ManagerPlanStage | null;
-  /** HR acknowledged the approved week by itself — never on a district manager's. */
+  /**
+   * HR acknowledged the approved week by itself — never on a district manager's, and read only on an APPROVED
+   * week: the acknowledgement belongs to that approval, so a week reopened or returned since (whose stamp the
+   * database clears, 20261018234000) can never read as acknowledged.
+   */
   hrAcknowledgedAt: string | null;
   isTest: boolean;
 };
@@ -79,6 +83,7 @@ export function managerPlanRowOf(raw: unknown): ManagerPlanRow | null {
   const weekStart = dayOf(row.week_start);
   if (!planId || !managerHrId || !weekStart) return null;
   const stage = row.returned_stage === "first" || row.returned_stage === "second" ? row.returned_stage : null;
+  const status: ManagerPlanStatus = isManagerPlanStatus(row.status) ? row.status : "draft";
   return {
     planId,
     managerHrId,
@@ -86,7 +91,7 @@ export function managerPlanRowOf(raw: unknown): ManagerPlanRow | null {
     plannerKind: isManagerPlannerKind(row.planner_kind) ? row.planner_kind : "dm",
     lineCode: textOrNull(row.line_code),
     weekStart,
-    status: isManagerPlanStatus(row.status) ? row.status : "draft",
+    status,
     version: Number(row.version ?? 1),
     dueOn: dayOf(row.due_on) ?? weeklyPlanDueOn(weekStart),
     submittedAt: textOrNull(row.submitted_at),
@@ -103,7 +108,7 @@ export function managerPlanRowOf(raw: unknown): ManagerPlanRow | null {
     decisionNote: textOrNull(row.decision_note),
     returnedDay: dayOf(row.returned_day),
     returnedStage: stage,
-    hrAcknowledgedAt: textOrNull(row.hr_acknowledged_at),
+    hrAcknowledgedAt: status === "approved" ? textOrNull(row.hr_acknowledged_at) : null,
     isTest: row.is_test === true,
   };
 }

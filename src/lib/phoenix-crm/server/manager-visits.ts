@@ -13,7 +13,6 @@
  * on a rep's seat is closed to a district manager (`saveVisit`), so there is one path for these, not two.
  */
 
-import { addDaysIso } from "@/lib/crm/dates";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { parseCapturedFix } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
@@ -354,9 +353,4 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
     }
   }
   return loadManagerToday(viewer, { test: isTest });
-}
-
-/** The first day of the window the report reads: the week's Saturday. Kept here so both readers agree. */
-export function managerVisitWindow(weekStart: string): { from: string; to: string } {
-  return { from: weekStart, to: addDaysIso(weekStart, 5) };
 }

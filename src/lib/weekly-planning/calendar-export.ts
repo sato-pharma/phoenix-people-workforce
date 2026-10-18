@@ -82,7 +82,9 @@ export function buildPlanningCalendarDetailRows(items: PlanningCalendarPlanItem[
       activity: item.activityTitle,
       location: item.region || item.lineName || "-",
       area: item.area || "-",
-      medicalRep: item.medicalRepDisplayName || item.medicalRepName || item.medicalRepHrId || "-",
+      // A rep who is booked but has left the directory (a Phoenix CRM half-day keeps the id and
+      // loses the name) is shown as "Unnamed", never as the HR id: an id is a code, not a name.
+      medicalRep: item.medicalRepDisplayName || item.medicalRepName || (item.medicalRepHrId ? "Unnamed" : "-"),
       time: item.time || "Full day",
       status: planStatusLabel(item.status),
       planKind: planKindLabel(item.planKind),

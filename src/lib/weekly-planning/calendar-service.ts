@@ -21,6 +21,7 @@ import {
   type PlanningCalendarWorkspace,
   type SameLinePlanBooking,
 } from "@/lib/weekly-planning/calendar";
+import { dropPendingRevisionsOfPlansOfRecord } from "@/lib/weekly-planning/plan-revisions";
 
 const CALENDAR_HEADER_LIMIT = 1000;
 const CALENDAR_ITEM_LIMIT = 5000;
@@ -55,6 +56,7 @@ type PlanCalendarHeaderRow = {
   employee_job_title: string | null;
   employee_name: string;
   id: string;
+  parent_plan_id: string | null;
   period_end_date: string;
   period_start_date: string;
   plan_kind: EmployeePlanKind;
@@ -289,7 +291,7 @@ async function loadLegacySubmittedPlanItems(start: string, end: string): Promise
     getEmployeeDirectoryRows(),
     supabase
       .from("employee_plan_headers")
-      .select("id,employee_hr_id,employee_name,employee_job_title,plan_kind,status,period_start_date,period_end_date")
+      .select("id,employee_hr_id,employee_name,employee_job_title,plan_kind,status,period_start_date,period_end_date,parent_plan_id")
       .in("status", [...sharedPlanningCalendarStatuses])
       .lte("period_start_date", end)
       .gte("period_end_date", start)
@@ -300,7 +302,9 @@ async function loadLegacySubmittedPlanItems(start: string, end: string): Promise
 
   const loadedHeaders = (headersResult.data ?? []) as PlanCalendarHeaderRow[];
   const hasMoreHeaders = loadedHeaders.length > CALENDAR_HEADER_LIMIT;
-  const headers = loadedHeaders.slice(0, CALENDAR_HEADER_LIMIT);
+  // The approved plan stays on the calendar while its revision waits for a decision; the revision
+  // is left out until it is approved, or the week would be drawn twice (the B-122 symptom).
+  const headers = dropPendingRevisionsOfPlansOfRecord(loadedHeaders.slice(0, CALENDAR_HEADER_LIMIT));
   const headerById = new Map(headers.map((header) => [header.id, header]));
   const planIds = headers.map((header) => header.id);
   const directoryByHrId = new Map(directoryRows.map((row) => [normalizeHrId(row.hrId), row]));

@@ -62,6 +62,12 @@ function rethrowWeeklyPlanRpcError(error: unknown): never {
   if (message.startsWith("weekly_plan_not_found")) {
     throw new WeeklyPlanRpcError("not_found", "Plan was not found.");
   }
+  // A unique violation on the plan-header indexes (submit or final approval colliding with another
+  // plan for the period, or with another live revision of the same plan) is a conflict the person
+  // can act on, not a server fault — and its raw text used to be rewritten by the form into the
+  // false "You already have an active plan for this period."
+  const uniqueViolation = translatePlanUniqueViolation(message, obj.code);
+  if (uniqueViolation) throw new WeeklyPlanRpcError("duplicate_period", uniqueViolation);
   throw error instanceof Error ? error : new Error(message);
 }
 
@@ -100,11 +106,20 @@ import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { createSystemNotification, type NotificationDeliveryStatus } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { buildPlanEmailTable } from "@/lib/weekly-planning/email-table";
+import { viewerMayEditPlan } from "@/lib/weekly-planning/plan-editor-state";
+import { planEmailMetrics, planNounLabel, planSentenceLabel } from "@/lib/weekly-planning/plan-labels";
 import {
   isPlanOwnerWithinViewerManagementChain,
   resolvePlanViewerScope,
   type PlanViewerScope,
 } from "@/lib/weekly-planning/plan-visibility";
+import {
+  chooseRevisionTarget,
+  dropPendingRevisionsOfPlansOfRecord,
+  REVISION_PENDING_MESSAGE,
+  translatePlanUniqueViolation,
+  type RevisionSibling,
+} from "@/lib/weekly-planning/plan-revisions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   isSecondApproverForManager,
@@ -124,11 +139,12 @@ import {
   isPastPlanWeek,
   isWeeklyMonthlyPlanEligibleTitle,
   planDayGapText,
+  movedPlanItemDate,
+  planMoveRefusal,
   planPeriodMove,
   planRequiredSlotsByDate,
   planWorkweekAllowsHalfDays,
   resolvePlanWorkweek,
-  shiftIsoDate,
   type EmployeePlanAction,
   type EmployeePlanActivityType,
   type EmployeePlanKind,
@@ -299,6 +315,10 @@ export type EmployeePlanReturnNoteInput = {
 export type EmployeePlanDecision = {
   action: EmployeePlanAction;
   actorHrId: string | null;
+  // The decider's name, resolved against the employee directory (nickname-aware). Only populated by
+  // getEmployeePlansWorkspace; other mapPlan() callers leave it undefined and the history prints the
+  // role alone — it never prints the HR id.
+  actorName?: string | null;
   actorRole: string | null;
   comment: string | null;
   createdAt: string;
@@ -793,8 +813,10 @@ function canViewPlan(
   return false;
 }
 
+// The rule itself is viewerMayEditPlan - the plans workspace calls the very same function to decide
+// whether to offer Save / Submit / Add day, so the editor never offers what this answers with 403.
 function assertPlanOwner(access: AccessContext, plan: PlanHeaderRow) {
-  if (!hrIdsMatch(access.hrId, plan.employee_hr_id) && access.role !== "Super Admin") {
+  if (!viewerMayEditPlan({ planOwnerHrId: plan.employee_hr_id, viewerHrId: access.hrId, viewerRole: access.role })) {
     throw new Error("Forbidden: only the employee can edit this plan.");
   }
 }
@@ -1128,7 +1150,8 @@ async function currentEmployeeWithDirectory(access: AccessContext) {
 // independent headers both reached hr_acknowledged for the same week because
 // nothing stopped a brand-new plan from being created instead of using the
 // existing revise flow on updateEmployeePlan, which links via parent_plan_id
-// and is unaffected by this check).
+// and is unaffected by this check). Only a revision of a DEAD plan (rejected or
+// cancelled) calls it, because that revision is a fresh, unlinked claim on the period.
 async function assertNoActivePlanForSamePeriod(
   employeeHrId: string,
   planKind: EmployeePlanKind,
@@ -1162,6 +1185,41 @@ async function loadPlanRow(planId: string): Promise<PlanHeaderRow> {
   if (error) throw error;
   if (!data) throw new Error("Plan was not found.");
   return data as PlanHeaderRow;
+}
+
+/** Every revision header already linked to one plan, whatever its status. */
+async function loadRevisionSiblings(parentPlanId: string): Promise<RevisionSibling[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("employee_plan_headers")
+    .select("id,status,revision,created_at")
+    .eq("parent_plan_id", parentPlanId);
+  if (error) throw error;
+  return ((data ?? []) as Array<{ created_at: string; id: string; revision: number; status: EmployeePlanStatus }>).map((row) => ({
+    createdAt: row.created_at,
+    id: row.id,
+    revision: row.revision,
+    status: row.status,
+  }));
+}
+
+/**
+ * Take back a revision draft this request just spawned when the write that was meant to fill it
+ * failed. Only a DRAFT is deleted (never a header that reached any other status), the items,
+ * decisions and comments go with it through ON DELETE CASCADE, and a failure here is logged rather
+ * than thrown — the caller is already rethrowing the error that matters.
+ */
+async function discardUnsubmittedRevision(planId: string) {
+  const { error } = await getSupabaseAdmin()
+    .from("employee_plan_headers")
+    .delete()
+    .eq("id", planId)
+    .eq("status", "draft");
+  if (error) {
+    logError("Weekly plan revision draft could not be taken back after a failed write", {
+      labels: { event: "weekly_plan_revision_discard_failed", planId },
+      error,
+    });
+  }
 }
 
 function planItemsRpcPayload(items: EmployeePlanItemInput[]) {
@@ -1424,11 +1482,7 @@ async function notifyRecipients(input: {
           ? {
               email: {
                 cc: ccEmails,
-                metrics: [
-                  { label: "Employee", value: `${input.plan.employee_name} (${input.plan.employee_hr_id})` },
-                  { label: "Plan", value: `${input.plan.plan_kind} - ${input.plan.period_key}` },
-                  { label: "Period", value: `${input.plan.period_start_date} to ${input.plan.period_end_date}` },
-                ],
+                metrics: planEmailMetrics(input.plan),
                 planTableHtml: planTable.html,
                 planTableText: planTable.text,
                 recipients: primaryEmail ? [primaryEmail] : undefined,
@@ -1735,10 +1789,10 @@ async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: st
       additionalMetadata: { roleHrefs },
       emailCcRecipients: ccRecipients,
       eventType: "plan_submitted",
-      message: `${plan.employee_name} submitted a ${plan.plan_kind} plan for ${plan.period_key}.`,
+      message: `${plan.employee_name} submitted a ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
       plan,
       recipients: managerRecipients,
-      title: `${plan.employee_name}'s ${plan.plan_kind} plan needs manager review`,
+      title: `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} needs manager review`,
     });
     return { errored, fellBackToSuperAdmin, recipientCount: managerRecipients.length };
   } catch (notifyError) {
@@ -1785,10 +1839,10 @@ async function notifyHrOnSubmit(plan: PlanHeaderRow, resolvedRecipients?: Array<
     additionalMetadata: { audience: "hr_awareness" },
     emailMode: "none",
     eventType: "plan_submitted",
-    message: `${plan.employee_name} submitted a ${plan.plan_kind} plan for ${plan.period_key}.`,
+    message: `${plan.employee_name} submitted a ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
     plan,
     recipients: primary,
-    title: `${plan.employee_name}'s ${plan.plan_kind} plan was submitted`,
+    title: `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} was submitted`,
   });
 }
 
@@ -1809,12 +1863,12 @@ async function notifyManagerPlanCancelled(plan: PlanHeaderRow, comment: string |
     actionUrl: `/admin/approvals/plan/${plan.id}`,
     eventType: "plan_cancelled",
     message:
-      `${plan.employee_name} cancelled their ${plan.plan_kind} plan for ${plan.period_key}.`
+      `${plan.employee_name} cancelled their ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`
       + (reason ? ` Reason: ${reason}` : "")
       + " No review is needed.",
     plan,
     recipients: [{ hrId: plan.manager_hr_id }],
-    title: `${plan.employee_name}'s ${plan.plan_kind} plan was cancelled`,
+    title: `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} was cancelled`,
   });
 }
 
@@ -2111,10 +2165,10 @@ async function notifyCeo(plan: PlanHeaderRow) {
     await notifyRecipients({
       actionUrl: `/admin/approvals/plan/${plan.id}`,
       eventType: "plan_manager_approved",
-      message: `${plan.manager_name ?? "The direct manager"} approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}.`,
+      message: `${plan.manager_name ?? "The direct manager"} approved ${plan.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
       plan,
       recipients: ceos.map((row) => ({ hrId: row.hr_id ?? null, userId: row.login_id ?? null })),
-      title: `${plan.employee_name}'s ${plan.plan_kind} plan needs CEO approval`,
+      title: `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} needs CEO approval`,
     });
   } catch (error) {
     logError("Weekly plan failed to notify CEO", {
@@ -2134,10 +2188,10 @@ async function notifySecondApprover(plan: PlanHeaderRow) {
     await notifyRecipients({
       actionUrl: await planReviewActionUrl(approverHrId, plan.id),
       eventType: "plan_manager_approved",
-      message: `${plan.manager_name ?? "The direct manager"} approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}. It now needs your approval.`,
+      message: `${plan.manager_name ?? "The direct manager"} approved ${plan.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. It now needs your approval.`,
       plan,
       recipients: [{ hrId: approverHrId }],
-      title: `${plan.employee_name}'s ${plan.plan_kind} plan needs your approval`,
+      title: `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} needs your approval`,
     });
   } catch (error) {
     logError("Weekly plan failed to notify the second approver", {
@@ -2167,13 +2221,13 @@ async function notifyHr(plan: PlanHeaderRow, deciderLabel: string | null = null)
       ...(autoAcknowledged ? { additionalMetadata: { audience: "hr_awareness" } } : {}),
       eventType: "plan_ceo_approved",
       message: autoAcknowledged
-        ? `${approver} approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}. It was acknowledged automatically — no action needed.`
-        : `${approver} approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}. Please review and acknowledge.`,
+        ? `${approver} approved ${plan.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. It was acknowledged automatically — no action needed.`
+        : `${approver} approved ${plan.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. Please review and acknowledge.`,
       plan,
       recipients: await hrAcknowledgementRecipients(),
       title: autoAcknowledged
-        ? `${plan.employee_name}'s ${plan.plan_kind} plan was approved and acknowledged`
-        : `${plan.employee_name}'s approved ${plan.plan_kind} plan needs HR acknowledgement`,
+        ? `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} was approved and acknowledged`
+        : `${plan.employee_name}'s approved ${planNounLabel(plan.plan_kind)} needs HR acknowledgement`,
     });
   } catch (error) {
     logError("Weekly plan failed to notify HR", {
@@ -2199,10 +2253,10 @@ async function notifyEmployeeReturnedOrRejected(
       actionUrl: `/employee-portals/plans?plan=${plan.id}`,
       emailCcRecipients: actorHrId && !hrIdsMatch(actorHrId, plan.employee_hr_id) ? [{ hrId: actorHrId }] : [],
       eventType: action,
-      message: `${plan.plan_kind} plan ${action.includes("reject") ? "was rejected" : "was returned for edit"}.${comment ? ` Comment: ${comment}` : ""}`,
+      message: `Your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)} ${action.includes("reject") ? "was rejected" : "was returned for edit"}.${comment ? ` Comment: ${comment}` : ""}`,
       plan,
       recipients: [{ hrId: plan.employee_hr_id }],
-      title: `Your ${plan.plan_kind} plan was ${action.includes("reject") ? "rejected" : "returned"}`,
+      title: `Your ${planNounLabel(plan.plan_kind)} was ${action.includes("reject") ? "rejected" : "returned"}`,
     });
   } catch (error) {
     logError("Weekly plan failed to notify employee of return/reject", {
@@ -2224,10 +2278,10 @@ async function notifyEmployeeManagerApproved(plan: PlanHeaderRow) {
       actionUrl: `/employee-portals/plans?plan=${plan.id}`,
       emailMode: "none",
       eventType: "manager_approve",
-      message: `${plan.manager_name ?? "Your manager"} approved your ${plan.plan_kind} plan for ${plan.period_key}.`,
+      message: `${plan.manager_name ?? "Your manager"} approved your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
       plan,
       recipients: [{ hrId: plan.employee_hr_id }],
-      title: `Your ${plan.plan_kind} plan was approved by your manager`,
+      title: `Your ${planNounLabel(plan.plan_kind)} was approved by your manager`,
     });
   } catch (error) {
     logError("Weekly plan failed to notify employee of manager approval", {
@@ -2280,7 +2334,10 @@ export async function listPlanComments(
   access: AccessContext,
   planId: string,
 ): Promise<{ canComment: boolean; comments: EmployeePlanComment[]; schemaReady: boolean }> {
-  await assertPermission(access, "weekly_plans", "update");
+  // Read is the floor, exactly as in addPlanComment below: CEO (read/approve/export) and the Manager
+  // role (read/approve) hold no `update`, so asserting it threw 403 and the thread showed them as
+  // empty. canViewPlan is the real authorization.
+  await assertPermission(access, "weekly_plans", "read");
   const plan = await loadPlanRow(planId);
   const { directory, employee } = await currentEmployeeWithDirectory(access);
   const viewerScope = resolvePlanViewerScope(access, directory.employees);
@@ -2383,14 +2440,14 @@ async function notifyPlanComment(plan: PlanHeaderRow, comment: EmployeePlanComme
       // The full comment, never trimmed to a preview: the owner's standing rule is that text is
       // never truncated with an ellipsis, and a half-sentence is exactly what forces the reader
       // back into the app to find out what was actually said.
-      message: `${comment.authorName ?? comment.authorHrId} commented on the ${plan.plan_kind} plan: "${comment.body}"`,
+      message: `${comment.authorName ?? comment.authorHrId} commented on the ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}: "${comment.body}"`,
       // The comment's own id — without it a second comment on the same plan collapses onto the
       // first one's notification event, because the title and actionUrl above never change between
       // messages on the same thread.
       messageKey: comment.id,
       plan,
       recipients: notifyKeys.map((key) => ({ hrId: toCanonicalHrId(key) })),
-      title: `New comment on ${plan.plan_kind} plan`,
+      title: `New comment on ${planNounLabel(plan.plan_kind)}`,
     });
   } catch (error) {
     logError("Weekly plan failed to notify participants of a new comment", {
@@ -2506,6 +2563,12 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
     const visible = workspaceRows.filter((plan) => canViewPlan(access, employee, plan, viewerScope));
     const mapped = visible.map(mapPlan).map((plan) => ({
       ...plan,
+      decisions: plan.decisions.map((decision) => ({
+        ...decision,
+        actorName: decision.actorHrId
+          ? directoryByHrId.get(normalizeHrId(decision.actorHrId))?.displayName ?? null
+          : null,
+      })),
       employeeDisplayName: directoryByHrId.get(normalizeHrId(plan.employeeHrId))?.displayName || plan.employeeName,
       managerDisplayName: directoryByHrId.get(normalizeHrId(plan.managerHrId))?.displayName || plan.managerName,
     }));
@@ -3052,7 +3115,7 @@ async function loadWeeklySourcedItems(
     const supabase = getSupabaseAdmin();
     const { data: headers, error: headersError } = await supabase
       .from("employee_plan_headers")
-      .select("id,status,plan_kind")
+      .select("id,status,plan_kind,parent_plan_id")
       .eq("plan_kind", "weekly")
       .in("status", PLAN_SOURCE_STATUSES)
       .lte("period_start_date", end)
@@ -3060,7 +3123,9 @@ async function loadWeeklySourcedItems(
       .in("employee_hr_id", keys)
       .limit(20);
     if (headersError) throw headersError;
-    const planIds = ((headers ?? []) as Array<{ id: string }>).map((row) => row.id);
+    const planIds = dropPendingRevisionsOfPlansOfRecord(
+      (headers ?? []) as Array<{ id: string; parent_plan_id: string | null; status: string }>,
+    ).map((row) => row.id);
     if (planIds.length === 0) return { items: [], ready: true };
     const { data: itemRows, error: itemsError } = await supabase
       .from("employee_plan_items")
@@ -3120,7 +3185,7 @@ async function loadMonthlySourcedItems(
     const supabase = getSupabaseAdmin();
     const { data: headers, error: headersError } = await supabase
       .from("employee_plan_headers")
-      .select("id,status,plan_kind")
+      .select("id,status,plan_kind,parent_plan_id")
       .eq("plan_kind", "monthly")
       .in("status", PLAN_SOURCE_STATUSES)
       .lte("period_start_date", end)
@@ -3128,7 +3193,9 @@ async function loadMonthlySourcedItems(
       .in("employee_hr_id", keys)
       .limit(20);
     if (headersError) throw headersError;
-    const planIds = ((headers ?? []) as Array<{ id: string }>).map((row) => row.id);
+    const planIds = dropPendingRevisionsOfPlansOfRecord(
+      (headers ?? []) as Array<{ id: string; parent_plan_id: string | null; status: string }>,
+    ).map((row) => row.id);
     if (planIds.length === 0) return { items: [], ready: true };
     const { data: itemRows, error: itemsError } = await supabase
       .from("employee_plan_items")
@@ -3573,11 +3640,12 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
   await assertPlansOnThisForm(access);
 
   if (isClosedEmployeePlanStatus(existing.status)) {
-    // Revising a closed plan: spawn a new draft revision (parent_plan_id chain).
-    // We always create it as 'draft' first; if the caller wants to submit in
-    // the same call, the item RPC promotes the new revision atomically. The
-    // revise audit row is written separately so the new row's
-    // history starts with a `revise` decision row before the optional submit.
+    // Revising a closed plan: edit the revision already open for it, or spawn a new draft
+    // revision (parent_plan_id chain). A new one is created as 'draft' first; if the caller
+    // wants to submit in the same call, the item RPC promotes the revision atomically. The
+    // revise audit row is written separately so the new row's history starts with a `revise`
+    // decision row before the optional submit. When the revision is approved,
+    // phx_weekly_plan_decide cancels the plan it revised in the same transaction.
     const owner = await currentEmployee(access);
     if (owner && !isActiveEmployee(owner)) {
       throw new Error("Forbidden: only active employees can revise plans.");
@@ -3609,42 +3677,75 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
         }),
       });
     }
-    const { data, error } = await getSupabaseAdmin()
-      .from("employee_plan_headers")
-      .insert({
-        created_by_login_id: access.loginId ?? null,
-        employee_hr_id: existing.employee_hr_id,
-        employee_job_title: existing.employee_job_title,
-        employee_name: existing.employee_name,
-        hierarchy_snapshot: existing.hierarchy_snapshot ?? {},
-        manager_hr_id: existing.manager_hr_id,
-        manager_name: existing.manager_name,
-        parent_plan_id: existing.id,
-        period_end_date: existing.period_end_date,
-        period_key: existing.period_key,
-        period_start_date: existing.period_start_date,
-        plan_kind: existing.plan_kind,
-        revision: existing.revision + 1,
-        status: "draft",
-      })
-      .select(planSelect)
-      .single();
-    if (error) throw error;
-    const revisionRow = data as PlanHeaderRow;
-    await recordDecision({
-      access,
-      action: "revise",
-      fromStatus: existing.status,
-      planId: revisionRow.id,
-      toStatus: "draft",
-    });
-    await rpcReplacePlanItems({
-      access,
-      expectedRevision: revisionRow.revision,
-      items,
-      planId: revisionRow.id,
-      submit: Boolean(input.submit),
-    });
+    // An approved plan stays the plan of record while its revision waits for the decisions (the
+    // unique index lets one live revision sit beside it); chooseRevisionTarget says whether to edit
+    // a revision that already exists, spawn one, or refuse because one is already awaiting a
+    // decision. A dead (rejected or cancelled) plan spawns an UNLINKED draft — see the helper.
+    const target = chooseRevisionTarget(existing.status, await loadRevisionSiblings(existing.id));
+    if (target.kind === "blocked") {
+      throw new WeeklyPlanRpcError("duplicate_period", REVISION_PENDING_MESSAGE);
+    }
+    let revisionRow: PlanHeaderRow;
+    let spawnedHere = false;
+    if (target.kind === "reuse") {
+      revisionRow = await loadPlanRow(target.revisionId);
+    } else {
+      if (!target.linkToParent) {
+        await assertNoActivePlanForSamePeriod(existing.employee_hr_id, existing.plan_kind, {
+          periodEndDate: existing.period_end_date,
+          periodStartDate: existing.period_start_date,
+        });
+      }
+      const { data, error } = await getSupabaseAdmin()
+        .from("employee_plan_headers")
+        .insert({
+          created_by_login_id: access.loginId ?? null,
+          employee_hr_id: existing.employee_hr_id,
+          employee_job_title: existing.employee_job_title,
+          employee_name: existing.employee_name,
+          hierarchy_snapshot: existing.hierarchy_snapshot ?? {},
+          manager_hr_id: existing.manager_hr_id,
+          manager_name: existing.manager_name,
+          parent_plan_id: target.linkToParent ? existing.id : null,
+          period_end_date: existing.period_end_date,
+          period_key: existing.period_key,
+          period_start_date: existing.period_start_date,
+          plan_kind: existing.plan_kind,
+          revision: existing.revision + 1,
+          status: "draft",
+        })
+        .select(planSelect)
+        .single();
+      if (error) throw error;
+      revisionRow = data as PlanHeaderRow;
+      spawnedHere = true;
+      try {
+        await recordDecision({
+          access,
+          action: "revise",
+          fromStatus: existing.status,
+          planId: revisionRow.id,
+          toStatus: "draft",
+        });
+      } catch (decisionError) {
+        await discardUnsubmittedRevision(revisionRow.id);
+        throw decisionError;
+      }
+    }
+    try {
+      await rpcReplacePlanItems({
+        access,
+        expectedRevision: revisionRow.revision,
+        items,
+        planId: revisionRow.id,
+        submit: Boolean(input.submit),
+      });
+    } catch (itemsError) {
+      // The header and its `revise` decision committed before the item write, so a failed write
+      // left an empty draft behind — 23 of them in production. Take back only what THIS call made.
+      if (spawnedHere) await discardUnsubmittedRevision(revisionRow.id);
+      throw itemsError;
+    }
     if (input.submit) {
       await afterPlanSubmitted(access, await loadPlanRow(revisionRow.id));
     }
@@ -3992,6 +4093,23 @@ export async function moveWeeklyPlanToPeriod(
   await assertNoActivePlanForSamePeriod(plan.employee_hr_id, plan.plan_kind, target);
   const nowIso = new Date().toISOString();
   const admin = getSupabaseAdmin();
+
+  // Read the items BEFORE the header moves: a monthly plan can hold a day the destination month does
+  // not have (the 31st into a 30-day month), and that is refused whole, with nothing written. A
+  // weekly plan always has a place for every item (one delta keeps each on its weekday).
+  const { data: itemRows, error: itemsReadError } = await admin
+    .from("employee_plan_items")
+    .select("*")
+    .eq("plan_id", plan.id);
+  if (itemsReadError) throw itemsReadError;
+  const currentItems = (itemRows ?? []) as Array<Record<string, unknown> & { activity_date: string }>;
+  const refusal = planMoveRefusal({
+    dayDelta,
+    itemDates: currentItems.map((record) => record.activity_date),
+    planKind: plan.plan_kind,
+    target,
+  });
+  if (refusal) throw new Error(refusal);
   const previous = {
     periodEndDate: plan.period_end_date,
     periodKey: plan.period_key,
@@ -4013,14 +4131,17 @@ export async function moveWeeklyPlanToPeriod(
   if (headerError) throw headerError;
 
   try {
-    const { data: itemRows, error: itemsReadError } = await admin
-      .from("employee_plan_items")
-      .select("*")
-      .eq("plan_id", plan.id);
-    if (itemsReadError) throw itemsReadError;
-    const shifted = (itemRows ?? []).map((row) => {
-      const record = row as Record<string, unknown> & { activity_date: string };
-      return { ...record, activity_date: shiftIsoDate(record.activity_date, dayDelta), updated_at: nowIso };
+    const shifted = currentItems.map((record) => {
+      const movedDate = movedPlanItemDate({
+        activityDate: record.activity_date,
+        dayDelta,
+        planKind: plan.plan_kind,
+        targetPeriodStartDate: target.periodStartDate,
+      });
+      // planMoveRefusal above already refused any day without a place, so this is unreachable; it
+      // throws (and the header is put back) rather than ever writing a guessed date.
+      if (movedDate === null) throw new Error("A plan day has no equivalent date in the destination period.");
+      return { ...record, activity_date: movedDate, updated_at: nowIso };
     });
     if (shifted.length > 0) {
       // WHOLE rows, upserted in ONE statement. A per-row update loop can half-apply and leave the
@@ -4158,10 +4279,10 @@ async function notifyEmployeeAcknowledged(plan: PlanHeaderRow) {
       actionUrl: `/employee-portals/plans?plan=${plan.id}`,
       emailMode: "none",
       eventType: "hr_acknowledge",
-      message: `Your ${plan.plan_kind} plan (${plan.period_key}) has been acknowledged by HR.`,
+      message: `Your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)} has been acknowledged by HR.`,
       plan,
       recipients: [{ hrId: plan.employee_hr_id }],
-      title: `Your ${plan.plan_kind} plan was acknowledged by HR`,
+      title: `Your ${planNounLabel(plan.plan_kind)} was acknowledged by HR`,
     });
   } catch (error) {
     logError("Weekly plan HR-acknowledgement notify failed", {
@@ -4177,10 +4298,10 @@ async function notifyVisitDetailsRequested(plan: PlanHeaderRow) {
     await notifyRecipients({
       actionUrl: portalPlanUrl,
       eventType: "plan_details_requested",
-      message: `Your manager has requested visit details for your ${plan.plan_kind} plan (${plan.period_key}). Please fill in the doctor information before resubmitting.`,
+      message: `Your manager has requested visit details for your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. Please fill in the doctor information before resubmitting.`,
       plan,
       recipients: [{ hrId: plan.employee_hr_id }],
-      title: `Visit details required for your ${plan.plan_kind} plan`,
+      title: `Visit details required for your ${planNounLabel(plan.plan_kind)}`,
     });
   } catch (error) {
     logError("Weekly plan failed to notify employee for visit details request", {
@@ -4310,10 +4431,10 @@ async function notifyManagerEditRequested(plan: PlanHeaderRow): Promise<void> {
     await notifyRecipients({
       actionUrl,
       eventType: "plan_edit_requested",
-      message: `${plan.employee_name} requested to edit their submitted ${plan.plan_kind} plan for ${plan.period_key}.`,
+      message: `${plan.employee_name} requested to edit their submitted ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
       plan,
       recipients: [{ hrId: plan.manager_hr_id }],
-      title: `${plan.employee_name} requested to edit their ${plan.plan_kind} plan`,
+      title: `${plan.employee_name} requested to edit their ${planNounLabel(plan.plan_kind)}`,
     });
   } catch (notifyError) {
     logError("Weekly plan failed to notify manager of edit request", {
@@ -4342,8 +4463,8 @@ async function notifyEmployeeEditRequestDecision(
       emailMode: decision === "approve" ? "none" : "primary_to_cc",
       eventType: decision === "approve" ? "plan_edit_request_approved" : "plan_edit_request_rejected",
       message: decision === "approve"
-        ? `Your manager approved your edit request. You can now edit and resubmit your ${plan.plan_kind} plan for ${plan.period_key}.`
-        : `Your manager rejected your edit request for your ${plan.plan_kind} plan.${comment ? ` Comment: ${comment}` : ""}`,
+        ? `Your manager approved your edit request. You can now edit and resubmit your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`
+        : `Your manager rejected your edit request for your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.${comment ? ` Comment: ${comment}` : ""}`,
       plan,
       recipients: [{ hrId: plan.employee_hr_id }],
       title: decision === "approve" ? "Your edit request was approved" : "Your edit request was rejected",

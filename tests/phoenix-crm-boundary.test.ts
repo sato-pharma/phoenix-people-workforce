@@ -943,6 +943,11 @@ const LATER_MIGRATIONS = [
   // The signboard scanner (2026-10-18): a new photo for a place sent back to its rep. One new function,
   // replacing nothing, plus a widened CHECK and a column on the refusals table — it appends at the end.
   "supabase/migrations/20261018230000_phoenix_crm_signboard_scanner.sql",
+  // An ask to edit closes with its week, and a reopen clears HR's acknowledgement (owner audit, 2026-10-18).
+  // It REPLACES two functions — the week's transition (earlier definer 20261017213000, above it) and the
+  // ask's decision (earlier definer 20261017120000, above it) — and changes no table, column or row, so it
+  // appends at the end.
+  "supabase/migrations/20261018234000_phoenix_crm_manager_plan_ask_closes_with_its_week.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

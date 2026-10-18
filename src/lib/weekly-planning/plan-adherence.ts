@@ -361,6 +361,31 @@ export type PlanAdherenceHistory = {
   measuredPeriods: number;
 };
 
+/**
+ * Plans whose status keeps them OUT of a person's score history.
+ *
+ * - draft: a working note nobody has submitted; scoring it would put a red number against a manager
+ *   for a week he has not committed to yet.
+ * - cancelled: withdrawn by its owner.
+ * - manager_rejected / ceo_rejected: dead ends. The database's active-period unique index already
+ *   treats them as such, so the owner files a REPLACEMENT plan for the same period; scoring the
+ *   rejected one as well scored it as "no trace" and counted one week twice.
+ *
+ * The returned statuses are deliberately NOT here: a returned plan is the same plan being reworked,
+ * and its replacement is that very row, so it is scored once.
+ */
+export const PLAN_ADHERENCE_HISTORY_EXCLUDED_STATUSES: ReadonlySet<string> = new Set([
+  "cancelled",
+  "ceo_rejected",
+  "draft",
+  "manager_rejected",
+]);
+
+/** Whether a plan with this status is scored in the person's history. */
+export function isScoredInAdherenceHistory(status: string | null | undefined): boolean {
+  return !PLAN_ADHERENCE_HISTORY_EXCLUDED_STATUSES.has(String(status ?? "").toLowerCase());
+}
+
 export function buildPlanAdherenceHistory(
   entries: readonly PlanAdherenceHistoryEntry[],
 ): PlanAdherenceHistory {

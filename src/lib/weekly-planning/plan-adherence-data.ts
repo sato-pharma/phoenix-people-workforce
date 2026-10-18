@@ -17,6 +17,7 @@ import {
   buildPlanAdherenceHistory,
   emptyPlanAdherenceEvidence,
   isCheckableActivity,
+  isScoredInAdherenceHistory,
   scorePlanAdherence,
   type PlanAdherenceEvidence,
   type PlanAdherenceHistory,
@@ -24,11 +25,14 @@ import {
   type PlanAdherenceScore,
   type PlanItemForAdherence,
 } from "@/lib/weekly-planning/plan-adherence";
+import { dropPendingRevisionsOfPlansOfRecord } from "@/lib/weekly-planning/plan-revisions";
 
 const PLAN_ITEM_COLUMNS =
   "id,plan_id,activity_date,activity_type,activity_title,double_visit_medical_rep_hr_id,double_visit_medical_rep_name";
 const PLAN_HEADER_COLUMNS =
   "id,plan_kind,period_key,period_start_date,period_end_date,employee_hr_id,employee_name,status";
+/** The history read also needs the link to the plan a revision revises. */
+const PLAN_HISTORY_COLUMNS = `${PLAN_HEADER_COLUMNS},parent_plan_id`;
 /** Only the four columns the evidence index is built from. A visit row is wide; this is not. */
 const EVIDENCE_VISIT_COLUMNS =
   "agent_hr_id,agent_name,double_hr_id,double_name,double2_hr_id,double2_name,visit_date";
@@ -47,6 +51,7 @@ type PlanHeaderRow = {
   employee_hr_id: string | null;
   employee_name: string | null;
   id: string;
+  parent_plan_id?: string | null;
   period_end_date: string | null;
   period_key: string | null;
   period_start_date: string | null;
@@ -314,11 +319,9 @@ export async function loadPlanAdherence(planId: string): Promise<PlanAdherenceSc
 /**
  * One person's score history, newest first — the extra approvals tab.
  *
- * Drafts are excluded: a plan nobody has submitted is a working note, and scoring it would put a
- * red number against a manager for a week he has not committed to yet.
+ * Which plans are left out (drafts, cancelled and rejected plans) is
+ * PLAN_ADHERENCE_HISTORY_EXCLUDED_STATUSES in plan-adherence.ts, where the reason is written down.
  */
-const HISTORY_EXCLUDED_STATUSES = new Set(["cancelled", "draft"]);
-
 export async function loadPlanAdherenceHistory(
   employeeHrId: string | null | undefined,
   options: { limit?: number; planKind?: string } = {},
@@ -329,16 +332,17 @@ export async function loadPlanAdherenceHistory(
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("employee_plan_headers")
-    .select(PLAN_HEADER_COLUMNS)
+    .select(PLAN_HISTORY_COLUMNS)
     .in("employee_hr_id", hrIdLookupKeys(hrId))
     .eq("plan_kind", options.planKind ?? "weekly")
     .order("period_start_date", { ascending: false })
     .limit(options.limit ?? 26);
   if (error) return buildPlanAdherenceHistory([]);
 
-  const headers = ((data ?? []) as PlanHeaderRow[]).filter(
-    (header) => !HISTORY_EXCLUDED_STATUSES.has(String(header.status ?? "").toLowerCase()),
-  );
+  // A revision still waiting for its decisions is left out while the approved plan it revises is in
+  // the same history: the week is scored once, on the plan of record.
+  const plansOfTheWeek = dropPendingRevisionsOfPlansOfRecord((data ?? []) as PlanHeaderRow[]);
+  const headers = plansOfTheWeek.filter((header) => isScoredInAdherenceHistory(header.status));
   if (headers.length === 0) return buildPlanAdherenceHistory([]);
 
   const scores = await loadPlanAdherenceForPlans(headers.map((header) => header.id));

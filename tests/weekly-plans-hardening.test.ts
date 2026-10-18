@@ -136,7 +136,7 @@ export function runWeeklyPlansHardeningTests() {
   );
   assert.match(
     serviceSource,
-    /plan was cancelled/,
+    /\$\{planNounLabel\(plan\.plan_kind\)\} was cancelled/,
     "cancellation notice title must say the plan was cancelled",
   );
 

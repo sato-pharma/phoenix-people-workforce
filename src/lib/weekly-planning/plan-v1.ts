@@ -509,6 +509,91 @@ export function planPeriodMove(
   return { dayDelta: wholeDaysBetween(currentPeriodStartDate, target.periodStartDate), target };
 }
 
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+function daysInIsoMonth(year: number, month: number) {
+  // Day 0 of the NEXT month is the last day of this one (month is 1-12 here).
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/**
+ * Where one plan item lands when its plan is re-dated onto another period, or null when it has no
+ * place there.
+ *
+ * - WEEKLY: the plan's one whole-day delta, so weekday alignment survives (a Sunday visit stays on
+ *   Sunday). Every weekly period has the same shape, so a weekly item always has a place.
+ * - MONTHLY: the SAME day-of-month in the destination month. A fixed day count is wrong across
+ *   months of different lengths - it put Jan 29-31 into March when a plan moved to February, and
+ *   Oct 31 on Dec 1 when it moved to November - so the header said the new month while rows sat
+ *   outside it. A day the destination month does not have (the 31st into a 30-day month, the 29th
+ *   into a short February) has no place: null, never a clamp to the last day.
+ */
+export function movedPlanItemDate(input: {
+  activityDate: string;
+  dayDelta: number;
+  planKind: EmployeePlanKind;
+  targetPeriodStartDate: string;
+}): string | null {
+  if (input.planKind !== "monthly") return shiftIsoDate(input.activityDate, input.dayDelta);
+  const day = Number(input.activityDate.slice(8, 10));
+  const year = Number(input.targetPeriodStartDate.slice(0, 4));
+  const month = Number(input.targetPeriodStartDate.slice(5, 7));
+  if (!Number.isInteger(day) || day < 1 || day > daysInIsoMonth(year, month)) return null;
+  return `${input.targetPeriodStartDate.slice(0, 8)}${String(day).padStart(2, "0")}`;
+}
+
+function longIsoDate(iso: string) {
+  const monthName = MONTH_NAMES[Number(iso.slice(5, 7)) - 1] ?? iso.slice(5, 7);
+  return `${Number(iso.slice(8, 10))} ${monthName} ${iso.slice(0, 4)}`;
+}
+
+/**
+ * Why a plan cannot be re-dated onto the target period, or null when every item has a place there.
+ * Today only a MONTHLY move can fail (see movedPlanItemDate). The whole move is refused - no item is
+ * dropped, clamped or left behind - and the message names the dates the person has to change first.
+ */
+export function planMoveRefusal(input: {
+  dayDelta: number;
+  itemDates: readonly string[];
+  planKind: EmployeePlanKind;
+  target: { periodKey: string; periodStartDate: string };
+}): string | null {
+  const homeless = Array.from(
+    new Set(
+      input.itemDates.filter(
+        (activityDate) =>
+          movedPlanItemDate({
+            activityDate,
+            dayDelta: input.dayDelta,
+            planKind: input.planKind,
+            targetPeriodStartDate: input.target.periodStartDate,
+          }) === null,
+      ),
+    ),
+  ).sort();
+  if (homeless.length === 0) return null;
+  const monthName = MONTH_NAMES[Number(input.target.periodStartDate.slice(5, 7)) - 1] ?? input.target.periodKey;
+  const several = homeless.length > 1;
+  return (
+    `This monthly plan cannot move to ${monthName} ${input.target.periodStartDate.slice(0, 4)}: ` +
+    `${several ? "it has days" : "it has a day"} that ${monthName} does not have (${homeless.map(longIsoDate).join(", ")}). ` +
+    `Change ${several ? "those days" : "that day"} in the plan first, then move it.`
+  );
+}
+
 /**
  * The required working slot for each date in a period, per the workweek.
  * Returns a Map<YYYY-MM-DD, "full" | "am" | "half"> covering only the days that must be

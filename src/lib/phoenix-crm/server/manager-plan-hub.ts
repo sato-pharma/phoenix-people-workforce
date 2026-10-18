@@ -18,6 +18,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { addDaysIso } from "@/lib/crm/dates";
 import { formatPhoenixDateTime, formatPhoenixLongDate } from "@/lib/i18n/format";
 import {
+  isManagerAskLive,
   managerAskStage,
   managerPlannerTitle,
   managerPlanStage,
@@ -260,7 +261,7 @@ function editAskStatusLabel(ask: ManagerEditAskRow, names: PeopleNames): string 
 
 async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId: string | null): Promise<ManagerHubDetail> {
   const asks = await loadEditAsks([plan.planId]);
-  const ask = (askId ? asks.find((entry) => entry.requestId === askId) : asks.find((entry) => managerAskStage(entry.status) !== null)) ?? null;
+  const ask = (askId ? asks.find((entry) => entry.requestId === askId) : asks.find((entry) => isManagerAskLive(entry.status, plan.status))) ?? null;
   if (!mayOpen(viewer, plan.managerHrId, [plan.firstApproverHrId, plan.secondApproverHrId, ask?.approverHrId ?? null, ask?.secondApproverHrId ?? null])) return NOT_FOUND;
 
   const [board, names] = await Promise.all([
@@ -277,7 +278,8 @@ async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId:
       ask?.decidedByHrId,
     ]),
   ]);
-  const askStage = ask ? managerAskStage(ask.status) : null;
+  // A decision is offered only on an ask whose week is still a sent one: Reopen on any other would only fail.
+  const askStage = ask && isManagerAskLive(ask.status, plan.status) ? managerAskStage(ask.status) : null;
   const hasSecond = plan.secondApproverHrId !== null;
   const stage: ManagerPlanStage | null = plan.status === "approved" ? returnStageOfApproved(hasSecond) : managerPlanStage(plan.status);
   const decideAs =
