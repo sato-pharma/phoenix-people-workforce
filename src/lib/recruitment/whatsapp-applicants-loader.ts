@@ -31,6 +31,7 @@ import {
   type WhatsAppApplicantCandidate,
   type WhatsAppApplicantSession,
 } from "@/lib/recruitment/whatsapp-applicants";
+import { countsOnWhatsAppApplicants } from "@/lib/recruitment/whatsapp-cv-archive";
 
 const SESSIONS_TABLE = "ats_whatsapp_classification_sessions";
 const INTAKE_TABLE = "ats_cv_intake_events";
@@ -310,7 +311,11 @@ export async function loadWhatsAppApplicantsView(): Promise<WhatsAppApplicantsVi
     audiences,
     candidates,
     questions,
-    sessions: sessions.map((session) => ({ ...session, candidate_id: joined.get(session.id) ?? null })),
+    // A conversation from before the 2026-10-18 clean-up that joins to nobody is a person he had taken
+    // out, not an unmatched applicant (whatsapp-cv-archive.ts, countsOnWhatsAppApplicants).
+    sessions: sessions
+      .filter((session) => countsOnWhatsAppApplicants(session.started_at, joined.has(session.id)))
+      .map((session) => ({ ...session, candidate_id: joined.get(session.id) ?? null })),
   });
 }
 

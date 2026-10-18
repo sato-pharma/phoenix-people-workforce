@@ -1013,6 +1013,19 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // (`add column if not exists`, the CHECKs dropped `if exists` before they are re-added,
   // `create or replace`).
   "20261017213000_phoenix_crm_manager_plan_wider_writers.sql",
+  // 2026-10-18, the WhatsApp CV Archive (owner, about 23:30 Cairo: the old WhatsApp CVs he keeps go in
+  // an Archive "in Phoenix as well", never in the pool or Screening). The MCP DECLINED it on staging —
+  // its `drop policy if exists` lines — so it was applied by the standing route: `node
+  // scripts/apply-sql-file.mjs <file> staging` (cifwmndunmlxjhyjugxa) at 23:43 Cairo, then PRODUCTION
+  // (ozucdzovmcqvepbozvqf) at 23:45 Cairo with PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com;
+  // both printed {"applied":true,"count":0}. No ledger row on either project carries this version or
+  // name. It defines NO function, so there is no prosrc digest to compare: verified on BOTH projects in
+  // one query each — ats_whatsapp_cv_archive and ats_whatsapp_cv_archive_files exist with RLS on, one
+  // service-role policy each, no SELECT for anon or authenticated, and the bucket recruitment-cv-archive
+  // exists private with its 10,485,760-byte limit. Purely additive (two new tables, one new bucket);
+  // re-applying it is a no-op (`if not exists`, policies dropped `if exists` before they are re-made,
+  // the bucket `on conflict do update`).
+  "20261018204000_ats_whatsapp_cv_archive.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

@@ -1551,6 +1551,8 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: allMethods, pattern: "/api/recruitment/files/**", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
   // One WhatsApp applicant's application as a PDF (the CV, then the sheet of every question and answer). It names a person, their phone and email and carries their CV, so it is the candidates grant AND recruitment:read for an HR authority role, exactly the page that offers the buttons.
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/whatsapp-applicants/:sessionId/application", permission: { resource: "candidates", action: "read" } }),
+  // One CV from the WhatsApp CV Archive (the old WhatsApp applicants kept on 2026-10-18, not candidates). A person's CV, so the candidates grant AND recruitment:read for an HR authority role — the WhatsApp Applicants page that lists them.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/whatsapp-cv-archive/:fileId", permission: { resource: "candidates", action: "read" } }),
   // Deliberately gated on the narrow `hiring_interviews` resource, not `recruitment`/
   // `candidates` (both hard-boundary-locked to HR authority roles) — so a hiring-manager-type
   // role like District Manager can view/act on only their own assigned candidate's CV,
