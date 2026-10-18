@@ -12,7 +12,8 @@
 //
 // Matching, in order: a sheet whose trimmed name equals `name` (case-insensitive); else the first sheet
 // whose name contains `includes` (case-insensitive); else — ONLY where the adapter has always done so
-// — the workbook's first sheet. Otherwise the sheet is missing, and callers must say so.
+// — the workbook's first sheet. Otherwise the sheet is missing, and callers must say so. Where that
+// first-sheet fallback is allowed, a BLANK sheet never wins at any step (see matchWeeklySheet).
 //
 // `firstSheetFallback` is the adapters' real behaviour, not a default. Ibn Sina's export has no
 // "Sheet2": on production 8 of its 9 stored uploads to 2026-09-16 were read from "Sheet1" through this
@@ -86,15 +87,32 @@ export function weeklySheetMatcherCodes(): string[] {
   return Object.keys(WEEKLY_SHEET_MATCHERS);
 }
 
-/** The worksheet the import reads for `matcher`, and how it was found — or null when the sheet is missing. */
+/** True when at least one cell of the sheet holds a value (ExcelJS: `actualRowCount`, rows with values). */
+function sheetHasData(sheet: ExcelJS.Worksheet): boolean {
+  return sheet.actualRowCount > 0;
+}
+
+/**
+ * The worksheet the import reads for `matcher`, and how it was found — or null when the sheet is missing.
+ *
+ * Where `firstSheetFallback` is true a BLANK sheet never wins: it is stepped past, by name and by the
+ * fallback alike. Excel gives every new workbook "Sheet1", "Sheet2" and "Sheet3", so an Ibn Sina file
+ * re-saved from one carries data in "Sheet1" and two empty sheets beside it — and the IS rule, which
+ * looks for an exact "Sheet2" first, used to land on the empty one and answer "No data rows found in
+ * the weekly file" about a 679-row workbook (ISP SATO SALES & STOCK 14-10-2026, 2026-10-18). Where the
+ * fallback is false the rule is unchanged on purpose: an EGD "Branch Sales Return" with no returns is a
+ * legitimate empty sheet, and skipping it would turn it into a missing one.
+ */
 export function matchWeeklySheet(workbook: ExcelJS.Workbook, matcher: WeeklySheetMatcher): WeeklySheetMatch | null {
+  const usable = (sheet: ExcelJS.Worksheet) => !matcher.firstSheetFallback || sheetHasData(sheet);
   const name = matcher.name.trim().toLowerCase();
-  const exact = workbook.worksheets.find((sheet) => sheet.name.trim().toLowerCase() === name);
+  const exact = workbook.worksheets.find((sheet) => sheet.name.trim().toLowerCase() === name && usable(sheet));
   if (exact) return { worksheet: exact, matchedBy: "name" };
   const includes = matcher.includes.toLowerCase();
-  const partial = workbook.worksheets.find((sheet) => sheet.name.toLowerCase().includes(includes));
+  const partial = workbook.worksheets.find((sheet) => sheet.name.toLowerCase().includes(includes) && usable(sheet));
   if (partial) return { worksheet: partial, matchedBy: "includes" };
-  const first = matcher.firstSheetFallback ? workbook.worksheets[0] : undefined;
+  // A workbook with no data anywhere keeps the first sheet, so it still reads as an empty file.
+  const first = matcher.firstSheetFallback ? (workbook.worksheets.find(sheetHasData) ?? workbook.worksheets[0]) : undefined;
   return first ? { worksheet: first, matchedBy: "first-sheet" } : null;
 }
 
