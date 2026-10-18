@@ -1026,6 +1026,35 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // re-applying it is a no-op (`if not exists`, policies dropped `if exists` before they are re-made,
   // the bucket `on conflict do update`).
   "20261018204000_ats_whatsapp_cv_archive.sql",
+  // 2026-10-19, written by the session that applied both weekly-plan migrations of #6095 (merged
+  // 00:25 Cairo, live 00:35). The MCP `apply_migration` answered `declined` on production and on
+  // staging, so they went through the standing route, `node scripts/apply-sql-file.mjs <file>
+  // production` (ozucdzovmcqvepbozvqf, PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com),
+  // a plain pooler connection that writes NO ledger row: the absence on production is the apply
+  // route, not a missed migration. STAGING (cifwmndunmlxjhyjugxa) carries real ledger rows for both
+  // versions and the same digests as production, read in the same session, so neither entry masks
+  // anything there — this list is project-agnostic and an entry justified on production silences
+  // the same file on staging.
+  // Verified by digest, not by presence: `md5(pg_proc.prosrc)` for public.phx_weekly_plan_decide on
+  // production reads fe4e6df16b75a9d07e5f9a846d5ba423 (it read 767fc837179135420935b21ec1ed1c49
+  // before the apply, which is also the one-command rollback), and this file is its LAST definer.
+  // Both indexes the file touches are live with the new predicates —
+  // employee_plan_headers_active_period_uidx (rewritten) and
+  // employee_plan_headers_one_live_revision_uidx (new) — and zero draft revisions are left whose
+  // parent is dead. Staging ran a rolled-back smoke test of five behaviours (a pending revision
+  // beside its approved parent, a second live revision refused, an unrelated plan for the same week
+  // still refused, approving the revision cancels the parent with one `cancel` decision row,
+  // rejecting it leaves the parent alone). Re-applying it is a no-op (`create or replace`, the
+  // indexes dropped `if exists` and re-made).
+  "20261018233000_weekly_plan_revision_supersedes_approved_parent.sql",
+  // The same apply route and the same day. Two functions, no table, column or row change, both
+  // md5-equal to production and staging alike: phoenix_crm_manager_plan_transition reads
+  // 6c5b73437cf504fac699e00954a45c8a (before the apply ce07420c77d4953c73701817894347ee, which is
+  // what 20261017213000 above installed, so THIS file is now that function's last definer and that
+  // entry's digest is superseded) and phoenix_crm_decide_manager_plan_edit reads
+  // 01145439d9ae968ceaddc06aa63998ac (before ed3d6b906dee579b07ea4bdbd5867428). Re-applying it is a
+  // no-op (`create or replace`); the rollback is the two earlier bodies.
+  "20261018234000_phoenix_crm_manager_plan_ask_closes_with_its_week.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

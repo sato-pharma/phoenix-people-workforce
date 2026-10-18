@@ -169,7 +169,7 @@ export function buildPlanningCalendarConflicts(items: PlanningCalendarPlanItem[]
 
     const first = group[0];
     const employeeNames = uniqueSorted(group.map((item) => item.employeeDisplayName));
-    const medicalRepName = cleanText(first.medicalRepDisplayName) || cleanText(first.medicalRepName) || cleanText(first.medicalRepHrId) || "the same Medical Rep";
+    const medicalRepName = cleanText(first.medicalRepDisplayName) || cleanText(first.medicalRepName) || "the same Medical Rep";
     const medicalRepIdentity = cleanText(first.medicalRepHrId) || cleanText(first.medicalRepName);
     const conflictLineNames = uniqueSorted(group.map((item) => item.lineName));
     const lineName = conflictLineNames.length === 1 ? (conflictLineNames[0] || "Unassigned line") : conflictLineNames.join(" / ");

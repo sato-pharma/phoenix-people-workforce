@@ -246,6 +246,19 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.equal(conflicts.length, 1, "same date + same Medical Rep must warn once — cross-line conflicts are now detected");
   assert.deepEqual(conflicts[0].employeeNames, ["Nahid Hatab", "Other Line", "Russia Sabri"]);
   assert.equal(attachPlanningConflictWarnings(conflictItems, conflicts)[0].conflictWarning !== null, true);
+  // A Medical Rep the directory cannot name must never surface as an HR id in the warning text.
+  const unnamedRepItems: PlanningCalendarPlanItem[] = conflictItems.slice(0, 2).map((item) => ({
+    ...item,
+    conflictKey: planningConflictKey("2026-06-21", "Line A", "MR-9"),
+    medicalRepDisplayName: null,
+    medicalRepHrId: "MR-9",
+    medicalRepName: null,
+  }));
+  const unnamedRepConflicts = buildPlanningCalendarConflicts(unnamedRepItems);
+  assert.equal(unnamedRepConflicts.length, 1, "two employees on one unnamed Medical Rep still warn once");
+  assert.doesNotMatch(unnamedRepConflicts[0].warning, /MR-9/, "the conflict warning must never print the Medical Rep's HR id");
+  assert.match(unnamedRepConflicts[0].warning, /the same Medical Rep/, "an unnamed Medical Rep reads as 'the same Medical Rep'");
+  assert.equal(unnamedRepConflicts[0].medicalRepHrId, "MR-9", "the HR id stays in the data field the callers match on");
   assert.equal(planningCalendarTitle("Russia Sabri", "Delta 2", "Munufia 2", "Double Visit"), "Russia Sabri - Delta 2 - Munufia 2");
   assert.match(
     sameLineBookingWarning({
