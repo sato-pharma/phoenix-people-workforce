@@ -338,6 +338,67 @@ already on it, so **no new cron job and no cron-job.org entry were needed.**
 
 
 
+## 18 October 2026 — a slow database, the Talent Acquisition seat, and what changed
+
+**What was reported.** The Talent Acquisition seat (Yomna Gamal, role `HR Resourcing`) could not load
+recruitment data.
+
+**What was found** (Africa/Cairo):
+
+- **Nothing was wrong in the recruitment code.** Run afterwards, read-only, as her seat, the page's seven
+  reads passed three times out of three in 2.5-3.1 s (1,491 candidates, 43 requisitions, 40
+  applications), and her seat holds every Recruitment and Candidates permission the page asks for.
+- **The database was the cause.** Production timed out between 10:30 and 11:55 and was hard-restarted at
+  **11:54:34**. At **10:57** her Recruitment page failed four times with "Session verification is
+  temporarily unavailable" — the login check, which runs before any page code is reached.
+- **It was the fourth hard restart in six days:** 12 Oct 19:04, 14 Oct 11:34, 17 Oct 12:30 and 18 Oct
+  11:54 (`public.database_restarts` holds all four), each preceded by 30-90 minutes of slowness, on the
+  2 GB compute class described above.
+- 🔴 **Not proven, and not to be written as if it were:** what killed the database, and whether the
+  attendance replay below was the trigger or only coincided with it. Only Supabase's own Reports (CPU,
+  memory and swap around those four times) can settle it. The compute size is a money decision: it is
+  made on the Supabase screen (Settings, Compute and Disk), never in chat.
+
+**Three things turned a slowdown into a dead end, and each now has a fix:**
+
+1. **The Recruitment page was all-or-nothing.** Seven reads ran in one `Promise.all` inside one `try`;
+   any one rejection blanked the page, wrote nothing to the log and showed "apply the recruitment
+   migrations on staging" — advice for a fresh environment. The page now settles its eight reads one by
+   one, names what did not load, logs ONE aggregated `recruitment` row, and never shows a failed pool as
+   zero. Account: `docs/recruitment-page-round-trips.md`.
+2. **The login check had no fallback.** `phx_auth_session_bundle` is called about twice a second with no
+   cache, and when its one retry also failed the whole render threw. The last ACCEPTED bundle is now kept
+   for ten minutes and used only after the live call and its retry both fail (owner's decision, with the
+   exposure stated: someone whose access was removed could keep opening pages for up to ten minutes, and
+   only while the live check is failing). Live is always tried first; the copy goes through every check a
+   live bundle does, including the lifecycle gate against today's date; it is never stored again from a
+   copy, so its age never resets; a served copy skips the idle-refresh write. It logs
+   `session_verification_served_from_recent_copy` at warning level, so a Railway log search shows every
+   time it was used. With no copy the outage still raises `SessionVerificationUnavailableError` as before.
+3. **The attendance route made one call per punch.** On 18 Oct between 10:16 and 10:33 the on-prem agent
+   replayed punches the table already held and the route answered with 10,461 single-row calls, fifty at a
+   time. It now sends up to 250 punches per call to `public.phx_insert_attendance_raw_punches` (a 1,000
+   punch request is four calls) and falls back to the single-row function, at concurrency 10, if a batch
+   fails. Account: `docs/attendance-agent.md`.
+
+**The restart alert has a gap — found while checking the above, not fixed in the same change.**
+`runDatabaseRestartCheck()` did NOT miss the 17 Oct restart: it recorded it in `database_restarts` six
+seconds after the database came up (start 12:30:10, noticed 12:30:16). But the audit log holds an
+`observability.database_restarted` row for 14 Oct (11:45, "delivered to 1 recipient") and for 18 Oct
+(12:00), and NONE for 17 Oct. `note_database_restart()` writes the row before the alert is sent, so an
+alert that fails once is never retried — the next run reads `unchanged`. The failure itself is not visible
+(it goes to the process log only), so the cause is inferred from the order of operations and the six-second
+timing, not observed. The repair is to re-attempt a recorded restart that has no audit row and is under an
+hour old, on each sweep run; the notification's idempotency key (`database-restarted:<start>:<hr id>`)
+already stops a second copy reaching anyone who received the first. It touches the alert path and its test,
+so it was left for its own change.
+
+**How to see that it worked after the deploy:** `/api/healthz` `revision` equals the merge commit;
+`pg_stat_statements` shows calls to `phx_insert_attendance_raw_punches` and far fewer to
+`phx_insert_attendance_raw_punch`; `app_error_events` carries a `recruitment` row only when a read really
+failed; and a Railway log search for `session_verification_served_from_recent_copy` shows whether the login
+fallback was ever used.
+
 ## Metrics & alerting — DEAD (nothing pages the owner)
 
 All of the below lived in GCP Cloud Monitoring inside project `phoenix-workforce-498619`. That

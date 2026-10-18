@@ -48,6 +48,11 @@ import { deleteRequest, patchJson, postJson } from "@/components/recruitment/rec
 import type { CvFolderCabinetData } from "@/components/recruitment/cv-folder-cabinet";
 import { CandidateDecisionTabStrip } from "@/components/recruitment/candidate-decision-tab-strip";
 import {
+  RecruitmentTabUnavailable,
+  RecruitmentUnavailableNotice,
+} from "@/components/recruitment/recruitment-unavailable-notice";
+import type { RecruitmentReadSource } from "@/lib/recruitment/page-reads";
+import {
   candidateMatchesDecisionTab,
   countCandidatesByDecisionTab,
   DEFAULT_CANDIDATE_DECISION_TAB,
@@ -218,15 +223,21 @@ type Props = {
   // The ~30 real managers a candidate can be sent to, straight from their job title. Distinct from
   // `managers` below, which is the whole employee directory and fills the requisition form.
   hiringManagers: HiringManagerOption[];
-  initialError: string | null;
   managers: ManagerOption[];
   openVacancies: VacancyReportRow[];
   // The full catalogue of active positions (all 21) offered in the requisition Position dropdown —
   // distinct from openVacancies, which is only the handful of positions with a vacant seat today.
   positionCatalogue: PositionCatalogueOption[];
+  // The reads the server could not complete (src/lib/recruitment/page-reads.ts). Every list above keeps
+  // its EMPTY shape for a source named here, and an empty shape is not an answer: the page says which
+  // part is missing instead of showing a zero or an empty table.
+  unavailableSources: RecruitmentReadSource[];
 };
 
 type TabKey = "pipeline" | "requisitions" | "candidates" | "folders" | "advertise";
+
+/** Under a tile whose figure is a dash because the pool did not load -- a zero would read as "no CVs". */
+const POOL_UNAVAILABLE_TILE_NOTE = "Unavailable right now.";
 
 /**
  * Which inline picker a pool row has open. Lifted to the table so only ONE row expands at a time —
@@ -1162,7 +1173,10 @@ function OfferFact({ label, value }: { label: string; value: string }) {
 }
 
 export function RecruitmentWorkspace(props: Props) {
-  const { candidateStats, dashboard, initialError } = props;
+  const { candidateStats, dashboard, unavailableSources } = props;
+  // A pool that did not load holds [] -- which would read as "no CVs" in the tiles and the tabs below.
+  const poolUnavailable = unavailableSources.includes("pool");
+  const foldersUnavailable = poolUnavailable || unavailableSources.includes("cvFolders");
   const router = useRouter();
   // The inbound-CV notification deep-links to ?candidate=<id> so a reviewer lands on the profile
   // holding the extracted fields, not on a module landing page they'd have to search from.
@@ -1176,7 +1190,7 @@ export function RecruitmentWorkspace(props: Props) {
   // ...except when HR sends someone back here holding a freshly created employee's HR_ID
   // (?application=<id>), which is a return trip into the pipeline, not a fresh visit.
   const [tab, setTab] = useState<TabKey>(() => (workspaceParams.get("application") ? "pipeline" : "candidates"));
-  const [error, setError] = useState<string | null>(initialError);
+  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   /**
@@ -1212,6 +1226,12 @@ export function RecruitmentWorkspace(props: Props) {
     });
   };
 
+  // Asking the server for the page again re-runs every read, which is the whole remedy for a slow moment.
+  const tryAgain = () =>
+    startTransition(() => {
+      router.refresh();
+    });
+
   const requisitions = dashboard?.requisitions ?? [];
   const applications = dashboard?.applications ?? [];
 
@@ -1226,6 +1246,7 @@ export function RecruitmentWorkspace(props: Props) {
 
       {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
       {notice ? <AdminCallout tone="success">{notice}</AdminCallout> : null}
+      <RecruitmentUnavailableNotice onRetry={tryAgain} pending={pending} sources={unavailableSources} />
 
       {/*
         These four count CVs, not requisitions. The previous set — open requisitions, active
@@ -1234,32 +1255,32 @@ export function RecruitmentWorkspace(props: Props) {
       */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <AdminStatCard
-          description="CVs received today, Cairo time."
+          description={poolUnavailable ? POOL_UNAVAILABLE_TILE_NOTE : "CVs received today, Cairo time."}
           icon={<FileSpreadsheet className="h-5 w-5" />}
           label="Arrived today"
           tone="orange"
-          value={candidateStats.arrivedToday}
+          value={poolUnavailable ? "—" : candidateStats.arrivedToday}
         />
         <AdminStatCard
-          description="CVs received in the last 7 days."
+          description={poolUnavailable ? POOL_UNAVAILABLE_TILE_NOTE : "CVs received in the last 7 days."}
           icon={<Users className="h-5 w-5" />}
           label="Arrived this week"
           tone="blue"
-          value={candidateStats.arrivedLast7Days}
+          value={poolUnavailable ? "—" : candidateStats.arrivedLast7Days}
         />
         <AdminStatCard
-          description="Still on the status intake set — nobody has looked yet."
+          description={poolUnavailable ? POOL_UNAVAILABLE_TILE_NOTE : "Still on the status intake set — nobody has looked yet."}
           icon={<UserPlus className="h-5 w-5" />}
           label="Not yet reviewed"
           tone="violet"
-          value={candidateStats.notYetReviewed}
+          value={poolUnavailable ? "—" : candidateStats.notYetReviewed}
         />
         <AdminStatCard
-          description="Candidates a hiring manager has been told about."
+          description={poolUnavailable ? POOL_UNAVAILABLE_TILE_NOTE : "Candidates a hiring manager has been told about."}
           icon={<CheckCircle2 className="h-5 w-5" />}
           label="Sent to a manager"
           tone="emerald"
-          value={candidateStats.sentToManager}
+          value={poolUnavailable ? "—" : candidateStats.sentToManager}
         />
       </div>
 
@@ -1278,12 +1299,12 @@ export function RecruitmentWorkspace(props: Props) {
         ))}
       </div>
 
-      {!dashboard ? (
-        <AdminCallout tone="warning">
-          Recruitment data could not be loaded. If this is a fresh environment, apply the recruitment migrations on staging.
-        </AdminCallout>
-      ) : tab === "advertise" ? (
+      {/* Each tab stands or falls on ITS OWN data. The pool and the folders do not need the dashboard,
+          so a dashboard that did not load no longer hides the screen where the work is. */}
+      {tab === "advertise" ? (
         <JobAdvertPanel />
+      ) : tab === "folders" && foldersUnavailable ? (
+        <RecruitmentTabUnavailable what="The CV folders list" />
       ) : tab === "folders" ? (
         // Handed the WHOLE candidate array, not the filed half. The shelf screen and the pool run
         // the same partition over the same input, which is what makes "in exactly one of the two"
@@ -1295,6 +1316,10 @@ export function RecruitmentWorkspace(props: Props) {
           cvFolderCabinet={props.cvFolderCabinet}
           onOpenCandidate={openCandidateFromFolder}
         />
+      ) : (tab === "pipeline" || tab === "requisitions") && !dashboard ? (
+        <RecruitmentTabUnavailable what={tab === "pipeline" ? "The hiring pipeline" : "The requisitions list"} />
+      ) : tab === "candidates" && poolUnavailable ? (
+        <RecruitmentTabUnavailable what="The candidate list" />
       ) : tab === "pipeline" ? (
         <PipelineTab
           applications={applications}
