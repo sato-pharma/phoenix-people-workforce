@@ -11,10 +11,10 @@
  * and the save or the log is the one place that can tell him to try again.
  */
 
-import { addDaysIso } from "@/lib/crm/dates";
 import { validationError } from "@/lib/http/api-errors";
 import {
   dmSingleVisitCapError,
+  managerVisitWindow,
   singleVisitHalfKey,
   singleVisitHalfOfHour,
   type ManagerHalf,
@@ -51,6 +51,8 @@ export async function loadSingleVisitHalvesUsed(input: { managerHrId: string; we
     }
   }
 
+  // Saturday through Friday: a Friday visit belongs to this week (`managerVisitWindow`, shared with the report).
+  const visitDays = managerVisitWindow(input.weekStart);
   const visits = await fetchAllRowsKeyset<Row>(
     () =>
       getSupabaseAdmin()
@@ -58,8 +60,8 @@ export async function loadSingleVisitHalvesUsed(input: { managerHrId: string; we
         .select("id, visit_date, half, created_at")
         .eq("manager_hr_id", input.managerHrId)
         .eq("is_test", input.isTest)
-        .gte("visit_date", input.weekStart)
-        .lte("visit_date", addDaysIso(input.weekStart, 5)),
+        .gte("visit_date", visitDays.from)
+        .lte("visit_date", visitDays.to),
     { cursorColumn: "id", cursorOf: (row) => String(row.id) },
   );
   for (const visit of visits) {

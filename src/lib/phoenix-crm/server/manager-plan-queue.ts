@@ -17,7 +17,13 @@
  * counted in his awaiting bucket, and he reaches it through the company feeds.
  */
 
-import { managerAskStage, managerPlanStage } from "@/lib/phoenix-crm/manager-plan-rules";
+import {
+  isManagerAskLive,
+  isManagerPlanStatus,
+  managerAskStage,
+  managerPlanStage,
+  type ManagerPlanStatus,
+} from "@/lib/phoenix-crm/manager-plan-rules";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import {
@@ -69,6 +75,28 @@ async function loadOpenPlans(isTest: boolean): Promise<ManagerPlanRow[]> {
   return rows.map(managerPlanRowOf).filter((row): row is ManagerPlanRow => row !== null);
 }
 
+/** The status of each of these weeks, in one world. A week that is not found is absent from the map. */
+async function loadPlanStatuses(planIds: ReadonlyArray<string>, isTest: boolean): Promise<Map<string, ManagerPlanStatus>> {
+  const out = new Map<string, ManagerPlanStatus>();
+  for (const part of chunk(dedupeIds(planIds), 100)) {
+    const rows = await fetchAllRowsKeyset<Row>(
+      () => getSupabaseAdmin().from("phoenix_crm_manager_plans").select("id, status").in("id", part).eq("is_test", isTest),
+      byId,
+    );
+    for (const row of rows) {
+      const id = textOrNull(row.id);
+      if (id && isManagerPlanStatus(row.status)) out.set(id, row.status);
+    }
+  }
+  return out;
+}
+
+/**
+ * The asks to edit that wait on somebody. 🔴 An ask counts only while its week is still a sent one: the
+ * database closes an ask in the same transaction that returns or re-sends the week (20261018234000), and this
+ * read drops one that is still open on any other week — a returned week, a draft — so it never reaches an
+ * approver's queue, his badge or the bell, and no Reopen is offered that could only fail.
+ */
 async function loadOpenEditAsks(isTest: boolean): Promise<ManagerEditAskRow[]> {
   const rows = await fetchAllRowsKeyset<Row>(
     () =>
@@ -79,7 +107,10 @@ async function loadOpenEditAsks(isTest: boolean): Promise<ManagerEditAskRow[]> {
         .eq("is_test", isTest),
     byId,
   );
-  return rows.map(editAskRowOf).filter((row): row is ManagerEditAskRow => row !== null);
+  const asks = rows.map(editAskRowOf).filter((row): row is ManagerEditAskRow => row !== null);
+  if (asks.length === 0) return asks;
+  const weeks = await loadPlanStatuses(asks.map((ask) => ask.planId), isTest);
+  return asks.filter((ask) => isManagerAskLive(ask.status, weeks.get(ask.planId)));
 }
 
 async function loadOpenRemovals(isTest: boolean): Promise<Row[]> {
@@ -215,6 +246,8 @@ export async function loadManagerOwnRequests(hrId: string | null | undefined, is
     ),
   ]);
   const out: ManagerRequestRecord[] = [];
+  const askRowList = askRows.map(editAskRowOf).filter((row): row is ManagerEditAskRow => row !== null);
+  const weekStatuses = await loadPlanStatuses(askRowList.map((ask) => ask.planId), isTest);
   for (const plan of planRows.map(managerPlanRowOf)) {
     if (!plan) continue;
     out.push({
@@ -229,18 +262,20 @@ export async function loadManagerOwnRequests(hrId: string | null | undefined, is
       waitingOnHrId: plan.status === "submitted" ? plan.firstApproverHrId : plan.status === "first_approved" ? plan.secondApproverHrId : null,
     });
   }
-  for (const ask of askRows.map(editAskRowOf)) {
-    if (!ask) continue;
+  for (const ask of askRowList) {
+    // An ask still open on a week that is no longer a sent one waits on nobody: it is as good as closed.
+    const open = managerAskStage(ask.status) !== null;
+    const live = isManagerAskLive(ask.status, weekStatuses.get(ask.planId));
     out.push({
       id: ask.requestId,
       kind: "edit",
       managerHrId: ask.managerHrId,
       weekStart: ask.weekStart,
       customerName: null,
-      status: ask.status,
+      status: open && !live ? "expired" : ask.status,
       submittedAt: ask.createdAt ?? "",
       decisionNote: ask.decisionNote,
-      waitingOnHrId: ask.status === "pending" ? ask.approverHrId : ask.status === "first_approved" ? ask.secondApproverHrId : null,
+      waitingOnHrId: !live ? null : ask.status === "pending" ? ask.approverHrId : ask.status === "first_approved" ? ask.secondApproverHrId : null,
     });
   }
   for (const row of removalRows) {

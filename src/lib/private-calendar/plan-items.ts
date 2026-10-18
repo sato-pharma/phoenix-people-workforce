@@ -28,6 +28,7 @@ import { loadManagerPlanHalfDays, managerHalfDayText, type ManagerPlanHalfDay } 
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readAllPrivateCalendarRows, type PrivateCalendarItem } from "@/lib/private-calendar/logic";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { dropPendingRevisionsOfPlansOfRecord } from "@/lib/weekly-planning/plan-revisions";
 
 /**
  * The plan statuses that mean a manager has signed the week off.
@@ -108,12 +109,13 @@ type PlanHeaderRow = {
   employee_plan_items: PlanItemRow[] | null;
   id: string;
   manager_name: string | null;
+  parent_plan_id: string | null;
   period_key: string | null;
   status: string | null;
 };
 
 const PLAN_SELECT =
-  "id,employee_hr_id,employee_name,manager_name,period_key,status," +
+  "id,employee_hr_id,employee_name,manager_name,parent_plan_id,period_key,status," +
   "employee_plan_items(id,activity_date,activity_type,activity_title,objective,area,location_text,notes,start_time,end_time,double_visit_medical_rep_name,sort_order)";
 
 function cleanText(value: string | null | undefined) {
@@ -301,7 +303,9 @@ export async function loadPlanPrivateCalendarItems(
       .order("id", { ascending: true })
       .range(from, to));
     const items: PrivateCalendarItem[] = [];
-    for (const header of headers) {
+    // A revision awaiting its decisions (manager_approved is in the list above) is left out while
+    // the approved plan it revises is the plan of record, or the week would be read twice.
+    for (const header of dropPendingRevisionsOfPlansOfRecord(headers)) {
       for (const item of header.employee_plan_items ?? []) {
         const date = cleanText(item.activity_date).slice(0, 10);
         // A week straddles a month boundary, so the header's period overlapping the range does not

@@ -49,6 +49,13 @@ import {
   type PlanningOwner,
 } from "@/lib/weekly-planning/regions";
 import { cairoDate } from "@/lib/format/cairo-datetime";
+import {
+  decisionActorLabel,
+  planHeadingLabel,
+  planRowPartLabel,
+  summarizeBulkApprove,
+  type BulkApproveRow,
+} from "@/lib/weekly-planning/plan-labels";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { PlanAdherenceBadge } from "@/components/weekly-planning/plan-adherence-report";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
@@ -58,7 +65,17 @@ import {
   MARKETING_DOUBLE_VISIT_TITLE,
   type MarketingDoubleVisitPartner,
 } from "@/lib/weekly-planning/marketing-double-visit";
-import { placeSourcedPlanRow, planDayMode } from "@/lib/weekly-planning/plan-slot-merge";
+import {
+  incompleteDaysHeading,
+  pickedPeriodIsShown,
+  planCommentFor,
+  pruneSelectedPlanIds,
+  type PlanCommentDrafts,
+  viewerMayEditPlan,
+  withoutPlanComment,
+  withPlanComment,
+} from "@/lib/weekly-planning/plan-editor-state";
+import { nextFreePlanDay, placeSourcedPlanRow, planDayMode, planDayRowsForMode } from "@/lib/weekly-planning/plan-slot-merge";
 import type { EmployeePlanKind, EmployeePlanStatus, PlanSlot, PlanWorkweek } from "@/lib/weekly-planning/plan-v1";
 import {
   buildEmployeePlanPeriod,
@@ -487,9 +504,10 @@ export function PlanDecisionTimeline({ decisions }: { decisions: EmployeePlanDec
             <div className="min-w-0">
               <p className="text-xs font-black text-slate-800">
                 {employeePlanActionLabel(d.action)}
-                {d.actorHrId ? (
+                {/* The decider's NAME (else the role they acted in) — never their HR id, which is a code. */}
+                {decisionActorLabel(d) ? (
                   <span className="ml-1.5 font-semibold text-slate-500">
-                    by {d.actorHrId}{d.actorRole ? ` (${d.actorRole})` : ""}
+                    by {decisionActorLabel(d)}
                   </span>
                 ) : null}
               </p>
@@ -1060,8 +1078,14 @@ function areasForRegion(source: AreaSource, region: string): string[] {
 /** Map raw service/DB/workflow errors to short, friendly, action-oriented messages. UI-only. */
 function friendlyError(message: string): string {
   const text = message || "Action failed.";
-  if (/duplicate key|already exists|active_period_uidx|23505/i.test(text)) {
-    return "You already have an active plan for this period.";
+  // The server answers a collision on the plan indexes with a sentence that is true (see
+  // translatePlanUniqueViolation) and it passes through untouched. This branch is only the safety
+  // net for a raw database duplicate that reached the form, and it must not claim the employee has
+  // an active plan: the old text said so even when the clash was an approved plan being revised.
+  // "already exists" is left out on purpose: assertNoActivePlanForSamePeriod writes that sentence
+  // itself, names the status, and tells the person what to do.
+  if (/duplicate key|active_period_uidx|one_live_revision_uidx|23505/i.test(text)) {
+    return "This plan clashes with another plan saved for the same period. Open My Plans to check it, then try again.";
   }
   if (/comment.*requires|requires a comment|COMMENT_REQUIRED/i.test(text)) {
     return "Please add a comment explaining the return or rejection.";
@@ -1227,7 +1251,11 @@ export function PlansWorkspace({
   // confirmation and got read as success. Tone travels WITH the text so they cannot drift.
   const showInfo = (text: string) => setMessage({ text, tone: "info" });
   const showError = (text: string) => setMessage({ text, tone: "error" });
-  const [comment, setComment] = useState("");
+  // One comment draft PER PLAN under review: a single shared string was sent on whichever plan was
+  // decided next, so text typed for one employee's plan landed on another's.
+  const [comments, setComments] = useState<PlanCommentDrafts>({});
+  const updateComment = (planId: string, value: string) =>
+    setComments((current) => withPlanComment(current, planId, value));
   const [returnNotes, setReturnNotes] = useState<Record<string, Record<string, string>>>({});
   const [visitDetailsPlan, setVisitDetailsPlan] = useState<EmployeePlan | null>(null);
   // Cross-domain prefill (approved vacation/excuse + monthly weekly sync),
@@ -1292,6 +1320,8 @@ export function PlansWorkspace({
     () => new Set(rows.map((row) => row.activityDate)),
     [rows],
   );
+  // "Add day" has a day to add only while some period day is still unused (mobile and desktop).
+  const hasFreePlanDay = nextFreePlanDay(periodDays, selectedDateSet) !== null;
   const requiredSlotsByDate = useMemo(
     () => planRequiredSlotsByDate(period.periodStartDate, period.periodEndDate, workweek),
     [period.periodEndDate, period.periodStartDate, workweek],
@@ -1374,9 +1404,14 @@ export function PlansWorkspace({
       ["final_approved", "hr_acknowledged"].includes(item.status) &&
       workspace.canAcknowledgeHr,
   );
-  const canEdit = planCanEdit(plan) && workspace.canSubmitPlans;
-  const periodLocked = Boolean(plan);
   const isOwnPlan = plan != null && ownPlans.some((p) => p.id === plan.id);
+  // The server lets only the plan's owner (or a Super Admin) save or submit it (assertPlanOwner), so a
+  // manager who opens a report's plan reads it instead of getting live buttons that answer 403.
+  const mayEditPlan =
+    plan == null ||
+    viewerMayEditPlan({ planOwnerHrId: plan.employeeHrId, viewerHrId: access.hrId, viewerRole: access.role });
+  const canEdit = planCanEdit(plan) && workspace.canSubmitPlans && mayEditPlan;
+  const periodLocked = Boolean(plan);
   const dayGroups = useMemo(() => groupDraftRows(rows), [rows]);
   const dayGroupByDate = useMemo(
     () => new Map(dayGroups.map((group) => [group.activityDate, group])),
@@ -1595,7 +1630,13 @@ export function PlansWorkspace({
 
   function resetRows(kind: EmployeePlanKind, date: string) {
     const normalizedDate = normalizeAnchorForKind(kind, date, workweek);
-    setRows(defaultRows(kind, normalizedDate, workweek));
+    const fresh = defaultRows(kind, normalizedDate, workweek);
+    // The prefill effect only re-runs when its inputs change, so a reset onto the period already on
+    // screen (Reset working days, Discard draft) would otherwise drop the approved-leave and holiday
+    // rows while the "Auto-synced into this plan" banner kept claiming they are there. Overlay the
+    // prefill already fetched for this very period; a different period is refilled by the effect.
+    const freshScopeKey = `${workspace.currentEmployee?.hrId ?? ""}|${kind}|${buildEmployeePlanPeriod(kind, normalizedDate, workweek).periodStartDate}`;
+    setRows(prefillState.scopeKey === freshScopeKey ? mergePrefillIntoRows(fresh, prefillState.items) : fresh);
     setSheetKey(null);
   }
 
@@ -1729,23 +1770,13 @@ export function PlansWorkspace({
       if (dayRows.length === 0) return current;
       // Locked (approved vacation/excuse) days can't switch modes.
       if (dayRows.some((row) => row.locked)) return current;
-      const dayNote = dayRows.find((row) => row.notes?.trim())?.notes ?? "";
       const otherRows = sorted.filter((row) => row.activityDate !== activityDate);
-      const first = { ...dayRows[0], notes: dayNote };
-      if (mode === "full") {
-        return sortDraftRows([...otherRows, { ...first, slot: "full" as PlanSlot, startTime: "", endTime: "" }]);
-      }
-      if (mode === "am" || mode === "pm") {
-        // One half only (a half-day planner): keep that half's row if the day has one, else the first.
-        const kept = dayRows.find((row) => row.slot === mode) ?? first;
-        return sortDraftRows([...otherRows, { ...kept, slot: mode as PlanSlot, startTime: "", endTime: "", notes: dayNote }]);
-      }
-      const am = dayRows.find((row) => row.slot === "am") ?? first;
-      const pm = dayRows.find((row) => row.slot === "pm") ?? createDraftRow(activityDate, current.length, `row-pm-${Date.now()}`, "pm");
+      // The transition itself is pure (planDayRowsForMode) so its row keys stay unique per mode.
       return sortDraftRows([
         ...otherRows,
-        { ...am, slot: "am" as PlanSlot, notes: dayNote },
-        { ...pm, activityDate, slot: "pm" as PlanSlot, notes: "" },
+        ...planDayRowsForMode(dayRows, mode, (slot) =>
+          createDraftRow(activityDate, current.length, `row-${slot}-${Date.now()}`, slot),
+        ),
       ]);
     });
   }
@@ -1772,10 +1803,10 @@ export function PlansWorkspace({
 
   function addRow() {
     setRows((current) => {
-      const used = new Set(current.map((row) => row.activityDate));
-      const nextDate =
-        periodDays.find((date) => !used.has(date)) ??
-        addDays(current[current.length - 1]?.activityDate ?? period.periodEndDate, 1);
+      // Every period day already has a row: add nothing. The old fallback (the day after the last
+      // row) always landed outside the period, and the server rejects a date outside it.
+      const nextDate = nextFreePlanDay(periodDays, current.map((row) => row.activityDate));
+      if (nextDate === null) return current;
       return sortDraftRows([...current, createDraftRow(nextDate, current.length, `row-add-${Date.now()}`)]);
     });
   }
@@ -1847,13 +1878,13 @@ export function PlansWorkspace({
           .filter((n) => n.note)
       : [];
     const response = await fetch(`/api/weekly-plans/${planId}/decision`, {
-      body: JSON.stringify({ action, comment, returnNotes: rowNotes }),
+      body: JSON.stringify({ action, comment: planCommentFor(comments, planId), returnNotes: rowNotes }),
       headers: { "Content-Type": "application/json" },
       method: "POST",
     });
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.message ?? "Decision failed.");
-    setComment("");
+    setComments((current) => withoutPlanComment(current, planId));
     if (action.includes("return")) setReturnNotes((c) => ({ ...c, [planId]: {} }));
     showInfo("Decision recorded.");
   }
@@ -1871,13 +1902,13 @@ export function PlansWorkspace({
 
   async function decideEditRequestAction(planId: string, decision: "approve" | "reject") {
     const response = await fetch(`/api/weekly-plans/${planId}/edit-request-decision`, {
-      body: JSON.stringify({ comment, decision }),
+      body: JSON.stringify({ comment: planCommentFor(comments, planId), decision }),
       headers: { "Content-Type": "application/json" },
       method: "POST",
     });
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.message ?? "Decision failed.");
-    setComment("");
+    setComments((current) => withoutPlanComment(current, planId));
     showInfo(decision === "approve" ? "Edit approved — employee can now revise." : "Edit request rejected.");
   }
 
@@ -1890,6 +1921,26 @@ export function PlansWorkspace({
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.message ?? "Bulk approve failed.");
     return payload;
+  }
+
+  // The batch call succeeds even when some plans in it fail, so the outcome is read plan by plan:
+  // the manager is told how many were approved and WHICH ones were not, and only the approved ones
+  // are un-ticked — the rest stay selected so one more click retries exactly them.
+  async function approveSelectedPlans(planIds: string[], onApproved: (approvedIds: string[]) => void) {
+    const result = await doBulkApprove(planIds);
+    const rows: BulkApproveRow[] = Array.isArray(result.data)
+      ? result.data
+      : planIds.map((planId) => ({ ok: (result.failed ?? 0) === 0, planId }));
+    const summary = summarizeBulkApprove(planIds, rows, managerQueue);
+    onApproved(summary.approvedIds);
+    if (summary.tone === "info") {
+      showInfo(summary.message);
+      return;
+    }
+    // A partial failure is reported through runAction's catch, the one place a failure is shown in the
+    // error tone. The queue is reloaded first so the plans that WERE approved leave it.
+    await reload();
+    throw new Error(summary.message);
   }
 
   async function doRequestVisitDetails(planId: string) {
@@ -1917,14 +1968,14 @@ export function PlansWorkspace({
 
   async function acknowledge(planId: string) {
     const response = await fetch(`/api/weekly-plans/${planId}/acknowledge`, {
-      body: JSON.stringify({ comment }),
+      body: JSON.stringify({ comment: planCommentFor(comments, planId) }),
       headers: { "Content-Type": "application/json" },
       method: "POST",
     });
     const result = await response.json();
     if (!response.ok || !result.success)
       throw new Error(result.message ?? "Acknowledgement failed.");
-    setComment("");
+    setComments((current) => withoutPlanComment(current, planId));
     showInfo("HR acknowledgement recorded.");
   }
 
@@ -1977,6 +2028,20 @@ export function PlansWorkspace({
         return;
       }
     }
+    // Picking the period already on screen only confirms the week: resetting would drop the rows the
+    // person has filled in, and the approved-leave rows with them (the prefill effect does not re-run
+    // because nothing it depends on changed).
+    if (
+      pickedPeriodIsShown({
+        kind: activeKind,
+        pickedAnchorDate: nextAnchorDate,
+        shownPeriodStartDate: period.periodStartDate,
+        workweek,
+      })
+    ) {
+      setWeekChosen(true);
+      return;
+    }
     setAnchorDate(nextAnchorDate);
     setWeekChosen(true);
     resetRows(activeKind, nextAnchorDate);
@@ -1997,9 +2062,9 @@ export function PlansWorkspace({
   // wraps as layout so there is no horizontal scroll.
   const incompleteBanner = canEdit && incompleteDays.length > 0 ? (
     <div className="border border-amber-300 bg-amber-50 p-3">
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         <TriangleAlert className="h-4 w-4 shrink-0 text-amber-600" />
-        <p className="text-sm font-black text-amber-800 whitespace-nowrap">Finish every working day before submitting</p>
+        <p className="min-w-0 text-sm font-black text-amber-800">{incompleteDaysHeading(allowHalfDays)}</p>
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {incompleteDays.map((label) => (
@@ -2243,7 +2308,6 @@ export function PlansWorkspace({
             label="Manager"
             value={workspace.currentEmployee?.managerName ?? "Not assigned"}
           />
-          <InfoChip label="Secured" value="RLS · service-role only" />
         </div>
 
         {/* Mini KPIs */}
@@ -2305,7 +2369,8 @@ export function PlansWorkspace({
           ))}
           {canEdit ? (
             <button
-              className="flex w-full items-center justify-center gap-1.5 border border-dashed border-orange-300 bg-orange-50/40 py-3 text-sm font-bold text-orange-600 active:bg-orange-50"
+              className="flex w-full items-center justify-center gap-1.5 border border-dashed border-orange-300 bg-orange-50/40 py-3 text-sm font-bold text-orange-600 active:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!hasFreePlanDay}
               onClick={addRow}
               type="button"
             >
@@ -2319,16 +2384,10 @@ export function PlansWorkspace({
         <div className="space-y-3">
           <QueueCard onFillDetails={setVisitDetailsPlan} onOpen={loadPlanForEdit} plans={ownPlans} title="My Plans" />
           <ReviewCard
-            comment={comment}
+            comments={comments}
             isPending={isPending}
-            onBulkApprove={(planIds) =>
-              runAction(async () => {
-                const result = await doBulkApprove(planIds);
-                const failed = result.failed ?? 0;
-                if (failed > 0) throw new Error(`${result.total - failed} approved, ${failed} failed.`);
-              })
-            }
-            onComment={setComment}
+            onBulkApprove={(planIds, onApproved) => runAction(() => approveSelectedPlans(planIds, onApproved))}
+            onComment={updateComment}
             onDecision={(planId, action) => runAction(() => decide(planId, action))}
             onRequestDetails={(p) => runAction(() => doRequestVisitDetails(p.id))}
             onReturnNote={updateReturnNote}
@@ -2338,18 +2397,18 @@ export function PlansWorkspace({
             type="manager"
           />
           <ReviewCard
-            comment={comment}
+            comments={comments}
             isPending={isPending}
-            onComment={setComment}
+            onComment={updateComment}
             onDecision={(planId, decision) => runAction(() => decideEditRequestAction(planId, decision as "approve" | "reject"))}
             plans={editRequestQueue}
             title="Edit Requests"
             type="edit_request"
           />
           <ReviewCard
-            comment={comment}
+            comments={comments}
             isPending={isPending}
-            onComment={setComment}
+            onComment={updateComment}
             onDecision={(planId, action) => runAction(() => decide(planId, action))}
             onReturnNote={updateReturnNote}
             plans={ceoQueue}
@@ -2366,9 +2425,9 @@ export function PlansWorkspace({
             title="District Manager Plans"
           />
           <ReviewCard
-            comment={comment}
+            comments={comments}
             isPending={isPending}
-            onComment={setComment}
+            onComment={updateComment}
             onDecision={(planId) => runAction(() => acknowledge(planId))}
             plans={hrQueue}
             title="HR Acknowledgement"
@@ -2657,7 +2716,7 @@ export function PlansWorkspace({
               <div className="flex flex-wrap gap-2">
                 <button
                   className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={!canEdit || selectedDateSet.size >= periodDays.length}
+                  disabled={!canEdit || !hasFreePlanDay}
                   onClick={addRow}
                   type="button"
                 >
@@ -2767,9 +2826,14 @@ export function PlansWorkspace({
                                       <p className="mt-1 text-sm font-black text-slate-900">Day {groupIndex + 1}</p>
                                     </div>
                                   </time>
-                                  <div className={`mt-3 grid grid-cols-2 border border-slate-200 bg-slate-50 p-0.5 ${adminSoftDepthClassName}`}>
+                                  <div
+                                    aria-label="Day mode"
+                                    className={`mt-3 grid grid-cols-2 border border-slate-200 bg-slate-50 p-0.5 ${adminSoftDepthClassName}`}
+                                    role="group"
+                                  >
                                     {(allowHalfDays ? (["full", "split", "am", "pm"] as const) : (["full", "split"] as const)).map((mode) => (
                                       <button
+                                        aria-pressed={shownDayMode(group, allowHalfDays) === mode}
                                         className={`h-8 px-2 text-phx-xs font-black transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-50 disabled:cursor-not-allowed disabled:opacity-50 ${
                                           shownDayMode(group, allowHalfDays) === mode
                                             ? "bg-slate-950 text-white shadow-[0_4px_10px_rgba(15,23,42,0.18)]"
@@ -3083,16 +3147,10 @@ export function PlansWorkspace({
           <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
             <QueueCard onFillDetails={setVisitDetailsPlan} onOpen={loadPlanForEdit} plans={ownPlans} title="My Plans" />
             <ReviewCard
-              comment={comment}
+              comments={comments}
               isPending={isPending}
-              onBulkApprove={(planIds) =>
-                runAction(async () => {
-                  const result = await doBulkApprove(planIds);
-                  const failed = result.failed ?? 0;
-                  if (failed > 0) throw new Error(`${result.total - failed} approved, ${failed} failed.`);
-                })
-              }
-              onComment={setComment}
+              onBulkApprove={(planIds, onApproved) => runAction(() => approveSelectedPlans(planIds, onApproved))}
+              onComment={updateComment}
               onDecision={(planId, action) => runAction(() => decide(planId, action))}
               onRequestDetails={(p) => runAction(() => doRequestVisitDetails(p.id))}
               onReturnNote={updateReturnNote}
@@ -3102,18 +3160,18 @@ export function PlansWorkspace({
               type="manager"
             />
             <ReviewCard
-              comment={comment}
+              comments={comments}
               isPending={isPending}
-              onComment={setComment}
+              onComment={updateComment}
               onDecision={(planId, decision) => runAction(() => decideEditRequestAction(planId, decision as "approve" | "reject"))}
               plans={editRequestQueue}
               title="Edit Requests"
               type="edit_request"
             />
             <ReviewCard
-              comment={comment}
+              comments={comments}
               isPending={isPending}
-              onComment={setComment}
+              onComment={updateComment}
               onDecision={(planId, action) => runAction(() => decide(planId, action))}
               onReturnNote={updateReturnNote}
               plans={ceoQueue}
@@ -3130,9 +3188,9 @@ export function PlansWorkspace({
               title="District Manager Plans"
             />
             <ReviewCard
-              comment={comment}
+              comments={comments}
               isPending={isPending}
-              onComment={setComment}
+              onComment={updateComment}
               onDecision={(planId) => runAction(() => acknowledge(planId))}
               plans={hrQueue}
               title="HR Acknowledgement"
@@ -3448,7 +3506,13 @@ function RowEditSheet({
               </p>
             </div>
           ) : null}
-          <Field label="Day Mode">
+          {/* Not a <Field>: that wraps its caption and control in a <label>, and a tap on the caption is
+              forwarded to the first button inside it - "Full day" - which collapsed a split day to one
+              row. The group is already named by its own aria-label. */}
+          <div>
+            <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
+              Day Mode
+            </span>
             <ChoiceGroup
               aria-label="Day mode"
               className="grid-cols-2"
@@ -3457,7 +3521,7 @@ function RowEditSheet({
               options={dayModeChoices}
               value={dayMode}
             />
-          </Field>
+          </div>
 
           <Field label="Activity Type">
             <SearchableSelect
@@ -3861,7 +3925,9 @@ function VisitDetailsModal({
         <div className="flex items-center justify-between bg-slate-900 px-4 py-3">
           <div>
             <h2 className="text-sm font-black uppercase tracking-wide text-white">Fill Visit Details</h2>
-            <p className="text-phx-xs text-slate-400">{plan.planKind} {plan.periodKey} — required by your manager</p>
+            <p className="text-phx-xs text-slate-400">
+              {planHeadingLabel(plan.planKind, plan.periodStartDate, plan.periodEndDate)} — required by your manager
+            </p>
           </div>
           <button aria-label="Close" onClick={onClose} className="text-slate-400 hover:text-white" type="button">
             <X className="h-5 w-5" />
@@ -4019,7 +4085,7 @@ function QueueCard({
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-black text-slate-900">
                   {showEmployeeName ? `${p.employeeDisplayName || p.employeeName} — ` : ""}
-                  {p.planKind} {p.periodKey}
+                  {planHeadingLabel(p.planKind, p.periodStartDate, p.periodEndDate)}
                 </p>
                 <span
                   className={`rounded-full border px-2 py-1 text-phx-xs font-black ${statusTone(p.status)}`}
@@ -4056,7 +4122,7 @@ function QueueCard({
 }
 
 function ReviewCard({
-  comment,
+  comments,
   isPending,
   onBulkApprove,
   onComment,
@@ -4068,10 +4134,11 @@ function ReviewCard({
   title,
   type,
 }: {
-  comment: string;
+  comments: PlanCommentDrafts;
   isPending: boolean;
-  onBulkApprove?: (planIds: string[]) => void;
-  onComment: (value: string) => void;
+  // `onApproved` un-ticks the plans the server approved (and only those) once it has answered.
+  onBulkApprove?: (planIds: string[], onApproved: (approvedIds: string[]) => void) => void;
+  onComment: (planId: string, value: string) => void;
   onDecision: (planId: string, action: string) => void;
   onRequestDetails?: (plan: EmployeePlan) => void;
   onReturnNote?: (planId: string, itemId: string, value: string) => void;
@@ -4082,6 +4149,16 @@ function ReviewCard({
 }) {
   // F1 — bulk selection state (manager only)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  // A plan decided one by one leaves the queue; drop it from the selection too, or "Approve selected"
+  // counts it and sends the id of a plan that is no longer waiting. Adjusting state while rendering
+  // (only when the queue's membership changed) is React's pattern for state derived from props.
+  const queuePlanIds = plans.map((p) => p.id);
+  const queueKey = queuePlanIds.join("|");
+  const [seenQueueKey, setSeenQueueKey] = useState(queueKey);
+  if (seenQueueKey !== queueKey) {
+    setSeenQueueKey(queueKey);
+    setSelectedIds((previous) => pruneSelectedPlanIds(previous, queuePlanIds));
+  }
   const allSelected = plans.length > 0 && plans.every((p) => selectedIds.has(p.id));
   const toggleAll = () => setSelectedIds(allSelected ? new Set() : new Set(plans.map((p) => p.id)));
   const toggleOne = (id: string) =>
@@ -4116,7 +4193,9 @@ function ReviewCard({
         <VirtualList
           estimateSize={200}
           items={plans}
-          renderItem={(p) => (
+          renderItem={(p) => {
+          const comment = planCommentFor(comments, p.id);
+          return (
             <div
               className="rounded-sm border border-slate-200 p-3 shadow-sm transition-colors duration-150 hover:border-slate-300 focus-within:border-orange-300 focus-within:bg-orange-50/20"
               key={p.id}
@@ -4125,7 +4204,7 @@ function ReviewCard({
                 <div className="min-w-0">
                   <p className="font-black text-slate-900">{p.employeeDisplayName || p.employeeName}</p>
                   <p className="text-xs font-semibold text-slate-500">
-                    {p.planKind} {p.periodKey} — {statusLabels[p.status]}
+                    {planHeadingLabel(p.planKind, p.periodStartDate, p.periodEndDate)} — {statusLabels[p.status]}
                   </p>
                   {p.offWindowFlagged ? (
                     <div className="mt-1">
@@ -4144,7 +4223,7 @@ function ReviewCard({
               </div>
               <textarea
                 className={cn(phxTextareaClassName, "mt-3 min-h-20")}
-                onChange={(e) => onComment(e.target.value)}
+                onChange={(e) => onComment(p.id, e.target.value)}
                 placeholder={
                   type === "hr"
                     ? "Acknowledgement note"
@@ -4159,7 +4238,7 @@ function ReviewCard({
                   {p.items.map((item) => (
                     <label className="block" key={item.id}>
                       <span className="block text-xs font-black text-slate-600">
-                        {formatDate(item.activityDate)} — {item.activityTitle}
+                        {formatDate(item.activityDate)} · {planRowPartLabel(item)} — {item.activityTitle}
                       </span>
                       <input
                         className={cin}
@@ -4283,7 +4362,8 @@ function ReviewCard({
                 ) : null}
               </div>
             </div>
-          )}
+          );
+          }}
         />
       </div>
       {/* F1 — Sticky bulk approve bar for manager type */}
@@ -4296,8 +4376,13 @@ function ReviewCard({
             disabled={isPending}
             onClick={() => {
               const ids = Array.from(selectedIds);
-              onBulkApprove(ids);
-              setSelectedIds(new Set());
+              onBulkApprove(ids, (approvedIds) =>
+                setSelectedIds((current) => {
+                  const next = new Set(current);
+                  for (const id of approvedIds) next.delete(id);
+                  return next;
+                }),
+              );
             }}
           >
             <CheckCircle2 className="mr-2 h-4 w-4" />

@@ -2,12 +2,13 @@ import ExcelJS from "exceljs";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 
 import { PHOENIX_RAIL_MARK_PNG_BASE64 } from "@/lib/export/phoenix-pdf-assets";
+import { activityDisplayLabel, planSlotLabel } from "@/lib/weekly-planning/calendar";
 import type { EmployeePlan } from "@/lib/weekly-planning/service";
 
 // Premium Phoenix-identity exporters for weekly / monthly plans.
 //
 // Both formats reproduce the on-screen workspace: one polished card per plan with
-// a dark brand band, the Date · Type · Region · Area · Medical Rep day grid, the
+// a dark brand band, the Date · Part · Type · Region · Area · Medical Rep day grid, the
 // orange date spine, and the orange-tinted Notes strip under each day. Colours and
 // layout mirror src/components/employee-portal/plans-workspace.tsx so a printed /
 // downloaded plan looks exactly like what the user approved on screen.
@@ -92,7 +93,43 @@ function statusToneKey(status: string): StatusToneKey {
   return "slate";
 }
 
-type PlanItem = EmployeePlan["items"][number];
+export type PlanItem = EmployeePlan["items"][number];
+
+/**
+ * Break text into lines that each fit `maxWidth`, never cutting any of it.
+ *
+ * Words wrap at spaces; a single word wider than the line (a long unbroken name or address) is
+ * split across lines instead of overflowing the cell or being clipped with an ellipsis, so the
+ * letters a planner typed are the letters on the page, in order. `measure` is the width of a string
+ * in whatever unit `maxWidth` uses, which keeps this free of the PDF library and testable alone.
+ */
+export function wrapTextToWidth(value: string, measure: (text: string) => number, maxWidth: number): string[] {
+  const text = compactText(value);
+  if (!text) return [];
+  const lines: string[] = [];
+  let current = "";
+  for (const word of text.split(" ")) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (measure(candidate) <= maxWidth) {
+      current = candidate;
+      continue;
+    }
+    if (current) {
+      lines.push(current);
+      current = "";
+    }
+    let rest = word;
+    while (rest.length > 1 && measure(rest) > maxWidth) {
+      let cut = rest.length - 1;
+      while (cut > 1 && measure(rest.slice(0, cut)) > maxWidth) cut -= 1;
+      lines.push(rest.slice(0, cut));
+      rest = rest.slice(cut);
+    }
+    current = rest;
+  }
+  if (current) lines.push(current);
+  return lines;
+}
 
 /** Resolve the Medical Rep label exactly as the workspace grid shows it. */
 function medicalRepDisplay(item: PlanItem, options: PlanExportRepOption[] | undefined) {
@@ -130,6 +167,49 @@ function planItems(plan: EmployeePlan): PlanItem[] {
       visitDetails: [],
     },
   ];
+}
+
+/**
+ * The text of one plan day as both exports print it.
+ *
+ * `part` is the half of the day, spelled exactly as the planning calendar, the planner and the
+ * approval email spell it (`planSlotLabel`: AM, PM, Full day, or the two clock times of an odd
+ * slot) — without it a day split into a morning and an afternoon row printed two lines that
+ * differed in nothing the reader could see. `type` is the label the planner and the calendar show
+ * (`activityDisplayLabel`), not the stored type: "Field" is a Single Visit to everyone but the
+ * database.
+ */
+export type PlanItemExportCells = {
+  area: string;
+  date: string;
+  day: string;
+  medicalRep: string;
+  notes: string;
+  part: string;
+  region: string;
+  type: string;
+};
+
+export function planItemExportCells(item: PlanItem, repOptions: PlanExportRepOption[] | undefined): PlanItemExportCells {
+  const returnNotesText = item.returnNotes
+    .map((note) => `↩ ${note.actorRole ?? "Reviewer"}: ${note.note}`)
+    .join("\n");
+  return {
+    area: compactText(item.area),
+    date: formatDayDate(item.activityDate),
+    day: formatDayName(item.activityDate),
+    medicalRep: medicalRepDisplay(item, repOptions),
+    notes: [compactText(item.notes), returnNotesText].filter(Boolean).join("\n"),
+    part: planSlotLabel(item.startTime, item.endTime),
+    region: compactText(item.locationText),
+    type: activityDisplayLabel(item.activityType, item.activityTitle),
+  };
+}
+
+/** Rough count of the lines a cell needs at an Excel column width (about one character per width unit, less the indent). */
+function estimateWrappedLines(text: string, columnWidth: number): number {
+  const usable = Math.max(1, columnWidth - 2);
+  return text.split("\n").reduce((total, line) => total + Math.max(1, Math.ceil(line.length / usable)), 0);
 }
 
 // ===========================================================================
@@ -171,16 +251,20 @@ const X_TONE: Record<StatusToneKey, { fill: string; text: string }> = {
 };
 
 const XLSX_COLUMNS = [
-  { label: "Day", width: 10, accent: X.slate300 },
-  { label: "Date", width: 13, accent: X.slate300 },
-  { label: "Type", width: 16, accent: X.sky400 },
-  { label: "Region", width: 22, accent: X.emerald400 },
-  { label: "Area", width: 20, accent: X.orange400 },
-  { label: "Medical Rep", width: 30, accent: X.violet400 },
-  { label: "Notes", width: 52, accent: X.orange400 },
-] as const;
+  { key: "day", label: "Day", width: 10, accent: X.slate300 },
+  { key: "date", label: "Date", width: 13, accent: X.slate300 },
+  { key: "part", label: "Part", width: 11, accent: X.slate300 },
+  { key: "type", label: "Type", width: 16, accent: X.sky400 },
+  { key: "region", label: "Region", width: 22, accent: X.emerald400 },
+  { key: "area", label: "Area", width: 20, accent: X.orange400 },
+  { key: "medicalRep", label: "Medical Rep", width: 30, accent: X.violet400 },
+  { key: "notes", label: "Notes", width: 52, accent: X.orange400 },
+] as const satisfies ReadonlyArray<{ key: keyof PlanItemExportCells; label: string; width: number; accent: string }>;
 
 const XLSX_COL_COUNT = XLSX_COLUMNS.length;
+// The plan bands above the grid are split in two: the owner on the left across Day to Region, the
+// period or status on the right across Area to Notes.
+const XLSX_BAND_SPLIT = 5;
 
 function fill(color: string): ExcelJS.Fill {
   return { type: "pattern", pattern: "solid", fgColor: { argb: color } };
@@ -272,18 +356,17 @@ function writePlanCardXlsx(
   let row = startRow;
 
   // --- Plan meta band (employee + period) -----------------------------------
-  sheet.mergeCells(row, 1, row, 4);
-  sheet.mergeCells(row, 5, row, XLSX_COL_COUNT);
+  sheet.mergeCells(row, 1, row, XLSX_BAND_SPLIT);
+  sheet.mergeCells(row, XLSX_BAND_SPLIT + 1, row, XLSX_COL_COUNT);
   const nameCell = sheet.getCell(row, 1);
   nameCell.value = {
     richText: [
-      { text: `${plan.employeeDisplayName ?? plan.employeeName}  `, font: { name: "Calibri", size: 12, bold: true, color: { argb: X.white } } },
-      { text: `HR ${plan.employeeHrId}`, font: { name: "Calibri", size: 10, color: { argb: X.slate300 } } },
+      { text: plan.employeeDisplayName ?? plan.employeeName, font: { name: "Calibri", size: 12, bold: true, color: { argb: X.white } } },
     ],
   };
   nameCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
   nameCell.fill = fill(X.slate900);
-  const periodCell = sheet.getCell(row, 5);
+  const periodCell = sheet.getCell(row, XLSX_BAND_SPLIT + 1);
   periodCell.value = `${plan.planKind === "weekly" ? "Weekly" : "Monthly"} · ${plan.periodKey}`;
   periodCell.font = { name: "Calibri", size: 11, bold: true, color: { argb: X.orange400 } };
   periodCell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
@@ -292,15 +375,15 @@ function writePlanCardXlsx(
   row += 1;
 
   // --- Plan meta sub-band (manager + status) --------------------------------
-  sheet.mergeCells(row, 1, row, 4);
-  sheet.mergeCells(row, 5, row, XLSX_COL_COUNT);
+  sheet.mergeCells(row, 1, row, XLSX_BAND_SPLIT);
+  sheet.mergeCells(row, XLSX_BAND_SPLIT + 1, row, XLSX_COL_COUNT);
   const mgrCell = sheet.getCell(row, 1);
   mgrCell.value = `Manager: ${plan.managerDisplayName ?? plan.managerName ?? "—"}    ·    Revision ${plan.revision}`;
   mgrCell.font = { name: "Calibri", size: 10, color: { argb: X.slate300 } };
   mgrCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
   mgrCell.fill = fill(X.slate800);
   const tone = X_TONE[statusToneKey(plan.status)];
-  const statusCell = sheet.getCell(row, 5);
+  const statusCell = sheet.getCell(row, XLSX_BAND_SPLIT + 1);
   statusCell.value = statusLabel(plan.status);
   statusCell.font = { name: "Calibri", size: 10, bold: true, color: { argb: tone.text } };
   statusCell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
@@ -326,31 +409,20 @@ function writePlanCardXlsx(
   items.forEach((item, index) => {
     const dataRow = sheet.getRow(row);
     const zebra = index % 2 === 1;
-    const returnNotesText = item.returnNotes
-      .map((note) => `↩ ${note.actorRole ?? "Reviewer"}: ${note.note}`)
-      .join("\n");
-    const notes = [compactText(item.notes), returnNotesText].filter(Boolean).join("\n");
+    const cells = planItemExportCells(item, repOptions);
 
-    const values = [
-      formatDayName(item.activityDate),
-      formatDayDate(item.activityDate),
-      item.activityType,
-      compactText(item.locationText),
-      compactText(item.area),
-      medicalRepDisplay(item, repOptions),
-      notes,
-    ];
-
-    values.forEach((value, colIndex) => {
+    XLSX_COLUMNS.forEach((col, colIndex) => {
       const cell = dataRow.getCell(colIndex + 1);
-      cell.value = value;
+      cell.value = cells[col.key];
       cell.border = thinGrid();
-      cell.alignment = { vertical: "middle", horizontal: "left", indent: 1, wrapText: colIndex === XLSX_COL_COUNT - 1 };
-      if (colIndex === 0) {
+      // Day and Date stay on one line; everything else wraps inside its cell instead of being clipped.
+      const wraps = col.key !== "day" && col.key !== "date";
+      cell.alignment = { vertical: "middle", horizontal: "left", indent: 1, wrapText: wraps };
+      if (col.key === "day") {
         cell.font = { name: "Calibri", size: 9, bold: true, color: { argb: X.orange600 } };
-      } else if (colIndex === 1) {
+      } else if (col.key === "date") {
         cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: X.slate700 } };
-      } else if (colIndex === 5 && item.activityType === "Double Visit") {
+      } else if (col.key === "medicalRep" && item.activityType === "Double Visit") {
         cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: X.violet700 } };
       } else {
         cell.font = { name: "Calibri", size: 10, color: { argb: X.slate700 } };
@@ -370,8 +442,9 @@ function writePlanCardXlsx(
       left: { style: "medium", color: { argb: X.orange500 } },
     } as ExcelJS.Borders;
 
-    const noteLines = notes ? notes.split("\n").length : 1;
-    dataRow.height = Math.max(20, noteLines * 14 + 4);
+    // Excel does not size a row to its wrapped text on its own, so estimate the tallest cell.
+    const tallest = XLSX_COLUMNS.reduce((acc, col) => Math.max(acc, estimateWrappedLines(cells[col.key], col.width)), 1);
+    dataRow.height = Math.max(20, tallest * 14 + 4);
     row += 1;
   });
 
@@ -434,14 +507,23 @@ const MARGIN = 34;
 const CONTENT_W = PAGE_W - MARGIN * 2;
 const BOTTOM = MARGIN + 18; // reserve space for footer
 
-// Date · Type · Region · Area · Medical Rep (mirrors the workspace grid).
+// Date · Part · Type · Region · Area · Medical Rep (mirrors the workspace grid). Part (AM / PM /
+// Full day) takes its own narrow column so a day split in two reads as two halves; the other
+// columns give up a little width for it and wrap their text, so the row grows instead of the type
+// shrinking or the text being cut.
 const PDF_COLS = [
-  { label: "Date", width: 68, accent: P.slate400 },
-  { label: "Type", width: 84, accent: P.sky400 },
-  { label: "Region", width: 118, accent: P.emerald400 },
-  { label: "Area", width: 110, accent: P.orange400 },
-  { label: "Medical Rep", width: CONTENT_W - 68 - 84 - 118 - 110, accent: P.violet400 },
+  { label: "Date", width: 62, accent: P.slate400 },
+  { label: "Part", width: 50, accent: P.slate400 },
+  { label: "Type", width: 82, accent: P.sky400 },
+  { label: "Region", width: 102, accent: P.emerald400 },
+  { label: "Area", width: 96, accent: P.orange400 },
+  { label: "Medical Rep", width: CONTENT_W - 62 - 50 - 82 - 102 - 96, accent: P.violet400 },
 ];
+const PDF_COL = { date: 0, part: 1, type: 2, region: 3, area: 4, rep: 5 } as const;
+const CELL_PAD = 6; // left and right padding inside a day-row cell
+const CELL_SIZE = 9; // day-row cell type size
+const CELL_LINE = 11; // line pitch of a wrapped day-row cell
+const ROW_MIN_H = 26; // a one-line day row, the height every row had before cells wrapped
 
 export async function buildEmployeePlansPdf(
   plans: EmployeePlan[],
@@ -570,34 +652,11 @@ class PdfRenderer {
     this.page.drawText(asciiSafe(value), { x, y, size: opts.size, font: opts.font, color: opts.color });
   }
 
-  private truncate(value: string, font: PDFFont, size: number, maxW: number) {
-    const safe = asciiSafe(value);
-    if (!safe) return "";
-    if (font.widthOfTextAtSize(safe, size) <= maxW) return safe;
-    let out = safe;
-    while (out.length > 1 && font.widthOfTextAtSize(`${out}...`, size) > maxW) {
-      out = out.slice(0, -1);
-    }
-    return `${out.trim()}...`;
-  }
-
+  // Text is wrapped, never cut: a cell that does not fit on one line takes more lines, and the row
+  // grows to hold them (see drawDayRow). A word wider than the cell is split rather than left to
+  // run into the next column.
   private wrap(value: string, font: PDFFont, size: number, maxW: number): string[] {
-    const safe = asciiSafe(value);
-    if (!safe) return [];
-    const words = safe.split(" ");
-    const lines: string[] = [];
-    let current = "";
-    for (const word of words) {
-      const candidate = current ? `${current} ${word}` : word;
-      if (font.widthOfTextAtSize(candidate, size) <= maxW || !current) {
-        current = candidate;
-      } else {
-        lines.push(current);
-        current = word;
-      }
-    }
-    if (current) lines.push(current);
-    return lines;
+    return wrapTextToWidth(asciiSafe(value), (text) => font.widthOfTextAtSize(text, size), maxW);
   }
 
   private ensure(height: number, redraw?: () => void) {
@@ -626,13 +685,10 @@ class PdfRenderer {
     const h1 = 24;
     this.page.drawRectangle({ x: MARGIN, y: this.y - h1, width: CONTENT_W, height: h1, color: P.slate900 });
     const nameY = this.y - 16;
-    this.text(plan.employeeDisplayName ?? plan.employeeName, MARGIN + 10, nameY, { size: 11, font: this.bold, color: P.white });
-    const nameW = this.bold.widthOfTextAtSize(asciiSafe(plan.employeeDisplayName ?? plan.employeeName), 11);
-    this.text(`HR ${plan.employeeHrId}`, MARGIN + 10 + nameW + 8, nameY, {
-      size: 9,
-      font: this.font,
-      color: P.slate300,
-    });
+    // The Helvetica standard font cannot draw Arabic, so a name with no Latin letters would print as
+    // nothing at all; the neutral word keeps the band from reading as an empty card.
+    const ownerName = asciiSafe(plan.employeeDisplayName ?? plan.employeeName) || "Employee";
+    this.text(ownerName, MARGIN + 10, nameY, { size: 11, font: this.bold, color: P.white });
     const period = `${plan.planKind === "weekly" ? "Weekly" : "Monthly"}  ·  ${plan.periodKey}`;
     const periodW = this.bold.widthOfTextAtSize(asciiSafe(period), 10);
     this.text(period, MARGIN + CONTENT_W - periodW - 10, nameY, {
@@ -708,8 +764,24 @@ class PdfRenderer {
     index: number,
     repOptions: PlanExportRepOption[] | undefined,
   ) {
-    const rowH = 26;
     const hasReturn = item.returnNotes.length > 0;
+
+    // Every cell wraps inside its column, and the row is as tall as its tallest cell: a one-line row
+    // is the 26pt it always was, and each extra line adds one line pitch. Nothing is cut, and the
+    // columns keep their widths, so the grid still ends at the right margin.
+    const cells = planItemExportCells(item, repOptions);
+    const cellLinesFor = (text: string, col: number) =>
+      this.wrap(text || "—", this.font, CELL_SIZE, PDF_COLS[col].width - CELL_PAD * 2);
+    const partLines = cellLinesFor(cells.part, PDF_COL.part);
+    const typeLines = cellLinesFor(cells.type, PDF_COL.type);
+    const regionLines = cellLinesFor(cells.region, PDF_COL.region);
+    const areaLines = cellLinesFor(cells.area, PDF_COL.area);
+    const repIsChip = item.activityType === "Double Visit" && Boolean(cells.medicalRep);
+    const repLines = repIsChip
+      ? this.wrap(cells.medicalRep, this.bold, 8, PDF_COLS[PDF_COL.rep].width - 16)
+      : cellLinesFor(cells.medicalRep, PDF_COL.rep);
+    const tallestCell = Math.max(1, partLines.length, typeLines.length, regionLines.length, areaLines.length, repLines.length);
+    const rowH = ROW_MIN_H + (tallestCell - 1) * CELL_LINE;
 
     // Compute notes block height up front so we can page-break cleanly.
     const noteText = compactText(item.notes);
@@ -723,7 +795,8 @@ class PdfRenderer {
     const visits = item.activityType === "Field" ? (item.visitDetails ?? []) : [];
     const visitCardsH = visits.reduce((acc, vd) => {
       const objLines = vd.objective ? this.wrap(vd.objective, this.font, 7.5, CONTENT_W - 28) : [];
-      return acc + 18 + objLines.length * 9 + 4;
+      const extraAddressLines = Math.max(0, this.wrap(vd.address, this.font, 8, CONTENT_W - 28).length - 1);
+      return acc + 18 + extraAddressLines * 9 + objLines.length * 9 + 4;
     }, visits.length > 0 ? 4 : 0);
 
     this.ensure(rowH + notesH + visitCardsH, () => this.drawColumnHeader());
@@ -750,54 +823,40 @@ class PdfRenderer {
       color: P.slate700,
     });
 
-    let cx = MARGIN + PDF_COLS[0].width;
-    const midY = cellTopY - 16;
+    // One wrapped cell: the first line sits where a one-line cell always sat (16pt below the row
+    // top), and each further line steps down one line pitch.
+    const drawCellLines = (lines: string[], col: number, color: ReturnType<typeof rgb>) => {
+      const x = MARGIN + PDF_COLS.slice(0, col).reduce((acc, c) => acc + c.width, 0) + CELL_PAD;
+      lines.forEach((line, lineIndex) => {
+        this.text(line, x, cellTopY - 16 - lineIndex * CELL_LINE, { size: CELL_SIZE, font: this.font, color });
+      });
+    };
 
-    // Type
-    this.text(this.truncate(item.activityType, this.font, 9, PDF_COLS[1].width - 12), cx + 6, midY, {
-      size: 9,
-      font: this.font,
-      color: P.slate700,
-    });
-    cx += PDF_COLS[1].width;
+    drawCellLines(partLines, PDF_COL.part, P.slate700);
+    drawCellLines(typeLines, PDF_COL.type, P.slate700);
+    drawCellLines(regionLines, PDF_COL.region, cells.region ? P.slate700 : P.slate400);
+    drawCellLines(areaLines, PDF_COL.area, cells.area ? P.slate700 : P.slate400);
 
-    // Region
-    this.text(this.truncate(compactText(item.locationText) || "—", this.font, 9, PDF_COLS[2].width - 12), cx + 6, midY, {
-      size: 9,
-      font: this.font,
-      color: compactText(item.locationText) ? P.slate700 : P.slate400,
-    });
-    cx += PDF_COLS[2].width;
-
-    // Area
-    this.text(this.truncate(compactText(item.area) || "—", this.font, 9, PDF_COLS[3].width - 12), cx + 6, midY, {
-      size: 9,
-      font: this.font,
-      color: compactText(item.area) ? P.slate700 : P.slate400,
-    });
-    cx += PDF_COLS[3].width;
-
-    // Medical Rep — violet chip for Double Visit, plain text otherwise
-    const repName = medicalRepDisplay(item, repOptions);
-    if (item.activityType === "Double Visit" && repName) {
-      const chipLabel = this.truncate(repName, this.bold, 8, PDF_COLS[4].width - 16);
-      const chipW = Math.min(PDF_COLS[4].width - 8, this.bold.widthOfTextAtSize(chipLabel, 8) + 12);
+    // Medical Rep — violet chip for Double Visit (as tall as its lines), plain text otherwise
+    if (repIsChip) {
+      const repX = MARGIN + PDF_COLS.slice(0, PDF_COL.rep).reduce((acc, c) => acc + c.width, 0);
+      const chipH = 4 + repLines.length * 10;
+      const widest = repLines.reduce((acc, line) => Math.max(acc, this.bold.widthOfTextAtSize(line, 8)), 0);
+      const chipW = Math.min(PDF_COLS[PDF_COL.rep].width - 8, widest + 12);
       this.page.drawRectangle({
-        x: cx + 6,
-        y: cellTopY - rowH / 2 - 7,
+        x: repX + 6,
+        y: cellTopY - 6 - chipH,
         width: chipW,
-        height: 14,
+        height: chipH,
         color: P.violet50,
         borderColor: P.violet200,
         borderWidth: 0.5,
       });
-      this.text(chipLabel, cx + 12, cellTopY - rowH / 2 - 2.5, { size: 8, font: this.bold, color: P.violet700 });
-    } else {
-      this.text(this.truncate(repName || "—", this.font, 9, PDF_COLS[4].width - 12), cx + 6, midY, {
-        size: 9,
-        font: this.font,
-        color: repName ? P.slate700 : P.slate400,
+      repLines.forEach((line, lineIndex) => {
+        this.text(line, repX + 12, cellTopY - 15.5 - lineIndex * 10, { size: 8, font: this.bold, color: P.violet700 });
       });
+    } else {
+      drawCellLines(repLines, PDF_COL.rep, cells.medicalRep ? P.slate700 : P.slate400);
     }
 
     // Bottom hairline
@@ -833,7 +892,9 @@ class PdfRenderer {
       this.y -= 4;
       for (const vd of visits) {
         const objLines = vd.objective ? this.wrap(vd.objective, this.font, 7.5, CONTENT_W - 28) : [];
-        const cardH = 18 + objLines.length * 9;
+        const addrLines = this.wrap(vd.address, this.font, 8, CONTENT_W - 28);
+        const extraAddrH = Math.max(0, addrLines.length - 1) * 9;
+        const cardH = 18 + extraAddrH + objLines.length * 9;
         this.page.drawRectangle({ x: MARGIN, y: this.y - cardH, width: CONTENT_W, height: cardH, color: hx("#F0F9FF") });
         this.page.drawRectangle({ x: MARGIN, y: this.y - cardH, width: 3, height: cardH, color: hx("#7DD3FC") });
         const nameLabel = `Dr. ${asciiSafe(vd.doctorName)}`;
@@ -848,11 +909,11 @@ class PdfRenderer {
           color: hx("#BAE6FD"),
         });
         this.text(specialityLabel, MARGIN + 14 + nameW, this.y - 11, { size: 7.5, font: this.bold, color: hx("#075985") });
-        const addrW = CONTENT_W - 28;
-        const addrText = this.truncate(asciiSafe(vd.address), this.font, 8, addrW);
-        this.text(addrText, MARGIN + 10, this.y - 19, { size: 8, font: this.font, color: hx("#0369A1") });
+        addrLines.forEach((line, lineIndex) => {
+          this.text(line, MARGIN + 10, this.y - 19 - lineIndex * 9, { size: 8, font: this.font, color: hx("#0369A1") });
+        });
         if (objLines.length > 0) {
-          let oy = this.y - 28;
+          let oy = this.y - 28 - extraAddrH;
           for (const line of objLines) {
             this.text(line, MARGIN + 10, oy, { size: 7.5, font: this.font, color: hx("#0C4A6E") });
             oy -= 9;

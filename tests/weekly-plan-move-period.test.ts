@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import {
   FIELD_WORKWEEK,
   HEAD_OFFICE_WORKWEEK,
+  movedPlanItemDate,
+  planMoveRefusal,
   planPeriodMove,
   shiftIsoDate,
 } from "../src/lib/weekly-planning/plan-v1.ts";
@@ -202,5 +204,146 @@ export function runWeeklyPlanMovePeriodTests() {
   assert.ok(
     workspaceUi.includes("{plan && workspace.canMovePlanPeriod ? ("),
     "the move control must render on canMovePlanPeriod, not on a flag that is only half the gate",
+  );
+
+  // ---- A MONTHLY plan keeps each item on the same day of the month -----------------------------
+  runMonthlyMoveTests(fn);
+}
+
+// ONE fixed day count is right for a week (every week is seven days, so each item keeps its weekday)
+// and wrong for a month: months differ in length, so the delta put Jan 29-31 into March when a plan
+// moved to February, Oct 31 on Dec 1 when it moved to November, and Mar 31 on Mar 3 when it moved to
+// February - the header said the new month while rows sat outside it. A monthly item now lands on
+// the SAME day of the destination month, and the whole move is refused (never clamped, never
+// dropped) when a day does not exist there.
+function monthlyMove(fromMonthStart: string, toMonthStart: string) {
+  const move = planPeriodMove("monthly", fromMonthStart, toMonthStart, HEAD_OFFICE_WORKWEEK);
+  const place = (activityDate: string) =>
+    movedPlanItemDate({
+      activityDate,
+      dayDelta: move.dayDelta,
+      planKind: "monthly",
+      targetPeriodStartDate: move.target.periodStartDate,
+    });
+  const refusal = (itemDates: string[]) =>
+    planMoveRefusal({ dayDelta: move.dayDelta, itemDates, planKind: "monthly", target: move.target });
+  return { move, place, refusal };
+}
+
+function runMonthlyMoveTests(moveFunctionSource: string) {
+  // January -> February 2026: the 15th moves, the 29th-31st have no place.
+  const janToFeb = monthlyMove("2026-01-01", "2026-02-10");
+  assert.equal(janToFeb.move.target.periodStartDate, "2026-02-01");
+  assert.equal(janToFeb.move.target.periodEndDate, "2026-02-28");
+  assert.equal(janToFeb.place("2026-01-15"), "2026-02-15", "Jan 15 lands on Feb 15");
+  assert.equal(janToFeb.refusal(["2026-01-01", "2026-01-15", "2026-01-28"]), null, "days 1-28 all exist in February");
+  assert.equal(janToFeb.place("2026-01-31"), null, "February has no 31st");
+  const janRefusal = janToFeb.refusal(["2026-01-31"]);
+  assert.ok(janRefusal !== null, "Jan 31 -> February is refused");
+  assert.match(janRefusal, /February 2026/, "the message names the destination month");
+  assert.match(janRefusal, /31 January 2026/, "and the date the person has to change");
+  assert.match(janRefusal, /Change that day in the plan first/, "and says what to do about it");
+  // The old whole-plan delta (+31 days) is what pushed these into March.
+  assert.equal(shiftIsoDate("2026-01-31", janToFeb.move.dayDelta), "2026-03-03", "the fixed delta misplaced Jan 31 in March");
+
+  // The whole move is refused, naming every offending date once and none of the others.
+  const mixed = janToFeb.refusal(["2026-01-05", "2026-01-29", "2026-01-30", "2026-01-31", "2026-01-31"]);
+  assert.ok(mixed !== null);
+  assert.match(mixed, /29 January 2026, 30 January 2026, 31 January 2026/);
+  assert.doesNotMatch(mixed, /5 January/, "a day that does move is not listed");
+  assert.match(mixed, /Change those days in the plan first/);
+  assert.equal((mixed.match(/31 January 2026/g) ?? []).length, 1, "a date held twice is named once");
+
+  // October -> November: days 1-30 move, the 31st has no place (the fixed delta put it on Dec 1).
+  const octToNov = monthlyMove("2026-10-01", "2026-11-01");
+  for (let day = 1; day <= 30; day += 1) {
+    const from = `2026-10-${String(day).padStart(2, "0")}`;
+    assert.equal(octToNov.place(from), `2026-11-${String(day).padStart(2, "0")}`, `${from} keeps its day of the month`);
+  }
+  assert.equal(octToNov.refusal(Array.from({ length: 30 }, (_, i) => `2026-10-${String(i + 1).padStart(2, "0")}`)), null);
+  assert.ok(octToNov.refusal(["2026-10-31"]) !== null, "Oct 31 -> November is refused");
+  assert.equal(shiftIsoDate("2026-10-31", octToNov.move.dayDelta), "2026-12-01", "the fixed delta put Oct 31 on Dec 1");
+
+  // November -> October: every November day exists in October.
+  const novToOct = monthlyMove("2026-11-01", "2026-10-15");
+  assert.equal(
+    novToOct.refusal(Array.from({ length: 30 }, (_, i) => `2026-11-${String(i + 1).padStart(2, "0")}`)),
+    null,
+  );
+  assert.equal(novToOct.place("2026-11-30"), "2026-10-30");
+
+  // March 31 -> April is refused; March 30 -> April 30 is fine; March 31 -> February is refused
+  // (the fixed delta put it on Mar 3).
+  const marToApr = monthlyMove("2026-03-01", "2026-04-01");
+  assert.ok(marToApr.refusal(["2026-03-31"]) !== null, "Mar 31 -> April is refused");
+  assert.equal(marToApr.place("2026-03-30"), "2026-04-30");
+  const marToFeb = monthlyMove("2026-03-01", "2026-02-01");
+  assert.ok(marToFeb.refusal(["2026-03-31"]) !== null, "Mar 31 -> February is refused");
+  assert.equal(shiftIsoDate("2026-03-31", marToFeb.move.dayDelta), "2026-03-03", "the fixed delta put Mar 31 on Mar 3");
+
+  // Leap years: Feb 29 exists in 2028 only.
+  const janToLeapFeb = monthlyMove("2028-01-01", "2028-02-01");
+  assert.equal(janToLeapFeb.place("2028-01-29"), "2028-02-29", "February 2028 has a 29th");
+  assert.ok(janToLeapFeb.refusal(["2028-01-30"]) !== null);
+  const febToMar = monthlyMove("2028-02-01", "2028-03-01");
+  assert.equal(febToMar.place("2028-02-29"), "2028-03-29");
+  const febToJan2027 = monthlyMove("2027-01-01", "2027-02-01");
+  assert.ok(febToJan2027.refusal(["2027-01-29"]) !== null, "February 2027 has no 29th");
+
+  // Exhaustive over three years: a monthly item either lands on the SAME day inside the destination
+  // month, or the move is refused - it can never land anywhere else.
+  for (const year of [2026, 2027, 2028]) {
+    for (let fromMonth = 1; fromMonth <= 12; fromMonth += 1) {
+      for (let toMonth = 1; toMonth <= 12; toMonth += 1) {
+        if (toMonth === fromMonth) continue;
+        const fromStart = `${year}-${String(fromMonth).padStart(2, "0")}-01`;
+        const toStart = `${year}-${String(toMonth).padStart(2, "0")}-01`;
+        const { move, place, refusal } = monthlyMove(fromStart, toStart);
+        const fromDays = new Date(Date.UTC(year, fromMonth, 0)).getUTCDate();
+        for (let day = 1; day <= fromDays; day += 1) {
+          const from = `${year}-${String(fromMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+          const to = place(from);
+          if (to === null) {
+            assert.ok(refusal([from]) !== null, `${from} -> ${toStart.slice(0, 7)}: no place must mean the move is refused`);
+            continue;
+          }
+          assert.equal(refusal([from]), null, `${from} -> ${toStart.slice(0, 7)}: a placeable day must not refuse the move`);
+          assert.ok(
+            to >= move.target.periodStartDate && to <= move.target.periodEndDate,
+            `${from} must land inside ${toStart.slice(0, 7)} (landed on ${to})`,
+          );
+          assert.equal(to.slice(8), from.slice(8), `${from} must keep its day of the month (landed on ${to})`);
+        }
+      }
+    }
+  }
+
+  // WEEKLY is unchanged: one delta, weekday preserved, never refused.
+  const weekly = planPeriodMove("weekly", "2026-08-29", "2026-08-24", FIELD_WORKWEEK);
+  for (const original of ["2026-08-29", "2026-08-30", "2026-09-03"]) {
+    assert.equal(
+      movedPlanItemDate({ activityDate: original, dayDelta: weekly.dayDelta, planKind: "weekly", targetPeriodStartDate: weekly.target.periodStartDate }),
+      shiftIsoDate(original, weekly.dayDelta),
+      `${original}: a weekly item still moves by the plan's one day delta`,
+    );
+  }
+  assert.equal(
+    planMoveRefusal({ dayDelta: weekly.dayDelta, itemDates: ["2026-08-29", "2026-08-31"], planKind: "weekly", target: weekly.target }),
+    null,
+    "a weekly plan always has a place for every item",
+  );
+
+  // The service reads the items and refuses BEFORE the header moves, so a refused move writes nothing.
+  const refusalAt = moveFunctionSource.indexOf("planMoveRefusal(");
+  const headerWriteAt = moveFunctionSource.indexOf('.from("employee_plan_headers")');
+  assert.ok(refusalAt >= 0, "moveWeeklyPlanToPeriod must ask planMoveRefusal");
+  assert.ok(headerWriteAt > refusalAt, "the refusal must come before the header is re-dated, or a refused move would leave a half-written plan");
+  assert.ok(
+    moveFunctionSource.includes("throw new Error(refusal)"),
+    "a refused move must surface its message to the caller",
+  );
+  assert.ok(
+    moveFunctionSource.includes("movedPlanItemDate({"),
+    "items must be re-dated through movedPlanItemDate, not the plan's fixed day delta",
   );
 }

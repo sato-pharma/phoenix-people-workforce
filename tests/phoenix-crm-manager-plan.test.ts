@@ -7,10 +7,15 @@ import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 import { owesAWeeklyPlan } from "../src/lib/daily-deductions/no-weekly-plan-select.ts";
 import { resolveEmployeePortalNavVisibility } from "../src/lib/employee-portal/navigation.ts";
 import { PHOENIX_CRM_EMAIL_EVENT_TYPES, PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES } from "../src/lib/notifications/phoenix-crm-channel-guard.ts";
+import { fieldWeekStart, weekdayOfIsoDay } from "../src/lib/phoenix-crm/calendar.ts";
 import {
   ceoHrIdOf,
+  countManagerOutcomes,
   countsAsPlannersVisitWithRep,
   DM_SINGLE_VISIT_HALF_DAYS_MAX,
+  isManagerAskLive,
+  managerEvidenceKey,
+  managerVisitWindow,
   dmPlansInPhoenixCrmFor,
   dmSingleVisitCapError,
   flagManagerCustomer,
@@ -57,6 +62,7 @@ import type { PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
 import { accessRegistry } from "../src/lib/security/access-registry.ts";
 import { askSteps } from "../src/lib/phoenix-crm/server/manager-plan-hub.ts";
 import { managerQueuePlace } from "../src/lib/phoenix-crm/server/manager-plan-queue.ts";
+import { managerPlanRowOf } from "../src/lib/phoenix-crm/server/manager-plan-rows.ts";
 import {
   assertManagerPlanWriter,
   managerAskDeciderRole,
@@ -1146,6 +1152,138 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(functionBody(source("src/lib/phoenix-crm/server/manager-visits.ts"), "export async function logManagerVisit("), /slotId === null && writer\.kind === "dm"\) \{\s*await assertSingleVisitLogFits\(/, "an unplanned visit he logs asks the limit");
   assert.match(capSource, /\.from\("phoenix_crm_manager_visits"\)[\s\S]*singleVisitHalfOfHour\(cairoHourOf\(visit\.created_at\)\)/, "the visits he logged count, an unplanned one by the Cairo half it was logged in");
   assert.match(capSource, /slot\.kind === "single_visit"\) used\.add/, "the single-visit half-days of his plan count");
+
+  // ── The weekly-plan audit, group C (owner, 2026-10-18) ──────────────────────────────────────────
+
+  // C1 — an ask to edit is live only while its week is still a sent one.
+  for (const planStatus of ["submitted", "first_approved", "approved"] as const) {
+    assert.equal(isManagerAskLive("pending", planStatus), true, `an ask waiting on the first step is live on a ${planStatus} week`);
+    assert.equal(isManagerAskLive("first_approved", planStatus), true, `an ask waiting on the second step is live on a ${planStatus} week`);
+  }
+  for (const planStatus of ["returned", "draft", null, undefined] as const) {
+    assert.equal(isManagerAskLive("pending", planStatus), false, `an ask still open on a ${String(planStatus)} week decides nothing`);
+    assert.equal(isManagerAskLive("first_approved", planStatus), false, `a second-step ask on a ${String(planStatus)} week decides nothing`);
+  }
+  for (const closed of ["reopened", "refused", "expired", "removal_pending", "removal_first_approved", null, ""]) {
+    assert.equal(isManagerAskLive(closed, "approved"), false, `${String(closed)} is not an open edit ask`);
+  }
+
+  // The Hub's readers all ask it, so a week returned under an ask never reaches a queue, a badge or a Reopen.
+  const queueSource = source("src/lib/phoenix-crm/server/manager-plan-queue.ts");
+  assert.match(functionBody(queueSource, "async function loadOpenEditAsks("), /isManagerAskLive\(ask\.status, weeks\.get\(ask\.planId\)\)/, "the queue drops an open ask whose week is no longer a sent one");
+  assert.match(functionBody(queueSource, "export async function loadManagerOwnRequests("), /isManagerAskLive\(ask\.status, weekStatuses\.get\(ask\.planId\)\)/, "his own requests do not show it as still waiting");
+  assert.match(functionBody(source("src/lib/phoenix-crm/server/manager-plans.ts"), "async function buildBoard("), /isManagerAskLive\(latestAsk\.status, plan\?\.status \?\? null\)/, "the board does not say a returned week has an ask waiting");
+  assert.match(functionBody(source("src/lib/phoenix-crm/server/manager-plan-hub.ts"), "async function planDetail("), /isManagerAskLive\(ask\.status, plan\.status\)/, "the Hub detail offers no decision on such an ask");
+  for (const file of ["manager-plan-queue.ts", "manager-plan-rows.ts"]) {
+    assert.equal(/notifications\/(in-app|phoenix-crm-)/.test(stripComments(source(`src/lib/phoenix-crm/server/${file}`))), false, `${file} still imports no notice sender (the import cycle)`);
+  }
+
+  // The database half of C1 and C2: one migration replaces exactly two functions and writes no row.
+  const closesSql = stripSqlComments(
+    readFileSync(new URL("../supabase/migrations/20261018234000_phoenix_crm_manager_plan_ask_closes_with_its_week.sql", import.meta.url), "utf8"),
+  ).replace(/\r\n/g, "\n");
+  const squash = (text: string): string => text.replace(/\s+/g, " ").trim();
+  const fnText = (sql: string, fn: string): string => {
+    const start = sql.indexOf(`create or replace function public.${fn}(p jsonb)`);
+    assert.ok(start >= 0, `${fn} is defined`);
+    const end = sql.indexOf("\n$$;", start);
+    assert.ok(end > start, `${fn} ends in $$;`);
+    return sql.slice(start, end + 4);
+  };
+  const stripped = (text: string, ...cuts: RegExp[]): string => cuts.reduce((rest, cut) => rest.replace(cut, ""), text);
+
+  const newTransition = fnText(closesSql, "phoenix_crm_manager_plan_transition");
+  const closeBlock = /if v_action in \('submit', 'return'\) then\s+with closed as \([\s\S]*?from closed c;\s+end if;/;
+  const block = newTransition.match(closeBlock)?.[0] ?? "";
+  assert.ok(block !== "", "the transition closes the asks of the week it returns or re-sends");
+  const blockSql = squash(block);
+  assert.match(blockSql, /update public\.phoenix_crm_manager_plan_edit_requests r set status = 'expired', decided_at = now\(\), decided_by_hr_id = null, decided_role = 'system',/, "the ask closes as expired, by the system, exactly like the expiry pass");
+  assert.match(blockSql, /where r\.plan_id = v_plan\.id and r\.status in \('pending', 'first_approved'\)/, "only an ask still open on THIS week is closed");
+  assert.match(blockSql, /'edit_expired', 'SYSTEM', 'system', v_plan\.status, v_plan\.status, v_plan\.version/, "each closed ask writes the same event the expiry pass writes");
+  assert.ok(blockSql.includes("'week_returned'") && blockSql.includes("'week_sent_again'"), "and the event says which of the two closed it");
+  const closePos = newTransition.indexOf(block);
+  assert.ok(closePos > newTransition.indexOf("insert into public.phoenix_crm_manager_plan_events"), "it runs in the same call, after the week's own event");
+  assert.ok(closePos < newTransition.indexOf("'hr_acknowledged'"), "and before the HR acknowledgement step, so one transaction holds all of it");
+
+  // Nothing else in either function moved: take the new text away and the live predecessor is left, to the character.
+  const wider = stripSqlComments(readFileSync(new URL("../supabase/migrations/20261017213000_phoenix_crm_manager_plan_wider_writers.sql", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+  assert.equal(squash(stripped(newTransition, closeBlock)), squash(fnText(wider, "phoenix_crm_manager_plan_transition")), "the transition is the wider-writers function plus the close block and nothing else");
+
+  const newDecide = fnText(closesSql, "phoenix_crm_decide_manager_plan_edit");
+  assert.match(newDecide, /hr_acknowledged_at = null,\s+hr_acknowledged_by_hr_id = null,\s+version = pl\.version \+ 1,/, "a reopen clears HR's automatic acknowledgement of the approval it undoes");
+  assert.equal(
+    squash(stripped(newDecide, /hr_acknowledged_at = null,\s+hr_acknowledged_by_hr_id = null,\s+/)),
+    squash(fnText(stripSqlComments(readFileSync(new URL("../supabase/migrations/20261017120000_phoenix_crm_manager_asks_second_approval.sql", import.meta.url), "utf8")).replace(/\r\n/g, "\n"), "phoenix_crm_decide_manager_plan_edit")),
+    "the decision is the second-approval function plus the two cleared columns and nothing else",
+  );
+  const outsideBodies = closesSql.replace(/create or replace function[\s\S]*?\n\$\$;/g, "");
+  assert.equal(/\b(insert|update|delete|alter|drop|truncate|create table|create index)\b/i.test(outsideBodies), false, "outside the two functions the migration changes no row, table or index");
+  assert.equal((closesSql.match(/create or replace function/g) ?? []).length, 2, "it replaces exactly two functions");
+  for (const fn of ["phoenix_crm_manager_plan_transition", "phoenix_crm_decide_manager_plan_edit"]) {
+    const text = fnText(closesSql, fn);
+    assert.match(text.slice(0, 250), /security definer/, `${fn} stays SECURITY DEFINER`);
+    assert.match(text.slice(0, 250), /set search_path to 'public'/, `${fn} keeps its fixed search path`);
+    assert.ok(closesSql.includes(`revoke execute on function public.${fn}(jsonb) from public, anon, authenticated;`), `${fn} stays revoked from the browser roles`);
+    assert.ok(closesSql.includes(`grant execute on function public.${fn}(jsonb) to service_role;`), `${fn} stays the service role's`);
+  }
+  assert.equal(/grant [^;]* to (anon|authenticated)\b/i.test(closesSql), false, "nothing is granted to a browser role");
+  assert.equal(closesSql.includes("phoenix_crm_manager_visits"), false, "the migration reads and writes no visit");
+
+  // C2 — the stamp is read only on an approved week, so a reopened or returned one can never read as acknowledged.
+  const planRaw = { id: "p-1", manager_hr_id: "B-155", week_start: "2026-10-24", hr_acknowledged_at: "2026-10-26T08:00:00Z" };
+  assert.equal(managerPlanRowOf({ ...planRaw, status: "approved" })?.hrAcknowledgedAt, "2026-10-26T08:00:00Z", "an approved week keeps its acknowledgement");
+  for (const status of ["draft", "submitted", "first_approved", "returned"]) {
+    assert.equal(managerPlanRowOf({ ...planRaw, status })?.hrAcknowledgedAt, null, `a ${status} week reads as not acknowledged`);
+  }
+
+  // C3 — a Friday visit is outside no week: the limit and the report read one window, Saturday through Friday.
+  assert.deepEqual(managerVisitWindow("2026-10-17"), { from: "2026-10-17", to: "2026-10-23" }, "the window is seven days from the Saturday");
+  assert.equal(weekdayOfIsoDay(managerVisitWindow("2026-10-17").to), 5, "and ends on the Friday");
+  assert.equal(fieldWeekStart("2026-10-23"), "2026-10-17", "that Friday belongs to the field week the window opens");
+  assert.equal(fieldWeekStart("2026-10-24"), "2026-10-24", "and the next Saturday opens the next window");
+  const reportSource = source("src/lib/phoenix-crm/server/manager-plan-report.ts");
+  for (const [name, text] of [["the cap", capSource], ["the report", reportSource]] as const) {
+    assert.ok(text.includes("managerVisitWindow(") && text.includes("managerVisitWindow,"), `${name} reads its visits over the shared window`);
+    assert.equal(/addDaysIso\([^)]*,\s*5\)/.test(stripComments(text)), false, `${name} does not hand-roll a Thursday-ending visit window`);
+  }
+  assert.match(reportSource, /loadManagerVisits\(managers, managerVisitWindow\(weekStart\), isTest\)/, "the report's visits are read over it");
+  assert.match(reportSource, /const weekEnd = managerVisitWindow\(weekStart\)\.to;/, "and so are the visits a rep logged with a manager");
+  assert.match(capSource, /\.gte\("visit_date", visitDays\.from\)\s*\.lte\("visit_date", visitDays\.to\)/, "the limit's visits too");
+  assert.equal(/export function managerVisitWindow/.test(source("src/lib/phoenix-crm/server/manager-visits.ts")), false, "there is one window, not a second one beside it");
+  assert.equal(weekdayOfIsoDay("2026-10-23"), 5, "Friday is still not a planning day");
+
+  // C4 and C5 — the report's counts: a customer who left the list is listed but owed nothing, and one visit answers a customer once.
+  const row = (outcome: "done" | "not_done" | "open" | "ahead" | "not_checkable", evidenceKey: string | null, gone = false) => ({ outcome, gone, evidenceKey });
+  assert.deepEqual(countManagerOutcomes([]), { planned: 0, done: 0, notDone: 0 }, "an empty week counts nothing");
+  assert.deepEqual(
+    countManagerOutcomes([row("done", "a"), row("not_done", "b"), row("open", "c"), row("ahead", "d"), row("not_checkable", null)]),
+    { planned: 4, done: 1, notDone: 1 },
+    "done, not done, open and ahead are planned; an admin half-day is counted nowhere",
+  );
+  assert.deepEqual(countManagerOutcomes([row("not_done", "a", true), row("done", "b", true), row("open", "c", true), row("done", "d")]), { planned: 1, done: 1, notDone: 0 }, "a customer who left the list is in none of the three counts, however his row reads");
+  assert.deepEqual(countManagerOutcomes([row("done", "own|2026-10-26|c:1"), row("done", "own|2026-10-26|c:1")]), { planned: 1, done: 1, notDone: 0 }, "the same customer in both halves of one day, visited, is one done");
+  assert.deepEqual(countManagerOutcomes([row("not_done", "own|2026-10-26|c:1"), row("not_done", "own|2026-10-26|c:1")]), { planned: 1, done: 0, notDone: 1 }, "and unvisited is one missed, never two");
+  assert.deepEqual(countManagerOutcomes([row("done", "own|2026-10-26|c:1"), row("done", "own|2026-10-27|c:1")]), { planned: 2, done: 2, notDone: 0 }, "the same customer on two different days is two visits");
+  assert.deepEqual(countManagerOutcomes([row("done", "own|2026-10-26|c:1"), row("done", "own|2026-10-26|c:2")]), { planned: 2, done: 2, notDone: 0 }, "two customers in one day are two visits");
+  assert.deepEqual(countManagerOutcomes([row("open", null), row("open", null)]), { planned: 2, done: 0, notDone: 0 }, "rows that can share no evidence are never merged");
+  assert.deepEqual(countManagerOutcomes([row("done", "k", true), row("done", "k")]), { planned: 1, done: 1, notDone: 0 }, "a gone row does not use up the key a live row counts under");
+
+  const evidence = (kind: "with_rep" | "single_visit" | "admin", over: Partial<{ repSeatId: string | null; customerId: string | null; managerCustomerId: string | null }> = {}) =>
+    managerEvidenceKey({ kind, repSeatId: "S-1", date: "2026-10-26", customerId: "c1", managerCustomerId: null, ...over });
+  assert.equal(evidence("single_visit"), evidence("single_visit"), "a customer's single visit has one key however many halves he is in");
+  assert.notEqual(evidence("single_visit"), evidence("single_visit", { customerId: "c2" }), "another customer has another");
+  assert.equal(evidence("single_visit", { customerId: null, managerCustomerId: "m1" }), "own|2026-10-26|m:m1", "Manager's own customer is keyed by himself");
+  assert.equal(evidence("with_rep"), "rep|S-1|2026-10-26|c1", "a with-rep customer is keyed by seat, day and customer");
+  assert.notEqual(evidence("with_rep"), evidence("with_rep", { repSeatId: "S-2" }), "a second rep's visit is another visit");
+  assert.notEqual(evidence("with_rep"), evidence("single_visit"), "his own visit never answers a rep's");
+  assert.equal(evidence("with_rep", { repSeatId: null }), null, "a with-rep row with no rep shares nothing");
+  assert.equal(evidence("admin"), null, "an admin half-day shares nothing");
+  assert.equal(evidence("single_visit", { customerId: null, managerCustomerId: null }), null, "and neither does a single visit with no customer");
+
+  assert.match(reportSource, /\{ \.\.\.countManagerOutcomes\(countRows\), unplanned: unplanned\.length \}/, "the report counts through the one pure function");
+  assert.equal(/summary\.(planned|done|notDone) \+= 1/.test(stripComments(reportSource)), false, "and no longer counts rows by hand");
+  assert.match(reportSource, /gone: row\.gone,/, "a customer who left the list is handed to it as gone");
+  assert.match(reportSource, /name: row\.name,\s+own: row\.managerCustomerId !== null,/, "while every row is still listed");
 
   // ── A rep still in the OLD CRM: his plan on the board, and his week approved (owner, 2026-10-17) ───
 

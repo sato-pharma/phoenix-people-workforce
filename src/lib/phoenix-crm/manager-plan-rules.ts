@@ -100,6 +100,19 @@ export function singleVisitHalfOfHour(cairoHour: number): ManagerHalf {
 }
 
 /**
+ * 🔴 THE DAYS A WEEK'S OWN SINGLE VISITS ARE COUNTED OVER — Saturday through FRIDAY, from this one place.
+ * The limit below (`manager-single-visit-cap.ts`) and the actual-versus-planned report
+ * (`manager-plan-report.ts`) both read his logged visits over it, so they cannot disagree about which
+ * visits belong to a week. A week is PLANNED Saturday to Thursday, but a visit can be LOGGED on any day, and a
+ * Friday belongs to the field week before it (`fieldWeekStart`): a window that stopped at Thursday counted a
+ * Friday visit in neither the limit nor any report. Friday is still not a planning day, and a Friday visit is
+ * never refused — real extra work happens then — it is simply counted in the week it belongs to.
+ */
+export function managerVisitWindow(weekStart: string): { from: string; to: string } {
+  return { from: weekStart, to: addDaysIso(weekStart, 6) };
+}
+
+/**
  * Whether one more half-day of single visits fits the week. `used` holds the half-days the week already
  * spends on them (planned ones and visits already logged); one that is among them is no new half-day.
  * Null when it fits, else the words he is shown.
@@ -673,6 +686,18 @@ export function managerAskStage(status: unknown): ManagerPlanStage | null {
   return null;
 }
 
+/**
+ * 🔴 AN ASK TO EDIT A SENT WEEK IS LIVE ONLY WHILE THAT WEEK IS STILL A SENT ONE. Its Reopen is allowed on a
+ * submitted, first-approved or approved week and nowhere else, so an ask still open on a week the approver
+ * RETURNED (or that is a draft again) can decide nothing. The database closes such an ask in the transition
+ * that returns or re-sends the week (20261018234000); every Hub reader asks this too, so a row the database
+ * has not closed yet — or an old one — never reaches an approver's queue or shows a Reopen that would fail.
+ * Edit asks only: an own-list removal does not hang on a week, so a removal's status never matches here.
+ */
+export function isManagerAskLive(askStatus: unknown, planStatus: ManagerPlanStatus | null | undefined): boolean {
+  return (askStatus === "pending" || askStatus === "first_approved") && isManagerPlanSent(planStatus ?? null);
+}
+
 /** The person a week waits on, or null when it waits on nobody (a draft is his own, approved is closed). */
 export function managerPlanWaitingOn(input: {
   status: ManagerPlanStatus | null;
@@ -837,6 +862,61 @@ export function managerOutcomeLabel(outcome: ManagerOutcome): string {
 }
 
 export type ManagerPlanSummary = { planned: number; done: number; notDone: number; unplanned: number };
+
+/**
+ * What would make one planned customer DONE, as a key: the same key means the same visit. A with-a-rep
+ * customer is answered by the rep's visit on that customer that day (seat, day and customer); a single-visit
+ * customer by the visit HE logged that day on that customer. Null when nothing can share it (an admin
+ * half-day, a with-rep row that names no customer).
+ */
+export function managerEvidenceKey(input: {
+  kind: ManagerSlotKind;
+  repSeatId: string | null;
+  date: string;
+  customerId: string | null;
+  managerCustomerId: string | null;
+}): string | null {
+  if (input.kind === "with_rep") return input.repSeatId && input.customerId ? `rep|${input.repSeatId}|${input.date}|${input.customerId}` : null;
+  if (input.kind === "single_visit") {
+    if (input.customerId) return `own|${input.date}|c:${input.customerId}`;
+    return input.managerCustomerId ? `own|${input.date}|m:${input.managerCustomerId}` : null;
+  }
+  return null;
+}
+
+/** One planned customer of a sent week, as the report's counts read it. */
+export type ManagerCountRow = {
+  outcome: ManagerOutcome;
+  /** The customer has since left the list (a rep's) or come off Manager's own list. */
+  gone: boolean;
+  /** `managerEvidenceKey`: rows sharing one are answered by one visit. */
+  evidenceKey: string | null;
+};
+
+/**
+ * 🔴 THE REPORT'S THREE COUNTS — planned, done and not done — from the rows of a sent week. Two rows that
+ * are about the SAME PIECE OF EVIDENCE count once: a customer ticked in both halves of one day is one visit
+ * to make (his single visit is keyed by day and customer, the rep's by seat, day and customer), so a visit
+ * that marks both rows Done is one done, and none is one missed, never two. A customer who has since left
+ * the list — a rep dropped him, or he came off Manager's own list — is still LISTED, with his flag, but is
+ * no longer owed a visit: he is in none of the three counts. An admin half-day is not checkable and is
+ * counted nowhere. The rows keep their own outcome for display; only the counts merge them.
+ */
+export function countManagerOutcomes(rows: ReadonlyArray<ManagerCountRow>): Pick<ManagerPlanSummary, "planned" | "done" | "notDone"> {
+  const seen = new Set<string>();
+  const counts = { planned: 0, done: 0, notDone: 0 };
+  for (const row of rows) {
+    if (row.outcome === "not_checkable" || row.gone) continue;
+    if (row.evidenceKey !== null) {
+      if (seen.has(row.evidenceKey)) continue;
+      seen.add(row.evidenceKey);
+    }
+    counts.planned += 1;
+    if (row.outcome === "done") counts.done += 1;
+    if (row.outcome === "not_done") counts.notDone += 1;
+  }
+  return counts;
+}
 
 /** "Planned 12 · done 9" — with the unplanned single visits named apart when there are any. */
 export function managerPlanSummaryText(summary: ManagerPlanSummary): string {

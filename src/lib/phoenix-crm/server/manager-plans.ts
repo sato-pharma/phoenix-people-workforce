@@ -31,6 +31,7 @@ import {
   findManagerPlanScope,
   flagManagerCustomer,
   halfOfListType,
+  isManagerAskLive,
   isManagerDayOpen,
   isManagerPlanStatus,
   isManagerPlanWeek,
@@ -554,8 +555,9 @@ async function buildBoard(
 
   const latestAsk = asks[0] ?? null;
   // An ask is open at either of its two steps: with the regional manager, then with the NSM above him.
-  const editAsked = latestAsk ? managerAskStage(latestAsk.status) !== null : false;
-  const askWaitingOn = latestAsk ? (latestAsk.status === "pending" ? latestAsk.approverHrId : latestAsk.status === "first_approved" ? latestAsk.secondApproverHrId : null) : null;
+  // 🔴 ...and only on a week that is still a sent one: an ask left open on a returned week decides nothing.
+  const editAsked = latestAsk ? isManagerAskLive(latestAsk.status, plan?.status ?? null) : false;
+  const askWaitingOn = latestAsk && editAsked ? (latestAsk.status === "pending" ? latestAsk.approverHrId : latestAsk.status === "first_approved" ? latestAsk.secondApproverHrId : null) : null;
   const state = managerWeekState({ weekStart, cairoToday: viewer.cairoToday, status: plan?.status ?? null, editAsked });
   const canWrite = reader.mode === "own" && reader.canWrite && managerHrId === viewer.hrId;
 

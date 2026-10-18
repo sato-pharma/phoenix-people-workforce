@@ -6,12 +6,22 @@
 // those aren't in the allowlist and get silently stripped.
 
 import { bidiIsolate } from "@/emails/bidi";
-import { planSlotLabel } from "@/lib/weekly-planning/calendar";
+import { utcDate } from "@/lib/format/cairo-datetime";
+import { activityDisplayLabel, planSlotLabel } from "@/lib/weekly-planning/calendar";
+import type { EmployeePlanActivityType } from "@/lib/weekly-planning/plan-v1";
 
 const MAX_EMAIL_PLAN_ROWS = 40;
-// Employee-supplied plan text is unbounded in the DB; cap each cell so one plan cannot
-// inflate the approval email past provider limits (Gmail clips at ~102KB).
-const MAX_CELL_CHARS = 300;
+// Employee-supplied plan text is unbounded in the DB (no length is enforced when a plan is saved),
+// and Gmail clips a message at about 102KB. So there are two safety limits, and NEITHER cuts a
+// sentence short in the middle of normal use:
+//   - one cell may hold up to 2,000 characters (a long paragraph; ordinary notes are a line or
+//     two). Past that the cell ends at a word and says, in words, that the rest is in Phoenix.
+//   - the table as a whole stops adding rows once their text passes 40,000 characters, and the
+//     "more rows" line says how many were left out. A row is shown whole or not at all.
+// Neither limit ever writes an ellipsis: three dots tell the reader nothing, a sentence does.
+const MAX_CELL_CHARS = 2000;
+const MAX_TABLE_TEXT_CHARS = 40000;
+const CELL_CONTINUES_NOTE = " (the rest is in Phoenix)";
 
 type PlanTableItem = {
   activity_date: string;
@@ -54,14 +64,62 @@ function clean(value: string | null | undefined) {
   // Strip explicit directional override/isolate characters - the HTML path re-isolates
   // safely via escapeCell, and the text projection has no other defense.
   const trimmed = String(value ?? "").replace(/[‪-‮⁦-⁩]/g, "").trim();
-  return trimmed.length > MAX_CELL_CHARS ? `${trimmed.slice(0, MAX_CELL_CHARS).trimEnd()}...` : trimmed;
+  if (trimmed.length <= MAX_CELL_CHARS) return trimmed;
+  const head = trimmed.slice(0, MAX_CELL_CHARS);
+  const lastSpace = head.lastIndexOf(" ");
+  // End on a whole word when there is one in the last stretch, so the note never follows half a word.
+  const atWord = lastSpace > MAX_CELL_CHARS - 80 ? head.slice(0, lastSpace) : head;
+  return `${atWord.trimEnd()}${CELL_CONTINUES_NOTE}`;
 }
 
 function dayLabel(activityDate: string) {
   const date = new Date(`${activityDate}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return activityDate;
   const weekday = date.toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "short" });
-  return `${weekday} ${activityDate}`;
+  // `activity_date` is a DATE-ONLY value, so UTC is what keeps the calendar day from shifting.
+  return `${weekday} ${utcDate(activityDate)}`;
+}
+
+/**
+ * What the activity cell says, in the words the planner and the calendar use.
+ *
+ * `primary` is the display label (a Field day is a "Single Visit", a coaching day is "Coaching"),
+ * not the stored title and type printed side by side — that read "Single Visit / Field" and
+ * "Coaching / Other". `secondary` is the activity type only when it adds something: it is dropped
+ * when it repeats the label, and "Other" is dropped always because it names nothing.
+ */
+function activityLabels(item: PlanTableItem) {
+  const type = item.activity_type as EmployeePlanActivityType;
+  const primary = activityDisplayLabel(type, clean(item.activity_title));
+  const typeLabel = type === "Other" ? "" : activityDisplayLabel(type);
+  const secondary = typeLabel.toLowerCase() === primary.toLowerCase() ? "" : typeLabel;
+  return { primary, secondary };
+}
+
+function moreRowsText(hiddenCount: number) {
+  return `${hiddenCount} more ${hiddenCount === 1 ? "row is" : "rows are"} not shown here. Open Phoenix to see the full plan.`;
+}
+
+/** Rows to show: as many as fit both limits, always at least one, in the order they were given. */
+function visibleRowsFor(rows: PlanTableItem[]) {
+  const visible: PlanTableItem[] = [];
+  let used = 0;
+  for (const item of rows) {
+    if (visible.length >= MAX_EMAIL_PLAN_ROWS) break;
+    const weight = [
+      item.activity_title,
+      item.activity_type,
+      item.location_text,
+      item.area,
+      item.objective,
+      item.attendees,
+      item.double_visit_medical_rep_name,
+    ].reduce((total, field) => total + clean(field).length, 0);
+    if (visible.length > 0 && used + weight > MAX_TABLE_TEXT_CHARS) break;
+    visible.push(item);
+    used += weight;
+  }
+  return visible;
 }
 
 /**
@@ -142,7 +200,7 @@ export function buildPlanEmailTable(items: PlanTableItem[] | null | undefined): 
   const rows = sortedItems(items ?? []);
   if (rows.length === 0) return { html: "", text: "" };
 
-  const visible = rows.slice(0, MAX_EMAIL_PLAN_ROWS);
+  const visible = visibleRowsFor(rows);
   const hiddenCount = rows.length - visible.length;
 
   const bodyRows = visible.map((item, index) => {
@@ -154,7 +212,8 @@ export function buildPlanEmailTable(items: PlanTableItem[] | null | undefined): 
         ? `<span style="${secondaryTextStyle}">${escapeHtml(slot)}</span>`
         : "";
     const dateCell = [`<strong>${escapeHtml(dayLabel(item.activity_date))}</strong>`, slotHtml].filter(Boolean).join("<br />");
-    const activityCell = stackedCell(clean(item.activity_title) || item.activity_type, clean(item.activity_type));
+    const labels = activityLabels(item);
+    const activityCell = stackedCell(labels.primary, labels.secondary);
     const locationCell = stackedCell(clean(item.location_text), clean(item.area));
     const objectiveRaw = clean(item.objective);
     const companionsRaw = companions(item);
@@ -173,7 +232,7 @@ export function buildPlanEmailTable(items: PlanTableItem[] | null | undefined): 
   }).join("");
 
   const moreRow = hiddenCount > 0
-    ? `<tr><td colspan="4" style="border:1px solid ${BORDER};padding:10px 12px;font-size:12px;font-style:italic;text-align:center;color:${MUTED}">+ ${hiddenCount} more row(s) - open Phoenix to see the full plan.</td></tr>`
+    ? `<tr><td colspan="4" style="border:1px solid ${BORDER};padding:10px 12px;font-size:12px;font-style:italic;text-align:center;color:${MUTED}">${escapeHtml(moreRowsText(hiddenCount))}</td></tr>`
     : "";
 
   const html = [
@@ -189,10 +248,8 @@ export function buildPlanEmailTable(items: PlanTableItem[] | null | undefined): 
   ].join("");
 
   const textLines = visible.map((item) => {
-    const title = clean(item.activity_title);
-    const activityLabel = title && title.toLowerCase() !== item.activity_type.toLowerCase()
-      ? `${title} (${item.activity_type})`
-      : title || item.activity_type;
+    const labels = activityLabels(item);
+    const activityLabel = labels.secondary ? `${labels.primary} (${labels.secondary})` : labels.primary;
     const parts = [
       [dayLabel(item.activity_date), timeSlotLabel(item)].filter(Boolean).join(" "),
       activityLabel,
@@ -202,7 +259,7 @@ export function buildPlanEmailTable(items: PlanTableItem[] | null | undefined): 
     ].filter(Boolean);
     return `- ${parts.join(" | ")}`;
   });
-  if (hiddenCount > 0) textLines.push(`- ... + ${hiddenCount} more row(s) - open Phoenix to see the full plan.`);
+  if (hiddenCount > 0) textLines.push(`- ${moreRowsText(hiddenCount)}`);
 
   return { html, text: textLines.join("\n") };
 }

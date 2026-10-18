@@ -3,6 +3,8 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 
 import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import type { PlanApprovalDetail } from "@/lib/approvals-hub/service";
+import { cairoDate } from "@/lib/format/cairo-datetime";
+import { planPeriodLabel } from "@/lib/weekly-planning/plan-labels";
 import { RequestTracker } from "@/components/approvals-hub/request-tracker";
 import { PlanDecisionActions } from "@/components/approvals-hub/plan-decision-actions";
 import { PlanApproverContext } from "@/components/approvals-hub/plan-approver-context";
@@ -51,7 +53,7 @@ export function PlanRequestDetail({ detail, backHref }: Props) {
         <div>
           <h2 className="text-lg font-black text-slate-900">{detail.employeeName}</h2>
           <p className="text-sm text-slate-600">
-            {kindLabel} plan · {detail.periodKey}
+            {kindLabel} plan · {planPeriodLabel(detail.periodStartDate, detail.periodEndDate) || detail.periodKey}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -93,11 +95,13 @@ export function PlanRequestDetail({ detail, backHref }: Props) {
               <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Plan details</h3>
             </header>
             <dl className="px-4 py-2">
-              <Row label="Employee" value={`${detail.employeeName} (${detail.employeeHrId})`} />
+              <Row label="Employee" value={detail.employeeName} />
               <Row label="Job title" value={detail.employeeJobTitle} />
               <Row label="Plan type" value={`${kindLabel} plan`} />
-              <Row label="Period" value={detail.periodKey} />
-              <Row label="Submitted" value={detail.submittedAt ? new Date(detail.submittedAt).toLocaleDateString("en-GB") : "—"} />
+              <Row label="Period" value={planPeriodLabel(detail.periodStartDate, detail.periodEndDate) || detail.periodKey} />
+              {/* `submittedAt` is an INSTANT we stamped, so it is read in Cairo — this is a server component, where the
+                  platform formatter would have used UTC and put an evening submission on the day before. */}
+              <Row label="Submitted" value={cairoDate(detail.submittedAt)} />
               <Row label="Manager" value={detail.managerName} />
               <Row label="Activities" value={detail.composition.total} />
             </dl>

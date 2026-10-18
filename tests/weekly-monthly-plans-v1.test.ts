@@ -15,6 +15,14 @@ import {
   getNextEmployeePlanStatus,
   isWeeklyMonthlyPlanEligibleTitle,
 } from "../src/lib/weekly-planning/plan-v1.ts";
+import {
+  chooseRevisionTarget,
+  dropPendingRevisionsOfPlansOfRecord,
+  PERIOD_CLAIMED_MESSAGE,
+  REVISION_PENDING_MESSAGE,
+  translatePlanUniqueViolation,
+  type RevisionSibling,
+} from "../src/lib/weekly-planning/plan-revisions.ts";
 
 export function runWeeklyMonthlyPlansV1Tests() {
   assert.equal(isWeeklyMonthlyPlanEligibleTitle("Product Manager"), true);
@@ -315,4 +323,219 @@ export function runWeeklyMonthlyPlansV1Tests() {
     "weekly-plans must NOT have an import route — XLSX import is deliberately out of scope",
   );
 
+  runWeeklyPlanRevisionTests();
+}
+
+// ── Amending an APPROVED plan ────────────────────────────────────────────────────────────────────
+// Production, 2026-10-18: an employee could not amend an approved plan. The revision header was
+// inserted, then promoting it to 'submitted' collided with its own approved parent in
+// employee_plan_headers_active_period_uidx, and the form said "You already have an active plan for
+// this period." — 24 revision headers existed, none ever submitted, 23 of them empty orphan drafts.
+// The database cannot run in the unit suite, so the SQL is pinned by what the migration SAYS (with
+// its comments stripped, so prose can never satisfy an assertion) and the decisions by pure functions.
+function sibling(id: string, status: RevisionSibling["status"], createdAt: string, revision = 6): RevisionSibling {
+  return { createdAt, id, revision, status };
+}
+
+function stripSqlComments(sql: string) {
+  return sql.replace(/--[^\n]*/g, "").replace(/\s+/g, " ").trim();
+}
+
+function runWeeklyPlanRevisionTests() {
+  // ── 1 · What updateEmployeePlan does with a closed plan ───────────────────────────────────────
+  assert.deepEqual(chooseRevisionTarget("hr_acknowledged", []), { kind: "create", linkToParent: true });
+  assert.deepEqual(chooseRevisionTarget("final_approved", []), { kind: "create", linkToParent: true });
+
+  // A retry reuses the open draft instead of leaving a second empty one behind (23 of them did).
+  assert.deepEqual(
+    chooseRevisionTarget("hr_acknowledged", [
+      sibling("older-draft", "draft", "2026-10-05T10:00:00Z"),
+      sibling("newer-draft", "draft", "2026-10-05T11:00:00Z", 7),
+    ]),
+    { kind: "reuse", revision: 7, revisionId: "newer-draft" },
+    "the newest open draft is the one to edit",
+  );
+  // A returned revision is LIVE (it holds the one-live-revision slot), so it outranks any stray draft.
+  assert.deepEqual(
+    chooseRevisionTarget("hr_acknowledged", [
+      sibling("stray-draft", "draft", "2026-10-06T10:00:00Z"),
+      sibling("returned", "manager_returned", "2026-10-05T10:00:00Z"),
+    ]),
+    { kind: "reuse", revision: 6, revisionId: "returned" },
+  );
+  assert.equal(chooseRevisionTarget("hr_acknowledged", [sibling("r", "ceo_returned", "2026-10-05T10:00:00Z")]).kind, "reuse");
+
+  // One live revision per parent: while one awaits a decision, spawning another would collide.
+  for (const waiting of ["submitted", "edit_requested", "details_requested", "manager_approved", "ceo_approved"] as const) {
+    assert.deepEqual(
+      chooseRevisionTarget("hr_acknowledged", [
+        sibling("stray-draft", "draft", "2026-10-06T10:00:00Z"),
+        sibling("waiting", waiting, "2026-10-05T10:00:00Z"),
+      ]),
+      { kind: "blocked" },
+      `a ${waiting} revision blocks another one, stray draft or not`,
+    );
+  }
+  // A revision that died frees the slot.
+  assert.deepEqual(
+    chooseRevisionTarget("hr_acknowledged", [
+      sibling("rej", "manager_rejected", "2026-10-05T10:00:00Z"),
+      sibling("rej2", "ceo_rejected", "2026-10-05T11:00:00Z"),
+      sibling("can", "cancelled", "2026-10-05T12:00:00Z"),
+    ]),
+    { kind: "create", linkToParent: true },
+  );
+
+  // A DEAD plan spawns an UNLINKED draft: the unique index exempts only revisions of an approved
+  // plan, so a linked revision of a dead one would sit beside whatever live plan the period holds.
+  for (const dead of ["cancelled", "manager_rejected", "ceo_rejected"] as const) {
+    assert.deepEqual(
+      chooseRevisionTarget(dead, [sibling("old", "draft", "2026-10-05T10:00:00Z")]),
+      { kind: "create", linkToParent: false },
+      `a revision of a ${dead} plan is a fresh claim on the period, not a linked revision`,
+    );
+  }
+
+  // ── 2 · The readers: a pending revision never draws beside its approved parent ────────────────
+  const approvedParent = { id: "R", parent_plan_id: null, status: "hr_acknowledged" };
+  for (const waiting of ["submitted", "manager_approved", "ceo_approved"]) {
+    assert.deepEqual(
+      dropPendingRevisionsOfPlansOfRecord([approvedParent, { id: "V", parent_plan_id: "R", status: waiting }]),
+      [approvedParent],
+      `a ${waiting} revision is left out while the plan it revises is the plan of record`,
+    );
+  }
+  assert.deepEqual(
+    dropPendingRevisionsOfPlansOfRecord([
+      { id: "R", parent_plan_id: null, status: "final_approved" },
+      { id: "V", parent_plan_id: "R", status: "submitted" },
+    ]).map((row) => row.id),
+    ["R"],
+    "final_approved is a plan of record too",
+  );
+  // Kept: an approved revision (the parent is cancelled by then), a revision whose parent the reader
+  // never loaded, a revision of a dead parent, and every row with no parent at all.
+  const keep = [
+    { id: "V1", parent_plan_id: "R1", status: "final_approved" },
+    { id: "V2", parent_plan_id: "R-not-loaded", status: "submitted" },
+    { id: "R3", parent_plan_id: null, status: "cancelled" },
+    { id: "V3", parent_plan_id: "R3", status: "submitted" },
+    { id: "P4", parent_plan_id: null, status: "submitted" },
+    { id: "P5", status: null },
+  ];
+  assert.deepEqual(dropPendingRevisionsOfPlansOfRecord(keep), keep, "nothing else is dropped, in the same order");
+  assert.deepEqual(dropPendingRevisionsOfPlansOfRecord([]), []);
+
+  // ── 3 · The error is true ─────────────────────────────────────────────────────────────────────
+  const activePeriodRaw = 'duplicate key value violates unique constraint "employee_plan_headers_active_period_uidx"';
+  const liveRevisionRaw = 'duplicate key value violates unique constraint "employee_plan_headers_one_live_revision_uidx"';
+  assert.equal(translatePlanUniqueViolation(liveRevisionRaw, "23505"), REVISION_PENDING_MESSAGE);
+  assert.equal(translatePlanUniqueViolation(activePeriodRaw, "23505"), PERIOD_CLAIMED_MESSAGE);
+  assert.equal(translatePlanUniqueViolation(activePeriodRaw), PERIOD_CLAIMED_MESSAGE, "the text alone is enough when no code travels");
+  assert.equal(translatePlanUniqueViolation("weekly_plan_revision_conflict: expected revision 3 but found 4"), null);
+  assert.equal(translatePlanUniqueViolation('duplicate key value violates unique constraint "some_other_uidx"', "23505"), null);
+  for (const message of [REVISION_PENDING_MESSAGE, PERIOD_CLAIMED_MESSAGE]) {
+    assert.doesNotMatch(
+      message,
+      /duplicate key|already exists|active_period_uidx|23505|You already have an active plan/i,
+      "a translated message must not be re-translated into the false sentence by the form",
+    );
+  }
+
+  const service = readFileSync("src/lib/weekly-planning/service.ts", "utf8");
+  assert.match(
+    service,
+    /const uniqueViolation = translatePlanUniqueViolation\(message, obj\.code\);[\s\S]*?new WeeklyPlanRpcError\("duplicate_period", uniqueViolation\)/,
+    "rethrowWeeklyPlanRpcError must turn a unique violation on the plan indexes into a typed 409 with a true sentence",
+  );
+
+  const ui = readFileSync("src/components/employee-portal/plans-workspace.tsx", "utf8");
+  const friendlyStart = ui.indexOf("function friendlyError(");
+  assert.ok(friendlyStart > 0, "the form's friendlyError must exist");
+  const friendly = ui.slice(friendlyStart, ui.indexOf("\n}\n", friendlyStart));
+  assert.doesNotMatch(friendly, /You already have an active plan for this period/, "the form must not claim an active plan it cannot know about");
+  assert.doesNotMatch(friendly, /duplicate key\|already exists/, "the server's own 'already exists' sentence must reach the person");
+
+  // ── 4 · The service: reuse, refuse, link only an approved parent, take back what failed ───────
+  const reviseStart = service.indexOf("if (isClosedEmployeePlanStatus(existing.status)) {");
+  assert.ok(reviseStart > 0, "updateEmployeePlan's closed-plan branch must exist");
+  const revise = service.slice(reviseStart, service.indexOf("if (!canEditEmployeePlanStatus(existing.status))", reviseStart));
+  assert.match(revise, /chooseRevisionTarget\(existing\.status, await loadRevisionSiblings\(existing\.id\)\)/, "the branch must ask what to do with the revisions that already exist");
+  assert.match(revise, /target\.kind === "blocked"[\s\S]*?REVISION_PENDING_MESSAGE/, "a revision already awaiting a decision must be refused with the true sentence");
+  assert.match(revise, /target\.kind === "reuse"[\s\S]*?loadPlanRow\(target\.revisionId\)/, "an open revision must be edited, not duplicated");
+  assert.match(revise, /parent_plan_id: target\.linkToParent \? existing\.id : null/, "only a revision of an APPROVED plan is linked to it");
+  assert.doesNotMatch(revise, /parent_plan_id: existing\.id,/, "the parent link must never be unconditional");
+  assert.match(revise, /catch \(itemsError\) \{[\s\S]*?if \(spawnedHere\) await discardUnsubmittedRevision\(revisionRow\.id\);[\s\S]*?throw itemsError;/, "a failed item write must take back the draft THIS call made, and rethrow");
+  assert.match(service, /async function discardUnsubmittedRevision[\s\S]*?\.delete\(\)[\s\S]*?\.eq\("status", "draft"\)/, "only a draft may be taken back");
+
+  // The readers that list the pre-approval statuses must hide a pending revision.
+  for (const [path, needle] of [
+    ["src/lib/weekly-planning/calendar-service.ts", "dropPendingRevisionsOfPlansOfRecord(loadedHeaders.slice("],
+    ["src/lib/private-calendar/plan-items.ts", "dropPendingRevisionsOfPlansOfRecord(headers)"],
+    ["src/lib/weekly-planning/plan-adherence-data.ts", "dropPendingRevisionsOfPlansOfRecord((data ?? []) as PlanHeaderRow[])"],
+  ] as const) {
+    const text = readFileSync(path, "utf8");
+    assert.ok(text.includes(needle), `${path} must hide a pending revision beside its approved parent`);
+    assert.ok(/parent_plan_id/.test(text), `${path} must select parent_plan_id to be able to`);
+  }
+  assert.equal(
+    (service.match(/dropPendingRevisionsOfPlansOfRecord\(\s*\(headers \?\? \[\]\)/g) ?? []).length,
+    2,
+    "both prefill sources (weekly into monthly, monthly into weekly) must hide a pending revision",
+  );
+  assert.match(
+    readFileSync("src/lib/calendar/service.ts", "utf8"),
+    /\.neq\("status", "cancelled"\)/,
+    "a plan replaced by its revision is cancelled and keeps its rows, so the personal calendar must skip cancelled plans",
+  );
+
+  // ── 5 · The migration ─────────────────────────────────────────────────────────────────────────
+  const migrationFile = readdirSync("supabase/migrations").find((name) => name === "20261018233000_weekly_plan_revision_supersedes_approved_parent.sql");
+  assert.ok(migrationFile, "the revision migration must exist under its minted timestamp");
+  const sql = stripSqlComments(readFileSync(`supabase/migrations/${migrationFile}`, "utf8"));
+
+  assert.ok(
+    sql.includes(
+      "create unique index employee_plan_headers_active_period_uidx on public.employee_plan_headers (employee_hr_id, plan_kind, period_key) " +
+        "where status not in ('draft', 'cancelled', 'manager_rejected', 'ceo_rejected') " +
+        "and (parent_plan_id is null or status in ('final_approved', 'hr_acknowledged'));",
+    ),
+    "one live plan per employee/kind/period must survive — a pending revision is the only thing it stops counting",
+  );
+  assert.ok(
+    sql.includes(
+      "create unique index employee_plan_headers_one_live_revision_uidx on public.employee_plan_headers (parent_plan_id) " +
+        "where parent_plan_id is not null and status not in ('draft', 'cancelled', 'manager_rejected', 'ceo_rejected');",
+    ),
+    "at most one live revision per parent",
+  );
+  assert.match(sql, /drop index if exists public\.employee_plan_headers_active_period_uidx; create unique index employee_plan_headers_active_period_uidx/, "re-appliable: drop then create");
+  assert.match(sql, /^begin;.*commit;$/, "one transaction");
+
+  const decide = sql.slice(sql.indexOf("create or replace function public.phx_weekly_plan_decide("));
+  const supersedeIdx = decide.indexOf("if next_status = 'final_approved' and header_parent_id is not null then");
+  const parentCancelIdx = decide.indexOf("set status = 'cancelled'");
+  const headerUpdateIdx = decide.indexOf("set status = next_status");
+  assert.ok(supersedeIdx > 0, "the decision that approves a revision must supersede its parent");
+  assert.ok(
+    supersedeIdx < parentCancelIdx && parentCancelIdx < headerUpdateIdx,
+    "the parent must leave the index BEFORE the revision enters it, or the approval collides with its own parent",
+  );
+  assert.match(
+    decide,
+    /where id = header_parent_id and employee_hr_id = header_employee_hr_id and plan_kind = header_plan_kind and period_key = header_period_key for update;/,
+    "the parent is locked, and only cancelled when it is the same employee, kind and period",
+  );
+  assert.match(decide, /if parent_status in \('final_approved', 'hr_acknowledged'\) then/, "only a plan of record is superseded");
+  assert.match(decide, /\(header_parent_id, p_actor_hr_id, p_actor_login_id, p_actor_role, 'cancel', parent_status, 'cancelled',/, "the parent gets a decision row, or the D5 drift check flags it");
+  assert.match(decide, /security definer set search_path to 'public', 'pg_temp'/, "still SECURITY DEFINER with a pinned search_path");
+  assert.match(
+    sql,
+    /revoke execute on function public\.phx_weekly_plan_decide\(uuid, integer, text, text, text, text, text, jsonb, boolean\) from public, anon, authenticated; grant execute on function public\.phx_weekly_plan_decide\(uuid, integer, text, text, text, text, text, jsonb, boolean\) to service_role;/,
+    "service_role only",
+  );
+  // What did not change.
+  assert.match(decide, /p_bypass_ceo boolean default false/, "the signature keeps its defaulted parameter, or the old overload would be left beside it");
+  assert.match(decide, /final_approved_at = case when next_status = 'final_approved' then now_ts else final_approved_at end/, "final approval still stamps final_approved_at");
+  assert.match(decide, /insert into public\.employee_plan_item_return_notes/, "item return notes still travel with a return");
 }

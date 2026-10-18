@@ -5,7 +5,9 @@ import {
   buildPlanAdherenceHistory,
   countsAsKept,
   isCheckableActivity,
+  isScoredInAdherenceHistory,
   isScoredVerdict,
+  PLAN_ADHERENCE_HISTORY_EXCLUDED_STATUSES,
   planAdherenceTone,
   planAdherenceVerdictLabel,
   scorePlanAdherence,
@@ -392,4 +394,35 @@ export function runPlanAdherenceTests(): void {
       `${label} passes a base path, not a callback`,
     );
   }
+
+  // 7. A rejected plan is not scored in the history, and its replacement is not scored twice.
+  //
+  // manager_rejected and ceo_rejected are dead ends: the active-period unique index already lets
+  // the owner file a REPLACEMENT plan for the same period. The history only left out drafts and
+  // cancelled plans, so the rejected one was loaded and scored as no_trace beside its replacement
+  // and one week counted twice.
+  for (const status of ["draft", "cancelled", "manager_rejected", "ceo_rejected"]) {
+    assert.equal(isScoredInAdherenceHistory(status), false, `a ${status} plan is not scored in the history`);
+    assert.ok(PLAN_ADHERENCE_HISTORY_EXCLUDED_STATUSES.has(status), `${status} is in the exclusion set`);
+  }
+  assert.equal(isScoredInAdherenceHistory("MANAGER_REJECTED"), false, "the status is compared case-insensitively");
+  for (const status of [
+    "submitted",
+    "edit_requested",
+    "details_requested",
+    "manager_approved",
+    "manager_returned",
+    "ceo_approved",
+    "ceo_returned",
+    "final_approved",
+    "hr_acknowledged",
+  ]) {
+    assert.equal(isScoredInAdherenceHistory(status), true, `a ${status} plan is still scored - the same plan is reworked or decided`);
+  }
+  assert.equal(isScoredInAdherenceHistory(null), true, "an unknown status is scored rather than silently hidden");
+  const dataSource = readFileSync("src/lib/weekly-planning/plan-adherence-data.ts", "utf8");
+  assert.ok(
+    dataSource.includes("filter((header) => isScoredInAdherenceHistory(header.status))"),
+    "the history query must filter on the shared rule, not a private list that can drift from it",
+  );
 }
