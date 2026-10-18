@@ -646,16 +646,20 @@ export const MODULES = [
   {
     id: "time-off",
     title: "Vacations, attendance and calendars",
-    scope: "Annual vacation requests and balances, attendance and fingerprints, excuses, Early Birds, the HR and team calendars, private calendars.",
+    scope: "Annual vacation requests and balances, attendance and fingerprints, excuses, Early Birds, the HR and team calendars, private calendars, the Field Absence Calendar.",
     globs: [
       "src/lib/{vacation,attendance,excuses,early-birds,hr-calendar,private-calendar,calendar}/**",
       "src/components/{vacation,attendance,early-birds,hr-calendar}/**",
       "app/**/{vacation-request,vacation-control,vacation-report,leave-management,finance-leave-management,attendance,fingerprint-analytics,excuses,early-birds,hr-calendar,company-calendar,team-calendar,private-calendar,private-calendars,private-calendar-disputes}/**",
       "local-attendance-agent/**",
+      // The Field Absence Calendar (owner, 2026-10-18) — who the system did not see at all on a working
+      // day. A calendar over this module's own records (vacation, fingerprints) plus the CRM and trips.
+      "src/{lib,components}/field-absence/**",
+      "app/**/field-absence/**",
       "tests/*{vacation,attendance,excuse,early-bird,calendar,leave}*",
       "supabase/migrations/*{vacation,attendance,excuse,leave,calendar}*",
     ],
-    keywords: ["vacation", "vacations", "annual leave", "attendance", "fingerprint", "excuse", "excuses", "early birds", "calendar", "اجازة", "إجازة", "حضور"],
+    keywords: ["vacation", "vacations", "annual leave", "attendance", "fingerprint", "excuse", "excuses", "early birds", "calendar", "field absence", "اجازة", "إجازة", "حضور"],
     tables: ["vacation", "attendance", "excuse", "leave_", "calendar"],
   },
   {

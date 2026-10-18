@@ -91,7 +91,7 @@ export const CRM_DAY_CLASSIFIED_VISIT_TYPES: ReadonlySet<number> = new Set<numbe
   ...CRM_CLASSIFIED_NON_REGULAR_VISIT_TYPES,
 ]);
 
-type CrmDayVisitRow = {
+export type CrmDayVisitRow = {
   visit_date: string | null;
   visit_type: number | null;
   visit_type_description: string | null;
@@ -125,7 +125,29 @@ export function describeCrmDay(rows: CrmDayVisitRow[]): string | null {
   return detail ? `${label}: ${detail}` : label;
 }
 
-const DAY_MAP_VISIT_COLUMNS =
+/**
+ * The day's ruling from its CRM rows: "field" for a regular visit or a CP-type activity, "leave" for
+ * the CRM's own leave code on a day with neither, null for a day holding only codes the table does
+ * not list (the strict fall-through above). The ONE ruling {@link getCrmActivityDayMaps} applies,
+ * exported so a reader of rows this module never fetched classifies them identically rather than
+ * keeping a second copy (the Field Absence Calendar, for a departed person's own visits).
+ */
+export function crmDayKind(rows: ReadonlyArray<Pick<CrmDayVisitRow, "visit_type">>): "field" | "leave" | null {
+  let regularCount = 0;
+  let hasCampaignType = false;
+  let hasLeaveType = false;
+  for (const row of rows) {
+    const visitType = Number(row.visit_type ?? 0);
+    if (visitType === 0) regularCount += 1;
+    else if (CRM_CAMPAIGN_VISIT_TYPES.has(visitType)) hasCampaignType = true;
+    else if (CRM_LEAVE_VISIT_TYPES.has(visitType)) hasLeaveType = true;
+  }
+  if (regularCount > 0 || hasCampaignType) return "field";
+  if (hasLeaveType) return "leave";
+  return null;
+}
+
+export const DAY_MAP_VISIT_COLUMNS =
   "visit_date,visit_type,visit_type_description,comment,customer_name,agent_hr_id,double_hr_id,double2_hr_id";
 
 /** Above this many distinct employees, fetching each person's own visits by index stops being
@@ -281,17 +303,9 @@ export async function getCrmActivityDayMaps(input: {
     const fieldDates = new Set<string>();
     const dayDetails = new Map<string, string>();
     for (const [dateIso, rows] of byDate) {
-      let regularCount = 0;
-      let hasCampaignType = false;
-      let hasLeaveType = false;
-      for (const row of rows) {
-        const visitType = Number(row.visit_type ?? 0);
-        if (visitType === 0) regularCount += 1;
-        else if (CRM_CAMPAIGN_VISIT_TYPES.has(visitType)) hasCampaignType = true;
-        else if (CRM_LEAVE_VISIT_TYPES.has(visitType)) hasLeaveType = true;
-      }
-      if (regularCount > 0 || hasCampaignType) fieldDates.add(dateIso);
-      else if (hasLeaveType) leaveDates.add(dateIso);
+      const kind = crmDayKind(rows);
+      if (kind === "field") fieldDates.add(dateIso);
+      else if (kind === "leave") leaveDates.add(dateIso);
       else continue;
       const detail = describeCrmDay(rows);
       if (detail) dayDetails.set(dateIso, detail);

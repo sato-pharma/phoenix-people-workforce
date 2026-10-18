@@ -146,6 +146,7 @@ const TWIN_RULES: readonly TwinRule[] = [
   // of them to the portal home: the sidebar row they were given pointed at an address their own
   // shell refuses. The portal half is a real page with the same gate; the admin page names it.
   { from: "/admin/field-activity", to: "/employee-portals/field-activity" },
+  { from: "/admin/field-absence", to: "/employee-portals/field-absence" },
 
   // ── Direct orders ──────────────────────────────────────────────────────────
   { from: "/admin/direct-orders", to: "/employee-portals/direct-orders" },
