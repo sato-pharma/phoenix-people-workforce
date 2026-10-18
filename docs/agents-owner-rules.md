@@ -8547,3 +8547,35 @@ that one entry so a second is a visible change. Every other Phoenix CRM notice i
 Audience: the rep, his manager and his manager's manager (the two nearest occupied manager seats).
 Wording names a role and the decision, never a recording or a check (Golden Rule #1). Account of the
 feature: `docs/phoenix-crm-visit-recording.md`, "His decision carries a comment".
+
+## A direct order counts in its campaign's ROI by itself — owner, 2026-10-18
+
+His words, after being shown a real order (Royafloxacin, EGP 6,693, booked to September 2026, raised by
+the District Manager for the Zagazig shop): *"if the direct order is made to the same marketing request
+in the same window period of time it should count in the roi."* He then chose, from multiple-choice
+answers: the two venue records are the same shop (link them); the match is **automatic** — same shop, a
+product the campaign promotes, a sales month inside the campaign's months — with no clicking by the rep;
+and the window is the one ROI already uses everywhere, **the pay month through `roi_duration_months`**.
+
+What it replaced: on 2026-10-09 he left `track_direct_sales` on for the one request it was on (EGP
+4,000, Nahed Tarek) and every other campaign ignored its direct orders (1 of 65 requests carried the
+flag). Since `20261018163217` the column defaults TRUE and every existing request was switched on except
+the service-fee settlement request, which `phx_admin_settle_service_fee` writes with the flag FALSE on
+purpose. The Super Admin switch on the case file is now an opt-out for one campaign. No function body
+changed: the matching rule is still `direct_hits` in `phx_marketing_request_sales_lines` and
+`phx_refresh_marketing_roi_facts`.
+
+What the match is, and is not. It is the campaign's target pharmacy code pair (distributor + customer
+code) equal to a direct-order venue's code pair, an approved non-reversal order, one of the campaign's
+products, and the month Finance booked inside the window. It is **not** the order's own declared campaign
+(`direct_order_requests.marketing_request_id`, picked on the order form): nothing in the ROI functions reads
+it, and the three orders that declare one have no booked month yet. The marketing pharmacy register and
+the direct-order venue register share no id, so one shop can be two records. The Zagazig shop was: the
+direct-order venue carried only an Overseas code, the campaign targeted the shop under an Ibn Sina code, and
+both codes sit in the same brick in the sales master. The link was made by adding that Ibn Sina code to the
+venue — only after he said the two are one shop, because a name-alike is never proof.
+
+Known limit, measured 2026-10-18: the attribution ledger behind the roll-up dedupe holds invoice rows only.
+One direct order is claimed by two campaigns today (one active, one rejected), which is harmless because a
+rejected campaign is outside every approved roll-up; a direct order claimed by two APPROVED campaigns would be
+added twice in a company-wide roll-up until the ledger learns direct lines. Rule line: `.claude/rules/marketing-roi.md`.

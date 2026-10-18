@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 import { readFileSync, readdirSync } from "node:fs";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // Proves every Marketing ROI actual-sales path uses identical CUSTOMER-MATCH attribution logic —
 // exact customer-code match only, no brick/geography fallback — by reading the migration SQL text
@@ -132,6 +133,51 @@ export function runMarketingRoiAttributionConsistencyTests() {
   testRefreshFactsFixMigrationRemovesFallback();
   testFastRpcHasNoOwnAttributionLogic();
   testCustomerDashboardIsExactOnlyAndLocksDirectBranchGap();
+  testDirectOrdersCountByDefaultButNotForASettlementRequest();
+}
+
+// OWNER, 2026-10-18: a direct order at a campaign's own pharmacy counts in that campaign's ROI with
+// nobody switching it on per campaign. The direct branch is still gated on track_direct_sales (the
+// two functions above are untouched), so "automatic" is carried by the column's DEFAULT and by the
+// one-time switch-on of existing requests. The service-fee settlement request is the exception that
+// must stay off: it is not a promotion, and its creator writes the flag FALSE explicitly.
+const DIRECT_BY_DEFAULT_MIGRATION = "20261018163217_marketing_direct_orders_count_by_default.sql";
+
+function testDirectOrdersCountByDefaultButNotForASettlementRequest() {
+  const live = new URL("../supabase/migrations/", import.meta.url);
+  const sql = stripSqlComments(readFileSync(new URL(DIRECT_BY_DEFAULT_MIGRATION, live), "utf8"));
+
+  assert.match(
+    sql,
+    /alter\s+table\s+public\.marketing_requests\s+alter\s+column\s+track_direct_sales\s+set\s+default\s+true\b/i,
+    "a new marketing request must default to counting direct orders",
+  );
+  assert.match(
+    sql,
+    /update\s+public\.marketing_requests\s+mr\s+set\s+track_direct_sales\s*=\s*true\s+where\s+mr\.track_direct_sales\s*=\s*false\s+and\s+not\s+exists\s*\(\s*select\s+1\s+from\s+public\.direct_order_marketing_offsets\s+o\s+where\s+o\.marketing_request_id\s*=\s*mr\.id\s*\)/i,
+    "existing requests are switched on, except one that settles a direct-order debt",
+  );
+
+  // No LATER migration may put the default back to false and quietly turn the feature off again.
+  const later = readdirSync(live)
+    .filter((f) => f.endsWith(".sql") && f > DIRECT_BY_DEFAULT_MIGRATION)
+    .filter((f) =>
+      /alter\s+column\s+track_direct_sales\s+set\s+default\s+false\b/i.test(stripSqlComments(readFileSync(new URL(f, live), "utf8"))),
+    );
+  assert.deepEqual(later, [], "no later migration may restore the opt-in default");
+
+  // The settlement request is created with the flag FALSE explicitly, so the new default never
+  // reaches it. If that literal changes, a settlement request would start claiming direct orders.
+  const { body } = resolveLatestFunctionBody("phx_admin_settle_service_fee");
+  assert.match(
+    stripSqlComments(body),
+    /v_admin_id,\s*v_admin_id,\s*false,\s*'phoenix'/i,
+    "the service-fee settlement request is created with track_direct_sales = false",
+  );
+
+  // The matching rule itself did not move: the direct branch is still the one gated place.
+  const lines = resolveLatestFunctionBody("phx_marketing_request_sales_lines").body;
+  assert.match(stripSqlComments(lines), /where\s+req\.track_direct_sales\s*=\s*true/i, "direct_hits is still gated on the flag");
 }
 
 function testCurrentRoiActualsIsExactOnly() {
