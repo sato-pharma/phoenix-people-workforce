@@ -241,13 +241,14 @@ function parseOutstationRequestId(tripId: string): number | null {
 }
 
 /** Returns the request id when the VIEWER may add an extra ticket to this row
- *  right here (own request, train/bus, not already declined) — a UI hint only;
- *  the server independently re-validates ownership/transport/payroll-lock. */
+ *  right here (own request, train/bus, still waiting for HR's decision) — a UI hint only;
+ *  the server independently re-validates ownership/transport/decision/payroll-lock. After HR has
+ *  approved or rejected the claim nothing can be added (owner, 2026-10-19), so no button is offered. */
 function extraTicketEligibleId(trip: ExpenseRow, viewerHrId: string | null | undefined): number | null {
   if (!viewerHrId) return null;
   if (trip.hrId.trim().toLowerCase() !== viewerHrId.trim().toLowerCase()) return null;
   if (trip.transportationType !== "Train" && trip.transportationType !== "Bus") return null;
-  if (mapStatusCategory(trip.status) === "Declined") return null;
+  if (mapStatusCategory(trip.status) !== "Pending") return null;
   return parseOutstationRequestId(trip.tripId);
 }
 

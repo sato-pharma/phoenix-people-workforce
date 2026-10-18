@@ -24,6 +24,11 @@ import {
   outstationClaimRevision,
 } from "@/lib/outstation/claim-revision";
 import { composeDecisionNote } from "@/lib/outstation/decision-note";
+import {
+  OUTSTATION_CLAIM_DECIDED_MESSAGE,
+  OUTSTATION_UNDECIDED_STATUSES,
+  isOutstationClaimUndecided,
+} from "@/lib/outstation/undecided-claim";
 import { carTripFuelIsUnpriceable, UNPRICEABLE_CAR_TRIP_MESSAGE } from "@/lib/outstation/fuel-policy";
 import { getRepTripVisitWorkload } from "@/lib/crm/visit-workload";
 import { mergeWorkloadEvidence } from "@/lib/outstation/workload-evidence";
@@ -2784,10 +2789,15 @@ export async function getOwnOutstationTicketCounts(
  * Employee self-service: add ONE OR MORE extra tickets (each an attachment +
  * cost) plus a shared reason to their own already-submitted train/bus request —
  * e.g. an unplanned multi-leg trip needing several ticket legs. The summed extra
- * cost is ADDED to the ticket/travel total (allowance is never touched); when the
- * request is already accepted and linked to an unpaid payroll expense, the linked
- * payroll addition is re-synced to the new total. Blocked once the expense has
- * been paid, for car trips, and for other people's requests.
+ * cost is ADDED to the ticket/travel total (allowance is never touched).
+ *
+ * Only while nobody has decided the claim (owner, 2026-10-19: "after HR decision not able to add
+ * anything"). It used to go on after HR accepted the claim and re-push the new, higher total to the
+ * linked payroll row — a figure HR never saw, because an ordinary Approve stores no typed amount and
+ * payroll then pays the claim in full. Now an accepted, rejected or otherwise decided claim refuses
+ * the ticket outright, so there is nothing to re-sync; HR adds a ticket through the trip edit and
+ * sees the new figure. Also blocked once the expense has been paid, for car trips, and for other
+ * people's requests.
  */
 export async function addExtraTicketsToOwnOutstationRequest(
   requestId: number,
@@ -2813,6 +2823,12 @@ export async function addExtraTicketsToOwnOutstationRequest(
   }
   if (existing.status.startsWith("rejected")) {
     throw new Error("This request was rejected and cannot accept extra tickets.");
+  }
+  // Checked before anything is uploaded or written. An allow-list: only a claim still waiting for a
+  // decision takes a ticket, so accepted_by_admin, accepted_by_system, the legacy approved and any
+  // status nobody listed are all refused.
+  if (!isOutstationClaimUndecided(existing.status)) {
+    throw new Error(OUTSTATION_CLAIM_DECIDED_MESSAGE);
   }
 
   const linkedPayroll = await getLinkedOutstationPayrollExpense(existing.id);
@@ -2885,6 +2901,9 @@ export async function addExtraTicketsToOwnOutstationRequest(
       })
       .eq("id", requestId)
       .eq("status", existing.status)
+      // The write is a gate too: HR deciding the claim between the read above and this update
+      // leaves no row to change, instead of a ticket landing on a claim that was just approved.
+      .in("status", [...OUTSTATION_UNDECIDED_STATUSES])
       .select("*")
       .maybeSingle();
 
@@ -2892,11 +2911,6 @@ export async function addExtraTicketsToOwnOutstationRequest(
     if (!data) throw new Error("This request just changed status. Refresh and try again.");
 
     const updated = mapOutstationRequestRow(data as Record<string, unknown>);
-    const syncedPayrollRows = await syncLinkedOutstationPayrollExpense({
-      access,
-      linkedPayroll,
-      request: updated,
-    });
 
     await writeRequiredAuditLog({
       actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
@@ -2907,7 +2921,6 @@ export async function addExtraTicketsToOwnOutstationRequest(
         extraTicketCount: uploaded.length,
         extraTicketTotal: extraTotal,
         newExpectedTotal: updated.expectedTotalAmount,
-        payrollExpenseRows: syncedPayrollRows,
         reason,
         source: "employee_extra_ticket",
         status: updated.status,
@@ -5257,8 +5270,8 @@ export async function captureOutstationDeparturePhoto(
   return { gateStatus, review };
 }
 
-/** A stop may be added only while nobody has decided the trip yet. */
-const JOURNEY_STOP_OPEN_STATUSES = ["submitted", "needs_review"] as const;
+/** A stop may be added only while nobody has decided the trip yet — the same list an extra ticket obeys. */
+const JOURNEY_STOP_OPEN_STATUSES = OUTSTATION_UNDECIDED_STATUSES;
 
 /**
  * The employee's OTHER live car trips touching the given Cairo days — the double-pay check for a

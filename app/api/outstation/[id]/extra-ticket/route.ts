@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { addExtraTicketsToOwnOutstationRequest } from "@/lib/outstation/service";
+import { OUTSTATION_CLAIM_DECIDED_MESSAGE } from "@/lib/outstation/undecided-claim";
 import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -13,6 +14,8 @@ export const dynamic = "force-dynamic";
 
 function extraTicketStatus(error: unknown) {
   if (isForbiddenError(error)) return 403;
+  // HR has already decided the claim: a conflict with its current state, not a malformed request.
+  if (error instanceof Error && error.message === OUTSTATION_CLAIM_DECIDED_MESSAGE) return 409;
   const message = error instanceof Error ? error.message.toLowerCase() : "";
   if (message.includes("already been added to payroll")) return 409;
   if (
