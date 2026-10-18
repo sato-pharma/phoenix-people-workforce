@@ -1,6 +1,6 @@
 import {
   createOpenAiResponseText,
-  hasOpenAiApiKey,
+  hasAiApiKey,
   OPENAI_NANO_MODEL,
   OPENAI_STRONG_MODEL,
 } from "@/lib/ai/openai-client";
@@ -630,7 +630,7 @@ export async function readPlaceSignboard(input: {
   repHrId: string;
   isTest: boolean;
 }): Promise<PhoenixCrmSignboardCheck> {
-  if (!hasOpenAiApiKey()) return unjudged("no_api_key");
+  if (!hasAiApiKey()) return unjudged("no_api_key");
 
   const bytes = await downloadIssuedPlacePhoto({
     hrId: input.repHrId,
@@ -654,7 +654,7 @@ export async function readStoredPlaceSignboard(input: {
   customerName: string;
   listType: PhoenixCrmListType;
 }): Promise<PhoenixCrmSignboardCheck> {
-  if (!hasOpenAiApiKey()) return unjudged("no_api_key");
+  if (!hasAiApiKey()) return unjudged("no_api_key");
   const bytes = await downloadPhoto(input.photoPath).catch(() => null);
   if (!bytes) return unjudged("no_bytes");
   return judgeBytes({ bytes, customerName: input.customerName, listType: input.listType, mode: "sweep" });

@@ -947,7 +947,7 @@ export function runRecruitmentCvExtractionTests() {
   assert.ok(entryPoint.length > 0, "extractCandidateFieldsFromCv must exist");
   assert.doesNotMatch(
     entryPoint,
-    /hasOpenAiApiKey/,
+    /hasAiApiKey/,
     "the entry point must not gate on the API key — that skips the free rules and OCR passes entirely",
   );
   // And the engine itself must keep its own check, or a missing key becomes a silent success.
@@ -957,11 +957,11 @@ export function runRecruitmentCvExtractionTests() {
   );
   assert.match(
     engine,
-    /if \(!hasOpenAiApiKey\(\)\) \{/,
+    /if \(!hasAiApiKey\(\)\) \{/,
     "the engine keeps the key check, after the free passes have had their turn",
   );
   assert.ok(
-    engine.indexOf("runRuleCvExtraction") < engine.indexOf("if (!hasOpenAiApiKey()) {"),
+    engine.indexOf("runRuleCvExtraction") < engine.indexOf("if (!hasAiApiKey()) {"),
     "the free rule pass must run BEFORE the key check, or removing the key removes the free read",
   );
 }

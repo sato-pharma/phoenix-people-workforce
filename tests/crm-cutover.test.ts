@@ -219,10 +219,12 @@ function readDoorTests() {
   const planBoard = read("src/lib/crm/plan-board.ts");
   assert.equal(
     (planBoard.match(/\.from\(\s*CRM_PLAN_ENTRIES_UNIFIED_VIEW\s*\)/g) ?? []).length,
-    5,
-    "all five plan-board reads use the unified view — the board summary's probe, its per-day keyset "
-      + "scan and the single scan it keeps for a named-agent or month window, then one plan's entries "
-      + "and the monthly planner's last-month reference. It was THREE until 2026-10-10, when the "
+    6,
+    "all six plan-board reads use the unified view — the board summary's probe, its per-day keyset "
+      + "scan and the single scan it keeps for a named-agent or month window, then one plan's entries, "
+      + "the monthly planner's last-month reference and the several reps' weeks a district manager reads "
+      + "for reps still in the old CRM (2026-10-17, source-filtered to the vendor's own plans). "
+      + "It was THREE until 2026-10-10, when the "
       + "summary stopped OFFSET-paging a whole month and became the probe-then-days read (the window "
       + "sorted by an id the view synthesises, so every page rebuilt the month: 452.6 ms a page, "
       + "~17.1 s for 44 days, half of all database time left after the roster index). Raising this "

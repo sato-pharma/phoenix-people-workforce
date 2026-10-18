@@ -5,7 +5,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission } from "@/lib/auth/permissions";
 import {
   createOpenAiResponseText,
-  hasOpenAiApiKey,
+  hasAiApiKey,
   OPENAI_ROUTE_BUDGET_MS,
 } from "@/lib/ai/openai-client";
 import { parseAiJson } from "@/lib/ai/parse-ai-json";
@@ -271,7 +271,7 @@ export async function extractDirectOrderInvoice(
     throw new InvoiceExtractionError("too_large", "That photo is too large. Take it again at normal quality.");
   }
 
-  if (!hasOpenAiApiKey()) {
+  if (!hasAiApiKey()) {
     // Says so plainly instead of returning an empty result that reads like "nothing on the invoice".
     throw new InvoiceExtractionError(
       "not_configured",

@@ -113,6 +113,31 @@ const STATUS_ACCENT: Record<PhoenixCrmPlanStatus | "none", string> = {
   returned: "border-l-rose-500",
 };
 
+// A rep who has not moved to Phoenix CRM: his week is the one he filed in the old CRM (owner, 2026-10-17).
+function oldCrmTone(status: number | null): PillTone {
+  if (status === 0) return "warn";
+  if (status === 1) return "good";
+  if (status === 2) return "info";
+  return "neutral";
+}
+
+function oldCrmAccent(status: number | null): string {
+  if (status === 0) return "border-l-amber-500";
+  if (status === 1) return "border-l-emerald-500";
+  if (status === 2) return "border-l-sky-500";
+  return "border-l-slate-300";
+}
+
+/** The pill on a territory's row: the Phoenix plan's word, or the old CRM plan's, or "Not started". */
+function rowPill(row: PlanReviewRow): { label: string; tone: PillTone; accent: string } {
+  if (row.plan) {
+    const status = row.plan.status;
+    return { label: row.plan.statusLabel, tone: STATUS_TONE[status], accent: STATUS_ACCENT[status] };
+  }
+  if (row.oldCrm) return { label: row.oldCrm.statusLabel, tone: oldCrmTone(row.oldCrm.status), accent: oldCrmAccent(row.oldCrm.status) };
+  return { label: planStatusLine({ status: null, repName: row.territory.repName }), tone: STATUS_TONE.none, accent: STATUS_ACCENT.none };
+}
+
 // ── Words ───────────────────────────────────────────────────────────────────────────────────────
 
 function territoryWords(territory: TerritorySummary): Array<string | null> {
@@ -169,6 +194,8 @@ function waitingNote(forYou: number | null | false, inAll: number | null | false
 // ── Plans ───────────────────────────────────────────────────────────────────────────────────────
 
 function reviewFilterOf(row: PlanReviewRow): Exclude<ReviewFilter, "all"> {
+  // A week filed in the old CRM waits for approval until it is approved there.
+  if (!row.plan && row.oldCrm) return row.oldCrm.status === 0 ? "waiting" : "approved";
   const status = row.plan?.status ?? null;
   if (status === "submitted") return "waiting";
   if (status === "approved") return "approved";
@@ -182,12 +209,14 @@ function reviewFilterOf(row: PlanReviewRow): Exclude<ReviewFilter, "all"> {
  * it was the third way one row said the same thing (owner, 2026-10-02).
  */
 function placedText(row: PlanReviewRow): string | null {
+  if (!row.plan && row.oldCrm) return `${plural(row.oldCrm.customers, "customer", "customers")} over ${plural(row.oldCrm.days, "day", "days")}`;
   if (!row.plan) return null;
   return `${countText(row.accounts)} AM · ${countText(row.doctors)} PM`;
 }
 
 function planStamp(row: PlanReviewRow): string | null {
   const { plan } = row;
+  if (!plan && row.oldCrm) return "Filed in the old CRM";
   // Nothing yet: the NOT STARTED pill sits right beside this, and saying it again in a sentence is
   // half of why the page ran four phone screens (owner, 2026-10-02).
   if (!plan) return null;
@@ -612,6 +641,7 @@ export function TeamTab({
               error={reviews.error}
               idPrefix={idPrefix}
               key={selectedWeek}
+              onOldCrmDecided={requestDecided}
               onOpen={(row) => openReview(row.territory.seatId, selectedWeek)}
               onRetry={reviews.reload}
               onWeek={chooseWeek}
@@ -671,9 +701,61 @@ export function TeamTab({
 
 // ── Sections ────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Approve the week a rep filed in the old CRM, or take that approval back (owner, 2026-10-17). The vendor has
+ * no return and no note, so those two are all there is; what may be pressed was decided on the server from
+ * the vendor's own rule and the viewer's reach.
+ */
+function OldCrmActions({
+  onDecided,
+  plan,
+  repName,
+}: {
+  onDecided: (message: string) => void;
+  plan: NonNullable<PlanReviewRow["oldCrm"]>;
+  repName: string | null;
+}) {
+  const [busy, setBusy] = useState<"approve" | "take_back" | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const who = repName ?? "the rep";
+
+  async function decide(action: "approve" | "take_back") {
+    setBusy(action);
+    setFailure(null);
+    try {
+      await crmPost("/api/phoenix-crm/plans/old-crm/decide", { action, crmPlanId: plan.crmPlanId }, "decision");
+      onDecided(action === "approve" ? `You approved ${who}'s week from the old CRM.` : `You took back your approval of ${who}'s week from the old CRM.`);
+    } catch (caught) {
+      setFailure(messageOf(caught));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (!plan.canApprove && !plan.canTakeBack) return null;
+  return (
+    <div className="grid min-w-0 gap-1.5">
+      <div className="flex flex-wrap gap-2">
+        {plan.canApprove ? (
+          <CrmButton disabled={busy !== null} onClick={() => void decide("approve")} size="sm" variant="primary">
+            {busy === "approve" ? "Approving" : "Approve the week"}
+          </CrmButton>
+        ) : null}
+        {plan.canTakeBack ? (
+          <CrmButton disabled={busy !== null} onClick={() => void decide("take_back")} size="sm" variant="secondary">
+            {busy === "take_back" ? "Taking back" : "Take back approval"}
+          </CrmButton>
+        ) : null}
+      </div>
+      {failure ? <p className="break-words text-xs font-bold leading-5 text-rose-700">{failure}</p> : null}
+    </div>
+  );
+}
+
 function PlansSection({
   error,
   idPrefix,
+  onOldCrmDecided,
   onOpen,
   onRetry,
   onWeek,
@@ -686,6 +768,8 @@ function PlansSection({
 }: {
   error: string | null;
   idPrefix: string;
+  /** A week filed in the old CRM was approved or its approval taken back: the page reads the plans again. */
+  onOldCrmDecided: (message: string) => void;
   onOpen: (row: PlanReviewRow) => void;
   onRetry: () => void;
   onWeek: (weekStart: string) => void;
@@ -783,6 +867,10 @@ function PlansSection({
   }
 
   function action(row: PlanReviewRow) {
+    // His week is in the old CRM, so there is no Phoenix plan to open: the buttons approve that one.
+    if (!row.plan && row.oldCrm) {
+      return <OldCrmActions onDecided={onOldCrmDecided} plan={row.oldCrm} repName={row.territory.repName} />;
+    }
     const { label, primary } = reviewAction(row);
     return (
       <CrmButton onClick={() => onOpen(row)} size="sm" variant={primary ? "primary" : "secondary"}>
@@ -827,16 +915,16 @@ function PlansSection({
         <div className="border-t border-slate-100">
           <CrmCardsOnPhone>
             {shown.map((row) => {
-              const status = row.plan?.status ?? "none";
+              const pill = rowPill(row);
               const stamp = planStamp(row);
               const placed = placedText(row);
               return (
                 <CrmCard
-                  accent={STATUS_ACCENT[status]}
+                  accent={pill.accent}
                   actions={action(row)}
                   key={row.territory.seatId}
                   meta={metaText(row.territory, viewerHrId, test)}
-                  status={<CrmPill tone={STATUS_TONE[status]}>{row.plan?.statusLabel ?? planStatusLine({ status: null, repName: row.territory.repName })}</CrmPill>}
+                  status={<CrmPill tone={pill.tone}>{pill.label}</CrmPill>}
                   title={row.territory.name}
                 >
                   {placed ? <p className="break-words text-sm font-black text-slate-800">{placed}</p> : null}
@@ -872,7 +960,7 @@ function PlansSection({
             </thead>
             <tbody>
               {shown.map((row) => {
-                const status = row.plan?.status ?? "none";
+                const pill = rowPill(row);
                 const stamp = planStamp(row);
                 const reviewer = test ? null : reviewerText(row.territory, viewerHrId);
                 return (
@@ -883,7 +971,7 @@ function PlansSection({
                       {reviewer ? <p className="text-xs text-slate-500">{reviewer}</p> : null}
                     </td>
                     <td className={crmTdClassName}>
-                      <CrmPill tone={STATUS_TONE[status]}>{row.plan?.statusLabel ?? planStatusLine({ status: null, repName: row.territory.repName })}</CrmPill>
+                      <CrmPill tone={pill.tone}>{pill.label}</CrmPill>
                       {stamp ? <p className="mt-1 text-xs text-slate-500">{stamp}</p> : null}
                     </td>
                     <td className={crmTdClassName}>{placedText(row)}</td>

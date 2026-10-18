@@ -25,7 +25,7 @@
  * model already could not read.
  */
 
-import { hasOpenAiApiKey } from "@/lib/ai/openai-client";
+import { hasAiApiKey } from "@/lib/ai/openai-client";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { filePlaceSignboardFlag } from "@/lib/phoenix-crm/server/location-integrity";
 import { readStoredPlaceSignboard, recordPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
@@ -260,7 +260,7 @@ export async function runPhoenixCrmSignboardSweep(
   const result: SignboardSweepResult = { read: 0, flagged: 0, unjudged: 0, unconfirmed: 0, moreWaiting: false, skipped: null };
   // No key here (a preview, a local run): nothing is read and nothing is written, so the backlog stays
   // exactly as it is for the environment that can read it.
-  if (!hasOpenAiApiKey()) return { ...result, skipped: "no_api_key" };
+  if (!hasAiApiKey()) return { ...result, skipped: "no_api_key" };
 
   const limit = Math.max(1, Math.min(options.limit ?? SIGNBOARD_SWEEP_LIMIT, 500));
   const deadline = Date.now() + (options.budgetMs ?? SIGNBOARD_SWEEP_BUDGET_MS);

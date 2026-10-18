@@ -101,7 +101,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `phoenix-crm-approvals` — Phoenix CRM — lists, validation, plans and approvals | `src/lib/phoenix-crm/{adoption-rules,approval-nudge-rules,customer-list-grouping,entry-rules,list-request-rules,list-row-facts,list-sheet-hours,list-template-rules,monthly-plan-rules,offplan-day,pharmacy-call-rules,plan-board-answer,plan-edit-rules,plan-review-rules,plan-rules,unplanned-rules,validate-next}.ts` and 4 more |
 | `phoenix-crm-boards` — Phoenix CRM — the silent detectors, the touch trail and the SFE's boards | `src/lib/phoenix-crm/{behaviour-integrity,duplicate-photos,location-integrity,refused-readings-rules,touch-trail,touch-trail-reader}.ts` and 15 more |
 | `phoenix-crm-refused-readings` — Phoenix CRM — the refusals a capture leaves behind | `src/lib/phoenix-crm/refused-readings-rules.ts` and 6 more |
-| `phoenix-crm-manager-plan` — Phoenix CRM — the district manager's weekly plan | `src/lib/phoenix-crm/manager-plan-rules.ts` and 7 more |
+| `phoenix-crm-manager-plan` — Phoenix CRM — the district manager's weekly plan | `src/lib/phoenix-crm/manager-plan-rules.ts` and 10 more |
 | `phoenix-crm-validation` — Phoenix CRM — validating a place: the signboard, the refusal, the merge | `src/lib/phoenix-crm/{signboard-rules,schedule-rules,shared-place-rules,shared-place-groups,place-match-groups,validation-feedback,duplicate-merge-rules,validation-review-filters}.ts` and 7 more |
 | `phoenix-crm-place-checks` — Phoenix CRM — the Place checks page: groups, the same-place comparison and the decisions | `src/lib/phoenix-crm/{shared-place-groups,place-match-groups,validation-review-filters}.ts` and 5 more |
 | `phoenix-crm-reports` — Phoenix CRM — the reports, the boards and how every figure is counted | `src/lib/phoenix-crm/{brick-report,daily-plan-report,exceptions,report-guide,report-rules,samples-report}.ts` and 3 more |
@@ -128,6 +128,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `approvals` — Approvals and workflow | `src/lib/{approvals-hub,workflow-control,workflow-registry,approvals}/**` and 4 more |
 | `devices` — Devices and tablet management (Headwind MDM) | `src/lib/devices/**` and 4 more |
 | `platform` — Platform — auth, security, cron, data access and shared UI | `src/lib/{auth,security,platform,cron-control,background-jobs,observability,error-monitor,share-links,share,http,imports,uploads,ai,validation,qr,operations,synthetic-journeys,admin,format,i18n,ui,utils}/**` and 8 more |
+| `platform-design-tokens` — Platform — design tokens, the form kit and the square-edge look | `src/components/ui/{form-kit,form-tokens,brand-tokens}*` and 3 more |
 | `database` — Database, migrations and Supabase | `supabase/**` and 2 more |
 | `engineering` — Engineering — CI, tests, scripts and deploys | `.github/**` and 7 more |
 | `engineering-deploys` — Engineering — Railway deploys and what is actually serving | `Dockerfile` and 11 more |
