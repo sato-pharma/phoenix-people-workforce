@@ -194,9 +194,23 @@ Phoenix plan for the week of 17 October, under 11 district managers, while the i
 running (plans 22:06, visits 22:14) and 42 reps were still logging visits there.
 
 - **The board.** `loadRepWeeks` reads a rep's iReports360 week (`getAgentsWeekPlanEntries`, the CRM door,
-  `source = ireports360`, weekly) only when Phoenix holds no customer of his that week; a Phoenix draft or
-  sent plan is never replaced. His state is `old_crm`, the pill reads "Old CRM plan", and a customer he
-  planned there is flagged like a sent one (it is a filed plan, not a draft).
+  the vendor's own `ireports360_plan_entries` rows, weekly) only when Phoenix holds no customer of his that
+  week; a Phoenix draft or sent plan is never replaced. His state is `old_crm`, the pill reads "Old CRM plan",
+  and a customer he planned there is flagged like a sent one (it is a filed plan, not a draft).
+- **🔴 It reads the vendor's rows, never `crm_plan_entries_unified` (2026-10-18).** The view anti-joins every
+  iReports360 plan entry of a rep in a STARTED team from his `counted_from` on, and all 21 teams are started,
+  so the first version of this read (#6064) answered zero for every rep it was built for. Found when a
+  product manager could not pick Gehad Alaaeldin (Pedia, Minia): the mirror held 22 reps' weeks for 17 Oct
+  (synced 14:04 Cairo; her plan 27550, 59 calls) and the view held none, so the board printed "No plan this
+  week" and greyed each rep out. After the fix, run through the board's own loader on production, 22 of 22 reps
+  read, Gehad's week gives 10 half-days with 59 of 59 customers tickable. The sync was never down. A reader that
+  asks "what did this rep file in the old app" reads the vendor's rows, as plan verification already does
+  (`getPlanForVerification`); the counting views are for counting. Pinned by `tests/crm-cutover.test.ts` (five
+  unified-view reads, four raw ones in `plan-board.ts`) and `tests/phoenix-crm-manager-plan.test.ts`.
+- **When the old week exists.** Reps file the next week in the old CRM on Wednesday to Friday (the 17 Oct plans
+  were first synced 14 Oct 17:06 to 16 Oct 19:05 Cairo). Before then the coming week shows "No plan this
+  week" for an old-CRM rep exactly as it does for a Phoenix rep who has not started a draft; it is not a
+  sync fault.
 - **Which half.** The old weekly plan names a day and no morning or afternoon (`appm`, `startAM` and
   `startPM` empty on all 16,544 weekly rows since 19 September). A contact goes where his **list** puts him
   (`halfOfListType`: AM list the morning, PM list the afternoon), as the rep's own Phoenix plan does.
