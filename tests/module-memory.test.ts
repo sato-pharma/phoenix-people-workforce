@@ -30,7 +30,7 @@ import {
 const lib = { MODULES, mentions, modulesForPath };
 
 /** Cross-cutting modules: a rule citing their files can legitimately be global. */
-const CROSS_CUTTING = new Set(["engineering", "sessions", "database", "platform"]);
+const CROSS_CUTTING = new Set(["engineering", "sessions", "database", "platform", "platform-design-tokens"]);
 
 /**
  * Global rules in AGENTS.md that cite ONE business module's files on purpose. Adding to this list

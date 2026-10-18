@@ -52,7 +52,7 @@
 
 import {
   createOpenAiResponseText,
-  hasOpenAiApiKey,
+  hasAiApiKey,
   OPENAI_ROUTE_BUDGET_MS,
   PhoenixOpenAiError,
   resolveOpenAiCopilotModel,
@@ -534,7 +534,7 @@ export async function composeCeoEmailDraft(input: CeoAssistRequest): Promise<Ceo
       "Tell the assistant what you want — type it, dictate it, or upload the document it should carry.",
     );
   }
-  if (!hasOpenAiApiKey()) {
+  if (!hasAiApiKey()) {
     throw new CeoAssistError("assist_not_configured", "The assistant is not configured on this server yet.");
   }
 

@@ -22,7 +22,7 @@ import { stripComments } from "./support/comment-strip.ts";
  * it, and nothing would have reported it.
  *
  * 🔴 AND NOTHING HERE MAY REACH THE NETWORK. `tests/` runs with PRODUCTION credentials and
- * APP_ENV=production, so `hasOpenAiApiKey()` is true in the suite — a test that exercised the
+ * APP_ENV=production, so `hasAiApiKey()` is true in the suite — a test that exercised the
  * happy path of `summarizeNeedsYouBoard` would make a real, billed OpenAI call on every CI run.
  * Only the two arms that return BEFORE the call are exercised live; the rest is read from source.
  * Never "improve" this file by feeding it a board with items and no unreadable source.

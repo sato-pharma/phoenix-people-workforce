@@ -1,6 +1,6 @@
 import {
   createOpenAiResponseText,
-  hasOpenAiApiKey,
+  hasAiApiKey,
   OPENAI_ROUTE_BUDGET_MS,
 } from "@/lib/ai/openai-client";
 import { parseAiJson } from "@/lib/ai/parse-ai-json";
@@ -179,7 +179,7 @@ export async function checkDirectOrderStorefrontEvidence(input: {
    */
   venueType?: VenueType;
 }): Promise<DirectOrderEvidenceCheck | null> {
-  if (!hasOpenAiApiKey()) return null;
+  if (!hasAiApiKey()) return null;
 
   const venueType = input.venueType ?? DEFAULT_VENUE_TYPE;
   const isPharmacyVenue = venueRequiresDistributorCode(venueType);

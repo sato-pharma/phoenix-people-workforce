@@ -24,7 +24,7 @@
 
 import {
   createOpenAiResponseText,
-  hasOpenAiApiKey,
+  hasAiApiKey,
   PhoenixOpenAiError,
 } from "@/lib/ai/openai-client";
 
@@ -311,7 +311,7 @@ export async function polishExpenseApprovalNote(input: ExpenseNoteRequest): Prom
   if (!draft) {
     throw new ExpenseNoteAssistError("note_failed", "Write the note in your own words first.");
   }
-  if (!hasOpenAiApiKey()) {
+  if (!hasAiApiKey()) {
     throw new ExpenseNoteAssistError(
       "note_not_configured",
       "Note writing is not configured on this server yet.",

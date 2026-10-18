@@ -6,7 +6,7 @@
 // round a number. Owner rule 2026-08-04: users never see that AI is involved, so nothing here is
 // ever labelled as such, and the call stays server-side.
 
-import { createOpenAiResponseText, hasOpenAiApiKey, OPENAI_NANO_MODEL } from "@/lib/ai/openai-client";
+import { createOpenAiResponseText, hasAiApiKey, OPENAI_NANO_MODEL } from "@/lib/ai/openai-client";
 import { HONESTY_SENTENCE } from "@/lib/sales/make-it-happen/engine";
 
 /** The owner's own sentence for an out-of-reach target (2026-09-13). Declared in engine.ts. */
@@ -142,7 +142,7 @@ export function isFaithfulRewrite(facts: CoachFacts, template: string, rewrite: 
 
 export async function phoenixCoachMessage(facts: CoachFacts): Promise<string> {
   const template = templateCoachMessage(facts);
-  if (!hasOpenAiApiKey()) return template;
+  if (!hasAiApiKey()) return template;
   try {
     const { outputText } = await createOpenAiResponseText({
       purpose: "make_it_happen_coach",

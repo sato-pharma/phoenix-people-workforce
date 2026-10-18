@@ -131,11 +131,16 @@ async function expectAiError(action: () => Promise<unknown>, code: AiAssistError
 export async function runEmailAiAssistTests() {
   {
     const savedKey = process.env.OPENAI_API_KEY;
+    // Anthropic is a second provider since 2026-10-18, so "no AI configured" now means NEITHER key — a
+    // developer's .env.local holding ANTHROPIC_API_KEY must not turn this into a live call.
+    const savedAnthropicKey = process.env.ANTHROPIC_API_KEY;
     try {
       delete process.env.OPENAI_API_KEY;
+      delete process.env.ANTHROPIC_API_KEY;
       await expectAiError(() => draftEmailWithAi(baseInput), "ai_not_configured", /not configured/i);
     } finally {
       restoreEnv("OPENAI_API_KEY", savedKey);
+      restoreEnv("ANTHROPIC_API_KEY", savedAnthropicKey);
     }
   }
 

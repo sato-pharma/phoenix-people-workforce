@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { summarizeErrorClusters } from "@/lib/error-monitor/ai-triage";
 import { getErrorClusterAggregates } from "@/lib/error-monitor/service";
-import { hasOpenAiApiKey, PhoenixOpenAiError } from "@/lib/ai/openai-client";
+import { hasAiApiKey, PhoenixOpenAiError } from "@/lib/ai/openai-client";
 import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     if (!allowed) {
       return NextResponse.json({ message: "Forbidden: insufficient permissions." }, { status: 403 });
     }
-    if (!hasOpenAiApiKey()) {
+    if (!hasAiApiKey()) {
       return NextResponse.json({ message: "AI triage is not configured (no OpenAI key)." }, { status: 503 });
     }
     await assertApiRateLimit({

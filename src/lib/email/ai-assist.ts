@@ -1,6 +1,6 @@
 import {
   createOpenAiResponseText,
-  hasOpenAiApiKey,
+  hasAiApiKey,
   OPENAI_COPILOT_DEFAULT_MODEL,
   OPENAI_ROUTE_BUDGET_MS,
   PhoenixOpenAiError,
@@ -295,7 +295,7 @@ function aiAssistErrorFromOpenAi(error: PhoenixOpenAiError) {
  * itself would not allow.
  */
 export async function draftEmailWithAi(input: AiDraftRequest): Promise<AiDraftResult> {
-  if (!hasOpenAiApiKey()) {
+  if (!hasAiApiKey()) {
     throw new AiAssistError(
       "ai_not_configured",
       "The AI assistant is not configured yet. Add your OpenAI key as OPENAI_API_KEY.",

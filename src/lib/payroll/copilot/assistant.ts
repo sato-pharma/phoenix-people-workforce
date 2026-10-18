@@ -1,6 +1,6 @@
 import {
   createOpenAiResponseText,
-  hasOpenAiApiKey,
+  hasAiApiKey,
   resolveOpenAiCopilotModel,
 } from "@/lib/ai/openai-client";
 
@@ -82,7 +82,7 @@ export async function answerCeoQuestion(input: {
   periodLabel: string;
   employees: AssistantEmployeeContext[];
 }): Promise<string | null> {
-  if (!hasOpenAiApiKey()) return null;
+  if (!hasAiApiKey()) return null;
 
   const instructions = [
     `You are a payroll assistant helping the CEO review the ${input.periodLabel} payroll draft.`,

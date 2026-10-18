@@ -631,7 +631,7 @@ function oneWizardShellTests(): void {
 // `--phx-radius-*` token reaches, so it is square ONLY because `.admin-shell`/
 // `.employee-portal-shell` zero `[class*="rounded"]`, and the same markup mounted outside a shell
 // renders `calc(infinity * 1px)`. A NEW one is therefore a defect wherever it is written — see
-// `.claude/rules/platform.md`, Design tokens — and the two pills on the attendance-exceptions
+// `.claude/rules/platform-design-tokens.md` — and the two pills on the attendance-exceptions
 // form were removed on 2026-10-07 for exactly that reason. It is not failed HERE only because the
 // one left in the system is the reference form's own decorative blur circle
 // (`h-48 w-48 rounded-full ... blur-2xl`), and that form's design is the owner's, not ours to
@@ -687,7 +687,7 @@ function squareFormsTests(): void {
       `${offenders.join("\n  ")}\n` +
       "The square-edge golden rule has no exceptions on a form: drop the class — no class at all " +
       "is square in every context, which rounded-md is only by token and rounded-full is not at " +
-      "all (.claude/rules/platform.md, Design tokens). A file that means square writes " +
+      "all (.claude/rules/platform-design-tokens.md). A file that means square writes " +
       "rounded-none. If the owner has put one of these screens on another design, take it OUT of " +
       "SQUARE_FORMS with his words and the test that holds it there, the way section 4 does.",
   );
