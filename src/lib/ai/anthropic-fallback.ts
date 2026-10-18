@@ -195,8 +195,10 @@ export function anthropicOutputFormatFor(format: unknown, model: string): Anthro
 }
 
 // An HTTP 400 that names one of the optional fields — the one answer the plain resend exists for.
+// "schema" is matched anywhere in a word: the CV reader's 50 nullable fields were refused on 18 Oct 2026
+// with "Schemas contains too many parameters with union types", which a whole-word match never saw.
 export function isOptionalFieldRefusal(status: number, rawBody: string) {
-  return status === 400 && /output_config|output_format|\bschema\b|\beffort\b/i.test(rawBody);
+  return status === 400 && /output_config|output_format|schema|\beffort\b|union types/i.test(rawBody);
 }
 
 const DATA_URL = /^data:([^;,]+);base64,([\s\S]*)$/;

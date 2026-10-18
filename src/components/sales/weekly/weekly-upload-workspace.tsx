@@ -16,6 +16,7 @@ import type {
 } from "@/lib/sales/weekly/types";
 import { WEEKLY_DISTRIBUTORS } from "@/lib/sales/weekly/distributors";
 import { weeklyProductKeysAreOne, weeklyUploadThisWeekUnits, weeklyUploadUnitScope } from "@/lib/sales/weekly/unit-totals";
+import { weeklyVerifyAiBadge } from "@/lib/sales/weekly/verify-ai-state";
 import type { SourceOfSalesProduct } from "@/lib/sales/monthly-distributor-import";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -1852,7 +1853,7 @@ function VerifyPanel({ result, verified, onConfirm }: { result: WeeklyVerifyResu
         {drift ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
         {missingSheet ? "A sheet the import reads is missing from this file — review carefully" : drift ? "Possible column drift — review carefully" : "Columns look consistent"}
         <span className={`ml-auto inline-flex items-center px-2 py-0.5 text-phx-xs font-bold ${result.aiUsed ? "bg-phx-accent-soft text-[#9A3412]" : "bg-slate-100 text-slate-600"}`}>
-          {result.aiUsed ? "AI checked" : "AI unavailable — manual review"}
+          {weeklyVerifyAiBadge(result.aiState)}
         </span>
       </div>
 

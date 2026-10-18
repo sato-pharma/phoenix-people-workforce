@@ -1,6 +1,8 @@
 // Weekly Sales — serializable shapes for the upload pipeline and dashboard. A separate module from
 // the monthly Source-of-Sales surface; nothing here is read by or merged with the monthly tables.
 
+import type { WeeklyVerifyAiState } from "@/lib/sales/weekly/verify-ai-state";
+
 export type WeeklyValidationIssue = {
   field: string;
   message: string;
@@ -309,6 +311,8 @@ export type WeeklyVerifyResult = {
   verdict: "pass" | "drift";
   /** false when no AI key is set or the AI call failed — the deterministic column plan still shows */
   aiUsed: boolean;
+  /** why AI did or did not judge the columns — the verify panel's badge reads this, never aiUsed alone */
+  aiState: WeeklyVerifyAiState;
   /** plain-English summary from the AI, or a fallback message when AI is unavailable */
   aiNote: string | null;
   /** the files/sheets that were read */

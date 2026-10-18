@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import ExcelJS from "exceljs";
 
-import { planWeeklyVerify, weeklyVerifyVerdict, type WeeklyVerifyPlan } from "../src/lib/sales/weekly/ai-verify.ts";
+import { planWeeklyVerify, verifyWeeklyUpload, weeklyVerifyVerdict, type WeeklyVerifyPlan } from "../src/lib/sales/weekly/ai-verify.ts";
+import { weeklyVerifyAiBadge } from "../src/lib/sales/weekly/verify-ai-state.ts";
+import { stripComments } from "./support/comment-strip.ts";
 import { listCodeWeeklyContracts, weeklyContractByCode } from "../src/lib/sales/weekly/column-contract.ts";
 import { parseWeeklyWorkbookBuffer } from "../src/lib/sales/weekly/parser.ts";
 import { weeklySheetMatcher } from "../src/lib/sales/weekly/sheet-match.ts";
@@ -221,4 +225,18 @@ export async function runWeeklyVerifySheetMatchTests() {
     const loaded = dbRowToContract({ distributor_code: "EG", distributor_name: "EGD", split_files: false, sheets: stale, active: true });
     assert.equal(loaded?.sheets.find((sheet) => sheet.role === "stock")?.sheetIncludes, "Current Stock Branches", "a stored override's stale sheet names are replaced by the shared rule");
   }
+
+  // ── The badge says WHY AI did not judge the columns (18 Oct 2026: a check that never called AI read
+  //    "AI unavailable" on production while AI was answering, and was taken for AI being down). ──
+  assert.equal(weeklyVerifyAiBadge("checked"), "AI checked");
+  for (const state of ["header_name_file", "nothing_to_check", "failed"] as const) {
+    assert.doesNotMatch(weeklyVerifyAiBadge(state), /unavailable/i, `${state}: AI was not down, so the badge never says it is unavailable`);
+  }
+  assert.match(weeklyVerifyAiBadge("not_configured"), /AI unavailable/, "only a missing key reads as unavailable");
+  const direct = await verifyWeeklyUpload({ distributorCode: "Direct", fileBuffer: Buffer.from(""), fileName: "direct.xlsx" });
+  assert.equal(direct.aiState, "header_name_file", "a Direct file is matched by header name, so AI has nothing to judge");
+  assert.equal(direct.aiUsed, false);
+  const panel = stripComments(readFileSync(fileURLToPath(new URL("../src/components/sales/weekly/weekly-upload-workspace.tsx", import.meta.url)), "utf8"));
+  assert.ok(panel.includes("weeklyVerifyAiBadge(result.aiState)"), "the verify panel's badge reads the state");
+  assert.doesNotMatch(panel, /aiUsed \? "AI checked"/, "and never the old yes/no that called every skipped check unavailable");
 }
