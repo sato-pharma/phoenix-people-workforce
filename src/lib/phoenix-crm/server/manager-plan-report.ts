@@ -114,13 +114,23 @@ export type ManagerReportView = {
 };
 
 /** The half-days each manager stood with a rep on a visit — "<seat>|<date>|<customer>" keys. */
-async function loadWithRepDone(managerHrIds: ReadonlyArray<string>, seatIds: ReadonlyArray<string>, weekStart: string, isTest: boolean): Promise<Map<string, Set<string>>> {
+async function loadWithRepDone(
+  managerHrIds: ReadonlyArray<string>,
+  seatIds: ReadonlyArray<string>,
+  weekStart: string,
+  isTest: boolean,
+  productManagerHrIds: ReadonlyArray<string> = [],
+): Promise<Map<string, Set<string>>> {
   const done = new Map<string, Set<string>>();
   const managers = dedupeIds(managerHrIds);
   if (managers.length === 0 || seatIds.length === 0) return done;
+  const productManagers = dedupeIds(productManagerHrIds);
   const weekEnd = addDaysIso(weekStart, 5);
-  const readBy = (column: "manager_hr_id" | "senior_hr_id" | "product_manager_hr_id", part: string[]) =>
-    fetchAllRowsKeyset<Row>(
+  const readBy = (column: "manager_hr_id" | "senior_hr_id" | "product_manager_hr_id", part: string[]): Promise<Row[]> => {
+    // The product manager's own slot is asked of the managers who plan as one, and not at all when none does.
+    const ids = column === "product_manager_hr_id" ? productManagers : managers;
+    if (ids.length === 0) return Promise.resolve([]);
+    return fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
           .from("phoenix_crm_countable_visits")
@@ -129,9 +139,10 @@ async function loadWithRepDone(managerHrIds: ReadonlyArray<string>, seatIds: Rea
           .eq("is_test", isTest)
           .gte("visit_date", weekStart)
           .lte("visit_date", weekEnd)
-          .in(column, managers),
+          .in(column, ids),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     );
+  };
   for (const part of chunk(dedupeIds(seatIds), 100)) {
     // A product manager is on a visit in its own slot (owner, 2026-10-17), so it is read too.
     const [asManager, asSenior, asProductManager] = await Promise.all([
@@ -198,6 +209,7 @@ export async function computeManagerReports(
       slots.flatMap((slot) => (slot.kind === "with_rep" && slot.repSeatId ? [slot.repSeatId] : [])),
       weekStart,
       isTest,
+      planRows.filter((plan) => plan.plannerKind === "pm").map((plan) => plan.managerHrId),
     ),
   ]);
   const customersBySlot = new Map<string, typeof slotCustomers>();

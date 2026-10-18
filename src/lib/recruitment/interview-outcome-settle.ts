@@ -22,16 +22,19 @@
 // the interviewer is being told less, not more. The outcome is stamped with no setter and a history line
 // that says it was settled automatically, so nobody mistakes it for a person's word.
 
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isBatchActor } from "@/lib/recruitment/batch-actor";
 import type { InterviewOutcome } from "@/lib/recruitment/interview-calendar-types";
+import { INTERVIEW_OUTCOME_WINDOW_DAYS } from "@/lib/recruitment/interview-outcome-window";
+import { isSentCvReturn } from "@/lib/recruitment/manager-recall-status";
 
 /** A decision made later than this after the interview is not read as the verdict on it. */
-export const DECISION_WINDOW_DAYS = 14;
+export const DECISION_WINDOW_DAYS = INTERVIEW_OUTCOME_WINDOW_DAYS;
 
 const DAY_MS = 86_400_000;
 
-export type SettleStatusEvent = { toStatus: string; actorHrId: string | null; createdAt: string };
+export type SettleStatusEvent = { toStatus: string; actorHrId: string | null; createdAt: string; fromStatus?: string | null };
 
 export type SettleEvidence = {
   startsAt: string;
@@ -76,11 +79,14 @@ export function inferInterviewOutcome(evidence: SettleEvidence): InferredOutcome
   // candidate shortlisted and then hired is hired, not "shortlisted").
   if (events.some((event) => event.toStatus === "hired")) return { outcome: "attended", reason: "the candidate was hired after it" };
 
+  // Taking a CV back from a manager (a recall, his Hide, the 45-day return) files `sent_to_manager →
+  // shortlisted`; nobody judged the interview by it, so it is never the verdict (`isSentCvReturn`).
   const decision = events.find(
     (event) =>
       Boolean(event.actorHrId) &&
       !isBatchActor(event.actorHrId) &&
-      event.toStatus in DECISION_WORDS &&
+      Object.prototype.hasOwnProperty.call(DECISION_WORDS, event.toStatus) &&
+      !isSentCvReturn(event) &&
       event.at - end <= DECISION_WINDOW_DAYS * DAY_MS,
   );
   // An offer drawn up after the interview outranks a shortlist or a back-up (it is further along), but not a
@@ -101,9 +107,17 @@ export function inferInterviewOutcome(evidence: SettleEvidence): InferredOutcome
 type BookingRow = { id: string; candidate_id: string; starts_at: string; duration_minutes: number | null };
 
 export type SettledInterview = { bookingId: string; candidateId: string; outcome: InterviewOutcome; reason: string };
-export type SettleRun = { considered: number; settled: SettledInterview[] };
+/** `stoppedEarly`: the run reached its deadline with interviews still to write; the next run settles them. */
+export type SettleRun = { considered: number; settled: SettledInterview[]; stoppedEarly: boolean };
 
 const READ_CHUNK = 40;
+
+/** How many settled interviews are written at once. */
+const WRITE_CONCURRENCY = 8;
+
+const BOOKING_COLUMNS = "id,candidate_id,starts_at,duration_minutes";
+
+type Db = ReturnType<typeof getSupabaseAdmin>;
 
 function chunk<T>(items: readonly T[], size: number): T[][] {
   const out: T[][] = [];
@@ -112,29 +126,108 @@ function chunk<T>(items: readonly T[], size: number): T[][] {
 }
 
 /**
- * Settle, across ALL time, every finished interview of a known candidate that has no outcome and whose
- * outcome the record proves. Idempotent: the write only lands where the outcome is still empty, so a run
- * twice at once, or a person answering between the read and the write, loses nothing. `dryRun` reads and
- * infers but writes nothing.
+ * The scheduled run reads every interview this recent: older than this, no shortlist, back-up or rejection
+ * can still count (DECISION_WINDOW_DAYS) and the panel has let the interview go.
+ */
+const SCAN_WINDOW_DAYS = DECISION_WINDOW_DAYS + INTERVIEW_OUTCOME_WINDOW_DAYS;
+
+/**
+ * The candidates hired, or given an offer, since `sinceIso`. A hire or an offer has no time limit (proof 2
+ * above), so these candidates' older interviews are read as well — which keeps "on all time" true without
+ * re-reading, every ten minutes, every old interview the record can never prove.
+ */
+async function candidatesHiredOrOfferedSince(db: Db, sinceIso: string): Promise<string[]> {
+  const [hires, offers] = await Promise.all([
+    db.from("ats_candidate_status_events").select("candidate_id").eq("to_status", "hired").gte("created_at", sinceIso).limit(5000),
+    db.from("offers").select("id").gte("created_at", sinceIso).limit(5000),
+  ]);
+  if (hires.error) throw hires.error;
+  if (offers.error) throw offers.error;
+  const ids = new Set<string>();
+  for (const row of (hires.data ?? []) as Array<{ candidate_id: string | null }>) if (row.candidate_id) ids.add(String(row.candidate_id));
+  // An offer names no candidate; the candidate names the offer.
+  for (const part of chunk(((offers.data ?? []) as Array<{ id: string }>).map((row) => String(row.id)), READ_CHUNK)) {
+    const { data, error } = await db.from("ats_candidates").select("id").in("offer_id", part);
+    if (error) throw error;
+    for (const row of (data ?? []) as Array<{ id: string }>) ids.add(String(row.id));
+  }
+  return [...ids];
+}
+
+/** Write one settled outcome, only where it is still empty. Null when somebody answered first. */
+async function writeSettledOutcome(
+  db: Db,
+  item: { row: BookingRow; candidateId: string; inferred: InferredOutcome },
+  stamp: string,
+): Promise<SettledInterview | null> {
+  const { row, candidateId, inferred } = item;
+  const { data: written, error: writeError } = await db
+    .from("ats_interview_bookings")
+    .update({ outcome: inferred.outcome, outcome_set_at: stamp, outcome_set_by_hr_id: null })
+    .eq("id", row.id)
+    .is("outcome", null)
+    .select("id");
+  if (writeError) throw writeError;
+  if (!written || written.length === 0) return null;
+  // The outcome landed; a missing history line is not worth failing the run for, but it is logged.
+  const history = await db.from("ats_interview_booking_changes").insert({
+    actor_hr_id: null,
+    booking_id: row.id,
+    kind: "outcome",
+    summary: `Settled automatically as ${inferred.outcome}: ${inferred.reason}.`,
+  });
+  if (history.error) {
+    logError("An interview outcome was settled automatically but its history line could not be written", {
+      error: history.error,
+      labels: { booking_id: row.id, event: "interview_outcome_settle_history_write_failed" },
+    });
+  }
+  return { bookingId: row.id, candidateId, outcome: inferred.outcome, reason: inferred.reason };
+}
+
+/**
+ * Settle every finished interview of a known candidate that has no outcome and whose outcome the record
+ * proves. The scheduled run reads the last SCAN_WINDOW_DAYS, plus any older interview whose candidate was
+ * hired or offered inside them: an older interview the record cannot prove stays null for ever, and an
+ * unbounded, oldest-first read would re-read those every ten minutes and, once a thousand piled up, starve
+ * every newer interview. `allTime` lifts the bound for a one-off sweep. Past `deadlineMs` it starts no new
+ * write and returns with `stoppedEarly`. Idempotent: the write only lands where the outcome is still
+ * empty, so a run twice at once, or a person answering between the read and the write, loses nothing.
+ * `dryRun` reads and infers but writes nothing.
  */
 export async function settleFinishedInterviewOutcomes(
   now: Date = new Date(),
-  options: { dryRun?: boolean } = {},
+  options: { allTime?: boolean; dryRun?: boolean; deadlineMs?: number } = {},
 ): Promise<SettleRun> {
   const db = getSupabaseAdmin();
-  const { data, error } = await db
+  const sinceIso = new Date(now.getTime() - SCAN_WINDOW_DAYS * DAY_MS).toISOString();
+  let query = db
     .from("ats_interview_bookings")
-    .select("id,candidate_id,starts_at,duration_minutes")
+    .select(BOOKING_COLUMNS)
     .is("outcome", null)
     .not("candidate_id", "is", null)
-    .lt("starts_at", now.toISOString())
-    .order("starts_at", { ascending: true })
-    .limit(1000);
+    .lt("starts_at", now.toISOString());
+  if (!options.allTime) query = query.gte("starts_at", sinceIso);
+  const { data, error } = await query.order("starts_at", { ascending: true }).limit(1000);
   if (error) throw error;
-  const rows = ((data ?? []) as BookingRow[]).filter(
+  const found = new Map(((data ?? []) as BookingRow[]).map((row) => [row.id, row]));
+  if (!options.allTime) {
+    for (const ids of chunk(await candidatesHiredOrOfferedSince(db, sinceIso), READ_CHUNK)) {
+      const older = await db
+        .from("ats_interview_bookings")
+        .select(BOOKING_COLUMNS)
+        .is("outcome", null)
+        .in("candidate_id", ids)
+        .lt("starts_at", sinceIso)
+        .limit(1000);
+      if (older.error) throw older.error;
+      for (const row of (older.data ?? []) as BookingRow[]) found.set(row.id, row);
+    }
+  }
+  const rows = [...found.values()].filter(
     (row) => Date.parse(row.starts_at) + (Number(row.duration_minutes) || 0) * 60_000 <= now.getTime(),
   );
-  if (rows.length === 0) return { considered: 0, settled: [] };
+  if (rows.length === 0) return { considered: 0, settled: [], stoppedEarly: false };
 
   const candidateIds = Array.from(new Set(rows.map((row) => String(row.candidate_id))));
   const bookingsByCandidate = new Map<string, string[]>();
@@ -147,7 +240,7 @@ export async function settleFinishedInterviewOutcomes(
       db.from("ats_interview_bookings").select("candidate_id,starts_at").in("candidate_id", ids),
       db
         .from("ats_candidate_status_events")
-        .select("candidate_id,to_status,actor_hr_id,created_at")
+        .select("candidate_id,from_status,to_status,actor_hr_id,created_at")
         .in("candidate_id", ids)
         .order("created_at", { ascending: true })
         .limit(5000),
@@ -161,9 +254,9 @@ export async function settleFinishedInterviewOutcomes(
       list.push(row.starts_at);
       bookingsByCandidate.set(String(row.candidate_id), list);
     }
-    for (const row of (events.data ?? []) as Array<{ candidate_id: string; to_status: string; actor_hr_id: string | null; created_at: string }>) {
+    for (const row of (events.data ?? []) as Array<{ candidate_id: string; from_status: string | null; to_status: string; actor_hr_id: string | null; created_at: string }>) {
       const list = eventsByCandidate.get(String(row.candidate_id)) ?? [];
-      list.push({ actorHrId: row.actor_hr_id, createdAt: row.created_at, toStatus: row.to_status });
+      list.push({ actorHrId: row.actor_hr_id, createdAt: row.created_at, fromStatus: row.from_status, toStatus: row.to_status });
       eventsByCandidate.set(String(row.candidate_id), list);
     }
     for (const row of (candidates.data ?? []) as Array<{ id: string; offer_id: string | null }>) {
@@ -179,6 +272,7 @@ export async function settleFinishedInterviewOutcomes(
   }
 
   const settled: SettledInterview[] = [];
+  const toWrite: Array<{ row: BookingRow; candidateId: string; inferred: InferredOutcome }> = [];
   for (const row of rows) {
     const candidateId = String(row.candidate_id);
     const start = Date.parse(row.starts_at);
@@ -198,26 +292,20 @@ export async function settleFinishedInterviewOutcomes(
       settled.push({ bookingId: row.id, candidateId, outcome: inferred.outcome, reason: inferred.reason });
       continue;
     }
-    const stamp = now.toISOString();
-    const { data: written, error: writeError } = await db
-      .from("ats_interview_bookings")
-      .update({ outcome: inferred.outcome, outcome_set_at: stamp, outcome_set_by_hr_id: null })
-      .eq("id", row.id)
-      .is("outcome", null)
-      .select("id");
-    if (writeError) throw writeError;
-    if (!written || written.length === 0) continue;
-    settled.push({ bookingId: row.id, candidateId, outcome: inferred.outcome, reason: inferred.reason });
-    try {
-      await db.from("ats_interview_booking_changes").insert({
-        actor_hr_id: null,
-        booking_id: row.id,
-        kind: "outcome",
-        summary: `Settled automatically as ${inferred.outcome}: ${inferred.reason}.`,
-      });
-    } catch {
-      // The outcome landed; a missing history line is not worth failing the run for.
+    toWrite.push({ row, candidateId, inferred });
+  }
+
+  const stamp = now.toISOString();
+  let stoppedEarly = false;
+  for (const group of chunk(toWrite, WRITE_CONCURRENCY)) {
+    // Past the deadline no new write starts; what is left keeps its null and the next run settles it.
+    if (options.deadlineMs !== undefined && Date.now() >= options.deadlineMs) {
+      stoppedEarly = true;
+      break;
+    }
+    for (const result of await Promise.all(group.map((item) => writeSettledOutcome(db, item, stamp)))) {
+      if (result) settled.push(result);
     }
   }
-  return { considered: rows.length, settled };
+  return { considered: rows.length, settled, stoppedEarly };
 }

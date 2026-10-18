@@ -57,7 +57,12 @@ export function runPhoenixCrmLiveTeamTests() {
     // (no seat) always is — every other notice still asks the seat's own team.
     assert.match(notifier, /if \(notice\.kind !== "manager_plan"\) return seatIsInLiveTeam\(notice\.seat, live\);/, "every other notice asks the seat's own team, as before");
     assert.match(notifier, /if \(seat\.tier !== "RSM" && seat\.tier !== "NSM"\) return seatIsInLiveTeam\(seat, live\);/, "a district manager's week asks his own team");
-    assert.match(notifier, /return \[\.\.\.live\]\.some\(\(liveSeatId\) => liveSeatId !== seat\.seatId && \(org\.seats\.get\(liveSeatId\)\?\.path\.includes\(seat\.seatId\) \?\? false\)\);/, "a regional or national manager's week asks for any live team below his seat");
+    assert.match(notifier, /return seatHasLiveTeamBelow\(org\.seats, seat\.seatId, live\);/, "a regional or national manager's week asks for any live team below his seat");
+    assert.match(
+      read("src/lib/phoenix-crm/live-team-rules.ts"),
+      /liveSeatId !== seatId && seats\.get\(liveSeatId\)\?\.path\.includes\(seatId\)/,
+      "…and that rule is a team BELOW the seat, never the seat's own",
+    );
 
     for (const [path, pattern, what] of [
       ["src/lib/phoenix-crm/server/plan-reminder.ts", /loadLiveTeamSeatIds\(cairoToday\)[\s\S]*seatIsInLiveTeam\(seat, live\)/, "the plan reminder"],

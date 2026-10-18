@@ -509,15 +509,17 @@ async function buildBoard(
   const team = district.filter((entry) => Boolean(personKey(entry.occupantHrId)));
   const weekEnd = addDaysIso(weekStart, 5);
 
-  const [holidays, planRows, approvers] = await Promise.all([
+  const [holidays, planRows] = await Promise.all([
     loadPlanHolidays(weekStart, weekEnd),
     loadWeekPlanRows([managerHrId], weekStart, isTest),
-    managerApproversFor(viewer.org, writer),
   ]);
   const plan = planRows[0] ?? null;
-  const [slots, asks] = await Promise.all([
+  // A sent week carries its own approvers, so they are worked out (an `employees` read for everyone but a
+  // district manager) only for a draft or a week not started.
+  const [slots, asks, approvers] = await Promise.all([
     plan ? loadManagerSlotRows([plan.planId]) : Promise.resolve([] as ManagerSlotRow[]),
     plan ? loadEditAsks([plan.planId]) : Promise.resolve([] as ManagerEditAskRow[]),
+    !plan || plan.status === "draft" ? managerApproversFor(viewer.org, writer) : Promise.resolve({ firstHrId: null, secondHrId: null }),
   ]);
   // The reps' own weeks: the chosen scope's, and every rep a saved half-day already names — so a ticked
   // customer is still flagged when the board shows another district.
