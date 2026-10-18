@@ -1,11 +1,11 @@
 ---
 name: the-district-managers-phoenix-crm-weekly-plan-as-he-specified-it
-description: "The DM's weekly plan in Phoenix CRM — the rep's numbered form inverted (pick a REP, tick that rep's doctors per half-day, or Admin, or a Single visit); the owner's rulings of 2026-10-16, BUILT on branch claude/district-manager-weekly-plan-69415c on 2026-10-17 as seven phoenix_crm_manager_* tables; migration applied to staging and production 2026-10-17; merged as #6025 at 11:12 Cairo the same day and live since about 11:23; his 'never skip the NSM after a regional manager' rule (week, edit asks, removals) merged as #6032 at 12:20 Cairo, its migration 20261017120000 on production since 12:06."
+description: "The DM's weekly plan in Phoenix CRM — the rep's numbered form inverted (pick a REP, tick that rep's doctors per half-day, or Admin, or a Single visit); the owner's rulings of 2026-10-16, BUILT on branch claude/district-manager-weekly-plan-69415c on 2026-10-17 as seven phoenix_crm_manager_* tables; migration applied to staging and production 2026-10-17; merged as #6025 at 11:12 Cairo the same day and live since about 11:23; his 'never skip the NSM after a regional manager' rule (week, edit asks, removals) merged as #6032 at 12:20 Cairo, its migration 20261017120000 on production since 12:06. WIDENED the same evening (about 18:00 Cairo) to the regional, national and product managers — each picks the district manager (or a product manager a line, or 'any rep') first, approvers 'as today' plus HR's automatic acknowledgement, Office for all but a DM, product managers file both forms; migration 20261017213000 on staging 18:53 and production 19:48 Cairo; merged on his word as #6055 at 20:31 Cairo and live from 20:46 (production revision a89e8173d contains it)."
 metadata:
   node_type: memory
   type: project
   originSessionId: 551fda9a-c5f4-4b2d-b228-a1f47c253abd
-  modified: 2026-10-17T09:20:57.146Z
+  modified: 2026-10-17T17:49:49.411Z
 ---
 
 Owner, **2026-10-16**, specifying the managers' weekly plan starting with the district manager:
@@ -103,6 +103,37 @@ function body holds `delete`s). No ledger row on either; all eight function dige
 26. 🔴 **Ticking a rep's customers offers doctors only — never his pharmacies** (owner, 2026-10-17, same
     round; he chose "Doctors only"). The build already never loads them; the pinned
     `halfOfListType("Pharmacy")` branch is dead code, not a rule.
+
+**Widened to the regional, national and product managers (2026-10-17, about 18:00 Cairo)**
+
+His words: *"Now do the same for the product managers and the national sales managers and the regional
+manager. The only difference is that he first choose the … region or the district manager, then … the
+areas of this district manager appear."* His answers in chat the same hour:
+
+27. **Approvers: "as today HR auto acknowledge"** — the manager on the HR record, then the CEO (one step
+    when that manager IS the CEO: every NSM), then HR acknowledges by itself (`SYSTEM-AUTO-HR-ACK`).
+    Hany → Ali → CEO; Ahmed → Rasha → CEO; Rasha → Hossam → CEO. A district manager's chain and his
+    no-HR-step ruling are untouched.
+28. **Picking the district manager: "once per day by default but have the option to half-day when
+    choosing area".**
+29. **The product side is "Rasha and Ahmed"** — Hossam (Marketing Manager) and Nahed (resigned, last day
+    31 Oct) are out. Their legacy form STAYS (the no-weekly-plan deduction reads it): they file both.
+30. **A product manager chooses Pedia or Anti Infective, and may skip the district manager and choose a
+    rep directly** ("Any rep in <line>"); **"Both of them"** — Rasha and Ahmed alike.
+31. **Office** is a new Admin half-day for everyone but a district manager, because Ali's, Amr's and the
+    product managers' attendance is judged on the days their plan marks Office.
+
+Built on branch `claude/manager-plan-wider-writers` (worktree `venue-missing-direct-order-f05ad9`);
+migration `20261017213000_phoenix_crm_manager_plan_wider_writers.sql` applied to staging at 18:53 and,
+announced at about 19:00 with no stop, to PRODUCTION at 19:48 Cairo via `apply-sql-file.mjs` (no ledger
+row; digests in `ACKNOWLEDGED_EXCEPTIONS`). Module rules: `phoenix-crm-manager-plan`, "Widened to the
+regional, national and product managers". Merged on "merge 6055 when green" as #6055 (`abcf30736`) at
+20:31 Cairo; production served it from 20:46 (revision `a89e8173d`). Looked at the same evening as Hany
+on phx-live (main, production data, nothing saved): his three district managers (Mohamed Eleiwa, Nermeen
+Salah, Sahar El Gallad) offered per day, Office first among the Admin half-days, Nermeen's five Delta (1)
+reps listed under "With a rep", no horizontal scroll at 375px. The worktree and both manager-plan branches
+were retired on his word; archive refs `refs/deleted-claude-manager-plan-wider-writers-20261017` and
+`refs/deleted-claude-district-manager-weekly-plan-69415c-20261017`.
 
 **Why:** the DM files a plan today that nobody builds from his reps' real days, so his week and his
 team's week are written twice and agree by hand.
