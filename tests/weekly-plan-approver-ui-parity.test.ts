@@ -108,6 +108,11 @@ export function runWeeklyPlanApproverUiParityTests() {
     /methods: \["GET"\], pattern: "\/api\/weekly-plans\/:id\/comments", permission: \{ resource: "weekly_plans", action: "read" \}/,
     "the access registry already declares the comment READ as weekly_plans:read - the service must agree with it",
   );
+  assert.match(
+    registrySource,
+    /methods: \["POST"\], pattern: "\/api\/weekly-plans\/:id\/comments", permission: \{ resource: "weekly_plans", action: "read" \}/,
+    "the access registry must declare the comment POST as weekly_plans:read too, the floor addPlanComment asserts - 'update' described a permission CEO and Manager cannot hold",
+  );
 
   // ── One review comment PER PLAN ────────────────────────────────────────────
   // A single shared string was bound to every plan's textarea and sent on whichever plan was decided
