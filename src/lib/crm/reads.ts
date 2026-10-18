@@ -24,7 +24,7 @@ import { CRM_VISIT_TYPE_FILTER_CODES, CRM_VISIT_TYPE_OPTIONS, resolveVisitTypeLa
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { addDaysIso, hasRealVendorTime, todayIso } from "@/lib/crm/dates";
-import { hrIdLookupKeys } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getOrLoadShared, sharedReadKey } from "@/lib/cache/shared-read";
@@ -173,7 +173,13 @@ export const CRM_RESIGNED_IN_LIST = `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`;
 // the static list itself: some of its entries are owner-excluded ACTIVE employees on purpose (e.g.
 // the CEO), and that decision must never be silently reversed just because they are still employed.
 const EXCLUDED_AGENTS_TTL_MS = 5 * 60_000;
-type EffectiveExclusion = { ids: number[]; inList: string };
+/**
+ * A person the live tier hides because their employment status is no longer active or on leave,
+ * with the last working day whose rows are still theirs. Carried on the cached exclusion so a reader
+ * JUDGING that person can have their own rows back — see {@link queryOwnVisitsOfDepartedAgents}.
+ */
+export type DepartedCrmAgent = { hrId: string; lastWorkingDate: string | null };
+type EffectiveExclusion = { ids: number[]; inList: string; departed: readonly DepartedCrmAgent[] };
 let excludedAgentsCache: (EffectiveExclusion & { at: number }) | null = null;
 let excludedAgentsInFlight: Promise<EffectiveExclusion> | null = null;
 
@@ -312,12 +318,13 @@ export function resolveLiveDepartedExclusion(input: {
  * tier is logged and degrades to the static list alone. */
 async function computeEffectiveExclusion(): Promise<EffectiveExclusion> {
   let liveIds: number[] = [];
+  let departed: DepartedCrmAgent[] = [];
   try {
     const employees = await getEmployeeDirectoryRows({ includeInactive: true });
-    const departedHrIds = employees
-      .filter((employee) => !isActiveLifecycleStatus(employee.employmentStatus))
-      .map((employee) => employee.hrId)
-      .filter((hrId): hrId is string => Boolean(hrId));
+    departed = employees
+      .filter((employee) => !isActiveLifecycleStatus(employee.employmentStatus) && Boolean(employee.hrId))
+      .map((employee) => ({ hrId: employee.hrId, lastWorkingDate: isoDayOrNull(employee.lastWorkingDate) }));
+    const departedHrIds = departed.map((agent) => agent.hrId);
     if (departedHrIds.length > 0) {
       const scannedCrmIds = await scanDepartedAgentCrmIds(departedHrIds);
       const activeEmployeeCrmIds = new Set(
@@ -335,7 +342,49 @@ async function computeEffectiveExclusion(): Promise<EffectiveExclusion> {
     });
   }
   const ids = Array.from(new Set<number>([...CRM_RESIGNED_AGENT_CRM_IDS, ...liveIds])).sort((a, b) => a - b);
-  return { ids, inList: ids.length > 0 ? `(${ids.join(",")})` : "" };
+  return { departed, ids, inList: ids.length > 0 ? `(${ids.join(",")})` : "" };
+}
+
+function isoDayOrNull(value: string | null | undefined): string | null {
+  const day = String(value ?? "").trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+}
+
+/** The departed people among `hrIds`, matched on the canonical HR id. Exported for its unit test. */
+export function departedAgentsAmong(
+  departed: readonly DepartedCrmAgent[],
+  hrIds: readonly string[],
+): DepartedCrmAgent[] {
+  const wanted = new Set(hrIds.map((hrId) => canonicalHrIdKey(hrId)).filter((key): key is string => Boolean(key)));
+  if (wanted.size === 0) return [];
+  return departed.filter((agent) => wanted.has(canonicalHrIdKey(agent.hrId) ?? ""));
+}
+
+/**
+ * Keep only the rows each departed person LOGGED THEMSELVES on or before their last working day.
+ *
+ * A row dated after it is not theirs: the CRM slot is handed to the replacement hired into the same
+ * area and line (memory crm-resigned-slot-reused-for-new-hire), and that is the successor's work.
+ * With no last working day recorded the row is kept, because the sync attributed it to them by date.
+ * Exported for its unit test.
+ */
+export function selectOwnVisitsThroughLastWorkingDate<T extends { agent_hr_id?: string | null; visit_date?: string | null }>(
+  rows: readonly T[],
+  departed: readonly DepartedCrmAgent[],
+): T[] {
+  const lastDayByKey = new Map<string, string | null>();
+  for (const agent of departed) {
+    const key = canonicalHrIdKey(agent.hrId);
+    if (key) lastDayByKey.set(key, agent.lastWorkingDate);
+  }
+  return rows.filter((row) => {
+    const key = canonicalHrIdKey(row.agent_hr_id ?? "");
+    if (!key || !lastDayByKey.has(key)) return false;
+    const day = String(row.visit_date ?? "").slice(0, 10);
+    if (!day) return false;
+    const lastDay = lastDayByKey.get(key) ?? null;
+    return lastDay === null || day <= lastDay;
+  });
 }
 
 /** Cached accessor for the effective exclusion; refreshes at most once per
@@ -2046,6 +2095,51 @@ export async function scanVisitsForRangeCreditingPartners<T = CrmVisitRow>(optio
   return [...visible, ...rescued].sort((a, b) =>
     compareUuidText((a as Keyed).id ?? "", (b as Keyed).id ?? ""),
   );
+}
+
+/**
+ * The rows the departed people among `hrIds` logged THEMSELVES, through their own last working day.
+ *
+ * WHY (found 2026-10-18 while building the Field Absence Calendar). The live tier of the exclusion
+ * keys on employment STATUS, never on a date, and recording a resignation sets that status at once.
+ * So a rep serving notice — status already `resigned`, last working day still ahead — loses every
+ * visit they logged, on every day of the period, from the minute HR records it. A reader that is
+ * JUDGING that person's day must not lose them: the fingerprint report keeps a leaver in scope up to
+ * the last working day, and a CRM field visit is what cancels that day's charge. Measured on
+ * production the same day: Hana Abdelaziz Samir Abdelaziz (last working day 31 Oct, recorded 18 Oct)
+ * read 0 of her 14 October visit days.
+ *
+ * Every live board keeps the exclusion exactly as it is — only the person being judged gets their
+ * own rows back, and only through their last working day, because a later row on the same slot is
+ * the successor's ({@link selectOwnVisitsThroughLastWorkingDate}). An ACTIVE person the static list
+ * hides on purpose (the CEO) is not departed and stays hidden. Add these rows to the reader's own;
+ * they never replace the partner-crediting door.
+ */
+export async function queryOwnVisitsOfDepartedAgents<T = CrmVisitRow>(options: {
+  dateFrom: string;
+  dateTo: string;
+  columns: string;
+  hrIds: readonly string[];
+}): Promise<T[]> {
+  if (options.hrIds.length === 0) return [];
+  const judged = departedAgentsAmong((await getEffectiveExclusion()).departed, options.hrIds);
+  if (judged.length === 0) return [];
+  const rows = await queryVisits<T & { agent_hr_id?: string | null; visit_date?: string | null }>({
+    agentHrIds: judged.map((agent) => agent.hrId),
+    columns: withOwnRowColumns(options.columns),
+    dateFrom: options.dateFrom,
+    dateTo: options.dateTo,
+    includeResignedAgents: true,
+  });
+  return selectOwnVisitsThroughLastWorkingDate(rows, judged);
+}
+
+/** The two columns {@link selectOwnVisitsThroughLastWorkingDate} reads, whatever the caller asked for. */
+function withOwnRowColumns(columns: string): string {
+  if (columns.trim() === "*") return columns;
+  const parts = columns.split(",").map((part) => part.trim()).filter(Boolean);
+  for (const column of ["agent_hr_id", "visit_date"]) if (!parts.includes(column)) parts.push(column);
+  return parts.join(", ");
 }
 
 /**
