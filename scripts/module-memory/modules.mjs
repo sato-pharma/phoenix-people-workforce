@@ -601,6 +601,26 @@ export const MODULES = [
     keywords: ["whatsapp bot", "screening question", "screening questions", "auto reply", "auto-replies", "careers form", "careers page", "apply form", "role menu", "show_if", "end_on"],
     tables: ["ats_whatsapp_"],
   },
+  // 🔴 SPLIT 2026-10-18, THE SAME WAY: `recruitment` measured 4,139 bytes against the 4,000-byte margin
+  // the moment the candidate-delete storage rule landed (28 rules, then 29). The OFFER LETTER is the
+  // second clean cut — its designs, the email it fires, the mailboxes it may leave from and the hand-off
+  // to the Employee Master are one family, and none of it is read while editing the pool, a candidate's
+  // files or the interview calendar. `recruitment` KEEPS EVERY GLOB IT HAD, so an offer file loads the
+  // PAIR and nothing that used to arrive stops arriving. The eight rules moved word for word.
+  {
+    id: "recruitment-offers",
+    title: "Recruitment — the job offer letter, its email and the hand-off to the Employee Master",
+    scope: "The job offer letter and its designs, the offer email and the mailboxes it may fire from, the candidate's accept and decline, and the offer-to-employee hand-off.",
+    globs: [
+      "src/lib/offers/**",
+      "src/components/offers/**",
+      "app/**/offers/**",
+      "tests/*offer*",
+      "supabase/migrations/*offer*",
+    ],
+    keywords: ["offer letter", "job offer", "offer email", "offer template", "offer letter design", "joining form", "accept button", "offer job titles"],
+    tables: ["offer_"],
+  },
   {
     id: "hiring-documents",
     title: "Hiring documents, contracts and company papers",
