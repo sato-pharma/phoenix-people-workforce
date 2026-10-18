@@ -261,23 +261,25 @@ function stripUnknownTokens(value: string, allowed: ReadonlySet<string>, warning
 
 function aiAssistErrorFromOpenAi(error: PhoenixOpenAiError) {
   switch (error.code) {
+    // Provider-neutral since Anthropic answers too: by the time a dead account reaches here, every
+    // configured provider has said so, and naming OpenAI alone sent people to the wrong billing page.
     case "not_configured":
       return new AiAssistError(
         "ai_not_configured",
-        "The AI assistant is not configured yet. Add your OpenAI key as OPENAI_API_KEY.",
+        "The AI assistant is not configured yet. Add OPENAI_API_KEY or ANTHROPIC_API_KEY on the server.",
       );
     case "quota_exceeded":
       return new AiAssistError(
         "ai_rate_limited",
-        "The OpenAI account is out of credit. Add billing/credit on platform.openai.com and try again.",
+        "The AI service is out of credit. Add credit to the AI account and try again.",
       );
     case "rate_limited":
       return new AiAssistError(
         "ai_rate_limited",
-        "The OpenAI rate limit was reached for now. Wait a minute and try again.",
+        "The AI service is busy right now. Wait a minute and try again.",
       );
     case "auth_failed":
-      return new AiAssistError("ai_failed", "OpenAI rejected the API key. Check OPENAI_API_KEY on the server.");
+      return new AiAssistError("ai_failed", "The AI service rejected the API key. Check OPENAI_API_KEY and ANTHROPIC_API_KEY on the server.");
     case "timeout":
       return new AiAssistError("ai_failed", "Could not reach the AI service: request timed out.");
     case "failed":
@@ -298,7 +300,7 @@ export async function draftEmailWithAi(input: AiDraftRequest): Promise<AiDraftRe
   if (!hasAiApiKey()) {
     throw new AiAssistError(
       "ai_not_configured",
-      "The AI assistant is not configured yet. Add your OpenAI key as OPENAI_API_KEY.",
+      "The AI assistant is not configured yet. Add OPENAI_API_KEY or ANTHROPIC_API_KEY on the server.",
     );
   }
   const instruction = input.instruction?.trim();
