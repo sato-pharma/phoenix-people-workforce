@@ -1,0 +1,80 @@
+name: Urgent deploy
+
+# THE "live in five minutes" ROUTE (owner, 2026-10-18). The normal route — PR checks, merge, main's
+# checks, Railway's Wait-for-CI build — is untouched and stays the default. This one uploads a PR's
+# code, merged onto the current main, straight to the production Railway service with `railway up`,
+# BEFORE its checks finish. The owner accepted that risk in his own words the same day.
+#
+# 🔴 STARTED ONLY BY `node scripts/urgent-deploy.mjs launch <pr>`, which a session runs ONLY when the
+# owner's own message says "live in five minutes". Never dispatch it, never push to its branches by
+# hand. Account: docs/deployment.md, "The urgent route".
+#
+# 🔴 IT IS TRIGGERED BY A PUSH TO ITS OWN BRANCH, NEVER BY A RUN ON `main` — and that is the safety of
+# the whole thing. Railway's Wait for CI holds a `main` commit's deploy until EVERY check suite on it
+# finishes, and withholds it for good if one fails. A dispatched run on `main` would attach its suite
+# to main HEAD and hold (or kill) the normal deploy for the 50 minutes this run can last. A push to
+# `urgent-deploy/*` puts the suite on the urgent commit, which Railway never deploys from.
+on:
+  push:
+    branches:
+      - urgent-deploy/production
+      - urgent-deploy/dry-run
+
+permissions:
+  # contents: write — the guard re-pushes a rebuilt urgent commit and deletes the branch when done.
+  contents: write
+  pull-requests: read
+
+# A newer launch replaces an older one: launch carries every still-unmerged urgent PR into the new
+# commit, so the older guard must stand down rather than fight it.
+concurrency:
+  group: urgent-deploy-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  urgent:
+    runs-on: ubuntu-latest
+    # Build ~3-4 min, then the guard watches up to 50 min for the normal route to take over.
+    timeout-minutes: 75
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN || secrets.RAILWAY_TOKEN }}
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Check out the urgent commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          # Full history: the guard answers "does production contain the merge?" by git ancestry.
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: '24'
+
+      - name: Git identity for rebuilt commits
+        run: |
+          git config user.name "urgent-deploy"
+          git config user.email "urgent-deploy@users.noreply.github.com"
+
+      - name: Upload to production and wait until it serves
+        run: node scripts/urgent-deploy.mjs deploy
+
+      - name: Guard the fix until the normal route takes over
+        if: github.ref_name == 'urgent-deploy/production'
+        run: node scripts/urgent-deploy.mjs guard
+
+      - name: Tell the owner the urgent run failed
+        if: failure() && github.ref_name == 'urgent-deploy/production'
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
+            echo "::warning::Telegram not configured — the failure reached nobody."
+            exit 0
+          fi
+          curl -sS --max-time 20 -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" -d "disable_web_page_preview=true" \
+            --data-urlencode "text=URGENT DEPLOY FAILED — read the run: ${RUN_URL}" -o /dev/null

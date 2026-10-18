@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { notificationConfigWarnings } from "@/lib/observability/config-drift";
 import { getDeployRevision } from "@/lib/observability/deploy-identity";
+import { readUrgentDeployRevision } from "@/lib/observability/urgent-deploy-marker";
 import { logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { auditWorkflowRegistryModules } from "@/lib/workflow-registry/service";
@@ -130,7 +131,9 @@ export async function GET() {
       // Non-fatal notification-config drift (email flag / Resend key unset in prod). Present
       // so an operator or synthetic monitor can catch a silent-email regression early.
       warnings,
-      revision: getDeployRevision(),
+      // An urgent `railway up` deploy carries no git sha; it names itself in public/urgent-deploy.json,
+      // which only an urgent upload ever contains, so it wins whenever it is there.
+      revision: readUrgentDeployRevision() ?? getDeployRevision(),
       time: new Date().toISOString(),
     },
     { status: ready ? 200 : 503, headers: { "cache-control": "no-store" } },

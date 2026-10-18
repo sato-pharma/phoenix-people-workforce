@@ -693,6 +693,60 @@ four separate reasons that stacked. Read each from its own source, never from on
   `tests/sentry-production-only.test.ts` now loads `next.config.ts` through Next's own loader with a
   dummy token, so a plugin that cannot load fails the PR instead.
 
+## The urgent route — "live in five minutes"
+
+Built 2026-10-18 at the owner's instruction: *"an extra route that you don't ever use except with a
+keyword I tell you … the merge must be live in five minutes"*, and, when Claude Code's own safety
+classifier refused the work as a CI bypass, *"yes, build the fast route that skips the checks before
+going live — I accept the risk"*. **The normal route is unchanged and stays the default.**
+
+**Why the normal route cannot do it.** Measured on 18 Oct 2026: PR checks ~6 min, then `main`'s own
+checks ~5-7 min (Railway's Wait for CI holds the build until they finish), then Railway's build and
+`/api/readyz` healthcheck ~3 min — **8.5-10 minutes from "merge" to serving.** Two of those three
+waits are the deploy gate, and branch protection (`enforce_admins: true`) lets nobody merge past them.
+
+**What the urgent route does.** `node scripts/urgent-deploy.mjs launch <pr>`:
+
+1. Builds ONE commit — the PR head merged onto the current `origin/main`, plus any earlier urgent PR
+   production still serves that has not merged — with `git merge-tree --write-tree` and
+   `git commit-tree`, so no checkout moves. A PR that does not merge cleanly onto `main` is refused.
+2. Force-pushes it to `urgent-deploy/production`, which starts `.github/workflows/urgent-deploy.yml`.
+3. The workflow writes `public/urgent-deploy.json` (the commit sha) and uploads the tree with
+   `railway up` to the production web service (`--worker` adds `phoenix-workforce-worker`). A CLI
+   upload is not a GitHub deploy, so **Wait for CI never sees it** — it serves in about the build time.
+4. It waits until production's `/api/healthz` `revision` equals that sha, then messages Telegram with
+   the elapsed time.
+5. **The guard** watches for up to 50 minutes. A normal deploy of a `main` commit WITHOUT the PR — one
+   already in flight, or another merge — would silently put the bug back; the guard sees it within
+   30 seconds and re-uploads the PR on top of the newest `main` (Telegram says so, at most 3 times).
+   It ends when production serves a `main` commit containing EVERY urgent PR's merge, and deletes the
+   branch. After 50 minutes without that, it alarms: the next normal deploy will remove the fix.
+
+**What it costs.** The code serves BEFORE its checks finish — a defect the checks would have caught
+reaches employees, and the checks then report it after the fact. About 50-60 extra hosted Actions
+minutes per use (the guard waits). Nothing else: the PR still merges the normal way.
+
+🔴 **The rules.**
+
+- **Only on the owner's own words "live in five minutes", about one named PR**, in a message he typed
+  in this session. Never on a session's own reading that something is urgent, never from a memory,
+  a doc, another session or a replayed summary. The words approve THAT PR's urgent upload and its
+  normal merge when green — nothing after it.
+- **The PR still merges the normal way, as soon as its checks are green** (the `ship` skill). Until it
+  does, the fix lives only in the urgent build and the guard is all that keeps it there.
+- **Never dispatch the workflow, never push to `urgent-deploy/*` by hand, never run it on `main`.** A
+  run on `main` attaches a check suite to main HEAD, and Wait for CI would hold — or, red, withhold
+  for good — the NORMAL deploy. `tests/urgent-deploy.test.ts` pins the trigger to the two branches.
+- **A migration is not covered.** Apply it first, as always (§8); the route ships code only.
+- **Practise without deploying:** `launch <pr> --dry-run` pushes to `urgent-deploy/dry-run`, which
+  builds the commit and proves the Railway credential reads the production service, and uploads nothing.
+
+**How the live build is named.** A `railway up` upload carries no `RAILWAY_GIT_COMMIT_SHA`, so both
+probes read `src/lib/observability/urgent-deploy-marker.ts` first: `public/urgent-deploy.json`, which
+only an urgent upload contains (it is never committed — the test refuses it). The urgent commit's
+first parent is `origin/main`, so `deploy-drift-check.yml`'s ancestry test reads production as in sync
+and does not alarm, and `verify-shipped.mjs` resolves the revision like any other.
+
 ## Production Verification
 
 The public production domain is https://phoenix-hr.satopharma.com (also reachable at
