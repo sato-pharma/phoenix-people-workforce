@@ -26,6 +26,7 @@ import {
   checkCvUpload,
   createInterviewBooking,
   type InterviewCalendarCaller,
+  isSignedInCaller,
   loadPeople,
   mayReadRequest,
   mayRequestInterviews,
@@ -41,6 +42,7 @@ import {
   type InterviewRequest,
   type InterviewRequestItem,
   isDistrictManagerOrAbove,
+  readsInterviewRequestInbox,
 } from "@/lib/recruitment/interview-calendar-types";
 
 const REQUESTS = "ats_interview_requests";
@@ -428,14 +430,25 @@ export async function createInterviewRequest(
 // ── Queues (read) ────────────────────────────────────────────────────────────────────────────────
 
 /**
- * The HR inbox: requests waiting for a time (and recently scheduled ones), soonest day first. Only a
- * caller with book rights on the calendar — HR and the owners — sees it.
+ * Who may READ the waiting list: a caller with book rights on the calendar — HR and the owners — and
+ * the Talent Acquisition seat, READ-ONLY (owner, 2026-10-18). That seat is a Viewer, so every other
+ * door here — giving a CV its time, withdrawing someone else's request — still asks for book rights
+ * and refuses her. Exported so the rule is run by a test, not only read from source.
+ */
+export function assertMayReadRequestInbox(caller: InterviewCalendarCaller): void {
+  if (isSignedInCaller(caller.access) && readsInterviewRequestInbox(caller.access)) return;
+  requireCalendarAccess(caller, "book", "any");
+}
+
+/**
+ * The HR inbox: requests waiting for a time (and recently scheduled ones), soonest day first. Read
+ * through `assertMayReadRequestInbox`: book rights, or the Talent Acquisition seat reading it.
  */
 export async function listInterviewRequestsInbox(
   caller: InterviewCalendarCaller,
   options: { includeCancelled?: boolean } = {},
 ): Promise<InterviewRequest[]> {
-  requireCalendarAccess(caller, "book", "any");
+  assertMayReadRequestInbox(caller);
   let query = recruitmentDb().from(REQUESTS).select(REQUEST_COLUMNS);
   if (!options.includeCancelled) query = query.neq("status", "cancelled");
   const { data, error } = await query.order("requested_day", { ascending: true }).order("created_at", { ascending: true });

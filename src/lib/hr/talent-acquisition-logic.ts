@@ -157,6 +157,8 @@ export type TalentCalendarMonth = {
 export type TalentInterviewCalendar = {
   /** Whether she may search candidates / add one to Recruitment from inside the calendar. */
   abilities: { canAddToRecruitment: boolean; canSearchCandidates: boolean };
+  /** Whether she reads the requests waiting for a time, read-only — her seat (`readsInterviewRequestInbox`). */
+  canReadRequests: boolean;
   /** Whether she may ASK for an interview — true for any HR seat (`mayRequestInterviews`). */
   canRequest: boolean;
   /** Viewer, Commenter, Editor, Owner, interviewer or requester — her tier on the calendar. */

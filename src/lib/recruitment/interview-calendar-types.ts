@@ -134,6 +134,18 @@ export function seesWholeInterviewCalendar(access: { role: string | null }): boo
 }
 
 /**
+ * A seat that READS the "Requests waiting for a time" list without being able to give a request a
+ * time — the Talent Acquisition seat (owner, 2026-10-18: "let Talent Acquisition see waiting interview
+ * requests on her calendar, read-only"). The list was for people with book rights, so her Viewer tier
+ * showed her only the requests she asked for herself. Reading is all this opens: booking, moving and
+ * withdrawing someone else's request stay behind `requireCalendarAccess(…, "book", …)`. The CEO is a
+ * Viewer too and is deliberately NOT here — nobody asked for his.
+ */
+export function readsInterviewRequestInbox(access: { role: string | null }): boolean {
+  return access.role === "HR Resourcing";
+}
+
+/**
  * Who a viewer is on the calendar, from facts the caller has already read.
  *
  * `isOwner` is `isInterviewCalendarOwner` above. A share row is looked up by the caller with the HR id

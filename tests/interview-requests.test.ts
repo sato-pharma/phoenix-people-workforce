@@ -10,8 +10,13 @@ import {
   mayReadRequest,
   type InterviewCalendarCaller,
 } from "../src/lib/recruitment/interview-calendar.ts";
-import type { InterviewCalendarPerson, InterviewCalendarRole } from "../src/lib/recruitment/interview-calendar-types.ts";
+import {
+  readsInterviewRequestInbox,
+  type InterviewCalendarPerson,
+  type InterviewCalendarRole,
+} from "../src/lib/recruitment/interview-calendar-types.ts";
 import { requestDayHasPassed } from "../src/lib/recruitment/interview-calendar-week.ts";
+import { assertMayReadRequestInbox, scheduleInterviewRequestItem } from "../src/lib/recruitment/interview-requests.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 const read = (relative: string) => readFileSync(join(process.cwd(), relative), "utf8");
@@ -114,7 +119,11 @@ export async function runInterviewRequestTests() {
   assert.match(view, /const mayRequest = !link && \(canRequest \?\? role === "requester"\)/, "a link viewer never requests; a requester seat does");
   assert.match(view, /mayRequest \? \(\s*<Action onClick=\{\(\) => setRequesting\(true\)\}/, "the Request button is drawn only for a requester");
   assert.match(view, /requesting \? \(\s*<RequestInterviewDialog/, "the Request dialog opens from that button");
-  assert.match(view, /mayRequest \|\| canBook \? \(\s*<InterviewRequestPanels/, "the request panels are drawn for a requester or a booker");
+  assert.match(
+    view,
+    /mayRequest \|\| canBook \|\| mayReadRequests \? \(\s*<InterviewRequestPanels/,
+    "the request panels are drawn for a requester, a booker, or the seat that reads the waiting list",
+  );
 
   const dialog = stripComments(read("src/components/recruitment/interview-calendar/request-interview-dialog.tsx"));
   assert.match(dialog, /canAdd=\{false\}/, "a request never adds an outside person to Recruitment — HR decides at booking");
@@ -162,4 +171,49 @@ export async function runInterviewRequestTests() {
   assert.match(panels, /const mineUpcoming = .*!isSettled\(request\)/, "it leaves the requester's list too — the interview stays on the calendar");
   assert.match(panels, /const mineEarlier = .*!isSettled\(request\)/, "earlier requests drop it as well");
   assert.match(panels, /request\.items\.filter\(\(item\) => !item\.booked\)\.map/, "and a card lists only the CVs still to book — a booked CV is on the calendar");
+
+  // ── The Talent Acquisition seat READS the waiting list and changes nothing (owner, 2026-10-18: "let
+  // Talent Acquisition see waiting interview requests on her calendar, read-only"). Her Viewer tier showed
+  // her only the requests she asked for herself; the list asked for book rights. ───────────────────────────
+  assert.equal(readsInterviewRequestInbox({ role: "HR Resourcing" }), true, "the Talent Acquisition seat reads the waiting list");
+  for (const role of ["CEO", "HR Operations", "Super Admin", "District Manager", "National Sales Manager", "Medical Representative", null]) {
+    assert.equal(readsInterviewRequestInbox({ role }), false, `${role ?? "no role"} is not given the read-only list by this door (the CEO is a Viewer too and nobody asked for his)`);
+  }
+  const seat = caller("viewer", "HR-011", "HR Resourcing");
+  assert.doesNotThrow(() => assertMayReadRequestInbox(seat), "she reads the waiting list");
+  assert.doesNotThrow(() => assertMayReadRequestInbox(caller("owner", "B-10", "Super Admin")), "the owner still reads it");
+  assert.doesNotThrow(() => assertMayReadRequestInbox(caller("editor", "H-1", "HR Operations")), "and an editor, who books from it");
+  assert.throws(() => assertMayReadRequestInbox(caller("viewer", "C-1", "CEO")), /Forbidden/, "another Viewer, the CEO, still needs book rights to read it");
+  assert.throws(() => assertMayReadRequestInbox(caller("requester", "D-07", "District Manager")), /Forbidden/, "a requester sees only her own requests, never the whole list");
+  assert.throws(
+    () => assertMayReadRequestInbox({ access: { ...access(null, "HR Resourcing"), source: "guest" } as AccessContext, link: null, own: null }),
+    /Forbidden/,
+    "the seat's role on a guest context (no sign-in) opens nothing",
+  );
+  // Reading is ALL it opens: giving a CV its time is checked before any row is read, and refuses her.
+  await assert.rejects(
+    () => scheduleInterviewRequestItem(seat, { dateKey: "2026-10-25", itemId: "i-1", platform: "in_office", requestId: "r-1", startMinutes: 600 }),
+    /Forbidden/,
+    "the Talent Acquisition seat cannot give a CV a time — that stays with book rights",
+  );
+  const gate = stripComments(read("src/lib/recruitment/interview-requests.ts"));
+  assert.match(gate, /export async function listInterviewRequestsInbox[\s\S]*?assertMayReadRequestInbox\(caller\);/, "the waiting list is read through that one gate");
+  assert.match(gate, /requireCalendarAccess\(caller, "book", "any"\);\s*\}/, "the gate falls back to book rights for everyone but her seat");
+  assert.match(gate, /const mine = Boolean\(caller\.access\.hrId\)[\s\S]*?if \(!canBook && !mine\) throw/, "withdrawing a request is still book rights or the requester's own");
+  assert.match(panels, /const showInbox = canBook \|\| canReadInbox;/, "the list is drawn for a booker or the reading seat");
+  assert.match(panels, /useRequests\(api, "\/requests", showInbox, reloadSignal\)/, "and read for both");
+  assert.equal((panels.match(/readOnly=\{!canBook\}/g) ?? []).length, 2, "both the waiting and the missed groups draw read-only cards for the reading seat");
+  assert.match(panels, /const canWithdraw = !readOnly && /, "a read-only card never offers Withdraw");
+  assert.match(panels, /readOnly \? "Waiting for a time" : "Waiting for HR"/, "and it does not tell her to wait for HR — she is HR");
+  assert.doesNotMatch(panels, /canBook=\{canBook \|\| canReadInbox\}|canBook=\{showInbox\}/, "the reading seat is never handed book rights to draw the list");
+  assert.match(view, /const mayReadRequests = !link && canReadRequests === true;/, "a link holder never reads the list; only the seat the server names");
+  assert.match(view, /canReadInbox=\{mayReadRequests\}/, "the panels are told");
+  for (const [file, pattern] of [
+    ["app/(admin)/recruitment/interview-calendar/page.tsx", /canReadRequests=\{readsInterviewRequestInbox\(access\)\}/],
+    ["app/employee-portals/interview-calendar/page.tsx", /canReadRequests=\{readsInterviewRequestInbox\(access\)\}/],
+    ["src/lib/hr/talent-acquisition-overview.ts", /canReadRequests: readsInterviewRequestInbox\(access\)/],
+    ["src/components/hr/talent-acquisition-calendar.tsx", /canReadRequests=\{calendar\.interviewCalendar\.canReadRequests\}/],
+  ] as const) {
+    assert.match(stripComments(read(file)), pattern, `${file} tells the calendar whether this seat reads the waiting list`);
+  }
 }

@@ -316,6 +316,7 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
           {calendar.interviewCalendar ? (
             <InterviewCalendarView
               abilities={calendar.interviewCalendar.abilities}
+              canReadRequests={calendar.interviewCalendar.canReadRequests}
               canRequest={calendar.interviewCalendar.canRequest}
               initialOpen={null}
               initialWeek={calendar.weekStart}
