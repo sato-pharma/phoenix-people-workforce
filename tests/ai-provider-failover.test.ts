@@ -42,6 +42,16 @@ import {
 
 const TEST_KEY = "sk-ant-test-key-for-unit-tests-0001";
 
+// What Anthropic answered the CV reader's 50-nullable-field schema with, on production 18 Oct 2026.
+const CV_SCHEMA_REFUSAL = JSON.stringify({
+  error: {
+    message:
+      "Schemas contains too many parameters with union types (50 parameters with type arrays or anyOf). This causes exponential compilation cost. Reduce the number of nullable or union-typed parameters.",
+    type: "invalid_request_error",
+  },
+  type: "error",
+});
+
 function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), { headers: { "content-type": "application/json", ...headers }, status });
 }
@@ -233,6 +243,8 @@ function requestShapeTests() {
   assert.ok(plainShape.system.includes(JSON.stringify(signSchema)), "and asks for the JSON in the prompt instead");
 
   assert.equal(isOptionalFieldRefusal(400, '{"error":{"message":"output_config.format.schema: unsupported"}}'), true);
+  // The CV reader's refusal on production, 18 Oct 2026 13:56 Cairo: it names neither field nor the bare word.
+  assert.equal(isOptionalFieldRefusal(400, CV_SCHEMA_REFUSAL), true, "a schema refused for its union types is resent plain");
   assert.equal(isOptionalFieldRefusal(400, '{"error":{"message":"image exceeds 10 MB maximum"}}'), false);
   assert.equal(isOptionalFieldRefusal(429, '{"error":{"message":"output_config"}}'), false, "only a 400 is a refusal of the request's shape");
 
@@ -405,6 +417,24 @@ async function callTests() {
   );
   assert.equal(refusedBoth, 2, "one plain resend, never a loop");
   assert.ok(buildAnthropicRequest(refusedCall, "claude-sonnet-5-5").output_config, "nothing was switched off for the process");
+  resetAnthropicPlainOnlyMemory();
+
+  // 🔴 The CV reader's refusal names no field: it must still be resent plain, or every CV read fails.
+  const cvBodies: Record<string, unknown>[] = [];
+  const cvRead = await callAnthropicMessages({
+    ...refusedCall,
+    fetchImpl: (async (_url: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      cvBodies.push(body);
+      return body.output_config
+        ? new Response(CV_SCHEMA_REFUSAL, { headers: { "content-type": "application/json" }, status: 400 })
+        : jsonResponse({ content: [{ text: '{"subject":"CV"}', type: "text" }] });
+    }) as typeof fetch,
+    format: { name: "cv_extraction", schema: { properties: { subject: { type: ["string", "null"] } }, type: "object" }, type: "json_schema" },
+  });
+  assert.equal(cvRead.outputText, '{"subject":"CV"}', "a schema refused for its union types still gets its answer");
+  assert.equal(cvBodies.length, 2, "through one plain resend");
+  assert.equal(cvBodies[1].output_config, undefined);
   resetAnthropicPlainOnlyMemory();
 
   // 🔴 Three answers that used to come back as an ordinary reply and were read as "the model found nothing".
