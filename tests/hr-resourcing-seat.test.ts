@@ -47,8 +47,12 @@ import {
 import {
   noticeFetchLimit,
   noticeHiddenFromSeat,
+  seatNeedsOtherKindsRead,
+  seatNoticeWindow,
+  TALENT_ACQUISITION_FLOODING_EVENT_TYPE,
   TALENT_ACQUISITION_HIDDEN_EVENT_TYPES,
 } from "../src/lib/notifications/seat-notice-filter.ts";
+import { stripComments } from "./support/comment-strip.ts";
 import { canViewOrganogramSensitiveFields } from "../src/lib/reports/organogram.ts";
 import { canSeeDoctorCoverage, DOCTOR_COVERAGE_PORTAL_ROLES } from "../src/lib/crm/doctor-coverage-roles.ts";
 import { seesWholeInterviewCalendar } from "../src/lib/recruitment/interview-calendar-types.ts";
@@ -278,6 +282,51 @@ export async function runHrResourcingSeatTests() {
     /\.filter\(\(row\) => !noticeHiddenFromSeat\(access\.role, row\.event_type\)\)/,
     "the notice list drops her hidden kinds",
   );
+  // A new CV reaches her about three times an hour, so a newest-20 window held nothing else after
+  // seven hours: the two interview requests of 17 Oct 2026 sat at positions 23 and 24 of her feed
+  // and neither the bell nor the band showed them (measured on production, 18 Oct 2026). The window
+  // keeps room for every other kind, whatever the new CVs do.
+  {
+    const cv = TALENT_ACQUISITION_FLOODING_EVENT_TYPE;
+    const feed = [
+      ...Array.from({ length: 30 }, (_, index) => ({ id: `cv-${index}`, event_type: cv })),
+      { id: "request-2", event_type: "interview_request_created" },
+      { id: "request-1", event_type: "interview_request_created" },
+      { id: "offer", event_type: "accepted_offer_alert" },
+      { id: "personal", event_type: null },
+    ];
+    const hers = seatNoticeWindow(SEAT, feed, 20).map((row) => row.id);
+    assert.equal(hers.length, 20, "her window is still the 20 the band serves");
+    for (const kept of ["request-2", "request-1", "offer", "personal"]) {
+      assert.ok(hers.includes(kept), `${kept} stays in her window under a flood of new CVs`);
+    }
+    assert.deepEqual(
+      hers,
+      feed.map((row) => row.id).filter((id) => hers.includes(id)),
+      "the window keeps newest-first order",
+    );
+    assert.equal(hers.filter((id) => id.startsWith("cv-")).length, 16, "the new CVs take the rest of the window");
+    assert.deepEqual(
+      seatNoticeWindow("Super Admin", feed, 20).map((row) => row.id),
+      feed.slice(0, 20).map((row) => row.id),
+      "every other seat is served exactly the newest 20",
+    );
+    assert.equal(
+      seatNoticeWindow(SEAT, feed.slice(0, 30), 20).length,
+      20,
+      "with no other kind to hold room for, the new CVs fill her window",
+    );
+    assert.equal(seatNoticeWindow(SEAT, feed.slice(30), 20).length, 4, "a short feed is served whole");
+    assert.equal(seatNeedsOtherKindsRead(SEAT), true, "her list reads her other kinds on their own");
+    assert.equal(seatNeedsOtherKindsRead("Super Admin"), false, "no other seat pays for that second read");
+    const listSource = stripComments(source("src/lib/notifications/in-app.ts"));
+    assert.match(listSource, /seatNoticeWindow\(access\.role, newestFirst, boundedLimit\)/, "the list is cut by the seat window");
+    assert.match(
+      listSource,
+      /seatNeedsOtherKindsRead\(access\.role\)[\s\S]{0,400}event_type\.neq\.\$\{TALENT_ACQUISITION_FLOODING_EVENT_TYPE\}/,
+      "her other kinds are read on their own, so an old interview request is still reachable",
+    );
+  }
   // "Open all four": Needs You, WhatsApp Inbox, Milestones and Spotlight — Needs You was TAKEN BACK
   // on 2026-10-16 ("remove needs you and hide from ta account"), the other three stand.
   assert.deepEqual([...(grants.spotlight ?? [])], ["read", "export"], "Spotlight, as the Super Admin holds it");

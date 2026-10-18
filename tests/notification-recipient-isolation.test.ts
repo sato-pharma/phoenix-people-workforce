@@ -514,10 +514,11 @@ export function runNotificationRecipientIsolationTests() {
   assert.match(inAppSource, /isPersonalBellCategory\(row\.category\)/, "in-app must drop non-allowlisted categories post-query");
   assert.match(inAppSource, /\.in\("category", allowedCategories\)/, "in-app SQL must restrict to allowlisted categories");
   // The bell is polled by every open page, and each database round trip costs 300-600 ms (Sentry, 2026-10-16): its
-  // two independent reads (the person's own rows, the rows that list them as a recipient) must run TOGETHER.
+  // two independent reads (the person's own rows, the rows that list them as a recipient) must run TOGETHER. The
+  // Talent Acquisition seat's third read (her non-CV notices) joins that same Promise.all, never a round trip after it.
   assert.match(
     inAppSource,
-    /const \[employeeResult, recipientResult\] = await Promise\.all\(\[[\s\S]*?\.eq\("employee_hr_id"[\s\S]*?\.overlaps\("recipients"/,
+    /const \[employeeResult, recipientResult(?:, otherKindsResult)?\] = await Promise\.all\(\[[\s\S]*?\.eq\("employee_hr_id"[\s\S]*?\.overlaps\("recipients"/,
     "in-app must read the person's own rows and the recipient rows in one Promise.all, never one after the other",
   );
 
