@@ -26,6 +26,7 @@ This file is loaded because this session opened a file of this module (or the mo
 
 - **`expense_claims` is the ONE live RLS read path in production.** Put a precondition in every shared-queue production `WHERE`; **"Log out everywhere" is THREE writes.**
 - **The `expense_claims` mirror builds `claimed_total` and `approved_total` from TWO tables**, so a stale request header breaches `expense_claims_approved_total_range`. **Read the expense components before touching an approved amount**; the rebuild flags `data_quality_hold`.
+- 🔴 **AN APPROVE OR REJECT IS REFUSED (409) UNLESS IT CARRIES THE `updated_at` THE REVIEWER SAW** (risk review of the chained-journey PR, 2026-10-18; built 2026-10-19). A claim keeps moving in the queue — extra tickets, a journey stop — and approving paid the row's CURRENT figures. `expectedRevision` is REQUIRED on `approveOutstationRequestForPayroll` and `rejectOutstationRequestAsAdmin` (never default it to "unchecked"); the approval's write is pinned to the stamp it checked, the queue Save skips a row without `requestRevision`, a comment-only edit is exempt. His comment is APPENDED to the system's `Journey check:` sentence, never written over it. Every writer that moves money must stamp `updated_at`. `claim-revision.ts`, `decision-note.ts`, `tests/outstation-stale-approval.test.ts`.
 
 ### Owner rules (moved from AGENTS.md §4)
 

@@ -1782,6 +1782,7 @@ import { runOutstationExpenseDecisionSavePreservesImportTests } from "./outstati
 import { runOutstationWorkflowReportDeleteGuardTests } from "./outstation-workflow-report-delete-guard.test.ts";
 import { runOutstationExpenseNoteAssistTests } from "./outstation-expense-note-assist.test.ts";
 import { runOutstationSubmissionWaitsForApprovalTests } from "./outstation-submission-waits-for-approval.test.ts";
+import { runOutstationStaleApprovalTests } from "./outstation-stale-approval.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
 
 import { runDirectOrdersPharmacyComboboxPlacementTests } from "./direct-orders-pharmacy-combobox-placement.test.ts";
@@ -10345,6 +10346,10 @@ await runTest(
 await runTest(
   "deleting a candidate removes the bytes behind their files from the recruitment bucket through the Storage API after the record delete succeeds — the paths are read before the cascade, a path a surviving row still names is kept, an unconfirmed one is never deleted, a storage failure is logged and never raised, and the comments and manager shelves go with the filings while a merge moves files and drops none",
   runRecruitmentCandidateDeleteStorageTests,
+);
+await runTest(
+  "an outstation approve or reject is decided on the claim the reviewer saw — the claim's version (its updated_at) is carried by the Expense Approvals row, the Action Center item and the admin screen, sent with every Approve, Reject, bulk approve and queue Save, and a claim that moved since (an extra ticket or a journey stop) is refused with 409 instead of paying figures nobody saw; a blank version is refused, the approval's write is pinned to the stamp it checked, a rejection is checked before any payroll row is deleted, the queue's Save skips a row without one by name, and an approver's comment is appended to the system's Journey check sentence instead of erasing it",
+  runOutstationStaleApprovalTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

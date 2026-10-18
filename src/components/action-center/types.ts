@@ -66,6 +66,9 @@ export type OutstationDetail = {
   approvalReason: string;
   notes: string | null;
   requestId: number;
+  /** The claim's version when this item was loaded (its `updatedAt`). Sent back with Approve or
+   * Reject so the decision is refused if the claim moved meanwhile — see claim-revision.ts. */
+  revision: string;
 };
 
 export type MarketingDetail = {

@@ -19,6 +19,7 @@ import type {
 import { ACTION_HUB_MODULE_LABELS, REJECTION_TEMPLATES } from "@/components/action-center/types";
 import { WeeklyPlanCalendar } from "@/components/action-center/weekly-plan-calendar";
 import { isEmployeeContext, type EmployeeContext } from "@/lib/action-center/employee-context";
+import { OUTSTATION_CLAIM_CHANGED_CODE } from "@/lib/outstation/claim-revision";
 import {
   buildMarketingDecisionConfirmPrompt,
   type MarketingConfirmDecision,
@@ -52,6 +53,15 @@ function purgeSnoozed() {
   const m = getSnoozeMap();
   const now = Date.now();
   localStorage.setItem(SNOOZE_KEY, JSON.stringify(Object.fromEntries(Object.entries(m).filter(([, v]) => v > now))));
+}
+
+/**
+ * The version of an outstation claim this list was loaded with, or "" for any other item. It goes
+ * back with Approve and Reject so a claim that moved after the list loaded (an extra ticket, a
+ * journey stop) is refused instead of approved at figures nobody here saw.
+ */
+function outstationRevisionOf(item: ActionHubItem): string {
+  return item.detail.module === "outstation" ? item.detail.revision : "";
 }
 
 type Props = {
@@ -665,7 +675,11 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
       };
     } else if (selected.module === "outstation") {
       approveRef.current = () => {
-        void callApi(`/api/admin/outstation/${selected.id}`, { comment: null }, "POST");
+        void callApi(
+          `/api/admin/outstation/${selected.id}`,
+          { comment: null, expectedRevision: outstationRevisionOf(selected) },
+          "POST",
+        );
       };
     } else {
       approveRef.current = null;
@@ -712,6 +726,9 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
       });
       const data = await res.json().catch(() => ({})) as Record<string, unknown>;
       if (!res.ok || !data.success) {
+        // An outstation claim that moved after this list loaded: nothing was decided. Reload the
+        // list so the new figures are on screen when the message is read, and keep his comment.
+        if (data.error === OUTSTATION_CLAIM_CHANGED_CODE) router.refresh();
         throw new Error(
           typeof data.message === "string" ? data.message :
           typeof data.error === "string" ? data.error :
@@ -762,10 +779,12 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
   function handleOutstationAction(decision: "approve" | "reject") {
     if (!selected) return;
     if (decision === "reject" && !comment.trim()) { setError("A rejection reason is required."); return; }
+    // Both carry the version of the claim this list loaded, so a claim that moved since is refused.
+    const expectedRevision = outstationRevisionOf(selected);
     if (decision === "approve") {
-      void callApi(`/api/admin/outstation/${selected.id}`, { comment: comment.trim() || null }, "POST");
+      void callApi(`/api/admin/outstation/${selected.id}`, { comment: comment.trim() || null, expectedRevision }, "POST");
     } else {
-      void callApi(`/api/admin/outstation/${selected.id}`, { comment: comment.trim() }, "PATCH");
+      void callApi(`/api/admin/outstation/${selected.id}`, { comment: comment.trim(), expectedRevision }, "PATCH");
     }
   }
 
@@ -825,34 +844,49 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
     if (bulkSelected.size === 0) return;
     setBulkBusy(true);
     const toApprove = allItems.filter((i) => bulkSelected.has(i.id) && !i.readOnlyReason);
-    const results = await Promise.allSettled(
-      toApprove.map((item) => {
-        if (item.module === "excuse") {
-          return fetch(`/api/excuses/${item.id}/decision`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ decision: "approve" }),
-          });
+    // A response is an approval only when it is OK. This used to count only a network failure as
+    // failed, so a refusal (403, 409, 500) was reported as "approved". An outstation claim that moved
+    // since this list loaded answers 409 and is counted on its own so the message can say why.
+    const outcomes = await Promise.all(
+      toApprove.map(async (item): Promise<"approved" | "changed" | "failed"> => {
+        try {
+          const response =
+            item.module === "excuse"
+              ? await fetch(`/api/excuses/${item.id}/decision`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ decision: "approve" }),
+                })
+              : item.module === "leave"
+                ? await fetch(`/api/vacations/requests/${item.id}/decision`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ decision: "approve", comment: "" }),
+                  })
+                : await fetch(`/api/admin/outstation/${item.id}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ expectedRevision: outstationRevisionOf(item) }),
+                  });
+          if (response.ok) return "approved";
+          const data = (await response.json().catch(() => ({}))) as { error?: unknown };
+          return data.error === OUTSTATION_CLAIM_CHANGED_CODE ? "changed" : "failed";
+        } catch {
+          return "failed";
         }
-        if (item.module === "leave") {
-          return fetch(`/api/vacations/requests/${item.id}/decision`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ decision: "approve", comment: "" }),
-          });
-        }
-        return fetch(`/api/admin/outstation/${item.id}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        });
       }),
     );
-    const failed = results.filter((r) => r.status === "rejected").length;
+    const changed = outcomes.filter((outcome) => outcome === "changed").length;
+    const failed = outcomes.length - outcomes.filter((outcome) => outcome === "approved").length;
     setBulkBusy(false);
     setBulkSelected(new Set());
     if (failed > 0) {
-      setError(`${toApprove.length - failed} approved, ${failed} failed.`);
+      setError(
+        `${toApprove.length - failed} approved, ${failed} not approved.` +
+          (changed > 0
+            ? ` ${changed} outstation claim${changed === 1 ? "" : "s"} changed since this list loaded — review the new figures and approve again.`
+            : ""),
+      );
     } else {
       setNotice(`${toApprove.length} approved. Page refreshing…`);
     }

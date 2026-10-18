@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { upsertEmployee } from "@/lib/employees/employee-directory";
+import { outstationClaimRevision } from "@/lib/outstation/claim-revision";
 import { approveOutstationRequestForPayroll } from "@/lib/outstation/service";
 import { createSalaryBatch, deleteSalaryBatch } from "@/lib/payroll/service";
 import { createProbationEvaluation, runProbationWorkflow } from "@/lib/probation/service";
@@ -360,7 +361,7 @@ async function runOutstationApprovalSmoke(lookup: LookupContext) {
       trip_end_date: "2026-07-02T18:00:00.000Z",
       trip_start_date: "2026-07-02T08:00:00.000Z",
     })
-    .select("id")
+    .select("id,updated_at")
     .single();
   if (error) throw error;
 
@@ -370,6 +371,8 @@ async function runOutstationApprovalSmoke(lookup: LookupContext) {
   tracked.payrollReportFileNames.add(fileName);
   const result = await approveOutstationRequestForPayroll(requestId, adminAccess, {
     comment: "PHASE16 disposable approved for payroll.",
+    // The version just inserted — an approval has to say which figures it was given.
+    expectedRevision: outstationClaimRevision(data.updated_at),
   });
   tracked.expenseTripIds.add(result.expenseTripId);
   const expense = await selectMaybeSingle("outstation_expenses", "trip_id,hr_approved,total", "trip_id", result.expenseTripId);
