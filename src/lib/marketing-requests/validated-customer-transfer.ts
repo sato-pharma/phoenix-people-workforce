@@ -962,7 +962,7 @@ async function assembleValidatedMarketingCustomerDetail(
     mappedRegionCode: primaryCodeRow ? text(primaryCodeRow, "mapped_region_code") : null,
     marketingAreaCode,
   });
-  // The photo's own pin outranks the inherited marketing area; the master's answer is untouched.
+  // The photo's own pin outranks the inherited marketing area AND the master's code answer (owner, 2026-10-18).
   const { geography: geographyBase, pinBrick } = applyPhotoPinTerritory(
     resolvedBase,
     await readPinTerritory(num(customer, "captured_latitude"), num(customer, "captured_longitude")),
@@ -1354,8 +1354,8 @@ export async function transferValidatedCustomerToDirectOrders(
   const longitude = num(customer, "captured_longitude") ?? num(marketingPharmacy, "captured_longitude");
   // THE PHOTO IS THE PRIMARY SOURCE OF TRUST (owner, 2026-10-18): a venue the master did not place
   // is filed where its photo's pin falls, not in the area the marketing label inherited.
-  const { geography, pinBrick } = applyPhotoPinTerritory(resolvedGeography, await readPinTerritory(latitude, longitude));
-  // Only guess a brick when neither the master nor the photo had one to give.
+  const { geography, pinBrick, overrode } = applyPhotoPinTerritory(resolvedGeography, await readPinTerritory(latitude, longitude));
+  // Only guess a brick when neither the photo nor the master had one to give.
   const brick = pinBrick
     ? pinBrick
     : geography.brickId
@@ -1468,6 +1468,11 @@ export async function transferValidatedCustomerToDirectOrders(
     reasonParts.push(
       `Brick ${brick.brickId} and area ${geography.areaCode} come from the evidence photo's own GPS pin (${brick.distanceKm} km from that brick's centre) — the photo is the primary source of trust, not the marketing area.`,
     );
+    if (overrode) {
+      reasonParts.push(
+        `The distributor code's master record named area ${overrode.areaCode ?? "none"} / brick ${overrode.brickId ?? "none"}; the photo's pin outranks it (owner ruling 2026-10-18).`,
+      );
+    }
   } else if (brick.brickId && brick.distanceKm !== null) {
     reasonParts.push(
       `Brick ${brick.brickId} is a SUGGESTION only — nearest centroid, ${brick.distanceKm} km from the captured pin. Confirm it before trusting the territory.`,
