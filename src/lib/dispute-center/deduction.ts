@@ -522,8 +522,10 @@ export async function decideDeductionDispute(
 ): Promise<DeductionDecisionResult> {
   const participant = await resolveCaseParticipant(access, "deduction", input.candidateId);
   if (!participant.isReviewer) throw new Error("Forbidden: only the Super Admin can decide a deduction dispute.");
+  // The note is OPTIONAL (owner, 2026-10-18): the Super Admin may accept, reduce or reject with or
+  // without words. Everything below that quotes the note does so only when there is one.
   const note = tidyDisputeText(input.note);
-  if (!note) throw new Error("Validation: write what you decided and why — the employee reads it.");
+  const noteSuffix = note ? `: ${note}` : "";
 
   // ONE DECISION PER REOPEN. Without this a decided case could be decided again behind the
   // employee's back, and worse for the money: each decision measures what it owes against whatever
@@ -595,8 +597,8 @@ export async function decideDeductionDispute(
         candidateId: input.candidateId,
         decisionReason:
           input.outcome === "accept"
-            ? `Dispute accepted: ${note}`
-            : `Dispute accepted in part — charged ${inUnit(reduced as number)}: ${note}`,
+            ? `Dispute accepted${noteSuffix}`
+            : `Dispute accepted in part — charged ${inUnit(reduced as number)}${noteSuffix}`,
         decisionStatus: input.outcome === "accept" ? "Do Not Take Action" : "Approved for Payroll",
         hrNote: note,
         ...(input.outcome === "reduce" ? { appliedValue: reduced as number } : {}),
@@ -646,7 +648,7 @@ export async function decideDeductionDispute(
           actor,
           appliedValue: valueBefore,
           candidateId: input.candidateId,
-          decisionReason: `Dispute rejected — the deduction stands as it was charged: ${note}`,
+          decisionReason: `Dispute rejected — the deduction stands as it was charged${noteSuffix}`,
           decisionStatus: "Approved for Payroll",
           hrNote: note,
         });
@@ -696,7 +698,7 @@ export async function decideDeductionDispute(
       candidateId: input.candidateId,
       employeeHrId,
       kind: "deduction",
-      reason: `Refund of a ${monthKeyLabel(monthKey)} deduction: ${note}`,
+      reason: `Refund of a ${monthKeyLabel(monthKey)} deduction${noteSuffix}`,
       ref: input.candidateId,
       sourceMonthKey: monthKey,
     });
@@ -711,7 +713,7 @@ export async function decideDeductionDispute(
       actorHrId: participant.viewerHrId,
       actorRole: access.role,
       kind: "deduction",
-      reason: `Replaced by a newer decision on the same dispute: ${note}`,
+      reason: `Replaced by a newer decision on the same dispute${noteSuffix}`,
       ref: input.candidateId,
     });
     if (cancelled.alreadyPaid) {
@@ -818,8 +820,8 @@ export async function decideDeductionReopen(
 ): Promise<void> {
   const participant = await resolveCaseParticipant(access, "deduction", input.candidateId);
   if (!participant.isReviewer) throw new Error("Forbidden: only the Super Admin can reopen a deduction dispute.");
+  // The note is OPTIONAL (owner, 2026-10-18).
   const note = tidyDisputeText(input.note);
-  if (!note) throw new Error("Validation: say what you are telling the employee.");
   const { candidates } = await loadParts([input.candidateId]);
   const candidate = candidates.get(input.candidateId);
   if (!candidate) throw notFoundError("That deduction no longer exists.");
@@ -841,9 +843,10 @@ export async function decideDeductionReopen(
     employeeHrId,
     eventKey: `${input.grant ? "reopened" : "reopen_declined"}:${new Date().toISOString()}`,
     kind: "deduction",
-    message: input.grant
+    message: (input.grant
       ? `The ${monthLabel} ${categoryLabel(candidate.category)} deduction is being looked at again. ${note}`
-      : `The decision on the ${monthLabel} ${categoryLabel(candidate.category)} deduction stands. ${note}`,
+      : `The decision on the ${monthLabel} ${categoryLabel(candidate.category)} deduction stands. ${note}`
+    ).trim(),
     recipientHrIds: [employeeHrId],
     ref: input.candidateId,
     title: input.grant ? `Reopened — ${categoryLabel(candidate.category)} deduction` : `Decision stands — ${categoryLabel(candidate.category)} deduction`,

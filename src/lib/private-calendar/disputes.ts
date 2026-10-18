@@ -237,8 +237,8 @@ export async function decidePrivateCalendarDataDispute(
   input: { decision: "accept" | "reject"; disputeId: string; note: string },
 ): Promise<PrivateCalendarDataDispute> {
   assertDisputeDecisionActor(access);
+  // The note is OPTIONAL (owner, 2026-10-18): accept or reject with or without words.
   const note = input.note.trim();
-  if (!note) throw new Error("A decision note is required.");
 
   const adminHrId = normalizeHrId(access.hrId) ?? normalizeHrId(access.loginId) ?? "system";
   const now = new Date().toISOString();
@@ -247,7 +247,7 @@ export async function decidePrivateCalendarDataDispute(
   const { data, error } = await getSupabaseAdmin()
     .from("private_calendar_data_disputes")
     .update({
-      admin_decision_note: note,
+      admin_decision_note: note || null,
       admin_hr_id: adminHrId,
       decided_at: now,
       status: nextStatus,
@@ -287,9 +287,9 @@ export async function decidePrivateCalendarDataDispute(
     actorId: adminHrId,
     channels: ["email", "in_app", "push"],
     eventType: "private_calendar_dispute_decided",
-    message: nextStatus === "accepted"
-      ? `Your dispute for ${dispute.disputeDate} was accepted. The calendar now shows the verified correction. Note: ${note}`
-      : `Your dispute for ${dispute.disputeDate} was reviewed and rejected. Note: ${note}`,
+    message: (nextStatus === "accepted"
+      ? `Your dispute for ${dispute.disputeDate} was accepted. The calendar now shows the verified correction.`
+      : `Your dispute for ${dispute.disputeDate} was reviewed and rejected.`) + (note ? ` Note: ${note}` : ""),
     metadata: { disputeId: dispute.id, employeeHrId: dispute.employeeHrId, idempotencyKey: `private-calendar-dispute:${dispute.id}:decided:${now}` },
     module: "private_calendar",
     priority: "normal",

@@ -107,14 +107,14 @@ export function DisputeDecisionPanel({ dispute, onDone }: { dispute: DisputeCase
               className={phxTextareaClassName}
               disabled={busy}
               onChange={(event) => setNote(event.target.value)}
-              placeholder="What are you telling them? They read this."
+              placeholder="What are you telling them? (optional — they read this)"
               rows={3}
               value={note}
             />
             <div className="flex flex-wrap gap-2">
               <button
                 className={phxButtonApproveClassName}
-                disabled={busy || !note.trim()}
+                disabled={busy}
                 onClick={() => post("/reopen", { action: "grant", note })}
                 type="button"
               >
@@ -123,7 +123,7 @@ export function DisputeDecisionPanel({ dispute, onDone }: { dispute: DisputeCase
               </button>
               <button
                 className={phxButtonDangerClassName}
-                disabled={busy || !note.trim()}
+                disabled={busy}
                 onClick={() => post("/reopen", { action: "decline", note })}
                 type="button"
               >
@@ -149,7 +149,7 @@ export function DisputeDecisionPanel({ dispute, onDone }: { dispute: DisputeCase
           <div className="space-y-3">
             <div>
               <label className={phxLabelClassName} htmlFor={`note-${dispute.ref}`}>
-                What you decided, and why
+                What you decided, and why (optional)
               </label>
               <textarea
                 className={phxTextareaClassName}
@@ -187,7 +187,7 @@ export function DisputeDecisionPanel({ dispute, onDone }: { dispute: DisputeCase
               {outcomesFor(dispute).map((outcome) => (
                 <button
                   className={outcome.danger ? phxButtonDangerClassName : outcome.value === "reduce" ? phxButtonGhostClassName : phxButtonApproveClassName}
-                  disabled={busy || !note.trim() || (outcome.value === "reduce" && !reducedValue.trim())}
+                  disabled={busy || (outcome.value === "reduce" && !reducedValue.trim())}
                   key={outcome.value}
                   onClick={() =>
                     post("/decide", {
