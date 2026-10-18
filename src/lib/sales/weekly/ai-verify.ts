@@ -25,6 +25,7 @@ import { resolveWeeklyContract } from "@/lib/sales/weekly/weekly-column-profile-
 import { weeklyDistributorByCode } from "@/lib/sales/weekly/distributors";
 import { matchWeeklySheet, weeklySheetMatcher } from "@/lib/sales/weekly/sheet-match";
 import type { WeeklyVerifyColumn, WeeklyVerifyMatrix, WeeklyVerifyResult } from "@/lib/sales/weekly/types";
+import type { WeeklyVerifyAiState } from "@/lib/sales/weekly/verify-ai-state";
 
 // ── AI provider planning (shared with src/lib/sales/ai/provider.ts) ────────────────────────────────
 // ai-verify uses the shared "mini" model defaults exactly, so it passes none.
@@ -293,6 +294,7 @@ export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<Week
       aiNote:
         `${distributor.name}'s columns are matched by header NAME, not position, so there is no fixed layout to check here. ` +
         "Confirm the file's headers look right before uploading.",
+      aiState: "header_name_file",
       aiUsed: false,
       columns: [],
       distributor: { code: distributor.code, name: distributor.name },
@@ -330,6 +332,7 @@ export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<Week
   // ── AI overlay (graceful: never throws out of here) ──
   const aiAvailable = hasAiProvider();
   let aiUsed = false;
+  let aiState: WeeklyVerifyAiState = aiAvailable ? "nothing_to_check" : "not_configured";
   const judgeItems = columns
     .filter((c) => c.status !== "empty" && c.status !== "missing")
     .map((c, index) => ({ id: index, ref: c, sheetRole: c.sheetRole, label: c.label, columnIndex: c.columnIndex, expectedHeaderHint: c.expectedHeaderHint, observedHeader: c.observedHeader }));
@@ -359,6 +362,7 @@ export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<Week
         }
       }
       aiUsed = true;
+      aiState = "checked";
       aiNote = summary ? summary.slice(0, 600) : "Column check complete.";
     } catch (error) {
       // Degrade gracefully — keep the deterministic plan, let the operator verify manually.
@@ -367,6 +371,7 @@ export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<Week
         error,
       });
       aiUsed = false;
+      aiState = "failed";
       aiNote = "The AI column check could not run just now — review the mapping below and confirm it looks right before uploading.";
     }
   }
@@ -377,6 +382,7 @@ export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<Week
   return {
     distributor: { code: distributor.code, name: distributor.name },
     verdict,
+    aiState,
     aiUsed,
     aiNote,
     files,
