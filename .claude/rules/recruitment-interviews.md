@@ -1,0 +1,35 @@
+---
+paths:
+  - "src/lib/recruitment/interview*"
+  - "src/components/recruitment/interview-calendar/**"
+  - "app/**/interview-calendar/**"
+  - "tests/*interview*"
+---
+
+# Module memory — Recruitment — the interview calendar and interview outcomes
+
+**Scope:** The interview calendar: booking an interview and the role it is for, invitations, reminders and requests, and the outcome of an interview once it has happened.
+
+This file is loaded because this session opened a file of this module (or the module-memory hook matched the work to it). **It binds exactly like AGENTS.md.** First the module's rules, then every memory note filed under it: each note line is the cue, and the whole note is `.claude/cloud-context/memory-mirror/<name>.md` (identical to the laptop memory folder). **Before acting on a line that bears on your change, open its note.**
+
+**Keeping it current:** a rule or fact you learn while working in this module goes into **Rules** below, in the same PR as the work. If a rule changed, EDIT its line — never add a second line that contradicts it. The notes block is generated (`node scripts/module-memory/build.mjs`); a new note reaches it through the fold, which runs three times a day — 09:00, 15:00 and 21:00 Cairo (docs/module-memory.md).
+
+🔴 **A RULE BULLET OVER 1,200 BYTES MUST NAME ITS `docs/` ACCOUNT, or the required `validate` job goes RED** — `tests/agents-long-hooks-cite-docs.test.ts` measures every line starting `- ` inside the Rules block below, and this module file can sit far under its size cap while one bullet is over this limit. **Relocate FIRST, trim second:** write the evidence into a `docs/` file, then cut the bullet to the cue plus that pointer. Trimming first destroys the account while reading as a tidy-up. 🔴 **AND CITING docs/ IS NOT ENOUGH — the same test caps HOW MANY bullets may be over 1,200 at a tenth of all of them, which has about ONE bullet of slack**, so a long bullet reddens `validate` with its pointer in place (2026-10-04: 26 of 263 against a limit of 26.3). The fix is to shorten YOUR OWN long bullet, never to delete anyone's rule.
+
+🔴 **PUT THE OPERATIVE CLAIM IN THE BULLET'S FIRST `**bold**` SPAN.** A session that never opens this file sees only that one span: `ruleHeadlines()` in `.claude/hooks/module-memory-injector.mjs` takes the FIRST `**…**` match per bullet (`/\*\*(.+?)\*\*/`) and nothing else, so a boundary, an exception or a date written in a later bold clause of the same bullet does not travel. A first span that states an absolute the rest of the bullet then qualifies is the worst case — it is read as the whole rule. 🔴 **Those spans are also the only thing that grows the pointer, which `tests/module-memory.test.ts` caps at 4,000 bytes (hard cliff 4,500) — a module that passes it is SPLIT, never trimmed** (`phoenix-crm` → `phoenix-crm-approvals`, 2026-10-03).
+
+<!-- module-memory:rules:begin — hand-written; add this module's rules here -->
+## Rules
+
+### The interview calendar — the role, and the outcome nobody answered
+
+- 🔴 **AN INTERVIEW NAMES THE ROLE IT IS FOR IN FREE TEXT OVER THE OFFER CATALOGUE, NEVER A DROPDOWN, AND THE TITLE TRAVELS INSIDE THE CANDIDATE IDENTITY SO A MATCHED CANDIDATE IS NEVER OVERWRITTEN** (measured 15 Oct 2026: `offer_job_titles` holds 4 active titles, while 28 of the 68 interviews held from 1 September sat on a candidate whose `applied_for_job_title` was NULL and so never appeared in that round's pile). `interview_job_title` on `ats_interview_bookings`; `interviewJobTitleLabel` (120 chars) is the one writer; `appliedForJobTitle` on `CalendarCandidateIdentity` reaches `createCandidate`, which writes it only on INSERT — a late interview for another role must never restate a record already in the pipeline. The suggestions go through the calendar's own `book` gate (`listInterviewJobTitleOptions`), never `offers:read`: an Editor the calendar was shared with holds none, and only names leave. A requester who may merely move their own interview cannot change it. Pinned by `tests/interview-role-and-outcome.test.ts`.
+- 🔴 **A FINISHED INTERVIEW WITH NO OUTCOME IS ASKED ABOUT ON THE CALENDAR ITSELF, AND THE PANEL IS SCOPED TO WHOEVER MAY ANSWER — NEVER A FOURTH NOTICE** (50 of those same 68 carried no outcome at all, while `interview-reminders.ts` had nagged the lead interviewer by three channels since 2026-09-23 — so another send was not the gap; being asked where the work already happens was). `interviewAwaitsOutcome` is `ended && outcome === null`, one pure rule the week chip, the phone day card and the server all share; `listInterviewsAwaitingOutcome` filters `mayReadBooking` and then hydrate's `canSetOutcome` (lead interviewer or the calendar's owner — `setInterviewOutcome`'s own gate), reaches 14 days back (older unanswered ones leave the panel and the daily nag, owner 2026-10-17, keeping the amber flag), returns 25 at most, and a share-link view renders no panel at all. Everyone who can read a booking still sees the amber `Outcome?` flag.
+- 🔴 **AN OUTCOME THE RECORD PROVES SETTLES ITSELF — THE PANEL KEEPS ONLY WHAT IT CANNOT RECOGNISE** (owner, 2026-10-17). `inferInterviewOutcome` (`interview-outcome-settle.ts`) is strict: a PERSON's (non-null, non-`ops:`) move to shortlisted, back-up or rejected after the interview ended, within 14 days and before the next interview, is the outcome in that word; a hire, or an offer created after it started, is "attended" however late, and beats an earlier shortlist (a hire a rejection too). 🔴 A CV coming back from a manager (`sent_to_manager → shortlisted`, `isSentCvReturn`) is nobody's verdict. A later booking, a comment, an older status, a batch sweep and an outside person prove nothing. `settleFinishedInterviewOutcomes` heads the ten-minute `interview-reminders` cron: it reads the last 28 days plus any older interview whose candidate was hired or offered in them, is awaited and stops writing at its 15 s deadline, writes only a null `outcome`, stamps no setter, applies no candidate effect, sends no notice, and records "Settled automatically as …". Pinned by `tests/interview-outcome-settle.test.ts`.
+<!-- module-memory:rules:end -->
+
+<!-- module-memory:notes:begin — generated by scripts/module-memory/build.mjs; do not edit -->
+## Memory notes (0)
+
+_No notes filed under this module yet._
+<!-- module-memory:notes:end -->

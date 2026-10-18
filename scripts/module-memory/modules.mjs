@@ -608,6 +608,25 @@ export const MODULES = [
     keywords: ["whatsapp bot", "screening question", "screening questions", "auto reply", "auto-replies", "careers form", "careers page", "apply form", "role menu", "show_if", "end_on"],
     tables: ["ats_whatsapp_"],
   },
+  // 🔴 SPLIT AGAIN 2026-10-18, for the same reason: the WhatsApp CV Archive rule took `recruitment`'s
+  // pointer to 4,084 bytes against the 4,000-byte margin. The INTERVIEW CALENDAR is the next clean cut —
+  // booking an interview and the role it names, the outcome panel and the outcome that settles itself
+  // are one family, read while working the calendar and its interview files, not while editing an offer
+  // or the pool. Its three rules moved VERBATIM; `recruitment` KEEPS EVERY GLOB IT HAD (its
+  // `interview-calendar` app glob included), so an interview file loads the PAIR.
+  {
+    id: "recruitment-interviews",
+    title: "Recruitment — the interview calendar and interview outcomes",
+    scope: "The interview calendar: booking an interview and the role it is for, invitations, reminders and requests, and the outcome of an interview once it has happened.",
+    globs: [
+      "src/lib/recruitment/interview*",
+      "src/components/recruitment/interview-calendar/**",
+      "app/**/interview-calendar/**",
+      "tests/*interview*",
+    ],
+    keywords: ["interview calendar", "interview outcome", "interview request", "interview requests", "interview invitation", "interview reminder", "book an interview"],
+    tables: ["ats_interview"],
+  },
   // 🔴 SPLIT 2026-10-18, THE SAME WAY: `recruitment` measured 4,139 bytes against the 4,000-byte margin
   // the moment the candidate-delete storage rule landed (28 rules, then 29). The OFFER LETTER is the
   // second clean cut — its designs, the email it fires, the mailboxes it may leave from and the hand-off

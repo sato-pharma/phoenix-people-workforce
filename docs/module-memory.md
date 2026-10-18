@@ -114,6 +114,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `marketing-roi` — Marketing ROI — the fact rebuild, the verdict, the Tracker, the Coverage Report and the Scorecard | `src/lib/marketing-requests/{roi,coverage-report,manager-scorecard}*` and 4 more |
 | `recruitment` — Recruitment, CVs and offers | `src/lib/{recruitment,cv,offers,whatsapp-inbox,mailbox-monitor,zoom}/**` and 4 more |
 | `recruitment-inbound` — Recruitment — the WhatsApp bot, the screening questions and the careers form | `src/lib/recruitment/inbound/**` and 4 more |
+| `recruitment-interviews` — Recruitment — the interview calendar and interview outcomes | `src/lib/recruitment/interview*` and 3 more |
 | `recruitment-offers` — Recruitment — the job offer letter, its email and the hand-off to the Employee Master | `src/lib/offers/**` and 4 more |
 | `hiring-documents` — Hiring documents, contracts and company papers | `src/lib/{hiring-pack,hiring-documents,contracts,business-cards,email-signature,spotlight,pdf,export}/**` and 4 more |
 | `employees` — Employees and the HR lifecycle | `src/lib/{employees,employee-lifecycle,employee-360,hr,hr-reminders,resignations,retention,retention-risk,lifecycle-risk,new-hire-mailbox}/**` and 4 more |
