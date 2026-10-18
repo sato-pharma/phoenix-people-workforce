@@ -452,7 +452,7 @@ export function ValidatedCustomerDetailView({
             {geography.resolvedFrom === "master_code"
               ? "Area and brick come from the Phoenix master database, matched on this pharmacy's distributor code. This is the same source the Direct Order catalogue uses."
               : geography.resolvedFrom === "photo_pin"
-                ? "Area and brick come from where the live evidence photo's GPS pin falls — the photo is the primary source of trust, so this can differ from the customer's marketing area."
+                ? "Area and brick come from where the live evidence photo's GPS pin falls — the photo is the primary source of trust, so this can differ from the customer's marketing area and from what the distributor code's master record names."
                 : geography.resolvedFrom === "marketing_area"
                 ? `Area comes from the customer's marketing area (${geography.marketingAreaName ?? "unknown"}). The distributor code did not match the master database, so the brick below is a nearest-centroid guess, not an authority.`
                 : `The marketing area "${geography.marketingAreaName ?? "unknown"}" does not exist in the Direct Order area list. A transfer will carry no area, and the Direct Order desk will not know whose territory this is.`}

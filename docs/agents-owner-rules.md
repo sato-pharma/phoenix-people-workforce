@@ -8604,6 +8604,9 @@ His word, the same evening: *"make the marketing transfer file the venue's brick
 pin."* Shipped: `applyPhotoPinTerritory` (`src/lib/marketing-requests/photo-pin-territory.ts`, pure) is applied
 by BOTH the transfer and the preview page, so a venue the master did not place is filed where its photo's pin
 falls (`resolvedFrom: "photo_pin"`), within the same 15 km trust radius. A venue whose distributor code
-resolved (`master_code`) keeps the master's territory untouched. Pinned in `tests/photo-pin-territory.test.ts`.
-Still not done: other photo modules. Open tension: marketing's earlier ruling "the REGISTERED CODE beats live
-GPS" (2026-08-21) — the transfer deliberately leaves the master's answer alone until he rules.
+resolved (`master_code`) was first left untouched; **he then ruled (2026-10-18, same evening): *"the photo wins
+everywhere, including where a distributor code exists"*** — so the guard is gone, a code-resolved venue is filed
+from its pin too, and the request's reason names the master territory the photo replaced (`overrode`). A pin
+over 15 km from any centre still changes nothing. Pinned in `tests/photo-pin-territory.test.ts`.
+Still not done: other photo modules, and `venue-territory.ts` (a marketing customer's own `area_id` still comes
+from the code and infers nothing from GPS — a different mechanism, not changed by this ruling's transfer fix).
