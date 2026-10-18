@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { Building2, CheckCircle2, EyeOff, Hourglass, MapPinCheck } from "lucide-react";
 
 import { AdminPageHero, AdminStatCard } from "@/components/admin/admin-design-system";
-import { ValidationReviewsBoard } from "@/components/phoenix-crm/validation-reviews-board";
+import { PlaceChecksWithDeck } from "@/components/place-review-deck/place-checks-with-deck";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { GOOGLE_MATCH_METERS, GOOGLE_STALE_PIN_METERS } from "@/lib/phoenix-crm/google-place-rules";
@@ -16,6 +16,7 @@ import {
   loadValidatedPlaces,
   loadValidationReviews,
 } from "@/lib/phoenix-crm/server/validation-reviews";
+import { parseDeckTab } from "@/lib/place-review-deck/slides";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ export const dynamic = "force-dynamic";
  * route. The redirect rather than a message is the integrity board's shape — a page that does not
  * describe itself to somebody who may not read it.
  */
-export default async function PhoenixCrmValidationReviewsPage() {
+export default async function PhoenixCrmValidationReviewsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const access = await resolveAccessContextFromPage();
   if (!(await canAccess(access, "phoenix_crm", "update"))) redirect("/admin");
   const viewer = await resolvePhoenixCrmViewer(access).catch(() => null);
@@ -82,6 +83,9 @@ export default async function PhoenixCrmValidationReviewsPage() {
   // Customers seated across every live venue. The 3-a-day cap is about the DAY, never about this number.
   const seated = liveVenues.reduce((total, row) => total + row.seated, 0);
   const venuesWithoutTimetable = liveVenues.filter((row) => row.seated > 0 && !row.schedulePhotoPath).length;
+  // `?review=<tab>` opens the one-by-one review on that tab — the Location integrity page links here so.
+  const review = (await searchParams).review;
+  const openOn = parseDeckTab(typeof review === "string" ? review : null);
 
   return (
     <div className="space-y-5">
@@ -138,11 +142,11 @@ export default async function PhoenixCrmValidationReviewsPage() {
         />
       </div>
 
-      <ValidationReviewsBoard
+      <PlaceChecksWithDeck
         capped={capped}
         decided={decided}
-        mode="company"
         noteIndex={noteIndex}
+        openOn={openOn}
         pending={waiting}
         reopened={reopened}
         sharedPlaces={sharedPlaces}

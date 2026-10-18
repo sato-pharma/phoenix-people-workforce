@@ -24,10 +24,10 @@
  */
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
+import { usePlaceCheckDone } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
@@ -86,8 +86,11 @@ function readingText(label: string, reading: SharedPlaceBoardRow["pin"]): string
   return `${label}: ${reading.lat.toFixed(5)}, ${reading.lon.toFixed(5)} (${accuracy})`;
 }
 
-/** Which of the two layouts a venue control is drawn in — the phone block and the table are BOTH in the page, so an id must say which. */
-type VenueScope = "cards" | "table";
+/**
+ * Which layout a venue control is drawn in — the phone block and the table are BOTH in the page, and the
+ * one-by-one review draws it a third time above them, so an id must say which.
+ */
+type VenueScope = "cards" | "table" | "deck";
 
 /**
  * Where the building stands, in one pill. A manager's board never says a decision waits on anybody, or
@@ -284,7 +287,7 @@ function Cost({ row }: { row: SharedPlaceBoardRow }) {
  * validate, and the answer says so by name.
  */
 function RestoreVenue({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope }) {
-  const router = useRouter();
+  const done = usePlaceCheckDone();
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -295,7 +298,7 @@ function RestoreVenue({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueSc
     setProblem(null);
     try {
       await crmPost<unknown>("/api/phoenix-crm/validation-reviews/shared-place/restore", { sharedPlaceId: row.sharedPlaceId, note }, "restored");
-      router.refresh();
+      done("restored");
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(false);
@@ -332,7 +335,7 @@ function RestoreVenue({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueSc
 }
 
 function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope }) {
-  const router = useRouter();
+  const done = usePlaceCheckDone();
   const [note, setNote] = useState("");
   // Opens on the reason the system's own confident reading gives, and on nothing otherwise.
   const [reason, setReason] = useState<ValidationRefusalReason | "">(() => adviseOnBuilding(row).refusal ?? "");
@@ -349,7 +352,8 @@ function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope 
         { sharedPlaceId: row.sharedPlaceId, decision, note, ...(decision === "reject" ? { refusalReason: reason } : {}) },
         "decided",
       );
-      router.refresh();
+      // Approving a building that was never held is "Keep it" on screen, and the review says so too.
+      done(decision === "reject" ? "rejected" : row.status === "held" ? "approved" : "kept");
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(null);
@@ -573,3 +577,10 @@ export function SharedPlaceList({
     </>
   );
 }
+
+/**
+ * The pieces the one-by-one review draws a polyclinic with (owner, 2026-10-18: "the polyclinic
+ * validation itself and the timetable … in the same screen"), exported as they are — the building's
+ * own evidence and its own decision, never a copy.
+ */
+export { Decision as VenueDecision, VenueHeader, signboardText as venueSignboardText, Where as VenueWhere };

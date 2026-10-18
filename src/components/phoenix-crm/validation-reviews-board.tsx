@@ -62,6 +62,8 @@ import { placeCheckScorecard, standingOfPlaceInUse, type PlaceStanding } from "@
 import { narrowVenueGroups, seatedCustomersByVenue, venueNeedsDecision, withoutSeated } from "@/lib/phoenix-crm/shared-place-groups";
 import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import type { PlaceNoteIndex, ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
+// Types only: this board is also a district manager's portal page, and the review is not his.
+import type { PlaceReviewDeckInput } from "@/lib/place-review-deck/slides";
 
 const OUTCOME_LABELS: Record<ValidationReviewOutcome, string> = {
   all: "Every outcome",
@@ -209,6 +211,7 @@ export function ValidationReviewsBoard({
   capped,
   mode,
   noteIndex,
+  reviewDeck,
 }: {
   /** Whose board this is — see the header. "company" is the Super Admin's, "team" a district manager's. */
   mode: PlaceCheckNotesMode;
@@ -223,6 +226,12 @@ export function ValidationReviewsBoard({
   sharedPlaces: SharedPlaceBoardRow[];
   /** Which reads stopped at their ceiling, so the page says "showing the newest" instead of lying. */
   capped: { reviews: boolean; validated: boolean; reopened: boolean; sharedPlaces: boolean };
+  /**
+   * The one-by-one review (owner, 2026-10-18), handed in by the Super Admin's page and drawn on his
+   * board alone. It is a render prop rather than an import so the review is in none of the portal's
+   * bundles; the board hands it what each of its tabs holds right now, filters applied.
+   */
+  reviewDeck?: (input: PlaceReviewDeckInput) => ReactNode;
 }) {
   const [filters, setFilters] = useState<ValidationReviewFilters>(EMPTY_VALIDATION_REVIEW_FILTERS);
   const [view, setView] = useState<PlaceCheckView>("needs");
@@ -369,6 +378,28 @@ export function ValidationReviewsBoard({
     return [...clinics, ...buildings];
   }, [team, showWaiting, filteredPending, needsGroups]);
 
+  // What the one-by-one review is built from: each tab's rows as the board shows them now, and, to look
+  // a row up after a decision moved it, every row the board holds with every customer in each building.
+  const withDeck = !team && reviewDeck !== undefined;
+  const everyVenueGroup = useMemo(
+    () => (withDeck ? narrowVenueGroups({ venues: sharedPlaces, seated, filters: EMPTY_VALIDATION_REVIEW_FILTERS, cutoff: null }) : []),
+    [withDeck, sharedPlaces, seated],
+  );
+  const deckInput = useMemo<PlaceReviewDeckInput | null>(
+    () =>
+      withDeck
+        ? {
+            boardView: view,
+            noteIndex,
+            waiting: { reviews: showWaiting ? filteredPending : [], venues: needsGroups },
+            unconfirmed: { places: filteredValidated, venues: buildingGroups.filter((group) => group.venue.status === "active") },
+            history: { reviews: showDecided ? filteredDecided : [], venues: filteredVenueGroups.filter((group) => group.venue.status === "retired") },
+            lookup: { reviews: [...pending, ...decided], places: validated, venues: everyVenueGroup },
+          }
+        : null,
+    [withDeck, view, noteIndex, showWaiting, filteredPending, needsGroups, filteredValidated, buildingGroups, showDecided, filteredDecided, filteredVenueGroups, pending, decided, validated, everyVenueGroup],
+  );
+
   const needsCount = (showWaiting ? filteredPending.length : 0) + needsGroups.length;
   const openCount = (showWaiting ? filteredPending.length : 0) + needsGroups.length;
   const historyCount = (showDecided ? filteredDecided.length : 0) + (showReopened ? filteredReopened.length : 0);
@@ -415,6 +446,7 @@ export function ValidationReviewsBoard({
   return (
     <CrmSurfaceProvider surface="admin">
       <div className="space-y-5">
+        {deckInput && reviewDeck ? reviewDeck(deckInput) : null}
         <div className="min-w-0 border border-slate-200 bg-white px-4 py-4">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-500">Filters</h2>

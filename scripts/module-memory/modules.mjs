@@ -386,9 +386,16 @@ export const MODULES = [
     globs: [
       "src/lib/phoenix-crm/{shared-place-groups,place-match-groups,validation-review-filters}.ts",
       "src/lib/phoenix-crm/server/{place-match-groups,validation-reviews}.ts",
-      "src/components/phoenix-crm/{place-match-board,shared-place-customers,shared-place-list,validated-place-list,validation-review-queue,validation-reviews-board,reopened-customer-list}.tsx",
+      "src/components/phoenix-crm/{place-match-board,shared-place-customers,shared-place-list,validated-place-list,validation-review-queue,validation-reviews-board,reopened-customer-list,place-check-done}.tsx",
       "app/**/field-crm/validation-reviews/**",
       "app/api/phoenix-crm/validation-reviews/**",
+      // The one-by-one review (owner, 2026-10-18): its shell, its pure slides, the integrity slide and
+      // the read of the open cases it is built from.
+      "src/components/place-review-deck/**",
+      "src/lib/place-review-deck/**",
+      "src/components/crm-integrity/integrity-review-slide.tsx",
+      "app/api/admin/phoenix-crm/integrity/cases/**",
+      "tests/place-review-deck*",
       "tests/phoenix-crm-{place-match-groups,shared-place-groups,refuse-validation,validation-review-filters,place-checks-in-overflow}*",
     ],
     keywords: ["place checks", "same place", "place match", "polyclinic group", "bulk answer", "reject a customer", "approve after rejection", "district manager place checks"],

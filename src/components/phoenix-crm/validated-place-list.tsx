@@ -24,10 +24,10 @@
  */
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
+import { usePlaceCheckDone } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
@@ -238,8 +238,8 @@ function Cost({ row }: { row: ValidatedPlaceRow }) {
  * the form was most of the row and the photograph a 113-pixel square beside it. Closed, a row is the
  * photo, who took it, what the reader saw, the system's advice and one button.
  */
-function Refuse({ row }: { row: ValidatedPlaceRow }) {
-  const router = useRouter();
+function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string }) {
+  const done = usePlaceCheckDone();
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   // Opens on the reason the system's own confident reading gives, and on nothing otherwise.
@@ -254,7 +254,7 @@ function Refuse({ row }: { row: ValidatedPlaceRow }) {
     setProblem(null);
     try {
       await crmPost<unknown>("/api/phoenix-crm/validation-reviews/refuse", { placeId: row.placeId, note, refusalReason: reason }, "refused");
-      router.refresh();
+      done("refused");
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(false);
@@ -275,7 +275,7 @@ function Refuse({ row }: { row: ValidatedPlaceRow }) {
       <Cost row={row} />
       <RefusalReasonField
         disabled={saving}
-        id={`refuse-reason-${row.placeId}`}
+        id={`refuse-reason-${scope}${row.placeId}`}
         kind={row.photoKind}
         onChange={(next) => {
           setReason(next);
@@ -283,13 +283,13 @@ function Refuse({ row }: { row: ValidatedPlaceRow }) {
         }}
         value={reason}
       />
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`refuse-note-${row.placeId}`}>
+      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`refuse-note-${scope}${row.placeId}`}>
         {VALIDATION_NOTE_LABEL}
       </label>
       <textarea
         className={crmTextareaClassName}
         disabled={saving}
-        id={`refuse-note-${row.placeId}`}
+        id={`refuse-note-${scope}${row.placeId}`}
         maxLength={500}
         onChange={(event) => {
           setNote(event.target.value);
@@ -333,7 +333,7 @@ function Refuse({ row }: { row: ValidatedPlaceRow }) {
  * it records that the Super Admin looked and confirmed, and the place leaves Not confirmed.
  */
 function Approve({ row }: { row: ValidatedPlaceRow }) {
-  const router = useRouter();
+  const done = usePlaceCheckDone();
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -343,7 +343,7 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
     setProblem(null);
     try {
       await crmPost<unknown>("/api/phoenix-crm/validation-reviews/approve", { placeId: row.placeId, note: "" }, "approved");
-      router.refresh();
+      done("approved");
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(false);
@@ -539,3 +539,10 @@ export function ValidatedPlaceList({
     </div>
   );
 }
+
+/**
+ * The pieces the one-by-one review draws a place in use with (owner, 2026-10-18), exported as they are
+ * — the same evidence and the same two controls, never a copy. `scope` keeps the review's field ids
+ * apart from this list's own.
+ */
+export { Approve as PlaceInUseApprove, Place as PlaceInUseEvidence, Refuse as PlaceInUseRefuse, photoAlt as placeInUsePhotoAlt };

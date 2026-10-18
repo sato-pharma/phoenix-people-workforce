@@ -14,10 +14,10 @@
  */
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
+import { usePlaceCheckDone } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
@@ -182,8 +182,8 @@ function Evidence({ row }: { row: ValidationReviewRow }) {
  * while the place is still retired and nothing newer has been said about it — the same test the
  * database makes. The note is OPTIONAL since 2026-10-15, as it is everywhere on this page.
  */
-function Restore({ row }: { row: ValidationReviewRow }) {
-  const router = useRouter();
+function Restore({ row, scope }: { row: ValidationReviewRow; scope: string }) {
+  const done = usePlaceCheckDone();
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -194,7 +194,7 @@ function Restore({ row }: { row: ValidationReviewRow }) {
     setProblem(null);
     try {
       await crmPost<unknown>("/api/phoenix-crm/validation-reviews/restore", { reviewId: row.reviewId, note }, "restored");
-      router.refresh();
+      done("restored");
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(false);
@@ -203,13 +203,13 @@ function Restore({ row }: { row: ValidationReviewRow }) {
 
   return (
     <div className="space-y-2 border-t border-slate-100 pt-2">
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`restore-note-${row.reviewId}`}>
+      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`restore-note-${scope}${row.reviewId}`}>
         Why it is accepted after all — optional (kept on the record, never shown to the rep)
       </label>
       <textarea
         className={crmTextareaClassName}
         disabled={saving}
-        id={`restore-note-${row.reviewId}`}
+        id={`restore-note-${scope}${row.reviewId}`}
         maxLength={500}
         onChange={(event) => setNote(event.target.value)}
         rows={2}
@@ -237,8 +237,8 @@ function Restore({ row }: { row: ValidationReviewRow }) {
  * round — refusing the same place from "Validations the system did not question" — overwrites that
  * evidence with `refused_by_admin`, which is exactly why this control exists here.
  */
-function RejectAfterApproval({ row }: { row: ValidationReviewRow }) {
-  const router = useRouter();
+function RejectAfterApproval({ row, scope }: { row: ValidationReviewRow; scope: string }) {
+  const done = usePlaceCheckDone();
   const [note, setNote] = useState("");
   // Opens on the reason the system's own confident reading gives, and on nothing otherwise.
   const [reason, setReason] = useState<ValidationRefusalReason | "">(() => adviseOnReview(row).refusal ?? "");
@@ -255,7 +255,7 @@ function RejectAfterApproval({ row }: { row: ValidationReviewRow }) {
         { reviewId: row.reviewId, decision: "reject", note, refusalReason: reason },
         "decided",
       );
-      router.refresh();
+      done("rejected");
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(false);
@@ -266,18 +266,18 @@ function RejectAfterApproval({ row }: { row: ValidationReviewRow }) {
     <div className="space-y-2 border-t border-slate-100 pt-2">
       <RefusalReasonField
         disabled={saving}
-        id={`reject-again-reason-${row.reviewId}`}
+        id={`reject-again-reason-${scope}${row.reviewId}`}
         kind={row.photoKind}
         onChange={setReason}
         value={reason}
       />
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`reject-again-note-${row.reviewId}`}>
+      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`reject-again-note-${scope}${row.reviewId}`}>
         {VALIDATION_NOTE_LABEL}
       </label>
       <textarea
         className={crmTextareaClassName}
         disabled={saving}
-        id={`reject-again-note-${row.reviewId}`}
+        id={`reject-again-note-${scope}${row.reviewId}`}
         maxLength={500}
         onChange={(event) => setNote(event.target.value)}
         rows={2}
@@ -317,8 +317,8 @@ function Settled({ row }: { row: ValidationReviewRow }) {
   );
 }
 
-function Decision({ row }: { row: ValidationReviewRow }) {
-  const router = useRouter();
+function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: string }) {
+  const done = usePlaceCheckDone();
   const [note, setNote] = useState("");
   // Opens on the reason the system's own confident reading gives, and on nothing otherwise.
   const [reason, setReason] = useState<ValidationRefusalReason | "">(() => adviseOnReview(row).refusal ?? "");
@@ -332,8 +332,8 @@ function Decision({ row }: { row: ValidationReviewRow }) {
         <p className="break-words text-xs text-slate-500">{[row.decidedByName, row.decidedAtText].filter(Boolean).join(" · ")}</p>
         {row.refusalLabel ? <p className="break-words text-xs font-semibold text-slate-700">The rep was told: {row.refusalLabel}</p> : null}
         {row.decisionNote ? <p className="break-words text-xs text-slate-600">{row.decisionNote}</p> : null}
-        {row.restorable ? <Restore row={row} /> : null}
-        {row.refusable ? <RejectAfterApproval row={row} /> : null}
+        {row.restorable ? <Restore row={row} scope={scope} /> : null}
+        {row.refusable ? <RejectAfterApproval row={row} scope={scope} /> : null}
       </div>
     );
   }
@@ -348,7 +348,7 @@ function Decision({ row }: { row: ValidationReviewRow }) {
         { reviewId: row.reviewId, decision, note, ...(decision === "reject" ? { refusalReason: reason } : {}) },
         "decided",
       );
-      router.refresh();
+      done(decision === "approve" ? "approved" : "rejected");
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(null);
@@ -359,18 +359,18 @@ function Decision({ row }: { row: ValidationReviewRow }) {
     <div className="space-y-2">
       <RefusalReasonField
         disabled={saving !== null}
-        id={`review-reason-${row.reviewId}`}
+        id={`review-reason-${scope}${row.reviewId}`}
         kind={row.photoKind}
         onChange={setReason}
         value={reason}
       />
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`review-note-${row.reviewId}`}>
+      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`review-note-${scope}${row.reviewId}`}>
         {VALIDATION_NOTE_LABEL}
       </label>
       <textarea
         className={crmTextareaClassName}
         disabled={saving !== null}
-        id={`review-note-${row.reviewId}`}
+        id={`review-note-${scope}${row.reviewId}`}
         maxLength={500}
         onChange={(event) => setNote(event.target.value)}
         rows={2}
@@ -554,3 +554,10 @@ export function ValidationReviewQueue({
     </>
   );
 }
+
+/**
+ * The pieces the one-by-one review draws a held place with (owner, 2026-10-18), exported as they are
+ * so the review shows the same evidence and posts through the same controls as this table — never a
+ * copy of either. `scope` keeps the review's field ids apart from this table's own.
+ */
+export { Decision as ReviewDecision, Evidence as ReviewEvidence, photoAlt as reviewPhotoAlt };

@@ -30,11 +30,13 @@
  */
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { crmPost, useCrmAction } from "@/components/phoenix-crm/api";
+import { usePlaceCheckDone } from "@/components/phoenix-crm/place-check-done";
 import { CrmButton, CrmField, CrmNote, crmTextareaClassName } from "@/components/phoenix-crm/ui";
+import { INTEGRITY_SETTLE_PRESETS } from "@/lib/crm-integrity/integrity-settle-presets";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { cn } from "@/lib/utils";
 import { INTEGRITY_NOTE_LIMIT, INTEGRITY_NOTE_REQUIRED, type IntegritySettlement } from "@/lib/phoenix-crm/integrity-settlement";
 
 // Africa/Cairo, human-readable — never raw UTC (owner standing rule). The formatter is the shared
@@ -56,14 +58,24 @@ function cairo(value: string): string {
 
 export function IntegritySettleControl({
   caseId,
+  presets = false,
   settlement,
+  startOpen = false,
 }: {
   caseId: string;
+  /**
+   * The one-by-one review (owner, 2026-10-18): the board's ready-made reasons as one-tap choices that
+   * fill the note, which can still be edited before Settle it. Off on the board, which keeps its look.
+   */
+  presets?: boolean;
   settlement: IntegritySettlement | null;
+  /** The review opens straight on the note, since settling is the one thing its footer is for. */
+  startOpen?: boolean;
 }) {
-  const router = useRouter();
+  // After the save: the page reads itself again, and inside the review the review is told so it can move on.
+  const done = usePlaceCheckDone();
   const action = useCrmAction();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(startOpen);
   const [note, setNote] = useState("");
   // The note is required by the service, and saying so before the round trip is kinder than a
   // refusal — but the service is still the authority on it, not this line.
@@ -80,7 +92,7 @@ export function IntegritySettleControl({
     if (!saved) return;
     setOpen(false);
     setNote("");
-    router.refresh();
+    done("settled");
   }
 
   async function reopen(): Promise<void> {
@@ -88,7 +100,7 @@ export function IntegritySettleControl({
       crmPost<{ caseId: string }>("/api/admin/phoenix-crm/integrity/reopen", { caseId }, "settled"),
     );
     if (!saved) return;
-    router.refresh();
+    done("reopened");
   }
 
   if (settlement) {
@@ -119,7 +131,28 @@ export function IntegritySettleControl({
   }
 
   return (
-    <div className="mt-3 min-w-0 space-y-2 border-t border-slate-100 pt-3">
+    <div className={cn("min-w-0 space-y-2", startOpen ? null : "mt-3 border-t border-slate-100 pt-3")}>
+      {presets ? (
+        <div aria-label="Ready-made reasons" className="flex min-w-0 flex-wrap gap-1.5" role="group">
+          {INTEGRITY_SETTLE_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              aria-pressed={note === preset.note}
+              className={cn(
+                "min-h-9 min-w-0 rounded-none border px-2.5 py-1 text-left text-xs font-black",
+                note === preset.note ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
+              )}
+              onClick={() => {
+                setNote(preset.note);
+                setMissing(false);
+              }}
+              type="button"
+            >
+              <span className="break-words">{preset.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       <CrmField
         error={missing && note.trim() === "" ? INTEGRITY_NOTE_REQUIRED : undefined}
         hint="Kept on the record for ever, and never shown to the rep."

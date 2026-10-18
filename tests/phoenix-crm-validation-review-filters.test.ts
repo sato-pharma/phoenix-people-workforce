@@ -139,7 +139,8 @@ export function runPhoenixCrmValidationReviewFiltersTests(): void {
   // when the Polyclinics set joined it (2026-10-09), and a single-line pattern reads that formatting
   // as a missing set. What is pinned is that every set reaches the board and the page draws none itself.
   const page = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
-  assert.ok(page.includes("<ValidationReviewsBoard"), "the page delegates the sections to the board");
+  // The one-by-one review's wrapper (2026-10-18) hands every prop on to the board unchanged.
+  assert.ok(page.includes("<ValidationReviewsBoard") || page.includes("<PlaceChecksWithDeck"), "the page delegates the sections to the board");
   for (const prop of ["capped={capped}", "decided={decided}", "pending={waiting}", "reopened={reopened}", "sharedPlaces={sharedPlaces}", "validated={validated}"]) {
     assert.ok(page.includes(prop), `the board is handed ${prop}`);
   }
