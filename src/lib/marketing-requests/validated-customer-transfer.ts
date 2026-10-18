@@ -4,6 +4,8 @@ import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { loadMarketingEvidencePhoto } from "@/lib/marketing-requests/evidence-photo-storage";
 import { getMarketingRequestDecisionSummary } from "@/lib/marketing-requests/service";
+import { loadBrickCentroids, resolveBrickForPoint, type ResolvedBrickPoint } from "@/lib/crm/brick-geo";
+import { applyPhotoPinTerritory, type PinnedGeography } from "@/lib/marketing-requests/photo-pin-territory";
 import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/http/uuid";
@@ -319,13 +321,14 @@ export function applyLegacyMarketingAreaAlias(code: string | null | undefined): 
   return LEGACY_MARKETING_AREA_ALIASES[trimmed.toLowerCase()] ?? trimmed;
 }
 
-export type ResolvedDirectOrderGeography = {
-  areaCode: string | null;
-  regionCode: string | null;
-  brickId: string | null;
-  /** Where each value came from, so the page can say so instead of implying certainty. */
-  source: "master_code" | "marketing_area" | "none";
-};
+/** Where each value came from, so the page can say so instead of implying certainty. */
+export type ResolvedDirectOrderGeography = PinnedGeography;
+
+/** The territory a captured pin falls in — the SAME brick centres the evidence stamp itself uses. */
+async function readPinTerritory(latitude: number | null, longitude: number | null): Promise<ResolvedBrickPoint | null> {
+  if (latitude === null || longitude === null) return null;
+  return resolveBrickForPoint(latitude, longitude, await loadBrickCentroids());
+}
 
 /**
  * Work out the area, region and brick Direct Orders should store — preferring the answer Phoenix
@@ -779,7 +782,7 @@ export type ValidatedCustomerDetail = {
     suggestedBrickId: string | null;
     suggestedBrickName: string | null;
     suggestedBrickDistanceKm: number | null;
-    /** True when the brick is the master database's answer, not a nearest-centroid guess. */
+    /** True when the brick is the master database's answer or the evidence photo's own pin — never a nearest-centroid guess. */
     brickIsFromMaster: boolean;
   };
   completeness: ValidatedCustomerCompleteness;
@@ -953,20 +956,27 @@ async function assembleValidatedMarketingCustomerDetail(
   // page must resolve geography from exactly the same input the transfer will use.
   const primaryLink = links[0];
   const primaryCodeRow = primaryLink ? codeById.get(String(primaryLink.distributor_code_id ?? "")) : undefined;
-  const geographyBase = await resolveDirectOrderGeography({
+  const resolvedBase = await resolveDirectOrderGeography({
     mappedAreaCode: primaryCodeRow ? text(primaryCodeRow, "mapped_area_code") : null,
     mappedBrickId: primaryCodeRow ? text(primaryCodeRow, "mapped_brick_id") : null,
     mappedRegionCode: primaryCodeRow ? text(primaryCodeRow, "mapped_region_code") : null,
     marketingAreaCode,
   });
-  // Only fall back to a geometric guess when the master had no brick to give.
-  const brick = geographyBase.brickId
-    ? { brickId: geographyBase.brickId, brickName: null, distanceKm: null }
-    : await suggestBrickForCapture({
-        areaCode: geographyBase.areaCode,
-        latitude: num(customer, "captured_latitude"),
-        longitude: num(customer, "captured_longitude"),
-      });
+  // The photo's own pin outranks the inherited marketing area; the master's answer is untouched.
+  const { geography: geographyBase, pinBrick } = applyPhotoPinTerritory(
+    resolvedBase,
+    await readPinTerritory(num(customer, "captured_latitude"), num(customer, "captured_longitude")),
+  );
+  // Only fall back to a geometric guess when neither the master nor the photo had a brick to give.
+  const brick = pinBrick
+    ? pinBrick
+    : geographyBase.brickId
+      ? { brickId: geographyBase.brickId, brickName: null, distanceKm: null }
+      : await suggestBrickForCapture({
+          areaCode: geographyBase.areaCode,
+          latitude: num(customer, "captured_latitude"),
+          longitude: num(customer, "captured_longitude"),
+        });
 
   const contacts = ((contactsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
     contactName: text(row, "contact_name"),
@@ -1333,7 +1343,7 @@ export async function transferValidatedCustomerToDirectOrders(
     const { data } = await supabase.from("areas").select("code").eq("id", areaId).maybeSingle();
     marketingAreaCode = data ? text(data as Record<string, unknown>, "code") : null;
   }
-  const geography = await resolveDirectOrderGeography({
+  const resolvedGeography = await resolveDirectOrderGeography({
     mappedAreaCode: text(codeRow, "mapped_area_code"),
     mappedBrickId: text(codeRow, "mapped_brick_id"),
     mappedRegionCode: text(codeRow, "mapped_region_code"),
@@ -1342,10 +1352,15 @@ export async function transferValidatedCustomerToDirectOrders(
 
   const latitude = num(customer, "captured_latitude") ?? num(marketingPharmacy, "captured_latitude");
   const longitude = num(customer, "captured_longitude") ?? num(marketingPharmacy, "captured_longitude");
-  // Only guess a brick when the master had none to give.
-  const brick = geography.brickId
-    ? { brickId: geography.brickId, brickName: null, distanceKm: null }
-    : await suggestBrickForCapture({ areaCode: geography.areaCode, latitude, longitude });
+  // THE PHOTO IS THE PRIMARY SOURCE OF TRUST (owner, 2026-10-18): a venue the master did not place
+  // is filed where its photo's pin falls, not in the area the marketing label inherited.
+  const { geography, pinBrick } = applyPhotoPinTerritory(resolvedGeography, await readPinTerritory(latitude, longitude));
+  // Only guess a brick when neither the master nor the photo had one to give.
+  const brick = pinBrick
+    ? pinBrick
+    : geography.brickId
+      ? { brickId: geography.brickId, brickName: null, distanceKm: null }
+      : await suggestBrickForCapture({ areaCode: geography.areaCode, latitude, longitude });
 
   const pharmacyName =
     text(marketingPharmacy, "display_name") ?? text(customer, "display_name") ?? "Transferred customer";
@@ -1449,6 +1464,10 @@ export async function transferValidatedCustomerToDirectOrders(
   }
   if (brick.brickId && geography.source === "master_code") {
     reasonParts.push(`Brick ${brick.brickId} and area ${geography.areaCode} come from the Phoenix master database.`);
+  } else if (brick.brickId && geography.source === "photo_pin") {
+    reasonParts.push(
+      `Brick ${brick.brickId} and area ${geography.areaCode} come from the evidence photo's own GPS pin (${brick.distanceKm} km from that brick's centre) — the photo is the primary source of trust, not the marketing area.`,
+    );
   } else if (brick.brickId && brick.distanceKm !== null) {
     reasonParts.push(
       `Brick ${brick.brickId} is a SUGGESTION only — nearest centroid, ${brick.distanceKm} km from the captured pin. Confirm it before trusting the territory.`,

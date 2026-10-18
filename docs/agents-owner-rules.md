@@ -8597,6 +8597,13 @@ The rule: wherever a module holds a live evidence photo, read the photo's own te
 disagreement lead the sentence. Shipped for the Direct Order approval panel: `checkDirectOrderGeography`
 takes a `photoTerritory` (the nearest brick centre to the stamped pin, `resolveBrickForPoint`), prints it as
 the first rows, and a centre further than `PHOTO_TERRITORY_TRUST_KM` (15 km) is "not usable" rather than an
-accusation. Pinned in `tests/direct-orders-hold-release.test.ts`. Not done, and his call: moving a venue's
-territory (attribution follows the brick), the transfer's brick suggestion, and other photo modules.
-Open tension: marketing's earlier ruling "the REGISTERED CODE beats live GPS" (2026-08-21).
+accusation. Pinned in `tests/direct-orders-hold-release.test.ts`. The nursery in the live case was re-pointed
+to منوف / Menoufia 2 at his word the same day (one row, no sales month booked, nothing approved).
+
+His word, the same evening: *"make the marketing transfer file the venue's brick and area from the photo's
+pin."* Shipped: `applyPhotoPinTerritory` (`src/lib/marketing-requests/photo-pin-territory.ts`, pure) is applied
+by BOTH the transfer and the preview page, so a venue the master did not place is filed where its photo's pin
+falls (`resolvedFrom: "photo_pin"`), within the same 15 km trust radius. A venue whose distributor code
+resolved (`master_code`) keeps the master's territory untouched. Pinned in `tests/photo-pin-territory.test.ts`.
+Still not done: other photo modules. Open tension: marketing's earlier ruling "the REGISTERED CODE beats live
+GPS" (2026-08-21) — the transfer deliberately leaves the master's answer alone until he rules.
