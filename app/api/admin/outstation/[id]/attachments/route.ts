@@ -44,6 +44,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         departureEvidenceImageUrl: null,
         employeeName: null,
         found: false,
+        journey: null,
         photos: [],
         tickets: [],
       });
@@ -60,11 +61,42 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       }))
       .filter((ticket): ticket is { contentType: string; name: string; url: string } => Boolean(ticket.url));
 
+    // The chained journey's stops (owner rule, 2026-10-18): each drive, whether it is paid and why,
+    // the flags, and every stop's own photo — signed like the arrival and departure photos.
+    const stops = requestRow.journeyStops ?? [];
+    const pricing = stops.length > 0 ? requestRow.journeyPricing ?? null : null;
+    const stopUrls = stops.length > 0 ? await createOutstationEvidenceSignedUrls(stops.map((stop) => stop.photoPath)) : [];
+    const journey =
+      stops.length > 0
+        ? {
+            flagReasons: pricing?.flagReasons ?? [],
+            fuelAmount: pricing?.fuelAmount ?? null,
+            legs: (pricing?.legs ?? []).map((leg) => ({
+              distanceKm: leg.distanceKm,
+              from: leg.from,
+              paid: leg.paid,
+              reason: leg.reason,
+              to: leg.to,
+            })),
+            modeReason: pricing?.modeReason ?? null,
+            singleDestinationFuelAmount: pricing?.singleDestinationFuelAmount ?? null,
+            stops: stops.map((stop, index) => ({
+              accuracyMeters: stop.accuracyMeters,
+              capturedAt: stop.capturedAt,
+              governorate: stop.governorate,
+              locationLabel: stop.locationLabel,
+              stopNumber: stop.stopNumber,
+              url: stopUrls[index] ?? null,
+            })),
+          }
+        : null;
+
     return NextResponse.json({
       carEvidenceImageUrl: requestRow.carEvidenceImageUrl ?? null,
       departureEvidenceImageUrl: requestRow.departureEvidenceImageUrl ?? null,
       employeeName: formatEmployeeDisplayName(requestRow.employeeName) || null,
       found: true,
+      journey,
       photos: approverTripPhotos(requestRow),
       tickets,
     });

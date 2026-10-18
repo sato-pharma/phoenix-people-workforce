@@ -1,5 +1,6 @@
 import type { DoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/types";
 import type { DepartureLocationRefusal } from "@/lib/outstation/departure-location-refusals";
+import type { ChainedJourneyPricing, OutstationJourneyStop } from "@/lib/outstation/chained-journey";
 
 export type OutstationEligibilityStatus =
   | "eligible"
@@ -314,6 +315,11 @@ export type OutstationExpenseRequest = {
   /** Departure photos refused for having no GPS location, with time and cause (owner, 2026-09-18).
    * Optional so a hand-built request (a preview, a fixture) need not carry one. */
   departureLocationRefusals?: DepartureLocationRefusal[];
+  /** Extra places of a chained journey after the arrival photo, each with its own live photo
+   * (owner rule, 2026-10-18 — chained-journey.ts). Optional so a hand-built request need not carry one. */
+  journeyStops?: OutstationJourneyStop[];
+  /** The last chained-journey pricing, or null for a trip with no stop. */
+  journeyPricing?: ChainedJourneyPricing | null;
   evidenceGateStatus: OutstationEvidenceGateStatus;
   /** How many times the CRM workload grab has been tried. Drives the admin repair screen. */
   workloadCaptureAttempts: number;

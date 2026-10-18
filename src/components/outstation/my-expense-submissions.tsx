@@ -14,9 +14,11 @@ import {
   TriangleAlert,
   Wallet,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 
 import { DeparturePhotoCard } from "@/components/outstation/departure-photo-card";
+import { JourneyStopCard } from "@/components/outstation/journey-stop-card";
 import type { MyOutstationSubmission } from "@/lib/outstation/service";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
@@ -282,6 +284,7 @@ export function MyExpenseSubmissions({
   employeeHrId: string;
   submissions: MyOutstationSubmission[];
 }) {
+  const router = useRouter();
   const [openId, setOpenId] = useState<number | null>(null);
   const [photos, setPhotos] = useState<Record<number, PhotoState>>({});
   const [captured, setCaptured] = useState<number[]>([]);
@@ -584,6 +587,68 @@ export function MyExpenseSubmissions({
                       </p>
                     ) : null}
                   </section>
+
+                  {/* ── The journey's stops (owner rule, 2026-10-18) ───────────── */}
+                  {submission.journeyStops.length > 0 || submission.canAddJourneyStop ? (
+                    <section>
+                      <SectionTitle>Journey</SectionTitle>
+                      {submission.journey ? (
+                        <div className="mt-3 border border-slate-200 bg-white p-3">
+                          <p className="text-phx-md leading-relaxed text-slate-700">
+                            {submission.journey.modeReason}
+                          </p>
+                          <ul className="mt-2 space-y-1 text-xs text-slate-600">
+                            {submission.journey.legs.map((leg, index) => (
+                              <li className="flex flex-wrap justify-between gap-x-3" key={`${index}-${leg.from}`}>
+                                <span className="min-w-0 break-words">
+                                  {leg.from} → {leg.to}
+                                  {leg.distanceKm !== null ? ` · ${leg.distanceKm} km` : ""}
+                                </span>
+                                <span className={`font-bold ${leg.paid ? "text-emerald-700" : "text-slate-500"}`}>
+                                  {leg.paid ? "Paid" : "Not paid"}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="mt-2 text-xs text-slate-600">
+                            Fuel {money(submission.journey.fuelAmount)} · home to first destination and back
+                            would be {money(submission.journey.singleDestinationFuelAmount)}
+                          </p>
+                          {submission.journey.flagged ? (
+                            <p className="mt-1.5 flex items-start gap-2 text-xs leading-relaxed text-amber-800">
+                              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                              Your approver will review this journey before it is paid.
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {submission.journeyStops.length > 0 ? (
+                        <ol className="mt-3 space-y-1.5 text-xs text-slate-600">
+                          {submission.journeyStops.map((stop) => (
+                            <li className="break-words" key={stop.stopNumber}>
+                              <span className="font-bold text-slate-900">Stop {stop.stopNumber}</span>
+                              {stop.governorate ? ` · ${stop.governorate}` : ""}
+                              {stop.locationLabel ? ` · ${stop.locationLabel}` : ""}
+                              {` · ${formatPhoenixLongDate(stop.capturedAt)}`}
+                            </li>
+                          ))}
+                        </ol>
+                      ) : null}
+                      {submission.canAddJourneyStop ? (
+                        <div className="mt-3">
+                          <JourneyStopCard
+                            employeeHrId={employeeHrId}
+                            key={`${submission.id}-${submission.journeyStops.length}`}
+                            nextStopNumber={
+                              Math.max(1, ...submission.journeyStops.map((stop) => stop.stopNumber)) + 1
+                            }
+                            onSaved={() => router.refresh()}
+                            requestId={submission.id}
+                          />
+                        </div>
+                      ) : null}
+                    </section>
+                  ) : null}
 
                   {/* ── The money, both figures side by side ───────────────── */}
                   <section>

@@ -44,11 +44,26 @@ import {
   deleteOutstationMeetingInvoice,
   deleteOutstationTicketAttachments,
   uploadOutstationCarEvidenceImage,
+  uploadOutstationJourneyStopImage,
   uploadOutstationMeetingInvoice,
   uploadOutstationTicketAttachments,
   type OutstationTicketAttachmentUploadInput,
 } from "@/lib/outstation/car-evidence-storage";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
+import {
+  JOURNEY_STOP_LOCATION_REQUIRED_MESSAGE,
+  MAX_JOURNEY_STOPS,
+  journeyOverlapHoldReason,
+  journeyStopDays,
+  pickJourneyLegOrigin,
+  priceChainedJourney,
+  readJourneyPricing,
+  readJourneyStops,
+  rebaseClaimOnNewFuel,
+  withJourneyReason,
+  type ChainedJourneyPricing,
+  type OutstationJourneyStop,
+} from "@/lib/outstation/chained-journey";
 import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import {
   outstationCampaignRuleOutcome,
@@ -2118,6 +2133,28 @@ export async function submitOutstationRequest(
       });
   const noInvoiceHoldReason =
     nonTravel && ticketAttachmentInputs.length === 0 ? NON_TRAVEL_NO_INVOICE_HOLD_REASON : null;
+  // A car trip filed for a day another of his journeys already reached through an added stop: the
+  // same drive could be paid twice (owner, 2026-10-18 — "make sure that no one abuses it"). The
+  // journey side flags it as another_trip_same_day; this is the other half. Held, never refused.
+  // A failed read HOLDS the claim and says why; it never refuses the submission (the 2026-08-09
+  // flag-never-reject rule — risk review, 2026-10-18).
+  let journeyOverlapReason: string | null = null;
+  if (!nonTravel && calculation.transportationType === "car") {
+    try {
+      journeyOverlapReason = journeyOverlapHoldReason({
+        journeys: await journeysWithStopsForEmployee(calculation.employeeHrId),
+        tripEndDate: calculation.tripEndDate,
+        tripStartDate: calculation.tripStartDate,
+      });
+    } catch (error) {
+      logError("Outstation journey-overlap check could not read the employee's other trips", {
+        error,
+        labels: { event: "outstation_journey_overlap_read_failed" },
+      });
+      journeyOverlapReason =
+        "The employee's other trips could not be read to check whether this drive is already paid through another journey's stop, so it is held for Super Admin review before it moves to payroll.";
+    }
+  }
 
   /**
    * The system FLAGS, it never REJECTS. (Owner rule, 2026-08-09.)
@@ -2154,6 +2191,7 @@ export async function submitOutstationRequest(
     gpsAccuracyHoldReason,
     offlineSyncHoldReason,
     noInvoiceHoldReason,
+    journeyOverlapReason,
   ].filter((reason): reason is string => Boolean(reason));
   /**
    * Owner rule (2026-08-28): a National Sales Manager is never held, for any reason.
@@ -2509,6 +2547,8 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     ),
     // A row read before the 2026-09-18 migration has no such column: no refused tries, never an error.
     departureLocationRefusals: readDepartureLocationRefusals(row.departure_location_refusals),
+    journeyPricing: readJourneyPricing(row.journey_pricing),
+    journeyStops: readJourneyStops(row.journey_stops),
     // Fall back to the pre-gate states, not to the strict ones: a row read before the 2026-08-04
     // migration has applied genuinely IS exempt, and defaulting it to "pending" would make the
     // gate withhold payroll from every historical request the moment this code deploys ahead of
@@ -3969,8 +4009,34 @@ export async function updateManagerExpenseAsAdmin(
         tripStartDate,
       });
   let fuelAmount = 0;
+  // A journey with added stops keeps the chained price through an admin edit (owner rule,
+  // 2026-10-18): the stops and their road legs are the employee's live photos, so an edit re-prices
+  // them with the edited dates, distance and destination rather than falling back to home and back.
+  let journeyPricing: ChainedJourneyPricing | null = null;
   if (!isMeetingExpense && transportationType === "car") {
     fuelAmount = roundMoney(distanceKm * 2 * policy.fuelRatePerKm);
+    const stops = existing.journeyStops ?? [];
+    if (stops.length > 0) {
+      journeyPricing = priceChainedJourney({
+        arrival: {
+          capturedAt: existing.carEvidenceMetadata?.capturedAt ?? existing.capturedAt ?? null,
+          distanceFromResidenceKm: distanceKm,
+          // The arrival governorate the stops were priced against (read from the arrival photo's
+          // GPS), unless this edit moved the destination: an unchanged save must not re-price.
+          governorate: destination
+            ? destinationGovernorate
+            : existing.journeyPricing?.legs[0]?.toGovernorate ?? destinationGovernorate,
+        },
+        fuelRatePerKm: policy.fuelRatePerKm,
+        gpsAccuracyThresholdMeters: policy.gpsAccuracyThresholdMeters,
+        otherCarTripsByDay: await otherCarTripsByCairoDay(existing, journeyStopDays(stops)),
+        residenceGovernorate,
+        stops,
+        tripEndDate,
+        tripStartDate,
+      });
+      fuelAmount = journeyPricing.fuelAmount;
+    }
   }
   const existingTravelCost =
     existing.reportTravelCost ?? roundMoney(existing.fuelAmount + existing.ticketAmount);
@@ -4101,6 +4167,11 @@ export async function updateManagerExpenseAsAdmin(
     trip_start_date: tripStartDate,
     updated_at: now,
   };
+  if ((existing.journeyStops ?? []).length > 0) {
+    // Null when the edit made it a meeting or a non-car trip: the stops stay on record, unpriced.
+    updatePayload.journey_pricing = journeyPricing;
+    updatePayload.approval_reason = withJourneyReason(existing.approvalReason, journeyPricing);
+  }
 
   if (destination) {
     updatePayload.captured_latitude = destination.latitude;
@@ -5077,6 +5148,368 @@ export async function captureOutstationDeparturePhoto(
   return { gateStatus, review };
 }
 
+/** A stop may be added only while nobody has decided the trip yet. */
+const JOURNEY_STOP_OPEN_STATUSES = ["submitted", "needs_review"] as const;
+
+/**
+ * The employee's OTHER live car trips touching the given Cairo days — the double-pay check for a
+ * stop. A failed read throws: an unread sibling list must never price as "no other trip".
+ */
+async function otherCarTripsByCairoDay(
+  request: OutstationExpenseRequest,
+  days: string[],
+): Promise<Record<string, number[]>> {
+  if (days.length === 0) return {};
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .select("id, employee_hr_id, status, expense_type, transportation_type, trip_start_date, trip_end_date")
+    // The lookup keys, never one spelling: the column can hold "B-12" or "b12" for one person.
+    .in("employee_hr_id", hrIdLookupKeys(request.employeeHrId))
+    .neq("id", request.id);
+  if (error) throw new Error(`The employee's other trips could not be read: ${error.message}`);
+  const owner = normalizeHrIdForAccess(request.employeeHrId);
+  const byDay: Record<string, number[]> = {};
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    if (normalizeHrIdForAccess(text(row.employee_hr_id)) !== owner) continue;
+    if (text(row.status).startsWith("rejected")) continue;
+    if (text(row.transportation_type).toLowerCase() !== "car") continue;
+    if (isNonTravelExpenseType(text(row.expense_type).toLowerCase() as OutstationExpenseType)) continue;
+    const first = text(row.trip_start_date).slice(0, 10);
+    const last = text(row.trip_end_date).slice(0, 10) || first;
+    for (const day of days) {
+      if (first && day >= first && day <= last) (byDay[day] ??= []).push(Number(row.id));
+    }
+  }
+  return byDay;
+}
+
+/** The employee's journeys that reached a day through a stop, with those days — for the submit hold. */
+async function journeysWithStopsForEmployee(employeeHrId: string): Promise<Array<{ id: number; stopDays: string[] }>> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .select("id, employee_hr_id, status, journey_stops")
+    .in("employee_hr_id", hrIdLookupKeys(employeeHrId));
+  if (error) throw new Error(`The employee's other trips could not be read: ${error.message}`);
+  const owner = normalizeHrIdForAccess(employeeHrId);
+  return ((data ?? []) as Array<Record<string, unknown>>)
+    .filter((row) => normalizeHrIdForAccess(text(row.employee_hr_id)) === owner)
+    .filter((row) => !text(row.status).startsWith("rejected"))
+    .map((row) => ({ id: Number(row.id), stopDays: journeyStopDays(readJourneyStops(row.journey_stops)) }))
+    .filter((journey) => journey.stopDays.length > 0);
+}
+
+/**
+ * Add a STOP to a car trip: the next place of a chained journey (owner rule, 2026-10-18 —
+ * "Minya → Fayoum × 1.8, Fayoum → Beni Suef × 1.8, Beni Suef → Minya × 1.8, only governorate to
+ * governorate, over 40 km"; pricing in chained-journey.ts).
+ *
+ * The anti-abuse rules (owner, same evening: "make sure that no one abuses it"), each here
+ * because this is the security boundary — the portal card only mirrors them:
+ *
+ *   - Only the employee on the trip, only a CAR trip, only while nobody has decided it and it is
+ *     not in payroll, and only until the end of the trip's last Cairo day (the departure window).
+ *   - A live in-app JPEG with a GPS position, or nothing is stored — refused like a departure photo
+ *     without a location. The capture time is the SERVER's, never the phone's.
+ *   - The place and its governorate are the reverse-geocode of that position; every distance is
+ *     Google's road distance between two live photo positions. Nothing is typed.
+ *   - At most MAX_JOURNEY_STOPS stops. Every stop photo has its own never-overwritten path.
+ *   - Every suspicious shape — impossible speed, ping-pong, a stop at home, another trip filed for
+ *     the same day, a weak GPS fix, a chain more than twice the old price — is FLAGGED onto the
+ *     approval reason for the Super Admin and never refused (the 2026-08-09 flag-never-reject rule).
+ *   - The money moves by exactly the fuel's change, so the claim still equals its components.
+ *   - The final write matches the row's exact updated_at, so a second capture or a decision that
+ *     lands in between makes this one fail rather than overwrite it.
+ */
+export async function captureOutstationJourneyStop(
+  access: AccessContext,
+  input: {
+    accuracyMeters?: number | null;
+    imageDataUrl: string;
+    latitude?: number | null;
+    locationLabel?: string | null;
+    longitude?: number | null;
+    requestId: number;
+  },
+): Promise<{ pricing: ChainedJourneyPricing; request: OutstationExpenseRequest; stop: OutstationJourneyStop }> {
+  const supabase = getSupabaseAdmin();
+  // The concurrency token, read RAW and FIRST: the final update matches this exact text, so any
+  // write after this point — another stop, an approval, an admin edit — makes this one fail.
+  const { data: token, error: tokenError } = await supabase
+    .from("outstation_expense_requests")
+    .select("updated_at")
+    .eq("id", input.requestId)
+    .maybeSingle();
+  if (tokenError) throw new Error(tokenError.message);
+  const request = token ? await getOutstationRequestById(input.requestId) : null;
+  if (!token || !request) throw new Error("That outstation request is not available.");
+
+  const callerHrId = normalizeHrIdForAccess(access.hrId);
+  if (!callerHrId || callerHrId !== normalizeHrIdForAccess(request.employeeHrId)) {
+    throw forbiddenError("A stop can only be added by the employee on the trip.");
+  }
+  if (request.expenseType !== "traveling" || request.transportationType !== "car") {
+    throw new Error("A stop can only be added to a car trip.");
+  }
+  if (!(JOURNEY_STOP_OPEN_STATUSES as readonly string[]).includes(request.status)) {
+    throw new Error(
+      "This trip has already been decided, so a stop can no longer be added. Ask a system administrator if it needs changing.",
+    );
+  }
+  const linkedPayroll = await getLinkedOutstationPayrollExpense(request.id);
+  if (isOutstationExpenseInPayroll(linkedPayroll)) {
+    throw new Error("This outstation expense has already been added to payroll and cannot be edited.");
+  }
+  const capturedAt = new Date().toISOString();
+  if (!isWithinDepartureWindow({ capturedAt, tripEndDate: request.tripEndDate })) {
+    throw new Error(
+      `A stop can only be added while the trip is open, and it closed at the end of ${String(request.tripEndDate).slice(0, 10)}. ` +
+        "Ask a system administrator if this needs changing.",
+    );
+  }
+  if (!request.carEvidenceImagePath) {
+    throw new Error("The arrival photo is missing, so a stop cannot be added yet — capture the arrival photo first.");
+  }
+  const existingStops = request.journeyStops ?? [];
+  if (existingStops.length >= MAX_JOURNEY_STOPS) {
+    throw new Error(
+      `This trip already has ${MAX_JOURNEY_STOPS} stops, the most one trip may carry. Ask a system administrator if more are needed.`,
+    );
+  }
+  if (!usablePosition(input.latitude, input.longitude)) {
+    throw new Error(JOURNEY_STOP_LOCATION_REQUIRED_MESSAGE);
+  }
+  const latitude = Number(input.latitude);
+  const longitude = Number(input.longitude);
+  const residenceLatitude = request.residenceLatitude;
+  const residenceLongitude = request.residenceLongitude;
+  if (!usablePosition(residenceLatitude, residenceLongitude)) {
+    throw new Error(
+      "Your registered residence location is missing or invalid, so the drive home cannot be measured. Please contact HR.",
+    );
+  }
+
+  const origin = pickJourneyLegOrigin({
+    arrival: {
+      capturedAt: request.carEvidenceMetadata?.capturedAt ?? request.capturedAt ?? null,
+      latitude: request.carEvidenceMetadata?.capturedLatitude ?? request.capturedLatitude,
+      longitude: request.carEvidenceMetadata?.capturedLongitude ?? request.capturedLongitude,
+    },
+    departure: request.departureEvidenceImagePath
+      ? {
+          capturedAt: request.departureCapturedAt ?? request.departureEvidenceMetadata?.capturedAt ?? null,
+          latitude: request.departureEvidenceMetadata?.capturedLatitude ?? null,
+          longitude: request.departureEvidenceMetadata?.capturedLongitude ?? null,
+        }
+      : null,
+    nowIso: capturedAt,
+    stops: existingStops,
+  });
+  if (!origin) {
+    throw new Error(
+      "The trip's earlier photos carry no location, so the drive to this stop cannot be measured. Ask a system administrator.",
+    );
+  }
+
+  const roadLeg = async (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
+    try {
+      const route = await googleDirectionsRoute(from, to);
+      const km = route.distanceMeters != null ? Number((route.distanceMeters / 1000).toFixed(2)) : null;
+      return {
+        error: km == null ? "Google returned no driving route." : null,
+        km,
+        minutes: minutesFromSeconds(route.durationInTrafficSeconds) ?? minutesFromSeconds(route.durationSeconds),
+      };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : "Google Routes API failed to calculate the driving route.",
+        km: null,
+        minutes: null,
+      };
+    }
+  };
+  const stopPoint = { lat: latitude, lng: longitude };
+  // Every governorate here is Google's reading of a GPS position, never a label the phone posted
+  // (risk review, 2026-10-18: a crafted departure label "Beni Suef" turned a Fayoum-only trip into
+  // a paid chain). The arrival's is read once and kept on the first leg of the stored pricing, so a
+  // later stop or an admin edit prices against the same answer.
+  const storedArrivalGovernorate = request.journeyPricing?.legs[0]?.toGovernorate ?? null;
+  const arrivalPoint = {
+    lat: Number(request.carEvidenceMetadata?.capturedLatitude ?? request.capturedLatitude),
+    lng: Number(request.carEvidenceMetadata?.capturedLongitude ?? request.capturedLongitude),
+  };
+  const readGovernorate = async (point: { lat: number; lng: number }) => {
+    if (!usablePosition(point.lat, point.lng)) return null;
+    const found = await googleReverseGeocode(point).catch(() => null);
+    return resolveFirstGovernorate(found?.governorate, found?.formattedAddress, found?.city, found?.area);
+  };
+  const [reverse, leg, home, originGovernorate, arrivalReadGovernorate] = await Promise.all([
+    googleReverseGeocode(stopPoint).catch(() => null),
+    roadLeg({ lat: origin.latitude, lng: origin.longitude }, stopPoint),
+    roadLeg(stopPoint, { lat: Number(residenceLatitude), lng: Number(residenceLongitude) }),
+    origin.kind === "departure"
+      ? readGovernorate({ lat: origin.latitude, lng: origin.longitude })
+      : Promise.resolve(null),
+    storedArrivalGovernorate ? Promise.resolve(storedArrivalGovernorate) : readGovernorate(arrivalPoint),
+  ]);
+
+  const residenceGovernorate = resolveFirstGovernorate(
+    request.residenceCity,
+    request.residenceArea,
+    request.residenceAddress,
+  );
+  // The stored destination fields were themselves written from Google's reverse geocode at submit;
+  // they are the fallback only when the arrival position cannot be read now.
+  const arrivalGovernorate =
+    arrivalReadGovernorate ??
+    resolveFirstGovernorate(request.toCity, request.toArea, request.toLabel, request.toCountry);
+  const governorate = resolveFirstGovernorate(
+    reverse?.governorate,
+    reverse?.formattedAddress,
+    reverse?.city,
+    reverse?.area,
+  );
+  const legFromGovernorate =
+    origin.kind === "stop"
+      ? existingStops.at(-1)?.governorate ?? null
+      : origin.kind === "departure"
+        ? originGovernorate
+        : arrivalGovernorate;
+
+  const stopNumber = Math.max(1, ...existingStops.map((entry) => entry.stopNumber)) + 1;
+  const photoPath = await uploadOutstationJourneyStopImage({
+    capturedAtMs: new Date(capturedAt).getTime(),
+    employeeHrId: request.employeeHrId,
+    imageDataUrl: input.imageDataUrl,
+    requestId: request.id,
+    stopNumber,
+  });
+
+  const stop: OutstationJourneyStop = {
+    accuracyMeters: readAccuracyInput(input.accuracyMeters),
+    capturedAt,
+    governorate,
+    latitude,
+    legFrom: origin.kind,
+    legFromCapturedAt: origin.capturedAt,
+    legFromGovernorate,
+    legFromPreviousKm: leg.km,
+    legFromPreviousMinutes: leg.minutes,
+    locationLabel: reverse?.formattedAddress ?? (text(input.locationLabel) || null),
+    longitude,
+    photoPath,
+    returnHomeKm: home.km,
+    routeError: [leg.error, home.error].filter(Boolean).join(" ") || null,
+    stopNumber,
+  };
+  const stops = [...existingStops, stop];
+
+  const policy = await getActivePolicyForRole(resolveJobFunctionRole(request.employeeRole));
+  const pricing = priceChainedJourney({
+    arrival: {
+      capturedAt: request.carEvidenceMetadata?.capturedAt ?? request.capturedAt ?? null,
+      distanceFromResidenceKm: request.distanceFromResidenceKm,
+      governorate: arrivalGovernorate,
+    },
+    fuelRatePerKm: policy.fuelRatePerKm,
+    gpsAccuracyThresholdMeters: policy.gpsAccuracyThresholdMeters,
+    otherCarTripsByDay: await otherCarTripsByCairoDay(request, journeyStopDays(stops)),
+    residenceGovernorate,
+    stops,
+    tripEndDate: request.tripEndDate,
+    tripStartDate: request.tripStartDate,
+  });
+  // A trip the system already found NOT eligible keeps its money exactly as it is: a stop must
+  // never raise the payable on a claim the approver is being told not to pay (risk review,
+  // 2026-10-18 — the travel cost rose while the claim stood still). The chain is still priced and
+  // recorded, and the approver reads what it would have paid.
+  const moneyMoves = request.eligibilityStatus !== "not_eligible";
+  const notEligibleNote = moneyMoves
+    ? []
+    : [
+        `The trip is not eligible, so the stops did not change the claim; priced as a journey the fuel would be ${pricing.fuelAmount.toFixed(2)}.`,
+      ];
+  const amounts = moneyMoves
+    ? rebaseClaimOnNewFuel({
+        claimedTotalAmount: request.claimedTotalAmount,
+        expectedTotalAmount: request.expectedTotalAmount,
+        expectedTotalFor: (travelCost) =>
+          reportExpectedTotal({
+            allowanceAmount: request.allowanceAmount,
+            eligibilityStatus: request.eligibilityStatus,
+            meetingAmount: outstationReportOverride(request.reportMeetingAmount, request.meetingAmount),
+            otherAmount: outstationReportOverride(request.reportOtherAmount, request.otherAmount),
+            travelCost,
+          }),
+        fuelAmount: request.fuelAmount,
+        newFuelAmount: pricing.fuelAmount,
+        reportTravelCost: request.reportTravelCost,
+        ticketAmount: request.ticketAmount,
+      })
+    : {
+        claimedTotalAmount: request.claimedTotalAmount,
+        expectedTotalAmount: request.expectedTotalAmount,
+        fuelAmount: request.fuelAmount,
+        reportTravelCost: request.reportTravelCost,
+      };
+
+  const { data, error } = await supabase
+    .from("outstation_expense_requests")
+    .update({
+      approval_reason: withJourneyReason(request.approvalReason, pricing, notEligibleNote),
+      ...(pricing.flags.length > 0 && request.approvalRecommendation === "auto_approve"
+        ? { approval_recommendation: "hr_review" }
+        : {}),
+      claimed_total_amount: amounts.claimedTotalAmount,
+      expected_total_amount: amounts.expectedTotalAmount,
+      fuel_amount: amounts.fuelAmount,
+      journey_pricing: pricing,
+      journey_stops: stops,
+      report_travel_cost: amounts.reportTravelCost,
+      updated_at: capturedAt,
+    })
+    .eq("id", request.id)
+    .eq("updated_at", (token as { updated_at: string }).updated_at)
+    .in("status", [...JOURNEY_STOP_OPEN_STATUSES])
+    .select("*")
+    .maybeSingle();
+  if (error) {
+    // The photo is already stored under its own path; it is left, never deleted — an orphaned
+    // object is cheap, a deleted capture is evidence lost.
+    throw new Error(`The stop photo was uploaded but the trip could not be updated: ${error.message}`);
+  }
+  if (!data) {
+    throw new Error("This trip changed while the stop was being saved. Refresh and take the stop photo again.");
+  }
+  const updated = mapOutstationRequestRow(data as Record<string, unknown>);
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
+    entityId: String(updated.id),
+    entityType: "outstation_request",
+    newValues: {
+      claimedTotalAmount: updated.claimedTotalAmount,
+      fuelAmount: updated.fuelAmount,
+      journeyFlags: pricing.flags,
+      journeyMode: pricing.mode,
+      paidKm: pricing.paidKm,
+      source: "employee_journey_stop",
+      stopGovernorate: governorate,
+      stopNumber,
+    },
+    oldValues: {
+      claimedTotalAmount: request.claimedTotalAmount,
+      fuelAmount: request.fuelAmount,
+      stopCount: existingStops.length,
+    },
+    summary:
+      `Employee added stop ${stopNumber} (${governorate ?? "governorate unknown"}) to outstation request ${updated.id}: ` +
+      `fuel ${formatEgp(request.fuelAmount)} → ${formatEgp(updated.fuelAmount)}` +
+      (pricing.flags.length > 0 ? `, flagged: ${pricing.flags.join(", ")}.` : "."),
+  });
+
+  return { pricing, request: updated, stop };
+}
+
 /**
  * Run the automatic release and record it when it does not happen.
  *
@@ -5318,6 +5751,28 @@ export type MyOutstationSubmission = {
   /** How many times the departure photo has been replaced. 0 on a first capture. */
   departureRetakeCount: number;
   /**
+   * True while he may add a STOP (owner rule, 2026-10-18 — chained-journey.ts): his own car trip,
+   * arrival photo taken, nobody has decided it, the trip window still open, under the stop cap. The
+   * server re-checks every one of these and payroll as well; this only decides whether to offer it.
+   */
+  canAddJourneyStop: boolean;
+  /** How the journey is priced once it has a stop; null for a trip with no stop. */
+  journey: {
+    /** True when the approver has something to look at — the WORDING is the approver's only. */
+    flagged: boolean;
+    fuelAmount: number;
+    legs: Array<{ distanceKm: number | null; from: string; paid: boolean; to: string }>;
+    mode: "chained" | "single_destination";
+    modeReason: string;
+    singleDestinationFuelAmount: number;
+  } | null;
+  journeyStops: Array<{
+    capturedAt: string;
+    governorate: string | null;
+    locationLabel: string | null;
+    stopNumber: number;
+  }>;
+  /**
    * Where the arrival GPS point actually falls in Phoenix geography, split into its three
    * levels rather than left as one address string. Derived at read time from the stored
    * coordinates, so it always reflects TODAY's brick tree — the owner's standing rule.
@@ -5387,9 +5842,19 @@ function buildMyOutstationSubmission(
     workloadGateStatus: request.workloadGateStatus,
   });
 
+  const journeyStops = request.journeyStops ?? [];
+  const journeyPricing = journeyStops.length > 0 ? request.journeyPricing ?? null : null;
+
   return {
     allowanceAmount: request.allowanceAmount,
     amWorkload: request.amWorkload ?? 0,
+    canAddJourneyStop:
+      request.expenseType === "traveling" &&
+      request.transportationType === "car" &&
+      (JOURNEY_STOP_OPEN_STATUSES as readonly string[]).includes(request.status) &&
+      Boolean(request.carEvidenceImagePath) &&
+      journeyStops.length < MAX_JOURNEY_STOPS &&
+      isWithinDepartureWindow({ capturedAt: new Date().toISOString(), tripEndDate: request.tripEndDate }),
     canCaptureDeparturePhoto: gate.blocker === "departure_photo",
     canRetakeDeparturePhoto:
       Boolean(request.departureEvidenceImagePath) &&
@@ -5420,6 +5885,27 @@ function buildMyOutstationSubmission(
     hasDeparturePhoto: Boolean(request.departureEvidenceImagePath),
     id: request.id,
     isPayrollEligible: gate.isPayrollEligible,
+    journey: journeyPricing
+      ? {
+          flagged: journeyPricing.flags.length > 0,
+          fuelAmount: journeyPricing.fuelAmount,
+          legs: journeyPricing.legs.map((leg) => ({
+            distanceKm: leg.distanceKm,
+            from: leg.from,
+            paid: leg.paid,
+            to: leg.to,
+          })),
+          mode: journeyPricing.mode,
+          modeReason: journeyPricing.modeReason,
+          singleDestinationFuelAmount: journeyPricing.singleDestinationFuelAmount,
+        }
+      : null,
+    journeyStops: journeyStops.map((stop) => ({
+      capturedAt: stop.capturedAt,
+      governorate: stop.governorate,
+      locationLabel: stop.locationLabel,
+      stopNumber: stop.stopNumber,
+    })),
     meetingAmount: outstationReportOverride(request.reportMeetingAmount, request.meetingAmount),
     notes: employeeVisibleNotes(request.notes),
     origin:

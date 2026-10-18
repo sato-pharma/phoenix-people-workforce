@@ -1,18 +1,120 @@
 "use client";
 
-import { FileText, ImageOff, Loader2, Paperclip } from "lucide-react";
+import { FileText, ImageOff, Loader2, Paperclip, Route, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { TripEvidencePhotos } from "@/components/outstation/trip-evidence-photos";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import type { ApproverTripPhoto } from "@/lib/outstation/trip-evidence-photos";
 
 type Ticket = { contentType: string; name: string; url: string };
+/** A chained journey's stops and drives (owner rule, 2026-10-18 — chained-journey.ts). */
+type ApproverJourney = {
+  flagReasons: string[];
+  fuelAmount: number | null;
+  legs: Array<{ distanceKm: number | null; from: string; paid: boolean; reason: string; to: string }>;
+  modeReason: string | null;
+  singleDestinationFuelAmount: number | null;
+  stops: Array<{
+    accuracyMeters: number | null;
+    capturedAt: string;
+    governorate: string | null;
+    locationLabel: string | null;
+    stopNumber: number;
+    url: string | null;
+  }>;
+};
 type AttachmentsData = {
   employeeName: string | null;
   found: boolean;
+  journey?: ApproverJourney | null;
   photos: ApproverTripPhoto[];
   tickets: Ticket[];
 };
+
+const LEG_REASON: Record<string, string> = {
+  different_governorates: "another governorate, over 40 km",
+  distance_unknown: "no road distance",
+  governorate_unknown: "governorate unknown",
+  same_governorate: "same governorate",
+  under_minimum_km: "40 km or less",
+};
+
+function egp(value: number | null): string {
+  return value === null || !Number.isFinite(value) ? "—" : `EGP ${value.toFixed(2)}`;
+}
+
+const STOP_TIME = stableEnGbFormatter({
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  month: "short",
+  timeZone: "Africa/Cairo",
+});
+
+function cairoDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return STOP_TIME.format(date);
+}
+
+/** Every drive of the journey, the flags, and each stop's own live photo. */
+function TripJourney({ journey }: { journey: ApproverJourney }) {
+  return (
+    <div className="border border-phx-line bg-white p-3">
+      <p className="flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
+        <Route className="h-3.5 w-3.5" /> Journey with {journey.stops.length} added{" "}
+        {journey.stops.length === 1 ? "stop" : "stops"}
+      </p>
+      {journey.modeReason ? <p className="mt-2 text-xs leading-relaxed text-slate-700">{journey.modeReason}</p> : null}
+      <ul className="mt-2 space-y-1 text-xs text-slate-600">
+        {journey.legs.map((leg, index) => (
+          <li className="flex flex-wrap justify-between gap-x-3" key={`${index}-${leg.from}`}>
+            <span className="min-w-0 break-words">
+              {leg.from} → {leg.to}
+              {leg.distanceKm !== null ? ` · ${leg.distanceKm} km` : ""}
+            </span>
+            <span className={`font-bold ${leg.paid ? "text-emerald-700" : "text-slate-500"}`}>
+              {leg.paid ? "Paid" : `Not paid · ${LEG_REASON[leg.reason] ?? leg.reason}`}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-xs text-slate-600">
+        Fuel {egp(journey.fuelAmount)} · home to first destination and back would be{" "}
+        {egp(journey.singleDestinationFuelAmount)}
+      </p>
+      {journey.flagReasons.map((reason) => (
+        <p className="mt-1.5 flex items-start gap-2 text-xs leading-relaxed text-amber-800" key={reason}>
+          <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {reason}
+        </p>
+      ))}
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {journey.stops.map((stop) => {
+          const caption = `Stop ${stop.stopNumber}${stop.governorate ? ` · ${stop.governorate}` : ""}`;
+          return (
+            <figure className="min-w-0" key={stop.stopNumber}>
+              {stop.url ? (
+                <ZoomablePhoto alt={caption} caption={caption} className="h-48 w-full bg-slate-100 object-contain" src={stop.url} />
+              ) : (
+                <p className="flex h-24 items-center justify-center gap-2 bg-slate-50 text-xs text-slate-500">
+                  <ImageOff className="h-3.5 w-3.5" /> The photo could not be opened right now.
+                </p>
+              )}
+              <figcaption className="mt-1 break-words text-xs text-slate-600">
+                <span className="font-bold text-slate-900">{caption}</span>
+                {` · ${cairoDateTime(stop.capturedAt)}`}
+                {stop.locationLabel ? ` · ${stop.locationLabel}` : ""}
+                {stop.accuracyMeters !== null ? ` · GPS ±${Math.round(stop.accuracyMeters)} m` : " · GPS accuracy not reported"}
+              </figcaption>
+            </figure>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /** Bulk-xlsx trips use `TRP-*`; only Phoenix-submitted rows are `OUTSTATION-<requestId>`. */
 function parseRequestId(tripId: string): string | null {
@@ -105,6 +207,7 @@ export function TripAttachments({ tripId }: { tripId: string }) {
   return (
     <div className="space-y-4">
       {photos.length > 0 ? <TripEvidencePhotos photos={photos} subject={data.employeeName} /> : null}
+      {data.journey ? <TripJourney journey={data.journey} /> : null}
       {items.length > 0 ? (
         <div>
           <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Tickets and receipts</p>
