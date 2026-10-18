@@ -83,16 +83,19 @@ export type EmployeePlanActivityType = (typeof employeePlanActivityTypes)[number
 //       Sunday → Thursday = full days, Fri + Sat off.
 // A plan day is "complete" when every required slot is filled. A `full` day
 // needs a full-day entry OR both AM + PM; an `am` day (Field Thursday) needs
-// only the AM slot. Days with no requirement are off and never block submit.
+// only the AM slot; a `half` day (the Group Product Manager's) needs AM OR PM
+// OR a full day. Days with no requirement are off and never block submit.
 // ---------------------------------------------------------------------------
 export type PlanSlot = "full" | "am" | "pm";
 export type PlanWorkweekCategory = "field" | "head_office";
+export type PlanDayRequirement = "full" | "am" | "half";
 
 export type PlanWorkweek = {
   category: PlanWorkweekCategory;
   // ISO day-of-week (0=Sun … 6=Sat) → the requirement for that working day.
-  // "full" needs a whole day (full entry or AM+PM); "am" needs only the morning.
-  requiredDays: Record<number, "full" | "am">;
+  // "full" needs a whole day (full entry or AM+PM); "am" needs only the morning;
+  // "half" needs one half of the day, either one.
+  requiredDays: Record<number, PlanDayRequirement>;
   // Day-of-week the planning week is anchored to (6=Saturday, 0=Sunday).
   weekStartDay: number;
 };
@@ -108,6 +111,17 @@ export const FIELD_WORKWEEK: PlanWorkweek = {
 export const HEAD_OFFICE_WORKWEEK: PlanWorkweek = {
   category: "head_office",
   requiredDays: { 0: "full", 1: "full", 2: "full", 3: "full", 4: "full" },
+  weekStartDay: 0,
+};
+
+// 🔴 The Group Product Manager — and ONLY the Group Product Manager — may plan a working day as AM
+// only or PM only; she never has to submit a full day (owner, 2026-10-18: "only the group product
+// manager make her okay to work only AM or only PM … doesn't have to submit a full day"). Same
+// Sunday–Thursday Head Office week; every working day still needs one half. A Product Manager,
+// the Marketing Manager and everyone else keep HEAD_OFFICE_WORKWEEK's full days.
+export const GROUP_PRODUCT_MANAGER_WORKWEEK: PlanWorkweek = {
+  category: "head_office",
+  requiredDays: { 0: "half", 1: "half", 2: "half", 3: "half", 4: "half" },
   weekStartDay: 0,
 };
 
@@ -130,9 +144,33 @@ export function resolvePlanWorkweek(input: {
   role?: PhoenixRole | null;
 }): PlanWorkweek {
   if (input.role && fieldForceRoleSet.has(input.role)) return FIELD_WORKWEEK;
+  if (input.role === "Group Product Manager") return GROUP_PRODUCT_MANAGER_WORKWEEK;
   const resolved = resolveJobFunctionRole(input.jobTitle);
   if (fieldForceRoleSet.has(resolved)) return FIELD_WORKWEEK;
+  if (resolved === "Group Product Manager") return GROUP_PRODUCT_MANAGER_WORKWEEK;
   return HEAD_OFFICE_WORKWEEK;
+}
+
+/** Whether this workweek lets a working day be planned as one half only (AM only or PM only). */
+export function planWorkweekAllowsHalfDays(workweek: PlanWorkweek): boolean {
+  return Object.values(workweek.requiredDays).includes("half");
+}
+
+/**
+ * What a working day still lacks, as the suffix the incomplete-day list shows after the day's name:
+ * null when the day is complete, "" when nothing is planned on it, " (morning)" for a Field
+ * Thursday with no morning, and " (morning missing)" / " (afternoon missing)" for a full day with
+ * one half. The editor's banner and the server's submit check both read it, so they cannot drift.
+ */
+export function planDayGapText(requirement: PlanDayRequirement, present: ReadonlySet<PlanSlot>): string | null {
+  if (present.has("full")) return null;
+  const hasAm = present.has("am");
+  const hasPm = present.has("pm");
+  if (requirement === "am") return hasAm ? null : " (morning)";
+  if (requirement === "half") return hasAm || hasPm ? null : "";
+  if (hasAm && hasPm) return null;
+  if (!hasAm && !hasPm) return "";
+  return hasAm ? " (afternoon missing)" : " (morning missing)";
 }
 
 // Positions that OWN and submit a weekly/monthly plan. Note this is a separate gate from both the
@@ -473,15 +511,15 @@ export function planPeriodMove(
 
 /**
  * The required working slot for each date in a period, per the workweek.
- * Returns a Map<YYYY-MM-DD, "full" | "am"> covering only the days that must be
+ * Returns a Map<YYYY-MM-DD, "full" | "am" | "half"> covering only the days that must be
  * planned. Days not present are off (Fri/Sat for Head Office, Fri for Field).
  */
 export function planRequiredSlotsByDate(
   periodStartDate: string,
   periodEndDate: string,
   workweek: PlanWorkweek,
-): Map<string, "full" | "am"> {
-  const required = new Map<string, "full" | "am">();
+): Map<string, PlanDayRequirement> {
+  const required = new Map<string, PlanDayRequirement>();
   const cursor = new Date(`${periodStartDate}T00:00:00Z`);
   const end = new Date(`${periodEndDate}T00:00:00Z`);
   while (cursor.getTime() <= end.getTime()) {

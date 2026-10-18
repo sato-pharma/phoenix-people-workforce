@@ -123,8 +123,10 @@ import {
   isDistrictManagerPlanTitle,
   isPastPlanWeek,
   isWeeklyMonthlyPlanEligibleTitle,
+  planDayGapText,
   planPeriodMove,
   planRequiredSlotsByDate,
+  planWorkweekAllowsHalfDays,
   resolvePlanWorkweek,
   shiftIsoDate,
   type EmployeePlanAction,
@@ -3350,26 +3352,15 @@ async function assertSubmissionComplete(input: {
 
   const incomplete: string[] = [];
   for (const [date, requirement] of required) {
-    const present = slotsByDate.get(date) ?? new Set<PlanSlot>();
-    const hasFull = present.has("full");
-    const dayLabel = formatPlanDayLabel(date);
-    if (requirement === "am") {
-      if (!hasFull && !present.has("am")) incomplete.push(`${dayLabel} (morning)`);
-      continue;
-    }
-    // requirement === "full": needs a full-day entry OR both AM and PM.
-    if (hasFull) continue;
-    const hasAm = present.has("am");
-    const hasPm = present.has("pm");
-    if (hasAm && hasPm) continue;
-    if (!hasAm && !hasPm) incomplete.push(dayLabel);
-    else incomplete.push(`${dayLabel} (${hasAm ? "afternoon" : "morning"} missing)`);
+    const gap = planDayGapText(requirement, slotsByDate.get(date) ?? new Set<PlanSlot>());
+    if (gap !== null) incomplete.push(`${formatPlanDayLabel(date)}${gap}`);
   }
 
   if (incomplete.length > 0) {
-    throw new Error(
-      `Plan is incomplete — every working day must be fully filled before submit. Missing: ${incomplete.join(", ")}.`,
-    );
+    const rule = planWorkweekAllowsHalfDays(workweek)
+      ? "every working day needs at least its morning or its afternoon before submit"
+      : "every working day must be fully filled before submit";
+    throw new Error(`Plan is incomplete — ${rule}. Missing: ${incomplete.join(", ")}.`);
   }
 
   // Validate that any leave-typed days are backed by approved requests.

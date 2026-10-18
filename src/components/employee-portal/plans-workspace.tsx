@@ -67,7 +67,9 @@ import {
   HEAD_OFFICE_WORKWEEK,
   isDistrictManagerPlanTitle,
   isPastPlanWeek,
+  planDayGapText,
   planRequiredSlotsByDate,
+  planWorkweekAllowsHalfDays,
 } from "@/lib/weekly-planning/plan-v1";
 import type {
   EmployeePlan,
@@ -135,7 +137,9 @@ type AreaSource = {
    */
   lockedRegion: string | null;
 };
-type DayMode = "full" | "split";
+// "am" / "pm" (AM only, PM only) are offered only to a workweek that allows half days — the Group
+// Product Manager's (planWorkweekAllowsHalfDays). The day then holds that one half and nothing else.
+type DayMode = "full" | "split" | "am" | "pm";
 type PlanningActivityValue = EmployeePlanItemInput["activityType"] | "Coaching" | typeof MARKETING_DOUBLE_VISIT_TITLE;
 
 type DayGroup = {
@@ -162,10 +166,29 @@ const noGeographyActivities = new Set<EmployeePlanItemInput["activityType"]>([
   "Meeting with Team",
 ]);
 
-const dayModeOptions = [
+const dayModeOptions: ReadonlyArray<{ label: string; value: DayMode }> = [
   { label: "Full day", value: "full" },
   { label: "AM / PM split", value: "split" },
-] as const;
+];
+
+const halfDayModeOptions: ReadonlyArray<{ label: string; value: DayMode }> = [
+  ...dayModeOptions,
+  { label: "AM only", value: "am" },
+  { label: "PM only", value: "pm" },
+];
+
+const dayModeButtonLabels: Record<DayMode, string> = { full: "Full day", split: "AM / PM", am: "AM only", pm: "PM only" };
+
+/**
+ * The day-mode button that is lit. For a planner who may plan half days, a day holding one lone AM
+ * or PM row reads "AM only" / "PM only"; for everyone else that day is still "AM / PM" (a Field
+ * Force Thursday's single AM row), exactly as planDayMode decides.
+ */
+function shownDayMode(group: Pick<DayGroup, "mode" | "rows">, allowHalfDays: boolean): DayMode {
+  const [only] = group.rows;
+  if (allowHalfDays && group.rows.length === 1 && only && only.slot !== "full") return only.slot;
+  return group.mode;
+}
 
 const trainingFormatOptions = ["Zoom", "Physical", "Other"] as const;
 
@@ -1274,6 +1297,7 @@ export function PlansWorkspace({
     [period.periodEndDate, period.periodStartDate, workweek],
   );
   const workingDayCount = requiredSlotsByDate.size;
+  const allowHalfDays = planWorkweekAllowsHalfDays(workweek);
   const plans = workspace.plans;
   const plan = plans.find((item) => item.id === selectedPlan) ?? null;
   const ownPlans = plans.filter(
@@ -1380,19 +1404,8 @@ export function PlansWorkspace({
     }
     const issues: string[] = [];
     for (const [date, requirement] of requiredSlotsByDate) {
-      const present = slotsByDate.get(date) ?? new Set<PlanSlot>();
-      const hasFull = present.has("full");
-      const label = `${formatDayName(date)} ${formatDate(date)}`;
-      if (requirement === "am") {
-        if (!hasFull && !present.has("am")) issues.push(`${label} (morning)`);
-        continue;
-      }
-      if (hasFull) continue;
-      const hasAm = present.has("am");
-      const hasPm = present.has("pm");
-      if (hasAm && hasPm) continue;
-      if (!hasAm && !hasPm) issues.push(label);
-      else issues.push(`${label} (${hasAm ? "afternoon" : "morning"} missing)`);
+      const gap = planDayGapText(requirement, slotsByDate.get(date) ?? new Set<PlanSlot>());
+      if (gap !== null) issues.push(`${formatDayName(date)} ${formatDate(date)}${gap}`);
     }
     return issues;
   }, [requiredSlotsByDate, rows]);
@@ -1721,6 +1734,11 @@ export function PlansWorkspace({
       const first = { ...dayRows[0], notes: dayNote };
       if (mode === "full") {
         return sortDraftRows([...otherRows, { ...first, slot: "full" as PlanSlot, startTime: "", endTime: "" }]);
+      }
+      if (mode === "am" || mode === "pm") {
+        // One half only (a half-day planner): keep that half's row if the day has one, else the first.
+        const kept = dayRows.find((row) => row.slot === mode) ?? first;
+        return sortDraftRows([...otherRows, { ...kept, slot: mode as PlanSlot, startTime: "", endTime: "", notes: dayNote }]);
       }
       const am = dayRows.find((row) => row.slot === "am") ?? first;
       const pm = dayRows.find((row) => row.slot === "pm") ?? createDraftRow(activityDate, current.length, `row-pm-${Date.now()}`, "pm");
@@ -2423,7 +2441,8 @@ export function PlansWorkspace({
               onUpdate={(field, value) => updateRow(sheetRow.key, field, value)}
               onUpdateLine={(value) => updateRowLine(sheetRow.key, value)}
               areaSource={areaSource}
-              dayMode={sheetGroup?.mode ?? "full"}
+              dayMode={sheetGroup ? shownDayMode(sheetGroup, allowHalfDays) : "full"}
+              dayModeChoices={allowHalfDays ? halfDayModeOptions : dayModeOptions}
               dayNote={sheetGroup?.dayNote ?? sheetRow.notes ?? ""}
               conflictWarning={rowConflictWarning.get(sheetRow.key) ?? null}
               row={sheetRow}
@@ -2749,10 +2768,10 @@ export function PlansWorkspace({
                                     </div>
                                   </time>
                                   <div className={`mt-3 grid grid-cols-2 border border-slate-200 bg-slate-50 p-0.5 ${adminSoftDepthClassName}`}>
-                                    {(["full", "split"] as const).map((mode) => (
+                                    {(allowHalfDays ? (["full", "split", "am", "pm"] as const) : (["full", "split"] as const)).map((mode) => (
                                       <button
                                         className={`h-8 px-2 text-phx-xs font-black transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-50 disabled:cursor-not-allowed disabled:opacity-50 ${
-                                          group.mode === mode
+                                          shownDayMode(group, allowHalfDays) === mode
                                             ? "bg-slate-950 text-white shadow-[0_4px_10px_rgba(15,23,42,0.18)]"
                                             : "text-slate-600 hover:bg-white"
                                         }`}
@@ -2761,7 +2780,7 @@ export function PlansWorkspace({
                                         onClick={() => setDayMode(group.activityDate, mode)}
                                         type="button"
                                       >
-                                        {mode === "full" ? "Full day" : "AM / PM"}
+                                        {dayModeButtonLabels[mode]}
                                       </button>
                                     ))}
                                   </div>
@@ -3342,6 +3361,7 @@ function RowEditSheet({
   canEdit,
   conflictWarning,
   dayMode,
+  dayModeChoices,
   dayNote,
   locked = false,
   lockedLabel,
@@ -3360,6 +3380,7 @@ function RowEditSheet({
   canEdit: boolean;
   conflictWarning: string | null;
   dayMode: DayMode;
+  dayModeChoices: ReadonlyArray<{ label: string; value: DayMode }>;
   dayNote: string;
   locked?: boolean;
   lockedLabel?: string;
@@ -3433,7 +3454,7 @@ function RowEditSheet({
               className="grid-cols-2"
               disabled={!canEdit}
               onChange={onDayMode}
-              options={dayModeOptions}
+              options={dayModeChoices}
               value={dayMode}
             />
           </Field>

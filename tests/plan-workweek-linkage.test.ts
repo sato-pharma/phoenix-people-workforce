@@ -4,9 +4,13 @@ import {
   buildEmployeePlanPeriod,
   employeePlanActivityTypes,
   FIELD_WORKWEEK,
+  GROUP_PRODUCT_MANAGER_WORKWEEK,
   HEAD_OFFICE_WORKWEEK,
+  planDayGapText,
   planRequiredSlotsByDate,
+  planWorkweekAllowsHalfDays,
   resolvePlanWorkweek,
+  type PlanSlot,
 } from "../src/lib/weekly-planning/plan-v1.ts";
 
 export function runPlanWorkweekLinkageTests() {
@@ -62,6 +66,35 @@ export function runPlanWorkweekLinkageTests() {
   assert.equal(fieldSlots.get("2026-07-01"), "full"); // Wednesday full
   // Friday is never a required day for either workweek.
   assert.equal(fieldSlots.has("2026-06-26"), false);
+
+  // --- The Group Product Manager plans half days (owner, 2026-10-18) ---------
+  // ONLY the Group Product Manager may plan a working day as AM only or PM only.
+  assert.equal(resolvePlanWorkweek({ jobTitle: "Group Product Manager" }), GROUP_PRODUCT_MANAGER_WORKWEEK);
+  assert.equal(resolvePlanWorkweek({ role: "Group Product Manager" }), GROUP_PRODUCT_MANAGER_WORKWEEK);
+  assert.equal(planWorkweekAllowsHalfDays(GROUP_PRODUCT_MANAGER_WORKWEEK), true);
+  for (const title of ["Product Manager", "Marketing Manager", "Training Manager", "National Sales Manager", "Medical Rep"]) {
+    assert.equal(planWorkweekAllowsHalfDays(resolvePlanWorkweek({ jobTitle: title })), false, `${title} must still plan full days`);
+  }
+  // Same Sunday–Thursday week as the rest of Head Office, every day needing one half.
+  const gpm = buildEmployeePlanPeriod("weekly", "2026-07-01", GROUP_PRODUCT_MANAGER_WORKWEEK);
+  assert.equal(gpm.periodStartDate, ho.periodStartDate);
+  assert.equal(gpm.periodEndDate, ho.periodEndDate);
+  const gpmSlots = planRequiredSlotsByDate(gpm.periodStartDate, gpm.periodEndDate, GROUP_PRODUCT_MANAGER_WORKWEEK);
+  assert.equal(gpmSlots.size, 5);
+  for (const [, requirement] of gpmSlots) assert.equal(requirement, "half");
+
+  // --- What a day still lacks (the banner and the server's submit check) -----
+  const slots = (...values: PlanSlot[]) => new Set<PlanSlot>(values);
+  assert.equal(planDayGapText("half", slots("am")), null, "AM only completes a Group Product Manager's day");
+  assert.equal(planDayGapText("half", slots("pm")), null, "PM only completes a Group Product Manager's day");
+  assert.equal(planDayGapText("half", slots("full")), null);
+  assert.equal(planDayGapText("half", slots()), "", "an empty day is still incomplete");
+  assert.equal(planDayGapText("full", slots("am")), " (afternoon missing)", "everyone else still needs the full day");
+  assert.equal(planDayGapText("full", slots("pm")), " (morning missing)");
+  assert.equal(planDayGapText("full", slots("am", "pm")), null);
+  assert.equal(planDayGapText("full", slots()), "");
+  assert.equal(planDayGapText("am", slots("pm")), " (morning)");
+  assert.equal(planDayGapText("am", slots("am")), null);
 
   // --- New activity types ---------------------------------------------------
   assert.ok((employeePlanActivityTypes as readonly string[]).includes("National Vacation"));
