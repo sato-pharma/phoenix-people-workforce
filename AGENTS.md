@@ -357,7 +357,7 @@ automatically; the local branch and worktree survive and still need approval to 
 2026-09-27): a full CI run on the PR **and** another on `main`. **Batch related work into ONE branch
 and ONE PR** — the fix, its test, its doc and the follow-ups you can already see — and push fixups in
 fewer, larger commits. Split only when the parts need SEPARATE approval (a migration, a locked file,
-a protected rule) or one part is urgent. 🔴 **A SECOND PR FOR ONE MODULE IS REFUSED AT `gh pr create`** (bash-guard **C18**, owner, 2026-10-14, cost cuts): same title scope as a PR open now or merged in the last 6 hours → widen that PR or hold the work; `PHX_PR_HOLD_OK=1` for an urgent one (`docs/ci-self-hosted-runner.md`, "The same-module hold"). **The only authority on cost is his invoice — never convert
+a protected rule) or one part is urgent. 🔴 **NO GUARD REFUSES A SECOND PR FOR ONE MODULE — the same-module hold (bash-guard C18) was REMOVED on the owner's word, 2026-10-19; never rebuild it** (`docs/ci-self-hosted-runner.md`, "The same-module hold was removed"). **The only authority on cost is his invoice — never convert
 measured minutes into a bill.** 🔴 **A FEATURE ARRIVING IN INSTALMENTS IS STILL ONE FEATURE — HOLD THE
 PARTS** (owner, 2026-09-29) and open ONE PR when it is whole, saying in one line that you are holding.
 `hold-a-whole-feature-for-one-pr-even-when-he-asks-in-pieces`
