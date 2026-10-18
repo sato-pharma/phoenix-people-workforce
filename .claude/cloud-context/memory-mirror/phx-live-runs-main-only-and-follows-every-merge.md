@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: 164a490b-b177-4b7c-a3bc-cd2c15da8076
-  modified: 2026-10-17T16:43:11.803Z
+  modified: 2026-10-18T18:34:35.775Z
 ---
 
 **His words (2026-10-17, ~19:31 Cairo):** "I want the PHX live to always run on main. Any update I
@@ -43,8 +43,20 @@ not a pre-production gate. He was told so once; do not re-argue it.
   its own branch uses its own laptop `node scripts/dev-server.mjs` (RAM permitting); his look is on
   main, after the merge.
 - Never pass `-Folder` or propose a branch on phx-live; never re-add the folder mirror.
-- 🔴 **Repo docs still lag:** `docs/agents-worktree-and-machine-limits.md` lines ~1298 and ~1339 describe
-  `phx-live -Folder <worktree>`. A docs-only PR is "small" and he will not merge one — fold the fix into
-  the next WIDE PR that touches anything, and AGENTS.md §5's phx-live clause with it.
+- 🔴 **Repo docs still lag — THE FIX IS WRITTEN AND HELD** (owner, 2026-10-18 ~21:40 Cairo: "carry the
+  phx-live docs commit in the next wide PR"): commit `59bd86c26` on `codex/phx-live-folder-docs`
+  (pushed, NO PR; worktree `_wt-phx-live-folder-docs`) rewrites `docs/agents-worktree-and-machine-limits.md`
+  and AGENTS.md §5's phx-live clause. A docs-only PR is "small" and he will not merge one. When the next
+  WIDE PR is being built, `git cherry-pick 59bd86c26` onto its branch (files are docs-only, so no
+  conflict with code), then retire the worktree with his approval and delete this branch.
+  **CARRIER STARTED (2026-10-18 ~22:00 Cairo, his "start the next wide PR with the phx-live docs commit in
+  it"):** worktree `_wt-contract-reds`, branch `codex/contract-reds` (from origin/main 6dc285701), commit
+  `b6936563d` = the same patch (patch-id equal), NOT pushed, NO PR. Put the next real fix on THIS branch and
+  open ONE PR when it is whole. The repo-wide contract gates were all green on that main (12 gates, 12.4 s),
+  so there was no red to fold in. 2026-10-18 ~22:15: "blank sheets" was offered as the first fix but is
+  ALREADY LIVE as #6073 (`sheet-match.ts`, tested); the only open shape is `adaptDirect` reading
+  `worksheets[0]` (`weekly/parser.ts` ~1503), and he chose "hold for a real failing file" — do not re-offer it.
+  After it ships, retire both `_wt-contract-reds` and `_wt-phx-live-folder-docs`
+  with his approval and delete `codex/phx-live-folder-docs`.
 
 Supersedes the `-Folder` lines of [[phx-preview-is-retired-phx-live-is-the-one-dev-server]].
