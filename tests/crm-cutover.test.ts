@@ -219,19 +219,27 @@ function readDoorTests() {
   const planBoard = read("src/lib/crm/plan-board.ts");
   assert.equal(
     (planBoard.match(/\.from\(\s*CRM_PLAN_ENTRIES_UNIFIED_VIEW\s*\)/g) ?? []).length,
-    6,
-    "all six plan-board reads use the unified view — the board summary's probe, its per-day keyset "
-      + "scan and the single scan it keeps for a named-agent or month window, then one plan's entries, "
-      + "the monthly planner's last-month reference and the several reps' weeks a district manager reads "
-      + "for reps still in the old CRM (2026-10-17, source-filtered to the vendor's own plans). "
+    5,
+    "all five plan-board reads use the unified view — the board summary's probe, its per-day keyset "
+      + "scan and the single scan it keeps for a named-agent or month window, then one plan's entries "
+      + "and the monthly planner's last-month reference. It was SIX from 2026-10-17 to 2026-10-18, when "
+      + "the several reps' weeks a district manager reads for reps still in the old CRM were read here "
+      + "too — and the view anti-joins every rep of a started team, so that read answered zero for every "
+      + "rep it was built for (22 reps filed 17 Oct in the old CRM, 0 came through). It is a vendor-row "
+      + "question now, one of the raw reads below. "
       + "It was THREE until 2026-10-10, when the "
       + "summary stopped OFFSET-paging a whole month and became the probe-then-days read (the window "
       + "sorted by an id the view synthesises, so every page rebuilt the month: 452.6 ms a page, "
       + "~17.1 s for 44 days, half of all database time left after the roster index). Raising this "
       + "number is only correct when the new site reads the UNIFIED VIEW — which is the whole point "
-      + "of the guard. The three `.from(CRM_PLAN_ENTRIES_TABLE)` reads below it are deliberate and "
+      + "of the guard. The four `.from(CRM_PLAN_ENTRIES_TABLE)` reads below it are deliberate and "
       + "separate: verification writes back to the vendor, so it resolves the plan's identity from "
-      + "the vendor's own rows.",
+      + "the vendor's own rows, and so does the read of what a rep filed in the old app.",
+  );
+  assert.equal(
+    (planBoard.match(/\.from\(\s*CRM_PLAN_ENTRIES_TABLE\s*\)/g) ?? []).length,
+    4,
+    "the plan's identity (three reads) and the old-CRM weeks of reps already in a started team (one) read the vendor's own rows",
   );
   assert.ok(read("src/lib/crm/rep-doctor-lists.ts").includes(".from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)"), "rep doctor lists read the unified plan view");
   const repsList = read("src/lib/crm/reps-list.ts");

@@ -1193,7 +1193,13 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(oldWeeks, /\.in\("seat_id", \[\.\.\.seatIds\]\)/, "only on the rep's own seat");
   assert.match(oldWeeks, /customerId: customer \? String\(customer\.id\) : null/, "an unmatched contact shows and cannot be ticked");
   const planBoardDoor = source("src/lib/crm/plan-board.ts");
-  assert.match(functionBody(planBoardDoor, "export async function getAgentsWeekPlanEntries("), /\.eq\("source", IREPORTS360_VISIT_SOURCE\)[\s\S]*\.eq\("plan_kind", "weekly"\)/, "the old plan only, weekly, never a started team's own Phoenix plan");
+  // 🔴 The old plan of a rep in a STARTED team is hidden by the unified view (it anti-joins him from his
+  // `counted_from`), so the read must come from the vendor's own rows: on 2026-10-18 the mirror held 22 reps'
+  // weeks for 17 Oct and the view let 0 through, and the board greyed every one of them out.
+  const weekEntriesBody = functionBody(planBoardDoor, "export async function getAgentsWeekPlanEntries(");
+  assert.match(weekEntriesBody, /\.from\(CRM_PLAN_ENTRIES_TABLE\)[\s\S]*\.eq\("plan_kind", "weekly"\)/, "a rep's old plan is read from the vendor's own rows, weekly only");
+  assert.equal(weekEntriesBody.includes("CRM_PLAN_ENTRIES_UNIFIED_VIEW"), false, "never through the counting view — it drops every rep of a started team");
+  assert.equal(weekEntriesBody.includes('"source"'), false, "the raw table has no source column and holds no Phoenix plan");
 
   const approval = source("src/lib/phoenix-crm/server/old-crm-plan-approval.ts");
   const decideBody = functionBody(approval, "export async function decideOldCrmPlan(");
