@@ -612,9 +612,18 @@ const HR_ID_FILTER_SAFE = /^[A-Za-z0-9-]{1,32}$/;
  *
  * The vendor plan carries a DAY per planned contact and no morning or afternoon (`appm`, `startAM` and
  * `startPM` are empty on every row measured 2026-10-17), so the caller places a contact by the half of the
- * list he sits on. The rep's iReports360 plan only: `source = ireports360` keeps a started team's own
- * Phoenix plans, which the same view carries, out of it. `ilike` with no wildcard is a case-insensitive
- * exact match, for the mixed-case `agent_hr_id`. A missing plan schema degrades to `null`, never an error.
+ * list he sits on.
+ *
+ * 🔴 READ FROM THE VENDOR'S OWN ROWS, NEVER THE UNIFIED VIEW. `crm_plan_entries_unified` anti-joins every
+ * iReports360 plan entry of a rep in a STARTED team from his `counted_from` on (Phoenix counts him
+ * instead), and every team is started — so through the view this read answered ZERO for every rep who
+ * mattered: on 2026-10-18 the raw mirror held 22 reps' weeks for 17 Oct (59 calls for one Pedia rep alone,
+ * synced 14:04 Cairo) and the view held none, so the manager's board read "No plan this week" and greyed
+ * every old-CRM rep out. The question here is what a rep filed in the OLD app, which the raw mirror
+ * answers and the counting view must not. The raw table carries no Phoenix plans (those live in
+ * `phoenix_crm_plans`), so no `source` filter is needed. Plan verification resolves a plan the same way
+ * (`getPlanForVerification`). `ilike` with no wildcard is a case-insensitive exact match, for the
+ * mixed-case `agent_hr_id`. A missing plan schema degrades to `null`, never an error.
  */
 export async function getAgentsWeekPlanEntries(
   agentHrIds: ReadonlyArray<string>,
@@ -629,9 +638,8 @@ export async function getAgentsWeekPlanEntries(
     let cursor: number | string | null = null;
     for (;;) {
       let query = supabase
-        .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
+        .from(CRM_PLAN_ENTRIES_TABLE)
         .select("crm_plan_entry_id, crm_plan_id, agent_hr_id, contact_crm_id, contact_grade, contact_name, speciality, plan_date, plan_status")
-        .eq("source", IREPORTS360_VISIT_SOURCE)
         .eq("plan_kind", "weekly")
         .gte("plan_date", start)
         .lte("plan_date", end)
