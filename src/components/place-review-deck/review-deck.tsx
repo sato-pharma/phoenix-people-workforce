@@ -8,8 +8,8 @@
  *
  * WHAT HE ASKED FOR, AND WHERE EACH LIVES:
  *   - full screen, opened from a button, sliding on by itself after a decision — the overlay below;
- *   - the Place checks tabs AND the integrity cases, as tabs (Waiting for you · Not confirmed ·
- *     Integrity cases · History · All) — `DECK_TABS`;
+ *   - the Place checks tabs AND the integrity cases, as tabs (Waiting for you · Not readable · Not
+ *     confirmed · Integrity cases · History · All) — `DECK_TABS`;
  *   - Places only, Polyclinics only, or Both — the switch beside the tabs;
  *   - a polyclinic split in two on one screen: the building's own validation, approved or rejected on
  *     its own, and the timetable, approved or rejected per customer — the venue slide;
@@ -77,6 +77,7 @@ import { cn } from "@/lib/utils";
 
 const TAB_LABELS: Record<DeckTab, string> = {
   waiting: "Waiting for you",
+  unreadable: "Not readable",
   unconfirmed: "Not confirmed",
   integrity: "Integrity cases",
   history: "History",
@@ -647,24 +648,31 @@ export function PlaceReviewDeck({ input, onClose, start }: { input: PlaceReviewD
               ) : null}
               {view.column}
             </div>
-            <div className="sticky bottom-0 z-10 min-w-0 border-t border-slate-200 bg-white shadow-[0_-10px_30px_-12px_rgba(15,23,42,0.25)] lg:static">
-              {view.footer ? (
-                <div className={cn("max-h-[45svh] min-w-0 overflow-y-auto px-5 py-4 lg:max-h-[50vh]", view.wideButtons ? "[&_button]:w-full" : null)}>{view.footer}</div>
-              ) : null}
-              <nav aria-label="Move between photos" className="flex min-w-0 items-center gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
-                <CrmButton aria-keyshortcuts="ArrowLeft" disabled={position === 0} onClick={() => move(-1)} size="sm">
-                  <ArrowLeft aria-hidden className="h-4 w-4" />
-                  Back
-                </CrmButton>
-                <p className="min-w-0 flex-1 break-words text-center text-xs font-black tabular-nums text-slate-500">
-                  {position + 1} of {total}
-                </p>
-                <CrmButton aria-keyshortcuts="ArrowRight" onClick={() => move(1)} size="sm" variant="primary">
-                  Next
-                  <ArrowRight aria-hidden className="h-4 w-4" />
-                </CrmButton>
-              </nav>
-            </div>
+            {/* On a wide screen the decision is pinned under the facts, as on the Screening review. On a
+                phone it follows the facts and only Back / Next is pinned: a held place's decision is
+                about 330 px, and pinned it covered 426 of the 603 px under the photo (measured
+                2026-10-19, 375 x 812). */}
+            {view.footer ? (
+              <div className="min-w-0 border-t border-slate-200 bg-white lg:shadow-[0_-10px_30px_-12px_rgba(15,23,42,0.25)]">
+                <div className={cn("min-w-0 px-5 py-3 lg:max-h-[45vh] lg:overflow-y-auto", view.wideButtons ? "[&_button]:w-full" : null)}>{view.footer}</div>
+              </div>
+            ) : null}
+            <nav
+              aria-label="Move between photos"
+              className="sticky bottom-0 z-10 flex min-w-0 items-center gap-2 border-t border-slate-200 bg-slate-50 px-5 py-2.5 shadow-[0_-10px_30px_-12px_rgba(15,23,42,0.25)] lg:static lg:shadow-none"
+            >
+              <CrmButton aria-keyshortcuts="ArrowLeft" disabled={position === 0} onClick={() => move(-1)} size="sm">
+                <ArrowLeft aria-hidden className="h-4 w-4" />
+                Back
+              </CrmButton>
+              <p className="min-w-0 flex-1 break-words text-center text-xs font-black tabular-nums text-slate-500">
+                {position + 1} of {total}
+              </p>
+              <CrmButton aria-keyshortcuts="ArrowRight" onClick={() => move(1)} size="sm" variant="primary">
+                Next
+                <ArrowRight aria-hidden className="h-4 w-4" />
+              </CrmButton>
+            </nav>
           </aside>
         </div>
       </PlaceCheckDoneProvider>

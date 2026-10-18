@@ -174,6 +174,13 @@ function checkHeDecidesNothing(): void {
     if (!/Waiting for your decision|Decided in the last/.test(line)) continue;
     assert.match(line, /team \?|: team/, `a decision-naming sentence is drawn unconditionally: ${line.trim()}`);
   }
+  // A seated customer waiting on the Super Admin reads as the building above it does (owner, 2026-10-19):
+  // "Waiting for you" to him, while a manager still reads "Still being checked".
+  assert.match(
+    read("src/components/phoenix-crm/shared-place-customers.tsx"),
+    /customer\.state === "waiting" \? <CrmPill tone="warn">\{mode === "team" \? "Still being checked" : "Waiting for you"\}<\/CrmPill>/,
+    "a waiting customer reads 'Waiting for you' to the Super Admin and 'Still being checked' to a manager",
+  );
 
   for (const [path, control] of [
     ["src/components/phoenix-crm/validated-place-list.tsx", "Refuse"],

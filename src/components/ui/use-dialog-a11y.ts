@@ -84,17 +84,14 @@ export function useDialogA11y<T extends HTMLElement = HTMLDivElement>({
     return () => {
       document.removeEventListener("keydown", handleKeyDown, true);
       document.body.style.overflow = previousOverflow;
+      // Return focus when the dialog closes — whether `open` turned false or the dialog was taken off
+      // the page. A lightbox rendered as `{open && <Lightbox />}` only ever unmounts, so a separate
+      // effect waiting for `open` to be false never ran for it and focus fell to the page body; inside
+      // the one-by-one review a Tab then left the review for the page behind it (measured 2026-10-19).
+      const target = returnFocusRef.current;
+      returnFocusRef.current = null;
+      if (target instanceof HTMLElement && target.isConnected) target.focus();
     };
-  }, [open]);
-
-  // Return focus when dialog closes
-  useEffect(() => {
-    if (open) return;
-    const target = returnFocusRef.current;
-    if (target && typeof (target as HTMLElement).focus === "function") {
-      (target as HTMLElement).focus();
-    }
-    returnFocusRef.current = null;
   }, [open]);
 
   return ref;

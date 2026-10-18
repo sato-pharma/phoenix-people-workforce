@@ -9,15 +9,22 @@ import {
   deckArrowStep,
   deckSeatItem,
   deckSlideKey,
+  deckSourcesOf,
   deckStartOfBoardView,
   deckTabNeedsCases,
   parseDeckTab,
+  placeIsUnreadable,
+  reviewIsUnreadable,
   slideIsSettled,
   summarizeDeckOutcomes,
+  venueIsUnreadable,
   venueLiveItems,
   type DeckSources,
+  type PlaceReviewDeckInput,
 } from "../src/lib/place-review-deck/slides.ts";
+import { standingOfPlaceInUse } from "../src/lib/phoenix-crm/place-check-scorecard.ts";
 import type { VenueGroup } from "../src/lib/phoenix-crm/shared-place-groups.ts";
+import type { ValidatedPlaceRow, ValidationReviewRow } from "../src/lib/phoenix-crm/view-types.ts";
 
 /**
  * Place checks — the one-by-one review (owner, 2026-10-18: "I want to have the picture in a very wide
@@ -65,6 +72,9 @@ function sources(): DeckSources {
   return {
     waitingReviews: ["r1", "r2"],
     waitingVenues: ["v-held"],
+    unreadableReviews: ["r-blur"],
+    unreadablePlaces: ["p-blur"],
+    unreadableVenues: ["v-blur"],
     unconfirmedPlaces: ["p1"],
     unconfirmedVenues: ["v-held", "v-active"],
     historyReviews: ["r3"],
@@ -88,17 +98,73 @@ export function runPlaceReviewDeckTests(): void {
   const keys = (tab: Parameters<typeof buildDeckSlides>[0], kind: Parameters<typeof buildDeckSlides>[1] = "both", from = sources()) =>
     buildDeckSlides(tab, kind, from).map((slide) => slide.key);
 
-  assert.deepEqual(DECK_TABS, ["waiting", "unconfirmed", "integrity", "history", "all"], "the tabs, in the order the work is done");
+  assert.deepEqual(DECK_TABS, ["waiting", "unreadable", "unconfirmed", "integrity", "history", "all"], "the tabs, in the order the work is done");
   assert.deepEqual(keys("waiting"), ["review:r1", "review:r2", "venue:v-held"], "Waiting is the held places, then the buildings that need a decision");
+  assert.deepEqual(keys("unreadable"), ["review:r-blur", "place:p-blur", "venue:v-blur"], "Not readable is the held places, then the places in use, then the buildings");
   assert.deepEqual(keys("unconfirmed"), ["place:p1", "venue:v-held", "venue:v-active"], "Not confirmed is the places in use, then the buildings");
   assert.deepEqual(keys("history"), ["review:r3", "venue:v-retired"], "History is the decided places, then the rejected buildings");
   assert.deepEqual(keys("integrity"), ["case:c1", "case:c2"], "Integrity cases is the open cases, in the board's order");
   assert.deepEqual(
     keys("all"),
-    ["review:r1", "review:r2", "venue:v-held", "place:p1", "venue:v-active", "case:c1", "case:c2", "review:r3", "venue:v-retired"],
+    ["review:r1", "review:r2", "venue:v-held", "review:r-blur", "place:p-blur", "venue:v-blur", "place:p1", "venue:v-active", "case:c1", "case:c2", "review:r3", "venue:v-retired"],
     "All walks every tab in order and keeps each slide ONCE — the held building is in Waiting and among the buildings in use",
   );
   assert.equal(new Set(keys("all")).size, keys("all").length, "All holds no slide twice");
+
+  // Not readable (owner, 2026-10-19: "in the review one by one put the unreadable in a separate tab").
+  {
+    const blurredSign = { verdict: "unjudged", reason: "unreadable", signText: null, problem: "blurred" };
+    const review = (reviewId: string, extra: Record<string, unknown>) =>
+      ({ reviewId, photoKind: "signboard", reason: "no_confident_listing", evidence: { checkReason: null, heldBecause: null, problem: null, signboard: null }, ...extra }) as unknown as ValidationReviewRow;
+    const place = (placeId: string, signboard: unknown, extra: Record<string, unknown> = {}) =>
+      ({ placeId, reviewed: false, photoKind: "signboard", signboard, schedule: null, ...extra }) as unknown as ValidatedPlaceRow;
+    const group = (id: string, signboard: unknown, customers: Array<{ state: string; timetable: unknown }>) =>
+      ({ venue: { sharedPlaceId: id, status: "active", signboard }, customers, total: customers.length }) as unknown as VenueGroup;
+
+    const reviews = [
+      review("r-clear", {}),
+      review("r-sign", { evidence: { checkReason: null, heldBecause: null, problem: null, signboard: blurredSign } }),
+      review("r-sign-named", { reason: "sign_other_name", evidence: { checkReason: null, heldBecause: null, problem: null, signboard: blurredSign } }),
+      review("r-timetable", { photoKind: "schedule", reason: null, evidence: { checkReason: null, heldBecause: "timetable_unreadable", problem: null, signboard: null } }),
+      review("r-not-a-timetable", { photoKind: "schedule", reason: null, evidence: { checkReason: "unreadable", heldBecause: null, problem: "not_a_timetable", signboard: null } }),
+    ];
+    const places = [
+      place("p-clear", { verdict: "match", reason: null, signText: "x" }),
+      place("p-sign", blurredSign),
+      place("p-legible", { verdict: "unjudged", reason: "unreadable", signText: null, problem: "none" }),
+      place("p-approved", blurredSign, { reviewed: true }),
+    ];
+    const unreadableTimetable = { verdict: "unjudged", scheduleText: null, hoursRead: null, reason: "unreadable" };
+    const venues = {
+      clear: group("v-clear", { verdict: "match", reason: null, signText: "x", note: null }, [{ state: "in_use", timetable: { verdict: "match" } }]),
+      sign: group("v-sign", { verdict: "unjudged", reason: "unreadable_final", signText: null, note: null }, []),
+      seat: group("v-seat", null, [{ state: "waiting", timetable: unreadableTimetable }]),
+      past: group("v-past", null, [{ state: "rejected", timetable: unreadableTimetable }]),
+    };
+    const input = {
+      boardView: "needs",
+      noteIndex: {},
+      waiting: { reviews, venues: [venues.seat, venues.clear] },
+      unconfirmed: { places, venues: [venues.clear, venues.sign, venues.past] },
+      history: { reviews: [], venues: [] },
+      lookup: { reviews, places, venues: Object.values(venues) },
+    } as unknown as PlaceReviewDeckInput;
+    const split = deckSourcesOf(input, []);
+    assert.deepEqual(split.unreadableReviews, ["r-sign", "r-timetable"], "a held place whose sign or timetable could not be read is Not readable");
+    assert.deepEqual(split.waitingReviews, ["r-clear", "r-sign-named", "r-not-a-timetable"], "and is MOVED out of Waiting — a sign naming somebody else, or a photo that is no timetable, stays");
+    assert.deepEqual(split.unreadablePlaces, ["p-sign"], "a place in use is Not readable exactly when the scorecard counts it so");
+    assert.deepEqual(split.unconfirmedPlaces, ["p-clear", "p-legible", "p-approved"], "and is MOVED out of Not confirmed — a legible sign, or one he approved, stays");
+    assert.deepEqual(split.unreadableVenues, ["v-seat", "v-sign"], "a polyclinic whose sign, or a waiting customer's timetable, could not be read is Not readable");
+    assert.deepEqual([split.waitingVenues, split.unconfirmedVenues], [["v-clear"], ["v-clear", "v-past"]], "and leaves both tabs; a rejected customer's unread timetable is past the reading");
+    const all = buildDeckSlides("all", "both", split).map((slide) => slide.key);
+    assert.equal(new Set(all).size, all.length, "with Not readable in it, All still holds each slide once");
+    assert.equal(all.length, reviews.length + places.length + 4, "and loses none: every held place, place in use and building is in All");
+    for (const row of places) {
+      assert.equal(placeIsUnreadable(row), standingOfPlaceInUse(row as Parameters<typeof standingOfPlaceInUse>[0]) === "notReadable", `the tab and the scorecard agree on ${row.placeId}`);
+    }
+    assert.equal(reviewIsUnreadable(reviews[1]), true);
+    assert.equal(venueIsUnreadable(venues.past), false);
+  }
 
   // The switch (owner, 2026-10-18: "view polyclinics only, or places only, or both").
   assert.deepEqual(keys("waiting", "places"), ["review:r1", "review:r2"], "Places keeps the places alone");
@@ -233,6 +299,30 @@ export function runPlaceReviewDeckTests(): void {
     assert.match(deck, /motion-safe:animate-in/, "the slide moves only when the device allows motion");
     assert.doesNotMatch(deck, /(?<!motion-safe:)animate-in/, "every transition is behind motion-safe");
     assert.match(deck, /const \[frozen\] = useState\(\(\) => input\);/, "the tabs are taken when the review opens, so '12 of 87' never shifts under his finger");
+    // Closing the zoomed photo hands focus back to the review: the lightbox is taken off the page rather
+    // than turned off, so the return has to run when the dialog's open period ENDS, unmount included.
+    // Before 2026-10-19 focus fell to the page body and the next Tab left the review.
+    const a11y = stripComments(read("src/components/ui/use-dialog-a11y.ts"));
+    assert.match(
+      a11y,
+      /return \(\) => \{[^}]*?const target = returnFocusRef\.current;\s*returnFocusRef\.current = null;\s*if \(target instanceof HTMLElement && target\.isConnected\) target\.focus\(\);\s*\};\s*\}, \[open\]\);/,
+      "focus goes back to where it was when a dialog closes, whether it is turned off or taken off the page",
+    );
+    // On a phone only Back / Next is pinned; pinned, a held place's decision covered 426 of the 603 px
+    // under the photo and pushed Back / Next off the screen (measured 2026-10-19, 375 x 812).
+    assert.match(deck, /aria-label="Move between photos"\s+className="sticky bottom-0 /, "Back / Next is what a phone keeps pinned");
+    assert.match(
+      deck,
+      /\{view\.footer \? \(\s*<div className="(?![^"]*\bsticky\b)[^"]*">\s*<div className=\{cn\("(?![^"]*\bsticky\b)[^"]*"[^>]*>\{view\.footer\}/,
+      "the decision follows the facts on a phone, never inside a pinned box",
+    );
+    // A polyclinic's two photos sit side by side on every screen: stacked on a phone, each upright photo
+    // had about 104 x 139 px of a 375 x 812 screen (measured 2026-10-19; he chose side by side).
+    const parts = stripComments(read("src/components/place-review-deck/deck-parts.tsx"));
+    const split = /export function DeckSplitStage[\s\S]*?className="([^"]*)"/.exec(parts)?.[1] ?? "";
+    assert.match(split, /(?:^| )grid-cols-2(?= |$)/, "a polyclinic's two photos sit side by side on a phone too");
+    assert.doesNotMatch(split, /grid-rows-2/, "a polyclinic's two photos are never stacked");
+    assert.match(parts, /absolute left-3 top-3 z-10 max-w-\[calc\(100%-5\.5rem\)\]/, "the photo's label stops short of the turn arrows in a half-width cell");
   }
   for (const path of NEW_FILES) {
     const code = stripComments(read(path));
