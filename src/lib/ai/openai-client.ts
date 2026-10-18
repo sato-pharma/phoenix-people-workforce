@@ -110,6 +110,12 @@ export function resetOpenAiAvailability() {
   openAiUnavailableUntilMs = 0;
 }
 
+// Read by the sales AI paths (src/lib/sales/ai/provider.ts), which make their own raw calls but share this
+// memory: once any caller has learned OpenAI's account is dead, every other caller skips the doomed attempt.
+export function isOpenAiUnavailable(nowMs = Date.now()) {
+  return nowMs < openAiUnavailableUntilMs;
+}
+
 /** The providers to try, in order. Only an environment with BOTH keys ever gets a second entry. */
 export function planAiProviders(
   env: OpenAiEnv = process.env,
@@ -156,6 +162,20 @@ function codeFrom(error: unknown) {
     : undefined;
 }
 
+function typeFrom(error: unknown) {
+  return typeof error === "object" && error !== null && "type" in error
+    ? String((error as { type?: unknown }).type ?? "")
+    : undefined;
+}
+
+// 🔴 OUT OF CREDIT IS NOT ALWAYS `code: "insufficient_quota"`. On 18 Oct 2026 the account answered
+// every completion with HTTP 429, `code: "credit_balance_exhausted"` and `type: "insufficient_quota"`
+// ("You have no credits remaining"). Read by its code alone that was a plain rate limit, so nothing
+// failed over to Anthropic and the out-of-credit alarm stayed quiet while every AI feature was down.
+export function isOpenAiOutOfCredit(code: string | undefined, type: string | undefined) {
+  return code === "insufficient_quota" || code === "credit_balance_exhausted" || type === "insufficient_quota";
+}
+
 function messageFrom(error: unknown) {
   return error instanceof Error ? error.message : "unknown OpenAI error";
 }
@@ -180,6 +200,7 @@ export function normalizeOpenAiError(error: unknown, context = "request") {
   const requestId = requestIdFrom(error);
   const status = statusFrom(error);
   const code = codeFrom(error);
+  const outOfCredit = isOpenAiOutOfCredit(code, typeFrom(error));
 
   if (error instanceof OpenAI.APIConnectionTimeoutError) {
     logOpenAiError(context, error);
@@ -189,7 +210,7 @@ export function normalizeOpenAiError(error: unknown, context = "request") {
   if (error instanceof OpenAI.RateLimitError) {
     logOpenAiError(context, error);
     return new PhoenixOpenAiError(
-      code === "insufficient_quota" ? "quota_exceeded" : "rate_limited",
+      outOfCredit ? "quota_exceeded" : "rate_limited",
       messageFrom(error),
       { requestId, status },
     );
@@ -207,7 +228,7 @@ export function normalizeOpenAiError(error: unknown, context = "request") {
     }
     if (status === 429) {
       return new PhoenixOpenAiError(
-        code === "insufficient_quota" ? "quota_exceeded" : "rate_limited",
+        outOfCredit ? "quota_exceeded" : "rate_limited",
         messageFrom(error),
         { requestId, status },
       );
