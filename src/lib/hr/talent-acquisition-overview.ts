@@ -124,6 +124,7 @@ import {
   resolveInterviewCalendarRole,
   type InterviewCalendarCaller,
 } from "@/lib/recruitment/interview-calendar";
+import { readsInterviewRequestInbox } from "@/lib/recruitment/interview-calendar-types";
 import {
   cairoDateKey,
   isDateKey,
@@ -275,7 +276,9 @@ async function loadCalendar(
     options.hireDates,
   );
   const calendar: TalentCalendar = {
-    interviewCalendar: role ? { abilities, canRequest, role, zoomConnected: isZoomConfigured() } : null,
+    interviewCalendar: role
+      ? { abilities, canReadRequests: readsInterviewRequestInbox(access), canRequest, role, zoomConnected: isZoomConfigured() }
+      : null,
     mine: (mine ?? []).map(toTalentInterview),
     mineLoaded: mine !== null,
     month: {
