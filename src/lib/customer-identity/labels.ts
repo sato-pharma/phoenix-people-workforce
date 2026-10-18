@@ -18,6 +18,7 @@ const SOURCE_LABEL: Record<IdentitySource, string> = {
   direct_order: "Direct orders",
   ireports360: "iReports360",
   marketing: "Marketing register",
+  marketing_customer: "Marketing customers",
   phoenix_crm: "Phoenix CRM",
   // Named for what it IS, so nobody reads it as a register that could be opened: it is a name a
   // rep wrote on a visit, and there is no row behind it to look up.

@@ -1,3 +1,4 @@
+import { bumpCustomer360Cache } from "@/lib/cache/namespaces";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { identityNameKey, identityPairKey } from "@/lib/customer-identity/suggestions";
 import type { EvidenceBand, IdentityKind, IdentitySource } from "@/lib/customer-identity/types";
@@ -179,6 +180,7 @@ export async function confirmLinks(
     });
   }
 
+  bumpCustomer360Cache("identity links confirmed");
   return { confirmed, masters: mastersTouched.size, merged };
 }
 
@@ -226,6 +228,7 @@ export async function ruleNotTheSame(
     }
   }
 
+  bumpCustomer360Cache("identity pair ruled not the same");
   return { ruled };
 }
 
@@ -247,5 +250,6 @@ export async function withdrawRuling(pairKey: string, actorHrId: string): Promis
   if (error) throw new Error(`customer-identity: withdrawing the ruling failed — ${error.message}`);
   const withdrawn = (data ?? []).length;
   if (withdrawn > 0) await writeEvent(actorHrId, "ruling_withdrawn", null, { pairKey });
+  bumpCustomer360Cache("identity ruling withdrawn");
   return { withdrawn };
 }

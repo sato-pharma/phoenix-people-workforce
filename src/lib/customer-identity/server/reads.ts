@@ -1,4 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { parseCrmContactCode } from "@/lib/crm/contact-code";
+import { isValidatedMarketingCustomer, marketingCustomerHubKind } from "@/lib/customer-360/validated";
 import { identityNameKey, suggestIdentityPairs } from "@/lib/customer-identity/suggestions";
 import type {
   DistributorCodePair,
@@ -38,6 +40,23 @@ async function pageActive<T>(table: string, columns: string, orderBy = "id"): Pr
       .select(columns)
       .eq("active", true)
       .order(orderBy, { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`customer-identity: reading ${table} failed — ${error.message}`);
+    const rows = (data ?? []) as unknown as T[];
+    out.push(...rows);
+    if (rows.length < PAGE) return out;
+  }
+}
+
+/** A table with no `active` column, read in full — ordered by id so two pages never overlap. */
+async function pageAll<T>(table: string, columns: string): Promise<T[]> {
+  const admin = getSupabaseAdmin();
+  const out: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await admin
+      .from(table)
+      .select(columns)
+      .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`customer-identity: reading ${table} failed — ${error.message}`);
     const rows = (data ?? []) as unknown as T[];
@@ -215,6 +234,60 @@ async function marketingCandidates(): Promise<IdentityCandidate[]> {
       name: text(row.display_name),
       regionCode: row.region_name,
       source: "marketing" as const,
+      sourceId: String(row.id),
+    }));
+}
+
+/**
+ * The marketing customers — the clinics, hospitals and accounts a marketing request is raised for.
+ *
+ * 🔴 VALIDATED ONLY (owner, 2026-10-18: "only work on validated customers because of the correct
+ * data"). A pending one is not a customer Customer 360 shows, so a link to it would answer nothing.
+ * The validated-status words live in `src/lib/customer-360/validated.ts`, never copied here.
+ *
+ * 🔴 A CLINIC IS PM AND EVERYTHING ELSE IS AM — `marketingCustomerHubKind`, the same split the 360
+ * report makes, so a link confirmed here lands on the hub of the same kind. PM, AM and pharmacy never
+ * mix in the engine, so a marketing hospital is never offered beside a doctor.
+ *
+ * Its contact id is the first CRM code on its contacts that names exactly one contact
+ * (`parseCrmContactCode`). Two rows sharing it reach the `fact` band — and still wait for him.
+ */
+async function marketingCustomerCandidates(): Promise<IdentityCandidate[]> {
+  const [rows, contacts] = await Promise.all([
+    pageAll<{
+      id: string;
+      customer_type: string | null;
+      display_name: string | null;
+      validation_status: string | null;
+      active: boolean | null;
+      merged_into_customer_id: string | null;
+      region_name: string | null;
+      captured_latitude: number | null;
+      captured_longitude: number | null;
+    }>(
+      "marketing_customers",
+      "id, customer_type, display_name, validation_status, active, merged_into_customer_id, region_name, captured_latitude, captured_longitude",
+    ),
+    pageActive<{ customer_id: string | null; crm_code: string | null }>("marketing_customer_contacts", "id, customer_id, crm_code"),
+  ]);
+
+  const contactIds = new Map<string, number>();
+  for (const contact of contacts) {
+    const customerId = text(contact.customer_id);
+    const contactId = parseCrmContactCode(contact.crm_code);
+    if (customerId && contactId !== null && !contactIds.has(customerId)) contactIds.set(customerId, contactId);
+  }
+
+  return rows
+    .filter((row) => text(row.display_name).length > 0 && isValidatedMarketingCustomer(row))
+    .map((row) => ({
+      contactCrmId: contactIds.get(String(row.id)) ?? null,
+      kind: (marketingCustomerHubKind(row.customer_type) === "doctor" ? "PM" : "AM") as IdentityKind,
+      lat: num(row.captured_latitude),
+      lon: num(row.captured_longitude),
+      name: text(row.display_name),
+      regionCode: row.region_name,
+      source: "marketing_customer" as const,
       sourceId: String(row.id),
     }));
 }
@@ -406,12 +479,13 @@ async function typedPharmacyCandidates(): Promise<IdentityCandidate[]> {
  * the self-agreement is dropped.
  */
 export async function loadIdentityCandidates(): Promise<IdentityCandidate[]> {
-  const [phoenix, vendor, marketing, direct, typed] = await Promise.all([
+  const [phoenix, vendor, marketing, direct, typed, marketingCustomers] = await Promise.all([
     phoenixCrmCandidates(),
     ireports360Candidates(),
     marketingCandidates(),
     directOrderCandidates(),
     typedPharmacyCandidates(),
+    marketingCustomerCandidates(),
   ]);
 
   const vendorById = new Map<number, IdentityCandidate>();
@@ -435,7 +509,7 @@ export async function loadIdentityCandidates(): Promise<IdentityCandidate[]> {
   // the ones where a duplicate is a real finding rather than a restatement.
   const remainingVendor = vendor.filter((row) => row.contactCrmId == null || !carriedOver.has(row.contactCrmId));
 
-  return [...folded, ...remainingVendor, ...marketing, ...direct, ...typed];
+  return [...folded, ...remainingVendor, ...marketing, ...direct, ...typed, ...marketingCustomers];
 }
 
 /**

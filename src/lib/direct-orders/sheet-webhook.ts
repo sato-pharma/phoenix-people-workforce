@@ -1,3 +1,4 @@
+import { bumpCustomer360Cache } from "@/lib/cache/namespaces";
 import { logWarning } from "@/lib/observability/log";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,6 +33,8 @@ const PING_TIMEOUT_MS = 4000;
 export function pingDirectOrderSheet(reason: string): void {
   const url = process.env.SHEET_REFRESH_WEBHOOK_URL?.trim();
   const secret = process.env.SHEET_REFRESH_WEBHOOK_SECRET?.trim();
+  // Customer 360 reads requests and orders too; refresh it first, whether or not the sheet is wired.
+  bumpCustomer360Cache("direct order changed");
   // Not configured is a normal state, not an error: the sheet still refreshes on its own timer.
   if (!url || !secret) return;
 

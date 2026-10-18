@@ -1,6 +1,7 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
 import { resolveEmployeeIdentityId, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
+import { bumpCustomer360Cache } from "@/lib/cache/namespaces";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import type { MarketingRequestStatus } from "@/lib/marketing-requests/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -184,5 +185,6 @@ export async function cancelMarketingRequest(params: {
       + `(was "${request.status}"). Reason: ${reason}`,
   });
 
+  bumpCustomer360Cache("marketing request cancelled");
   return { requestCode: request.requestCode, requestId, status: MARKETING_CANCELLED_STATUS };
 }

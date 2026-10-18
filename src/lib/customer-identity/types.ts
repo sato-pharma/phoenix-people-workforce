@@ -29,8 +29,14 @@
  * the shop is near it, not on it. `typedPharmacyCandidates` in `server/reads.ts` holds the
  * reasoning. Everything downstream treats it like any other source — it is a suggestion, and
  * nothing links until the Super Admin confirms it.
+ *
+ * 🔴 `marketing_customer` IS A DOCTOR OR AN ACCOUNT, NEVER A PHARMACY (owner, 2026-10-18 — Customer
+ * 360 links every validated doctor to everything the system knows about it). A marketing clinic is
+ * the doctor's own place and enters as PM; a hospital, an account or anything else enters as AM. A
+ * validated one joins a Phoenix CRM doctor in Customer 360 only through its CRM code or a link the
+ * Super Admin confirmed here.
  */
-export type IdentitySource = "phoenix_crm" | "marketing" | "direct_order" | "ireports360" | "visit_feedback";
+export type IdentitySource = "phoenix_crm" | "marketing" | "direct_order" | "ireports360" | "visit_feedback" | "marketing_customer";
 
 /**
  * 🔴 PM, AM AND PHARMACY NEVER MIX (owner, 2026-09-30, asked directly: PM *and* AM customers are

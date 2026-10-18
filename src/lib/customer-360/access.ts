@@ -82,3 +82,24 @@ export function canViewCustomerSubject(
 ): boolean {
   return filterCustomerSubjectsForViewer([subject], scope).length === 1;
 }
+
+/** The geography a validated doctor or account is offered by: its validated place. */
+export type HubGeography = { areaCode: string | null; regionName: string | null; lines: readonly string[] };
+
+/**
+ * The same bound, for Customer 360's validated doctors and accounts. A hub's geography is its
+ * validated place; its lines are the lines that hold it validated or visit it. Fail-closed exactly as
+ * {@link filterCustomerSubjectsForViewer}: no bound resolved means nothing offered.
+ */
+export function canViewHubGeography(hub: HubGeography, scope: CustomerVisibilityScope): boolean {
+  if (scope.canViewAllSales) return true;
+  if (scope.allowedAreaCodes) return hasNormalized(scope.allowedAreaCodes, hub.areaCode);
+  if (scope.allowedRegionNames) {
+    if (!hasNormalized(scope.allowedRegionNames, hub.regionName)) return false;
+    if (scope.allowedLineNames && hub.lines.length > 0) {
+      return hub.lines.some((line) => hasNormalized(scope.allowedLineNames, line));
+    }
+    return true;
+  }
+  return false;
+}

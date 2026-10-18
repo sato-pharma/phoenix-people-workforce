@@ -20,7 +20,7 @@ function Section({
   title: string;
 }) {
   return (
-    <section className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+    <section className="border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
       <div className="mb-3 flex items-start gap-2">
         <span aria-hidden className="mt-0.5 text-slate-400">
           {icon}
@@ -37,7 +37,7 @@ function Section({
 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <p className="rounded-[14px] border border-dashed border-slate-300 bg-slate-50 p-4 text-[12px] font-semibold text-slate-500">
+    <p className="border border-dashed border-slate-300 bg-slate-50 p-4 text-[12px] font-semibold text-slate-500">
       {children}
     </p>
   );
@@ -147,24 +147,22 @@ export function Customer360View({ profile }: { profile: Customer360Profile }) {
           </Empty>
         ) : (
           <div className="space-y-3">
-            <div className="rounded-[14px] bg-slate-900 p-4 text-white">
+            <div className="bg-slate-900 p-4 text-white">
               <p className="text-[11px] font-black uppercase tracking-wide text-white/60">Tracked lines</p>
               <p className="mt-0.5 text-2xl font-black tabular-nums">{money.format(sales.trackedValue)}</p>
               <p className="text-[12px] font-semibold text-white/70">
-                {whole.format(sales.trackedUnits)} units · CNS, Anti Infective and Pedia
+                Monthly Closing value, closed months · CNS, Anti Infective and Pedia
               </p>
             </div>
 
             <table className="w-full table-fixed border-collapse">
               <colgroup>
-                <col className="w-[46%]" />
-                <col className="w-[27%]" />
-                <col className="w-[27%]" />
+                <col className="w-[60%]" />
+                <col className="w-[40%]" />
               </colgroup>
               <thead>
                 <tr className="border-b border-slate-200 text-left">
                   <th className="py-1.5 text-[11px] font-black uppercase tracking-wide text-slate-400">Line</th>
-                  <th className="py-1.5 text-right text-[11px] font-black uppercase tracking-wide text-slate-400">Units</th>
                   <th className="py-1.5 text-right text-[11px] font-black uppercase tracking-wide text-slate-400">Value</th>
                 </tr>
               </thead>
@@ -172,9 +170,6 @@ export function Customer360View({ profile }: { profile: Customer360Profile }) {
                 {sales.trackedLines.map((line) => (
                   <tr key={line.line} className="border-b border-slate-100 last:border-0">
                     <td className="break-words py-1.5 text-[13px] font-semibold text-slate-800">{line.line}</td>
-                    <td className="py-1.5 text-right text-[13px] font-semibold tabular-nums text-slate-600">
-                      {whole.format(line.units)}
-                    </td>
                     <td className="py-1.5 text-right text-[13px] font-bold tabular-nums text-slate-900">
                       {money.format(line.value)}
                     </td>
@@ -184,13 +179,11 @@ export function Customer360View({ profile }: { profile: Customer360Profile }) {
                   <tr key={line.line} className="border-b border-slate-100 bg-amber-50/60 last:border-0">
                     <td className="break-words py-1.5 text-[13px] font-semibold text-amber-800">
                       {line.line}
-                      <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-800">
+                      <span className="ml-1.5 bg-amber-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-800">
                         Confidential
                       </span>
                     </td>
-                    <td className="py-1.5 text-right text-[13px] font-semibold tabular-nums text-amber-800">
-                      {whole.format(line.units)}
-                    </td>
+
                     <td className="py-1.5 text-right text-[13px] font-bold tabular-nums text-amber-900">
                       {money.format(line.value)}
                     </td>
@@ -253,7 +246,7 @@ export function Customer360View({ profile }: { profile: Customer360Profile }) {
                       {code.customerCode}
                     </span>
                     {code.alsoInOtherRegister ? (
-                      <span className="mt-1 inline-block rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-violet-700 ring-1 ring-violet-200">
+                      <span className="mt-1 inline-block bg-violet-50 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-violet-700 ring-1 ring-violet-200">
                         Also in the other register
                       </span>
                     ) : null}
@@ -289,13 +282,13 @@ export function Customer360View({ profile }: { profile: Customer360Profile }) {
           ) : (
             <ul className="space-y-2">
               {profile.marketingRequests.map((request) => (
-                <li key={request.id} className="rounded-[14px] border border-slate-200 p-3">
+                <li key={request.id} className="border border-slate-200 p-3">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <span className="break-words text-[13px] font-bold text-slate-900">
                       {request.requestCode || "Request"}
                     </span>
                     {request.status ? (
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-600">
+                      <span className="bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-600">
                         {request.status}
                       </span>
                     ) : null}
@@ -325,13 +318,13 @@ export function Customer360View({ profile }: { profile: Customer360Profile }) {
           ) : (
             <ul className="space-y-2">
               {profile.directOrders.map((order) => (
-                <li key={order.id} className="rounded-[14px] border border-slate-200 p-3">
+                <li key={order.id} className="border border-slate-200 p-3">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <span className="break-words text-[13px] font-bold text-slate-900">
                       {order.productName || "Order"}
                     </span>
                     {order.status ? (
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-600">
+                      <span className="bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-600">
                         {order.status}
                       </span>
                     ) : null}

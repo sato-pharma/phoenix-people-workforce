@@ -21,6 +21,7 @@ import {
   checkDirectOrderStorefrontEvidence,
   type DirectOrderEvidenceCheck,
 } from "@/lib/direct-orders/evidence-check";
+import { bumpCustomer360Cache } from "@/lib/cache/namespaces";
 import { assertDirectOrderWorkflowTransition } from "@/lib/direct-orders/workflow";
 import {
   directOrderFieldEvidenceGap,
@@ -1890,4 +1891,5 @@ export async function decideDirectOrderPharmacyValidation(
           : ""
     }.`,
   });
+  bumpCustomer360Cache("direct-order pharmacy validation decided");
 }
