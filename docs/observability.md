@@ -368,18 +368,38 @@ recruitment data.
    zero. Account: `docs/recruitment-page-round-trips.md`.
 2. **The login check had no fallback.** `phx_auth_session_bundle` is called about twice a second with no
    cache, and when its one retry also failed the whole render threw. The last ACCEPTED bundle is now kept
-   for ten minutes and used only after the live call and its retry both fail (owner's decision, with the
-   exposure stated: someone whose access was removed could keep opening pages for up to ten minutes, and
-   only while the live check is failing). Live is always tried first; the copy goes through every check a
-   live bundle does, including the lifecycle gate against today's date; it is never stored again from a
-   copy, so its age never resets; a served copy skips the idle-refresh write. It logs
-   `session_verification_served_from_recent_copy` at warning level, so a Railway log search shows every
-   time it was used. With no copy the outage still raises `SessionVerificationUnavailableError` as before.
+   for ten minutes and used only after the live call and its retry both fail (owner's decision). Live is
+   always tried first; the copy goes through every check a live bundle does, including the lifecycle gate
+   against today's date; it is never stored again from a copy, so its age never resets; a served copy
+   skips the idle-refresh write. It logs `session_verification_served_from_recent_copy` at warning level,
+   so a Railway log search shows every time it was used. With no copy the outage still raises
+   `SessionVerificationUnavailableError` as before.
+
+   **What a copy can do — narrowed after the risk review of this change.** It authorises READS only: a
+   page render, or an API request that is a GET or HEAD (`mayUseRecentSessionCopy` in `server.ts`). A
+   POST, PUT, PATCH or DELETE during an outage answers "Session verification is temporarily unavailable"
+   exactly as before, and the passkey registration and listing routes and the change-password route ask
+   for `allowRecentCopy: false` outright — a passkey or a password set from a copy would outlive the ten
+   minutes and give lasting access to a session that had been revoked. A logout, a forced logout and a
+   dev-preview switch made in this process forget the copy at once (`forgetRememberedBundlesForSessions`),
+   and a read that began BEFORE that moment, or before a newer live answer for the same session, cannot
+   store itself afterwards (a per-session barrier on the read's start time), so a slow older answer cannot
+   bring a revoked session back. The exposure the owner accepted is therefore: a role change or a
+   deactivation made somewhere else can go unseen for up to ten minutes, and only while the live check is
+   failing, and only to read.
+
+   **A consequence worth knowing, not changed:** while the database is failing, a person with a copy
+   waits the same ~30 s for the two bundle attempts and then their page runs ALL of its own reads against
+   the failing database (the Recruitment page runs eight, each optional one capped at 8 s, and its Try
+   again button repeats them). Before the copy the same person was stopped after the two bundle attempts.
+   The copy trades that load-shedding for a working page; if an outage ever shows the extra reads hurting,
+   the lever is to skip a page's optional reads when it was served from a copy.
 3. **The attendance route made one call per punch.** On 18 Oct between 10:16 and 10:33 the on-prem agent
    replayed punches the table already held and the route answered with 10,461 single-row calls, fifty at a
    time. It now sends up to 250 punches per call to `public.phx_insert_attendance_raw_punches` (a 1,000
    punch request is four calls) and falls back to the single-row function, at concurrency 10, if a batch
-   fails. Account: `docs/attendance-agent.md`.
+   fails; a fallback is logged as `raw_punch_batch_fell_back`, because a missing function or one punch the
+   database refuses would otherwise bring the old load back unseen. Account: `docs/attendance-agent.md`.
 
 **The restart alert has a gap — found while checking the above, not fixed in the same change.**
 `runDatabaseRestartCheck()` did NOT miss the 17 Oct restart: it recorded it in `database_restarts` six

@@ -1,4 +1,5 @@
 import type { PhoenixRole } from "@/lib/auth/permissions";
+import { forgetRememberedBundlesForSessions } from "@/lib/auth/session-bundle-cache";
 import type { SessionPayload } from "@/lib/auth/session";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -235,6 +236,10 @@ export async function updateAppSessionVersion(
 export async function revokeAppSession(sessionId: string | null | undefined, reason: string) {
   const normalizedSessionId = String(sessionId ?? "").trim();
   if (!normalizedSessionId) return;
+
+  // Before the database is asked, so a logout during an outage still drops this process's copy of the
+  // session (session-bundle-cache.ts): a revoked session must never be readable from memory afterwards.
+  forgetRememberedBundlesForSessions([normalizedSessionId]);
 
   const { error } = await getSupabaseAdmin()
     .from("app_sessions")

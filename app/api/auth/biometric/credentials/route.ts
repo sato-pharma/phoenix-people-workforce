@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 async function requireSessionLoginId(request: Request) {
   const sessionToken = getCookieValue(request.headers.get("cookie"), phoenixSessionCookieName);
-  const sessionState = await resolveSessionState(sessionToken);
+  const sessionState = await resolveSessionState(sessionToken, { allowRecentCopy: false });
   return sessionState?.access.loginId ?? null;
 }
 

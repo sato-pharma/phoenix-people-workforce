@@ -242,6 +242,10 @@ export async function runAttendanceRawPunchBatchTests() {
       "the device-user activity write is untouched",
     );
     assert.ok(/maxPunchesPerRequest = 1000/.test(route), "the request ceiling is unchanged");
+    assert.ok(
+      /batchesFallenBack > 0\) \{\s*logWarning\("Raw punch batches fell back to one call per punch"/.test(route),
+      "a fallback is logged: without it a missing function or one poison punch quietly brings the old load back",
+    );
   }
 
   // ── 12 · the migration: same posture as the single-row function, idempotent, service_role only ──

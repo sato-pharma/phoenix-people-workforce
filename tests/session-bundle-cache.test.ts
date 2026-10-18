@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   clearSessionBundleCache,
   forgetRememberedBundle,
+  forgetRememberedBundlesForSessions,
   mayServeRememberedBundle,
   recallRememberedBundle,
   rememberAcceptedBundle,
@@ -149,7 +150,9 @@ export function runSessionBundleCacheTests() {
     "a copy is parsed like a live bundle, so every check below runs on it",
   );
   assert.ok(
-    server.includes("    forgetRememberedBundle(bundleCacheKey);\n  }\n  const bundle = parseAuthSessionBundle(bundleData);"),
+    server.includes(
+      "    forgetRememberedBundle(bundleCacheKey, bundleReadStartedAt);\n  }\n  const bundle = parseAuthSessionBundle(bundleData);",
+    ),
     "a live answer forgets the old copy before any check runs",
   );
   assert.ok(
@@ -164,11 +167,88 @@ export function runSessionBundleCacheTests() {
   const gate = server.indexOf("const lifecycleGate =");
   assert.ok(accept > gate, "remembering happens after the lifecycle gate and every rejection check, never before");
 
-  // Nothing else may serve a copy: the only importer of the cache is the one resolver.
-  const importers = ["src/lib/auth/app-sessions.ts", "src/lib/auth/session.ts", "app/api/auth/heartbeat/route.ts"].filter(
-    (file) => read(file).includes("session-bundle-cache"),
+  // Nothing else may SERVE a copy: only the one resolver recalls one. The two places that revoke a session
+  // import the cache to FORGET it, and nothing more.
+  const recallers = [
+    "src/lib/auth/app-sessions.ts",
+    "src/lib/auth/session.ts",
+    "src/lib/activity/service.ts",
+    "app/api/auth/heartbeat/route.ts",
+    "app/api/auth/logout/route.ts",
+  ].filter((file) => read(file).includes("recallRememberedBundle"));
+  assert.deepEqual(recallers, [], "no other auth path may serve a remembered bundle");
+
+  // ── 10 · a slow OLDER read cannot bring back a session that a newer answer or a revocation settled ─
+  {
+    clearSessionBundleCache();
+    const key = sessionBundleCacheKey({ sid: "sid-9", loginId: "ta" });
+    // Request A began at T0 and its answer is slow; request B began at T0+1s, got a live answer ("revoked")
+    // and forgot the copy at that read's start time.
+    forgetRememberedBundle(key, T0 + 1_000);
+    rememberAcceptedBundle(key, bundle("sid-9"), T0 + 5_000, T0);
+    assert.equal(sessionBundleCacheSize(), 0, "A began before B's live answer, so its older picture is refused");
+    // B itself, and any read that began after it, may store.
+    rememberAcceptedBundle(key, bundle("sid-9"), T0 + 5_000, T0 + 1_000);
+    assert.equal(sessionBundleCacheSize(), 1, "the read that produced the live answer may store its own bundle");
+    // A forget with no start time drops the copy and blocks nothing.
+    clearSessionBundleCache();
+    rememberAcceptedBundle(key, bundle("sid-9"), T0);
+    forgetRememberedBundle(key);
+    rememberAcceptedBundle(key, bundle("sid-9"), T0 + 10, T0);
+    assert.equal(sessionBundleCacheSize(), 1, "a plain forget (no read start given) sets no barrier");
+  }
+
+  // ── 11 · a logout or forced logout here removes the copy of that session at once ───────────────────
+  {
+    clearSessionBundleCache();
+    const keyA = sessionBundleCacheKey({ sid: "sid-10", loginId: "ta" });
+    const keyB = sessionBundleCacheKey({ sid: "sid-11", loginId: "ta" });
+    rememberAcceptedBundle(keyA, bundle("sid-10"), T0);
+    rememberAcceptedBundle(keyB, bundle("sid-11"), T0);
+    forgetRememberedBundlesForSessions(["sid-10", "  ", ""], T0 + MINUTE);
+    assert.equal(recallRememberedBundle(keyA, T0 + MINUTE), null, "the revoked session's copy is gone");
+    assert.ok(recallRememberedBundle(keyB, T0 + MINUTE), "another session's copy is untouched");
+    rememberAcceptedBundle(keyA, bundle("sid-10"), T0 + 2 * MINUTE, T0 + 30_000);
+    assert.equal(recallRememberedBundle(keyA, T0 + 2 * MINUTE), null, "a read that began before the revocation cannot restore it");
+    rememberAcceptedBundle(keyA, bundle("sid-10"), T0 + 3 * MINUTE, T0 + 2 * MINUTE);
+    assert.ok(recallRememberedBundle(keyA, T0 + 3 * MINUTE), "a read that began after the revocation may store");
+    forgetRememberedBundlesForSessions([], T0);
+    assert.equal(sessionBundleCacheSize(), 2, "an empty list changes nothing");
+  }
+
+  // ── 12 · what a copy may NOT do: bind a credential, or authorise a write ───────────────────────────
+  assert.ok(
+    server.includes("const recentCopy = options.allowRecentCopy === false ? null : recallRememberedBundle(bundleCacheKey);"),
+    "a caller can refuse the copy, and then an unreadable bundle throws exactly as it did before the copy",
   );
-  assert.deepEqual(importers, [], "no other auth path may serve a remembered bundle");
+  assert.ok(
+    server.includes('return method === "GET" || method === "HEAD";'),
+    "an API request that is not a GET or HEAD never accepts the copy",
+  );
+  assert.equal(
+    (server.match(/\{ allowRecentCopy \}/g) ?? []).length,
+    2,
+    "both the cookie and the bearer path of the API resolver pass the method rule",
+  );
+  for (const route of [
+    "app/api/auth/biometric/register/options/route.ts",
+    "app/api/auth/biometric/register/verify/route.ts",
+    "app/api/auth/biometric/credentials/route.ts",
+    "app/api/auth/change-password/route.ts",
+  ]) {
+    assert.ok(
+      read(route).includes("resolveSessionState(sessionToken, { allowRecentCopy: false })"),
+      `${route} must never run on a copy: a passkey or a password it sets outlives the ten minutes`,
+    );
+  }
+  assert.ok(
+    read("src/lib/auth/app-sessions.ts").includes("forgetRememberedBundlesForSessions([normalizedSessionId])"),
+    "logout drops this process's copy before the database is even asked",
+  );
+  assert.ok(
+    read("src/lib/activity/service.ts").includes("forgetRememberedBundlesForSessions("),
+    "a forced logout drops the copy of every session it revoked",
+  );
 
   clearSessionBundleCache();
 }

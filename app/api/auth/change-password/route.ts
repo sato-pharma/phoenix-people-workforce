@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   try {
     const cookieHeader = request.headers.get("cookie");
     const sessionToken = getCookieValue(cookieHeader, phoenixSessionCookieName);
-    const sessionState = await resolveSessionState(sessionToken);
+    const sessionState = await resolveSessionState(sessionToken, { allowRecentCopy: false });
 
     if (!sessionState || !sessionState.access.loginId) {
       return NextResponse.json(

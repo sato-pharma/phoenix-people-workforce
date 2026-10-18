@@ -40,7 +40,7 @@ export type RecruitmentReadSource =
 export const RECRUITMENT_READ_LABELS: Record<RecruitmentReadSource, string> = {
   dashboard: "requisitions and the hiring pipeline",
   pool: "the candidate list",
-  vacancies: "the open vacancies for new requisitions",
+  vacancies: "the open vacancy list",
   positionCatalogue: "the position list for new requisitions",
   hiringManagers: "the hiring-manager list",
   employeeDirectory: "the manager list for requisitions",

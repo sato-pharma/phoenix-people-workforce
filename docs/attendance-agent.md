@@ -31,7 +31,10 @@ The route accepts at most 1,000 punches a request and stores them through `inser
   concurrency 10 (it was 50). That covers an error, a thrown request and an answer that is not a count
   between 0 and the batch size, and it means the route also works if it deploys before the migration. A
   failure is still reported against the punch's own position in the request (`input_index`), so the agent
-  still knows which punches to send again. A batch is one statement, so a failed one wrote nothing.
+  still knows which punches to send again. A batch is one statement, so a failed one wrote nothing. Any
+  fallback is logged as a warning, `raw_punch_batch_fell_back` (batches fallen back, failures, punches): a
+  missing function, or one punch the database refuses inside a batch the agent re-sends every run, would
+  otherwise bring the 250-single-calls-per-batch load back with nothing to see.
 - Both functions run as the caller, pin `search_path`, and are executable by `service_role` only.
 
 **Why:** on 18 October 2026, 10:16-10:33 Cairo, the agent replayed punches the table already held and the

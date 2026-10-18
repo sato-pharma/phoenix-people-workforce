@@ -299,7 +299,15 @@ function appSessionRejectionSummary(reason: AppSessionRejectionReason) {
 
 export async function resolveSessionState(
   token: string | null | undefined,
-  options: { refreshIdle?: boolean } = {},
+  options: {
+    /**
+     * False for anything that leaves lasting access behind (a passkey, a new password) or writes: it then
+     * never accepts the last-accepted copy, and an unreadable bundle throws as it did before the copy
+     * existed. Left out, the copy may stand in (session-bundle-cache.ts).
+     */
+    allowRecentCopy?: boolean;
+    refreshIdle?: boolean;
+  } = {},
 ): Promise<ResolvedSessionState | null> {
   const payload = verifySessionToken(token);
   if (!payload) return null;
@@ -386,6 +394,9 @@ export async function resolveSessionState(
   // reach the database" is not a verdict on the session (see that class), and a plain object
   // thrown into a server render surfaced only as Next's opaque digest error (PHOENIX-WORKFORCE-9,
   // 2026-10-17: field-crm renders failing with "Supabase request timed out.").
+  // When this read BEGAN, so a slow answer that finally arrives after a newer one (or a revocation made
+  // here) cannot store its older picture of the session as the copy.
+  const bundleReadStartedAt = Date.now();
   let bundleSettled = await callBundle();
   if (isTransientBundleFailure(bundleSettled)) {
     await new Promise((resolve) => setTimeout(resolve, SESSION_BUNDLE_RETRY_DELAY_MS));
@@ -400,7 +411,7 @@ export async function resolveSessionState(
   let servedFromRecentCopy = false;
   if (isTransientBundleFailure(bundleSettled)) {
     const cause = bundleSettled.ok ? bundleSettled.value.error : bundleSettled.error;
-    const recentCopy = recallRememberedBundle(bundleCacheKey);
+    const recentCopy = options.allowRecentCopy === false ? null : recallRememberedBundle(bundleCacheKey);
     if (!recentCopy) {
       logError("Session verification unavailable — session bundle could not be read", {
         labels: { event: "session_verification_unavailable", loginId: payload.loginId },
@@ -421,7 +432,7 @@ export async function resolveSessionState(
     bundleData = bundleSettled.value.data;
     // A live answer replaces whatever was held for this session, and it is held again only if every
     // check below accepts it -- so a rejection can never be undone by a later outage.
-    forgetRememberedBundle(bundleCacheKey);
+    forgetRememberedBundle(bundleCacheKey, bundleReadStartedAt);
   }
   const bundle = parseAuthSessionBundle(bundleData);
 
@@ -621,6 +632,8 @@ export async function resolveSessionState(
     rememberAcceptedBundle(
       bundleCacheKey,
       refreshedExpiry ? withRefreshedSessionExpiry(bundleData, refreshedExpiry) : bundleData,
+      Date.now(),
+      bundleReadStartedAt,
     );
   }
 
@@ -639,15 +652,31 @@ export async function resolveSessionState(
   };
 }
 
-export async function resolveSessionAccessContext(token: string | null | undefined) {
-  const state = await resolveSessionState(token);
+export async function resolveSessionAccessContext(
+  token: string | null | undefined,
+  options: { allowRecentCopy?: boolean } = {},
+) {
+  const state = await resolveSessionState(token, options);
   return state?.access ?? null;
+}
+
+/**
+ * The last-accepted session copy (session-bundle-cache.ts) may stand in for a failed login check only on
+ * a request that cannot change anything: a GET or HEAD. A POST, PUT, PATCH or DELETE during an outage
+ * answers "Session verification is temporarily unavailable" exactly as before the copy existed, so a copy
+ * never authorises a write, a send or a credential change (risk review, 18 Oct 2026).
+ */
+function mayUseRecentSessionCopy(request: Request): boolean {
+  const method = String(request.method ?? "GET").toUpperCase();
+  return method === "GET" || method === "HEAD";
 }
 
 async function resolveAccessContextInner(request: Request): Promise<AccessContext> {
   const cookieHeader = request.headers.get("cookie");
+  const allowRecentCopy = mayUseRecentSessionCopy(request);
   const sessionContext = await resolveSessionAccessContext(
     getCookieValue(cookieHeader, phoenixSessionCookieName),
+    { allowRecentCopy },
   );
 
   if (sessionContext) {
@@ -660,7 +689,7 @@ async function resolveAccessContextInner(request: Request): Promise<AccessContex
   // request that has both is a browser request, and its cookie is the more trustworthy of the two.
   // Only this Request-based resolver accepts it; resolveAccessContextFromPage stays cookie-only,
   // because a server-rendered page is never loaded by the native client.
-  const bearerContext = await resolveSessionAccessContext(bearerTokenFromRequest(request));
+  const bearerContext = await resolveSessionAccessContext(bearerTokenFromRequest(request), { allowRecentCopy });
 
   if (bearerContext) {
     return bearerContext;

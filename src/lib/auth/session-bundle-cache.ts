@@ -20,8 +20,15 @@
  *   - A COPY IS NOT A FRESH ANSWER. It goes through exactly the same checks as a live bundle (expiry,
  *     revocation, role, version, active, the employee lifecycle gate against TODAY'S date), and serving
  *     it never stores it again, so its age never resets and ten minutes is the most it can ever cover.
- *   - The exposure is stated and accepted (owner, 18 Oct 2026): someone whose access was removed could
- *     keep opening pages for up to ten minutes, and only while the live check is failing.
+ *   - A COPY NEVER BINDS A CREDENTIAL AND NEVER AUTHORISES A WRITE. The passkey and password routes ask for
+ *     `allowRecentCopy: false`, and an API request that is not a GET or HEAD does the same (server.ts), so
+ *     what a copy can do is read pages and read-only API calls -- never leave lasting access behind.
+ *   - A LOGOUT OR FORCED LOGOUT IN THIS PROCESS FORGETS THE COPY at once, and a read that began BEFORE that
+ *     moment can no longer store itself afterwards (`forgetRememberedBundlesForSessions`), so a slow older
+ *     answer cannot bring a revoked session back.
+ *   - The exposure is stated and accepted (owner, 18 Oct 2026): someone whose access was removed by a
+ *     change made elsewhere (a role change, a deactivation) could keep reading pages for up to ten
+ *     minutes, and only while the live check is failing.
  *
  * Process-local, bounded, and held on `globalThis` so the page renderer and the route handlers -- which
  * Next may bundle separately -- see the same copy.
@@ -35,6 +42,7 @@ export const SESSION_BUNDLE_CACHE_MAX_ENTRIES = 500;
 type Remembered = { data: Record<string, unknown>; storedAt: number };
 
 const STORE_KEY = Symbol.for("phoenix.sessionBundleCache");
+const BARRIER_KEY = Symbol.for("phoenix.sessionBundleCacheBarrier");
 
 function store(): Map<string, Remembered> {
   const holder = globalThis as unknown as Record<symbol, Map<string, Remembered> | undefined>;
@@ -43,6 +51,38 @@ function store(): Map<string, Remembered> {
   const created = new Map<string, Remembered>();
   holder[STORE_KEY] = created;
   return created;
+}
+
+/**
+ * Per session id: the start time of the newest read that has already been answered live (or the moment
+ * a revocation was made here). A read that STARTED earlier may not store its bundle afterwards -- it is a
+ * picture taken before the answer we already have.
+ */
+function barriers(): Map<string, number> {
+  const holder = globalThis as unknown as Record<symbol, Map<string, number> | undefined>;
+  const existing = holder[BARRIER_KEY];
+  if (existing) return existing;
+  const created = new Map<string, number>();
+  holder[BARRIER_KEY] = created;
+  return created;
+}
+
+function sessionIdOf(key: string): string {
+  const cut = key.indexOf("\u0000");
+  return cut < 0 ? key : key.slice(0, cut);
+}
+
+function raiseBarrier(sessionId: string, observedAt: number): void {
+  if (!Number.isFinite(observedAt)) return;
+  const map = barriers();
+  const current = map.get(sessionId);
+  map.delete(sessionId); // re-inserting moves it to the newest end of the Map's order
+  map.set(sessionId, current === undefined ? observedAt : Math.max(current, observedAt));
+  while (map.size > SESSION_BUNDLE_CACHE_MAX_ENTRIES) {
+    const oldest = map.keys().next();
+    if (oldest.done) break;
+    map.delete(oldest.value);
+  }
 }
 
 export function sessionBundleCacheKey(input: { sid: string; loginId: string }): string {
@@ -66,10 +106,21 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-/** Stores the raw bundle of a session every check has just accepted. Anything that is not an object is ignored. */
-export function rememberAcceptedBundle(key: string, data: unknown, now: number = Date.now()): void {
+/**
+ * Stores the raw bundle of a session every check has just accepted. Anything that is not an object is
+ * ignored, and so is a bundle whose READ began before a newer live answer or a revocation for the same
+ * session (`readStartedAt`, which defaults to `now` for a caller that has no slow read to speak of).
+ */
+export function rememberAcceptedBundle(
+  key: string,
+  data: unknown,
+  now: number = Date.now(),
+  readStartedAt: number = now,
+): void {
   const record = asRecord(data);
   if (!record) return;
+  const barrier = barriers().get(sessionIdOf(key));
+  if (barrier !== undefined && barrier > readStartedAt) return;
   const entries = store();
   entries.delete(key); // re-inserting moves it to the newest end of the Map's order
   entries.set(key, { data: structuredClone(record), storedAt: now });
@@ -93,8 +144,27 @@ export function recallRememberedBundle(key: string, now: number = Date.now()): R
   return structuredClone(entry.data);
 }
 
-export function forgetRememberedBundle(key: string): void {
+/**
+ * Drops the copy. `observedAt` is the START of the read whose live answer replaced it: any read that began
+ * earlier is stale from now on and may not store itself. Left out, nothing but the copy is dropped.
+ */
+export function forgetRememberedBundle(key: string, observedAt?: number): void {
   store().delete(key);
+  if (observedAt !== undefined) raiseBarrier(sessionIdOf(key), observedAt);
+}
+
+/**
+ * A session was revoked in THIS process (logout, forced logout): its copy goes now, and a read that began
+ * before this moment can no longer put it back. Cheap -- at most 500 entries are ever held.
+ */
+export function forgetRememberedBundlesForSessions(sessionIds: ReadonlyArray<string>, now: number = Date.now()): void {
+  const wanted = new Set(sessionIds.map((id) => String(id ?? "").trim()).filter(Boolean));
+  if (wanted.size === 0) return;
+  const entries = store();
+  for (const key of [...entries.keys()]) {
+    if (wanted.has(sessionIdOf(key))) entries.delete(key);
+  }
+  for (const id of wanted) raiseBarrier(id, now);
 }
 
 /**
@@ -122,6 +192,7 @@ export function withRefreshedSessionExpiry(
 /** Test seams. */
 export function clearSessionBundleCache(): void {
   store().clear();
+  barriers().clear();
 }
 
 export function sessionBundleCacheSize(): number {

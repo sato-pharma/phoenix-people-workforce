@@ -8,6 +8,7 @@ import {
 import { routeAttendancePunch } from "@/lib/attendance/metrics";
 import { insertRawPunches } from "@/lib/attendance/raw-punch-batch";
 import { toApiError, unauthorizedError, validationError } from "@/lib/http/api-errors";
+import { logWarning } from "@/lib/observability/log";
 import { requiredTokenAuthorized } from "@/lib/security/cron-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -315,7 +316,7 @@ async function insertPunches(punches: ValidatedPunch[]) {
   // production. The helper falls back to one call per punch, at low concurrency, if a batch fails, so
   // a failure is still reported against the punch's own index. Both functions end in ON CONFLICT DO
   // NOTHING, so a re-pushed punch is a duplicate, never an error.
-  const { inserted, duplicate, failures } = await insertRawPunches(
+  const { inserted, duplicate, failures, batchesFallenBack } = await insertRawPunches(
     toInsert.map(({ punch, employeeHrId }) => ({
       inputIndex: punch.input_index,
       row: {
@@ -331,6 +332,16 @@ async function insertPunches(punches: ValidatedPunch[]) {
     })),
     (functionName, args) => supabase.rpc(functionName, args),
   );
+
+  // A fallback is correct but it is the old load coming back: a missing batch function, or one punch the
+  // database refuses sitting in a batch the agent re-sends on every run, would otherwise cost 250 single
+  // calls per batch forever without anyone seeing it.
+  if (batchesFallenBack > 0) {
+    logWarning("Raw punch batches fell back to one call per punch", {
+      labels: { event: "raw_punch_batch_fell_back" },
+      context: { batchesFallenBack, failed: failures.length, punches: toInsert.length },
+    });
+  }
 
   // EVERY punch, not just the unmapped ones. `last_seen_punch_at` is meant to say when this
   // device user was last at the door; handing this only `unmappedPunches` is what froze the
