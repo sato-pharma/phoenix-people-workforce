@@ -54,6 +54,11 @@ export type EmployeePortalNavVisibility = {
   // server-side (see src/lib/employee-portal/team-calendar.ts). Reads the iReports360
   // visits mirror; each green numeric day deep-links to that rep's day drill-down.
   showTeamCalendarTab?: boolean;
+  // Field Absence Calendar — the National Sales Manager's door to the names on his own line the
+  // system did not see at all on a working day (owner, 2026-10-18). The admin-mode holders (Super
+  // Admin, CEO, SFE Manager) have their own row in adminNavigationSectionSeeds. The link grants
+  // nothing: loadFieldAbsencePage re-checks the grant, the role and his NSM seat's line.
+  showFieldAbsenceTab?: boolean;
   showTeamExpensesTab?: boolean;
   showVacanciesTab?: boolean;
   // "My Candidates" (/employee-portals/recruitment-candidates) — candidates assigned to a hiring
@@ -746,6 +751,7 @@ export function resolveEmployeePortalNavVisibility(
     showDashboardTab: !isTrainingManager,
     showDsmsPerformanceTab: isNationalSalesManager,
     showTeamCalendarTab: isNationalSalesManager,
+    showFieldAbsenceTab: isNationalSalesManager,
     // The isHeadOffice branch is line/department-based, so a District or Regional Manager sitting
     // on the Office line would otherwise be offered a submit form the server now rejects — mirror
     // the EXCUSE_EXCLUDED_ROLES gate here so the tab never appears for those two roles.

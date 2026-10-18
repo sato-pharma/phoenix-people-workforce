@@ -134,3 +134,24 @@ export async function loadPendingLeaveDays(
 ): Promise<ApprovedLeaveDay[]> {
   return loadLeaveDays(PENDING_VACATION_STATUSES, hrIds, range);
 }
+
+/**
+ * Every request that has been FILED and not refused — the statuses the private calendar already
+ * treats as reserving the day (`loadVacationItems`): approved, waiting on the manager or HR, waiting
+ * for a covering assignment, or submitted.
+ *
+ * For the one reader that asks a different question from "was he away": the Field Absence Calendar,
+ * which lists the people the system did not see AT ALL on a working day (owner, 2026-10-18: *"no
+ * submit vacation, no records for this day"*). A filed request is a record — he told the system — so
+ * it takes his name off that day whether or not anyone has decided it yet. A rejected or cancelled
+ * request is not here, so the day comes back the moment it is refused. Nothing that pays, deducts or
+ * counts an absence may read this.
+ */
+export const FILED_VACATION_STATUSES = ["approved", "pending_manager", "pending_hr", "needs_assignment", "submitted"] as const;
+
+export async function loadFiledLeaveDays(
+  hrIds: Iterable<string | null | undefined>,
+  range: { from: string; to: string },
+): Promise<ApprovedLeaveDay[]> {
+  return loadLeaveDays(FILED_VACATION_STATUSES, hrIds, range);
+}

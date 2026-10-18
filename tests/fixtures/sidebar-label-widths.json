@@ -84,6 +84,7 @@
     "Expense Center": 89,
     "Expense Requests": 103,
     "Expenses Dashboard": 119,
+    "Field Absence Calendar": 135,
     "Field Activity": 75,
     "Field Coaching": 85,
     "Finance Overview": 102,
@@ -255,6 +256,7 @@
     "Excuse Approvals": 99,
     "Expense Dashboard": 111,
     "Expense Submissions": 119,
+    "Field Absence Calendar": 131,
     "Field Activity": 74,
     "Fingerprint Report": 105,
     "Frequency": 59,
@@ -309,6 +311,7 @@
   },
   "bottom-bar": {
     "360": 18,
+    "Absence": 40,
     "All": 13,
     "Analytics": 43,
     "Approvals": 48,

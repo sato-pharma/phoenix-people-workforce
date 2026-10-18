@@ -156,6 +156,7 @@ const MODULE_RULES: ModuleRule[] = [
   { prefix: "/private-calendars", key: "private_calendars", label: "Private Calendars" },
   { prefix: "/private-calendar-disputes", key: "private_calendars", label: "Private Calendars" },
   { prefix: "/team-calendar", key: "team_calendar", label: "Team Calendar" },
+  { prefix: "/field-absence", key: "field_absence", label: "Field Absence Calendar" },
   { prefix: "/early-birds", key: "early_birds", label: "Early Birds" },
   { prefix: "/excuses", key: "excuses", label: "Excuses" },
   { prefix: "/field-workforce-compliance", key: "workforce_compliance", label: "Workforce Compliance" },

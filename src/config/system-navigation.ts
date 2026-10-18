@@ -14,6 +14,7 @@ import {
   CalendarFold,
   CalendarHeart,
   CalendarRange,
+  CalendarX2,
   ChartColumnBig,
   ChartNoAxesColumnIncreasing,
   ClipboardCheck,
@@ -1412,6 +1413,11 @@ export const adminNavigationSectionSeeds = [
       // every CNS territory; the tab itself is offered by forecastIsOffered, and the Training Manager
       // (who holds phoenix_crm for the Doctors directory alone) is not listed.
       { href: "/admin/field-crm?tab=forecast", activeTab: "forecast", icon: PackageCheck, label: "Daily Forecast", permissions: [{ action: "read", resource: "phoenix_crm" }], roles: ["Super Admin", "CEO", "SFE Manager"] },
+      // Field Absence Calendar (owner, 2026-10-18: "track daily who didn't go to work") — the field
+      // people the system did not see at all on a working day. The three admin-mode holders of
+      // field_absence; the National Sales Manager is a portal seat and reaches the twin through
+      // showFieldAbsenceTab. The page re-checks the grant and the role (src/lib/field-absence/).
+      { href: "/admin/field-absence", icon: CalendarX2, label: "Field Absence Calendar", permissions: [{ action: "read", resource: "field_absence" }], roles: ["Super Admin", "CEO", "SFE Manager"] },
     ],
     label: "Sales vs Target",
   },
@@ -1888,6 +1894,9 @@ const employeePortalNavigationSectionSeeds = [
       // here alone is exactly how Early Birds became URL-only; both halves move together or the
       // module is invisible again.
       { href: "/employee-portals/field-activity", icon: MapPinned, label: "Field Activity", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
+      // Field Absence Calendar — the portal half, the National Sales Manager's own line. The portal
+      // rail row is drawn by showFieldAbsenceTab; this row feeds the command palette and Modules Control.
+      { href: "/employee-portals/field-absence", icon: CalendarX2, label: "Field Absence Calendar", permissions: [{ resource: "field_absence", action: "read" }], roles: ["National Sales Manager"] },
       // Coaching Analytics was removed from the portal catalog on 2026-09-29 (owner: hide coaching +
       // training manager system-wide in the portal). Only the double-visit / field-activity items
       // remain in this section, so its heading is no longer "Coaching".

@@ -66,6 +66,7 @@ import {
   Inbox,
   Target,
   CalendarRange,
+  CalendarX2,
   CalendarCheck2,
   MapPinCheck,
   MapPinned,
@@ -358,6 +359,7 @@ function buildEmployeePortalSections({
   showSpotlightTab = false,
   showDsmsPerformanceTab = false,
   showTeamCalendarTab = false,
+  showFieldAbsenceTab = false,
   showTeamExpensesTab = false,
   showVacanciesTab = false,
   showMyCandidatesTab = false,
@@ -613,6 +615,9 @@ function buildEmployeePortalSections({
         // Coaching Analytics is NOT restored here: this branch took it off the sidebar on the
         // owner's own sheet, and main's ruling the same day set its flag to false anyway.
         ...(showTeamCalendarTab ? [{ href: "/employee-portals/team-calendar", label: "Team Calendar", icon: CalendarRange }] : []),
+        // Field Absence Calendar (owner, 2026-10-18) — beside the Team Calendar it complements: that
+        // one counts the visits each day holds, this one names who left no record at all.
+        ...(showFieldAbsenceTab ? [{ href: "/employee-portals/field-absence", label: "Field Absence Calendar", icon: CalendarX2 }] : []),
       ],
     },
     {

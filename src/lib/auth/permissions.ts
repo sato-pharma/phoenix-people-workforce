@@ -169,6 +169,10 @@ export type PermissionResource =
   | "payslips"
   | "deductions"
   | "double_visit_analytics"
+  // Field Absence Calendar (owner, 2026-10-18): the names of field people the system did not see at
+  // all on a working day. READ ONLY, and four roles only — capped in `hardBoundaryAllowedActions`,
+  // because the page names people, and a rep or a district manager must never hold it.
+  | "field_absence"
   | "weekly_plans"
   | "expenses"
   | "market_awareness"
@@ -312,6 +316,7 @@ export const permissionResources: PermissionResource[] = [
   "payroll",
   "deductions",
   "double_visit_analytics",
+  "field_absence",
   "weekly_plans",
   "expenses",
   "market_awareness",
@@ -723,6 +728,11 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
       return role === "Super Admin" ? allActions : [];
     case "synthetic_journeys":
       return role === "Super Admin" ? ["read"] : [];
+    case "field_absence":
+      // The owner's four, 2026-10-18 ("admin and national sales managers and SFE and CEO"), and READ
+      // alone: the calendar is a view over records other modules own, so there is nothing to write.
+      // Capped here so an override can never hand a rep or a district manager the list of names.
+      return role === "Super Admin" || role === "CEO" || role === "National Sales Manager" || role === "SFE Manager" ? ["read"] : [];
     case "employees":
       if (role === "Super Admin") return allActions;
       // HR Operations maintains personnel records. She may not delete: her job description requires
@@ -973,6 +983,7 @@ function applyHardPermissionBoundaries<T extends PermissionMap>(matrix: T): T {
 const defaultPermissionMatrix: PermissionMap = {
   "Super Admin": {
     market_awareness: allActions,
+    field_absence: ["read"],
     // Production Planner. No `delete`: a stock report and a recorded run are append-only facts
     // about a date, and a mistyped run is EXCLUDED from learning rather than removed.
     production_planning: ["read", "create", "update", "export"],
@@ -1063,6 +1074,7 @@ const defaultPermissionMatrix: PermissionMap = {
     visual_aids: ["read", "create", "update"],
   },
   CEO: {
+    field_absence: ["read"],
     // Spotlight: read and export. The owner named him and the Super Admin as the only two holders.
     spotlight: ["read", "export"],
     // Production Planner (owner, 2026-10-05): "the main controller is the R&D manager Dr. Sahar
@@ -1483,6 +1495,8 @@ const defaultPermissionMatrix: PermissionMap = {
     // per line. Without it he was routed a decision the route refused him, which is a queue that
     // cannot be cleared by the only person allowed to clear it.
     market_awareness: ["read", "approve", "export"],
+    // His own line only — the scope is the NSM seat he holds (src/lib/field-absence/access.ts).
+    field_absence: ["read"],
     direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
@@ -1598,6 +1612,7 @@ const defaultPermissionMatrix: PermissionMap = {
   },
   "SFE Manager": {
     market_awareness: ["read", "export"],
+    field_absence: ["read"],
     // `approve` added 2026-08-02 on owner instruction, alongside the Direct Orders Approvals
     // sidebar entry. This is APPROVAL AUTHORITY over direct orders, not just visibility — the
     // page carries no guard of its own, so showing it without this grant would only produce

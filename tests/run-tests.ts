@@ -568,6 +568,7 @@ import { runRepsWeeklyPlansTests } from "./reps-weekly-plans.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runFieldActivityReportTests } from "./field-activity-report.test.ts";
+import { runFieldAbsenceCalendarTests } from "./field-absence-calendar.test.ts";
 import { runVisitCountGoldenRuleTests } from "./visit-count-golden-rule.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
 import { runHrIdStorageCasingTests } from "./hr-id-storage-casing.test.ts";
@@ -10316,6 +10317,10 @@ await runTest(
 await runTest(
   "the notifications cron's probation step reads the role lists ONCE per run instead of once per employee on probation — ten employees resolved in one run make one app_auth_users select, the single-employee callers still read fresh, a failed role read is never shared with the next employee, an empty approver list is re-read rather than shared, and the run passes its lookups to both the scheduled and the overdue reminders",
   runProbationRecipientLookupsTests,
+);
+await runTest(
+  "the Field Absence Calendar lists a field person on a working day only when no source recorded anything — Friday, a Saturday off for an RSM or NSM, a holiday and a future day list nobody, Thursday is a half day, today is so far, a joiner, a leaver and a transfer are judged only on their own seat days, a fingerprint punch counts, an unreadable source lists nobody, and only the owner's four roles reach it, an NSM on his own line alone",
+  runFieldAbsenceCalendarTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

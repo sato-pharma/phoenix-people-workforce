@@ -140,6 +140,7 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   // sheet has no answer for it and it keeps the seat main gave it — under the DV rows, here.
   "/employee-portals/field-activity": { icon: "map-outline", section: "iReports 360" },
   "/employee-portals/team-calendar": { icon: "people-circle-outline", section: "iReports 360" },
+  "/employee-portals/field-absence": { icon: "calendar-clear-outline", section: "iReports 360" },
   // ── KPIs ──────────────────────────────────────────────────────────────────────────────────────
   // A heading of its own on the sidebar since 2026-10-14; the Summary keeps the pulse glyph it had.
   "/employee-portals/kpis": { icon: "pulse-outline", section: "KPIs" },

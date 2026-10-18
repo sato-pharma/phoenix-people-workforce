@@ -69,6 +69,7 @@ export const MODULE_LABELS: Record<PermissionResource, string> = {
   direct_orders: "Direct Orders",
   double_visit_analytics: "Double Visit Analytics",
   early_birds: "Early Birds",
+  field_absence: "Field Absence Calendar",
   employee_documents: "Employee Documents",
   employee_profile: "Employee Profile",
   employees: "Employee Records",
