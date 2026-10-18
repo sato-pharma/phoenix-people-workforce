@@ -253,7 +253,9 @@ strong reader read three plates CLEARLY in the first 153 that named the customer
 matched, because one side wrote the article and the other did not: `أيمن البدوى` for `ايمن بدوي`,
 `عبير محمد راوي` for `عبير الراوي`, `إبراهيم عبد الله العفيفي` for `إبراهيم عفيفي`. A plain word now
 answers for the same word with `ال` in front, either way round, on the PERSON axis only, and only
-where the word keeps three letters without it. A one-letter skeleton rule (the dots the reader most
+where the word keeps three letters without it. 🔴 It applies to EVERY word of the name, the given name
+included, not to the family name alone: of the 1,217 places re-read, one matches on that alone,
+`الحسن زهران` against a plate reading `حسن زهران`, and in Arabic those are one name. A one-letter skeleton rule (the dots the reader most
 often misplaces) was scored on the same reads and REFUSED: of its three extra matches one was plainly
 another doctor — `محمد ابو العنيين` on a plate reading `مجدي أبو العينين`, the first name lost to a
 three-word name's allowance — and one, `النجار` against `البحار`, is two real surnames. Those near

@@ -25,7 +25,7 @@
  *   - it never tells the rep anything. He reads his customer validated, or still being checked.
  */
 
-import { hasOpenAiApiKey } from "@/lib/ai/openai-client";
+import { hasAiApiKey } from "@/lib/ai/openai-client";
 import { logError } from "@/lib/observability/log";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import { callPhoenixCrm, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -225,7 +225,7 @@ export async function runHeldSignboardRecheck(
   options: { limit?: number; budgetMs?: number } = {},
 ): Promise<HeldSignboardRecheckResult> {
   const result: HeldSignboardRecheckResult = { approved: 0, done: 0, moreWaiting: false, read: 0, skipped: null, unread: 0 };
-  if (!hasOpenAiApiKey()) return { ...result, skipped: "no_api_key" };
+  if (!hasAiApiKey()) return { ...result, skipped: "no_api_key" };
   const limit = Math.max(1, Math.min(options.limit ?? HELD_SIGNBOARD_RECHECK_LIMIT, 50));
   const deadline = Date.now() + (options.budgetMs ?? HELD_SIGNBOARD_RECHECK_BUDGET_MS);
   const queue = await loadHeldSignboardPlaces({ limit });

@@ -684,7 +684,7 @@ export async function rereadHeldPlaceSignboard(input: {
   customerName: string;
   listType: PhoenixCrmListType;
 }): Promise<PhoenixCrmSignboardCheck> {
-  if (!hasOpenAiApiKey()) return unjudged("no_api_key");
+  if (!hasAiApiKey()) return unjudged("no_api_key");
   const bytes = await downloadPhoto(input.photoPath).catch(() => null);
   if (!bytes) return unjudged("no_bytes");
   const cropped = await cropStampBand(bytes);

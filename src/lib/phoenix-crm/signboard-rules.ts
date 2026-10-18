@@ -277,7 +277,8 @@ function personNameWords(text: string): NameWord[] {
   return groups.map((parts) => ({ word: parts.join(""), core: parts.length > 1 ? compoundCore(parts) : null }));
 }
 
-// 🔴 A FAMILY NAME IS WRITTEN WITH AND WITHOUT ITS ال, AND THAT IS STILL ONE NAME. Re-reading the
+// 🔴 A NAME IS WRITTEN WITH AND WITHOUT ITS ال, AND THAT IS STILL ONE NAME — on any word of it, the
+// given name too (الحسن on the list, حسن on the plate: one place of the 1,217). Re-reading the
 // places the door left unconfirmed, 18 Oct 2026, the strong reader read three plates clearly that
 // named the customer and were not matched: "أيمن البدوى" for ايمن بدوي, "عبير محمد راوي" for عبير
 // الراوي, "إبراهيم عبد الله العفيفي" for إبراهيم عفيفي. So a plain word answers for the same word
