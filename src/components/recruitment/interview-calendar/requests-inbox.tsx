@@ -200,6 +200,7 @@ function RequestCard({
   onBooked,
   onCancelled,
   onOpenBooking,
+  readOnly = false,
   request,
   todayKey,
   zoomConnected,
@@ -210,6 +211,11 @@ function RequestCard({
   onBooked: (request: InterviewRequest, booking: InterviewBooking) => void;
   onCancelled: (requestId: string) => void;
   onOpenBooking: (bookingId: string) => void;
+  /**
+   * The Talent Acquisition seat reading the list: she sees the request, its CVs and opens them, and is
+   * offered nothing to change — no "Book time", no "Withdraw request" on someone else's request.
+   */
+  readOnly?: boolean;
   request: InterviewRequest;
   todayKey: string;
   zoomConnected: boolean;
@@ -230,7 +236,7 @@ function RequestCard({
 
   const waiting = request.pendingItemCount;
   const done = request.status !== "cancelled" && waiting === 0;
-  const canWithdraw = request.items.every((item) => !item.booked) && request.status !== "cancelled";
+  const canWithdraw = !readOnly && request.items.every((item) => !item.booked) && request.status !== "cancelled";
 
   async function withdraw() {
     setBusy(true);
@@ -331,7 +337,7 @@ function RequestCard({
                     Book time
                   </Action>
                 ) : (
-                  <span className="shrink-0 text-[11px] font-semibold text-orange-700">Waiting for HR</span>
+                  <span className="shrink-0 text-[11px] font-semibold text-orange-700">{readOnly ? "Waiting for a time" : "Waiting for HR"}</span>
                 )}
                 </span>
               </li>
@@ -435,6 +441,7 @@ function useRequests(api: CalendarApi, path: string, enabled: boolean, reloadSig
 export function InterviewRequestPanels({
   api,
   canBook,
+  canReadInbox = false,
   canRequest,
   onBookingCreated,
   onOpenBooking,
@@ -444,6 +451,8 @@ export function InterviewRequestPanels({
 }: {
   api: CalendarApi;
   canBook: boolean;
+  /** Reads the waiting list without booking from it (the Talent Acquisition seat) — cards are read-only. */
+  canReadInbox?: boolean;
   canRequest: boolean;
   /** A booking HR just made from a request — the grid adds it. */
   onBookingCreated: (booking: InterviewBooking) => void;
@@ -453,7 +462,8 @@ export function InterviewRequestPanels({
   todayKey: string;
   zoomConnected: boolean;
 }) {
-  const inbox = useRequests(api, "/requests", canBook, reloadSignal);
+  const showInbox = canBook || canReadInbox;
+  const inbox = useRequests(api, "/requests", showInbox, reloadSignal);
   const mine = useRequests(api, "/requests?mine=1", canRequest, reloadSignal);
 
   const onBooked = useCallback(
@@ -481,7 +491,7 @@ export function InterviewRequestPanels({
 
   return (
     <>
-      {canBook ? (
+      {showInbox ? (
         <section className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
           <div className="flex items-center justify-between gap-2 border-b-2 border-b-orange-600 px-4 py-2.5">
             <p className="inline-flex items-center gap-2 text-[14px] font-bold text-slate-900">
@@ -511,6 +521,7 @@ export function InterviewRequestPanels({
                     onBooked={onBooked}
                     onCancelled={inbox.remove}
                     onOpenBooking={onOpenBooking}
+                    readOnly={!canBook}
                     request={request}
                     todayKey={todayKey}
                     zoomConnected={zoomConnected}
@@ -532,6 +543,7 @@ export function InterviewRequestPanels({
                       onBooked={onBooked}
                       onCancelled={inbox.remove}
                       onOpenBooking={onOpenBooking}
+                      readOnly={!canBook}
                       request={request}
                       todayKey={todayKey}
                       zoomConnected={zoomConnected}

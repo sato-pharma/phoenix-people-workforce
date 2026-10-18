@@ -182,6 +182,7 @@ type CellContent = {
 
 export function InterviewCalendarView({
   abilities,
+  canReadRequests,
   canRequest,
   initialOpen,
   initialWeek,
@@ -193,6 +194,8 @@ export function InterviewCalendarView({
   zoomConnected,
 }: {
   abilities?: InterviewCalendarAbilities;
+  /** May this viewer READ the requests waiting for a time without booking them (the Talent Acquisition seat). Server-decided. */
+  canReadRequests?: boolean;
   /** May this viewer ask for an interview (a District Manager and above, or HR). Server-decided. */
   canRequest?: boolean;
   initialOpen: string | null;
@@ -220,6 +223,8 @@ export function InterviewCalendarView({
   // A requester sees the Request button and their own requests; the server is the authority, so a
   // link view (no seat) never requests. Falls back to the requester seat role when no flag is passed.
   const mayRequest = !link && (canRequest ?? role === "requester");
+  // Reading the waiting list is a seat the server names, never a link holder's.
+  const mayReadRequests = !link && canReadRequests === true;
   const canSearch = abilities?.canSearchCandidates === true;
   const canAdd = abilities?.canAddToRecruitment === true;
 
@@ -619,10 +624,11 @@ export function InterviewCalendarView({
 
       {link ? null : <OutcomePromptPanel api={api} onOpenBooking={openInterview} reloadSignal={bookingChanged} />}
 
-      {mayRequest || canBook ? (
+      {mayRequest || canBook || mayReadRequests ? (
         <InterviewRequestPanels
           api={api}
           canBook={canBook}
+          canReadInbox={mayReadRequests}
           canRequest={mayRequest}
           onBookingCreated={replaceBooking}
           onOpenBooking={openInterview}
