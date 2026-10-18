@@ -215,7 +215,7 @@ export function mapManagerHalfDayToPrivateCalendarItem(
   const recordedNowhereElse = plannedActivityIsRecordedNowhereElse(activityType);
   const detailLines = [`Activity: ${activityType}`, `Half day: ${halfDay.half}`];
   if (halfDay.kind === "single_visit" && halfDay.areaName) detailLines.push(`Where: ${halfDay.areaName}`);
-  if (halfDay.kind !== "admin") detailLines.push(`Customers planned: ${halfDay.customerCount}`);
+  if (halfDay.kind !== "admin" && halfDay.customerCount !== null) detailLines.push(`Customers planned: ${halfDay.customerCount}`);
   detailLines.push(`Week: ${halfDay.weekStart}`);
   if (names.approver) detailLines.push(`Approved by: ${names.approver}`);
   return {

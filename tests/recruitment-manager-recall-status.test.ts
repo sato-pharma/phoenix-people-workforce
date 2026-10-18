@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { statusChangeRefusal } from "../src/lib/recruitment/candidate-status.ts";
-import { returnReleasedCvToShortlist, type StatusWriteClient } from "../src/lib/recruitment/manager-recall-status.ts";
+import { returnReleasedCvToShortlist, returnSentCvToShortlist, type StatusWriteClient } from "../src/lib/recruitment/manager-recall-status.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -101,6 +101,24 @@ export async function runRecruitmentManagerRecallStatusTests(): Promise<void> {
   {
     const { client } = fakeClient({ updated: [{ id: "cand-1" }], eventError: { message: "boom" } });
     assert.equal(await returnReleasedCvToShortlist(client, INPUT), true, "a lost history line does not fail a completed return");
+  }
+
+  // The 45-day sweep makes the same write under an `ops:` actor: nobody on the CV, the actor on the event only.
+  {
+    const { client, log } = fakeClient({ updated: [{ id: "cand-1" }] });
+    const swept = await returnSentCvToShortlist(client, {
+      candidateId: "cand-1",
+      changedAt: INPUT.changedAt,
+      note: INPUT.note,
+      statusActorHrId: null,
+      eventActorHrId: "ops:manager-hold-45-days",
+      eventWriteFailed: { event: "manager_hold_return_event_write_failed", message: "history line not written" },
+    });
+    assert.equal(swept, true, "the sweep returns a CV still at sent_to_manager");
+    const update = log.find((entry) => entry.table === "ats_candidates")?.calls.find((call) => call.method === "update")?.args[0] as Record<string, unknown>;
+    assert.equal(update.status_changed_by_hr_id, null, "a sweep stamps no person on the candidate");
+    const insert = log.find((entry) => entry.table === "ats_candidate_status_events")?.calls.find((call) => call.method === "insert")?.args[0] as Record<string, unknown>;
+    assert.equal(insert.actor_hr_id, "ops:manager-hold-45-days", "…and the batch actor on the history line, so reports never count it as a decision");
   }
 
   // ── 2 · The guard is UNCHANGED — it is the recall that stopped going through it ────────────────

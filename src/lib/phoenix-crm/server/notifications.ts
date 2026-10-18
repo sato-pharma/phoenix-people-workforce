@@ -79,7 +79,7 @@ import { dropReasonLabel } from "@/lib/phoenix-crm/entry-rules";
 import { LOCATION_NOT_CONFIRMED_TEXT, LOCATION_NOT_CONFIRMED_TITLE } from "@/lib/phoenix-crm/google-place-rules";
 import { managerPlannerTitle, type ManagerPlannerKind } from "@/lib/phoenix-crm/manager-plan-rules";
 import { PHOENIX_CRM_ADMINISTRATOR_HR_ID, planEditStatusLabel, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
-import { seatIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
+import { seatHasLiveTeamBelow, seatIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
 import { phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
 import { loadLiveTeamSeatIds } from "@/lib/phoenix-crm/server/live-teams";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
@@ -1987,7 +1987,7 @@ async function noticeIsForALiveTeam(notice: PhoenixCrmNotice, live: ReadonlySet<
   if (!seat) return true;
   if (seat.tier !== "RSM" && seat.tier !== "NSM") return seatIsInLiveTeam(seat, live);
   const org = await loadPhoenixCrmOrg();
-  return [...live].some((liveSeatId) => liveSeatId !== seat.seatId && (org.seats.get(liveSeatId)?.path.includes(seat.seatId) ?? false));
+  return seatHasLiveTeamBelow(org.seats, seat.seatId, live);
 }
 
 export async function notifyPhoenixCrm(notice: PhoenixCrmNotice, isTest: boolean): Promise<void> {

@@ -36,6 +36,21 @@ export function seatIsInLiveTeam(
   return live.has(seat.seatId) || (seat.parentSeatId ? live.has(seat.parentSeatId) : false);
 }
 
+/**
+ * Whether any live team sits BELOW this seat — the rule that moves a regional or national sales manager's
+ * week into Phoenix CRM, and the one the notice gate must follow. A team's own seat never counts for itself.
+ */
+export function seatHasLiveTeamBelow(
+  seats: ReadonlyMap<string, { path: ReadonlyArray<string> }>,
+  seatId: string,
+  live: ReadonlySet<string>,
+): boolean {
+  for (const liveSeatId of live) {
+    if (liveSeatId !== seatId && seats.get(liveSeatId)?.path.includes(seatId)) return true;
+  }
+  return false;
+}
+
 /** Same question by seat id, through the organogram. */
 export function seatIdIsInLiveTeam(
   seats: ReadonlyMap<string, { seatId: string; parentSeatId?: string | null }>,

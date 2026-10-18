@@ -171,7 +171,7 @@ export async function runInterviewRoleAndOutcomeTests() {
     /interviewAwaitsOutcome\(booking\) && booking\.canSetOutcome/,
     "and it returns only the interviews this caller may record an outcome on",
   );
-  assert.match(domain, /OUTCOME_PROMPT_LOOKBACK_DAYS = 14/, "it reaches back two weeks only: an older unanswered interview leaves the panel (owner, 2026-10-17)");
+  assert.match(domain, /OUTCOME_PROMPT_LOOKBACK_DAYS = INTERVIEW_OUTCOME_WINDOW_DAYS/, "it reaches back two weeks only: an older unanswered interview leaves the panel (owner, 2026-10-17)");
   assert.match(domain, /OUTCOME_PROMPT_LIMIT = 25/, "and never puts an unreadable list in front of anybody");
 
   // ── 4 · The screens ask ───────────────────────────────────────────────────────────────────────

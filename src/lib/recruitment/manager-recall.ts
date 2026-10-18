@@ -77,15 +77,16 @@ export async function recallCandidateFromManager(
   if (!held && !stampNamesHim) throw new Error("That manager does not hold this CV.");
 
   const managerName = managerLabel(held?.managerName ?? candidate.managerNotified?.name ?? null);
+  const remaining = sends.filter((send) => !hrIdsMatch(send.managerHrId, input.managerHrId));
+  const returnsStatus = remaining.length === 0 && normalizeCandidateStatus(candidate.status) === "sent_to_manager";
   // Refused BEFORE the send is deleted: a recall that fails after its first write is the half-done
-  // state this function must never leave behind.
+  // state this function must never leave behind. Only checked when the note is going to be written.
   const note = input.statusNote ? input.statusNote(managerName) : `Taken back from ${managerName}.`;
-  if (note.length > CANDIDATE_STATUS_NOTE_MAX_LENGTH) {
+  if (returnsStatus && note.length > CANDIDATE_STATUS_NOTE_MAX_LENGTH) {
     throw new Error(`Keep the note under ${CANDIDATE_STATUS_NOTE_MAX_LENGTH} characters.`);
   }
   if (held) await deleteManagerSend(candidate.id, input.managerHrId);
 
-  const remaining = sends.filter((send) => !hrIdsMatch(send.managerHrId, input.managerHrId));
   const newest = [...remaining].sort((left, right) => Date.parse(right.sentAt) - Date.parse(left.sentAt))[0] ?? null;
   if (stampNamesHim || remaining.length === 0) {
     const { error } = await recruitmentDb()
@@ -96,7 +97,7 @@ export async function recallCandidateFromManager(
   }
 
   let statusReturned = false;
-  if (remaining.length === 0 && normalizeCandidateStatus(candidate.status) === "sent_to_manager") {
+  if (returnsStatus) {
     // Written straight to the table, NOT through updateCandidateStatus: that function is a person's
     // click and refuses `sent_to_manager → shortlisted` on purpose (statusChangeRefusal) to protect a
     // CV a manager still holds. His send was deleted above, so nobody does. Going through it threw

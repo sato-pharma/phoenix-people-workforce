@@ -813,7 +813,9 @@ export function managerOutcome(input: { kind: ManagerSlotKind; date: string; don
  * 🔴 A REP'S VISIT THAT ANSWERS A MANAGER'S "WITH A REP" HALF-DAY. A district, regional or national sales
  * manager: the double or chain visit naming him (`countsAsManagersDoubleVisit`, unchanged). A product
  * manager (owner, 2026-10-17): the rep's visit naming him as its product manager — the slot the visit form
- * already has for him (`product_manager_hr_id`), never a double visit of anyone else.
+ * already has for him (`product_manager_hr_id`), never a double visit of anyone else. Only the two kinds
+ * that can carry him count — a product manager visit and a chain visit (`entry-rules.ts` writes the slot
+ * for no other) — as the district manager's rule asks `double` or `chain` of its own slot.
  */
 export function countsAsPlannersVisitWithRep(
   visit: { kind: unknown; managerHrId: unknown; seniorHrId: unknown; productManagerHrId?: unknown },
@@ -822,6 +824,7 @@ export function countsAsPlannersVisitWithRep(
   if (countsAsManagersDoubleVisit(visit, plannerHrId)) return true;
   const planner = personKey(plannerHrId);
   if (!planner || typeof visit.productManagerHrId !== "string") return false;
+  if (visit.kind !== "product_manager" && visit.kind !== "chain") return false;
   return personKey(visit.productManagerHrId) === planner;
 }
 

@@ -25,6 +25,7 @@ import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { listInterviewsToRemindAbout, type ReminderInterview } from "@/lib/recruitment/interview-calendar";
 import { interviewCalendarHref, isDistrictManagerOrAbove } from "@/lib/recruitment/interview-calendar-types";
+import { INTERVIEW_OUTCOME_WINDOW_DAYS } from "@/lib/recruitment/interview-outcome-window";
 import {
   addDays,
   cairoDateKey,
@@ -47,7 +48,7 @@ const SEARCH_AHEAD_DAYS = 4;
  * Recording any outcome removes the interview from the reminder source, so the pump stops at once; this
  * bound only keeps a truly-abandoned interview from nagging forever.
  */
-export const AWAITING_PUMP_MAX_DAYS = 14;
+export const AWAITING_PUMP_MAX_DAYS = INTERVIEW_OUTCOME_WINDOW_DAYS;
 /** Not before this hour (Cairo) does the daily "record what happened" nag go out. */
 export const AWAITING_PUMP_MINUTES = 9 * 60;
 

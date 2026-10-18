@@ -54,6 +54,7 @@ import {
 } from "../src/lib/phoenix-crm/old-crm-plan-rules.ts";
 import { buildOrgIndex, heldManagerSeats, ownTerritories, personKey, territoriesInScope, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 import type { PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
+import { accessRegistry } from "../src/lib/security/access-registry.ts";
 import { askSteps } from "../src/lib/phoenix-crm/server/manager-plan-hub.ts";
 import { managerQueuePlace } from "../src/lib/phoenix-crm/server/manager-plan-queue.ts";
 import {
@@ -943,6 +944,13 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   const approversFor = functionBody(writers, "export async function managerApproversFor(");
   assert.match(approversFor, /if \(writer\.kind === "dm" && writer\.seat\) \{\s*const approvers = managerPlanApprovers\(org, writer\.seat\.seatId\);/, "a district manager keeps his seat chain");
   assert.match(approversFor, /return legacyStyleApprovers\(\{ plannerHrId: writer\.hrId, managerHrId: await managerOfRecord\(writer\.hrId\), ceoHrId: ceoHrIdOf\(org\) \}\);/, "everyone else goes where the legacy plan goes");
+  assert.match(
+    functionBody(writers, "async function managerOfRecord("),
+    /const present = rows\.length > 0 && !rows\.some\(/,
+    "a manager of record who has left, or who has no employees row at all, is skipped and the week goes on to the CEO",
+  );
+  assert.match(functionBody(writers, "async function readProductManagerRoster("), /byPerson\.get\(hrId\)/, "two spellings of one product manager's id plan once");
+  assert.match(writers, /Date\.now\(\) - lastGood\.readAt <= LAST_GOOD_ROSTER_MAX_AGE_MS \? lastGood\.roster : \[\]/, "the last good roster stands in for a short failure only, never for ever");
   for (const [name, text] of [
     ["the week", functionBody(plans, "export async function transitionManagerPlan(")],
     ["the edit ask", functionBody(plans, "export async function raiseManagerPlanEdit(")],
@@ -1015,8 +1023,13 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(weekHere, /if \(writer\.kind === "pm"\) return true;\s*return dmPlansInPhoenixCrm\(/, "a product manager's board always opens; everyone else's with the switch");
   assert.match(
     functionBody(switchSource, "async function seniorPlansInPhoenixCrm("),
-    /liveSeatId !== seat\.seatId && \(org\.seats\.get\(liveSeatId\)\?\.path\.includes\(seat\.seatId\) \?\? false\)/,
+    /seats\.some\(\(seat\) => seatHasLiveTeamBelow\(org\.seats, seat\.seatId, live\)\)/,
     "a live team below the seat switches it",
+  );
+  assert.match(
+    source("src/lib/phoenix-crm/live-team-rules.ts"),
+    /liveSeatId !== seatId && seats\.get\(liveSeatId\)\?\.path\.includes\(seatId\)/,
+    "…through the one shared rule: a team BELOW the seat, never the seat's own",
   );
 
   // Attendance: a switched regional or national manager is judged by the Office half-days of the new
@@ -1028,7 +1041,9 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.equal(managerHalfLegacyType("admin", "office"), "Office", "every calendar reads an Office half-day as the legacy Office");
 
   // The report: a product manager stands with a rep in the visit's own product manager slot.
-  assert.equal(countsAsPlannersVisitWithRep({ kind: "single", managerHrId: null, seniorHrId: null, productManagerHrId: "b-155" }, "B-155"), true, "the rep's visit naming the product manager counts for him");
+  assert.equal(countsAsPlannersVisitWithRep({ kind: "product_manager", managerHrId: null, seniorHrId: null, productManagerHrId: "b-155" }, "B-155"), true, "the rep's visit naming the product manager counts for him");
+  assert.equal(countsAsPlannersVisitWithRep({ kind: "chain", managerHrId: "PD-0001", seniorHrId: null, productManagerHrId: "b-155" }, "B-155"), true, "and so does a chain visit that names him");
+  assert.equal(countsAsPlannersVisitWithRep({ kind: "single", managerHrId: null, seniorHrId: null, productManagerHrId: "b-155" }, "B-155"), false, "a visit of a kind that cannot carry a product manager does not count for him");
   assert.equal(countsAsPlannersVisitWithRep({ kind: "single", managerHrId: "B-155", seniorHrId: null, productManagerHrId: null }, "B-155"), false, "a single visit in the manager slot is still no double visit");
   assert.equal(countsAsPlannersVisitWithRep({ kind: "double", managerHrId: "PD-0001", seniorHrId: null, productManagerHrId: null }, "PD-0001"), true);
   assert.match(source("src/lib/phoenix-crm/server/manager-plan-report.ts"), /readBy\("product_manager_hr_id", part\),/, "the report reads that slot");
@@ -1049,6 +1064,59 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   const registry = source("src/lib/security/access-registry.ts").split("\n").filter((line) => line.includes('pattern: "/api/phoenix-crm/manager-plans'));
   assert.equal(registry.length, 17, "seventeen declarations across the fourteen routes");
   for (const line of registry) assert.ok(line.includes('permission: { resource: "phoenix_crm", action: "read" }'), `declared on read: ${line.trim().slice(0, 120)}`);
+
+  // 🔴 `read` at the door makes the SERVICE the gate: a Medical Rep holds `read` too. So each of the ten
+  // mutating POSTs names the function it ends in, and that function holds the writer check or the stored
+  // approver's. A new manager-plan POST with no row here fails — it cannot copy the `read` door without
+  // declaring the gate behind it (the registry's own permission audit cannot tell the two apart).
+  const writerGate = /assertManagerPlanWriter\(viewer\)/;
+  const plansFile = "src/lib/phoenix-crm/server/manager-plans.ts";
+  const customersFile = "src/lib/phoenix-crm/server/manager-customers.ts";
+  // One function serves the send AND the decision, so each of those rows is held to ITS OWN branch, and
+  // the check must stand before that branch's write — not merely somewhere in the function.
+  const gates: Array<{ route: string; service: string; file: string; gate: RegExp[]; branch?: [string, string] }> = [
+    { route: "/api/phoenix-crm/manager-plans", service: "saveManagerPlanSlot", file: plansFile, gate: [writerGate] },
+    {
+      route: "/api/phoenix-crm/manager-plans/submit",
+      service: "transitionManagerPlan",
+      file: plansFile,
+      gate: [writerGate],
+      branch: ['if (action === "submit") {', "callPhoenixCrm"],
+    },
+    {
+      route: "/api/phoenix-crm/manager-plans/decide",
+      service: "transitionManagerPlan",
+      file: plansFile,
+      gate: [/managerPlanDeciderRole\(viewer/],
+      branch: ["const hasSecond", "callPhoenixCrm"],
+    },
+    { route: "/api/phoenix-crm/manager-plans/edit-requests", service: "raiseManagerPlanEdit", file: plansFile, gate: [writerGate] },
+    { route: "/api/phoenix-crm/manager-plans/edit-requests/decide", service: "decideManagerPlanEdit", file: plansFile, gate: [/managerAskDeciderRole\(viewer/] },
+    { route: "/api/phoenix-crm/manager-plans/customers", service: "addManagerCustomer", file: customersFile, gate: [writerGate] },
+    { route: "/api/phoenix-crm/manager-plans/customers/match", service: "matchManagerCustomer", file: customersFile, gate: [writerGate] },
+    { route: "/api/phoenix-crm/manager-plans/customers/locate", service: "locateManagerCustomer", file: customersFile, gate: [writerGate] },
+    { route: "/api/phoenix-crm/manager-plans/customers/removal", service: "requestManagerCustomerRemoval", file: customersFile, gate: [writerGate] },
+    { route: "/api/phoenix-crm/manager-plans/customers/removal/decide", service: "decideManagerCustomerRemoval", file: customersFile, gate: [/managerAskDeciderRole\(viewer/] },
+    { route: "/api/phoenix-crm/manager-plans/visits", service: "logManagerVisit", file: "src/lib/phoenix-crm/server/manager-visits.ts", gate: [writerGate] },
+  ];
+  const registeredPosts = accessRegistry
+    .filter((entry) => entry.pattern.startsWith("/api/phoenix-crm/manager-plans") && entry.methods.includes("POST"))
+    .map((entry) => entry.pattern)
+    .sort();
+  assert.deepEqual(registeredPosts, gates.map((row) => row.route).sort(), "every manager-plan POST declares the service gate behind its read door");
+  for (const { route, service, file, gate, branch } of gates) {
+    assert.ok(source(`app${route}/route.ts`).includes(`await ${service}(viewer`), `POST ${route} ends in ${service}`);
+    const whole = functionBody(source(file), `export async function ${service}(`);
+    let body = whole;
+    if (branch) {
+      const start = whole.indexOf(branch[0]);
+      assert.ok(start >= 0, `${service} (POST ${route}) still opens its branch with ${branch[0]}`);
+      const end = whole.indexOf(branch[1], start + branch[0].length);
+      assert.ok(end > start, `${service} (POST ${route}) still writes through ${branch[1]} inside that branch`);
+      body = whole.slice(start, end);
+    }
+    for (const check of gate) assert.match(body, check, `${service} (POST ${route}) holds its writer or approver check before its write`);
+  }
 
   // The board: the scope picker, the half-day override, and the HR line on a non-district manager's send.
   assert.match(board, /function ScopePicker\(/, "the board picks the district manager first");

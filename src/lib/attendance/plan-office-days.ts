@@ -100,6 +100,9 @@ export async function getPlanOfficeDayMap(input: {
     managerHrIds: normalizedHrIds,
     statuses: ["approved"],
     isTest: false,
+    // Only the Office halves of a regional or national manager's week are read, never a customer.
+    plannerKinds: ["rsm", "nsm"],
+    customerCounts: false,
   }).catch((crmError: unknown) => {
     logWarning("Plan office-day lookup could not read the Phoenix CRM manager weeks", {
       labels: { event: "plan_office_days_crm_manager_read_failed" },

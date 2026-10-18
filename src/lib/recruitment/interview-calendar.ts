@@ -111,6 +111,7 @@ import {
   weekInstantRange,
   weekStartFor,
 } from "@/lib/recruitment/interview-calendar-week";
+import { INTERVIEW_OUTCOME_WINDOW_DAYS } from "@/lib/recruitment/interview-outcome-window";
 import { canOpenWhatsAppApplications } from "@/lib/recruitment/whatsapp-application-access";
 import { findWhatsAppApplicationSessionId } from "@/lib/recruitment/whatsapp-applicants-loader";
 import {
@@ -1057,9 +1058,10 @@ export async function listInterviewCalendarDay(
  * Fourteen days (owner, 2026-10-17: "age old unanswered interviews off the panel after 14 days"): the
  * point is to catch the round being worked on now, and a list that reaches back further is a list
  * nobody reads. An older one is not lost — it keeps its amber flag on its own week, and the automatic
- * settling (interview-outcome-settle.ts) still answers it, across all time, if a decision arrives.
+ * settling (interview-outcome-settle.ts) still answers it when a hire or an offer arrives, however late; a
+ * shortlist, back-up or rejection counts only inside its own 14 days.
  */
-export const OUTCOME_PROMPT_LOOKBACK_DAYS = 14;
+export const OUTCOME_PROMPT_LOOKBACK_DAYS = INTERVIEW_OUTCOME_WINDOW_DAYS;
 /** At most this many are put in front of someone at once; the rest wait their turn. */
 export const OUTCOME_PROMPT_LIMIT = 25;
 

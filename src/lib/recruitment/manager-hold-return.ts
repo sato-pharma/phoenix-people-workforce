@@ -43,6 +43,7 @@ import { recruitmentDb } from "@/lib/recruitment/db";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { folderHolderKeys, loadDistrictSeatRows } from "@/lib/recruitment/folder-holders";
 import { isWithinManagerHold, MANAGER_HOLD_DAYS, managerHoldDaysHeld } from "@/lib/recruitment/manager-hold-window";
+import { RECALL_RETURN_STATUS, returnSentCvToShortlist } from "@/lib/recruitment/manager-recall-status";
 import { MANAGER_SENDS_TABLE } from "@/lib/recruitment/manager-sends";
 import { managerLabel } from "@/lib/recruitment/person-labels";
 import {
@@ -63,7 +64,7 @@ export const MANAGER_HOLD_RETURN_ACTOR = "ops:manager-hold-45-days";
  * the CV out of "nobody has looked at this" — see sendCandidatesToManager), so returning it to the
  * unreviewed pile would put 45-day-old, already-screened CVs in front of the triage backlog alarm.
  */
-export const MANAGER_HOLD_RETURN_STATUS = "shortlisted";
+export const MANAGER_HOLD_RETURN_STATUS = RECALL_RETURN_STATUS;
 
 /** One manager's hold on one CV, as the rule reads it. */
 export type HeldSendRecord = {
@@ -314,45 +315,22 @@ export function assembleSentCandidates(
  *
  * Written straight to the table and NOT through updateCandidateStatus: that function exists for a
  * person's click and refuses `sent_to_manager → shortlisted` on purpose (statusChangeRefusal) — the
- * refusal protects a CV a manager still holds, and this is the case where he no longer does.
+ * refusal protects a CV a manager still holds, and this is the case where he no longer does. The write
+ * is the one a person's recall uses (manager-recall-status.ts); only the actor differs.
  */
 async function returnOne(expired: ExpiredHold, now: Date): Promise<boolean> {
-  const supabase = recruitmentDb();
-  const changedAt = now.toISOString();
-  const note = buildHoldReturnNote(expired);
-
-  const { data, error } = await supabase
-    .from("ats_candidates")
-    .update({
-      status: MANAGER_HOLD_RETURN_STATUS,
-      status_changed_at: changedAt,
-      // NULL, exactly like every other sweep: the `ops:` marker lives on the event row, never here.
-      status_changed_by_hr_id: null,
-      status_note: note,
-      updated_at: changedAt,
-    })
-    .eq("id", expired.candidateId)
-    .eq("status", "sent_to_manager")
-    .select("id");
-  if (error) throw error;
-  if ((data ?? []).length === 0) return false;
-
-  const event = await supabase.from("ats_candidate_status_events").insert({
-    actor_hr_id: MANAGER_HOLD_RETURN_ACTOR,
-    candidate_id: expired.candidateId,
-    from_status: "sent_to_manager",
-    note,
-    to_status: MANAGER_HOLD_RETURN_STATUS,
+  return returnSentCvToShortlist(recruitmentDb(), {
+    candidateId: expired.candidateId,
+    changedAt: now.toISOString(),
+    note: buildHoldReturnNote(expired),
+    // NULL, exactly like every other sweep: the `ops:` marker lives on the event row, never here.
+    statusActorHrId: null,
+    eventActorHrId: MANAGER_HOLD_RETURN_ACTOR,
+    eventWriteFailed: {
+      event: "manager_hold_return_event_write_failed",
+      message: "A CV came back from its managers but the history line could not be written",
+    },
   });
-  // Best effort, like recordCandidateStatusEvent: the status has already changed, and reporting a
-  // successful return as a failure would only invite a second run to look for it again.
-  if (event.error) {
-    logError("A CV came back from its managers but the history line could not be written", {
-      error: event.error,
-      labels: { candidate_id: expired.candidateId, event: "manager_hold_return_event_write_failed" },
-    });
-  }
-  return true;
 }
 
 export type ManagerHoldReturnResult = {

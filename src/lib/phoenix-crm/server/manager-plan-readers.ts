@@ -99,20 +99,22 @@ export type ManagerPlanHalfDay = {
   activityLabel: string | null;
   areaName: string | null;
   note: string | null;
-  customerCount: number;
+  /** Null when the caller asked for no customer counts (`customerCounts: false`) — never a zero it did not read. */
+  customerCount: number | null;
   legacyType: LegacyPlanActivityType;
   decidedByHrId: string | null;
   firstApproverHrId: string | null;
   isTest: boolean;
 };
 
-/** These managers' plans whose week touches [from, to]. Real world unless asked otherwise. */
+/** These managers' plans whose week touches [from, to], of these planner kinds if named. Real world unless asked otherwise. */
 export async function loadManagerPlansInRange(input: {
   from: string;
   to: string;
   managerHrIds?: ReadonlyArray<string> | null;
   statuses?: ReadonlyArray<ManagerPlanStatus>;
   isTest?: boolean;
+  plannerKinds?: ReadonlyArray<ManagerPlannerKind>;
 }): Promise<ManagerPlanRow[]> {
   const isTest = input.isTest ?? false;
   const read = (part: string[] | null) =>
@@ -127,6 +129,7 @@ export async function loadManagerPlansInRange(input: {
           .eq("is_test", isTest);
         if (part) query = query.in("manager_hr_id", part);
         if (input.statuses && input.statuses.length > 0) query = query.in("status", [...input.statuses]);
+        if (input.plannerKinds && input.plannerKinds.length > 0) query = query.in("planner_kind", [...input.plannerKinds]);
         return query;
       },
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
@@ -144,6 +147,8 @@ export async function loadManagerPlansInRange(input: {
 /**
  * The half-days of these managers' weeks inside [from, to], each carrying its plan's status. Only weeks
  * gone for review or approved unless `sentOnly` is false — a draft is an intention nobody was asked about.
+ * `plannerKinds` reads only those planners' weeks, and `customerCounts: false` skips reading the customers
+ * of every slot (each `customerCount` is then null) — for a screen that needs the half-days alone.
  */
 export async function loadManagerPlanHalfDays(input: {
   from: string;
@@ -152,13 +157,16 @@ export async function loadManagerPlanHalfDays(input: {
   statuses?: ReadonlyArray<ManagerPlanStatus>;
   sentOnly?: boolean;
   isTest?: boolean;
+  plannerKinds?: ReadonlyArray<ManagerPlannerKind>;
+  customerCounts?: boolean;
 }): Promise<ManagerPlanHalfDay[]> {
   if (input.managerHrIds && input.managerHrIds.length === 0) return [];
+  if (input.plannerKinds && input.plannerKinds.length === 0) return [];
   const plans = (await loadManagerPlansInRange(input)).filter((plan) => input.sentOnly === false || isManagerPlanSent(plan.status));
   if (plans.length === 0) return [];
   const planById = new Map(plans.map((plan) => [plan.planId, plan]));
   const slots = (await loadManagerSlotRows(plans.map((plan) => plan.planId))).filter((slot) => slot.date >= input.from && slot.date <= input.to);
-  const customers = await loadManagerSlotCustomers(slots.filter((slot) => slot.kind !== "admin").map((slot) => slot.slotId));
+  const customers = input.customerCounts === false ? [] : await loadManagerSlotCustomers(slots.filter((slot) => slot.kind !== "admin").map((slot) => slot.slotId));
   const countBySlot = new Map<string, number>();
   for (const row of customers) countBySlot.set(row.slotId, (countBySlot.get(row.slotId) ?? 0) + 1);
   const out: ManagerPlanHalfDay[] = [];
@@ -182,7 +190,7 @@ export async function loadManagerPlanHalfDays(input: {
       activityLabel: slot.kind === "admin" ? (managerAdminActivityLabel(slot.activityType) ?? "Admin") : null,
       areaName: slot.areaName,
       note: slot.note,
-      customerCount: countBySlot.get(slot.slotId) ?? 0,
+      customerCount: input.customerCounts === false ? null : (countBySlot.get(slot.slotId) ?? 0),
       legacyType: managerHalfLegacyType(slot.kind, slot.activityType),
       decidedByHrId: plan.decidedByHrId ?? plan.firstDecidedByHrId,
       firstApproverHrId: plan.firstApproverHrId,
