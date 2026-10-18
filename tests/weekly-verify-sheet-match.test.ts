@@ -9,7 +9,7 @@ import { weeklyVerifyAiBadge } from "../src/lib/sales/weekly/verify-ai-state.ts"
 import { stripComments } from "./support/comment-strip.ts";
 import { listCodeWeeklyContracts, weeklyContractByCode } from "../src/lib/sales/weekly/column-contract.ts";
 import { parseWeeklyWorkbookBuffer } from "../src/lib/sales/weekly/parser.ts";
-import { weeklySheetMatcher } from "../src/lib/sales/weekly/sheet-match.ts";
+import { matchWeeklySheet, weeklySheetMatcher } from "../src/lib/sales/weekly/sheet-match.ts";
 import { dbRowToContract } from "../src/lib/sales/weekly/weekly-column-profile-store.ts";
 
 // The pre-upload verification screen must pick exactly the sheets the import reads — and say MISSING
@@ -195,6 +195,55 @@ export async function runWeeklyVerifySheetMatchTests() {
     const result = await plan("IS", { file: buffer });
     assert.ok(result.warnings.some((text) => text.includes('reads this file\'s first sheet, "Report"')), "Ibn Sina: reading the first of several sheets is called out");
     assert.deepEqual(planSheets(result), await parserSheets("IS", { buffer }), "Ibn Sina (several sheets): the screen and the import agree");
+  }
+
+  // ── Ibn Sina re-saved from a fresh Excel workbook: data in "Sheet1" and BLANK "Sheet2" + "Sheet3". ──
+  // The IS rule looks for an exact "Sheet2" first, so it used to land on the empty one and the import
+  // answered "No data rows found in the weekly file" about a 679-row workbook (2026-10-18). A blank
+  // sheet never wins where the first-sheet fallback is allowed; the screen and the import must agree.
+  {
+    const wb = new ExcelJS.Workbook();
+    const data = wb.addWorksheet("Sheet1");
+    data.addRow(header({ 3: "Item Code", 4: "Item Name", 5: "Branch Code", 6: "Branch Name", 7: "Stock", 9: "Sales Quantity" }, 11));
+    data.addRow(["MARCYRL", "", 581363, "CONVIBAN 25MG 30 TAB", 74, "Mostord Branch", 15, 403, 4, 0, 117]);
+    wb.addWorksheet("Sheet2");
+    wb.addWorksheet("Sheet3");
+    const buffer = await wb.xlsx.writeBuffer();
+    const result = await plan("IS", { file: buffer });
+    assert.deepEqual(result.files.map((file) => file.sheetName), ["Sheet1"], "Ibn Sina with blank Sheet2/Sheet3: the screen reads the data sheet");
+    assert.deepEqual(await parserSheets("IS", { buffer }), ["Sheet1"], "Ibn Sina with blank Sheet2/Sheet3: the import reads the data sheet, not the empty Sheet2");
+    assert.deepEqual(planSheets(result), await parserSheets("IS", { buffer }), "Ibn Sina with blank Sheet2/Sheet3: the screen and the import agree");
+  }
+
+  // ── A blank FIRST sheet in front of the data: the fallback steps past it too. ──
+  {
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet("Cover");
+    const data = wb.addWorksheet("Report");
+    data.addRow(header({ 3: "Item Code", 4: "Item Name", 5: "Branch Code", 6: "Branch Name", 7: "Stock", 9: "Sales Quantity" }, 11));
+    const buffer = await wb.xlsx.writeBuffer();
+    assert.deepEqual(await parserSheets("IS", { buffer }), ["Report"], "Ibn Sina: a blank first sheet is stepped past by the fallback");
+  }
+
+  // ── Where there is NO first-sheet fallback a blank named sheet is still that sheet. ──
+  // An EGD "Branch Sales Return" with no returns is legitimate; skipping it would make it "missing".
+  {
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet("Branch Sales Return");
+    const matcher = weeklySheetMatcher("EG", "returns")!;
+    assert.equal(matcher.firstSheetFallback, false, "EGD returns: no first-sheet fallback");
+    const match = matchWeeklySheet(wb, matcher);
+    assert.equal(match?.matchedBy, "name", "EGD returns: an empty, exactly named sheet is still matched by name");
+  }
+
+  // ── A workbook with no data anywhere still resolves to its first sheet, so it reads as an empty file. ──
+  {
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet("Sheet1");
+    wb.addWorksheet("Sheet2");
+    const match = matchWeeklySheet(wb, weeklySheetMatcher("IS", "combined")!);
+    assert.equal(match?.worksheet.name, "Sheet1", "Ibn Sina: an entirely blank workbook falls back to its first sheet");
+    assert.equal(match?.matchedBy, "first-sheet", "Ibn Sina: and says it did");
   }
 
   // ── Overseas: both files, both "Data". ──
