@@ -250,7 +250,11 @@ export async function suggestCustomerBricks(
 
     const aiSuggestions = await aiSuggest("customer", rest, candidates, referenceAliases.length ? referenceAliases : undefined);
     for (const s of aiSuggestions) answered.set(s.raw, { ...s, source: "ai" });
-    if (model) await storeAiAnswers(aiSuggestions.map((s) => ({ brickId: s.code, pharmacyKey: keyOf.get(s.raw) ?? "" })), model);
+    // Filed under the model that answers FIRST now, read after the call: if OpenAI ran out of credit
+    // during it, the planner has just learned that and names Claude, who answered the rest. (A call that
+    // straddles the failover files its earlier batches under Claude too — cached suggestions only.)
+    const answeredBy = aiSuggestModel() ?? model;
+    if (answeredBy) await storeAiAnswers(aiSuggestions.map((s) => ({ brickId: s.code, pharmacyKey: keyOf.get(s.raw) ?? "" })), answeredBy);
   }
 
   // Every customer code gets its pharmacy's answer.
