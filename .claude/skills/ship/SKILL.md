@@ -11,6 +11,15 @@ within minutes — no staged rollout, no no-traffic revision, no post-deploy smo
 between the merge and employees using it. This skill is the order that keeps that safe, and the
 proof that it landed.
 
+## Urgent — "live in five minutes"
+
+**Only when the owner's own message says "live in five minutes" about this PR.** Before step 1, run
+`node scripts/urgent-deploy.mjs launch <pr>` (add `--worker` if the fix runs in the worker's jobs) —
+it serves the PR in ~4-5 minutes without waiting for checks, and Telegram reports when it is live.
+Then carry on with this skill unchanged: merge as soon as the PR's checks are green — his words
+approve that merge — because until it merges only the urgent run's guard keeps the fix live. Never
+on any other words. Account: `docs/deployment.md`, "The urgent route".
+
 ## 0 · The gate, before anything
 
 - **Merging is one of the two protected actions** (AGENTS.md §6). Run this only when the owner's own
