@@ -176,6 +176,8 @@ const ROUTE_GATES: RouteGate[] = [
   // Refusing a validation the check never held — every PM customer, and the AM ones that matched
   // (2026-10-03). The same gate, the same decider, and the same reject underneath it.
   post("validation-reviews/refuse", "update"),
+  // Confirming a validation the system could not read (owner, 2026-10-17): the same gate and decider.
+  post("validation-reviews/approve", "update"),
   // Approving a place AFTER it was rejected (owner, 2026-10-03): the same gate and the same decider.
   post("validation-reviews/restore", "update"),
   // Deciding a POLYCLINIC or centre (owner, 2026-10-09: the administrator has the right to review the

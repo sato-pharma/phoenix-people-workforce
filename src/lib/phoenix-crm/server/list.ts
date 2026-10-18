@@ -102,10 +102,11 @@ import { googleMismatchMessage, mismatchIsHeld, type LocationCheckState } from "
 import { checkPlaceOnGoogle, googleCheckRecord, type GooglePlaceCheck } from "@/lib/phoenix-crm/server/google-place-check";
 import { filePlaceCaptureTrust, judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
 import { readPlaceSignboard, recordPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
+import { settleHeldSignboard } from "@/lib/phoenix-crm/server/signboard-holds";
 import {
   signboardApplies,
+  signboardDoorHolds,
   signboardHoldRecord,
-  signboardHoldsForReview,
   signboardNameIsUsable,
   signboardUnjudged,
   type PhoenixCrmSignboardCheck,
@@ -2158,6 +2159,8 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   let signboard: { check: PhoenixCrmSignboardCheck; record: Record<string, unknown> } | null = null;
   let schedule: PhoenixCrmScheduleCheck | null = null;
   let heldBecause: ScheduleHeldBecause | null = null;
+  // Held by the signboard ALONE — then the system re-reads it before the Super Admin is asked.
+  let heldBySignboard = false;
   if (seated && venue) {
     // Which photograph this seating is saved against: the one he just took, or the BUILDING's own
     // board, already on file (owner, 2026-10-10 — "ask him for only one timetable, not for every
@@ -2195,10 +2198,13 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     // The owner's third step, 2026-10-08: and does the signboard in the photo name this customer. A
     // confident negative rides the SAME `hold_review` the Google hold rides, so the already-atomic hold
     // path does all of it — the customer stays under To validate, one review row is raised, and the rep
-    // reads only that the system is checking. 🔴 `unjudged` NEVER holds: see signboardHoldsForReview.
+    // reads only that the system is checking. 🔴 Since 2026-10-17 EVERYTHING BUT A MATCH holds here
+    // (`signboardDoorHolds`) — an unreadable sign included — and `settleHeldSignboard` below re-reads it
+    // and approves it itself once the name is read; the Super Admin is asked only when it cannot be.
     signboard = await signboardCheckForSave(subject, place, { seatId: seat.seatId, repHrId: viewer.hrId, isTest }, payload.hold_review !== undefined);
-    if (signboard && payload.hold_review === undefined && signboardHoldsForReview(signboard.check)) {
+    if (signboard && payload.hold_review === undefined && signboardDoorHolds(signboard.check)) {
       payload.hold_review = signboard.record;
+      heldBySignboard = true;
     }
     payload.place = await (placeRowRead ?? placePayload(place, seat));
   }
@@ -2221,7 +2227,11 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     // braces against telling him "held" about a save that was not.
     heldBecause: result.held === true ? heldBecause : null,
   };
-  if (validated.held && !isTest) {
+  // A signboard hold is NOT his yet: the system re-reads it first (after the reply, below) and tells him
+  // only when every read is spent (`settleHeldSignboard`). Every other hold is his at once, as before.
+  const heldReviewId = text(result.review_id);
+  const signboardHold = validated.held && heldBySignboard && heldReviewId !== null;
+  if (validated.held && !isTest && !signboardHold) {
     await notifyValidationReviewWaiting({ customerName: validated.customerName, seat, repHrId: viewer.hrId, reviewId: text(result.review_id) });
   }
   // 🔴 THE RECORDS BELOW GO AFTER THE REPLY (2026-10-16 Phoenix CRM performance audit). Each one is
@@ -2266,6 +2276,27 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
       settings: viewer.config.settings,
       scope: "unplaced",
     });
+    // The held signboard's first re-read, straight after the door's own (owner, 2026-10-17: "Hold;
+    // re-read; else you decide"). LAST, because it can take most of a minute, and AFTER the door's
+    // verdict is recorded above, so the count it writes is 2.
+    if (signboardHold && heldReviewId && judgedPlace) {
+      const settled = await settleHeldSignboard(
+        {
+          customerId: validated.customerId,
+          customerName: subject?.name ?? validated.customerName,
+          isTest,
+          listType: subject?.listType ?? validated.listType,
+          photoPath: judgedPlace.photoPath,
+          placeId: validated.placeId,
+          readsSoFar: 1,
+          repHrId: viewer.hrId,
+          reviewId: heldReviewId,
+          seatId: seat.seatId,
+        },
+        { seat },
+      );
+      if (settled === "approved" && !isTest) await withdrawValidationNotConfirmed(validated.customerId);
+    }
   });
   if (validated.requestId && validated.requestKind) {
     await notifyRequestRaised(viewer, seat, isTest, {
@@ -2531,6 +2562,7 @@ export async function addPlace(
   let heldBecause: ScheduleHeldBecause | null = null;
   let matched: Row | null = null;
   let holdRecord: Row | null = null;
+  let heldBySignboard = false;
   if (seated && venue) {
     // Neither Google nor the signboard, for the reason `validateCustomer`'s seated branch records in
     // full: both are judged on the customer's name at HIS door, and this door is the building's.
@@ -2550,11 +2582,9 @@ export async function addPlace(
     // second identification, not a free pass on the strength of the first.
     const googleHolds = google !== null && google.check.verdict.kind !== "match";
     signboard = await signboardCheckForSave(subject, place, { seatId: seat.seatId, repHrId: viewer.hrId, isTest }, googleHolds);
-    holdRecord = googleHolds
-      ? (google as { record: Row }).record
-      : signboard && signboardHoldsForReview(signboard.check)
-        ? signboard.record
-        : null;
+    // Everything but a match holds at the door since 2026-10-17, and is re-read below (`validateCustomer`).
+    heldBySignboard = !googleHolds && signboard !== null && signboardDoorHolds(signboard.check);
+    holdRecord = googleHolds ? (google as { record: Row }).record : heldBySignboard && signboard ? signboard.record : null;
     if (google?.check.verdict.kind === "match") matched = google.record;
   }
   const result = await callPhoenixCrm<Row>("phoenix_crm_add_place", {
@@ -2575,7 +2605,10 @@ export async function addPlace(
     held: result.held === true,
     heldBecause: result.held === true ? heldBecause : null,
   };
-  if (added.held && !isTest) {
+  // A signboard hold is re-read before he is asked, exactly as in `validateCustomer`.
+  const heldReviewId = text(result.review_id);
+  const signboardHold = added.held && heldBySignboard && heldReviewId !== null;
+  if (added.held && !isTest && !signboardHold) {
     await notifyValidationReviewWaiting({ customerName: added.customerName, seat, repHrId: viewer.hrId, reviewId: text(result.review_id) });
   }
   // After the reply, for the reason `validateCustomer` gives: each of these is a record kept after the
@@ -2592,6 +2625,23 @@ export async function addPlace(
     }
     if (keptSignboard) await recordPlaceSignboard(added.placeId, keptSignboard.check);
     if (keptSchedule) await recordPlaceSchedule(added.placeId, keptSchedule);
+    if (signboardHold && heldReviewId && judgedPlace && subject) {
+      await settleHeldSignboard(
+        {
+          customerId: added.customerId,
+          customerName: subject.name,
+          isTest,
+          listType: subject.listType,
+          photoPath: judgedPlace.photoPath,
+          placeId: added.placeId,
+          readsSoFar: 1,
+          repHrId: viewer.hrId,
+          reviewId: heldReviewId,
+          seatId: seat.seatId,
+        },
+        { seat },
+      );
+    }
   });
   return added;
 }

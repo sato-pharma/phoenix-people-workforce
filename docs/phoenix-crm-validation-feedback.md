@@ -248,6 +248,53 @@ him to settle. The place axis is untouched — its quorum is `distinctiveWords`,
 and joining there would take the allowance off `مستشفى ابو كبير المركزي`. Pinned by
 `checkNameSpelling` in `tests/phoenix-crm-signboard-check.test.ts`, each half broken and seen to fail.
 
+**The ال of a family name (2026-10-18).** Re-reading the places the door had left unconfirmed, the
+strong reader read three plates CLEARLY in the first 153 that named the customer and were still not
+matched, because one side wrote the article and the other did not: `أيمن البدوى` for `ايمن بدوي`,
+`عبير محمد راوي` for `عبير الراوي`, `إبراهيم عبد الله العفيفي` for `إبراهيم عفيفي`. A plain word now
+answers for the same word with `ال` in front, either way round, on the PERSON axis only, and only
+where the word keeps three letters without it. 🔴 It applies to EVERY word of the name, the given name
+included, not to the family name alone: of the 1,217 places re-read, one matches on that alone,
+`الحسن زهران` against a plate reading `حسن زهران`, and in Arabic those are one name. A one-letter skeleton rule (the dots the reader most
+often misplaces) was scored on the same reads and REFUSED: of its three extra matches one was plainly
+another doctor — `محمد ابو العنيين` on a plate reading `مجدي أبو العينين`, the first name lost to a
+three-word name's allowance — and one, `النجار` against `البحار`, is two real surnames. Those near
+misses stay unmatched and go to the Super Admin's Approve on Not confirmed. Pinned by
+`checkNameSpelling` part 6, broken twice (the rule off; the three-letter floor lowered) and seen to fail
+on its own assertion each time.
+
+**His own name first (2026-10-18).** The same night's re-read wrote every confirmed match, so its
+confirmations were judged again from their own stored readings — no model call — against names that
+are NOT the customer's: 20 other customers of the same list, and near misses built from his own name
+(another given name before his father's and family name; his given name before another surname). Of
+341 confirmations, 106 also matched one. The bag of words had three blind spots. A three-word name may
+lose one word, and it could lose the GIVEN name: `وائل محمد بلحة` passed on a plate reading `احمد محمد
+بلحة`. His given name could stand as another man's father: `محمد الشحري` on `أحمد محمد الشحرى`. And
+the sign's whole text could lend his words from two different names: `مجدى عبد العزيز` was written as a
+match off a pharmacy notice naming `الدكتور مجدى` and, further down, `الدكتور / محمود عبدالعزيز`.
+
+`readsTheCustomersName` in `signboard-rules.ts` closes all three on the PERSON axis. A person name the
+reader split out must open on one of his words — the practice's kind (`مركز`, `عيادة`) and the lone
+letter `أ.د` leaves are skipped, nothing else, since `مي` is a given name — and the whole text must
+carry his words in his order as one run that opens on his given name, at most two other words between
+two of his. The quorum is unchanged. Requiring the given name outright was scored first and refused:
+it lost three plates whose given name was simply unreadable (`د / ... عبد النبي الخولي`), where the
+reader's split name still opens on his father's name.
+
+Replayed on the same 341: 335 stand, and those also matching a decoy fall from 106 to 71 (what is left
+is mostly a plate whose given name is unreadable — the allowance the quorum exists for — and AM place
+names). A confirmation the night wrote that no longer matches is put back exactly as it stood before
+the night, once this rule is live, for the Super Admin's Approve on Not confirmed. The six of the
+341: four plates read in part whose name opens on another given name
+(`مجاهد علي ضاهر` for `محمد على ضاهر`, `سينا ناجح زاخر` for `مينا ناجح زاخر`, `مرسى زاهر متري` for
+`برسيس زاهر متري`, `رجاب يحيى عبد الكريم` for `رباب يحيي عبد الكريم` — misread letters or a
+brother, which a look settles), the notice, and a hospital filed on the PM list. A slower "careful"
+read (high reasoning effort, every unclear sign enlarged and read again) was tried on 11 unresolved
+places the same night and confirmed none, at about three minutes each: the photographs are the limit,
+not how hard the reader looks. Pinned by `checkNameSpelling` part 7, broken four ways (the rule off,
+the text run off, the three-letter floor put back on his words, no lead word skipped) and seen to fail
+each time.
+
 - **The refusal reason** (`validation-feedback.ts`). Six closed reasons: no signboard in the photo;
   the sign is not this customer; too dark or blurred to read; not taken at the entrance; a photo of
   paper, not a building; the location is not where the photo was taken. The free note stays on the
@@ -263,6 +310,82 @@ and joining there would take the allowance off `مستشفى ابو كبير ا�
   reopened customers waiting to be captured again have their own section, and a row on Needs You.
 - **The brick lookup.** A place row records whether a brick was matched, none was nearby, or the
   lookup could not run — so "no brick" is never confused with "never looked".
+
+## The door reader and the held re-read (2026-10-17)
+
+The owner, looking at the photographs Place checks filed "Not readable": *"how come any unreadable
+should be not validated, should be wait until the system check and I manual approve or reject"* — and,
+of the places already validated, *"I can read them. So why you cannot?"* Asked in chat, he chose:
+new validations **hold, are re-read, and are his only when the system cannot read them**; a reading
+service that is down is retried and then held for him (*"try to reread, try to fix, try to fall back
+on other way. If you couldn't read them, then hold for manual review"*); the rep reads **"The system
+is checking this place"**, the wording a Google hold already shows; and he gets an **Approve** of his
+own on Not confirmed, one row or ticked rows.
+
+**Why the door could not read them.** Thirty production photographs a person reads at a glance, all
+filed `unreadable` at the door, were replayed through every reader on 2026-10-17:
+
+| Reader | Confirmed | Wrong name confirmed |
+| --- | --- | --- |
+| The door's reader that day (`gpt-5.4-nano`) | 1 of 30 | 0 |
+| `gpt-5.4-mini` at the door | 12 of 30 | 0 |
+| The strong model, blind | 14 of 30 | 0 |
+| Door + strong blind + guided read confirmed by a blind close look | **16 of 30** | **0** |
+| The guided read on its own (told the name) | 19 of 30 | **8** (on 40 near-miss decoys) |
+| An enhanced (sharpened, contrast-stretched) image | no gain | — |
+
+The guided read is the one that finds the most, and the one that cannot be trusted alone: handed a
+decoy name one letter away from the real one, it wrote the decoy back eight times, two AM hospitals
+among them. So its answer counts only when a BLIND close look at the spot it pointed to reads the name
+itself — and `signboardReadsCustomerName` asks that the name was READ, never merely that the frame is
+a `match`: the AM rule makes a frame whose clear signs name no place at all a match, and a close look
+that read only "صيدلية" would otherwise confirm whatever name the guided read was handed.
+
+**What was built.**
+
+- **The door** reads with `gpt-5.4-mini` (`PHOENIX_CRM_SIGNBOARD_DOOR_MODEL`), nano behind it, one look
+  inside the rep's 8 s. `signboardDoorHolds` holds everything but a match — an unreadable sign, a lost
+  call and a missing key included — except a place another check already holds (`held_elsewhere`, one
+  review row) and a name with nothing to compare (`name_unusable`, no reading can answer it). The
+  Super Admin is NOT told at the door: the system has not finished.
+- **The re-read** (`server/signboard-holds.ts`) runs straight after the rep's reply and then hourly,
+  riding the visit roll-up's fire: `rereadHeldPlaceSignboard` reads blind with the strong model (mini
+  behind it when a call fails), then guided with a blind spot check, inside a 45 s budget and a 20 s
+  cap per call — the fallback the owner asked for when the reading service is down. Four reads in all
+  (`SIGNBOARD_HELD_MAX_READS`), counted on the place's own `signboard_check.attempts`; a read the
+  reader never answered spends none (below). A confirmed match is **approved by the system** through the same
+  `phoenix_crm_decide_validation_review` approve his own button runs, as the actor `SYSTEM`, and the
+  board says "The system". Every read spent with nothing confirmed: the last unreadable read is kept as
+  `unreadable_final` and he is told then.
+- **Never:** the system never rejects; never touches a Google or a timetable hold (only
+  `google->>verdict = 'signboard'`); never a building — a venue is held on the same test but stays his
+  decision alone; and the night's signboard pass leaves every held place to the re-read.
+- **His Approve** (`approveValidatedPlace`, `/api/phoenix-crm/validation-reviews/approve`): the Super
+  Admin alone, an active place, a place already decided left as it is; otherwise the place's one review
+  row is raised or reused as `confirmed_by_admin` and approved. A district manager's board approves
+  nothing. Needs you shows "The system is still reading this sign" while reads are left.
+
+Pinned by `tests/phoenix-crm-held-signboard.test.ts` and `tests/phoenix-crm-signboard-check.test.ts`.
+
+### A reader that never answered read nothing (2026-10-18)
+
+Re-reading the 1,217 places production had filed unreadable, the AI account ran out of credit at
+about place 900 (01:00 Cairo, 18 Oct 2026): the remaining 241 calls came back HTTP 429 "no credits",
+and the CV reader failed the same way at 01:00 and 01:06. As built, the held re-read counted only a
+missing key as no read; a `call_failed` counted. So an outage would spend every held place's four
+reads within hours and page the Super Admin once for each place, about a photograph nobody looked at.
+
+- `heldSignboardReadHappened` (`signboard-rules.ts`): a check `unjudged` for `call_failed` or
+  `no_api_key` is no read. `settleHeldSignboard` returns `unread`, and writes nothing and spends
+  nothing; the place waits for the next run.
+- `heldSignboardReaderIsDown`: three unread places with none answered stop the hourly run
+  (`skipped: "reader_unavailable"`, `moreWaiting`), so a reader that is down is not asked twelve times
+  an hour. One answered read means the reader is up, and the run carries on past a single bad call.
+- A photo that cannot be cropped is `no_bytes`, not `call_failed`: it never gets better, so it is a
+  read that answered and it spends one, or that place would wait for ever.
+
+Every door capture is still held while the reader is down. That is the ruling ("If you couldn't read
+them, then hold for manual review"); the holds wait and are read when credit returns.
 
 ## The same-seat duplicate merge
 

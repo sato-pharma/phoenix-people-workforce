@@ -40,6 +40,7 @@ import { notifyPhoenixCrm, PHOENIX_CRM_NOTIFICATION_CATEGORY, PHOENIX_CRM_NOTIFI
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import { loadSharedPlaceNames, loadSharedPlaceRefusalsForCustomers } from "@/lib/phoenix-crm/server/shared-places";
+import { signboardHoldStillReading } from "@/lib/phoenix-crm/signboard-rules";
 import {
   parseValidationRefusalReason,
   validationRefusalLabel,
@@ -187,6 +188,19 @@ export async function countValidationReviewsWaiting(): Promise<{ count: number; 
 
 function reviewNoticeKey(reviewId: string): string {
   return `phoenix_crm:validation_review:${reviewId}`;
+}
+
+/**
+ * The decider the system writes when it approves a held signboard (`SIGNBOARD_SYSTEM_ACTOR` in
+ * server/signboard-holds.ts, which imports this file — so the word is restated here rather than
+ * imported back, and `tests/phoenix-crm-held-signboard.test.ts` holds the two equal).
+ */
+const SYSTEM_DECIDER = "SYSTEM";
+
+/** Answer the "waiting for you" notice of one review — when the system approved it first. Never throws. */
+export async function withdrawValidationReviewWaiting(reviewId: string): Promise<void> {
+  if (!reviewId) return;
+  await withdrawInAppNotificationsByEventKeyPrefix(reviewNoticeKey(reviewId)).catch(() => undefined);
 }
 
 /**
@@ -404,6 +418,11 @@ export type ValidationReviewRow = {
    * has something to retire. The mirror image of `restorable`, and the same test the database makes.
    */
   refusable: boolean;
+  /**
+   * A door signboard hold the system is still re-reading (owner, 2026-10-17: "Hold; re-read; else you
+   * decide"). He may still decide it now; the row says the system has not finished with it.
+   */
+  systemStillReading: boolean;
 };
 
 function reading(lat: unknown, lon: unknown, accuracy: unknown): ValidationReviewReading | null {
@@ -571,7 +590,14 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
       reason,
       query: text(google.query),
       listings: listingsOf(google, point),
-      decidedByName: text(row.decided_by_hr_id) ? nameOf(names, text(row.decided_by_hr_id), "") || null : null,
+      // The system approves a held signboard itself once a reading confirms the customer (2026-10-17,
+      // server/signboard-holds.ts), as the actor SYSTEM — a word no person carries, shown as a word.
+      decidedByName:
+        text(row.decided_by_hr_id) === SYSTEM_DECIDER
+          ? "The system"
+          : text(row.decided_by_hr_id)
+            ? nameOf(names, text(row.decided_by_hr_id), "") || null
+            : null,
       decidedAtText: text(row.decided_at) ? formatPhoenixDateTime(String(row.decided_at)) : null,
       decidedAt: text(row.decided_at),
       decisionNote: text(row.decision_note),
@@ -580,6 +606,12 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
       // 2026-10-15 an APPROVAL can be taken back while the place it approved is still active.
       restorable: status === "rejected" && place.status === "retired",
       refusable: status === "approved" && place.status === "active",
+      systemStillReading: signboardHoldStillReading({
+        isTest: row.is_test === true,
+        pending: status === "pending",
+        signboardHold: signboard,
+        stored: place.signboard_check,
+      }),
     };
   });
   // 🔴 THE LONGER WINDOW IS FOR THE UNDO, NOT FOR THE HISTORY. A rejection older than the ordinary
@@ -981,6 +1013,74 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
   // notice, one wording, and nothing in it says a person looked.
   await tellRepValidateAgain(viewer, result);
   return { placeId, reopened: result.reopened === true };
+}
+
+/**
+ * Confirm one validation the system could not (owner, 2026-10-17: *"make me able to approve"*, asked on
+ * the Not confirmed photographs — "I can read them. So why you cannot?").
+ *
+ * The mirror of `refuseValidatedPlace`: the SAME review row the automatic check writes, in the rep's
+ * name, put to `pending` and then decided by the SAME `phoenix_crm_decide_validation_review` approve —
+ * so a confirmation is one more `validation_review_approved` event, and the place leaves Not confirmed
+ * because a review now exists for it (`reviewed`). The customer is already validated, so nothing the
+ * rep sees changes and he is told nothing (golden rule #1).
+ *
+ * A place someone has already decided is left exactly as it is, and a place the door is still holding
+ * is approved on its own review, keeping the evidence it was held on.
+ */
+export async function approveValidatedPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ placeId: string; approved: boolean }> {
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
+  const body = (raw && typeof raw === "object" ? raw : {}) as Row;
+  if (!isUuid(body.placeId)) throw validationError("Choose the place to approve.");
+  const note = cleanText(body.note, 500);
+  const placeId = String(body.placeId).toLowerCase();
+
+  const [placeRead, reviewRead] = await Promise.all([
+    getSupabaseAdmin().from("phoenix_crm_places").select("id, seat_id, customer_id, is_test, status, created_by_hr_id").eq("id", placeId).maybeSingle(),
+    getSupabaseAdmin().from("phoenix_crm_validation_reviews").select("id, status").eq("place_id", placeId).maybeSingle(),
+  ]);
+  throwIfError(placeRead.error);
+  throwIfError(reviewRead.error);
+  const place = placeRead.data as Row | null;
+  if (!place) throw notFoundError("This place is no longer there. Reload the page.");
+  if (place.status !== "active") throw validationError("This place is already retired. Reload the page.");
+  const existing = reviewRead.data as Row | null;
+  // Decided already — by him, or by the system's own reading. Nothing to add.
+  if (existing && existing.status !== "pending") return { placeId, approved: false };
+
+  let reviewId = existing ? String(existing.id) : null;
+  if (!reviewId) {
+    // 🔴 An UPSERT on place_id, for the reason `refuseValidatedPlace` gives: the index is UNIQUE.
+    const upserted = await getSupabaseAdmin()
+      .from("phoenix_crm_validation_reviews")
+      .upsert(
+        {
+          seat_id: String(place.seat_id),
+          customer_id: String(place.customer_id),
+          place_id: placeId,
+          is_test: place.is_test === true,
+          kind: "validation",
+          status: "pending",
+          google: { reason: "confirmed_by_admin", confirmed_by_hr_id: viewer.hrId },
+          created_by_hr_id: String(place.created_by_hr_id),
+          decided_by_hr_id: null,
+          decided_at: null,
+          decision_note: null,
+        },
+        { onConflict: "place_id" },
+      )
+      .select("id")
+      .single();
+    throwIfError(upserted.error);
+    reviewId = String((upserted.data as Row).id);
+  }
+
+  await callPhoenixCrm<Row>("phoenix_crm_decide_validation_review", {
+    p: { review_id: reviewId, actor_hr_id: viewer.hrId, decision: "approve", note, refusal_reason: null },
+  });
+  // A held place's "waiting for you" notice is answered.
+  await withdrawValidationReviewWaiting(reviewId);
+  return { placeId, approved: true };
 }
 
 // ── Waiting to be captured again ────────────────────────────────────────────────────────────────

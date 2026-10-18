@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * Phoenix CRM — validations the system never held, and the Super Admin's power to refuse one.
+ * Phoenix CRM — validations the system never held, and the Super Admin's power to refuse one — or,
+ * since 2026-10-17, to approve one the system could not read (`Approve`, below).
  *
  * The Google check covers AM customers only (`googleCheckApplies`), so a doctor's validation is never
  * held and never appears in the queue above; an AM one that matched its listing does not either. Before
@@ -323,6 +324,39 @@ function Refuse({ row }: { row: ValidatedPlaceRow }) {
 }
 
 /**
+ * Confirm it himself (owner, 2026-10-17: *"make me able to approve"* — "I can read them. So why you
+ * cannot?"). One press: the customer is already validated, so approving changes nothing the rep sees;
+ * it records that the Super Admin looked and confirmed, and the place leaves Not confirmed.
+ */
+function Approve({ row }: { row: ValidatedPlaceRow }) {
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  async function approve() {
+    if (saving) return;
+    setSaving(true);
+    setProblem(null);
+    try {
+      await crmPost<unknown>("/api/phoenix-crm/validation-reviews/approve", { placeId: row.placeId, note: "" }, "approved");
+      router.refresh();
+    } catch (error) {
+      setProblem(messageOf(error));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <CrmButton disabled={saving} onClick={() => void approve()} variant="primary">
+        {saving ? "Approving…" : "Approve this validation"}
+      </CrmButton>
+      {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
+    </div>
+  );
+}
+
+/**
  * `showSearch` is false when the board above owns the filtering (the Place checks page) — the list is
  * then handed rows that are already narrowed, and its own search box would be a second, confusing one.
  * It stays true by default so the component keeps its own search anywhere it is used on its own.
@@ -341,6 +375,7 @@ function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteI
     <div className="min-w-0 space-y-2">
       {/* The system's recommendation and its reason (owner, 2026-10-17) — the Super Admin's board only. */}
       {mode === "team" ? null : <SystemAdvice advice={adviseOnPlaceInUse(row)} />}
+      {mode === "team" ? null : <Approve row={row} />}
       {mode === "team" ? null : <Refuse row={row} />}
       <PlaceCheckNotes
         integrity={noteIndex.integrity[key] ?? []}
@@ -355,11 +390,20 @@ function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteI
 }
 
 /**
- * Refusing several at once (owner, 2026-10-15: "also make me able to multiple select and response").
- * It runs the row's OWN request per place — same route, same reason, same note — so there is no second
- * refusal path; see `place-check-bulk.tsx`.
+ * Answering several at once (owner, 2026-10-15: "also make me able to multiple select and response";
+ * Approve added 2026-10-17). Each runs the row's OWN request per place — same route, same reason, same
+ * note — so there is no second decision path; see `place-check-bulk.tsx`.
  */
-const REFUSE_ACTIONS: ReadonlyArray<BulkAction<ValidatedPlaceRow>> = [
+const IN_USE_ACTIONS: ReadonlyArray<BulkAction<ValidatedPlaceRow>> = [
+  {
+    key: "approve",
+    label: "Approve",
+    busyLabel: "Approving",
+    variant: "primary",
+    needsReason: false,
+    takes: () => true,
+    run: (row, answer) => crmPost<unknown>("/api/phoenix-crm/validation-reviews/approve", { placeId: row.placeId, note: answer.note }, "approved"),
+  },
   {
     key: "refuse",
     label: "Refuse",
@@ -429,9 +473,12 @@ export function ValidatedPlaceList({
         <>
           {bulk ? (
             <BulkDecideBar
-              actions={REFUSE_ACTIONS}
-              // Refusing is the one action here, so only the rows the system recommends rejecting are offered.
-              adviceOf={(row) => (adviseOnPlaceInUse(row).kind === "reject" ? "reject" : null)}
+              actions={IN_USE_ACTIONS}
+              // Both answers are here since 2026-10-17, so both quick picks are offered; "look yourself" is neither.
+              adviceOf={(row) => {
+                const advice = adviseOnPlaceInUse(row).kind;
+                return advice === "look" ? null : advice;
+              }}
               kind={kind}
               nameOf={(row) => row.customerName}
               picks={picks}
@@ -455,7 +502,7 @@ export function ValidatedPlaceList({
                 <th className={crmThClassName}>Photo</th>
                 <th className={crmThClassName}>Customer and rep</th>
                 <th className={crmThClassName}>The place they saved</th>
-                <th className={crmThClassName}>{mode === "team" ? "Your comment" : "Refuse it"}</th>
+                <th className={crmThClassName}>{mode === "team" ? "Your comment" : "Approve or refuse"}</th>
               </tr>
             </thead>
             <tbody>

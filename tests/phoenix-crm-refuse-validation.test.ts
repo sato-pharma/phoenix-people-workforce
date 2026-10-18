@@ -276,7 +276,7 @@ function checkBulkDecide(): void {
   }
 
   const list = read("src/components/phoenix-crm/validated-place-list.tsx");
-  assert.match(list, /actions=\{REFUSE_ACTIONS\}/, "the validated list refuses in bulk through its own refuse route");
+  assert.match(list, /actions=\{IN_USE_ACTIONS\}/, "the validated list approves and refuses in bulk through its own two routes");
   assert.match(list, /crmPost<unknown>\("\/api\/phoenix-crm\/validation-reviews\/refuse", \{ placeId: row\.placeId, note: answer\.note, refusalReason: answer\.reason \}/, "with exactly the body one row posts");
   // 🔴 THE PAGE IS WHAT CAN BE PICKED — "Pick all" must never reach rows behind a Show more.
   assert.match(list, /useRowPicks<ValidatedPlaceRow>\(bulk \? shown : \[\]/, "and only the rows actually on screen can be ticked");

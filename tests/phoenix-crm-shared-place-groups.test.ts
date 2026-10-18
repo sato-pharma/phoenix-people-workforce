@@ -121,6 +121,7 @@ function review(overrides: Partial<ValidationReviewRow>): ValidationReviewRow {
     decisionNote: null,
     restorable: false,
     refusable: false,
+    systemStillReading: false,
     ...overrides,
   };
 }

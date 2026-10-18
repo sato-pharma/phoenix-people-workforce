@@ -497,6 +497,47 @@ function checkNameSpelling(): void {
   assert.equal(pm("أ.د. محمد علي", ["الأستاذ الدكتور محمد علي"]), true);
   assert.equal(pm("محمد علي", ["الاستاذة الدكتورة محمد علي"]), true);
 
+  // 6 · 🔴 A FAMILY NAME WITH AND WITHOUT ITS ال IS ONE NAME. Three clear plates the re-read of 18 Oct
+  //      2026 found unmatched, as the strong reader returned them.
+  assert.equal(pm("ايمن بدوي", ["مركز الدكتور أيمن البدوى"]), true, "البدوى on the plate is بدوي on the list");
+  assert.equal(pm("عبير الراوي", ["دكتورة عبير محمد راوي"]), true, "and the other way round");
+  assert.equal(pm("إبراهيم عفيفي", ["دكتور إبراهيم عبد الله العفيفي"]), true, "a three-word plate keeps the allowance it had");
+  //      Only the ال: a letter the reader got wrong is another name, and الله never sheds it.
+  assert.equal(pm("محمد ابو العنيين", ["مجدي أبو العينين"]), false, "مجدي is not محمد, and العينين is not العنيين");
+  assert.equal(pm("احمد البدري", ["أحمد البدوي"]), false, "البدري is not البدوي");
+  assert.equal(pm("حمدي نوفل", ["مجدي أمين نوفل"]), false, "a surname alone is not the name");
+  assert.equal(pm("علي الحج", ["علي حج"]), false, "a word left with two letters is not a name");
+
+  // 7 · 🔴 THE ALLOWANCE IS NEVER HIS GIVEN NAME LOST BEHIND ANOTHER MAN'S. Three shapes the decoy check
+  //      of 18 Oct 2026 found among the strong reader's confirmations.
+  const onSign = (customerName: string, personNames: string[], signText: string) =>
+    signNamesCustomer({ customerName, listType: "PM", personNames, placeNames: [], signText }).matches;
+  assert.equal(pm("وائل محمد بلحة", ["احمد محمد بلحة"]), false, "his father's and family name behind another given name");
+  assert.equal(pm("محمد الشحري", ["أحمد محمد الشحرى"]), false, "his given name standing as somebody else's father");
+  assert.equal(
+    onSign("وائل محمد بلحة", [], "دكتور احمد محمد بلحة استشاري الباطنة"),
+    false,
+    "and the same in the sign's whole text: the run must open on his given name",
+  );
+  assert.equal(
+    onSign(
+      "مجدى عبد العزيز",
+      ["الدكتور مجدى", "الدكتور / محمود عبدالعزيز"],
+      "يرجى من السادة المرضى مراجعة الادوية مع الدكتور مجدى بعد صرف الروشتة من الصيدلية لعدم اعطاء بديل إدارة الدكتور / محمود عبدالعزيز",
+    ),
+    false,
+    "his words gathered from two names on one notice",
+  );
+  //      What stays a match: a given name the plate's damage took, the practice's kind in front, and a
+  //      reader that split the name badly while the text still reads it whole.
+  assert.equal(pm("محمود عبدالنبي الخولي", ["عبد النبي الخولي"]), true, "د / ... عبد النبي الخولي");
+  assert.equal(pm("ايمن بدوي", ["مركز أيمن البدوى"]), true, "مركز is never a given name");
+  assert.equal(pm("محمد علي", ["أ.د/ محمد علي"]), true, "nor the letter أ.د leaves behind");
+  assert.equal(onSign("بسمة احمد", ["أحمد حمدى زكى"], "د/بسمة أحمد حمدى زكى إستشارى طب الأطفال"), true, "the text reads it whole");
+  assert.equal(onSign("عادل البكري", [], "دكتور عادل البكاري البكري استشاري اطفال"), true, "one stray word between two of his");
+  assert.equal(pm("مي احمد", ["مي احمد"]), true, "a two-letter given name is still read");
+  assert.equal(pm("وائل احمد", ["مي احمد"]), false, "and is still another given name");
+
   // 5 · A facility name is untouched: its quorum is the stemmed distinctive words, as before.
   assert.equal(
     signNamesCustomer({ customerName: "مستشفى ابو كبير المركزي", listType: "AM", personNames: [], placeNames: ["مستشفى أبو كبير"], signText: null }).matches,
@@ -526,9 +567,17 @@ function checkTwoReaders(): void {
     stripped.includes("PHOENIX_CRM_SIGNBOARD_SWEEP_MODEL = OPENAI_STRONG_MODEL"),
     "the night reads with the strong model; three of the four false holds were a board the cheap one could not read",
   );
+  // 🔴 The door's reader moved from the cheapest tier to the middle one on 2026-10-17: replayed on 30
+  // production photos the cheap one had filed "unreadable", it confirmed 1 and the middle tier 12, at
+  // 5.9 s p95 — inside the rep's 8 s. The cheap one is the fallback for a LOST call only.
+  assert.ok(stripped.includes('PHOENIX_CRM_SIGNBOARD_DOOR_MODEL = "gpt-5.4-mini"'), "the door reads with the middle tier");
   assert.ok(
-    stripped.includes("atTheDoor ? OPENAI_NANO_MODEL : PHOENIX_CRM_SIGNBOARD_SWEEP_MODEL"),
-    "and the door still reads with the cheap one, inside the rep's own save",
+    stripped.includes("DOOR_MODELS = [PHOENIX_CRM_SIGNBOARD_DOOR_MODEL, OPENAI_NANO_MODEL]"),
+    "and falls back to the cheap one only when the call is lost",
+  );
+  assert.ok(
+    stripped.includes("atTheDoor ? DOOR_MODELS : [PHOENIX_CRM_SIGNBOARD_SWEEP_MODEL]"),
+    "while the night keeps its one strong model",
   );
 
   // The prompt asks for EVERY sign, with the three fields the verdict turns on.
@@ -544,12 +593,26 @@ function checkTwoReaders(): void {
   assert.ok(/kind: \{ enum: \["medical", "other", "unknown"\]/.test(server), "so is the trade");
   assert.ok(
     !/customerName[^\n]*question|question[^\n]*customerName/.test(stripped),
-    "the customer's name is NEVER in the prompt — a reader told what to expect finds it on a blank wall",
+    "the customer's name is NEVER in a blind reader's prompt — a reader told what to expect finds it on a blank wall",
   );
+  // 🔴 The ONE reader told the name is the held re-read's guided look (owner, 2026-10-17: "look at what
+  // the rep typed"), and its answer is believed only when a BLIND close look at the spot it named reads
+  // the name itself: on 40 production photos it wrote a near-miss decoy it was handed 8 times.
+  const readSignsBody = stripped.slice(stripped.indexOf("async function readSigns("), stripped.indexOf("const WIDE_QUESTION"));
+  assert.ok(readSignsBody.length > 0 && !/customerName|nameGiven/.test(readSignsBody), "the blind reader takes no name at all");
+  assert.equal(stripped.split("readGuided(").length - 1, 2, "the guided read is declared once and called once");
+  const spotCheckBody = stripped.slice(stripped.indexOf("async function spotCheck("));
+  assert.ok(spotCheckBody.includes("readGuided("), "and it is called only from spotCheck");
+  assert.ok(
+    spotCheckBody.includes("if (!close || !signboardReadsCustomerName(close.signs, subject)) return null;"),
+    "whose answer stands only when the blind close look reads the NAME — not merely a step-4 match",
+  );
+  const judgeBytesBody = stripped.slice(stripped.indexOf("async function judgeBytes("), stripped.indexOf("async function blindRead("));
+  assert.ok(judgeBytesBody.length > 0 && !/spotCheck|readGuided/.test(judgeBytesBody), "the door and the night never take the guided read");
 
   // The second look: taken only when the first found nobody, and then it decides.
   assert.ok(
-    stripped.includes("if (atTheDoor || judged.verdict === \"match\") return judged;"),
+    stripped.includes("if (!input.secondLook || judged.verdict === \"match\") return judged;") && stripped.includes("secondLook: !atTheDoor,"),
     "one look at the door, and no second look once a sign has named him",
   );
   assert.ok(stripped.includes("cropToBox(cropped.jpeg, chosen.box)"), "the second look is the chosen sign, cropped out of the frame");

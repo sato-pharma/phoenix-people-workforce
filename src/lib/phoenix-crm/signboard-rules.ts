@@ -53,7 +53,10 @@ export type SignboardVerdictKind =
    * nobody — that is a match.
    */
   | "no_name"
-  /** No answer was obtained. NEVER a pass, and never a hold — see the header. */
+  /**
+   * No answer was obtained. NEVER a pass. At the door it HOLDS since 2026-10-17 (`signboardDoorHolds`)
+   * and the system re-reads it; it never holds on the integrity board (`signboardHoldsForReview`).
+   */
   | "unjudged";
 
 export type SignboardCheckReason =
@@ -274,6 +277,20 @@ function personNameWords(text: string): NameWord[] {
   return groups.map((parts) => ({ word: parts.join(""), core: parts.length > 1 ? compoundCore(parts) : null }));
 }
 
+// 🔴 A NAME IS WRITTEN WITH AND WITHOUT ITS ال, AND THAT IS STILL ONE NAME — on any word of it, the
+// given name too (الحسن on the list, حسن on the plate: one place of the 1,217). Re-reading the
+// places the door left unconfirmed, 18 Oct 2026, the strong reader read three plates clearly that
+// named the customer and were not matched: "أيمن البدوى" for ايمن بدوي, "عبير محمد راوي" for عبير
+// الراوي, "إبراهيم عبد الله العفيفي" for إبراهيم عفيفي. So a plain word answers for the same word
+// with ال in front, either way round. Only ال, and only on a word that keeps three letters without
+// it: a letter the reader got wrong is NOT forgiven — "محمد ابو العنيين" on a plate reading "مجدي أبو
+// العينين" is another doctor, and a guided reader handed a near-miss copied it 8 times in 40.
+
+/** A word without the ال in front of it, when what is left is still a name. */
+function withoutArticle(word: string): string {
+  return word.startsWith("ال") && word.length >= 5 ? word.slice(2) : word;
+}
+
 /** Is this word of the customer's name among the words read off one candidate? */
 function nameWordIsThere(wanted: NameWord, read: readonly NameWord[]): boolean {
   return read.some(
@@ -282,8 +299,68 @@ function nameWordIsThere(wanted: NameWord, read: readonly NameWord[]): boolean {
       // The reader dropped the head or the tail: "الله عفيفي" for عبد الله عفيفي.
       (wanted.core !== null && candidate.core === null && candidate.word === wanted.core) ||
       // The list dropped it: اسامه العيلة for a plate reading "اسامة ابراهيم ابو العيلة".
-      (wanted.core === null && candidate.core === wanted.word),
+      (wanted.core === null && candidate.core === wanted.word) ||
+      // One side wrote the ال and the other did not: البدوى on the plate, بدوي on the list.
+      (wanted.core === null && candidate.core === null && withoutArticle(candidate.word) === withoutArticle(wanted.word)),
   );
+}
+
+// 🔴 A THREE-WORD NAME MAY LOSE ONE WORD, AND IT MUST NEVER BE HIS GIVEN NAME LOST BEHIND ANOTHER.
+// Judging the 341 places the strong reader confirmed on 18 Oct 2026 again, from their own readings,
+// against names that are NOT the customer's — 20 strangers, and his surname under other given names —
+// 106 also matched one, in three shapes the bag of words could not see: his
+// father's and family name behind another given name ("وائل محمد بلحة" passed on a plate reading
+// "احمد محمد بلحة"), his given name standing as somebody else's father ("محمد الشحري" on "أحمد محمد
+// الشحرى"), and his words gathered from two names on one notice ("مجدى عبد العزيز" from "الدكتور
+// مجدى" and "الدكتور / محمود عبدالعزيز"). So a person name the reader split out must OPEN on one of
+// his words — it may still have lost the given name to the plate's damage ("د / ... عبد النبي
+// الخولي") — and the sign's whole text must carry his words, in his order, as one run that opens on
+// his given name, with at most two other words between two of his. Requiring the given name outright
+// was scored and refused: it lost three plates whose given name was simply unreadable. Replayed: 335
+// of the 341 stand and the decoys they also match fall from 106 to 71. Of the six that leave, four
+// are plates whose name opens on another given name, read in part ("مجاهد علي ضاهر" for محمد على
+// ضاهر, "سينا ناجح زاخر" for مينا ناجح زاخر), one is the notice above and one a hospital filed on the
+// PM list; each goes to the Super Admin's Approve, as a misread letter does.
+
+/**
+ * Words a plate puts in front of the name that are never a given name: the practice's own kind, and
+ * the lone letter "أ.د" leaves once the fold has taken its د. Nothing else is skipped — "مي" is a
+ * given name of two letters.
+ */
+const PLATE_LEAD_WORDS: ReadonlySet<string> = new Set(["مركز", "عياده", "عيادات", "مستشفي", "مجمع"]);
+
+/**
+ * Does this candidate say HIS name, rather than carrying his words inside somebody else's?
+ *
+ * `customerWords` is every word of the name, a two-letter given name included — the quorum's
+ * three-letter floor would let "مي احمد" open on احمد and take any احمد's plate.
+ */
+function readsTheCustomersName(
+  customerWords: readonly NameWord[],
+  read: readonly NameWord[],
+  allowedMisses: number,
+  isSignText: boolean,
+): boolean {
+  if (customerWords.length === 0) return false;
+  if (!isSignText) {
+    const opening = read.find((word) => word.word.length > 1 && !PLATE_LEAD_WORDS.has(word.word));
+    return opening !== undefined && customerWords.some((name) => nameWordIsThere(name, [opening]));
+  }
+  for (let start = 0; start < read.length; start += 1) {
+    if (!nameWordIsThere(customerWords[0], [read[start]])) continue;
+    let at = start;
+    let missed = 0;
+    for (const name of customerWords.slice(1)) {
+      const step = read.slice(at + 1, at + 4).findIndex((word) => nameWordIsThere(name, [word]));
+      if (step < 0) {
+        missed += 1;
+        continue;
+      }
+      at += 1 + step;
+    }
+    if (missed <= allowedMisses) return true;
+  }
+  return false;
 }
 
 /**
@@ -340,18 +417,23 @@ export function signNamesCustomer(input: {
   // `wanted` being non-empty already proves the name is there; `?? ""` is what says so to the compiler.
   const wordsOf = (text: string): NameWord[] =>
     placeAxis ? distinctiveWords(text).map((word) => ({ core: null, word })) : personNameWords(text);
-  const wantedWords = wordsOf(input.customerName ?? "").filter((name) => name.word.length >= 3);
+  const customerWords = wordsOf(input.customerName ?? "").filter((name) => name.word.length > 1);
+  const wantedWords = customerWords.filter((name) => name.word.length >= 3);
   if (wantedWords.length === 0) return { matches: null, score: null };
   // A name of three tokens or more survives losing one; two tokens must both be there.
   const allowedMisses = wantedWords.length >= 3 ? 1 : 0;
 
   let best: number | null = null;
   let matched = false;
-  for (const candidate of haystacks) {
+  for (const [index, candidate] of haystacks.entries()) {
     const read = wordsOf(candidate);
     if (read.length === 0) continue;
     const missing = wantedWords.filter((name) => !nameWordIsThere(name, read)).length;
-    if (missing <= allowedMisses) matched = true;
+    // On the person axis the allowance is never spent on his given name standing behind another
+    // man's: a name read off the sign opens on one of HIS words, and the sign's whole text carries
+    // his words as one run that opens on his given name (`readsTheCustomersName`).
+    const isTheName = placeAxis || readsTheCustomersName(customerWords, read, allowedMisses, index >= preferred.length);
+    if (missing <= allowedMisses && isTheName) matched = true;
     const score = jaccardSimilarity(nameTokens(candidate), nameTokens(input.customerName));
     best = best === null ? score : Math.max(best, score);
   }
@@ -924,15 +1006,141 @@ export function judgeSignboard(input: {
 }
 
 /**
- * Does this verdict hold the place for the owner to look at?
+ * Is this verdict a CONFIDENT NEGATIVE — a sign read clearly that names somebody else, or no person at a
+ * PM door?
  *
- * 🔴 `unjudged` is false here, in every one of its reasons, and that is the whole safety property of
- * this module. The key has run out of credits twice in this system's life, both times silently and
- * both times reading as a retryable rate limit; a hold on the absence of an answer would have held
- * every validation in the field on both days.
+ * 🔴 It was the DOOR's hold until 2026-10-17, and `unjudged` was false here in every one of its reasons:
+ * the key has run out of credits twice in this system's life, and a hold on the absence of an answer
+ * would have stopped every validation in the field. The door asks `signboardDoorHolds` below since the
+ * owner's "Hold; re-read; else you decide"; this stays the narrower question — the verdicts that name a
+ * negative — and an `unjudged` is still never one.
  */
 export function signboardHoldsForReview(check: PhoenixCrmSignboardCheck): boolean {
   return check.verdict === "other_name" || check.verdict === "no_name";
+}
+
+/**
+ * Does the DOOR save this place held, waiting on the system and then on the Super Admin?
+ *
+ * 🔴 EVERYTHING BUT A MATCH, SINCE 2026-10-17 (owner: *"how come any unreadable should be not
+ * validated, should be wait until the system check and I manual approve or reject"*, answered "Hold;
+ * re-read; else you decide"). Before that day an unreadable frame was VALIDATED, and the cheap reader
+ * confirmed 1 of 30 production photos a person reads at a glance — so 79% of the places in use had no
+ * confirmation at all. A lost call and a missing key hold too (his answer for a reading service that is
+ * down: *"try to reread, try to fix, try to fall back on other way. If you couldn't read them, then
+ * hold for manual review"*).
+ *
+ * The 2026-10-08 reason never to hold on an absence — the key ran dry twice and would have held every
+ * validation in the field — is answered by WHAT a hold is now, not by refusing to hold: the rep is
+ * saved and reads "the system is checking", and `server/signboard-holds.ts` re-reads every held place
+ * and approves the confirmed ones itself, so a day with no key is a day of held places that settle once
+ * the key is back. `signboardHoldsForReview` above still answers the narrower question the integrity
+ * board asks (a confident negative).
+ *
+ * A place another check already holds (`held_elsewhere`) is not held twice: one review row, one decision.
+ * A name with nothing to compare (`name_unusable`) is not held either — no reading can ever answer it,
+ * so a hold would only spend every re-read on a question that does not exist.
+ */
+export function signboardDoorHolds(check: PhoenixCrmSignboardCheck): boolean {
+  if (check.verdict === "match") return false;
+  return check.reason !== "held_elsewhere" && check.reason !== "name_unusable";
+}
+
+/**
+ * How many times the system reads a HELD place before it is the Super Admin's alone: the door's read
+ * and three re-reads (owner, 2026-10-17, "re-read up to 3 times"). Counted on the place's own
+ * `signboard_check.attempts`, the door's read being the first.
+ */
+export const SIGNBOARD_HELD_MAX_READS = 4;
+
+/**
+ * Reads recorded on a place's stored `signboard_check`: none is 0, and a check written before the count
+ * existed has had exactly one. The one reading of the count, for the re-read's queue and the board alike.
+ */
+export function signboardReadsRecorded(stored: unknown): number {
+  if (!stored || typeof stored !== "object") return 0;
+  const attempts = Number((stored as Record<string, unknown>).attempts ?? 0);
+  return Number.isFinite(attempts) && attempts > 0 ? attempts : 1;
+}
+
+/**
+ * Is the system still reading this held place — a door signboard hold with reads left? The board says
+ * so on the row, and the Super Admin is told it is his only once it is not (`server/signboard-holds.ts`).
+ */
+export function signboardHoldStillReading(input: { pending: boolean; signboardHold: boolean; isTest: boolean; stored: unknown }): boolean {
+  return input.pending && input.signboardHold && !input.isTest && signboardReadsRecorded(input.stored) < SIGNBOARD_HELD_MAX_READS;
+}
+
+/**
+ * Does any sign in this reading carry the customer's NAME — not merely a verdict of `match`?
+ *
+ * 🔴 THE DIFFERENCE IS THE OWNER'S AM RULE, AND IT MATTERS ONLY WHERE A READING WAS STEERED. An AM
+ * frame whose clear signs name no place at all is a `match` (`judgeSignboards` step 4) — right for a
+ * hospital that signs its departments, and a blind reader cannot be steered into it. The guided read
+ * was TOLD the name, and measured on 40 production photos (2026-10-17) it wrote a decoy name it was
+ * handed on 8 of 40 near-miss decoys, both AM hospitals among them; so its answer is accepted only
+ * when a BLIND close look at the spot it pointed to reads the name itself — and step 4 would accept a
+ * close look that read nothing but "صيدلية".
+ */
+export function signboardReadsCustomerName(
+  signs: readonly PhoenixCrmSign[],
+  input: { customerName: string | null; listType: PhoenixCrmListType },
+): boolean {
+  return signs.some((sign) => signNamesCustomerOnSign(sign, input).matches === true);
+}
+
+/**
+ * What a held place's re-read concludes for the hold (owner, 2026-10-17).
+ *
+ *   approve — a reading confirmed the customer: the system approves the hold itself;
+ *   again    — no confirmation yet, and the place has reads left;
+ *   done     — no confirmation after every read it gets: it is the Super Admin's to decide, and he is
+ *              told now rather than at the door.
+ */
+export function heldSignboardOutcome(check: PhoenixCrmSignboardCheck, readsSoFar: number): "approve" | "again" | "done" {
+  if (check.verdict === "match") return "approve";
+  return readsSoFar >= SIGNBOARD_HELD_MAX_READS ? "done" : "again";
+}
+
+/**
+ * Did a held place's re-read READ anything — or did the reader never answer?
+ *
+ * 🔴 A LOST CALL IS NO READ, AND SPENDING ONE ON IT EMPTIES THE WHOLE QUEUE ONTO THE SUPER ADMIN. On
+ * 18 Oct 2026 at 01:00 Cairo the AI account ran out of credit mid-way through the night's re-read of
+ * the unreadable places — 241 of them came back `call_failed`, and production's own calls failed from
+ * the same minute. Counted as reads, every place the door held that day would have spent its four in
+ * the after-reply read and three hourly runs, been filed "every read spent", and paged him once each,
+ * for photographs nobody had looked at — and then never been read again once the credit was back. So
+ * a lost call, like a missing key, spends nothing and the place waits; the photo that cannot be opened
+ * at all is `no_bytes`, which is a read that answered, and spends one.
+ */
+export function heldSignboardReadHappened(check: PhoenixCrmSignboardCheck): boolean {
+  return !(check.verdict === "unjudged" && (check.reason === "call_failed" || check.reason === "no_api_key"));
+}
+
+/** Unread places, with not one read answering, after which the hourly run stops: the reader is down. */
+export const HELD_SIGNBOARD_READER_DOWN_AFTER = 3;
+
+/**
+ * Is the reader down, on this run's evidence? Only when NOTHING has answered: one photo whose every call
+ * times out must not stop the queue behind it, and a reader that answered once is up.
+ */
+export function heldSignboardReaderIsDown(run: { unread: number; answered: number }): boolean {
+  return run.answered === 0 && run.unread >= HELD_SIGNBOARD_READER_DOWN_AFTER;
+}
+
+/**
+ * The check kept on the place row after a held re-read: the read itself, its count, and — on the last
+ * read of a frame nobody could read — the terminal `unreadable_final`, so the row says "every read was
+ * spent" in words a human can see (`SIGNBOARD_UNJUDGED_TEXT` on the board).
+ */
+export function heldSignboardCheckToKeep(
+  read: PhoenixCrmSignboardCheck,
+  reads: number,
+  outcome: "approve" | "again" | "done",
+): PhoenixCrmSignboardCheck {
+  const spent = outcome === "done" && read.verdict === "unjudged" && read.reason === "unreadable";
+  return { ...read, attempts: reads, reason: spent ? "unreadable_final" : read.reason };
 }
 
 /** A one-token name is not evidence of anything, here as everywhere else in this repository. */
