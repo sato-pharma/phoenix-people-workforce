@@ -2509,7 +2509,6 @@ import { runRequiredCheckNamesTests } from "./required-check-names.test.ts";
 import { runDependabotAlertsTests } from "./dependabot-alerts.test.ts";
 import { runWorkflowDispatchGuardTests } from "./workflow-dispatch-guard.test.ts";
 import { runCiTreeReuseDryrunTests } from "./ci-tree-reuse-dryrun.test.ts";
-import { runPrSameModuleHoldGuardTests } from "./pr-same-module-hold-guard.test.ts";
 import { runNextBuildCpuCapTests } from "./next-build-cpu-cap.test.ts";
 import { runAttributionFreezesPublishedMonthsTests } from "./attribution-freezes-published-months.test.ts";
 import { runTestAccountTests } from "./test-accounts.test.ts";
@@ -9895,10 +9894,6 @@ await runTest(
 await runTest(
   "the tree-reuse DRY RUN only measures: judge() is a pure comparison of two 40-hex tree ids where anything unreadable is UNKNOWN and never a MATCH, the PR is found from the squash subject's (#N) and its FINAL head's green run is read back from step names, every failed read becomes UNKNOWN with a one-line reason and nothing throws, --report counts verdicts from step names alone, and in ci.yml the recording steps are pull_request-only, the dry-run pair is push-only, continue-on-error and the LAST two steps of checks, the added permissions are read-only, and no condition anywhere reads the verdict to skip or gate real work",
   runCiTreeReuseDryrunTests,
-);
-await runTest(
-  "bash-guard C18 holds a second `gh pr create` for one module: the module is the conventional-commit scope of the title, an OPEN PR with a shared scope holds, a MERGED one holds for six hours and not a minute longer, a different scope / a title with no scope / chore(deps) and chore(memory) plumbing never hold, PHX_PR_HOLD_OK=1 lets one through, and every degraded state - gh failing, no readable title - ALLOWS; driven as a subprocess against a fake gh",
-  runPrSameModuleHoldGuardTests,
 );
 await runTest(
   "the next build page-data worker cap is INERT unless a self-hosted runner asks for it: the config's own PHX_BUILD_CPUS predicate is lifted out of next.config.ts and executed, leaving experimental.cpus ABSENT for unset, empty, 0, negative and non-numeric (every GitHub-hosted run, every local build and production take that path) and capping at the NUMBER 4 only when asked, while ci.yml passes it solely under runner.environment == 'self-hosted' and neither file sets the dead NEXT_CPUS, which next@16.3.3 never reads",

@@ -52,9 +52,6 @@
 //       on 8 Oct 2026 one held a worktree for over an hour and kept its session from being archived.
 //       A foreground one is let through (its input is closed, so it exits at once).
 //       PHX_STDIN_OK=1 stands it down.
-//   C18 a `gh pr create` whose title scope matches a PR that is OPEN or MERGED in the last 6 hours —
-//       every merge costs two full CI runs, so a second PR for one module is held (widen the first
-//       one instead). Fails open on no scope / deps / memory / a gh error. PHX_PR_HOLD_OK=1 stands it down.
 //   C19 a command that would land in Python's INTERACTIVE REPL — a bare `python`/`python3`/`py` with
 //       no script, no `-c` and nothing feeding it, or a `python - <<DELIM` whose closing delimiter is
 //       missing. With no console attached, 3.13/3.14's _pyrepl dies in windows_console.getheightwidth
@@ -1872,61 +1869,6 @@ try {
           );
         }
       }
-    }
-  }
-
-  // C18 — a second PR for one module is refused (owner, 2026-10-14, cost cuts: "same-module hold:
-  // guard on gh pr create"). The module is the conventional-commit SCOPE of `--title`; if a PR with a
-  // shared scope is open, or merged in the last 6 hours, the new one is held and the message names
-  // it. FAILS OPEN in every direction (no readable title, no scope, deps/memory plumbing, `gh`
-  // missing or offline). The decision lives in scripts/pr-same-module-hold.mjs so it is testable.
-  // `PHX_PR_HOLD_OK=1 <cmd>` (`$env:PHX_PR_HOLD_OK=1; <cmd>` in PowerShell) stands it down.
-  const PR_HOLD_STAND_DOWN =
-    /(?:^|[\s;&|(])\s*(?:\$env:)?PHX_PR_HOLD_OK\s*=\s*['"]?1['"]?(?![\w.])/i;
-  const GH_PR_CREATE =
-    /(?:^|[\n|&;(])\s*(?:[A-Za-z_]\w*=\S+\s+)*gh(?:\.exe)?\s+pr\s+create(?:\s|$)/i;
-  const createText = withoutHeredocBodies(cmd);
-  if (
-    GH_PR_CREATE.test(createText) &&
-    !/(?:^|\s)(?:--help|-h)(?:\s|$)/.test(createText) &&
-    !PR_HOLD_STAND_DOWN.test(cmd) &&
-    process.env.PHX_PR_HOLD_OK !== '1'
-  ) {
-    try {
-      const holdUrl = new URL('../../scripts/pr-same-module-hold.mjs', import.meta.url).href;
-      const { holdDenial, holdingPr, prScope, prTitleFromCommand } = await import(holdUrl);
-      const title = prTitleFromCommand(createText);
-      if (title && prScope(title)) {
-        const ghList = (state, fields) =>
-          JSON.parse(
-            String(
-              execFileSync('gh', ['pr', 'list', '--state', state, '--limit', '50', '--json', fields], {
-                cwd: input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd(),
-                encoding: 'utf8',
-                stdio: ['ignore', 'pipe', 'ignore'],
-                timeout: 20000,
-                shell: process.platform === 'win32',
-              }),
-            ),
-          );
-        const open = ghList('open', 'number,title,headRefName');
-        const merged = ghList('merged', 'number,title,mergedAt');
-        const holder = holdingPr({ title, open, merged });
-        if (holder) {
-          deny(
-            holdDenial({
-              title,
-              holder,
-              standDown: String(input?.tool_name ?? '').toLowerCase().includes('powershell')
-                ? '$env:PHX_PR_HOLD_OK=1; <the same command>'
-                : 'PHX_PR_HOLD_OK=1 <the same command>',
-            }),
-          );
-        }
-      }
-    } catch (e) {
-      if (e?.[Symbol.for('phx.hook-exit')]) throw e; // a deny above ended this hook (hook-dispatch.mjs)
-      // Unreachable gh, unparseable JSON, module absent — allow. Never block on a blind spot.
     }
   }
 
