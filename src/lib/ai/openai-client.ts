@@ -110,6 +110,12 @@ export function resetOpenAiAvailability() {
   openAiUnavailableUntilMs = 0;
 }
 
+// Read by the sales AI paths (src/lib/sales/ai/provider.ts), which make their own raw calls but share this
+// memory: once any caller has learned OpenAI's account is dead, every other caller skips the doomed attempt.
+export function isOpenAiUnavailable(nowMs = Date.now()) {
+  return nowMs < openAiUnavailableUntilMs;
+}
+
 /** The providers to try, in order. Only an environment with BOTH keys ever gets a second entry. */
 export function planAiProviders(
   env: OpenAiEnv = process.env,

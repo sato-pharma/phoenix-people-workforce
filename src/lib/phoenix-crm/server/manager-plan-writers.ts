@@ -11,8 +11,10 @@
  * login stayed active on 17 Oct 2026), so a departed holder is dropped by `isTerminalEmploymentStatus` —
  * she neither plans a week nor appears in anybody's pick list.
  *
- * 🔴 IT FAILS OPEN TO NOBODY. An unreadable roster leaves the product managers without the Plan tab for a
- * minute; it never takes the whole module down, since every Phoenix CRM page builds its viewer through it.
+ * 🔴 IT NEVER TAKES THE MODULE DOWN, since every Phoenix CRM page builds its viewer through it. An unreadable
+ * roster keeps the last one read on this server for up to fifteen minutes (nobody, past that or if none
+ * was) rather than taking the Plan tab away from the product managers, and the reading link from their
+ * managers, over a passing failure.
  *
  * Nothing here sends a notice, so `access.ts` may import it without closing a cycle.
  */
@@ -21,6 +23,7 @@ import { unstable_cache } from "next/cache";
 
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
+import { hrIdLookupKeys } from "@/lib/hr-id";
 import { resolveHrIdsForRole } from "@/lib/notifications/role-recipients";
 import { logWarning } from "@/lib/observability/log";
 import { seatIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
@@ -61,42 +64,70 @@ async function readProductManagerRoster(): Promise<ProductManagerPlanner[]> {
   const { data: people, error: peopleError } = await getSupabaseAdmin()
     .from("employees")
     .select("hr_id, employment_status, manager_hr_id")
-    .in("hr_id", hrIds);
+    .in("hr_id", hrIds.flatMap((hrId) => hrIdLookupKeys(hrId)));
   if (peopleError) throw peopleError;
-  const out: ProductManagerPlanner[] = [];
+  // Every spelling of an id is asked for, so one person can come back as two rows: he plans once, under
+  // the manager either row names.
+  const byPerson = new Map<string, ProductManagerPlanner>();
   for (const row of (people ?? []) as Row[]) {
     const hrId = personKey(textOrNull(row.hr_id));
     if (!hrId || isTerminalEmploymentStatus(textOrNull(row.employment_status))) continue;
-    out.push({ hrId, managerHrId: personKey(textOrNull(row.manager_hr_id)) });
+    const managerHrId = personKey(textOrNull(row.manager_hr_id));
+    const known = byPerson.get(hrId);
+    if (!known || (!known.managerHrId && managerHrId)) byPerson.set(hrId, { hrId, managerHrId });
   }
-  return out.sort((left, right) => left.hrId.localeCompare(right.hrId));
+  return [...byPerson.values()].sort((left, right) => left.hrId.localeCompare(right.hrId));
 }
 
 const cachedProductManagerRoster = unstable_cache(readProductManagerRoster, ["phoenix-crm-product-manager-planners-v1"], { revalidate: 300 });
 
-/** Every product manager who plans a week here. Five minutes old at most; nobody when it cannot be read. */
+/**
+ * How long the last roster read stands in for one that cannot be read. Past it the answer is nobody, as
+ * before there was a fallback: a product manager who has left must not go on planning through a long
+ * outage, and two servers must not disagree for longer than this.
+ */
+const LAST_GOOD_ROSTER_MAX_AGE_MS = 15 * 60_000;
+
+/** The roster as it last read, kept so a short failed read does not take the product managers' Plan tab away. */
+let lastGoodProductManagerRoster: { roster: ProductManagerPlanner[]; readAt: number } | null = null;
+
+/** Every product manager who plans a week here. Five minutes old at most; the last roster read, for up to fifteen minutes, when it cannot be read now. */
 export async function loadProductManagerRoster(): Promise<ProductManagerPlanner[]> {
   try {
-    return await cachedProductManagerRoster();
+    const roster = await cachedProductManagerRoster();
+    lastGoodProductManagerRoster = { roster, readAt: Date.now() };
+    return roster;
   } catch (error) {
     logWarning("Phoenix CRM could not read the product managers who plan a week", {
       labels: { event: "phoenix_crm_product_manager_roster_failed" },
       error,
     });
-    return [];
   }
+  const lastGood = lastGoodProductManagerRoster;
+  return lastGood && Date.now() - lastGood.readAt <= LAST_GOOD_ROSTER_MAX_AGE_MS ? lastGood.roster : [];
 }
 
-/** The manager one person's HR record names. A failed read throws: a week is never sent to a guess. */
+/**
+ * The manager one person's HR record names. A failed read throws: a week is never sent to a guess. 🔴 A
+ * manager who has left, or who has no employees row at all, is not named — the HR record lags a
+ * resignation, and a week sent to someone who can never decide it would wait for ever — so the week goes
+ * on to the CEO (`legacyStyleApprovers`).
+ */
 async function managerOfRecord(hrId: string): Promise<string | null> {
-  const ids = [...new Set([hrId, hrId.toUpperCase()])];
-  const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id, manager_hr_id").in("hr_id", ids);
+  const db = getSupabaseAdmin();
+  const { data, error } = await db.from("employees").select("hr_id, manager_hr_id").in("hr_id", hrIdLookupKeys(hrId));
   if (error) throw error;
+  let manager: string | null = null;
   for (const row of (data ?? []) as Row[]) {
-    const manager = personKey(textOrNull(row.manager_hr_id));
-    if (manager) return manager;
+    manager = personKey(textOrNull(row.manager_hr_id));
+    if (manager) break;
   }
-  return null;
+  if (!manager) return null;
+  const { data: held, error: heldError } = await db.from("employees").select("hr_id, employment_status").in("hr_id", hrIdLookupKeys(manager));
+  if (heldError) throw heldError;
+  const rows = (held ?? []) as Row[];
+  const present = rows.length > 0 && !rows.some((row) => isTerminalEmploymentStatus(textOrNull(row.employment_status)));
+  return present ? manager : null;
 }
 
 /**

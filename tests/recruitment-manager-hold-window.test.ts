@@ -312,10 +312,14 @@ export function runRecruitmentManagerHoldWindowTests() {
 
   const returnSource = read("../src/lib/recruitment/manager-hold-return.ts");
   assert.ok(
-    returnSource.includes('.eq("status", "sent_to_manager")'),
+    returnSource.includes("returnSentCvToShortlist(recruitmentDb(), {") &&
+      read("../src/lib/recruitment/manager-recall-status.ts").includes('.eq("status", "sent_to_manager")'),
     "the status move is CONDITIONAL — a manager's answer a minute ago must not be overwritten by a nightly sweep",
   );
-  assert.ok(returnSource.includes("status_changed_by_hr_id: null"), "the actor lives on the event row, never on the candidate");
+  assert.ok(
+    returnSource.includes("statusActorHrId: null") && returnSource.includes("eventActorHrId: MANAGER_HOLD_RETURN_ACTOR"),
+    "the actor lives on the event row, never on the candidate",
+  );
   assert.ok(
     !returnSource.includes('from "@/lib/recruitment/candidates"'),
     "it must not import the person's-click path (updateCandidateStatus), which refuses sent_to_manager → shortlisted on purpose",

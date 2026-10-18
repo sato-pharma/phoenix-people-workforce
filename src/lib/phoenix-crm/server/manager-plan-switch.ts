@@ -17,7 +17,8 @@
  */
 
 import { owesAWeeklyPlan } from "@/lib/daily-deductions/no-weekly-plan-select";
-import { seatIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
+import { hrIdLookupKeys } from "@/lib/hr-id";
+import { seatHasLiveTeamBelow, seatIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
 import {
   dmPlansInPhoenixCrmFor,
   managerOwnVisitClosed,
@@ -41,8 +42,7 @@ export const DM_PLANS_IN_PHOENIX_CRM = "Forbidden: your week is planned in Phoen
  * was not allowed to file. A failed read throws: every caller already decides what "unknown" means.
  */
 async function owesTheLegacyWeeklyPlan(hrId: string): Promise<boolean> {
-  const ids = [...new Set([hrId, hrId.toUpperCase()])];
-  const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id, job_title").in("hr_id", ids);
+  const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id, job_title").in("hr_id", hrIdLookupKeys(hrId));
   if (error) throw error;
   return ((data ?? []) as Array<{ job_title: string | null }>).some((row) => owesAWeeklyPlan(row.job_title));
 }
@@ -75,7 +75,7 @@ async function seniorPlansInPhoenixCrm(org: OrgIndex, hrId: string, cairoToday: 
   if (await owesTheLegacyWeeklyPlan(hrId)) return false;
   const live = await loadLiveTeamSeatIdsForDisplay(cairoToday);
   if (live === null) return true;
-  return seats.some((seat) => [...live].some((liveSeatId) => liveSeatId !== seat.seatId && (org.seats.get(liveSeatId)?.path.includes(seat.seatId) ?? false)));
+  return seats.some((seat) => seatHasLiveTeamBelow(org.seats, seat.seatId, live));
 }
 
 /**
