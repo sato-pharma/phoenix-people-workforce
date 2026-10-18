@@ -9,7 +9,13 @@ import {
 } from "@/lib/communication/metrics";
 import { canViewerSeeNotification, isPersonalBellCategory, PERSONAL_BELL_CATEGORIES } from "@/lib/notifications/recipients";
 import { notificationHrefForViewerRole } from "@/lib/notifications/hrefs";
-import { noticeFetchLimit, noticeHiddenFromSeat } from "@/lib/notifications/seat-notice-filter";
+import {
+  noticeFetchLimit,
+  noticeHiddenFromSeat,
+  seatNeedsOtherKindsRead,
+  seatNoticeWindow,
+  TALENT_ACQUISITION_FLOODING_EVENT_TYPE,
+} from "@/lib/notifications/seat-notice-filter";
 // A LEAF of the Phoenix CRM server tree, chosen deliberately: it imports only access, db and the
 // pure rules, so the bell never ends up in a cycle with that module's own notifications file.
 import { phoenixCrmPlanIdsAwaitingDecision, phoenixCrmVisitIdsAwaitingDecision } from "@/lib/phoenix-crm/server/awaiting-decisions";
@@ -432,7 +438,7 @@ export async function listInAppNotificationsForViewer(
 
     // The two reads are independent, so they run together: the bell is polled by every open page and each
     // round trip to the database costs 300-600 ms (Sentry, 2026-10-16), which the second one used to add on top.
-    const [employeeResult, recipientResult] = await Promise.all([
+    const [employeeResult, recipientResult, otherKindsResult] = await Promise.all([
       supabase
         .from("notification_events")
         .select(selectColumns)
@@ -447,6 +453,19 @@ export async function listInAppNotificationsForViewer(
         .in("category", allowedCategories)
         .order("created_at", { ascending: false })
         .limit(readLimit),
+      // The Talent Acquisition seat gets a new-CV notice every twenty minutes, so the two reads above
+      // fill with them and reach back only a day or two. Her other notices are read on their own, so an
+      // interview request that has waited three days is still on the page (seat-notice-filter.ts).
+      seatNeedsOtherKindsRead(access.role)
+        ? supabase
+            .from("notification_events")
+            .select(selectColumns)
+            .eq("employee_hr_id", employeeHrId.toUpperCase())
+            .in("category", allowedCategories)
+            .or(`event_type.is.null,event_type.neq.${TALENT_ACQUISITION_FLOODING_EVENT_TYPE}`)
+            .order("created_at", { ascending: false })
+            .limit(readLimit)
+        : null,
     ]);
 
     if (employeeResult.error) throw employeeResult.error;
@@ -464,7 +483,15 @@ export async function listInAppNotificationsForViewer(
       }
     }
 
-    const rows = Array.from(rowsById.values())
+    // A failed side read costs her the older interview requests, never the bell itself.
+    if (otherKindsResult && !otherKindsResult.error) {
+      for (const row of (otherKindsResult.data ?? []) as InAppNotificationEventRow[]) {
+        const id = String(row.id ?? "");
+        if (id) rowsById.set(id, row);
+      }
+    }
+
+    const newestFirst = Array.from(rowsById.values())
       // Personal-bell category allowlist: hide legacy/orphaned categories (e.g.
       // "leave") that may carry mis-assigned recipients. Defense-in-depth on top
       // of the SQL .in("category", ...) filter. See src/lib/notifications/recipients.ts.
@@ -483,8 +510,10 @@ export async function listInAppNotificationsForViewer(
       // A Phoenix CRM test-world notice is addressed to the real person, so every filter above
       // passes it. This is the one that keeps it off her bell and on her test login's.
       .filter((row) => testNoticeVisibleToViewer(identity.testLoginId, row))
-      .sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")))
-      .slice(0, boundedLimit);
+      .sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")));
+    // The newest `boundedLimit` rows; for the Talent Acquisition seat, with room held for the notices
+    // that are not a new CV (seat-notice-filter.ts).
+    const rows = seatNoticeWindow(access.role, newestFirst, boundedLimit);
 
     const rowIds = rows.map((row) => String(row.id ?? "")).filter(Boolean);
     const stateByEventId = new Map<string, NotificationUserStateRow>();

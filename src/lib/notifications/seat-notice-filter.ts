@@ -42,3 +42,42 @@ export function noticeHiddenFromSeat(role: PhoenixRole | null | undefined, event
 export function noticeFetchLimit(role: PhoenixRole | null | undefined, limit: number): number {
   return role === "HR Resourcing" ? Math.max(limit, 100) : limit;
 }
+
+/**
+ * The one notice that arrives all day. A new CV fires roughly three times an hour for this seat, so a
+ * newest-first window of 20 holds nothing else after about seven hours: measured 2026-10-18, both
+ * interview requests of the 17th (17:00 and 17:23 Cairo) sat at positions 23 and 24 of her feed and
+ * the bell and the band, which serve 20 and no more, showed neither.
+ */
+export const TALENT_ACQUISITION_FLOODING_EVENT_TYPE = "recruitment_inbound_cv";
+
+/** True when the list must also read this seat's NON-flooding notices on their own (a second query). */
+export function seatNeedsOtherKindsRead(role: PhoenixRole | null | undefined): boolean {
+  return role === "HR Resourcing";
+}
+
+/**
+ * The window a viewer is served, newest first. For every seat but this one it is the plain newest
+ * `limit`. For hers, at least half the window is held for notices that are NOT a new CV (an interview
+ * request, an accepted offer, her own personal notices) when she has them, and the new CVs take the
+ * rest, so the kind that arrives all day can never push the others out of sight. Rows keep their
+ * order; nothing is added that the caller did not pass in.
+ */
+export function seatNoticeWindow<T extends { event_type?: string | null }>(
+  role: PhoenixRole | null | undefined,
+  newestFirst: readonly T[],
+  limit: number,
+): T[] {
+  if (!seatNeedsOtherKindsRead(role)) return newestFirst.slice(0, limit);
+  const reserved = Math.ceil(limit / 2);
+  const kept = new Set<T>();
+  for (const row of newestFirst) {
+    if (kept.size >= reserved) break;
+    if (row.event_type !== TALENT_ACQUISITION_FLOODING_EVENT_TYPE) kept.add(row);
+  }
+  for (const row of newestFirst) {
+    if (kept.size >= limit) break;
+    kept.add(row);
+  }
+  return newestFirst.filter((row) => kept.has(row));
+}
