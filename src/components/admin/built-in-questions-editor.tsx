@@ -470,7 +470,7 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
 
               {prompt.supportsRegionToken ? (
                 <p className="mt-1 text-phx-xs text-slate-500">
-                  Write <code className="rounded bg-slate-100 px-1 py-0.5 text-slate-700">{REGION_TOKEN}</code> where
+                  Write <code className="bg-slate-100 px-1 py-0.5 text-slate-700">{REGION_TOKEN}</code> where
                   the region name should appear — the bot replaces it with the region they chose.
                 </p>
               ) : null}
@@ -583,7 +583,7 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
               </div>
 
               {/* -- The answers -------------------------------------------------------------- */}
-              <div className="mt-4 rounded border border-slate-200 bg-slate-50/60 p-3">
+              <div className="mt-4 border border-slate-200 bg-slate-50/60 p-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <p className="text-phx-xs font-medium text-slate-600">What the applicant can answer</p>
                   {prompt.options.length > 0 ? (
@@ -605,7 +605,7 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
                       const title = typed.title ?? "";
                       const description = typed.description ?? "";
                       return (
-                        <div className="rounded border border-slate-200 bg-white p-3" key={value}>
+                        <div className="border border-slate-200 bg-white p-3" key={value}>
                           {/* The label and the code are separate elements, not one sentence: at
                               375px the longest code (national_sales_manager) broke across two lines
                               inside a combined badge, and a code split mid-word reads as two codes. */}
@@ -615,7 +615,7 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
                             </span>
                             <span className="flex items-center gap-1.5">
                               <span className="text-phx-xs text-slate-400">sends back</span>
-                              <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-phx-xs whitespace-nowrap text-slate-500">
+                              <span className="break-all bg-slate-100 px-1.5 py-0.5 font-mono text-phx-xs text-slate-500">
                                 {value}
                               </span>
                             </span>
@@ -723,12 +723,12 @@ export function BuiltInQuestionsEditor({ initialPrompts }: Props) {
                         if (!option) return null;
                         return (
                           <div
-                            className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded border border-dashed border-slate-300 bg-white/60 p-2"
+                            className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border border-dashed border-slate-300 bg-white/60 p-2"
                             key={value}
                           >
                             <span className="text-phx-xs text-slate-500">{option.defaultTitle}</span>
                             <span className="flex items-center gap-1.5">
-                              <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-phx-xs whitespace-nowrap text-slate-500">
+                              <span className="break-all bg-slate-100 px-1.5 py-0.5 font-mono text-phx-xs text-slate-500">
                                 {value}
                               </span>
                               <Button

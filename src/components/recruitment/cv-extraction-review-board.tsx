@@ -25,6 +25,13 @@
 //   • array (repeating block) → its own card list, entries removable but not free-text edited
 // If a fourth shape is ever added to CvFieldType, it MUST be handled in buildValues before it
 // ships, or it will silently blank on the first review.
+//
+// THE LOOK (2026-10-19 premium sweep). Every state a value can be in reads at a glance, square and
+// in the module's colours: a slot holding a value carries an emerald rule (it will be saved), an
+// empty slot is a dashed drop target, the Unassigned tray is dashed rose while it holds anything
+// (those values are not saved) and turns emerald when it is empty, an irrelevant field is
+// a dashed grey well, and a value the reader was unsure of wears an amber "Check this" chip. The
+// footer is the form's own pair: the orange commit and the plain Cancel.
 
 import { useMemo, useState } from "react";
 import {
@@ -40,8 +47,8 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
+import { AlertCircle, CheckCircle2, GripVertical, Inbox, RotateCcw, Save, X } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import type { ExtractedCvValue, ExtractedField, ExtractedFieldConfidence } from "@/lib/recruitment/cv-extraction";
 import {
   CV_FIELD_SECTIONS,
@@ -51,10 +58,31 @@ import {
   type CvSubFieldDefinition,
 } from "@/lib/recruitment/cv-field-schemas";
 import {
+  phxButtonAccentClassName,
+  phxButtonGhostClassName,
   phxFieldClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
-import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  adminChipDepthClassName,
+  adminControlDepthClassName,
+  adminRecessedDepthClassName,
+  adminSoftDepthClassName,
+} from "@/components/admin/admin-design-tokens";
+import { cn } from "@/lib/utils";
+
+/** The micro-caps label over every slot, select and block. */
+const fieldLabelClassName = "mb-1 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500";
+
+/** A section's heading: the module's orange tick, then the section name on a hairline. */
+function SectionHeading({ children }: { children: string }) {
+  return (
+    <p className="flex items-center gap-2 border-b border-slate-200 pb-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-slate-700">
+      <span aria-hidden="true" className="h-3 w-0.5 bg-orange-500" />
+      {children}
+    </p>
+  );
+}
 
 const POOL_ID = "__pool__";
 
@@ -121,20 +149,26 @@ function Chip({ chip, isEditing, onEdit, onCommitEdit }: {
 
   return (
     <div
-      className={`flex cursor-grab items-start gap-1.5 rounded-md border px-2 py-1 text-sm active:cursor-grabbing ${
-        isDragging ? "opacity-40" : "border-gray-200 bg-white"
-      }`}
+      className={cn(
+        `flex cursor-grab items-start gap-1.5 border px-2 py-1 text-sm text-slate-900 transition-colors active:cursor-grabbing ${adminChipDepthClassName}`,
+        isDragging
+          ? "border-dashed border-orange-300 bg-orange-50/40 opacity-40"
+          : "border-slate-200 bg-white hover:border-orange-300",
+      )}
       onClick={() => onEdit(chip.key)}
       ref={setNodeRef}
       style={style}
       {...listeners}
       {...attributes}
     >
+      <GripVertical aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-300" />
       {/* break-words, never truncate: the universal schema carries a professional summary and
           per-role responsibilities, and a reviewer cannot check a value they can only see half of. */}
-      <span className="min-w-0 flex-1 break-words">{chip.value || <span className="text-slate-400">(empty)</span>}</span>
+      <span className="min-w-0 flex-1 break-words" dir="auto">
+        {chip.value || <span className="text-slate-400">(empty)</span>}
+      </span>
       {chip.confidence === "low" ? (
-        <span className="shrink-0 rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-phx-2xs font-semibold text-amber-700">
+        <span className="shrink-0 border border-amber-300 bg-amber-50 px-1 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.06em] text-amber-800">
           Check this
         </span>
       ) : null}
@@ -145,7 +179,7 @@ function Chip({ chip, isEditing, onEdit, onCommitEdit }: {
 function DroppableArea({ id, children, className }: { id: string; children: React.ReactNode; className?: string }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
-    <div className={`${className ?? ""} ${isOver ? "ring-2 ring-orange-300" : ""}`} ref={setNodeRef}>
+    <div className={`${className ?? ""} ${isOver ? "ring-2 ring-orange-400 ring-offset-1" : ""}`} ref={setNodeRef}>
       {children}
     </div>
   );
@@ -172,12 +206,12 @@ function BlockCard({
   const itemFields = field.itemFields ?? [];
   return (
     <div>
-      <p className="mb-1 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
+      <p className={fieldLabelClassName}>
         {field.label} <span className="text-slate-300">·</span> {entries.length}{" "}
         {entries.length === 1 ? "entry" : "entries"}
       </p>
       {entries.length === 0 ? (
-        <p className="rounded-md border border-dashed border-gray-300 bg-white px-2 py-2 text-xs text-slate-400">
+        <p className="border border-dashed border-slate-300 bg-white px-2.5 py-2 text-xs text-slate-400">
           The CV listed none.
         </p>
       ) : (
@@ -187,24 +221,28 @@ function BlockCard({
               .map((subField) => ({ subField, text: subValueText(subField, entry[subField.key]) }))
               .filter((line): line is { subField: CvSubFieldDefinition; text: string } => line.text !== null);
             return (
-              <div className="rounded-md border border-gray-200 bg-white px-2 py-1.5" key={index}>
+              <div
+                className={`border border-slate-200 border-l-[3px] border-l-emerald-500 bg-white px-2.5 py-2 ${adminSoftDepthClassName}`}
+                key={index}
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     {lines.length === 0 ? (
                       <p className="text-xs text-slate-400">(empty entry)</p>
                     ) : (
                       lines.map(({ subField, text }) => (
-                        <p className="break-words text-xs text-slate-700" key={subField.key}>
+                        <p className="break-words text-xs leading-5 text-slate-700" dir="auto" key={subField.key}>
                           <span className="font-medium text-slate-500">{subField.label}:</span> {text}
                         </p>
                       ))
                     )}
                   </div>
                   <button
-                    className="shrink-0 rounded border border-gray-200 px-1.5 py-0.5 text-phx-xs text-slate-500 hover:border-rose-200 hover:text-rose-600"
+                    className={`inline-flex shrink-0 items-center gap-1 border border-slate-200 bg-white px-1.5 py-0.5 text-phx-xs font-semibold text-slate-500 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 ${adminControlDepthClassName}`}
                     onClick={() => onRemove(field.key, index)}
                     type="button"
                   >
+                    <X aria-hidden="true" className="h-3 w-3" />
                     Remove
                   </button>
                 </div>
@@ -386,22 +424,73 @@ export function CvExtractionReviewBoard({
 
   return (
     <DndContext onDragEnd={handleDragEnd} onDragStart={handleDragStart} sensors={sensors}>
-      <div className={`space-y-3 rounded border border-slate-200 bg-slate-50/60 p-4 ${adminRecessedDepthClassName}`}>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Drag a field into the right column, or drag one out to leave it blank. Populate resets everything to the original suggested values.
-          </p>
-          <Button onClick={applyAiPopulate} size="sm" type="button" variant="secondary">
+      <div className={`space-y-4 border border-slate-200 bg-slate-50/60 p-4 ${adminRecessedDepthClassName}`}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 grow basis-72 space-y-2">
+            <p className="text-xs font-medium leading-5 text-slate-600">
+              Drag a field into the right column, or drag one out to leave it blank. Populate resets everything to the original suggested values.
+            </p>
+            {/* The four states, named once, so the colours below never have to be guessed. */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-phx-2xs font-bold uppercase tracking-[0.06em] text-slate-500">
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden="true" className="h-2.5 w-2.5 border-l-[3px] border-l-emerald-500 bg-emerald-100" />
+                Saved
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden="true" className="h-2.5 w-2.5 border border-dashed border-slate-400 bg-white" />
+                Empty slot
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden="true" className="h-2.5 w-2.5 border border-dashed border-rose-300 bg-rose-50" />
+                Not saved
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden="true" className="h-2.5 w-2.5 border border-amber-300 bg-amber-50" />
+                Check this
+              </span>
+            </div>
+          </div>
+          <button
+            className={`${phxButtonGhostClassName} ${adminControlDepthClassName}`}
+            onClick={applyAiPopulate}
+            type="button"
+          >
+            <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
             Populate
-          </Button>
+          </button>
         </div>
-        {error ? <p className="text-xs text-rose-600">{error}</p> : null}
+        {error ? (
+          <p
+            className="flex items-start gap-2 border border-rose-200 border-l-[3px] border-l-rose-500 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"
+            role="alert"
+          >
+            <AlertCircle aria-hidden="true" className="mt-px h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 break-words">{error}</span>
+          </p>
+        ) : null}
 
         <div>
-          <p className="mb-1 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">Unassigned</p>
-          <DroppableArea className="flex min-h-[42px] flex-wrap gap-2 rounded-md border border-dashed border-gray-300 bg-white p-2" id={POOL_ID}>
+          <p className={cn(fieldLabelClassName, "flex flex-wrap items-center gap-x-2")}>
+            <Inbox aria-hidden="true" className="h-3 w-3 text-slate-400" />
+            Unassigned
+            {poolChipKeys.length > 0 ? (
+              <span className="font-semibold normal-case tracking-normal text-rose-700">
+                {poolChipKeys.length} not saved
+              </span>
+            ) : null}
+          </p>
+          <DroppableArea
+            className={cn(
+              "flex min-h-[42px] flex-wrap gap-2 border border-dashed p-2",
+              poolChipKeys.length === 0 ? "border-emerald-300 bg-emerald-50/40" : "border-rose-300 bg-rose-50/40",
+            )}
+            id={POOL_ID}
+          >
             {poolChipKeys.length === 0 ? (
-              <span className="px-1 py-1 text-xs text-slate-400">Nothing unassigned.</span>
+              <span className="inline-flex items-center gap-1.5 px-1 py-1 text-xs font-medium text-emerald-800">
+                <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
+                Nothing unassigned.
+              </span>
             ) : (
               poolChipKeys.map((key) => (
                 <Chip
@@ -418,9 +507,7 @@ export function CvExtractionReviewBoard({
 
         {sections.map((section) => (
           <div className="space-y-2" key={section.key}>
-            <p className="border-b border-slate-200 pb-1 text-phx-xs font-semibold uppercase tracking-wider text-slate-500">
-              {section.label}
-            </p>
+            <SectionHeading>{section.label}</SectionHeading>
 
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {section.chipsInSection.map((field) => {
@@ -428,8 +515,10 @@ export function CvExtractionReviewBoard({
                 if (fieldIrrelevant(field)) {
                   return (
                     <div key={field.key}>
-                      <p className="mb-1 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">{field.label}</p>
-                      <div className="flex min-h-[42px] items-center rounded-md border border-dashed border-gray-200 bg-slate-50 px-2 text-xs italic text-slate-400">
+                      <p className={fieldLabelClassName}>{field.label}</p>
+                      <div
+                        className={`flex min-h-[42px] items-center border border-dashed border-slate-200 bg-slate-50 px-2 text-xs italic text-slate-400 ${adminRecessedDepthClassName}`}
+                      >
                         Irrelevant
                       </div>
                     </div>
@@ -437,8 +526,16 @@ export function CvExtractionReviewBoard({
                 }
                 return (
                   <div key={field.key}>
-                    <p className="mb-1 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">{field.label}</p>
-                    <DroppableArea className="min-h-[42px] rounded-md border border-gray-200 bg-white p-1.5" id={slotId(field.key)}>
+                    <p className={fieldLabelClassName}>{field.label}</p>
+                    <DroppableArea
+                      className={cn(
+                        "min-h-[42px] border p-1.5",
+                        assignedChipKey
+                          ? `border-slate-200 border-l-[3px] border-l-emerald-500 bg-emerald-50/40 ${adminRecessedDepthClassName}`
+                          : "border-dashed border-slate-300 bg-white",
+                      )}
+                      id={slotId(field.key)}
+                    >
                       {assignedChipKey ? (
                         <Chip
                           chip={chipDisplay(assignedChipKey)}
@@ -447,7 +544,7 @@ export function CvExtractionReviewBoard({
                           onEdit={setEditingChip}
                         />
                       ) : (
-                        <span className="block px-1 py-1 text-xs text-slate-400">Drop a field here</span>
+                        <span className="block px-1 py-1 text-xs italic text-slate-400">Drop a field here</span>
                       )}
                     </DroppableArea>
                   </div>
@@ -456,7 +553,7 @@ export function CvExtractionReviewBoard({
 
               {section.bools.map((field) => (
                 <div key={field.key}>
-                  <p className="mb-1 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">{field.label}</p>
+                  <p className={fieldLabelClassName}>{field.label}</p>
                   <select
                     className={phxSelectClassName}
                     onChange={(event) =>
@@ -482,19 +579,33 @@ export function CvExtractionReviewBoard({
           </div>
         ))}
 
-        <div className="flex gap-2">
-          <Button disabled={busy} onClick={() => void onSave(buildValues())}>
+        {/* The form's own pair: orange is the one terminal commit, Cancel is plain. Green stays
+            reserved for a decision pair (form-tokens.ts) — saving a review is not one. */}
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3">
+          <button
+            className={`${phxButtonAccentClassName} ${adminControlDepthClassName} disabled:shadow-none`}
+            disabled={busy}
+            onClick={() => void onSave(buildValues())}
+            type="button"
+          >
+            <Save aria-hidden="true" className="h-3.5 w-3.5" />
             {saveLabel}
-          </Button>
-          <Button disabled={busy} onClick={onCancel} variant="ghost">
+          </button>
+          <button
+            className={`${phxButtonGhostClassName} ${adminControlDepthClassName} disabled:shadow-none`}
+            disabled={busy}
+            onClick={onCancel}
+            type="button"
+          >
             Cancel
-          </Button>
+          </button>
         </div>
       </div>
 
       <DragOverlay>
         {activeChip ? (
-          <div className="flex items-center gap-1.5 rounded-md border border-orange-300 bg-white px-2 py-1 text-sm shadow-lg">
+          <div className="flex items-center gap-1.5 border border-orange-400 bg-white px-2 py-1 text-sm text-slate-900 shadow-[0_12px_28px_rgba(15,23,42,0.18)]">
+            <GripVertical aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-orange-400" />
             {chipValues[activeChip] || <span className="text-slate-400">(empty)</span>}
           </div>
         ) : null}

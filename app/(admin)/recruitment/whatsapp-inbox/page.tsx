@@ -1,5 +1,8 @@
+import { AlertTriangle, MessagesSquare } from "lucide-react";
 import { redirect } from "next/navigation";
 
+import { adminChipDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { WhatsAppInbox } from "@/components/whatsapp-inbox/whatsapp-inbox";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { canUseWhatsAppInbox } from "@/lib/whatsapp-inbox/access";
@@ -53,9 +56,26 @@ export default async function WhatsAppInboxPage() {
       ? "The inbox's database tables are not installed here yet, so no chats can be shown."
       : "The chats could not be read just now. Refresh the page to try again.";
     return (
-      <div className="mx-auto max-w-3xl p-6">
-        <h1 className="text-[20px] font-black text-phx-ink">WhatsApp Inbox unavailable</h1>
-        <p className="mt-2 text-[13px] text-phx-ink-soft">{message}</p>
+      <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
+        <RecruitmentPageHeader
+          description="Both company WhatsApp numbers, read and answered inside Phoenix."
+          icon={<MessagesSquare aria-hidden="true" className="h-3.5 w-3.5" />}
+          title="WhatsApp Inbox"
+        />
+        <div
+          className={`flex items-start gap-3 border border-amber-200 bg-amber-50 px-4 py-4 ${adminSoftDepthClassName}`}
+          role="alert"
+        >
+          <span
+            className={`flex h-9 w-9 flex-none items-center justify-center border border-amber-300 bg-white text-amber-600 ${adminChipDepthClassName}`}
+          >
+            <AlertTriangle aria-hidden="true" className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-black text-amber-950">WhatsApp Inbox unavailable</p>
+            <p className="mt-1 break-words text-[13px] leading-5 text-amber-900">{message}</p>
+          </div>
+        </div>
       </div>
     );
   }

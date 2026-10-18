@@ -23,7 +23,8 @@ import { CANDIDATE_COMMENT_MAX_LENGTH, type CandidateComment } from "@/lib/recru
 import { cairoStamp, EmptyNote } from "@/components/recruitment/workstation/workstation-ui";
 import type { CandidateTimelineEvent, CandidateTimelineKind } from "@/lib/recruitment/candidate-timeline";
 import { cn } from "@/lib/utils";
-import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { phxButtonAccentClassName, phxTextareaClassName } from "@/components/ui/form-tokens";
+import { adminControlDepthClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /** The dot beside each line. Colour is the only thing carrying the kind, so it stays semantic. */
 const kindTone: Record<CandidateTimelineKind, string> = {
@@ -192,7 +193,9 @@ export function WorkstationNotesTab({
   return (
     <div className="flex min-h-0 flex-col">
       {canWrite ? (
-        <div className="shrink-0 border-b border-phx-line bg-phx-paper p-2">
+        // The note box sits in a recessed well at the head of the tab; the field itself is the one
+        // form design's textarea, and the save is the form kit's terminal commit at the pane's size.
+        <div className={cn("shrink-0 border-b border-phx-line bg-phx-paper p-2", adminRecessedDepthClassName)}>
           <textarea
             aria-label="Add a note"
             className={`${phxTextareaClassName} leading-relaxed`}
@@ -206,7 +209,12 @@ export function WorkstationNotesTab({
           />
           <div className="mt-1.5 flex items-center gap-2">
             <button
-              className="inline-flex items-center gap-1.5 border border-phx-accent-line bg-phx-accent px-2.5 py-1 text-[12px] font-bold text-white transition hover:bg-phx-accent-press disabled:opacity-45"
+              className={cn(
+                phxButtonAccentClassName,
+                "px-2.5 py-1 text-[12px] disabled:opacity-45",
+                adminControlDepthClassName,
+                "disabled:shadow-none",
+              )}
               disabled={saving || draft.trim().length === 0}
               onClick={() => void save()}
               type="button"

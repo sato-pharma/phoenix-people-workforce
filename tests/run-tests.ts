@@ -386,6 +386,7 @@ import { runRecruitmentCandidateSourceContextTests } from "./recruitment-candida
 import { runRecruitmentDbBatchTests } from "./recruitment-db-batch.test.ts";
 import { runRecruitmentPoolRoundTripsTests } from "./recruitment-pool-round-trips.test.ts";
 import { runRecruitmentPageReadsTests } from "./recruitment-page-reads.test.ts";
+import { runRecruitmentPoolWhatsAppColumnsTests } from "./recruitment-pool-whatsapp-columns.test.ts";
 import { runAttendanceRawPunchBatchTests } from "./attendance-raw-punch-batch.test.ts";
 import { runAttendanceExportHouseIdentityTests } from "./attendance-export-house-identity.test.ts";
 import { runAttendanceCalendarSourceTests } from "./attendance-calendar-source.test.ts";
@@ -3585,6 +3586,7 @@ await runTest("recruitment candidate source context (email subject / whatsapp fi
 await runTest("recruitment db batching (.in() id lists stay inside the request URL)", runRecruitmentDbBatchTests);
 await runTest("recruitment pool round trips (counts from the pool rows, whole-table reads start before the pool)", runRecruitmentPoolRoundTripsTests);
 await runTest("recruitment page reads settle one by one (a failed read is named, never blanks the page)", runRecruitmentPageReadsTests);
+await runTest("the recruitment pool's headers are the WhatsApp questions, switching by role, and each cell is the candidate's own answer", runRecruitmentPoolWhatsAppColumnsTests);
 await runTest("attendance calendar source", runAttendanceCalendarSourceTests);
 await runTest("attendance raw punches go in batches of 250 and fall back punch by punch (counts, failure index, bounded concurrency)", runAttendanceRawPunchBatchTests);
 await runTest("attendance exports (house identity, mapping header row, incomplete warning)", runAttendanceExportHouseIdentityTests);

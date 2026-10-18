@@ -29,12 +29,16 @@ import {
 } from "@/lib/recruitment/interview-calendar-types";
 import { cn } from "@/lib/utils";
 
+import { RecruitmentPill } from "@/components/recruitment/recruitment-premium";
+
+import { PanelHeading } from "./calendar-dialog";
 import { CopyLinkSection } from "./copy-link-section";
 import {
   phxFieldClassName,
+  phxLabelClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
-import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminPanelHeaderClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 function AccessSelect({
   disabled,
@@ -154,21 +158,26 @@ export function InterviewShareDialog({ onClose, weekStart }: { onClose: () => vo
       <div
         aria-labelledby="share-interview-calendar-title"
         aria-modal="true"
-        className="flex max-h-[92vh] w-full max-w-[560px] flex-col border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.28)]"
+        className="flex max-h-[92vh] w-full max-w-[560px] flex-col border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.32)]"
         ref={dialogRef}
         role="dialog"
       >
-        <header className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-5">
+        <header className={`flex items-start justify-between gap-3 px-4 py-3.5 text-white sm:px-5 ${adminPanelHeaderClassName}`}>
           <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-orange-700">Share</p>
-            <h2 className="mt-0.5 text-[17px] font-bold text-slate-900" id="share-interview-calendar-title">
+            <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-orange-300">
+              <Share2 aria-hidden className="h-3.5 w-3.5" />
+              Share
+            </p>
+            <h2 className="mt-1 break-words text-[17px] font-bold leading-snug tracking-tight text-white" id="share-interview-calendar-title">
               Share the interview calendar
             </h2>
-            <p className="text-[12px] text-slate-500">People you add are told in Phoenix. A copy link reaches whoever you send it to. Only you can share it.</p>
+            <p className="mt-0.5 break-words text-[12px] leading-5 text-slate-300">
+              People you add are told in Phoenix. A copy link reaches whoever you send it to. Only you can share it.
+            </p>
           </div>
           <button
             aria-label="Close"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center border border-transparent text-slate-500 hover:border-slate-200 hover:text-slate-900"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center border border-white/15 text-slate-300 transition-colors hover:border-white/40 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
             onClick={onClose}
             type="button"
           >
@@ -179,7 +188,7 @@ export function InterviewShareDialog({ onClose, weekStart }: { onClose: () => vo
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
           <section aria-label="Add a person">
             {picked ? (
-              <div className="border border-orange-200 bg-orange-50 p-3">
+              <div className={`border border-orange-200 border-l-[3px] border-l-orange-500 bg-orange-50 p-3 ${adminSoftDepthClassName}`}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="break-words text-[14px] font-bold text-slate-900">{picked.name}</p>
@@ -202,10 +211,10 @@ export function InterviewShareDialog({ onClose, weekStart }: { onClose: () => vo
               </div>
             ) : (
               <>
-                <label className="block" htmlFor="interview-share-search">
-                  <span className="text-[12px] font-bold text-slate-700">Add a person</span>
+                <label className={phxLabelClassName} htmlFor="interview-share-search">
+                  Add a person
                 </label>
-                <div className="relative mt-1">
+                <div className="relative">
                   <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
                     autoComplete="off"
@@ -218,7 +227,7 @@ export function InterviewShareDialog({ onClose, weekStart }: { onClose: () => vo
                   />
                 </div>
                 {query.trim().length >= 2 ? (
-                  <ul className="mt-1 divide-y divide-slate-100 border border-slate-200">
+                  <ul className={`mt-1 divide-y divide-slate-100 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
                     {searching && people.length === 0 ? (
                       <li className="px-3 py-2 text-[12px] text-slate-500">Searching…</li>
                     ) : people.length === 0 ? (
@@ -259,17 +268,27 @@ export function InterviewShareDialog({ onClose, weekStart }: { onClose: () => vo
           </section>
 
           {error ? (
-            <p className="mt-3 border-l-[3px] border-l-red-600 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-700" role="alert">
+            <p className="mt-3 break-words border border-red-200 border-l-[3px] border-l-red-600 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-700" role="alert">
               {error}
             </p>
           ) : null}
 
           <section aria-label="People with access" className="mt-5">
-            <p className="mb-2 text-[12px] font-bold uppercase tracking-[0.06em] text-slate-700">People with access</p>
-            <ul className="divide-y divide-slate-100 border border-slate-200">
+            <PanelHeading
+              aside={
+                shares && shares.length > 0 ? (
+                  <span className="text-[11px] font-bold tabular-nums text-slate-500">
+                    {shares.length} {shares.length === 1 ? "person" : "people"}
+                  </span>
+                ) : null
+              }
+            >
+              People with access
+            </PanelHeading>
+            <ul className={`divide-y divide-slate-100 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
               <li className="flex items-center justify-between gap-3 bg-slate-50 px-3 py-2">
                 <span className="text-[13px] font-semibold text-slate-900">You</span>
-                <span className="text-[12px] font-bold text-slate-500">{ACCESS_LEVEL_LABEL.owner}</span>
+                <RecruitmentPill tone="orange">{ACCESS_LEVEL_LABEL.owner}</RecruitmentPill>
               </li>
               {shares === null ? (
                 <li className="px-3 py-2 text-[12px] text-slate-500">Reading…</li>

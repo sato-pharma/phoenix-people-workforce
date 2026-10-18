@@ -6,6 +6,8 @@
 // summary. It reads `candidateScreeningFacts`, so a confirmed column renders black and the CV
 // reader's hedged answer renders grey italic with a "?" — one convention, one module, everywhere.
 
+import { FileSearch } from "lucide-react";
+
 import type { StoredCvExtraction } from "@/lib/recruitment/cv-extraction-fields";
 import {
   candidateScreeningChecks,
@@ -18,7 +20,7 @@ import {
 import type { Candidate } from "@/lib/recruitment/types";
 import { candidateWhatsAppAnswers, type ScreeningQuestionLabel } from "@/lib/recruitment/whatsapp-answers";
 import { WhatsAppAnswersList } from "@/components/recruitment/whatsapp-answers-list";
-import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Cell = {
   hint?: string;
@@ -35,13 +37,28 @@ type Cell = {
 /**
  * WHICH FRAME THIS BLOCK DRAWS AROUND ITSELF.
  *
- * `card` is what the two older screens have always had: a rounded, shadowless slate card sitting on
- * a page. `flat` draws nothing at all, because in the screening workstation this block is already
- * inside a titled, square, bordered section — a second frame in there is a rounded rectangle in the
- * middle of a corporate grid, which is exactly the noise the owner objected to, and rounded corners
- * are against house style besides. The default is `card` so nothing outside the workstation moves.
+ * `card` is what the two older screens have always had: a white card sitting on a page — square
+ * since the 2026-10-19 premium sweep, lifted by the soft depth a box inside a panel takes. `flat`
+ * draws nothing at all, because in the screening workstation and on the candidate's own page this
+ * block is already inside a titled, square, bordered section — a second frame in there is a box in
+ * the middle of a box, which is exactly the noise the owner objected to. The default is `card` so
+ * nothing outside those two screens moves.
  */
 type Frame = "card" | "flat";
+
+/**
+ * The heading over each block, and the one thing the two frames share: the module's orange tick in
+ * front of a micro-caps label. It is what separates "Screening checks", "From the CV" and "Answers on
+ * WhatsApp" at a glance — three different kinds of fact, three different sources.
+ */
+function BlockHeading({ children }: { children: string }) {
+  return (
+    <p className="flex items-center gap-2 text-[11px] font-black uppercase leading-[1.45] tracking-[0.12em] text-slate-500">
+      <span aria-hidden="true" className="h-3 w-0.5 bg-orange-500" />
+      {children}
+    </p>
+  );
+}
 
 /**
  * The facts a screener needs, resolved once and laid out in a responsive grid.
@@ -199,10 +216,11 @@ export function CandidateFactsSummary({
         className={
           frame === "flat"
             ? `bg-white px-3 py-2 ${className ?? ""}`
-            : `rounded-md border border-dashed border-slate-300 bg-slate-50/60 p-3 ${className ?? ""}`
+            : `flex items-start gap-2.5 border border-dashed border-slate-300 bg-slate-50/60 p-3 ${adminRecessedDepthClassName} ${className ?? ""}`
         }
       >
-        <p className="text-xs text-slate-600">
+        {flat ? null : <FileSearch aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />}
+        <p className="text-xs leading-5 text-slate-600">
           Nothing has been read off this CV yet — read the document itself, or use “Read the CV again”.
         </p>
       </div>
@@ -211,12 +229,9 @@ export function CandidateFactsSummary({
 
   const gridColumns =
     columns === 1 ? "grid-cols-1" : columns === 2 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3";
-  // Square, unframed and on the workstation's own tokens; or the slate card the older screens draw.
-  const frameClass = flat ? "bg-white" : `rounded-md border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`;
-  const headingClass = flat
-    ? "text-[11px] font-bold uppercase leading-[1.45] tracking-[0.09em] text-phx-ink-soft"
-    : "text-phx-xs font-semibold uppercase tracking-wide text-slate-500";
-  const ruleClass = flat ? "border-phx-line" : "border-slate-100";
+  // Unframed inside a titled section; or the white card the older screens draw, square and lifted.
+  const frameClass = flat ? "bg-white" : `border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`;
+  const ruleClass = flat ? "border-phx-line" : "border-slate-200/80";
 
   return (
     <div className={`${frameClass} ${className ?? ""}`}>
@@ -224,16 +239,16 @@ export function CandidateFactsSummary({
           ANSWERLESSNESS is worth printing. */}
       {checks.length > 0 ? (
         <>
-          <p className={headingClass}>Screening checks</p>
-          <dl className={`mt-2 grid gap-x-6 gap-y-2 ${gridColumns}`}>
+          <BlockHeading>Screening checks</BlockHeading>
+          <dl className={`mt-2.5 grid gap-x-6 gap-y-3 ${gridColumns}`}>
             <FactCells cells={checks} flat={flat} />
           </dl>
         </>
       ) : null}
       {cells.length > 0 ? (
-        <div className={checks.length > 0 ? `mt-3 border-t ${ruleClass} pt-2` : ""}>
-          <p className={headingClass}>From the CV</p>
-          <dl className={`mt-2 grid gap-x-6 gap-y-2 ${gridColumns}`}>
+        <div className={checks.length > 0 ? `mt-4 border-t ${ruleClass} pt-3` : ""}>
+          <BlockHeading>From the CV</BlockHeading>
+          <dl className={`mt-2.5 grid gap-x-6 gap-y-3 ${gridColumns}`}>
             <FactCells cells={cells} flat={flat} />
           </dl>
         </div>
@@ -241,26 +256,32 @@ export function CandidateFactsSummary({
       {/* Their own answers, under their own heading. The border is the whole point: it says "a
           person told us this" without needing a word of explanation on every line. */}
       {answers.length > 0 ? (
-        <div className={cells.length > 0 || checks.length > 0 ? `mt-3 border-t ${ruleClass} pt-2` : ""}>
-          <p className={headingClass}>Answers on WhatsApp</p>
-          <WhatsAppAnswersList answers={answers} className="mt-2" columns={columns} frame={frame} />
+        <div className={cells.length > 0 || checks.length > 0 ? `mt-4 border-t ${ruleClass} pt-3` : ""}>
+          <BlockHeading>Answers on WhatsApp</BlockHeading>
+          <WhatsAppAnswersList answers={answers} className="mt-2.5" columns={columns} frame={frame} />
         </div>
       ) : null}
       {salaryOnFile ? (
-        <div className={cells.length > 0 || checks.length > 0 || answers.length > 0 ? `mt-3 border-t ${ruleClass} pt-2` : ""}>
-          <p className={headingClass}>On the record</p>
-          <dl className={`mt-2 grid gap-x-6 gap-y-2 ${gridColumns}`}>
+        <div className={cells.length > 0 || checks.length > 0 || answers.length > 0 ? `mt-4 border-t ${ruleClass} pt-3` : ""}>
+          <BlockHeading>On the record</BlockHeading>
+          <dl className={`mt-2.5 grid gap-x-6 gap-y-3 ${gridColumns}`}>
             <FactCells cells={[{ label: "Expected salary", value: salaryOnFile }]} flat={flat} />
           </dl>
         </div>
       ) : null}
       {/* The candidate's own words about themselves. 201 CVs carry one and nothing displayed it
           until 2026-08-24 — it is the fastest read in the whole record and answers "is this person
-          plausible" before any structured field does. */}
+          plausible" before any structured field does. Set as a quotation on an orange rule, because
+          it is the one block here written by the person rather than read off them. */}
       {candidate.professionalSummary ? (
-        <p className={`mt-3 border-t ${ruleClass} pt-2 text-xs leading-relaxed text-slate-700`}>
-          {candidate.professionalSummary}
-        </p>
+        <div className={`mt-4 border-t ${ruleClass} pt-3`}>
+          <p
+            className="border-l-2 border-orange-300 pl-3 text-[13px] leading-relaxed text-slate-700"
+            dir="auto"
+          >
+            {candidate.professionalSummary}
+          </p>
+        </div>
       ) : null}
     </div>
   );
@@ -275,14 +296,14 @@ function FactCells({ cells, flat = false }: { cells: Cell[]; flat?: boolean }) {
           <dt
             className={
               flat
-                ? "text-[10px] font-bold uppercase leading-[1.5] tracking-[0.09em] text-phx-ink-faint"
-                : "text-phx-xs font-semibold uppercase tracking-wide text-slate-400"
+                ? "text-[10px] font-bold uppercase leading-[1.5] tracking-[0.1em] text-phx-ink-faint"
+                : "text-[10px] font-bold uppercase leading-[1.5] tracking-[0.1em] text-slate-400"
             }
           >
             {cell.label}
           </dt>
           <dd
-            className={`text-sm ${
+            className={`mt-0.5 break-words text-sm leading-snug ${
               cell.missing
                 ? // NOT italic: italic already means "the CV reader hedged this", which is a claim
                   // about confidence. This is a claim about existence, and conflating the two would
@@ -307,7 +328,7 @@ function FactCells({ cells, flat = false }: { cells: Cell[]; flat?: boolean }) {
             {cell.value}
             {cell.unconfirmed ? " ?" : ""}
           </dd>
-          {cell.hint && !cell.unconfirmed ? <dd className="text-phx-xs text-slate-500">{cell.hint}</dd> : null}
+          {cell.hint && !cell.unconfirmed ? <dd className="mt-0.5 text-phx-xs text-slate-500">{cell.hint}</dd> : null}
         </div>
       ))}
     </>

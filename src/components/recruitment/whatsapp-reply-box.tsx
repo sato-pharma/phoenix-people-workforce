@@ -31,7 +31,7 @@
 // every class names a token and the buttons come from the screening page’s own Action kit.
 
 import { useCallback, useState } from "react";
-import { MessageCircle } from "lucide-react";
+import { CheckCheck, Clock, Info, Loader2, MessageCircle } from "lucide-react";
 
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
@@ -136,64 +136,111 @@ export function WhatsAppReplyBox({ candidateId }: { candidateId: string }) {
   }
 
   return (
-    <div className={`${adminPanelClassName} w-full p-3 text-[12px]`}>
-      {state.kind === "loading" ? <p className="text-phx-ink-soft">Checking WhatsApp…</p> : null}
+    <div className={`${adminPanelClassName} w-full text-[12px]`}>
+      {/* A titled strip, so the open box reads as one object on a busy header rather than loose lines:
+          the mark, what it is, and — once WhatsApp has said yes — how long is left, as a chip that
+          turns to the warning ink in the last hour. */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-phx-paper px-3 py-2">
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink">
+          <MessageCircle aria-hidden className="h-3.5 w-3.5 text-phx-accent" />
+          Reply on WhatsApp
+        </span>
+        {state.kind === "open" ? (
+          <span
+            className={
+              state.minutesLeft < 60
+                ? "inline-flex items-center gap-1 border border-phx-warn-line bg-phx-warn-bg px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-phx-warn"
+                : "inline-flex items-center gap-1 border border-phx-ok-line bg-phx-ok-bg px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-phx-ok"
+            }
+          >
+            <Clock aria-hidden className="h-3 w-3" />
+            {formatRemaining(state.minutesLeft)} left
+          </span>
+        ) : null}
+      </div>
 
-      {state.kind === "none" ? (
-        <p className="leading-snug text-phx-ink-soft">
-          This candidate has never messaged us on WhatsApp, so there is no conversation to reply to.
-        </p>
-      ) : null}
-
-      {state.kind === "closed" ? (
-        <p className="leading-snug text-phx-ink-soft">
-          WhatsApp only allows a written reply within 24 hours of their last message, and theirs came in on{" "}
-          <span className="font-semibold text-phx-ink">{formatCairo(state.lastInboundAt)}</span>. Send an approved
-          template instead.
-        </p>
-      ) : null}
-
-      {state.kind === "error" ? <p className="leading-snug text-phx-danger">{state.message}</p> : null}
-
-      {state.kind === "open" ? (
-        <div className="flex w-full flex-col gap-2">
-          <p className="leading-snug text-phx-ink-soft">
-            Sending from{" "}
-            <span className="font-semibold text-phx-ink">{state.lineNumber ?? "the line they messaged"}</span>.{" "}
-            {formatRemaining(state.minutesLeft)} left to reply in your own words.
+      <div className="p-3">
+        {state.kind === "loading" ? (
+          <p className="inline-flex items-center gap-1.5 text-phx-ink-soft" role="status">
+            <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin text-phx-accent" />
+            Checking WhatsApp…
           </p>
-          <textarea
-            className={`${phxTextareaClassName} leading-relaxed`}
-            disabled={sending}
-            onChange={(event) => setText(event.target.value)}
-            placeholder="Write your reply…"
-            rows={3}
-            value={text}
-          />
-          <div className="flex flex-wrap items-center gap-1.5">
-            {/* The one loud control here, and it is loud for the reason the kit reserves that volume:
-                this message leaves the building the moment it is pressed and cannot be recalled. */}
-            <Action disabled={sending || text.trim().length === 0} onClick={() => void send()} tone="primary">
-              {sending ? "Sending…" : "Send"}
-            </Action>
-            <Action disabled={sending} onClick={() => setState({ kind: "idle" })} tone="ghost">
-              Close
-            </Action>
-          </div>
-          {sendError ? <p className="leading-snug text-phx-danger">{sendError}</p> : null}
-          {sent ? (
-            <p className="leading-snug text-phx-ink-soft">
-              Sent: <span className="font-semibold text-phx-ink">{sent}</span>
-            </p>
-          ) : null}
-        </div>
-      ) : null}
+        ) : null}
 
-      {state.kind !== "open" && state.kind !== "loading" ? (
-        <Action className="mt-2" onClick={() => setState({ kind: "idle" })} tone="ghost">
-          Close
-        </Action>
-      ) : null}
+        {state.kind === "none" ? (
+          <p className="flex items-start gap-1.5 border border-phx-info-line bg-phx-info-bg px-2.5 py-2 leading-snug text-phx-ink-2">
+            <Info aria-hidden className="mt-px h-3.5 w-3.5 flex-none text-phx-info" />
+            <span className="min-w-0 break-words">
+              This candidate has never messaged us on WhatsApp, so there is no conversation to reply to.
+            </span>
+          </p>
+        ) : null}
+
+        {state.kind === "closed" ? (
+          <p className="flex items-start gap-1.5 border border-phx-warn-line bg-phx-warn-bg px-2.5 py-2 leading-snug text-phx-ink-2">
+            <Clock aria-hidden className="mt-px h-3.5 w-3.5 flex-none text-phx-warn" />
+            <span className="min-w-0 break-words">
+              WhatsApp only allows a written reply within 24 hours of their last message, and theirs came in on{" "}
+              <span className="font-semibold text-phx-ink">{formatCairo(state.lastInboundAt)}</span>. Send an approved
+              template instead.
+            </span>
+          </p>
+        ) : null}
+
+        {state.kind === "error" ? (
+          <p className="break-words border border-phx-danger-line bg-phx-danger-bg px-2.5 py-2 leading-snug text-phx-danger" role="alert">
+            {state.message}
+          </p>
+        ) : null}
+
+        {state.kind === "open" ? (
+          <div className="flex w-full flex-col gap-2">
+            <p className="leading-snug text-phx-ink-soft">
+              Sending from{" "}
+              <span className="font-semibold text-phx-ink">{state.lineNumber ?? "the line they messaged"}</span>.{" "}
+              {formatRemaining(state.minutesLeft)} left to reply in your own words.
+            </p>
+            <textarea
+              className={`${phxTextareaClassName} leading-relaxed`}
+              disabled={sending}
+              onChange={(event) => setText(event.target.value)}
+              placeholder="Write your reply…"
+              rows={3}
+              value={text}
+            />
+            <div className="flex flex-wrap items-center gap-1.5">
+              {/* The one loud control here, and it is loud for the reason the kit reserves that volume:
+                  this message leaves the building the moment it is pressed and cannot be recalled. */}
+              <Action disabled={sending || text.trim().length === 0} onClick={() => void send()} tone="primary">
+                {sending ? <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" /> : null}
+                {sending ? "Sending…" : "Send"}
+              </Action>
+              <Action disabled={sending} onClick={() => setState({ kind: "idle" })} tone="ghost">
+                Close
+              </Action>
+            </div>
+            {sendError ? (
+              <p className="break-words border border-phx-danger-line bg-phx-danger-bg px-2.5 py-2 leading-snug text-phx-danger" role="alert">
+                {sendError}
+              </p>
+            ) : null}
+            {sent ? (
+              <p className="flex items-start gap-1.5 border border-phx-ok-line bg-phx-ok-bg px-2.5 py-2 leading-snug text-phx-ink-2">
+                <CheckCheck aria-hidden className="mt-px h-3.5 w-3.5 flex-none text-phx-ok" />
+                <span className="min-w-0 whitespace-pre-wrap break-words">
+                  Sent: <span className="font-semibold text-phx-ink">{sent}</span>
+                </span>
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {state.kind !== "open" && state.kind !== "loading" ? (
+          <Action className="mt-2" onClick={() => setState({ kind: "idle" })} tone="ghost">
+            Close
+          </Action>
+        ) : null}
+      </div>
     </div>
   );
 }

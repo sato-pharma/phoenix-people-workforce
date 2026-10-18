@@ -1,7 +1,11 @@
+import { CalendarDays, LockKeyhole } from "lucide-react";
 import { redirect } from "next/navigation";
 
+import { AdminInsightChip } from "@/components/admin/admin-design-system";
+import { adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
 import { PageContainer } from "@/components/layout/page-container";
 import { InterviewCalendarView } from "@/components/recruitment/interview-calendar/interview-calendar-view";
+import { RecruitmentEmptyState, RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { isUuid } from "@/lib/http/uuid";
@@ -47,15 +51,23 @@ export default async function InterviewCalendarPage({
   const now = new Date();
   const week = typeof params.week === "string" && isDateKey(params.week) ? params.week : upcomingWeekStart(now);
   const open = typeof params.open === "string" && isUuid(params.open) ? params.open : null;
+  const zoomConnected = isZoomConfigured();
 
   return (
     <PageContainer>
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold text-slate-900">Interview Calendar</h1>
-        <p className="text-sm text-slate-500">
-          Every interview booked from a CV, a week at a time. Click a name to open the CV; export the week as PDF or Excel.
-        </p>
-      </div>
+      <RecruitmentPageHeader
+        badges={
+          role ? (
+            <>
+              <AdminInsightChip tone="orange">Sunday to Thursday · Cairo time</AdminInsightChip>
+              <AdminInsightChip tone={zoomConnected ? "emerald" : "slate"}>{zoomConnected ? "Zoom connected" : "Zoom not connected"}</AdminInsightChip>
+            </>
+          ) : null
+        }
+        description="Every interview booked from a CV, a week at a time. Click a name to open the CV; export the week as PDF or Excel."
+        icon={<CalendarDays aria-hidden="true" className="h-3.5 w-3.5" />}
+        title="Interview Calendar"
+      />
       {role ? (
         <InterviewCalendarView
           abilities={await interviewCalendarAbilities(access)}
@@ -65,11 +77,15 @@ export default async function InterviewCalendarPage({
           initialWeek={week}
           role={role}
           todayKey={cairoDateKey(now)}
-          zoomConnected={isZoomConfigured()}
+          zoomConnected={zoomConnected}
         />
       ) : (
-        <div className="border border-slate-200 bg-white p-6 text-sm text-slate-600">
-          The interview calendar has not been shared with you. Only its owner can share it.
+        <div className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
+          <RecruitmentEmptyState
+            icon={<LockKeyhole aria-hidden="true" className="h-5 w-5" />}
+            message="The interview calendar has not been shared with you. Only its owner can share it."
+            title="Not shared with you"
+          />
         </div>
       )}
     </PageContainer>

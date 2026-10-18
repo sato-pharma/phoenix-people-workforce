@@ -54,6 +54,7 @@ import {
   type ScreeningRoleFilter,
   type ScreeningSeenFilter,
 } from "@/lib/recruitment/screening-link";
+import { adminChipDepthClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import type { Candidate } from "@/lib/recruitment/types";
 import { cn } from "@/lib/utils";
@@ -455,7 +456,13 @@ export function ScreeningFilterBar({
     area !== null ||
     source !== null;
   return (
-    <div className="flex flex-wrap items-end gap-x-3 gap-y-2 border border-b-0 border-phx-line bg-gradient-to-b from-white to-phx-surface-2 px-3 py-2.5">
+    // THE MODULE'S TOOLBAR TRAY (2026-10-19) — the same recessed strip every other recruitment
+    // screen sets its filters in (recruitmentToolbarClassName), drawn here in the --phx-* palette
+    // this bar already speaks, and closed on all four sides now that the panes below sit apart from
+    // it rather than butting against its bottom edge.
+    <div
+      className={`flex flex-wrap items-end gap-x-3 gap-y-2 border border-phx-line bg-phx-paper px-3 py-2.5 ${adminRecessedDepthClassName}`}
+    >
       {/* The size of the pile, as the headline of the bar rather than another grey word in it.
           "42 of 434" is the single fact this row exists to report — how much the switches beside it
           just took off — and as plain 12px text it read as a caption on the Status filter. The
@@ -465,7 +472,8 @@ export function ScreeningFilterBar({
           "inline-flex h-8 items-center gap-1 whitespace-nowrap border px-2 text-[13px] font-black tabular-nums",
           narrowed
             ? "border-phx-accent-line bg-phx-accent-soft text-phx-accent-press"
-            : "border-phx-line bg-phx-paper-2 text-phx-ink",
+            : "border-phx-line bg-white text-phx-ink",
+          adminChipDepthClassName,
         )}
       >
         {narrowed ? (
@@ -727,7 +735,12 @@ export function ScreeningFilterBar({
 /**
  * The queue wants the whole viewport; the shells around it want their own padding. This keeps the
  * negative-margin trick in one place rather than repeating it in both page files.
+ *
+ * A COLUMN WITH AIR BETWEEN ITS PARTS (2026-10-19). The header, the filter tray and the panel used
+ * to butt against each other edge to edge — the bar dropped its own bottom border to share the
+ * panel's — so three surfaces read as one tall box. Each is now its own lifted object, and the gap
+ * is what lets the depth on each one read.
  */
 export function ScreeningPageFrame({ children }: { children: React.ReactNode }) {
-  return <div className="-mx-2 sm:-mx-4">{children}</div>;
+  return <div className="-mx-2 flex flex-col gap-3 sm:-mx-4">{children}</div>;
 }

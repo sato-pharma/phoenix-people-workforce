@@ -12,7 +12,7 @@
 // DOWNLOAD is a button, not a link: building the file takes a few seconds, and a button can say it is working,
 // save the file when it arrives, and say in words when it could not. PRINT is a link to a new tab.
 
-import { Download, Loader2, Printer } from "lucide-react";
+import { AlertCircle, Download, Loader2, Printer } from "lucide-react";
 import * as React from "react";
 
 import { Action, ActionLink } from "@/components/recruitment/workstation/workstation-look";
@@ -64,9 +64,15 @@ export function CandidateApplicationActions({
           Print application
         </ActionLink>
       </div>
+      {/* Said in words under the two buttons, on a rose rule so it reads as this pair's own answer
+          and not as a page error — and it WRAPS, because a server message has no length bound. */}
       {problem ? (
-        <p className="mt-1 break-words text-[11px] leading-snug text-red-700" role="alert">
-          {problem}
+        <p
+          className="mt-1.5 flex min-w-0 items-start gap-1.5 border-l-2 border-rose-500 bg-rose-50 px-2 py-1 text-[11px] font-semibold leading-snug text-rose-800"
+          role="alert"
+        >
+          <AlertCircle aria-hidden className="mt-px h-3 w-3 shrink-0" />
+          <span className="min-w-0 break-words">{problem}</span>
         </p>
       ) : null}
     </div>

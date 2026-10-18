@@ -62,6 +62,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useOptimistic, useState, useSyncExternalStore, useTransition } from "react";
 import { ArrowLeft, ChevronDown, ChevronUp, Minimize2, ScanLine } from "lucide-react";
 
+import { adminChipDepthClassName, adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
 import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
 import {
   decisionTabForStatusFilter,
@@ -511,7 +512,9 @@ export function WorkstationPageClient({
                 )}
                 Filters
                 {activeFilters > 0 ? (
-                  <span className="border border-phx-accent-line bg-phx-accent-soft px-1 text-[11px] font-black leading-tight tabular-nums text-phx-accent-press">
+                  <span
+                    className={`border border-phx-accent-line bg-phx-accent-soft px-1 text-[11px] font-black leading-tight tabular-nums text-phx-accent-press ${adminChipDepthClassName}`}
+                  >
                     {activeFilters}
                   </span>
                 ) : null}
@@ -601,7 +604,9 @@ export function WorkstationPageClient({
         className={
           fullBleed
             ? "fixed inset-0 z-[190] flex flex-col bg-white"
-            : "flex h-[calc((100vh_-_4rem)_/_var(--phx-scale-applied,1))] min-h-[calc(32rem_/_var(--phx-scale-applied,1))] flex-col border border-phx-line bg-white"
+            : // The page-level panel (2026-10-19): the house panel depth, lifting the whole cockpit
+              // off the admin shell's ground the way every other recruitment panel is lifted.
+              `flex h-[calc((100vh_-_4rem)_/_var(--phx-scale-applied,1))] min-h-[calc(32rem_/_var(--phx-scale-applied,1))] flex-col overflow-hidden border border-phx-line bg-white ${adminPanelDepthClassName}`
         }
       >
         {/* A CV'S OWN PAGE: one slim line, and the rest of the screen is the CV. The way back to
@@ -717,16 +722,13 @@ function BacklogFigures({ poolSize, throughput }: { poolSize: number; throughput
           week" is a fact, and a red pill would be this component having an opinion about a
           recruiter's week. Silent when the week is unreportable, rather than drawing a confident
           line through a span whose decisions were never recorded. */}
+      {/* A tile like its two neighbours since 2026-10-19, so the three facts read as one row of the
+          same object rather than two tiles and a loose sentence. */}
       {netThisWeek === null ? null : (
-        <span className="flex items-baseline gap-1.5">
-          <span className="text-[15px] font-black leading-none tabular-nums text-phx-ink">
-            {netThisWeek > 0 ? `+${netThisWeek}` : netThisWeek}
-          </span>
-          <span className="text-[11px] font-semibold leading-none text-phx-ink-soft">
-            this week
-            {improving === null ? "" : improving ? ", better than last week" : ", worse than last week"}
-          </span>
-        </span>
+        <Figure
+          label={`this week${improving === null ? "" : improving ? ", better than last week" : ", worse than last week"}`}
+          value={netThisWeek > 0 ? `+${netThisWeek}` : netThisWeek}
+        />
       )}
       {throughput.historyCoversEveryBucket ? null : (
         // NOT an error, and not hidden either. Decisions were only recorded from this date, so a

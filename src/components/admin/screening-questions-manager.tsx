@@ -348,7 +348,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
               <Card className="p-4" key={row.clientKey}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-phx-xs font-bold text-slate-500">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center bg-slate-100 text-phx-xs font-bold text-slate-500">
                       {index + 1}
                     </span>
                     <div className="flex flex-col">
@@ -376,11 +376,11 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                       </Button>
                     </div>
                     {row.questionKey ? (
-                      <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-phx-2xs text-slate-500">
+                      <span className="bg-slate-100 px-1.5 py-0.5 font-mono text-phx-2xs text-slate-500">
                         {row.questionKey}
                       </span>
                     ) : (
-                      <span className="rounded bg-blue-50 px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wider text-blue-600">
+                      <span className="bg-blue-50 px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wider text-blue-600">
                         New
                       </span>
                     )}

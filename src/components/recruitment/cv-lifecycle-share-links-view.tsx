@@ -1,5 +1,20 @@
 "use client";
 
+import {
+  Ban,
+  CalendarX2,
+  Check,
+  CheckCircle2,
+  Clock3,
+  Copy,
+  KeyRound,
+  Link2,
+  Loader2,
+  Plus,
+  ShieldAlert,
+  ShieldCheck,
+  TriangleAlert,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -11,10 +26,26 @@ import { assessLiveFeedAmbiguity } from "@/lib/share-links/live-feed-ambiguity";
 import { LiveFeedAmbiguityBanner } from "@/components/share-links/live-feed-ambiguity-banner";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import {
+  phxButtonAccentClassName,
+  phxButtonDangerClassName,
+  phxButtonGhostClassName,
+  phxButtonPrimaryClassName,
   phxFieldClassName,
   phxLabelClassName,
 } from "@/components/ui/form-tokens";
-import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
+import {
+  adminChipDepthClassName,
+  adminControlDepthClassName,
+  adminSoftDepthClassName,
+} from "@/components/admin/admin-design-tokens";
+import {
+  RecruitmentEmptyState,
+  RecruitmentKpiStrip,
+  RecruitmentPanel,
+  RecruitmentPill,
+  type RecruitmentPillTone,
+} from "@/components/recruitment/recruitment-premium";
+import { cn } from "@/lib/utils";
 
 type Props = { productionUrl: string };
 
@@ -177,9 +208,10 @@ export function CvLifecycleShareLinksView({ productionUrl }: Props) {
   const inputClass =
     `${phxFieldClassName} mt-1`;
   const fieldLabelClass = phxLabelClassName;
+  const revokedCount = links.filter((link) => link.revokedAt).length;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* The paused rotation goes FIRST: it is the only state here that a human must clear before a
           machine can carry on, and the expiry question below it is a different one with a different
           deadline. Both can be true at once and both are then shown — except for the healthy
@@ -191,12 +223,49 @@ export function CvLifecycleShareLinksView({ productionUrl }: Props) {
         <ExpiryBanner verdict={verdict} />
       ) : null}
 
+      {/* The four counts at a glance, read off the same verdict the banner and the daily alarm read. */}
+      {loadedAtMs > 0 ? (
+        <RecruitmentKpiStrip
+          items={[
+            {
+              description: "Feeding the sheet right now.",
+              icon: <ShieldCheck aria-hidden="true" className="h-4 w-4" />,
+              label: "Live links",
+              tone: "emerald",
+              value: <span className="tabular-nums">{verdict.liveCount}</span>,
+            },
+            {
+              description: `Lapse within ${CV_LIFECYCLE_LINK_EXPIRY_WARNING_DAYS} days.`,
+              icon: <Clock3 aria-hidden="true" className="h-4 w-4" />,
+              label: "Expiring soon",
+              tone: verdict.expiringSoon.length > 0 ? "rose" : "orange",
+              value: <span className="tabular-nums">{verdict.expiringSoon.length}</span>,
+            },
+            {
+              description: "Lapsed without being revoked.",
+              icon: <CalendarX2 aria-hidden="true" className="h-4 w-4" />,
+              label: "Expired",
+              tone: verdict.expired.length > 0 ? "rose" : "blue",
+              value: <span className="tabular-nums">{verdict.expired.length}</span>,
+            },
+            {
+              description: "Switched off by a person.",
+              icon: <Ban aria-hidden="true" className="h-4 w-4" />,
+              label: "Revoked",
+              tone: "violet",
+              value: <span className="tabular-nums">{revokedCount}</span>,
+            },
+          ]}
+        />
+      ) : null}
+
       {/* ── Mint ───────────────────────────────────────────────────────────── */}
-      <section className={adminPanelClassName}>
-        <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
-          <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Create a link</h2>
-        </header>
-        <div className="space-y-3 px-4 py-4">
+      <RecruitmentPanel
+        description="A new key for the sheet's Apps Script. The token appears once, here, the moment it is made."
+        icon={<KeyRound aria-hidden="true" className="h-4 w-4" />}
+        title="Create a link"
+      >
+        <div className="space-y-4 px-4 py-4 sm:px-5">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
               <label className={fieldLabelClass} htmlFor="cv-sheet-link-label">
@@ -224,43 +293,51 @@ export function CvLifecycleShareLinksView({ productionUrl }: Props) {
             </div>
           </div>
 
-          <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
-            This link reads every candidate&apos;s name and phone number, with no Phoenix login. Put it in
-            the sheet&apos;s Apps Script — never in a cell, never in a message — and keep the sheet private:
-            the sheet&apos;s own Google sharing is the real access control. You will see the token once, on
-            this screen, and never again.
+          <p className="flex gap-2.5 border border-amber-300 border-l-4 border-l-amber-500 bg-amber-50 px-3 py-2.5 text-phx-sm font-semibold leading-6 text-amber-900">
+            <TriangleAlert aria-hidden="true" className="mt-1 h-4 w-4 flex-none text-amber-600" />
+            <span className="min-w-0">
+              This link reads every candidate&apos;s name and phone number, with no Phoenix login. Put it in
+              the sheet&apos;s Apps Script — never in a cell, never in a message — and keep the sheet private:
+              the sheet&apos;s own Google sharing is the real access control. You will see the token once, on
+              this screen, and never again.
+            </span>
           </p>
 
           {error ? (
-            <p className="border border-rose-300 bg-rose-50 px-3 py-2 text-phx-sm font-semibold text-rose-700">
+            <p className="border border-rose-300 border-l-4 border-l-rose-500 bg-rose-50 px-3 py-2 text-phx-sm font-semibold text-rose-700">
               {error}
             </p>
           ) : null}
 
-          <button
-            className="bg-orange-500 px-4 py-2 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:bg-slate-300"
-            disabled={busy}
-            onClick={create}
-            type="button"
-          >
-            {busy ? "Creating…" : "Create link"}
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-4">
+            <button
+              className={cn(phxButtonAccentClassName, adminControlDepthClassName, "disabled:shadow-none")}
+              disabled={busy}
+              onClick={create}
+              type="button"
+            >
+              {busy ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Plus aria-hidden="true" className="h-4 w-4" />}
+              {busy ? "Creating…" : "Create link"}
+            </button>
+          </div>
 
           {created ? (
-            <div className="space-y-2 border border-emerald-300 bg-emerald-50 px-3 py-3">
-              <p className="text-phx-sm font-black text-emerald-900">
+            <div className={`space-y-2.5 border border-emerald-300 border-l-4 border-l-emerald-500 bg-emerald-50 px-4 py-3 ${adminChipDepthClassName}`}>
+              <p className="flex items-center gap-2 text-phx-sm font-black text-emerald-900">
+                <CheckCircle2 aria-hidden="true" className="h-4 w-4 flex-none text-emerald-600" />
                 Copy this now — it is shown once and cannot be retrieved afterwards.
               </p>
               {/* `break-all`, not `overflow-x-auto`: the golden rule forbids a horizontal scroll,
                   and the ellipsis ban forbids cutting it. A long URL wraps. */}
-              <code className="block break-all border border-emerald-200 bg-white px-2 py-1.5 text-phx-xs text-slate-900">
+              <code className="block break-all border border-emerald-200 bg-white px-2.5 py-2 font-mono text-phx-xs text-slate-900">
                 {feedUrl(created.token)}
               </code>
               <button
-                className="bg-slate-900 px-3 py-1.5 text-phx-xs font-bold text-white hover:bg-slate-700"
+                className={cn(phxButtonPrimaryClassName, "px-3 py-1.5 text-xs", adminControlDepthClassName)}
                 onClick={() => copy(feedUrl(created.token), "url")}
                 type="button"
               >
+                {copied === "url" ? <Check aria-hidden="true" className="h-3.5 w-3.5" /> : <Copy aria-hidden="true" className="h-3.5 w-3.5" />}
                 {copied === "url" ? "Copied" : "Copy feed URL"}
               </button>
               <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-phx-xs text-slate-700">
@@ -279,20 +356,25 @@ export function CvLifecycleShareLinksView({ productionUrl }: Props) {
             </div>
           ) : null}
         </div>
-      </section>
+      </RecruitmentPanel>
 
       {/* ── The links ──────────────────────────────────────────────────────── */}
-      <section className={adminPanelClassName}>
-        <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
-          <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Existing links</h2>
-        </header>
-
+      <RecruitmentPanel
+        count={loading ? undefined : links.length}
+        icon={<Link2 aria-hidden="true" className="h-4 w-4" />}
+        title="Existing links"
+      >
         {loading ? (
-          <p className="px-4 py-6 text-phx-sm text-slate-500">Loading…</p>
-        ) : links.length === 0 ? (
-          <p className="px-4 py-6 text-phx-sm text-slate-500">
-            No link has ever been created. The sheet is not being fed.
+          <p className="flex items-center gap-2 px-4 py-6 text-phx-sm text-slate-500">
+            <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin text-orange-500" />
+            Loading…
           </p>
+        ) : links.length === 0 ? (
+          <RecruitmentEmptyState
+            icon={<Link2 aria-hidden="true" className="h-5 w-5" />}
+            message="No link has ever been created. The sheet is not being fed."
+            title="No sheet links yet"
+          />
         ) : (
           <>
             {/* Desktop. `table-fixed` + `<colgroup>` so the widths are declared rather than
@@ -307,17 +389,17 @@ export function CvLifecycleShareLinksView({ productionUrl }: Props) {
                 </colgroup>
                 <thead>
                   <tr className="border-b border-phx-line text-phx-xs font-black uppercase tracking-wider text-slate-500">
-                    <th className="px-4 py-2">Link</th>
-                    <th className="px-4 py-2">Expires</th>
-                    <th className="px-4 py-2">Reads</th>
-                    <th className="px-4 py-2">Action</th>
+                    <th className="px-4 py-2.5">Link</th>
+                    <th className="px-4 py-2.5">Expires</th>
+                    <th className="px-4 py-2.5">Reads</th>
+                    <th className="px-4 py-2.5">Action</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-slate-100">
                   {links.map((link) => {
                     const state = linkState(link, loadedAtMs);
                     return (
-                      <tr className="border-b border-[#f1f4f6] align-top" key={link.id}>
+                      <tr className="align-top transition-colors hover:bg-orange-50/30" key={link.id}>
                         <td className="px-4 py-3">
                           <span className="block break-words font-black text-slate-900">
                             {link.label ?? "Unlabelled link"}
@@ -328,13 +410,13 @@ export function CvLifecycleShareLinksView({ productionUrl }: Props) {
                         </td>
                         <td className="px-4 py-3">
                           <StatusChip expiring={expiringIds.has(link.id)} state={state} />
-                          <span className="mt-1 block break-words text-slate-700">{cairoDate(link.expiresAt)}</span>
+                          <span className="mt-1 block break-words font-semibold text-slate-700">{cairoDate(link.expiresAt)}</span>
                           <span className="block break-words text-phx-xs text-slate-500">
                             {remaining(link, state, loadedAtMs)}
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <span className="block tabular-nums text-slate-700">{link.accessCount}</span>
+                          <span className="block font-black tabular-nums text-slate-900">{link.accessCount}</span>
                           <span className="block break-words text-phx-xs text-slate-500">
                             {link.lastAccessedAt ? `last ${cairoDate(link.lastAccessedAt)}` : "never read"}
                           </span>
@@ -358,11 +440,11 @@ export function CvLifecycleShareLinksView({ productionUrl }: Props) {
 
             {/* Mobile: cards, never a table — the admin shell's own rule, and the only honest way
                 to show eight facts on a 375px screen without shrinking type or cutting text. */}
-            <ul className="divide-y divide-[#f1f4f6] md:hidden">
+            <ul className="space-y-3 p-3 md:hidden">
               {links.map((link) => {
                 const state = linkState(link, loadedAtMs);
                 return (
-                  <li className="space-y-1.5 px-4 py-3" key={link.id}>
+                  <li className={`space-y-1.5 border border-slate-200 bg-white px-4 py-3 ${adminSoftDepthClassName}`} key={link.id}>
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusChip expiring={expiringIds.has(link.id)} state={state} />
                       <span className="break-words text-phx-sm font-black text-slate-900">
@@ -379,21 +461,23 @@ export function CvLifecycleShareLinksView({ productionUrl }: Props) {
                       {link.accessCount} read{link.accessCount === 1 ? "" : "s"}
                       {link.lastAccessedAt ? `, last ${cairoDate(link.lastAccessedAt)}` : ", never read"}
                     </p>
-                    <RevokeControl
-                      confirming={confirmingRevoke === link.id}
-                      link={link}
-                      onCancel={() => setConfirmingRevoke(null)}
-                      onConfirm={() => revoke(link.id)}
-                      onStart={() => setConfirmingRevoke(link.id)}
-                      state={state}
-                    />
+                    <div className="pt-1">
+                      <RevokeControl
+                        confirming={confirmingRevoke === link.id}
+                        link={link}
+                        onCancel={() => setConfirmingRevoke(null)}
+                        onConfirm={() => revoke(link.id)}
+                        onStart={() => setConfirmingRevoke(link.id)}
+                        state={state}
+                      />
+                    </div>
                   </li>
                 );
               })}
             </ul>
           </>
         )}
-      </section>
+      </RecruitmentPanel>
     </div>
   );
 }
@@ -448,17 +532,12 @@ function expiryBannerIsTheAllClear(verdict: ReturnType<typeof assessCvLifecycleL
   return verdict.expired.length === 0 && verdict.expiringSoon.length === 0 && verdict.liveCount > 0;
 }
 
+/** The link's state as the module's one pill — four states on four of the kit's six tones. */
 function StatusChip({ expiring, state }: { expiring: boolean; state: LinkState }) {
-  const tone =
-    state === "revoked"
-      ? "bg-slate-200 text-slate-600"
-      : state === "expired"
-        ? "bg-rose-100 text-rose-800"
-        : expiring
-          ? "bg-amber-100 text-amber-900"
-          : "bg-emerald-100 text-emerald-800";
+  const tone: RecruitmentPillTone =
+    state === "revoked" ? "slate" : state === "expired" ? "rose" : expiring ? "amber" : "emerald";
   const text = state === "revoked" ? "Revoked" : state === "expired" ? "Expired" : expiring ? "Expiring" : "Active";
-  return <span className={`inline-block px-1.5 py-0.5 text-phx-xs font-black ${tone}`}>{text}</span>;
+  return <RecruitmentPill tone={tone}>{text}</RecruitmentPill>;
 }
 
 /**
@@ -488,10 +567,11 @@ function RevokeControl({
   if (!confirming) {
     return (
       <button
-        className="border border-rose-300 px-2 py-1 text-phx-xs font-bold text-rose-600 hover:bg-rose-50"
+        className={`inline-flex items-center gap-1.5 border border-rose-300 bg-white px-2.5 py-1 text-phx-xs font-bold text-rose-600 transition hover:border-rose-400 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 ${adminControlDepthClassName}`}
         onClick={onStart}
         type="button"
       >
+        <Ban aria-hidden="true" className="h-3.5 w-3.5" />
         Revoke
       </button>
     );
@@ -502,17 +582,13 @@ function RevokeControl({
         The sheet stops filling. Sure?
       </span>
       <button
-        className="bg-rose-600 px-2 py-1 text-phx-xs font-black text-white hover:bg-rose-700"
+        className={cn(phxButtonDangerClassName, "px-2.5 py-1 text-xs", adminControlDepthClassName)}
         onClick={onConfirm}
         type="button"
       >
         Revoke {link.tokenPreview}
       </button>
-      <button
-        className="border border-slate-300 px-2 py-1 text-phx-xs font-bold text-slate-600 hover:bg-slate-50"
-        onClick={onCancel}
-        type="button"
-      >
+      <button className={cn(phxButtonGhostClassName, "px-2.5 py-1 text-xs")} onClick={onCancel} type="button">
         Cancel
       </button>
     </span>
@@ -531,15 +607,18 @@ function RevokeControl({
 function ExpiryBanner({ verdict }: { verdict: ReturnType<typeof assessCvLifecycleLinkExpiry> }) {
   if (verdict.expired.length > 0 || verdict.liveCount === 0) {
     return (
-      <section className="border-2 border-rose-500 bg-rose-50 px-4 py-3">
-        <h2 className="text-phx-sm font-black uppercase tracking-wider text-rose-800">
-          {verdict.liveCount === 0 ? "The sheet is not being fed" : "A link has expired"}
-        </h2>
-        <p className="mt-1 text-phx-sm font-semibold text-rose-900">
-          {verdict.liveCount === 0
-            ? "No live link remains, so the Google Sheet is showing numbers that have stopped moving rather than an error. Create a link below and paste it into the sheet's Apps Script."
-            : `${verdict.expired.length} link(s) lapsed without being replaced. A live link still feeds the sheet, but tidy these away.`}
-        </p>
+      <section className={`flex gap-3 border-2 border-rose-500 bg-rose-50 px-4 py-3 ${adminChipDepthClassName}`}>
+        <ShieldAlert aria-hidden="true" className="mt-0.5 h-5 w-5 flex-none text-rose-600" />
+        <div className="min-w-0">
+          <h2 className="break-words text-phx-sm font-black uppercase tracking-wider text-rose-800">
+            {verdict.liveCount === 0 ? "The sheet is not being fed" : "A link has expired"}
+          </h2>
+          <p className="mt-1 break-words text-phx-sm font-semibold text-rose-900">
+            {verdict.liveCount === 0
+              ? "No live link remains, so the Google Sheet is showing numbers that have stopped moving rather than an error. Create a link below and paste it into the sheet's Apps Script."
+              : `${verdict.expired.length} link(s) lapsed without being replaced. A live link still feeds the sheet, but tidy these away.`}
+          </p>
+        </div>
       </section>
     );
   }
@@ -547,21 +626,25 @@ function ExpiryBanner({ verdict }: { verdict: ReturnType<typeof assessCvLifecycl
   if (verdict.expiringSoon.length > 0) {
     const soonest = verdict.expiringSoon[0]!;
     return (
-      <section className="border-2 border-amber-500 bg-amber-50 px-4 py-3">
-        <h2 className="text-phx-sm font-black uppercase tracking-wider text-amber-900">
-          A link expires in {soonest.daysLeft === 0 ? "less than a day" : `${soonest.daysLeft} days`}
-        </h2>
-        <p className="mt-1 text-phx-sm font-semibold text-amber-900">
-          When it lapses the sheet keeps showing yesterday&apos;s numbers instead of an error, so nothing
-          else will tell you. Create the replacement below, paste it into the sheet&apos;s Apps Script, then
-          revoke the old one.
-        </p>
+      <section className={`flex gap-3 border-2 border-amber-500 bg-amber-50 px-4 py-3 ${adminChipDepthClassName}`}>
+        <Clock3 aria-hidden="true" className="mt-0.5 h-5 w-5 flex-none text-amber-600" />
+        <div className="min-w-0">
+          <h2 className="break-words text-phx-sm font-black uppercase tracking-wider text-amber-900">
+            A link expires in {soonest.daysLeft === 0 ? "less than a day" : `${soonest.daysLeft} days`}
+          </h2>
+          <p className="mt-1 break-words text-phx-sm font-semibold text-amber-900">
+            When it lapses the sheet keeps showing yesterday&apos;s numbers instead of an error, so nothing
+            else will tell you. Create the replacement below, paste it into the sheet&apos;s Apps Script, then
+            revoke the old one.
+          </p>
+        </div>
       </section>
     );
   }
 
   return (
-    <section className="border border-emerald-300 bg-emerald-50 px-4 py-2.5">
+    <section className={`flex items-center gap-2.5 border border-emerald-300 border-l-4 border-l-emerald-500 bg-emerald-50 px-4 py-2.5 ${adminChipDepthClassName}`}>
+      <ShieldCheck aria-hidden="true" className="h-4 w-4 flex-none text-emerald-600" />
       <p className="text-phx-sm font-semibold text-emerald-900">
         {verdict.liveCount} live link
         {verdict.liveCount === 1 ? "" : "s"}, none expiring within {CV_LIFECYCLE_LINK_EXPIRY_WARNING_DAYS} days.

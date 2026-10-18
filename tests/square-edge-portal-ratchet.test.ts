@@ -74,8 +74,9 @@ import { stripComments } from "./support/comment-strip.ts";
  * while it read 174 a site could be re-added for free and nothing would have gone red,
  * so the ground won was still giveable. The warn branch is not a nag; it is the only
  * moment the count is known to have dropped, and ignoring it silently re-opens the gap.
+ * 156 -> 153 on 2026-10-19, the Recruitment premium sweep.
  */
-const BASELINE = 156;
+const BASELINE = 153;
 
 const ROOTS = ["app", "src/components"];
 

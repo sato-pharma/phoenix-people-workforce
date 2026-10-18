@@ -17,6 +17,7 @@ import { logRecruitmentReadFailures } from "@/lib/recruitment/page-read-log";
 import { settleRecruitmentPage, unavailableSources } from "@/lib/recruitment/page-reads";
 import { countCandidatePoolStatuses } from "@/lib/recruitment/pool-enrichment";
 import { listOpenVacanciesForRequisition, listPositionCatalogue } from "@/lib/recruitment/requisitions";
+import { loadPoolWhatsAppQuestions } from "@/lib/recruitment/pool-whatsapp-questions-load";
 import type { Candidate } from "@/lib/recruitment/types";
 
 export const dynamic = "force-dynamic";
@@ -99,6 +100,7 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
     managers,
     openVacancies,
     positionCatalogue,
+    whatsappQuestions,
   } = await settleRecruitmentPage({
     dashboard: () => getRecruitmentDashboard(access, candidatePoolCounts ? { candidatePoolCounts } : {}),
     pool: async () => {
@@ -114,6 +116,8 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
     // `withNames` resolves each folder's creator to a person's name — the owner's standing rule
     // that a screen shows names, never HR codes.
     cvFolders: () => loadCvFolderCabinet({ withNames: true }),
+    // The bot's questions, so the pool's headers follow them (pool-whatsapp-columns.ts).
+    whatsappQuestions: () => loadPoolWhatsAppQuestions(),
   });
   logRecruitmentReadFailures(access, failures, "/recruitment");
 
@@ -138,6 +142,7 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
       openVacancies={openVacancies}
       positionCatalogue={positionCatalogue}
       unavailableSources={unavailableSources(failures)}
+      whatsappQuestions={whatsappQuestions}
     />
   );
 }

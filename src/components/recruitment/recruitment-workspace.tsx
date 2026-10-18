@@ -9,34 +9,35 @@ import {
   Briefcase,
   BriefcaseBusiness,
   Check,
+  ClipboardList,
   CheckCircle2,
   Clock,
   Copy,
   ExternalLink,
   Eye,
   FileSpreadsheet,
+  FolderOpen,
   FolderPlus,
+  Megaphone,
   Send,
   Sparkles,
   Trash2,
   Undo2,
   UserPlus,
   Users,
+  Workflow,
   X,
 } from "lucide-react";
 import Link from "next/link";
 
 import {
   AdminCallout,
-  AdminPageHero,
-  AdminSectionHeader,
+  AdminInsightChip,
   AdminStatCard,
-  AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import {
   PortalDesktopTable,
-  PortalEmptyState,
   PortalRecordCard,
   PortalRecordFields,
   PortalResponsiveDataList,
@@ -45,6 +46,14 @@ import { Input } from "@/components/ui/input";
 import { JobAdvertPanel } from "@/components/recruitment/job-advert-panel";
 import { CandidateFoldersTab } from "@/components/recruitment/candidate-folders-tab";
 import { deleteRequest, patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
+import {
+  RecruitmentEmptyState,
+  RecruitmentKpiStrip,
+  RecruitmentPageHeader,
+  RecruitmentPanel,
+  RecruitmentPill,
+  RecruitmentTabBar,
+} from "@/components/recruitment/recruitment-premium";
 import type { CvFolderCabinetData } from "@/components/recruitment/cv-folder-cabinet";
 import { CandidateDecisionTabStrip } from "@/components/recruitment/candidate-decision-tab-strip";
 import {
@@ -93,7 +102,13 @@ import {
   humanizeRecruitmentTerm,
   requisitionStatusLabel,
 } from "@/lib/recruitment/labels";
-import { adminControlDepthClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  adminChipDepthClassName,
+  adminControlDepthClassName,
+  adminPanelDepthClassName,
+  adminRecessedDepthClassName,
+  adminSoftDepthClassName,
+} from "@/components/admin/admin-design-tokens";
 // offer-rules is the pure half of the offer service — no database imports — so the same
 // completeness check runs in the browser and on the server without pulling a Supabase client in.
 import { isOfferStage, missingOfferTerms } from "@/lib/recruitment/offer-rules";
@@ -168,7 +183,22 @@ import { linkedInProfileHref } from "@/lib/recruitment/linkedin-profile";
 import { CvExtractionPanel } from "@/components/recruitment/cv-extraction-panel";
 import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-review-board";
 import { CandidateFactsSummary } from "@/components/recruitment/candidate-facts-summary";
-import type { ScreeningQuestionLabel } from "@/lib/recruitment/whatsapp-answers";
+import { candidateWhatsAppAnswers, type ScreeningQuestionLabel } from "@/lib/recruitment/whatsapp-answers";
+import {
+  applyPoolColumnLayout,
+  poolAnswersByColumn,
+  poolColumnCatalogue,
+  poolColumnViewKey,
+  poolDefaultColumns,
+  poolRoleQuestionsCaption,
+  poolSharedColumnKeys,
+  type PoolSharedColumnKey,
+  type PoolTableColumn,
+  type PoolWhatsAppQuestions,
+} from "@/lib/recruitment/pool-whatsapp-columns";
+import { PoolColumnChooser, PoolEditableCell } from "@/components/recruitment/pool-question-columns";
+import { usePoolColumnLayout } from "@/components/recruitment/use-pool-column-layout";
+import { WhatsAppAnswersList } from "@/components/recruitment/whatsapp-answers-list";
 import { CandidateScreeningSession } from "@/components/recruitment/candidate-screening-session";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
 // The screening queue's two pickers, used verbatim here.
@@ -192,6 +222,7 @@ import { defaultCvPositionKey, getCvPositionSchema, listCvPositionSchemas } from
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import {
+  phxButtonGhostClassName,
   phxFieldClassName,
   phxLabelTextClassName,
   phxSelectClassName,
@@ -232,9 +263,23 @@ type Props = {
   // its EMPTY shape for a source named here, and an empty shape is not an answer: the page says which
   // part is missing instead of showing a zero or an empty table.
   unavailableSources: RecruitmentReadSource[];
+  /**
+   * The WhatsApp bot's questions and who each is asked to, so the pool's headers follow them
+   * (pool-whatsapp-columns.ts). Null when the list could not be read.
+   */
+  whatsappQuestions: PoolWhatsAppQuestions | null;
 };
 
 type TabKey = "pipeline" | "requisitions" | "candidates" | "folders" | "advertise";
+
+// One mark per tab, so the bar reads at a glance and the selected one carries the accent.
+const workspaceTabIcon: Record<TabKey, ReactNode> = {
+  advertise: <Megaphone className="h-4 w-4" />,
+  candidates: <Users className="h-4 w-4" />,
+  folders: <FolderOpen className="h-4 w-4" />,
+  pipeline: <Workflow className="h-4 w-4" />,
+  requisitions: <ClipboardList className="h-4 w-4" />,
+};
 
 /** Under a tile whose figure is a dash because the pool did not load -- a zero would read as "no CVs". */
 const POOL_UNAVAILABLE_TILE_NOTE = "Unavailable right now.";
@@ -409,28 +454,12 @@ function cairoDateTime(iso: string | null | undefined): string {
 // Light-touch color coding for stage/status pills — shared by the mobile cards and
 // the desktop tables below so both surfaces read consistently at a glance. Purely
 // presentational: it maps existing stage/status strings to a color, nothing more.
+// The tones are the module kit's six (recruitment-premium.tsx), so a stage reads in the same colour
+// here as on the candidate page, the cockpit and the calendar.
 type BadgeTone = "orange" | "emerald" | "amber" | "rose" | "sky" | "slate";
 
-const badgeToneClassName: Record<BadgeTone, string> = {
-  amber: "bg-amber-100 text-amber-700",
-  emerald: "bg-emerald-100 text-emerald-700",
-  orange: "bg-orange-100 text-orange-700",
-  rose: "bg-rose-100 text-rose-700",
-  sky: "bg-sky-100 text-sky-700",
-  slate: "bg-slate-100 text-slate-600",
-};
-
 function StagePill({ children, tone }: { children: ReactNode; tone: BadgeTone }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center px-1.5 py-0.5 text-phx-2xs font-semibold uppercase tracking-wide",
-        badgeToneClassName[tone],
-      )}
-    >
-      {children}
-    </span>
-  );
+  return <RecruitmentPill tone={tone}>{children}</RecruitmentPill>;
 }
 
 // Intake channel -> pill colour. Presentational only: the channel itself is decided in the domain
@@ -785,8 +814,15 @@ function FinalSelectionCard({
         {loading ? "Loading…" : "Compare candidates"}
       </Button>
       {board ? (
-        <div className="overflow-x-auto border border-slate-200">
-          <table className="w-full text-xs">
+        <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+          <table className="w-full table-fixed text-xs">
+            <colgroup>
+              <col className="w-[32%]" />
+              <col className="w-[12%]" />
+              <col className="w-[18%]" />
+              <col className="w-[16%]" />
+              <col className="w-[22%]" />
+            </colgroup>
             <thead>
               <tr>
                 <th className="px-2 py-1 text-left">Candidate</th>
@@ -806,15 +842,13 @@ function FinalSelectionCard({
               ) : (
                 board.map((entry) => (
                   <tr key={entry.application.id} className={entry.application.id === application.id ? "bg-orange-50" : ""}>
-                    <td className="px-2 py-1 font-medium text-slate-900">{entry.candidate?.fullName ?? "—"}</td>
-                    <td className="px-2 py-1">{entry.ratingAverage ?? "—"}</td>
-                    <td className="px-2 py-1">{entry.candidate?.expectedSalary ?? "—"}</td>
-                    <td className="px-2 py-1">{entry.candidate?.noticePeriod ?? "—"}</td>
-                    <td className="px-2 py-1">
+                    <td className="break-words px-2 py-1 font-semibold text-slate-900">{entry.candidate?.fullName ?? "—"}</td>
+                    <td className="break-words px-2 py-1 tabular-nums">{entry.ratingAverage ?? "—"}</td>
+                    <td className="break-words px-2 py-1 tabular-nums">{entry.candidate?.expectedSalary ?? "—"}</td>
+                    <td className="break-words px-2 py-1">{entry.candidate?.noticePeriod ?? "—"}</td>
+                    <td className="break-words px-2 py-1">
                       {entry.riskPreviouslyRejected ? (
-                        <span className="bg-orange-100 px-1.5 py-0.5 text-phx-2xs font-semibold text-orange-700">
-                          Previously rejected
-                        </span>
+                        <StagePill tone="orange">Previously rejected</StagePill>
                       ) : (
                         "—"
                       )}
@@ -1239,9 +1273,20 @@ export function RecruitmentWorkspace(props: Props) {
 
   return (
     <div className="space-y-6">
-      <AdminPageHero
+      <RecruitmentPageHeader
+        badges={
+          dashboard ? (
+            <>
+              <AdminInsightChip tone="orange">
+                {requisitions.filter((requisition) => ["req_open", "req_published"].includes(requisition.status)).length} open
+                requisitions
+              </AdminInsightChip>
+              <AdminInsightChip tone="slate">{applications.length} in the pipeline</AdminInsightChip>
+            </>
+          ) : null
+        }
         eyebrow="People Management"
-        icon={<BriefcaseBusiness className="h-4 w-4" />}
+        icon={<BriefcaseBusiness className="h-3.5 w-3.5" />}
         title="Recruitment"
         description="Read every CV as it arrives, decide on it, and send the ones worth seeing straight to the hiring manager."
       />
@@ -1255,51 +1300,59 @@ export function RecruitmentWorkspace(props: Props) {
         applications, hires, total applications — read 3 / 7 / 0 / 7 in production on 2026-08-15,
         the same week 152 CVs arrived, so the headline of the module described the part nobody uses.
       */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <AdminStatCard
-          description={poolUnavailable ? POOL_UNAVAILABLE_TILE_NOTE : "CVs received today, Cairo time."}
-          icon={<FileSpreadsheet className="h-5 w-5" />}
-          label="Arrived today"
-          tone="orange"
-          value={poolUnavailable ? "—" : candidateStats.arrivedToday}
-        />
-        <AdminStatCard
-          description={poolUnavailable ? POOL_UNAVAILABLE_TILE_NOTE : "CVs received in the last 7 days."}
-          icon={<Users className="h-5 w-5" />}
-          label="Arrived this week"
-          tone="blue"
-          value={poolUnavailable ? "—" : candidateStats.arrivedLast7Days}
-        />
-        <AdminStatCard
-          description={poolUnavailable ? POOL_UNAVAILABLE_TILE_NOTE : "Still on the status intake set — nobody has looked yet."}
-          icon={<UserPlus className="h-5 w-5" />}
-          label="Not yet reviewed"
-          tone="violet"
-          value={poolUnavailable ? "—" : candidateStats.notYetReviewed}
-        />
-        <AdminStatCard
-          description={poolUnavailable ? POOL_UNAVAILABLE_TILE_NOTE : "Candidates a hiring manager has been told about."}
-          icon={<CheckCircle2 className="h-5 w-5" />}
-          label="Sent to a manager"
-          tone="emerald"
-          value={poolUnavailable ? "—" : candidateStats.sentToManager}
-        />
-      </div>
+      <RecruitmentKpiStrip
+        items={[
+          {
+            description: poolUnavailable ? POOL_UNAVAILABLE_TILE_NOTE : "CVs received today, Cairo time.",
+            icon: <FileSpreadsheet className="h-5 w-5" />,
+            label: "Arrived today",
+            tone: "orange",
+            value: poolUnavailable ? "—" : candidateStats.arrivedToday,
+          },
+          {
+            description: poolUnavailable ? POOL_UNAVAILABLE_TILE_NOTE : "CVs received in the last 7 days.",
+            icon: <Users className="h-5 w-5" />,
+            label: "Arrived this week",
+            tone: "blue",
+            value: poolUnavailable ? "—" : candidateStats.arrivedLast7Days,
+          },
+          {
+            description: poolUnavailable ? POOL_UNAVAILABLE_TILE_NOTE : "Still on the status intake set — nobody has looked yet.",
+            icon: <UserPlus className="h-5 w-5" />,
+            label: "Not yet reviewed",
+            tone: "violet",
+            value: poolUnavailable ? "—" : candidateStats.notYetReviewed,
+          },
+          {
+            description: poolUnavailable ? POOL_UNAVAILABLE_TILE_NOTE : "Candidates a hiring manager has been told about.",
+            icon: <CheckCircle2 className="h-5 w-5" />,
+            label: "Sent to a manager",
+            tone: "emerald",
+            value: poolUnavailable ? "—" : candidateStats.sentToManager,
+          },
+        ]}
+      />
 
       {/* Candidates first, because it is where the work is and where the module now opens. */}
-      <div className="flex flex-wrap gap-2">
-        {/* Advertise is management-only: it hands out apply links and retires channels. */}
-        {/* Folders sits directly after Candidates because it is the same pile, shelved — a CV is in
-            one or the other and never both, so the two tabs read as two halves of one list. */}
-        {(props.canManage
+      {/* Advertise is management-only: it hands out apply links and retires channels. */}
+      {/* Folders sits directly after Candidates because it is the same pile, shelved — a CV is in
+          one or the other and never both, so the two tabs read as two halves of one list. */}
+      {/* Counts only where the number is the tab's own list: the pool and the shelves split one
+          array by a rule that lives in their own components, so a count here would be a second guess. */}
+      <RecruitmentTabBar
+        label="Recruitment sections"
+        onChange={setTab}
+        tabs={(props.canManage
           ? (["candidates", "folders", "requisitions", "pipeline", "advertise"] as TabKey[])
           : (["candidates", "folders", "requisitions", "pipeline"] as TabKey[])
-        ).map((key) => (
-          <Button key={key} variant={tab === key ? "default" : "ghost"} onClick={() => setTab(key)}>
-            {humanizeRecruitmentTerm(key)}
-          </Button>
-        ))}
-      </div>
+        ).map((key) => ({
+          count: !dashboard ? null : key === "requisitions" ? requisitions.length : key === "pipeline" ? applications.length : null,
+          icon: workspaceTabIcon[key],
+          key,
+          label: humanizeRecruitmentTerm(key),
+        }))}
+        value={tab}
+      />
 
       {/* Each tab stands or falls on ITS OWN data. The pool and the folders do not need the dashboard,
           so a dashboard that did not load no longer hides the screen where the work is. */}
@@ -1369,6 +1422,7 @@ export function RecruitmentWorkspace(props: Props) {
           run={run}
           setError={setError}
           setNotice={setNotice}
+          whatsappQuestions={props.whatsappQuestions}
         />
       )}
     </div>
@@ -1593,9 +1647,20 @@ function PipelineTab({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <AdminTableShell title="Pipeline" description="Every application and its current stage. Select a row to act on it.">
+        <RecruitmentPanel
+          count={applications.length}
+          description="Every application and its current stage. Select a row to act on it."
+          icon={<Workflow aria-hidden="true" className="h-4 w-4" />}
+          title="Pipeline"
+        >
           <PortalResponsiveDataList
-            empty={<PortalEmptyState message="Add a candidate from the Candidates tab." title="No applications yet" />}
+            empty={
+              <RecruitmentEmptyState
+                icon={<Workflow aria-hidden="true" className="h-5 w-5" />}
+                message="Add a candidate from the Candidates tab."
+                title="No applications yet"
+              />
+            }
             getKey={(application) => application.id}
             items={applications}
             renderCard={(application) => (
@@ -1638,14 +1703,18 @@ function PipelineTab({
                   {applications.map((application) => (
                     <tr
                       key={application.id}
-                      className={selectedId === application.id ? "bg-orange-50" : "cursor-pointer"}
+                      className={
+                        selectedId === application.id
+                          ? "bg-orange-50 shadow-[inset_3px_0_0_#f97316]"
+                          : "cursor-pointer transition-colors hover:bg-slate-50"
+                      }
                       onClick={() => selectApplication(application.id)}
                     >
                       {/* The stored name is the whole forwarded-mail envelope on 40% of this
                           pool, so the raw value wrapped a row onto three lines. Same treatment the
                           candidate table has always given it: the name on screen, the envelope on
                           hover. */}
-                      <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900" title={application.candidate?.fullName}>
+                      <td className="break-words px-3 py-2 font-semibold text-slate-950" title={application.candidate?.fullName}>
                         {candidateDisplayName(application.candidate?.fullName ?? "") || "Unknown candidate"}
                       </td>
                       <td className="px-3 py-2">{application.requisition?.jobTitle ?? "—"}</td>
@@ -1655,10 +1724,15 @@ function PipelineTab({
                       <td className="whitespace-nowrap px-3 py-2">
                         <WaitingInStage application={application} asOf={asOf} />
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2">
-                        {application.managerNotified
-                          ? `${application.managerNotified.managerName} · ${cairoDateTime(application.managerNotified.sentAt)}`
-                          : "Not sent"}
+                      <td className="break-words px-3 py-2 text-xs">
+                        {application.managerNotified ? (
+                          <>
+                            <span className="block font-semibold text-slate-800">{application.managerNotified.managerName}</span>
+                            <span className="block tabular-nums text-slate-500">{cairoDateTime(application.managerNotified.sentAt)}</span>
+                          </>
+                        ) : (
+                          <StagePill tone="amber">Not sent</StagePill>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right">
                         {canDelete ? (
@@ -1684,19 +1758,30 @@ function PipelineTab({
               </PortalDesktopTable>
             )}
           />
-        </AdminTableShell>
+        </RecruitmentPanel>
 
-        <div className="space-y-3">
-          <AdminSectionHeader title="Actions" description="Move the selected candidate through the pipeline." />
+        <RecruitmentPanel
+          className="self-start lg:sticky lg:top-4"
+          description="Move the selected candidate through the pipeline."
+          icon={<Sparkles aria-hidden="true" className="h-4 w-4" />}
+          title="Actions"
+        >
           {!selected ? (
-            <p className="text-sm text-slate-500">Select an application to see available actions.</p>
+            <RecruitmentEmptyState
+              icon={<Workflow aria-hidden="true" className="h-5 w-5" />}
+              message="Select an application to see available actions."
+              title="Nothing selected"
+            />
           ) : (
-            <div className="space-y-3 border border-slate-200 p-4">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">{selected.candidate?.fullName}</p>
-                <p className="text-xs text-slate-500">
-                  {selected.requisition?.jobTitle} · {applicationStageLabel(selected.stage)}
+            <div className="space-y-3 p-4">
+              <div className="border-b border-slate-200 pb-3">
+                <p className="break-words text-base font-black tracking-tight text-slate-950">
+                  {candidateDisplayName(selected.candidate?.fullName ?? "") || "Unknown candidate"}
                 </p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <StagePill tone={stageTone(selected.stage)}>{applicationStageLabel(selected.stage)}</StagePill>
+                  <span className="break-words text-xs font-medium text-slate-500">{selected.requisition?.jobTitle ?? "—"}</span>
+                </div>
               </div>
 
               {canManage ? <SendToManagerCard application={selected} pending={pending} run={run} /> : null}
@@ -1791,7 +1876,7 @@ function PipelineTab({
                     across, and brings you back with their HR_ID already filled in.
                   </p>
                   <a
-                    className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                    className={cn(phxButtonGhostClassName, "w-full justify-center")}
                     href={`${addEmployeeHref}?fromApplication=${encodeURIComponent(selected.id)}`}
                   >
                     Open Add Employee with these details
@@ -1916,7 +2001,7 @@ function PipelineTab({
               ) : null}
             </div>
           )}
-        </div>
+        </RecruitmentPanel>
       </div>
     </>
   );
@@ -2128,11 +2213,12 @@ function RequisitionsTab({
   return (
     <div className="space-y-4">
       {canCreate ? (
-        <AdminTableShell
-          title="Open a requisition"
+        <RecruitmentPanel
           description="Three ways in: pick any active position from the catalogue, wrap a seat that is already vacant on the organogram, or type a free job title. A position or a typed title also needs the manager who will hire for it."
+          icon={<ClipboardList aria-hidden="true" className="h-4 w-4" />}
+          title="Open a requisition"
         >
-          <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-3">
             <RequisitionField
               hint={
                 hasMatchingSeats
@@ -2280,7 +2366,7 @@ function RequisitionsTab({
                 onChange={(e) => setDeadline(e.target.value)}
               />
             </RequisitionField>
-            <div className="sm:col-span-2 lg:col-span-3">
+            <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 pt-4 sm:col-span-2 lg:col-span-3">
               <Button
                 disabled={pending || !canSubmit}
                 onClick={() =>
@@ -2316,7 +2402,7 @@ function RequisitionsTab({
               </Button>
             </div>
           </div>
-        </AdminTableShell>
+        </RecruitmentPanel>
       ) : null}
 
       {/*
@@ -2334,18 +2420,23 @@ function RequisitionsTab({
         33 times.
       */}
       {canCreate && openVacancies.length > 0 ? (
-        <AdminTableShell
-          title="Vacant seats with no requisition"
+        <RecruitmentPanel
+          count={openVacancies.length}
           description={`${openVacancies.length} open ${openVacancies.length === 1 ? "seat" : "seats"} on the organogram nobody is recruiting for. Opening one inherits its line, area and manager.`}
+          icon={<Briefcase aria-hidden="true" className="h-4 w-4" />}
+          title="Vacant seats with no requisition"
         >
           <ul className="divide-y divide-slate-100">
             {openVacancies.map((vacancy) => (
-              <li className="flex flex-wrap items-center justify-between gap-3 px-5 py-3" key={vacancy.id}>
-                <div className="min-w-0">
-                  <p className="whitespace-nowrap text-sm font-semibold text-slate-800">
+              <li
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-slate-50 sm:px-5"
+                key={vacancy.id}
+              >
+                <div className="min-w-0 grow basis-56">
+                  <p className="break-words text-sm font-bold text-slate-900">
                     {vacancy.jobTitle ?? vacancy.positionTitle ?? "Untitled seat"}
                   </p>
-                  <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500">
+                  <p className="mt-0.5 break-words text-xs text-slate-500">
                     {[vacancy.lineName, vacancy.areaName, managerLabelOrNull(vacancy.managerName, vacancy.managerHrId)]
                       .filter(Boolean)
                       .join(" · ") || vacancy.vacancyCode}
@@ -2367,12 +2458,23 @@ function RequisitionsTab({
               </li>
             ))}
           </ul>
-        </AdminTableShell>
+        </RecruitmentPanel>
       ) : null}
 
-      <AdminTableShell title="Requisitions" description="All recruitment openings and their status.">
+      <RecruitmentPanel
+        count={requisitions.length}
+        description="All recruitment openings and their status."
+        icon={<ClipboardList aria-hidden="true" className="h-4 w-4" />}
+        title="Requisitions"
+      >
         <PortalResponsiveDataList
-          empty={<PortalEmptyState message="Requisitions will appear here once one is opened." title="No requisitions yet" />}
+          empty={
+            <RecruitmentEmptyState
+              icon={<ClipboardList aria-hidden="true" className="h-5 w-5" />}
+              message="Requisitions will appear here once one is opened."
+              title="No requisitions yet"
+            />
+          }
           getKey={(requisition) => requisition.id}
           items={requisitions}
           renderCard={(requisition) => (
@@ -2408,9 +2510,9 @@ function RequisitionsTab({
               </thead>
               <tbody>
                 {requisitions.map((requisition) => (
-                  <tr key={requisition.id}>
-                    <td className="px-3 py-2 font-medium text-slate-900">{requisition.requisitionCode}</td>
-                    <td className="px-3 py-2">{requisition.jobTitle}</td>
+                  <tr className="transition-colors hover:bg-slate-50" key={requisition.id}>
+                    <td className="break-words px-3 py-2 text-xs font-bold tabular-nums text-slate-700">{requisition.requisitionCode}</td>
+                    <td className="break-words px-3 py-2 font-semibold text-slate-950">{requisition.jobTitle}</td>
                     <td className="px-3 py-2">
                       <StagePill tone={requisitionStatusTone(requisition.status)}>{requisitionStatusLabel(requisition.status)}</StagePill>
                     </td>
@@ -2433,7 +2535,7 @@ function RequisitionsTab({
             </PortalDesktopTable>
           )}
         />
-      </AdminTableShell>
+      </RecruitmentPanel>
     </div>
   );
 }
@@ -3257,6 +3359,55 @@ function positionBody(
   return {};
 }
 
+/** The tooltip on a grey-italic answer: the bot never asked this, so the CV is standing in. */
+const POOL_CV_STAND_IN_TITLE = "Not answered on WhatsApp — read off the CV instead.";
+
+/** The Which region? · Which area? header's explanation of its two lines. */
+const POOL_PLACE_HEADER_TITLE =
+  "Where they want to work. A second line naming an AREA is the applicant's own answer from WhatsApp; a second line naming a governorate is the address read off their CV.";
+
+/**
+ * What each field of a column's editor opens with: the answer on the record now, "" for a missing one.
+ * Read from the record's own columns, so the editor shows exactly what a save will replace — the
+ * applied-for title even where the bot never asked it, and never the CV standing in for an answer.
+ */
+function poolCurrentAnswerValues(
+  candidate: Candidate,
+  column: PoolTableColumn,
+  answers: ReadonlyMap<string, string>,
+): Record<string, string> {
+  const valueOf = (editKey: string): string => {
+    switch (editKey) {
+      case "job_title":
+        return candidate.appliedForJobTitle ?? "";
+      case "background":
+        return candidate.declaredBackground ?? "";
+      case "region":
+        return answers.get("region") ?? "";
+      case "area":
+        return candidate.preferredAreaName ?? "";
+      case "experience":
+        return candidate.declaredExperience ?? "";
+      case "salary":
+        return candidate.declaredExpectedSalary ?? "";
+      default:
+        return answers.get(editKey) ?? "";
+    }
+  };
+  return Object.fromEntries(column.editKeys.map((editKey) => [editKey, valueOf(editKey)]));
+}
+
+/** An admin question's answer under its column. Only the applicant can answer these, so no CV stands in. */
+function PoolAnswerText({ answer }: { answer: string | null }) {
+  return answer ? (
+    <span className="block whitespace-pre-wrap break-words font-semibold text-slate-800" dir="auto">
+      {answer}
+    </span>
+  ) : (
+    <span className="text-slate-300">—</span>
+  );
+}
+
 function CandidatePoolCard({
   areaOptions,
   candidate,
@@ -3281,6 +3432,7 @@ function CandidatePoolCard({
   setSendTo,
   setStartReq,
   startReq,
+  whatsappQuestions,
 }: {
   areaOptions: CandidateFolderAreaOption[];
   candidate: Candidate;
@@ -3306,6 +3458,8 @@ function CandidatePoolCard({
   setSendTo: Dispatch<SetStateAction<Record<string, string>>>;
   setStartReq: Dispatch<SetStateAction<Record<string, string>>>;
   startReq: Record<string, string>;
+  /** The bot's questions, so the card lists every WhatsApp answer under the question it answers. */
+  whatsappQuestions: PoolWhatsAppQuestions | null;
 }) {
   // One card is one candidate, so the open picker is local here — unlike the table, where the state
   // is lifted so two rows cannot expand at once.
@@ -3328,6 +3482,9 @@ function CandidatePoolCard({
   // them. The label carries the explanation instead — "(from CV)" rather than a sentence.
   const shown = (value: string, confirmed: boolean) =>
     confirmed ? value : <span className="font-medium italic text-slate-500">{value} ?</span>;
+  // The phone's half of "the headers are the WhatsApp questions": a card has no header row, so it
+  // lists every answer under the question it answers — the same list the profile panel shows.
+  const whatsappAnswers = candidateWhatsAppAnswers(candidate, whatsappQuestions?.questions ?? null);
 
   return (
     <PortalRecordCard
@@ -3487,6 +3644,9 @@ function CandidatePoolCard({
                 },
               ]
             : []),
+          ...(whatsappAnswers.length > 0
+            ? [{ label: "WhatsApp answers", value: <WhatsAppAnswersList answers={whatsappAnswers} /> }]
+            : []),
           ...(isStatedNonEgyptian(candidate.nationality)
             ? [{ label: "Nationality", value: nonEgyptianFlagTitle(candidate.nationality) }]
             : []),
@@ -3578,6 +3738,7 @@ function CandidatesTab({
   run,
   setError,
   setNotice,
+  whatsappQuestions,
 }: {
   /** Every active area, tagged with the region it files under in RECRUITMENT — the folder picker's
       area list. Loaded on the server because it reads the org chart; see candidate-folder-options.ts. */
@@ -3604,6 +3765,8 @@ function CandidatesTab({
   run: (work: () => Promise<string | void>) => void;
   setError: (value: string | null) => void;
   setNotice: (value: string | null) => void;
+  /** The bot's questions — the pool's headers follow them. Null when they could not be read. */
+  whatsappQuestions: PoolWhatsAppQuestions | null;
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -3898,6 +4061,26 @@ function CandidatesTab({
   // <tbody> and the mobile list a single stack. The section headings come from the map next to
   // this one rather than from a nested render, which keeps the 200-line row renderer untouched.
   const displayedCandidates = groupByManager ? [...managerGroups.flatMap((group) => group.candidates), ...unsentVisible] : visibleCandidates;
+  // THE HEADERS FOLLOW THE WHATSAPP QUESTIONS (owner, 2026-10-19 — "switch by role"). With no role
+  // picked the table's columns are the questions every applicant meets; with one picked they become
+  // every question THAT role is asked, each cell the candidate's own answer. pool-whatsapp-columns.ts
+  // decides which; the answers come from the same reader the profile panel uses.
+  const answersByCandidateId = new Map(
+    displayedCandidates.map((candidate) => [candidate.id, poolAnswersByColumn(candidate, whatsappQuestions)]),
+  );
+  const answeredKeys = new Set([...answersByCandidateId.values()].flatMap((answers) => [...answers.keys()]));
+  const roleView: CandidateRoleFamily | null = roleFilter && roleFilter !== "unknown" ? roleFilter : null;
+  // "Full control" (owner, 2026-10-19): the reader may add any question as a column, hide one and
+  // reorder them, kept per view in this browser. Nothing saved means the view's own WhatsApp questions.
+  const [savedColumns, saveColumns] = usePoolColumnLayout(poolColumnViewKey(roleView));
+  const defaultColumns = poolDefaultColumns({ answeredKeys, roleFamily: roleView, whatsapp: whatsappQuestions });
+  const columnCatalogue = poolColumnCatalogue(whatsappQuestions, answeredKeys);
+  const tableColumns = applyPoolColumnLayout(defaultColumns, columnCatalogue, savedColumns);
+  // The measured, pinned widths below are for the shared five exactly as they ship; any other set of
+  // columns shares the width equally instead.
+  const usesPinnedLayout = !roleView && !savedColumns;
+  // Which answer cell is open for editing — one at a time, like the row pickers.
+  const [editingCell, setEditingCell] = useState<{ candidateId: string; columnKey: string } | null>(null);
   const groupHeaderByCandidateId = new Map<string, ManagerGroup>();
   if (groupByManager) {
     for (const group of managerGroups) {
@@ -4155,8 +4338,12 @@ function CandidatesTab({
   return (
     <div className="space-y-4">
       {canManage ? (
-        <AdminTableShell title="Add a candidate" description="Create a candidate record (deduplicated by National ID, then email or phone).">
-          <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4">
+        <RecruitmentPanel
+          description="Create a candidate record (deduplicated by National ID, then email or phone)."
+          icon={<UserPlus aria-hidden="true" className="h-4 w-4" />}
+          title="Add a candidate"
+        >
+          <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-4">
             <Input placeholder="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
             <Input placeholder="National ID" value={nationalId} onChange={(e) => setNationalId(e.target.value)} />
             <Input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -4218,12 +4405,13 @@ function CandidatesTab({
               }}
             />
           </div>
-        </AdminTableShell>
+        </RecruitmentPanel>
       ) : null}
 
-      <AdminTableShell
-        title="Candidate pool"
+      <RecruitmentPanel
         description={poolShellDescription}
+        icon={<Users aria-hidden="true" className="h-4 w-4" />}
+        title="Candidate pool"
       >
         <div className="space-y-3 p-3">
           {/* The two piles, before anything else on the toolbar — because which pile you are in
@@ -4246,7 +4434,7 @@ function CandidatesTab({
           />
           {showsRedSplit ? (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <div className="inline-flex overflow-hidden rounded-md border border-phx-line">
+            <div className={`inline-flex overflow-hidden border border-phx-line ${adminChipDepthClassName}`}>
               {candidateCvTabs.map((key) => {
                 const isActive = cvTab === key;
                 return (
@@ -4266,7 +4454,7 @@ function CandidatesTab({
                     title={candidateCvTabDescriptions[key]}
                     type="button"
                   >
-                    {key === "red" ? <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-rose-500" /> : null}
+                    {key === "red" ? <span aria-hidden className="h-2 w-2 shrink-0 bg-rose-500" /> : null}
                     {candidateCvTabLabels[key]}
                     <span className="tabular-nums opacity-70">{cvTabCandidates[key].length}</span>
                   </button>
@@ -4289,7 +4477,7 @@ function CandidatesTab({
               Fits-the-screen rule: no fixed widths, no nowrap, no truncation. A long name and a
               long folder label both WRAP. */}
           {q && filedMatches.length > 0 ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+            <div className="border border-amber-200 bg-amber-50 p-3">
               <p className="text-xs font-semibold text-amber-900">
                 {filedMatches.length === 1
                   ? "1 more CV matches, filed in a folder"
@@ -4449,7 +4637,7 @@ function CandidatesTab({
                 URL cannot, while this one is bookmarkable and survives closing the browser. It
                 opens on the unread pile because that is the reason to come back a second time. */}
             <Link
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
               href={screeningHref(screeningBasePath, { seen: "unseen", status: statusFilterForDecisionTab(decisionTab) })}
               title="Open the screening queue on its own page, starting with the CVs you have never read"
             >
@@ -4462,7 +4650,7 @@ function CandidatesTab({
                 554 of 781 candidates on 2026-09-05. A second link rather than a replacement, because
                 the one above is in the owner's bookmarks and answers a different question. */}
             <Link
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
               href={screeningHref(screeningBasePath, { seen: "untouched", status: statusFilterForDecisionTab(decisionTab) })}
               title="Open the screening queue on the CVs nobody has read yet — not you, not the other screener"
             >
@@ -4656,9 +4844,29 @@ function CandidatesTab({
             </Button>
           </div>
         ) : null}
+        <div className="flex flex-wrap items-start justify-between gap-2 px-1 pb-2">
+          <p className="min-w-0 flex-1 text-xs text-slate-600">
+            {roleView
+              ? poolRoleQuestionsCaption(roleView, tableColumns.length)
+              : "The columns are the WhatsApp questions every applicant is asked. Pick a role to see that role's own questions."}
+          </p>
+          <PoolColumnChooser
+            catalogue={columnCatalogue}
+            columns={tableColumns}
+            isCustom={savedColumns !== null}
+            onChange={saveColumns}
+            viewLabel={roleView ? candidateRoleFamilyLabels[roleView] : "all roles"}
+          />
+        </div>
         <PortalResponsiveDataList
           breakpoint="xl"
-          empty={<PortalEmptyState message="Add a candidate above, or try a different search." title="No candidates found" />}
+          empty={
+            <RecruitmentEmptyState
+              icon={<Users aria-hidden="true" className="h-5 w-5" />}
+              message="Add a candidate above, or try a different search."
+              title="No candidates found"
+            />
+          }
           getKey={(candidate) => candidate.id}
           items={displayedCandidates}
           renderCard={(candidate) => {
@@ -4720,6 +4928,7 @@ function CandidatesTab({
                   setSendTo={setSendTo}
                   setStartReq={setStartReq}
                   startReq={startReq}
+                  whatsappQuestions={whatsappQuestions}
                 />
               </>
             );
@@ -4761,16 +4970,34 @@ function CandidatesTab({
                  * is deliberately absent (its strings reach 285 chars) and lives on the profile
                  * card, where the text can breathe.
                  */
+                /*
+                 * Since 2026-10-19 the columns are the WhatsApp questions, and Status and Received
+                 * moved under the name (the Candidate cell's third line) to give them the room: the
+                 * shared five are Applying for (the flexible one) and four narrow answers.
+                 */
+                usesPinnedLayout ? (
                 <colgroup>
                   {canSelect ? <col className="w-[36px]" /> : null}
                   <col className="w-[332px]" />
                   <col />
-                  <col className="w-[6%]" />
-                  <col className="w-[6%]" />
-                  <col className="w-[5%]" />
                   <col className="w-[8%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[7%]" />
                   <col className="w-[11%]" />
                 </colgroup>
+                ) : (
+                  /* A role's own questions, or a layout the reader chose: the name keeps a quarter,
+                     the questions share the rest equally, so eight questions still fit the screen. */
+                  <colgroup>
+                    {canSelect ? <col className="w-[36px]" /> : null}
+                    <col className="w-[24%]" />
+                    {tableColumns.map((column) => (
+                      <col key={column.key} />
+                    ))}
+                    <col className="w-[11%]" />
+                  </colgroup>
+                )
               }
             >
               {/* No colours here on purpose. The admin shell's locked rules in globals.css paint
@@ -4791,16 +5018,20 @@ function CandidatesTab({
                     </th>
                   ) : null}
                   <th className="px-3 py-2.5">Candidate</th>
-                  <th className="px-3 py-2.5">Role</th>
-                  <th
-                    className="px-3 py-2.5"
-                    title="Where they want to work. A second line naming an AREA is the applicant&apos;s own answer from WhatsApp; a second line naming a governorate is the address read off their CV."
-                  >
-                    Region
-                  </th>
-                  <th className="px-3 py-2.5">Experience</th>
-                  <th className="px-3 py-2.5">Status</th>
-                  <th className="px-3 py-2.5">Received</th>
+                  {/* The WhatsApp bot's own questions, in sentence case: they are questions, and a
+                      sentence in capitals is slower to read than the answer under it. A cell's
+                      answer is in plain type; grey italic is the CV standing in where the bot never
+                      asked, and its tooltip says so. */}
+                  {tableColumns.map((column) => (
+                    <th
+                      className="px-2 py-2.5 normal-case tracking-normal"
+                      dir="auto"
+                      key={column.key}
+                      title={column.key === "place" ? POOL_PLACE_HEADER_TITLE : (column.askedTo ?? undefined)}
+                    >
+                      {column.header}
+                    </th>
+                  ))}
                   <th className="px-3 py-2.5">Actions</th>
                 </tr>
               </thead>
@@ -4825,7 +5056,260 @@ function CandidatesTab({
                   // nested table, so all 200 lines of the row renderer below stay exactly as they
                   // are and the columns cannot come to disagree between one pile and the next.
                   const groupHeader = groupHeaderByCandidateId.get(candidate.id) ?? null;
-                  const headingColSpan = canSelect ? 8 : 7;
+                  const headingColSpan = (canSelect ? 1 : 0) + tableColumns.length + 2;
+                  const whatsappAnswers = answersByCandidateId.get(candidate.id) ?? new Map<string, string>();
+                  // The five built-in columns' cells — the same cells whichever view shows them, each
+                  // keyed by its column so a reader's layout can put them in any order.
+                  const sharedCells: Record<PoolSharedColumnKey, { className: string; content: ReactNode }> = {
+                    appliedFor: {
+                      className: "px-3 py-2.5",
+                      content: (
+                        <>
+                          {/* Second column on purpose: after the name, "what does this person do" is
+                              the fact that decides who a CV goes to.
+
+                              The header is the bot's first question, "What are you applying for?", so
+                              since 2026-10-19 the top line is their ANSWER — the applied-for ladder, whose
+                              "stated" rung is what they tapped on WhatsApp — and the job they hold now
+                              drops to a small "Now:" line under it. Until then the CV's current title led
+                              and the answer sat beneath it. The bottom line is the FAMILY, a fixed vocabulary of eight,
+                              and it is what makes 426 free-text titles scannable at all: "district
+                              Manger", "District Sales Manager" and "SENIOR DISTRICT MANAGER |
+                              PHARMACEUTICAL SALES & LEADERSHIP" are three spellings of one job, and all
+                              three read District Manager here. It is also exactly what the Role filter
+                              matches on, so what the reader sees is what the dropdown will find.
+
+                              Grey italic still means "we were told this rather than shown it", the same
+                              convention this cell has used since 2026-08-21 — now extended to the CV
+                              reader's own hedged answers, which the tooltip names in plain words. */}
+                            {appliedFor.text ? (
+                              <span
+                                className={`block break-words ${appliedFor.source === "stated" ? "text-slate-900" : "italic text-slate-500"}`}
+                                title={
+                                  appliedFor.source === "stated"
+                                    ? [candidate.appliedForJobTitle, candidate.appliedForEvidence].filter(Boolean).join("\n")
+                                    : `${APPLIED_FOR_SOURCE_LABEL[appliedFor.source ?? "subject"]}:\n"${appliedFor.evidence ?? appliedFor.text}"`
+                                }
+                              >
+                                {appliedFor.text}
+                              </span>
+                            ) : facts.roleTitle ? (
+                              <span
+                                className={`block break-words ${facts.roleTitle.confirmed ? "text-slate-900" : "italic text-slate-500"}`}
+                                title={
+                                  facts.roleTitle.confirmed
+                                    ? `Their current job title, as recorded.\n${facts.roleTitle.value}`
+                                    : `${UNCONFIRMED_FACT_TITLE}\n\nRead off the CV as their current job title:\n"${facts.roleTitle.value}"`
+                                }
+                              >
+                                {facts.roleTitle.value}
+                              </span>
+                            ) : null}
+                            {/* The job they hold now, when it is not the job they asked for — the header
+                                asks what they are applying for, so their current title is the second fact. */}
+                            {appliedFor.text &&
+                            facts.roleTitle &&
+                            normalizeJobTitle(appliedFor.text) !== normalizeJobTitle(facts.roleTitle.value) ? (
+                              <div
+                                className="mt-0.5 break-words text-phx-xs text-slate-500"
+                                title={facts.roleTitle.confirmed ? "Their current job title, as recorded." : UNCONFIRMED_FACT_TITLE}
+                              >
+                                Now: {facts.roleTitle.value}
+                              </div>
+                            ) : null}
+                            {/* The family, under the words it was worked out from — and only when the
+                                two differ. Repeating "Medical Representative" under a title that already
+                                reads "Medical Representative" is another line that says nothing, which
+                                is the exact fault this rebuild exists to fix. */}
+                            {roleFamily && !roleTitleAlreadySaysFamily ? (
+                              <div className="mt-0.5 break-words text-phx-xs font-semibold uppercase tracking-[0.06em] text-slate-400">
+                                {candidateRoleFamilyLabels[roleFamily]}
+                              </div>
+                            ) : null}
+                            {/* "Not stated" gives way to the badge — it is the weaker of the two facts,
+                                and stacking both would say the same nothing twice. */}
+                            {!appliedFor.text && !facts.roleTitle && !isNotACv(candidate) ? (
+                              <span className="text-slate-300">Not stated</span>
+                            ) : null}
+                            {/* The badge lives in THIS cell rather than beside the name, deliberately
+                                twice over. It is a fact about the attachment, not about the person, and
+                                a warning pinned to someone's name reads as a judgement on them. And
+                                this is the cell whose emptiness raises the question: a certificate
+                                yields no job title, so the reader is already staring at this blank
+                                space asking why. It is also the widest column, where the 332px
+                                Candidate cell would have squeezed the name — which since 2026-09-03
+                                wraps rather than truncating, so it needs that width more, not less. */}
+                            {isNotACv(candidate) ? (
+                              <div className={appliedFor.text || facts.roleTitle ? "mt-0.5" : undefined}>
+                                <StagePill tone="amber">
+                                  <span title={NOT_A_CV_TITLE}>{NOT_A_CV_LABEL}</span>
+                                </StagePill>
+                              </div>
+                            ) : null}
+                        </>
+                      ),
+                    },
+                    background: {
+                      className: "px-2 py-2.5",
+                      content: (
+                        <>
+                          {/* "What did you graduate in?" — their own answer from WhatsApp; where the bot
+                              never asked, the faculty read off the CV in grey italic. */}
+                            {facts.background ? (
+                              <span className="block break-words font-semibold text-slate-800" dir="auto" title="Their own answer on WhatsApp.">
+                                {facts.background.value}
+                              </span>
+                            ) : candidate.faculty || candidate.degree ? (
+                              <span className="block break-words italic text-slate-500" dir="auto" title={POOL_CV_STAND_IN_TITLE}>
+                                {candidate.faculty || candidate.degree}
+                              </span>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                        </>
+                      ),
+                    },
+                    place: {
+                      className: "px-2 py-2.5",
+                      content: (
+                        <>
+                          {/* Where they are, which the pool could filter on but never showed — so a
+                              screener narrowing to Alex-BHR had to take the filter's word for it and
+                              could not tell, looking at the rows it returned, why any of them were
+                              there. The region is the company's own map of Egypt, never geography's
+                              (Beni Suef and Fayoum are Giza here, by the owner's call), so the
+                              governorate it was derived from sits underneath: the reader needs to see
+                              the working, not just the verdict. */}
+                            {facts.region ? (
+                              <span
+                                className={`block break-words font-semibold ${facts.region.confirmed ? "text-slate-800" : "italic font-normal text-slate-500"}`}
+                                title={
+                                  facts.region.value.declared
+                                    ? `The applicant chose this themselves when they applied on WhatsApp.${
+                                        facts.governorate ? ` Their CV gives the address as "${facts.governorate.value}".` : ""
+                                      }`
+                                    : facts.region.confirmed
+                                      ? `Company region for ${facts.governorate?.value ?? ""}.`
+                                      : `${UNCONFIRMED_FACT_TITLE}\n\nRead off the CV as: "${facts.governorate?.value ?? ""}"`
+                                }
+                              >
+                                {facts.region.value.label}
+                              </span>
+                            ) : null}
+                            {/* The area they asked for outranks the governorate on their CV, and only one
+                                of the two fits: it answers the same question more precisely, and it is
+                                the only line on this row the applicant wrote himself. The governorate is
+                                not lost — it moves into the tooltip.
+
+                                ONE element, not a branch into two. That began as a no-ellipsis ratchet
+                                argument — two sibling elements each carrying the class would have counted
+                                as two sites — and since 2026-09-03 this line wraps instead of truncating,
+                                so the ratchet no longer decides it. The choice stands on its own: the two
+                                are alternative answers to one question, not facts to stack, and a second
+                                line would add height to every row to repeat what the tooltip says. */}
+                            {facts.area || facts.governorate ? (
+                              <div
+                                className={`mt-0.5 break-words text-phx-xs ${facts.area ? "text-slate-600" : "text-slate-500"}`}
+                                title={
+                                  facts.area
+                                    ? `Asked to work in ${facts.area.value}.${
+                                        facts.governorate ? ` CV address: ${facts.governorate.value}.` : ""
+                                      }`
+                                    : facts.governorate!.value
+                                }
+                              >
+                                {facts.area ? facts.area.value : facts.governorate!.value}
+                              </div>
+                            ) : facts.region ? null : (
+                              <span className="text-slate-300">Not on file</span>
+                            )}
+                        </>
+                      ),
+                    },
+                    experience: {
+                      className: "px-2 py-2.5",
+                      content: (
+                        <>
+                          {/* How long they have worked, and whether any of it was as a medical rep —
+                              the two questions that decide whether a pharma CV is worth opening, and
+                              neither had a column.
+
+                              The years are the CV reader's arithmetic over the work history far more
+                              often than a figure printed on the CV, which is why 117 of them are hedged
+                              and why a hedged one shows in grey italic with a "~". Showing it is still
+                              right: "~7 yrs, check it" is a decision a screener can act on and a blank
+                              cell is not. */}
+                            {/* Their WhatsApp answer leads — a band they chose about themselves. The CV's
+                                counted years follow, smaller, because the two answer differently. */}
+                            {facts.declaredExperience ? (
+                              <span className="block break-words font-semibold text-slate-800" title="Their own answer on WhatsApp.">
+                                {facts.declaredExperience.value}
+                              </span>
+                            ) : null}
+                            {facts.years ? (
+                              <span
+                                className={`whitespace-nowrap ${
+                                  facts.declaredExperience
+                                    ? "mt-0.5 block text-phx-xs italic text-slate-500"
+                                    : facts.years.confirmed
+                                      ? "font-semibold text-slate-800"
+                                      : "italic text-slate-500"
+                                }`}
+                                title={
+                                  facts.years.confirmed
+                                    ? "Total years of experience, as recorded."
+                                    : `${UNCONFIRMED_FACT_TITLE}\n\nWorked out from the work history on the CV.`
+                                }
+                              >
+                                {facts.years.confirmed ? "" : "~"}
+                                {formatYearsOfExperience(facts.years.value)}
+                              </span>
+                            ) : facts.declaredExperience ? null : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                            {/* `false` is an ANSWER here, not an absence: "never worked as a medical
+                                rep" is exactly what a screener of a pharma pool wants to know, and
+                                leaving it blank would hide the finding. Only a missing answer is blank. */}
+                            {facts.pharmaRep ? (
+                              <div className="mt-0.5">
+                                <StagePill tone={facts.pharmaRep.value ? "emerald" : "slate"}>
+                                  <span
+                                    title={
+                                      facts.pharmaRep.confirmed
+                                        ? undefined
+                                        : UNCONFIRMED_FACT_TITLE
+                                    }
+                                  >
+                                    {facts.pharmaRep.value ? "Pharma rep" : "No pharma"}
+                                    {facts.pharmaRep.confirmed ? "" : " ?"}
+                                  </span>
+                                </StagePill>
+                              </div>
+                            ) : null}
+                        </>
+                      ),
+                    },
+                    salary: {
+                      className: "px-2 py-2.5",
+                      content: (
+                        <>
+                          {/* "Expected salary" — verbatim, never a parsed figure: "25 k to 30 k" and
+                              "negotiable" are the answer. Grey italic is a figure typed into the ATS. */}
+                            {facts.expectedSalary ? (
+                              <span
+                                className={`block break-words ${candidate.declaredExpectedSalary ? "font-semibold text-slate-800" : "italic text-slate-500"}`}
+                                dir="auto"
+                                title={candidate.declaredExpectedSalary ? "Their own answer on WhatsApp." : "Typed into the candidate record — not a WhatsApp answer."}
+                              >
+                                {facts.expectedSalary.value}
+                              </span>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                        </>
+                      ),
+                    },
+                  };
                   return (
                     <Fragment key={candidate.id}>
                       {groupHeader ? (
@@ -4916,211 +5400,20 @@ function CandidatesTab({
                         <div className="mt-0.5 break-words text-phx-xs text-slate-500" title={contact || undefined}>
                           {contact || <span className="text-slate-300">No contact details</span>}
                         </div>
-                      </td>
-                      {/* Second column on purpose: after the name, "what does this person do" is
-                          the fact that decides who a CV goes to.
-
-                          Two lines, answering two different questions. The top line is the role
-                          itself — their own job title where the record has one, otherwise the job
-                          the sender said they wanted, which is all this column showed until
-                          2026-08-24. The bottom line is the FAMILY, a fixed vocabulary of eight,
-                          and it is what makes 426 free-text titles scannable at all: "district
-                          Manger", "District Sales Manager" and "SENIOR DISTRICT MANAGER |
-                          PHARMACEUTICAL SALES & LEADERSHIP" are three spellings of one job, and all
-                          three read District Manager here. It is also exactly what the Role filter
-                          matches on, so what the reader sees is what the dropdown will find.
-
-                          Grey italic still means "we were told this rather than shown it", the same
-                          convention this cell has used since 2026-08-21 — now extended to the CV
-                          reader's own hedged answers, which the tooltip names in plain words. */}
-                      <td className="px-3 py-2.5">
-                        {facts.roleTitle ? (
-                          <span
-                            className={`block break-words ${facts.roleTitle.confirmed ? "text-slate-900" : "italic text-slate-500"}`}
-                            title={
-                              facts.roleTitle.confirmed
-                                ? `Their current job title, as recorded.\n${facts.roleTitle.value}`
-                                : `${UNCONFIRMED_FACT_TITLE}\n\nRead off the CV as their current job title:\n"${facts.roleTitle.value}"`
-                            }
-                          >
-                            {facts.roleTitle.value}
-                          </span>
-                        ) : appliedFor.text ? (
-                          <span
-                            className={`block break-words ${appliedFor.source === "stated" ? "text-slate-900" : "italic text-slate-500"}`}
-                            title={
-                              appliedFor.source === "stated"
-                                ? [candidate.appliedForJobTitle, candidate.appliedForEvidence].filter(Boolean).join("\n")
-                                : `${APPLIED_FOR_SOURCE_LABEL[appliedFor.source ?? "subject"]}:\n"${appliedFor.evidence ?? appliedFor.text}"`
-                            }
-                          >
-                            {appliedFor.text}
-                          </span>
-                        ) : null}
-                        {/* The family, under the words it was worked out from — and only when the
-                            two differ. Repeating "Medical Representative" under a title that already
-                            reads "Medical Representative" is another line that says nothing, which
-                            is the exact fault this rebuild exists to fix. */}
-                        {roleFamily && !roleTitleAlreadySaysFamily ? (
-                          <div className="mt-0.5 break-words text-phx-xs font-semibold uppercase tracking-[0.06em] text-slate-400">
-                            {candidateRoleFamilyLabels[roleFamily]}
-                          </div>
-                        ) : null}
-                        {/* "Not stated" gives way to the badge — it is the weaker of the two facts,
-                            and stacking both would say the same nothing twice. */}
-                        {!facts.roleTitle && !appliedFor.text && !isNotACv(candidate) ? (
-                          <span className="text-slate-300">Not stated</span>
-                        ) : null}
-                        {/* The badge lives in THIS cell rather than beside the name, deliberately
-                            twice over. It is a fact about the attachment, not about the person, and
-                            a warning pinned to someone's name reads as a judgement on them. And
-                            this is the cell whose emptiness raises the question: a certificate
-                            yields no job title, so the reader is already staring at this blank
-                            space asking why. It is also the widest column, where the 332px
-                            Candidate cell would have squeezed the name — which since 2026-09-03
-                            wraps rather than truncating, so it needs that width more, not less. */}
-                        {isNotACv(candidate) ? (
-                          <div className={facts.roleTitle || appliedFor.text ? "mt-0.5" : undefined}>
-                            <StagePill tone="amber">
-                              <span title={NOT_A_CV_TITLE}>{NOT_A_CV_LABEL}</span>
-                            </StagePill>
-                          </div>
-                        ) : null}
-                      </td>
-                      {/* Where they are, which the pool could filter on but never showed — so a
-                          screener narrowing to Alex-BHR had to take the filter's word for it and
-                          could not tell, looking at the rows it returned, why any of them were
-                          there. The region is the company's own map of Egypt, never geography's
-                          (Beni Suef and Fayoum are Giza here, by the owner's call), so the
-                          governorate it was derived from sits underneath: the reader needs to see
-                          the working, not just the verdict. */}
-                      <td className="px-3 py-2.5">
-                        {facts.region ? (
-                          <span
-                            className={`block break-words font-semibold ${facts.region.confirmed ? "text-slate-800" : "italic font-normal text-slate-500"}`}
-                            title={
-                              facts.region.value.declared
-                                ? `The applicant chose this themselves when they applied on WhatsApp.${
-                                    facts.governorate ? ` Their CV gives the address as "${facts.governorate.value}".` : ""
-                                  }`
-                                : facts.region.confirmed
-                                  ? `Company region for ${facts.governorate?.value ?? ""}.`
-                                  : `${UNCONFIRMED_FACT_TITLE}\n\nRead off the CV as: "${facts.governorate?.value ?? ""}"`
-                            }
-                          >
-                            {facts.region.value.label}
-                          </span>
-                        ) : null}
-                        {/* The area they asked for outranks the governorate on their CV, and only one
-                            of the two fits: it answers the same question more precisely, and it is
-                            the only line on this row the applicant wrote himself. The governorate is
-                            not lost — it moves into the tooltip.
-
-                            ONE element, not a branch into two. That began as a no-ellipsis ratchet
-                            argument — two sibling elements each carrying the class would have counted
-                            as two sites — and since 2026-09-03 this line wraps instead of truncating,
-                            so the ratchet no longer decides it. The choice stands on its own: the two
-                            are alternative answers to one question, not facts to stack, and a second
-                            line would add height to every row to repeat what the tooltip says. */}
-                        {facts.area || facts.governorate ? (
-                          <div
-                            className={`mt-0.5 break-words text-phx-xs ${facts.area ? "text-slate-600" : "text-slate-500"}`}
-                            title={
-                              facts.area
-                                ? `Asked to work in ${facts.area.value}.${
-                                    facts.governorate ? ` CV address: ${facts.governorate.value}.` : ""
-                                  }`
-                                : facts.governorate!.value
-                            }
-                          >
-                            {facts.area ? facts.area.value : facts.governorate!.value}
-                          </div>
-                        ) : facts.region ? null : (
-                          <span className="text-slate-300">Not on file</span>
-                        )}
-                      </td>
-                      {/* How long they have worked, and whether any of it was as a medical rep —
-                          the two questions that decide whether a pharma CV is worth opening, and
-                          neither had a column.
-
-                          The years are the CV reader's arithmetic over the work history far more
-                          often than a figure printed on the CV, which is why 117 of them are hedged
-                          and why a hedged one shows in grey italic with a "~". Showing it is still
-                          right: "~7 yrs, check it" is a decision a screener can act on and a blank
-                          cell is not. */}
-                      <td className="whitespace-nowrap px-3 py-2.5">
-                        {facts.years ? (
-                          <span
-                            className={facts.years.confirmed ? "font-semibold text-slate-800" : "italic text-slate-500"}
-                            title={
-                              facts.years.confirmed
-                                ? "Total years of experience, as recorded."
-                                : `${UNCONFIRMED_FACT_TITLE}\n\nWorked out from the work history on the CV.`
-                            }
-                          >
-                            {facts.years.confirmed ? "" : "~"}
-                            {formatYearsOfExperience(facts.years.value)}
-                          </span>
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
-                        {/* `false` is an ANSWER here, not an absence: "never worked as a medical
-                            rep" is exactly what a screener of a pharma pool wants to know, and
-                            leaving it blank would hide the finding. Only a missing answer is blank. */}
-                        {facts.pharmaRep ? (
-                          <div className="mt-0.5">
-                            <StagePill tone={facts.pharmaRep.value ? "emerald" : "slate"}>
-                              <span
-                                title={
-                                  facts.pharmaRep.confirmed
-                                    ? undefined
-                                    : UNCONFIRMED_FACT_TITLE
-                                }
-                              >
-                                {facts.pharmaRep.value ? "Pharma rep" : "No pharma"}
-                                {facts.pharmaRep.confirmed ? "" : " ?"}
-                              </span>
-                            </StagePill>
-                          </div>
-                        ) : null}
-                      </td>
-                      {/* The reason for the current status sits in the tooltip rather than a column
-                          of its own: it is read when someone asks "why", not on every scan of the
-                          pool. The durable copy is in ats_candidate_status_events either way. */}
-                      <td className="px-3 py-2.5">
-                        <StagePill tone={candidateStatusTone(candidate.status)}>
-                          <span title={candidate.statusNote ?? undefined}>{candidateStatusLabel(candidate.status)}</span>
-                        </StagePill>
-                      </td>
-                      {/* When it landed, Cairo time, and on which channel — one column since
-                          2026-08-24, because Source was a whole column spent repeating "WhatsApp"
-                          down the screen and its 104px paid for most of Region.
-
-                          Date over time rather than one line, so a fixed-width column shows the
-                          whole stamp instead of clipping it; every other cell in this row is two
-                          lines anyway, so the second line is free. The New pill marks the last 24
-                          hours, measured from the server's stamp.
-
-                          The channel badge used to carry the sender's own first line underneath,
-                          and that line was the single worst thing on this tab: 173 of the 225 rows
-                          carrying one overflowed, one of them by 7,094px, and those 173 were the
-                          bulk of the 223 clipped cells on the page. `shortLabel` is whatever the
-                          sender wrote first — a forwarded mail stores an entire message there,
-                          reaching 1,546 characters — so no column width answers it, and no length
-                          limit does either: only 38 of the 225 lines fit, and what fits is
-                          "Cv.pdf", "Bassem cv", "cv". So it is not drawn. The sender's words are
-                          this cell's hover title, they are on the mobile card under "Their words",
-                          and they are still what the search box matches. */}
-                      <td
-                        className="whitespace-nowrap px-3 py-2.5 text-phx-xs text-slate-600"
-                        title={candidate.sourceContext?.detailLines.join("\n") || undefined}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          {cairoDateTime(candidate.createdAt).split(" · ")[0]}
+                        {/* Status, then when it landed (Cairo time) and on which channel — under the
+                            name since 2026-10-19, when their two columns went to the WhatsApp
+                            questions. The reason for the status is the pill's tooltip; the sender's
+                            own words are the date's (never drawn: `shortLabel` reaches 1,546
+                            characters, and is on the mobile card under "Their words"). */}
+                        <div
+                          className="mt-1 flex flex-wrap items-center gap-1.5 text-phx-xs text-slate-600"
+                          title={candidate.sourceContext?.detailLines.join("\n") || undefined}
+                        >
+                          <StagePill tone={candidateStatusTone(candidate.status)}>
+                            <span title={candidate.statusNote ?? undefined}>{candidateStatusLabel(candidate.status)}</span>
+                          </StagePill>
+                          <span className="whitespace-nowrap">{cairoDateTime(candidate.createdAt)}</span>
                           {isNewArrival(candidate) ? <StagePill tone="orange">New</StagePill> : null}
-                        </div>
-                        <div className="mt-0.5 flex items-center gap-1.5 text-slate-400">
-                          {cairoDateTime(candidate.createdAt).split(" · ")[1] ?? ""}
                           {(() => {
                             const channel = candidateSourceChannel(candidate.source, candidate.sourceContext);
                             return (
@@ -5131,6 +5424,42 @@ function CandidatesTab({
                           })()}
                         </div>
                       </td>
+                      {tableColumns.map((column) => {
+                        const shared = (poolSharedColumnKeys as readonly string[]).includes(column.key)
+                          ? sharedCells[column.key as PoolSharedColumnKey]
+                          : null;
+                        const currentValues = poolCurrentAnswerValues(candidate, column, whatsappAnswers);
+                        return (
+                          <PoolEditableCell
+                            canEdit={canFileCandidates}
+                            className={shared?.className ?? "px-2 py-2.5"}
+                            column={column}
+                            currentValues={currentValues}
+                            editing={editingCell?.candidateId === candidate.id && editingCell.columnKey === column.key}
+                            key={column.key}
+                            onCancel={() => setEditingCell(null)}
+                            onSave={(values) =>
+                              run(async () => {
+                                // One save per answer that changed; the place column can change two.
+                                for (const editKey of column.editKeys) {
+                                  const next = (values[editKey] ?? "").trim();
+                                  if (next === (currentValues[editKey] ?? "").trim()) continue;
+                                  await patchJson(`/api/recruitment/candidates/${candidate.id}/whatsapp-answer`, {
+                                    key: editKey,
+                                    value: next,
+                                  });
+                                }
+                                setEditingCell(null);
+                                return `Saved the answer to "${column.header}" for ${displayName}.`;
+                              })
+                            }
+                            onStartEdit={() => setEditingCell({ candidateId: candidate.id, columnKey: column.key })}
+                            pending={pending}
+                          >
+                            {shared ? shared.content : <PoolAnswerText answer={whatsappAnswers.get(column.key) ?? null} />}
+                          </PoolEditableCell>
+                        );
+                      })}
                       <td className="px-3 py-2.5">
                         <CandidateActionsControl
                           areaOptions={areaOptions}
@@ -5166,10 +5495,10 @@ function CandidatesTab({
             </PortalDesktopTable>
           )}
         />
-      </AdminTableShell>
+      </RecruitmentPanel>
 
       {profile ? (
-        <div ref={profilePanelRef} className="space-y-3 border border-slate-200 p-4">
+        <div ref={profilePanelRef} className={`space-y-3 border border-slate-200 bg-white p-4 sm:p-5 ${adminPanelDepthClassName}`}>
           {/*
            * NOT sticky, deliberately. It was, and it sliced the global header in half: the app's own
            * topbar is `sticky top-0 z-20` (src/components/layout/topbar.tsx), this was `sticky top-0
@@ -5210,7 +5539,7 @@ function CandidatesTab({
            */}
           {wayBackOffScreen ? (
             <button
-              className="fixed bottom-6 right-6 z-50 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-phx-accent-line bg-white px-4 py-2.5 text-xs font-semibold text-phx-accent shadow-[0_10px_30px_rgba(15,23,42,0.18)] transition hover:bg-phx-accent-soft"
+              className="fixed bottom-6 right-6 z-50 inline-flex items-center gap-1.5 whitespace-nowrap border border-phx-accent-line bg-white px-4 py-2.5 text-xs font-semibold text-phx-accent shadow-[0_10px_30px_rgba(15,23,42,0.18)] transition hover:bg-phx-accent-soft"
               onClick={returnToPool}
               type="button"
             >
@@ -5295,7 +5624,7 @@ function CandidatesTab({
             const readFrom =
               appliedFor.source === "stated" ? profile.candidate.appliedForEvidence : appliedFor.evidence;
             return (
-              <div className={`rounded-md border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
+              <div className={`border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
                 <p className="text-phx-xs font-semibold uppercase tracking-wide text-slate-500">Applying for</p>
                 <p className="mt-1 text-sm font-medium text-slate-900">{appliedFor.text}</p>
                 {readFrom ? (
@@ -5308,7 +5637,7 @@ function CandidatesTab({
           })()}
 
           {profile.candidate.sourceContext && profile.candidate.sourceContext.detailLines.length > 0 ? (
-            <div className={`rounded-md border border-slate-200 bg-slate-50/60 p-3 ${adminRecessedDepthClassName}`}>
+            <div className={`border border-slate-200 bg-slate-50/60 p-3 ${adminRecessedDepthClassName}`}>
               <p className="text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
                 {profile.candidate.sourceContext.channel === "email" ? "Email subject" : "First WhatsApp messages"}
               </p>
@@ -5325,7 +5654,7 @@ function CandidatesTab({
           {canManage && (storedExtraction || profile.files.some((file) => file.kind === "cv")) ? (
             <div className="space-y-2">
               {!retryExtraction && storedExtraction && pendingExtractionFieldCount > 0 ? (
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-orange-200 bg-orange-50/70 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border border-orange-200 bg-orange-50/70 p-3">
                   <div>
                     <p className="text-sm font-semibold text-slate-900">
                       {pendingExtractionFieldCount} {pendingExtractionFieldCount === 1 ? "field" : "fields"} read from this CV
@@ -5687,11 +6016,11 @@ function InterviewsSection({
           {interviews.map((interview) => {
             const summary = summarizeScorecard(interview.interviewType, interview.score ?? {});
             return (
-              <li key={interview.id} className="border border-slate-200 p-2 text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-slate-800">{humanizeRecruitmentTerm(interview.interviewType)}</span>
-                  <span className="text-slate-500">
-                    {interview.scheduledAt ? new Date(interview.scheduledAt).toLocaleString() : "Unscheduled"}
+              <li key={interview.id} className={`border border-slate-200 bg-white p-2.5 text-xs ${adminSoftDepthClassName}`}>
+                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                  <span className="font-bold text-slate-900">{humanizeRecruitmentTerm(interview.interviewType)}</span>
+                  <span className="tabular-nums text-slate-500">
+                    {interview.scheduledAt ? cairoDateTime(interview.scheduledAt) : "Unscheduled"}
                   </span>
                 </div>
                 <div className="text-slate-500">

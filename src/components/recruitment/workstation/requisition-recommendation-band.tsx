@@ -9,9 +9,9 @@
 //
 // A BAND UNDER THE BAR, NOT ANOTHER BUTTON IN IT, because a recommendation is a sentence before it
 // is a press: the reader has to see WHY ("Chose Menoufia 1 on WhatsApp") to trust the one click, and
-// the reason does not fit in a button. It sits on the paper ground with the hairline every other
-// band here uses, and its press is the accent — the "carry on" colour — because attaching is the
-// work moving forward.
+// the reason does not fit in a button. It carries the accent rule down its leading edge that every
+// band here uses when the page is offering something, and its press is the accent — the "carry on"
+// colour — because attaching is the work moving forward.
 //
 // "Keep shortlisted" has no button of its own here. That press already exists — Shortlist, with its
 // S key — and a second control doing the same thing would make the reader wonder how they differ.
@@ -19,6 +19,7 @@
 import { useState } from "react";
 import { ClipboardCheck, Loader2 } from "lucide-react";
 
+import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 import { requisitionOptionLabel, type RequisitionRecommendation } from "@/lib/recruitment/requisition-match";
@@ -49,19 +50,32 @@ export function RequisitionRecommendationBand({
     );
   }
 
+  // THE SYSTEM IS SPEAKING, so the line says so the way every other band on this page does: the
+  // accent rule down its leading edge and the recommendation as an orange kicker. A recessed strip
+  // (2026-10-19), cut into the card above it rather than floating off it.
   if (recommendation.verdict === "keep") {
     return (
-      <p className="border-t border-phx-line bg-phx-paper px-4 py-1.5 text-[12px] text-phx-ink-2">
-        <span className="font-bold uppercase tracking-[0.06em]">Recommended: keep shortlisted.</span>{" "}
+      <p
+        className={cn(
+          "border-l-[3px] border-t border-l-phx-accent border-t-phx-line bg-phx-paper px-4 py-1.5 text-[12px] text-phx-ink-2",
+          adminRecessedDepthClassName,
+        )}
+      >
+        <span className="font-bold uppercase tracking-[0.06em] text-phx-accent-press">Recommended: keep shortlisted.</span>{" "}
         {recommendation.reason}
       </p>
     );
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-phx-line bg-phx-paper px-4 py-2">
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-x-3 gap-y-1.5 border-l-[3px] border-t border-l-phx-accent border-t-phx-line bg-phx-accent-soft px-4 py-2",
+        adminRecessedDepthClassName,
+      )}
+    >
       <p className="min-w-0 flex-1 basis-64 text-[12px] text-phx-ink-2">
-        <span className="font-bold uppercase tracking-[0.06em]">Recommended: attach to a requisition.</span>{" "}
+        <span className="font-bold uppercase tracking-[0.06em] text-phx-accent-press">Recommended: attach to a requisition.</span>{" "}
         {recommendation.reason}
         {options.length === 1 ? (
           <span className="block font-semibold text-phx-ink">

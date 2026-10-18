@@ -4,35 +4,57 @@
 //
 // WHY A FILE FOR THIS. The owner's words on 2026-09-12, about the screen he screens on: it "looks
 // crowded and noisy". It was not one component's fault. Nine files drew this page, every one of them
-// wrote its own controls inline, and the same class string —
+// wrote its own controls inline, and one bold 12px hairline button on white had been retyped more
+// than twenty times. Twenty copies of a button is not twenty buttons: it is one button that nobody
+// can change, and it is why every bar on the page shouted at exactly the same volume, from the
+// "Back to the pool" link to the bulk verdict.
 //
-//   "inline-flex items-center gap-1 border border-phx-line bg-white px-2 py-1 text-[12px] font-bold"
-//
-// — had been retyped more than twenty times. Twenty copies of a button is not twenty buttons: it is
-// one button that nobody can change, and it is why every bar on the page shouted at exactly the same
-// volume. Bold 12px on white behind a hairline, from the "Back to the pool" link to the bulk
-// verdict, so nothing on screen could be more important than anything else.
-//
-// SO THE VOICE LIVES HERE AND THE PAGES BORROW IT. Four things: a header, a band, a button and a
+// SO THE VOICE LIVES HERE AND THE PAGES BORROW IT. A header, a band, a button, a figure and a
 // medallion. Change the button once and every bar on the screening page changes with it.
 //
-// WHAT "PREMIUM" MEANS IN THIS REPOSITORY, because the word has been read wrong here before and it
-// cost a golden rule: it is NOT rounding, and it is NOT a floating card. Corners are square
-// everywhere (AGENTS.md §4 — and the note pinned beside that rule says restoring polish from
-// history re-rounds them, so take the DEPTH only). Structure comes from hairlines, not from boxes;
-// the shadow ladder appears once, on the one surface that genuinely floats. What is left to work
-// with is the part that was missing: HIERARCHY. Three volumes, not one —
+// 2026-10-19 — THE QUIET LOOK IS RETIRED, BY THE OWNER'S LATER WORD. From 2026-09-12 this cockpit
+// was the one recruitment screen kept flat: hairlines only, no depth, the shadow ladder used once.
+// In the full-module premium sweep he was asked that exact question and chose "Full polish there
+// too", and a "Full redesign". So the workstation now wears the house premium look like every other
+// recruitment screen: the shared depth tokens (admin-design-tokens.ts), the house page header with
+// its accent rail, the dark panel band on each pane head, the recruitment kit's pills and empty
+// states. tests/recruitment-premium-depth.test.ts assertion 9 pins it; restoring the flat look would
+// undo his later word.
 //
-//   · the page says its name once, in real display type;
+// PREMIUM HERE STILL MEANS CALM, because "noisy" was the complaint that started this file. Depth on
+// everything at one volume is the same noise in a new material, so the depth has a ladder too —
+//
+//   · ONE focal surface: the candidate under review and the CV, lifted with the panel depth;
+//   · the panes around it are soft cards resting on a recessed tray;
+//   · controls carry the control depth and drop it when they are disabled;
+//   · pills and tallies carry the faint chip depth, and nothing else does.
+//
+// And the type keeps its three volumes —
+//
+//   · the page says its name once, in the house header (rail, kicker, display title);
 //   · a band that is telling the reader something speaks at 12-13px, in its own tone;
 //   · everything else is 11px, quiet, and gets out of the way.
+//
+// Corners stay square everywhere (AGENTS.md §4): the depth is a shadow, never a radius.
 //
 // AND THE SIZES STAY ARBITRARY — text-[13px], not text-phx-md. `cn()` runs tailwind-merge, which
 // STRIPS custom named font sizes, so a text-phx-* class inside a cn() call silently renders at the
 // inherited size. That is a live trap in this repository, not a theory.
 
 import type React from "react";
+import { UserRoundSearch } from "lucide-react";
 
+import {
+  adminChipDepthClassName,
+  adminControlDepthClassName,
+  adminSoftDepthClassName,
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
+import { RECRUITMENT_EYEBROW } from "@/components/recruitment/recruitment-premium";
 import { cn } from "@/lib/utils";
 
 /* ══ THE BUTTON ═══════════════════════════════════════════════════════════════════════════════ */
@@ -43,17 +65,21 @@ import { cn } from "@/lib/utils";
  * `primary` is filled orange and means "this is the action". `quiet` is the ordinary hairline
  * control. `ghost` carries no border at all until the pointer is on it — which is what most of the
  * old inline buttons should always have been: a "Clear" beside a count is not a thing to be
- * announced, it is a thing to be findable.
+ * announced, it is a thing to be findable. `onDark` is `quiet` for a control that sits on a pane's
+ * dark header band, where white-on-white would vanish.
+ *
+ * `primary` and `quiet` carry the house control depth, and drop it while disabled — a greyed control
+ * still floating reads as one that will answer a press.
  */
-export type ActionTone = "primary" | "quiet" | "ghost";
+export type ActionTone = "primary" | "quiet" | "ghost" | "onDark";
 
 const actionToneClass: Record<ActionTone, string> = {
   ghost:
     "border border-transparent text-phx-ink-soft hover:border-phx-line hover:bg-white hover:text-phx-ink-2",
-  primary:
-    "border border-phx-accent-press bg-phx-accent text-phx-accent-ink shadow-[0_1px_2px_rgba(13,16,21,0.10)] hover:bg-phx-accent-hover",
-  quiet:
-    "border border-phx-line bg-white text-phx-ink-2 hover:border-phx-line-strong hover:bg-phx-paper",
+  onDark:
+    "border border-white/15 bg-white/10 text-slate-100 hover:border-white/30 hover:bg-white/20 hover:text-white",
+  primary: `border border-phx-accent-press bg-phx-accent text-phx-accent-ink hover:bg-phx-accent-hover ${adminControlDepthClassName} disabled:shadow-none`,
+  quiet: `border border-phx-line bg-white text-phx-ink-2 hover:border-phx-line-strong hover:bg-phx-paper ${adminControlDepthClassName} disabled:shadow-none`,
 };
 
 /**
@@ -214,8 +240,16 @@ export function BandSays({ children }: { children: React.ReactNode }) {
  * own heading, two panes to the right of where the eye starts.
  *
  * So: the name in display type, what is in the pile under it in plain words, and the figures as a
- * quiet series on the right where a figure belongs. The controls sit in their own row underneath, so
- * the name is never in a queue behind a button.
+ * row of small tiles on the right where a figure belongs. The controls sit in their own row
+ * underneath, so the name is never in a queue behind a button.
+ *
+ * SINCE 2026-10-19 IT IS THE HOUSE HEADER — the same anatomy as `AdminPageHero` and the recruitment
+ * kit's `RecruitmentPageHeader`: the square orange rail down the title's leading edge, the module's
+ * kicker above it, the display title, the plain-words line under it, and the fading rule it sits on.
+ * Built from the same `pageHeader*` tokens rather than wrapping the hero itself, because this one
+ * carries two things the hero has no slot for — the figure tiles and the controls row — and the
+ * pinned figures strip below has to stay its own element. Never a dark banner: the owner stripped
+ * those from every page on 2026-09-03.
  */
 export function WorkHeader({
   controls,
@@ -225,21 +259,22 @@ export function WorkHeader({
 }: {
   /** The bar controls, in their own row under the name. */
   controls?: React.ReactNode;
-  /** Quiet numbers, pushed to the end of the name's row from `sm` up. */
+  /** Figure tiles, at the end of the name's row from `lg` up and under it below that. */
   figures?: React.ReactNode;
   subtitle?: React.ReactNode;
   title: string;
 }) {
   return (
-    <header className="border-b border-phx-line bg-white px-3 pb-2 pt-3 sm:px-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <div className="min-w-0">
-          <h1 className="break-words text-[20px] font-black leading-[1.15] tracking-[-0.015em] text-phx-ink">
-            {title}
-          </h1>
-          {subtitle ? (
-            <p className="mt-0.5 break-words text-[12px] leading-snug text-phx-ink-soft">{subtitle}</p>
-          ) : null}
+    <header className="min-w-0 px-3 pt-3 sm:px-4">
+      <div className="flex flex-col gap-3 pb-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="relative min-w-0 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <div className={pageHeaderKickerClassName}>
+            <UserRoundSearch aria-hidden="true" className="h-3.5 w-3.5" />
+            {RECRUITMENT_EYEBROW}
+          </div>
+          <h1 className={cn(pageHeaderTitleClassName, "break-words")}>{title}</h1>
+          {subtitle ? <p className={cn(pageHeaderDescriptionClassName, "break-words")}>{subtitle}</p> : null}
         </div>
         {figures ? (
           /*
@@ -253,32 +288,37 @@ export function WorkHeader({
            *
            * Dropping it costs nothing above the fold: with room to spare, `flex-shrink` never
            * engages, so the strip keeps its natural width on one line at the end of the name's row
-           * (measured identical at 1440px — 371px wide, 13px tall, same left edge, with and
-           * without). It only does something when there is no room, which is the whole point.
+           * (measured identical at 1440px with and without, when these were plain figures; the
+           * tiles of 2026-10-19 follow the same rule). It only does something when there is no
+           * room, which is the whole point.
            *
            * `min-w-0` stays and is load-bearing: without it the strip cannot be sized below the
            * min-content width of its own flex line, and the overflow comes straight back.
            */
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1">{figures}</div>
+          <div className="flex min-w-0 flex-wrap items-stretch gap-2">{figures}</div>
         ) : null}
       </div>
-      {controls ? <div className="mt-2 flex flex-wrap items-center gap-1.5">{controls}</div> : null}
+      {controls ? <div className="flex flex-wrap items-center gap-1.5 pb-3">{controls}</div> : null}
+      <div aria-hidden="true" className={pageHeaderRuleClassName} />
     </header>
   );
 }
 
 /**
- * One figure and its words.
+ * One figure and its words, as a small lifted tile.
  *
- * The number first and large, the words after it and small — a recruiter reads the figure and only
+ * The number first and large, the words under it and small — a recruiter reads the figure and only
  * reads the label if the figure surprised them. Tabular so a row of these does not jitter as the
- * counts change underneath it.
+ * counts change underneath it. A tile sizes to its own words and wraps to the next line with its
+ * neighbours on a phone; it never forces a width, so it cannot push the page sideways.
  */
 export function Figure({ label, value }: { label: string; value: number | string }) {
   return (
-    <span className="flex items-baseline gap-1.5">
-      <span className="text-[15px] font-black leading-none tabular-nums text-phx-ink">{value}</span>
-      <span className="text-[11px] font-semibold leading-none text-phx-ink-soft">{label}</span>
+    <span
+      className={`flex min-w-0 flex-col gap-1 border border-phx-line bg-white px-3 py-2 ${adminSoftDepthClassName}`}
+    >
+      <span className="text-[20px] font-black leading-none tabular-nums text-phx-ink">{value}</span>
+      <span className="break-words text-[11px] font-semibold leading-tight text-phx-ink-soft">{label}</span>
     </span>
   );
 }
@@ -318,6 +358,9 @@ export function Medallion({
       className={cn(
         "flex w-11 shrink-0 flex-col items-center justify-center gap-0.5 border py-1",
         medallionToneClass[tone],
+        // A computed read sits on the card as a chip; the dashed "nothing to read" box stays flat,
+        // because a lifted empty box reads as occupied.
+        tone === "none" ? null : adminChipDepthClassName,
       )}
       title={title}
     >
@@ -349,6 +392,7 @@ export function Tally({ active, children }: { active: boolean; children: React.R
         active
           ? "border-phx-accent-line bg-white text-phx-accent-press"
           : "border-phx-line bg-phx-paper text-phx-ink-2",
+        adminChipDepthClassName,
       )}
     >
       {children}

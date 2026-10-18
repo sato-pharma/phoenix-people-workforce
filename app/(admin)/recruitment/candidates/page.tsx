@@ -3,7 +3,8 @@ import { Suspense } from "react";
 import { Users } from "lucide-react";
 
 import { PageContainer } from "@/components/layout/page-container";
-import { AdminPageHero } from "@/components/admin/admin-design-system";
+import { AdminInsightChip } from "@/components/admin/admin-design-system";
+import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { RecruitmentCandidatesPortal } from "@/components/employee-portal/recruitment-candidates-portal";
 import { canAccess, canOpenPersonalCandidateInbox } from "@/lib/auth/permissions";
@@ -134,10 +135,27 @@ async function AdminRecruitmentCandidatesContent() {
   return (
     <PageContainer>
       <div className="mx-auto max-w-5xl space-y-6">
-        <AdminPageHero
+        <RecruitmentPageHeader
+          badges={
+            <>
+              <AdminInsightChip tone="orange">
+                {visibleSentToMe.length === 1 ? "1 CV sent to you" : `${visibleSentToMe.length} CVs sent to you`}
+              </AdminInsightChip>
+              <AdminInsightChip tone="slate">
+                {visibleApplications.length === 1
+                  ? "1 in your final round"
+                  : `${visibleApplications.length} in your final round`}
+              </AdminInsightChip>
+              {unseenIds.length > 0 ? (
+                <AdminInsightChip tone="emerald">
+                  {unseenIds.length === 1 ? "1 not opened yet" : `${unseenIds.length} not opened yet`}
+                </AdminInsightChip>
+              ) : null}
+            </>
+          }
           description="CVs sent to you, and candidates in your final hiring round — read the CV, answer, and record your interview outcome."
           eyebrow="Hiring"
-          icon={<Users className="h-5 w-5" />}
+          icon={<Users aria-hidden="true" className="h-3.5 w-3.5" />}
           title="My Candidates"
         />
         <RecruitmentCandidatesPortal

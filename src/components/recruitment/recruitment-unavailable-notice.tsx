@@ -1,10 +1,23 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, RotateCw } from "lucide-react";
 
-import { AdminCallout } from "@/components/admin/admin-design-system";
-import { Button } from "@/components/ui/button";
+import {
+  adminChipDepthClassName,
+  adminControlDepthClassName,
+  adminSoftDepthClassName,
+} from "@/components/admin/admin-design-tokens";
+import { phxButtonGhostClassName } from "@/components/ui/form-tokens";
 import { describeUnavailable, type RecruitmentReadSource } from "@/lib/recruitment/page-reads";
+
+/**
+ * The amber notice both pieces below are drawn on: a hairline box with a 3px amber rule down its
+ * leading edge, lifted like any other box inside a panel, and an icon tile so it reads as the page
+ * talking rather than as a row of data. Square, like everything in the module.
+ */
+const noticeClassName = `flex min-w-0 items-start gap-3 border border-amber-200 border-l-[3px] border-l-amber-500 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 ${adminSoftDepthClassName}`;
+
+const noticeIconClassName = `flex h-8 w-8 shrink-0 items-center justify-center border border-amber-300 bg-white text-amber-600 ${adminChipDepthClassName}`;
 
 /**
  * Says, in words, which parts of the Recruitment page did not load -- and offers the one thing that
@@ -29,29 +42,41 @@ export function RecruitmentUnavailableNotice({
   // With the dashboard and the candidate pool both missing there is no working "rest" to point at.
   const restIsWorking = !(sources.includes("dashboard") && sources.includes("pool"));
   return (
-    <AdminCallout tone="warning">
-      <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
-      <div className="min-w-0 flex-1 space-y-2" role="status">
+    <div className={noticeClassName}>
+      <span aria-hidden="true" className={noticeIconClassName}>
+        <AlertTriangle className="h-4 w-4" />
+      </span>
+      <div className="min-w-0 flex-1 space-y-2.5" role="status">
         <div className="space-y-1">
-          <p className="font-medium">Some recruitment information is temporarily unavailable.</p>
-          <p>
+          <p className="break-words font-bold text-amber-950">Some recruitment information is temporarily unavailable.</p>
+          <p className="break-words text-[13px] leading-5 text-amber-900">
             Not loaded: {describeUnavailable(sources)}.{restIsWorking ? " The rest of this page is working." : ""}
           </p>
         </div>
-        <Button size="sm" variant="secondary" disabled={pending} onClick={onRetry}>
+        <button
+          className={`${phxButtonGhostClassName} ${adminControlDepthClassName} disabled:shadow-none`}
+          disabled={pending}
+          onClick={onRetry}
+          type="button"
+        >
+          <RotateCw aria-hidden="true" className={pending ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />
           {pending ? "Trying again" : "Try again"}
-        </Button>
+        </button>
       </div>
-    </AdminCallout>
+    </div>
   );
 }
 
 /** Stands in for a tab whose own data did not load -- never an empty table that reads as "none". */
 export function RecruitmentTabUnavailable({ what }: { what: string }) {
   return (
-    <AdminCallout tone="warning">
-      <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
-      <p className="min-w-0 flex-1">{what} is temporarily unavailable. Use Try again above.</p>
-    </AdminCallout>
+    <div className={noticeClassName}>
+      <span aria-hidden="true" className={noticeIconClassName}>
+        <AlertTriangle className="h-4 w-4" />
+      </span>
+      <p className="min-w-0 flex-1 break-words self-center text-[13px] leading-5 text-amber-900">
+        <span className="font-bold text-amber-950">{what} is temporarily unavailable.</span> Use Try again above.
+      </p>
+    </div>
   );
 }

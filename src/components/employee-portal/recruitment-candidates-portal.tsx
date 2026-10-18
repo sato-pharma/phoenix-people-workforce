@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { BriefcaseBusiness, CalendarClock, CheckCircle2, ClipboardCheck, Folder, Inbox } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import {
+  RecruitmentEmptyState,
+  RecruitmentPanel,
+  RecruitmentPill,
+  type RecruitmentPillTone,
+} from "@/components/recruitment/recruitment-premium";
 import {
   CandidateCallControl,
   CandidateCallNotice,
@@ -49,7 +55,8 @@ import {
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
-import { adminChipDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminPanelDepthClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
+import { cn } from "@/lib/utils";
 
 type Props = {
   /**
@@ -150,17 +157,56 @@ async function sendJson(url: string, method: "POST" | "PATCH", body: unknown): P
 // A narrow, DM-relevant subset of the full 26-stage pipeline — everything else (CV/phone
 // screening, interview scheduling) is the recruiter's own stage, shown as a neutral
 // "With recruitment" badge below.
-const stageLabels: Record<string, { label: string; tone: string }> = {
-  application_rejected: { label: "Not qualified", tone: "border-rose-200 bg-rose-50 text-rose-700" },
-  application_withdrawn: { label: "Withdrawn", tone: "border-slate-200 bg-slate-100 text-slate-500" },
-  final_selection: { label: "Final selection (recruitment)", tone: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-  hired: { label: "Hired", tone: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-  hiring_manager_interview: { label: "Ready for your interview", tone: "border-amber-200 bg-amber-50 text-amber-700" },
-  manager_interview_completed: { label: "Passed to recruitment", tone: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+const stageLabels: Record<string, { label: string; tone: RecruitmentPillTone }> = {
+  application_rejected: { label: "Not qualified", tone: "rose" },
+  application_withdrawn: { label: "Withdrawn", tone: "slate" },
+  final_selection: { label: "Final selection (recruitment)", tone: "emerald" },
+  hired: { label: "Hired", tone: "emerald" },
+  hiring_manager_interview: { label: "Ready for your interview", tone: "amber" },
+  manager_interview_completed: { label: "Passed to recruitment", tone: "emerald" },
 };
 
-function stageBadge(stage: string) {
-  return stageLabels[stage] ?? { label: "With recruitment", tone: "border-slate-200 bg-slate-50 text-slate-500" };
+function stageBadge(stage: string): { label: string; tone: RecruitmentPillTone } {
+  return stageLabels[stage] ?? { label: "With recruitment", tone: "slate" };
+}
+
+/**
+ * One inbox card's frame — square, lifted off the page by the house panel shadow, with a left rail
+ * that says at a glance whether the card is waiting on THIS manager (orange) or already settled
+ * (a quiet slate line). The rail is colour only; the words on the card still say the same thing.
+ */
+function inboxCardClassName(waitingOnYou: boolean) {
+  return cn(
+    `scroll-mt-24 space-y-4 border border-slate-200 border-l-4 bg-white p-4 sm:p-5 ${adminPanelDepthClassName}`,
+    waitingOnYou ? "border-l-orange-500" : "border-l-slate-300",
+  );
+}
+
+/** A heading inside a card: a small icon, then the words, in the module's uppercase label style. */
+function CardSectionHeading({ children, icon }: { children: ReactNode; icon: ReactNode }) {
+  return (
+    <p className="flex flex-wrap items-center gap-1.5 text-xs font-black uppercase tracking-[0.12em] text-slate-600">
+      <span aria-hidden="true" className="text-orange-500">
+        {icon}
+      </span>
+      {children}
+    </p>
+  );
+}
+
+/**
+ * The heading over one position folder in "Sent to you" — the folder mark, its name, and how many
+ * CVs it holds as a chip. Wraps on a phone: a long position name is the one a manager most needs
+ * to read in full.
+ */
+function PositionFolderHeading({ count, label }: { count: number; label: string }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-200 pb-1.5">
+      <Folder aria-hidden="true" className="h-4 w-4 flex-none text-amber-500" />
+      <h3 className="min-w-0 break-words text-sm font-black text-slate-900">{label}</h3>
+      <RecruitmentPill tone="slate">{count === 1 ? "1 CV" : `${count} CVs`}</RecruitmentPill>
+    </div>
+  );
 }
 
 function formatYesNo(value: boolean | null | undefined) {
@@ -184,12 +230,15 @@ const hiringManagerCriteria = [
 
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
   return (
-    <div>
-      <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">{label}</p>
-      <p className="text-slate-700">{value?.trim() ? value : "—"}</p>
+    <div className="min-w-0">
+      <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+      <p className="mt-0.5 break-words font-semibold text-slate-800">{value?.trim() ? value : "—"}</p>
     </div>
   );
 }
+
+/** The card's facts, in one recessed well so they read as a block apart from the actions below. */
+const factsWellClassName = `grid grid-cols-1 gap-3 border border-slate-200 bg-slate-50/60 p-3 text-sm sm:grid-cols-2 lg:grid-cols-3 ${adminRecessedDepthClassName}`;
 
 function CandidateCard({
   application,
@@ -311,23 +360,22 @@ function CandidateCard({
     .join(" · ");
 
   return (
-    <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6" id={`candidate-${candidate.id}`}>
+    <article className={inboxCardClassName(canAct)} id={`candidate-${candidate.id}`}>
       <CandidateCallNotice claim={call.claim} viewerHrId={viewerHrId} />
       <CandidateOpenedNotice candidateId={candidate.id} />
 
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-base font-semibold text-slate-900">{candidate.fullName}</p>
-          <p className="text-xs text-slate-500">
+        <div className="min-w-0">
+          <p className="break-words text-base font-black tracking-tight text-slate-950">{candidate.fullName}</p>
+          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+            <BriefcaseBusiness aria-hidden="true" className="h-3.5 w-3.5 text-slate-400" />
             {requisition.jobTitle} · {requisition.requisitionCode}
           </p>
         </div>
-        <span className={`inline-block rounded border px-2 py-0.5 text-phx-xs font-semibold ${badge.tone}`}>
-          {badge.label}
-        </span>
+        <RecruitmentPill tone={badge.tone}>{badge.label}</RecruitmentPill>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+      <div className={factsWellClassName}>
         <Field label="Email" value={candidate.email} />
         {/* The hint tracks `canAct`, which gates every control on this card. Hard-coding it to true
             would point a manager at an "I will call" button that his own card is not rendering,
@@ -363,7 +411,7 @@ function CandidateCard({
 
       {canAct && !hmInterview ? (
         <div className="space-y-2 border-t border-slate-100 pt-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Schedule your interview</p>
+          <CardSectionHeading icon={<CalendarClock className="h-3.5 w-3.5" />}>Schedule your interview</CardSectionHeading>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <input
               className={phxFieldClassName}
@@ -392,9 +440,9 @@ function CandidateCard({
 
       {canAct && hmInterview && !hmInterview.outcome ? (
         <div className="space-y-3 border-t border-slate-100 pt-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <CardSectionHeading icon={<ClipboardCheck className="h-3.5 w-3.5" />}>
             Interview{hmInterview.scheduledAt ? ` on ${cairoDateTime(hmInterview.scheduledAt)}` : ""} — record your feedback
-          </p>
+          </CardSectionHeading>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {hiringManagerCriteria.map((criterion) => (
               <label className="flex items-center justify-between gap-2 text-xs text-slate-600" key={criterion.key}>
@@ -431,7 +479,7 @@ function CandidateCard({
           </div>
         </div>
       ) : null}
-    </Card>
+    </article>
   );
 }
 
@@ -544,14 +592,17 @@ function SentCandidateCard({
 
   if (hidden) {
     return (
-      <Card className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-slate-500 shadow-[0_1px_3px_rgba(15,23,42,0.08)]" id={`candidate-${candidate.id}`}>
+      <div
+        className={`scroll-mt-24 border border-slate-200 border-l-4 border-l-slate-300 bg-slate-50/60 px-4 py-3 text-sm text-slate-500 ${adminRecessedDepthClassName}`}
+        id={`candidate-${candidate.id}`}
+      >
         {candidate.fullName} is hidden from your folders. The recruitment team still has the CV.
-      </Card>
+      </div>
     );
   }
 
   return (
-    <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6" id={`candidate-${candidate.id}`}>
+    <article className={inboxCardClassName(awaitingAnswer)} id={`candidate-${candidate.id}`}>
       {/* Who has taken this CV, at the TOP of the card. A manager must know it is somebody else's
           before he reads a word of it, not after he has formed an opinion at the foot of the card. */}
       <CandidateCallNotice claim={call.claim} viewerHrId={viewerHrId} />
@@ -560,8 +611,8 @@ function SentCandidateCard({
       <CandidateOpenedNotice candidateId={candidate.id} />
 
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-base font-semibold text-slate-900">{candidate.fullName}</p>
+        <div className="min-w-0">
+          <p className="break-words text-base font-black tracking-tight text-slate-950">{candidate.fullName}</p>
           {/* The one question a manager opens this card to answer. Read through the same evidence
               ladder the pool table uses, because `applied_for_job_title` is filled on 15 of the 555
               production rows — reading only that made this line say "no role stated" on 540 CVs.
@@ -570,20 +621,19 @@ function SentCandidateCard({
             const appliedFor = candidateRowAppliedFor(candidate);
             return (
               <p
-                className="text-xs text-slate-500"
+                className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500"
                 title={appliedFor.source ? `${APPLIED_FOR_SOURCE_LABEL[appliedFor.source]}: ${appliedFor.evidence}` : undefined}
               >
+                <BriefcaseBusiness aria-hidden="true" className="h-3.5 w-3.5 text-slate-400" />
                 {appliedFor.text ? `Applying for ${appliedFor.text}` : "No role stated on the application"}
               </p>
             );
           })()}
         </div>
-        <span className={`inline-block rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-xs font-semibold text-slate-600 ${adminChipDepthClassName}`}>
-          {candidateStatusLabel(candidate.status)}
-        </span>
+        <RecruitmentPill tone={awaitingAnswer ? "orange" : "slate"}>{candidateStatusLabel(candidate.status)}</RecruitmentPill>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+      <div className={factsWellClassName}>
         {/* Hidden until he takes the CV. The owner, 2026-09-09 — and it is the reservation that
             reveals it, which is what makes "I will call" something he can act on. */}
         <Field label="Phone" value={call.phone} />
@@ -632,9 +682,12 @@ function SentCandidateCard({
           is in that box as the reason it has always required. */}
       {!awaitingAnswer ? (
         <div className="border-t border-slate-100 pt-3">
-          <p className="text-xs text-slate-500">
-            You answered: {candidateStatusLabel(candidate.status)}
-            {candidate.statusNote?.trim() ? ` — ${candidate.statusNote}` : ""}
+          <p className="flex flex-wrap items-start gap-1.5 break-words text-xs text-slate-500">
+            <CheckCircle2 aria-hidden="true" className="mt-px h-3.5 w-3.5 flex-none text-emerald-600" />
+            <span className="min-w-0">
+              You answered: {candidateStatusLabel(candidate.status)}
+              {candidate.statusNote?.trim() ? ` — ${candidate.statusNote}` : ""}
+            </span>
           </p>
         </div>
       ) : null}
@@ -682,7 +735,7 @@ function SentCandidateCard({
         }
         viewerHrId={viewerHrId}
       />
-    </Card>
+    </article>
   );
 }
 
@@ -800,12 +853,13 @@ function RecruitmentCandidatesPortalBody({
     initialDistrictBoards.length === 0
   ) {
     return (
-      <Card className="rounded-lg border border-gray-200 bg-white p-10 text-center shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
-        <p className="text-base font-semibold text-slate-700">No candidates yet</p>
-        <p className="mt-1 text-sm text-slate-400">
-          CVs the recruitment team sends you, and candidates assigned to your open positions, will appear here.
-        </p>
-      </Card>
+      <div className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
+        <RecruitmentEmptyState
+          icon={<Inbox aria-hidden="true" className="h-5 w-5" />}
+          message="CVs the recruitment team sends you, and candidates assigned to your open positions, will appear here."
+          title="No candidates yet"
+        />
+      </div>
     );
   }
 
@@ -815,14 +869,18 @@ function RecruitmentCandidatesPortalBody({
           one that needs an answer. The requisition-based applications below are the longer route
           and are already sitting in a workflow. */}
       {liveSends.length > 0 ? (
-        <section className="space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">Sent to you</h2>
-            <p className="text-xs text-slate-500">
+        <RecruitmentPanel
+          bodyClassName="space-y-4 bg-slate-50/60 p-3 sm:p-4"
+          count={liveSends.length}
+          description={
+            <>
               CVs the recruitment team asked you to look at. A CV in one of your folders stays until it is taken back
               or you return it; any other CV goes back to the recruitment team after {MANAGER_HOLD_DAYS} days.
-            </p>
-          </div>
+            </>
+          }
+          icon={<Inbox aria-hidden="true" className="h-4 w-4" />}
+          title="Sent to you"
+        >
           {/* ── One folder per position ───────────────────────────────────────────────────────
               The owner, 2026-08-28: "he goes to a folder called Nasr City Medical Reps ... he can
               look at the same page when he wants a certain position." A manager filling a seat
@@ -836,12 +894,7 @@ function RecruitmentCandidatesPortalBody({
           {showGroupHeadings
             ? positionFolders.map((folder) => (
                 <div className="space-y-3" key={folder.key}>
-                  <div className="flex items-baseline justify-between gap-3 border-b border-slate-200 pb-1">
-                    <h3 className="text-sm font-bold text-slate-800">{folder.label}</h3>
-                    <span className="shrink-0 text-xs font-semibold text-slate-500">
-                      {folder.candidates.length === 1 ? "1 CV" : `${folder.candidates.length} CVs`}
-                    </span>
-                  </div>
+                  <PositionFolderHeading count={folder.candidates.length} label={folder.label} />
                   {folder.candidates.map((candidate) => (
                     renderSentCard(candidate)
                   ))}
@@ -855,20 +908,13 @@ function RecruitmentCandidatesPortalBody({
               filed under an invented heading that would read like a vacancy of its own. */}
           {unfiledSends.length > 0 ? (
             <div className="space-y-3">
-              {showGroupHeadings ? (
-                <div className="flex items-baseline justify-between gap-3 border-b border-slate-200 pb-1">
-                  <h3 className="text-sm font-bold text-slate-800">No position given</h3>
-                  <span className="shrink-0 text-xs font-semibold text-slate-500">
-                    {unfiledSends.length === 1 ? "1 CV" : `${unfiledSends.length} CVs`}
-                  </span>
-                </div>
-              ) : null}
+              {showGroupHeadings ? <PositionFolderHeading count={unfiledSends.length} label="No position given" /> : null}
               {unfiledSends.map((candidate) => (
                 renderSentCard(candidate)
               ))}
             </div>
           ) : null}
-        </section>
+        </RecruitmentPanel>
       ) : null}
 
       {/* His shelf, immediately under the list it was filled from — a CV he "kept for later" has to
@@ -900,9 +946,15 @@ function RecruitmentCandidatesPortalBody({
       {applications.length > 0 ? (
         <section className="space-y-4">
           {sentToMe.length > 0 ? (
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900">Your open positions</h2>
-              <p className="text-xs text-slate-500">Candidates assigned to a position you are the hiring manager for.</p>
+            <div className="flex flex-wrap items-start gap-x-3 gap-y-1 border-b border-slate-200 pb-2">
+              <BriefcaseBusiness aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-orange-500" />
+              <div className="min-w-0 grow basis-64">
+                <h2 className="flex flex-wrap items-center gap-2 text-sm font-black uppercase tracking-[0.12em] text-slate-900">
+                  Your open positions
+                  <RecruitmentPill tone="slate">{applications.length}</RecruitmentPill>
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500">Candidates assigned to a position you are the hiring manager for.</p>
+              </div>
             </div>
           ) : null}
           {applications.map((application) => (

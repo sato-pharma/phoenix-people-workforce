@@ -1,10 +1,25 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { BadgeCheck, Check, CheckCheck, Contact, Eye, Loader2, Mail, Phone } from "lucide-react";
 
 import type { ContactReviewRow } from "@/lib/recruitment/contact-review-service";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
-import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminControlDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  RecruitmentEmptyState,
+  RecruitmentKpiStrip,
+  RecruitmentPanel,
+  RecruitmentPill,
+} from "@/components/recruitment/recruitment-premium";
+import { phxButtonAccentClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
+
+// THE LOOK (owner, 2026-10-19, the full-module premium sweep): the three counts are the module's KPI
+// strip and the queue is one panel under the house dark band, with the bulk accept on the band.
+// Desktop is a fixed table that fits by MERGING columns — where the CV came from and when sit under
+// the name — and a phone gets one card per candidate. Nothing scrolls sideways and nothing is cut:
+// an address wraps onto as many lines as it needs.
 
 // Every moment this module shows a person is Cairo local time, never a raw UTC string. Written
 // here, matching intake-health-view.tsx and recruitment-workspace.tsx, rather than imported across
@@ -27,27 +42,18 @@ function sourceLabel(source: string | null): string {
   return source ?? "—";
 }
 
-function StatTile({ hint, label, value }: { hint?: string; label: string; value: string }) {
-  return (
-    <div className={`rounded-lg border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
-      <div className="text-2xl font-semibold text-slate-900">{value}</div>
-      <div className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
-      {hint ? <div className="mt-1 text-xs text-slate-400">{hint}</div> : null}
-    </div>
-  );
-}
+/** The row's own Accept: a hairline control that lifts on hover, never a second loud button. */
+const acceptButtonClassName = `inline-flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:border-emerald-400 hover:text-emerald-700 disabled:opacity-40 ${adminControlDepthClassName} disabled:shadow-none`;
 
 /** A proposed value with the AI's own hedge beside it, so "low" is never mistaken for a fact. */
 function Proposed({ confidence, value }: { confidence: "high" | "low"; value: string | null }) {
   if (!value) return <span className="text-slate-300">—</span>;
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-      <span className="font-medium text-slate-800">{value}</span>
-      {confidence === "low" ? (
-        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-amber-700">
-          Check
-        </span>
-      ) : null}
+    <span className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
+      <span className="min-w-0 break-all font-semibold text-slate-800" dir="ltr">
+        {value}
+      </span>
+      {confidence === "low" ? <RecruitmentPill tone="amber">Check</RecruitmentPill> : null}
     </span>
   );
 }
@@ -113,55 +119,72 @@ export function ContactReviewView({ rows: initialRows }: { rows: ContactReviewRo
   }
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <StatTile hint="Their CV holds an email or a phone" label="Awaiting review" value={String(rows.length)} />
-        <StatTile
-          hint="Safe to accept without opening the CV"
-          label="High confidence"
-          value={String(highConfidenceCount)}
-        />
-        <StatTile
-          hint="A reading the AI was unsure of"
-          label="Needs a look"
-          value={String(rows.length - highConfidenceCount)}
-        />
-      </div>
+    <div className="space-y-5">
+      <RecruitmentKpiStrip
+        items={[
+          {
+            description: "Their CV holds an email or a phone",
+            icon: <Contact aria-hidden="true" className="h-4 w-4" />,
+            label: "Awaiting review",
+            tone: "orange",
+            value: <span className="tabular-nums">{String(rows.length)}</span>,
+          },
+          {
+            description: "Safe to accept without opening the CV",
+            icon: <BadgeCheck aria-hidden="true" className="h-4 w-4" />,
+            label: "High confidence",
+            tone: "emerald",
+            value: <span className="tabular-nums">{String(highConfidenceCount)}</span>,
+          },
+          {
+            description: "A reading the AI was unsure of",
+            icon: <Eye aria-hidden="true" className="h-4 w-4" />,
+            label: "Needs a look",
+            tone: "violet",
+            value: <span className="tabular-nums">{String(rows.length - highConfidenceCount)}</span>,
+          },
+        ]}
+      />
 
-      <div className={`rounded-lg border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">Contact details found in CVs</h2>
-            <p className="mt-0.5 text-xs text-slate-500">
-              These candidates have no email or phone on record, but their own CV does. Accepting fills only the blank
-              column — nothing already on the record is ever overwritten.
-            </p>
-          </div>
+      <RecruitmentPanel
+        actions={
           <button
-            className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+            className={cn(phxButtonAccentClassName, "px-3 text-xs")}
             disabled={busy !== null || highConfidenceCount === 0}
             onClick={() => accept(rows.map((row) => row.candidateId), true, "__bulk__")}
             type="button"
           >
+            {busy === "__bulk__" ? (
+              <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <CheckCheck aria-hidden="true" className="h-3.5 w-3.5" />
+            )}
             {busy === "__bulk__" ? "Accepting…" : `Accept ${highConfidenceCount} high-confidence`}
           </button>
-        </div>
-
+        }
+        count={rows.length}
+        description="These candidates have no email or phone on record, but their own CV does. Accepting fills only the blank column — nothing already on the record is ever overwritten."
+        icon={<Contact aria-hidden="true" className="h-4 w-4" />}
+        title="Contact details found in CVs"
+      >
         {error ? (
-          <p className="mt-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>
+          <p className="mx-4 mt-4 border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 sm:mx-5" role="alert">
+            {error}
+          </p>
         ) : null}
 
         {report ? (
-          <div className="mt-3 space-y-2 rounded-md bg-slate-50 px-3 py-2 text-sm">
-            <p className="font-medium text-slate-800">
+          <div className="mx-4 mt-4 space-y-2 border border-emerald-200 bg-emerald-50/70 px-3 py-2.5 text-sm sm:mx-5" role="status">
+            <p className="flex items-center gap-1.5 font-bold text-emerald-900">
+              <Check aria-hidden="true" className="h-4 w-4" />
               {report.applied} candidate{report.applied === 1 ? "" : "s"} updated.
             </p>
             {report.skipped.length > 0 ? (
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-600">
                   Left for a human ({report.skipped.length})
                 </p>
-                <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
+                <ul className="mt-1 space-y-0.5 break-words text-xs text-slate-700">
                   {report.skipped.map((line) => (
                     <li key={line}>{line}</li>
                   ))}
@@ -170,10 +193,10 @@ export function ContactReviewView({ rows: initialRows }: { rows: ContactReviewRo
             ) : null}
             {report.failed.length > 0 ? (
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-rose-600">
+                <p className="text-xs font-black uppercase tracking-wide text-rose-600">
                   Could not save ({report.failed.length})
                 </p>
-                <ul className="mt-1 space-y-0.5 text-xs text-rose-700">
+                <ul className="mt-1 space-y-0.5 break-words text-xs text-rose-700">
                   {report.failed.map((line) => (
                     <li key={line}>{line}</li>
                   ))}
@@ -184,87 +207,115 @@ export function ContactReviewView({ rows: initialRows }: { rows: ContactReviewRo
         ) : null}
 
         {rows.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-500">
-            Nothing waiting — every candidate whose CV carries contact details already has them on record.
-          </p>
+          <RecruitmentEmptyState
+            icon={<BadgeCheck aria-hidden="true" className="h-5 w-5" />}
+            message="Nothing waiting — every candidate whose CV carries contact details already has them on record."
+            title="Nothing waiting"
+          />
         ) : (
           <>
             {/* Phone: one card per candidate. Four columns of addresses and numbers cannot fit a
                 375px screen without either wrapping or truncating, and both are forbidden here. */}
-            <div className="mt-4 divide-y divide-slate-100 md:hidden">
+            <div className="mt-2 divide-y divide-slate-100 md:hidden">
               {rows.map((row) => (
-                <div className="py-3 first:pt-0" key={row.candidateId}>
-                  <p className="text-sm font-semibold text-slate-800">{row.name}</p>
-                  <p className="mt-0.5 text-xs text-slate-400">
+                <div className="px-4 py-3" key={row.candidateId}>
+                  <p className="break-words text-sm font-black text-slate-900" dir="auto">
+                    {row.name}
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
                     {sourceLabel(row.source)} · {cairoDate(row.createdAt)}
                   </p>
-                  <dl className="mt-2 space-y-1 text-xs">
+                  <dl className="mt-2 space-y-1.5 text-xs">
                     {row.proposal.email ? (
-                      <div className="flex items-baseline gap-2">
-                        <dt className="text-phx-2xs font-bold uppercase tracking-wide text-slate-400">Email</dt>
-                        <dd className="min-w-0 overflow-x-auto">
+                      <div className="flex items-start gap-2">
+                        <dt className="flex flex-none items-center gap-1 pt-px text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+                          <Mail aria-hidden="true" className="h-3 w-3" />
+                          Email
+                        </dt>
+                        <dd className="min-w-0">
                           <Proposed confidence={row.proposal.email.confidence} value={row.proposal.email.value} />
                         </dd>
                       </div>
                     ) : null}
                     {row.proposal.phone ? (
-                      <div className="flex items-baseline gap-2">
-                        <dt className="text-phx-2xs font-bold uppercase tracking-wide text-slate-400">Phone</dt>
-                        <dd className="min-w-0 overflow-x-auto">
+                      <div className="flex items-start gap-2">
+                        <dt className="flex flex-none items-center gap-1 pt-px text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+                          <Phone aria-hidden="true" className="h-3 w-3" />
+                          Phone
+                        </dt>
+                        <dd className="min-w-0">
                           <Proposed confidence={row.proposal.phone.confidence} value={row.proposal.phone.value} />
                         </dd>
                       </div>
                     ) : null}
                   </dl>
                   <button
-                    className="mt-2 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-40"
+                    className={cn(acceptButtonClassName, "mt-2.5")}
                     disabled={busy !== null}
                     onClick={() => accept([row.candidateId], false, row.candidateId)}
                     type="button"
                   >
+                    <Check aria-hidden="true" className="h-3.5 w-3.5" />
                     {busy === row.candidateId ? "Accepting…" : "Accept"}
                   </button>
                 </div>
               ))}
             </div>
 
-            <div className="mt-4 hidden overflow-x-auto md:block">
-              <table className="w-full text-sm" data-portal-desktop-table>
+            <div className="mt-2 hidden md:block">
+              <table className="w-full table-fixed text-sm" data-portal-desktop-table>
+                <colgroup>
+                  <col className="w-[28%]" />
+                  <col className="w-[32%]" />
+                  <col className="w-[24%]" />
+                  <col className="w-[16%]" />
+                </colgroup>
                 <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                    <th className="pb-2 font-medium">Candidate</th>
-                    <th className="pb-2 font-medium">Source</th>
-                    <th className="pb-2 font-medium">Email found</th>
-                    <th className="pb-2 font-medium">Phone found</th>
-                    <th className="pb-2 font-medium">Received</th>
-                    <th className="pb-2" />
+                  <tr className="text-left text-xs uppercase tracking-wide">
+                    <th className="px-4 py-2.5 font-bold">Candidate</th>
+                    <th className="px-4 py-2.5 font-bold">Email found</th>
+                    <th className="px-4 py-2.5 font-bold">Phone found</th>
+                    <th className="px-4 py-2.5">
+                      <span className="sr-only">Accept</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((row) => (
-                    <tr className="border-t border-slate-100 align-top" key={row.candidateId}>
-                      <td className="py-2 whitespace-nowrap font-medium text-slate-800">{row.name}</td>
-                      <td className="py-2 whitespace-nowrap text-slate-500">{sourceLabel(row.source)}</td>
-                      <td className="py-2">
+                    <tr
+                      className="border-t border-slate-100 align-top transition-colors hover:bg-slate-50/70"
+                      key={row.candidateId}
+                    >
+                      <td className="px-4 py-3">
+                        <span className="block break-words font-bold text-slate-900" dir="auto">
+                          {row.name}
+                        </span>
+                        {/* Source and Received were two columns of their own; they sit under the name
+                            now, which is how the table fits without a sideways scroll. */}
+                        <span className="mt-0.5 block break-words text-xs text-slate-500">
+                          {sourceLabel(row.source)} · Received {cairoDate(row.createdAt)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
                         <Proposed
                           confidence={row.proposal.email?.confidence ?? "high"}
                           value={row.proposal.email?.value ?? null}
                         />
                       </td>
-                      <td className="py-2">
+                      <td className="px-4 py-3">
                         <Proposed
                           confidence={row.proposal.phone?.confidence ?? "high"}
                           value={row.proposal.phone?.value ?? null}
                         />
                       </td>
-                      <td className="py-2 whitespace-nowrap text-slate-500">{cairoDate(row.createdAt)}</td>
-                      <td className="py-2 text-right">
+                      <td className="px-4 py-3 text-right">
                         <button
-                          className="whitespace-nowrap rounded-md border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 disabled:opacity-40"
+                          className={acceptButtonClassName}
                           disabled={busy !== null}
                           onClick={() => accept([row.candidateId], false, row.candidateId)}
                           type="button"
                         >
+                          <Check aria-hidden="true" className="h-3.5 w-3.5" />
                           {busy === row.candidateId ? "Accepting…" : "Accept"}
                         </button>
                       </td>
@@ -275,7 +326,7 @@ export function ContactReviewView({ rows: initialRows }: { rows: ContactReviewRo
             </div>
           </>
         )}
-      </div>
+      </RecruitmentPanel>
     </div>
   );
 }

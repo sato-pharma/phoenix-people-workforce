@@ -1,6 +1,10 @@
+import { Activity, AlertTriangle } from "lucide-react";
 import { redirect } from "next/navigation";
 
+import { AdminInsightChip } from "@/components/admin/admin-design-system";
+import { adminChipDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { IntakeHealthView } from "@/components/recruitment/intake-health-view";
+import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { canViewInboundIntakeHealth } from "@/lib/recruitment/access";
@@ -40,23 +44,55 @@ export default async function IntakeHealthPage() {
   } catch (error) {
     const message = String((error as { message?: unknown })?.message ?? error);
     return (
-      <div className="mx-auto max-w-3xl p-6">
-        <h1 className="text-lg font-semibold text-slate-900">Intake health unavailable</h1>
-        <p className="mt-2 text-sm text-slate-600">{message}</p>
+      <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
+        <IntakeHealthHeader />
+        <div
+          className={`flex items-start gap-3 border border-amber-200 bg-amber-50 px-4 py-4 ${adminSoftDepthClassName}`}
+          role="alert"
+        >
+          <span
+            className={`flex h-9 w-9 flex-none items-center justify-center border border-amber-300 bg-white text-amber-600 ${adminChipDepthClassName}`}
+          >
+            <AlertTriangle aria-hidden="true" className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-black text-amber-950">Intake health unavailable</p>
+            <p className="mt-1 break-words text-[13px] leading-5 text-amber-900">{message}</p>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-6">
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold text-slate-900">Inbound CV Intake Health</h1>
-        <p className="text-sm text-slate-500">
-          How WhatsApp + email CVs are flowing into the pipeline over the last 30 days, and any that could not be
-          processed automatically (retry re-queues them for the worker).
-        </p>
-      </div>
+    <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
+      <IntakeHealthHeader deadLettered={deadLetters.length} windowDays={analytics.windowDays} />
       <IntakeHealthView analytics={analytics} deadLetters={deadLetters} heldBack={heldBack} />
     </div>
+  );
+}
+
+/** The page's one header, on the funnel and on its error state alike. Chips only when the read landed. */
+function IntakeHealthHeader({ deadLettered, windowDays }: { deadLettered?: number; windowDays?: number }) {
+  return (
+    <RecruitmentPageHeader
+      badges={
+        windowDays === undefined ? undefined : (
+          <>
+            <AdminInsightChip tone="orange">Last {windowDays} days</AdminInsightChip>
+            {deadLettered ? (
+              <AdminInsightChip tone="slate">
+                {deadLettered === 1 ? "1 CV waiting for a retry" : `${deadLettered} CVs waiting for a retry`}
+              </AdminInsightChip>
+            ) : (
+              <AdminInsightChip tone="emerald">Nothing waiting for a retry</AdminInsightChip>
+            )}
+          </>
+        )
+      }
+      description="How WhatsApp and email CVs are flowing into the pipeline over the last 30 days, and any that could not be processed automatically (retry re-queues them for the worker)."
+      icon={<Activity aria-hidden="true" className="h-3.5 w-3.5" />}
+      title="Inbound CV Intake Health"
+    />
   );
 }

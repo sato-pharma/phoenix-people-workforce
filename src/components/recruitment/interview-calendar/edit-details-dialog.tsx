@@ -16,11 +16,11 @@ import { Action } from "@/components/recruitment/workstation/workstation-look";
 import type { InterviewBooking } from "@/lib/recruitment/interview-calendar-types";
 
 import { type CalendarApi, reasonText } from "./calendar-api";
-import { CalendarDialog } from "./calendar-dialog";
+import { CalendarDialog, PanelHeading } from "./calendar-dialog";
 import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker";
 import { OrgFields } from "./org-fields";
 import { PanelPicker } from "./panel-picker";
-import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { phxFieldClassName, phxLabelClassName, phxLabelTextClassName } from "@/components/ui/form-tokens";
 
 const inputClass = `${phxFieldClassName} mt-1 block`;
 
@@ -89,7 +89,7 @@ export function EditInterviewDetailsDialog({
       eyebrow="Edit details"
       footer={
         <>
-          <p className="min-w-0 text-[12px] text-slate-600">
+          <p className="min-w-0 break-words text-[12px] text-slate-600">
             {error ? <span className="font-semibold text-red-700">{error}</span> : problem ? problem : "Only who is interviewed and who conducts it — not the time or place."}
           </p>
           <div className="flex shrink-0 justify-end gap-2">
@@ -112,14 +112,14 @@ export function EditInterviewDetailsDialog({
       <div className="flex flex-col gap-4">
         {isExternal ? (
           <div className="flex flex-col gap-2.5">
-            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Person from outside</p>
+            <PanelHeading>Person from outside</PanelHeading>
             <label className="block">
-              <span className="text-[12px] font-bold text-slate-700">Name</span>
+              <span className={phxLabelTextClassName}>Name</span>
               <input autoComplete="off" className={inputClass} maxLength={200} onChange={(event) => setName(event.target.value)} value={name} />
             </label>
             <div className="grid gap-2.5 sm:grid-cols-2">
               <label className="block">
-                <span className="text-[12px] font-bold text-slate-700">Phone / WhatsApp (optional)</span>
+                <span className={phxLabelTextClassName}>Phone / WhatsApp (optional)</span>
                 <input
                   autoComplete="off"
                   className={inputClass}
@@ -132,7 +132,7 @@ export function EditInterviewDetailsDialog({
                 />
               </label>
               <label className="block">
-                <span className="text-[12px] font-bold text-slate-700">E-mail (optional)</span>
+                <span className={phxLabelTextClassName}>E-mail (optional)</span>
                 <input
                   autoComplete="off"
                   className={inputClass}
@@ -145,13 +145,13 @@ export function EditInterviewDetailsDialog({
             </div>
           </div>
         ) : (
-          <p className="border-l-[3px] border-l-slate-300 bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
+          <p className="border-l-[3px] border-l-slate-300 bg-slate-50 px-3 py-2 text-[12px] leading-5 text-slate-600">
             This person is a Recruitment candidate — their name, phone and e-mail are changed on their candidate record.
           </p>
         )}
 
         <div>
-          <p className="mb-1 text-[12px] font-bold text-slate-700">Interviewer (optional)</p>
+          <p className={phxLabelClassName}>Interviewer (optional)</p>
           <InterviewerPicker api={api} onChange={chooseInterviewer} value={interviewer} />
           <p className="mt-1 text-[11px] text-slate-500">Choosing the interviewer fills in the area & line below — you can change them.</p>
         </div>
@@ -159,7 +159,7 @@ export function EditInterviewDetailsDialog({
         <OrgFields api={api} area={area} jobTitle={jobTitle} line={line} onArea={setArea} onJobTitle={setJobTitle} onLine={setLine} />
 
         <div>
-          <p className="mb-1 text-[12px] font-bold text-slate-700">Panel (optional)</p>
+          <p className={phxLabelClassName}>Panel (optional)</p>
           <PanelPicker api={api} excludeHrId={interviewer?.hrId ?? null} onChange={setPanel} value={panel} />
           <p className="mt-1 text-[11px] text-slate-500">Anyone added here also sees the interview on their own calendar. The interviewer above records how it went.</p>
         </div>

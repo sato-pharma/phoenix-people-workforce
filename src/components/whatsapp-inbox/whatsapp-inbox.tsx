@@ -12,10 +12,23 @@
 
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Briefcase, FileText, Link2, Loader2, Map as MapIcon, MapPin, MessageCirclePlus, RefreshCw, Search, X } from "lucide-react";
+import {
+  Briefcase,
+  FileText,
+  Link2,
+  Loader2,
+  Map as MapIcon,
+  MapPin,
+  MessageCirclePlus,
+  MessagesSquare,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react";
 
 import {
   adminPanelClassName,
+  adminPanelHeaderClassName,
   pageHeaderKickerClassName,
   pageHeaderRailClassName,
   pageHeaderRuleClassName,
@@ -351,6 +364,25 @@ export function WhatsAppInbox({
             selectedId || composingNew ? "hidden" : "flex",
           )}
         >
+          {/* The list's own title band — the house dark band every panel in the module wears — with how
+              many chats it holds now, so a narrowed list says so before a row is read. */}
+          <div
+            className={cn(
+              "flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2 text-white",
+              adminPanelHeaderClassName,
+            )}
+          >
+            <span className="inline-flex items-center gap-2">
+              <MessagesSquare aria-hidden className="h-3.5 w-3.5 text-orange-300" />
+              <span className="text-[11px] font-black uppercase tracking-[0.14em]">Chats</span>
+              <span className="border border-orange-400/40 bg-orange-500/15 px-1.5 py-0.5 text-[10px] font-black tabular-nums text-orange-100">
+                {conversations.length < totalCount ? `${conversations.length} of ${totalCount}` : totalCount}
+              </span>
+            </span>
+            {filtered ? (
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-300">Filtered</span>
+            ) : null}
+          </div>
           <form
             className="shrink-0 border-b border-slate-200 p-2.5"
             onSubmit={(event) => {

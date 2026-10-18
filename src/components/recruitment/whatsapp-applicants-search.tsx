@@ -4,10 +4,28 @@
 // own WhatsApp questions then appear as filters. Every row is already on the page, so a filter only
 // narrows the list and nothing waits on the server. What a row and a filter mean is decided in
 // src/lib/recruitment/whatsapp-applicants.ts. This file only draws it.
+//
+// THE LOOK (owner, 2026-10-19, the full-module premium sweep): the counts are the module's KPI strip,
+// the job title and its question filters sit in the recessed filter tray, and the people found are one
+// panel under the house dark band — a fixed-layout table on a desktop, one card per person on a phone.
+// Every count on the strip is worked out from the one read the page already loaded, and follows a
+// decision made on this page the moment it is saved.
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
+import {
+  BadgeCheck,
+  Briefcase,
+  CheckCircle2,
+  Hourglass,
+  Inbox,
+  ListChecks,
+  MapPin,
+  MessageSquareText,
+  SlidersHorizontal,
+  UsersRound,
+} from "lucide-react";
 
 import { CandidateDecisionTabStrip } from "@/components/recruitment/candidate-decision-tab-strip";
 import { ScheduleInterviewButton } from "@/components/recruitment/interview-calendar/schedule-interview-button";
@@ -32,15 +50,29 @@ import {
   type WhatsAppApplicantRow,
   type WhatsAppApplicantsView,
 } from "@/lib/recruitment/whatsapp-applicant-filters";
-import { phxSelectClassName } from "@/components/ui/form-tokens";
-import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  phxButtonApproveDenseClassName,
+  phxButtonDangerDenseClassName,
+  phxButtonGhostClassName,
+  phxLabelClassName,
+  phxLabelTextClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
+import { adminControlDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  RecruitmentEmptyState,
+  RecruitmentKpiStrip,
+  RecruitmentPanel,
+  RecruitmentPill,
+  recruitmentToolbarClassName,
+} from "@/components/recruitment/recruitment-premium";
+import { cn } from "@/lib/utils";
 
 /** Rows drawn at once. A longer list shows a button for the next lot. */
 const ROWS_PER_STEP = 100;
 
-const labelClass = "block text-xs font-semibold uppercase tracking-wide text-slate-500";
 const selectClass =
-  `${phxSelectClassName} mt-1 min-w-0`;
+  `${phxSelectClassName} min-w-0`;
 
 function FilterSelect({
   filter,
@@ -54,11 +86,11 @@ function FilterSelect({
   value: string;
 }) {
   return (
-    <div className="min-w-0">
-      <label className="block break-words text-xs font-semibold text-slate-700" dir="auto" htmlFor={id}>
+    <div className="min-w-0 grow basis-56">
+      <label className="mb-1 block break-words text-xs font-bold text-slate-700" dir="auto" htmlFor={id}>
         {filter.label}
       </label>
-      {filter.note ? <p className="break-words text-xs text-slate-400">{filter.note}</p> : null}
+      {filter.note ? <p className="mb-1 break-words text-xs text-slate-400">{filter.note}</p> : null}
       <select className={selectClass} id={id} onChange={(event) => onChange(event.target.value)} value={value}>
         <option value="">Any</option>
         {filter.options.map((option) => (
@@ -92,16 +124,20 @@ function isQuickDecisionStatus(value: string): value is QuickDecisionStatus {
 
 /** The box around the name: green for Shortlisted, red for Rejected, light blue for Pending. */
 const QUICK_DECISION_BOX_CLASS: Record<QuickDecisionStatus, string> = {
-  new: "border-sky-300 bg-sky-50",
-  rejected: "border-rose-300 bg-rose-50",
-  shortlisted: "border-emerald-300 bg-emerald-50",
+  new: "border-sky-300 border-l-sky-500 bg-sky-50/70",
+  rejected: "border-rose-300 border-l-rose-500 bg-rose-50/70",
+  shortlisted: "border-emerald-300 border-l-emerald-500 bg-emerald-50/70",
 };
 
-/** The matching button, filled in, once that is the candidate's current status. */
+/**
+ * The matching button, filled in, once that is the candidate's current status. Shortlist and Reject
+ * wear the form kit's decision pair (colour only, so the dense size below is kept); Pending keeps its
+ * light blue, the colour of the box it puts the name in.
+ */
 const QUICK_DECISION_ACTIVE_BUTTON_CLASS: Record<QuickDecisionStatus, string> = {
   new: "border-sky-600 bg-sky-600 text-white",
-  rejected: "border-rose-600 bg-rose-600 text-white",
-  shortlisted: "border-emerald-600 bg-emerald-600 text-white",
+  rejected: phxButtonDangerDenseClassName,
+  shortlisted: phxButtonApproveDenseClassName,
 };
 
 /**
@@ -146,17 +182,18 @@ function WhatsAppApplicantDecisionButtons({
   };
 
   return (
-    <div className="mt-2 min-w-0">
-      <div aria-label={`Mark ${name}`} className="flex flex-wrap gap-1.5" role="group">
+    <div className="mt-2.5 min-w-0">
+      <div aria-label={`Mark ${name}`} className="flex flex-wrap gap-1" role="group">
         {QUICK_DECISIONS.map((option) => {
           const active = isQuickDecisionStatus(status) && status === option.status;
           return (
             <button
-              className={`border px-2 py-0.5 text-xs font-semibold disabled:opacity-60 ${
+              className={cn(
+                "border px-2.5 py-1 text-xs font-bold transition disabled:opacity-60",
                 active
                   ? QUICK_DECISION_ACTIVE_BUTTON_CLASS[option.status]
-                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
+                  : `border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-900 ${adminControlDepthClassName} disabled:shadow-none`,
+              )}
               disabled={pending !== null}
               key={option.status}
               onClick={() => void setDecision(option.status)}
@@ -167,7 +204,11 @@ function WhatsAppApplicantDecisionButtons({
           );
         })}
       </div>
-      {error ? <p className="mt-1 break-words text-xs text-rose-600">{error}</p> : null}
+      {error ? (
+        <p className="mt-1.5 break-words border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -185,13 +226,15 @@ function ApplicantCell({
   row: WhatsAppApplicantRow;
   titleLabel: string | null;
 }) {
-  const boxClass = isQuickDecisionStatus(row.status) ? QUICK_DECISION_BOX_CLASS[row.status] : "border-transparent";
+  const boxClass = isQuickDecisionStatus(row.status)
+    ? QUICK_DECISION_BOX_CLASS[row.status]
+    : "border-slate-200 border-l-slate-300 bg-white";
   return (
-    <div className={`min-w-0 border p-2 ${boxClass}`}>
+    <div className={`min-w-0 border border-l-[3px] p-2.5 ${boxClass}`}>
       {/* The name opens everything on file for this person — their own page, which links on to
           screening for a decision. A new tab, so the filtered list is still here when it is closed. */}
       <Link
-        className="block break-words font-semibold text-slate-900 hover:text-orange-600 hover:underline"
+        className="block break-words text-sm font-black text-slate-950 hover:text-orange-600 hover:underline"
         dir="auto"
         href={candidatePageHref(pool, row.candidateId)}
         prefetch={false}
@@ -201,7 +244,7 @@ function ApplicantCell({
         {row.name}
       </Link>
       <span className="mt-0.5 block break-words text-xs text-slate-500">
-        {row.statusLabel} · Applied {cairoDate(row.appliedAt)}
+        <span className="font-bold text-slate-700">{row.statusLabel}</span> · Applied {cairoDate(row.appliedAt)}
       </span>
       {row.typedTitle ? (
         <span className="mt-0.5 block break-words text-xs text-slate-500" dir="auto">
@@ -235,7 +278,7 @@ function RegionCell({ row }: { row: WhatsAppApplicantRow }) {
   if (!row.region) {
     return (
       <div className="min-w-0">
-        <span className="block text-slate-500">Not known</span>
+        <span className="block text-sm font-semibold text-slate-500">Not known</span>
         <span className="mt-0.5 block break-words text-xs text-slate-400">
           Neither their WhatsApp answer nor their CV places them in a region
         </span>
@@ -250,8 +293,9 @@ function RegionCell({ row }: { row: WhatsAppApplicantRow }) {
         : "text-amber-700";
   return (
     <div className="min-w-0">
-      <span className="block break-words text-slate-900" dir="auto">
-        {row.region.label}
+      <span className="flex items-start gap-1.5 break-words text-sm font-bold text-slate-900" dir="auto">
+        <MapPin aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 flex-none text-orange-500" />
+        <span className="min-w-0 break-words">{row.region.label}</span>
       </span>
       <span className={`mt-0.5 block break-words text-xs ${sourceTone}`} dir="auto">
         {row.region.sourceLine}
@@ -265,13 +309,13 @@ function AnswerList({ row }: { row: WhatsAppApplicantRow }) {
     return <span className="text-xs text-slate-400">No answers after the job title</span>;
   }
   return (
-    <dl className="min-w-0 space-y-1.5">
+    <dl className="min-w-0 divide-y divide-slate-100">
       {row.answers.map((answer) => (
-        <div className="min-w-0" key={answer.key}>
+        <div className="min-w-0 py-1.5 first:pt-0 last:pb-0" key={answer.key}>
           <dt className="break-words text-xs text-slate-500" dir="auto">
             {answer.question}
           </dt>
-          <dd className="break-words text-sm font-medium text-slate-900" dir="auto">
+          <dd className="break-words text-sm font-bold text-slate-900" dir="auto">
             {answer.answer}
           </dd>
         </div>
@@ -283,18 +327,20 @@ function AnswerList({ row }: { row: WhatsAppApplicantRow }) {
 function ProgressCell({ row }: { row: WhatsAppApplicantRow }) {
   if (row.finished) {
     return (
-      <span className="inline-block border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-800">
+      <RecruitmentPill tone="emerald">
+        <CheckCircle2 aria-hidden="true" className="h-3 w-3" />
         Answered all
-      </span>
+      </RecruitmentPill>
     );
   }
   return (
     <div className="min-w-0">
-      <span className="inline-block border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-900">
+      <RecruitmentPill tone="amber">
+        <Hourglass aria-hidden="true" className="h-3 w-3" />
         Did not answer all
-      </span>
+      </RecruitmentPill>
       {row.waitingOn ? (
-        <span className="mt-1 block break-words text-xs text-slate-600" dir="auto">
+        <span className="mt-1.5 block break-words text-xs text-slate-600" dir="auto">
           {row.stillOpen ? "Waiting for their answer to:" : "Stopped at:"} {row.waitingOn}
         </span>
       ) : null}
@@ -362,6 +408,9 @@ export function WhatsAppApplicantsSearch({ canDecide, view }: { canDecide: boole
     () => rows.filter((row) => row.titleValue === title && candidateMatchesDecisionTab(row.status, decisionTab)).length,
     [rows, title, decisionTab],
   );
+  // The strip's counts: the whole list this page loaded, with any decision made here laid over it.
+  const allCounts = useMemo(() => countCandidatesByDecisionTab(rows), [rows]);
+  const answeredAll = useMemo(() => rows.filter((row) => row.finished).length, [rows]);
   const shown = matches.slice(0, limit);
   const filtered = Object.values(selections).some(Boolean);
 
@@ -377,136 +426,185 @@ export function WhatsAppApplicantsSearch({ canDecide, view }: { canDecide: boole
 
   if (view.titles.length === 0) {
     return (
-      <p className={`border border-slate-200 bg-white p-6 text-sm text-slate-600 ${adminSoftDepthClassName}`}>
-        Nobody has answered the WhatsApp questions yet.
-      </p>
+      <RecruitmentPanel icon={<MessageSquareText aria-hidden="true" className="h-4 w-4" />} title="WhatsApp applicants">
+        <RecruitmentEmptyState
+          icon={<Inbox aria-hidden="true" className="h-5 w-5" />}
+          message="Nobody has answered the WhatsApp questions yet."
+          title="No applicants yet"
+        />
+      </RecruitmentPanel>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <section className={`border border-slate-200 bg-white px-4 py-4 ${adminSoftDepthClassName}`}>
-        <label className={labelClass} htmlFor="whatsapp-applicants-title">
-          Job title
-        </label>
-        <select
-          className={`${selectClass} md:max-w-md`}
-          id="whatsapp-applicants-title"
-          onChange={(event) => chooseTitle(event.target.value)}
-          value={title}
-        >
-          <option value="">Choose a job title</option>
-          {view.titles.map((entry) => (
-            <option key={entry.value} value={entry.value}>
-              {entry.label} ({entry.count})
-            </option>
-          ))}
-        </select>
+    <div className="space-y-5">
+      <RecruitmentKpiStrip
+        items={[
+          {
+            description: "who started the WhatsApp questions",
+            icon: <UsersRound aria-hidden="true" className="h-4 w-4" />,
+            label: "Applications",
+            tone: "orange",
+            value: <span className="tabular-nums">{rows.length}</span>,
+          },
+          {
+            description: "waiting for a first decision",
+            icon: <Hourglass aria-hidden="true" className="h-4 w-4" />,
+            label: "Not decided yet",
+            tone: "blue",
+            value: <span className="tabular-nums">{allCounts.new}</span>,
+          },
+          {
+            description: "on the shortlist",
+            icon: <BadgeCheck aria-hidden="true" className="h-4 w-4" />,
+            label: "Shortlisted",
+            tone: "emerald",
+            value: <span className="tabular-nums">{allCounts.shortlisted}</span>,
+          },
+          {
+            description: "answered every question",
+            icon: <ListChecks aria-hidden="true" className="h-4 w-4" />,
+            label: "Answered all",
+            tone: "violet",
+            value: <span className="tabular-nums">{answeredAll}</span>,
+          },
+        ]}
+      />
+
+      <section aria-label="Search" className={recruitmentToolbarClassName}>
+        <div className="w-full min-w-0 md:max-w-md">
+          <label className={phxLabelClassName} htmlFor="whatsapp-applicants-title">
+            Job title
+          </label>
+          <select
+            className={selectClass}
+            id="whatsapp-applicants-title"
+            onChange={(event) => chooseTitle(event.target.value)}
+            value={title}
+          >
+            <option value="">Choose a job title</option>
+            {view.titles.map((entry) => (
+              <option key={entry.value} value={entry.value}>
+                {entry.label} ({entry.count})
+              </option>
+            ))}
+          </select>
+        </div>
 
         {filters.length > 0 ? (
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {filters.map((filter, index) => (
-              <FilterSelect
-                filter={filter}
-                id={`whatsapp-applicants-filter-${index}`}
-                key={filter.key}
-                onChange={(value) => chooseFilter(filter.key, value)}
-                value={selections[filter.key] ?? ""}
-              />
-            ))}
+          <div className="w-full min-w-0 border-t border-slate-200 pt-3">
+            <p className={cn("mb-2 flex items-center gap-1.5", phxLabelTextClassName)}>
+              <SlidersHorizontal aria-hidden="true" className="h-3.5 w-3.5 text-orange-500" />
+              Their answers
+            </p>
+            <div className="flex flex-wrap items-end gap-3">
+              {filters.map((filter, index) => (
+                <FilterSelect
+                  filter={filter}
+                  id={`whatsapp-applicants-filter-${index}`}
+                  key={filter.key}
+                  onChange={(value) => chooseFilter(filter.key, value)}
+                  value={selections[filter.key] ?? ""}
+                />
+              ))}
+            </div>
           </div>
         ) : null}
       </section>
 
       {chosenTitle ? (
-        <section className="space-y-3">
-          <CandidateDecisionTabStrip
-            active={decisionTab}
-            counts={decisionCounts}
-            onSelect={(tab) => {
-              setDecisionTab(tab);
-              setLimit(ROWS_PER_STEP);
-            }}
-          />
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
-            <div className="flex items-baseline gap-1.5">
-              <span className="font-bold uppercase tracking-wide text-slate-400">People</span>
-              <span className="text-sm font-bold tabular-nums text-slate-800">
-                {filtered ? `${matches.length} of ${tabTotal}` : matches.length}
-              </span>
-            </div>
-            {/* THE SAME PEOPLE ON THE SCREENING PAGE. The owner, 2026-09-18: "based on my filters, I
-                can go to screening page and only show those I filtered." The link carries the search,
-                and the screening page runs it again. A new tab, like a CV, so this list stays put. */}
-            {matches.length > 0 ? (
-              <Link
-                className="border border-orange-600 bg-orange-600 px-2 py-1 text-xs font-semibold text-white hover:bg-orange-700"
-                // The tab travels too, so the screening page opens on the same pile this list shows.
-                href={screeningHref(pool, {
-                  status: statusFilterForDecisionTab(decisionTab),
-                  whatsapp: whatsAppApplicantSearchParam(title, selections),
-                })}
-                rel="noopener"
-                target="_blank"
-                title="Open exactly these people on the screening page, in a new tab"
-              >
-                Screen {matches.length === 1 ? "this CV" : `these ${matches.length} CVs`}
-              </Link>
+        <RecruitmentPanel
+          actions={
+            <>
+              {/* THE SAME PEOPLE ON THE SCREENING PAGE. The owner, 2026-09-18: "based on my filters, I
+                  can go to screening page and only show those I filtered." The link carries the search,
+                  and the screening page runs it again. A new tab, like a CV, so this list stays put. */}
+              {matches.length > 0 ? (
+                <Link
+                  className="inline-flex items-center gap-1.5 border border-orange-500 bg-orange-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-orange-700"
+                  // The tab travels too, so the screening page opens on the same pile this list shows.
+                  href={screeningHref(pool, {
+                    status: statusFilterForDecisionTab(decisionTab),
+                    whatsapp: whatsAppApplicantSearchParam(title, selections),
+                  })}
+                  rel="noopener"
+                  target="_blank"
+                  title="Open exactly these people on the screening page, in a new tab"
+                >
+                  Screen {matches.length === 1 ? "this CV" : `these ${matches.length} CVs`}
+                </Link>
+              ) : null}
+              {filtered ? (
+                <button
+                  className="border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-white/20"
+                  onClick={() => {
+                    setSelections({});
+                    setLimit(ROWS_PER_STEP);
+                  }}
+                  type="button"
+                >
+                  Clear filters
+                </button>
+              ) : null}
+            </>
+          }
+          count={filtered ? `${matches.length} of ${tabTotal}` : matches.length}
+          icon={<Briefcase aria-hidden="true" className="h-4 w-4" />}
+          title={<span dir="auto">{chosenTitle.label}</span>}
+        >
+          <div className="space-y-3 px-4 pt-4 sm:px-5">
+            <CandidateDecisionTabStrip
+              active={decisionTab}
+              counts={decisionCounts}
+              onSelect={(tab) => {
+                setDecisionTab(tab);
+                setLimit(ROWS_PER_STEP);
+              }}
+            />
+
+            {chosenTitle.unlinked > 0 ? (
+              <p className="break-words text-xs text-slate-500">
+                {chosenTitle.unlinked === 1 ? "1 more person" : `${chosenTitle.unlinked} more people`} answered for this
+                title, but their chat could not be matched to a CV in the system, so they are not listed.
+              </p>
             ) : null}
-            {filtered ? (
-              <button
-                className={`border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 ${adminControlDepthClassName}`}
-                onClick={() => {
-                  setSelections({});
-                  setLimit(ROWS_PER_STEP);
-                }}
-                type="button"
-              >
-                Clear filters
-              </button>
+
+            {chosenTitle.inFolders > 0 ? (
+              <p className="break-words text-xs text-slate-500">
+                {chosenTitle.inFolders === 1 ? "1 more person" : `${chosenTitle.inFolders} more people`} applied for this
+                title, but their CV has been moved into a folder on the Folders tab, so they are shown only inside that folder.
+              </p>
             ) : null}
           </div>
 
-          {chosenTitle.unlinked > 0 ? (
-            <p className="break-words text-xs text-slate-500">
-              {chosenTitle.unlinked === 1 ? "1 more person" : `${chosenTitle.unlinked} more people`} answered for this
-              title, but their chat could not be matched to a CV in the system, so they are not listed.
-            </p>
-          ) : null}
-
-          {chosenTitle.inFolders > 0 ? (
-            <p className="break-words text-xs text-slate-500">
-              {chosenTitle.inFolders === 1 ? "1 more person" : `${chosenTitle.inFolders} more people`} applied for this
-              title, but their CV has been moved into a folder on the Folders tab, so they are shown only inside that folder.
-            </p>
-          ) : null}
-
           {matches.length === 0 ? (
-            <p className={`border border-slate-200 bg-white p-6 text-sm text-slate-600 ${adminSoftDepthClassName}`}>
-              {emptyMessage(filtered, decisionTab)}
-            </p>
+            <RecruitmentEmptyState
+              icon={<UsersRound aria-hidden="true" className="h-5 w-5" />}
+              message={emptyMessage(filtered, decisionTab)}
+              title="Nobody to show"
+            />
           ) : (
             <>
-              <div className={`hidden border border-slate-200 bg-white md:block ${adminPanelDepthClassName}`}>
+              <div className="mt-4 hidden border-t border-slate-200 md:block">
                 <table className="w-full table-fixed text-left text-sm">
                   <colgroup>
-                    <col className="w-[24%]" />
+                    <col className="w-[26%]" />
                     <col className="w-[18%]" />
-                    <col className="w-[40%]" />
+                    <col className="w-[38%]" />
                     <col className="w-[18%]" />
                   </colgroup>
-                  <thead>
-                    <tr className="border-b border-slate-200 text-xs font-bold uppercase tracking-wide text-slate-500">
-                      <th className="px-3 py-2">Applicant</th>
-                      <th className="px-3 py-2">Region</th>
-                      <th className="px-3 py-2">Their answers</th>
-                      <th className="px-3 py-2">Answered all?</th>
+                  <thead className="bg-slate-50">
+                    <tr className={cn("border-b border-slate-200", phxLabelTextClassName)}>
+                      <th className="px-4 py-2.5" scope="col">Applicant</th>
+                      <th className="px-3 py-2.5" scope="col">Region</th>
+                      <th className="px-3 py-2.5" scope="col">Their answers</th>
+                      <th className="px-4 py-2.5" scope="col">Answered all?</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100">
                     {shown.map((row) => (
-                      <tr className="border-b border-slate-100 align-top last:border-b-0" key={row.key}>
-                        <td className="px-3 py-3">
+                      <tr className="align-top transition-colors hover:bg-slate-50/60" key={row.key}>
+                        <td className="px-4 py-3">
                           <ApplicantCell
                             canDecide={canDecide}
                             onDecided={onDecided}
@@ -521,7 +619,7 @@ export function WhatsAppApplicantsSearch({ canDecide, view }: { canDecide: boole
                         <td className="px-3 py-3">
                           <AnswerList row={row} />
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-4 py-3">
                           <ProgressCell row={row} />
                         </td>
                       </tr>
@@ -530,9 +628,9 @@ export function WhatsAppApplicantsSearch({ canDecide, view }: { canDecide: boole
                 </table>
               </div>
 
-              <ul className={`divide-y divide-slate-100 border border-slate-200 bg-white md:hidden ${adminPanelDepthClassName}`}>
+              <ul className="mt-4 divide-y divide-slate-100 border-t border-slate-200 md:hidden">
                 {shown.map((row) => (
-                  <li className="space-y-2.5 px-4 py-3 text-sm" key={row.key}>
+                  <li className="space-y-3 px-4 py-4 text-sm" key={row.key}>
                     <ApplicantCell
                       canDecide={canDecide}
                       onDecided={onDecided}
@@ -541,32 +639,41 @@ export function WhatsAppApplicantsSearch({ canDecide, view }: { canDecide: boole
                       titleLabel={chosenTitle?.label ?? null}
                     />
                     <div>
-                      <span className={labelClass}>Region</span>
-                      <div className="mt-0.5">
-                        <RegionCell row={row} />
-                      </div>
+                      <span className={phxLabelClassName}>Region</span>
+                      <RegionCell row={row} />
                     </div>
-                    <AnswerList row={row} />
+                    <div>
+                      <span className={phxLabelClassName}>Their answers</span>
+                      <AnswerList row={row} />
+                    </div>
                     <ProgressCell row={row} />
                   </li>
                 ))}
               </ul>
 
               {matches.length > shown.length ? (
-                <button
-                  className={`w-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 ${adminControlDepthClassName}`}
-                  onClick={() => setLimit((current) => current + ROWS_PER_STEP)}
-                  type="button"
-                >
-                  Show {Math.min(ROWS_PER_STEP, matches.length - shown.length)} more ({matches.length - shown.length} not
-                  shown yet)
-                </button>
+                <div className="border-t border-slate-200 p-4 sm:px-5">
+                  <button
+                    className={cn(phxButtonGhostClassName, "w-full justify-center text-xs")}
+                    onClick={() => setLimit((current) => current + ROWS_PER_STEP)}
+                    type="button"
+                  >
+                    Show {Math.min(ROWS_PER_STEP, matches.length - shown.length)} more ({matches.length - shown.length} not
+                    shown yet)
+                  </button>
+                </div>
               ) : null}
             </>
           )}
-        </section>
+        </RecruitmentPanel>
       ) : (
-        <p className="text-sm text-slate-500">Choose a job title to see who applied for it.</p>
+        <RecruitmentPanel icon={<Briefcase aria-hidden="true" className="h-4 w-4" />} title="Applicants">
+          <RecruitmentEmptyState
+            icon={<Briefcase aria-hidden="true" className="h-5 w-5" />}
+            message="Choose a job title to see who applied for it."
+            title="Choose a job title"
+          />
+        </RecruitmentPanel>
       )}
     </div>
   );

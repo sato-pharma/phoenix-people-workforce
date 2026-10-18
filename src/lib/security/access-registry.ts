@@ -1508,6 +1508,10 @@ export const accessRegistry = [
   // Takes a CV back out of one manager's folder (owner, 2026-10-16): deletes that manager's send, so
   // it is a mutation with its own audit row, ahead of the candidates/** read-only catch-all.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/candidates/*/recall-from-manager", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
+  // Edit, or fill in, one of a candidate's WhatsApp answers from the pool (owner, 2026-10-19). A change
+  // to the record, so `candidates:update` (Super Admin and Talent Acquisition) with its own audit row,
+  // ahead of the catch-all whose candidates:read is only the authority to look.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/recruitment/candidates/*/whatsapp-answer", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/candidates/**", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
   // CV LOOKUP — the search-only CV access the owner asked for on 2026-09-30 (HR Operations may find
   // a CV she searches for; she may not have the pool). TWO CONCRETE ENTRIES AND NO WILDCARD, so the

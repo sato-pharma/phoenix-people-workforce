@@ -1,6 +1,14 @@
+import { AlertTriangle, MessageSquareText, ShieldAlert } from "lucide-react";
 import { redirect } from "next/navigation";
 
+import { AdminInsightChip } from "@/components/admin/admin-design-system";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { PageContainer } from "@/components/layout/page-container";
+import {
+  RecruitmentEmptyState,
+  RecruitmentPageHeader,
+  RecruitmentPanel,
+} from "@/components/recruitment/recruitment-premium";
 import { WhatsAppApplicantsSearch } from "@/components/recruitment/whatsapp-applicants-search";
 import { WhatsAppCvArchive } from "@/components/recruitment/whatsapp-cv-archive";
 import { canAccess, isHrAuthorityRole } from "@/lib/auth/permissions";
@@ -48,30 +56,59 @@ export default async function WhatsAppApplicantsPage() {
       ])
     : [null, null];
 
+  // The header's chips count what the one read above already holds — nothing extra is fetched for them.
+  const applications = view ? view.rows.length : null;
+  const titles = view ? view.titles.length : null;
+  const archived = archive && archive !== "unavailable" ? archive.people : null;
+
   return (
     <PageContainer>
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold text-slate-900">WhatsApp Applicants</h1>
-        <p className="text-sm text-slate-500">
-          Everyone who sent a CV on WhatsApp and answered at least the first question. Choose a job title, then narrow
-          the list with the questions that title was asked.
-        </p>
-      </div>
+      <RecruitmentPageHeader
+        badges={
+          applications !== null && titles !== null ? (
+            <>
+              <AdminInsightChip tone="orange">
+                {applications === 1 ? "1 application" : `${applications} applications`}
+              </AdminInsightChip>
+              <AdminInsightChip>{titles === 1 ? "1 job title" : `${titles} job titles`}</AdminInsightChip>
+              {archived ? (
+                <AdminInsightChip tone="slate">
+                  {archived === 1 ? "1 person in the Archive" : `${archived} people in the Archive`}
+                </AdminInsightChip>
+              ) : null}
+            </>
+          ) : undefined
+        }
+        description="Everyone who sent a CV on WhatsApp and answered at least the first question. Choose a job title, then narrow the list with the questions that title was asked."
+        icon={<MessageSquareText aria-hidden="true" className="h-3.5 w-3.5" />}
+        title="WhatsApp Applicants"
+      />
       {view && archive ? (
         <>
           <WhatsAppApplicantsSearch canDecide={canDecide} view={view} />
           {archive === "unavailable" ? (
-            <p className="mt-8 border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-              The Archive of older WhatsApp CVs could not be read just now. Reload the page to try again.
-            </p>
+            <div
+              className={`flex items-start gap-3 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 ${adminSoftDepthClassName}`}
+              role="status"
+            >
+              <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-amber-600" />
+              <p className="min-w-0 break-words">
+                <span className="font-bold">The Archive is unavailable.</span> The Archive of older WhatsApp CVs could
+                not be read just now. Reload the page to try again.
+              </p>
+            </div>
           ) : (
             <WhatsAppCvArchive view={archive} />
           )}
         </>
       ) : (
-        <p className="border border-slate-200 bg-white p-6 text-sm text-slate-600">
-          This list names candidates and opens their CVs, and your account cannot view candidates.
-        </p>
+        <RecruitmentPanel icon={<ShieldAlert aria-hidden="true" className="h-4 w-4" />} title="Candidates are not shared with you">
+          <RecruitmentEmptyState
+            icon={<ShieldAlert aria-hidden="true" className="h-5 w-5" />}
+            message="This list names candidates and opens their CVs, and your account cannot view candidates."
+            title="This list is not open to your account"
+          />
+        </RecruitmentPanel>
       )}
     </PageContainer>
   );

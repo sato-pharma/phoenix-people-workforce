@@ -50,7 +50,14 @@
 // other (screening-tab-sync.ts), so the list he goes back to already shows what he decided.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Layers, PanelLeft, X } from "lucide-react";
+import { FileSearch, FileX2, Layers, PanelLeft, X } from "lucide-react";
+
+import {
+  adminChipDepthClassName,
+  adminPanelDepthClassName,
+  adminRecessedDepthClassName,
+  adminSoftDepthClassName,
+} from "@/components/admin/admin-design-tokens";
 
 import {
   BULK_DECISION_MAX,
@@ -1202,7 +1209,11 @@ export function ScreeningWorkstation({
   return (
     <div
       className={cn(
-        "relative flex h-full min-h-0 w-full overflow-hidden bg-phx-surface-2",
+        "relative flex h-full min-h-0 w-full overflow-hidden",
+        // THE TRAY (2026-10-19, the owner's "Full polish there too"). Every pane is a card resting on
+        // a recessed ground, 8px apart, so the cockpit reads as four objects rather than one grid of
+        // hairlines. In focus the tray gives its padding back: the whole screen is the document.
+        focus ? "bg-white" : cn("gap-2 bg-phx-paper-2 p-2", adminRecessedDepthClassName),
         // ONE KEYBOARD-FOCUS TREATMENT for the whole workstation, declared once here rather than on
         // each of the ~40 controls below it. It is an INSET outline, so a focused row at the very
         // edge of a pane is not clipped by the pane's own overflow — which is exactly where the
@@ -1260,14 +1271,15 @@ export function ScreeningWorkstation({
         </>
       )}
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", focus ? null : "gap-2")}>
         {/* The one bar that exists only on smaller screens: the queue drawer's handle, and the
             pane switcher. At a workstation neither is needed and neither renders — and in focus it
             goes as well, because "the whole screen for the CV" has to mean the same thing on a
-            phone as it does on a laptop. The way back out lives on the strip above the document. */}
+            phone as it does on a laptop. The way back out lives on the strip above the document.
+            A small card of its own on the tray, like the panes under it. */}
         <div
           className={cn(
-            "shrink-0 items-center gap-1.5 border-b border-phx-line bg-white px-3 py-1.5 xl:hidden",
+            `shrink-0 items-center gap-1.5 border border-phx-line bg-white px-3 py-1.5 xl:hidden ${adminSoftDepthClassName}`,
             // A SEGMENTED CONTROL, not three loose buttons. The three panes are one choice, so they
             // are drawn as one object with a shared frame — which is also what stops the row from
             // reading as five competing controls on a 375px phone.
@@ -1300,15 +1312,19 @@ export function ScreeningWorkstation({
               </>
             )}
           </span>
-          <span className="flex shrink-0 border border-phx-line lg:hidden">
+          {/* The house segment: a recessed tray, the chosen pane lifted onto white with the accent
+              rule under it — the same object as the recruitment kit's tab bar, at a phone's size. */}
+          <span
+            className={cn("flex shrink-0 gap-0.5 border border-phx-line bg-phx-surface-2 p-0.5 lg:hidden", adminRecessedDepthClassName)}
+          >
             {mobilePanes.map((pane) => (
               <button
                 aria-pressed={mobilePane === pane}
                 className={cn(
-                  "border-l border-phx-line px-2 py-1.5 text-[12px] font-bold leading-none transition-colors first:border-l-0",
+                  "relative px-2.5 py-1.5 text-[12px] font-bold leading-none transition-colors",
                   mobilePane === pane
-                    ? "bg-phx-accent text-phx-accent-ink"
-                    : "bg-white text-phx-ink-2 hover:bg-phx-paper",
+                    ? cn("bg-white text-phx-accent-press after:absolute after:inset-x-1.5 after:bottom-0 after:h-0.5 after:bg-phx-accent", adminChipDepthClassName)
+                    : "text-phx-ink-soft hover:bg-white/70 hover:text-phx-ink",
                 )}
                 key={pane}
                 onClick={() => setMobilePane(pane)}
@@ -1320,130 +1336,140 @@ export function ScreeningWorkstation({
           </span>
         </div>
 
-        {/* ── The undo offer ────────────────────────────────────────────────
-            Across the full width, above both panes, because it belongs to the DECISION and not to
-            whichever CV happens to be open — after a bulk verdict the row it refers to may not be
-            on screen at all. It wraps rather than scrolling, per the fits-the-screen rule. */}
-        {undoable ? (
-          <Band
-            footnote="Or press U. This offer goes in a few seconds; after that the decision can still be changed the ordinary way, with a reason."
-            tone="accent"
-          >
-            <BandSays>{undoable.label}.</BandSays>
-            <Action disabled={busy} onClick={() => void undoLast()} tone="quiet">
-              Undo
-            </Action>
-          </Band>
-        ) : null}
+        {/* ── THE BANDS, AS ONE STACK ────────────────────────────────────────────────────────────
+            Every band below is a full-width line the page says to the reader, and on the tray they
+            sit together in ONE soft card — never five loose strips floating between the panes.
+            `empty:hidden` is what keeps it honest: with no band showing the card has no children at
+            all, so it draws nothing and costs no gap. The bands keep their own bottom rule, so the
+            card has no bottom edge of its own. */}
+        <div
+          className={`flex shrink-0 flex-col overflow-hidden border border-b-0 border-phx-line bg-white empty:hidden ${adminSoftDepthClassName}`}
+        >
+          {/* ── The undo offer ────────────────────────────────────────────────
+              Across the full width, above both panes, because it belongs to the DECISION and not to
+              whichever CV happens to be open — after a bulk verdict the row it refers to may not be
+              on screen at all. It wraps rather than scrolling, per the fits-the-screen rule. */}
+          {undoable ? (
+            <Band
+              footnote="Or press U. This offer goes in a few seconds; after that the decision can still be changed the ordinary way, with a reason."
+              tone="accent"
+            >
+              <BandSays>{undoable.label}.</BandSays>
+              <Action disabled={busy} onClick={() => void undoLast()} tone="quiet">
+                Undo
+              </Action>
+            </Band>
+          ) : null}
 
-        {/* ── Search inside the CVs ─────────────────────────────────────────
-            Offered only once something is typed, and only while the instant search is narrower than
-            the CV search could be. Wraps rather than scrolling, per the fits-the-screen rule. */}
-        {search.trim().length >= 2 ? (
-          cvSearch && cvSearch.query === search.trim().toLowerCase() ? (
+          {/* ── Search inside the CVs ─────────────────────────────────────────
+              Offered only once something is typed, and only while the instant search is narrower than
+              the CV search could be. Wraps rather than scrolling, per the fits-the-screen rule. */}
+          {search.trim().length >= 2 ? (
+            cvSearch && cvSearch.query === search.trim().toLowerCase() ? (
+              <Band
+                footnote={
+                  cvSearch.truncated ? (
+                    // NEVER a silent cut. A list stopped at the cap reads as a complete answer, and a
+                    // recruiter who believes they have seen every match stops looking.
+                    <>
+                      More than {cvSearch.ids.size} CVs match. Add another word to narrow it — every
+                      word must appear, so &ldquo;{search.trim()} cairo&rdquo; is a smaller list.
+                    </>
+                  ) : null
+                }
+              >
+                <BandSays>
+                  {cvSearch.ids.size} {cvSearch.ids.size === 1 ? "CV mentions" : "CVs mention"}
+                  {" "}&ldquo;{search.trim()}&rdquo;
+                </BandSays>
+                <Action onClick={() => setCvSearch(null)} tone="ghost">
+                  Clear
+                </Action>
+              </Band>
+            ) : (
+              <Band footnote="The box above searches names, roles and numbers. This reads what the CV itself says — skills, employers, universities.">
+                <Action disabled={cvSearching} onClick={() => void searchCvContents()} tone="quiet">
+                  {cvSearching ? "Searching CVs..." : `Search inside CVs for "${search.trim()}"`}
+                </Action>
+              </Band>
+            )
+          ) : null}
+
+          {/* ── SCREENING ONE VACANT SEAT ───────────────────────────────────────────────────────────
+              The way out is one press, and it is the whole reason this line still exists after the
+              page header started naming the seat itself. The header says WHICH seat and what is in the
+              pile; this says how to stop looking at only that seat — and it has to live here rather
+              than up there because leaving seat mode also puts the work queue back on "Everyone", which
+              is state the workstation owns.
+
+              Wraps at 375px rather than scrolling sideways; no ellipsis, no id. Not on a CV's own page,
+              which is one CV and not a pile — leaving seat mode there would change nothing on it. */}
+          {seatLabel && !ownPage ? (
+            <Band tone="accent">
+              <BandSays>One vacant seat: {seatLabel}</BandSays>
+              <Action
+                onClick={() => {
+                  onSelectVacancy(null);
+                  setQueue("all");
+                }}
+                tone="quiet"
+              >
+                Show everyone
+              </Action>
+            </Band>
+          ) : null}
+
+          {/* ── A SEARCH FROM THE WHATSAPP APPLICANTS PAGE ──────────────────────────────────────────
+              Named here as well as in the page header, because full bleed hides that header and this
+              line is then the only thing saying why the pile is short. The way out is one press, as it
+              is for a seat. Wraps at 375px rather than scrolling sideways; no ellipsis, no code. */}
+          {whatsAppSearch && !ownPage ? (
+            <Band tone="accent">
+              <BandSays>WhatsApp applicants: {whatsAppSearch}</BandSays>
+              <Action
+                onClick={() => {
+                  onLeaveWhatsAppSearch();
+                  setQueue("all");
+                }}
+                tone="quiet"
+              >
+                Show everyone
+              </Action>
+            </Band>
+          ) : null}
+
+          {/* ── The bulk verdict ──────────────────────────────────────────────
+              Only once something is ticked. A permanently visible bar advertising an action nobody
+              has set up yet is furniture, and the row tick-boxes are how it is reached. */}
+          {canDecide && markedVisible.length > 0 ? (
             <Band
               footnote={
-                cvSearch.truncated ? (
-                  // NEVER a silent cut. A list stopped at the cap reads as a complete answer, and a
-                  // recruiter who believes they have seen every match stops looking.
-                  <>
-                    More than {cvSearch.ids.size} CVs match. Add another word to narrow it — every
-                    word must appear, so &ldquo;{search.trim()} cairo&rdquo; is a smaller list.
-                  </>
-                ) : null
+                <>
+                  One decision, applied together — it either moves all of them or none. Every move is
+                  written to each candidate&rsquo;s history, and can be taken back for a few seconds
+                  afterwards.
+                </>
               }
             >
-              <BandSays>
-                {cvSearch.ids.size} {cvSearch.ids.size === 1 ? "CV mentions" : "CVs mention"}
-                {" "}&ldquo;{search.trim()}&rdquo;
-              </BandSays>
-              <Action onClick={() => setCvSearch(null)} tone="ghost">
+              <BandSays>{markedVisible.length} selected</BandSays>
+              {bulkDecidableStatuses.map((status) => (
+                <Action disabled={busy} key={status} onClick={() => void bulkDecide(status)} tone="quiet">
+                  {candidateStatusLabels[status]} all {markedVisible.length}
+                </Action>
+              ))}
+              {visible.length > markedVisible.length ? (
+                <Action onClick={markAllVisible} tone="ghost">
+                  Select all {Math.min(visible.length, BULK_DECISION_MAX)} in this list
+                </Action>
+              ) : null}
+              <Action onClick={clearMarks} tone="ghost">
                 Clear
               </Action>
             </Band>
-          ) : (
-            <Band footnote="The box above searches names, roles and numbers. This reads what the CV itself says — skills, employers, universities.">
-              <Action disabled={cvSearching} onClick={() => void searchCvContents()} tone="quiet">
-                {cvSearching ? "Searching CVs..." : `Search inside CVs for "${search.trim()}"`}
-              </Action>
-            </Band>
-          )
-        ) : null}
+          ) : null}
+        </div>
 
-        {/* ── SCREENING ONE VACANT SEAT ───────────────────────────────────────────────────────────
-            The way out is one press, and it is the whole reason this line still exists after the
-            page header started naming the seat itself. The header says WHICH seat and what is in the
-            pile; this says how to stop looking at only that seat — and it has to live here rather
-            than up there because leaving seat mode also puts the work queue back on "Everyone", which
-            is state the workstation owns.
-
-            Wraps at 375px rather than scrolling sideways; no ellipsis, no id. Not on a CV's own page,
-            which is one CV and not a pile — leaving seat mode there would change nothing on it. */}
-        {seatLabel && !ownPage ? (
-          <Band tone="accent">
-            <BandSays>One vacant seat: {seatLabel}</BandSays>
-            <Action
-              onClick={() => {
-                onSelectVacancy(null);
-                setQueue("all");
-              }}
-              tone="quiet"
-            >
-              Show everyone
-            </Action>
-          </Band>
-        ) : null}
-
-        {/* ── A SEARCH FROM THE WHATSAPP APPLICANTS PAGE ──────────────────────────────────────────
-            Named here as well as in the page header, because full bleed hides that header and this
-            line is then the only thing saying why the pile is short. The way out is one press, as it
-            is for a seat. Wraps at 375px rather than scrolling sideways; no ellipsis, no code. */}
-        {whatsAppSearch && !ownPage ? (
-          <Band tone="accent">
-            <BandSays>WhatsApp applicants: {whatsAppSearch}</BandSays>
-            <Action
-              onClick={() => {
-                onLeaveWhatsAppSearch();
-                setQueue("all");
-              }}
-              tone="quiet"
-            >
-              Show everyone
-            </Action>
-          </Band>
-        ) : null}
-
-        {/* ── The bulk verdict ──────────────────────────────────────────────
-            Only once something is ticked. A permanently visible bar advertising an action nobody
-            has set up yet is furniture, and the row tick-boxes are how it is reached. */}
-        {canDecide && markedVisible.length > 0 ? (
-          <Band
-            footnote={
-              <>
-                One decision, applied together — it either moves all of them or none. Every move is
-                written to each candidate&rsquo;s history, and can be taken back for a few seconds
-                afterwards.
-              </>
-            }
-          >
-            <BandSays>{markedVisible.length} selected</BandSays>
-            {bulkDecidableStatuses.map((status) => (
-              <Action disabled={busy} key={status} onClick={() => void bulkDecide(status)} tone="quiet">
-                {candidateStatusLabels[status]} all {markedVisible.length}
-              </Action>
-            ))}
-            {visible.length > markedVisible.length ? (
-              <Action onClick={markAllVisible} tone="ghost">
-                Select all {Math.min(visible.length, BULK_DECISION_MAX)} in this list
-              </Action>
-            ) : null}
-            <Action onClick={clearMarks} tone="ghost">
-              Clear
-            </Action>
-          </Band>
-        ) : null}
-
-        <div className="flex min-h-0 flex-1">
+        <div className={cn("flex min-h-0 flex-1", focus ? null : "gap-2")}>
           {/* ── AREA 2 ─────────────────────────────────────────────────────────────────────────
               Not on a CV's own page — that page is the tab a press in THIS list opens. */}
           {ownPage ? null : (
@@ -1481,49 +1507,73 @@ export function ScreeningWorkstation({
           )}
 
           {/* ── AREA 3 + the CV ──────────────────────────────────────────────── */}
+          {/* THE FOCAL COLUMN. The one place on the page that carries the PANEL depth — the candidate
+              under review and their CV are what this whole screen is for, so they are the two
+              surfaces that sit highest off the tray; everything around them is a soft card. In
+              focus both give their frame back and the document runs edge to edge. */}
           <div
             className={cn(
               "min-h-0 min-w-0 flex-1 flex-col lg:flex",
               mobilePane === "cv" || focus ? "flex" : "hidden",
+              focus ? null : "gap-2",
             )}
           >
             {selected ? (
               <>
-                <WorkstationReviewHeader
-                  attachedTo={attachedInSession[selected.id] ?? null}
-                  busy={busy}
-                  canDecide={canDecide}
-                  canReply={canReply}
-                  canSend={canSendToManagers}
-                  decided={decided[selected.id] ?? null}
-                  error={actionError}
-                  focus={focus}
-                  hiringManagers={hiringManagers}
-                  canRate={canDecide}
-                  onAttach={(requisitionId) => void attach(requisitionId)}
-                  onDecide={decide}
-                  onNext={ownPage ? null : goToNext}
-                  onRate={rate}
-                  rating={ratingOf(selected)}
-                  onSend={() => void send()}
-                  onSendStateChange={setSendState}
-                  onToggleFocus={onToggleFocus}
-                  positionSuggestions={positionSuggestions}
-                  row={selected}
-                  sendState={sendState}
-                  sentConfirmation={sentInSession[selected.id] ?? null}
-                  suggestedVacancyIds={suggestedVacancyIds}
-                  vacancies={vacancies}
-                />
-                {selected.duplicateCount > 1 ? (
-                  <DuplicateBanner
-                    archiving={busy}
-                    onArchive={(id) => void archiveDuplicate(id)}
-                    onOpen={ownPage ? openTwin : openCandidate}
+                {/* Who, what can be done, and the duplicate line — ONE card, with the accent rule
+                    along its top edge marking it as the subject of the page. */}
+                <div
+                  className={
+                    focus
+                      ? "shrink-0"
+                      : `relative shrink-0 border border-phx-line bg-white ${adminPanelDepthClassName}`
+                  }
+                >
+                  {focus ? null : (
+                    <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-0.5 bg-phx-accent" />
+                  )}
+                  <WorkstationReviewHeader
+                    attachedTo={attachedInSession[selected.id] ?? null}
+                    busy={busy}
+                    canDecide={canDecide}
+                    canReply={canReply}
+                    canSend={canSendToManagers}
+                    decided={decided[selected.id] ?? null}
+                    error={actionError}
+                    focus={focus}
+                    hiringManagers={hiringManagers}
+                    canRate={canDecide}
+                    onAttach={(requisitionId) => void attach(requisitionId)}
+                    onDecide={decide}
+                    onNext={ownPage ? null : goToNext}
+                    onRate={rate}
+                    rating={ratingOf(selected)}
+                    onSend={() => void send()}
+                    onSendStateChange={setSendState}
+                    onToggleFocus={onToggleFocus}
+                    positionSuggestions={positionSuggestions}
                     row={selected}
+                    sendState={sendState}
+                    sentConfirmation={sentInSession[selected.id] ?? null}
+                    suggestedVacancyIds={suggestedVacancyIds}
+                    vacancies={vacancies}
                   />
-                ) : null}
-                <div className="min-h-0 flex-1">
+                  {selected.duplicateCount > 1 ? (
+                    <DuplicateBanner
+                      archiving={busy}
+                      onArchive={(id) => void archiveDuplicate(id)}
+                      onOpen={ownPage ? openTwin : openCandidate}
+                      row={selected}
+                    />
+                  ) : null}
+                </div>
+                <div
+                  className={
+                    focus
+                      ? "min-h-0 flex-1"
+                      : `min-h-0 flex-1 overflow-hidden border border-phx-line bg-white ${adminPanelDepthClassName}`
+                  }
+                >
                   <WorkstationCvPane
                     attachedCount={entry?.profile.files.length ?? 0}
                     error={entryError}
@@ -1536,13 +1586,26 @@ export function ScreeningWorkstation({
             ) : ownPage ? (
               // The page for ONE CV with no CV on it. Said plainly, because "pick somebody from the
               // list" points at a list this page does not have.
-              <EmptyNote>
-                {selectedId && archived[selectedId]
-                  ? "Archived as a duplicate. It is in the Duplicates folder and can be put back from there."
-                  : "This CV could not be found. It may have been merged into another record."}
-              </EmptyNote>
+              <div
+                className={`flex min-h-0 flex-1 items-center justify-center border border-phx-line bg-white ${adminSoftDepthClassName}`}
+              >
+                <EmptyNote
+                  icon={<FileX2 aria-hidden className="h-5 w-5" />}
+                  title={selectedId && archived[selectedId] ? "Archived as a duplicate" : "CV not found"}
+                >
+                  {selectedId && archived[selectedId]
+                    ? "Archived as a duplicate. It is in the Duplicates folder and can be put back from there."
+                    : "This CV could not be found. It may have been merged into another record."}
+                </EmptyNote>
+              </div>
             ) : (
-              <EmptyNote>Nothing is selected. Pick somebody from the list to read their CV.</EmptyNote>
+              <div
+                className={`flex min-h-0 flex-1 items-center justify-center border border-phx-line bg-white ${adminSoftDepthClassName}`}
+              >
+                <EmptyNote icon={<FileSearch aria-hidden className="h-5 w-5" />} title="No CV open">
+                  Nothing is selected. Pick somebody from the list to read their CV.
+                </EmptyNote>
+              </div>
             )}
           </div>
 

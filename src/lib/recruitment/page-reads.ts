@@ -3,11 +3,12 @@ import type { CvFolderCabinetData } from "@/components/recruitment/cv-folder-cab
 import type { CandidateFolderAreaOption } from "@/lib/recruitment/candidate-folder-options";
 import type { RecruitmentDashboard } from "@/lib/recruitment/dashboard";
 import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
+import type { PoolWhatsAppQuestions } from "@/lib/recruitment/pool-whatsapp-columns";
 import type { Candidate, PositionCatalogueOption } from "@/lib/recruitment/types";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
 
 /**
- * The Recruitment page's eight reads, settled ONE BY ONE.
+ * The Recruitment page's nine reads, settled ONE BY ONE.
  *
  * Both page files (`app/(admin)/recruitment/page.tsx` and its employee-portal mirror) used to run the
  * seven reads in a single `Promise.all` inside a single `try`. Any one rejection blanked the whole page,
@@ -34,7 +35,8 @@ export type RecruitmentReadSource =
   | "hiringManagers"
   | "employeeDirectory"
   | "areaOptions"
-  | "cvFolders";
+  | "cvFolders"
+  | "whatsappQuestions";
 
 /** What the page tells the reader is missing, in the words a recruiter uses. */
 export const RECRUITMENT_READ_LABELS: Record<RecruitmentReadSource, string> = {
@@ -46,6 +48,7 @@ export const RECRUITMENT_READ_LABELS: Record<RecruitmentReadSource, string> = {
   employeeDirectory: "the manager list for requisitions",
   areaOptions: "the area list for folders",
   cvFolders: "the CV folders",
+  whatsappQuestions: "the WhatsApp questions for the role columns",
 };
 
 /**
@@ -129,6 +132,8 @@ export type RecruitmentPageReads = {
   employeeDirectory: () => PromiseLike<Array<{ hrId: string; displayName: string }>>;
   areaOptions: () => PromiseLike<CandidateFolderAreaOption[]>;
   cvFolders: () => PromiseLike<{ members: Map<string, string[]>; rows: CvFolderCabinetData["rows"] }>;
+  /** The WhatsApp bot's questions, so the pool's headers can follow them (pool-whatsapp-columns.ts). */
+  whatsappQuestions: () => PromiseLike<PoolWhatsAppQuestions>;
 };
 
 export type RecruitmentPageData = {
@@ -140,12 +145,14 @@ export type RecruitmentPageData = {
   managers: RecruitmentManagerOption[];
   areaOptions: CandidateFolderAreaOption[];
   cvFolderCabinet: CvFolderCabinetData;
+  /** Null when it could not be read: the pool then keeps the shared headers and the default audiences. */
+  whatsappQuestions: PoolWhatsAppQuestions | null;
   /** Every read that did not land, in the order the page asks for them. */
   failures: RecruitmentReadFailure[];
 };
 
 /**
- * Runs all eight reads at once and returns what loaded plus what did not.
+ * Runs all nine reads at once and returns what loaded plus what did not.
  *
  * Missing data keeps its EMPTY shape here (an empty array, no dashboard, an empty cabinet) because the
  * client components need a value. The empty shape must never be read as an answer: the page passes the
@@ -158,7 +165,7 @@ export async function settleRecruitmentPage(
   options: { optionalDeadlineMs?: number } = {},
 ): Promise<RecruitmentPageData> {
   const optional = { deadlineMs: options.optionalDeadlineMs ?? OPTIONAL_READ_DEADLINE_MS };
-  const [dashboard, pool, vacancies, catalogue, hiringManagers, employees, areas, cabinet] = await Promise.all([
+  const [dashboard, pool, vacancies, catalogue, hiringManagers, employees, areas, cabinet, questions] = await Promise.all([
     settleRead("dashboard", reads.dashboard),
     settleRead("pool", reads.pool),
     settleRead("vacancies", reads.vacancies, optional),
@@ -167,9 +174,10 @@ export async function settleRecruitmentPage(
     settleRead("employeeDirectory", reads.employeeDirectory, optional),
     settleRead("areaOptions", reads.areaOptions, optional),
     settleRead("cvFolders", reads.cvFolders, optional),
+    settleRead("whatsappQuestions", reads.whatsappQuestions, optional),
   ]);
 
-  const failures = [dashboard, pool, vacancies, catalogue, hiringManagers, employees, areas, cabinet].flatMap(
+  const failures = [dashboard, pool, vacancies, catalogue, hiringManagers, employees, areas, cabinet, questions].flatMap(
     (settled) => (settled.ok ? [] : [settled.failure]),
   );
 
@@ -191,6 +199,7 @@ export async function settleRecruitmentPage(
     cvFolderCabinet: cabinet.ok
       ? { members: Object.fromEntries(cabinet.value.members), rows: cabinet.value.rows }
       : { members: {}, rows: [] },
+    whatsappQuestions: questions.ok ? questions.value : null,
     failures,
   };
 }

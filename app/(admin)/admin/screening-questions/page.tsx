@@ -1,9 +1,13 @@
+import { ListChecks } from "lucide-react";
+
+import { AdminInsightChip } from "@/components/admin/admin-design-system";
 import { BuiltInQuestionsEditor, type BuiltInPromptRow } from "@/components/admin/built-in-questions-editor";
 import { ScreeningQuestionsManager } from "@/components/admin/screening-questions-manager";
 import {
   WhatsAppAutoRepliesEditor,
   type AutoReplyEditorRow,
 } from "@/components/admin/whatsapp-auto-replies-editor";
+import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { listAutoReplies } from "@/lib/recruitment/inbound/whatsapp-auto-replies-catalogue";
 import { builtInPrompts } from "@/lib/recruitment/inbound/whatsapp-question-prompts";
@@ -72,7 +76,32 @@ export default async function ScreeningQuestionsPage() {
   }
 
   return (
-    <div className="space-y-8 p-6">
+    <div className="space-y-8 p-4 sm:p-6">
+      {/* The chips name only what cannot change while the page is open — the six built-in questions
+          and the automatic replies are fixed sets; the extra questions are counted by their own
+          editor, which is the one that adds and removes them. */}
+      <RecruitmentPageHeader
+        badges={
+          prompts.length > 0 || autoReplies.length > 0 ? (
+            <>
+              {prompts.length > 0 ? (
+                <AdminInsightChip tone="orange">
+                  {prompts.length === 1 ? "1 built-in question" : `${prompts.length} built-in questions`}
+                </AdminInsightChip>
+              ) : null}
+              {autoReplies.length > 0 ? (
+                <AdminInsightChip>
+                  {autoReplies.length === 1 ? "1 automatic reply" : `${autoReplies.length} automatic replies`}
+                </AdminInsightChip>
+              ) : null}
+              <AdminInsightChip tone="slate">Saved wording goes out on the next reply</AdminInsightChip>
+            </>
+          ) : undefined
+        }
+        description="The whole WhatsApp conversation an applicant has with the bot, in the order they meet it: the six built-in questions, the extra questions you add, and the messages the bot sends by itself."
+        icon={<ListChecks aria-hidden="true" className="h-3.5 w-3.5" />}
+        title="Screening Questions"
+      />
       {prompts.length > 0 ? <BuiltInQuestionsEditor initialPrompts={prompts} /> : null}
       <ScreeningQuestionsManager embedded initialError={initialError} initialQuestions={questions} />
       {autoReplies.length > 0 ? <WhatsAppAutoRepliesEditor initialReplies={autoReplies} /> : null}

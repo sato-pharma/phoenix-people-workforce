@@ -16,10 +16,11 @@
 // interviewer, or the calendar's owner. A viewer is never handed a list they cannot act on, and a
 // share-link guest is never handed one at all.
 
-import { ClipboardCheck } from "lucide-react";
+import { ChevronRight, ClipboardCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { RecruitmentPanel } from "@/components/recruitment/recruitment-premium";
 import { PLATFORM_LABEL, type InterviewBooking } from "@/lib/recruitment/interview-calendar-types";
 import { formatShortDate, formatTimeRange } from "@/lib/recruitment/interview-calendar-week";
 
@@ -59,41 +60,42 @@ export function OutcomePromptPanel({
   if (bookings.length === 0) return null;
 
   return (
-    <section aria-label="Interviews waiting for an outcome" className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
-      <div className="flex items-center justify-between gap-2 border-b-2 border-b-amber-500 px-4 py-2.5">
-        <p className="inline-flex items-center gap-2 text-[14px] font-bold text-slate-900">
-          <ClipboardCheck className="h-4 w-4 text-amber-600" />
-          {bookings.length === 1 ? "An interview is waiting for its outcome" : "Interviews waiting for their outcome"}
-        </p>
-        <span className="border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">{bookings.length}</span>
-      </div>
-      <div className="px-3 py-3">
-        <p className="px-1 text-[12px] text-slate-600">
-          These are over. Open one and say how it went — Shortlisted, Back-up, Rejected or Prioritized also moves the candidate in
-          Recruitment. Nothing is sent to the candidate.
-        </p>
-        <ul className="mt-2 flex flex-col">
+    <div aria-label="Interviews waiting for an outcome" role="region">
+      <RecruitmentPanel
+        bodyClassName="p-3 sm:p-4"
+        count={bookings.length}
+        description="These are over. Open one and say how it went — Shortlisted, Back-up, Rejected or Prioritized also moves the candidate in Recruitment. Nothing is sent to the candidate."
+        icon={<ClipboardCheck aria-hidden className="h-4 w-4" />}
+        title={bookings.length === 1 ? "An interview is waiting for its outcome" : "Interviews waiting for their outcome"}
+      >
+        <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {bookings.map((booking) => (
-            <li className="border-b border-slate-100 last:border-b-0" key={booking.id}>
+            <li className="min-w-0" key={booking.id}>
               <button
-                className="flex w-full flex-wrap items-baseline gap-x-2 gap-y-0.5 px-1 py-2 text-left hover:bg-amber-50"
+                className={`group flex h-full w-full items-start gap-3 border border-amber-200 border-l-[3px] border-l-amber-500 bg-amber-50/40 px-3 py-2.5 text-left transition-colors hover:border-amber-300 hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${adminSoftDepthClassName}`}
                 onClick={() => onOpenBooking(booking.id)}
                 type="button"
               >
-                <span className="break-words text-[13px] font-bold text-amber-800 underline decoration-amber-300 underline-offset-2">
-                  {booking.candidateName}
+                <span className="min-w-0 flex-1">
+                  <span className="block break-words text-[13px] font-bold text-amber-900 underline decoration-amber-300 underline-offset-2 group-hover:decoration-amber-600">
+                    {booking.candidateName}
+                  </span>
+                  {booking.jobTitle ? <span className="mt-0.5 block break-words text-[12px] text-slate-700">{booking.jobTitle}</span> : null}
+                  <span className="mt-1 block text-[11px] tabular-nums text-slate-500">
+                    {formatShortDate(booking.dateKey)} · {formatTimeRange(booking.startMinutes, booking.durationMinutes)} ·{" "}
+                    {PLATFORM_LABEL[booking.platform]}
+                  </span>
+                  {booking.interviewerName ? <span className="block break-words text-[11px] font-semibold text-slate-600">{booking.interviewerName}</span> : null}
                 </span>
-                {booking.jobTitle ? <span className="break-words text-[12px] text-slate-700">{booking.jobTitle}</span> : null}
-                <span className="text-[11px] tabular-nums text-slate-500">
-                  {formatShortDate(booking.dateKey)} · {formatTimeRange(booking.startMinutes, booking.durationMinutes)} ·{" "}
-                  {PLATFORM_LABEL[booking.platform]}
+                <span className="inline-flex items-center gap-0.5 pt-0.5 text-[11px] font-black uppercase tracking-[0.06em] text-amber-800">
+                  Outcome
+                  <ChevronRight aria-hidden className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
                 </span>
-                {booking.interviewerName ? <span className="text-[11px] text-slate-500">{booking.interviewerName}</span> : null}
               </button>
             </li>
           ))}
         </ul>
-      </div>
-    </section>
+      </RecruitmentPanel>
+    </div>
   );
 }

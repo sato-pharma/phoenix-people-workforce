@@ -10,10 +10,13 @@
 // argues 0 is "too severe for dense HR tables". Both positions are on the record; his instruction
 // is the one that governs this surface, and the rest of the module is untouched.
 //
-// So structure here comes from LINES, never from radius or shadow — which is what the token file
-// asks for anyway ("Reach for --phx-line before reaching for a shadow"). Everything else is the
-// Phoenix palette: `--phx-line` hairlines, the four-step ink ramp, orange for the one thing that is
-// active, and the semantic triples for the status pills.
+// Structure here started out as LINES only, never radius or shadow. That held until 2026-10-19, when
+// the owner chose "Full polish there too" for this cockpit in the full-module premium sweep (see the
+// header of workstation-look.tsx). So the radius rule stands — square, always — and the shadow is
+// back, from the shared house tokens only: each pane's head is the house's dark panel band, each pane
+// is a card with the soft depth, a pill is a chip, a meter is a recessed well. Everything else is
+// still the Phoenix palette: `--phx-line` hairlines, the four-step ink ramp, orange for the one
+// thing that is active, and the recruitment kit's six pill tones for status.
 //
 // ── THE TYPE SCALE, AND WHY IT IS WRITTEN THE WAY IT IS ────────────────────────────────────────
 //
@@ -51,6 +54,16 @@
 import { useCallback, useState } from "react";
 import { ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 
+import {
+  adminChipDepthClassName,
+  adminPanelHeaderClassName,
+  adminRecessedDepthClassName,
+  adminSoftDepthClassName,
+} from "@/components/admin/admin-design-tokens";
+import {
+  RecruitmentEmptyState,
+  recruitmentPillToneClassName,
+} from "@/components/recruitment/recruitment-premium";
 import { cn } from "@/lib/utils";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
@@ -60,6 +73,10 @@ import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
  * One bar, repeated across all four panes, because the workstation's whole claim is that a
  * recruiter can stop navigating: four panes that each announce themselves differently is four
  * things to re-learn every time the eye moves.
+ *
+ * SINCE 2026-10-19 IT IS THE HOUSE'S DARK PANEL BAND (`adminPanelHeaderClassName`) — the same band
+ * every `RecruitmentPanel` on the rest of the module opens with, so a pane here reads as the same
+ * object as a panel there. The count sits on it as the kit's orange chip. Still slim: one line, 36px.
  */
 export function PaneHead({
   children,
@@ -88,20 +105,27 @@ export function PaneHead({
 }) {
   const foldName = (foldLabel ?? title).toLowerCase();
   return (
-    <div className="flex min-h-9 shrink-0 items-center justify-between gap-2 border-b border-phx-line bg-gradient-to-b from-white to-phx-surface-2 px-3 py-1.5">
+    <div
+      className={cn(
+        "flex min-h-9 shrink-0 items-center justify-between gap-2 px-3 py-1.5 text-white",
+        adminPanelHeaderClassName,
+      )}
+    >
       {/* A 2px tick in the accent, not a heading weight competition. Four panes each need to say
           which one they are without any of them shouting; a mark reads faster than more bold. */}
-      <span aria-hidden className="h-3 w-0.5 shrink-0 bg-phx-accent" />
+      <span aria-hidden className="h-3 w-0.5 shrink-0 bg-orange-400" />
       {/* 11px, not 12. The body size on this page is 12px and that is correct for what a reader
           READS; a pane's own name is not read, it is glanced at once to place the pane. Four heads
           set at body size in bold uppercase was four labels competing with their own contents — the
           "a heading that outshouts its content" failure the look kit names. Wide tracking keeps it
           legible at the smaller step, which is what tracking is for. */}
-      <span className="min-w-0 flex-1 text-[11px] font-bold uppercase leading-[1.45] tracking-[0.12em] text-phx-ink-soft">
+      <span className="min-w-0 flex-1 break-words text-[11px] font-black uppercase leading-[1.45] tracking-[0.12em] text-white">
         {title}
       </span>
       {right ? (
-        <span className="shrink-0 text-[11px] font-semibold leading-[1.45] tabular-nums text-phx-ink-soft">{right}</span>
+        <span className="shrink-0 border border-orange-400/40 bg-orange-500/15 px-1.5 py-0.5 text-[10px] font-black leading-none tabular-nums text-orange-100">
+          {right}
+        </span>
       ) : null}
       {children}
       {onCollapse ? (
@@ -109,7 +133,7 @@ export function PaneHead({
            would just be a second thing that can hide the CV. */
         <button
           aria-label={`Fold the ${foldName} pane away`}
-          className="hidden shrink-0 border border-phx-line bg-white p-0.5 text-phx-ink-faint transition-colors hover:border-phx-accent-line hover:text-phx-accent-press xl:inline-flex"
+          className="hidden shrink-0 border border-white/15 bg-white/10 p-0.5 text-slate-300 transition-colors hover:border-orange-300/60 hover:bg-white/20 hover:text-white xl:inline-flex"
           onClick={onCollapse}
           title={`Fold the ${foldName} pane away`}
           type="button"
@@ -132,6 +156,9 @@ export function PaneHead({
  * NOT a disappearance. A pane that folds to nothing is a pane a recruiter cannot find again, and the
  * one thing this screen must never do is lose a control somebody was using a minute ago. The spine
  * is the whole affordance: it says which pane is folded and it is the button that brings it back.
+ *
+ * A slim card of its own on the cockpit's tray, lifted like the panes it stands in for, with the
+ * accent arrow pointing the way the pane will come back.
  */
 export function PaneSpine({
   label,
@@ -145,21 +172,18 @@ export function PaneSpine({
   return (
     <button
       aria-label={`Bring back the ${label.toLowerCase()} pane`}
-      className={cn(
-        "hidden h-full w-7 shrink-0 flex-col items-center gap-2 bg-gradient-to-b from-white to-phx-surface-2 py-2 transition-colors hover:bg-phx-paper xl:flex",
-        side === "left" ? "border-r border-phx-line" : "border-l border-phx-line",
-      )}
+      className={`group hidden h-full w-7 shrink-0 flex-col items-center gap-2 border border-phx-line bg-white py-2 transition-colors hover:border-phx-accent-line hover:bg-phx-accent-soft xl:flex ${adminSoftDepthClassName}`}
       onClick={onOpen}
       title={`Bring back the ${label.toLowerCase()} pane`}
       type="button"
     >
       {side === "left" ? (
-        <ChevronsRight aria-hidden className="h-3.5 w-3.5 shrink-0 text-phx-ink-faint" />
+        <ChevronsRight aria-hidden className="h-3.5 w-3.5 shrink-0 text-phx-accent" />
       ) : (
-        <ChevronsLeft aria-hidden className="h-3.5 w-3.5 shrink-0 text-phx-ink-faint" />
+        <ChevronsLeft aria-hidden className="h-3.5 w-3.5 shrink-0 text-phx-accent" />
       )}
       <span
-        className="text-[11px] font-bold uppercase tracking-[0.12em] text-phx-ink-soft"
+        className="text-[11px] font-bold uppercase tracking-[0.12em] text-phx-ink-soft group-hover:text-phx-accent-press"
         style={{ writingMode: "vertical-rl" }}
       >
         {label}
@@ -170,16 +194,21 @@ export function PaneSpine({
 
 export type PillTone = "neutral" | "ok" | "warn" | "danger" | "info" | "accent";
 
+/**
+ * The workstation's six semantic tones, spoken in the recruitment kit's six pill colours — so a
+ * "Shortlisted" here is the same green chip as a "Shortlisted" on the pool, the folders or the
+ * interview calendar, never a near-miss of it.
+ */
 const pillToneClass: Record<PillTone, string> = {
-  accent: "border-phx-accent-line bg-phx-accent-soft text-phx-accent-press",
-  danger: "border-phx-danger-line bg-phx-danger-bg text-phx-danger",
-  info: "border-phx-info-line bg-phx-info-bg text-phx-info",
-  neutral: "border-phx-line bg-white text-phx-ink-soft",
-  ok: "border-phx-ok-line bg-phx-ok-bg text-phx-ok",
-  warn: "border-phx-warn-line bg-phx-warn-bg text-phx-warn",
+  accent: recruitmentPillToneClassName.orange,
+  danger: recruitmentPillToneClassName.rose,
+  info: recruitmentPillToneClassName.sky,
+  neutral: recruitmentPillToneClassName.slate,
+  ok: recruitmentPillToneClassName.emerald,
+  warn: recruitmentPillToneClassName.amber,
 };
 
-/** A square status chip. Semantic triple — foreground, background and border agree. */
+/** A square status chip, with the kit's contact shadow. Foreground, background and border agree. */
 export function Pill({
   children,
   className,
@@ -196,6 +225,7 @@ export function Pill({
       className={cn(
         "inline-flex shrink-0 items-center gap-1 border px-1.5 py-0.5 text-[10px] font-bold uppercase leading-[1.4] tracking-[0.08em]",
         pillToneClass[tone],
+        adminChipDepthClassName,
         className,
       )}
       title={title}
@@ -237,8 +267,21 @@ export function KeyValue({
  *
  * Never a generic "no results": an empty duplicate pile is good news and an empty candidate list is
  * a filter somebody should undo, and one sentence cannot mean both.
+ *
+ * Given a `title`, it is a whole pane with nothing in it — the empty queue, the empty CV pane — and
+ * it says so with the module's own empty state (`RecruitmentEmptyState`: the orange medallion, the
+ * title, the sentence). Without one it stays the quiet single line a section uses for "none yet".
  */
-export function EmptyNote({ children }: { children: React.ReactNode }) {
+export function EmptyNote({
+  children,
+  icon,
+  title,
+}: {
+  children: React.ReactNode;
+  icon?: React.ReactNode;
+  title?: string;
+}) {
+  if (title) return <RecruitmentEmptyState icon={icon} message={children} title={title} />;
   return <p className="px-3 py-6 text-center text-[13px] leading-relaxed text-phx-ink-soft">{children}</p>;
 }
 
@@ -298,7 +341,7 @@ export function FitBar({ state }: { state: "met" | "partial" | "missing" | "unkn
         ? "bg-phx-warn"
         : "bg-phx-danger";
   return (
-    <span className="block h-2 w-full border border-phx-line bg-phx-surface-2" aria-hidden>
+    <span className={cn("block h-2 w-full border border-phx-line bg-phx-surface-2", adminRecessedDepthClassName)} aria-hidden>
       {state === "unknown" ? null : <span className={cn("block h-full transition-[width] duration-300", tone)} style={{ width }} />}
     </span>
   );
@@ -430,8 +473,8 @@ export function CollapsibleSection({
           <ChevronRight
             aria-hidden
             className={cn(
-              "h-3.5 w-3.5 shrink-0 text-phx-ink-faint transition-transform duration-200",
-              open && "rotate-90",
+              "h-3.5 w-3.5 shrink-0 transition-transform duration-200",
+              open ? "rotate-90 text-phx-accent" : "text-phx-ink-faint",
             )}
           />
           <span

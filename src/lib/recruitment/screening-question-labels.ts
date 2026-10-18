@@ -19,13 +19,14 @@ import type { ScreeningQuestionLabel } from "@/lib/recruitment/whatsapp-answers"
 export async function listScreeningQuestionLabels(): Promise<ScreeningQuestionLabel[]> {
   const { data, error } = await recruitmentDb()
     .from("ats_whatsapp_screening_questions")
-    .select("question_key,body_text,applies_to_role_families")
+    .select("question_key,body_text,applies_to_role_families,is_active")
     .order("sort_order", { ascending: true });
   if (error) throw error;
-  type Row = { question_key: string; body_text: string; applies_to_role_families: string[] | null };
+  type Row = { question_key: string; body_text: string; applies_to_role_families: string[] | null; is_active: boolean | null };
   return ((data ?? []) as Row[]).map((row) => ({
     appliesToRoleFamilies: Array.isArray(row.applies_to_role_families) ? row.applies_to_role_families : null,
     bodyText: String(row.body_text ?? ""),
+    isActive: row.is_active !== false,
     questionKey: String(row.question_key ?? ""),
   }));
 }

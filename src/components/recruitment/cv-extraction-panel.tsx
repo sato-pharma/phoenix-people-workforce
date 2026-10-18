@@ -9,14 +9,19 @@
 // reviewer had to declare the role BEFORE the CV was read — which is backwards, since the CV is
 // what says what the role is. The schema is now universal and the job title is an extracted field,
 // so the picker renders only if some future schema is added alongside it.
+//
+// THE LOOK (2026-10-19 premium sweep): the idle row sits in the module's recessed toolbar tray —
+// the file well, then the one action — and a failure is said on a rose rule that wraps.
 
 import { useRef, useState } from "react";
+import { AlertCircle, FileUp, Loader2, Sparkles } from "lucide-react";
 
+import { adminControlDepthClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-review-board";
-import { Button } from "@/components/ui/button";
+import { recruitmentToolbarClassName } from "@/components/recruitment/recruitment-premium";
 import type { ExtractedCandidateFields } from "@/lib/recruitment/cv-extraction";
 import { defaultCvPositionKey, getCvPositionSchema, listCvPositionSchemas } from "@/lib/recruitment/cv-field-schemas";
-import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { phxButtonGhostClassName, phxLabelTextClassName, phxSelectClassName } from "@/components/ui/form-tokens";
 
 async function postJson(url: string, body: unknown): Promise<Record<string, unknown>> {
   const res = await fetch(url, {
@@ -123,7 +128,7 @@ export function CvExtractionPanel({ onCreated }: { onCreated: (candidateId: stri
 
   if (stage !== "review") {
     return (
-      <div className="flex flex-wrap items-center gap-2">
+      <div className={recruitmentToolbarClassName}>
         {positionOptions.length > 1 ? (
           <select
             className={phxSelectClassName}
@@ -138,11 +143,44 @@ export function CvExtractionPanel({ onCreated }: { onCreated: (candidateId: stri
             ))}
           </select>
         ) : null}
-        <input ref={fileRef} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="text-sm" type="file" />
-        <Button disabled={busy} onClick={() => void startFromCv()} variant="secondary">
+        <div className="flex min-w-0 grow basis-60 flex-col gap-1.5">
+          <span className={`inline-flex items-center gap-1.5 ${phxLabelTextClassName}`}>
+            <FileUp aria-hidden="true" className="h-3.5 w-3.5 text-orange-600" />
+            CV file
+          </span>
+          <span
+            className={`flex min-w-0 items-center border border-dashed border-slate-300 bg-white px-3 py-2 ${adminRecessedDepthClassName}`}
+          >
+            <input
+              ref={fileRef}
+              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+              className="min-w-0 max-w-full text-sm text-slate-700"
+              type="file"
+            />
+          </span>
+        </div>
+        <button
+          className={`${phxButtonGhostClassName} ${adminControlDepthClassName} disabled:shadow-none`}
+          disabled={busy}
+          onClick={() => void startFromCv()}
+          type="button"
+        >
+          {busy ? (
+            <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Sparkles aria-hidden="true" className="h-3.5 w-3.5 text-orange-600" />
+          )}
           {busy ? "Reading CV…" : "Create from CV"}
-        </Button>
-        {error ? <p className="text-xs text-rose-600">{error}</p> : null}
+        </button>
+        {error ? (
+          <p
+            className="flex basis-full items-start gap-2 border-l-[3px] border-rose-500 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"
+            role="alert"
+          >
+            <AlertCircle aria-hidden="true" className="mt-px h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 break-words">{error}</span>
+          </p>
+        ) : null}
       </div>
     );
   }

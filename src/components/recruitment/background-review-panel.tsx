@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileSearch } from "lucide-react";
+import { AlertCircle, FileSearch, UserRound } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { patchJson } from "@/components/recruitment/recruitment-fetch";
 import {
   backgroundReviewQueue,
@@ -16,7 +15,13 @@ import { candidateFolderKindLabels, candidateFolderLabel } from "@/lib/recruitme
 import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
 import type { Candidate } from "@/lib/recruitment/types";
-import { adminPanelClassName } from "@/components/admin/admin-design-tokens";
+import { adminChipDepthClassName, adminControlDepthClassName } from "@/components/admin/admin-design-tokens";
+import { RecruitmentPanel } from "@/components/recruitment/recruitment-premium";
+import {
+  phxButtonApproveClassName,
+  phxButtonDangerClassName,
+  phxButtonGhostClassName,
+} from "@/components/ui/form-tokens";
 
 /**
  * The admin's queue for CVs the eligibility rule will not decide by itself.
@@ -59,29 +64,33 @@ export function BackgroundReviewPanel({
 
   if (total === 0) return null;
 
+  // THE LOOK (2026-10-19 premium sweep): the module's panel — the dark band naming the queue, the
+  // count as its chip — so this reads as one of the tab's sections and not a card dropped on it.
+  //
+  // The band's heading WRAPS. It is set in spaced capitals on the band now, and at that size the
+  // old `whitespace-nowrap` would have held it on one line at roughly the full width of a phone —
+  // a heading with no room left beside it. The SENTENCE under it wraps for the reason it always
+  // has: measured at 375px on 2026-09-12, held at `whitespace-nowrap` it laid out 314px inside a
+  // 349px row, and #3743 fixed the identical shape two sections down, where the same class had put
+  // the whole tab into a 65px sideways scroll. The count is a short label and keeps its class.
   return (
-    <section className={`${adminPanelClassName} rounded-lg`}>
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-phx-line px-3 py-2">
-        <span className="flex items-center whitespace-nowrap text-sm font-black text-phx-ink">
-          <FileSearch aria-hidden className="mr-1.5 h-4 w-4 text-phx-accent-press" />
-          Degrees waiting for you to check
-        </span>
-        {/* WRAPS, like every other sentence on this tab. Measured at 375px on 2026-09-12: held at
-            `whitespace-nowrap` it lays out 314px inside a 349px row — it fits, but with 35px to
-            spare, and it is a SENTENCE. #3743 fixed the identical shape two sections down, where
-            the same class had put the whole tab into a 65px sideways scroll. The heading beside it
-            and the count after it are short labels and keep theirs. */}
-        <span className="text-xs font-medium text-slate-500">
-          Nobody here reaches a district manager until you answer.
-        </span>
-        <span className="ml-auto whitespace-nowrap text-xs font-bold tabular-nums text-phx-accent-press">
+    <RecruitmentPanel
+      count={
+        <span className="whitespace-nowrap">
           {total} {total === 1 ? "CV" : "CVs"}
         </span>
-      </div>
-
+      }
+      description="Nobody here reaches a district manager until you answer."
+      icon={<FileSearch aria-hidden className="h-4 w-4" />}
+      title="Degrees waiting for you to check"
+    >
       {error ? (
-        <p className="border-b border-phx-line bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
-          {error}
+        <p
+          className="flex items-start gap-2 border-b border-rose-200 border-l-[3px] border-l-rose-500 bg-rose-50 px-4 py-2.5 text-xs font-semibold text-rose-800"
+          role="alert"
+        >
+          <AlertCircle aria-hidden className="mt-px h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 break-words">{error}</span>
         </p>
       ) : null}
 
@@ -108,7 +117,7 @@ export function BackgroundReviewPanel({
         setBusyId={setBusyId}
         setError={setError}
       />
-    </section>
+    </RecruitmentPanel>
   );
 }
 
@@ -151,18 +160,24 @@ function ReviewGroup({
   };
 
   return (
-    <div className="border-b border-phx-line last:border-b-0">
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 bg-slate-50 px-3 py-1.5">
-        <span className="whitespace-nowrap text-xs font-black text-phx-ink">{heading}</span>
-        <span className="text-phx-xs font-medium text-slate-500">{note}</span>
-        <span className="ml-auto whitespace-nowrap text-phx-xs font-bold tabular-nums text-slate-500">
+    <div className="border-b border-slate-200 last:border-b-0">
+      {/* The group's own sub-header: a recessed strip with the orange tick, so the two questions
+          read as two halves of the queue rather than as one list with a line through it. */}
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-slate-200 bg-slate-50 px-4 py-2">
+        <span aria-hidden="true" className="h-3 w-0.5 self-center bg-orange-500" />
+        <span className="whitespace-nowrap text-xs font-black text-slate-800">{heading}</span>
+        <span className={`ml-auto whitespace-nowrap border border-slate-200 bg-white px-1.5 text-phx-2xs font-black tabular-nums text-slate-600 ${adminChipDepthClassName}`}>
           {rows.length}
         </span>
+        <span className="basis-full text-phx-xs font-medium leading-5 text-slate-500">{note}</span>
       </div>
 
-      <ul className="divide-y divide-phx-line">
+      <ul className="divide-y divide-slate-100">
         {rows.slice(0, shown).map(({ candidate, standing }) => (
-          <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2" key={candidate.id}>
+          <li
+            className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 transition-colors hover:bg-orange-50/40"
+            key={candidate.id}
+          >
             {/* The NAME wraps. Measured at 375px on 2026-09-02: pinned at `whitespace-nowrap` a real
                 candidate's five-part name laid out 335px wide inside a 325px box and painted over
                 what sits beside it. A name has no length bound, so this is the one label here bound
@@ -172,15 +187,16 @@ function ReviewGroup({
                 The title says PROFILE, not CV: this button routes to the profile panel, and the row
                 in the folder list beside it is the one that now opens the CV itself. */}
             <button
-              className="text-left text-sm font-bold text-phx-ink underline-offset-2 hover:underline"
+              className="inline-flex min-w-0 items-start gap-1.5 text-left text-sm font-bold text-slate-950 underline-offset-2 hover:text-orange-700 hover:underline"
               onClick={() => onOpenCandidate(candidate.id)}
               title={`Open ${candidateDisplayName(candidate.fullName)}'s profile`}
               type="button"
             >
-              {candidateDisplayName(candidate.fullName)}
+              <UserRound aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+              <span className="min-w-0 break-words">{candidateDisplayName(candidate.fullName)}</span>
             </button>
 
-            <span className="whitespace-nowrap text-phx-xs font-semibold text-slate-400">
+            <span className={`whitespace-nowrap border border-slate-200 bg-white px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.06em] text-slate-500 ${adminChipDepthClassName}`}>
               {candidateStatusLabel(candidate.status)}
             </span>
 
@@ -197,7 +213,7 @@ function ReviewGroup({
                 rendering today is only 265px inside 349px, which is why it had not bitten yet. */}
             {candidate.folder &&
             (candidate.folder.kind === "medical_rep" || candidate.folder.kind === "district_manager") ? (
-              <span className="bg-amber-50 px-1.5 py-0.5 text-phx-xs font-semibold text-amber-700">
+              <span className="border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-xs font-semibold text-amber-800">
                 Filed: {candidateFolderKindLabels[candidate.folder.kind]} ·{" "}
                 {candidateFolderLabel(candidate.folder.kind, candidate.folder.key)}
               </span>
@@ -207,32 +223,40 @@ function ReviewGroup({
                 own answer and "cv" is what the extractor read off the document — an admin weighs
                 those two very differently, so the row says which it is rather than just quoting it. */}
             {standing.verdict.evidence ? (
-              <span className="text-phx-xs text-slate-600" dir="auto">
+              <span className="basis-full border-l-2 border-slate-300 pl-2 text-phx-xs leading-5 text-slate-700" dir="auto">
                 <span className="font-semibold text-slate-400">
                   {standing.verdict.source === "declared" ? "They answered: " : "Their CV says: "}
                 </span>
                 {standing.verdict.evidence}
               </span>
             ) : (
-              <span className="text-phx-xs italic text-slate-400">No faculty on the CV</span>
+              <span className="basis-full border-l-2 border-dashed border-slate-300 pl-2 text-phx-xs italic text-slate-400">
+                No faculty on the CV
+              </span>
             )}
 
-            <span className="ml-auto flex shrink-0 items-center gap-2">
-              <Button
+            {/* The decision pair, in the house's decision colours: green for the answer that sends the
+                CV on to the district managers, rose for the one that takes it off their screen. It
+                WRAPS under the row on a phone instead of holding its width against the name. */}
+            <span className="ml-auto flex flex-wrap items-center gap-2">
+              <button
+                className={`${phxButtonApproveClassName} ${adminControlDepthClassName} disabled:shadow-none`}
                 disabled={busyId === candidate.id}
                 onClick={() => answer(candidate.id, "eligible")}
                 title={describeBackgroundConfirmation("eligible")}
+                type="button"
               >
                 {busyId === candidate.id ? "Saving…" : "One of the five"}
-              </Button>
-              <Button
+              </button>
+              <button
+                className={`${phxButtonDangerClassName} ${adminControlDepthClassName} disabled:shadow-none`}
                 disabled={busyId === candidate.id}
                 onClick={() => answer(candidate.id, "paramedical")}
                 title={describeBackgroundConfirmation("paramedical")}
-                variant="secondary"
+                type="button"
               >
                 Paramedical
-              </Button>
+              </button>
             </span>
           </li>
         ))}
@@ -240,10 +264,14 @@ function ReviewGroup({
 
       {/* Counted, never hidden. A list that silently stops at 25 reads as a queue of 25. */}
       {shown < rows.length ? (
-        <div className="px-3 py-2">
-          <Button onClick={() => setShown(shown + PAGE)} variant="secondary">
+        <div className="border-t border-slate-100 px-4 py-3">
+          <button
+            className={`${phxButtonGhostClassName} ${adminControlDepthClassName}`}
+            onClick={() => setShown(shown + PAGE)}
+            type="button"
+          >
             Show {Math.min(PAGE, rows.length - shown)} more of {rows.length}
-          </Button>
+          </button>
         </div>
       ) : null}
     </div>

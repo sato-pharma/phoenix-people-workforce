@@ -92,6 +92,12 @@ import {
   phxButtonDangerClassName,
   phxFieldClassName,
 } from "@/components/ui/form-tokens";
+import {
+  adminControlDepthClassName,
+  adminPanelDepthClassName,
+  adminRecessedDepthClassName,
+  adminThumbBarDepthClassName,
+} from "@/components/admin/admin-design-tokens";
 
 type LoadedCandidate = {
   profile: CandidateProfile;
@@ -894,7 +900,9 @@ export function CandidateScreeningSession({
             : "flex min-h-[24rem] items-center justify-center bg-slate-900/80 p-6"
         }
       >
-        <div className="bg-white p-6 text-center">
+        {/* A lifted card on the dimmed ground (2026-10-19), the house panel depth — the one thing
+            on screen when the pile is empty, so it is the one thing that floats. */}
+        <div className={`border border-slate-200 bg-white p-6 text-center ${adminPanelDepthClassName}`}>
           <p className="text-sm text-slate-700">
             {cvTab === "red"
               ? "No red-flagged CVs in this queue — nothing here says anybody cannot be hired."
@@ -907,7 +915,7 @@ export function CandidateScreeningSession({
             <CvTabStrip counts={cvTabCounts} onSelect={openCvTab} tab={cvTab} tone="light" />
           </div>
           <button
-            className="mt-3 bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+            className={`mt-3 bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 ${adminControlDepthClassName}`}
             onClick={() => onClose(0)}
             type="button"
           >
@@ -1196,7 +1204,9 @@ export function CandidateScreeningSession({
             ) : null}
           </div>
 
-          <div className="sticky bottom-0 space-y-2 border-t border-slate-200 bg-white p-3">
+          {/* The decision bar floats over the facts as they scroll under it — the house thumb-bar
+              depth, cast upward, so the edge reads as a bar resting on the page (2026-10-19). */}
+          <div className={`sticky bottom-0 space-y-2 border-t border-slate-200 bg-white p-3 ${adminThumbBarDepthClassName}`}>
             {error ? <p className="text-xs text-rose-600">{error}</p> : null}
             {thisDecision ? (
               <p className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
@@ -1221,7 +1231,7 @@ export function CandidateScreeningSession({
                 not become one. Rendered only when the caller actually loaded the manager list; a
                 picker with nothing in it is worse than no picker. */}
             {hiringManagers.length > 0 ? (
-              <div className="space-y-1.5 border border-orange-200 bg-orange-50/70 p-2">
+              <div className={`space-y-1.5 border border-orange-200 bg-orange-50/70 p-2 ${adminRecessedDepthClassName}`}>
                 {/* What is already true, before offering to change it. */}
                 {sentNow ? (
                   <p className="flex items-start gap-1.5 text-phx-xs font-bold text-orange-800">
@@ -1333,7 +1343,7 @@ export function CandidateScreeningSession({
                     value={effectiveManagerHrIds}
                   />
                   <button
-                    className="flex h-8 shrink-0 items-center gap-1.5 bg-orange-600 px-3 text-xs font-bold text-white transition hover:bg-orange-700 disabled:opacity-40"
+                    className={`flex h-8 shrink-0 items-center gap-1.5 bg-orange-600 px-3 text-xs font-bold text-white transition hover:bg-orange-700 disabled:opacity-40 ${adminControlDepthClassName} disabled:shadow-none`}
                     disabled={busy || effectiveManagerHrIds.length === 0}
                     onClick={() => void sendToManager()}
                     type="button"
@@ -1374,7 +1384,7 @@ export function CandidateScreeningSession({
             </div>
             <div className="grid grid-cols-2 gap-2">
               <button
-                className={cn(phxButtonApproveClassName, "justify-center")}
+                className={cn(phxButtonApproveClassName, "justify-center", adminControlDepthClassName)}
                 disabled={busy}
                 onClick={() => void decide("shortlisted")}
                 type="button"
@@ -1382,7 +1392,7 @@ export function CandidateScreeningSession({
                 <Check className="h-4 w-4" /> Shortlist <kbd className="text-phx-2xs font-normal opacity-70">S</kbd>
               </button>
               <button
-                className={cn(phxButtonDangerClassName, "justify-center")}
+                className={cn(phxButtonDangerClassName, "justify-center", adminControlDepthClassName)}
                 disabled={busy}
                 onClick={() => void decide("rejected")}
                 type="button"
