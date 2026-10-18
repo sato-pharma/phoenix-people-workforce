@@ -18,13 +18,17 @@ import type { ReactNode } from "react";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { cn } from "@/lib/utils";
 
-/** A photograph on the dark stage, labelled at its corner and captioned under it. */
+/**
+ * A photograph on the dark stage, labelled at its corner and captioned under it. The label stops 5.5rem
+ * short of the right edge, where the two turn arrows sit (70px), so in a half-width cell on a phone it
+ * wraps instead of running under them.
+ */
 export function DeckStagePhoto({ alt, caption, label, path }: { alt: string; caption: string | null; label: string; path: string | null }) {
   return (
     <figure className="flex h-full min-h-0 w-full min-w-0 flex-col">
       <div className="relative min-h-0 flex-1">
         <CrmPhotoThumb alt={alt} caption={caption ?? alt} className="absolute inset-0 h-full w-full border-0 bg-transparent" path={path} rotatable />
-        <span className="pointer-events-none absolute left-3 top-3 z-10 max-w-[70%] bg-slate-950/80 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-white">
+        <span className="pointer-events-none absolute left-3 top-3 z-10 max-w-[calc(100%-5.5rem)] bg-slate-950/80 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-white">
           <span className="break-words">{label}</span>
         </span>
       </div>
@@ -60,10 +64,14 @@ export function DeckStageEmpty({ label, lines, title, tone = "neutral" }: { labe
   );
 }
 
-/** Two photographs on one stage: side by side on a wide screen, one above the other on a phone. */
+/**
+ * Two photographs on one stage, side by side on every screen (owner, 2026-10-19, choosing "side by side").
+ * Stacked on a phone, each upright photo had about 104 x 139 px of a 375 x 812 screen; side by side it
+ * has about 187 x 249, and the column still starts on the first screen.
+ */
 export function DeckSplitStage({ first, second }: { first: ReactNode; second: ReactNode }) {
   return (
-    <div className="grid h-full min-h-0 w-full min-w-0 grid-rows-2 gap-px bg-slate-800 lg:grid-cols-2 lg:grid-rows-1">
+    <div className="grid h-full min-h-0 w-full min-w-0 grid-cols-2 gap-px bg-slate-800">
       <div className="min-h-0 min-w-0 bg-slate-950">{first}</div>
       <div className="min-h-0 min-w-0 bg-slate-950">{second}</div>
     </div>

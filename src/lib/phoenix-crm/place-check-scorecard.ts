@@ -47,6 +47,33 @@ type Waiting = Pick<ValidationReviewRow, "placeId" | "repName" | "photoKind">;
 /** The sign's reasons that mean "the photograph could not be read", as opposed to "there was nothing to compare". */
 const SIGN_UNREADABLE = new Set(["unreadable", "unreadable_final", "unconfirmed"]);
 
+/**
+ * Whether a SIGN's reading says the photograph could not be read — the one rule the scorecard's "Not
+ * readable" column and the review's Not readable tab both use, so the two can never count differently.
+ * A verdict the reader reached is not unreadable, and neither is a sign it called legible or decorative
+ * (2026-10-18): that is a name it could not compare, and a new photo would read the same.
+ */
+export function signCouldNotBeRead(sign: { verdict: string; reason?: string | null; problem?: string | null } | null | undefined): boolean {
+  if (!sign) return false;
+  if (sign.verdict === "match" || sign.verdict === "other_name" || sign.verdict === "no_name") return false;
+  if (sign.problem === "none" || sign.problem === "stylised") return false;
+  return SIGN_UNREADABLE.has(sign.reason ?? "");
+}
+
+/**
+ * Whether a TIMETABLE's reading says the photograph could not be read: no verdict reached, and either
+ * the reader said unreadable or the scanner held it after its tries for that reason. A photograph that
+ * is not a timetable at all is the wrong photo, not an unreadable one.
+ */
+export function timetableCouldNotBeRead(
+  timetable: { verdict?: string | null; reason?: string | null; heldBecause?: string | null; problem?: string | null } | null | undefined,
+): boolean {
+  if (!timetable) return false;
+  if (timetable.verdict && timetable.verdict !== "unjudged") return false;
+  if (timetable.problem === "not_a_timetable") return false;
+  return timetable.reason === "unreadable" || timetable.heldBecause === "timetable_unreadable";
+}
+
 /** Where a place in use stands, on its own evidence. */
 export function standingOfPlaceInUse(row: InUse): Exclude<PlaceStanding, "waiting"> {
   // A person looked and it is still in use: he approved it.
@@ -64,10 +91,7 @@ export function standingOfPlaceInUse(row: InUse): Exclude<PlaceStanding, "waitin
   if (sign.verdict === "match") return "confirmed";
   if (sign.verdict === "other_name") return "anotherName";
   if (sign.verdict === "no_name") return "wrongPhoto";
-  // A sign the reader called legible, or decorative, that did not confirm is not the rep's unreadable
-  // photo (2026-10-18): it is a name the system could not compare, and a new photo would read the same.
-  if (sign.problem === "none" || sign.problem === "stylised") return "notRead";
-  return SIGN_UNREADABLE.has(sign.reason ?? "") ? "notReadable" : "notRead";
+  return signCouldNotBeRead(sign) ? "notReadable" : "notRead";
 }
 
 function blank(repName: string): RepScore {

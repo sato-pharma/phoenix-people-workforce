@@ -18,17 +18,22 @@
  * one to the left under his finger and "12 of 87" would become "12 of 86" showing a different photo.
  */
 
+import { signCouldNotBeRead, standingOfPlaceInUse, timetableCouldNotBeRead } from "@/lib/phoenix-crm/place-check-scorecard";
 import type { VenueGroup } from "@/lib/phoenix-crm/shared-place-groups";
 import type { PlaceNoteIndex, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 
 /**
  * The tabs, in the order the work is done; `all` is every other tab in this order, each slide once.
  *
+ * Not readable (owner, 2026-10-19: "in the review one by one put the unreadable in a separate tab") is
+ * every photo the reader could not read — a held place, a place in use, a polyclinic whose sign or
+ * timetable could not be read — MOVED out of Waiting and Not confirmed, so each sits in one tab.
+ *
  * 🔴 THE BOARD IMPORTS NOTHING FROM THIS FILE BUT TYPES. The Place checks board is also a district
  * manager's portal page, so a value imported from here would put this module in that bundle; the tab
  * WORDS live in the review's own component, which only the Super Admin's page loads.
  */
-export const DECK_TABS = ["waiting", "unconfirmed", "integrity", "history", "all"] as const;
+export const DECK_TABS = ["waiting", "unreadable", "unconfirmed", "integrity", "history", "all"] as const;
 export type DeckTab = (typeof DECK_TABS)[number];
 
 /** Places only, polyclinics only, or both (owner, 2026-10-18: "view polyclinics only, or places only, or both"). */
@@ -48,6 +53,10 @@ export type DeckSlide = {
 export type DeckSources = {
   waitingReviews: ReadonlyArray<string>;
   waitingVenues: ReadonlyArray<string>;
+  /** The photos that could not be read, taken out of the two tabs above and below. */
+  unreadableReviews: ReadonlyArray<string>;
+  unreadablePlaces: ReadonlyArray<string>;
+  unreadableVenues: ReadonlyArray<string>;
   unconfirmedPlaces: ReadonlyArray<string>;
   unconfirmedVenues: ReadonlyArray<string>;
   historyReviews: ReadonlyArray<string>;
@@ -82,16 +91,45 @@ export function deckSeatItem(customerKey: string): string {
   return `seat:${customerKey}`;
 }
 
+/** A held place whose photo — its sign, or the timetable it is seated on — could not be read. */
+export function reviewIsUnreadable(row: Pick<ValidationReviewRow, "photoKind" | "reason" | "evidence">): boolean {
+  if (row.photoKind === "schedule") {
+    if (row.reason === "schedule_other_name" || row.reason === "schedule_missing") return false;
+    return timetableCouldNotBeRead({ reason: row.evidence.checkReason, heldBecause: row.evidence.heldBecause, problem: row.evidence.problem });
+  }
+  if (row.reason === "sign_other_name" || row.reason === "sign_no_name") return false;
+  return signCouldNotBeRead(row.evidence.signboard);
+}
+
+/** A place in use the scorecard counts as Not readable — the same rule, so the two never disagree. */
+export function placeIsUnreadable(row: Parameters<typeof standingOfPlaceInUse>[0]): boolean {
+  return standingOfPlaceInUse(row) === "notReadable";
+}
+
+/**
+ * A polyclinic whose building sign could not be read, or where a customer still waiting or in use has a
+ * timetable that could not be read. A rejected or sent-back customer is past the reading.
+ */
+export function venueIsUnreadable(group: Pick<VenueGroup, "venue" | "customers">): boolean {
+  if (signCouldNotBeRead(group.venue.signboard)) return true;
+  return group.customers.some((customer) => (customer.state === "waiting" || customer.state === "in_use") && timetableCouldNotBeRead(customer.timetable));
+}
+
 export function deckSourcesOf(input: PlaceReviewDeckInput, cases: DeckSources["cases"]): DeckSources {
-  const reviewIds = (rows: ReadonlyArray<ValidationReviewRow>) => rows.map((row) => row.reviewId);
-  const venueIds = (groups: ReadonlyArray<VenueGroup>) => groups.map((group) => group.venue.sharedPlaceId);
+  const venueId = (group: VenueGroup) => group.venue.sharedPlaceId;
+  const unreadableVenues = new Set([...input.waiting.venues, ...input.unconfirmed.venues].filter(venueIsUnreadable).map(venueId));
+  const readable = <T>(rows: ReadonlyArray<T>, unreadable: (row: T) => boolean) => rows.filter((row) => !unreadable(row));
+  const venuesLeft = (groups: ReadonlyArray<VenueGroup>) => groups.map(venueId).filter((id) => !unreadableVenues.has(id));
   return {
-    waitingReviews: reviewIds(input.waiting.reviews),
-    waitingVenues: venueIds(input.waiting.venues),
-    unconfirmedPlaces: input.unconfirmed.places.map((row) => row.placeId),
-    unconfirmedVenues: venueIds(input.unconfirmed.venues),
-    historyReviews: reviewIds(input.history.reviews),
-    historyVenues: venueIds(input.history.venues),
+    waitingReviews: readable(input.waiting.reviews, reviewIsUnreadable).map((row) => row.reviewId),
+    waitingVenues: venuesLeft(input.waiting.venues),
+    unreadableReviews: input.waiting.reviews.filter(reviewIsUnreadable).map((row) => row.reviewId),
+    unreadablePlaces: input.unconfirmed.places.filter(placeIsUnreadable).map((row) => row.placeId),
+    unreadableVenues: [...unreadableVenues],
+    unconfirmedPlaces: readable(input.unconfirmed.places, placeIsUnreadable).map((row) => row.placeId),
+    unconfirmedVenues: venuesLeft(input.unconfirmed.venues),
+    historyReviews: input.history.reviews.map((row) => row.reviewId),
+    historyVenues: input.history.venues.map(venueId),
     cases,
   };
 }
@@ -104,6 +142,12 @@ function slidesOf(tab: OneTab, sources: DeckSources): DeckSlide[] {
   switch (tab) {
     case "waiting":
       return [...reviews(sources.waitingReviews), ...venues(sources.waitingVenues)];
+    case "unreadable":
+      return [
+        ...reviews(sources.unreadableReviews),
+        ...sources.unreadablePlaces.map((id): DeckSlide => ({ key: deckSlideKey("place", id), kind: "place", polyclinic: false })),
+        ...venues(sources.unreadableVenues),
+      ];
     case "unconfirmed":
       return [
         ...sources.unconfirmedPlaces.map((id): DeckSlide => ({ key: deckSlideKey("place", id), kind: "place", polyclinic: false })),
@@ -122,12 +166,12 @@ function kindTakes(kind: DeckKind, slide: DeckSlide): boolean {
 }
 
 /**
- * The slides of one tab under one switch position, in order. `all` walks the other four tabs in their
- * own order and keeps each slide the first time it appears — a polyclinic held for a decision is in
+ * The slides of one tab under one switch position, in order. `all` walks the other tabs in their own
+ * order and keeps each slide the first time it appears — a polyclinic held for a decision is in
  * Waiting AND among the buildings in use, and is one slide, not two.
  */
 export function buildDeckSlides(tab: DeckTab, kind: DeckKind, sources: DeckSources): DeckSlide[] {
-  const tabs: OneTab[] = tab === "all" ? ["waiting", "unconfirmed", "integrity", "history"] : [tab];
+  const tabs: OneTab[] = tab === "all" ? DECK_TABS.filter((one): one is OneTab => one !== "all") : [tab];
   const seen = new Set<string>();
   const slides: DeckSlide[] = [];
   for (const one of tabs) {
