@@ -20,11 +20,8 @@ import { PharmacyComboBox, type PharmacySearchHit } from "@/components/direct-or
 import { cn } from "@/lib/utils";
 import { phxButtonApproveDenseClassName } from "@/components/ui/form-tokens";
 
-import {
-  computeDirectOrderSalesValue,
-  computeDiscountSalesValue,
-  maxBonusUnits,
-} from "@/lib/direct-orders/approval-flow";
+import { maxBonusUnits } from "@/lib/direct-orders/approval-flow";
+import { previewBasketValue } from "@/lib/direct-orders/basket-value";
 import type {
   DirectOrderApprovalListItem,
   DirectOrderDealType,
@@ -448,11 +445,37 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   const bonusBasis = product && hasPharmacyPrice ? product.pharmacyPrice! : 0;
 
   const overCap = dealType === "discount" ? discountNum > discountCapPct : bonusNum > maxBonus;
-  const salesValue = !product
-    ? 0
-    : dealType === "discount"
-      ? computeDiscountSalesValue({ qty: qtyNum, publicPrice: product.publicPrice ?? 0, discountPct: discountNum })
-      : computeDirectOrderSalesValue({ qty: qtyNum, pharmacyPrice: bonusBasis });
+  // The value shown is the WHOLE order: the main line plus every extra concentration still on it,
+  // each priced by the same functions the server uses (basket-value.ts). It used to price the main
+  // line alone, so adding Lacto Advanced 2 left the number exactly where it was.
+  const basket = useMemo<ReturnType<typeof previewBasketValue>>(() => {
+    if (!product) return { lines: [], total: 0 };
+    return previewBasketValue([
+      {
+        productCode: product.productCode,
+        productName: product.productName,
+        dealType,
+        qty: qtyNum,
+        discountPct: discountNum,
+        publicPrice: product.publicPrice,
+        pharmacyPrice: product.pharmacyPrice,
+      },
+      ...activeExtras.map(([code, line]) => {
+        const member = products.find((candidate) => candidate.productCode === code);
+        return {
+          productCode: code,
+          productName: member?.productName ?? code,
+          dealType: line.dealType,
+          qty: Number(line.qty) || 0,
+          discountPct: Number(line.discount) || 0,
+          publicPrice: member?.publicPrice ?? null,
+          pharmacyPrice: member?.pharmacyPrice ?? null,
+        };
+      }),
+    ]);
+  }, [product, products, dealType, qtyNum, discountNum, activeExtras]);
+  const salesValue = basket.total;
+  const isBasketOrder = basket.lines.length > 1;
   const visibleBricks = useMemo(
     () => (newAreaCode ? bricks.filter((b) => b.areaCode === newAreaCode) : []),
     [bricks, newAreaCode],
@@ -948,9 +971,36 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           ) : null}
 
           <div className="border border-orange-200 bg-orange-50 px-3 py-2 text-sm">
-            <span className="font-black uppercase tracking-wider text-phx-xs text-orange-700">Sales value ({dealType === "discount" ? "public × (1−disc%)" : "bonus excluded"})</span>
+            <span className="font-black uppercase tracking-wider text-phx-xs text-orange-700">
+              {isBasketOrder
+                ? "Sales value (total)"
+                : `Sales value (${dealType === "discount" ? "public × (1−disc%)" : "bonus excluded"})`}
+            </span>
             <div className="text-lg font-black text-slate-900">{money(salesValue)}</div>
-            {product ? (
+            {isBasketOrder ? (
+              // One row per line, so the requester can see each concentration was counted and what
+              // it contributed. A line the server would refuse for a missing price says so here
+              // rather than quietly adding nothing.
+              <ul className="mt-1 space-y-1">
+                {basket.lines.map((line) => (
+                  <li key={line.productCode} className="break-words text-phx-xs text-slate-500">
+                    <span className="font-bold text-slate-700">{line.productName}</span>
+                    {" — "}
+                    {line.dealType === "discount"
+                      ? `${line.qty.toLocaleString("en-US")} × ${money(line.basisPrice ?? 0)} × (1 − ${line.discountPct}%)`
+                      : `${line.qty.toLocaleString("en-US")} × ${money(line.basisPrice ?? 0)} pharmacy price`}
+                    {" = "}
+                    <span className="font-bold text-slate-700">{money(line.salesValue)}</span>
+                    {line.basisPrice == null ? (
+                      <span className="block font-bold text-rose-600">
+                        No {line.dealType === "discount" ? "public" : "pharmacy"} price is set for this product, so
+                        this line cannot be submitted.
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : product ? (
               <div className="text-phx-xs text-slate-500">
                 {dealType === "discount"
                   ? `${qtyNum.toLocaleString("en-US")} × ${money(product.publicPrice ?? 0)} × (1 − ${discountNum}%)`
