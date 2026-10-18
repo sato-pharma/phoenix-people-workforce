@@ -26,7 +26,7 @@ The dates, his words and the incidents behind each line: `~/.claude/docs/standin
   exact words he would type, naming the target (“merge 3805 when green”, never a bare “yes”) —
   they reach his box as GHOST TEXT on the build he runs now (2.31226.1, restored 2026-10-15), and
   as a `wrap_up` reply button in any session that has that tool. Never put a placeholder like `<name>` inside those words. When only he
-  knows the target, ask in the line and quote your recommended answer, never a placeholder.
+  knows the target, ask it as an MCQ (golden rule below) and quote your recommended option, never a placeholder.
 - **ALWAYS PUT SOMETHING IN THE BOX** (owner rule, 2026-09-18). The line NEVER ends without quoted
   words. No filler: re-checks, re-runs, verification, polish, status reads, "continue", "check other
   pending items" and every closing message are done in the turn and never suggested. **Nothing needs
@@ -52,8 +52,15 @@ The dates, his words and the incidents behind each line: `~/.claude/docs/standin
 - **Never silently drop anything.** Ask as many questions as it takes to get it right.
 - **Names, never codes or IDs** — in chat and in UI.
 - **Times in Cairo local**, not raw UTC.
-- **When a business fact is uncertain, ask in chat as multiple choice** (short options, recommended
-  first) — do not guess, and do not interrogate him in prose. An XLSX is only for long per-item lists.
+- 🥇 **GOLDEN RULE — EVERY QUESTION TO HIM IS A MULTIPLE-CHOICE QUESTION, NEVER PROSE** (owner,
+  2026-10-18: "put a golden rule that you never ask me in the form of text … when you need to ask me,
+  you must ask me in the form of MCQ"). Whatever the subject — a business fact, a design choice, a
+  data fix, a scope call, an "if you want, I can …" — put it through the `AskUserQuestion` tool: 2–4
+  short options, the recommended one first and marked "(Recommended)", names never codes, one idea per
+  question. **Never end a reply with an open question, an offer in prose, or a "needs your call"
+  paragraph.** If no choice is genuinely his, do not ask: decide and report. A session without the tool
+  writes the same lettered options in chat. An XLSX is only for long per-item lists. The `**Next step:**`
+  line is not a place to ask: it quotes the recommended option's words.
 - **Report faithfully.** If tests failed, say so with output; if a step was skipped, say that. Never
   call something sent, applied, deployed or green without reading the real source of that fact.
 - **Never say his work was built with AI in anything written about him** (owner rule, 2026-10-05 —
