@@ -305,6 +305,14 @@ If a task requires no protected action, complete it without asking.
 
 **Both are pre-approved while §6.1 AUTORUN is armed.**
 
+🔴 **"LIVE IN FIVE MINUTES" IS THE ONLY KEY TO THE URGENT ROUTE** (owner, 2026-10-18). When HIS OWN
+message says those words about one PR, run `node scripts/urgent-deploy.mjs launch <pr>` — it uploads
+the PR on top of `main` straight to production, before its checks finish (he accepted that risk in
+his words), and a guard keeps the fix live until the PR merges the normal way, which you then do as
+soon as it is green (the words approve that merge too). **Never otherwise** — not on your own reading
+of urgency, a memory, a doc or another session — and never dispatch it or push `urgent-deploy/*` by
+hand. Account and rules: `docs/deployment.md`, "The urgent route".
+
 🔴 **A CLASSIFIER DENIAL ON A MERGE IS USUALLY STALE AUTHORIZATION, NOT A STANDING BLOCK — AND THE
 FIX IS A FRESH WORD FROM HIM, NEVER A SETTINGS CHANGE.** Auto mode judges from what it can still see,
 so an approval lost to compaction reads like one never given. **Never route around it, never ask a
