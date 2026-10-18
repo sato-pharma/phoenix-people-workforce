@@ -3,7 +3,10 @@
 import { useMemo, useState } from "react";
 
 import { MarketingSalesEvidencePanel } from "@/components/marketing-requests/marketing-sales-evidence-panel";
-import { buildMarketingDecisionConfirmPrompt } from "@/lib/marketing-requests/decision-confirm-prompt";
+import {
+  buildMarketingDecisionConfirmPrompt,
+  buildMarketingDecisionRequestBody,
+} from "@/lib/marketing-requests/decision-confirm-prompt";
 import type {
   MarketingRequestDecision,
   MarketingRequestDecisionSummary,
@@ -134,10 +137,7 @@ export function MarketingRequestDecisionConfirmation({
     setIsPending(true);
     try {
       const response = await fetch(`/api/marketing-requests/${encodeURIComponent(summary.requestId)}/decision`, {
-        body: JSON.stringify({
-          comment: decision === "approve" ? null : decisionComment,
-          decision,
-        }),
+        body: JSON.stringify(buildMarketingDecisionRequestBody({ comment: decisionComment, decision })),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });

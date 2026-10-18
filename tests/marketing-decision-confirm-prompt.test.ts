@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { buildMarketingDecisionConfirmPrompt } from "../src/lib/marketing-requests/decision-confirm-prompt.ts";
+import {
+  buildMarketingDecisionConfirmPrompt,
+  buildMarketingDecisionRequestBody,
+} from "../src/lib/marketing-requests/decision-confirm-prompt.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 const BASE = {
   customerName: "احمد وحيد",
@@ -141,5 +145,50 @@ export function runMarketingDecisionConfirmPromptTests() {
     handler,
     /callApi\(/,
     "clicking a marketing button in the Action Center must not reach the API — only the confirmation may",
+  );
+
+  // ── A note typed beside ANY decision reaches the database ─────────────────────────────────────
+  // MKT-REQ-20261012-AA9F92DD, 2026-10-18: the Marketing Manager typed a note on this page and
+  // approved; the step was stamped with a NULL decision_note, the event log held `note: null`, and
+  // the CEO never saw it. The page built its body as `decision === "approve" ? null : note`, so every
+  // approve note since 2026-06-19 — Finance Execution's "Execute" included — died in the browser
+  // while the box's own placeholder promised it was "saved to audit history".
+  const approveWithNote = buildMarketingDecisionRequestBody({
+    comment: "  Approved for the ENT and IM doctors only.  ",
+    decision: "approve",
+  });
+  assert.deepEqual(
+    approveWithNote,
+    { comment: "Approved for the ENT and IM doctors only.", decision: "approve" },
+    "an approve with a note must send that note, trimmed — it is the whole defect",
+  );
+  for (const decision of ["approve", "return", "reject"] as const) {
+    assert.equal(
+      buildMarketingDecisionRequestBody({ comment: "the reason", decision }).comment,
+      "the reason",
+      `${decision} must carry its note to the API`,
+    );
+    // Approve needs no note: a blank box is a null, never an empty string the RPC would have to clean.
+    for (const blank of ["", "   \n ", null, undefined]) {
+      assert.equal(
+        buildMarketingDecisionRequestBody({ comment: blank, decision }).comment,
+        null,
+        `${decision} with a blank note sends null`,
+      );
+    }
+    assert.equal(buildMarketingDecisionRequestBody({ comment: "x", decision }).decision, decision);
+  }
+  // The page posts through the builder. Comments are stripped first because the builder's own
+  // explanation quotes the old expression, and a "must not appear" guard would trip on its own prose.
+  const pageCode = stripComments(decisionPage);
+  assert.match(
+    pageCode,
+    /JSON\.stringify\(buildMarketingDecisionRequestBody\(\{ comment: decisionComment, decision \}\)\)/,
+    "the decision page must build its request body with buildMarketingDecisionRequestBody",
+  );
+  assert.doesNotMatch(
+    pageCode,
+    /decision === "approve" \? null/,
+    "no decision may be special-cased to drop the note — an approve note is a record somebody will read",
   );
 }

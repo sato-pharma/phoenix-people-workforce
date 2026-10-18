@@ -18,6 +18,29 @@
 
 export type MarketingConfirmDecision = "approve" | "reject" | "return";
 
+/**
+ * What the decision page POSTs to `/api/marketing-requests/:id/decision`.
+ *
+ * WHY THIS IS A BUILDER. The page's note box is offered on every decision and its placeholder says
+ * the note is "saved to audit history", but the request body was built inline as
+ * `comment: decision === "approve" ? null : decisionComment` — so a note typed beside Approve (or
+ * Finance Execution's "Execute", which is an approve) was thrown away in the browser and the step
+ * was stamped with a NULL `decision_note`. Found 2026-10-18 on MKT-REQ-20261012-AA9F92DD, where the
+ * Marketing Manager's note at Marketing Review never reached the database, the event log or the
+ * CEO. The line dated from 2026-06-19, so every approve note typed on this page since was lost.
+ *
+ * The database stores whatever it is given (`NULLIF(btrim(p_decision_note), '')`), so the whole
+ * defect lived in this one expression. Exported and pure so a test can run it instead of reading
+ * source text. Return and reject still REQUIRE a note — that is checked before this is called.
+ */
+export function buildMarketingDecisionRequestBody(params: {
+  comment?: string | null;
+  decision: MarketingConfirmDecision;
+}): { comment: string | null; decision: MarketingConfirmDecision } {
+  const note = typeof params.comment === "string" ? params.comment.trim() : "";
+  return { comment: note || null, decision: params.decision };
+}
+
 export type MarketingDecisionConfirmPrompt = {
   /** What is being decided — request, customer, money. */
   body: string;
