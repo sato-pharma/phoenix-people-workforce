@@ -894,6 +894,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/pharmacy-details", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/update", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // A new signboard photo for a place the system sent back to its rep (2026-10-18) — only a place
+  // waiting on one (`retakePlaceSignboard`), never a free swap of a place's evidence.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/signboard", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // Approving or rejecting a place the Google Maps check could not confirm (owner, 2026-10-03): the
   // Super Admin ALONE — `update` at the route, `canDecideValidationReviews` in the service.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),

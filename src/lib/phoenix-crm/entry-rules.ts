@@ -253,6 +253,16 @@ export const PLACE_PRECISION_NOTE = `Validation needs an accurate location, with
 export const SIGNBOARD_FRAME_NOTE =
   "Put the signboard inside the box, with the customer's name readable.";
 
+/**
+ * 🔴 A CUSTOMER'S PLACE IS PHOTOGRAPHED AT HIS OWN NAMEPLATE, NEVER "THE CLINIC SIGN OR DOOR" (2026-10-18).
+ * The old words named a DOOR as good enough, and the audit of 532 places filed "Not readable" found
+ * exactly that: hospital fronts, bare doors, a street — every one accepted at the door because nothing
+ * said the name had to be in it. `SIGNBOARD_FRAME_NOTE` above stays for a polyclinic's own building
+ * sign, which names the building and nobody inside it.
+ */
+export const NAMEPLATE_FRAME_NOTE = "Photograph the customer's own nameplate, close enough that the name fills the box.";
+export const PLACE_PHOTO_NEEDED = "Take a live photo of the customer's own nameplate.";
+
 export const ROUGH_FIX_AT_THE_PLACE = `Validation needs an accurate location, within ${PLACE_MAX_ACCURACY_METERS} m, and your phone gave only a rough one. Turn on precise location for ${BROWSER_PLACEHOLDER}; if it is already on, step outside the building and wait a few seconds, then take the photo and press Capture location again at the clinic.`;
 export const ROUGH_FIX_FOR_A_VISIT = `Your phone gave only a rough location. Turn on precise location for ${BROWSER_PLACEHOLDER}; if it is already on, step outside the building and wait a few seconds, then tap Log visit again.`;
 
@@ -547,7 +557,7 @@ export function refusedReadingOf(raw: unknown, subjectKind: "place" | "visit"): 
 export function parsePlaceDraft(raw: unknown): EntryRuleResult<PlaceDraft> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const photoPath = String(body.photoPath ?? "").trim();
-  if (!photoPath) return { ok: false, error: "Take a live photo of the clinic sign or door." };
+  if (!photoPath) return { ok: false, error: PLACE_PHOTO_NEEDED };
   const fix = parseCapturedFix(body);
   if (!fix.ok) return fix;
   // A place is fixed for good: a rough photo OR a rough pin is no reading (owner, 2026-10-03).

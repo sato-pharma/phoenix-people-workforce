@@ -429,8 +429,8 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
     const allowed = [...reasonCheck[1]!.matchAll(/'([a-z_]+)'::text/g)].map((match) => match[1]!);
     assert.deepEqual(
       [...allowed].sort(),
-      ["blocked", "no_fix", "off_listing", "rough", "timetable_missing", "timetable_unreadable"],
-      "six reasons, and the migration is where that list lives",
+      ["blocked", "no_fix", "off_listing", "rough", "signboard_no_plate", "signboard_unreadable", "timetable_missing", "timetable_unreadable"],
+      "eight reasons, and the migration is where that list lives",
     );
     const sentences = new Map<string, string>();
     for (const reason of allowed) {
@@ -447,6 +447,11 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
     for (const reason of ["timetable_unreadable", "timetable_missing"] as const) {
       assert.doesNotMatch(sentences.get(reason)!, /too rough|\d+ m\b/, `${reason} is about the photograph of the timetable, never a radius`);
       assert.match(sentences.get(reason)!, /timetable/, `${reason} names the timetable`);
+    }
+    // The signboard scanner's two (2026-10-18): the same — a photograph of the nameplate refused.
+    for (const reason of ["signboard_unreadable", "signboard_no_plate"] as const) {
+      assert.doesNotMatch(sentences.get(reason)!, /too rough|\d+ m\b/, `${reason} is about the photograph of the signboard, never a radius`);
+      assert.match(sentences.get(reason)!, /nameplate|signboard/, `${reason} names the signboard`);
     }
     assert.equal(parseRefusedReason("something_new"), "rough", "an unrecognised value still returns a reason, because the type admits nothing else — the loop above is what keeps that branch unreachable");
 

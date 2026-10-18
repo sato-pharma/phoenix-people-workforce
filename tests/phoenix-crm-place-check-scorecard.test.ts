@@ -62,6 +62,12 @@ function checkStanding(): void {
   for (const reason of ["name_unusable", "call_failed", null]) {
     assert.equal(standingOfPlaceInUse(sign("unjudged", reason)), "notRead", `an unjudged sign for ${String(reason)} had nothing read, not a bad photo`);
   }
+  const legible = sign("unjudged", "unreadable_final");
+  assert.equal(
+    standingOfPlaceInUse({ ...legible, signboard: { ...legible.signboard!, problem: "none" } }),
+    "notRead",
+    "🔴 a sign the reader called legible that did not confirm is a name not compared — never counted against the rep as unreadable",
+  );
   assert.equal(standingOfPlaceInUse({ ...sign("match"), signboard: null }), "notRead", "a sign never read is not read");
 
   // 🔴 THE TIMETABLE, for a customer seated in a polyclinic — never his building's sign.

@@ -128,6 +128,8 @@ export function placeWithoutMeasurements(place: ListPlace): ListPlace {
     session: place.session ?? null,
     ...(place.venueTimetableOnFile === undefined ? {} : { venueTimetableOnFile: place.venueTimetableOnFile }),
     ...(place.venueHeld === undefined ? {} : { venueHeld: place.venueHeld }),
+    // "New signboard photo needed": the sentence he must read to fix his photo, measuring nothing.
+    signboardRetake: place.signboardRetake ?? null,
   };
 }
 

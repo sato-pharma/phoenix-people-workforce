@@ -40,7 +40,12 @@ import { notifyPhoenixCrm, PHOENIX_CRM_NOTIFICATION_CATEGORY, PHOENIX_CRM_NOTIFI
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import { loadSharedPlaceNames, loadSharedPlaceRefusalsForCustomers } from "@/lib/phoenix-crm/server/shared-places";
-import { signboardHoldStillReading } from "@/lib/phoenix-crm/signboard-rules";
+import {
+  parseSignboardPhotoProblem,
+  signboardHoldStillReading,
+  signboardRetakeWaiting,
+  type SignboardPhotoProblem,
+} from "@/lib/phoenix-crm/signboard-rules";
 import {
   parseValidationRefusalReason,
   validationRefusalLabel,
@@ -382,7 +387,12 @@ export type ValidationReviewRow = {
     heldBecause: ScheduleHeldBecause | null;
     legibility: ScheduleLegibility | null;
     problem: ScheduleProblem | null;
-    signboard: { verdict: "match" | "other_name" | "no_name" | "unjudged"; reason: string | null; signText: string | null } | null;
+    signboard: {
+      verdict: "match" | "other_name" | "no_name" | "unjudged";
+      reason: string | null;
+      signText: string | null;
+      problem?: SignboardPhotoProblem | null;
+    } | null;
   };
   /** What the system read on the signboard — or on the timetable — verbatim. */
   signText: string | null;
@@ -774,6 +784,10 @@ export type ValidatedPlaceRow = {
     verdict: "match" | "other_name" | "no_name" | "unjudged";
     reason: string | null;
     signText: string | null;
+    /** The photo shows no readable name and the rep has been asked for a new one (2026-10-18). */
+    retake?: boolean;
+    /** What the reader said stops the name being read; `none` is a legible sign that did not confirm. */
+    problem?: SignboardPhotoProblem | null;
   } | null;
   /**
    * Which photo this place's evidence IS — the sign on a building, or the timetable of a polyclinic —
@@ -935,7 +949,13 @@ function signboardOf(value: unknown): ValidatedPlaceRow["signboard"] {
   const check = value as Row;
   const verdict = check.verdict;
   if (verdict !== "match" && verdict !== "other_name" && verdict !== "no_name" && verdict !== "unjudged") return null;
-  return { reason: text(check.reason), signText: text(check.signText), verdict };
+  return {
+    problem: parseSignboardPhotoProblem(check.problem),
+    reason: text(check.reason),
+    retake: signboardRetakeWaiting(check) !== null,
+    signText: text(check.signText),
+    verdict,
+  };
 }
 
 /**

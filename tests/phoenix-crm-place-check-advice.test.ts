@@ -79,6 +79,20 @@ function checkSign() {
   const building = note(adviseOnBuilding({ signboard: { verdict: "other_name", reason: null, signText: "مستشفى طنطا" } }));
   assert.match(building.reason, /a different place, not the building/, "a polyclinic's sign is judged as the BUILDING's name, never a person's");
   assert.equal(note(adviseOnBuilding({ signboard: { verdict: "match", reason: null, signText: "مجمع عيادات" } })).kind, "approve");
+
+  // 🔴 A LEGIBLE SIGN THAT DID NOT CONFIRM IS THE ADMIN'S LOOK, NEVER A REJECT (2026-10-18): the one-off
+  // read kept "د. محمد زكي" for محمد ذكي, and five AM hospitals at their own building's sign, final.
+  const legible = note(adviseOnSign({ verdict: "unjudged", reason: "unreadable_final", signText: "د. محمد زكي", problem: "none" }));
+  assert.equal(legible.kind, "look", "🔴 a sign the reader called legible is never recommended for rejection as unreadable");
+  assert.equal(legible.quote, "د. محمد زكي", "and the admin reads what it says");
+  const buildingSign = note(adviseOnSign({ verdict: "unjudged", reason: "unreadable_final", signText: "مستشفى صدر المحلة", problem: "building_sign_only" }));
+  assert.equal(buildingSign.kind, "look", "a building's own sign is the admin's look too");
+  assert.equal(
+    note(adviseOnSign({ verdict: "unjudged", reason: "unreadable_final", signText: "دكتور سلامة السيد البيودي", problem: "stylised" })).kind,
+    "look",
+    "a decorative plate is the admin's look: a new photo would read the same",
+  );
+  assert.equal(note(adviseOnSign({ verdict: "unjudged", reason: "unreadable_final", signText: null, problem: "too_far" })).kind, "reject", "a plate too far to read still cannot show who it is");
 }
 
 function checkTimetable() {

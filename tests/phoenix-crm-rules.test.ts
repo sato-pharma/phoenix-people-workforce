@@ -608,7 +608,8 @@ function runEntryRuleTests() {
   assert.equal(valueOf(parseCapturedFix({ lat: 30.05, lon: 31.23, deviceCapturedAt: "yesterday" })).deviceCapturedAt, null);
 
   // Validation: a live photo, the location on the spot, and at least one timing — in that order.
-  const PHOTO = "Take a live photo of the clinic sign or door.";
+  // His own nameplate, never "the clinic sign or door" (2026-10-18): the old words named a door as enough.
+  const PHOTO = "Take a live photo of the customer's own nameplate.";
   assert.equal(refusalOf(parsePlaceDraft({})), PHOTO);
   assert.equal(refusalOf(parsePlaceDraft({ photoPath: "seat/photo.jpg" })), LOCATION);
   assert.equal(refusalOf(parsePlaceDraft({ photoPath: "seat/photo.jpg", lat: 30.05, lon: 31.23 })), "Add the days and hours this customer receives visits.");

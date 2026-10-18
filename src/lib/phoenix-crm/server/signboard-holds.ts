@@ -78,6 +78,35 @@ export type HeldSignboardPlace = {
 export type HeldSignboardSettlement = "approved" | "again" | "done" | "lost" | "unread";
 
 /**
+ * Approve a held place as the system, because a reading confirmed the customer's name — through the SAME
+ * `phoenix_crm_decide_validation_review` approve the Super Admin's own button runs. False when it did not
+ * land: he decided it first (`review_decided`), or the review is gone, and his decision stands. One
+ * approve for the hourly re-read, the one-off read of the old places and the rep's new photo alike.
+ */
+export async function approveHeldSignboardBySystem(reviewId: string): Promise<boolean> {
+  try {
+    await callPhoenixCrm<Row>("phoenix_crm_decide_validation_review", {
+      p: {
+        review_id: reviewId,
+        actor_hr_id: SIGNBOARD_SYSTEM_ACTOR,
+        decision: "approve",
+        note: SIGNBOARD_SYSTEM_APPROVAL_NOTE,
+        refusal_reason: null,
+      },
+    });
+  } catch (error) {
+    logError("Phoenix CRM held signboard approval did not land", {
+      error,
+      labels: { event: "phoenix_crm_held_signboard_approve_skipped" },
+    });
+    return false;
+  }
+  // A notice may already be in his bell from an older hold; it is answered now.
+  await withdrawValidationReviewWaiting(reviewId);
+  return true;
+}
+
+/**
  * Read one held place once more and act on what the read says. Never throws: it runs after a rep's
  * reply and inside a cron, and the place is already saved and held whatever happens here.
  *
@@ -102,29 +131,7 @@ export async function settleHeldSignboard(
     const outcome = heldSignboardOutcome(read, reads);
     await recordPlaceSignboard(place.placeId, heldSignboardCheckToKeep(read, reads, outcome));
 
-    if (outcome === "approve") {
-      try {
-        await callPhoenixCrm<Row>("phoenix_crm_decide_validation_review", {
-          p: {
-            review_id: place.reviewId,
-            actor_hr_id: SIGNBOARD_SYSTEM_ACTOR,
-            decision: "approve",
-            note: SIGNBOARD_SYSTEM_APPROVAL_NOTE,
-            refusal_reason: null,
-          },
-        });
-      } catch (error) {
-        // He decided it first (`review_decided`), or the review is gone: his decision stands.
-        logError("Phoenix CRM held signboard approval did not land", {
-          error,
-          labels: { event: "phoenix_crm_held_signboard_approve_skipped" },
-        });
-        return "lost";
-      }
-      // A notice may already be in his bell from an older hold; it is answered now.
-      await withdrawValidationReviewWaiting(place.reviewId);
-      return "approved";
-    }
+    if (outcome === "approve") return (await approveHeldSignboardBySystem(place.reviewId)) ? "approved" : "lost";
     if (outcome === "done" && !place.isTest && context.seat) {
       await notifyValidationReviewWaiting({
         customerName: place.customerName,

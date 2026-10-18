@@ -64,6 +64,9 @@ export function standingOfPlaceInUse(row: InUse): Exclude<PlaceStanding, "waitin
   if (sign.verdict === "match") return "confirmed";
   if (sign.verdict === "other_name") return "anotherName";
   if (sign.verdict === "no_name") return "wrongPhoto";
+  // A sign the reader called legible, or decorative, that did not confirm is not the rep's unreadable
+  // photo (2026-10-18): it is a name the system could not compare, and a new photo would read the same.
+  if (sign.problem === "none" || sign.problem === "stylised") return "notRead";
   return SIGN_UNREADABLE.has(sign.reason ?? "") ? "notReadable" : "notRead";
 }
 

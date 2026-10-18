@@ -179,6 +179,11 @@ const BLIND_READERS: ReadonlyArray<string> = [
   // page and both routes, pinned in tests/phoenix-crm-visit-report.test.ts), and the mock-location
   // evidence is shaped out of the payload for the SFE Manager before it leaves the server.
   "src/lib/phoenix-crm/server/visit-report.ts",
+  // The stored-signboard re-judge (2026-10-18). After it confirms a plate under the owner's spelling
+  // rulings it looks up which OPEN signboard cases sit on those places, so the script can list them for
+  // the Super Admin to decide — it reads ids and flags only, settles nothing, and answers nobody: its
+  // one caller is `scripts/phoenix-crm-reread-signboards.mjs`, and check 4 keeps every rep route away.
+  "src/lib/phoenix-crm/server/signboard-sweep.ts",
 ];
 
 /**

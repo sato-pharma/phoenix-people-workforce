@@ -195,6 +195,8 @@ export type ListScreen =
    */
   | { name: "add-place"; customerId: string; draft: PlaceDraftState | null; seated?: SeatedDraftState | null }
   | { name: "edit-place"; customerId: string; placeId: string }
+  /** A new signboard photo for a place the system sent back to its rep (2026-10-18). */
+  | { name: "retake-signboard"; customerId: string; placeId: string }
   | { name: "move-place"; customerId: string; placeId: string }
   /** The Super Admin moves several standalone customers into one validated polyclinic (owner, 2026-10-10). */
   | { name: "seat-in-venue"; customerId: string }

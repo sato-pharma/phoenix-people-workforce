@@ -26,14 +26,14 @@ import { customerMetaText, listText } from "@/components/phoenix-crm/labels";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { emptyPlaceDraft, PlaceEditor, placeDraftProblem, placePayload, type PlaceDraftState } from "@/components/phoenix-crm/place-editor";
 import { CrmBackBar, CrmBlock, CrmButton, CrmChoice, CrmField, CrmNote, CrmPanel, CrmPill, crmInputClassName } from "@/components/phoenix-crm/ui";
-import { CUSTOMER_NAME_MAX, parseCustomerPhone } from "@/lib/phoenix-crm/entry-rules";
+import { CUSTOMER_NAME_MAX, PLACE_PHOTO_NEEDED, parseCustomerPhone } from "@/lib/phoenix-crm/entry-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import type { TerritoryListView, ValidateResult, VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
 
 /** The server keeps a speciality to this length (entry-rules.ts parseOutsideCustomer). */
 const SPECIALITY_TEXT_MAX = 80;
 
-const PHOTO_NEEDED = "Take a live photo of the clinic sign or door.";
+const PHOTO_NEEDED = PLACE_PHOTO_NEEDED;
 const UNCHECKED = "The save may have gone through, but Phoenix could not check. Check the connection, then press Save again.";
 
 /**
@@ -220,7 +220,7 @@ export function OutOfListEntry({
         </CrmBlock>
         <CrmBlock className="border-t border-slate-100" title="Someone new">
           <p className="text-sm font-medium leading-6 text-slate-600">
-            Not on your list and not met before: enter the customer and validate the place now — a live photo of the sign or door, and the days and hours.
+            Not on your list and not met before: enter the customer and validate the place now — a live photo of the customer&apos;s own nameplate, and the days and hours.
             The visit counts once the customer is added to your list.
           </p>
           {canAddNew ? (

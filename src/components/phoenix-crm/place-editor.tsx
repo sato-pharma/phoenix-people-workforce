@@ -20,7 +20,7 @@ import { locationReaderPayload } from "@/components/phoenix-crm/location-reader"
 import { TimingsEditor, timingsToDrafts } from "@/components/phoenix-crm/timings-editor";
 import { CrmBlock, CrmField, CrmNote, crmInputClassName } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
-import { PLACE_PRECISION_NOTE, PLACE_TEXT_MAX, SIGNBOARD_FRAME_NOTE, pickPlacePoint } from "@/lib/phoenix-crm/entry-rules";
+import { NAMEPLATE_FRAME_NOTE, PLACE_PHOTO_NEEDED, PLACE_PRECISION_NOTE, PLACE_TEXT_MAX, pickPlacePoint } from "@/lib/phoenix-crm/entry-rules";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
@@ -62,7 +62,7 @@ export function emptyPlaceDraft(): PlaceDraftState {
 
 /** The server's own checks, so a gap is named before the save leaves the phone. */
 export function placeDraftProblem(draft: PlaceDraftState, options: { needsPhoto: boolean }): string | null {
-  if (options.needsPhoto && !draft.photo) return "Take a live photo of the clinic sign or door.";
+  if (options.needsPhoto && !draft.photo) return PLACE_PHOTO_NEEDED;
   if (options.needsPhoto && !draft.pin) return "Press Capture location while you stand at the clinic.";
   const checked = parseTimings(timingsToDrafts(draft.timings));
   return checked.ok ? null : checked.error;
@@ -290,8 +290,8 @@ export function PlaceEditor({
           ) : (
             <LivePhotoCapture
               disabled={disabled}
-              frameGuide={{ note: SIGNBOARD_FRAME_NOTE }}
-              hint="Stand at the clinic's signboard and take a live photo. Put the signboard inside the box on the screen, with the customer's name readable. The photo keeps its own location and time."
+              frameGuide={{ note: NAMEPLATE_FRAME_NOTE }}
+              hint="Stand at the customer's own nameplate and take a live photo, close enough that the name fills the box on the screen. Inside a hospital, photograph the clinic's room plate. The photo keeps its own location and time."
               onChange={takePhoto}
               purpose="place"
               seatId={seatId}

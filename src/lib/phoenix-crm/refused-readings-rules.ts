@@ -56,13 +56,36 @@
  * the tries are counted per rep, per building, per Cairo day, and the photograph's pointer. Never a
  * position: both say nothing about where the rep stood.
  */
-export type RefusedReason = "no_fix" | "rough" | "off_listing" | "blocked" | "timetable_unreadable" | "timetable_missing";
+/**
+ * `signboard_unreadable` and `signboard_no_plate` (2026-10-18) are the signboard's twins of the two
+ * timetable reasons: the door read the signboard photo, found no name it could read, and told the rep what
+ * to fix. They carry `signboard_key` (the place, the customer, or a new customer's folded name) instead of
+ * a building, because the tries are counted per rep, per customer, per Cairo day.
+ */
+export type RefusedReason =
+  | "no_fix"
+  | "rough"
+  | "off_listing"
+  | "blocked"
+  | "timetable_unreadable"
+  | "timetable_missing"
+  | "signboard_unreadable"
+  | "signboard_no_plate";
 export type RefusedSubject = "visit" | "place";
 /** Which permission the browser blocked. Only these two are capable of ending a capture. */
 export type BlockedPermission = "location" | "camera";
 
 /** Every reason the table's own CHECK allows, in the order it was taught them. */
-export const REFUSED_REASONS: readonly RefusedReason[] = ["no_fix", "rough", "off_listing", "blocked", "timetable_unreadable", "timetable_missing"];
+export const REFUSED_REASONS: readonly RefusedReason[] = [
+  "no_fix",
+  "rough",
+  "off_listing",
+  "blocked",
+  "timetable_unreadable",
+  "timetable_missing",
+  "signboard_unreadable",
+  "signboard_no_plate",
+];
 
 /**
  * The stored reason, read EXHAUSTIVELY.
@@ -199,6 +222,12 @@ export function refusalSentence(attempt: Pick<RefusedAttempt, "subjectKind" | "r
   }
   if (attempt.reason === "timetable_unreadable") {
     return "The photo of the polyclinic's timetable could not be read — too far, blurred, glare or cut off — so the rep was asked to take it again. The third failed photo of the same building in one day is saved and held for the Super Admin.";
+  }
+  if (attempt.reason === "signboard_no_plate") {
+    return "The signboard photo did not show the customer's nameplate, so the rep was asked to photograph it again. The third failed photo of the same customer in one day is saved and held for the Super Admin.";
+  }
+  if (attempt.reason === "signboard_unreadable") {
+    return "The customer's name could not be read in the signboard photo — too far, blurred, dark or cut off — so the rep was asked to take it again. The third failed photo of the same customer in one day is saved and held for the Super Admin.";
   }
   if (attempt.reason === "off_listing") {
     // Never the accuracy radius here: both readings were precise, and printing them would read as a
