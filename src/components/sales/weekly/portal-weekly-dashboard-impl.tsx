@@ -36,20 +36,23 @@ import {
   Users,
 } from "lucide-react";
 
-import { phxSelectClassName } from "@/components/ui/form-tokens";
 import { MultiSelectFilter, type MultiSelectFilterMode } from "@/components/ui/multi-select-filter";
 import { PortalWeeklyFieldForceView } from "@/components/sales/weekly/portal-weekly-field-force-view";
 import { WeeklyProductUnitsView } from "@/components/sales/weekly/weekly-product-units-view";
 import { WeeklySalesDepotDetail } from "@/components/sales/weekly/weekly-sales-depot-detail";
 import { WeeklyUnitProductPicker } from "@/components/sales/weekly/weekly-unit-product-picker";
 import { breakdownColumns, completenessColumns } from "@/components/sales/weekly/weekly-table-widths";
+import {
+  PORTAL_NSM_DSM_MAX_MONTHS,
+  cairoCycleMonthNow,
+  portalNsmDsmExportMonths,
+} from "@/lib/sales/weekly/nsm-dsm-export-months";
 import type {
   PortalWeeklyComparison,
   PortalWeeklyScopeView,
 } from "@/lib/sales/weekly/portal-weekly-dashboard";
 import type { PortalWeeklyFieldForce } from "@/lib/sales/weekly/portal-weekly-field-force";
 import type { WeeklyDashboard, WeeklyRanked } from "@/lib/sales/weekly/types";
-import { cn } from "@/lib/utils";
 import {
   weeklyCutUnits,
   weeklyCutUnitsOf,
@@ -154,11 +157,11 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
     distributors: "include",
   });
 
-  // The NSM/DSM workbook's own month, and nothing else (owner, 2026-10-17: "they only choose the
-  // month"). Deliberately NOT the page's Month filter: that one is multi-select and sits beside a Week
-  // filter, and a week-filtered book collapses its W1..Wn grid to one column and prints a month total
-  // that is really one week's sales. null means "the latest uploaded month", which the server resolves.
-  const [nsmDsmMonth, setNsmDsmMonth] = useState<string | null>(null);
+  // The NSM/DSM workbook follows the page's MONTH filter and nothing else (owner, 2026-10-17: "they
+  // only choose the month in their weekly sales dashboard"; 2026-10-18: it must follow the filter, a
+  // separate month box beside the button exported November while October was picked). The Week
+  // filter never reaches it: a week-filtered book collapses its W1..Wn grid to one column and prints
+  // a month total that is really one week's sales.
   const [downloadingNsmDsm, setDownloadingNsmDsm] = useState(false);
   const [nsmDsmError, setNsmDsmError] = useState<string | null>(null);
 
@@ -256,42 +259,70 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
     setRefreshTick((tick) => tick + 1);
   };
 
+  // The months the Month filter names (or the current month when it is empty) — one workbook each.
+  // Read off the filter's own option list, so what downloads is always a month he can see. The
+  // current month is taken once per page, in Cairo, so a month Finance booked ahead never becomes
+  // the default book.
+  const [currentCycleMonth] = useState(() => cairoCycleMonthNow());
+  const nsmDsmMonths = useMemo(
+    () =>
+      portalNsmDsmExportMonths({
+        available: data.availableMonths.map((month) => month.code),
+        currentMonth: currentCycleMonth,
+        mode: modes.months,
+        selected: selection.months,
+      }),
+    [data.availableMonths, currentCycleMonth, modes.months, selection.months],
+  );
+  const nsmDsmMonthLabels = useMemo(
+    () => new Map(data.availableMonths.map((month) => [month.code, month.name])),
+    [data.availableMonths],
+  );
+
   // Fetched rather than linked, so a 403 or a 429 says so on the page instead of replacing it with a
   // JSON error document — this book takes seconds to build and has its own rate-limit budget.
   const downloadNsmDsm = useCallback(async () => {
-    if (downloadingNsmDsm) return;
+    if (downloadingNsmDsm || nsmDsmMonths.length === 0) return;
+    if (nsmDsmMonths.length > PORTAL_NSM_DSM_MAX_MONTHS) {
+      setNsmDsmError(
+        `Pick ${PORTAL_NSM_DSM_MAX_MONTHS} months or fewer in the Month filter — each month downloads as its own workbook.`,
+      );
+      return;
+    }
     setDownloadingNsmDsm(true);
     setNsmDsmError(null);
     try {
-      const params = new URLSearchParams();
-      if (nsmDsmMonth) params.set("month", nsmDsmMonth);
-      const response = await fetch(`/api/employee-portals/weekly-sales/nsm-dsm-export?${params.toString()}`, {
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        setNsmDsmError(
-          response.status === 429
-            ? "Too many downloads just now — try again in a minute."
-            : "The NSM/DSM export could not be generated.",
-        );
-        return;
+      for (const month of nsmDsmMonths) {
+        const params = new URLSearchParams({ month });
+        const response = await fetch(`/api/employee-portals/weekly-sales/nsm-dsm-export?${params.toString()}`, {
+          cache: "no-store",
+        });
+        const monthName = nsmDsmMonthLabels.get(month) ?? month;
+        if (!response.ok) {
+          setNsmDsmError(
+            response.status === 429
+              ? "Too many downloads just now — try again in a minute."
+              : `The NSM/DSM export for ${monthName} could not be generated.`,
+          );
+          return;
+        }
+        const blob = await response.blob();
+        const match = (response.headers.get("Content-Disposition") ?? "").match(/filename="([^"]+)"/);
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = match?.[1] ?? `phoenix-weekly-nsm-dsm_${month.slice(0, 7)}.xlsx`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
       }
-      const blob = await response.blob();
-      const match = (response.headers.get("Content-Disposition") ?? "").match(/filename="([^"]+)"/);
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = match?.[1] ?? "phoenix-weekly-nsm-dsm.xlsx";
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
     } catch {
       setNsmDsmError("The NSM/DSM export could not be generated.");
     } finally {
       setDownloadingNsmDsm(false);
     }
-  }, [downloadingNsmDsm, nsmDsmMonth]);
+  }, [downloadingNsmDsm, nsmDsmMonths, nsmDsmMonthLabels]);
 
   const toggleFilter = (key: MultiKey, code: string | undefined) => {
     if (!code) return;
@@ -477,35 +508,16 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* The NSM/DSM workbook, for the manager it is about: one month, his own scope, nothing else
-              to pick. The month sits on the button rather than taking the page's Month filter — see
-              nsmDsmMonth above for why a week-filtered book is the wrong book. The select wears the
-              house field token at dense height, as every filter control on a toolbar does. */}
+          {/* The NSM/DSM workbook, for the manager it is about: his own scope, the months his Month
+              filter names (the current month when it is empty), one workbook per month. The months are
+              printed beside the button so what will download is never a surprise. */}
           {scope.canDownloadNsmDsmExport && monthOptions.length > 0 ? (
             <div className="flex flex-wrap items-center gap-1.5">
-              <label className="sr-only" htmlFor="nsm-dsm-month">
-                Month for the NSM/DSM export
-              </label>
-              <select
-                id="nsm-dsm-month"
-                value={nsmDsmMonth ?? monthOptions[0].code}
-                onChange={(event) => {
-                  setNsmDsmMonth(event.target.value);
-                  setNsmDsmError(null);
-                }}
-                className={cn(phxSelectClassName, "h-8 w-auto max-w-[11rem]")}
-              >
-                {monthOptions.map((option) => (
-                  <option key={option.code} value={option.code}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
               <button
                 type="button"
                 onClick={downloadNsmDsm}
-                disabled={downloadingNsmDsm}
-                title="Download the field-manager workbook for that month, scoped to your own areas: sales by area, branch and distributor week by week in units, branches ranked, stock with no sales, and full details"
+                disabled={downloadingNsmDsm || nsmDsmMonths.length === 0}
+                title="Download the field-manager workbook for the months in the Month filter (the current month when none is picked), scoped to your own areas: sales by area, branch and distributor week by week in units, branches ranked, stock with no sales, and full details"
                 className="inline-flex h-8 items-center gap-1.5 border border-orange-500 bg-white px-2.5 text-phx-2xs font-black uppercase tracking-wide text-orange-600 transition hover:bg-orange-50 disabled:opacity-50"
               >
                 {downloadingNsmDsm ? (
@@ -515,6 +527,11 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
                 )}
                 {downloadingNsmDsm ? "Preparing…" : "NSM/DSM Export"}
               </button>
+              <span className="break-words text-phx-2xs font-bold text-slate-500">
+                {nsmDsmMonths.length === 0
+                  ? "No month in the filter"
+                  : nsmDsmMonths.map((month) => nsmDsmMonthLabels.get(month) ?? month).join(" · ")}
+              </span>
             </div>
           ) : null}
           {nsmDsmError ? (

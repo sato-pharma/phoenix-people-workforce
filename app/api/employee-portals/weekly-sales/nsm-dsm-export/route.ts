@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { isPortalNsmDsmCycleMonth } from "@/lib/sales/weekly/nsm-dsm-export-months";
 import { buildPortalNsmDsmExport } from "@/lib/sales/weekly/portal-nsm-dsm-export";
 import { mayDownloadPortalNsmDsmExport } from "@/lib/sales/weekly/portal-weekly-dashboard";
 
@@ -33,6 +34,14 @@ export async function GET(request: Request) {
     // The ONE input. Nothing else on the query string is read, so no filter on the screen can narrow
     // the book behind the reader's back or collapse its week grid.
     const month = new URL(request.url).searchParams.get("month");
+    // A month that is named but unreadable is refused, never replaced by the latest one: that sent
+    // November's book to a manager who had asked for October's.
+    if (month !== null && month.trim() !== "" && !isPortalNsmDsmCycleMonth(month)) {
+      return NextResponse.json(
+        { success: false, error: "month must be a cycle month such as 2026-10-01." },
+        { status: 400 },
+      );
+    }
     const { buffer, filename } = await buildPortalNsmDsmExport(access, month);
 
     return new Response(new Uint8Array(buffer), {

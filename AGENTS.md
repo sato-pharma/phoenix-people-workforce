@@ -191,7 +191,7 @@ words, incidents, measurements, pre-image tables): `docs/agents-owner-rules.md`.
 
 - When he says he will list several requests, **log each as a task and wait for the go-ahead.**
 - **Ask when the answer changes the outcome; decide when it does not.**
-- **Ask business-fact questions IN CHAT as multiple choice, never in prose** — short options, one idea each, recommended first; read his typed "Other" answers closely. An XLSX with dropdowns is only for long per-item lists. Never guess to avoid asking. `ask-business-questions-as-in-chat-multiple-choice`
+- 🥇 **EVERY QUESTION TO HIM IS A MULTIPLE-CHOICE QUESTION, NEVER PROSE** (owner, 2026-10-18: *"you never ask me in the form of text … you must ask me in the form of MCQ"*) — a business fact, a design choice, a data fix, a scope call, an "if you want, I can …". Use `AskUserQuestion`: 2–4 short options, recommended first, one idea each; read his typed "Other" answers closely. Never end a reply with an open question or an offer in prose; if no choice is genuinely his, decide and report. An XLSX with dropdowns is only for long per-item lists. Never guess to avoid asking. `ask-business-questions-as-in-chat-multiple-choice`
 - Take ownership. Automate the work rather than returning a checklist he has to execute.
 
 **How to build**
