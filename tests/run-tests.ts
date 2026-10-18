@@ -377,6 +377,8 @@ import { runRecruitmentInboundMasteryTests } from "./recruitment-inbound-mastery
 import { runRecruitmentCandidateSourceContextTests } from "./recruitment-candidate-source-context.test.ts";
 import { runRecruitmentDbBatchTests } from "./recruitment-db-batch.test.ts";
 import { runRecruitmentPoolRoundTripsTests } from "./recruitment-pool-round-trips.test.ts";
+import { runRecruitmentPageReadsTests } from "./recruitment-page-reads.test.ts";
+import { runAttendanceRawPunchBatchTests } from "./attendance-raw-punch-batch.test.ts";
 import { runAttendanceExportHouseIdentityTests } from "./attendance-export-house-identity.test.ts";
 import { runAttendanceCalendarSourceTests } from "./attendance-calendar-source.test.ts";
 import { runEmployeeStatusFilterConsolidationTests } from "./employee-status-filter-consolidation.test.ts";
@@ -929,6 +931,7 @@ import { runMedicalRepExpensesTests } from "./medical-rep-expenses.test.ts";
 import { runAuthSessionTests } from "./auth-session.test.ts";
 import { runAuthSessionBundleTests } from "./auth-session-bundle.test.ts";
 import { runSessionUnavailableKeepsSessionTests } from "./session-unavailable-keeps-session.test.ts";
+import { runSessionBundleCacheTests } from "./session-bundle-cache.test.ts";
 import { runDepartedAccessRevocationTests } from "./departed-access-revocation.test.ts";
 import { runAuthPageAccessTests } from "./auth-page-access.test.ts";
 import { runLoginPageServerRenderTests } from "./login-page-server-render.test.ts";
@@ -3561,7 +3564,9 @@ await runTest("recruitment inbound mastery (analytics, spike, fuzzy dedup, cv-li
 await runTest("recruitment candidate source context (email subject / whatsapp first messages)", runRecruitmentCandidateSourceContextTests);
 await runTest("recruitment db batching (.in() id lists stay inside the request URL)", runRecruitmentDbBatchTests);
 await runTest("recruitment pool round trips (counts from the pool rows, whole-table reads start before the pool)", runRecruitmentPoolRoundTripsTests);
+await runTest("recruitment page reads settle one by one (a failed read is named, never blanks the page)", runRecruitmentPageReadsTests);
 await runTest("attendance calendar source", runAttendanceCalendarSourceTests);
+await runTest("attendance raw punches go in batches of 250 and fall back punch by punch (counts, failure index, bounded concurrency)", runAttendanceRawPunchBatchTests);
 await runTest("attendance exports (house identity, mapping header row, incomplete warning)", runAttendanceExportHouseIdentityTests);
 await runTest("employee status filter consolidation (5 hand-rolled terminal-status filters → shared constant)", runEmployeeStatusFilterConsolidationTests);
 await runTest("attendance working days", runAttendanceWorkingDaysTests);
@@ -4848,6 +4853,10 @@ await runTest(
 await runTest(
   "a Supabase outage keeps the session (unverifiable != departed, heartbeat answers 503 not 401)",
   runSessionUnavailableKeepsSessionTests,
+);
+await runTest(
+  "a recent session copy may stand in for a failed login check, for ten minutes at most (live first, accepted sessions only)",
+  runSessionBundleCacheTests,
 );
 await runTest("departure revokes access on the last working day", runDepartedAccessRevocationTests);
 await runTest("auth page access guard (guest-fallback predicate)", runAuthPageAccessTests);
