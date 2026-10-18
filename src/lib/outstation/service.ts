@@ -15,6 +15,15 @@ import { randomUUID } from "node:crypto";
 import { cache } from "react";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import {
+  OUTSTATION_CLAIM_CHANGED_CODE,
+  OUTSTATION_CLAIM_REVISION_MISSING_MESSAGE,
+  OutstationClaimChangedError,
+  assertOutstationClaimUnchanged,
+  isOutstationClaimChangedError,
+  outstationClaimRevision,
+} from "@/lib/outstation/claim-revision";
+import { composeDecisionNote } from "@/lib/outstation/decision-note";
 import { carTripFuelIsUnpriceable, UNPRICEABLE_CAR_TRIP_MESSAGE } from "@/lib/outstation/fuel-policy";
 import { getRepTripVisitWorkload } from "@/lib/crm/visit-workload";
 import { mergeWorkloadEvidence } from "@/lib/outstation/workload-evidence";
@@ -2656,7 +2665,9 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     transportationType,
     tripEndDate: isoString(row.trip_end_date),
     tripStartDate: isoString(row.trip_start_date),
-    updatedAt: isoString(row.updated_at),
+    // The claim's version token — what a reviewer sends back with Approve or Reject so the
+    // decision is refused if the claim moved after he loaded it (claim-revision.ts).
+    updatedAt: outstationClaimRevision(row.updated_at),
   };
 }
 
@@ -3244,10 +3255,36 @@ async function pushAcceptedOutstationExpenseToPayroll(
 // (accepted_by_system); a Super Admin may also call it to OVERRIDE a system rejection
 // (accepted_by_admin). It intentionally does not block on the prior status — accepting a
 // rejected request is the whole point of the override.
+/**
+ * The request's stored `updated_at`, exactly as the database holds it.
+ *
+ * Read raw rather than taken from a mapped request: the approval below pins its write to this
+ * value, and the mapper rounds to the millisecond. Throws when the request is gone.
+ */
+async function readOutstationRequestStoredUpdatedAt(requestId: number): Promise<string> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .select("updated_at")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Outstation request was not found.");
+  return String((data as { updated_at?: unknown }).updated_at ?? "");
+}
+
 export async function approveOutstationRequestForPayroll(
   requestId: number,
   access: AccessContext,
-  options: { comment?: string | null } = {},
+  options: {
+    comment?: string | null;
+    /**
+     * The `updatedAt` of the claim the reviewer was looking at. REQUIRED: an approval pays the
+     * claim's current figures, so it has to say which figures it was given. Refused with an
+     * OutstationClaimChangedError (409 at the routes) when the claim has moved since, or when this
+     * is blank. See claim-revision.ts.
+     */
+    expectedRevision: string;
+  },
 ) {
   await assertOutstationAdminAccess(access, "approve");
 
@@ -3271,23 +3308,39 @@ export async function approveOutstationRequestForPayroll(
     });
   }
 
+  // ── The claim he approves is the claim he saw (2026-10-19) ──────────────────────────────────
+  // The figures pushed to payroll below are the row's CURRENT ones, and a claim keeps moving while
+  // it waits in the queue (an employee's extra tickets, a journey stop that re-prices the trip).
+  // So the version he loaded is checked here, and the write is pinned to the exact stored
+  // timestamp it was checked against: a change landing between this read and the update leaves no
+  // row to update, instead of being approved unseen. The write returned is the row that was
+  // checked, so what goes to payroll is what he saw.
+  const checkedUpdatedAt = await readOutstationRequestStoredUpdatedAt(requestId);
+  assertOutstationClaimUnchanged({ current: checkedUpdatedAt, expected: options.expectedRevision });
+
   const acceptedStatus = access.scope === "system" ? "accepted_by_system" : "accepted_by_admin";
   const now = new Date().toISOString();
+  const typedComment = cleanText(options.comment);
   const { data, error } = await getSupabaseAdmin()
     .from("outstation_expense_requests")
     .update({
-      approval_reason: cleanText(options.comment) ?? existing.approvalReason,
+      // His words, with the system's "Journey check:" group kept at the end (decision-note.ts).
+      approval_reason: typedComment
+        ? composeDecisionNote(existing.approvalReason, typedComment)
+        : existing.approvalReason,
       calculation_status: acceptedStatus,
       status: acceptedStatus,
       updated_at: now,
     })
     .eq("id", requestId)
+    .eq("updated_at", checkedUpdatedAt)
     .select("*")
     .maybeSingle();
 
   if (error) throw new Error(error.message);
   if (!data) {
-    throw new Error("Outstation request state changed. Refresh and retry.");
+    // Not found, or the row moved after it was checked: either way it is no longer the claim he saw.
+    throw new OutstationClaimChangedError("changed");
   }
 
   const request = mapOutstationRequestRow(data as Record<string, unknown>);
@@ -4245,7 +4298,15 @@ export async function updateManagerExpenseAsAdmin(
 export async function rejectOutstationRequestAsAdmin(
   requestId: number,
   access: AccessContext,
-  options: { comment: string },
+  options: {
+    comment: string;
+    /**
+     * The `updatedAt` of the claim the reviewer was looking at — REQUIRED, like the approval's. A
+     * rejection is decided on the figures in front of him, so one made on a claim that has since
+     * moved (a corrected stop, an extra ticket) is refused until he has seen the new figures.
+     */
+    expectedRevision: string;
+  },
 ): Promise<OutstationExpenseRequest> {
   await assertOutstationAdminAccess(access, "approve");
 
@@ -4286,6 +4347,15 @@ export async function rejectOutstationRequestAsAdmin(
       status: existing.status,
     });
   }
+
+  // Checked BEFORE anything below is touched: an accepted claim's payroll rows are deleted next, and
+  // that must not happen on the strength of a screen that is out of date. Only a check, not a pin on
+  // the final write — pinning it would let any unrelated stamp (a photo arriving) fail the update
+  // AFTER the payroll rows were gone, and a rejection pays nothing, so the stale window is harmless.
+  assertOutstationClaimUnchanged({
+    current: await readOutstationRequestStoredUpdatedAt(requestId),
+    expected: options.expectedRevision,
+  });
 
   const now = new Date().toISOString();
   // Only the hr id is canonicalised; `system` is a marker, not a person, and must survive.
@@ -4331,7 +4401,8 @@ export async function rejectOutstationRequestAsAdmin(
   const { data, error } = await supabase
     .from("outstation_expense_requests")
     .update({
-      approval_reason: comment,
+      // His reason, with the system's "Journey check:" group kept at the end (decision-note.ts).
+      approval_reason: composeDecisionNote(existing.approvalReason, comment),
       approval_recommendation: "reject",
       calculation_status: "rejected_by_admin",
       status: "rejected_by_admin",
@@ -4373,6 +4444,11 @@ export type OutstationRequestExpenseDecisionInput = {
   approvedAmount?: number | null;
   hrApproved?: boolean;
   hrComment?: string;
+  /**
+   * The claim's version token the queue row was loaded with (`requestRevision` on the row). An
+   * approve, a reject or a trimmed amount without it is skipped, never applied blind.
+   */
+  requestRevision?: string | null;
   status?: string | null;
   total: number;
   tripId: string;
@@ -4380,8 +4456,11 @@ export type OutstationRequestExpenseDecisionInput = {
 
 export type OutstationRequestExpenseDecisionResult = {
   applied: number;
-  /** Rows deliberately not written, each with a reason the reviewer can act on. */
-  skipped: Array<{ reason: string; tripId: string }>;
+  /**
+   * Rows deliberately not written, each with a reason the reviewer can act on. `code` is
+   * OUTSTATION_CLAIM_CHANGED_CODE when the claim moved after the queue loaded it.
+   */
+  skipped: Array<{ code?: string; reason: string; tripId: string }>;
 };
 
 /**
@@ -4443,7 +4522,9 @@ async function writeOutstationRequestDecisionNote(input: {
   comment: string;
   request: OutstationExpenseRequest;
 }): Promise<void> {
-  const next = cleanText(input.comment) ?? "";
+  // His words, with the system's "Journey check:" group kept at the end (decision-note.ts) — the
+  // comment box is pre-filled with the whole stored reason, so clearing it must not erase the group.
+  const next = composeDecisionNote(input.request.approvalReason, cleanText(input.comment));
   const previous = cleanText(input.request.approvalReason) ?? "";
   if (next === previous) return;
 
@@ -4487,7 +4568,7 @@ export async function applyOutstationRequestExpenseDecisions(input: {
   entries: ReadonlyArray<{ record: OutstationRequestExpenseDecisionInput; requestId: number }>;
 }): Promise<OutstationRequestExpenseDecisionResult> {
   let applied = 0;
-  const skipped: Array<{ reason: string; tripId: string }> = [];
+  const skipped: OutstationRequestExpenseDecisionResult["skipped"] = [];
 
   for (const { record, requestId } of input.entries) {
     const hrComment = String(record.hrComment ?? "");
@@ -4533,6 +4614,26 @@ export async function applyOutstationRequestExpenseDecisions(input: {
         continue;
       }
 
+      // ── A decision that moves money carries the claim he was looking at (2026-10-19) ─────────
+      // Approve, reject and a trimmed amount are all decided on the figures on screen, and the
+      // queue can be minutes old. A row that arrives without its version token (a hand-built POST,
+      // an uploaded sheet, a tab opened before this check shipped) is skipped by name rather than
+      // decided blind; a row whose claim has since moved is refused by the same check inside the two
+      // workflow functions (approve pins its write to it) or just below (a trimmed amount).
+      // A comment-only edit above moves no money and is not held to it.
+      const seenRevision = cleanText(record.requestRevision) ?? "";
+      if (!seenRevision) {
+        skipped.push({
+          code: OUTSTATION_CLAIM_CHANGED_CODE,
+          reason: OUTSTATION_CLAIM_REVISION_MISSING_MESSAGE,
+          tripId: record.tripId,
+        });
+        continue;
+      }
+      if (plan.action === "amount") {
+        assertOutstationClaimUnchanged({ current: existing.updatedAt, expected: seenRevision });
+      }
+
       // The payable-figure write below carries the reason only onto the linked payroll row, which
       // the queue does not read a request's comment from — so a trim's reason is written here too.
       if (plan.action === "amount") {
@@ -4540,15 +4641,22 @@ export async function applyOutstationRequestExpenseDecisions(input: {
       }
 
       if (plan.action === "reject") {
-        await rejectOutstationRequestAsAdmin(requestId, input.access, { comment: hrComment });
+        await rejectOutstationRequestAsAdmin(requestId, input.access, {
+          comment: hrComment,
+          expectedRevision: seenRevision,
+        });
         applied += 1;
         continue;
       }
 
       const request =
         plan.action === "approve"
-          ? (await approveOutstationRequestForPayroll(requestId, input.access, { comment: hrComment || null }))
-              .request
+          ? (
+              await approveOutstationRequestForPayroll(requestId, input.access, {
+                comment: hrComment || null,
+                expectedRevision: seenRevision,
+              })
+            ).request
           : existing;
 
       applied += 1;
@@ -4602,6 +4710,7 @@ export async function applyOutstationRequestExpenseDecisions(input: {
       }
     } catch (error) {
       skipped.push({
+        ...(isOutstationClaimChangedError(error) ? { code: OUTSTATION_CLAIM_CHANGED_CODE } : {}),
         reason: error instanceof Error ? error.message : "the decision could not be applied",
         tripId: record.tripId,
       });

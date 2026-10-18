@@ -136,6 +136,10 @@ export type ExpenseTripRecord = {
   pharmacyWorkload?: number | null;
   pmWorkload: number;
   requestType: string;
+  /** The version of a Phoenix-submitted request this row was loaded at (its `updated_at`, see
+   * claim-revision.ts). Present only on request rows; a decision on one is refused if the claim has
+   * moved since, so a screen posts it back unchanged. Excel-imported historical rows never carry it. */
+  requestRevision?: string;
   row: number;
   specialist: string;
   status: string;

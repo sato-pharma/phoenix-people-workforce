@@ -45,6 +45,7 @@ import { Input } from "@/components/ui/input";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import { formatDateTimeValue, formatDateValue } from "@/lib/i18n/format";
 import { resolveCaptureTimeliness } from "@/lib/outstation/capture-timeliness";
+import { OUTSTATION_CLAIM_CHANGED_CODE } from "@/lib/outstation/claim-revision";
 import { viewEligibilityReason } from "@/lib/outstation/eligibility-reason";
 import { approverTripPhotos } from "@/lib/outstation/trip-evidence-photos";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
@@ -60,6 +61,7 @@ import {
 type AdminAction = "approve" | "delete" | "fill-distance" | "reject";
 
 type ActionPayload = {
+  error?: string;
   linkedPayroll?: {
     deletedRows?: number;
     expenseTripId?: string;
@@ -853,6 +855,20 @@ export function OutstationRequestsAdmin({
     );
   }
 
+  /**
+   * A decision was refused because the claim moved after this screen loaded it. Nothing was decided;
+   * put the current figures on screen so the next click is on what is really there.
+   */
+  async function reloadRequestAfterConflict(requestId: number) {
+    try {
+      const response = await fetch(`/api/admin/outstation/${requestId}`, { headers: { accept: "application/json" } });
+      const payload = await response.json().catch(() => null) as ActionPayload | null;
+      if (response.ok && payload?.request) updateRequestInState(payload.request);
+    } catch {
+      // The refusal message already tells him to refresh; a failed reload must not hide it.
+    }
+  }
+
   async function approveRequest(selectedRequest: OutstationExpenseRequest) {
     setActing({ action: "approve", id: selectedRequest.id });
     setActionRequestId(selectedRequest.id);
@@ -860,12 +876,18 @@ export function OutstationRequestsAdmin({
     setActionMessage(null);
     try {
       const response = await fetch(`/api/admin/outstation/${selectedRequest.id}`, {
-        body: JSON.stringify({ comment: "Approved from admin outstation review." }),
+        // `expectedRevision` is the version of the claim on screen: the server refuses to approve a
+        // claim that has changed since (an extra ticket, a journey stop) and pays only what was seen.
+        body: JSON.stringify({
+          comment: "Approved from admin outstation review.",
+          expectedRevision: selectedRequest.updatedAt,
+        }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
       const payload = await response.json().catch(() => null) as ActionPayload | null;
       if (!response.ok || !payload?.request) {
+        if (payload?.error === OUTSTATION_CLAIM_CHANGED_CODE) await reloadRequestAfterConflict(selectedRequest.id);
         throw new Error(payload?.message ?? "Unable to approve outstation request.");
       }
       updateRequestInState(payload.request);
@@ -891,12 +913,13 @@ export function OutstationRequestsAdmin({
     setActionMessage(null);
     try {
       const response = await fetch(`/api/admin/outstation/${request.id}`, {
-        body: JSON.stringify({ comment }),
+        body: JSON.stringify({ comment, expectedRevision: request.updatedAt }),
         headers: { "Content-Type": "application/json" },
         method: "PATCH",
       });
       const payload = await response.json().catch(() => null) as ActionPayload | null;
       if (!response.ok || !payload?.request) {
+        if (payload?.error === OUTSTATION_CLAIM_CHANGED_CODE) await reloadRequestAfterConflict(request.id);
         throw new Error(payload?.message ?? "Unable to reject outstation request.");
       }
       updateRequestInState(payload.request);

@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import {
+  OUTSTATION_CLAIM_CHANGED_CODE,
+  isOutstationClaimChangedError,
+} from "@/lib/outstation/claim-revision";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 import {
   approveOutstationRequestForPayroll,
@@ -24,8 +28,27 @@ function isOutstationPayrollLockError(error: unknown) {
 
 function outstationWorkflowStatus(error: unknown) {
   if (isForbiddenError(error)) return 403;
-  if (isOutstationPayrollLockError(error) || isWorkflowRegistryTransitionError(error)) return 409;
+  // 409 for a claim that moved after the reviewer loaded it (or a screen that never said which
+  // version it showed): nothing was decided, and the answer is to refresh and look again.
+  if (
+    isOutstationPayrollLockError(error) ||
+    isWorkflowRegistryTransitionError(error) ||
+    isOutstationClaimChangedError(error)
+  ) {
+    return 409;
+  }
   return 500;
+}
+
+/** The error code a failed decision answers with — the claim-moved one is distinct so a screen can refresh on it. */
+function outstationDecisionErrorCode(error: unknown, fallback: string) {
+  if (isForbiddenError(error)) return "forbidden";
+  return isOutstationClaimChangedError(error) ? OUTSTATION_CLAIM_CHANGED_CODE : fallback;
+}
+
+/** The version token the screen sends with a decision; blank when it sent none (the service refuses blank). */
+function expectedRevisionFrom(body: { expectedRevision?: unknown }) {
+  return typeof body.expectedRevision === "string" ? body.expectedRevision : "";
 }
 
 /**
@@ -125,9 +148,13 @@ export async function POST(
       );
     }
 
-    const body = await request.json().catch(() => ({})) as { comment?: string | null };
+    const body = await request.json().catch(() => ({})) as {
+      comment?: string | null;
+      expectedRevision?: string | null;
+    };
     const result = await approveOutstationRequestForPayroll(id, access, {
       comment: typeof body.comment === "string" ? body.comment : null,
+      expectedRevision: expectedRevisionFrom(body),
     });
 
     return NextResponse.json({
@@ -141,7 +168,7 @@ export async function POST(
     const message = clientSafeErrorMessage(error, "Unable to approve outstation request.");
     await recordOutstationDecisionFailure({ access, action: "approve", error, requestId });
     return NextResponse.json(
-      { error: isForbiddenError(error) ? "forbidden" : "outstation_approval_failed", message, success: false },
+      { error: outstationDecisionErrorCode(error, "outstation_approval_failed"), message, success: false },
       { status: outstationWorkflowStatus(error) },
     );
   }
@@ -169,7 +196,10 @@ export async function PATCH(
       );
     }
 
-    const body = await request.json().catch(() => ({})) as { comment?: string | null };
+    const body = await request.json().catch(() => ({})) as {
+      comment?: string | null;
+      expectedRevision?: string | null;
+    };
     const comment = typeof body.comment === "string" ? body.comment.trim() : "";
     if (!comment) {
       return NextResponse.json(
@@ -178,7 +208,10 @@ export async function PATCH(
       );
     }
 
-    const rejected = await rejectOutstationRequestAsAdmin(id, access, { comment });
+    const rejected = await rejectOutstationRequestAsAdmin(id, access, {
+      comment,
+      expectedRevision: expectedRevisionFrom(body),
+    });
 
     return NextResponse.json({
       message: "Outstation expense rejected.",
@@ -189,7 +222,7 @@ export async function PATCH(
     const message = clientSafeErrorMessage(error, "Unable to reject outstation request.");
     await recordOutstationDecisionFailure({ access, action: "reject", error, requestId });
     return NextResponse.json(
-      { error: isForbiddenError(error) ? "forbidden" : "outstation_rejection_failed", message, success: false },
+      { error: outstationDecisionErrorCode(error, "outstation_rejection_failed"), message, success: false },
       { status: outstationWorkflowStatus(error) },
     );
   }

@@ -68,7 +68,7 @@ function mapOutstation(r: OutstationExpenseRequest): ActionHubItem {
     id: String(r.id), module: "outstation", employeeName: r.employeeName, employeeHrId: r.employeeHrId,
     title: `Outstation · ${r.tripStartDate}`, statusLabel: "Pending approval", submittedAt: r.createdAt,
     urgency: r.approvalRecommendation === "auto_approve" ? "low" : r.approvalRecommendation === "reject" ? "high" : "normal",
-    detail: { module: "outstation", expenseType: r.expenseType, tripStartDate: r.tripStartDate, tripEndDate: r.tripEndDate, toLabel: r.toLabel, allowanceAmount: r.allowanceAmount, claimedTotalAmount: r.claimedTotalAmount, approvalRecommendation: r.approvalRecommendation, approvalReason: r.approvalReason, notes: r.notes, requestId: r.id },
+    detail: { module: "outstation", expenseType: r.expenseType, tripStartDate: r.tripStartDate, tripEndDate: r.tripEndDate, toLabel: r.toLabel, allowanceAmount: r.allowanceAmount, claimedTotalAmount: r.claimedTotalAmount, approvalRecommendation: r.approvalRecommendation, approvalReason: r.approvalReason, notes: r.notes, requestId: r.id, revision: r.updatedAt },
   };
 }
 

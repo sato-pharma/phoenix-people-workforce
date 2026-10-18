@@ -389,6 +389,7 @@ function mapOutstationItem(
       approvalReason: request.approvalReason,
       notes: request.notes,
       requestId: request.id,
+      revision: request.updatedAt,
     },
   };
 }

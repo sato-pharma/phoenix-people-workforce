@@ -1,5 +1,6 @@
 import type { PayrollExpenseApproval, ExpenseTripRecord } from "@/lib/payroll/types";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
+import { outstationClaimRevision } from "@/lib/outstation/claim-revision";
 import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
 import { nextPayrollPeriod } from "@/lib/outstation/payroll-period";
 
@@ -361,6 +362,9 @@ export function mapOutstationRequestRowToPayrollApproval(
     pharmacyWorkload,
     pmWorkload,
     reportId: null,
+    // The version the reviewer is looking at. Posted back with a decision so a claim that moved
+    // after the queue loaded (an extra ticket, a journey stop) is refused, not approved unseen.
+    requestRevision: outstationClaimRevision(row.updated_at),
     requestType: "Outstation",
     row: Number(row.id ?? 0),
     sourceFileName: "Outstation Requests",
