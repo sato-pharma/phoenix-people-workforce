@@ -8,6 +8,7 @@
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { bumpCustomer360Cache } from "@/lib/cache/namespaces";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { conflictError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { canonicalHrIdKey, resolveStoredHrId, type StoredHrIdDirectoryEntry } from "@/lib/hr-id";
@@ -287,6 +288,7 @@ export async function approveCustomerPharmacyLink(
       : `Customer pharmacy link for "${pharmacyName ?? "a pharmacy"}" approved by ${actorHrId ?? access.hrId ?? "unknown"}.`,
   });
 
+  bumpCustomer360Cache("customer pharmacy link approved");
   return toDecisionResult(data as LinkDecisionRow);
 }
 
@@ -339,5 +341,6 @@ export async function rejectCustomerPharmacyLink(
     summary: `Customer pharmacy link rejected by ${actorHrId ?? access.hrId ?? "unknown"}: ${trimmedReason}`,
   });
 
+  bumpCustomer360Cache("customer pharmacy link rejected");
   return toDecisionResult(data as LinkDecisionRow);
 }

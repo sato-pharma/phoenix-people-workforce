@@ -6,6 +6,7 @@
  * error and stays one (toApiError hides its detail from the client).
  */
 
+import { bumpCustomer360Cache } from "@/lib/cache/namespaces";
 import { ApiError } from "@/lib/http/api-errors";
 import { CUSTOMER_PHONE_ERROR } from "@/lib/phoenix-crm/entry-rules";
 import { SHARED_PLACE_DAY_FULL_TEXT } from "@/lib/phoenix-crm/shared-place-rules";
@@ -298,11 +299,42 @@ export function phoenixCrmRefusal(error: unknown): ApiError | null {
   return null;
 }
 
+/**
+ * The Phoenix CRM writes that change Customer 360 (owner, 2026-10-18: "make this module update
+ * itself"): who is validated or dropped, where a validated place is, its name, and the visits that
+ * say which lines call on it and which pharmacies they name. Each refreshes the report on success.
+ * A write missing here still reaches the report within ten minutes; it is never wrong, only late.
+ */
+export const CUSTOMER_360_PHOENIX_WRITERS: ReadonlySet<string> = new Set([
+  "phoenix_crm_add_place",
+  "phoenix_crm_admin_edit_visit",
+  "phoenix_crm_archive_outside",
+  "phoenix_crm_decide_manager_customer_removal",
+  "phoenix_crm_decide_request",
+  "phoenix_crm_decide_shared_place",
+  "phoenix_crm_decide_validation_review",
+  "phoenix_crm_edit_visit_detail",
+  "phoenix_crm_move_customer",
+  "phoenix_crm_move_place",
+  "phoenix_crm_rename_customer",
+  "phoenix_crm_restore_shared_place",
+  "phoenix_crm_restore_validation",
+  "phoenix_crm_reverse_list_request",
+  "phoenix_crm_reverse_unplanned_visit",
+  "phoenix_crm_save_visit",
+  "phoenix_crm_seat_places_in_venue",
+  "phoenix_crm_set_venue_timetable",
+  "phoenix_crm_settle_venue_timetable",
+  "phoenix_crm_update_place",
+  "phoenix_crm_validate_customer",
+]);
+
 export async function callPhoenixCrm<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   const { data, error } = await getSupabaseAdmin().rpc(fn, args);
   if (error) {
     throw phoenixCrmRefusal(error) ?? error;
   }
+  if (CUSTOMER_360_PHOENIX_WRITERS.has(fn)) bumpCustomer360Cache(fn);
   return data as T;
 }
 

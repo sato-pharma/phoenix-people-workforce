@@ -168,6 +168,7 @@ import {
 } from "@/lib/venues/wholesaler-venue-guard";
 import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
 import { loadAlsoKnownAsBatch } from "@/lib/customer-identity/server/profile";
+import { bumpCustomer360Cache } from "@/lib/cache/namespaces";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-resolution";
 import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
@@ -10430,5 +10431,6 @@ export async function mergeMarketingVenue(
       + `Reason: ${reason}`,
   });
 
+  bumpCustomer360Cache("marketing venue merged");
   return result;
 }

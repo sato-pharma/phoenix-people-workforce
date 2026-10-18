@@ -2179,6 +2179,13 @@ export const accessRegistry = [
   // and `withdraw_ruling` undoes it, both stamped with who and when.
   sessionApi({ methods: ["GET"], pattern: "/api/customer-identity/suggestions", permission: { resource: "customer_identity", action: "read" } }),
   sessionApi({ csrfRequired: true, methods: ["POST"], pattern: "/api/customer-identity/decide", permission: { resource: "customer_identity", action: "update" } }),
+  // Customer 360 (owner, 2026-10-18) — every validated doctor and account linked to its visits,
+  // pharmacies, marketing money and sales. The export is the page's own scoped report through the
+  // page's own filter (sales:read, territory-scoped), read-only. The pharmacy-match POST records the
+  // Super Admin's decision on a pharmacy a rep named on a visit and writes ONLY
+  // `customer_360_pharmacy_matches` — no visit, customer, register row or identity link is touched.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/customer-360/export", permission: { resource: "sales", action: "read" } }),
+  sessionApi({ csrfRequired: true, methods: ["POST"], pattern: "/api/customer-360/pharmacy-matches", permission: { resource: "customer_identity", action: "update" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/milestones/card", permission: { resource: "milestones", action: "export" } }),
   // The rep's OWN card, self-scoped (owner, 2026-09-30). Not the publishing right above: it builds
   // ONLY the caller's own card (access.hrId, never a hrId off the wire), so it needs no `milestones`

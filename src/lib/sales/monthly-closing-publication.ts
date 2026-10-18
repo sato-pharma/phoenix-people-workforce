@@ -1,3 +1,4 @@
+import { bumpCustomer360Cache } from "@/lib/cache/namespaces";
 import { invalidateClosingStoreSplitCache } from "@/lib/dashboard/invalidation";
 import { isHeadOfficeLine } from "@/lib/sales/access-scope";
 import {
@@ -411,6 +412,7 @@ export async function publishClosing(input: {
     .single();
   if (error) throw new Error(error.message);
   invalidateClosingStoreSplitCache(`closing published — ${line}/${period}`);
+  bumpCustomer360Cache("monthly closing published");
 
   // Best-effort: a notification failure must never turn a successful publish into an error response.
   // publishedAt anchors the send's idempotency key — a true re-publish (this row didn't exist a
@@ -470,4 +472,5 @@ export async function unpublishClosing(input: {
     .is("unpublished_at", null);
   if (error) throw new Error(error.message);
   invalidateClosingStoreSplitCache(`closing unpublished — ${input.line}/${period}`);
+  bumpCustomer360Cache("monthly closing unpublished");
 }

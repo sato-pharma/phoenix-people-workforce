@@ -1,6 +1,7 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
 import { resolveEmployeeIdentityId, type AccessContext } from "@/lib/auth/permissions";
+import { bumpCustomer360Cache } from "@/lib/cache/namespaces";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { resolveMarketingInvoiceObligation } from "@/lib/marketing-requests/invoice-obligation";
 import type { MarketingInvoiceStatus } from "@/lib/marketing-requests/types";
@@ -393,6 +394,7 @@ export async function placeMarketingRequestOnFinanceHold(params: {
       + `(was "${request.status}"). Reason: ${reason}`,
   });
 
+  bumpCustomer360Cache("marketing request placed on finance hold");
   return { requestCode: request.requestCode, requestId, status: MARKETING_FINANCE_HOLD_STATUS };
 }
 
@@ -466,5 +468,6 @@ export async function releaseMarketingRequestFromFinanceHold(params: {
       + `back to "${nextStatus}". Reason: ${reason}`,
   });
 
+  bumpCustomer360Cache("marketing request released from finance hold");
   return { requestCode: request.requestCode, requestId, status: nextStatus };
 }

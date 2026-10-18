@@ -1,5 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { bumpCustomer360Cache } from "@/lib/cache/namespaces";
 import { forbiddenError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -215,5 +216,6 @@ export async function runDirectOrderProbationSweep(
     }
   }
 
+  if (result.promoted.length > 0) bumpCustomer360Cache("direct-order pharmacies promoted to trusted");
   return result;
 }

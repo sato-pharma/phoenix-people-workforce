@@ -182,6 +182,12 @@ import { runProbationDomainMigrationReadinessTests } from "./probation-domain-mi
 import { runCrmContactCodeTests } from "./crm-contact-code.test.ts";
 import { runCustomerGeographySpineTests } from "./customer-geography-spine.test.ts";
 import { runCustomer360Tests, runCustomer360AlsoKnownAsTests } from "./customer-360.test.ts";
+import { runCustomer360ValidatedTests } from "./customer-360-validated.test.ts";
+import { runCustomer360PharmacyMatcherTests } from "./customer-360-pharmacy-matcher.test.ts";
+import { runCustomer360VerdictTests } from "./customer-360-verdict.test.ts";
+import { runCustomer360HubTests } from "./customer-360-hubs.test.ts";
+import { runCustomer360WiringTests } from "./customer-360-wiring.test.ts";
+import { runCustomer360ReportTests } from "./customer-360-report.test.ts";
 import { runMarketingValidationDeskAliasTests } from "./marketing-validation-desk-confirmed-aliases.test.ts";
 import { runMarketingRoiSalesDataAsOfTests } from "./marketing-roi-sales-data-asof.test.ts";
 import { runDirectOrderPickerAliasTests } from "./direct-order-picker-confirmed-aliases.test.ts";
@@ -4068,6 +4074,12 @@ await runTest("direct channel", runDirectChannelTests);
 await runTest("direct orders land on their own area", runDirectOrdersLandOnTheirOwnAreaTests);
 await runTest("the place spine resolves EXACT customer-code pairs (two .in() filters are independent)", runCustomerGeographySpineTests);
 await runTest("Customer 360 hides confidential money and never offers a picker wider than its viewer", runCustomer360Tests);
+await runTest("Customer 360 counts VALIDATED doctors and accounts only, and \"validated\" is defined in one file", runCustomer360ValidatedTests);
+await runTest("Customer 360 ties a pharmacy named on a visit only when it is the one shop of that name in the brick; anything uncertain waits for the Super Admin, whose decision outranks the rule", runCustomer360PharmacyMatcherTests);
+await runTest("Customer 360 whitelists growth after the request even under 10x, and blacklists only a closed window that stayed flat", runCustomer360VerdictTests);
+await runTest("Customer 360 builds one hub per validated doctor or account: PM and AM never mix, marketing joins by fact, one row per shop, EP-PHS never proves a shop", runCustomer360HubTests);
+await runTest("Customer 360 refreshes after every writer, reads the closing alone, gates in its handlers, is never read to stop a request, and accepts the identity sources the database allows", runCustomer360WiringTests);
+await runTest("Customer 360 judges only months closed for every line, counts direct orders in closed months on three lines, never reads EP-PHS without its brick, and keeps El Qema out of the detail with one verdict for every viewer", runCustomer360ReportTests);
 await runTest(
   "the marketing validation desk's \"also known as\" is a note and never a verdict: confirmed links only, read from the VISIBLE links, never deciding validationStatus, and in neutral ink on a screen that records permanent verdicts",
   runMarketingValidationDeskAliasTests,

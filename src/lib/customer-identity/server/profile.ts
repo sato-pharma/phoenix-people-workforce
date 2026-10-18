@@ -1,3 +1,5 @@
+import { parseCrmContactCode } from "@/lib/crm/contact-code";
+import { marketingCustomerHubKind } from "@/lib/customer-360/validated";
 import { othersOnMaster } from "@/lib/customer-identity/suggestions";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -160,6 +162,40 @@ async function readSource(source: IdentitySource, ids: readonly string[]): Promi
       out.set(String(row.id), {
         distributorPairs: codes.get(String(row.id)) ?? [],
         kind: "pharmacy",
+        lat: num(row.captured_latitude),
+        lon: num(row.captured_longitude),
+        name: text(row.display_name),
+        regionCode: text(row.region_name) || null,
+        source,
+        sourceId: String(row.id),
+      });
+    }
+    return out;
+  }
+
+  // A marketing customer is a doctor or an account, never a pharmacy — the same PM/AM split the
+  // candidate reader makes (`marketingCustomerHubKind`), so one row never reads two ways.
+  if (source === "marketing_customer") {
+    const [{ data, error }, { data: contactRows, error: contactError }] = await Promise.all([
+      admin
+        .from("marketing_customers")
+        .select("id, customer_type, display_name, region_name, captured_latitude, captured_longitude")
+        .in("id", [...ids]),
+      admin.from("marketing_customer_contacts").select("customer_id, crm_code, active").in("customer_id", [...ids]),
+    ]);
+    if (error) throw new Error(`customer-identity: reading marketing_customers failed — ${error.message}`);
+    if (contactError) throw new Error(`customer-identity: reading marketing_customer_contacts failed — ${contactError.message}`);
+    const contactIds = new Map<string, number>();
+    for (const row of (contactRows ?? []) as Row[]) {
+      if (row.active !== true) continue;
+      const contactId = parseCrmContactCode(text(row.crm_code));
+      const customerId = text(row.customer_id);
+      if (customerId && contactId !== null && !contactIds.has(customerId)) contactIds.set(customerId, contactId);
+    }
+    for (const row of (data ?? []) as Row[]) {
+      out.set(String(row.id), {
+        contactCrmId: contactIds.get(String(row.id)) ?? null,
+        kind: marketingCustomerHubKind(text(row.customer_type)) === "doctor" ? "PM" : "AM",
         lat: num(row.captured_latitude),
         lon: num(row.captured_longitude),
         name: text(row.display_name),

@@ -24,8 +24,8 @@ export const dynamic = "force-dynamic";
 function NotFound({ message }: { message: string }) {
   return (
     <div className="mx-auto max-w-3xl p-6">
-      <Card className="rounded-[20px] border-slate-200/80 bg-white p-6 text-center shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
-        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+      <Card className="rounded-none border-slate-200/80 bg-white p-6 text-center shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+        <span className="mx-auto flex h-12 w-12 items-center justify-center bg-slate-100 text-slate-400">
           <Building2 className="h-5 w-5" />
         </span>
         <h1 className="mt-3 text-lg font-black text-slate-900">Customer not found</h1>
@@ -99,7 +99,7 @@ export default async function Customer360DetailPage({
         Back to Customer 360
       </Link>
 
-      <header className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
+      <header className="border border-slate-200 bg-white p-5 shadow-sm">
         <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
           {customerRegisterLabel(profile.register)}
         </p>

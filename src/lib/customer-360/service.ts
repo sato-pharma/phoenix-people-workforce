@@ -11,7 +11,9 @@
  *   · marketing requests raised for it        (marketing_request_pharmacies)
  *   · direct orders placed on it              (direct_order_requests.pharmacy_id)
  *   · the campaign a direct order came from   (direct_order_requests.marketing_request_id)
- *   · its actual sales                        (source_of_sales_channel_customer_rollup)
+ *   · its actual sales — the Monthly Closing's own customer rows (`phx_closing_customers_for_pairs`,
+ *     through `server/sales.ts`), closed months only, VALUE only. The closing is the one source of
+ *     truth for sales (owner, golden rule), and a unit total across different products is never valid.
  *
  *  NOT SHOWN, because the link does not exist — and saying so is the point
  *   · CRM visits. CRM records pharmacies as their own contact type, and the names do not meet
@@ -39,6 +41,8 @@ import {
   resolveCustomerGeography,
   type CustomerCodePair,
 } from "@/lib/sales/customer-geography";
+import { loadClosedMonths, loadClosingRowsForPairs } from "@/lib/customer-360/server/sales";
+import { hubLineLabel, normalisePair, pairCanBeRead } from "@/lib/customer-360/hub";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -396,34 +400,37 @@ async function loadOtherRegisterPairs(register: CustomerRegister): Promise<Set<s
 }
 
 /**
- * This pharmacy's sales, one query per code pair.
+ * This pharmacy's sales — the Monthly Closing's own customer rows for its exact code pairs, closed
+ * months only (Customer 360's shared reader, `server/sales.ts`).
  *
- * Deliberately NOT two `.in()` filters. PostgREST applies those independently, so they match the
- * cross-product rather than the pairs — the exact bug the shared place resolver was built to close.
- * A pharmacy holds a handful of pairs, so asking once per pair is both exact and cheap.
+ * 🔴 THE CLOSING, NEVER THE ROLLUP. This page used to read `source_of_sales_channel_customer_rollup`
+ * directly — a second sales source beside the closing, which the Monthly Closing golden rule forbids —
+ * and summed UNITS across every product on a line, which is never a valid figure. The closing's rows
+ * carry value only, already free of the restricted products, so the headline is value only.
+ *
+ * Pairs travel as pairs (the wrapper takes the pair list), never as two independent `.in()` filters.
+ * EP-PHS reuses a code across shops, so its pair also carries the shop's brick.
  */
-async function loadSalesRows(pairs: readonly CustomerCodePair[]): Promise<CustomerSalesRollupRow[]> {
+async function loadSalesRows(
+  pairs: readonly CustomerCodePair[],
+  brickOf: (pair: CustomerCodePair) => string | null,
+): Promise<CustomerSalesRollupRow[]> {
   if (pairs.length === 0) return [];
-  const supabase = getSupabaseAdmin();
-  const collected: CustomerSalesRollupRow[] = [];
-  for (const pair of pairs) {
-    const { data } = await supabase
-      .from("source_of_sales_channel_customer_rollup")
-      .select("official_line, period, units_all, units_restricted, value_all, value_restricted")
-      .eq("distributor_code", pair.distributorCode)
-      .eq("client_code", pair.customerCode);
-    for (const row of (data ?? []) as Record<string, unknown>[]) {
-      collected.push({
-        officialLine: text(row.official_line),
-        period: text(row.period),
-        unitsAll: row.units_all == null ? null : Number(row.units_all),
-        unitsRestricted: row.units_restricted == null ? null : Number(row.units_restricted),
-        valueAll: row.value_all == null ? null : Number(row.value_all),
-        valueRestricted: row.value_restricted == null ? null : Number(row.value_restricted),
-      });
-    }
-  }
-  return collected;
+  const months = await loadClosedMonths();
+  // An EP-PHS code whose brick is unknown names every shop that carries it, so it is never read.
+  const readable = pairs
+    .map((pair) => normalisePair({ brickId: brickOf(pair), customerCode: pair.customerCode, distributorCode: pair.distributorCode }))
+    .filter(pairCanBeRead);
+  if (readable.length === 0) return [];
+  const rows = await loadClosingRowsForPairs(readable, months);
+  return rows.map((row) => ({
+    officialLine: hubLineLabel(row.line),
+    period: row.period,
+    unitsAll: null,
+    unitsRestricted: null,
+    valueAll: row.value,
+    valueRestricted: 0,
+  }));
 }
 
 /**
@@ -453,7 +460,10 @@ export async function getCustomer360Profile(
   const pairs = await loadSubjectCodePairs(ref);
   const otherRegister = await loadOtherRegisterPairs(ref.register);
   const geography = await resolveCustomerGeography(pairs);
-  const salesRows = await loadSalesRows(pairs);
+  const salesRows = await loadSalesRows(
+    pairs,
+    (pair) => geography.get(customerGeographyKey(pair.distributorCode, pair.customerCode))?.brickId ?? null,
+  );
 
   const codes: CustomerCodeLink[] = pairs.map((pair) => {
     const resolved = geography.get(customerGeographyKey(pair.distributorCode, pair.customerCode));

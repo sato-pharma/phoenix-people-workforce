@@ -2406,3 +2406,85 @@ async function readContactVisitHistoryPaged(ids: readonly number[], daysSince: s
   }
   return byContact;
 }
+
+/** One contact's visits in one month by one rep, as `phx_crm_contact_visit_months` groups them. */
+export type CrmContactVisitMonth = {
+  month: string;
+  agentHrId: string | null;
+  agentName: string | null;
+  /** The view's AM/PM tag — a Phoenix pharmacy call carries `Pharmacy` here (visit-count-buckets.ts). */
+  ampm: string | null;
+  /** `ireports360` or `phoenix`. */
+  source: string | null;
+  speciality: string | null;
+  visitType: number | null;
+  visits: number;
+  lastVisitedOn: string | null;
+};
+
+/** Server-side fold over the visits door, one row per contact (…20261018230827). */
+const CRM_CONTACT_VISIT_MONTHS_RPC = "phx_crm_contact_visit_months";
+
+/**
+ * 🔴 CUSTOMER 360's VISITS, per validated contact per month per rep (owner, 2026-10-18: "a doctor
+ * visited by all three lines"). Both sources — Phoenix CRM's own and iReports360 — because most
+ * lines' history lives only in the vendor mirror; resigned reps included, because a visit a rep made
+ * before leaving is still a visit the doctor received; the 100000 placeholder excluded in SQL.
+ *
+ * IT LIVES HERE BECAUSE THIS IS THE DOOR (`crm-single-source.test.ts`). The fold runs in the
+ * database: ~2,250 validated contacts hold ~150,000 visit rows since January, and the report needs a
+ * few rows each. One row per contact comes back, so 500 contacts a call stays under PostgREST's
+ * 1,000-row cap; measured on production 2026-10-18 at 340 ms per 500.
+ *
+ * Bucketing (AM · PM · Pharmacies apart) and regular-versus-campaign are the caller's, through
+ * `visitCountBucket` and `classifyVisit` — this hands back the fields those two read, unjudged.
+ */
+export async function readContactVisitMonths(
+  contactCrmIds: readonly number[],
+  from: string,
+): Promise<Map<number, CrmContactVisitMonth[]>> {
+  const ids = [...new Set(contactCrmIds)].filter((id) => Number.isFinite(id) && id > 0);
+  const byContact = new Map<number, CrmContactVisitMonth[]>();
+  if (ids.length === 0) return byContact;
+  const supabase = getSupabaseAdmin();
+  type MonthJson = {
+    month?: string | null;
+    agent_hr_id?: string | null;
+    agent_name?: string | null;
+    ampm?: string | null;
+    source?: string | null;
+    speciality?: string | null;
+    visit_type?: number | null;
+    visits?: number | string | null;
+    last_visited_on?: string | null;
+  };
+  type Row = { contact_crm_id: number | string | null; months: MonthJson[] | null };
+  const chunks = Array.from({ length: Math.ceil(ids.length / CONTACT_HISTORY_RPC_CHUNK) }, (_unused, index) =>
+    ids.slice(index * CONTACT_HISTORY_RPC_CHUNK, (index + 1) * CONTACT_HISTORY_RPC_CHUNK),
+  );
+  const answers = await mapWithConcurrency(chunks, 3, async (chunk) => {
+    const { data, error } = await supabase.rpc(CRM_CONTACT_VISIT_MONTHS_RPC, { p_contact_crm_ids: chunk, p_from: from });
+    if (error) throw toQueryError(error);
+    return (data ?? []) as Row[];
+  });
+  for (const rows of answers) {
+    for (const row of rows) {
+      if (row.contact_crm_id == null || !Array.isArray(row.months)) continue;
+      byContact.set(
+        Number(row.contact_crm_id),
+        row.months.map((entry) => ({
+          agentHrId: entry.agent_hr_id ?? null,
+          agentName: entry.agent_name ?? null,
+          ampm: entry.ampm ?? null,
+          lastVisitedOn: entry.last_visited_on ?? null,
+          month: String(entry.month ?? ""),
+          source: entry.source ?? null,
+          speciality: entry.speciality ?? null,
+          visitType: entry.visit_type == null ? null : Number(entry.visit_type),
+          visits: Number(entry.visits ?? 0),
+        })),
+      );
+    }
+  }
+  return byContact;
+}

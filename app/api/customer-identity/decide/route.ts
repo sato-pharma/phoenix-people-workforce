@@ -28,8 +28,8 @@ const KINDS = new Set<IdentityKind>(["PM", "AM", "pharmacy"]);
 const BANDS = new Set<EvidenceBand>(["fact", "strong", "likely", "possible"]);
 // 🔴 EVERY SOURCE THE ENGINE CAN OFFER MUST BE HERE, or the Super Admin's confirmation of a pair
 //    it put in front of him is refused as a malformed body — a dead end with no wording to explain
-//    it. `visit_feedback` joined on 2026-10-01.
-const SOURCES = new Set(["phoenix_crm", "marketing", "direct_order", "ireports360", "visit_feedback"]);
+//    it. `visit_feedback` joined on 2026-10-01, `marketing_customer` on 2026-10-18.
+const SOURCES = new Set(["phoenix_crm", "marketing", "direct_order", "ireports360", "visit_feedback", "marketing_customer"]);
 
 function side(raw: unknown): DecisionSide | null {
   if (!raw || typeof raw !== "object") return null;
