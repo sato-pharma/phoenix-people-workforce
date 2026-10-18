@@ -568,6 +568,50 @@ Pinned by `checkDoorScanner`, `checkOneReadPerPhoto`, `checkBoardTooFullForOneAn
 `checkOwnersSpellingRulings` and `checkStoredReadingsRejudged` (`tests/phoenix-crm-signboard-check.test.ts`) and `checkTheReReads`
 (`tests/phoenix-crm-held-signboard.test.ts`).
 
+## The one-by-one review (2026-10-18)
+
+The owner, on Place checks: *"for the admin to facilitate on him taking the decision. Look at the
+screening page in recruitment module. I want to have the picture in a very wide space in the screen
+and a column on the right having all the data I need … validate from this screen or reject or approve.
+Then press next … like sliding instead of opening."* Asked in chat, he chose: the Place checks tabs AND
+the integrity cases, **as tabs** (*"I can make view all in a tab or … waiting only"*); a **button** that
+opens it **full screen**; after a decision it **slides to the next** by itself; *"I also can choose to
+view polyclinics only, or places only, or both"*; and a polyclinic **in two on one screen** — the
+building's own validation approved or rejected alone, and the timetable approved or rejected **per
+customer**. *"Very, very premium, polished."*
+
+**What he sees.** A light bar at the top of his board (never a dark band — the September ruling on page
+banners) holds **Review one by one** and how many wait. It opens on the board tab he stands on, filters
+as they are. The review is a dark full-screen dialog: tabs with counts (Waiting for you · Not
+confirmed · Integrity cases · History · All), the Places · Polyclinics · Both switch, "12 of 87", an
+orange progress bar. The photo fills the left, whole and rotatable, and opens the zoom; the column on
+the right is the row read whole — the system's advice, where the rep stood, the sign reading, the
+comments — and the footer holds the decision and Back / Next. On a phone the photo is on top at 55% of
+the screen. Location integrity links to it on the Integrity cases tab, for the Super Admin only.
+
+**How it is built, and the rules it keeps.**
+
+- **No second decision path.** Every button on a slide is the board's own control, exported from the
+  list it lives in and posting to the route it always posted to. `usePlaceCheckDone()`
+  (`place-check-done.tsx`) replaced the controls' `router.refresh()`: on the board it is exactly that
+  refresh; inside the review a provider also hears which item was answered and how.
+- **The tabs are taken when it opens** (`slides.ts`). A slide holds only its key and its row is looked
+  up in the board's current data, so an approved place stays where it was and shows approved, and
+  "12 of 87" never shifts under his finger.
+- **It slides on only when nothing on the slide still waits** (`slideIsSettled`): a polyclinic needs
+  its building decided and every waiting customer answered. Going Back never slides on by itself.
+- **No key decides.** ← and → move, never while he types, holds a modifier or has the zoom open
+  (`deckArrowStep`). These are live places.
+- **The Super Admin's alone.** The board takes it as a render prop, drawn only in `mode="company"`, and
+  imports nothing from it but types, so a district manager's portal bundle carries none of it.
+- **The cases are read when a tab needs them**, through `GET /api/admin/phoenix-crm/integrity/cases`,
+  which calls `loadIntegrityBoard` and never the table, so every narrowing of the board applies. The
+  tab keeps the cases as first read; a settled case is read again to show it answered.
+- **Left out on purpose:** "Same place, several reps" (it compares pairs of places, not one photo) and
+  the customers waiting to be captured again (no photo, nothing to decide).
+
+Pinned by `tests/place-review-deck.test.ts`.
+
 ## The same-seat duplicate merge
 
 A one-off script and a guarded database function, never a feature.

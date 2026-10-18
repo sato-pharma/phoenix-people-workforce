@@ -1873,6 +1873,7 @@ import { runPhoenixCrmCaptureTrustPlaceTests } from "./phoenix-crm-capture-trust
 import { runPhoenixCrmValidationFeedbackTests } from "./phoenix-crm-validation-feedback.test.ts";
 import { runPhoenixCrmSharedPlaceTests } from "./phoenix-crm-shared-place.test.ts";
 import { runPhoenixCrmSharedPlaceGroupsTests } from "./phoenix-crm-shared-place-groups.test.ts";
+import { runPlaceReviewDeckTests } from "./place-review-deck.test.ts";
 import { runPhoenixCrmPlaceMatchGroupsTests } from "./phoenix-crm-place-match-groups.test.ts";
 import { runPhoenixCrmValidateStepsTests } from "./phoenix-crm-validate-steps.test.ts";
 import { runPhoenixCrmOffplanCapTests } from "./phoenix-crm-offplan-cap.test.ts";
@@ -7097,6 +7098,11 @@ await runTest(
 await runTest(
   "Phoenix CRM Place checks polyclinic groups (owner, 2026-10-17): the polyclinics and hospitals are their own tab, apart from the single clinics, and each building is one group — the sign on its door, its one timetable, and the customers seated in it with what the timetable says about each; a customer the timetable does not name can be rejected on their own row on the timetable's reasons, through the existing review or refuse route, without touching the building or anyone else; a manager's board shows the evidence and no decision control; a row is taken out of the clinics view only when its building is on the board; and Rejected shows a rejected building again",
   runPhoenixCrmSharedPlaceGroupsTests,
+);
+
+await runTest(
+  "Place checks one-by-one review (owner, 2026-10-18): each tab holds what the board's own tab holds, the Places / Polyclinics / Both switch keeps one kind or both, and All holds every slide once; a slide slides on by itself only once nothing on it is still waiting — a polyclinic's building and every waiting customer in it; the arrows never move while he types, holds a modifier or has the zoom open, and no key decides; every decision is the board's own control reporting through usePlaceCheckDone and the review posts nothing of its own; it is the Super Admin's alone and reaches no district manager's bundle; it is a real dialog on square corners with no sideways scroll; and the open cases are read through the board's own loader",
+  runPlaceReviewDeckTests,
 );
 
 await runTest(

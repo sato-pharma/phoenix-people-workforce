@@ -934,6 +934,10 @@ export const accessRegistry = [
   // `update` — the SFE Manager reads this board and may download the part of it he reads, which is
   // what `loadIntegrityBoard` hands back for him and nothing more. A GET, so no CSRF.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/phoenix-crm/integrity/export", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  // The open cases, for the one-by-one review on Place checks (owner, 2026-10-18). `read`, and the board's
+  // own loader underneath: the same audience, the same narrowing and the same 404 as the board page. A
+  // read that changes nothing, so no audit row and no CSRF.
+  sessionApi({ methods: ["GET"], pattern: "/api/admin/phoenix-crm/integrity/cases", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // A polyclinic, medical centre, medical tower or hospital outpatient suite — captured ONCE at its
   // door, with customers seated inside it (owner, 2026-10-09). GET is the picker, for a reader of the
   // territory; POST captures one, and the service gates it to the territory's own rep or a manager.

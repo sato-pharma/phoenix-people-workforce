@@ -1,5 +1,6 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
-import { CheckCheck, Eye, ShieldAlert, Undo2, Users } from "lucide-react";
+import { CheckCheck, Eye, GalleryHorizontalEnd, ShieldAlert, Undo2, Users } from "lucide-react";
 
 import { AdminCallout, AdminPageHero, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
 import { IntegrityBoardView } from "@/components/crm-integrity/integrity-board-view";
@@ -119,6 +120,19 @@ export default async function PhoenixCrmIntegrityPage() {
             : "Captures Phoenix could not account for — a photograph that had already been sent, or a month whose shape no honest month has. Nothing here is a verdict and no rep is told: it is where to look, and what to look at."
         }
         icon={<ShieldAlert className="h-3.5 w-3.5" />}
+        actions={
+          // The one-by-one review lives on Place checks, which is the Super Admin's alone — the SFE
+          // Manager, who reads this board, is never offered a door to a page that would turn him away.
+          canSettle && board.cases.length > 0 ? (
+            <Link
+              className="inline-flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-none border border-orange-600 bg-orange-600 px-4 py-2 text-center text-sm font-black text-white transition hover:bg-orange-700"
+              href="/admin/field-crm/validation-reviews?review=integrity"
+            >
+              <GalleryHorizontalEnd aria-hidden className="h-4 w-4 shrink-0" />
+              Review the cases one by one
+            </Link>
+          ) : undefined
+        }
       />
 
       {/* Three, four or five counters. A withdrawn flag and a settled case each leave the findings and

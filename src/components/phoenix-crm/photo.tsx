@@ -119,6 +119,17 @@ function usePhotoLink(path: string | null): PhotoState {
 }
 
 /**
+ * Sign the links for photos about to be shown, so the next one in the one-by-one review (owner,
+ * 2026-10-18) is already there when it slides in. The same batch and the same reuse as a thumbnail on
+ * screen — a path signed in the last eight minutes is not asked for again.
+ */
+export function prefetchCrmPhotos(paths: ReadonlyArray<string | null>): void {
+  for (const path of paths) {
+    if (path) requestLink(path);
+  }
+}
+
+/**
  * A stored photo as a thumbnail that opens full screen. `path` null (a customer validated before
  * photos, which cannot happen today, or a test row) shows a plain "No photo" tile.
  */

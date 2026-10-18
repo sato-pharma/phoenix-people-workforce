@@ -182,7 +182,9 @@ function SignEvidence({ entry }: { entry: IntegrityCase }) {
   );
 }
 
-function Reasons({ entry }: { entry: IntegrityCase }) {
+// Exported for the one-by-one review (`integrity-review-slide.tsx`, owner 2026-10-18), which draws a
+// case from these same parts — so this board and the review can never print different facts.
+export function Reasons({ entry }: { entry: IntegrityCase }) {
   return (
     <>
       <ul className="space-y-1">
@@ -210,7 +212,7 @@ function Reasons({ entry }: { entry: IntegrityCase }) {
  * The tiles are only requested once a case is OPENED, so a tile host learns about an area only for a
  * case somebody actually read.
  */
-function CaseMapPanel({ map }: { map: CaseMap | null }) {
+export function CaseMapPanel({ map }: { map: CaseMap | null }) {
   if (map === null) {
     return <p className="text-xs leading-5 text-slate-500">No usable reading was kept for this case, so there is nothing to place on a map.</p>;
   }
@@ -297,7 +299,7 @@ function CaseMapPanel({ map }: { map: CaseMap | null }) {
 }
 
 /** What has happened to this place or this customer, oldest first. Names, never HR ids. */
-function CaseTimeline({ entry }: { entry: IntegrityCase }) {
+export function CaseTimeline({ entry }: { entry: IntegrityCase }) {
   if (entry.history.length === 0) {
     return <p className="text-xs leading-5 text-slate-500">Nothing else has been recorded about this place or this customer beyond the capture itself.</p>;
   }
@@ -317,6 +319,33 @@ function CaseTimeline({ entry }: { entry: IntegrityCase }) {
 }
 
 /**
+ * What a case's photograph is called, and whose it is.
+ *
+ * 🔴 WHOSE PICTURE THIS IS, AND WHEN IT WAS TAKEN, IS NOT THE SAME ON EVERY CASE — and the caption
+ * used to assert one answer for all of them. On the eight older detectors the photograph is the
+ * one saved WITH the capture this case is about, so the rep's name and the case's own Cairo time
+ * are right. On a visit-against-the-photograph case it is the picture the PLACE was validated
+ * with, taken by whoever validated it on whatever day that was: captioning it with this rep and
+ * this visit's time would put a name and a date on a photograph neither belongs to.
+ *
+ * Exported for the one-by-one review, so the panel below and the review caption a photo the same way.
+ */
+export function casePhoto(entry: IntegrityCase): { heading: string; alt: string; caption: string } {
+  const photographAt = typeof entry.signals.photographAtIso === "string" ? entry.signals.photographAtIso : null;
+  return entry.source === "visit_photo"
+    ? {
+        heading: "The photograph of the place",
+        alt: `The photograph the place was validated with: ${entry.customerName}`,
+        caption: `${entry.customerName} · validated${photographAt === null ? "" : ` ${cairo(photographAt)}`}`,
+      }
+    : {
+        heading: "The photograph",
+        alt: `${entry.repName} at ${entry.customerName}`,
+        caption: `${entry.repName} · ${entry.customerName} · ${cairo(entry.capturedAt)}`,
+      };
+}
+
+/**
  * Everything behind the headline: the story in plain English, the photograph, the map and its
  * numbers, the measurements, the history, and the decision.
  */
@@ -331,25 +360,7 @@ function CasePanel({ canSettle, row }: { canSettle: boolean; row: BoardRow }) {
   // may not be ticked for a bulk settle — but it is exactly the case whose panel must still offer the
   // control, which is how a settled case is reopened.
   const offersDecision = canSettle && (entry.laterReading === null || !entry.laterReading.withdrawsFlag);
-  // 🔴 WHOSE PICTURE THIS IS, AND WHEN IT WAS TAKEN, IS NOT THE SAME ON EVERY CASE — and the caption
-  // used to assert one answer for all of them. On the eight older detectors the photograph is the
-  // one saved WITH the capture this case is about, so the rep's name and the case's own Cairo time
-  // are right. On a visit-against-the-photograph case it is the picture the PLACE was validated
-  // with, taken by whoever validated it on whatever day that was: captioning it with this rep and
-  // this visit's time would put a name and a date on a photograph neither belongs to.
-  const photographAt = typeof entry.signals.photographAtIso === "string" ? entry.signals.photographAtIso : null;
-  const photo =
-    entry.source === "visit_photo"
-      ? {
-          heading: "The photograph of the place",
-          alt: `The photograph the place was validated with: ${entry.customerName}`,
-          caption: `${entry.customerName} · validated${photographAt === null ? "" : ` ${cairo(photographAt)}`}`,
-        }
-      : {
-          heading: "The photograph",
-          alt: `${entry.repName} at ${entry.customerName}`,
-          caption: `${entry.repName} · ${entry.customerName} · ${cairo(entry.capturedAt)}`,
-        };
+  const photo = casePhoto(entry);
   return (
     <div className="min-w-0 space-y-4 border-t border-slate-200 pt-4">
       {/* 1. The comparison, first and biggest: this location against the validation location. */}
@@ -421,7 +432,7 @@ function CasePanel({ canSettle, row }: { canSettle: boolean; row: BoardRow }) {
  * comparison, and before this it was two rows buried in a measurements list under the photograph.
  * On a phone the two stack with the distance between them, so the order still reads as a comparison.
  */
-function CaseComparisonPanel({ comparison }: { comparison: CaseComparison | null }) {
+export function CaseComparisonPanel({ comparison }: { comparison: CaseComparison | null }) {
   if (comparison === null) {
     return (
       <p className="text-sm leading-6 text-slate-600">

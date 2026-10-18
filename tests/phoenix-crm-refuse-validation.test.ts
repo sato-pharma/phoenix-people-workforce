@@ -164,7 +164,8 @@ function checkRestoreScreen(): void {
   const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
   assert.match(queue, /"\/api\/phoenix-crm\/validation-reviews\/restore"/, "the rejected row posts to the restore route");
   assert.match(queue, /\{ reviewId: row\.reviewId, note \}/, "with the review and the written reason");
-  assert.match(queue, /\{row\.restorable \? <Restore row=\{row\} \/> : null\}/, "and the option appears only where the server says it still can");
+  // `scope` is the one-by-one review's (2026-10-18): it tells the control which slide it decides.
+  assert.match(queue, /\{row\.restorable \? <Restore row=\{row\}(?: scope=\{scope\})? \/> : null\}/, "and the option appears only where the server says it still can");
   assert.doesNotMatch(queue, /disabled=\{saving \|\| note\.trim\(\)\.length === 0\}/, "the button no longer waits for a written note (owner, 2026-10-15)");
   assert.match(queue, /Approve it after all/, "worded as what it does");
 }
@@ -211,7 +212,7 @@ function checkRejectAfterApproval(): void {
   // The screen: the SAME route and the SAME decision the pending row posts, so there is one reject
   // path — and the review row keeps the evidence the system held it on.
   const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
-  assert.match(queue, /\{row\.refusable \? <RejectAfterApproval row=\{row\} \/> : null\}/, "the approved row offers it, only where the server says it still can");
+  assert.match(queue, /\{row\.refusable \? <RejectAfterApproval row=\{row\}(?: scope=\{scope\})? \/> : null\}/, "the approved row offers it, only where the server says it still can");
   assert.match(
     queue,
     /\{ reviewId: row\.reviewId, decision: "reject", note, refusalReason: reason \}/,
@@ -323,7 +324,13 @@ function checkScreens(): void {
   for (const prop of ["pending={waiting}", "decided={decided}", "validated={validated}", "reopened={reopened}", "capped={capped}"]) {
     assert.ok(page.includes(prop), `the Place checks board is handed ${prop}`);
   }
-  assert.ok(page.includes("<ValidationReviewsBoard"), "the board is what the page draws");
+  // Since 2026-10-18 the page draws the board through the one-by-one review's wrapper, which hands
+  // every prop on to it unchanged — so the wrapper is pinned to draw the company board.
+  assert.ok(page.includes("<ValidationReviewsBoard") || page.includes("<PlaceChecksWithDeck"), "the board is what the page draws");
+  if (page.includes("<PlaceChecksWithDeck")) {
+    const wrapper = read("src/components/place-review-deck/place-checks-with-deck.tsx");
+    assert.match(wrapper, /<ValidationReviewsBoard \{\.\.\.board\} mode="company"/, "the wrapper draws the company board with every prop it was handed");
+  }
 
   const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
   // By PROP, not as one line — the same lesson the loop above was rewritten for. This assertion was

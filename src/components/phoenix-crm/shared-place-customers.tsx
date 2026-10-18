@@ -25,9 +25,9 @@
  */
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { usePlaceCheckDone } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
@@ -193,7 +193,7 @@ function Cost({ customer }: { customer: SeatedCustomer }) {
  * name this customer — and a different timetable reason can still be picked. The note stays optional.
  */
 function RejectNotOnTimetable({ customer, scope }: { customer: SeatedCustomer; scope: string }) {
-  const router = useRouter();
+  const done = usePlaceCheckDone();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState<ValidationRefusalReason | "">(defaultReason(customer));
   const [note, setNote] = useState("");
@@ -211,7 +211,7 @@ function RejectNotOnTimetable({ customer, scope }: { customer: SeatedCustomer; s
       } else {
         await crmPost<unknown>("/api/phoenix-crm/validation-reviews/refuse", { placeId: customer.placeId, note, refusalReason: reason }, "refused");
       }
-      router.refresh();
+      done("rejected");
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(false);
@@ -292,7 +292,7 @@ function RejectNotOnTimetable({ customer, scope }: { customer: SeatedCustomer; s
 
 /** A customer the system is still checking: approve him, or reject him with a timetable reason. */
 function WaitingDecision({ customer, noTimetable, scope }: { customer: SeatedCustomer; noTimetable: boolean; scope: string }) {
-  const router = useRouter();
+  const done = usePlaceCheckDone();
   const [note, setNote] = useState("");
   const [reason, setReason] = useState<ValidationRefusalReason | "">(evidenceReason(customer, noTimetable));
   const [saving, setSaving] = useState<"approve" | "reject" | null>(null);
@@ -308,7 +308,7 @@ function WaitingDecision({ customer, noTimetable, scope }: { customer: SeatedCus
         { reviewId: customer.reviewId, decision, note, ...(decision === "reject" ? { refusalReason: reason } : {}) },
         "decided",
       );
-      router.refresh();
+      done(decision === "approve" ? "approved" : "rejected");
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(null);
@@ -347,7 +347,7 @@ function WaitingDecision({ customer, noTimetable, scope }: { customer: SeatedCus
 
 /** Taking a rejection back — the mirror of the reject, through the review restore route. */
 function RestoreSeated({ customer, scope }: { customer: SeatedCustomer; scope: string }) {
-  const router = useRouter();
+  const done = usePlaceCheckDone();
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -358,7 +358,7 @@ function RestoreSeated({ customer, scope }: { customer: SeatedCustomer; scope: s
     setProblem(null);
     try {
       await crmPost<unknown>("/api/phoenix-crm/validation-reviews/restore", { reviewId: customer.reviewId, note }, "restored");
-      router.refresh();
+      done("restored");
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(false);
@@ -517,3 +517,10 @@ export function SeatedCustomers({
     </div>
   );
 }
+
+/**
+ * The pieces the one-by-one review draws each seated customer with (owner, 2026-10-18: "approve or
+ * reject the timetable or schedule alone … per customer"), exported as they are — the same evidence and
+ * the same controls, never a copy.
+ */
+export { LastColumn as SeatedLastColumn, Timetable as SeatedTimetableEvidence, Who as SeatedWho };
