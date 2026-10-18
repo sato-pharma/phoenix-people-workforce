@@ -68,6 +68,10 @@ function json(status: number, payload: unknown) {
 }
 
 const openAiQuota = () => json(429, { error: { code: "insufficient_quota", message: "You exceeded your current quota" } });
+// The answer OpenAI really gave on 18 Oct 2026 (read off the live account): the CODE is new, only the TYPE
+// still says insufficient_quota. A fixture that carries the old code alone is what let #6065 ship blind.
+const openAiOutOfCreditAsServed = () =>
+  json(429, { error: { code: "credit_balance_exhausted", message: "You have no credits remaining", type: "insufficient_quota" } });
 const openAiRateLimited = () => json(429, { error: { code: "rate_limit_exceeded", message: "Too many requests" } });
 const openAiRejected = () => json(401, { error: { message: "Incorrect API key provided" } });
 const openAiBroken = () => json(500, { error: { message: "The server had an error" } });
@@ -163,6 +167,11 @@ function planningTests() {
   assert.equal(salesAiFailureCodeFor(403, "{}"), "auth_failed");
   assert.equal(salesAiFailureCodeFor(402, "{}"), "quota_exceeded", "OpenRouter says out of credit with a 402");
   assert.equal(salesAiFailureCodeFor(429, JSON.stringify({ error: { code: "insufficient_quota" } })), "quota_exceeded");
+  assert.equal(
+    salesAiFailureCodeFor(429, JSON.stringify({ error: { code: "credit_balance_exhausted", type: "insufficient_quota" } })),
+    "quota_exceeded",
+    "today's real out-of-credit answer: a new code under the old type",
+  );
   assert.equal(salesAiFailureCodeFor(429, JSON.stringify({ error: { code: "rate_limit_exceeded" } })), "rate_limited");
   assert.equal(salesAiFailureCodeFor(500, "{}"), "failed");
   assert.equal(salesAiFailureCodeFor(400, "{}"), "failed");
@@ -221,6 +230,17 @@ async function suggestTests() {
 
     assert.deepEqual(await aiSuggest("product", unknowns, candidates), expectedMatch);
     assert.deepEqual(net.calls, { anthropic: 2, openai: 1 }, "the second call goes straight to Claude");
+  } finally {
+    net.restore();
+    restoreEnv();
+  }
+
+  // The out-of-credit answer exactly as OpenAI serves it today (new code, old type) must fail over too.
+  restoreEnv = withEnv(both);
+  net = installFetch({ anthropic: () => claudeOk(matchJson), openai: openAiOutOfCreditAsServed });
+  try {
+    assert.deepEqual(await aiSuggest("product", unknowns, candidates), expectedMatch);
+    assert.deepEqual(net.calls, { anthropic: 1, openai: 1 }, "credit_balance_exhausted + insufficient_quota is out of credit, not a rate limit");
   } finally {
     net.restore();
     restoreEnv();
