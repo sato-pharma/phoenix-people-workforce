@@ -822,6 +822,28 @@ export const MODULES = [
     keywords: ["login", "access control", "permission", "permissions", "role sweep", "cron", "cron job", "error monitor", "share link", "dev-auth"],
     tables: ["auth.", "app_auth", "app_error", "cron."],
   },
+  // 🔴 SPLIT 2026-10-18, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` reached 29
+  // rules and its injected pointer measured 4,141 bytes against the 4,000-byte margin
+  // `tests/module-memory.test.ts` holds, the moment the AI-providers rule landed. The cut is the
+  // Design tokens section — nine rules about the shared look in code (the radius tokens, the one
+  // wizard shell, the button, panel-header and depth tokens, the form-control guard), none of which is
+  // read while editing a login, a cron or an error screen. They moved VERBATIM. `platform` KEEPS EVERY
+  // GLOB IT HAD, so a file under `src/components/ui/` or `src/styles/` loads the PAIR and nothing that
+  // used to arrive stops arriving. The file itself was at 79% of its 72,000-byte cap — two different
+  // limits, and this was the small one.
+  {
+    id: "platform-design-tokens",
+    title: "Platform — design tokens, the form kit and the square-edge look",
+    scope: "The shared look in code: the `--phx-radius` tokens and the square-edge rule, the one wizard shell in `form-kit.tsx`, the approve, danger and WhatsApp button tokens, the dark panel header and depth tokens, and the guard that refuses a form control painting its own box.",
+    globs: [
+      "src/components/ui/{form-kit,form-tokens,brand-tokens}*",
+      "src/components/admin/admin-design-tokens.ts",
+      "src/styles/**",
+      "tests/*{form-design,admin-shell-palette}*",
+    ],
+    keywords: ["design token", "design tokens", "form-kit", "form-tokens", "brand-tokens", "square-edge", "wizard shell", "panel header band"],
+    tables: [],
+  },
   {
     id: "database",
     title: "Database, migrations and Supabase",

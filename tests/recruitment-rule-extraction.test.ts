@@ -769,7 +769,7 @@ function runWiringTests() {
   // 2. The rule pass runs BEFORE the API-key check, so a configured-but-broken OpenAI (credits
   //    exhausted, as on 2026-08-16) no longer costs every inbound applicant their profile.
   assert.ok(
-    extraction.indexOf("runRuleCvExtraction(cleanedText, ruleContext)") < extraction.indexOf("if (!hasOpenAiApiKey())"),
+    extraction.indexOf("runRuleCvExtraction(cleanedText, ruleContext)") < extraction.indexOf("if (!hasAiApiKey())"),
     "the free rule pass must run before the OpenAI key is required",
   );
   // An exhausted AI must fall back rather than throw: first to the rule result, then — for a scan,

@@ -42,7 +42,7 @@
 
 import {
   createOpenAiResponseText,
-  hasOpenAiApiKey,
+  hasAiApiKey,
   OPENAI_ROUTE_BUDGET_MS,
   PhoenixOpenAiError,
   resolveOpenAiCopilotModel,
@@ -698,7 +698,7 @@ export async function polishSatoEmailDraft(input: SatoPolishRequest): Promise<Sa
   } else if (!emailPlainText(bodyHtml)) {
     throw new SatoPolishError("polish_failed", "Write the email in your own words first, or use Write it.");
   }
-  if (!hasOpenAiApiKey()) {
+  if (!hasAiApiKey()) {
     throw new SatoPolishError("polish_not_configured", "The assistant is not configured on this server yet.");
   }
 

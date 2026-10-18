@@ -22,7 +22,7 @@ import {
   type IssueStatus,
 } from "@/lib/error-monitor/derived-status";
 import { decodeErrorMessage } from "@/lib/error-monitor/message-decode";
-import { hasOpenAiApiKey } from "@/lib/ai/openai-client";
+import { hasAiApiKey } from "@/lib/ai/openai-client";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
 export type ErrorEventRowWithStatus = ErrorEventRow & { status: IssueStatus; displayMessage: string; employeeName: string | null };
@@ -48,7 +48,7 @@ export async function loadSystemIssuesSnapshot() {
   };
 
   return {
-    aiEnabled: hasOpenAiApiKey(),
+    aiEnabled: hasAiApiKey(),
     appErrors: appErrorsWithStatus,
   };
 }

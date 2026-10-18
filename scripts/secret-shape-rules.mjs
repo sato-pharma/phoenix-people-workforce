@@ -31,6 +31,18 @@ export const KEY_SHAPES = [
     describe: 'must look like sk-… — letters, digits, "_" and "-" only, with no spaces, dots or line breaks',
   },
   {
+    // Anthropic, the second AI provider behind src/lib/ai/openai-client.ts (2026-10-18, when the OpenAI
+    // account failed to recharge). Registered BEFORE a key reaches Railway, for the reason GROQ_API_KEY's
+    // rule below gives: it is pasted by hand off a screen, and OPENAI_API_KEY's masked paste is what
+    // took every AI feature down in silence. Deliberately NOT anchored on the "api03" segment of the
+    // usual sk-ant-api03-… form — Anthropic issues other prefixes, and this rule must never be what
+    // rejects a real key. Length and charset catch the failure that actually happens: a truncated or
+    // masked paste (the generic redaction-marker check covers dots and asterisks for every variable).
+    name: "ANTHROPIC_API_KEY",
+    pattern: /^sk-ant-[A-Za-z0-9_-]{20,}$/,
+    describe: 'must look like sk-ant-… — letters, digits, "_" and "-" only, with no spaces, dots or line breaks',
+  },
+  {
     // Groq, for the CRM spoken visit comment on a browser with no speech engine of its own (Firefox).
     // Registered on 2026-09-25 with the feature and BEFORE any key was pasted, for one reason:
     // OPENAI_API_KEY's masked paste was found only after every AI feature had been silently dead for
