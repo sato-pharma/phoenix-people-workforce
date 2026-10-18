@@ -1,11 +1,11 @@
 ---
 name: the-hetzner-previews-run-on-staging-not-production
-description: "Since 2026-10-08 14:30 Cairo the Hetzner box previews (`phx-preview`, :3000 and :3001) read STAGING `cifwmndunmlxjhyjugxa` with APP_ENV=staging and PHOENIX_EMAIL_FORCE_TESTING=true (owner-approved) — never put production keys back in `~phx/secure/.env.local`; a preview showing staging data is correct. They RUN AS `phxpreview` (no sudo) from a read-only mirror — never run a preview or its install as phx again. PRODUCTION data on the box is ONLY `phx-live` (port 3100, user `phxlive`, its own allowlisted env, port firewalled to `phxtunnel`+`phxlive`, owner's plan 2026-10-12) — never widen phx-preview to production instead."
+description: "phx-preview was RETIRED 2026-10-17 (phx-live is the one dev server) — what follows is its record, and the phx-live half still holds. Since 2026-10-08 14:30 Cairo the Hetzner box previews (`phx-preview`, :3000 and :3001) read STAGING `cifwmndunmlxjhyjugxa` with APP_ENV=staging and PHOENIX_EMAIL_FORCE_TESTING=true (owner-approved) — never put production keys back in `~phx/secure/.env.local`; a preview showing staging data is correct. They RUN AS `phxpreview` (no sudo) from a read-only mirror — never run a preview or its install as phx again. PRODUCTION data on the box is ONLY `phx-live` (port 3100, user `phxlive`, its own allowlisted env, port firewalled to `phxtunnel`+`phxlive`, owner's plan 2026-10-12) — never widen phx-preview to production instead."
 metadata:
   node_type: memory
   type: project
   originSessionId: ddbd6fd7-8a24-45e4-b9cc-5c709ace3bd5
-  modified: 2026-10-12T14:40:09.065Z
+  modified: 2026-10-17T12:58:50.094Z
 ---
 
 On 2026-10-08 the owner approved "move the box previews to staging and restart preview-b" (security

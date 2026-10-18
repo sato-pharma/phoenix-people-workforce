@@ -1,11 +1,11 @@
 ---
 name: the-phx-preview-dev-server-cannot-compile-a-page-at-its-2048-mb-heap
-description: "phx-preview's box dev server is pinned to PHOENIX_DEV_HEAP_MB=2048 (preview-scope.sh), and compiling /(admin)/admin/page or /employee-portals/visit-report/page runs it out of memory on a cold start (measured 2026-10-17, 3 crashes) — API routes compile fine, so walk a role through dev-auth HEADERS with curl/fetch, and a rendered page needs phx-live or production."
+description: "HISTORY — phx-preview was RETIRED 2026-10-17, see phx-preview-is-retired-phx-live-is-the-one-dev-server. phx-preview's box dev server is pinned to PHOENIX_DEV_HEAP_MB=2048 (preview-scope.sh), and compiling /(admin)/admin/page or /employee-portals/visit-report/page runs it out of memory on a cold start (measured 2026-10-17, 3 crashes) — API routes compile fine, so walk a role through dev-auth HEADERS with curl/fetch, and a rendered page needs phx-live or production."
 metadata:
   node_type: memory
   type: reference
   originSessionId: 66a89f4f-2303-4993-98ac-46a08f51bbff
-  modified: 2026-10-16T22:00:56.499Z
+  modified: 2026-10-17T12:58:48.375Z
 ---
 
 Measured 2026-10-17 walking the Visit report (PR 6021, merge `43a5639cb`) on `phx-preview main`. The log

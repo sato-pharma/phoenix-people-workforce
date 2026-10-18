@@ -1,6 +1,6 @@
 ---
 name: the-preview-box-runs-two-checkouts-so-never-pkill-by-name
-description: "The Hetzner preview box runs TWO preview checkouts (preview on 3000, preview-b on 3001), so a session never owns it - `pkill -f \"next dev\"` there killed every session's preview. Both phx-preview.ps1 -Stop and preview-start.sh are port-scoped since 2026-10-03; never widen them back."
+description: "RETIRED 2026-10-17 - phx-preview, its two checkouts and preview-start.sh are gone from the box; what still holds is the rule: on the box stop a server by its PORT or scope name, never `pkill` by name (live-ctl.sh does). History: the Hetzner preview box ran TWO preview checkouts (preview on 3000, preview-b on 3001), so a session never owns it - `pkill -f \"next dev\"` there killed every session's preview. Both phx-preview.ps1 -Stop and preview-start.sh are port-scoped since 2026-10-03; never widen them back."
 metadata:
   node_type: memory
   type: project

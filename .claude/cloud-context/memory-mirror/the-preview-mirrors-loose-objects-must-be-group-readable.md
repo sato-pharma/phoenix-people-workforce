@@ -1,6 +1,6 @@
 ---
 name: the-preview-mirrors-loose-objects-must-be-group-readable
-description: Every box preview dies with "upload-pack: not our ref 0000…" when a loose object in /srv/phx-preview-mirror.git is group phx — phxpreview cannot read it, so the ref advertises zeros.
+description: phx-live (and phx-preview until it was retired 2026-10-17) dies with "upload-pack: not our ref 0000…" when a loose object in /srv/phx-preview-mirror.git is group phx — the reader (phxlive, through group phxpreview, which is why that user and group stay) cannot read it, so the ref advertises zeros. The guard lives in preview-scope.sh refresh_preview_mirror.
 metadata:
   type: project
 ---
