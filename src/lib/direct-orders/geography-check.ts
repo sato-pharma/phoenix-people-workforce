@@ -30,7 +30,39 @@ import { normalizeArabicPharmacyName } from "@/lib/pharmacy-master/pharmacy-matc
 
 export type DirectOrderGeographyVerdict = "match" | "mismatch" | "unknown" | "not_checkable";
 
+/**
+ * Where the live evidence photo's own GPS puts the venue — the nearest brick centre to the pin that
+ * is stamped on the photo, which is how the Phoenix evidence stamp itself names its territory.
+ */
+export type DirectOrderPhotoTerritory = {
+  brickId: string | null;
+  brickName: string | null;
+  areaCode: string | null;
+  areaName: string | null;
+  /** Great-circle distance from the photo's pin to that brick's centre. */
+  distanceKm: number | null;
+};
+
+/**
+ * Past this the nearest centre is not a believable reading of the pin — brick centres are geocoded
+ * guesses, and a "nearest" 40 km away is nonsense rather than a territory. The photo is then
+ * reported as not usable instead of accusing a rep on it (a false accusation costs more than a miss).
+ */
+export const PHOTO_TERRITORY_TRUST_KM = 15;
+
 export type DirectOrderGeographyCheck = {
+  /**
+   * THE PRIMARY SOURCE OF TRUST (owner, 2026-10-18): wherever a module holds a live evidence photo,
+   * the photo's own GPS territory outranks every declared or derived value. This is the declared
+   * brick and area read against it, and it is listed FIRST on the panel.
+   */
+  photo: {
+    brick: { verdict: DirectOrderGeographyVerdict; declared: string | null; photo: string | null };
+    area: { verdict: DirectOrderGeographyVerdict; declared: string | null; photo: string | null };
+    distanceKm: number | null;
+    /** Why the photo could not speak, in words — null when it did. */
+    unusableReason: "no_photo" | "too_far" | null;
+  };
   /** Distributor's recorded brick for the code vs the brick declared on the request. */
   brick: {
     verdict: DirectOrderGeographyVerdict;
@@ -78,6 +110,18 @@ export type DirectOrderGeographyInput = {
   masterAreaName: string | null;
   /** Free text the submitter typed. */
   address: string | null;
+  /**
+   * The territory the live evidence photo's GPS falls in. `null` = this request carries no live
+   * photo with coordinates (an invoice-route venue, or none filed) — said in words, never skipped.
+   */
+  photoTerritory?: DirectOrderPhotoTerritory | null;
+  /**
+   * The venue kind's own name (for example "Nursery") when this kind of venue has NO distributor
+   * account by definition. Such a venue can never be cross-checked against a customer code, so the
+   * sentence must not read as though a code were missing — the live photo is its only territory
+   * evidence. Null/absent for a pharmacy.
+   */
+  noDistributorAccountVenueLabel?: string | null;
   /**
    * Every known brick/area name, so the address can be tested for naming a DIFFERENT one. Without
    * this the address check can only ever say "unknown" — it has nothing to compare against.
@@ -149,27 +193,69 @@ export function checkDirectOrderGeography(input: DirectOrderGeographyInput): Dir
     // accusation teaches people to ignore the warning entirely.
   }
 
+  // ── The live photo — the PRIMARY source of trust (owner, 2026-10-18) ────────────────────────
+  // "In any module that has an evidence photo, the photo is the primary source of trust." The
+  // declared brick and area are a rep's typing (or an inherited marketing label); the photo's pin is
+  // a measurement. So the photo is read FIRST, and a disagreement with it leads the summary even when
+  // the distributor-code check below passes. The master check is kept, never removed.
+  const photoTerritory = input.photoTerritory ?? null;
+  const photoTooFar =
+    photoTerritory !== null && photoTerritory.distanceKm !== null && photoTerritory.distanceKm > PHOTO_TERRITORY_TRUST_KM;
+  const photoUnusableReason: "no_photo" | "too_far" | null =
+    !photoTerritory || (!photoTerritory.brickId && !photoTerritory.areaCode)
+      ? "no_photo"
+      : photoTooFar
+        ? "too_far"
+        : null;
+  const photoBrickVerdict: DirectOrderGeographyVerdict = photoUnusableReason
+    ? "not_checkable"
+    : compareCodes(input.declaredBrickId, photoTerritory?.brickId ?? null);
+  const photoAreaVerdict: DirectOrderGeographyVerdict = photoUnusableReason
+    ? "not_checkable"
+    : compareCodes(input.declaredAreaCode, photoTerritory?.areaCode ?? null);
+  const photoBrickName = photoTerritory?.brickName ?? photoTerritory?.brickId ?? null;
+  const photoAreaName = photoTerritory?.areaName ?? photoTerritory?.areaCode ?? null;
+  const photoKm = photoTerritory?.distanceKm == null ? null : Math.round(photoTerritory.distanceKm * 10) / 10;
+  const noAccountLabel = input.noDistributorAccountVenueLabel?.trim().toLowerCase() || null;
+  const declaredBrickLabel = input.declaredBrickName ?? input.declaredBrickId ?? "—";
+  const declaredAreaLabel = input.declaredAreaName ?? input.declaredAreaCode ?? "—";
+
   // ── The sentence ─────────────────────────────────────────────────────────────────────────
   let summary: string;
-  if (brickVerdict === "mismatch") {
+  if (photoAreaVerdict === "mismatch") {
+    summary = `PHOTO MISMATCH — the live evidence photo was taken in area ${photoAreaName ?? "—"} (nearest brick ${photoBrickName ?? "—"}${photoKm === null ? "" : `, ${photoKm} km from the pin`}), but this venue is filed under ${declaredAreaLabel}, brick ${declaredBrickLabel}. The photo is the primary evidence of where the shop stands, and sales attribution follows the brick, so this decides which rep and which area get credited.`;
+  } else if (photoBrickVerdict === "mismatch") {
+    summary = `PHOTO MISMATCH — the live evidence photo's pin is nearest brick ${photoBrickName ?? "—"}${photoKm === null ? "" : ` (${photoKm} km)`} in the same area, but this venue is filed under brick ${declaredBrickLabel}. The photo is the primary evidence of where the shop stands; sales attribution follows the brick.`;
+  } else if (brickVerdict === "mismatch") {
     summary = `MISMATCH — the distributor places this customer in brick ${input.masterBrickName ?? input.masterBrickId ?? "—"}, but the request declares ${input.declaredBrickName ?? input.declaredBrickId ?? "—"}. Sales attribution follows the brick, so this decides which rep and which area get credited.`;
   } else if (areaVerdict === "mismatch") {
     summary = `MISMATCH — the distributor places this customer in area ${input.masterAreaName ?? input.masterAreaCode ?? "—"}, not the ${input.declaredAreaName ?? input.declaredAreaCode ?? "—"} declared here.`;
   } else if (addressVerdict === "mismatch") {
     summary = `The brick agrees with the distributor, but the typed address names ${matchedName} — somewhere else entirely. Most likely a careless address; worth one look before approving.`;
+  } else if (photoBrickVerdict === "match" && photoAreaVerdict === "match" && brickVerdict !== "match") {
+    summary = noAccountLabel
+      ? `Checked against the live photo — its GPS falls in the brick and area this request declares. A ${noAccountLabel} has no distributor account, so the photo is its only territory evidence.`
+      : "Checked against the live photo — its GPS falls in the brick and area this request declares. No distributor customer code was available to cross-check.";
   } else if (brickVerdict === "match") {
     summary =
       addressVerdict === "match"
         ? "Checked and agrees — the distributor's own record, the declared brick and the typed address all point to the same place."
         : "Checked and agrees — the distributor's own record places this customer in the brick this request declares.";
   } else if (brickVerdict === "not_checkable") {
-    summary =
-      "NOT CHECKED — there is no distributor customer code to check against, so nothing here has been verified against the master database. This is not a pass.";
+    summary = noAccountLabel
+      ? `NOT CHECKED — a ${noAccountLabel} has no distributor account and this request carries no usable live photo, so nothing here has been verified. This is not a pass.`
+      : "NOT CHECKED — there is no distributor customer code to check against, so nothing here has been verified against the master database. This is not a pass.";
   } else {
     summary = "NOT CHECKED — the request declares no brick, so there is nothing to compare.";
   }
 
   return {
+    photo: {
+      brick: { verdict: photoBrickVerdict, declared: input.declaredBrickName ?? input.declaredBrickId, photo: photoBrickName },
+      area: { verdict: photoAreaVerdict, declared: input.declaredAreaName ?? input.declaredAreaCode, photo: photoAreaName },
+      distanceKm: photoKm,
+      unusableReason: photoUnusableReason,
+    },
     brick: { verdict: brickVerdict, declared: input.declaredBrickName ?? input.declaredBrickId, master: input.masterBrickName ?? input.masterBrickId },
     area: { verdict: areaVerdict, declared: input.declaredAreaName ?? input.declaredAreaCode, master: input.masterAreaName ?? input.masterAreaCode },
     address: { verdict: addressVerdict, matchedName, resolvedPlace, resolvedFrom },

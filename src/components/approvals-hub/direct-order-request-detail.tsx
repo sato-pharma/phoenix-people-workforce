@@ -227,12 +227,41 @@ export function DirectOrderRequestDetail({
   const candidateMatch = possibleDistributorMatches[0] ?? null;
   // Built ONCE and read by both the desktop table and the mobile cards. Two copies of the same
   // three rows is how the retail totals drifted before (#1833) — the same list, reduced twice.
+  // The live photo's own GPS territory is listed FIRST and is the primary source of trust (owner,
+  // 2026-10-18); the distributor master follows. A photo that cannot speak says why in words.
+  const photoReading = geographyCheck?.photo ?? null;
+  const photoUnusableText =
+    photoReading?.unusableReason === "too_far"
+      ? "The photo's pin is too far from any brick centre to name a territory"
+      : "No live evidence photo with GPS on this request";
+  const photoRows = photoReading
+    ? photoReading.unusableReason
+      ? [{ label: "Live photo", declared: "—", master: photoUnusableText, verdict: photoReading.area.verdict, source: "photo" as const }]
+      : [
+          {
+            label: "Brick · live photo",
+            declared: photoReading.brick.declared ?? "—",
+            master: `${photoReading.brick.photo ?? "—"}${photoReading.distanceKm === null ? "" : ` (nearest brick centre to the photo's pin, ${photoReading.distanceKm} km)`}`,
+            verdict: photoReading.brick.verdict,
+            source: "photo" as const,
+          },
+          {
+            label: "Area · live photo",
+            declared: photoReading.area.declared ?? "—",
+            master: photoReading.area.photo ?? "—",
+            verdict: photoReading.area.verdict,
+            source: "photo" as const,
+          },
+        ]
+    : [];
   const comparisonRows = geographyCheck
     ? [
-        { label: "Brick", declared: geographyCheck.brick.declared ?? "—", master: geographyCheck.brick.master ?? "—", verdict: geographyCheck.brick.verdict },
-        { label: "Area", declared: geographyCheck.area.declared ?? "—", master: geographyCheck.area.master ?? "—", verdict: geographyCheck.area.verdict },
+        ...photoRows,
+        { label: "Brick", declared: geographyCheck.brick.declared ?? "—", master: geographyCheck.brick.master ?? "—", verdict: geographyCheck.brick.verdict, source: "master" as const },
+        { label: "Area", declared: geographyCheck.area.declared ?? "—", master: geographyCheck.area.master ?? "—", verdict: geographyCheck.area.verdict, source: "master" as const },
         {
           label: "Typed address",
+          source: "master" as const,
           declared: detail.pharmacy?.pharmacyAddress || "—",
           // Never blank (golden rule): the address is resolved to a place, and the resolution says
           // it was read from the address rather than asserted by the master database.
@@ -609,7 +638,7 @@ export function DirectOrderRequestDetail({
       ) : null}
 
       {geographyCheck ? (
-        <PanelSection title="Submitter's details vs the master database">
+        <PanelSection title="Submitter's details vs the live photo and the master database">
           {/* Side by side, because scattered fields hid the problem for months. Live example: the
               submitter had put the customer CODE in the pharmacy-name box and the customer NAME in
               the doctor box, while the typed address named a different governorate than the brick.
@@ -620,7 +649,7 @@ export function DirectOrderRequestDetail({
                 <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
                   <th className="whitespace-nowrap px-3 py-2">Field</th>
                   <th className="whitespace-nowrap px-3 py-2">Submitter entered</th>
-                  <th className="whitespace-nowrap px-3 py-2">Master database says</th>
+                  <th className="whitespace-nowrap px-3 py-2">Photo or master database says</th>
                   <th className="whitespace-nowrap px-3 py-2">Agreement</th>
                 </tr>
               </thead>
@@ -663,16 +692,18 @@ export function DirectOrderRequestDetail({
                   Submitter: {row.declared}
                 </p>
                 <p className="mt-0.5 break-words text-phx-sm text-slate-600" dir="auto">
-                  Master: {row.master}
+                  {row.source === "photo" ? "Photo" : "Master"}: {row.master}
                 </p>
               </article>
             ))}
           </div>
           <p
             className={`mt-3 border px-3 py-2 text-phx-sm font-bold ${
-              geographyCheck.brick.verdict === "mismatch" || geographyCheck.area.verdict === "mismatch"
+              geographyCheck.photo.area.verdict === "mismatch" ||
+              geographyCheck.brick.verdict === "mismatch" ||
+              geographyCheck.area.verdict === "mismatch"
                 ? "border-rose-300 bg-rose-50 text-rose-900"
-                : geographyCheck.address.verdict === "mismatch"
+                : geographyCheck.photo.brick.verdict === "mismatch" || geographyCheck.address.verdict === "mismatch"
                   ? "border-amber-300 bg-amber-50 text-amber-900"
                   : geographyCheck.brick.verdict === "match"
                     ? "border-emerald-300 bg-emerald-50 text-emerald-900"

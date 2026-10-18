@@ -556,6 +556,96 @@ export function runDirectOrderHoldReleaseTests() {
   });
   assert.equal(longest.address.resolvedPlace, "بركة السبع", "the LONGEST matching place name must win, not the first");
 
+  // ── THE LIVE PHOTO IS THE PRIMARY SOURCE OF TRUST (owner, 2026-10-18) ─────────────────────
+  // The live case (request 299304bf): حضانه عبد الكريم, no distributor code, filed under brick
+  // منشأة سلطان / Menoufia 1 from an inherited marketing label, while its photo was taken 0.7 km
+  // from منوف / Menoufia 2. The panel used to print "nothing to check" on every territory row.
+  const photoCase = (
+    photoTerritory: Parameters<typeof checkDirectOrderGeography>[0]["photoTerritory"],
+    overrides: { masterBrickId?: string | null; masterAreaCode?: string | null } = {},
+  ) =>
+    checkDirectOrderGeography({
+      declaredBrickId: "B201-9",
+      declaredBrickName: "منشأة سلطان",
+      declaredAreaCode: "D12",
+      declaredAreaName: "Menoufia 1",
+      masterBrickId: overrides.masterBrickId ?? null,
+      masterBrickName: null,
+      masterAreaCode: overrides.masterAreaCode ?? null,
+      masterAreaName: null,
+      address: null,
+      photoTerritory,
+    });
+  const menouf = { brickId: "B202-1", brickName: "منوف", areaCode: "D13", areaName: "Menoufia 2", distanceKm: 0.7 };
+
+  const photoWrongArea = photoCase(menouf);
+  assert.equal(photoWrongArea.photo.area.verdict, "mismatch", "a photo taken in another AREA must disagree with the filed area");
+  assert.equal(photoWrongArea.photo.brick.verdict, "mismatch");
+  assert.match(photoWrongArea.summary, /^PHOTO MISMATCH/, "the photo's disagreement must LEAD the summary");
+  assert.match(photoWrongArea.summary, /Menoufia 2/);
+  assert.match(photoWrongArea.summary, /primary evidence/);
+
+  // The photo outranks a passing master check — a distributor code that agrees with the filed brick
+  // must not drown out a pin that says the shop stands somewhere else.
+  const photoBeatsMaster = photoCase(menouf, { masterBrickId: "B201-9", masterAreaCode: "D12" });
+  assert.equal(photoBeatsMaster.brick.verdict, "match", "the master check is still run and still reported");
+  assert.match(photoBeatsMaster.summary, /^PHOTO MISMATCH/, "a passing master check must not hide a photo mismatch");
+
+  // Same area, different brick: still the photo's word, but named as a brick difference.
+  const photoWrongBrick = photoCase({ ...menouf, brickId: "B201-3", brickName: "بركة السبع", areaCode: "D12", areaName: "Menoufia 1" });
+  assert.equal(photoWrongBrick.photo.area.verdict, "match");
+  assert.equal(photoWrongBrick.photo.brick.verdict, "mismatch");
+  assert.match(photoWrongBrick.summary, /same area/);
+
+  // Everything agrees with the photo, with no distributor code to cross-check.
+  const photoAgrees = photoCase({ brickId: "B201-9", brickName: "منشأة سلطان", areaCode: "D12", areaName: "Menoufia 1", distanceKm: 1.1 });
+  assert.equal(photoAgrees.photo.area.verdict, "match");
+  assert.equal(photoAgrees.photo.brick.verdict, "match");
+  assert.match(photoAgrees.summary, /^Checked against the live photo/);
+
+  // FAIL SOFT: a pin whose nearest brick centre is implausibly far names no territory, and a rep is
+  // never accused on it. No photo at all is its own state — both say so in words, never skip.
+  const photoTooFar = photoCase({ ...menouf, distanceKm: 40 });
+  assert.equal(photoTooFar.photo.unusableReason, "too_far");
+  assert.equal(photoTooFar.photo.area.verdict, "not_checkable");
+  assert.doesNotMatch(photoTooFar.summary, /PHOTO MISMATCH/, "a centre 40 km away is not evidence against the filed place");
+  // A nursery has NO distributor account by definition (حضانه عبد الكريم): the sentence must never
+  // read as though a code were missing — the photo is its only territory evidence.
+  const nurseryAgrees = checkDirectOrderGeography({
+    declaredBrickId: "B201-9",
+    declaredBrickName: "منشأة سلطان",
+    declaredAreaCode: "D12",
+    declaredAreaName: "Menoufia 1",
+    masterBrickId: null,
+    masterBrickName: null,
+    masterAreaCode: null,
+    masterAreaName: null,
+    address: null,
+    photoTerritory: { brickId: "B201-9", brickName: "منشأة سلطان", areaCode: "D12", areaName: "Menoufia 1", distanceKm: 1.1 },
+    noDistributorAccountVenueLabel: "Nursery",
+  });
+  assert.match(nurseryAgrees.summary, /A nursery has no distributor account/);
+  assert.doesNotMatch(nurseryAgrees.summary, /No distributor customer code was available/);
+  const nurseryNoPhoto = checkDirectOrderGeography({
+    declaredBrickId: "B201-9",
+    declaredBrickName: "منشأة سلطان",
+    declaredAreaCode: "D12",
+    declaredAreaName: "Menoufia 1",
+    masterBrickId: null,
+    masterBrickName: null,
+    masterAreaCode: null,
+    masterAreaName: null,
+    address: null,
+    photoTerritory: null,
+    noDistributorAccountVenueLabel: "Nursery",
+  });
+  assert.match(nurseryNoPhoto.summary, /^NOT CHECKED — a nursery has no distributor account/);
+  assert.doesNotMatch(nurseryNoPhoto.summary, /no distributor customer code to check against/);
+  const noPhoto = photoCase(null);
+  assert.equal(noPhoto.photo.unusableReason, "no_photo");
+  assert.equal(noPhoto.photo.brick.verdict, "not_checkable");
+  assert.doesNotMatch(noPhoto.summary, /PHOTO MISMATCH/);
+
   // ── AUTO-LINK (owner rule, 2026-08-08: "if the pharmacy matches automatic link") ──────────
   //
   // The click was removed, so the match condition is now the ONLY thing standing between a
