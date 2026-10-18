@@ -115,6 +115,21 @@ function checkTimetable() {
     assert.equal(advice.kind, "look", `a reading that never came back (${reason}) recommends nothing either way`);
   }
   assert.equal(note(adviseOnTimetable(null)).kind, "look");
+
+  // The administrator's exception (owner, 2026-10-18, City clinic has no timetable): no photograph can
+  // name anybody there, so the system gives NO verdict and pre-picks NO refusal — whatever was read.
+  const readings = [
+    { verdict: "other_name" as const, scheduleText: "د. كريم", hoursRead: null, legibility: "clear" as const },
+    { verdict: "no_schedule" as const, scheduleText: null, hoursRead: null },
+    null,
+  ];
+  for (const timetable of readings) {
+    const none = note(adviseOnTimetable(timetable, true));
+    assert.equal(none.kind, "look", "🔴 a building the administrator declared has no timetable is never a rejection");
+    assert.equal(none.refusal, null, "and no timetable refusal is pre-picked for the rep to be told");
+    assert.match(none.reason, /no timetable/);
+  }
+  assert.equal(note(adviseOnTimetable({ verdict: "match", scheduleText: "د. جورج موسى", hoursRead: null })).kind, "approve", "without the exception a match still approves");
 }
 
 function checkHeldRows() {

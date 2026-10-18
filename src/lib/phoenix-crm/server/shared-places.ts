@@ -531,6 +531,13 @@ export type SharedPlaceBoardRow = SharedPlaceRow & {
   decidedByName: string | null;
   decisionNote: string | null;
   /**
+   * Set when the administrator declared that this building has NO timetable and validates its customers
+   * himself, as an exception (owner, 2026-10-18, City clinic: "make the place validated, and make those
+   * doctors validated by the admin as an exception for this polyclinic and show this"). A marker for the
+   * screen ONLY — nothing validates a customer off it, so one seated there later is still held for him.
+   */
+  timetableExempt: { atText: string; byName: string } | null;
+  /**
    * Whether this venue's REJECTION can still be taken back (owner, 2026-10-15: "make me able to
    * approve validation after rejection") — the same pair of tests the database makes: still retired,
    * and with the `retired_at` the rejection stamped, which is how the restore finds the places it
@@ -572,7 +579,8 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
         .from("phoenix_crm_shared_places")
         .select(
           `${SHARED_PLACE_COLUMNS}, created_at, signboard_check, decided_at, decided_by_hr_id, decision_note, ` +
-            "retired_at, refusal_reason, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters",
+            "retired_at, refusal_reason, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, " +
+            "timetable_exempt_at, timetable_exempt_by_hr_id",
         )
         // 🔴 A REJECTED VENUE IS ON THIS BOARD AGAIN, AND ONLY BECAUSE THERE IS NOW SOMETHING TO DO
         // ABOUT IT (owner, 2026-10-15: "make me able to approve validation after rejection"). Until
@@ -595,7 +603,11 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
 
   const [counts, names] = await Promise.all([
     seatedCounts(rows.map((row) => String(row.id))),
-    loadPeopleNames([...rows.map((row) => text(row.created_by_hr_id)), ...rows.map((row) => text(row.decided_by_hr_id))]),
+    loadPeopleNames([
+      ...rows.map((row) => text(row.created_by_hr_id)),
+      ...rows.map((row) => text(row.decided_by_hr_id)),
+      ...rows.map((row) => text(row.timetable_exempt_by_hr_id)),
+    ]),
   ]);
 
   return {
@@ -617,6 +629,12 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
         decidedAtText: text(row.decided_at) ? formatPhoenixDateTime(String(row.decided_at)) : null,
         decidedByName: text(row.decided_by_hr_id) ? nameOf(names, text(row.decided_by_hr_id), "The administrator") : null,
         decisionNote: text(row.decision_note),
+        timetableExempt: text(row.timetable_exempt_at)
+          ? {
+              atText: formatPhoenixDateTime(String(row.timetable_exempt_at)),
+              byName: nameOf(names, text(row.timetable_exempt_by_hr_id), "The administrator"),
+            }
+          : null,
         // The same pair of tests the database makes, so the control appears exactly where it works.
         restorable: row.status === "retired" && text(row.retired_at) !== null,
       };

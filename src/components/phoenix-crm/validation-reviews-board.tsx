@@ -364,7 +364,7 @@ export function ValidationReviewsBoard({
     const clinics = showWaiting ? filteredPending.map((row) => adviseOnReview(row)) : [];
     const buildings = needsGroups.flatMap((group) => [
       ...(group.venue.status === "held" ? [adviseOnBuilding(group.venue)] : []),
-      ...group.customers.filter((customer) => customer.state === "waiting").map((customer) => adviseOnTimetable(customer.timetable)),
+      ...group.customers.filter((customer) => customer.state === "waiting").map((customer) => adviseOnTimetable(customer.timetable, group.venue.timetableExempt !== null)),
     ]);
     return [...clinics, ...buildings];
   }, [team, showWaiting, filteredPending, needsGroups]);
