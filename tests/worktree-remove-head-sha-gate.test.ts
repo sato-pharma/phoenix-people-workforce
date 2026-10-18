@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { isShaLike, pickMergedPrForTip, removalVerdict } from "../scripts/lib/remove-gate.mjs";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * `new-session.mjs --remove` must not accept a merged PR that merely SHARES THE BRANCH NAME, and
@@ -232,6 +233,76 @@ export function runWorktreeRemoveHeadShaGateTests() {
     // so rather than printing `git branch rescue/detached-null null`.
     assert.match(source, /detached && detachedSha === null/, "the rescue must handle an unreadable detached tip");
     assert.match(source, /rev-parse HEAD/, "and point the reader at the folder, which still exists there");
+  }
+
+  // ── 6. A FOLDER THAT VANISHES MID-GATE IS NOT "STRANDED COMMITS" ────────────────────────────
+  //
+  // Measured 2026-10-19 retiring `_wt-weekly-plan-followups` (PR 6099, merged at that tip): the
+  // session that owned the worktree retired it during this command's slow `gh` reads, every later
+  // git read inside the dead folder failed and answered null, and null means "refuse" — so the gate
+  // printed "commits here are on no remote branch and no merged PR" about a folder that no longer
+  // existed. The verdict is its own reason, ranked after `open-pr` and before the safety signals,
+  // because it is the absence of the folder those signals were read from, not a signal itself.
+  {
+    const stranded = {
+      contentBackedUp: false,
+      filesIdenticalOnMain: false,
+      mergedPr: null,
+      onAnotherRemoteBranch: null,
+      openPrOnHead: null,
+      pushed: false,
+      unpushed: "abc123 some commit",
+    };
+    assert.deepEqual(
+      removalVerdict({ ...stranded, folderGone: true }),
+      { ok: false, reason: "folder-gone" },
+      "a folder that is gone reads as folder-gone, never as the stranded work its failed reads imply",
+    );
+    assert.deepEqual(
+      removalVerdict({ ...stranded, folderGone: true, unpushed: "" }),
+      { ok: false, reason: "folder-gone" },
+      "folder-gone does not depend on whether anything was unpushed",
+    );
+    assert.deepEqual(
+      removalVerdict({ ...stranded, folderGone: true, pushed: true, mergedPr: "6099" }),
+      { ok: false, reason: "folder-gone" },
+      "folder-gone outranks the safety signals — they were read from a folder that is not there",
+    );
+    assert.deepEqual(
+      removalVerdict({ ...stranded, folderGone: true, openPrOnHead: "6099" }),
+      { ok: false, pr: "6099", reason: "open-pr" },
+      "an OPEN PR still outranks folder-gone — the branch must not be deleted under somebody's open PR",
+    );
+    assert.deepEqual(
+      removalVerdict({ ...stranded, folderGone: false }),
+      { ok: false, reason: "stranded" },
+      "folderGone false leaves the stranded verdict exactly as it was",
+    );
+    assert.deepEqual(removalVerdict({ ...stranded, folderGone: false, pushed: true }), { ok: true });
+
+    // The wiring, read from code with the comments stripped (the comments quote these very strings).
+    const code = stripComments(read("scripts/new-session.mjs"));
+    assert.match(
+      code,
+      /const folderGone = \(\(\) => \{[\s\S]*?"rev-parse", "--git-dir"/,
+      "folderGone must be asked of git itself, in the worktree folder",
+    );
+    assert.match(code, /\n\s+folderGone,\n/, "and handed to removalVerdict");
+    assert.match(code, /verdict\.reason === "folder-gone"/, "and the reason must be wired to a branch of its own");
+    assert.ok(
+      code.includes('git(["worktree", "prune"])'),
+      "a gone folder leaves a dead registration, and `worktree prune` is what drops it",
+    );
+    const openPrRead = code.indexOf("const openPrOnHead");
+    const goneRead = code.indexOf("const folderGone");
+    const verdictCall = code.indexOf("const verdict = removalVerdict");
+    assert.ok(openPrRead !== -1 && goneRead !== -1 && verdictCall !== -1, "could not locate the reads — this pin measures nothing");
+    assert.ok(
+      openPrRead < goneRead && goneRead < verdictCall,
+      "folderGone must be asked AFTER the slow gh reads and right before the verdict — asked early it misses the window it exists for",
+    );
+    // With the folder gone the tip comes from the branch, which survives it.
+    assert.match(code, /const retiredTip = alreadyGone \? shortSha\(tipOfBranch\(\)\)/, "a gone folder's tip is read from the branch");
   }
 
   console.log("worktree remove head-sha gate: OK");

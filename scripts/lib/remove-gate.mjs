@@ -44,13 +44,24 @@ export function pickMergedPrForTip(rows, tip) {
 /**
  * Whether `--remove` may proceed, and why not when it may not.
  *
- * `{ ok: true }`, or `{ ok: false, reason }` where reason is `"open-pr"` or `"stranded"`. The order
- * is the point: `open-pr` is checked FIRST and is not overridable by any safety signal, because a
- * branch can be both fully backed up and still carrying somebody's open PR.
+ * `{ ok: true }`, or `{ ok: false, reason }` where reason is `"open-pr"`, `"folder-gone"` or
+ * `"stranded"`. The order is the point: `open-pr` is checked FIRST and is not overridable by any
+ * safety signal, because a branch can be both fully backed up and still carrying somebody's open PR.
+ *
+ * 🔴 `folder-gone` COMES SECOND, AND IT IS NOT A SAFETY SIGNAL — IT IS THE ABSENCE OF THE FOLDER THE
+ * OTHER SIGNALS WERE READ FROM. Every answer in the gate comes from `git` run INSIDE the worktree, so
+ * when the folder stops being a git checkout part-way through (the session that owns it retired it
+ * in the same minute), the reads after that point fail, come back `null`, and null means "refuse".
+ * The gate then blamed STRANDED commits that were sitting safely on a merged PR's head. Measured
+ * 2026-10-19 retiring `_wt-weekly-plan-followups` (PR 6099, merged at that tip): it printed "commits
+ * here are on no remote branch and no merged PR" about a folder that no longer existed.
+ * Nothing in a folder that is not there can be lost by removing it, so this verdict is neither a pass
+ * nor a refusal about the work: the caller prunes the dead registration and says so.
  */
 export function removalVerdict(signals) {
   const s = signals && typeof signals === "object" ? signals : {};
   if (s.openPrOnHead) return { ok: false, reason: "open-pr", pr: String(s.openPrOnHead) };
+  if (s.folderGone) return { ok: false, reason: "folder-gone" };
   if (!s.unpushed) return { ok: true };
   // Any ONE of these is enough: the commits are on origin under this name or another, a merged PR
   // carries this exact tip, their patch-ids are upstream, or every file they touch is already
