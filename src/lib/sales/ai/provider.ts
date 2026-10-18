@@ -1,101 +1,268 @@
-// Shared OpenAI-compatible AI provider resolution + a single JSON chat helper for the Sales module.
-// Provider-agnostic via the /chat/completions API. Set ONE of these in the env (no code change):
+// Shared AI provider resolution + failover + a single JSON chat helper for the Sales module.
+//
+// The first provider is OpenAI-compatible (/chat/completions). Set ONE of these in the env (no code change):
 //   OPENAI_API_KEY      -> OpenAI       GROQ_API_KEY -> Groq       OPENROUTER_API_KEY -> OpenRouter
 //   AI_API_KEY + AI_BASE_URL -> any other OpenAI-compatible provider
-//   AI_MODEL (or OPENAI_MODEL) -> override the model for whichever provider is active
-// With no key configured resolveAiProvider returns null and callers degrade to a no-op (aiUsed=false).
+//   AI_MODEL (or OPENAI_MODEL) -> override the model for whichever of those is active
 //
-// NOTE: the older src/lib/sales/normalizer/ai-suggest.ts and src/lib/sales/weekly/ai-verify.ts still
-// carry their own copies of this resolver; consolidating them onto this module is a safe follow-up
-// (kept separate here to avoid touching those live paths in the AI-explain change).
+// ANTHROPIC IS THE SECOND PROVIDER (owner, 2026-10-18, the OpenAI account failed to recharge). The three
+// sales AI paths — this file's aiChatJson, normalizer/ai-suggest.ts and weekly/ai-verify.ts — make their own
+// raw calls rather than going through the shared createOpenAiResponseText, so they stayed dark while every
+// other AI feature failed over. They now plan their providers HERE, with the same rules as the shared call
+// (src/lib/ai/openai-client.ts): OpenAI-compatible first, Anthropic only when that account is dead
+// (quota_exceeded or auth_failed), AI_PROVIDER=openai|anthropic pins one, and the shared 10-minute
+// "OpenAI is unavailable" memory is read and written so a failure seen by one caller spares the rest.
+//
+// With no key configured planSalesAi returns [] and callers degrade to a no-op (aiUsed=false).
 
-import { aiErrorCodeForResponse, recordAiCall } from "@/lib/observability/ai-metrics";
+import { callAnthropicMessages, AnthropicRequestError, hasAnthropicApiKey, resolveAnthropicModel } from "@/lib/ai/anthropic-fallback";
+import { isOpenAiUnavailable, noteOpenAiUnavailable, resolveAiProviderMode, shouldFailOverToNextProvider } from "@/lib/ai/openai-client";
+import { aiErrorCodeForResponse, isQuotaExhaustedBody, recordAiCall, type AiCallComponent } from "@/lib/observability/ai-metrics";
 
-export type AiProvider = { baseUrl: string; key: string; model: string };
+type AiEnv = Record<string, string | undefined>;
+
+export type AiProviderName = "generic" | "groq" | "openai" | "openrouter";
+export type AiProvider = { baseUrl: string; key: string; model: string; name: AiProviderName };
 
 export type AiModelDefaults = { openai: string; groq: string; openrouter: string; generic: string };
 
-const DEFAULT_MODELS: AiModelDefaults = {
+export const DEFAULT_AI_MODELS: AiModelDefaults = {
   openai: "gpt-4o-mini",
   groq: "llama-3.3-70b-versatile",
   openrouter: "openai/gpt-4o-mini",
   generic: "gpt-4o-mini",
 };
 
-export function resolveAiProvider(models: AiModelDefaults = DEFAULT_MODELS): AiProvider | null {
-  const baseOverride = process.env.AI_BASE_URL?.replace(/\/+$/, "");
-  const modelOverride = process.env.AI_MODEL || process.env.OPENAI_MODEL;
-  if (process.env.OPENAI_API_KEY) return { baseUrl: baseOverride || "https://api.openai.com/v1", key: process.env.OPENAI_API_KEY, model: modelOverride || models.openai };
-  if (process.env.GROQ_API_KEY) return { baseUrl: baseOverride || "https://api.groq.com/openai/v1", key: process.env.GROQ_API_KEY, model: modelOverride || models.groq };
-  if (process.env.OPENROUTER_API_KEY) return { baseUrl: baseOverride || "https://openrouter.ai/api/v1", key: process.env.OPENROUTER_API_KEY, model: modelOverride || models.openrouter };
-  if (process.env.AI_API_KEY && baseOverride) return { baseUrl: baseOverride, key: process.env.AI_API_KEY, model: modelOverride || models.generic };
+export function resolveAiProvider(models: AiModelDefaults = DEFAULT_AI_MODELS, env: AiEnv = process.env): AiProvider | null {
+  const baseOverride = env.AI_BASE_URL?.replace(/\/+$/, "");
+  const modelOverride = env.AI_MODEL || env.OPENAI_MODEL;
+  if (env.OPENAI_API_KEY) return { baseUrl: baseOverride || "https://api.openai.com/v1", key: env.OPENAI_API_KEY, model: modelOverride || models.openai, name: "openai" };
+  if (env.GROQ_API_KEY) return { baseUrl: baseOverride || "https://api.groq.com/openai/v1", key: env.GROQ_API_KEY, model: modelOverride || models.groq, name: "groq" };
+  if (env.OPENROUTER_API_KEY) return { baseUrl: baseOverride || "https://openrouter.ai/api/v1", key: env.OPENROUTER_API_KEY, model: modelOverride || models.openrouter, name: "openrouter" };
+  if (env.AI_API_KEY && baseOverride) return { baseUrl: baseOverride, key: env.AI_API_KEY, model: modelOverride || models.generic, name: "generic" };
   return null;
 }
 
-export function hasAiProvider(): boolean {
-  return resolveAiProvider() !== null;
+// One provider the call may go to: an OpenAI-compatible chat endpoint, or Anthropic's Messages API.
+export type SalesAiLeg = { kind: "anthropic"; model: string } | { kind: "chat"; provider: AiProvider };
+
+/**
+ * The providers to try, in order. `models` is the calling path's own default tier: Anthropic's model is
+ * chosen from the OPENAI name in `models.openai` (a "mini" path gets the fast Claude model, ai-suggest's
+ * gpt-4o gets the strong one) and NOT from AI_MODEL, which is an override for the OpenAI-compatible side only.
+ * Only an environment with BOTH an OpenAI-compatible key and an Anthropic key ever gets a second entry.
+ */
+export function planSalesAi(
+  models: AiModelDefaults = DEFAULT_AI_MODELS,
+  env: AiEnv = process.env,
+  nowMs = Date.now(),
+): SalesAiLeg[] {
+  const mode = resolveAiProviderMode(env);
+  const provider = mode === "anthropic" ? null : resolveAiProvider(models, env);
+  const chat: SalesAiLeg | null = provider ? { kind: "chat", provider } : null;
+  const claude: SalesAiLeg | null =
+    mode !== "openai" && hasAnthropicApiKey(env)
+      ? { kind: "anthropic", model: resolveAnthropicModel(models.openai, env) }
+      : null;
+  if (chat && claude) {
+    // The shared memory is about the OpenAI ACCOUNT, so it only reorders when the chat leg IS OpenAI.
+    return provider?.name === "openai" && isOpenAiUnavailable(nowMs) ? [claude, chat] : [chat, claude];
+  }
+  if (chat) return [chat];
+  if (claude) return [claude];
+  return [];
 }
 
-// One JSON chat-completions round-trip. Throws a human-readable reason on HTTP failure (callers catch
-// and degrade). Server-only — never logs the key; on error only the upstream status/body fragment.
+export function hasAiProvider(models: AiModelDefaults = DEFAULT_AI_MODELS): boolean {
+  return planSalesAi(models).length > 0;
+}
+
+/** The model that would answer FIRST right now — what cached answers are keyed by (see aiSuggestModel). */
+export function firstSalesAiModel(models: AiModelDefaults = DEFAULT_AI_MODELS): string | null {
+  const leg = planSalesAi(models)[0];
+  if (!leg) return null;
+  return leg.kind === "anthropic" ? leg.model : leg.provider.model;
+}
+
+export type SalesAiFailureCode = "auth_failed" | "failed" | "not_configured" | "quota_exceeded" | "rate_limited" | "timeout";
+
+// The one error a leg throws, so the failover loop can read WHY it failed without parsing a message. The
+// message is whatever the calling path shows its user; the code decides whether the next provider is tried.
+export class SalesAiError extends Error {
+  code: SalesAiFailureCode;
+  status?: number;
+
+  constructor(code: SalesAiFailureCode, message: string, status?: number) {
+    super(message);
+    this.name = "SalesAiError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+/** What an OpenAI-compatible HTTP failure means for the app (402 is how OpenRouter says "out of credit"). */
+export function salesAiFailureCodeFor(status: number, rawBody: string): SalesAiFailureCode {
+  if (status === 401 || status === 403) return "auth_failed";
+  if (status === 402) return "quota_exceeded";
+  if (status === 429) return isQuotaExhaustedBody(rawBody) ? "quota_exceeded" : "rate_limited";
+  return "failed";
+}
+
+/**
+ * Runs `attempt` against each planned provider in turn. It moves to the next ONLY when the ACCOUNT is dead
+ * (out of credit, key rejected) — a timeout, a rate limit or any other failure stays with the provider that
+ * gave it and is thrown as it was. Throws not_configured when no provider is configured at all.
+ */
+export async function runWithSalesAiFailover<T>(
+  attempt: (leg: SalesAiLeg) => Promise<T>,
+  models: AiModelDefaults = DEFAULT_AI_MODELS,
+): Promise<T> {
+  const plan = planSalesAi(models);
+  if (plan.length === 0) throw new SalesAiError("not_configured", "No AI provider is configured.");
+
+  for (const [index, leg] of plan.entries()) {
+    try {
+      return await attempt(leg);
+    } catch (error) {
+      const code = error instanceof SalesAiError ? error.code : "failed";
+      const failOver = shouldFailOverToNextProvider(code);
+      if (failOver && leg.kind === "chat" && leg.provider.name === "openai" && hasAnthropicApiKey()) {
+        noteOpenAiUnavailable();
+      }
+      if (!failOver || index === plan.length - 1) throw error;
+    }
+  }
+
+  // Unreachable: `plan` is never empty and its last entry always throws above. Present for the compiler.
+  throw new SalesAiError("failed", "No AI provider was attempted.");
+}
+
+/**
+ * One Anthropic JSON round trip for a sales path: the same `system` + `user` pair the OpenAI-compatible leg
+ * sends, the reply cleaned of any markdown fence. Records the call under the path's own component, so the
+ * AI board and the out-of-credit alarm name the right feature. Throws SalesAiError; never logs the key.
+ */
+export async function anthropicJson(params: {
+  component: AiCallComponent;
+  maxRetries?: number;
+  maxTokens: number;
+  model: string;
+  purpose: string;
+  system: string;
+  timeoutMs: number;
+  user: string;
+}): Promise<{ model: string; text: string }> {
+  const startedAt = Date.now();
+  try {
+    const reply = await callAnthropicMessages({
+      format: { type: "json_object" },
+      input: params.user,
+      instructions: params.system,
+      maxOutputTokens: params.maxTokens,
+      maxRetries: params.maxRetries ?? 1,
+      model: params.model,
+      timeoutMs: params.timeoutMs,
+    });
+    recordAiCall({
+      component: params.component,
+      inputTokens: reply.inputTokens,
+      latencyMs: Date.now() - startedAt,
+      model: reply.model,
+      outputTokens: reply.outputTokens,
+      purpose: params.purpose,
+      status: "success",
+    });
+    return { model: reply.model, text: reply.outputText };
+  } catch (error) {
+    const failure = error instanceof AnthropicRequestError ? error : null;
+    const code: SalesAiFailureCode = failure?.code ?? "failed";
+    recordAiCall({
+      component: params.component,
+      errorCode: code,
+      latencyMs: Date.now() - startedAt,
+      model: params.model,
+      purpose: params.purpose,
+      status: "error",
+    });
+    throw new SalesAiError(code, failure ? failure.message : "The Anthropic request failed.", failure?.status);
+  }
+}
+
+// One JSON chat round-trip. Throws a human-readable reason on HTTP failure (callers catch and degrade).
+// Server-only — never logs the key; on error only the upstream status/body fragment. Falls over to
+// Anthropic when the OpenAI-compatible account is dead (see the header).
 export async function aiChatJson(
-  provider: AiProvider,
   system: string,
   user: string,
   opts?: { timeoutMs?: number; maxTokens?: number; purpose?: string },
 ): Promise<string> {
   const purpose = opts?.purpose ?? "sales_ai_chat";
-  const startedAt = Date.now();
-  // Captured so the failure row can say WHY, not just that something failed. A row reading
-  // "HTTP 401" is the difference between "the key is wrong" and "the model is busy" — the two
-  // that looked identical during the 2026-09-02 outage.
-  let upstreamStatus: number | undefined;
-  let upstreamCode: string | undefined;
-  try {
-    const res = await fetch(`${provider.baseUrl}/chat/completions`, {
-      body: JSON.stringify({
-        max_completion_tokens: opts?.maxTokens ?? 1500,
-        messages: [
-          { content: system, role: "system" },
-          { content: user, role: "user" },
-        ],
-        model: provider.model,
-        response_format: { type: "json_object" },
-        temperature: 0,
-      }),
-      headers: { Authorization: `Bearer ${provider.key}`, "Content-Type": "application/json" },
-      method: "POST",
-      signal: AbortSignal.timeout(opts?.timeoutMs ?? 45_000),
-    });
-    if (!res.ok) {
-      upstreamStatus = res.status;
-      const body = await res.text().catch(() => "");
-      upstreamCode = aiErrorCodeForResponse(res.status, body);
-      throw new Error(`AI request failed (HTTP ${res.status}): ${body.slice(0, 200)}`);
+  const timeoutMs = opts?.timeoutMs ?? 45_000;
+  const maxTokens = opts?.maxTokens ?? 1500;
+
+  return runWithSalesAiFailover(async (leg) => {
+    if (leg.kind === "anthropic") {
+      const reply = await anthropicJson({ component: "sales_ai_provider", maxTokens, model: leg.model, purpose, system, timeoutMs, user });
+      return reply.text;
     }
-    const json = (await res.json()) as {
-      choices?: { message?: { content?: string } }[];
-      usage?: { prompt_tokens?: number; completion_tokens?: number };
-    };
-    recordAiCall({
-      component: "sales_ai_provider",
-      inputTokens: json.usage?.prompt_tokens,
-      latencyMs: Date.now() - startedAt,
-      model: provider.model,
-      outputTokens: json.usage?.completion_tokens,
-      purpose,
-      status: "success",
-    });
-    return json.choices?.[0]?.message?.content ?? "{}";
-  } catch (error) {
-    recordAiCall({
-      component: "sales_ai_provider",
-      errorCode: upstreamCode ?? (upstreamStatus === undefined ? "no_http_status" : String(upstreamStatus)),
-      latencyMs: Date.now() - startedAt,
-      model: provider.model,
-      purpose,
-      status: "error",
-    });
-    throw error;
-  }
+
+    const { provider } = leg;
+    const startedAt = Date.now();
+    // Captured so the failure row can say WHY, not just that something failed. A row reading
+    // "HTTP 401" is the difference between "the key is wrong" and "the model is busy" — the two
+    // that looked identical during the 2026-09-02 outage.
+    let upstreamStatus: number | undefined;
+    let upstreamCode: string | undefined;
+    try {
+      const res = await fetch(`${provider.baseUrl}/chat/completions`, {
+        body: JSON.stringify({
+          max_completion_tokens: maxTokens,
+          messages: [
+            { content: system, role: "system" },
+            { content: user, role: "user" },
+          ],
+          model: provider.model,
+          response_format: { type: "json_object" },
+          temperature: 0,
+        }),
+        headers: { Authorization: `Bearer ${provider.key}`, "Content-Type": "application/json" },
+        method: "POST",
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!res.ok) {
+        upstreamStatus = res.status;
+        const body = await res.text().catch(() => "");
+        upstreamCode = aiErrorCodeForResponse(res.status, body);
+        throw new SalesAiError(
+          salesAiFailureCodeFor(res.status, body),
+          `AI request failed (HTTP ${res.status}): ${body.slice(0, 200)}`,
+          res.status,
+        );
+      }
+      const json = (await res.json()) as {
+        choices?: { message?: { content?: string } }[];
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
+      recordAiCall({
+        component: "sales_ai_provider",
+        inputTokens: json.usage?.prompt_tokens,
+        latencyMs: Date.now() - startedAt,
+        model: provider.model,
+        outputTokens: json.usage?.completion_tokens,
+        purpose,
+        status: "success",
+      });
+      return json.choices?.[0]?.message?.content ?? "{}";
+    } catch (error) {
+      recordAiCall({
+        component: "sales_ai_provider",
+        errorCode: upstreamCode ?? (upstreamStatus === undefined ? "no_http_status" : String(upstreamStatus)),
+        latencyMs: Date.now() - startedAt,
+        model: provider.model,
+        purpose,
+        status: "error",
+      });
+      throw error;
+    }
+  });
 }

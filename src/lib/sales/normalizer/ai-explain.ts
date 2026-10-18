@@ -9,7 +9,7 @@
 // posture of ai-suggest.ts / weekly ai-verify.ts).
 
 import { logError } from "@/lib/observability/log";
-import { aiChatJson, resolveAiProvider } from "@/lib/sales/ai/provider";
+import { aiChatJson, hasAiProvider } from "@/lib/sales/ai/provider";
 
 export type HeaderMismatchSuggestion = { expected: string; suggestedHeader: string | null; note?: string };
 export type HeaderMismatchExplanation = { aiUsed: boolean; summary: string; suggestions: HeaderMismatchSuggestion[] };
@@ -45,13 +45,12 @@ export function buildHeaderMismatchMessages(input: HeaderMismatchInput): { syste
 }
 
 export async function explainHeaderMismatch(input: HeaderMismatchInput): Promise<HeaderMismatchExplanation> {
-  const provider = resolveAiProvider();
-  if (!provider || input.observedHeaders.length === 0 || input.missingGroups.length === 0) return EMPTY;
+  if (!hasAiProvider() || input.observedHeaders.length === 0 || input.missingGroups.length === 0) return EMPTY;
   // Only a FOUND title (or null) may be suggested — the AI can never invent a header.
   const foundSet = new Set(input.observedHeaders.map((h) => h.trim().toLowerCase()));
   try {
     const { system, user } = buildHeaderMismatchMessages(input);
-    const text = await aiChatJson(provider, system, user);
+    const text = await aiChatJson(system, user);
     const parsed = JSON.parse(text) as { summary?: unknown; suggestions?: { expected?: unknown; suggestedHeader?: unknown; note?: unknown }[] };
     const suggestions: HeaderMismatchSuggestion[] = Array.isArray(parsed.suggestions)
       ? parsed.suggestions.map((s) => {

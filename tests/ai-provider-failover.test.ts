@@ -15,6 +15,7 @@ import {
 } from "@/lib/ai/anthropic-fallback.ts";
 import {
   hasAiApiKey,
+  isOpenAiOutOfCredit,
   noteOpenAiUnavailable,
   OPENAI_UNAVAILABLE_WINDOW_MS,
   planAiProviders,
@@ -82,6 +83,15 @@ function planningTests() {
   for (const code of ["timeout", "rate_limited", "failed", "not_configured"] as const) {
     assert.equal(shouldFailOverToNextProvider(code), false, `${code} stays with the provider that gave it`);
   }
+
+  // 🔴 The account's real answer on 18 Oct 2026 (HTTP 429, "You have no credits remaining"). Read by its
+  //    code alone it was a rate limit, and nothing failed over while every AI feature was down.
+  assert.equal(isOpenAiOutOfCredit("credit_balance_exhausted", "insufficient_quota"), true, "the 18 Oct answer is out of credit");
+  assert.equal(isOpenAiOutOfCredit("credit_balance_exhausted", undefined), true, "by its code alone");
+  assert.equal(isOpenAiOutOfCredit(undefined, "insufficient_quota"), true, "or by its type alone");
+  assert.equal(isOpenAiOutOfCredit("insufficient_quota", undefined), true, "the older answer still counts");
+  assert.equal(isOpenAiOutOfCredit("rate_limit_exceeded", "requests"), false, "a real rate limit stays a rate limit");
+  assert.equal(isOpenAiOutOfCredit(undefined, undefined), false);
 }
 
 function modelTests() {
@@ -342,6 +352,15 @@ function wiringTests() {
     "only a dead account fails over; any other error is thrown from the provider that gave it",
   );
   assert.match(entry, /noteOpenAiUnavailable\(\)/, "a dead OpenAI account is remembered so the next call skips it");
+
+  const normalizer = client.slice(client.indexOf("export function normalizeOpenAiError"), client.indexOf("function openAiClient"));
+  assert.match(normalizer, /const outOfCredit = isOpenAiOutOfCredit\(code, typeFrom\(error\)\);/, "out of credit is read from the code AND the type");
+  assert.equal(
+    normalizer.split('outOfCredit ? "quota_exceeded" : "rate_limited"').length - 1,
+    2,
+    "both 429 branches (the SDK's RateLimitError and a bare 429) ask it",
+  );
+  assert.doesNotMatch(normalizer, /code === "insufficient_quota"/, "never the code alone again");
 
   const anthropicRun = client.slice(client.indexOf("async function runAnthropicResponse"), client.indexOf("function normalizeAnthropicError"));
   assert.match(anthropicRun, /recordAiCall\(\{[\s\S]*status: "success"/, "an Anthropic success lands on the AI telemetry board");

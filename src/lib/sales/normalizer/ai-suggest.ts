@@ -10,9 +10,19 @@
 //   OPENROUTER_API_KEY  -> OpenRouter     (default model openai/gpt-4o)
 //   AI_API_KEY + AI_BASE_URL              -> any other OpenAI-compatible provider
 //   AI_MODEL            -> override the model for whichever provider is active
+// ANTHROPIC_API_KEY is the second provider: when the account above is out of credit or its key is
+// rejected, the batch is asked of Claude instead (src/lib/sales/ai/provider.ts holds the plan).
 // With no key it is a no-op and the UI hides the button.
 
-import { resolveAiProvider, type AiProvider } from "@/lib/sales/ai/provider";
+import {
+  anthropicJson,
+  firstSalesAiModel,
+  hasAiProvider,
+  runWithSalesAiFailover,
+  salesAiFailureCodeFor,
+  SalesAiError,
+  type AiProvider,
+} from "@/lib/sales/ai/provider";
 import { aiErrorCodeForResponse, isQuotaExhaustedBody, recordAiCall } from "@/lib/observability/ai-metrics";
 
 export type AiCandidate = { code: string; label: string };
@@ -25,19 +35,18 @@ export type AiKind = "product" | "territory" | "customer";
 // Provider resolution is shared (src/lib/sales/ai/provider.ts). ai-suggest keeps GPT-4o (the heavier
 // model) for the harder name-matching task, overriding the shared "mini" defaults.
 const AI_SUGGEST_MODELS = { openai: "gpt-4o", groq: "llama-3.3-70b-versatile", openrouter: "openai/gpt-4o", generic: "gpt-4o" } as const;
-
-function resolveProvider(): AiProvider | null {
-  return resolveAiProvider({ ...AI_SUGGEST_MODELS });
-}
+// The same defaults as a mutable copy, for the planner (it also picks Claude's strong tier from "gpt-4o").
+const SUGGEST_MODELS = { ...AI_SUGGEST_MODELS };
 
 export function hasAiKey(): boolean {
-  return resolveProvider() !== null;
+  return hasAiProvider(SUGGEST_MODELS);
 }
 
-// The model answering right now. customer-ai-answers.ts keeps each model's answers apart, so a
-// model change asks again instead of serving another model's answers.
+// The model that answers FIRST right now. customer-ai-answers.ts keeps each model's answers apart, so a
+// model change asks again instead of serving another model's answers. Once OpenAI has been seen out of
+// credit this is Claude's model, which is why customer-suggest.ts asks again after the call.
 export function aiSuggestModel(): string | null {
-  return resolveProvider()?.model ?? null;
+  return firstSalesAiModel(SUGGEST_MODELS);
 }
 
 function systemPrompt(kind: AiKind): string {
@@ -135,13 +144,56 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// One chat-completions call. Returns the model's JSON text, or throws a human-readable reason on failure
-// so the UI surfaces it instead of a misleading "no matches".
-async function generate(provider: AiProvider, kind: AiKind, unknowns: AiUnknown[], candidates: AiCandidate[], referenceAliases?: AiReferenceAlias[]): Promise<string> {
+// What the UI shows for each way an AI account can fail. Both providers' failures map onto these, so the
+// message names the fix (billing, key, waiting) whichever account answered last.
+const OUT_OF_CREDIT_MESSAGE = "AI account is out of credit / quota — this is a billing problem, not a busy server, so waiting will NOT help. Top up or fix billing on the AI provider account, then try again.";
+const KEY_REJECTED_MESSAGE = "AI key was rejected (401) — check the API key is valid and has credit/access.";
+const RATE_LIMITED_MESSAGE = "AI is rate-limited right now — wait a moment (or lower the batch size / run fewer rows at once), then click AI suggest again.";
+// Claude has no JSON mode here, so a blank, prose-only or truncated reply is possible; the operator should read this, not a parser error.
+const UNREADABLE_MESSAGE = "AI returned an answer that could not be read — click AI suggest again.";
+
+// One batch asked of the planned provider(s). Returns the model's JSON text, or throws a human-readable
+// reason on failure so the UI surfaces it instead of a misleading "no matches". OpenAI-compatible first;
+// Claude only when that account is out of credit or its key is rejected (runWithSalesAiFailover).
+async function generate(kind: AiKind, unknowns: AiUnknown[], candidates: AiCandidate[], referenceAliases?: AiReferenceAlias[]): Promise<string> {
+  const system = systemPrompt(kind);
+  const user = userPrompt(unknowns, candidates, kind, referenceAliases);
+  return runWithSalesAiFailover(
+    (leg) => (leg.kind === "anthropic" ? askClaude(leg.model, kind, system, user) : askChatProvider(leg.provider, kind, system, user)),
+    SUGGEST_MODELS,
+  );
+}
+
+// One batch of up to 60 rows: ~1.5k tokens of answer, so 4k is headroom, and a generous timeout because
+// the chat leg has none of its own.
+async function askClaude(model: string, kind: AiKind, system: string, user: string): Promise<string> {
+  try {
+    const reply = await anthropicJson({
+      component: "sales_normalizer_ai_suggest",
+      maxRetries: MAX_RATE_LIMIT_RETRIES,
+      maxTokens: 4_000,
+      model,
+      purpose: `ai_suggest_${kind}`,
+      system,
+      timeoutMs: 120_000,
+      user,
+    });
+    return reply.text;
+  } catch (error) {
+    if (!(error instanceof SalesAiError)) throw error;
+    if (error.code === "quota_exceeded") throw new SalesAiError(error.code, OUT_OF_CREDIT_MESSAGE, error.status);
+    if (error.code === "auth_failed") throw new SalesAiError(error.code, KEY_REJECTED_MESSAGE, error.status);
+    if (error.code === "rate_limited") throw new SalesAiError(error.code, RATE_LIMITED_MESSAGE, error.status);
+    throw error;
+  }
+}
+
+// One chat-completions call against the OpenAI-compatible provider.
+async function askChatProvider(provider: AiProvider, kind: AiKind, system: string, user: string): Promise<string> {
   const body_ = JSON.stringify({
     messages: [
-      { content: systemPrompt(kind), role: "system" },
-      { content: userPrompt(unknowns, candidates, kind, referenceAliases), role: "user" },
+      { content: system, role: "system" },
+      { content: user, role: "user" },
     ],
     model: provider.model,
     response_format: { type: "json_object" },
@@ -185,13 +237,11 @@ async function generate(provider: AiProvider, kind: AiKind, unknowns: AiUnknown[
           await delay(2 ** attempt * rateLimitRetryBaseMs() + Math.floor(Math.random() * 250));
           continue;
         }
-        throw new Error("AI is rate-limited right now — wait a moment (or lower the batch size / run fewer rows at once), then click AI suggest again.");
+        throw new SalesAiError("rate_limited", RATE_LIMITED_MESSAGE, res.status);
       }
-      if (res.status === 429) {
-        throw new Error("AI account is out of credit / quota — this is a billing problem, not a busy server, so waiting will NOT help. Top up or fix billing on the AI provider account, then try again.");
-      }
-      if (res.status === 401) throw new Error("AI key was rejected (401) — check the API key is valid and has credit/access.");
-      throw new Error(`AI request failed (HTTP ${res.status}): ${shortReason(respBody)}`);
+      if (res.status === 429) throw new SalesAiError("quota_exceeded", OUT_OF_CREDIT_MESSAGE, res.status);
+      if (res.status === 401) throw new SalesAiError("auth_failed", KEY_REJECTED_MESSAGE, res.status);
+      throw new SalesAiError(salesAiFailureCodeFor(res.status, respBody), `AI request failed (HTTP ${res.status}): ${shortReason(respBody)}`, res.status);
     }
   } catch (error) {
     recordAiCall({
@@ -210,8 +260,7 @@ async function generate(provider: AiProvider, kind: AiKind, unknowns: AiUnknown[
 // AI can never invent a code. Batches to keep each request small. If every batch fails (e.g. bad key or
 // rate limit), throws the reason so the UI shows it instead of a misleading "no matches".
 export async function aiSuggest(kind: AiKind, unknowns: AiUnknown[], candidates: AiCandidate[], referenceAliases?: AiReferenceAlias[]): Promise<AiSuggestion[]> {
-  const provider = resolveProvider();
-  if (!provider || unknowns.length === 0 || candidates.length === 0) return [];
+  if (!hasAiKey() || unknowns.length === 0 || candidates.length === 0) return [];
   const validCodes = new Map(candidates.map((c) => [c.code.trim().toUpperCase(), c.code]));
   const out: AiSuggestion[] = [];
   const BATCH = 60;
@@ -219,8 +268,9 @@ export async function aiSuggest(kind: AiKind, unknowns: AiUnknown[], candidates:
   for (let i = 0; i < unknowns.length; i += BATCH) {
     const chunk = unknowns.slice(i, i + BATCH);
     try {
-      const text = await generate(provider, kind, chunk, candidates, referenceAliases);
+      const text = await generate(kind, chunk, candidates, referenceAliases);
       const parsed = JSON.parse(text) as { matches?: { code?: string | null; id?: number; confidence?: number | null }[] } | { code?: string | null; id?: number; confidence?: number | null }[];
+      if (parsed === null || typeof parsed !== "object") throw new SyntaxError("The AI reply was not a JSON object.");
       const arr = Array.isArray(parsed) ? parsed : parsed.matches ?? [];
       for (const item of Array.isArray(arr) ? arr : []) {
         const idx = Number(item.id) - 1;
@@ -232,7 +282,7 @@ export async function aiSuggest(kind: AiKind, unknowns: AiUnknown[], candidates:
         if (u && code) out.push({ code, raw: u.raw, confidence });
       }
     } catch (e) {
-      lastError = e instanceof Error ? e.message : "AI error.";
+      lastError = e instanceof SyntaxError ? UNREADABLE_MESSAGE : e instanceof Error ? e.message : "AI error.";
     }
   }
   if (out.length === 0 && lastError) throw new Error(lastError);

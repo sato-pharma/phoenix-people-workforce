@@ -4,19 +4,20 @@
 // column contract (column-contract.ts), so the operator can see exactly which data the engine will
 // take from which column BEFORE committing to the upload. An OpenAI call judges each pinned column
 // for "drift" (a renamed/moved header), but the verdict math is recomputed server-side — the AI is
-// never trusted to gate anything.
+// never trusted to gate anything. The call goes to the OpenAI-compatible provider first and to Anthropic
+// when that account is out of credit or its key is rejected (src/lib/sales/ai/provider.ts).
 //
 // PRIVACY: only column HEADER TEXT leaves the server (product/branch column titles, and for PS the
 // outlet/location names that are themselves the headers). No sales numbers, quantities, or data rows
 // are ever sent — mirrors the privacy posture of src/lib/sales/normalizer/ai-suggest.ts.
 //
-// PRODUCTION SAFETY: when no AI key is configured (e.g. a preview without OPENAI_API_KEY) or the AI
+// PRODUCTION SAFETY: when no AI key is configured (e.g. a preview without OPENAI_API_KEY or ANTHROPIC_API_KEY) or the AI
 // call fails, this NEVER throws — it returns the deterministic column plan with aiUsed=false so the
 // operator can still review and verify manually. An AI outage must not freeze the upload flow.
 
 import ExcelJS from "exceljs";
 
-import { resolveAiProvider, type AiProvider } from "@/lib/sales/ai/provider";
+import { anthropicJson, hasAiProvider, runWithSalesAiFailover, salesAiFailureCodeFor, SalesAiError } from "@/lib/sales/ai/provider";
 import { aiErrorCodeForResponse, recordAiCall } from "@/lib/observability/ai-metrics";
 import { logError } from "@/lib/observability/log";
 import { type WeeklyContractSheet, type WeeklyDistributorContract } from "@/lib/sales/weekly/column-contract";
@@ -25,15 +26,12 @@ import { weeklyDistributorByCode } from "@/lib/sales/weekly/distributors";
 import { matchWeeklySheet, weeklySheetMatcher } from "@/lib/sales/weekly/sheet-match";
 import type { WeeklyVerifyColumn, WeeklyVerifyMatrix, WeeklyVerifyResult } from "@/lib/sales/weekly/types";
 
-// ── AI provider resolution (shared with src/lib/sales/ai/provider.ts) ──────────────────────────────
-// ai-verify uses the shared "mini" model defaults exactly, so it delegates straight to resolveAiProvider.
-function resolveProvider(): AiProvider | null {
-  return resolveAiProvider();
-}
+// ── AI provider planning (shared with src/lib/sales/ai/provider.ts) ────────────────────────────────
+// ai-verify uses the shared "mini" model defaults exactly, so it passes none.
 
-/** True when an AI key is configured — the route surfaces this so the UI can label the mode. */
+/** True when an AI key is configured (either provider) — the route surfaces this so the UI can label the mode. */
 export function hasWeeklyVerifyAi(): boolean {
-  return resolveProvider() !== null;
+  return hasAiProvider();
 }
 
 // ── cell helper (mirrors parser.ts) ───────────────────────────────────────────────────────────────
@@ -74,8 +72,9 @@ export type WeeklyVerifyInput = {
 // ── AI overlay ────────────────────────────────────────────────────────────────────────────────────
 type AiJudgement = { id: number; status: "match" | "drift" | "uncertain"; note?: string };
 
-async function judgeWithAi(
-  provider: AiProvider,
+// Exported for tests/sales-ai-failover.test.ts: the only other way in is verifyWeeklyUpload, which reads the
+// column contract from the database.
+export async function judgeWithAi(
   distributorName: string,
   items: { id: number; sheetRole: string; label: string; columnIndex: number; expectedHeaderHint: string; observedHeader: string }[],
 ): Promise<{ judgements: AiJudgement[]; summary: string }> {
@@ -91,52 +90,68 @@ async function judgeWithAi(
     .join("\n");
   const user = `Distributor: ${distributorName}\n\nPinned columns (id | sheet | field | col | expected | found):\n${lines}\n\nReturn ONLY JSON of this exact shape: {"items":[{"id":<id>,"status":"match|drift|uncertain","note":"<short reason>"}],"summary":"<one plain-English sentence about whether the file lines up>"}`;
 
-  const startedAt = Date.now();
-  const res = await fetch(`${provider.baseUrl}/chat/completions`, {
-    body: JSON.stringify({
-      max_completion_tokens: 2000,
-      messages: [
-        { content: system, role: "system" },
-        { content: user, role: "user" },
-      ],
-      model: provider.model,
-      response_format: { type: "json_object" },
-    }),
-    headers: { Authorization: `Bearer ${provider.key}`, "Content-Type": "application/json" },
-    method: "POST",
-    signal: AbortSignal.timeout(45_000),
-  });
-  if (!res.ok) {
-    // Log upstream body server-side only — it can echo request details / key fragments on 401.
-    const body = await res.text().catch(() => "");
-    logError("Weekly verify AI request failed", {
-      labels: { event: "weekly_verify_ai_request_failed", httpStatus: res.status },
-      context: { bodySnippet: body.slice(0, 300) },
+  const text = await runWithSalesAiFailover(async (leg) => {
+    if (leg.kind === "anthropic") {
+      const reply = await anthropicJson({
+        component: "sales_weekly_ai_verify",
+        maxTokens: 2000,
+        model: leg.model,
+        purpose: "weekly_verify_columns",
+        system,
+        timeoutMs: 45_000,
+        user,
+      });
+      return reply.text;
+    }
+
+    const { provider } = leg;
+    const startedAt = Date.now();
+    const res = await fetch(`${provider.baseUrl}/chat/completions`, {
+      body: JSON.stringify({
+        max_completion_tokens: 2000,
+        messages: [
+          { content: system, role: "system" },
+          { content: user, role: "user" },
+        ],
+        model: provider.model,
+        response_format: { type: "json_object" },
+      }),
+      headers: { Authorization: `Bearer ${provider.key}`, "Content-Type": "application/json" },
+      method: "POST",
+      signal: AbortSignal.timeout(45_000),
     });
+    if (!res.ok) {
+      // Log upstream body server-side only — it can echo request details / key fragments on 401.
+      const body = await res.text().catch(() => "");
+      logError("Weekly verify AI request failed", {
+        labels: { event: "weekly_verify_ai_request_failed", httpStatus: res.status },
+        context: { bodySnippet: body.slice(0, 300) },
+      });
+      recordAiCall({
+        component: "sales_weekly_ai_verify",
+        errorCode: aiErrorCodeForResponse(res.status, body),
+        latencyMs: Date.now() - startedAt,
+        model: provider.model,
+        purpose: "weekly_verify_columns",
+        status: "error",
+      });
+      throw new SalesAiError(salesAiFailureCodeFor(res.status, body), `AI request failed (HTTP ${res.status}).`, res.status);
+    }
+    const json = (await res.json()) as {
+      choices?: { message?: { content?: string } }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
     recordAiCall({
       component: "sales_weekly_ai_verify",
-      errorCode: aiErrorCodeForResponse(res.status, body),
+      inputTokens: json.usage?.prompt_tokens,
       latencyMs: Date.now() - startedAt,
       model: provider.model,
+      outputTokens: json.usage?.completion_tokens,
       purpose: "weekly_verify_columns",
-      status: "error",
+      status: "success",
     });
-    throw new Error(`AI request failed (HTTP ${res.status}).`);
-  }
-  const json = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
-    usage?: { prompt_tokens?: number; completion_tokens?: number };
-  };
-  recordAiCall({
-    component: "sales_weekly_ai_verify",
-    inputTokens: json.usage?.prompt_tokens,
-    latencyMs: Date.now() - startedAt,
-    model: provider.model,
-    outputTokens: json.usage?.completion_tokens,
-    purpose: "weekly_verify_columns",
-    status: "success",
+    return json.choices?.[0]?.message?.content ?? "{}";
   });
-  const text = json.choices?.[0]?.message?.content ?? "{}";
   const parsed = JSON.parse(text) as { items?: AiJudgement[]; summary?: string };
   return { judgements: Array.isArray(parsed.items) ? parsed.items : [], summary: String(parsed.summary ?? "") };
 }
@@ -313,7 +328,7 @@ export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<Week
   });
 
   // ── AI overlay (graceful: never throws out of here) ──
-  const provider = resolveProvider();
+  const aiAvailable = hasAiProvider();
   let aiUsed = false;
   let aiNote: string | null =
     "AI verification is not configured here — review the column mapping below and confirm it matches your file before uploading.";
@@ -322,10 +337,9 @@ export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<Week
     .filter((c) => c.status !== "empty" && c.status !== "missing")
     .map((c, index) => ({ id: index, ref: c, sheetRole: c.sheetRole, label: c.label, columnIndex: c.columnIndex, expectedHeaderHint: c.expectedHeaderHint, observedHeader: c.observedHeader }));
 
-  if (provider && judgeItems.length > 0) {
+  if (aiAvailable && judgeItems.length > 0) {
     try {
       const { judgements, summary } = await judgeWithAi(
-        provider,
         contract.name,
         judgeItems.map(({ id, sheetRole, label, columnIndex, expectedHeaderHint, observedHeader }) => ({ id, sheetRole, label, columnIndex, expectedHeaderHint, observedHeader })),
       );
