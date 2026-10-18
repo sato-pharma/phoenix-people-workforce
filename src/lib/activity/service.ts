@@ -14,6 +14,7 @@ import {
   expectedWorkingDaysInRange,
   listCairoDatesInRange,
 } from "@/lib/activity/working-baseline";
+import { forgetRememberedBundlesForSessions } from "@/lib/auth/session-bundle-cache";
 import { describeDeviceLabel } from "@/lib/auth/webauthn";
 import { resolveActivityModule } from "@/lib/activity/modules";
 import { buildModuleJourney } from "@/lib/activity/module-journey";
@@ -1433,6 +1434,8 @@ export async function forceLogoutUser(hrId: string, reason: string): Promise<For
     .is("revoked_at", null)
     .select("id");
   if (error) throw new Error(`Force logout failed: ${error.message}`);
+  // These sessions are revoked: drop this process's last-accepted copy of each (session-bundle-cache.ts).
+  forgetRememberedBundlesForSessions((data ?? []).map((row) => String((row as { id?: unknown }).id ?? "")));
 
   let phonePush: PhoneAppPushStopResult | null = null;
   try {

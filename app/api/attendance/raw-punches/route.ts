@@ -6,7 +6,9 @@ import {
   type DeviceUserMapSnapshot,
 } from "@/lib/attendance/device-user-activity";
 import { routeAttendancePunch } from "@/lib/attendance/metrics";
+import { insertRawPunches } from "@/lib/attendance/raw-punch-batch";
 import { toApiError, unauthorizedError, validationError } from "@/lib/http/api-errors";
+import { logWarning } from "@/lib/observability/log";
 import { requiredTokenAuthorized } from "@/lib/security/cron-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -284,14 +286,9 @@ async function recordDeviceUserActivity(
   }
 }
 
-const insertConcurrency = 50;
-
 async function insertPunches(punches: ValidatedPunch[]) {
   const supabase = getSupabaseAdmin();
   const deviceUserRows = await resolveDeviceUserRows(punches);
-  const failures: PunchFailure[] = [];
-  let inserted = 0;
-  let duplicate = 0;
   let skippedIgnored = 0;
   let skippedUnknown = 0;
   const unknownDeviceUsers = new Set<string>();
@@ -314,51 +311,36 @@ async function insertPunches(punches: ValidatedPunch[]) {
     toInsert.push({ punch, employeeHrId });
   }
 
-  // Each row is independent (the DB function's own ON CONFLICT DO NOTHING makes it safe to
-  // race) — chunked concurrency instead of one RPC at a time is what keeps a full
-  // maxPunchesPerRequest batch from taking minutes.
-  for (let i = 0; i < toInsert.length; i += insertConcurrency) {
-    const chunk = toInsert.slice(i, i + insertConcurrency);
-    const results = await Promise.all(
-      chunk.map(async ({ punch, employeeHrId }) => {
-        const { input_index, ...punchRow } = punch;
-        // Conflict-tolerant insert. The DB function uses ON CONFLICT DO NOTHING so
-        // re-pushed punches are silently ignored at the database level (no 23505
-        // ERROR logged). Returns the new id, or null when the punch already existed.
-        const { data, error } = await supabase.rpc("phx_insert_attendance_raw_punch", {
-          p_device_id: punchRow.device_id,
-          p_device_user_id: punchRow.device_user_id,
-          p_employee_hr_id: employeeHrId,
-          p_punch_time: punchRow.punch_time,
-          p_punch_type: punchRow.punch_type,
-          p_verify_mode: punchRow.verify_mode,
-          p_raw_payload: punchRow.raw_payload ?? {},
-          p_source_run_id: punchRow.source_run_id,
-        });
-        return { data, error, input_index };
-      }),
-    );
+  // Up to 250 punches per database call, not one call per punch: the agent re-sends punches the table
+  // already holds, and 10,461 single calls in 17 minutes (18 Oct 2026) were part of what slowed
+  // production. The helper falls back to one call per punch, at low concurrency, if a batch fails, so
+  // a failure is still reported against the punch's own index. Both functions end in ON CONFLICT DO
+  // NOTHING, so a re-pushed punch is a duplicate, never an error.
+  const { inserted, duplicate, failures, batchesFallenBack } = await insertRawPunches(
+    toInsert.map(({ punch, employeeHrId }) => ({
+      inputIndex: punch.input_index,
+      row: {
+        device_id: punch.device_id,
+        device_user_id: punch.device_user_id,
+        employee_hr_id: employeeHrId,
+        punch_time: punch.punch_time,
+        punch_type: punch.punch_type,
+        verify_mode: punch.verify_mode,
+        raw_payload: punch.raw_payload ?? {},
+        source_run_id: punch.source_run_id,
+      },
+    })),
+    (functionName, args) => supabase.rpc(functionName, args),
+  );
 
-    for (const result of results) {
-      if (result.error) {
-        // Defensive: a unique violation should no longer surface here, but if the
-        // function is ever briefly unavailable, still treat it as a duplicate
-        // rather than a hard failure.
-        if (result.error.code === "23505") {
-          duplicate += 1;
-          continue;
-        }
-
-        failures.push({ index: result.input_index, message: result.error.message });
-        continue;
-      }
-
-      if (result.data == null) {
-        duplicate += 1;
-      } else {
-        inserted += 1;
-      }
-    }
+  // A fallback is correct but it is the old load coming back: a missing batch function, or one punch the
+  // database refuses sitting in a batch the agent re-sends on every run, would otherwise cost 250 single
+  // calls per batch forever without anyone seeing it.
+  if (batchesFallenBack > 0) {
+    logWarning("Raw punch batches fell back to one call per punch", {
+      labels: { event: "raw_punch_batch_fell_back" },
+      context: { batchesFallenBack, failed: failures.length, punches: toInsert.length },
+    });
   }
 
   // EVERY punch, not just the unmapped ones. `last_seen_punch_at` is meant to say when this

@@ -7,24 +7,19 @@ import { canAccess, isHrAuthorityRole, type AccessContext } from "@/lib/auth/per
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { listCandidates } from "@/lib/recruitment/candidates";
-import {
-  listCandidateFolderAreaOptions,
-  type CandidateFolderAreaOption,
-} from "@/lib/recruitment/candidate-folder-options";
+import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
 import { summarizeCandidatePool } from "@/lib/recruitment/candidate-stats";
 import { loadCvFolderCabinet } from "@/lib/recruitment/cv-folder-tree-db";
-import type { CvFolderCabinetData } from "@/components/recruitment/cv-folder-cabinet";
-import { getRecruitmentDashboard, type RecruitmentDashboard } from "@/lib/recruitment/dashboard";
+import { getRecruitmentDashboard } from "@/lib/recruitment/dashboard";
 import { isFileUploadEnabled } from "@/lib/recruitment/file-storage";
-import { listHiringManagerOptions, type HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
+import { listHiringManagerOptions } from "@/lib/recruitment/hiring-manager-notify";
+import { logRecruitmentReadFailures } from "@/lib/recruitment/page-read-log";
+import { settleRecruitmentPage, unavailableSources } from "@/lib/recruitment/page-reads";
 import { countCandidatePoolStatuses } from "@/lib/recruitment/pool-enrichment";
 import { listOpenVacanciesForRequisition, listPositionCatalogue } from "@/lib/recruitment/requisitions";
-import type { Candidate, PositionCatalogueOption } from "@/lib/recruitment/types";
-import type { VacancyReportRow } from "@/lib/reports/vacancies";
+import type { Candidate } from "@/lib/recruitment/types";
 
 export const dynamic = "force-dynamic";
-
-export type RecruitmentManagerOption = { hrId: string; fullName: string };
 
 export default async function RecruitmentPage() {
   const access = await resolveAccessContextFromPage();
@@ -71,26 +66,6 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
   // Hard delete is Super Admin only (server enforces this too).
   const canDelete = access.role === "Super Admin" || access.scope === "system";
 
-  let dashboard: RecruitmentDashboard | null = null;
-  let openVacancies: VacancyReportRow[] = [];
-  let positionCatalogue: PositionCatalogueOption[] = [];
-  let managers: RecruitmentManagerOption[] = [];
-  // Only the ~30 people whose job title says manager -- the list a candidate is actually SENT to.
-  // `managers` above is the whole employee directory (it fills the requisition form), which is the
-  // wrong list to offer here: picking a District Sales Manager out of every employee is the kind of
-  // ceremony that left 214 of 221 candidates sitting in the pool.
-  let hiringManagers: HiringManagerOption[] = [];
-  let candidates: Candidate[] = [];
-  // The folder picker's area list. Empty on a load failure rather than throwing: a recruiter
-  // who cannot file to an area must still get the pool, and the picker degrades to the two
-  // shelves that need no database (regions are a closed list, job titles are typed).
-  let areaOptions: CandidateFolderAreaOption[] = [];
-  // The hand-built folder tree, flattened for the client boundary. Empty is a legitimate state —
-  // nobody has made a folder yet — and it is also what a load failure leaves behind, on purpose: an
-  // empty cabinet shows every CV in the pool, where a half-read one would hide people.
-  let cvFolderCabinet: CvFolderCabinetData = { members: {}, rows: [] };
-  let initialError: string | null = null;
-
   // The pool starts WITH the reads below rather than after them: it needs none of their answers, and
   // run second it was a whole extra wait on every load. Settled on its own, so a failed pool still
   // leaves the dashboard, vacancies and folders on screen beside the error, exactly as when it ran last.
@@ -111,40 +86,36 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
     ? poolLoad.then((pool) => (pool.ok ? countCandidatePoolStatuses(pool.rows.map((row) => row.status)) : null))
     : undefined;
 
-  try {
-    const [dashboardData, vacancies, catalogue, managerOptions, employeeRows, areas, cabinet] =
-      await Promise.all([
-        getRecruitmentDashboard(access, candidatePoolCounts ? { candidatePoolCounts } : {}),
-        listOpenVacanciesForRequisition(),
-        listPositionCatalogue(),
-        listHiringManagerOptions(),
-        getEmployeeDirectoryRows(),
-        listCandidateFolderAreaOptions(),
-        // `withNames` resolves each folder's creator to a person's name — the owner's standing rule
-        // that a screen shows names, never HR codes.
-        loadCvFolderCabinet({ withNames: true }),
-      ]);
-    dashboard = dashboardData;
-    areaOptions = areas;
-    // A plain object, not the Map the loader returns: this crosses into a client component, and a
-    // Map that survives today's React serializer is a dependency on that serializer rather than on
-    // anything this page states.
-    cvFolderCabinet = {
-      members: Object.fromEntries(cabinet.members),
-      rows: cabinet.rows,
-    };
-    openVacancies = vacancies;
-    positionCatalogue = catalogue;
-    hiringManagers = managerOptions;
-    managers = employeeRows
-      .map((row) => ({ hrId: row.hrId, fullName: row.displayName }))
-      .sort((a, b) => a.fullName.localeCompare(b.fullName));
-    const pool = await poolLoad;
-    if (!pool.ok) throw pool.error;
-    candidates = pool.rows;
-  } catch (error) {
-    initialError = error instanceof Error ? error.message : "Failed to load recruitment data.";
-  }
+  // Each read settles on its own (src/lib/recruitment/page-reads.ts): a read that fails leaves its slot
+  // empty and is NAMED to the reader, instead of one rejection blanking the page and logging nothing.
+  // Only the dashboard and the pool decide whether the page means anything; the rest are extras.
+  const {
+    areaOptions,
+    candidates,
+    cvFolderCabinet,
+    dashboard,
+    failures,
+    hiringManagers,
+    managers,
+    openVacancies,
+    positionCatalogue,
+  } = await settleRecruitmentPage({
+    dashboard: () => getRecruitmentDashboard(access, candidatePoolCounts ? { candidatePoolCounts } : {}),
+    pool: async () => {
+      const pool = await poolLoad;
+      if (!pool.ok) throw pool.error;
+      return pool.rows;
+    },
+    vacancies: () => listOpenVacanciesForRequisition(),
+    positionCatalogue: () => listPositionCatalogue(),
+    hiringManagers: () => listHiringManagerOptions(),
+    employeeDirectory: () => getEmployeeDirectoryRows(),
+    areaOptions: () => listCandidateFolderAreaOptions(),
+    // `withNames` resolves each folder's creator to a person's name — the owner's standing rule
+    // that a screen shows names, never HR codes.
+    cvFolders: () => loadCvFolderCabinet({ withNames: true }),
+  });
+  logRecruitmentReadFailures(access, failures, "/recruitment");
 
   return (
     <RecruitmentWorkspace
@@ -162,11 +133,11 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
       cvFolderCabinet={cvFolderCabinet}
       dashboard={dashboard}
       filesEnabled={isFileUploadEnabled()}
-      initialError={initialError}
       hiringManagers={hiringManagers}
       managers={managers}
       openVacancies={openVacancies}
       positionCatalogue={positionCatalogue}
+      unavailableSources={unavailableSources(failures)}
     />
   );
 }

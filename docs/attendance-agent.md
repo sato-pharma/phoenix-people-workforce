@@ -16,6 +16,34 @@ The local attendance agent is a separate .NET application that integrates with Z
 4. Phoenix maps `device_user_id` to employee `HR_ID` using the device-user-mapping table
 5. Only mapped, active employees have their punches stored in `attendance_raw_punches`
 
+## How the API stores a batch
+
+The route accepts at most 1,000 punches a request and stores them through `insertRawPunches`
+(`src/lib/attendance/raw-punch-batch.ts`):
+
+- **Up to 250 punches per database call** to `public.phx_insert_attendance_raw_punches(p_rows jsonb)`, one
+  `INSERT … SELECT FROM jsonb_to_recordset … ON CONFLICT DO NOTHING`. The function returns how many rows it
+  inserted; the rest of the batch is reported as `duplicate`. A 1,000-punch request is four calls.
+- **The conflict clause has no target on purpose**, so it covers both partial unique indexes
+  (`attendance_raw_punches_idempotency_typed_idx` for a punch with a type, `…_null_type_idx` for one
+  without) exactly as the single-row function does. A re-sent punch is a duplicate, never an error.
+- **A batch that fails is retried punch by punch**, through `phx_insert_attendance_raw_punch`, at
+  concurrency 10 (it was 50). That covers an error, a thrown request and an answer that is not a count
+  between 0 and the batch size, and it means the route also works if it deploys before the migration. A
+  failure is still reported against the punch's own position in the request (`input_index`), so the agent
+  still knows which punches to send again. A batch is one statement, so a failed one wrote nothing. Any
+  fallback is logged as a warning, `raw_punch_batch_fell_back` (batches fallen back, failures, punches): a
+  missing function, or one punch the database refuses inside a batch the agent re-sends every run, would
+  otherwise bring the 250-single-calls-per-batch load back with nothing to see.
+- Both functions run as the caller, pin `search_path`, and are executable by `service_role` only.
+
+**Why:** on 18 October 2026, 10:16-10:33 Cairo, the agent replayed punches the table already held and the
+route answered with 10,461 single-row calls, fifty at a time, while production was entering the slowdown
+that timed out logins from 10:30 to 11:55 (`docs/observability.md`, "18 October 2026").
+
+**Not done:** a replay watermark on the agent side (`local-attendance-agent/`), so it stops re-sending
+punches the server already holds. That is the .NET program on the office machine and ships separately.
+
 ## Setup
 
 1. Navigate to `local-attendance-agent/`
