@@ -98,16 +98,37 @@ export function hasAiApiKey(env: OpenAiEnv = process.env) {
 
 // OpenAI answering "out of credit" or "bad key" does not heal on its own, so once it has said so the
 // next calls go straight to Anthropic instead of each paying for a failed OpenAI round trip first. The
-// window is per process and short on purpose: a top-up is noticed within ten minutes with no deploy.
+// window is per process and starts at ten minutes, so a top-up is noticed with no deploy.
+//
+// 🔴 IT DOUBLES WHILE THE ACCOUNT STAYS DEAD (10, 20, 40, then 60 minutes), AND ONE ANSWER FROM OPENAI
+// RESETS IT. On 18 Oct 2026 the fixed ten minutes meant each process walked back into the dead account
+// six times an hour: 12 of the 13 AI error rows after the failover went live were that re-test, each one
+// a user waiting 1.2–2.4 s (the SDK retries the 429 once) — 6.1 s on a CV — before Claude answered.
 export const OPENAI_UNAVAILABLE_WINDOW_MS = 10 * 60_000;
+export const OPENAI_UNAVAILABLE_MAX_WINDOW_MS = 60 * 60_000;
 let openAiUnavailableUntilMs = 0;
+let openAiUnavailableStreak = 0;
+
+/** How long OpenAI is skipped after its `streak`-th consecutive dead answer. */
+export function openAiUnavailableWindowMs(streak: number) {
+  return Math.min(OPENAI_UNAVAILABLE_MAX_WINDOW_MS, OPENAI_UNAVAILABLE_WINDOW_MS * 2 ** Math.max(0, streak - 1));
+}
 
 export function noteOpenAiUnavailable(nowMs = Date.now()) {
-  openAiUnavailableUntilMs = nowMs + OPENAI_UNAVAILABLE_WINDOW_MS;
+  // Only an answer from AFTER the window counts as a new strike: four reads in flight when it closed
+  // fail together, and must not jump straight to the longest wait.
+  if (nowMs >= openAiUnavailableUntilMs) openAiUnavailableStreak += 1;
+  openAiUnavailableUntilMs = nowMs + openAiUnavailableWindowMs(openAiUnavailableStreak);
+}
+
+/** OpenAI answered: the account is alive, so the next dead answer starts the wait from ten minutes again. */
+export function noteOpenAiAvailable() {
+  openAiUnavailableStreak = 0;
+  openAiUnavailableUntilMs = 0;
 }
 
 export function resetOpenAiAvailability() {
-  openAiUnavailableUntilMs = 0;
+  noteOpenAiAvailable();
 }
 
 // Read by the sales AI paths (src/lib/sales/ai/provider.ts), which make their own raw calls but share this
@@ -303,14 +324,28 @@ export type CreateResponseTextParams = {
 export async function createOpenAiResponseText(params: CreateResponseTextParams) {
   const requestedModel = params.model?.trim() || resolveOpenAiEmailModel();
   const plan = planAiProviders();
+  const budgetMs = params.timeoutMs ?? OPENAI_EMAIL_TIMEOUT_MS;
+  const startedAt = Date.now();
+  let lastFailure: PhoenixOpenAiError | null = null;
 
   for (const [index, provider] of plan.entries()) {
+    let legParams = params;
+    if (index > 0) {
+      // The second provider gets what is LEFT of the caller's budget, not a fresh one: a door read
+      // budgeted 8 s must not wait 1.2 s for a dead OpenAI and then 8 s more for Claude.
+      const leftMs = failoverLegTimeoutMs(budgetMs, Date.now() - startedAt);
+      if (leftMs === null) throw lastFailure ?? new PhoenixOpenAiError("timeout", "No time was left for the second AI provider.");
+      legParams = { ...params, timeoutMs: leftMs };
+    }
     try {
-      return provider === "anthropic"
-        ? await runAnthropicResponse(params, requestedModel)
-        : await runOpenAiResponse(params, requestedModel);
+      const reply = provider === "anthropic"
+        ? await runAnthropicResponse(legParams, requestedModel)
+        : await runOpenAiResponse(legParams, requestedModel);
+      if (provider === "openai") noteOpenAiAvailable();
+      return reply;
     } catch (error) {
       const failure = normalizeOpenAiError(error, params.purpose);
+      lastFailure = failure;
       if (provider === "openai" && shouldFailOverToNextProvider(failure.code) && hasAnthropicApiKey()) {
         noteOpenAiUnavailable();
       }
@@ -320,6 +355,15 @@ export async function createOpenAiResponseText(params: CreateResponseTextParams)
 
   // Unreachable: `plan` is never empty and its last entry always throws above. Present for the compiler.
   throw new PhoenixOpenAiError("failed", "No AI provider was attempted.");
+}
+
+// Under a second is not a call, it is a timeout with a model call attached to it.
+export const AI_FAILOVER_MIN_LEG_MS = 1_000;
+
+/** The timeout the next provider gets: what is left of `budgetMs`, or null when too little is left. */
+export function failoverLegTimeoutMs(budgetMs: number, elapsedMs: number) {
+  const leftMs = budgetMs - elapsedMs;
+  return leftMs >= AI_FAILOVER_MIN_LEG_MS ? leftMs : null;
 }
 
 async function runAnthropicResponse(params: CreateResponseTextParams, requestedModel: string) {
@@ -338,6 +382,8 @@ async function runAnthropicResponse(params: CreateResponseTextParams, requestedM
       maxOutputTokens: params.maxOutputTokens ?? OPENAI_EMAIL_MAX_OUTPUT_TOKENS,
       maxRetries: params.maxRetries ?? OPENAI_MAX_RETRIES,
       model,
+      // The same effort the OpenAI leg sends (its default is "low" too, in runOpenAiResponse).
+      reasoningEffort: params.reasoning?.effort ?? "low",
       timeoutMs: params.timeoutMs ?? OPENAI_EMAIL_TIMEOUT_MS,
     });
 

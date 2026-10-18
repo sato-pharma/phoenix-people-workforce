@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     await assertPermission(access, "weekly_sales", "update");
     if (!hasAiKey()) {
       return NextResponse.json(
-        { success: false, error: "AI is not configured. Add an OPENAI_API_KEY (or compatible) to enable suggestions." },
+        { success: false, error: "AI is not configured. Add an OPENAI_API_KEY (or compatible) or an ANTHROPIC_API_KEY to enable suggestions." },
         { status: 400 },
       );
     }
