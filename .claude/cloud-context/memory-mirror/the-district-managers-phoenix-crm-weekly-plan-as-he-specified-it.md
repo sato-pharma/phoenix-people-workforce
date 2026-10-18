@@ -156,3 +156,25 @@ and company calendars — attendance office days, the CEO Command Center and Emp
 included DMs, so the first count of nine was wrong. **No payroll exposure** — the no-weekly-plan deduction is an allow-list of Product Manager
 and Group Product Manager only, so no DM is ever charged. Related:
 [[sos-monthly-closing-is-the-only-sales-truth]].
+
+**Later rulings, 2026-10-17 evening (owner, in chat).** (1) A manager who has moved to Phoenix CRM keeps the
+old Plans tab as a **read-only history** of what they filed on the old module — no submit (PR 6059).
+(2) A **district sales manager may not plan or log more than two days of single visits a week —
+four half-days in any mix** ("four halves or 2 full days"); the limit covers the visits logged as well
+as the plan (PR 6061). (3) A rep who is **still in the old CRM** (all 21 district teams are live, so it is
+per rep: 25 reps had no Phoenix plan for the week of 17 Oct, under 11 district managers) — their
+iReports360 week must appear on the DM's board "tickable" (matched to the rep's Phoenix customer, the
+half taken from the customer's AM/PM list because the old plan has no AM/PM; unmatched shown and not
+tickable), and "validate" means **approve the rep's weekly plan** for Phoenix reps and old-CRM reps alike,
+from the Team tab, through the vendor's own supervisor approval (status 0 → 1, take-back 1 → 0, a 2 never
+touched). Account: `docs/phoenix-crm-manager-plan.md`, "A rep who still works in the old CRM".
+
+**Later ruling, 2026-10-17 night / 2026-10-18 (owner, in chat).** (4) A customer the DSM **adds** while planning
+a single visit: first "must enter speciality, name, phone and an address, brick and area — typed, or Capture
+location fills them", then within the hour **"make all optional … make the area and brick drop-list cascading
+… make everything we did now optional"**. So: the name, the grades and an area of his region are needed; the
+speciality, phone, address and brick are OPTIONAL; Area and Brick are cascading drop-lists (areas of his
+region, then the chosen area's bricks, `GET .../customers/bricks`); Capture location fills the address and
+selects the area and brick (`POST .../customers/locate`). Applies to every manager who adds to a Manager's
+own list. No migration: the address and brick live in `pin_address` / `pin_brick_id` / `pin_brick_name` (no
+`pin_lat` = filled in by hand). `missingManagerCustomerField` is the one rule the form and the server ask.
