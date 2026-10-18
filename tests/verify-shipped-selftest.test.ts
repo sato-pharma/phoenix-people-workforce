@@ -42,14 +42,18 @@ const SCRIPT = join(REPO_ROOT, ".claude", "skills", "ship", "verify-shipped.mjs"
 
 // A ratchet, not an equality: cases may RISE freely and must never FALL. Raise this number when you
 // add cases; never lower it to make a red test green — lowering it is precisely the move this guards.
-const MIN_CASES = 32;
+const MIN_CASES = 48;
 
-// The three cases that carry the withheld rule. Matched on a distinctive fragment rather than the
-// whole sentence, so rewording a case name does not fail the build, but deleting the case does.
+// The cases that carry the withheld rule, then the two that carry `--wait`'s stop rule (2026-10-19).
+// Matched on a distinctive fragment rather than the whole sentence, so rewording a case name does not
+// fail the build, but deleting the case does.
 const LOAD_BEARING = [
   "never succeeded and NOT serving",
   "NOT withheld when the commit IS serving",
   "ancestry UNKNOWN never prints the accusation",
+  // `--wait` stops on a settled verdict, and a timeout is never reported as one.
+  "a settled verdict stops at once",
+  "at the limit it stops and says TIMED OUT, never settled",
 ];
 
 export function runVerifyShippedSelftestTests() {
@@ -98,9 +102,10 @@ export function runVerifyShippedSelftestTests() {
     assert.ok(
       output.includes(fragment),
       `the verify-shipped selftest no longer covers "${fragment}". ` +
-        "These three cases encode the rule that a deploy is WITHHELD only when its commit is also absent from what is serving " +
+        "The first three encode the rule that a deploy is WITHHELD only when its commit is also absent from what is serving " +
         "(2026-09-28, production deployment 6712985148: its only status was in_progress while /api/healthz served that exact revision). " +
-        "Without them the verifier can go back to printing WITHHELD on a healthy deploy and nothing will notice.",
+        "Without them the verifier can go back to printing WITHHELD on a healthy deploy and nothing will notice. " +
+        "The last two encode `--wait`: it must stop on a settled verdict and must never present a timeout as one.",
     );
   }
 

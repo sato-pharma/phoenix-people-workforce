@@ -4,6 +4,17 @@
 //   node .claude/skills/ship/verify-shipped.mjs <pr>
 //   node .claude/skills/ship/verify-shipped.mjs <pr> --simulate-live <sha>   force the live revision
 //   node .claude/skills/ship/verify-shipped.mjs <pr> --json                  machine-readable
+//   node .claude/skills/ship/verify-shipped.mjs <pr> --wait [minutes]        re-read until it settles
+//
+// `--wait` (default 30 minutes, a reading every 90 s) exists because the deploy gate holds a merge
+// for the length of main's CI plus the build - about ten minutes - so the first reading is nearly
+// always QUEUED. Waiting by hand meant a throwaway loop script each time (three in one session on
+// 2026-10-19, one of them blind because Windows quoting stripped its filter), and a poll loop typed
+// into the shell is refused by bash-guard. It stops on SHIPPED, SHIPPED BUT MAIN IS RED and NOT
+// MERGED, keeps going through QUEUED, NOT LIVE and CANNOT TELL, and on timeout exits with the LAST
+// reading's code - so running out of patience is never reported as a pass. Run it with
+// run_in_background and act on the notification. Progress lines go to stderr; stdout is the final
+// reading alone, so `--json` stays parseable.
 //
 // Exit codes, so a background run's notification carries the answer:
 //   0 SHIPPED   the live revision contains the merge, and main's CI for it is not red
@@ -26,7 +37,7 @@
 //     ci.yml reads fully green (measured 2026-09-27, cd9e0be03). When a deploy is withheld this
 //     names the suites that were bad, because the CI line alone will look innocent.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -53,8 +64,46 @@ function findGitAnchor() {
 }
 const ANCHOR = findGitAnchor();
 
+// The PR number is the first all-digit argument - which `--wait 45` and a digits-only
+// `--simulate-live` value would otherwise steal. Pure, so the selftest covers each spelling.
+// `waitMinutes` is null when `--wait` is absent, 30 when it has no number, else the number.
+export function parseArgs(args) {
+  const waitAt = args.indexOf('--wait');
+  const waitValueAt = waitAt >= 0 && /^\d+$/.test(args[waitAt + 1] || '') ? waitAt + 1 : -1;
+  const simAt = args.indexOf('--simulate-live');
+  const pr = (
+    args.find((a, i) => /^\d+$/.test(a) && i !== waitValueAt && !(simAt >= 0 && i === simAt + 1)) || ''
+  ).trim();
+  const waitMinutes = waitAt < 0 ? null : waitValueAt >= 0 ? Number(args[waitValueAt]) : 30;
+  return { pr, waitMinutes, waitValueAt };
+}
+
+// What each exit code means, for the one-line progress a `--wait` run prints per reading.
+export const VERDICT_BY_CODE = {
+  0: 'SHIPPED',
+  2: 'QUEUED',
+  3: 'NOT LIVE',
+  4: 'NOT MERGED',
+  5: 'CANNOT TELL',
+  6: 'SHIPPED, BUT MAIN IS RED',
+};
+
+// Whether a `--wait` run stops after this reading. A verdict that waiting cannot change ends it
+// (SHIPPED, SHIPPED BUT MAIN IS RED, NOT MERGED); QUEUED, NOT LIVE and CANNOT TELL are all states
+// the next reading can improve, so they run on until the limit. The clock never overrides a settled
+// verdict, and an exit code that is not one of ours is the verifier itself crashing - retried twice,
+// then given up on, so a broken `gh` does not eat thirty minutes.
+const WAIT_SETTLED = new Set([0, 4, 6]);
+export function waitStep({ code, elapsedMs, maxMs, crashes = 0 }) {
+  if (WAIT_SETTLED.has(code)) return { done: true, why: 'settled' };
+  if (!(code in VERDICT_BY_CODE) && crashes >= 3)
+    return { done: true, why: 'the verifier itself failed three readings in a row' };
+  if (elapsedMs >= maxMs) return { done: true, why: 'timed out' };
+  return { done: false, why: '' };
+}
+
 const argv = process.argv.slice(2);
-const pr = (argv.find((a) => /^\d+$/.test(a)) || '').trim();
+const { pr, waitMinutes, waitValueAt } = parseArgs(argv);
 const asJson = argv.includes('--json');
 const simulateLive = argv.includes('--simulate-live') ? argv[argv.indexOf('--simulate-live') + 1] || null : null;
 
@@ -344,13 +393,93 @@ if (argv.includes('--selftest')) {
     console.log(`${bad.length ? 'FAIL' : 'PASS'}  deploy row: ${name}${bad.length ? '  ->  ' + bad.join('; ') : ''}`);
   }
 
-  console.log(`\nSELFTEST verify-shipped: ${CASES.length + ANC.length + WH.length + DR.length} cases, ${failed} failed`);
+  // `--wait`. The stop rule is the whole feature: stopping on a verdict that is not final reports a
+  // build still in flight as the end, and running past SHIPPED wastes the half hour this exists to
+  // save. The clock must also never turn a timeout into a pass - the limit case pins the reason.
+  const MAXM = 30 * 60 * 1000;
+  const WAIT = [
+    ['wait: a settled verdict stops at once - SHIPPED',
+      () => waitStep({ code: 0, elapsedMs: 0, maxMs: MAXM }), { done: true, why: 'settled' }],
+    ['wait: SHIPPED BUT MAIN IS RED also stops - waiting cannot un-red it',
+      () => waitStep({ code: 6, elapsedMs: 1000, maxMs: MAXM }), { done: true, why: 'settled' }],
+    ['wait: NOT MERGED stops - a PR that is not merged will not become live by waiting',
+      () => waitStep({ code: 4, elapsedMs: 1000, maxMs: MAXM }), { done: true, why: 'settled' }],
+    ['wait: QUEUED keeps waiting',
+      () => waitStep({ code: 2, elapsedMs: 90000, maxMs: MAXM }), { done: false, why: '' }],
+    ['wait: NOT LIVE keeps waiting - the build row can appear late',
+      () => waitStep({ code: 3, elapsedMs: 90000, maxMs: MAXM }), { done: false, why: '' }],
+    ['wait: CANNOT TELL keeps waiting - a source may answer on the next reading',
+      () => waitStep({ code: 5, elapsedMs: 90000, maxMs: MAXM }), { done: false, why: '' }],
+    ['wait: at the limit it stops and says TIMED OUT, never settled',
+      () => waitStep({ code: 2, elapsedMs: MAXM, maxMs: MAXM }), { done: true, why: 'timed out' }],
+    ['wait: a settled verdict wins over the clock',
+      () => waitStep({ code: 0, elapsedMs: MAXM * 2, maxMs: MAXM }), { done: true, why: 'settled' }],
+    ['wait: an exit code that is not ours is the verifier crashing - retried at first',
+      () => waitStep({ code: 1, elapsedMs: 1000, maxMs: MAXM, crashes: 1 }), { done: false, why: '' }],
+    ['wait: three crashes in a row stop it, naming the verifier and not the PR',
+      () => waitStep({ code: 1, elapsedMs: 1000, maxMs: MAXM, crashes: 3 }), { done: true, why: /verifier itself failed/ }],
+    ['args: --wait with no number waits 30 minutes and still finds the PR',
+      () => parseArgs(['6098', '--wait']), { pr: '6098', waitMinutes: 30 }],
+    ['args: the number after --wait is minutes, never the PR',
+      () => parseArgs(['--wait', '45', '6098']), { pr: '6098', waitMinutes: 45 }],
+    ['args: no --wait means no waiting at all',
+      () => parseArgs(['6098']), { pr: '6098', waitMinutes: null }],
+    ['args: a digits-only --simulate-live value is not the PR',
+      () => parseArgs(['6098', '--simulate-live', '1234567']), { pr: '6098', waitMinutes: null }],
+    ['args: --wait followed by a word is the default, and the PR is still found',
+      () => parseArgs(['--wait', 'soon', '6098']), { pr: '6098', waitMinutes: 30 }],
+    ['args: every exit code the verifier can return has a progress label',
+      () => ({ labelled: [0, 2, 3, 4, 5, 6].every((c) => typeof VERDICT_BY_CODE[c] === 'string') }), { labelled: true }],
+  ];
+  for (const [name, run, want] of WAIT) {
+    const got = run();
+    const bad = [];
+    for (const [key, expected] of Object.entries(want)) {
+      const ok = expected instanceof RegExp ? expected.test(String(got[key])) : got[key] === expected;
+      if (!ok) bad.push(`${key} expected=${expected} got=${got[key]}`);
+    }
+    if (bad.length) failed++;
+    console.log(`${bad.length ? 'FAIL' : 'PASS'}  ${name}${bad.length ? '  ->  ' + bad.join('; ') : ''}`);
+  }
+
+  console.log(`\nSELFTEST verify-shipped: ${CASES.length + ANC.length + WH.length + DR.length + WAIT.length} cases, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 }
 
 if (!pr) {
-  console.error('usage: node verify-shipped.mjs <pr number> [--simulate-live <sha>] [--json] [--selftest]');
+  console.error('usage: node verify-shipped.mjs <pr number> [--wait [minutes]] [--simulate-live <sha>] [--json] [--selftest]');
   process.exit(64);
+}
+
+// `--wait`: run this same script again and again as a child - each reading is a whole fresh run,
+// because the script ends in process.exit() - until waitStep says stop. See the header for why.
+if (waitMinutes !== null) {
+  const WAIT_EVERY_MS = 90 * 1000;
+  const childArgs = argv.filter((a, i) => a !== '--wait' && i !== waitValueAt);
+  const clock = () => new Date().toLocaleTimeString('en-GB', { timeZone: 'Africa/Cairo', hour12: false });
+  const started = Date.now();
+  console.error(`waiting for PR #${pr} to settle - up to ${waitMinutes} min, one reading every ${WAIT_EVERY_MS / 1000} s`);
+  let crashes = 0;
+  let last;
+  let step;
+  for (;;) {
+    const run = spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...childArgs], {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: 180 * 1000,
+    });
+    const code = typeof run.status === 'number' ? run.status : 1;
+    crashes = code in VERDICT_BY_CODE ? 0 : crashes + 1;
+    last = { code, stdout: run.stdout || '', stderr: run.stderr || '' };
+    step = waitStep({ code, elapsedMs: Date.now() - started, maxMs: waitMinutes * 60 * 1000, crashes });
+    console.error(`[${clock()} Cairo] ${VERDICT_BY_CODE[code] || `exit ${code}`}`);
+    if (step.done) break;
+    await new Promise((r) => setTimeout(r, WAIT_EVERY_MS));
+  }
+  process.stdout.write(last.stdout);
+  if (last.stderr) process.stderr.write(last.stderr);
+  if (step.why !== 'settled') console.error(`stopped waiting: ${step.why} - the last reading above stands, and it is NOT a pass`);
+  process.exit(last.code);
 }
 
 // gh may be gh.exe or a .cmd shim depending on how it was installed; try each before giving up.

@@ -780,6 +780,8 @@ node .claude/skills/ship/verify-shipped.mjs <pr>
 That is the proof half of the `ship` skill (`.claude/skills/ship/SKILL.md`), which carries the whole
 merge sequence and the traps inside it; `--selftest` checks its verdict table.
 
+Right after a merge, `--wait [minutes]` re-reads every 90 seconds (30 minutes by default) until the answer is settled — shipped, not merged, or shipped with a red `main` — and a timeout is printed as NOT a pass. Run it with `run_in_background: true`, never as a poll loop.
+
 The staging environment has its own deployment and its own `/api/healthz`
 (`https://phoenix-people-workforce-staging.up.railway.app/api/healthz`). Because it also tracks
 `main`, its `revision` normally matches production's — seeing the same SHA on both is expected,

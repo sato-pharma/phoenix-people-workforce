@@ -203,6 +203,21 @@ required `checks` job, asserts `0 failed`, ratchets the count against its own `M
 rise but never fall, and pins three cases by name so a hard one cannot be swapped for an easy one at
 the same count. **If you add cases, raise `MIN_CASES` there and leave this page alone.**
 
+**Right after a merge, let it wait instead of re-running it by hand:**
+
+```bash
+node .claude/skills/ship/verify-shipped.mjs <n> --wait [minutes]
+```
+
+Run it with `run_in_background: true` and act on the notification — never in the foreground, never in
+a poll loop. It re-reads every 90 seconds (30 minutes unless you give a number) and stops at the
+first answer waiting cannot change: `0` shipped, `4` not merged or `6` shipped but main is red. It
+keeps going through `2` queued, `3` not live and `5` cannot tell, which is what the first minutes of
+a deploy normally look like. Progress goes to stderr and the final reading to stdout. 🔴 **Giving up
+at the limit is NOT a pass:** it prints the last reading and "NOT a pass" and exits with that
+reading's code, so a deploy that never landed still reads as queued or not live. Three crashed
+readings in a row also stop it, naming the verifier itself as the failure.
+
 **A `CANNOT TELL` names its own reason — read the note, do not assume a missing commit.** Ancestry
 needs a git checkout, and the script asks git in its own folder, falling back to yours. A copy
 lifted out with `git show` and run from a scratchpad has no checkout under it, and that used to

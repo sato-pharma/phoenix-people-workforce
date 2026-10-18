@@ -677,9 +677,26 @@ if (args.includes("--remove")) {
   // The decision itself lives in `scripts/lib/remove-gate.mjs`, with fixtures: the ORDER matters
   // (an open PR overrides every safety signal) and an order is exactly what a source-reading test
   // cannot check.
+  // 🔴 THE FOLDER CAN VANISH WHILE THIS RUNS, and every read above came from git INSIDE it. The
+  // session that owns a worktree retires it the moment its PR merges, and that can land in the middle
+  // of this gate: the later reads then fail, answer null, and null means "refuse" - so the gate blamed
+  // STRANDED commits that were safely on a merged PR's head. Measured 2026-10-19 retiring
+  // `_wt-weekly-plan-followups` (PR 6099): "commits here are on no remote branch and no merged PR",
+  // printed about a folder that no longer existed. Asked LAST, after the slow reads, because that is
+  // where the window is. A folder that is not a checkout holds nothing this command could lose.
+  const folderGone = (() => {
+    try {
+      execFileSync("git", ["-C", dir, "rev-parse", "--git-dir"], { stdio: "ignore" });
+      return false;
+    } catch {
+      return true;
+    }
+  })();
+
   const verdict = removalVerdict({
     contentBackedUp,
     filesIdenticalOnMain,
+    folderGone,
     mergedPr,
     onAnotherRemoteBranch,
     openPrOnHead,
@@ -730,29 +747,6 @@ if (args.includes("--remove")) {
     );
   }
 
-  console.log("  spreadsheets/PDFs   none untracked");
-  console.log("  uncommitted work    none");
-  console.log(
-    "  commits vs main     " +
-      (!unpushed
-        ? "none"
-        : mergedPr
-          // Named only when that PR's own head sha IS this tip, so the number printed is about
-          // these commits and not about an older PR that reused the branch name.
-          ? "present, but PR #" + mergedPr + " merged this exact tip — squash residue, not stranded work"
-          : pushed
-            ? "present, and the branch is on origin"
-            : onAnotherRemoteBranch
-              ? "present, and on origin as " + onAnotherRemoteBranch + " — not this branch's name"
-              : contentBackedUp
-                // The detached-HEAD case, and the reason this line exists: without it the chain fell
-                // through and printed "on origin as null", which reads as a bug in the very check that
-                // just cleared the removal.
-                ? "present, but their CONTENT is upstream already (patch-id match) — squash residue, not stranded work"
-                : "present, and every file they touch is byte-identical on origin/main — landed inside a larger squash (a roll-up member)"),
-  );
-  console.log("  node_modules        " + dropModulesJunction(dir));
-
   // 🔴 READ THE TIP BEFORE THE FOLDER GOES. The advice printed after the removal tells the reader to
   // compare the merged PR's `headRefOid` against this sha — that IS the advice, and the sha is the
   // only part of it they cannot look up from the message. `headSha(dir)` asks git with `cwd: dir`,
@@ -763,11 +757,67 @@ if (args.includes("--remove")) {
   // That fallback is now gone — `headSha` answers null — so the remaining question is what the
   // advice says when the read genuinely fails while the folder still exists. The branch is still
   // here at that point, so there is always a command that works: `git rev-parse <branch>`.
-  const retiredTip = shortSha(headSha(dir));
+  //
+  // When the folder is already gone there is no worktree to ask, so the tip comes from the BRANCH
+  // (`git rev-parse <branch>`), which survives the folder. A detached head has no branch, so it
+  // answers null and the advice below names the command that still works.
+  const alreadyGone = verdict.reason === "folder-gone";
+  const tipOfBranch = () => {
+    if (!entry.branch || entry.branch === "(detached)") return null;
+    try {
+      const sha = git(["rev-parse", entry.branch]).trim();
+      return isShaLike(sha) ? sha : null;
+    } catch {
+      return null;
+    }
+  };
+  const retiredTip = alreadyGone ? shortSha(tipOfBranch()) : shortSha(headSha(dir));
 
-  git(["worktree", "remove", dir]);
+  if (alreadyGone) {
+    console.log("  folder              gone - it stopped being a git checkout while this ran, so something");
+    console.log("                      else (usually the session that owns it) retired it first");
+    console.log(
+      "  commits             " +
+        (retiredTip
+          ? "safe in the repository: " + entry.branch + " still points at " + retiredTip
+          : "their tip could not be read here (a detached head has no branch to ask)"),
+    );
+    // The registration outlives a folder that is gone; `prune` drops it and touches nothing else.
+    git(["worktree", "prune"]);
+  } else {
+    console.log("  spreadsheets/PDFs   none untracked");
+    console.log("  uncommitted work    none");
+    console.log(
+      "  commits vs main     " +
+        (!unpushed
+          ? "none"
+          : mergedPr
+            // Named only when that PR's own head sha IS this tip, so the number printed is about
+            // these commits and not about an older PR that reused the branch name.
+            ? "present, but PR #" + mergedPr + " merged this exact tip — squash residue, not stranded work"
+            : pushed
+              ? "present, and the branch is on origin"
+              : onAnotherRemoteBranch
+                ? "present, and on origin as " + onAnotherRemoteBranch + " — not this branch's name"
+                : contentBackedUp
+                  // The detached-HEAD case, and the reason this line exists: without it the chain fell
+                  // through and printed "on origin as null", which reads as a bug in the very check that
+                  // just cleared the removal.
+                  ? "present, but their CONTENT is upstream already (patch-id match) — squash residue, not stranded work"
+                  : "present, and every file they touch is byte-identical on origin/main — landed inside a larger squash (a roll-up member)"),
+    );
+    console.log("  node_modules        " + dropModulesJunction(dir));
+    git(["worktree", "remove", dir]);
+  }
   const husk = fs.existsSync(dir);
-  console.log("  worktree removed    " + (husk ? "folder REMAINS — a husk" : "yes, no husk left"));
+  console.log(
+    "  worktree removed    " +
+      (husk
+        ? "folder REMAINS — a husk"
+        : alreadyGone
+          ? "already gone - not removed by this command, no husk left"
+          : "yes, no husk left"),
+  );
   if (husk) {
     // The advice is a deletion command, so it must ask the load-bearing question before printing
     // one. A folder whose junction was LEFT ALONE above is exactly the folder this `rmdir /s /q`

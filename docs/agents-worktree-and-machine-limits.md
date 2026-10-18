@@ -486,7 +486,7 @@ see* above and was dropped the same day. The cue — and every memory slug — s
 
 - **Start a session with `node scripts/new-session.mjs <task>` — one command for the whole four-step ritual** ([scripts/new-session.mjs](../scripts/new-session.mjs), also wired as `pnpm run session:new`; invoke `node` directly per §2.1): fetch `origin/main`, create `_wt-<task>` on `codex/<task>`, junction `node_modules` from the primary, copy the gitignored env files. It refuses to start below 6 GB of free commit charge. `--status` prints live headroom and which folders can actually run, `--repair` fixes a worktree missing either piece, `--from <ref>` branches from something other than `origin/main`. **`git worktree add` is only step one of four** — it never copies gitignored files, so a hand-made worktree has no `.env.local` (dev-auth and the dev server then fail silently, with no error) and no `node_modules` (nothing runs at all). By hand that is `git worktree add` **plus** `node scripts/sync-worktree-env.mjs` **plus** the junction.
 
-- **Remove worktrees with `node scripts/new-session.mjs --remove <task>`** (`pnpm run session:remove`), only after approval. It runs three gates in cost order before touching anything — untracked `.xlsx`/`.pdf` rescue scan, then uncommitted work, then commits that are on no remote branch **and** have no merged PR — drops the `node_modules` junction with `cmd /c rmdir` so no husk is left, and re-reads the folder's branch live rather than trusting an earlier scan (a parallel session can repoint a tree first). **A squash-merged branch legitimately holds commits `main` does not**, so the last gate asks `gh pr list --head <branch> --state merged`, never reachability: pure reachability calls every successfully merged worktree stranded, and the advice that follows from it — "push the branch" — is how you get a conflicting PR that runs no CI at all. By hand it is `git worktree remove` plus that same PR check; `git branch --merged` is always wrong here. Stale worktrees must not accumulate.
+- **Remove worktrees with `node scripts/new-session.mjs --remove <task>`** (`pnpm run session:remove`), only after approval. It runs three gates in cost order before touching anything — untracked `.xlsx`/`.pdf` rescue scan, then uncommitted work, then commits that are on no remote branch **and** have no merged PR — drops the `node_modules` junction with `cmd /c rmdir` so no husk is left, and re-reads the folder's branch live rather than trusting an earlier scan (a parallel session can repoint a tree first). **A squash-merged branch legitimately holds commits `main` does not**, so the last gate asks `gh pr list --head <branch> --state merged`, never reachability: pure reachability calls every successfully merged worktree stranded, and the advice that follows from it — "push the branch" — is how you get a conflicting PR that runs no CI at all. By hand it is `git worktree remove` plus that same PR check; `git branch --merged` is always wrong here. Stale worktrees must not accumulate. 🔴 **If the folder stops being a git checkout WHILE the command runs** (the session that owns it retires it the same minute its PR merges), the verdict is `folder-gone`, not `stranded`: the later reads fail inside a dead folder and used to be blamed on the commits (2026-10-19, `_wt-weekly-plan-followups`, PR 6099). It then reads the tip from the branch, runs `git worktree prune` and exits 0, saying it removed nothing itself; an open PR on the head still refuses first. Only the slow-`gh` window is covered — a folder that vanishes during the earlier scan still refuses or errors as before.
 
 ### The retune — the count was the wrong instrument (2026-09-04, the same night)
 
@@ -1295,8 +1295,9 @@ and no measurable CPU** — an ssh tunnel, nothing more.
 
 🔴 **`phx-preview` IS RETIRED — 2026-10-17, owner: *"make phx-live work like pnpm run dev by default
 and retire phx-preview"*.** He wanted ONE thing exactly like his old `pnpm run dev`, not two. The box
-look now goes through **`phx-live`** (next section), and `phx-live -Folder <worktree>` replaces
-`phx-preview <branch>`. His profile's `phx-preview` function only prints that it is retired
+look now goes through **`phx-live`** (next section) — which, since ~19:31 that evening, serves
+GitHub's **main only**, so there is no branch look any more: a session that needs one runs its own
+laptop `node scripts/dev-server.mjs`. His profile's `phx-preview` function only prints that it is retired
 (previous profile: `Microsoft.PowerShell_profile.ps1.pre-retire-phx-preview-20261017`).
 
 **Its leftovers were REMOVED the same day** (owner: *"remove the phx-preview leftovers from the
@@ -1336,27 +1337,41 @@ stalled the laptop. `phx-preview` is retired (section above). 🔴 **Since 2026-
 phx-live is OPTIONAL — the laptop's `pnpm run dev` is the default again** ("The dev server is the
 laptop's `pnpm run dev` again", above); what follows is how it runs when he chooses it.
 
-**How it runs.** `phx-live` in his PowerShell (`~/.claude/scripts/phx-live.ps1`; `-Folder`, `-Build`,
-`-DevAuth`, `-Resync`, `-Stop`, `-InstallEnv`) opens `http://localhost:3000`.
+**How it runs.** `phx-live` in his PowerShell (`~/.claude/scripts/phx-live.ps1`; `-Dev`, `-DevAuth`,
+`-Resync`, `-Stop`, `-InstallEnv`, `-InstallEnvStaging`; `-Folder` is refused and `-Build` is
+ignored) opens `http://localhost:3000`.
 
-🔴 **Plain `phx-live` is `next dev` — the old `pnpm run dev` — since 2026-10-17** (owner, the same
-words as the retirement above). A save shows in seconds; a page's FIRST open compiles it, measured on
-the box that morning at **31 s** (`/employee-portals/plans`), then **0.7–3.2 s** — the laptop's old
-first compile was 30–60 s. **`-Build`** is the production-build mode (`live-ctl.sh serve … fast`,
-`/opt/phx-live/live-fast.sh`): fast pages, but a save shows only after a ~3 min rebuild. It was the
-default 2026-10-16..17, chosen when `next dev` measured 2.5–3 MINUTES a page; that figure was phx-live
-sitting inside `phx-previews.slice`, whose 4.5 GB cap beat its own scope's, and it was fixed the same
-day by moving it to `phx-live.slice` (7 GB) — which is what makes `next dev` the right default again.
-`-Dev` is still accepted and does nothing; `-DevAuth` always means `next dev`. Rollback:
-`~/.claude/scripts/phx-live.ps1.pre-dev-default-20261017`.
+🔴 **Since 2026-10-17 ~19:31 Cairo phx-live serves GitHub's `main` and nothing else** (owner: *"I want
+the PHX live to always run on main. Any update I will do, I will push to main and test on main, never
+on any branch."*). Plain `phx-live` is the **production build** of main — every page as fast as the
+real site; `-Dev` is `next dev` of main (what `/admin/dev-preview` needs; a page's first open compiles
+in 10–30 s) and `-DevAuth` is `next dev` that also accepts `x-phoenix-role` headers; `-Build` is
+accepted and ignored because the production build is the default. **`-Folder` prints "phx-live runs
+MAIN only" and exits 1** — no laptop folder, branch or unpushed edit ever reaches the box.
+`phx-live-follow.mjs` compares main on GitHub with the commit the BOX is on every 60 s and runs
+`live-ctl.sh follow <sha>`, which moves the checkout under the running server: a merge shows about
+3–4 minutes later while the old build keeps answering, and a change to `package.json`,
+`pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.npmrc` or `patches` reinstalls (about a minute down).
+A merge also deploys to production once main's CI is green (~10–15 minutes), so phx-live shows it
+only minutes before the real site: it is **not a pre-production gate**. **A session never asks him to
+look at a branch, a worktree or a preview** — its own look is the laptop's
+`node scripts/dev-server.mjs`. Rollback of the main-only script:
+`~/.claude/scripts/phx-live.ps1.pre-main-only-20261017`.
 
-- `phx-live-sync.mjs` watches the folder and sends each saved file over ssh as `phxlive`, whose
+*Earlier the same day* plain `phx-live` was `next dev` and `-Folder <worktree>` mirrored a folder to
+the box; the morning's 2.5–3 minute pages were `phx-previews.slice`'s 4.5 GB cap beating its own
+scope's, fixed by moving it to `phx-live.slice` (7 GB). That folder mode is retired — the sync bullet
+and table rows 9 and 10 below are the record of how it ran, not how it runs.
+
+- **Folder mode, RETIRED 2026-10-17 ~19:31 (`phx-live-follow.mjs` replaced it):** `phx-live-sync.mjs`
+  watches the folder and sends each saved file over ssh as `phxlive`, whose
   forced command is `/opt/phx-live/live-receiver.mjs`. The receiver refuses any path outside the
   checkout, and anything under `.git/`, `node_modules/`, `.next/` or named `.env*`. The sync
   reconciles against a hash manifest every 60 s and does a full resync when `HEAD` moves.
 - The browser reaches the server through an ssh tunnel as `phxtunnel` (`permitopen="127.0.0.1:3100"`,
   no shell). The `Host` header is `localhost`, so `/admin/dev-preview`'s loopback gate passes.
-- The server is `next dev` in `phx-preview-3100.scope` as `phxlive` (no sudo), capped at
+- The server (the production build of main, or `next dev` under `-Dev` / `-DevAuth`) runs in
+  `phx-preview-3100.scope` as `phxlive` (no sudo), capped at
   `MemoryHigh=5G MemoryMax=5632M MemorySwapMax=2G`. `/home/phx/live-ctl.sh` controls it (`prepare`,
   `serve`, `stop`, `status`, `install-env`, `install-env-staging`). The base checkout comes from the
   read-only mirror.
@@ -1376,8 +1391,8 @@ day by moving it to `phx-live.slice` (7 GB) — which is what makes `next dev` t
 | 6 | Production's `PHOENIX_AUTH_SECRET` on the box would let anyone forge sessions on the real site. | The box gets its own random secret from `openssl rand`. The cost: a password-reset code made from phx-live does not work on production, so **do not do password resets from phx-live**. |
 | 7 | The box has 7.7 GB. phx-live (≤5.5 GB) plus a preview (≤4 GB) plus a remote-check build (~7.4 GB) means an OOM. | Every scope is capped. `remote-check`'s busy probe counts `phx-preview-3100.scope` as a run (`PHX_LIVE_RUN_ID`, pinned in `tests/remote-check.test.ts` 7b), so no build starts beside it. If the server is killed, the laptop side restarts it. |
 | 8 | No internet, or the box is down, means no dev server at all. | Fallback: `node scripts/dev-server.mjs --port 3000` locally, as before (heavy, but it works). |
-| 9 | Sync drift: `fs.watch` can miss events (a git checkout, a mass rename). | The 60 s manifest reconcile, a full resync on a `HEAD` change, and `-Resync` by hand. |
-| 10 | It serves one folder at a time. | `-Folder` switches it. The start line says which folder it is syncing. |
+| 9 | *(Folder mode, retired.)* Sync drift: `fs.watch` can miss events (a git checkout, a mass rename). | The 60 s manifest reconcile, a full resync on a `HEAD` change, and `-Resync` by hand. |
+| 10 | It serves one thing: GitHub's main. | Since 2026-10-17 ~19:31 `-Folder` is refused; a branch or worktree look is the laptop's own `node scripts/dev-server.mjs`. |
 | 11 | A lockfile change runs `pnpm install` on the box, which takes 1–2 minutes. | The window says "installing", and HMR resumes after. |
 | 12 | Errors raised in phx-live land in production `app_error_events`. | The same as before. `APP_ENV=development` keeps them separable in the Error Monitor. |
 | 13 | Dev-preview drops the real session (by design, `app/api/dev-auth/preview/route.ts`) and writes an audit row to production. | By design, as before. Log in again after a preview. |
