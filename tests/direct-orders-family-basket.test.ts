@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { computeDiscountSalesValue } from "../src/lib/direct-orders/approval-flow.ts";
+import { previewBasketValue, priceBasketLine } from "../src/lib/direct-orders/basket-value.ts";
 import {
   MULTI_ITEM_FAMILY_CODES,
   familyAllowsMultipleItems,
@@ -132,6 +134,83 @@ export async function runDirectOrderFamilyBasketTests() {
     formCode,
     /siblings\.some\(\(s\) => s\.productCode === code\)/,
     "only lines still offered may be submitted — a stale extra line is the worst kind of surprise on an order",
+  );
+
+  // ── The value on the form is the WHOLE order, not the main line ────────────
+  //
+  // Reported 2026-10-18: Lacto Advanced 1, 100 units at 25% showed 24,750 EGP; ticking Lacto Advanced
+  // 2 with its own 100 units at 25% left the number at 24,750. The server stored the right total, so
+  // only the preview was wrong — and a requester cannot tell whether a line was counted if the figure
+  // never moves.
+  const discountLine = (productCode: string, publicPrice: number | null, qty = 100, discountPct = 25) => ({
+    productCode,
+    productName: productCode,
+    dealType: "discount" as const,
+    qty,
+    discountPct,
+    publicPrice,
+    pharmacyPrice: null,
+  });
+
+  const mainOnly = previewBasketValue([discountLine("LA001", 330)]);
+  assert.equal(mainOnly.total, 24_750, "the one-line order is valued exactly as before: 100 × 330 × (1 − 25%)");
+  assert.equal(
+    mainOnly.total,
+    computeDiscountSalesValue({ qty: 100, publicPrice: 330, discountPct: 25 }),
+    "a single line goes through the same locked formula, not a copy of it",
+  );
+
+  const twoLines = previewBasketValue([discountLine("LA001", 330), discountLine("LA002", 300)]);
+  assert.deepEqual(
+    twoLines.lines.map((line) => line.salesValue),
+    [24_750, 22_500],
+    "each concentration contributes its own value — the second is 100 × 300 × (1 − 25%)",
+  );
+  assert.equal(twoLines.total, 47_250, "the total moves when a second concentration is added");
+  assert.ok(twoLines.total > mainOnly.total, "adding a priced line can only raise the order value");
+
+  const mixedDeals = previewBasketValue([
+    discountLine("LA001", 330),
+    { ...discountLine("LA002", null), dealType: "bonus" as const, qty: 40, pharmacyPrice: 200 },
+  ]);
+  assert.deepEqual(
+    mixedDeals.lines.map((line) => line.salesValue),
+    [24_750, 8_000],
+    "a bonus line is valued qty × PHARMACY price and ignores the discount, beside a discount line on the public price",
+  );
+  assert.equal(mixedDeals.total, 32_750);
+
+  const unpriced = priceBasketLine(discountLine("LA002", null));
+  assert.equal(unpriced.salesValue, 0, "the server refuses a discount line with no public price, so it adds nothing");
+  assert.equal(unpriced.basisPrice, null, "…and says so, so the form can name the missing price");
+  assert.equal(priceBasketLine(discountLine("LA002", 0)).basisPrice, null, "a zero price is a missing price");
+  assert.equal(
+    priceBasketLine({ ...discountLine("LA002", 330), dealType: "bonus", pharmacyPrice: null }).basisPrice,
+    null,
+    "a bonus line never falls back to the public price",
+  );
+
+  assert.equal(priceBasketLine(discountLine("LA001", 330, 100.9)).qty, 100, "quantity is whole units, as on the server");
+  assert.equal(
+    priceBasketLine(discountLine("LA001", 330, 100, 140)).discountPct,
+    100,
+    "a discount is held at 100%, as on the server",
+  );
+  assert.equal(previewBasketValue([]).total, 0, "an empty basket is worth nothing");
+
+  // The form must price through that function, with the extra lines fed in — not the main product
+  // alone, which is the whole defect.
+  assert.match(formCode, /previewBasketValue\(/, "the form's sales value must come from the basket pricing");
+  assert.match(
+    formCode,
+    /\.\.\.activeExtras\.map\(/,
+    "every extra line still on the order must be priced into the value shown",
+  );
+  assert.match(formCode, /const salesValue = basket\.total;/, "the figure shown is the whole-order total");
+  assert.doesNotMatch(
+    formCode,
+    /computeDiscountSalesValue|computeDirectOrderSalesValue/,
+    "the form must not price the main line by itself again — one line's value is not the order's value",
   );
 
   // ── The report tells the truth about a basket, and adds NO column ──────────
