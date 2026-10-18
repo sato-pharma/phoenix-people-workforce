@@ -248,6 +248,24 @@ async function suggestTests() {
     restoreEnv();
   }
 
+  // Claude has no JSON mode on this leg, so a blank, prose-only or non-object reply is possible. Nothing is
+  // suggested, nothing is saved, and the operator reads a plain sentence rather than a parser error.
+  for (const unreadable of ["", "I cannot help with that.", "null", '{"matches":']) {
+    restoreEnv = withEnv({ ANTHROPIC_API_KEY: CLAUDE_KEY });
+    net = installFetch({ anthropic: () => claudeOk(unreadable) });
+    try {
+      await assert.rejects(
+        () => aiSuggest("product", unknowns, candidates),
+        (error: unknown) => error instanceof Error && error.message === "AI returned an answer that could not be read — click AI suggest again.",
+        `a reply of ${JSON.stringify(unreadable)} must be reported as unreadable`,
+      );
+      assert.deepEqual(net.calls, { anthropic: 1, openai: 0 });
+    } finally {
+      net.restore();
+      restoreEnv();
+    }
+  }
+
   // A busy OpenAI stays with OpenAI: after its retries it surfaces the rate-limit message, with no Claude call
   // and nothing remembered, because waiting helps and a second provider is not needed.
   restoreEnv = withEnv({ ...both, AI_SUGGEST_RETRY_BASE_MS: "5" });
@@ -366,6 +384,18 @@ async function verifyTests() {
     restoreEnv();
   }
 
+  // An unreadable Claude reply still rejects, which verifyWeeklyUpload catches and turns into aiUsed=false.
+  for (const unreadable of ["", "Sorry, I cannot do that.", "null"]) {
+    restoreEnv = withEnv({ ANTHROPIC_API_KEY: CLAUDE_KEY });
+    net = installFetch({ anthropic: () => claudeOk(unreadable) });
+    try {
+      await assert.rejects(() => judgeWithAi("Ibn Sina", items), `a reply of ${JSON.stringify(unreadable)} must not become a verdict`);
+    } finally {
+      net.restore();
+      restoreEnv();
+    }
+  }
+
   restoreEnv = withEnv({});
   net = installFetch({});
   try {
@@ -393,6 +423,19 @@ async function explainTests() {
   } finally {
     net.restore();
     restoreEnv();
+  }
+
+  for (const unreadable of ["", "I would rather not.", "null"]) {
+    restoreEnv = withEnv({ ANTHROPIC_API_KEY: CLAUDE_KEY });
+    net = installFetch({ anthropic: () => claudeOk(unreadable) });
+    try {
+      const result = await explainHeaderMismatch(input);
+      assert.equal(result.aiUsed, false, `a reply of ${JSON.stringify(unreadable)} must leave the deterministic gate alone`);
+      assert.deepEqual(result.suggestions, []);
+    } finally {
+      net.restore();
+      restoreEnv();
+    }
   }
 
   restoreEnv = withEnv({ ANTHROPIC_API_KEY: CLAUDE_KEY });

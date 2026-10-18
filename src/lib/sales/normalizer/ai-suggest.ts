@@ -149,6 +149,8 @@ function delay(ms: number): Promise<void> {
 const OUT_OF_CREDIT_MESSAGE = "AI account is out of credit / quota — this is a billing problem, not a busy server, so waiting will NOT help. Top up or fix billing on the AI provider account, then try again.";
 const KEY_REJECTED_MESSAGE = "AI key was rejected (401) — check the API key is valid and has credit/access.";
 const RATE_LIMITED_MESSAGE = "AI is rate-limited right now — wait a moment (or lower the batch size / run fewer rows at once), then click AI suggest again.";
+// Claude has no JSON mode here, so a blank, prose-only or truncated reply is possible; the operator should read this, not a parser error.
+const UNREADABLE_MESSAGE = "AI returned an answer that could not be read — click AI suggest again.";
 
 // One batch asked of the planned provider(s). Returns the model's JSON text, or throws a human-readable
 // reason on failure so the UI surfaces it instead of a misleading "no matches". OpenAI-compatible first;
@@ -268,6 +270,7 @@ export async function aiSuggest(kind: AiKind, unknowns: AiUnknown[], candidates:
     try {
       const text = await generate(kind, chunk, candidates, referenceAliases);
       const parsed = JSON.parse(text) as { matches?: { code?: string | null; id?: number; confidence?: number | null }[] } | { code?: string | null; id?: number; confidence?: number | null }[];
+      if (parsed === null || typeof parsed !== "object") throw new SyntaxError("The AI reply was not a JSON object.");
       const arr = Array.isArray(parsed) ? parsed : parsed.matches ?? [];
       for (const item of Array.isArray(arr) ? arr : []) {
         const idx = Number(item.id) - 1;
@@ -279,7 +282,7 @@ export async function aiSuggest(kind: AiKind, unknowns: AiUnknown[], candidates:
         if (u && code) out.push({ code, raw: u.raw, confidence });
       }
     } catch (e) {
-      lastError = e instanceof Error ? e.message : "AI error.";
+      lastError = e instanceof SyntaxError ? UNREADABLE_MESSAGE : e instanceof Error ? e.message : "AI error.";
     }
   }
   if (out.length === 0 && lastError) throw new Error(lastError);
