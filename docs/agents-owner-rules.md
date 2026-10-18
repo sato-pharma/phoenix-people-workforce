@@ -8579,3 +8579,24 @@ Known limit, measured 2026-10-18: the attribution ledger behind the roll-up dedu
 One direct order is claimed by two campaigns today (one active, one rejected), which is harmless because a
 rejected campaign is outside every approved roll-up; a direct order claimed by two APPROVED campaigns would be
 added twice in a company-wide roll-up until the ledger learns direct lines. Rule line: `.claude/rules/marketing-roi.md`.
+
+## The evidence photo is the primary source of trust — owner, 2026-10-18
+
+His words, after Direct Order request 299304bf (حضانه عبد الكريم, a marketing transfer with no distributor
+code): *"in any module that have an evidence photo your primary source of trust should be the photo of
+evidence."* The approval panel showed the venue filed under brick منشأة سلطان / Menoufia 1 while its live
+photo was stamped منوف / Menoufia 2, and every territory row read "nothing to check" because the only
+comparison was against a distributor customer's record, which a codeless venue does not have.
+
+Measured on production the same day: the pin is 0.7 km from the منوف centre (B202-1, area D13) and 6.9 km
+from the منشأة سلطان centre (B201-9, area D12). The filed area D12 was inherited from the marketing
+customer's legacy `delta_1` label (his 2026-08-22 ruling "Delta (1) is Menoufia 1"), and the brick was the
+nearest centre inside THAT area only (`suggestBrickForCapture`) — a guess, not a reading.
+
+The rule: wherever a module holds a live evidence photo, read the photo's own territory FIRST and let a
+disagreement lead the sentence. Shipped for the Direct Order approval panel: `checkDirectOrderGeography`
+takes a `photoTerritory` (the nearest brick centre to the stamped pin, `resolveBrickForPoint`), prints it as
+the first rows, and a centre further than `PHOTO_TERRITORY_TRUST_KM` (15 km) is "not usable" rather than an
+accusation. Pinned in `tests/direct-orders-hold-release.test.ts`. Not done, and his call: moving a venue's
+territory (attribution follows the brick), the transfer's brick suggestion, and other photo modules.
+Open tension: marketing's earlier ruling "the REGISTERED CODE beats live GPS" (2026-08-21).

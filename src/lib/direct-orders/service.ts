@@ -96,7 +96,8 @@ import {
   type DirectOrderHoldConflict,
   type DirectOrderHoldGround,
 } from "@/lib/direct-orders/hold-decision";
-import { checkDirectOrderGeography } from "@/lib/direct-orders/geography-check";
+import { checkDirectOrderGeography, type DirectOrderPhotoTerritory } from "@/lib/direct-orders/geography-check";
+import { loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
 import { extraDirectOrderAreaCodes } from "@/lib/direct-orders/extra-area-grants";
 import {
   canRecordDirectOrderCollection,
@@ -6437,8 +6438,29 @@ export async function getDirectOrderApprovalDetail(
   // — answering the less important half of the question and hiding that the brick agrees too.
   const masterBrickId = resolvedPair?.mappedBrickId ?? candidate?.brickId ?? null;
   const masterAreaCode = resolvedPair?.mappedAreaCode ?? candidate?.areaCode ?? null;
+  // THE PHOTO IS THE PRIMARY SOURCE OF TRUST (owner, 2026-10-18). The territory the live evidence
+  // photo's own pin falls in is read from the SAME brick centres the evidence stamp uses, so the
+  // panel can never disagree with the words printed on the photo. Read from the raw row — the
+  // adjudicator-facing note is stripped for some viewers, the coordinates are not that note.
+  let photoTerritory: DirectOrderPhotoTerritory | null = null;
+  const photoLat = rawEvidence?.capturedLatitude ?? null;
+  const photoLon = rawEvidence?.capturedLongitude ?? null;
+  if (photoLat !== null && photoLon !== null) {
+    const point = resolveBrickForPoint(photoLat, photoLon, await loadBrickCentroids());
+    if (point) {
+      photoTerritory = {
+        brickId: point.brickId,
+        brickName: point.brickName,
+        areaCode: point.areaCode,
+        areaName: point.areaName,
+        distanceKm: point.distanceKm,
+      };
+    }
+  }
   const geographyCheck = pharmacy
     ? checkDirectOrderGeography({
+        photoTerritory,
+        noDistributorAccountVenueLabel: venueRequiresDistributorCode(pharmacy.venueType) ? null : venueTypeLabel(pharmacy.venueType),
         declaredBrickId: pharmacy.brickId,
         declaredBrickName: geo.brick?.name ?? null,
         declaredAreaCode: pharmacy.areaCode,
