@@ -29,10 +29,14 @@ import { PlatformChoice, endChoices, startChoices } from "./cell-dialog";
 import { PersonPicker, initialPersonChoice, personProblem, submitBooking, type PersonChoice } from "./person-picker";
 import { ZoomMeetingPanels } from "./zoom-panels";
 import {
+  phxButtonDangerDenseClassName,
   phxFieldClassName,
+  phxLabelClassName,
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { RecruitmentPill } from "@/components/recruitment/recruitment-premium";
 
 export function SessionDialog({
   api,
@@ -155,7 +159,7 @@ export function SessionDialog({
       z={225}
     >
       <div className="flex flex-col gap-5">
-        <dl className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 gap-y-2 text-[13px] text-slate-800">
+        <dl className={`grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 gap-y-2 border border-slate-200 bg-white p-3 text-[13px] text-slate-800 ${adminSoftDepthClassName}`}>
           <dt className="pt-0.5 text-slate-400">
             <CalendarDays aria-label="Day" className="h-4 w-4" />
           </dt>
@@ -163,7 +167,7 @@ export function SessionDialog({
           <dt className="pt-0.5 text-slate-400">
             <Clock3 aria-label="Time" className="h-4 w-4" />
           </dt>
-          <dd>
+          <dd className="tabular-nums">
             {formatTimeRange(session.startMinutes, session.durationMinutes)}{" "}
             <span className="text-slate-500">
               ({formatDuration(session.durationMinutes)}, {slots.length} slots of {session.slotMinutes} min — {bookings.length} booked)
@@ -194,12 +198,18 @@ export function SessionDialog({
         {session.createdByName ? <p className="-mt-3 text-[11px] text-slate-500">Made by {session.createdByName}</p> : null}
 
         <section aria-label="Slots">
-          <PanelHeading>
+          <PanelHeading
+            aside={
+              <span className="text-[11px] font-bold tabular-nums text-slate-500">
+                {bookings.length} of {slots.length} booked
+              </span>
+            }
+          >
             <span className="inline-flex items-center gap-1.5">
               <Users className="h-3.5 w-3.5" /> Slots
             </span>
           </PanelHeading>
-          <ul className="divide-y divide-slate-100 border border-slate-200">
+          <ul className={`divide-y divide-slate-100 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
             {slots.map((at) => {
               const held = byStart.get(at) ?? null;
               return (
@@ -215,7 +225,9 @@ export function SessionDialog({
                       {held.external ? <span className="ml-1.5 text-[11px] font-semibold text-slate-500 no-underline">from outside</span> : null}
                     </button>
                   ) : (
-                    <span className="min-w-0 flex-1 text-[12px] text-slate-400">Free</span>
+                    <span className="min-w-0 flex-1">
+                      <RecruitmentPill tone="emerald">Free</RecruitmentPill>
+                    </span>
                   )}
                   {!held && canBook && !session.ended ? (
                     <Action onClick={() => setBooking(at)} tone="quiet">
@@ -231,8 +243,8 @@ export function SessionDialog({
 
         {canBook ? (
           confirmCancel ? (
-            <div className="border border-red-200 bg-red-50 p-3">
-              <p className="text-[12px] font-semibold text-red-800">
+            <div className="border border-red-200 border-l-[3px] border-l-red-600 bg-red-50 p-3">
+              <p className="break-words text-[12px] font-semibold text-red-800">
                 Cancel this session?{" "}
                 {bookings.length > 0
                   ? `Its ${bookings.length} booked ${bookings.length === 1 ? "interview is" : "interviews are"} cancelled with it`
@@ -244,7 +256,7 @@ export function SessionDialog({
                   Keep it
                 </Action>
                 <button
-                  className="inline-flex items-center gap-1.5 border border-red-700 bg-red-700 px-2 py-1.5 text-[12px] font-bold leading-none text-white hover:bg-red-800 disabled:opacity-50"
+                  className={cn("inline-flex items-center gap-1.5 border px-2 py-1.5 text-[12px] font-bold leading-none disabled:opacity-50", phxButtonDangerDenseClassName)}
                   disabled={busy !== null}
                   onClick={() => void cancel()}
                   type="button"
@@ -365,7 +377,7 @@ function BookSlotDialog({
           </>
         ) : (
           <>
-            <p className="min-w-0 text-[12px] text-slate-600">{error ? <span className="font-semibold text-red-700">{error}</span> : (problem ?? "")}</p>
+            <p className="min-w-0 break-words text-[12px] text-slate-600">{error ? <span className="font-semibold text-red-700">{error}</span> : (problem ?? "")}</p>
             <div className="flex shrink-0 justify-end gap-2">
               <Action onClick={onClose} size="md" tone="quiet">
                 Cancel
@@ -396,7 +408,7 @@ function BookSlotDialog({
         <div className="flex flex-col gap-3">
           <PersonPicker api={api} canAdd={canAdd} canSearch={canSearch} onChange={setPerson} value={person} />
           <label className="block">
-            <span className="mb-1 block text-[12px] font-bold text-slate-700">Note (optional)</span>
+            <span className={phxLabelClassName}>Note (optional)</span>
             <textarea
               className={`${phxTextareaClassName} block`}
               maxLength={2000}
@@ -470,7 +482,7 @@ function EditSessionDialog({
       eyebrow="Interview session"
       footer={
         <>
-          <p className="min-w-0 text-[12px] text-slate-600">
+          <p className="min-w-0 break-words text-[12px] tabular-nums text-slate-600">
             {error ? <span className="font-semibold text-red-700">{error}</span> : `${formatTimeRange(start, end - start)} · slots of ${slot} min`}
           </p>
           <div className="flex shrink-0 justify-end gap-2">
@@ -492,7 +504,7 @@ function EditSessionDialog({
     >
       <div className="flex flex-col gap-3">
         <label className="block">
-          <span className="mb-1 block text-[12px] font-bold text-slate-700">Name (optional)</span>
+          <span className={phxLabelClassName}>Name (optional)</span>
           <input
             className={`${phxFieldClassName} block`}
             maxLength={120}
@@ -502,7 +514,7 @@ function EditSessionDialog({
         </label>
         <div className="grid grid-cols-2 gap-2">
           <label className="block">
-            <span className="mb-1 block text-[12px] font-bold text-slate-700">Starts at</span>
+            <span className={phxLabelClassName}>Starts at</span>
             <select
               className={phxSelectClassName}
               onChange={(event) => chooseStart(Number(event.target.value))}
@@ -516,7 +528,7 @@ function EditSessionDialog({
             </select>
           </label>
           <label className="block">
-            <span className="mb-1 block text-[12px] font-bold text-slate-700">Ends at</span>
+            <span className={phxLabelClassName}>Ends at</span>
             <select
               className={phxSelectClassName}
               onChange={(event) => setEnd(Number(event.target.value))}
@@ -531,7 +543,7 @@ function EditSessionDialog({
           </label>
         </div>
         <div>
-          <span className="mb-1 block text-[12px] font-bold text-slate-700">Each interview (slot)</span>
+          <span className={phxLabelClassName}>Each interview (slot)</span>
           <Segmented<number>
             label="Slot length"
             onChange={(minutes) => setSlot(minutes)}
@@ -545,11 +557,11 @@ function EditSessionDialog({
           {bookedCount > 0 ? <p className="mt-1 text-[11px] text-slate-500">The slot length is fixed while people are booked into it.</p> : null}
         </div>
         <div>
-          <span className="mb-1 block text-[12px] font-bold text-slate-700">Where</span>
+          <span className={phxLabelClassName}>Where</span>
           <PlatformChoice onChange={setPlatform} value={platform} zoomConnected={zoomConnected} />
         </div>
         <label className="block">
-          <span className="mb-1 block text-[12px] font-bold text-slate-700">Note (optional)</span>
+          <span className={phxLabelClassName}>Note (optional)</span>
           <textarea
             className={`${phxTextareaClassName} block`}
             maxLength={2000}

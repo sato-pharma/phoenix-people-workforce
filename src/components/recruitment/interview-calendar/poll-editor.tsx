@@ -8,6 +8,7 @@
 import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import {
   POLL_QUESTION_TYPE_LABEL,
@@ -21,6 +22,7 @@ import { type CalendarApi, reasonText } from "./calendar-api";
 import { CalendarDialog, ErrorLine, NoteLine, PanelHeading } from "./calendar-dialog";
 import {
   phxFieldClassName,
+  phxLabelTextClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
 
@@ -81,14 +83,14 @@ export function PollEditor({
   return (
     <div className="flex flex-col gap-3">
       <label className="block">
-        <span className="text-[12px] font-bold text-slate-700">{nameLabel}</span>
+        <span className={phxLabelTextClassName}>{nameLabel}</span>
         <input className={`mt-1 ${inputClass}`} maxLength={120} onChange={(event) => setName(event.target.value)} value={name} />
       </label>
       <ol className="flex flex-col gap-3">
         {questions.map((question, index) => (
-          <li className="border border-slate-200 p-3" key={index}>
+          <li className={`border border-slate-200 border-l-[3px] border-l-orange-500 bg-white p-3 ${adminSoftDepthClassName}`} key={index}>
             <div className="flex items-start justify-between gap-2">
-              <p className="text-[12px] font-bold text-slate-700">Question {index + 1}</p>
+              <p className="text-[12px] font-black uppercase tracking-[0.06em] tabular-nums text-slate-800">Question {index + 1}</p>
               {questions.length > 1 ? (
                 <button
                   aria-label={`Remove question ${index + 1}`}
@@ -283,12 +285,12 @@ export function PollSetsDialog({
           </PanelHeading>
           {error ? <ErrorLine>{error}</ErrorLine> : null}
           {sets !== null && sets.length === 0 ? <NoteLine>No saved polls yet.</NoteLine> : null}
-          <ul className="divide-y divide-slate-100 border border-slate-200">
+          <ul className={`divide-y divide-slate-100 border border-slate-200 bg-white empty:hidden ${adminSoftDepthClassName}`}>
             {(sets ?? []).map((set) => (
               <li className="flex items-start justify-between gap-3 px-3 py-2" key={set.id}>
                 <span className="min-w-0">
                   <span className="block break-words text-[13px] font-semibold text-slate-900">{set.name}</span>
-                  <span className="block text-[11px] text-slate-500">
+                  <span className="block text-[11px] tabular-nums text-slate-500">
                     {set.questions.length} {set.questions.length === 1 ? "question" : "questions"}
                   </span>
                 </span>

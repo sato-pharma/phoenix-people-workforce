@@ -27,8 +27,9 @@
 // it is actioned is a queue that loses your place on every single decision.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Eye, FolderClosed, Search, X } from "lucide-react";
+import { Copy, Eye, FolderClosed, Inbox, Search, X } from "lucide-react";
 
+import { adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { candidateStatusLabel, type CandidateStatus } from "@/lib/recruitment/candidate-status";
 import { candidateRedFlagLabels } from "@/lib/recruitment/red-flag";
 import { StarMark } from "@/components/recruitment/workstation/candidate-stars";
@@ -149,11 +150,19 @@ export function WorkstationCandidateList({
   const visible = useMemo(() => rows.slice(0, limit), [limit, rows]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col border-r border-phx-line bg-white">
+    // A CARD ON THE COCKPIT'S TRAY (2026-10-19): the soft depth, a full hairline, the dark pane band.
+    <div className={`flex h-full min-h-0 w-full flex-col overflow-hidden border border-phx-line bg-white ${adminSoftDepthClassName}`}>
       <PaneHead collapseTo="left" foldLabel="candidates" onCollapse={onCollapse} right={totalLabel} title={title} />
 
-      <div className="flex shrink-0 items-center gap-1.5 border-b border-phx-line bg-phx-surface-2 px-2 py-1.5">
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 border border-phx-line bg-white px-2">
+      {/* The search sits in a recessed strip under the band; the field itself wears the one form
+          design's ground and its orange focus edge, never a shadow of its own. */}
+      <div
+        className={cn(
+          "flex shrink-0 items-center gap-1.5 border-b border-phx-line bg-phx-surface-2 px-2 py-1.5",
+          adminRecessedDepthClassName,
+        )}
+      >
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 border border-phx-line bg-white px-2 transition-colors focus-within:border-orange-500">
           <Search aria-hidden className="h-3.5 w-3.5 shrink-0 text-phx-ink-faint" />
           <input
             aria-label="Search candidates"
@@ -177,7 +186,9 @@ export function WorkstationCandidateList({
 
       <div className="min-h-0 flex-1 overflow-y-auto" onScroll={extend} ref={scrollRef}>
         {rows.length === 0 ? (
-          <EmptyNote>{emptyLabel}</EmptyNote>
+          <EmptyNote icon={<Inbox aria-hidden className="h-5 w-5" />} title="Nothing in this pile">
+            {emptyLabel}
+          </EmptyNote>
         ) : (
           <>
             {visible.map((row, index) => {
@@ -231,7 +242,7 @@ export function WorkstationCandidateList({
               // A real button as well as the scroll handler. Scroll-to-load alone is invisible to a
               // keyboard user and silently broken if the pane never overflows.
               <button
-                className="w-full border-b border-phx-line bg-phx-paper px-3 py-2 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-accent-soft"
+                className="w-full border-b border-phx-line bg-phx-surface-2 px-3 py-2.5 text-[12px] font-bold text-phx-accent-press transition hover:bg-phx-accent-soft"
                 onClick={() => widen(PAGE_STEP)}
                 type="button"
               >

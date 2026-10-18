@@ -1,6 +1,9 @@
+import { Undo2 } from "lucide-react";
 import { redirect } from "next/navigation";
 
+import { AdminInsightChip } from "@/components/admin/admin-design-system";
 import { PageContainer } from "@/components/layout/page-container";
+import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { ReturnedCvsQueue } from "@/components/recruitment/returned-cvs-queue";
 import { canAccess, isHrAuthorityRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -36,13 +39,14 @@ export default async function ReturnedCvsPage() {
 
   return (
     <PageContainer>
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold text-slate-900">Returned CVs</h1>
-        <p className="text-sm text-slate-500">
-          CVs a district manager handed back — grouped by the manager who returned them and the reason they gave. Re-route
-          each one, then mark it handled to clear it from the queue.
-        </p>
-      </div>
+      {/* The live counts sit in the queue's own KPI strip, which drops a CV the moment it is marked
+          handled; a count up here would go stale on the first press, so the header carries none. */}
+      <RecruitmentPageHeader
+        badges={<AdminInsightChip tone="slate">Grouped by manager and reason</AdminInsightChip>}
+        description="CVs a district manager handed back — grouped by the manager who returned them and the reason they gave. Re-route each one, then mark it handled to clear it from the queue."
+        icon={<Undo2 aria-hidden="true" className="h-3.5 w-3.5" />}
+        title="Returned CVs"
+      />
       <ReturnedCvsQueue groups={groups} />
     </PageContainer>
   );

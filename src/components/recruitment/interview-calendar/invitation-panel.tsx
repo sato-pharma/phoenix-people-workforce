@@ -15,6 +15,8 @@
 import { Building2, Check, Loader2, Mail, MessageCircle, Send } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { RecruitmentPill } from "@/components/recruitment/recruitment-premium";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import {
   INVITATION_CHANNEL_LABEL,
@@ -30,7 +32,7 @@ import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { cn } from "@/lib/utils";
 
 import { reasonText, type CalendarApi } from "./calendar-api";
-import { ErrorLine } from "./calendar-dialog";
+import { ErrorLine, PanelHeading } from "./calendar-dialog";
 
 const RECIPIENT_LABEL: Record<InvitationRecipient, string> = { candidate: "Candidate", interviewer: "Interviewer" };
 
@@ -162,23 +164,26 @@ export function InvitationPanel({ api, bookingId }: { api: CalendarApi; bookingI
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[12px] font-bold uppercase tracking-[0.06em] text-slate-700">Send the invitation</p>
-        {plan.interviewer ? (
-          <Action disabled={both.length < 2 || busy !== null} onClick={sendBoth} tone="primary">
-            <Send className="h-3.5 w-3.5" />
-            Send to both
-          </Action>
-        ) : null}
-      </div>
+      <PanelHeading
+        aside={
+          plan.interviewer ? (
+            <Action disabled={both.length < 2 || busy !== null} onClick={sendBoth} tone="primary">
+              <Send className="h-3.5 w-3.5" />
+              Send to both
+            </Action>
+          ) : null
+        }
+      >
+        Send the invitation
+      </PanelHeading>
 
-      {problem ? <p className="border-l-[3px] border-l-amber-500 bg-amber-50 px-3 py-2 text-[12px] text-slate-700">{problem}</p> : null}
+      {problem ? <p className="break-words border border-amber-200 border-l-[3px] border-l-amber-500 bg-amber-50 px-3 py-2 text-[12px] text-slate-700">{problem}</p> : null}
       {!plan.interviewer ? (
-        <p className="text-[12px] text-slate-500">No interviewer is chosen for this interview. Move it and choose one to send them the invitation too.</p>
+        <p className="break-words border border-dashed border-slate-300 px-3 py-2 text-[12px] text-slate-500">No interviewer is chosen for this interview. Move it and choose one to send them the invitation too.</p>
       ) : null}
 
       {waiting.map((recipient) => (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-l-[3px] border-l-sky-600 bg-sky-50 px-3 py-2" key={recipient}>
+        <div className="flex flex-wrap items-center justify-between gap-2 border border-sky-200 border-l-[3px] border-l-sky-600 bg-sky-50 px-3 py-2" key={recipient}>
           <p className="min-w-0 break-words text-[12px] text-slate-800">Next: {planOf(recipient)?.name}&apos;s WhatsApp.</p>
           <Action onClick={() => send(recipient, "invitation", "whatsapp")} tone="primary">
             <MessageCircle className="h-3.5 w-3.5" />
@@ -190,7 +195,7 @@ export function InvitationPanel({ api, bookingId }: { api: CalendarApi; bookingI
       {notice ? (
         <p
           aria-live="polite"
-          className={cn("border-l-[3px] px-3 py-2 text-[12px] break-words", notice.tone === "ok" ? "border-l-emerald-600 bg-emerald-50 text-slate-800" : "border-l-red-600 bg-red-50 font-semibold text-red-800")}
+          className={cn("border border-l-[3px] px-3 py-2 text-[12px] break-words", notice.tone === "ok" ? "border-emerald-200 border-l-emerald-600 bg-emerald-50 text-slate-800" : "border-red-200 border-l-red-600 bg-red-50 font-semibold text-red-800")}
         >
           {notice.text}
         </p>
@@ -214,15 +219,15 @@ export function InvitationPanel({ api, bookingId }: { api: CalendarApi; bookingI
 
       {log.length > 0 ? (
         <div>
-          <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">Sent so far</p>
-          <ul className="flex flex-col gap-1">
+          <PanelHeading aside={<span className="text-[11px] font-bold tabular-nums text-slate-500">{log.length}</span>}>Sent so far</PanelHeading>
+          <ul className={`flex flex-col divide-y divide-slate-100 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
             {log.map((entry) => (
-              <li className="flex items-start gap-1.5 break-words text-[12px] text-slate-700" key={entry.id}>
+              <li className="flex items-start gap-1.5 break-words px-3 py-2 text-[12px] text-slate-700" key={entry.id}>
                 <Check className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", entry.status === "failed" ? "text-red-600" : "text-emerald-600")} />
                 <span className="min-w-0">
                   <span className="font-semibold">{RECIPIENT_LABEL[entry.recipient]}</span>
                   {entry.kind === "company_details" ? " · company details" : ""} — {invitationLogSentence(entry)}
-                  <span className="text-slate-500">
+                  <span className="tabular-nums text-slate-500">
                     {" "}
                     · {CAIRO_STAMP.format(new Date(entry.createdAt))}
                     {entry.sentByName ? ` · ${entry.sentByName}` : ""}
@@ -255,17 +260,23 @@ function RecipientCard({
   const hasCompany = person.messages.some((message) => message.kind === "company_details");
   const working = busy?.startsWith(`${person.recipient}:`) ?? false;
   return (
-    <section className="border border-slate-200 p-3">
+    <section
+      className={
+        person.recipient === "candidate"
+          ? `border border-slate-200 border-l-[3px] border-l-orange-500 bg-white p-3 ${adminSoftDepthClassName}`
+          : `border border-slate-200 border-l-[3px] border-l-sky-600 bg-white p-3 ${adminSoftDepthClassName}`
+      }
+    >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">{RECIPIENT_LABEL[person.recipient]}</p>
-          <p className="break-words text-[14px] font-bold text-slate-900">{person.name}</p>
+          <RecruitmentPill tone={person.recipient === "candidate" ? "orange" : "sky"}>{RECIPIENT_LABEL[person.recipient]}</RecruitmentPill>
+          <p className="mt-1 break-words text-[15px] font-black text-slate-900">{person.name}</p>
         </div>
-        <div aria-label={`How to reach ${person.name}`} className="flex border border-slate-200" role="group">
+        <div aria-label={`How to reach ${person.name}`} className="flex border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.06)]" role="group">
           {(["whatsapp", "email"] as const).map((option) => (
             <button
               aria-pressed={channel === option}
-              className={cn("inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-bold", channel === option ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}
+              className={cn("inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-bold", channel === option ? "bg-slate-900 text-white shadow-[inset_0_-2px_0_#f97316]" : "bg-white text-slate-600 hover:bg-slate-50")}
               key={option}
               onClick={() => onChannel(option)}
               type="button"
@@ -277,13 +288,13 @@ function RecipientCard({
         </div>
       </div>
 
-      <dl className="mt-2 grid grid-cols-1 gap-y-0.5 text-[12px] text-slate-700">
+      <dl className={`mt-2 grid grid-cols-1 gap-y-0.5 border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-700 ${adminRecessedDepthClassName}`}>
         <div className="break-words">
           <dt className="inline font-semibold">WhatsApp: </dt>
           <dd className="inline">
             {person.contact.whatsappDisplay ? (
               <>
-                <span dir="ltr">{person.contact.whatsappDisplay}</span>
+                <span className="tabular-nums" dir="ltr">{person.contact.whatsappDisplay}</span>
                 <span className="text-slate-500"> — {person.contact.whatsappSource}</span>
               </>
             ) : (
@@ -299,8 +310,8 @@ function RecipientCard({
 
       {invitation ? (
         <details className="mt-2 text-[12px]">
-          <summary className="cursor-pointer font-semibold text-sky-700">See the message</summary>
-          <pre className="mt-1 whitespace-pre-wrap break-words border-l-[3px] border-l-slate-300 bg-slate-50 px-3 py-2 font-sans text-[12px] text-slate-800">{invitation.text}</pre>
+          <summary className="cursor-pointer font-semibold text-sky-700 hover:text-sky-800">See the message</summary>
+          <pre className="mt-1 whitespace-pre-wrap break-words border-l-[3px] border-l-orange-300 bg-orange-50/40 px-3 py-2 font-sans text-[12px] leading-relaxed text-slate-800">{invitation.text}</pre>
         </details>
       ) : null}
 
@@ -313,8 +324,8 @@ function RecipientCard({
 
       {hasCompany ? (
         <div className="mt-3 border-t border-slate-200 pt-3">
-          <p className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-700">
-            <Building2 className="h-3.5 w-3.5 text-slate-400" />
+          <p className="flex items-center gap-1.5 text-[12px] font-bold text-slate-800">
+            <Building2 className="h-3.5 w-3.5 shrink-0 text-orange-600" />
             Company location, website and LinkedIn
           </p>
           <div className="mt-1.5 flex flex-wrap gap-2">

@@ -25,6 +25,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  ClipboardCheck,
   Clock3,
   FileSpreadsheet,
   FileText,
@@ -71,7 +72,18 @@ import {
   type InterviewOutcomeGroup,
   type InterviewSession,
 } from "@/lib/recruitment/interview-calendar-types";
-import { adminControlDepthClassName, adminPanelDepthClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
+import {
+  adminControlDepthClassName,
+  adminPanelDepthClassName,
+  adminPanelHeaderClassName,
+  adminSoftDepthClassName,
+} from "@/components/admin/admin-design-tokens";
+import {
+  RecruitmentEmptyState,
+  RecruitmentKpiStrip,
+  recruitmentToolbarClassName,
+  type RecruitmentKpi,
+} from "@/components/recruitment/recruitment-premium";
 import {
   SLOT_MINUTES,
   WORKDAY_END_MINUTES,
@@ -95,7 +107,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { calendarApi, reasonText, type CalendarApi } from "./calendar-api";
-import { CalendarDialog, ErrorLine } from "./calendar-dialog";
+import { CalendarDialog, ErrorLine, PanelHeading } from "./calendar-dialog";
 import { CellDialog } from "./cell-dialog";
 import { EditInterviewDetailsDialog } from "./edit-details-dialog";
 import { MonthPicker, cursorFor, type MonthCursor } from "./month-picker";
@@ -110,7 +122,7 @@ import { InterviewExtrasPanel } from "./interview-extras-panel";
 import { ScorecardPanel } from "./scorecard-panel";
 import { ZoomAutoOpen } from "./zoom-auto-open";
 import { ZoomMeetingPanels, type MeetingTarget } from "./zoom-panels";
-import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { phxButtonAccentClassName, phxButtonDangerDenseClassName, phxTextareaClassName } from "@/components/ui/form-tokens";
 
 type CalendarFile = { id: string; kind: string; fileName: string; mimeType: string | null; createdAt: string };
 
@@ -488,6 +500,7 @@ export function InterviewCalendarView({
 
   const counts = useMemo(
     () => ({
+      awaiting: bookings.filter((booking) => interviewAwaitsOutcome(booking)).length,
       office: bookings.filter((booking) => booking.platform === "in_office").length,
       sessions: sessions.length,
       total: bookings.length,
@@ -498,21 +511,75 @@ export function InterviewCalendarView({
 
   const cvsNeedSignIn = Boolean(link && !link.signedIn && !link.guestCvs);
 
+  // The week's figures at a glance — counted from the week the grid already read, never a fetch of
+  // their own. While the week is reading, or when it could not be read, a tile says "—" rather than
+  // drawing a zero nobody measured.
+  const known = !loading && !loadError;
+  const figure = (value: number) => <span className="tabular-nums">{known ? String(value) : "—"}</span>;
+  const kpis: RecruitmentKpi[] = [
+    {
+      description: counts.total === 1 ? "Interview booked this week" : "Interviews booked this week",
+      icon: <CalendarDays aria-hidden className="h-4 w-4" />,
+      label: "This week",
+      tone: "violet",
+      value: figure(counts.total),
+    },
+    {
+      description: "At the office",
+      icon: <Building2 aria-hidden className="h-4 w-4" />,
+      label: "In office",
+      tone: "orange",
+      value: figure(counts.office),
+    },
+    {
+      description: "On Phoenix's Zoom",
+      icon: <Video aria-hidden className="h-4 w-4" />,
+      label: "Zoom",
+      tone: "blue",
+      value: figure(counts.zoom),
+    },
+    {
+      description: "Blocks of the day cut into slots",
+      icon: <Users aria-hidden className="h-4 w-4" />,
+      label: "Sessions",
+      tone: "emerald",
+      value: figure(counts.sessions),
+    },
+    {
+      description: "Held, and nobody has said how it went",
+      icon: <ClipboardCheck aria-hidden className="h-4 w-4" />,
+      label: "Awaiting outcome",
+      tone: "rose",
+      value: figure(counts.awaiting),
+    },
+  ];
+
   return (
     <div className="flex flex-col gap-4">
       {link ? <LinkBanner link={link} role={role} /> : null}
       {link ? null : <ZoomAutoOpen api={api} />}
 
-      {/* ── The week bar ───────────────────────────────────────────────────────────────────── */}
-      <section className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
-        <div className="flex flex-col gap-3 border-b-2 border-b-orange-600 px-4 py-3 lg:flex-row lg:items-end lg:justify-between">
+      {/* ── The week bar: the week's name on the house band, its controls in the tray below ──── */}
+      <section aria-label="The week" className={`min-w-0 border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
+        <header className={`flex flex-wrap items-end justify-between gap-x-4 gap-y-2 px-4 py-3.5 text-white sm:px-5 ${adminPanelHeaderClassName}`}>
           <div className="min-w-0">
-            <p className="text-[22px] font-bold leading-tight text-slate-900">{formatWeekOf(weekStart)}</p>
-            <p className="mt-0.5 text-[13px] text-slate-500">
+            <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-orange-300">
+              <CalendarDays aria-hidden className="h-3.5 w-3.5" />
+              {weekStart === thisWeek ? "This week" : "Interview week"}
+            </p>
+            <h2 className="mt-1 break-words text-[22px] font-black leading-tight tracking-tight text-white">{formatWeekOf(weekStart)}</h2>
+            <p className="mt-0.5 break-words text-[12px] tabular-nums text-slate-300">
               {formatWeekRange(weekStart)} · Sunday to Thursday, 9:00 AM to 5:00 PM, Cairo time
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          {role !== "owner" ? (
+            <p className="max-w-full break-words border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-slate-200">
+              Your access: <span className="text-white">{ACCESS_LEVEL_LABEL[role]}</span>
+            </p>
+          ) : null}
+        </header>
+        <div className="flex flex-col gap-3 p-3 sm:p-4">
+          <div className={cn(recruitmentToolbarClassName, "relative items-center")}>
             {lockedWeek ? null : (
               <>
                 <div className="flex">
@@ -536,13 +603,13 @@ export function InterviewCalendarView({
                 <Action disabled={weekStart === thisWeek} onClick={() => goToWeek(thisWeek)} size="md" tone="quiet">
                   This week
                 </Action>
-                <div className="relative" ref={pickerRef}>
+                <div className="sm:relative" ref={pickerRef}>
                   <Action aria-expanded={pickerOpen} onClick={() => setPickerOpen((open) => !open)} size="md" tone="quiet">
                     <CalendarDays className="h-4 w-4" />
                     Choose a week
                   </Action>
                   {pickerOpen ? (
-                    <div className="absolute left-0 top-full z-30 mt-1 w-[18rem] border border-slate-200 bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] sm:left-auto sm:right-0">
+                    <div className="absolute left-3 right-3 top-full z-30 mt-1 border border-slate-200 bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] sm:left-auto sm:right-0 sm:w-[18rem]">
                       <MonthPicker
                         allowPast
                         cursor={pickerCursor}
@@ -558,7 +625,7 @@ export function InterviewCalendarView({
                     </div>
                   ) : null}
                 </div>
-                <span aria-hidden className="mx-1 hidden h-6 w-px bg-slate-200 sm:inline-block" />
+                <span aria-hidden className="mx-1 hidden h-6 w-px bg-slate-300 sm:inline-block" />
               </>
             )}
             <Action disabled={exporting !== null} onClick={() => void exportWeek("pdf")} size="md" tone="quiet">
@@ -569,57 +636,49 @@ export function InterviewCalendarView({
               {exporting === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
               Export Excel
             </Action>
-            {mayRequest ? (
-              <Action onClick={() => setRequesting(true)} size="md" tone="primary">
-                <Send className="h-4 w-4" />
-                Request an interview
-              </Action>
-            ) : null}
-            {canShareInterviewCalendar(role) ? (
-              <Action onClick={() => setSharing(true)} size="md" tone={mayRequest ? "quiet" : "primary"}>
-                <Share2 className="h-4 w-4" />
-                Share
-              </Action>
+            {mayRequest || canShareInterviewCalendar(role) ? (
+              <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
+                {mayRequest ? (
+                  <Action onClick={() => setRequesting(true)} size="md" tone="primary">
+                    <Send className="h-4 w-4" />
+                    Request an interview
+                  </Action>
+                ) : null}
+                {canShareInterviewCalendar(role) ? (
+                  <Action onClick={() => setSharing(true)} size="md" tone={mayRequest ? "quiet" : "primary"}>
+                    <Share2 className="h-4 w-4" />
+                    Share
+                  </Action>
+                ) : null}
+              </div>
             ) : null}
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 text-[12px] text-slate-600">
-          <span>
-            <span className="font-bold text-slate-900">{counts.total}</span> {counts.total === 1 ? "interview" : "interviews"} this week
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span aria-hidden className="inline-block h-2.5 w-2.5 bg-orange-600" />
-            In office {counts.office}
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span aria-hidden className="inline-block h-2.5 w-2.5 bg-sky-600" />
-            Zoom {counts.zoom}
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <Users aria-hidden className="h-3 w-3 text-slate-500" />
-            Sessions {counts.sessions}
-          </span>
-          {role !== "owner" ? (
-            <span className="text-slate-500">
-              Your access: {ACCESS_LEVEL_LABEL[role]}
-              {role === "interviewer" ? " — the interviews you were chosen to conduct." : ""}
+
+          <RecruitmentKpiStrip items={kpis} />
+
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-slate-600">
+            <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700">
+              <span aria-hidden className="inline-block h-2.5 w-2.5 bg-orange-600 shadow-[0_0_0_2px_#ffedd5]" />
+              In office
             </span>
-          ) : null}
-          <span className="text-slate-500">
-            {cvsNeedSignIn ? "Sign in to open the CVs." : "Click a name to open the CV."}
-            {canBook ? " Press a free time to book someone or set up a Zoom session." : ""}
-          </span>
+            <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700">
+              <span aria-hidden className="inline-block h-2.5 w-2.5 bg-sky-600 shadow-[0_0_0_2px_#e0f2fe]" />
+              Zoom
+            </span>
+            <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700">
+              <Users aria-hidden className="h-3 w-3 text-slate-500" />
+              Session
+            </span>
+            {role === "interviewer" ? <span className="text-slate-500">You see the interviews you were chosen to conduct.</span> : null}
+            <span className="text-slate-500">
+              {cvsNeedSignIn ? "Sign in to open the CVs." : "Click a name to open the CV."}
+              {canBook ? " Press a free time to book someone or set up a Zoom session." : ""}
+            </span>
+          </div>
+
+          {exportError ? <ErrorLine>{exportError}</ErrorLine> : null}
+          {loadError && !loading ? <ErrorLine>{loadError}</ErrorLine> : null}
         </div>
-        {exportError ? (
-          <p className="border-t border-red-200 bg-red-50 px-4 py-2 text-[12px] font-semibold text-red-700" role="alert">
-            {exportError}
-          </p>
-        ) : null}
-        {loadError && !loading ? (
-          <p className="border-t border-red-200 bg-red-50 px-4 py-2 text-[12px] font-semibold text-red-700" role="alert">
-            {loadError}
-          </p>
-        ) : null}
       </section>
 
       {link ? null : <OutcomePromptPanel api={api} onOpenBooking={openInterview} reloadSignal={bookingChanged} />}
@@ -641,7 +700,7 @@ export function InterviewCalendarView({
       {/* ── Desktop: the grid ──────────────────────────────────────────────────────────────── */}
       <section aria-busy={loading} aria-label="Week grid" className={`relative hidden border border-slate-200 bg-white md:block ${adminPanelDepthClassName}`}>
         {loading ? (
-          <div className="absolute right-3 top-3 z-10 inline-flex items-center gap-1 text-[11px] text-slate-500">
+          <div className="absolute right-3 top-2.5 z-10 inline-flex items-center gap-1 border border-orange-400/40 bg-slate-950/80 px-2 py-0.5 text-[11px] font-semibold text-orange-100">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading the week…
           </div>
         ) : null}
@@ -657,17 +716,20 @@ export function InterviewCalendarView({
                 treatment the Approvals Hub and the Coverage Report wear, so the three cannot
                 drift. Every OTHER bg-slate-900 in this module is a selected state on a button. */}
             <tr className={`${adminPanelHeaderClassName} text-white`}>
-              <th className="border-r border-slate-700 px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide" scope="col">
+              <th className="border-r border-slate-700 px-2 py-2.5 text-left text-[11px] font-black uppercase tracking-[0.12em]" scope="col">
                 Time
               </th>
               {days.map((day) => (
                 <th
-                  className={cn("border-r border-slate-700 px-2 py-2 text-left last:border-r-0", day === todayKey && "bg-orange-600")}
+                  className={cn("border-r border-slate-700 px-2 py-2.5 text-left last:border-r-0", day === todayKey && "bg-orange-600")}
                   key={day}
                   scope="col"
                 >
-                  <span className="block text-[13px] font-bold">{weekdayName(day)}</span>
-                  <span className="block text-[11px] font-semibold opacity-80">{formatShortDate(day)}</span>
+                  <span className="flex flex-wrap items-baseline gap-x-1.5">
+                    <span className="text-[13px] font-black tracking-tight">{weekdayName(day)}</span>
+                    {day === todayKey ? <span className="text-[10px] font-black uppercase tracking-[0.12em] opacity-90">Today</span> : null}
+                  </span>
+                  <span className="block text-[11px] font-semibold tabular-nums opacity-80">{formatShortDate(day)}</span>
                 </th>
               ))}
             </tr>
@@ -778,9 +840,24 @@ export function InterviewCalendarView({
               : null;
           return (
             <li className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`} key={day}>
-              <p className={cn("flex items-baseline justify-between gap-2 px-3 py-2 text-white", day === todayKey ? "bg-orange-600" : "bg-slate-900")}>
-                <span className="text-[14px] font-bold">{weekdayName(day)}</span>
-                <span className="text-[12px] font-semibold opacity-80">{formatShortDate(day)}</span>
+              <p
+                className={cn(
+                  "flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 px-3 py-2.5 text-white",
+                  day === todayKey ? "bg-orange-600" : adminPanelHeaderClassName,
+                )}
+              >
+                <span className="inline-flex items-baseline gap-1.5">
+                  <span className="text-[14px] font-black tracking-tight">{weekdayName(day)}</span>
+                  {day === todayKey ? <span className="text-[10px] font-black uppercase tracking-[0.12em] text-orange-100">Today</span> : null}
+                </span>
+                <span className="inline-flex items-baseline gap-2 text-[12px] font-semibold tabular-nums opacity-90">
+                  {items.length > 0 ? (
+                    <span className="text-[11px] font-bold opacity-80">
+                      {items.length} {items.length === 1 ? "entry" : "entries"}
+                    </span>
+                  ) : null}
+                  {formatShortDate(day)}
+                </span>
               </p>
               {items.length === 0 ? (
                 <p className="px-3 py-3 text-[12px] text-slate-500">{loading ? "Reading…" : "No interviews."}</p>
@@ -791,8 +868,10 @@ export function InterviewCalendarView({
                       <li key={`s-${item.session.id}`}>
                         <button
                           className={cn(
-                            "flex w-full items-start gap-3 px-3 py-2.5 text-left",
-                            item.session.platform === "zoom" ? "bg-sky-50 hover:bg-sky-100" : "bg-orange-50 hover:bg-orange-100",
+                            "flex w-full items-start gap-3 border-l-[3px] px-3 py-2.5 text-left transition-colors",
+                            item.session.platform === "zoom"
+                              ? "border-l-sky-600 bg-sky-50 hover:bg-sky-100"
+                              : "border-l-orange-600 bg-orange-50 hover:bg-orange-100",
                           )}
                           onClick={() => openSession(item.session.id)}
                           type="button"
@@ -817,7 +896,10 @@ export function InterviewCalendarView({
                     ) : (
                       <li key={item.booking.id}>
                         <button
-                          className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-orange-50"
+                          className={cn(
+                            "flex w-full items-start gap-3 border-l-[3px] px-3 py-2.5 text-left transition-colors hover:bg-orange-50",
+                            item.booking.platform === "zoom" ? "border-l-sky-300" : "border-l-orange-300",
+                          )}
                           onClick={() => openInterview(item.booking.id)}
                           type="button"
                         >
@@ -854,7 +936,7 @@ export function InterviewCalendarView({
                 </ul>
               )}
               {firstFree !== null ? (
-                <div className="border-t border-slate-100 px-3 py-2">
+                <div className="border-t border-slate-100 bg-slate-50/70 px-3 py-2">
                   <Action onClick={() => setCell({ dateKey: day, start: firstFree })} tone="quiet">
                     <Plus className="h-3.5 w-3.5" />
                     Book on this day
@@ -867,12 +949,17 @@ export function InterviewCalendarView({
       </ul>
 
       {!loading && bookings.length === 0 && sessions.length === 0 && !loadError ? (
-        <p className="border border-dashed border-slate-300 bg-white px-4 py-5 text-center text-[13px] text-slate-500">
-          No interviews this week.
-          {canBook
-            ? " Press a free time on the calendar (on a phone, Book on this day) to book someone from Phoenix or from outside, or to set up a Zoom session. Any CV's Schedule interview button books too."
-            : ""}
-        </p>
+        <section aria-label="No interviews this week" className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
+          <RecruitmentEmptyState
+            icon={<CalendarDays aria-hidden className="h-5 w-5" />}
+            message={
+              canBook
+                ? "Press a free time on the calendar (on a phone, Book on this day) to book someone from Phoenix or from outside, or to set up a Zoom session. Any CV's Schedule interview button books too."
+                : "Nothing is on the calendar for these five days."
+            }
+            title="No interviews this week"
+          />
+        </section>
       ) : null}
 
       {openBooking ? (
@@ -946,22 +1033,26 @@ function LinkBanner({ link, role }: { link: InterviewCalendarLinkView; role: Int
   const more =
     link.accessLevel === "editor" ? "book, move and cancel interviews" : link.accessLevel === "commenter" ? "leave notes on interviews" : null;
   return (
-    <section className="flex flex-col gap-2 border border-sky-200 border-l-[3px] border-l-sky-600 bg-sky-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0 text-[13px] text-slate-800">
+    <section
+      className={`flex flex-col gap-3 border border-sky-200 border-l-[3px] border-l-sky-600 bg-gradient-to-r from-sky-50 to-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${adminSoftDepthClassName}`}
+    >
+      <div className="flex min-w-0 items-start gap-3 text-[13px] text-slate-800">
+        <span aria-hidden className={`mt-0.5 hidden h-9 w-9 shrink-0 items-center justify-center border border-sky-200 bg-white text-sky-700 sm:inline-flex ${adminSoftDepthClassName}`}>
+          <Link2 className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
         <p className="inline-flex items-center gap-1.5 font-bold text-slate-900">
-          <Link2 className="h-4 w-4 text-sky-700" /> Opened from a shared link
+          <Link2 className="h-4 w-4 text-sky-700 sm:hidden" /> Opened from a shared link
         </p>
-        <p className="mt-0.5">
+        <p className="mt-0.5 break-words leading-5">
           {link.signedIn
             ? `It opens ${scope}. You are ${ACCESS_LEVEL_LABEL[role]} here.`
             : `It opens ${scope}, to view.${more ? ` Sign in to Phoenix to also ${more}.` : ""}${link.guestCvs ? "" : " The CVs open after signing in."}`}
         </p>
+        </div>
       </div>
       {link.signInHref ? (
-        <a
-          className="inline-flex shrink-0 items-center justify-center gap-1.5 border border-orange-700 bg-orange-600 px-3 py-2 text-[13px] font-bold leading-none text-white hover:bg-orange-700"
-          href={link.signInHref}
-        >
+        <a className={`${phxButtonAccentClassName} shrink-0 justify-center ${adminControlDepthClassName}`} href={link.signInHref}>
           <LogIn className="h-4 w-4" />
           Sign in
         </a>
@@ -979,8 +1070,8 @@ function SessionChip({ booked, onOpen, session }: { booked: number; onOpen: () =
   return (
     <button
       className={cn(
-        "pointer-events-auto block w-full border bg-white px-1.5 py-1 text-left transition-colors",
-        zoom ? "border-sky-300 hover:bg-sky-100" : "border-orange-300 hover:bg-orange-100",
+        "pointer-events-auto block w-full border border-l-[3px] bg-white px-1.5 py-1 text-left shadow-[0_1px_2px_rgba(15,23,42,0.08)] transition-colors",
+        zoom ? "border-sky-300 border-l-sky-600 hover:bg-sky-100" : "border-orange-300 border-l-orange-600 hover:bg-orange-100",
       )}
       onClick={onOpen}
       title="Open the session"
@@ -990,7 +1081,7 @@ function SessionChip({ booked, onOpen, session }: { booked: number; onOpen: () =
         <Users className="h-3 w-3" /> Session · {PLATFORM_LABEL[session.platform]}
       </span>
       <span className="block break-words text-[12px] font-bold leading-tight text-slate-900">{session.title ?? "Interview session"}</span>
-      <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10.5px] leading-tight text-slate-600">
+      <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10.5px] leading-tight tabular-nums text-slate-600">
         <span>{formatTimeRange(session.startMinutes, session.durationMinutes)}</span>
         <span>
           {booked} of {total} booked
@@ -1011,7 +1102,7 @@ function BookingChip({ booking, onOpen }: { booking: InterviewBooking; onOpen: (
   return (
     <button
       className={cn(
-        "group/chip pointer-events-auto block w-full border-l-[3px] px-1.5 py-1 text-left transition-colors",
+        "group/chip pointer-events-auto block w-full border-l-[3px] px-1.5 py-1 text-left shadow-[0_1px_2px_rgba(15,23,42,0.08)] transition-colors",
         zoom ? "border-l-sky-600 bg-sky-100 hover:bg-sky-200" : "border-l-orange-600 bg-orange-100 hover:bg-orange-200",
       )}
       onClick={onOpen}
@@ -1031,7 +1122,7 @@ function BookingChip({ booking, onOpen }: { booking: InterviewBooking; onOpen: (
         </span>
       ) : null}
       <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10.5px] leading-tight text-slate-600">
-        <span className="inline-flex items-center gap-0.5">
+        <span className="inline-flex items-center gap-0.5 tabular-nums">
           <PlatformIcon className="h-3 w-3" platform={booking.platform} />
           {formatTimeRange(booking.startMinutes, booking.durationMinutes)}
         </span>
@@ -1276,9 +1367,9 @@ function InterviewPanel({
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-orange-700">Interview</p>
-        <p className="mt-0.5 break-words text-[17px] font-bold text-slate-900">{booking.candidateName}</p>
+      <div className="border-l-[3px] border-l-orange-500 pl-3">
+        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-orange-700">Interview</p>
+        <p className="mt-0.5 break-words text-[18px] font-black leading-snug tracking-tight text-slate-950">{booking.candidateName}</p>
         {booking.jobTitle ? <p className="break-words text-[12px] font-semibold text-slate-700">Interviewed for {booking.jobTitle}</p> : null}
         {booking.candidateJobTitle && booking.candidateJobTitle !== booking.jobTitle ? (
           <p className="break-words text-[12px] text-slate-500">Applied for {booking.candidateJobTitle}</p>
@@ -1286,7 +1377,7 @@ function InterviewPanel({
         {booking.external ? <p className="text-[12px] text-slate-500">From outside Phoenix — kept on the calendar only, not in Recruitment.</p> : null}
       </div>
 
-      <dl className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 gap-y-2 text-[13px] text-slate-800">
+      <dl className={`grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 gap-y-2 border border-slate-200 bg-white p-3 text-[13px] text-slate-800 ${adminSoftDepthClassName}`}>
         <dt className="pt-0.5 text-slate-400">
           <CalendarDays aria-label="Day" className="h-4 w-4" />
         </dt>
@@ -1294,7 +1385,7 @@ function InterviewPanel({
         <dt className="pt-0.5 text-slate-400">
           <Clock3 aria-label="Time" className="h-4 w-4" />
         </dt>
-        <dd>
+        <dd className="tabular-nums">
           {formatTimeRange(booking.startMinutes, booking.durationMinutes)}{" "}
           <span className="text-slate-500">({formatDuration(booking.durationMinutes)})</span>
         </dd>
@@ -1395,7 +1486,11 @@ function InterviewPanel({
 
       {booking.canSetOutcome || booking.outcome ? (
         <section aria-label="How it went" className="border-t border-slate-200 pt-3">
-          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">How it went</p>
+          <PanelHeading
+            aside={interviewAwaitsOutcome(booking) ? <span className="text-[11px] font-black uppercase tracking-[0.06em] text-amber-700">Waiting</span> : null}
+          >
+            How it went
+          </PanelHeading>
           {booking.canSetOutcome ? (
             <>
               <div aria-label="Did they come" className="mt-1.5 flex flex-wrap gap-1.5" role="group">
@@ -1406,8 +1501,10 @@ function InterviewPanel({
                     <button
                       aria-pressed={chosen}
                       className={cn(
-                        "min-h-[44px] border px-3 py-1.5 text-[12px] font-bold leading-none disabled:opacity-50 lg:min-h-0 lg:px-2",
-                        chosen ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-800 hover:border-slate-500",
+                        "min-h-[44px] border px-3 py-1.5 text-[12px] font-bold leading-none transition-colors disabled:opacity-50 lg:min-h-0 lg:px-2",
+                        chosen
+                          ? "border-slate-900 bg-slate-900 text-white shadow-[inset_0_-2px_0_#f97316]"
+                          : "border-slate-300 bg-white text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:border-slate-500",
                       )}
                       disabled={busy !== null}
                       key={group}
@@ -1427,8 +1524,10 @@ function InterviewPanel({
                       <button
                         aria-pressed={chosen}
                         className={cn(
-                          "min-h-[44px] border px-3 py-1.5 text-[12px] font-bold leading-none disabled:opacity-50 lg:min-h-0 lg:px-2",
-                          chosen ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-800 hover:border-slate-500",
+                          "min-h-[44px] border px-3 py-1.5 text-[12px] font-bold leading-none transition-colors disabled:opacity-50 lg:min-h-0 lg:px-2",
+                          chosen
+                            ? "border-slate-900 bg-slate-900 text-white shadow-[inset_0_-2px_0_#f97316]"
+                            : "border-slate-300 bg-white text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:border-slate-500",
                         )}
                         disabled={busy !== null}
                         key={option}
@@ -1458,8 +1557,8 @@ function InterviewPanel({
 
       {canBook ? (
         confirmCancel ? (
-          <div className="border border-red-200 bg-red-50 p-3">
-            <p className="text-[12px] font-semibold text-red-800">
+          <div className="border border-red-200 border-l-[3px] border-l-red-600 bg-red-50 p-3">
+            <p className="break-words text-[12px] font-semibold text-red-800">
               Cancel this interview? It leaves the calendar with its notes
               {booking.sessionId ? ", and its slot in the session is free again" : booking.zoomJoinUrl ? ", and its Zoom meeting is deleted" : ""}.
             </p>
@@ -1468,7 +1567,7 @@ function InterviewPanel({
                 Keep it
               </Action>
               <button
-                className="inline-flex items-center gap-1.5 border border-red-700 bg-red-700 px-2 py-1.5 text-[12px] font-bold leading-none text-white hover:bg-red-800 disabled:opacity-50"
+                className={cn("inline-flex items-center gap-1.5 border px-2 py-1.5 text-[12px] font-bold leading-none disabled:opacity-50", phxButtonDangerDenseClassName)}
                 disabled={busy !== null}
                 onClick={() => void cancel()}
                 type="button"
@@ -1523,11 +1622,17 @@ function InterviewPanel({
       <ScorecardPanel api={api} booking={booking} onChanged={onChanged} />
 
       <section aria-label="Notes" className="border-t border-slate-200 pt-3">
-        <p className="mb-2 text-[12px] font-bold uppercase tracking-[0.06em] text-slate-700">
-          Notes{booking.comments.length > 0 ? ` (${booking.comments.length})` : ""}
-        </p>
+        <PanelHeading
+          aside={
+            booking.comments.length > 0 ? (
+              <span className="border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[11px] font-black tabular-nums text-slate-700">{booking.comments.length}</span>
+            ) : null
+          }
+        >
+          Notes
+        </PanelHeading>
         {booking.comments.length === 0 ? (
-          <p className="text-[12px] text-slate-500">No notes yet.</p>
+          <p className="border border-dashed border-slate-300 px-3 py-2 text-[12px] text-slate-500">No notes yet.</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {booking.comments.map((comment) => (

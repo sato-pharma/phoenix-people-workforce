@@ -6,12 +6,19 @@
 // shortlisted ... rejected", so that a new CV is easy to see. The rule that places a CV on a tab is
 // candidate-decision-tabs.ts; this file only draws it.
 //
-// The look is the pool's own Active / Red-flagged strip — the segmented control a screener already
-// knows — with two changes the six tabs force. It WRAPS instead of scrolling (the fits-the-screen
-// rule: six labels do not fit on one line at phone width, and a horizontal scroll is the bug), and it
-// has square edges throughout. Every tab always renders, even at zero, for the reason the pool's
-// strip gives: a tab that vanishes when it empties reads as a bug the day it comes back.
+// THE LOOK IS THE MODULE'S SEGMENTED CONTROL (2026-10-19 premium sweep): one recessed tray of square
+// segments, the chosen one lifted onto white with an orange underline and an orange count chip — the
+// same object as `RecruitmentTabBar` in recruitment-premium.tsx, drawn here by hand only because this
+// strip is a set of FILTER toggles (`aria-pressed`, a tooltip per pile) rather than a tablist. It
+// WRAPS instead of scrolling (the fits-the-screen rule: seven labels do not fit on one line at phone
+// width, and a horizontal scroll is the bug), and every corner is square. Every tab always renders,
+// even at zero, for the reason the pool's strip gives: a tab that vanishes when it empties reads as a
+// bug the day it comes back.
 
+import {
+  adminChipDepthClassName,
+  adminRecessedDepthClassName,
+} from "@/components/admin/admin-design-tokens";
 import {
   candidateDecisionTabDescriptions,
   candidateDecisionTabLabels,
@@ -35,7 +42,7 @@ export function CandidateDecisionTabStrip({
   return (
     <div
       aria-label="Decision"
-      className={cn("flex flex-wrap border-l border-t border-phx-line", className)}
+      className={cn(`flex flex-wrap gap-1 border border-slate-200 bg-slate-100/80 p-1 ${adminRecessedDepthClassName}`, className)}
       role="group"
     >
       {candidateDecisionTabs.map((tab) => {
@@ -44,8 +51,11 @@ export function CandidateDecisionTabStrip({
           <button
             aria-pressed={isActive}
             className={cn(
-              "inline-flex h-9 items-center gap-1.5 whitespace-nowrap border-b border-r border-phx-line px-3 text-xs font-semibold transition",
-              isActive ? "bg-orange-50 text-phx-accent-press" : "bg-white text-slate-600 hover:bg-slate-50",
+              "relative inline-flex min-h-9 grow items-center justify-center gap-2 whitespace-nowrap px-3 py-1.5 text-xs font-bold transition-colors sm:grow-0",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-1",
+              isActive
+                ? `bg-white text-slate-950 ${adminChipDepthClassName}`
+                : "text-slate-600 hover:bg-white/70 hover:text-slate-900",
             )}
             key={tab}
             onClick={() => onSelect(tab)}
@@ -53,7 +63,15 @@ export function CandidateDecisionTabStrip({
             type="button"
           >
             {candidateDecisionTabLabels[tab]}
-            <span className="tabular-nums opacity-70">{counts[tab]}</span>
+            <span
+              className={cn(
+                "border px-1.5 text-phx-2xs font-black tabular-nums",
+                isActive ? "border-orange-200 bg-orange-50 text-orange-700" : "border-slate-200/80 bg-white/80 text-slate-500",
+              )}
+            >
+              {counts[tab]}
+            </span>
+            {isActive ? <span aria-hidden="true" className="absolute inset-x-2 bottom-0 h-0.5 bg-orange-500" /> : null}
           </button>
         );
       })}

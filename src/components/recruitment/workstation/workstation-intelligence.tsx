@@ -56,6 +56,12 @@ import {
   type StoredCvExtraction,
 } from "@/lib/recruitment/cv-extraction-fields";
 import { WorkstationNotesTab, WorkstationTimelineTab } from "@/components/recruitment/workstation/workstation-history-tabs";
+import {
+  adminChipDepthClassName,
+  adminControlDepthClassName,
+  adminRecessedDepthClassName,
+  adminSoftDepthClassName,
+} from "@/components/admin/admin-design-tokens";
 import { cn } from "@/lib/utils";
 
 export const intelligenceTabs = ["summary", "cv", "timeline", "notes"] as const;
@@ -116,9 +122,14 @@ export function WorkstationIntelligencePanel({
   tab: IntelligenceTab;
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col border-l border-phx-line bg-white">
+    // A CARD ON THE COCKPIT'S TRAY (2026-10-19): the soft depth, a full hairline, the dark pane band.
+    <div className={`flex h-full min-h-0 w-full flex-col overflow-hidden border border-phx-line bg-white ${adminSoftDepthClassName}`}>
       <PaneHead collapseTo="right" foldLabel="intelligence" onCollapse={onCollapse} title="Candidate intelligence" />
-      <div className="flex shrink-0 border-b border-phx-line bg-phx-surface-2">
+      {/* THE HOUSE TAB BAR, at a pane's size — the same object as the recruitment kit's
+          `RecruitmentTabBar`: a recessed tray of square segments, the chosen one lifted onto white
+          with the accent rule under it. Kept as pressed buttons rather than the kit's tablist,
+          because these four drive the panel below them and screen readers already know them so. */}
+      <div className={cn("flex shrink-0 gap-1 border-b border-phx-line bg-phx-surface-2 p-1", adminRecessedDepthClassName)}>
         {intelligenceTabs.map((key) => (
           <button
             /* The label is `hidden sm:inline`, so below the `sm` breakpoint this button is an icon
@@ -127,14 +138,10 @@ export function WorkstationIntelligencePanel({
             aria-label={tabLabels[key]}
             aria-pressed={tab === key}
             className={cn(
-              // The chosen tab sits on WHITE, which is the ground of the panel below it, so the tab
-              // and its content read as one surface and the unchosen tabs as the recessed strip they
-              // are. That is the whole of the depth here — no shadow, no radius, and the 2px accent
-              // rule is the only colour the strip spends.
-              "flex flex-1 items-center justify-center gap-1 border-b-2 px-1 py-2 text-[11px] font-bold uppercase leading-none tracking-[0.06em] transition-colors",
+              "relative flex flex-1 items-center justify-center gap-1 px-1 py-2 text-[11px] font-bold uppercase leading-none tracking-[0.06em] transition-colors",
               tab === key
-                ? "border-b-phx-accent bg-white text-phx-accent-press"
-                : "border-b-transparent text-phx-ink-faint hover:bg-white hover:text-phx-ink-2",
+                ? cn("bg-white text-phx-accent-press", adminChipDepthClassName)
+                : "text-phx-ink-faint hover:bg-white/70 hover:text-phx-ink-2",
             )}
             key={key}
             onClick={() => onTabChange(key)}
@@ -143,10 +150,13 @@ export function WorkstationIntelligencePanel({
             {tabIcons[key]}
             <span className="hidden sm:inline">{tabLabels[key]}</span>
             {key === "notes" && noteCount > 0 ? (
-              <span className="border border-phx-line bg-phx-paper px-1 text-[10px] tabular-nums text-phx-ink-2">
+              <span
+                className={`border border-phx-line bg-phx-paper px-1 text-[10px] tabular-nums text-phx-ink-2 ${adminChipDepthClassName}`}
+              >
                 {noteCount}
               </span>
             ) : null}
+            {tab === key ? <span aria-hidden className="absolute inset-x-1.5 bottom-0 h-0.5 bg-phx-accent" /> : null}
           </button>
         ))}
       </div>
@@ -165,7 +175,9 @@ export function WorkstationIntelligencePanel({
               Reading the record…
             </p>
           ) : (
-            <EmptyNote>Pick a candidate from the list to read their record.</EmptyNote>
+            <EmptyNote icon={<Brain aria-hidden className="h-5 w-5" />} title="No candidate open">
+              Pick a candidate from the list to read their record.
+            </EmptyNote>
           )
         ) : tab === "summary" ? (
           <SummaryTab
@@ -543,7 +555,7 @@ function CvDataTab({
                         them one at a time, looking at the document that produced them. */}
                     {onAccept && unapplied.has(row.key) ? (
                       <button
-                        className="mt-1 border border-phx-accent-line bg-phx-accent-soft px-2 py-0.5 text-[11px] font-bold text-phx-accent-press transition hover:bg-phx-accent hover:text-white"
+                        className={`mt-1 border border-phx-accent-line bg-phx-accent-soft px-2 py-0.5 text-[11px] font-bold text-phx-accent-press transition hover:bg-phx-accent hover:text-white ${adminControlDepthClassName}`}
                         onClick={() => onAccept(row.key, unapplied.get(row.key) ?? null)}
                         title="Write this reading onto the candidate record"
                         type="button"

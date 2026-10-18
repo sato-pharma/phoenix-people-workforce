@@ -4,15 +4,24 @@ import { BriefcaseBusiness, Building2, Download, GraduationCap, Search, UsersRou
 import Link from "next/link";
 import * as React from "react";
 
-import { AdminPageHero, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
+import { AdminInsightChip, AdminPageHero, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
+import {
+  adminChipDepthClassName,
+  adminControlDepthClassName,
+  adminRecessedDepthClassName,
+} from "@/components/admin/admin-design-tokens";
 import {
   PortalDesktopTable,
-  PortalEmptyState,
   PortalRecordCard,
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
-import { Badge } from "@/components/ui/badge";
+import {
+  RecruitmentEmptyState,
+  RecruitmentPill,
+  recruitmentToolbarClassName,
+  type RecruitmentPillTone,
+} from "@/components/recruitment/recruitment-premium";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDurationMonths, type CvExperienceStatus } from "@/lib/cv/cv-database";
@@ -101,10 +110,10 @@ function experienceLabel(status: CvExperienceStatus) {
   return "Not stated";
 }
 
-function experienceBadgeVariant(status: CvExperienceStatus) {
-  if (status === "experienced") return "success" as const;
-  if (status === "fresh") return "neutral" as const;
-  return "warning" as const;
+function experiencePillTone(status: CvExperienceStatus): RecruitmentPillTone {
+  if (status === "experienced") return "emerald";
+  if (status === "fresh") return "slate";
+  return "amber";
 }
 
 function experienceCardAccent(status: CvExperienceStatus) {
@@ -279,10 +288,10 @@ async function downloadWorkbook(rows: CvLibraryRow[], fileName: string) {
 
 function filterButtonClassName(active: boolean) {
   return cn(
-    "h-10 rounded-2xl border px-3 text-xs font-bold transition",
+    "inline-flex min-h-9 items-center border-b-2 px-3 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400",
     active
-      ? "border-phx-accent bg-phx-accent-soft text-phx-accent-press shadow-sm"
-      : "border-[#D7E0EA] bg-white/95 text-phx-ink-soft hover:bg-phx-paper",
+      ? cn("border-orange-500 bg-white text-slate-950", adminChipDepthClassName)
+      : "border-transparent text-slate-600 hover:bg-white/70 hover:text-slate-900",
   );
 }
 
@@ -418,7 +427,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
       <AdminPageHero
         actions={
           <Button
-            className="rounded-2xl px-3 py-2 text-xs shadow-sm"
+            className={cn("px-3 py-2 text-xs", adminControlDepthClassName, "disabled:shadow-none")}
             disabled={filteredRows.length === 0}
             onClick={() => void downloadWorkbook(filteredRows, "phoenix-cv-database-export.xlsx")}
             variant="secondary"
@@ -427,8 +436,13 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
             Download what is on screen
           </Button>
         }
+        badges={
+          <AdminInsightChip tone="orange">
+            {rows.length === 1 ? "1 CV on file" : `${rows.length} CVs on file`}
+          </AdminInsightChip>
+        }
         description="Every CV that has reached Phoenix, read as a library: what each person does now, how long they have sold pharmaceuticals, where they studied, where they live and where they asked to work. The same records as the Recruitment pool — open any row to read the CV itself."
-        eyebrow="People Management"
+        eyebrow="Recruitment"
         icon={<BriefcaseBusiness className="h-4 w-4" />}
         title="CV Database"
       />
@@ -467,7 +481,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
       <AdminTableShell
         action={
           <Button
-            className="h-10 gap-2 rounded-2xl shadow-sm"
+            className={cn("h-10 gap-2", adminControlDepthClassName, "disabled:shadow-none")}
             disabled={!hasActiveFilters}
             onClick={clearFilters}
             variant="secondary"
@@ -479,7 +493,8 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
         description="Search names, roles, employers, universities and areas. Region is where someone will work; Governorate is where they live."
         title="Find someone"
       >
-        <div className="grid gap-3 p-4 lg:grid-cols-[1.4fr_auto] lg:items-center">
+        <div className="p-4">
+        <div className={cn(recruitmentToolbarClassName, "grid lg:grid-cols-[1.4fr_auto] lg:items-center")}>
           <label className="relative block">
             <span className="sr-only">Search the CV database</span>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-soft" />
@@ -490,24 +505,31 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
               value={query}
             />
           </label>
-          <div className="flex flex-wrap gap-2">
-            {(
-              [
-                ["all", "All"],
-                ["experienced", "Experienced"],
-                ["fresh", "Fresh"],
-                ["unknown", "Not stated"],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                className={filterButtonClassName(experienceFilter === value)}
-                key={value}
-                onClick={() => setExperienceFilter(value)}
-                type="button"
-              >
-                {label}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <div
+              aria-label="Medical sales experience"
+              className={cn("flex flex-wrap gap-1 border border-slate-200 bg-slate-100/80 p-1", adminRecessedDepthClassName)}
+              role="group"
+            >
+              {(
+                [
+                  ["all", "All"],
+                  ["experienced", "Experienced"],
+                  ["fresh", "Fresh"],
+                  ["unknown", "Not stated"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  aria-pressed={experienceFilter === value}
+                  className={filterButtonClassName(experienceFilter === value)}
+                  key={value}
+                  onClick={() => setExperienceFilter(value)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <label className="sr-only" htmlFor="cv-database-role">
               Role
             </label>
@@ -639,20 +661,27 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
             ) : null}
           </div>
         </div>
+        </div>
       </AdminTableShell>
 
       <AdminTableShell
         action={
-          <Badge className="px-3 py-1 text-xs" variant="neutral">
+          <span
+            className={cn(
+              "inline-flex items-center border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs font-bold tabular-nums text-orange-800",
+              adminChipDepthClassName,
+            )}
+          >
             {filteredRows.length} of {rows.length} shown
-          </Badge>
+          </span>
         }
         description="The same candidates as the Recruitment pool. Open one to read the CV and its extracted fields."
         title="Candidate records"
       >
         <PortalResponsiveDataList
           empty={
-            <PortalEmptyState
+            <RecruitmentEmptyState
+              icon={<Search aria-hidden="true" className="h-5 w-5" />}
               message={
                 rows.length === 0
                   ? "A CV sent to the recruitment inbox or the WhatsApp number appears here automatically."
@@ -668,7 +697,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
               accent={experienceCardAccent(row.medicalSales)}
               meta={`CV received ${emptyText(row.receivedOn)}`}
               status={
-                <Badge variant={experienceBadgeVariant(row.medicalSales)}>{experienceLabel(row.medicalSales)}</Badge>
+                <RecruitmentPill tone={experiencePillTone(row.medicalSales)}>{experienceLabel(row.medicalSales)}</RecruitmentPill>
               }
               title={emptyText(row.name)}
             >
@@ -754,9 +783,9 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
                         </div>
                       ) : null}
                       <span className="mt-1.5 inline-flex items-center gap-2 whitespace-nowrap">
-                        <Badge variant={experienceBadgeVariant(row.medicalSales)}>
+                        <RecruitmentPill tone={experiencePillTone(row.medicalSales)}>
                           {experienceLabel(row.medicalSales)}
-                        </Badge>
+                        </RecruitmentPill>
                         {row.medicalSalesDuration ? <span>{row.medicalSalesDuration}</span> : null}
                       </span>
                       {row.medicalSalesEmployer ? (

@@ -281,8 +281,11 @@ function runSectionTests() {
   assert.deepEqual(titles(full), PRINTED_SECTIONS, "a full record prints all nine sections, in the screen's order");
 
   // The paper follows the PAGE, not a list written here: read the page's own top-level section titles.
+  // Since the 2026-10-19 premium sweep each top-level section is a RecordPanel (the module's dark
+  // band, folding); the nested record subsections are still CollapsibleSections titled by an
+  // expression, which this reader skips exactly as it always has.
   const page = stripComments(read("src/components/recruitment/candidate-record-page.tsx"));
-  const pageTitles = [...page.matchAll(/<CollapsibleSection\b[^>]*?\btitle="([^"]+)"/g)].map((match) => match[1]!);
+  const pageTitles = [...page.matchAll(/<(?:CollapsibleSection|RecordPanel)\b[^>]*?\btitle="([^"]+)"/g)].map((match) => match[1]!);
   assert.ok(pageTitles.length >= 10, `the page's sections were read (${pageTitles.join(" | ")})`);
   assert.deepEqual(
     pageTitles.filter((title) => title !== LEFT_OUT),

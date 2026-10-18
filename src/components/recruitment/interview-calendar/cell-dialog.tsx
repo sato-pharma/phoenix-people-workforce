@@ -49,6 +49,7 @@ import { PanelPicker } from "./panel-picker";
 import { PersonPicker, initialPersonChoice, personLabel, personProblem, submitBooking, type PersonChoice } from "./person-picker";
 import {
   phxFieldClassName,
+  phxLabelClassName,
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
@@ -99,7 +100,9 @@ export function PlatformChoice({
             aria-pressed={selected}
             className={cn(
               "flex items-center gap-2.5 border px-3 py-2.5 text-left transition-colors",
-              selected ? "border-orange-600 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-800 hover:border-orange-300",
+              selected
+                ? "border-orange-600 bg-orange-50 text-orange-800 shadow-[inset_0_0_0_1px_#ea580c]"
+                : "border-slate-200 bg-white text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:border-orange-300",
             )}
             key={option.platform}
             onClick={() => onChange(option.platform)}
@@ -120,7 +123,7 @@ export function PlatformChoice({
 }
 
 function FieldLabel({ children }: { children: string }) {
-  return <span className="mb-1 block text-[12px] font-bold text-slate-700">{children}</span>;
+  return <span className={phxLabelClassName}>{children}</span>;
 }
 
 type Done =
@@ -298,13 +301,13 @@ export function CellDialog({
     return (
       <CalendarDialog eyebrow={formatDayLong(dateKey)} onClose={onClose} title={booking ? "Interview booked" : "Interview session made"} width="sm">
         <div className="flex flex-col gap-4">
-          <div className="flex items-start gap-3 border-l-[3px] border-l-emerald-600 bg-emerald-50 px-4 py-3">
+          <div className="flex items-start gap-3 border border-emerald-200 border-l-[3px] border-l-emerald-600 bg-emerald-50 px-4 py-3">
             <CalendarCheck2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
             <div className="min-w-0 text-[13px] text-slate-700">
               {booking ? (
                 <>
                   <p className="break-words text-[14px] font-bold text-slate-900">{booking.candidateName}</p>
-                  <p>
+                  <p className="tabular-nums">
                     {formatTimeRange(booking.startMinutes, booking.durationMinutes)} · {formatDuration(booking.durationMinutes)} · {PLATFORM_LABEL[booking.platform]}
                   </p>
                   {booking.interviewerName ? <p className="mt-1 text-[12px] text-slate-600">Interviewer: {booking.interviewerName}</p> : null}
@@ -312,7 +315,7 @@ export function CellDialog({
               ) : session ? (
                 <>
                   <p className="break-words text-[14px] font-bold text-slate-900">{session.title ?? "Interview session"}</p>
-                  <p>
+                  <p className="tabular-nums">
                     {formatTimeRange(session.startMinutes, session.durationMinutes)} · {sessionSlotStarts(session).length} slots of {session.slotMinutes} min ·{" "}
                     {PLATFORM_LABEL[session.platform]}
                   </p>
@@ -359,7 +362,7 @@ export function CellDialog({
       eyebrow="Book on the calendar"
       footer={
         <>
-          <p className="min-w-0 text-[12px] text-slate-600">
+          <p className="min-w-0 break-words text-[12px] tabular-nums text-slate-600">
             {error ? <span className="font-semibold text-red-700">{error}</span> : problem ? problem : <span className="font-semibold text-slate-900">{summary}</span>}
           </p>
           <div className="flex shrink-0 justify-end gap-2">
@@ -393,9 +396,9 @@ export function CellDialog({
         />
 
         {onTheDay.length > 0 ? (
-          <div className="border-l-[3px] border-l-amber-500 bg-amber-50 px-3 py-2 text-[12px] text-slate-700">
+          <div className="border border-amber-200 border-l-[3px] border-l-amber-500 bg-amber-50 px-3 py-2 text-[12px] text-slate-700">
             <p className="font-bold text-slate-900">Already on this day</p>
-            <ul className="mt-0.5">
+            <ul className="mt-0.5 tabular-nums">
               {onTheDay.map((line) => (
                 <li className="break-words" key={line.key}>
                   {line.text}
@@ -447,7 +450,7 @@ export function CellDialog({
                     ))}
                   </select>
                 </div>
-                <p className="mt-1 text-[12px] font-semibold text-slate-700">{formatTimeRange(start, duration)}</p>
+                <p className="mt-1.5 text-[13px] font-bold tabular-nums text-slate-900">{formatTimeRange(start, duration)}</p>
               </div>
               <div>
                 <FieldLabel>Where</FieldLabel>

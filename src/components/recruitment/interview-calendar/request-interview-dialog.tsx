@@ -118,7 +118,7 @@ export function RequestInterviewDialog({
       eyebrow="Request an interview"
       footer={
         <>
-          <p className="min-w-0 text-[12px] text-slate-500">
+          <p className="min-w-0 break-words text-[12px] text-slate-600">
             {problem ?? `Ready — ${readyItems.length} ${readyItems.length === 1 ? "CV" : "CVs"} for ${interviewer?.name} on ${day ? formatDayLong(day) : ""}.`}
           </p>
           <div className="flex shrink-0 gap-2">
@@ -157,14 +157,17 @@ export function RequestInterviewDialog({
         </section>
 
         <section>
-          <PanelHeading aside={<span className="text-[11px] text-slate-500">{items.length} of {MAX_ITEMS}</span>}>The CVs</PanelHeading>
+          <PanelHeading aside={<span className="text-[11px] font-bold tabular-nums text-slate-500">{items.length} of {MAX_ITEMS}</span>}>The CVs</PanelHeading>
           <ul className="flex flex-col gap-3">
             {items.map((item, index) => (
               <li className={`border border-slate-200 bg-slate-50/60 p-3 ${adminRecessedDepthClassName}`} key={item.key}>
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-[12px] font-bold text-slate-700">
-                    CV {index + 1}
-                    {personLabel(item.choice) ? <span className="font-semibold text-slate-500"> — {personLabel(item.choice)}</span> : null}
+                  <p className="flex min-w-0 flex-wrap items-center gap-x-2 text-[12px] font-black uppercase tracking-[0.06em] text-slate-800">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span aria-hidden className="inline-block h-3 w-[3px] bg-orange-500" />
+                      CV {index + 1}
+                    </span>
+                    {personLabel(item.choice) ? <span className="break-words font-semibold normal-case tracking-normal text-slate-500"> — {personLabel(item.choice)}</span> : null}
                   </p>
                   {items.length > 1 ? (
                     <button

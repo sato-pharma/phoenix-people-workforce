@@ -26,8 +26,9 @@ import { cn } from "@/lib/utils";
 
 import { calendarApi, reasonText } from "./calendar-api";
 import { ErrorLine, NoteLine, PanelHeading, Segmented, Switch } from "./calendar-dialog";
-import { phxSelectClassName } from "@/components/ui/form-tokens";
-import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
+import { phxLabelClassName, phxSelectClassName } from "@/components/ui/form-tokens";
+import { adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { RecruitmentPill } from "@/components/recruitment/recruitment-premium";
 
 const LEVEL_WITH_LINK: Record<InterviewCalendarAccessLevel, string> = {
   commenter: "Anyone with the link sees the calendar and opens its CVs; after signing in to Phoenix they can also leave notes.",
@@ -121,7 +122,7 @@ export function CopyLinkSection({ weekStart }: { weekStart: string }) {
       <div className={`border border-slate-200 bg-slate-50 p-3 ${adminRecessedDepthClassName}`}>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
-            <span className="mb-1 block text-[12px] font-bold text-slate-700">Anyone with the link is</span>
+            <span className={phxLabelClassName}>Anyone with the link is</span>
             <select className={selectClass} onChange={(event) => setLevel(event.target.value as InterviewCalendarAccessLevel)} value={level}>
               {INTERVIEW_CALENDAR_ACCESS_LEVELS.map((entry) => (
                 <option key={entry} value={entry}>
@@ -131,7 +132,7 @@ export function CopyLinkSection({ weekStart }: { weekStart: string }) {
             </select>
           </label>
           <div>
-            <span className="mb-1 block text-[12px] font-bold text-slate-700">It opens</span>
+            <span className={phxLabelClassName}>It opens</span>
             <Segmented<"week" | "all">
               label="What the link opens"
               onChange={setScope}
@@ -144,7 +145,7 @@ export function CopyLinkSection({ weekStart }: { weekStart: string }) {
             <p className="mt-1 text-[11px] text-slate-500">{scope === "week" ? `The week of ${formatWeekRange(weekStart)}.` : "Every week, past and future."}</p>
           </div>
         </div>
-        <p className="mt-2 text-[11px] text-slate-600">{LEVEL_WITH_LINK[level]}</p>
+        <p className="mt-2 break-words text-[11px] leading-5 text-slate-600">{LEVEL_WITH_LINK[level]}</p>
         <div className="mt-3">
           <Switch
             checked={guestCvs}
@@ -185,13 +186,23 @@ export function CopyLinkSection({ weekStart }: { weekStart: string }) {
           </li>
         ) : (
           links.map((link) => (
-            <li className={cn("border p-3", link.isActive ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50")} key={link.id}>
+            <li
+              className={
+                link.isActive
+                  ? `border border-slate-200 border-l-[3px] border-l-orange-500 bg-white p-3 ${adminSoftDepthClassName}`
+                  : `border border-slate-200 bg-slate-50 p-3 ${adminRecessedDepthClassName}`
+              }
+              key={link.id}
+            >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-[13px] font-bold text-slate-900">
-                    {ACCESS_LEVEL_LABEL[link.accessLevel]} · {scopeText(link)}
+                  <p className="flex flex-wrap items-center gap-2 text-[13px] font-bold text-slate-900">
+                    <RecruitmentPill tone={link.isActive ? "emerald" : "slate"}>{link.isActive ? "On" : "Off"}</RecruitmentPill>
+                    <span className="break-words">
+                      {ACCESS_LEVEL_LABEL[link.accessLevel]} · {scopeText(link)}
+                    </span>
                   </p>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="mt-0.5 break-words text-[11px] tabular-nums text-slate-500">
                     {link.isActive ? "On" : "Switched off — it opens nothing"} · made {stamp(link.createdAt)}
                     {link.createdByName ? ` by ${link.createdByName}` : ""} ·{" "}
                     {link.useCount === 0 ? "not opened yet" : `opened ${link.useCount} ${link.useCount === 1 ? "time" : "times"}, last ${stamp(link.lastUsedAt)}`}

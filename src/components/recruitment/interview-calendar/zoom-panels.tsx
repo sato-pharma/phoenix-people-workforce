@@ -12,6 +12,7 @@ import { Check, ClipboardCopy, ListChecks, Loader2, MessageCircle, Plus, Refresh
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { phxWhatsAppShareButtonClassName } from "@/components/ui/brand-tokens";
+import { RecruitmentPill, type RecruitmentPillTone } from "@/components/recruitment/recruitment-premium";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import {
   whatsAppShareUrl,
@@ -29,7 +30,7 @@ import { type CalendarApi, reasonText } from "./calendar-api";
 import { CalendarDialog, ErrorLine, NoteLine, PanelHeading } from "./calendar-dialog";
 import { PollEditor, PollSetsDialog } from "./poll-editor";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
-import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 export type MeetingTarget = { kind: "booking" | "session"; id: string };
 
@@ -161,10 +162,10 @@ function InvitationPanel({ api, hasMeeting, target }: { api: CalendarApi; hasMee
 
 // ── Polls ──────────────────────────────────────────────────────────────────────────────────────
 
-const POLL_STATUS: Record<InterviewPoll["status"], { label: string; className: string }> = {
-  created: { className: "text-emerald-700", label: "On the Zoom meeting" },
-  failed: { className: "text-red-700", label: "Zoom refused it" },
-  pending: { className: "text-amber-700", label: "Waiting for the meeting" },
+const POLL_STATUS: Record<InterviewPoll["status"], { label: string; tone: RecruitmentPillTone }> = {
+  created: { label: "On the Zoom meeting", tone: "emerald" },
+  failed: { label: "Zoom refused it", tone: "rose" },
+  pending: { label: "Waiting for the meeting", tone: "amber" },
 };
 
 function PollsPanel({
@@ -265,19 +266,21 @@ function PollsPanel({
       {polls === null ? (
         <p className="text-[12px] text-slate-500">Reading…</p>
       ) : polls.length === 0 ? (
-        <p className="text-[12px] text-slate-500">No polls on this meeting.</p>
+        <p className="border border-dashed border-slate-300 px-3 py-2 text-[12px] text-slate-500">No polls on this meeting.</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {polls.map((poll) => (
-            <li className="border border-slate-200 px-3 py-2" key={poll.id}>
+            <li className={`border border-slate-200 bg-white px-3 py-2 ${adminSoftDepthClassName}`} key={poll.id}>
               <div className="flex items-start justify-between gap-2">
                 <span className="min-w-0">
                   <span className="block break-words text-[13px] font-semibold text-slate-900">{poll.title}</span>
-                  <span className="block text-[11px] text-slate-500">
+                  <span className="block text-[11px] tabular-nums text-slate-500">
                     {poll.questions.length} {poll.questions.length === 1 ? "question" : "questions"}
                     {poll.fromSetName ? ` · from “${poll.fromSetName}”` : ""}
                   </span>
-                  <span className={cn("block text-[11px] font-semibold", POLL_STATUS[poll.status].className)}>{POLL_STATUS[poll.status].label}</span>
+                  <span className="mt-1 block">
+                    <RecruitmentPill tone={POLL_STATUS[poll.status].tone}>{POLL_STATUS[poll.status].label}</RecruitmentPill>
+                  </span>
                   {poll.error ? <span className="block break-words text-[11px] text-red-700">{poll.error}</span> : null}
                 </span>
                 {canBook ? (
@@ -420,7 +423,7 @@ function ReportPanel({ api, hasMeeting, target }: { api: CalendarApi; hasMeeting
       ) : (
         <div className="flex flex-col gap-4">
           {insights.startedAt || insights.endedAt ? (
-            <p className="text-[12px] text-slate-600">
+            <p className="text-[12px] font-semibold tabular-nums text-slate-700">
               Held {cairoTime(insights.startedAt)}
               {insights.endedAt ? ` to ${cairoTime(insights.endedAt)}` : ""} (Cairo)
             </p>
@@ -428,7 +431,7 @@ function ReportPanel({ api, hasMeeting, target }: { api: CalendarApi; hasMeeting
           <Attendance part={insights.attendance} />
           <PollAnswers part={insights.polls} />
           <Summary part={insights.summary} />
-          {insights.fetchedAt ? <p className="text-[11px] text-slate-400">Read from Zoom {cairoStamp(insights.fetchedAt)}</p> : null}
+          {insights.fetchedAt ? <p className="text-[11px] tabular-nums text-slate-400">Read from Zoom {cairoStamp(insights.fetchedAt)}</p> : null}
         </div>
       )}
       {error ? <div className="mt-2"><ErrorLine>{error}</ErrorLine></div> : null}
@@ -438,8 +441,8 @@ function ReportPanel({ api, hasMeeting, target }: { api: CalendarApi; hasMeeting
 
 function PartHeading({ icon, label }: { icon: ReactNode; label: string }) {
   return (
-    <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-bold text-slate-800">
-      <span className="text-slate-400">{icon}</span>
+    <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-black text-slate-800">
+      <span className="text-orange-600">{icon}</span>
       {label}
     </p>
   );
@@ -451,14 +454,14 @@ function Attendance({ part }: { part: InterviewZoomInsights["attendance"] }) {
     <div>
       <PartHeading icon={<Users className="h-3.5 w-3.5" />} label={`Who attended${people.length > 0 ? ` (${people.length})` : ""}`} />
       {people.length === 0 ? (
-        <p className="text-[12px] text-slate-500">{part.note ?? "Nobody joined."}</p>
+        <p className="break-words text-[12px] text-slate-500">{part.note ?? "Nobody joined."}</p>
       ) : (
-        <ul className="divide-y divide-slate-100 border border-slate-200">
+        <ul className={`divide-y divide-slate-100 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
           {people.map((person, index) => (
             <li className="px-3 py-2" key={`${person.name}-${index}`}>
               <p className="break-words text-[13px] font-semibold text-slate-900">{person.name}</p>
               {person.email ? <p className="break-all text-[11px] text-slate-500">{person.email}</p> : null}
-              <p className="text-[11px] text-slate-600">
+              <p className="text-[11px] tabular-nums text-slate-600">
                 {person.joinedAt ? `Joined ${cairoTime(person.joinedAt)}` : ""}
                 {person.leftAt ? ` · left ${cairoTime(person.leftAt)}` : ""} · in the meeting {spent(person.seconds)}
               </p>
@@ -478,11 +481,11 @@ function PollAnswers({ part }: { part: InterviewZoomInsights["polls"] }) {
     <div>
       <PartHeading icon={<ListChecks className="h-3.5 w-3.5" />} label="Poll answers" />
       {answers.length === 0 ? (
-        <p className="text-[12px] text-slate-500">{part.note ?? "No poll was answered."}</p>
+        <p className="break-words text-[12px] text-slate-500">{part.note ?? "No poll was answered."}</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {[...byQuestion.entries()].map(([question, rows]) => (
-            <li className="border border-slate-200 px-3 py-2" key={question}>
+            <li className={`border border-slate-200 bg-white px-3 py-2 ${adminSoftDepthClassName}`} key={question}>
               <p className="break-words text-[12px] font-bold text-slate-800">{question}</p>
               <ul className="mt-1 flex flex-col gap-0.5">
                 {rows.map((row, index) => (
@@ -505,9 +508,9 @@ function Summary({ part }: { part: InterviewZoomInsights["summary"] }) {
     <div>
       <PartHeading icon={<Sparkles className="h-3.5 w-3.5" />} label="AI summary" />
       {!summary ? (
-        <p className="text-[12px] text-slate-500">{part.note ?? "Zoom has no summary for this meeting."}</p>
+        <p className="break-words text-[12px] text-slate-500">{part.note ?? "Zoom has no summary for this meeting."}</p>
       ) : (
-        <div className="flex flex-col gap-2 border-l-[3px] border-l-sky-600 bg-sky-50/60 px-3 py-2 text-[12px] text-slate-800">
+        <div className="flex flex-col gap-2 border border-sky-200 border-l-[3px] border-l-sky-600 bg-sky-50/60 px-3 py-2 text-[12px] text-slate-800">
           {summary.title ? <p className="font-bold">{summary.title}</p> : null}
           {summary.overview ? <p className="whitespace-pre-wrap break-words">{summary.overview}</p> : null}
           {summary.details.map((detail, index) => (

@@ -85,17 +85,19 @@ const PINNED_NOWRAP = new Set<string>([
   // `flex-wrap` row, so it wraps as a unit rather than widening the row. Measured 2026-09-12: the
   // page stayed at 375 with it present.
   'candidate-folders-tab.tsx :: filed :: cairoDateTime(candidate.folder.filedAt) | candidate.folder.filedByHrId ? ` by ${personLabel(candidate.folder.filedByName, UNNAMED_FILER_LABEL)}` : ""',
-  // A fixed section heading, not a sentence — no full stop, and its wording is not data.
-  "candidate-folders-tab.tsx :: They told us where they belong :: ",
+  // "They told us where they belong" lost its class in the 2026-10-19 premium sweep: it is now the
+  // title on a panel's dark band, set in spaced capitals, where held at `whitespace-nowrap` it would
+  // take about the full width of a phone with nothing left beside it. A heading that wraps is the fix.
   "candidate-folders-tab.tsx ::  :: group.label",
   'candidate-folders-tab.tsx ::  :: group.names.length | group.names.length === 1 ? "CV" : "CVs"',
   "candidate-folders-tab.tsx ::  :: candidateDisplayName(row.fullName)",
   "candidate-folders-tab.tsx ::  :: folder.candidates.length",
 
   // ── background-review-panel.tsx ──────────────────────────────────────────────────────────────
-  // Also a heading. The SENTENCE beside it — "Nobody here reaches a district manager until you
-  // answer." — was 314px inside a 349px row, 35px from breaking, and lost its class on 2026-09-12.
-  "background-review-panel.tsx :: Degrees waiting for you to check :: ",
+  // The SENTENCE under the heading — "Nobody here reaches a district manager until you answer." —
+  // was 314px inside a 349px row, 35px from breaking, and lost its class on 2026-09-12. The heading
+  // itself, "Degrees waiting for you to check", lost its class in the 2026-10-19 premium sweep for
+  // the same reason as "They told us where they belong" above: it is a band title in spaced capitals.
   'background-review-panel.tsx ::  :: total | total === 1 ? "CV" : "CVs"',
   "background-review-panel.tsx ::  :: heading",
   "background-review-panel.tsx ::  :: rows.length",

@@ -33,6 +33,8 @@ export type ScreeningQuestionLabel = {
   questionKey: string;
   bodyText: string;
   appliesToRoleFamilies?: readonly string[] | null;
+  /** False for a question the admin has switched off. Absent means unknown and is read as live. */
+  isActive?: boolean;
 };
 
 export type WhatsAppAnswer = {

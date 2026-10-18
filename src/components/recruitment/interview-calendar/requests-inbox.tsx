@@ -8,10 +8,11 @@
 // Two panels, each drawn only for who may use it: the INBOX for a caller with book rights (HR and the
 // owners), and MY REQUESTS for a requester (a District Manager and above, or HR). The owner sees both.
 
-import { CalendarClock, CheckCircle2, ChevronDown, ChevronRight, Clock3, Loader2, Trash2, UserRound, Users } from "lucide-react";
+import { CalendarCheck2, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, Clock3, Inbox, Loader2, Trash2, UserRound, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
+import { RecruitmentEmptyState, RecruitmentPanel, RecruitmentPill, type RecruitmentPillTone } from "@/components/recruitment/recruitment-premium";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,11 +29,13 @@ import { type CalendarApi, reasonText } from "./calendar-api";
 import { CalendarDialog, ErrorLine, NoteLine, Segmented } from "./calendar-dialog";
 import { useInterviewJobTitles } from "./org-fields";
 import {
+  phxButtonDangerDenseClassName,
   phxFieldClassName,
+  phxLabelClassName,
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
-import { adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const DURATION_OPTIONS = [30, 45, 60] as const;
 
@@ -95,7 +98,7 @@ function BookTimeDialog({
       eyebrow="Book a time"
       footer={
         <>
-          <p className="min-w-0 text-[12px] text-slate-500">
+          <p className="min-w-0 break-words text-[12px] tabular-nums text-slate-600">
             {start === null ? "Choose a time." : `${item.candidateName} at ${formatTimeOfDay(start)}, ${formatDayLong(request.requestedDay)}.`}
           </p>
           <div className="flex shrink-0 gap-2">
@@ -117,7 +120,7 @@ function BookTimeDialog({
     >
       <div className="flex flex-col gap-4">
         <div>
-          <p className="mb-1 text-[12px] font-bold uppercase tracking-[0.06em] text-slate-700">Time</p>
+          <p className={phxLabelClassName}>Time</p>
           <select
             aria-label="Interview time"
             className={`${phxSelectClassName} block`}
@@ -133,7 +136,7 @@ function BookTimeDialog({
           </select>
         </div>
         <div>
-          <p className="mb-1 text-[12px] font-bold uppercase tracking-[0.06em] text-slate-700">Role interviewed for (optional)</p>
+          <p className={phxLabelClassName}>Role interviewed for (optional)</p>
           <input
             aria-label="Role interviewed for"
             autoComplete="off"
@@ -151,7 +154,7 @@ function BookTimeDialog({
           </datalist>
         </div>
         <div>
-          <p className="mb-1 text-[12px] font-bold uppercase tracking-[0.06em] text-slate-700">How long</p>
+          <p className={phxLabelClassName}>How long</p>
           <Segmented
             label="How long"
             onChange={(value) => setDuration(value)}
@@ -160,7 +163,7 @@ function BookTimeDialog({
           />
         </div>
         <div>
-          <p className="mb-1 text-[12px] font-bold uppercase tracking-[0.06em] text-slate-700">Where</p>
+          <p className={phxLabelClassName}>Where</p>
           <Segmented
             label="Where"
             onChange={(value) => setPlatform(value)}
@@ -175,7 +178,7 @@ function BookTimeDialog({
           ) : null}
         </div>
         <div>
-          <p className="mb-1 text-[12px] font-bold uppercase tracking-[0.06em] text-slate-700">A note (optional)</p>
+          <p className={phxLabelClassName}>A note (optional)</p>
           <textarea
             aria-label="A note on the interview"
             className={`${phxTextareaClassName} block`}
@@ -250,11 +253,24 @@ function RequestCard({
     }
   }
 
+  const statusTone: RecruitmentPillTone =
+    request.status === "cancelled" ? "slate" : waiting > 0 && dayPassed ? "slate" : waiting > 0 ? "orange" : "emerald";
+
   return (
-    <li className={cn("border", request.status === "cancelled" ? "border-slate-200 bg-slate-50" : done ? "border-emerald-200 bg-emerald-50/40" : "border-slate-200 bg-white")}>
+    <li
+      className={
+        request.status === "cancelled"
+          ? `border border-slate-200 bg-slate-50 ${adminRecessedDepthClassName}`
+          : done
+            ? `border border-emerald-200 border-l-[3px] border-l-emerald-500 bg-emerald-50/40 ${adminSoftDepthClassName}`
+            : dayPassed
+              ? `border border-slate-200 border-l-[3px] border-l-slate-400 bg-white ${adminSoftDepthClassName}`
+              : `border border-slate-200 border-l-[3px] border-l-orange-500 bg-white ${adminSoftDepthClassName}`
+      }
+    >
       <button
         aria-expanded={open}
-        className="flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-slate-50"
+        className="flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors hover:bg-orange-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-400"
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
@@ -265,7 +281,7 @@ function RequestCard({
               <CalendarClock className="h-3.5 w-3.5 text-orange-600" />
               {formatDayLong(request.requestedDay)}
             </span>
-            <span className="text-[12px] text-slate-500">{formatShortDate(request.requestedDay)}</span>
+            <span className="text-[12px] tabular-nums text-slate-500">{formatShortDate(request.requestedDay)}</span>
           </span>
           <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-slate-600">
             <span className="inline-flex items-center gap-1">
@@ -278,32 +294,23 @@ function RequestCard({
             </span>
           </span>
         </span>
-        <span
-          className={cn(
-            "shrink-0 whitespace-nowrap border px-2 py-0.5 text-[11px] font-bold",
-            request.status === "cancelled"
-              ? "border-slate-300 text-slate-500"
+        <span className="pt-0.5 tabular-nums">
+          <RecruitmentPill tone={statusTone}>
+            {request.status === "cancelled"
+              ? INTERVIEW_REQUEST_STATUS_LABEL.cancelled
               : waiting > 0 && dayPassed
-                ? "border-slate-300 bg-slate-100 text-slate-700"
+                ? `${waiting} not booked · day passed`
                 : waiting > 0
-                  ? "border-orange-300 bg-orange-100 text-orange-800"
-                  : "border-emerald-300 bg-emerald-100 text-emerald-800",
-          )}
-        >
-          {request.status === "cancelled"
-            ? INTERVIEW_REQUEST_STATUS_LABEL.cancelled
-            : waiting > 0 && dayPassed
-              ? `${waiting} not booked · day passed`
-              : waiting > 0
-                ? `${waiting} to book`
-                : INTERVIEW_REQUEST_STATUS_LABEL.scheduled}
+                  ? `${waiting} to book`
+                  : INTERVIEW_REQUEST_STATUS_LABEL.scheduled}
+          </RecruitmentPill>
         </span>
       </button>
 
       {open ? (
         <div className="border-t border-slate-100 px-3 py-2.5">
-          {request.note ? <p className="mb-2 whitespace-pre-wrap break-words border-l-[3px] border-l-slate-300 bg-slate-50 px-3 py-2 text-[12px] text-slate-700">{request.note}</p> : null}
-          <ul className="flex flex-col divide-y divide-slate-100 border border-slate-100">
+          {request.note ? <p className="mb-2 whitespace-pre-wrap break-words border-l-[3px] border-l-slate-300 bg-slate-50 px-3 py-2 text-[12px] leading-5 text-slate-700">{request.note}</p> : null}
+          <ul className={`flex flex-col divide-y divide-slate-100 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
             {request.items.filter((item) => !item.booked).map((item) => (
               <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2" key={item.id}>
                 <span className="min-w-0">
@@ -330,14 +337,14 @@ function RequestCard({
                     <CheckCircle2 className="h-3.5 w-3.5" /> Booked
                   </button>
                 ) : dayPassed && request.status !== "cancelled" ? (
-                  <span className="shrink-0 text-[11px] font-semibold text-slate-500">Day passed — never booked</span>
+                  <span className="shrink-0 border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-500">Day passed — never booked</span>
                 ) : canBook && request.status !== "cancelled" ? (
                   <Action onClick={() => setBooking(item)} tone="primary">
                     <Clock3 className="h-3.5 w-3.5" />
                     Book time
                   </Action>
                 ) : (
-                  <span className="shrink-0 text-[11px] font-semibold text-orange-700">{readOnly ? "Waiting for a time" : "Waiting for HR"}</span>
+                  <span className="shrink-0 border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[11px] font-bold text-orange-800">{readOnly ? "Waiting for a time" : "Waiting for HR"}</span>
                 )}
                 </span>
               </li>
@@ -346,14 +353,14 @@ function RequestCard({
 
           {canWithdraw ? (
             confirmCancel ? (
-              <div className="mt-2 border border-red-200 bg-red-50 p-2.5">
-                <p className="text-[12px] font-semibold text-red-800">Withdraw this whole request? None of its CVs are booked yet.</p>
+              <div className="mt-2 border border-red-200 border-l-[3px] border-l-red-600 bg-red-50 p-2.5">
+                <p className="break-words text-[12px] font-semibold text-red-800">Withdraw this whole request? None of its CVs are booked yet.</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Action onClick={() => setConfirmCancel(false)} tone="quiet">
                     Keep it
                   </Action>
                   <button
-                    className="inline-flex items-center gap-1.5 border border-red-700 bg-red-700 px-2 py-1.5 text-[12px] font-bold leading-none text-white hover:bg-red-800 disabled:opacity-50"
+                    className={cn("inline-flex items-center gap-1.5 border px-2 py-1.5 text-[12px] font-bold leading-none disabled:opacity-50", phxButtonDangerDenseClassName)}
                     disabled={busy}
                     onClick={() => void withdraw()}
                     type="button"
@@ -492,17 +499,17 @@ export function InterviewRequestPanels({
   return (
     <>
       {showInbox ? (
-        <section className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
-          <div className="flex items-center justify-between gap-2 border-b-2 border-b-orange-600 px-4 py-2.5">
-            <p className="inline-flex items-center gap-2 text-[14px] font-bold text-slate-900">
-              <CalendarClock className="h-4 w-4 text-orange-600" />
-              Requests waiting for a time
-            </p>
-            {inboxWaiting.length > 0 ? (
-              <span className="border border-orange-300 bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-800">{inboxWaiting.length}</span>
-            ) : null}
-          </div>
-          <div className="px-3 py-3">
+        <RecruitmentPanel
+          bodyClassName="p-3 sm:p-4"
+          count={inboxWaiting.length > 0 ? inboxWaiting.length : undefined}
+          description={
+            canBook
+              ? "Phone the candidates, then give each CV a time — it lands on the requester's and the interviewer's calendar."
+              : "What was asked for, waiting for HR to give each CV a time."
+          }
+          icon={<CalendarClock aria-hidden className="h-4 w-4" />}
+          title="Requests waiting for a time"
+        >
             {inbox.error ? (
               <ErrorLine>{inbox.error}</ErrorLine>
             ) : inbox.requests === null ? (
@@ -510,7 +517,11 @@ export function InterviewRequestPanels({
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading the requests…
               </p>
             ) : inboxWaiting.length === 0 ? (
-              <p className="px-1 text-[13px] text-slate-500">No requests are waiting for a time.</p>
+              <RecruitmentEmptyState
+                icon={<Inbox aria-hidden className="h-5 w-5" />}
+                message="No requests are waiting for a time."
+                title="All caught up"
+              />
             ) : (
               <ul className="flex flex-col gap-2">
                 {inboxWaiting.map((request) => (
@@ -530,11 +541,11 @@ export function InterviewRequestPanels({
               </ul>
             )}
             {inboxMissed.length > 0 ? (
-              <details className="mt-3">
-                <summary className="cursor-pointer text-[12px] font-semibold text-slate-500 hover:text-slate-800">
+              <details className={`mt-3 border border-slate-200 bg-slate-50 ${adminRecessedDepthClassName}`}>
+                <summary className="cursor-pointer px-3 py-2 text-[12px] font-bold tabular-nums text-slate-600 hover:text-slate-900">
                   {inboxMissed.length} {inboxMissed.length === 1 ? "request" : "requests"} whose day passed without a time
                 </summary>
-                <ul className="mt-2 flex flex-col gap-2">
+                <ul className="flex flex-col gap-2 border-t border-slate-200 p-2 sm:p-3">
                   {inboxMissed.map((request) => (
                     <RequestCard
                       api={api}
@@ -552,19 +563,17 @@ export function InterviewRequestPanels({
                 </ul>
               </details>
             ) : null}
-          </div>
-        </section>
+        </RecruitmentPanel>
       ) : null}
 
       {canRequest ? (
-        <section className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
-          <div className="flex items-center justify-between gap-2 border-b border-b-slate-200 px-4 py-2.5">
-            <p className="inline-flex items-center gap-2 text-[14px] font-bold text-slate-900">
-              <UserRound className="h-4 w-4 text-slate-500" />
-              Your interview requests
-            </p>
-          </div>
-          <div className="px-3 py-3">
+        <RecruitmentPanel
+          bodyClassName="p-3 sm:p-4"
+          count={mine.requests && mineUpcoming.length > 0 ? mineUpcoming.length : undefined}
+          description="The CVs you sent for a day. Each one moves onto the calendar as HR gives it a time."
+          icon={<UserRound aria-hidden className="h-4 w-4" />}
+          title="Your interview requests"
+        >
             {mine.error ? (
               <ErrorLine>{mine.error}</ErrorLine>
             ) : mine.requests === null ? (
@@ -572,11 +581,17 @@ export function InterviewRequestPanels({
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading your requests…
               </p>
             ) : mine.requests.length === 0 ? (
-              <p className="px-1 text-[13px] text-slate-500">You have not asked for any interviews yet. Use “Request an interview” above.</p>
+              <RecruitmentEmptyState
+                icon={<CalendarCheck2 aria-hidden className="h-5 w-5" />}
+                message="You have not asked for any interviews yet. Use “Request an interview” above."
+                title="No requests yet"
+              />
             ) : (
               <>
                 {mineUpcoming.length === 0 ? (
-                  <p className="px-1 text-[13px] text-slate-500">No requests for the days ahead.</p>
+                  <p className="border border-dashed border-slate-300 bg-white px-3 py-3 text-center text-[13px] text-slate-500">
+                    No requests for the days ahead.
+                  </p>
                 ) : (
                   <ul className="flex flex-col gap-2">
                     {mineUpcoming.map((request) => (
@@ -595,11 +610,11 @@ export function InterviewRequestPanels({
                   </ul>
                 )}
                 {mineEarlier.length > 0 ? (
-                  <details className="mt-3">
-                    <summary className="cursor-pointer text-[12px] font-semibold text-slate-500 hover:text-slate-800">
+                  <details className={`mt-3 border border-slate-200 bg-slate-50 ${adminRecessedDepthClassName}`}>
+                    <summary className="cursor-pointer px-3 py-2 text-[12px] font-bold tabular-nums text-slate-600 hover:text-slate-900">
                       {mineEarlier.length} earlier {mineEarlier.length === 1 ? "request" : "requests"}
                     </summary>
-                    <ul className="mt-2 flex flex-col gap-2">
+                    <ul className="flex flex-col gap-2 border-t border-slate-200 p-2 sm:p-3">
                       {mineEarlier.map((request) => (
                         <RequestCard
                           api={api}
@@ -618,8 +633,7 @@ export function InterviewRequestPanels({
                 ) : null}
               </>
             )}
-          </div>
-        </section>
+        </RecruitmentPanel>
       ) : null}
     </>
   );

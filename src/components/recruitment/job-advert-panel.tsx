@@ -1,16 +1,40 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Copy, ExternalLink, Loader2, Plus, RefreshCw } from "lucide-react";
+import {
+  BarChart3,
+  ClipboardPaste,
+  Copy,
+  ExternalLink,
+  Inbox,
+  Link2Off,
+  Loader2,
+  Mail,
+  MessageCircle,
+  PenLine,
+  Plus,
+  Radio,
+  RefreshCw,
+  Share2,
+  Smartphone,
+} from "lucide-react";
 
-import { AdminCallout, AdminSectionHeader, AdminTableShell } from "@/components/admin/admin-design-system";
+import { AdminCallout } from "@/components/admin/admin-design-system";
+import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 import {
   PortalDesktopTable,
-  PortalEmptyState,
   PortalRecordCard,
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
+import {
+  RecruitmentEmptyState,
+  RecruitmentKpiStrip,
+  RecruitmentPanel,
+  RecruitmentPill,
+  RecruitmentTabBar,
+  recruitmentToolbarClassName,
+} from "@/components/recruitment/recruitment-premium";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
@@ -290,6 +314,40 @@ export function JobAdvertPanel() {
   const relaySelectClass =
     `${phxSelectClassName} max-w-[16rem]`;
 
+  // The four figures a recruiter reads before posting anything: how many channels are live, how many
+  // of those accept a post from them at all, how many relay handsets are mapped, and how many CVs
+  // still arrive with no code. A failed load prints "—", never a misleading zero.
+  const advertKpis = [
+    {
+      description: "Groups and feeds on the list today",
+      icon: <Radio aria-hidden="true" className="h-4 w-4" />,
+      label: "Active channels",
+      tone: "orange" as const,
+      value: state ? activeChannels.length : "—",
+    },
+    {
+      description: "The rest are broadcast feeds you can only ask to carry it",
+      icon: <Share2 aria-hidden="true" className="h-4 w-4" />,
+      label: "You can post in",
+      tone: "blue" as const,
+      value: state ? postableCount : "—",
+    },
+    {
+      description: "Handsets whose code-less forwards inherit a channel",
+      icon: <Smartphone aria-hidden="true" className="h-4 w-4" />,
+      label: "Relay handsets",
+      tone: "violet" as const,
+      value: state ? relayRows.length : "—",
+    },
+    {
+      description: `CVs with no tracking code, last ${state?.attribution.sinceDays ?? 90} days`,
+      icon: <Link2Off aria-hidden="true" className="h-4 w-4" />,
+      label: "Arrived untracked",
+      tone: "rose" as const,
+      value: state ? state.attribution.untracked : "—",
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <AdminCallout tone="neutral">
@@ -305,15 +363,18 @@ export function JobAdvertPanel() {
         </div>
       </AdminCallout>
 
+      <RecruitmentKpiStrip items={advertKpis} />
+
       {loadError ? <AdminCallout tone="warning">{loadError}</AdminCallout> : null}
       {notice ? <AdminCallout tone="success">{notice}</AdminCallout> : null}
 
       {/* ── 1 · The advert ─────────────────────────────────────────────── */}
-      <section className="space-y-3">
-        <AdminSectionHeader
-          description="Write it once. Each group gets the same words with its own apply link on the end."
-          title="The post"
-        />
+      <RecruitmentPanel
+        bodyClassName="space-y-4 p-4 sm:p-5"
+        description="Write it once. Each group gets the same words with its own apply link on the end."
+        icon={<PenLine aria-hidden="true" className="h-4 w-4" />}
+        title="The post"
+      >
         <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1 text-sm">
             <span className="font-medium text-slate-700">Job title</span>
@@ -334,7 +395,10 @@ export function JobAdvertPanel() {
           />
         </label>
         <label className="block space-y-1 text-sm">
-          <span className="font-medium text-slate-700">The post as it will be pasted — edit freely</span>
+          <span className="flex flex-wrap items-center gap-2 font-medium text-slate-700">
+            The post as it will be pasted — edit freely
+            {bodyOverride !== null ? <RecruitmentPill tone="amber">Edited by hand</RecruitmentPill> : null}
+          </span>
           <textarea
             className={cn(phxTextareaClassName, "min-h-40 font-mono")}
             onChange={(event) => setBodyOverride(event.target.value)}
@@ -346,21 +410,24 @@ export function JobAdvertPanel() {
             <RefreshCw className="mr-1 h-3 w-3" /> Rebuild from the fields above
           </Button>
         ) : null}
-      </section>
+      </RecruitmentPanel>
 
       {/* ── 2 · Where applicants land ──────────────────────────────────── */}
-      <section className="space-y-3">
-        <AdminSectionHeader
-          description="The link at the bottom of the post. Whichever you choose, the CV lands in this system automatically."
-          title="Where applicants send their CV"
+      <RecruitmentPanel
+        bodyClassName="space-y-4 p-4 sm:p-5"
+        description="The link at the bottom of the post. Whichever you choose, the CV lands in this system automatically."
+        icon={<Inbox aria-hidden="true" className="h-4 w-4" />}
+        title="Where applicants send their CV"
+      >
+        <RecruitmentTabBar<ApplyChannelKind>
+          label="Where applicants send their CV"
+          onChange={(kind) => setApplyKind(kind)}
+          tabs={[
+            { icon: <MessageCircle className="h-4 w-4" />, key: "whatsapp", label: "WhatsApp" },
+            { icon: <Mail className="h-4 w-4" />, key: "email", label: "Email" },
+          ]}
+          value={applyKind}
         />
-        <div className="flex flex-wrap gap-2">
-          {(["whatsapp", "email"] as ApplyChannelKind[]).map((kind) => (
-            <Button key={kind} onClick={() => setApplyKind(kind)} size="sm" variant={applyKind === kind ? "default" : "ghost"}>
-              {kind === "whatsapp" ? "WhatsApp" : "Email"}
-            </Button>
-          ))}
-        </div>
         {applyKind === "whatsapp" ? (
           <AdminCallout tone="warning">
             <div>
@@ -378,15 +445,15 @@ export function JobAdvertPanel() {
           </AdminCallout>
         ) : null}
         {destination ? (
-          <p className="text-sm text-slate-600">
-            Applicants will reach: <span className="font-medium text-slate-900">{destination}</span>
+          <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 border border-slate-200 border-l-4 border-l-orange-500 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-600 ${adminRecessedDepthClassName}`}>
+            <span>Applicants will reach:</span>
+            <span className="break-words font-mono text-[13px] font-bold text-slate-950">{destination}</span>
             {applyKind === "whatsapp" ? (
-              <span className="text-slate-500">
-                {" "}
-                by default — a channel with its own apply line below overrides this for its own link.
+              <span className="basis-full text-[12px] text-slate-500">
+                By default — a channel with its own apply line below overrides this for its own link.
               </span>
             ) : null}
-          </p>
+          </div>
         ) : (
           <AdminCallout tone="warning">
             <div>
@@ -401,14 +468,15 @@ export function JobAdvertPanel() {
             </div>
           </AdminCallout>
         )}
-      </section>
+      </RecruitmentPanel>
 
       {/* ── 3 · The groups ─────────────────────────────────────────────── */}
-      <section className="space-y-3">
-        <AdminSectionHeader
-          description="Paste links, one per line — Facebook, WhatsApp or Telegram. 'Name | link' works, a bare link works, and so does a whole copied table."
-          title="Where you post it"
-        />
+      <RecruitmentPanel
+        bodyClassName="space-y-3 p-4 sm:p-5"
+        description="Paste links, one per line — Facebook, WhatsApp or Telegram. 'Name | link' works, a bare link works, and so does a whole copied table."
+        icon={<ClipboardPaste aria-hidden="true" className="h-4 w-4" />}
+        title="Where you post it"
+      >
         <textarea
           className={cn(phxTextareaClassName, "min-h-24 font-mono")}
           onChange={(event) => setPaste(event.target.value)}
@@ -418,306 +486,326 @@ export function JobAdvertPanel() {
         <Button disabled={busy || paste.trim().length === 0} onClick={addChannels} size="sm">
           {busy ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plus className="mr-1 h-3 w-3" />} Add these channels
         </Button>
+      </RecruitmentPanel>
 
-        <AdminTableShell
-          description="Copy takes the post plus that channel's own tracked link, then opens the channel so you can paste."
-          title={`Channels (${activeChannels.length} active, ${postableCount} you can post in)`}
-        >
-          <PortalResponsiveDataList
-            empty={<PortalEmptyState message="Paste your group links above." title="No channels yet" />}
-            getKey={(channel: JobPostChannel) => channel.id}
-            items={channels}
-            renderCard={(channel: JobPostChannel) => (
-              <PortalRecordCard title={channel.name}>
-                <PortalRecordFields
-                  fields={[
-                    { label: "Code", value: channel.code },
-                    {
-                      label: "Where",
-                      value: platformOf(channel.kind).broadcast
-                        ? `${platformOf(channel.kind).label} — broadcast`
-                        : platformOf(channel.kind).label,
-                    },
-                    { label: "Status", value: channel.isActive ? "Active" : "Retired" },
-                  ]}
-                />
-                <label className="mt-2 block text-xs uppercase text-slate-500" htmlFor={`apply-${channel.id}`}>
-                  Apply line
-                </label>
-                <Input
-                  className="mt-1 h-9 font-mono text-xs"
-                  defaultValue={channel.applyWhatsAppNumber ?? ""}
-                  disabled={busy}
-                  id={`apply-${channel.id}`}
-                  key={`apply-card-${channel.id}-${channel.applyWhatsAppNumber ?? ""}`}
-                  onBlur={(event) => setApplyNumber(channel, event.target.value)}
-                  placeholder={defaultWhatsAppNumber ?? "default"}
-                />
-                <div className="mt-2 flex gap-2">
-                  <Button onClick={() => copyForChannel(channel)} size="sm">
-                    <Copy className="mr-1 h-3 w-3" /> {platformOf(channel.kind).broadcast ? "Copy & ask" : "Copy & open"}
-                  </Button>
-                  <Button disabled={busy} onClick={() => retire(channel)} size="sm" variant="ghost">
-                    {channel.isActive ? "Retire" : "Restore"}
-                  </Button>
-                </div>
-              </PortalRecordCard>
-            )}
-            renderTable={() => (
-              <PortalDesktopTable
-                cols={
-                  <colgroup>
-                    <col className="w-[16%]" />
-                    <col className="w-[18%]" />
-                    <col className="w-[12%]" />
-                    <col className="w-[20%]" />
-                    <col className="w-[10%]" />
-                    <col className="w-[24%]" />
-                  </colgroup>
-                }
-              >
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
-                    <th className="whitespace-nowrap p-2">Channel</th>
-                    <th className="whitespace-nowrap p-2">Where</th>
-                    <th className="whitespace-nowrap p-2">Code</th>
-                    <th className="whitespace-nowrap p-2">Apply line</th>
-                    <th className="whitespace-nowrap p-2">Status</th>
-                    <th className="whitespace-nowrap p-2">Post it</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {channels.map((channel) => (
-                    <tr className="border-b border-slate-100" key={channel.id}>
-                      <td className="whitespace-nowrap p-2 font-medium text-slate-900">{channel.name}</td>
-                      <td className="whitespace-nowrap p-2 text-slate-600">
-                        {platformOf(channel.kind).label}
-                        {platformOf(channel.kind).broadcast ? (
-                          <span className="ml-1 text-amber-700">— broadcast, ask the admin</span>
-                        ) : null}
-                      </td>
-                      <td className="whitespace-nowrap p-2 font-mono text-xs text-slate-600">{channel.code}</td>
-                      <td className="whitespace-nowrap p-2">
-                        <Input
-                          aria-label={`Apply line for ${channel.name}`}
-                          className="h-9 max-w-[11rem] font-mono text-xs"
-                          defaultValue={channel.applyWhatsAppNumber ?? ""}
-                          disabled={busy}
-                          key={`apply-${channel.id}-${channel.applyWhatsAppNumber ?? ""}`}
-                          onBlur={(event) => setApplyNumber(channel, event.target.value)}
-                          placeholder={defaultWhatsAppNumber ?? "default"}
-                        />
-                      </td>
-                      <td className="whitespace-nowrap p-2 text-slate-600">{channel.isActive ? "Active" : "Retired"}</td>
-                      <td className="whitespace-nowrap p-2">
-                        <div className="flex gap-2">
-                          <Button onClick={() => copyForChannel(channel)} size="sm">
-                            <Copy className="mr-1 h-3 w-3" />
-                            {platformOf(channel.kind).broadcast ? "Copy & ask" : "Copy & open"}
-                            {channel.url ? <ExternalLink className="ml-1 h-3 w-3" /> : null}
-                          </Button>
-                          <Button disabled={busy} onClick={() => retire(channel)} size="sm" variant="ghost">
-                            {channel.isActive ? "Retire" : "Restore"}
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </PortalDesktopTable>
-            )}
-          />
-        </AdminTableShell>
-      </section>
-
-      {/* ── 4 · Relay handsets ─────────────────────────────────────────── */}
-      <section className="space-y-3">
-        <AdminSectionHeader
-          description="Most CVs reach us forwarded from a relay handset, which drops the applicant's code-bearing message. Tie each relay to the channel it forwards from, and its code-less forwards inherit that channel. A CV that still carries its own code always keeps it."
-          title="Relay handsets"
-        />
-        <AdminTableShell
-          description="A relay maps to one channel. Move it here whenever a handset's source changes — no code change needed."
-          title={`Relay handsets (${relayRows.length})`}
-        >
-          <PortalResponsiveDataList
-            empty={
-              <PortalEmptyState
-                message="Add a relay handset number below and pick the channel it forwards from."
-                title="No relay handsets mapped"
+      <RecruitmentPanel
+        count={`${activeChannels.length} active · ${postableCount} you can post in`}
+        description="Copy takes the post plus that channel's own tracked link, then opens the channel so you can paste."
+        icon={<Radio aria-hidden="true" className="h-4 w-4" />}
+        title="Channels"
+      >
+        <PortalResponsiveDataList
+          empty={
+            <RecruitmentEmptyState
+              icon={<Radio aria-hidden="true" className="h-5 w-5" />}
+              message="Paste your group links above."
+              title="No channels yet"
+            />
+          }
+          getKey={(channel: JobPostChannel) => channel.id}
+          items={channels}
+          renderCard={(channel: JobPostChannel) => (
+            <PortalRecordCard title={channel.name}>
+              <PortalRecordFields
+                fields={[
+                  { label: "Code", value: channel.code },
+                  {
+                    label: "Where",
+                    value: platformOf(channel.kind).broadcast
+                      ? `${platformOf(channel.kind).label} — broadcast`
+                      : platformOf(channel.kind).label,
+                  },
+                  { label: "Status", value: channel.isActive ? "Active" : "Retired" },
+                ]}
               />
-            }
-            getKey={(row: (typeof relayRows)[number]) => row.number}
-            items={relayRows}
-            renderCard={(row: (typeof relayRows)[number]) => (
-              <PortalRecordCard title={row.number}>
-                <label className="mt-2 block text-xs uppercase text-slate-500" htmlFor={`relay-${row.number}`}>
-                  Forwards from
-                </label>
-                <select
-                  className={relaySelectClass}
-                  disabled={busy}
-                  id={`relay-${row.number}`}
-                  onChange={(event) => assignForwarder(row.number, event.target.value || null)}
-                  value={row.channelCode}
-                >
-                  <option value="">— Unassigned —</option>
-                  {channels.map((channel) => (
-                    <option key={channel.id} value={channel.code}>
-                      {channel.name}
-                      {channel.isActive ? "" : " (retired)"}
-                    </option>
-                  ))}
-                </select>
-              </PortalRecordCard>
-            )}
-            renderTable={() => (
-              <PortalDesktopTable
-                cols={
-                  <colgroup>
-                    <col className="w-[35%]" />
-                    <col className="w-[65%]" />
-                  </colgroup>
-                }
-              >
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
-                    <th className="whitespace-nowrap p-2">Handset</th>
-                    <th className="whitespace-nowrap p-2">Forwards from</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {relayRows.map((row) => (
-                    <tr className="border-b border-slate-100" key={row.number}>
-                      <td className="whitespace-nowrap p-2 font-mono text-xs text-slate-900">{row.number}</td>
-                      <td className="p-2">
-                        <select
-                          aria-label={`Channel for ${row.number}`}
-                          className={relaySelectClass}
-                          disabled={busy}
-                          onChange={(event) => assignForwarder(row.number, event.target.value || null)}
-                          value={row.channelCode}
-                        >
-                          <option value="">— Unassigned —</option>
-                          {channels.map((channel) => (
-                            <option key={channel.id} value={channel.code}>
-                              {channel.name}
-                              {channel.isActive ? "" : " (retired)"}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </PortalDesktopTable>
-            )}
-          />
-          <div className="mt-3 flex flex-wrap items-end gap-2">
-            <div className="min-w-[12rem] flex-1">
-              <label className="block text-xs uppercase text-slate-500" htmlFor="new-relay-number">
-                Add a relay handset
+              <label className="mt-2 block text-xs uppercase text-slate-500" htmlFor={`apply-${channel.id}`}>
+                Apply line
               </label>
               <Input
-                id="new-relay-number"
-                onChange={(event) => setNewRelay(event.target.value)}
-                placeholder="e.g. 01280955558"
-                value={newRelay}
+                className="mt-1 h-9 font-mono text-xs"
+                defaultValue={channel.applyWhatsAppNumber ?? ""}
+                disabled={busy}
+                id={`apply-${channel.id}`}
+                key={`apply-card-${channel.id}-${channel.applyWhatsAppNumber ?? ""}`}
+                onBlur={(event) => setApplyNumber(channel, event.target.value)}
+                placeholder={defaultWhatsAppNumber ?? "default"}
               />
-            </div>
-            <select
-              aria-label="Channel for the new relay handset"
-              className={relaySelectClass}
-              disabled={busy}
-              onChange={(event) => setNewRelayChannel(event.target.value)}
-              value={newRelayChannel}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button onClick={() => copyForChannel(channel)} size="sm">
+                  <Copy className="mr-1 h-3 w-3" /> {platformOf(channel.kind).broadcast ? "Copy & ask" : "Copy & open"}
+                </Button>
+                <Button disabled={busy} onClick={() => retire(channel)} size="sm" variant="ghost">
+                  {channel.isActive ? "Retire" : "Restore"}
+                </Button>
+              </div>
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className="w-[20%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[19%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[23%]" />
+                </colgroup>
+              }
             >
-              <option value="">Pick a channel…</option>
-              {channels.map((channel) => (
-                <option key={channel.id} value={channel.code}>
-                  {channel.name}
-                  {channel.isActive ? "" : " (retired)"}
-                </option>
-              ))}
-            </select>
-            <Button
-              disabled={busy || newRelay.trim().length === 0 || newRelayChannel.length === 0}
-              onClick={async () => {
-                await assignForwarder(newRelay, newRelayChannel || null);
-                setNewRelay("");
-                setNewRelayChannel("");
-              }}
-              size="sm"
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+                  <th className="whitespace-nowrap p-2">Channel</th>
+                  <th className="whitespace-nowrap p-2">Where</th>
+                  <th className="whitespace-nowrap p-2">Code</th>
+                  <th className="whitespace-nowrap p-2">Apply line</th>
+                  <th className="whitespace-nowrap p-2">Status</th>
+                  <th className="whitespace-nowrap p-2">Post it</th>
+                </tr>
+              </thead>
+              <tbody>
+                {channels.map((channel) => (
+                  <tr className="border-b border-slate-100 align-top transition-colors hover:bg-orange-50/30" key={channel.id}>
+                    <td className="break-words p-2 font-semibold text-slate-900">{channel.name}</td>
+                    <td className="break-words p-2 text-slate-600">
+                      {platformOf(channel.kind).label}
+                      {platformOf(channel.kind).broadcast ? (
+                        <span className="mt-1 block text-[12px] text-amber-700">Broadcast — ask the admin</span>
+                      ) : null}
+                    </td>
+                    <td className="break-words p-2 font-mono text-xs text-slate-600">{channel.code}</td>
+                    <td className="p-2">
+                      <Input
+                        aria-label={`Apply line for ${channel.name}`}
+                        className="h-9 max-w-[11rem] font-mono text-xs"
+                        defaultValue={channel.applyWhatsAppNumber ?? ""}
+                        disabled={busy}
+                        key={`apply-${channel.id}-${channel.applyWhatsAppNumber ?? ""}`}
+                        onBlur={(event) => setApplyNumber(channel, event.target.value)}
+                        placeholder={defaultWhatsAppNumber ?? "default"}
+                      />
+                    </td>
+                    <td className="p-2">
+                      <ChannelStatusPill active={channel.isActive} />
+                    </td>
+                    <td className="p-2">
+                      <div className="flex flex-wrap gap-2">
+                        <Button onClick={() => copyForChannel(channel)} size="sm">
+                          <Copy className="mr-1 h-3 w-3" />
+                          {platformOf(channel.kind).broadcast ? "Copy & ask" : "Copy & open"}
+                          {channel.url ? <ExternalLink className="ml-1 h-3 w-3" /> : null}
+                        </Button>
+                        <Button disabled={busy} onClick={() => retire(channel)} size="sm" variant="ghost">
+                          {channel.isActive ? "Retire" : "Restore"}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
+      </RecruitmentPanel>
+
+      {/* ── 4 · Relay handsets ─────────────────────────────────────────── */}
+      <RecruitmentPanel
+        count={relayRows.length}
+        description="Most CVs reach us forwarded from a relay handset, which drops the applicant's code-bearing message. Tie each relay to the channel it forwards from, and its code-less forwards inherit that channel. A CV that still carries its own code always keeps it."
+        icon={<Smartphone aria-hidden="true" className="h-4 w-4" />}
+        title="Relay handsets"
+      >
+        <p className="border-b border-slate-100 px-4 py-2.5 text-[12px] text-slate-500 sm:px-5">
+          A relay maps to one channel. Move it here whenever a handset&apos;s source changes — no code change needed.
+        </p>
+        <PortalResponsiveDataList
+          empty={
+            <RecruitmentEmptyState
+              icon={<Smartphone aria-hidden="true" className="h-5 w-5" />}
+              message="Add a relay handset number below and pick the channel it forwards from."
+              title="No relay handsets mapped"
+            />
+          }
+          getKey={(row: (typeof relayRows)[number]) => row.number}
+          items={relayRows}
+          renderCard={(row: (typeof relayRows)[number]) => (
+            <PortalRecordCard title={row.number}>
+              <label className="mt-2 block text-xs uppercase text-slate-500" htmlFor={`relay-${row.number}`}>
+                Forwards from
+              </label>
+              <select
+                className={relaySelectClass}
+                disabled={busy}
+                id={`relay-${row.number}`}
+                onChange={(event) => assignForwarder(row.number, event.target.value || null)}
+                value={row.channelCode}
+              >
+                <option value="">— Unassigned —</option>
+                {channels.map((channel) => (
+                  <option key={channel.id} value={channel.code}>
+                    {channel.name}
+                    {channel.isActive ? "" : " (retired)"}
+                  </option>
+                ))}
+              </select>
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className="w-[35%]" />
+                  <col className="w-[65%]" />
+                </colgroup>
+              }
             >
-              <Plus className="mr-1 h-3 w-3" /> Attach
-            </Button>
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+                  <th className="whitespace-nowrap p-2">Handset</th>
+                  <th className="whitespace-nowrap p-2">Forwards from</th>
+                </tr>
+              </thead>
+              <tbody>
+                {relayRows.map((row) => (
+                  <tr className="border-b border-slate-100 transition-colors hover:bg-orange-50/30" key={row.number}>
+                    <td className="break-words p-2 font-mono text-xs font-semibold text-slate-900">{row.number}</td>
+                    <td className="p-2">
+                      <select
+                        aria-label={`Channel for ${row.number}`}
+                        className={relaySelectClass}
+                        disabled={busy}
+                        onChange={(event) => assignForwarder(row.number, event.target.value || null)}
+                        value={row.channelCode}
+                      >
+                        <option value="">— Unassigned —</option>
+                        {channels.map((channel) => (
+                          <option key={channel.id} value={channel.code}>
+                            {channel.name}
+                            {channel.isActive ? "" : " (retired)"}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
+        <div className={cn("m-4 sm:m-5", recruitmentToolbarClassName)}>
+          <div className="min-w-[12rem] flex-1">
+            <label className="block text-xs uppercase text-slate-500" htmlFor="new-relay-number">
+              Add a relay handset
+            </label>
+            <Input
+              id="new-relay-number"
+              onChange={(event) => setNewRelay(event.target.value)}
+              placeholder="e.g. 01280955558"
+              value={newRelay}
+            />
           </div>
-        </AdminTableShell>
-      </section>
+          <select
+            aria-label="Channel for the new relay handset"
+            className={relaySelectClass}
+            disabled={busy}
+            onChange={(event) => setNewRelayChannel(event.target.value)}
+            value={newRelayChannel}
+          >
+            <option value="">Pick a channel…</option>
+            {channels.map((channel) => (
+              <option key={channel.id} value={channel.code}>
+                {channel.name}
+                {channel.isActive ? "" : " (retired)"}
+              </option>
+            ))}
+          </select>
+          <Button
+            disabled={busy || newRelay.trim().length === 0 || newRelayChannel.length === 0}
+            onClick={async () => {
+              await assignForwarder(newRelay, newRelayChannel || null);
+              setNewRelay("");
+              setNewRelayChannel("");
+            }}
+            size="sm"
+          >
+            <Plus className="mr-1 h-3 w-3" /> Attach
+          </Button>
+        </div>
+      </RecruitmentPanel>
 
       {/* ── 5 · What it produced ───────────────────────────────────────── */}
-      <section className="space-y-3">
-        <AdminSectionHeader
-          description={`Candidates whose CV arrived through each group's own link, over the last ${state?.attribution.sinceDays ?? 90} days.`}
-          title="What each group produced"
-        />
-        <AdminTableShell
-          description="Counted per person, not per message — someone who sends their CV three times is one candidate."
-          title="Candidates by group"
-        >
-          <PortalResponsiveDataList
-            empty={<PortalEmptyState message="Nothing has come through a tracked link yet." title="No attributed CVs yet" />}
-            getKey={(row: ChannelAttribution["rows"][number]) => row.code}
-            items={attributionRows}
-            renderCard={(row: ChannelAttribution["rows"][number]) => (
-              <PortalRecordCard title={row.name}>
-                <PortalRecordFields
-                  fields={[
-                    { label: "Candidates", value: String(row.candidates) },
-                    { label: "Last CV", value: row.lastCvAt ? formatPhoenixLongDate(row.lastCvAt) : "—" },
-                  ]}
-                />
-              </PortalRecordCard>
-            )}
-            renderTable={() => (
-              <PortalDesktopTable
-                cols={
-                  <colgroup>
-                    <col className="w-[45%]" />
-                    <col className="w-[25%]" />
-                    <col className="w-[30%]" />
-                  </colgroup>
-                }
-              >
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
-                    <th className="whitespace-nowrap p-2">Group</th>
-                    <th className="whitespace-nowrap p-2">Candidates</th>
-                    <th className="whitespace-nowrap p-2">Last CV</th>
+      <RecruitmentPanel
+        count={attributionRows.length}
+        description={`Candidates whose CV arrived through each group's own link, over the last ${state?.attribution.sinceDays ?? 90} days. Counted per person, not per message — someone who sends their CV three times is one candidate.`}
+        icon={<BarChart3 aria-hidden="true" className="h-4 w-4" />}
+        title="What each group produced"
+      >
+        <PortalResponsiveDataList
+          empty={
+            <RecruitmentEmptyState
+              icon={<BarChart3 aria-hidden="true" className="h-5 w-5" />}
+              message="Nothing has come through a tracked link yet."
+              title="No attributed CVs yet"
+            />
+          }
+          getKey={(row: ChannelAttribution["rows"][number]) => row.code}
+          items={attributionRows}
+          renderCard={(row: ChannelAttribution["rows"][number]) => (
+            <PortalRecordCard title={row.name}>
+              <PortalRecordFields
+                fields={[
+                  { label: "Candidates", value: String(row.candidates) },
+                  { label: "Last CV", value: row.lastCvAt ? formatPhoenixLongDate(row.lastCvAt) : "—" },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className="w-[45%]" />
+                  <col className="w-[25%]" />
+                  <col className="w-[30%]" />
+                </colgroup>
+              }
+            >
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+                  <th className="whitespace-nowrap p-2">Group</th>
+                  <th className="whitespace-nowrap p-2">Candidates</th>
+                  <th className="whitespace-nowrap p-2">Last CV</th>
+                </tr>
+              </thead>
+              <tbody>
+                {attributionRows.map((row) => (
+                  <tr className="border-b border-slate-100 transition-colors hover:bg-orange-50/30" key={row.code}>
+                    <td className="break-words p-2 font-semibold text-slate-900">{row.name}</td>
+                    <td className="p-2 text-base font-black tabular-nums text-slate-950">{row.candidates}</td>
+                    <td className="break-words p-2 text-slate-600">
+                      {row.lastCvAt ? formatPhoenixLongDate(row.lastCvAt) : "—"}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {attributionRows.map((row) => (
-                    <tr className="border-b border-slate-100" key={row.code}>
-                      <td className="whitespace-nowrap p-2 font-medium text-slate-900">{row.name}</td>
-                      <td className="whitespace-nowrap p-2 tabular-nums text-slate-900">{row.candidates}</td>
-                      <td className="whitespace-nowrap p-2 text-slate-600">
-                        {row.lastCvAt ? formatPhoenixLongDate(row.lastCvAt) : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </PortalDesktopTable>
-            )}
-          />
-        </AdminTableShell>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
         {state ? (
-          <p className="text-sm text-slate-600">
-            {state.attribution.untracked} CV{state.attribution.untracked === 1 ? "" : "s"} arrived with no code —
-            everything posted before this existed, plus anyone who wrote their own message instead of tapping the link.
+          <p className="border-t border-slate-100 px-4 py-3 text-sm text-slate-600 sm:px-5">
+            <span className="font-bold tabular-nums text-slate-900">
+              {state.attribution.untracked} CV{state.attribution.untracked === 1 ? "" : "s"}
+            </span>{" "}
+            arrived with no code — everything posted before this existed, plus anyone who wrote their own
+            message instead of tapping the link.
           </p>
         ) : null}
-      </section>
+      </RecruitmentPanel>
     </div>
   );
+}
+
+/** A channel's state as a pill — live in green, retired in grey — so the column reads at a glance. */
+function ChannelStatusPill({ active }: { active: boolean }) {
+  return <RecruitmentPill tone={active ? "emerald" : "slate"}>{active ? "Active" : "Retired"}</RecruitmentPill>;
 }

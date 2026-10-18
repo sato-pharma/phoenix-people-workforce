@@ -217,8 +217,12 @@ import { stripComments } from "./support/comment-strip.ts";
  * ONE `MatrixScroller` component, where the exemption is declared and reasoned about once — the
  * `PortalDesktopTable` move at 238 -> 237, at page scale. Three sites became one, and the page is
  * now the only place a fourth matrix could inherit the scroll without declaring a new one.
+ *
+ * 212 -> 205 on 2026-10-19: the Recruitment premium sweep. Contact Review's phone-card scrollers
+ * and the final-selection comparison table in the pipeline's Actions column became wrapping cards
+ * and a fixed-layout table; the rest of the drop is cells that now wrap instead of holding one line.
  */
-const BASELINE = 212;
+const BASELINE = 205;
 
 /**
  * app/ and src/components/ are where UI class strings live. src/lib/ is excluded on

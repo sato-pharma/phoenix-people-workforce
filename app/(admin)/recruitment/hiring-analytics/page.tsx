@@ -1,7 +1,10 @@
+import { BarChart3 } from "lucide-react";
 import { redirect } from "next/navigation";
 
+import { AdminInsightChip } from "@/components/admin/admin-design-system";
 import { PageContainer } from "@/components/layout/page-container";
 import { HiringAnalyticsView } from "@/components/recruitment/hiring-analytics-view";
+import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { loadHiringAnalytics } from "@/lib/recruitment/hiring-analytics";
@@ -38,14 +41,15 @@ export default async function HiringAnalyticsPage() {
 
   return (
     <PageContainer>
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold text-slate-900">Hiring Analytics</h1>
-        <p className="text-sm text-slate-500">
-          Where candidates come from, how many of them a person actually decided on, how long that
-          took, and where the pipeline stops. Automated sweeps are excluded from every figure.
-        </p>
+      <div className="space-y-6">
+        <RecruitmentPageHeader
+          badges={<AdminInsightChip tone="slate">Automated sweeps excluded</AdminInsightChip>}
+          description="Where candidates come from, how many of them a person actually decided on, how long that took, and where the pipeline stops. Automated sweeps are excluded from every figure."
+          icon={<BarChart3 aria-hidden="true" className="h-3.5 w-3.5" />}
+          title="Hiring Analytics"
+        />
+        <HiringAnalyticsView report={report} />
       </div>
-      <HiringAnalyticsView report={report} />
     </PageContainer>
   );
 }

@@ -759,8 +759,10 @@ export function runRecruitmentCvExtractionTests() {
   assert.ok(poolHead.length > 0, "the candidate pool's header row must still be findable");
   assert.match(
     poolHead,
-    /<th[^>]*>(Role|Applying for)<\/th>/,
-    "the desktop table must carry the column that says what this person does",
+    // Since 2026-10-19 every header is a WhatsApp question, drawn from the column list — whose first
+    // column with no role picked is "What are you applying for?" (tests/recruitment-pool-whatsapp-columns.test.ts).
+    /<th[^>]*>\s*\{column\.header\}\s*<\/th>/,
+    "the desktop table must carry the column that says what this person is applying for",
   );
   assert.match(
     workspaceSource,

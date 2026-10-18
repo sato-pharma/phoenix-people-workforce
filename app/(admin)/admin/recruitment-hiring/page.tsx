@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, BriefcaseBusiness } from "lucide-react";
+import { ArrowRight, BriefcaseBusiness, LockKeyhole } from "lucide-react";
 
-import { AdminPageHero } from "@/components/admin/admin-design-system";
+import { AdminInsightChip } from "@/components/admin/admin-design-system";
+import { adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
+import { RecruitmentEmptyState, RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { recruitmentHiringPageItems } from "@/config/system-navigation";
 import {
   buildPermissionLookup,
@@ -34,16 +36,25 @@ export default async function RecruitmentHiringPage() {
 
   return (
     <div className="space-y-6">
-      <AdminPageHero
+      <RecruitmentPageHeader
+        badges={
+          <AdminInsightChip tone="orange">
+            {visibleTools.length === 1 ? "1 tool open to you" : `${visibleTools.length} tools open to you`}
+          </AdminInsightChip>
+        }
         description="Recruitment pipeline, CV database, offer lifecycle, and hiring documents — in one place."
         eyebrow="HR Operations"
-        icon={<BriefcaseBusiness className="h-3.5 w-3.5" />}
+        icon={<BriefcaseBusiness aria-hidden="true" className="h-3.5 w-3.5" />}
         title="Recruitment & Hiring"
       />
 
       {visibleTools.length === 0 ? (
-        <div className="border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-          No recruitment or hiring tools are available for your role.
+        <div className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
+          <RecruitmentEmptyState
+            icon={<LockKeyhole aria-hidden="true" className="h-5 w-5" />}
+            message="No recruitment or hiring tools are available for your role."
+            title="Nothing to open here"
+          />
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

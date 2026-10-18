@@ -1,7 +1,9 @@
+import { Megaphone } from "lucide-react";
 import { redirect } from "next/navigation";
 
+import { AdminInsightChip } from "@/components/admin/admin-design-system";
 import { JobPostBuilder } from "@/components/recruitment/job-post-builder";
-import { PremiumHero } from "@/components/ui/premium-hero";
+import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { loadMarketAwarenessLines } from "@/lib/market-awareness/lines";
@@ -9,7 +11,7 @@ import { canBuildJobPosts } from "@/lib/recruitment/access";
 import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
 import { candidateRegionCodes, candidateRegionLabels, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { listJobPostTitles } from "@/lib/recruitment/job-posts/service";
-import { JOB_POST_CAREERS } from "@/lib/recruitment/job-posts/templates";
+import { JOB_POST_CAREERS, JOB_POST_TEMPLATES } from "@/lib/recruitment/job-posts/templates";
 import { NEW_CHANNEL_APPLY_WHATSAPP_NUMBER } from "@/lib/recruitment/outreach/job-post-channels";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +24,10 @@ export const dynamic = "force-dynamic";
 // roles both nav rows carry. A row offered to someone this page then redirects is exactly what
 // every-offered-link-opens.test.ts exists to catch, so the two change together.
 //
-// THE HEADER IS PremiumHero, flat by the owner's decision (see whatsapp-templates/page.tsx).
+// THE HEADER IS RecruitmentPageHeader, the one header every recruitment screen opens with (owner,
+// 2026-10-19: the full-module premium sweep) — the same slim rail, kicker, title and rule PremiumHero
+// drew, so the module has ONE header rather than two that look alike. The job-post PICTURE below it is
+// paper and is not part of that sweep.
 export default async function JobPostsPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") {
@@ -52,11 +57,21 @@ export default async function JobPostsPage() {
     .sort(([a], [b]) => (regionOrder.get(a) ?? 99) - (regionOrder.get(b) ?? 99))
     .map(([code, areas]) => ({ label: candidateRegionLabels[code as CandidateRegionCode] ?? code, areas }));
 
+  const readyTitles = titles.filter((title) => title.isActive).length;
+
   return (
     <div className="mx-auto max-w-7xl p-4 sm:p-6">
-      <PremiumHero
-        kicker="Recruitment"
-        subtitle="Choose a job title and its wording is ready — what you will do and what you need. Adjust it, pick one of six designs, and download the post. Changes you save stay with the title."
+      <RecruitmentPageHeader
+        badges={
+          <>
+            <AdminInsightChip tone="orange">
+              {readyTitles === 1 ? "1 job title ready" : `${readyTitles} job titles ready`}
+            </AdminInsightChip>
+            <AdminInsightChip tone="slate">{JOB_POST_TEMPLATES.length} designs</AdminInsightChip>
+          </>
+        }
+        description="Choose a job title and its wording is ready — what you will do and what you need. Adjust it, pick one of six designs, and download the post. Changes you save stay with the title."
+        icon={<Megaphone aria-hidden="true" className="h-3.5 w-3.5" />}
         title="Job Posts"
       />
       <div className="pt-5">

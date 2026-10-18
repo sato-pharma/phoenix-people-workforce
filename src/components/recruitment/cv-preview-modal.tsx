@@ -3,8 +3,13 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Minus, Plus, X } from "lucide-react";
+import { AlertCircle, Download, FileText, Minus, Plus, X } from "lucide-react";
 
+import {
+  adminControlDepthClassName,
+  adminPanelHeaderClassName,
+  adminRecessedDepthClassName,
+} from "@/components/admin/admin-design-tokens";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { reportClientError } from "@/lib/error-monitor/report-client-error";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
@@ -586,24 +591,27 @@ export function CvDocumentView({
   // takes away in the working one. He is told what to do instead, in words, rather than being left
   // looking at a red sentence with nothing under it.
   const failureNotice = error ? (
-    <div className="p-1 text-sm">
-      <p className="text-rose-600">{error}</p>
-      <p className="mt-1">
-        {allowDownload ? (
-          <a
-            className="font-semibold text-slate-900 underline underline-offset-2"
-            href={inlineUrl}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Open the CV in a new tab
-          </a>
-        ) : (
-          <span className="text-slate-500">
-            Ask the recruitment team to send you a readable copy of this CV.
-          </span>
-        )}
-      </p>
+    <div className="flex items-start gap-2.5 border border-rose-200 border-l-[3px] border-l-rose-500 bg-rose-50 px-3 py-2.5 text-sm">
+      <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+      <div className="min-w-0">
+        <p className="break-words font-semibold text-rose-800">{error}</p>
+        <p className="mt-1">
+          {allowDownload ? (
+            <a
+              className="font-semibold text-slate-900 underline underline-offset-2"
+              href={inlineUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Open the CV in a new tab
+            </a>
+          ) : (
+            <span className="text-slate-600">
+              Ask the recruitment team to send you a readable copy of this CV.
+            </span>
+          )}
+        </p>
+      </div>
     </div>
   ) : null;
 
@@ -704,7 +712,7 @@ export function CvDocumentView({
               The chrome is transparent until hover, so the larger target costs nothing visually. */}
           <button
             aria-label="Zoom out"
-            className="flex h-8 w-8 items-center justify-center rounded text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:opacity-40"
+            className="flex h-8 w-8 items-center justify-center text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:opacity-40"
             disabled={zoom <= MIN_ZOOM + 0.001}
             onClick={() => setManualZoom(clampZoom(zoom - ZOOM_STEP))}
             type="button"
@@ -716,7 +724,7 @@ export function CvDocumentView({
           </span>
           <button
             aria-label="Zoom in"
-            className="flex h-8 w-8 items-center justify-center rounded text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:opacity-40"
+            className="flex h-8 w-8 items-center justify-center text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:opacity-40"
             disabled={zoom >= MAX_ZOOM - 0.001}
             onClick={() => setManualZoom(clampZoom(zoom + ZOOM_STEP))}
             type="button"
@@ -724,7 +732,7 @@ export function CvDocumentView({
             <Plus className="h-3.5 w-3.5" />
           </button>
           <button
-            className={`ml-1 flex h-8 items-center rounded px-2.5 text-phx-xs font-bold transition ${
+            className={`ml-1 flex h-8 items-center px-2.5 text-phx-xs font-bold transition ${
               manualZoom === null ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white hover:text-slate-900"
             }`}
             onClick={() => setManualZoom(null)}
@@ -775,41 +783,61 @@ export function CvPreviewModal({
     />
   );
 
+  // THE LOOK (2026-10-19 premium sweep): a square viewer, lifted off a darkened page. The house's
+  // dark band names the document and holds Close; under it a light, recessed strip carries the
+  // caller's controls and Download, so a caller's own buttons and error text keep the light ground
+  // they were drawn for. The document itself sits on a grey desk, the page lifted off it.
   const modal = (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#020617]/65 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#020617]/70 p-4 backdrop-blur-sm">
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={`Preview — ${fileName}`}
-        className={`flex h-[85vh] w-full flex-col overflow-hidden rounded-lg border border-phx-line bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)] ${
+        className={`flex h-[85vh] w-full flex-col overflow-hidden border border-slate-300 bg-white shadow-[0_28px_90px_rgba(15,23,42,0.35)] ${
           sidePanel ? "max-w-6xl" : "max-w-3xl"
         }`}
       >
-        <div className="flex items-center justify-between gap-4 border-b border-phx-line px-5 py-3">
-          <p className="break-all text-sm font-semibold text-slate-900">{fileName}</p>
-          <div className="flex flex-wrap items-center justify-end gap-3">
+        <header className={`flex items-start justify-between gap-4 px-4 py-3 text-white sm:px-5 ${adminPanelHeaderClassName}`}>
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <span
+              aria-hidden="true"
+              className="flex h-9 w-9 shrink-0 items-center justify-center border border-orange-400/40 bg-orange-500/15 text-orange-300"
+            >
+              <FileText className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-300">CV preview</p>
+              <p className="break-all text-sm font-semibold text-white">{fileName}</p>
+            </div>
+          </div>
+          <button
+            aria-label="Close"
+            className="flex h-9 w-9 shrink-0 items-center justify-center border border-white/15 bg-white/5 text-slate-200 transition hover:border-white/30 hover:bg-white/15 hover:text-white"
+            onClick={onClose}
+            type="button"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </header>
+        {headerActions || allowDownload ? (
+          <div
+            className={`flex flex-wrap items-center justify-end gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 sm:px-5 ${adminRecessedDepthClassName}`}
+          >
             {headerActions}
             {allowDownload ? (
               <a
-                className="text-xs font-semibold text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"
+                className={`inline-flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-800 ${adminControlDepthClassName}`}
                 href={downloadUrl}
                 rel="noreferrer"
                 target="_blank"
               >
+                <Download aria-hidden="true" className="h-3.5 w-3.5" />
                 Download
               </a>
             ) : null}
-            <button
-              aria-label="Close"
-              className="rounded-md p-1 text-phx-ink-soft transition hover:bg-phx-paper-2 hover:text-slate-900"
-              onClick={onClose}
-              type="button"
-            >
-              <X className="h-5 w-5" />
-            </button>
           </div>
-        </div>
+        ) : null}
 
         {sidePanel ? (
           // Below `lg` this stacks instead of splitting into columns — and deliberately does NOT
@@ -830,13 +858,13 @@ export function CvPreviewModal({
           // 527px, and because it carries no overflow of its own on mobile the extra 40px painted
           // straight over the "On record" panel below it.
           <div className="flex flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
-            <div className="min-h-[60vh] shrink-0 bg-slate-50 lg:min-h-0 lg:flex-1 lg:overflow-auto lg:border-r lg:border-phx-line">
+            <div className="min-h-[60vh] shrink-0 bg-slate-100 lg:min-h-0 lg:flex-1 lg:overflow-auto lg:border-r lg:border-slate-200">
               {documentBody}
             </div>
-            <div className={`w-full shrink-0 p-5 lg:w-[360px] lg:overflow-auto${sidePanelFirstOnPhone ? " order-first lg:order-none" : ""}`}>{sidePanel}</div>
+            <div className={`w-full shrink-0 bg-white p-5 lg:w-[360px] lg:overflow-auto${sidePanelFirstOnPhone ? " order-first lg:order-none" : ""}`}>{sidePanel}</div>
           </div>
         ) : (
-          <div className="flex-1 overflow-auto bg-slate-50">{documentBody}</div>
+          <div className="flex-1 overflow-auto bg-slate-100">{documentBody}</div>
         )}
       </div>
     </div>

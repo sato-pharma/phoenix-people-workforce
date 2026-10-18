@@ -1,8 +1,11 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
+import { Lock } from "lucide-react";
 
+import { adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { PageContainer } from "@/components/layout/page-container";
+import { RecruitmentEmptyState } from "@/components/recruitment/recruitment-premium";
 import { WorkstationPageClient } from "@/components/recruitment/workstation/workstation-page-client";
 import { canAccess, isHrAuthorityRole, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -86,10 +89,16 @@ async function ScreeningContent({
   // `payroll`, `payslips` and `deductions` locked over 30 Aug – 3 Sep 2026.
   const canViewCandidates = await canAccess(access, "candidates", "read");
   if (!canViewCandidates) {
+    // The module's own empty state on a lifted panel (2026-10-19) — the same answer the portal twin
+    // gives with its shell's empty state, rather than a bare boxed sentence.
     return (
-      <p className="border border-slate-200 bg-white p-6 text-sm text-slate-600">
-        Screening is available to roles that can read the candidate pool.
-      </p>
+      <div className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
+        <RecruitmentEmptyState
+          icon={<Lock aria-hidden="true" className="h-5 w-5" />}
+          message="Screening is available to roles that can read the candidate pool."
+          title="Screening Unavailable"
+        />
+      </div>
     );
   }
 

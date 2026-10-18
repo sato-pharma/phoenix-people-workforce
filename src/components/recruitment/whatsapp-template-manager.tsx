@@ -7,8 +7,13 @@
 // editor with chips. The owner writes these by pasting a message he already sends by hand and
 // replacing the parts that change — a WYSIWYG surface would fight that paste, and a placeholder he
 // cannot see is one he cannot delete.
+//
+// THE LOOK (owner, 2026-10-19, the full-module premium sweep): the two actions sit in the recessed
+// tray, the editor is a panel under the house dark band wearing the form kit's labels and buttons, and
+// each category is its own panel listing its templates with the full wording in a recessed well.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Braces, LayoutTemplate, Loader2, MessageCircle, PencilLine, Plus } from "lucide-react";
 
 import { deleteRequest, getJson, patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
 // The SHARED Cairo formatter, not a local toLocaleString. This string is hydrated, and en-GB's
@@ -19,10 +24,21 @@ import { WhatsAppSendDialog } from "@/components/recruitment/whatsapp-send-dialo
 import { cn } from "@/lib/utils";
 import { phxWhatsAppSendButtonClassName } from "@/components/ui/brand-tokens";
 import {
+  phxButtonAccentClassName,
+  phxButtonGhostClassName,
+  phxCheckInputClassName,
   phxFieldClassName,
+  phxHintClassName,
+  phxLabelClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
-import { adminControlDepthClassName, adminPanelDepthClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminControlDepthClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  RecruitmentEmptyState,
+  RecruitmentPanel,
+  RecruitmentPill,
+  recruitmentToolbarClassName,
+} from "@/components/recruitment/recruitment-premium";
 
 type Template = {
   id: string;
@@ -55,6 +71,9 @@ const SUGGESTIONS = [
   "sender_name",
   "company_name",
 ];
+
+/** The small square row controls — Edit, Switch off/on — lifted like every control in the module. */
+const rowButtonClass = `inline-flex items-center gap-1 border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 transition hover:border-slate-400 hover:text-slate-950 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`;
 
 export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -239,37 +258,45 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className={recruitmentToolbarClassName}>
         <button
           className={phxWhatsAppSendButtonClassName}
           onClick={() => setSendOpen(true)}
           type="button"
         >
+          <MessageCircle aria-hidden="true" className="h-4 w-4" />
           Send to any number
         </button>
         {canManage ? (
-          <button
-            className="border border-phx-accent bg-phx-accent px-4 py-2 text-sm font-semibold text-white transition hover:bg-phx-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60"
-            onClick={startCreate}
-            type="button"
-          >
+          <button className={phxButtonAccentClassName} onClick={startCreate} type="button">
+            <Plus aria-hidden="true" className="h-4 w-4" />
             New template
           </button>
         ) : null}
+        {loading ? (
+          <span className="inline-flex items-center gap-1.5 self-center text-xs font-semibold text-slate-500" role="status">
+            <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
+            Loading…
+          </span>
+        ) : null}
       </div>
 
-      {error ? <p className="border border-red-300 bg-red-50 p-2 text-sm text-red-800">{error}</p> : null}
-      {loading ? <p className="text-sm text-slate-600">Loading…</p> : null}
+      {error ? (
+        <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800" role="alert">
+          {error}
+        </p>
+      ) : null}
 
       {editorOpen && canManage ? (
-        <div className={`border border-slate-300 bg-white ${adminPanelDepthClassName}`}>
-          <div className={`border-b border-slate-200 bg-slate-50 px-4 py-2 ${adminRecessedDepthClassName}`}>
-            <h3 className="text-sm font-semibold text-slate-900">{creating ? "New template" : "Edit template"}</h3>
-          </div>
-          <div className="space-y-3 px-4 py-4">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <RecruitmentPanel
+          description="Anything inside {{ }} becomes a box to fill in when you send."
+          icon={<PencilLine aria-hidden="true" className="h-4 w-4" />}
+          title={creating ? "New template" : "Edit template"}
+        >
+          <div className="space-y-4 px-4 py-4 sm:px-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="sm:col-span-2">
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600" htmlFor="tpl-name">
+                <label className={phxLabelClassName} htmlFor="tpl-name">
                   Name
                 </label>
                 <input
@@ -281,7 +308,7 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600" htmlFor="tpl-category">
+                <label className={phxLabelClassName} htmlFor="tpl-category">
                   Category
                 </label>
                 <input
@@ -295,7 +322,7 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600" htmlFor="tpl-body">
+              <label className={phxLabelClassName} htmlFor="tpl-body">
                 Message
               </label>
               <textarea
@@ -307,10 +334,10 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
                 rows={14}
                 value={draft.body}
               />
-              <p className="mt-1 text-xs text-slate-600">
+              <p className={phxHintClassName}>
                 Anything inside {"{{ }}"} becomes a box to fill in when you send. Press one below to insert it.
               </p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
+              <div className={`mt-2 flex flex-wrap gap-1.5 border border-slate-200 bg-slate-50/80 p-2 ${adminRecessedDepthClassName}`}>
                 {SUGGESTIONS.map((key) => (
                   <button
                     className={`border border-phx-line bg-[#FBFCFD] px-2 py-1 font-mono text-[11px] text-slate-700 transition hover:border-phx-accent-line hover:bg-white hover:text-slate-900 ${adminControlDepthClassName}`}
@@ -325,16 +352,16 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
             </div>
 
             <div className="flex flex-wrap items-center gap-4">
-              <label className="flex items-center gap-2 text-sm text-slate-700">
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                 <input
                   checked={draft.isActive}
-                  className="h-4 w-4 border border-slate-400"
+                  className={phxCheckInputClassName}
                   onChange={(event) => setDraft({ ...draft, isActive: event.target.checked })}
                   type="checkbox"
                 />
                 Available to send
               </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700" htmlFor="tpl-order">
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700" htmlFor="tpl-order">
                 Order
                 <input
                   className={cn(phxFieldClassName, "w-20")}
@@ -346,62 +373,71 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
               </label>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="border border-phx-accent bg-phx-accent px-4 py-2 text-sm font-semibold text-white transition hover:bg-phx-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60 disabled:border-slate-300 disabled:bg-slate-300"
-                disabled={busy}
-                onClick={save}
-                type="button"
-              >
+            <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4">
+              <button className={phxButtonAccentClassName} disabled={busy} onClick={save} type="button">
+                {busy ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : null}
                 {busy ? "Saving…" : "Save"}
               </button>
-              <button
-                className={`border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 ${adminControlDepthClassName}`}
-                onClick={cancelEdit}
-                type="button"
-              >
+              <button className={phxButtonGhostClassName} onClick={cancelEdit} type="button">
                 Cancel
               </button>
             </div>
           </div>
-        </div>
+        </RecruitmentPanel>
+      ) : null}
+
+      {!loading && !error && templates.length === 0 ? (
+        <RecruitmentPanel icon={<LayoutTemplate aria-hidden="true" className="h-4 w-4" />} title="Templates">
+          <RecruitmentEmptyState
+            icon={<LayoutTemplate aria-hidden="true" className="h-5 w-5" />}
+            message={
+              canManage
+                ? "Press New template to write the first one."
+                : "Nobody has written a WhatsApp template yet."
+            }
+            title="No templates yet"
+          />
+        </RecruitmentPanel>
       ) : null}
 
       {grouped.map(([category, list]) => (
-        <div className="space-y-2" key={category}>
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">{category}</h3>
-          <div className="space-y-2">
+        <RecruitmentPanel
+          count={list.length}
+          icon={<LayoutTemplate aria-hidden="true" className="h-4 w-4" />}
+          key={category}
+          title={<span dir="auto">{category}</span>}
+        >
+          <ul className="divide-y divide-slate-100">
             {list.map((template) => (
-              <div
+              <li
                 className={cn(
-                  "border bg-white p-3",
-                  template.isActive ? "border-slate-300" : "border-slate-200 bg-slate-50",
+                  "relative px-4 py-4 sm:px-5",
+                  template.isActive ? "bg-white" : "bg-slate-50/70",
                 )}
                 key={template.id}
               >
+                {/* The side rail: orange for a template that can be sent, grey for one switched off. */}
+                <span
+                  aria-hidden="true"
+                  className={cn("absolute inset-y-0 left-0 w-[3px]", template.isActive ? "bg-orange-400" : "bg-slate-300")}
+                />
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-900">
+                  <div className="min-w-0 grow basis-56">
+                    <p className="flex flex-wrap items-center gap-2 break-words text-sm font-black text-slate-950" dir="auto">
                       {template.name}
-                      {template.isActive ? null : (
-                        <span className="ml-2 border border-slate-400 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
-                          Switched off
-                        </span>
-                      )}
+                      {template.isActive ? null : <RecruitmentPill tone="slate">Switched off</RecruitmentPill>}
                     </p>
-                    <p className="text-xs text-slate-600">Last changed {cairoDateTime(template.updatedAt)} (Cairo)</p>
+                    <p className="mt-0.5 text-xs tabular-nums text-slate-500">
+                      Last changed {cairoDateTime(template.updatedAt)} (Cairo)
+                    </p>
                   </div>
                   {canManage ? (
                     <div className="flex flex-wrap gap-1.5">
-                      <button
-                        className={`border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 ${adminControlDepthClassName}`}
-                        onClick={() => startEdit(template)}
-                        type="button"
-                      >
+                      <button className={rowButtonClass} onClick={() => startEdit(template)} type="button">
                         Edit
                       </button>
                       <button
-                        className={`border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 ${adminControlDepthClassName}`}
+                        className={rowButtonClass}
                         disabled={busy}
                         onClick={() => toggleActive(template)}
                         type="button"
@@ -409,7 +445,7 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
                         {template.isActive ? "Switch off" : "Switch on"}
                       </button>
                       <button
-                        className="border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+                        className={`inline-flex items-center gap-1 border border-rose-300 bg-white px-2.5 py-1.5 text-xs font-bold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                         disabled={busy}
                         onClick={() => remove(template)}
                         type="button"
@@ -421,20 +457,21 @@ export function WhatsAppTemplateManager({ canManage }: { canManage: boolean }) {
                 </div>
                 {/* The whole body, wrapped — never clipped and never an ellipsis. */}
                 <p
-                  className={`mt-2 whitespace-pre-wrap break-words border border-slate-200 bg-slate-50 p-2 text-[13px] leading-relaxed text-slate-700 ${adminRecessedDepthClassName}`}
+                  className={`mt-3 whitespace-pre-wrap break-words border border-slate-200 bg-slate-50 px-3 py-2.5 text-[13px] leading-relaxed text-slate-700 ${adminRecessedDepthClassName}`}
                   dir="auto"
                 >
                   {template.body}
                 </p>
                 {template.variableKeys.length > 0 ? (
-                  <p className="mt-1.5 text-xs text-slate-600">
-                    Asks for: {template.variableKeys.join(", ")}
+                  <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
+                    <Braces aria-hidden="true" className="h-3.5 w-3.5 text-orange-500" />
+                    <span className="font-bold">Asks for:</span> {template.variableKeys.join(", ")}
                   </p>
                 ) : null}
-              </div>
+              </li>
             ))}
-          </div>
-        </div>
+          </ul>
+        </RecruitmentPanel>
       ))}
 
       {sendOpen ? <WhatsAppSendDialog onClose={() => setSendOpen(false)} /> : null}

@@ -1,7 +1,10 @@
+import { Eye } from "lucide-react";
 import { redirect } from "next/navigation";
 
+import { AdminInsightChip } from "@/components/admin/admin-design-system";
 import { PageContainer } from "@/components/layout/page-container";
 import { ManagerEngagementView } from "@/components/recruitment/manager-engagement-view";
+import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canViewManagerCvEngagement, loadManagerCvEngagement } from "@/lib/recruitment/manager-cv-engagement";
@@ -39,14 +42,15 @@ export default async function ManagerEngagementPage() {
 
   return (
     <PageContainer>
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold text-slate-900">Manager CV Engagement</h1>
-        <p className="text-sm text-slate-500">
-          For every manager: how many CVs are in their My Candidates folder, how many they opened, how many are still
-          unopened, and how many they answered.
-        </p>
+      <div className="space-y-6">
+        <RecruitmentPageHeader
+          badges={<AdminInsightChip tone="slate">Silent report</AdminInsightChip>}
+          description="For every manager: how many CVs are in their My Candidates folder, how many they opened, how many are still unopened, and how many they answered."
+          icon={<Eye aria-hidden="true" className="h-3.5 w-3.5" />}
+          title="Manager CV Engagement"
+        />
+        <ManagerEngagementView report={report} />
       </div>
-      <ManagerEngagementView report={report} />
     </PageContainer>
   );
 }

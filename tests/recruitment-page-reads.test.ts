@@ -44,6 +44,7 @@ function readsOf(overrides: Partial<Record<keyof RecruitmentPageReads, () => Pro
     ]),
     areaOptions: ok([{ id: "a1" }]),
     cvFolders: ok({ members: new Map([["f1", ["c1"]]]), rows: [{ id: "f1" }] }),
+    whatsappQuestions: ok({ audiences: {}, questions: [] }),
     ...overrides,
   } as unknown as RecruitmentPageReads;
 }
@@ -164,6 +165,7 @@ export async function runRecruitmentPageReadsTests() {
         employeeDirectory: boom("f"),
         areaOptions: boom("g"),
         cvFolders: boom("h"),
+        whatsappQuestions: boom("i"),
       }),
     );
     assert.deepEqual(unavailableSources(everything.failures), [
@@ -175,8 +177,10 @@ export async function runRecruitmentPageReadsTests() {
       "employeeDirectory",
       "areaOptions",
       "cvFolders",
+      "whatsappQuestions",
     ]);
     assert.equal(everything.dashboard, null);
+    assert.equal(everything.whatsappQuestions, null, "a question list that did not load is null, never an empty list");
     assert.deepEqual(everything.candidates, []);
   }
 
@@ -247,7 +251,8 @@ export async function runRecruitmentPageReadsTests() {
   );
   assert.ok(workspace.includes("<RecruitmentUnavailableNotice"), "the workspace names what did not load");
   assert.ok(
-    workspace.includes('value={poolUnavailable ? "—" : candidateStats.arrivedToday}'),
+    // The tiles are a RecruitmentKpiStrip since the 2026-10-19 premium sweep, so the value is an item field.
+    workspace.includes('value: poolUnavailable ? "—" : candidateStats.arrivedToday,'),
     "a pool that did not load reads as a dash in the tiles, never as zero CVs",
   );
   assert.ok(

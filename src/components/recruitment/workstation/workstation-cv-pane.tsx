@@ -26,7 +26,7 @@ import { Download, ExternalLink, FileWarning, Loader2 } from "lucide-react";
 
 import { CvDocumentView } from "@/components/recruitment/cv-preview-modal";
 import { ActionLink } from "@/components/recruitment/workstation/workstation-look";
-import { PaneHead } from "@/components/recruitment/workstation/workstation-ui";
+import { EmptyNote, PaneHead } from "@/components/recruitment/workstation/workstation-ui";
 
 export type CvPaneFile = {
   id: string;
@@ -56,19 +56,20 @@ export function WorkstationCvPane({
       <PaneHead title="CV">
         {file && downloadUrl ? (
           <span className="ml-auto flex shrink-0 items-center gap-2">
-            <span className="hidden max-w-[220px] break-all text-[11px] text-phx-ink-soft md:inline">
+            <span className="hidden max-w-[220px] break-all text-[11px] text-slate-300 md:inline">
               {file.fileName}
             </span>
             {/* Both are escapes, not actions — they exist for the day the preview cannot draw the
                 file — so they take the quietest volume the kit has and get out of the document's
-                way. They were two more hand-typed copies of the page's one button. */}
+                way. They were two more hand-typed copies of the page's one button. On the pane's
+                dark band since 2026-10-19, so they wear the kit's on-dark tone. */}
             <ActionLink
               className="px-2 py-1 text-[11px]"
               href={`${downloadUrl}?disposition=inline`}
               rel="noreferrer"
               target="_blank"
               title="Open this CV in its own browser tab"
-              tone="quiet"
+              tone="onDark"
             >
               <ExternalLink aria-hidden className="h-3 w-3" />
               New tab
@@ -77,7 +78,7 @@ export function WorkstationCvPane({
               className="px-2 py-1 text-[11px]"
               href={downloadUrl}
               title="Save this CV to your machine"
-              tone="quiet"
+              tone="onDark"
             >
               <Download aria-hidden className="h-3 w-3" />
               Download
@@ -114,16 +115,14 @@ export function WorkstationCvPane({
             mimeType={file.mimeType}
           />
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-            <FileWarning aria-hidden className="h-6 w-6 text-phx-warn" />
-            <p className="text-[14px] font-bold text-phx-ink">No readable CV attached</p>
+          <div className="flex h-full flex-col items-center justify-center">
             {/* Two different facts, said differently, because they need different actions: chase the
-                applicant, or open the file by hand. */}
-            <p className="max-w-sm text-[12px] leading-relaxed text-phx-ink-soft">
+                applicant, or open the file by hand. Said with the module's own empty state. */}
+            <EmptyNote icon={<FileWarning aria-hidden className="h-5 w-5" />} title="No readable CV attached">
               {attachedCount === 0
                 ? "No file is attached to this candidate."
                 : `${attachedCount} file${attachedCount === 1 ? "" : "s"} on the record, none of them a CV this viewer can draw. Download from the candidate's folder to open it.`}
-            </p>
+            </EmptyNote>
           </div>
         )}
       </div>

@@ -8,6 +8,7 @@
 import { Loader2, Star } from "lucide-react";
 import { useState } from "react";
 
+import { RecruitmentPill, type RecruitmentPillTone } from "@/components/recruitment/recruitment-premium";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import {
   INTERVIEW_VERDICTS,
@@ -17,9 +18,11 @@ import {
 } from "@/lib/recruitment/interview-calendar-types";
 
 import { type CalendarApi, reasonText } from "./calendar-api";
-import { ErrorLine } from "./calendar-dialog";
-import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { ErrorLine, PanelHeading } from "./calendar-dialog";
+import { phxLabelTextClassName, phxTextareaClassName } from "@/components/ui/form-tokens";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+
+const VERDICT_TONE: Record<InterviewVerdict, RecruitmentPillTone> = { no: "rose", strong_yes: "emerald", yes: "sky" };
 
 function Stars({ rating }: { rating: number }) {
   return (
@@ -63,19 +66,25 @@ export function ScorecardPanel({ api, booking, onChanged }: { api: CalendarApi; 
 
   return (
     <section aria-label="Scorecards" className="border-t border-slate-200 pt-3">
-      <p className="mb-2 text-[12px] font-bold uppercase tracking-[0.06em] text-slate-700">
-        Scorecards{booking.scorecards.length > 0 ? ` (${booking.scorecards.length})` : ""}
-      </p>
+      <PanelHeading
+        aside={
+          booking.scorecards.length > 0 ? (
+            <span className="text-[11px] font-bold tabular-nums text-slate-500">{booking.scorecards.length} filed</span>
+          ) : null
+        }
+      >
+        Scorecards
+      </PanelHeading>
 
       {others.length > 0 ? (
         <ul className="mb-3 flex flex-col gap-2">
           {others.map((scorecard) => (
-            <li className="border-l-[3px] border-l-slate-300 bg-slate-50 px-3 py-2" key={scorecard.evaluatorHrId}>
-              <p className="flex flex-wrap items-center justify-between gap-x-2 text-[12px]">
-                <span className="font-bold text-slate-800">{scorecard.evaluatorName}</span>
+            <li className={`border border-slate-200 border-l-[3px] border-l-orange-400 bg-white px-3 py-2 ${adminSoftDepthClassName}`} key={scorecard.evaluatorHrId}>
+              <p className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[12px]">
+                <span className="min-w-0 break-words font-bold text-slate-800">{scorecard.evaluatorName}</span>
                 <span className="inline-flex items-center gap-2">
                   <Stars rating={scorecard.rating} />
-                  <span className="font-semibold text-slate-700">{INTERVIEW_VERDICT_LABEL[scorecard.verdict]}</span>
+                  <RecruitmentPill tone={VERDICT_TONE[scorecard.verdict]}>{INTERVIEW_VERDICT_LABEL[scorecard.verdict]}</RecruitmentPill>
                 </span>
               </p>
               {scorecard.comment ? <p className="mt-0.5 whitespace-pre-wrap break-words text-[12px] text-slate-600">{scorecard.comment}</p> : null}
@@ -85,8 +94,8 @@ export function ScorecardPanel({ api, booking, onChanged }: { api: CalendarApi; 
       ) : null}
 
       {booking.canScoreInterview ? (
-        <div className={`border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
-          <p className="text-[12px] font-bold text-slate-700">{mine ? "Your scorecard" : "Add your scorecard"}</p>
+        <div className={`border border-slate-200 border-l-[3px] border-l-orange-500 bg-white p-3 ${adminSoftDepthClassName}`}>
+          <p className={phxLabelTextClassName}>{mine ? "Your scorecard" : "Add your scorecard"}</p>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <div aria-label="Rating" className="inline-flex items-center gap-1" role="group">
               {[1, 2, 3, 4, 5].map((n) => (
@@ -99,7 +108,7 @@ export function ScorecardPanel({ api, booking, onChanged }: { api: CalendarApi; 
               {INTERVIEW_VERDICTS.map((option, index) => (
                 <button
                   aria-pressed={verdict === option}
-                  className={`border px-2.5 py-1.5 text-[12px] font-bold leading-none ${index > 0 ? "-ml-px" : ""} ${verdict === option ? "relative border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+                  className={`border px-2.5 py-1.5 text-[12px] font-bold leading-none ${index > 0 ? "-ml-px" : ""} ${verdict === option ? "relative border-slate-900 bg-slate-900 text-white shadow-[inset_0_-2px_0_#f97316]" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
                   key={option}
                   onClick={() => setVerdict(option)}
                   type="button"

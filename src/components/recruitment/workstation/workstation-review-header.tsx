@@ -62,7 +62,10 @@ import { CandidateApplicationActions } from "@/components/recruitment/candidate-
 import { WhatsAppReplyBox } from "@/components/recruitment/whatsapp-reply-box";
 import { WhatsAppSendDialog } from "@/components/recruitment/whatsapp-send-dialog";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
-import { Pill, relativeDays, useSectionFold } from "@/components/recruitment/workstation/workstation-ui";
+import { relativeDays, useSectionFold } from "@/components/recruitment/workstation/workstation-ui";
+import { adminControlDepthClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
+import { RecruitmentPill } from "@/components/recruitment/recruitment-premium";
+import { phxWhatsAppShareButtonClassName } from "@/components/ui/brand-tokens";
 import {
   composeRejectionNote,
   rejectionReasonLabels,
@@ -77,7 +80,13 @@ import { CandidateStars } from "@/components/recruitment/workstation/candidate-s
 import { RequisitionRecommendationBand } from "@/components/recruitment/workstation/requisition-recommendation-band";
 import type { CandidateRating } from "@/lib/recruitment/candidate-rating";
 import { cn } from "@/lib/utils";
-import { phxFieldClassName } from "@/components/ui/form-tokens";
+import {
+  phxButtonAccentClassName,
+  phxButtonApproveDenseClassName,
+  phxButtonDangerClassName,
+  phxButtonDangerDenseClassName,
+  phxFieldClassName,
+} from "@/components/ui/form-tokens";
 
 export type SendState = {
   managerHrIds: string[];
@@ -196,10 +205,12 @@ export function WorkstationReviewHeader({
   // is just a thinner bar.
   const [actionsOpen, toggleActions] = useSectionFold("review:actions");
   const status = decided ?? row.status ?? "new";
+  // THE STAGE, in the recruitment kit's own pill — the same chip, in the same colour, that names a
+  // stage on the pool, the folders and the interview calendar.
   const statusPill = (
-    <Pill tone={status === "rejected" ? "danger" : status === "new" ? "accent" : "ok"}>
+    <RecruitmentPill tone={status === "rejected" ? "rose" : status === "new" ? "orange" : "emerald"}>
       {candidateStatusLabel(status)}
-    </Pill>
+    </RecruitmentPill>
   );
   const decisions = (
     <>
@@ -224,7 +235,7 @@ export function WorkstationReviewHeader({
         label="WhatsApp"
         onClick={() => setWhatsAppOpen(true)}
         pressed={whatsAppOpen}
-        tone="info"
+        tone="whatsapp"
       />
       {whatsAppOpen ? (
         <WhatsAppSendDialog
@@ -419,7 +430,7 @@ export function WorkstationReviewHeader({
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 bg-phx-surface-2 px-3 py-1">
           <button
             aria-label="Leave full-screen reading"
-            className="shrink-0 border border-phx-line bg-white p-1 text-phx-ink-2 transition-colors hover:border-phx-accent-line hover:text-phx-accent-press"
+            className={`shrink-0 border border-phx-line bg-white p-1 text-phx-ink-2 transition-colors hover:border-phx-accent-line hover:text-phx-accent-press ${adminControlDepthClassName}`}
             onClick={onToggleFocus}
             title="Leave full-screen reading — or press Escape"
             type="button"
@@ -457,8 +468,11 @@ export function WorkstationReviewHeader({
     </button>
   );
 
+  // NO EDGE OF ITS OWN since 2026-10-19: the cockpit wraps this block and the duplicate line under it
+  // in ONE lifted card — the focal surface of the page — so the hairline and the depth are the
+  // card's, and an edge here would draw a second line along the card's own.
   return (
-    <div className="shrink-0 border-b border-phx-line bg-white">
+    <div className="shrink-0 bg-white">
       {/* ── Who ───────────────────────────────────────────────────────────── */}
       {!whoOpen ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-1.5">
@@ -598,21 +612,35 @@ export function WorkstationReviewHeader({
   );
 }
 
-type DecisionTone = "ok" | "danger" | "info" | "accent";
+type DecisionTone = "ok" | "danger" | "info" | "accent" | "whatsapp";
 
-/** Every press on the strip is this size and weight — a button and a link alike. */
-const DECISION_SHAPE =
-  "inline-flex items-center gap-1.5 border px-3 py-1.5 text-[13px] font-bold leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-45";
+/**
+ * Every press on the strip is this size and weight — a button and a link alike — and carries the
+ * house control depth, dropped while it is disabled (a greyed control still floating reads as one
+ * that will answer).
+ */
+const DECISION_SHAPE = `inline-flex items-center gap-1.5 border px-3 py-1.5 text-[13px] font-bold leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${adminControlDepthClassName} disabled:shadow-none`;
 
-/** A press at rest: white, the meaning in the ink, its own tint only under the pointer. */
+/**
+ * A press at rest.
+ *
+ * SHORTLIST AND REJECT ARE THE HOUSE DECISION PAIR (2026-10-19, the owner's full premium sweep): the
+ * approve green and the reject rose every other decision pair in Phoenix wears, from the form kit's
+ * DENSE pair — colour only, so the strip's own shape above still sets their size and they stay the
+ * same height as everything beside them. WhatsApp wears the WhatsApp brand button, like every
+ * WhatsApp press in the app; the shape is applied after it, so it takes the strip's geometry and
+ * keeps the brand's colours. The ways of reaching a person stay white with the meaning in the ink.
+ */
 function decisionRest(tone: DecisionTone): string {
   return tone === "ok"
-    ? "border-phx-line bg-white text-phx-ok hover:border-phx-ok-line hover:bg-phx-ok-bg"
+    ? phxButtonApproveDenseClassName
     : tone === "danger"
-      ? "border-phx-line bg-white text-phx-danger hover:border-phx-danger-line hover:bg-phx-danger-bg"
+      ? phxButtonDangerDenseClassName
       : tone === "info"
         ? "border-phx-line bg-white text-phx-info hover:border-phx-info-line hover:bg-phx-info-bg"
-        : "border-phx-accent-press bg-phx-accent text-phx-accent-ink shadow-[0_1px_2px_rgba(13,16,21,0.10)] hover:bg-phx-accent-hover";
+        : tone === "whatsapp"
+          ? phxWhatsAppShareButtonClassName
+          : "border-phx-accent-press bg-phx-accent text-phx-accent-ink hover:bg-phx-accent-hover";
 }
 
 function DecisionButton({
@@ -653,38 +681,45 @@ function DecisionButton({
   title?: string;
   tone: DecisionTone;
 }) {
-  // ── ONE LOUD BUTTON PER ROW, AND IT IS THE ONE THAT MOVES THE WORK ─────────────────────────────
+  // ── THE LOUD VOLUME IS SPENT ON THE VERDICTS AND ON MOVING ON — NOWHERE ELSE ──────────────────
   //
   // Until 2026-09-12 all five of these were filled blocks — green, red, blue, blue, orange, side by
   // side at the same size and the same weight. Five tinted rectangles in a row is not five
   // affordances, it is a stripe: nothing in it can be more important than anything else, and the
-  // owner's word for the screen that resulted was "noisy".
+  // owner's word for the screen that resulted was "noisy". So the colour moved into the ink, and only
+  // "Next candidate" kept a solid ground.
   //
-  // So the COLOUR MOVES INTO THE INK. The verdict buttons sit on white behind the same hairline as
-  // everything else, carrying their meaning in the glyph and the word — green for shortlist, red for
-  // reject — and fill with their own tint only under the pointer, which is the moment the meaning is
-  // about to matter. Exactly one button keeps a solid ground, and it is "Next candidate", because
-  // that is the press this screen is built to make cheap. The Band kit states the same rule for
-  // bands: the loudest volume is spent once, or it is not loud.
+  // 2026-10-19, THE OWNER'S FULL PREMIUM SWEEP: Shortlist and Reject wear the house decision pair —
+  // solid approve-green and reject-rose, the pair every other verdict in Phoenix wears — and WhatsApp
+  // wears its brand button. That is still not the stripe: the ways of reaching the person (LinkedIn,
+  // the interview, the application, Send to manager) stay white with the meaning in the ink, so the
+  // filled grounds are exactly the two verdicts, the brand press and the one that moves the work on.
   //
-  // A PRESSED BUTTON HAS A PANEL OPEN UNDERNEATH IT, so it wears the filled tint and an inset
+  // A PRESSED BUTTON HAS A PANEL OPEN UNDERNEATH IT, so it wears its darker fill and an inset
   // shadow — pushed in, not glowing. The old `ring-1` read as a halo, which is the one ornament this
   // design system does not own.
-  const rest = decisionRest(tone);
+  const rest = tone === "whatsapp" ? null : decisionRest(tone);
   const held =
     tone === "ok"
-      ? "border-phx-ok-line bg-phx-ok-bg text-phx-ok"
+      ? "border-emerald-700 bg-emerald-700 text-white"
       : tone === "danger"
-        ? "border-phx-danger-line bg-phx-danger-bg text-phx-danger"
+        ? "border-rose-700 bg-rose-700 text-white"
         : tone === "info"
           ? "border-phx-info-line bg-phx-info-bg text-phx-info"
-          : "border-phx-accent-press bg-phx-accent-hover text-phx-accent-ink";
+          : tone === "whatsapp"
+            ? "border-[#1DA851] bg-[#1DA851] text-slate-900"
+            : "border-phx-accent-press bg-phx-accent-hover text-phx-accent-ink";
   return (
     <button
       aria-pressed={pressed}
       className={cn(
+        // The WhatsApp brand button goes FIRST, so the strip's shape after it wins the geometry and
+        // the brand keeps its colours.
+        tone === "whatsapp" ? phxWhatsAppShareButtonClassName : null,
         DECISION_SHAPE,
-        pressed ? cn(held, "shadow-[inset_0_1px_2px_rgba(13,16,21,0.14)]") : rest,
+        pressed
+          ? cn(held, "shadow-[inset_0_1px_2px_rgba(13,16,21,0.14)] hover:shadow-[inset_0_1px_2px_rgba(13,16,21,0.14)]")
+          : rest,
       )}
       disabled={disabled}
       onClick={onClick}
@@ -750,7 +785,7 @@ function RejectPanel({
   const [detail, setDetail] = useState("");
 
   return (
-    <div className="border-t border-phx-line bg-phx-paper px-4 py-2.5">
+    <div className={cn("border-t border-phx-line bg-phx-paper px-4 py-2.5", adminRecessedDepthClassName)}>
       <p className="text-[12px] font-bold uppercase tracking-[0.06em] text-phx-ink-2">Why are they not going forward?</p>
       <div className="mt-1.5 flex flex-wrap gap-1">
         {rejectionReasons.map((key) => (
@@ -786,7 +821,12 @@ function RejectPanel({
           Cancel
         </Action>
         <button
-          className="border border-phx-danger-line bg-phx-danger px-3 py-2 text-[13px] font-bold leading-none text-white shadow-[0_1px_2px_rgba(13,16,21,0.10)] transition-colors hover:bg-phx-danger/90 disabled:cursor-not-allowed disabled:opacity-45"
+          className={cn(
+            phxButtonDangerClassName,
+            "px-3 py-2 text-[13px] leading-none disabled:cursor-not-allowed disabled:opacity-45",
+            adminControlDepthClassName,
+            "disabled:shadow-none",
+          )}
           /* A reason is required and the button says so by staying off — the whole point of the
              list is that the archive can be counted, and an unlabelled rejection is the state this
              replaces.
@@ -794,7 +834,8 @@ function RejectPanel({
              The one control on this page that is NOT built from the Action kit, and deliberately:
              the kit has three volumes and the loudest of them is the accent, which is the page's
              "carry on" colour. This is the single irreversible-feeling act on the screen and it has
-             to be unmistakably its own thing. */
+             to be unmistakably its own thing — so it wears the house's reject token (2026-10-19), the
+             same rose as the Reject that opened this panel, at the panel's own size. */
           disabled={busy || reason === null}
           onClick={() => {
             if (!reason) return;
@@ -854,7 +895,7 @@ function SendPanel({
   };
 
   return (
-    <div className="border-t border-phx-line bg-phx-paper px-4 py-2.5">
+    <div className={cn("border-t border-phx-line bg-phx-paper px-4 py-2.5", adminRecessedDepthClassName)}>
       <div className="flex flex-wrap items-start gap-2">
         <div className="min-w-[240px] flex-1">
           <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.06em] text-phx-ink-soft">
@@ -923,8 +964,14 @@ function SendPanel({
       ) : null}
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
+        {/* The panel's one commit, so it wears the form kit's terminal commit at the strip's size. */}
         <button
-          className="inline-flex items-center gap-1.5 border border-phx-info-line bg-phx-info px-3 py-1.5 text-[13px] font-bold text-white transition hover:opacity-90 disabled:opacity-45"
+          className={cn(
+            phxButtonAccentClassName,
+            "px-3 py-1.5 text-[13px]",
+            adminControlDepthClassName,
+            "disabled:shadow-none",
+          )}
           disabled={busy || state.managerHrIds.length === 0}
           onClick={onSend}
           type="button"

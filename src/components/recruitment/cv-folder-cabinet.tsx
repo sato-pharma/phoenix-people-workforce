@@ -27,7 +27,21 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, Copy, FolderPlus, FolderTree, Pencil, Trash2, Undo2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  FileText,
+  Folder,
+  FolderInput,
+  FolderOpen,
+  FolderPlus,
+  FolderTree,
+  Pencil,
+  Search,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 
 import { deleteJson, deleteRequest, patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
@@ -45,7 +59,19 @@ import {
   phxFieldClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
-import { adminControlDepthClassName, adminPanelClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  adminChipDepthClassName,
+  adminControlDepthClassName,
+  adminPanelDepthClassName,
+  adminPanelHeaderClassName,
+  adminRecessedDepthClassName,
+  adminSoftDepthClassName,
+} from "@/components/admin/admin-design-tokens";
+import {
+  RecruitmentEmptyState,
+  RecruitmentPill,
+  recruitmentToolbarClassName,
+} from "@/components/recruitment/recruitment-premium";
 
 /**
  * The rows and memberships, exactly as the page loaded them.
@@ -250,30 +276,40 @@ export function CvFolderCabinet({
   );
 
   return (
-    <section className={adminPanelClassName}>
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-phx-line px-3 py-2">
-        <h3 className="flex items-center gap-1.5 whitespace-nowrap text-sm font-black text-phx-ink">
-          <FolderTree className="h-4 w-4" aria-hidden="true" />
+    <section className={`min-w-0 border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
+      {/* The cabinet's own band — the module's dark panel header, so this reads as the same kind of
+          surface as every other Recruitment panel. The title, the count and the sentence wrap
+          independently: the sentence is prose and must never sit at `whitespace-nowrap`. */}
+      <header
+        className={cn(
+          "flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 text-white",
+          adminPanelHeaderClassName,
+        )}
+      >
+        <h3 className="flex items-center gap-1.5 whitespace-nowrap text-sm font-black uppercase tracking-[0.12em] text-white">
+          <FolderTree className="h-4 w-4 text-orange-300" aria-hidden="true" />
           Your folders
         </h3>
-        {/* Wraps rather than sitting on one line — measured at 375px this sentence is wider than the
-            phone, and the page does not scroll sideways, so a nowrap here paints the tail off the
-            edge where nothing can reach it. */}
-        <p className="text-xs font-medium text-slate-500">
-          Folders you make yourself, nested as deep as {MAX_CV_FOLDER_DEPTH} levels. A CV pushed here
-          leaves the main pool; copying puts the same CV in a second folder.
-        </p>
-        <span className="ml-auto whitespace-nowrap text-xs font-bold tabular-nums text-phx-accent-press">
+        <span className="whitespace-nowrap border border-orange-400/40 bg-orange-500/15 px-1.5 py-0.5 text-phx-2xs font-black tabular-nums text-orange-100">
           {cabinet.rows.length} folder{cabinet.rows.length === 1 ? "" : "s"} · {filedTotal} CV
           {filedTotal === 1 ? "" : "s"}
         </span>
-      </div>
+        {/* Wraps rather than sitting on one line — measured at 375px this sentence is wider than the
+            phone, and the page does not scroll sideways, so a nowrap here paints the tail off the
+            edge where nothing can reach it. */}
+        <p className="basis-full text-xs font-medium leading-5 text-slate-300">
+          Folders you make yourself, nested as deep as {MAX_CV_FOLDER_DEPTH} levels. A CV pushed here
+          leaves the main pool; copying puts the same CV in a second folder.
+        </p>
+      </header>
 
       {error ? (
-        <p className="border-b border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{error}</p>
+        <p className="border-b border-rose-200 border-l-4 border-l-rose-500 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700">
+          {error}
+        </p>
       ) : null}
       {notice ? (
-        <p className="border-b border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+        <p className="border-b border-emerald-200 border-l-4 border-l-emerald-500 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700">
           {notice}
         </p>
       ) : null}
@@ -282,12 +318,12 @@ export function CvFolderCabinet({
           makes the column wrap rather than forcing the grid wider than the screen. */}
       <div className="grid gap-0 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         {/* ── THE TREE ──────────────────────────────────────────────────────────────────────── */}
-        <div className="border-b border-phx-line lg:border-b-0 lg:border-r">
-          <div className="flex flex-wrap items-center gap-2 border-b border-phx-line px-3 py-2">
-            <span className="text-xs font-bold uppercase tracking-wide text-phx-ink-soft">Folders</span>
+        <div className={`min-w-0 border-b border-slate-200 bg-slate-50/70 lg:border-b-0 lg:border-r ${adminRecessedDepthClassName}`}>
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-3 py-2.5">
+            <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Folders</span>
             {canManage ? (
               <button
-                className={`ml-auto flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+                className={`ml-auto flex items-center gap-1 border border-orange-600 bg-orange-600 px-2.5 py-1 text-[12px] font-bold text-white transition hover:bg-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                 disabled={busy}
                 onClick={() => createFolder(null)}
                 type="button"
@@ -299,11 +335,13 @@ export function CvFolderCabinet({
           </div>
 
           {tree.length === 0 ? (
-            <p className="px-3 py-6 text-center text-xs font-medium text-slate-500">
-              No folders yet. {canManage ? "Make one and push the CVs you want to keep for later." : ""}
-            </p>
+            <RecruitmentEmptyState
+              icon={<FolderTree aria-hidden="true" className="h-5 w-5" />}
+              message={`No folders yet. ${canManage ? "Make one and push the CVs you want to keep for later." : ""}`}
+              title="An empty cabinet"
+            />
           ) : (
-            <ul className="py-1">
+            <ul className="space-y-0.5 p-1.5">
               {tree.map((node) => (
                 <CvFolderBranch
                   expanded={expanded}
@@ -321,18 +359,25 @@ export function CvFolderCabinet({
         {/* ── THE OPEN FOLDER ───────────────────────────────────────────────────────────────── */}
         <div className="min-w-0">
           {!openFolder ? (
-            <p className="px-3 py-6 text-center text-xs font-medium text-slate-500">
-              Pick a folder on the left to see what is in it.
-            </p>
+            <RecruitmentEmptyState
+              icon={<FolderOpen aria-hidden="true" className="h-5 w-5" />}
+              message="Pick a folder on the left to see what is in it."
+              title="No folder open"
+            />
           ) : (
             <div className="min-w-0">
-              <div className="border-b border-phx-line px-3 py-2">
+              <div className="border-b border-slate-200 px-4 py-3">
                 {/* The full path, wrapping. A breadcrumb that truncates breaks the owner's no-ellipsis
                     rule and is also the one line that says WHICH "Cairo" this is. */}
-                <p className="text-[12px] font-medium text-slate-500">{openFolder.path.join(" › ")}</p>
-                <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                  <h4 className="text-sm font-black text-phx-ink">{openFolder.name}</h4>
-                  <span className="whitespace-nowrap text-xs font-bold tabular-nums text-phx-accent-press">
+                <p className="break-words text-[12px] font-medium text-slate-500">{openFolder.path.join(" › ")}</p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  <h4 className="flex min-w-0 items-center gap-2 break-words text-base font-black tracking-tight text-slate-950">
+                    <FolderOpen aria-hidden="true" className="h-5 w-5 flex-none text-orange-500" />
+                    {openFolder.name}
+                  </h4>
+                  <span
+                    className={`whitespace-nowrap border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-xs font-bold tabular-nums text-orange-800 ${adminChipDepthClassName}`}
+                  >
                     {openFolder.directCount} here
                     {openFolder.totalCount !== openFolder.directCount
                       ? ` · ${openFolder.totalCount} with subfolders`
@@ -344,7 +389,7 @@ export function CvFolderCabinet({
                 </div>
 
                 {canManage ? (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
+                  <div className={cn("mt-3", recruitmentToolbarClassName, "items-center gap-2 px-2.5 py-2 sm:px-3")}>
                     <FolderAction
                       busy={busy}
                       icon={<FolderPlus className="h-3.5 w-3.5" aria-hidden="true" />}
@@ -359,11 +404,12 @@ export function CvFolderCabinet({
                     />
                     <FolderAction
                       busy={busy}
+                      danger
                       icon={<Trash2 className="h-3.5 w-3.5" aria-hidden="true" />}
                       label="Delete"
                       onClick={() => deleteFolder(openFolder)}
                     />
-                    <label className="flex flex-wrap items-center gap-1.5 text-[12px] font-semibold text-phx-ink-2">
+                    <label className="flex flex-wrap items-center gap-1.5 text-[12px] font-semibold text-slate-700">
                       Move this folder into
                       {/* A native select, never shrunk — the owner's rule. `w-full sm:w-auto` lets it
                           take its own line on a phone instead of squeezing the label off screen. */}
@@ -392,55 +438,65 @@ export function CvFolderCabinet({
 
               {/* ── PUSH CVs IN ─────────────────────────────────────────────────────────────── */}
               {canManage ? (
-                <div className="border-b border-phx-line px-3 py-2">
+                <div className="border-b border-slate-200 px-4 py-2.5">
                   <button
-                    className={`flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper ${adminControlDepthClassName}`}
+                    aria-expanded={adding}
+                    className={cn(
+                      `flex items-center gap-1 border px-2.5 py-1 text-[12px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${adminControlDepthClassName}`,
+                      adding
+                        ? "border-slate-900 bg-slate-900 text-white hover:bg-slate-800"
+                        : "border-orange-300 bg-white text-orange-700 hover:bg-orange-50",
+                    )}
                     onClick={() => setAdding((current) => !current)}
                     type="button"
                   >
-                    <FolderPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                    <FolderInput className="h-3.5 w-3.5" aria-hidden="true" />
                     {adding ? "Done adding" : "Push CVs in here"}
                   </button>
 
                   {adding ? (
-                    <div className="mt-2 space-y-2">
-                      <input
-                        className={phxFieldClassName}
-                        onChange={(event) => setSearch(event.target.value)}
-                        placeholder="Search by name, phone or email"
-                        type="search"
-                        value={search}
-                      />
+                    <div className="mt-2.5 space-y-2">
+                      <div className="relative">
+                        <Search
+                          aria-hidden="true"
+                          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                        />
+                        <input
+                          className={cn(phxFieldClassName, "pl-9")}
+                          onChange={(event) => setSearch(event.target.value)}
+                          placeholder="Search by name, phone or email"
+                          type="search"
+                          value={search}
+                        />
+                      </div>
                       {addable.length === 0 ? (
                         <p className="text-xs font-medium text-slate-500">
                           Nobody matches that, or everyone found is already in this folder.
                         </p>
                       ) : (
-                        <ul className="border border-phx-line">
+                        <ul className={`divide-y divide-slate-100 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
                           {addable.map((candidate) => {
                             const inFolders = (candidate.cvFolderIds ?? [])
                               .map((id) => byId.get(id)?.name)
                               .filter(Boolean);
                             return (
                               <li
-                                className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-phx-line px-2 py-1 last:border-b-0"
+                                className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2.5 py-1.5 transition-colors hover:bg-orange-50/40"
                                 key={candidate.id}
                               >
-                                <span className="text-[13px] font-bold text-phx-ink">
+                                <span className="break-words text-[13px] font-bold text-slate-900">
                                   {candidateDisplayName(candidate.fullName)}
                                 </span>
-                                <span className="text-[12px] text-slate-500">
+                                <span className="break-words text-[12px] text-slate-500">
                                   {candidate.phone ?? candidate.email ?? ""}
                                 </span>
                                 {/* Where it is now, in WORDS, so a move is never blind. */}
                                 {inFolders.length > 0 ? (
-                                  <span className="text-[12px] font-semibold text-amber-700">
-                                    now in {inFolders.join(", ")}
-                                  </span>
+                                  <RecruitmentPill tone="amber">now in {inFolders.join(", ")}</RecruitmentPill>
                                 ) : null}
                                 <span className="ml-auto flex flex-wrap gap-1">
                                   <button
-                                    className={`border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+                                    className={`border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition hover:border-orange-400 hover:text-orange-700 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                                     disabled={busy}
                                     onClick={() => fileCandidates(openFolder.id, [candidate.id], "move")}
                                     type="button"
@@ -449,7 +505,7 @@ export function CvFolderCabinet({
                                   </button>
                                   {inFolders.length > 0 ? (
                                     <button
-                                      className={`flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+                                      className={`flex items-center gap-1 border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition hover:border-orange-400 hover:text-orange-700 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                                       disabled={busy}
                                       onClick={() => fileCandidates(openFolder.id, [candidate.id], "copy")}
                                       type="button"
@@ -477,18 +533,24 @@ export function CvFolderCabinet({
 
               {/* ── WHAT IS IN THE FOLDER ───────────────────────────────────────────────────── */}
               {folderCandidates.length === 0 ? (
-                <p className="px-3 py-6 text-center text-xs font-medium text-slate-500">
-                  This folder is empty.
-                  {openFolder.totalCount > 0 ? " Its subfolders are not — open one on the left." : ""}
-                </p>
+                <RecruitmentEmptyState
+                  icon={<FolderOpen aria-hidden="true" className="h-5 w-5" />}
+                  message={
+                    <>
+                      This folder is empty.
+                      {openFolder.totalCount > 0 ? " Its subfolders are not — open one on the left." : ""}
+                    </>
+                  }
+                  title="Nothing filed here"
+                />
               ) : (
                 <>
                   {canManage && selectedIds.length > 0 ? (
-                    <div className={`flex flex-wrap items-center gap-1.5 border-b border-phx-line bg-phx-paper px-3 py-2 ${adminRecessedDepthClassName}`}>
-                      <span className="whitespace-nowrap text-[12px] font-bold text-phx-ink">
+                    <div className={`flex flex-wrap items-center gap-1.5 border-b border-orange-200 border-l-4 border-l-orange-500 bg-orange-50/70 px-3 py-2 ${adminRecessedDepthClassName}`}>
+                      <span className="whitespace-nowrap text-[12px] font-black text-orange-900">
                         {selectedIds.length} picked
                       </span>
-                      <label className="flex flex-wrap items-center gap-1.5 text-[12px] font-semibold text-phx-ink-2">
+                      <label className="flex flex-wrap items-center gap-1.5 text-[12px] font-semibold text-slate-700">
                         Send to
                         <select
                           className={cn(phxSelectClassName, "sm:w-auto")}
@@ -507,7 +569,7 @@ export function CvFolderCabinet({
                         </select>
                       </label>
                       <button
-                        className={`border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+                        className={`border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition hover:border-orange-400 hover:text-orange-700 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                         disabled={busy || !destination}
                         onClick={() => fileCandidates(destination, selectedIds, "move")}
                         type="button"
@@ -515,7 +577,7 @@ export function CvFolderCabinet({
                         Move
                       </button>
                       <button
-                        className={`flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+                        className={`flex items-center gap-1 border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition hover:border-orange-400 hover:text-orange-700 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                         disabled={busy || !destination}
                         onClick={() => fileCandidates(destination, selectedIds, "copy")}
                         type="button"
@@ -524,7 +586,7 @@ export function CvFolderCabinet({
                         Copy
                       </button>
                       <button
-                        className={`border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+                        className={`border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition hover:border-orange-400 hover:text-orange-700 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                         disabled={busy}
                         onClick={() => takeOut(openFolder.id, selectedIds)}
                         type="button"
@@ -532,7 +594,7 @@ export function CvFolderCabinet({
                         Take out of this folder
                       </button>
                       <button
-                        className={`flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+                        className={`flex items-center gap-1 border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition hover:border-orange-400 hover:text-orange-700 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                         disabled={busy}
                         onClick={() => returnToPool(selectedIds)}
                         type="button"
@@ -543,43 +605,46 @@ export function CvFolderCabinet({
                     </div>
                   ) : null}
 
-                  <ul>
+                  <ul className="divide-y divide-slate-100">
                     {folderCandidates.map((candidate) => {
                       const alsoIn = (candidate.cvFolderIds ?? [])
                         .filter((id) => id !== openFolder.id)
                         .map((id) => byId.get(id)?.name)
                         .filter(Boolean);
+                      const picked = selected.has(candidate.id);
                       return (
                         <li
-                          className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-phx-line px-3 py-1.5 last:border-b-0"
+                          className={cn(
+                            "flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 transition-colors",
+                            picked ? "bg-orange-50/70" : "hover:bg-slate-50",
+                          )}
                           key={candidate.id}
                         >
                           {canManage ? (
                             <input
                               aria-label={`Pick ${candidateDisplayName(candidate.fullName)}`}
-                              checked={selected.has(candidate.id)}
-                              className="h-3.5 w-3.5 accent-phx-accent-press"
+                              checked={picked}
+                              className="h-4 w-4 accent-orange-600"
                               onChange={() => toggleSelected(candidate.id)}
                               type="checkbox"
                             />
                           ) : null}
+                          <FileText aria-hidden="true" className="h-4 w-4 flex-none text-slate-400" />
                           <button
-                            className="text-[13px] font-bold text-phx-ink underline-offset-2 hover:underline"
+                            className="break-words text-left text-[13px] font-bold text-slate-900 underline-offset-2 hover:text-orange-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
                             onClick={() => onOpenCandidate(candidate.id)}
                             type="button"
                           >
                             {candidateDisplayName(candidate.fullName)}
                           </button>
-                          <span className="text-[12px] text-slate-500">
+                          <span className="break-words text-[12px] text-slate-500">
                             {candidate.phone ?? candidate.email ?? ""}
                           </span>
                           {/* A copy says so on BOTH rows. Without this a recruiter taking somebody out
                               of one folder has no way to know they are still filed elsewhere, and the
                               pool would go on hiding them with nothing on screen explaining why. */}
                           {alsoIn.length > 0 ? (
-                            <span className="text-[12px] font-semibold text-amber-700">
-                              also in {alsoIn.join(", ")}
-                            </span>
+                            <RecruitmentPill tone="amber">also in {alsoIn.join(", ")}</RecruitmentPill>
                           ) : null}
                         </li>
                       );
@@ -595,21 +660,31 @@ export function CvFolderCabinet({
   );
 }
 
-/** One action button in the open folder's header — square, bordered, and the same on every row. */
+/**
+ * One action button in the open folder's header — square, bordered, and the same on every row. The
+ * destructive one (Delete) carries the rose line so it never reads as a neighbour of Rename.
+ */
 function FolderAction({
   busy,
+  danger = false,
   icon,
   label,
   onClick,
 }: {
   busy: boolean;
+  danger?: boolean;
   icon: ReactNode;
   label: string;
   onClick: () => void;
 }) {
   return (
     <button
-      className={`flex items-center gap-1 border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+      className={cn(
+        `flex items-center gap-1 border bg-white px-2.5 py-1 text-[12px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`,
+        danger
+          ? "border-rose-300 text-rose-700 hover:border-rose-400 hover:bg-rose-50"
+          : "border-slate-300 text-slate-700 hover:border-orange-400 hover:text-orange-700",
+      )}
       disabled={busy}
       onClick={onClick}
       type="button"
@@ -621,7 +696,9 @@ function FolderAction({
 }
 
 /**
- * One folder in the tree, and its children.
+ * One folder in the tree, and its children — a folder TILE: the folder mark, the name, and what it
+ * really holds as a count chip. The open folder carries the orange rail and a lifted white ground,
+ * so the reader always knows which folder the right-hand pane is showing.
  *
  * INDENTED WITH PADDING, NOT NESTED MARGINS, and capped: `paddingLeft` grows 12px a level to a
  * maximum, so a folder five deep still starts on screen at 375px. The fits-the-screen rule is the
@@ -643,20 +720,23 @@ function CvFolderBranch({
 }) {
   const isOpen = expanded.has(node.id);
   const hasChildren = node.children.length > 0;
+  const isCurrent = openFolderId === node.id;
 
   return (
     <li>
       <div
         className={cn(
-          "flex items-center gap-1 px-2 py-1",
-          openFolderId === node.id ? "bg-phx-paper" : "",
+          "flex items-center gap-1.5 border-l-[3px] py-1.5 pr-2 transition-colors",
+          isCurrent
+            ? `border-l-orange-500 bg-white ${adminChipDepthClassName}`
+            : "border-l-transparent hover:bg-white/80",
         )}
-        style={{ paddingLeft: `${Math.min(node.depth - 1, MAX_CV_FOLDER_DEPTH - 1) * 12 + 8}px` }}
+        style={{ paddingLeft: `${Math.min(node.depth - 1, MAX_CV_FOLDER_DEPTH - 1) * 12 + 6}px` }}
       >
         {hasChildren ? (
           <button
             aria-label={isOpen ? `Collapse ${node.name}` : `Expand ${node.name}`}
-            className="shrink-0 text-phx-ink-soft"
+            className="flex-none text-slate-400 transition hover:text-slate-700"
             onClick={() => onToggle(node.id)}
             type="button"
           >
@@ -668,29 +748,40 @@ function CvFolderBranch({
           </button>
         ) : (
           // A spacer the width of the chevron, so names line up whether or not a folder has children.
-          <span aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+          <span aria-hidden="true" className="h-3.5 w-3.5 flex-none" />
         )}
         <button
+          aria-current={isCurrent ? "true" : undefined}
           className={cn(
-            "min-w-0 flex-1 text-left text-[13px] font-semibold text-phx-ink",
-            openFolderId === node.id ? "font-black" : "",
+            "flex min-w-0 flex-1 items-start gap-1.5 text-left text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400",
+            isCurrent ? "font-black text-slate-950" : "font-semibold text-slate-700 hover:text-slate-950",
           )}
           onClick={() => onOpen(node.id)}
           type="button"
         >
+          {isCurrent ? (
+            <FolderOpen aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-orange-500" />
+          ) : (
+            <Folder aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-amber-500" />
+          )}
           {/* Wraps. A folder somebody named "Medical Reps — Alexandria, second interview" is the one
               name a recruiter most needs to read in full, and truncating it is the owner's ellipsis
               ban as well as the thing that makes two folders look identical. */}
-          {node.name}
+          <span className="min-w-0 break-words">{node.name}</span>
         </button>
         {/* The number is what the folder REALLY holds, subfolders included and counted once. A
             collapsed parent showing only its own CVs is how a folder looks empty while holding 40. */}
-        <span className="shrink-0 whitespace-nowrap text-[12px] font-bold tabular-nums text-phx-ink-soft">
+        <span
+          className={cn(
+            "whitespace-nowrap border px-1.5 py-px text-[11px] font-black tabular-nums",
+            isCurrent ? "border-orange-200 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-500",
+          )}
+        >
           {node.totalCount}
         </span>
       </div>
       {hasChildren && isOpen ? (
-        <ul>
+        <ul className="space-y-0.5">
           {node.children.map((child) => (
             <CvFolderBranch
               expanded={expanded}

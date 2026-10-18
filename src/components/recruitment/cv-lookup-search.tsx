@@ -1,19 +1,27 @@
 "use client";
 
-import { CalendarPlus, Download, FileSearch, Loader2, Search } from "lucide-react";
+import { CalendarPlus, Download, FileSearch, Loader2, Search, SearchX, ShieldCheck } from "lucide-react";
 import * as React from "react";
 
-import { AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
+import { AdminInsightChip } from "@/components/admin/admin-design-system";
+import { adminChipDepthClassName, adminControlDepthClassName } from "@/components/admin/admin-design-tokens";
 import {
   PortalDesktopTable,
-  PortalEmptyState,
   PortalRecordCard,
   PortalRecordFields,
   PortalResponsiveDataList,
   portalInputClassName,
 } from "@/components/employee-portal/portal-primitives";
 import { ScheduleInterviewButton } from "@/components/recruitment/interview-calendar/schedule-interview-button";
+import {
+  RecruitmentEmptyState,
+  RecruitmentPageHeader,
+  RecruitmentPanel,
+  RecruitmentPill,
+} from "@/components/recruitment/recruitment-premium";
 import { Button } from "@/components/ui/button";
+import { phxButtonAccentClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
 import { cairoDate } from "@/lib/format/cairo-datetime";
 import type { CvLookupHit } from "@/lib/recruitment/cv-lookup";
 import { fetchCvLookupApplication, saveBytesAsPdf } from "@/lib/recruitment/whatsapp-application-client";
@@ -49,10 +57,14 @@ import { fetchCvLookupApplication, saveBytesAsPdf } from "@/lib/recruitment/what
  * hits its own 1,000-row ceiling — a cut list that reads as a complete answer is the one failure
  * worse than no answer at all.
  *
- * Design follows the sibling recruitment screens: AdminPageHero, AdminTableShell, desktop table
- * with a `table-fixed` colgroup, mobile cards, square edges, Phoenix orange, Cairo dates, names
- * never ids, nothing truncated.
+ * Design is the module's one kit (`recruitment-premium.tsx`, the owner's 2026-10-19 full sweep): the
+ * `RecruitmentPageHeader`, a search console in a `RecruitmentPanel` whose field is the one form
+ * design, the results in a second panel, desktop table with a `table-fixed` colgroup, mobile cards,
+ * square edges, Phoenix orange, Cairo dates, names never ids, nothing truncated.
  */
+
+/** What the one box reads, said once under it so nobody has to guess what a search can find. */
+const SEARCHABLE_FIELDS = ["Name", "Phone", "E-mail", "University", "Employer", "Anything on the CV"] as const;
 
 const MIN_QUERY_LENGTH = 3;
 
@@ -199,18 +211,19 @@ export function CvLookupSearch() {
 
   return (
     <div className="space-y-6">
-      <AdminPageHero
+      <RecruitmentPageHeader
+        badges={<AdminInsightChip tone="slate">Only matches are shown</AdminInsightChip>}
         description="Search for a candidate by name, phone, e-mail, or anything their CV or application says. Only the people the search matches are shown."
-        eyebrow="Recruitment"
-        icon={<FileSearch className="h-5 w-5" />}
+        icon={<FileSearch aria-hidden="true" className="h-3.5 w-3.5" />}
         title="CV Lookup"
       />
 
-      <AdminTableShell
+      <RecruitmentPanel
         description="Type at least three characters and press Search. Nothing is listed until you do."
+        icon={<Search aria-hidden="true" className="h-4 w-4" />}
         title="Find a candidate"
       >
-        <div className="border-t border-slate-100 px-4 py-4 sm:px-6">
+        <div className="px-4 py-5 sm:px-6">
           <form
             className="flex flex-col gap-2 sm:flex-row"
             onSubmit={(event) => {
@@ -221,33 +234,63 @@ export function CvLookupSearch() {
             <label className="sr-only" htmlFor="cv-lookup-query">
               Search the CV database
             </label>
-            <input
-              autoComplete="off"
-              className={portalInputClassName}
-              id="cv-lookup-query"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Name, phone, e-mail, university, employer, speciality…"
-              type="search"
-              value={query}
-            />
-            <Button className="gap-2 sm:w-auto" disabled={searching} type="submit">
-              {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            <div className="relative min-w-0 flex-1">
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                autoComplete="off"
+                className={cn(portalInputClassName, "pl-9")}
+                id="cv-lookup-query"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Name, phone, e-mail, university, employer, speciality…"
+                type="search"
+                value={query}
+              />
+            </div>
+            <button
+              className={cn(phxButtonAccentClassName, "h-10 justify-center", adminControlDepthClassName, "disabled:shadow-none")}
+              disabled={searching}
+              type="submit"
+            >
+              {searching ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Search aria-hidden="true" className="h-4 w-4" />}
               Search
-            </Button>
+            </button>
           </form>
 
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Searches</span>
+            {SEARCHABLE_FIELDS.map((field) => (
+              <span
+                className={`border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-bold text-slate-600 ${adminChipDepthClassName}`}
+                key={field}
+              >
+                {field}
+              </span>
+            ))}
+          </div>
+
           {tooShort ? (
-            <p className="mt-2 text-xs font-semibold text-slate-500">
+            <p className="mt-3 text-xs font-semibold text-slate-500">
               Keep typing — a search needs at least {MIN_QUERY_LENGTH} characters.
             </p>
           ) : null}
           {error ? (
-            <p className="mt-2 border-l-[3px] border-l-rose-500 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+            <p className="mt-3 border-l-[3px] border-l-rose-500 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
               {error}
             </p>
           ) : null}
+
+          <p className="mt-4 flex items-start gap-2 border-t border-slate-100 pt-3 text-xs leading-5 text-slate-500">
+            <ShieldCheck aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 flex-none text-emerald-600" />
+            <span className="min-w-0">
+              This screen never lists the CV database. Each search returns only the people it matches, and
+              nothing is fetched until you press Search.
+            </span>
+          </p>
         </div>
-      </AdminTableShell>
+      </RecruitmentPanel>
 
       {result ? (
         <CvLookupResultsView
@@ -288,17 +331,20 @@ export function CvLookupResultsView({
   truncated: boolean;
 }) {
   return (
-    <AdminTableShell
+    <RecruitmentPanel
+      count={hits.length}
       description={
         truncated
           ? `Showing the first ${hits.length} matches for “${query}” — there are more. Add another word to narrow it.`
           : `${hits.length} ${hits.length === 1 ? "candidate matches" : "candidates match"} “${query}”.`
       }
+      icon={<FileSearch aria-hidden="true" className="h-4 w-4" />}
       title="Search results"
     >
       <PortalResponsiveDataList
         empty={
-          <PortalEmptyState
+          <RecruitmentEmptyState
+            icon={<SearchX aria-hidden="true" className="h-5 w-5" />}
             message={`Nothing in the CV database matches “${query}”. Try a different spelling, or search for their phone number.`}
             title="No candidate matches that"
           />
@@ -319,7 +365,10 @@ export function CvLookupResultsView({
                 ]}
               />
               {hit.matchedOn ? (
-                <p className="border-l-[3px] border-l-slate-300 bg-slate-50 px-2.5 py-2 text-xs font-medium leading-5 text-slate-600">
+                <p className="border-l-[3px] border-l-orange-400 bg-orange-50/60 px-2.5 py-2 text-xs font-medium leading-5 text-slate-700">
+                  <span className="mb-0.5 block text-phx-2xs font-black uppercase tracking-[0.12em] text-orange-700">
+                    Why it matched
+                  </span>
                   {hit.matchedOn}
                 </p>
               ) : null}
@@ -359,7 +408,7 @@ export function CvLookupResultsView({
             </thead>
             <tbody className="divide-y divide-slate-100">
               {hits.map((hit) => (
-                <tr className="align-top" key={hit.candidateId}>
+                <tr className="align-top transition-colors hover:bg-orange-50/30" key={hit.candidateId}>
                   <td className="px-4 py-3">
                     <StackedCell
                       primary={hit.name}
@@ -367,18 +416,19 @@ export function CvLookupResultsView({
                     />
                   </td>
                   <td className="px-4 py-3">
-                    <StackedCell
-                      primary={hit.appliedFor}
-                      secondary={[hit.statusLabel, hit.addedAt ? `Added ${cairoDate(hit.addedAt)}` : ""]
-                        .filter((part) => part.trim() !== "")
-                        .join(" · ")}
-                    />
+                    <StackedCell primary={hit.appliedFor} />
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      {hit.statusLabel.trim() !== "" ? <RecruitmentPill tone="slate">{hit.statusLabel}</RecruitmentPill> : null}
+                      {hit.addedAt ? (
+                        <span className="text-xs font-semibold text-slate-500">{`Added ${cairoDate(hit.addedAt)}`}</span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <StackedCell primary={hit.phone} secondary={hit.email} />
                   </td>
                   <td className="px-4 py-3">
-                    <p className="text-xs font-medium leading-5 text-slate-600">
+                    <p className="border-l-2 border-l-orange-300 pl-2.5 text-xs font-medium leading-5 text-slate-600">
                       {hit.matchedOn ||
                         [hit.currentJobTitle, hit.currentEmployer].filter((part) => part.trim() !== "").join(" · ") ||
                         "Matched on the application."}
@@ -391,6 +441,6 @@ export function CvLookupResultsView({
           </PortalDesktopTable>
         )}
       />
-    </AdminTableShell>
+    </RecruitmentPanel>
   );
 }

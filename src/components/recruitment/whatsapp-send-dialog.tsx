@@ -9,17 +9,32 @@
 // The employee target exists because a probationer is not a candidate. Measured 2026-09-08: of the
 // 30 people inside their 90-day window, 29 had no candidate record, so a probation message driven
 // off the CV list would have been typed by hand nearly every time.
+//
+// THE LOOK (owner, 2026-10-19, the full-module premium sweep): a lifted sheet under the house dark
+// band, the form kit's labels and fields, the templates as one square segmented tray, and the message
+// previewed as the bubble the person will read. The one green control is the brand token, because it
+// is the button that opens WhatsApp — it sends nothing by itself.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Eye, LayoutTemplate, Loader2, MessageCircle, Smartphone, X } from "lucide-react";
 
 import { getJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { cn } from "@/lib/utils";
 import { phxWhatsAppSendButtonClassName } from "@/components/ui/brand-tokens";
 import {
   phxFieldClassName,
+  phxHintClassName,
+  phxLabelClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
-import { adminControlDepthClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  adminChipDepthClassName,
+  adminPanelDepthClassName,
+  adminPanelHeaderClassName,
+  adminRecessedDepthClassName,
+  adminSoftDepthClassName,
+} from "@/components/admin/admin-design-tokens";
+import { RecruitmentEmptyState } from "@/components/recruitment/recruitment-premium";
 
 type Template = {
   id: string;
@@ -59,7 +74,7 @@ type EmployeeContext = {
 function MessagePreview({ text }: { text: string }) {
   const lines = text.split("\n");
   return (
-    <div className={`border border-slate-200 bg-[#e7f6e9] p-3 text-[13px] leading-relaxed text-slate-800 ${adminSoftDepthClassName}`}>
+    <div className={`ml-auto max-w-[92%] border border-slate-200 bg-[#e7f6e9] px-3 py-2.5 text-[13px] leading-relaxed text-slate-800 ${adminSoftDepthClassName}`}>
       {lines.map((line, index) => (
         // A blank line is a paragraph break in the original and must survive as vertical space, so
         // it renders a non-breaking space rather than collapsing to nothing.
@@ -303,54 +318,74 @@ export function WhatsAppSendDialog({
   const who = candidate?.fullName ?? employee?.fullName ?? candidateName ?? employeeName ?? "a WhatsApp number";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-2 sm:p-6">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/60 p-2 sm:p-6">
       <div
         aria-label={`Send a WhatsApp message to ${who}`}
         aria-modal="true"
-        className="w-full max-w-3xl border border-phx-line-strong bg-white"
+        className={`w-full max-w-3xl border border-slate-300 bg-white ${adminPanelDepthClassName}`}
         ref={dialogRef}
         role="dialog"
       >
-        <div className={`flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3 ${adminRecessedDepthClassName}`}>
-          <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-slate-900">WhatsApp message</h2>
-            <p className="text-xs text-slate-600" dir="auto">
-              To {who}
-            </p>
+        <div
+          className={cn(
+            "flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 py-3 text-white sm:px-5",
+            adminPanelHeaderClassName,
+          )}
+        >
+          <div className="flex min-w-0 grow basis-56 items-start gap-2.5">
+            <MessageCircle aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-orange-300" />
+            <div className="min-w-0">
+              <h2 className="text-sm font-black uppercase tracking-[0.12em] text-white">WhatsApp message</h2>
+              <p className="mt-0.5 break-words text-xs text-slate-300" dir="auto">
+                To {who}
+              </p>
+            </div>
           </div>
           <button
-            className={`border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 ${adminControlDepthClassName}`}
+            className="inline-flex items-center gap-1 border border-white/25 bg-white/10 px-2.5 py-1.5 text-xs font-bold text-white transition hover:bg-white/20"
             onClick={onClose}
             type="button"
           >
+            <X aria-hidden="true" className="h-3.5 w-3.5" />
             Close
           </button>
         </div>
 
-        <div className="space-y-4 px-4 py-4">
-          {loading ? <p className="text-sm text-slate-600">Loading your templates…</p> : null}
+        <div className="space-y-5 px-4 py-4 sm:px-5">
+          {loading ? (
+            <p className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600" role="status">
+              <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin text-orange-500" />
+              Loading your templates…
+            </p>
+          ) : null}
 
           {!loading && templates.length === 0 ? (
-            <p className="text-sm text-slate-700">
-              No templates yet. Add one on the WhatsApp Templates screen, then come back here.
-            </p>
+            <RecruitmentEmptyState
+              icon={<LayoutTemplate aria-hidden="true" className="h-5 w-5" />}
+              message="Add one on the WhatsApp Templates screen, then come back here."
+              title="No templates yet"
+            />
           ) : null}
 
           {!loading && templates.length > 0 ? (
             <>
               <div>
-                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  Template
-                </span>
-                {/* Wraps rather than scrolls — the fits-the-screen rule. No min-width floor anywhere. */}
-                <div className="flex flex-wrap gap-2">
+                <span className={phxLabelClassName}>Template</span>
+                {/* Wraps rather than scrolls — the fits-the-screen rule. No min-width floor anywhere.
+                    One recessed tray of square segments, the chosen one lifted onto white with the
+                    module's orange underline — the same object as the module's tab bar. */}
+                <div
+                  className={`flex flex-wrap gap-1 border border-slate-200 bg-slate-100/80 p-1 ${adminRecessedDepthClassName}`}
+                  role="group"
+                >
                   {templates.map((template) => (
                     <button
+                      aria-pressed={template.id === selectedId}
                       className={cn(
-                        "border px-3 py-1.5 text-left text-xs font-medium",
+                        "border-b-2 px-3 py-1.5 text-left text-xs font-bold transition-colors",
                         template.id === selectedId
-                          ? "border-phx-accent bg-phx-accent text-white"
-                          : "border-phx-line bg-white text-slate-700 hover:border-phx-accent-line hover:text-slate-900",
+                          ? `border-b-orange-500 bg-white text-slate-950 ${adminChipDepthClassName}`
+                          : "border-b-transparent text-slate-600 hover:bg-white/70 hover:text-slate-900",
                       )}
                       key={template.id}
                       onClick={() => {
@@ -359,14 +394,17 @@ export function WhatsAppSendDialog({
                       }}
                       type="button"
                     >
-                      {template.name}
+                      <span className="break-words" dir="auto">
+                        {template.name}
+                      </span>
                     </button>
                   ))}
                 </div>
               </div>
 
               <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600" htmlFor="wa-number">
+                <label className={cn(phxLabelClassName, "flex items-center gap-1.5")} htmlFor="wa-number">
+                  <Smartphone aria-hidden="true" className="h-3.5 w-3.5 text-orange-500" />
                   WhatsApp number
                 </label>
                 <input
@@ -377,7 +415,7 @@ export function WhatsAppSendDialog({
                   placeholder="01012345678, or +44… for a number outside Egypt"
                   value={toNumber}
                 />
-                <p className="mt-1 text-xs text-slate-600">
+                <p className={phxHintClassName}>
                   {candidate?.numberSource
                     ? `From this candidate's ${candidate.numberSource === "whatsapp" ? "WhatsApp" : "phone"} field. Change it here if it is wrong.`
                     : employee?.numberSource
@@ -391,13 +429,10 @@ export function WhatsAppSendDialog({
               </div>
 
               {fields.length > 0 ? (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4 border-t border-slate-200 pt-4 sm:grid-cols-2">
                   {fields.map((key) => (
-                    <div className={cn(MULTILINE_KEYS.has(key) && "sm:col-span-2")} key={key}>
-                      <label
-                        className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600"
-                        htmlFor={`wa-field-${key}`}
-                      >
+                    <div className={cn("min-w-0", MULTILINE_KEYS.has(key) && "sm:col-span-2")} key={key}>
+                      <label className={phxLabelClassName} htmlFor={`wa-field-${key}`}>
                         {labelFor(key)}
                       </label>
                       {MULTILINE_KEYS.has(key) ? (
@@ -424,28 +459,39 @@ export function WhatsAppSendDialog({
               ) : null}
 
               <div>
-                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                <span className={cn(phxLabelClassName, "flex items-center gap-1.5")}>
+                  <Eye aria-hidden="true" className="h-3.5 w-3.5 text-orange-500" />
                   Preview
                 </span>
-                <MessagePreview text={preview} />
+                {/* The message as the person will see it: a bubble on the chat's own pale ground. */}
+                <div className={`border border-slate-200 bg-slate-50 p-3 sm:p-4 ${adminRecessedDepthClassName}`}>
+                  <MessagePreview text={preview} />
+                </div>
               </div>
             </>
           ) : null}
 
-          {error ? <p className="border border-red-300 bg-red-50 p-2 text-sm text-red-800">{error}</p> : null}
+          {error ? (
+            <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800" role="alert">
+              {error}
+            </p>
+          ) : null}
 
           {blockedUrl ? (
-            <p className="border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">
-              Your browser blocked the pop-up.{" "}
-              <a className="font-semibold underline" href={blockedUrl} rel="noopener noreferrer" target="_blank">
-                Open WhatsApp
-              </a>
+            <p className="flex items-start gap-2 border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status">
+              <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-amber-600" />
+              <span className="min-w-0 break-words">
+                Your browser blocked the pop-up.{" "}
+                <a className="font-bold underline" href={blockedUrl} rel="noopener noreferrer" target="_blank">
+                  Open WhatsApp
+                </a>
+              </span>
             </p>
           ) : null}
         </div>
 
-        <div className={`flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 ${adminRecessedDepthClassName}`}>
-          <p className="text-xs text-slate-600">
+        <div className={`flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:px-5 ${adminRecessedDepthClassName}`}>
+          <p className="min-w-0 grow basis-56 text-xs text-slate-600">
             Opens WhatsApp with the message written. You press send there.
           </p>
           <button
@@ -457,11 +503,12 @@ export function WhatsAppSendDialog({
             onClick={onSend}
             type="button"
           >
+            {busy ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <MessageCircle aria-hidden="true" className="h-4 w-4" />}
             {busy ? "Preparing…" : "Open in WhatsApp"}
           </button>
         </div>
         {missing.length > 0 ? (
-          <p className="border-t border-slate-200 px-4 py-2 text-xs text-slate-600">
+          <p className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900 sm:px-5">
             Still to fill in: {missing.map((key) => labelFor(key)).join(", ")}
           </p>
         ) : null}

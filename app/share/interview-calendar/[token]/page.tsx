@@ -1,6 +1,10 @@
+import { CalendarDays, Link2Off } from "lucide-react";
 import type { Metadata } from "next";
 
+import { AdminInsightChip } from "@/components/admin/admin-design-system";
+import { adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
 import { InterviewCalendarView } from "@/components/recruitment/interview-calendar/interview-calendar-view";
+import { RecruitmentEmptyState, RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { isUuid } from "@/lib/http/uuid";
 import { interviewCalendarAbilities } from "@/lib/recruitment/interview-calendar";
@@ -40,13 +44,20 @@ export default async function SharedInterviewCalendarPage({
 
   if (!opened) {
     return (
-      <main className="min-h-screen bg-slate-100 px-4 py-8">
-        <div className="mx-auto max-w-xl border border-slate-200 bg-white p-6">
-          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-orange-700">Interview Calendar</p>
-          <h1 className="mt-1 text-[18px] font-bold text-slate-900">This link does not open anything</h1>
-          <p className="mt-2 text-sm text-slate-600">
-            It was switched off or deleted by the person who shared it. Ask them for a new link.
-          </p>
+      <main className="min-h-screen bg-[#F3F6FA] px-4 py-6 sm:px-6 sm:py-10">
+        <div className="mx-auto max-w-xl">
+          <RecruitmentPageHeader
+            description="Sato Pharma recruitment."
+            icon={<CalendarDays aria-hidden="true" className="h-3.5 w-3.5" />}
+            title="Interview Calendar"
+          />
+          <div className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
+            <RecruitmentEmptyState
+              icon={<Link2Off aria-hidden="true" className="h-5 w-5" />}
+              message="It was switched off or deleted by the person who shared it. Ask them for a new link."
+              title="This link does not open anything"
+            />
+          </div>
         </div>
       </main>
     );
@@ -62,12 +73,19 @@ export default async function SharedInterviewCalendarPage({
   const abilities = await interviewCalendarAbilities(access);
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-6 sm:py-8">
+    <main className="min-h-screen bg-[#F3F6FA] px-4 py-6 sm:px-6 sm:py-8">
       <div className="mx-auto max-w-7xl">
-        <div className="mb-4">
-          <h1 className="text-lg font-semibold text-slate-900">Interview Calendar</h1>
-          <p className="text-sm text-slate-500">Sato Pharma recruitment. Click a name to open the CV.</p>
-        </div>
+        <RecruitmentPageHeader
+          badges={
+            <>
+              <AdminInsightChip tone="orange">Sunday to Thursday · Cairo time</AdminInsightChip>
+              {lockedWeek ? <AdminInsightChip tone="slate">This link opens one week</AdminInsightChip> : null}
+            </>
+          }
+          description="Sato Pharma recruitment. Click a name to open the CV."
+          icon={<CalendarDays aria-hidden="true" className="h-3.5 w-3.5" />}
+          title="Interview Calendar"
+        />
         <InterviewCalendarView
           abilities={abilities}
           initialOpen={open}

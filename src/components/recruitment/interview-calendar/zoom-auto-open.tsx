@@ -134,7 +134,7 @@ export function ZoomAutoOpen({ api }: { api: CalendarApi }) {
   return (
     <div className="flex flex-col gap-2">
       {blocked.map((meeting) => (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-l-[3px] border-l-orange-600 bg-orange-50 px-3 py-2" key={keyOf(meeting)} role="alert">
+        <div className="flex flex-wrap items-center justify-between gap-2 border border-orange-200 border-l-[3px] border-l-orange-600 bg-orange-50 px-3 py-2" key={keyOf(meeting)} role="alert">
           <p className="min-w-0 break-words text-[13px] text-slate-900">
             <span className="font-bold">{meeting.candidateName}</span>&apos;s Zoom interview is starting ({formatTimeOfDay(meeting.startMinutes)}). Your browser stopped it opening by itself — allow
             pop-ups for Phoenix to have it open on its own.

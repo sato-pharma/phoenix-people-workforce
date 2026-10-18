@@ -28,11 +28,11 @@ import { readFileSync, readdirSync } from "node:fs";
  *   · THE FORM GROUND (assertion 8). The two picker input wrappers wear the one form design's
  *     border, background and focus ring (AGENTS.md §4). They are the only flat four-sided grounds
  *     left in the module, and they stay flat.
- *   · THE SCREENING WORKSTATION (assertion 9). `workstation/` answers a LATER instruction than the
- *     premium rule — 2026-09-12, the screen he screens on "looks crowded and noisy" — and
- *     `workstation-look.tsx` says in its own header that the shadow ladder is spent once, on the
- *     one surface that genuinely floats. A later, narrower instruction from the owner outranks a
- *     standing default, so the cockpit was left exactly as he approved it.
+ *   · THE SCREENING WORKSTATION WAS A CARVE-OUT UNTIL 2026-10-19 (assertion 9 now pins the
+ *     opposite). It had kept the quiet look of 2026-09-12 — the screen he screens on "looks crowded
+ *     and noisy" — until the owner's full-module premium sweep, where he was asked that exact
+ *     question and chose "Full polish there too". His later word outranks the earlier one, so the
+ *     cockpit is now held to the same zero-flat-box ratchet as every other recruitment screen.
  *   · THE PRINT VIEWS (assertion 10). `candidate-record-print.tsx` and
  *     `whatsapp-application-print.tsx` mirror a printed page; the house ink rule governs them, not
  *     this one.
@@ -129,7 +129,7 @@ export function runRecruitmentPremiumDepthTests() {
   const flat: string[] = [];
   let grounded = 0;
   for (const { name, source } of files) {
-    if (name.startsWith("workstation/") || name.endsWith("-print.tsx")) continue;
+    if (name.endsWith("-print.tsx")) continue;
     for (const value of classExpressions(source)) {
       if (!BOXED_GROUND.test(value)) continue;
       grounded += 1;
@@ -279,22 +279,19 @@ export function runRecruitmentPremiumDepthTests() {
       `focus ring belong to the one form design (AGENTS.md §4); only a surface takes depth here.`,
   );
 
-  // 9. THE SCREENING WORKSTATION KEEPS ITS OWN QUIET LOOK. Deliberate, and the reason is dated:
-  //    `workstation/` was rebuilt on 2026-09-12 because the owner said the screen he screens on
-  //    "looks crowded and noisy", and `workstation-look.tsx` records in its own header that the
-  //    shadow ladder is spent ONCE, on the one surface that genuinely floats. That instruction is
-  //    LATER and narrower than the standing premium default, so it wins. A session that "finishes"
-  //    the module by lifting the cockpit is undoing a fix he asked for.
-  const liftedCockpit = files
-    .filter(({ name }) => name.startsWith("workstation/"))
-    .filter(({ source }) => source.includes('from "@/components/admin/admin-design-tokens"'))
-    .map(({ name }) => name);
-  assert.deepEqual(
-    liftedCockpit,
-    [],
-    `${DIR}/workstation: ${liftedCockpit.join(", ")} now compose(s) the admin depth tokens. The ` +
-      `cockpit's look answers the owner's 2026-09-12 "crowded and noisy" — a later and narrower ` +
-      `instruction than the premium default. Leave it as he approved it.`,
+  // 9. THE SCREENING WORKSTATION WEARS THE PREMIUM LOOK TOO (owner, 2026-10-19). It had been the
+  //    one carve-out since 2026-09-12 ("looks crowded and noisy"); asked during the full-module sweep
+  //    whether it should stay quiet, he chose "Full polish there too". So the cockpit composes the
+  //    shared depth tokens like every other screen, and assertion 2 now reaches it. Restoring the
+  //    quiet look would undo his later word.
+  const cockpit = files.filter(({ name }) => name.startsWith("workstation/"));
+  const liftedCockpit = cockpit.filter(({ source }) =>
+    source.includes('from "@/components/admin/admin-design-tokens"'),
+  );
+  assert.ok(
+    liftedCockpit.length >= 4,
+    `${DIR}/workstation: only ${liftedCockpit.length} of ${cockpit.length} cockpit file(s) compose the ` +
+      `admin depth tokens. The owner chose full premium polish for the workstation on 2026-10-19.`,
   );
 
   // 10. THE PRINT VIEWS TAKE NO DEPTH. They mirror a printed page, where a drop shadow is either

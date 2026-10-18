@@ -237,8 +237,11 @@ import { stripComments } from "./support/comment-strip.ts";
  * longest name still sits on one line, with `break-words` behind it as the guarantee for
  * tomorrow's. No horizontal scroll was bought in exchange: that grid already scrolls sideways by
  * the owner's own ruling, and no row on it grew taller (33px and 36px before and after).
+ *
+ * 144 -> 141 on 2026-10-19: the Recruitment premium sweep. Three cuts became wraps — the Intake
+ * Health dead-letter error, which now prints in full, among them.
  */
-const BASELINE = 144;
+const BASELINE = 141;
 
 const ROOTS = ["app", "src"];
 

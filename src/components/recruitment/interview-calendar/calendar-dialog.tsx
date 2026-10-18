@@ -14,7 +14,7 @@ import { createPortal } from "react-dom";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { cn } from "@/lib/utils";
-import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminPanelHeaderClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const layers: symbol[] = [];
 
@@ -80,28 +80,34 @@ export function CalendarDialog({
       <div
         aria-labelledby={titleId}
         aria-modal="true"
-        className={cn("flex max-h-[94vh] w-full flex-col border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.28)]", WIDTH[width])}
+        className={cn("flex max-h-[94vh] w-full flex-col border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.32)]", WIDTH[width])}
         ref={dialogRef}
         role="dialog"
       >
-        <header className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-5">
+        {/* The house dark band names the pop-up — the same band every recruitment panel opens with. */}
+        <header className={`flex items-start justify-between gap-3 px-4 py-3.5 text-white sm:px-5 ${adminPanelHeaderClassName}`}>
           <div className="min-w-0">
-            {eyebrow ? <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-orange-700">{eyebrow}</p> : null}
-            <h2 className="mt-0.5 break-words text-[17px] font-bold text-slate-900" id={titleId}>
+            {eyebrow ? (
+              <p className="flex items-center gap-1.5 break-words text-[11px] font-black uppercase tracking-[0.12em] text-orange-300">
+                <span aria-hidden className="inline-block h-2.5 w-[3px] bg-orange-500" />
+                {eyebrow}
+              </p>
+            ) : null}
+            <h2 className="mt-1 break-words text-[17px] font-bold leading-snug tracking-tight text-white" id={titleId}>
               {title}
             </h2>
-            {sub ? <div className="text-[12px] text-slate-500">{sub}</div> : null}
+            {sub ? <div className="mt-0.5 break-words text-[12px] leading-5 text-slate-300">{sub}</div> : null}
           </div>
           <button
             aria-label="Close"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center border border-transparent text-slate-500 hover:border-slate-200 hover:text-slate-900"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center border border-white/15 text-slate-300 transition-colors hover:border-white/40 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
             onClick={onClose}
             type="button"
           >
             <X className="h-4 w-4" />
           </button>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto bg-white px-4 py-4 sm:px-5">{children}</div>
         {footer ? (
           <footer className={`flex flex-col gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 ${adminRecessedDepthClassName}`}>
             {footer}
@@ -117,7 +123,10 @@ export function CalendarDialog({
 export function PanelHeading({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   return (
     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-      <p className="text-[12px] font-bold uppercase tracking-[0.06em] text-slate-700">{children}</p>
+      <p className="flex items-center gap-2 text-[12px] font-black uppercase tracking-[0.08em] text-slate-800">
+        <span aria-hidden className="inline-block h-3 w-[3px] bg-orange-500" />
+        {children}
+      </p>
       {aside}
     </div>
   );
@@ -125,7 +134,7 @@ export function PanelHeading({ children, aside }: { children: ReactNode; aside?:
 
 export function ErrorLine({ children }: { children: ReactNode }) {
   return (
-    <p className="border-l-[3px] border-l-red-600 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-700" role="alert">
+    <p className="break-words border border-red-200 border-l-[3px] border-l-red-600 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-700" role="alert">
       {children}
     </p>
   );
@@ -138,7 +147,7 @@ export function NoteLine({ children, tone = "slate" }: { children: ReactNode; to
     sky: "border-l-sky-600 bg-sky-50 text-slate-700",
     slate: "border-l-slate-300 bg-slate-50 text-slate-600",
   }[tone];
-  return <p className={cn("border-l-[3px] px-3 py-2 text-[12px]", toneClass)}>{children}</p>;
+  return <p className={cn("break-words border-l-[3px] px-3 py-2 text-[12px] leading-5", toneClass)}>{children}</p>;
 }
 
 /** A two- to four-way choice drawn as joined buttons. */
@@ -159,9 +168,11 @@ export function Segmented<T extends string | number>({
         <button
           aria-pressed={value === option.value}
           className={cn(
-            "border px-2.5 py-1.5 text-[12px] font-bold leading-none",
+            "border px-2.5 py-1.5 text-[12px] font-bold leading-none tabular-nums transition-colors",
             index > 0 && "-ml-px",
-            value === option.value ? "relative border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+            value === option.value
+              ? "relative border-slate-900 bg-slate-900 text-white shadow-[inset_0_-2px_0_#f97316]"
+              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900",
             option.disabled && "cursor-not-allowed opacity-40",
           )}
           disabled={option.disabled}

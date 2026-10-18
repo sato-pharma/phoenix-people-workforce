@@ -21,6 +21,7 @@
 
 import { AlertTriangle } from "lucide-react";
 
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { Action, Tally } from "@/components/recruitment/workstation/workstation-look";
 import { CollapsibleSection, PaneHead, Pill } from "@/components/recruitment/workstation/workstation-ui";
 import {
@@ -85,7 +86,8 @@ export function WorkstationQueuePanel({
   const visibleQueues = NEEDS_ATTENTION.filter((key) => key !== "interviews" || counts.interviews > 0);
 
   return (
-    <div className="flex h-full min-h-0 flex-col border-r border-phx-line bg-white">
+    // A CARD ON THE COCKPIT'S TRAY (2026-10-19): the soft depth, a full hairline, the dark pane band.
+    <div className={`flex h-full min-h-0 w-full flex-col overflow-hidden border border-phx-line bg-white ${adminSoftDepthClassName}`}>
       <PaneHead collapseTo="left" onCollapse={onCollapse} right={`${counts.all} live`} title="Work queue" />
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* BOTH GROUPS FOLD, and each keeps its headline number while folded. On a rail this narrow

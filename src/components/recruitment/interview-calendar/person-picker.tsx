@@ -16,8 +16,8 @@ import { cn } from "@/lib/utils";
 
 import { type CalendarApi } from "./calendar-api";
 import { NoteLine, Segmented, Switch } from "./calendar-dialog";
-import { phxFieldClassName } from "@/components/ui/form-tokens";
-import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
+import { phxFieldClassName, phxLabelTextClassName } from "@/components/ui/form-tokens";
+import { adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 export type CandidateMatch = { id: string; name: string; jobTitle: string | null };
 
@@ -129,7 +129,7 @@ export function PersonPicker({
 
       {value.kind === "phoenix" ? (
         value.candidate ? (
-          <div className="flex items-start justify-between gap-2 border border-orange-200 bg-orange-50 px-3 py-2">
+          <div className={`flex items-start justify-between gap-2 border border-orange-200 border-l-[3px] border-l-orange-500 bg-orange-50 px-3 py-2 ${adminSoftDepthClassName}`}>
             <span className="min-w-0">
               <span className="block break-words text-[14px] font-bold text-slate-900">{value.candidate.name}</span>
               {value.candidate.jobTitle ? <span className="block break-words text-[12px] text-slate-600">Applied for {value.candidate.jobTitle}</span> : null}
@@ -153,7 +153,7 @@ export function PersonPicker({
               />
             </div>
             {searchable ? (
-              <ul className="mt-1 max-h-56 divide-y divide-slate-100 overflow-y-auto border border-slate-200">
+              <ul className={`mt-1 max-h-56 divide-y divide-slate-100 overflow-y-auto border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
                 {!answered ? (
                   <li className="flex items-center gap-1.5 px-3 py-2 text-[12px] text-slate-500">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching…
@@ -166,7 +166,7 @@ export function PersonPicker({
                   found?.people.map((person) => (
                     <li key={person.id}>
                       <button
-                        className="block w-full px-3 py-2 text-left hover:bg-orange-50"
+                        className="block w-full px-3 py-2 text-left transition-colors hover:bg-orange-50 focus-visible:bg-orange-50 focus-visible:outline-none"
                         onClick={() => onChange({ candidate: person, kind: "phoenix" })}
                         type="button"
                       >
@@ -185,7 +185,7 @@ export function PersonPicker({
       ) : (
         <div className="flex flex-col gap-2.5">
           <label className="block">
-            <span className="text-[12px] font-bold text-slate-700">Name</span>
+            <span className={phxLabelTextClassName}>Name</span>
             <input
               autoComplete="off"
               className={cn(inputClass, "mt-1")}
@@ -196,7 +196,7 @@ export function PersonPicker({
           </label>
           <div className="grid gap-2.5 sm:grid-cols-2">
             <label className="block">
-              <span className="text-[12px] font-bold text-slate-700">Phone (optional)</span>
+              <span className={phxLabelTextClassName}>Phone (optional)</span>
               <input
                 autoComplete="off"
                 className={cn(inputClass, "mt-1")}
@@ -208,7 +208,7 @@ export function PersonPicker({
               />
             </label>
             <label className="block">
-              <span className="text-[12px] font-bold text-slate-700">E-mail (optional)</span>
+              <span className={phxLabelTextClassName}>E-mail (optional)</span>
               <input
                 autoComplete="off"
                 className={cn(inputClass, "mt-1")}
@@ -220,7 +220,7 @@ export function PersonPicker({
             </label>
           </div>
           <div>
-            <span className="text-[12px] font-bold text-slate-700">CV (optional)</span>
+            <span className={phxLabelTextClassName}>CV (optional)</span>
             {value.cv ? (
               <div className={`mt-1 flex items-center justify-between gap-2 border border-slate-200 bg-slate-50 px-3 py-2 ${adminRecessedDepthClassName}`}>
                 <span className="min-w-0 break-all text-[12px] font-semibold text-slate-800">{value.cv.name}</span>

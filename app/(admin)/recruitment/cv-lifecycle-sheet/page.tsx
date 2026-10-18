@@ -1,7 +1,9 @@
+import { Link2 } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { PageContainer } from "@/components/layout/page-container";
 import { CvLifecycleShareLinksView } from "@/components/recruitment/cv-lifecycle-share-links-view";
+import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { systemDeployment } from "@/config/system-settings";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -40,15 +42,14 @@ export default async function CvLifecycleSheetLinksPage() {
 
   return (
     <PageContainer>
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold text-slate-900">CV Sheet Links</h1>
-        <p className="text-sm text-slate-500">
-          The links that feed the live CV-lifecycle Google Sheet. Each one is a password-free key to every
-          candidate&apos;s name and phone number, so it belongs in the sheet&apos;s Apps Script and nowhere
-          else. Create one, watch when it expires, and revoke it the moment it is no longer needed.
-        </p>
+      <div className="space-y-6">
+        <RecruitmentPageHeader
+          description="The links that feed the live CV-lifecycle Google Sheet. Each one is a password-free key to every candidate's name and phone number, so it belongs in the sheet's Apps Script and nowhere else. Create one, watch when it expires, and revoke it the moment it is no longer needed."
+          icon={<Link2 aria-hidden="true" className="h-3.5 w-3.5" />}
+          title="CV Sheet Links"
+        />
+        <CvLifecycleShareLinksView productionUrl={systemDeployment.productionUrl} />
       </div>
-      <CvLifecycleShareLinksView productionUrl={systemDeployment.productionUrl} />
     </PageContainer>
   );
 }

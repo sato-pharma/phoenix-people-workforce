@@ -18,6 +18,7 @@
 
 import { Star } from "lucide-react";
 
+import { adminControlDepthClassName } from "@/components/admin/admin-design-tokens";
 import {
   candidateRatingLabels,
   candidateRatings,
@@ -51,7 +52,8 @@ export function CandidateStars({
   return (
     <span
       aria-label={rating === null ? "Not starred" : candidateRatingLabels[rating]}
-      className="inline-flex items-center border border-phx-line bg-white"
+      // One control in the decision bar, so it carries the house control depth like its neighbours.
+      className={`inline-flex items-center border border-phx-line bg-white ${adminControlDepthClassName}`}
       role="group"
     >
       {candidateRatings.map((value) => {

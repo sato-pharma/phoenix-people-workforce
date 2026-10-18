@@ -1,8 +1,12 @@
+import { Lock, UserRoundX } from "lucide-react";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
+import type { ReactNode } from "react";
 
+import { adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
 import { PageContainer } from "@/components/layout/page-container";
 import { CandidateRecordPage } from "@/components/recruitment/candidate-record-page";
+import { RecruitmentEmptyState } from "@/components/recruitment/recruitment-premium";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { canAccess, isHrAuthorityRole, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -50,9 +54,11 @@ async function CandidateContent({ access, rawId }: { access: AccessContext; rawI
   // account of why this branch is reachable. Such a caller gets a sentence, not the record.
   if (!(await canAccess(access, "candidates", "read"))) {
     return (
-      <p className="border border-slate-200 bg-white p-6 text-sm text-slate-600">
-        A candidate&apos;s page is available to roles that can read the candidate pool.
-      </p>
+      <CandidateFallback
+        icon={<Lock aria-hidden="true" className="h-5 w-5" />}
+        message={<>A candidate&apos;s page is available to roles that can read the candidate pool.</>}
+        title="Not available to your role"
+      />
     );
   }
 
@@ -67,12 +73,22 @@ async function CandidateContent({ access, rawId }: { access: AccessContext; rawI
     : null;
   if (!record) {
     return (
-      <p className="border border-slate-200 bg-white p-6 text-sm text-slate-600">
-        This candidate is not in the system. The link may be incomplete, or the record may have been
-        removed. Go back to the candidate pool and open the name from there.
-      </p>
+      <CandidateFallback
+        icon={<UserRoundX aria-hidden="true" className="h-5 w-5" />}
+        message="This candidate is not in the system. The link may be incomplete, or the record may have been removed. Go back to the candidate pool and open the name from there."
+        title="No such candidate"
+      />
     );
   }
 
   return <CandidateRecordPage record={record} />;
+}
+
+/** The sentence a reader gets instead of the record, in the module's lifted empty-state panel. */
+function CandidateFallback({ icon, message, title }: { icon: ReactNode; message: ReactNode; title: string }) {
+  return (
+    <div className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
+      <RecruitmentEmptyState icon={icon} message={message} title={title} />
+    </div>
+  );
 }

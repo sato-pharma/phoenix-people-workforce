@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { phxFieldClassName, phxLabelTextClassName } from "@/components/ui/form-tokens";
 
 import type { CalendarApi } from "./calendar-api";
 
@@ -71,7 +71,7 @@ export function OrgFields({
   return (
     <div className="flex flex-col gap-2.5">
       <label className="block">
-        <span className="text-[12px] font-bold text-slate-700">Role interviewed for (optional)</span>
+        <span className={phxLabelTextClassName}>Role interviewed for (optional)</span>
         <input
           autoComplete="off"
           className={inputClass}
@@ -86,13 +86,13 @@ export function OrgFields({
             <option key={title} value={title} />
           ))}
         </datalist>
-        <span className="mt-1 block text-[11px] text-slate-500">
+        <span className="mt-1 block text-[11px] leading-4 text-slate-500">
           Choose a title or type one. Someone added to Recruitment from this booking is filed under it.
         </span>
       </label>
       <div className="grid gap-2.5 sm:grid-cols-2">
         <label className="block">
-          <span className="text-[12px] font-bold text-slate-700">Line (optional)</span>
+          <span className={phxLabelTextClassName}>Line (optional)</span>
           <select className={inputClass} onChange={(event) => onLine(event.target.value)} value={line}>
             <option value="">—</option>
             {lineOptions.map((option) => (
@@ -103,7 +103,7 @@ export function OrgFields({
           </select>
         </label>
         <label className="block">
-          <span className="text-[12px] font-bold text-slate-700">Area (optional)</span>
+          <span className={phxLabelTextClassName}>Area (optional)</span>
           <input autoComplete="off" className={inputClass} maxLength={80} onChange={(event) => onArea(event.target.value)} placeholder="e.g. Delta (1)" value={area} />
         </label>
       </div>
