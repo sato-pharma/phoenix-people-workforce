@@ -29,13 +29,22 @@ import { hasAiApiKey } from "@/lib/ai/openai-client";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { filePlaceSignboardFlag } from "@/lib/phoenix-crm/server/location-integrity";
 import { readStoredPlaceSignboard, recordPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
-import { loadHeldSignboardPlaceIds } from "@/lib/phoenix-crm/server/signboard-holds";
 import {
+  approveHeldSignboardBySystem,
+  loadHeldSignboardPlaceIds,
+  loadHeldSignboardPlaces,
+} from "@/lib/phoenix-crm/server/signboard-holds";
+import {
+  SIGNBOARD_HELD_MAX_READS,
   signboardApplies,
+  signboardBacklogCheckToKeep,
+  signboardBacklogOutcome,
   signboardNameIsUsable,
   signboardNextAttempt,
+  signboardRejudge,
   signboardUnjudged,
   type PhoenixCrmSignboardCheck,
+  type SignboardBacklogOutcome,
 } from "@/lib/phoenix-crm/signboard-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -303,4 +312,286 @@ export async function runPhoenixCrmSignboardSweep(
   };
   await Promise.all(Array.from({ length: Math.min(SIGNBOARD_SWEEP_CONCURRENCY, backlog.length) }, () => worker()));
   return result;
+}
+
+// ── The places filed "Not readable" before 2026-10-18: one read each, once ──────────────────────
+//
+// 🔴 ONE READ PER PHOTO, ONCE, EVER (owner, 2026-10-18: "fix all the unreadable" — and "a total wasting
+// of money" to keep measuring the same photos). Audited the same evening: 532 active places filed
+// "Not readable", 93 whose read was lost when the OpenAI account ran dry, and 151 never read. 451 of the
+// 532 had been read exactly once, at the door, by the cheapest model, which filed clear plates
+// unreadable and misread others — so the stored answer did not even say whether the photo was bad.
+//
+// Each photo is read once by the strong reader, one look, and the place ends in one of three states:
+// confirmed (a held one approved by the system), filed with another name for the Super Admin (only when
+// a second reading agrees, as the night files), or SENT BACK to its rep for a new photo with the reason.
+// The last is written `unreadable_final` so no backlog, night or held re-read ever reads it again —
+// whichever build is serving when it is written.
+
+/** Reasons the one-off read takes: the unreadable, the lost and the never-read. */
+export const SIGNBOARD_BACKLOG_REASONS = ["unreadable", "unreadable_final", "call_failed", "no_api_key", "no_bytes"] as const;
+
+export type SignboardBacklogRow = {
+  placeId: string;
+  repHrId: string;
+  customerName: string;
+  listType: PhoenixCrmListType;
+  held: boolean;
+  outcome: SignboardBacklogOutcome;
+  problem: string | null;
+  verdict: string;
+  /** Whether the write landed; null on a dry run. */
+  written: boolean | null;
+  /** On a held place the system approved: whether the approve landed. */
+  approved: boolean | null;
+};
+
+/**
+ * The places the one-off read takes, oldest first — with every place this read already wrote left out
+ * (a `retake` request, or a strong read on record), so a second run reads nothing twice.
+ *
+ * `placeIds` names places to read again ON PURPOSE, already-read or not — the one way a photo this pass
+ * read is read twice, and only when a person names it (2026-10-18: the sideways photos read before the
+ * reader learnt to turn them upright). A confirmed or flagged place is never taken, named or not.
+ */
+export async function loadUnreadableBacklog(placeIds?: readonly string[]): Promise<SweepPlace[]> {
+  const named = placeIds && placeIds.length > 0 ? [...new Set(placeIds.map((id) => id.toLowerCase()))] : null;
+  const reasons = SIGNBOARD_BACKLOG_REASONS.join(",");
+  const rows: Row[] = [];
+  for (let from = 0; ; from += 1000) {
+    let query = getSupabaseAdmin()
+      .from("phoenix_crm_places")
+      .select(
+        "id, customer_id, seat_id, created_by_hr_id, photo_path, lat, lon, accuracy_meters, captured_at, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)",
+      )
+      .eq("status", "active")
+      .eq("is_test", false)
+      .is("shared_place_id", null)
+      .neq("customer.list_type", "Pharmacy");
+    query = named
+      ? query.in("id", named)
+      : query.or(`signboard_check.is.null,and(signboard_check->>verdict.eq.unjudged,signboard_check->>reason.in.(${reasons}))`);
+    const { data, error } = await query
+      .order("captured_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + 999);
+    throwIfError(error);
+    const page = (data ?? []) as Row[];
+    rows.push(...page);
+    if (page.length < 1000) break;
+  }
+  return rows
+    .filter((row) => {
+      const stored = (row.signboard_check ?? null) as Row | null;
+      if (named) return stored?.verdict !== "match" && stored?.verdict !== "other_name";
+      return !stored || (!stored.retake && stored.strongRead !== true);
+    })
+    .map(toPlace)
+    .filter((entry): entry is SweepPlace => entry !== null);
+}
+
+/** One look, by the strong reader; a lost call is asked once more, as the night asks it. */
+async function readOnceForBacklog(place: SweepPlace): Promise<PhoenixCrmSignboardCheck> {
+  if (!signboardApplies(place.listType) || !signboardNameIsUsable(place.customerName)) return signboardUnjudged("name_unusable");
+  const input = { customerName: place.customerName, listType: place.listType, photoPath: place.photoPath };
+  const first = await readStoredPlaceSignboard(input, { secondLook: false });
+  if (first.verdict !== "unjudged" || first.reason !== "call_failed") return first;
+  return readStoredPlaceSignboard(input, { secondLook: false });
+}
+
+/**
+ * Read every old "Not readable" place once and write what the photo shows. Prints nothing and writes
+ * nothing unless `apply` is true; a dry run still READS, so `limit` is how a dry run is kept small.
+ */
+export async function rereadUnreadablePlacesOnce(
+  options: {
+    apply: boolean;
+    limit?: number;
+    concurrency?: number;
+    /** Read exactly these places, already-read or not (`loadUnreadableBacklog`). */
+    placeIds?: readonly string[];
+    onRow?: (row: SignboardBacklogRow) => void;
+  },
+): Promise<{ rows: SignboardBacklogRow[]; skipped: "no_api_key" | null }> {
+  if (!hasAiApiKey()) return { rows: [], skipped: "no_api_key" };
+  const [backlog, held] = await Promise.all([
+    loadUnreadableBacklog(options.placeIds),
+    loadHeldSignboardPlaces({ includeSpent: true, limit: 500 }),
+  ]);
+  const heldByPlace = new Map(held.map((place) => [place.placeId, place]));
+  const queue = backlog.slice(0, Math.max(0, options.limit ?? backlog.length));
+  const rows: SignboardBacklogRow[] = [];
+
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < queue.length) {
+      const place = queue[next];
+      next += 1;
+      const heldPlace = heldByPlace.get(place.placeId) ?? null;
+      let read = await readOnceForBacklog(place);
+      // A name on the owner's board is never filed on one reading — the night's own rule.
+      if (read.verdict === "other_name") {
+        const second = await readOnceForBacklog(place);
+        read = second.verdict === read.verdict ? second : { ...read, reason: "unconfirmed", verdict: "unjudged" };
+      }
+      const outcome = signboardBacklogOutcome(read, place.listType);
+      const row: SignboardBacklogRow = {
+        approved: null,
+        customerName: place.customerName,
+        held: heldPlace !== null,
+        listType: place.listType,
+        outcome,
+        placeId: place.placeId,
+        problem: read.problem ?? null,
+        repHrId: place.repHrId,
+        verdict: read.reason ? `${read.verdict}/${read.reason}` : read.verdict,
+        written: null,
+      };
+      if (options.apply && outcome !== "lost") {
+        const kept = signboardBacklogCheckToKeep(read, place.priorAttempts, outcome);
+        // A held place's count is set past the held re-read's last read, so the hourly run never reads
+        // this photo again; the hold itself stays the Super Admin's unless the name was read.
+        const toWrite = heldPlace ? { ...kept, attempts: Math.max(kept.attempts, SIGNBOARD_HELD_MAX_READS) } : kept;
+        row.written = await recordPlaceSignboard(place.placeId, toWrite);
+        if (outcome === "confirm" && heldPlace) row.approved = await approveHeldSignboardBySystem(heldPlace.reviewId);
+        if (outcome === "flag" && !heldPlace) {
+          await filePlaceSignboardFlag({
+            placeId: place.placeId,
+            seatId: place.seatId,
+            repHrId: place.repHrId,
+            customerId: place.customerId,
+            isTest: false,
+            flag: "sign_other_name",
+            signals: { signText: read.signText, personNames: read.personNames, placeNames: read.placeNames, note: read.note },
+            fixed: { lat: place.lat, lon: place.lon, accuracyMeters: place.accuracyMeters, capturedAt: place.capturedAt },
+          });
+        }
+      }
+      rows.push(row);
+      options.onRow?.(row);
+    }
+  };
+  const concurrency = Math.max(1, Math.min(options.concurrency ?? SIGNBOARD_SWEEP_CONCURRENCY, 8));
+  await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, () => worker()));
+  return { rows, skipped: null };
+}
+
+// ── The owner's rulings, applied to the readings already stored: no model call ──────────────────
+//
+// 🔴 A RULING IS APPLIED TO WHAT IS STORED, NEVER BY READING THE PHOTO AGAIN (owner, 2026-10-18 — the
+// rulings on ؤ/ئ, the dotted letters and the paper photo). Every place keeps the reader's signs in
+// `signboard_check.signs`, so judging them again under today's rules costs nothing. Only the two changes
+// `signboardRejudge` names are ever written. 🔴 A CASE ON HIS INTEGRITY BOARD IS LISTED, NEVER SETTLED
+// HERE: a sign the reader filed as another doctor's that now names the customer is his to close.
+
+export type SignboardRejudgeRow = {
+  placeId: string;
+  repHrId: string;
+  customerName: string;
+  listType: PhoenixCrmListType;
+  held: boolean;
+  outcome: "confirm" | "retake";
+  /** The stored verdict before, as `verdict/reason`. */
+  before: string;
+  signText: string | null;
+  /** Whether the write landed; null on a dry run. */
+  written: boolean | null;
+  /** On a held place the system approved: whether the approve landed. */
+  approved: boolean | null;
+};
+
+/** An open signboard case on the board whose place the re-judge confirmed — his click to settle. */
+export type SignboardRejudgeOpenCase = { caseId: string; placeId: string; flags: string[] };
+
+async function loadStoredSignboards(): Promise<Row[]> {
+  const rows: Row[] = [];
+  for (let from = 0; ; from += 500) {
+    const { data, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_places")
+      .select("id, created_by_hr_id, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)")
+      .eq("status", "active")
+      .eq("is_test", false)
+      .is("shared_place_id", null)
+      .neq("customer.list_type", "Pharmacy")
+      .not("signboard_check", "is", null)
+      .order("id", { ascending: true })
+      .range(from, from + 499);
+    throwIfError(error);
+    const page = (data ?? []) as Row[];
+    rows.push(...page);
+    if (page.length < 500) break;
+  }
+  return rows;
+}
+
+/**
+ * Judge every stored signboard reading again under today's rules and write the changes. Writes nothing
+ * unless `apply` is true. A held place the re-judge confirms is approved by the system, through the same
+ * approve the door's hold uses; a held place sent back keeps its hold, its reads spent.
+ */
+export async function rejudgeStoredSignboardsOnce(options: {
+  apply: boolean;
+  now?: Date;
+  onRow?: (row: SignboardRejudgeRow) => void;
+}): Promise<{ scanned: number; rows: SignboardRejudgeRow[]; openCases: SignboardRejudgeOpenCase[] }> {
+  const now = options.now ?? new Date();
+  const [stored, held] = await Promise.all([loadStoredSignboards(), loadHeldSignboardPlaces({ includeSpent: true, limit: 500 })]);
+  const heldByPlace = new Map(held.map((place) => [place.placeId, place]));
+  const rows: SignboardRejudgeRow[] = [];
+
+  for (const raw of stored) {
+    const customer = (Array.isArray(raw.customer) ? raw.customer[0] : raw.customer) as Row | null | undefined;
+    if (!customer) continue;
+    const check = raw.signboard_check as PhoenixCrmSignboardCheck;
+    const listType = String(customer.list_type ?? "") as PhoenixCrmListType;
+    const customerName = String(customer.name ?? "");
+    if (!signboardApplies(listType) || !signboardNameIsUsable(customerName)) continue;
+    const change = signboardRejudge(check, { customerName, listType }, now);
+    if (!change) continue;
+
+    const placeId = String(raw.id);
+    const heldPlace = heldByPlace.get(placeId) ?? null;
+    const row: SignboardRejudgeRow = {
+      approved: null,
+      before: check.reason ? `${check.verdict}/${check.reason}` : String(check.verdict),
+      customerName,
+      held: heldPlace !== null,
+      listType,
+      outcome: change.outcome,
+      placeId,
+      repHrId: String(raw.created_by_hr_id ?? ""),
+      signText: change.check.signText ?? null,
+      written: null,
+    };
+    if (options.apply) {
+      const toWrite = heldPlace && change.outcome === "retake"
+        ? { ...change.check, attempts: Math.max(change.check.attempts, SIGNBOARD_HELD_MAX_READS) }
+        : change.check;
+      row.written = await recordPlaceSignboard(placeId, toWrite);
+      if (row.written && change.outcome === "confirm" && heldPlace) row.approved = await approveHeldSignboardBySystem(heldPlace.reviewId);
+    }
+    rows.push(row);
+    options.onRow?.(row);
+  }
+
+  const confirmed = rows.filter((row) => row.outcome === "confirm").map((row) => row.placeId);
+  const openCases: SignboardRejudgeOpenCase[] = [];
+  for (let from = 0; from < confirmed.length; from += 100) {
+    const { data, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_location_integrity")
+      .select("id, subject_id, flags")
+      .eq("subject_kind", "place")
+      .eq("source", "signboard")
+      .is("settled_at", null)
+      .in("subject_id", confirmed.slice(from, from + 100));
+    throwIfError(error);
+    for (const entry of (data ?? []) as Row[]) {
+      openCases.push({
+        caseId: String(entry.id),
+        flags: (Array.isArray(entry.flags) ? entry.flags : []).map((flag) => String(flag)),
+        placeId: String(entry.subject_id),
+      });
+    }
+  }
+  return { openCases, rows, scanned: stored.length };
 }

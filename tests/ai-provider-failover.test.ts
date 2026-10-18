@@ -31,6 +31,7 @@ import {
   OPENAI_UNAVAILABLE_WINDOW_MS,
   openAiUnavailableWindowMs,
   planAiProviders,
+  preferAiProvider,
   resetOpenAiAvailability,
   resolveAiProviderMode,
   shouldFailOverToNextProvider,
@@ -83,6 +84,17 @@ function planningTests() {
   assert.deepEqual(planAiProviders({ ...both, AI_PROVIDER: "openai" }, 0, 0), ["openai"]);
   assert.deepEqual(planAiProviders({ ...both, AI_PROVIDER: " Anthropic " }, 0, 0), ["anthropic"]);
   assert.equal(resolveAiProviderMode({ AI_PROVIDER: "nonsense" }), "auto", "an unknown value is auto, not an error");
+
+  // A caller's preference reorders the plan and never widens it (the signboard reader, 2026-10-18).
+  assert.deepEqual(preferAiProvider(planAiProviders(both, 0, 0), "anthropic"), ["anthropic", "openai"], "Claude first, OpenAI behind it");
+  assert.deepEqual(preferAiProvider(planAiProviders(both, 0, 0)), ["openai", "anthropic"], "no preference keeps the default order");
+  assert.deepEqual(preferAiProvider(planAiProviders(both, 1_000, 5_000), "anthropic"), ["anthropic", "openai"]);
+  assert.deepEqual(preferAiProvider(planAiProviders(openAiOnly, 0, 0), "anthropic"), ["openai"], "no Anthropic key, no Anthropic leg");
+  assert.deepEqual(
+    preferAiProvider(planAiProviders({ ...both, AI_PROVIDER: "openai" }, 0, 0), "anthropic"),
+    ["openai"],
+    "a pin wins over any caller's preference",
+  );
 
   noteOpenAiUnavailable(10_000);
   try {
@@ -559,6 +571,16 @@ function wiringTests() {
   const client = readFileSync("src/lib/ai/openai-client.ts", "utf8");
   const entry = client.slice(client.indexOf("export async function createOpenAiResponseText"));
   assert.match(entry, /planAiProviders\(\)/, "the shared entry point asks the plan which provider answers");
+  assert.match(
+    entry,
+    /preferAiProvider\(planAiProviders\(\), params\.preferProvider\)/,
+    "and puts the caller's preferred provider first, inside that plan",
+  );
+  assert.match(
+    client,
+    /resolveAnthropicModel\(params\.anthropicModel\?\.trim\(\) \|\| requestedModel\)/,
+    "a Claude model named by the caller is asked for by name, and ANTHROPIC_MODEL still overrides it",
+  );
   assert.match(entry, /runAnthropicResponse\(legParams, requestedModel\)/);
   assert.match(entry, /runOpenAiResponse\(legParams, requestedModel\)/);
   assert.match(

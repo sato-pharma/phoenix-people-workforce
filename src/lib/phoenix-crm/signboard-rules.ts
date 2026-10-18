@@ -96,6 +96,67 @@ export type SignboardCheckReason =
    */
   | "unconfirmed";
 
+/**
+ * What the reader says stops the customer's own nameplate being read in this photograph — asked with
+ * every blind read since 2026-10-18, and the words a rep is given to fix it (`signboardRetakeAdvice`).
+ *
+ * 🔴 IT WAS ADDED BECAUSE A STORED "NOT READABLE" SAID NOTHING ABOUT THE PHOTO. On 18 Oct 2026, 532
+ * places were filed unreadable; read again by Claude, some were clear plates the old reader could not
+ * read, and the rest a hospital front, a blank door, a blurred street. Only this field tells the two
+ * apart without a person opening every photo.
+ */
+export type SignboardPhotoProblem =
+  /** The signs that matter are legible. */
+  | "none"
+  /** No nameplate or lettered sign of a practice at all: a street, a wall, a bare door, a vehicle. */
+  | "no_plate"
+  /** Only a building's, a hospital's or another trade's sign — no plate of the practice itself. */
+  | "building_sign_only"
+  /** A plate is there but too small in the frame to read. */
+  | "too_far"
+  | "blurred"
+  | "dark_or_glare"
+  /** The plate runs out of the frame. */
+  | "cut_off"
+  /** Calligraphic or decorative lettering the reader cannot follow. */
+  | "stylised"
+  /**
+   * The scene is on its side or upside down — a phone held sideways — and no upright reading of it was
+   * made. Never the reader's own answer: set by `server/signboard-check.ts` from the reader's `upright`
+   * word, when there was no time (the door) or no answer to turning it (2026-10-18).
+   */
+  | "sideways";
+
+export const SIGNBOARD_PHOTO_PROBLEMS: readonly SignboardPhotoProblem[] = [
+  "none",
+  "no_plate",
+  "building_sign_only",
+  "too_far",
+  "blurred",
+  "dark_or_glare",
+  "cut_off",
+  "stylised",
+  "sideways",
+];
+
+/** An answer outside the list is no answer — never a guess at which problem it meant. */
+export function parseSignboardPhotoProblem(value: unknown): SignboardPhotoProblem | null {
+  const raw = String(value ?? "").trim().toLowerCase();
+  return (SIGNBOARD_PHOTO_PROBLEMS as readonly string[]).includes(raw) ? (raw as SignboardPhotoProblem) : null;
+}
+
+/**
+ * "New signboard photo needed" — the place's photo does not show the customer's name, so the only fix is
+ * a new photograph from the rep at that door (owner, 2026-10-18: "fix all the unreadable"). Kept on the
+ * place's own `signboard_check`, so the rep's list and the Super Admin's board read one record.
+ */
+export type SignboardRetakeRequest = {
+  requestedAt: string;
+  problem: SignboardPhotoProblem | null;
+  /** The sentence the rep reads: what to photograph differently. */
+  advice: string;
+};
+
 export type PhoenixCrmSignboardCheck = {
   verdict: SignboardVerdictKind;
   /** Why, for every verdict but `match`. Null on a match. */
@@ -136,6 +197,16 @@ export type PhoenixCrmSignboardCheck = {
    * A row written before this field existed reads as 1 — it has had its first attempt.
    */
   attempts: number;
+  /** What the reader said stops the name being read. Absent on a check written before 2026-10-18. */
+  problem?: SignboardPhotoProblem | null;
+  /**
+   * True when the strong reader itself answered this read — never a fallback after a lost call. An
+   * `unreadable` it answers is final at once (`signboardNextAttempt`): the same photo read again by the
+   * same reader is the cost the owner stopped on 2026-10-18, not a second chance.
+   */
+  strongRead?: boolean;
+  /** Set when the rep has been asked for a new photograph of this place. */
+  retake?: SignboardRetakeRequest | null;
 };
 
 // ── The stamp band ──────────────────────────────────────────────────────────────────────────────
@@ -291,9 +362,35 @@ function withoutArticle(word: string): string {
   return word.startsWith("ال") && word.length >= 5 ? word.slice(2) : word;
 }
 
+// 🔴 THE OWNER'S SPELLING RULINGS, 18 Oct 2026, asked one by one after measuring each on the stored
+// readings against 20 other customers' names per confirmed place (about 32,000 tries):
+//   · ؤ is و and ئ is ي — فؤاد and فواد, ناشئ and ناشي are one name (2 more confirms, 1 more stranger).
+//   · ذ, ز and د are one letter, and ح and خ are one — "أحمد ذكي" for احمد دكى, "أبو حشبة" for ابوخشبه
+//     (6 more confirms, no new stranger).
+// Compared word against word, Arabic on both sides: the cross-script compiler never sees it. 🔴 LONG
+// VOWELS ARE NOT FORGIVEN — dropping them merged محمود with محمد and سعيد with سعد, and stranger matches
+// went from 52 to 220. Nor is any other letter: "محمد ابو العنيين" against "مجدي أبو العينين" is still
+// another doctor.
+const SAME_LETTER: ReadonlyArray<readonly [RegExp, string]> = [
+  [/ؤ/g, "و"],
+  [/ئ/g, "ي"],
+  [/[ذز]/g, "د"],
+  [/خ/g, "ح"],
+];
+
+/** A word as the comparison reads it: each pair the owner ruled the same written one way. */
+export function spelledOneWay(word: string): string {
+  return SAME_LETTER.reduce((text, [letter, as]) => text.replace(letter, as), word);
+}
+
 /** Is this word of the customer's name among the words read off one candidate? */
-function nameWordIsThere(wanted: NameWord, read: readonly NameWord[]): boolean {
-  return read.some(
+function nameWordIsThere(given: NameWord, read: readonly NameWord[]): boolean {
+  const oneWay = (name: NameWord): NameWord => ({
+    core: name.core === null ? null : spelledOneWay(name.core),
+    word: spelledOneWay(name.word),
+  });
+  const wanted = oneWay(given);
+  return read.map(oneWay).some(
     (candidate) =>
       candidate.word === wanted.word ||
       // The reader dropped the head or the tail: "الله عفيفي" for عبد الله عفيفي.
@@ -374,7 +471,9 @@ function readsTheCustomersName(
  * a SQL twin, `public.phoenix_crm_fold_name`, which tests/phoenix-crm-customer-name-fold.test.ts
  * compares against it literally, so a THIRD fold is the precise drift that test exists to refuse.
  * On a PERSON's name two WORD steps sit on top of it, never a character fold — the compound and the
- * professor's title, `personNameWords` above — applied to both sides alike.
+ * professor's title, `personNameWords` above — applied to both sides alike. The one letter step is the
+ * owner's own list of letters that are the same (`spelledOneWay`), and it is applied only where two
+ * words are compared, so the fold and its SQL twin stay one.
  *
  * `listingIsAccount` in google-place-rules.ts is the near miss: its stemWord and KIND_WORDS are
  * built for facility names and would stem a person's. Its QUORUM is sound, though, and is borrowed —
@@ -739,6 +838,90 @@ export function chooseSignToReadAgain(
   )[0];
 }
 
+// ── A board too full for one answer ─────────────────────────────────────────────────────────────
+//
+// 🔴 A HOSPITAL'S BOARD OF FORTY PLATES DID NOT FIT IN ONE ANSWER, AND IT WAS A LOST CALL FOR EVER
+// (2026-10-18). The one-off read of the old places left two places of one rep unanswered: both photos
+// are the same wall of about forty plates, د. طلعت فواد among them, and Claude ran out of room before
+// it finished listing them (max_tokens) on all four calls. A lost call is read again every night, so
+// that photo would have been paid for nightly and never read. The door is now told to photograph
+// exactly this board inside a hospital. So a whole-photo read that runs out of room is read again in
+// four overlapping quarters, side by side, and every plate's box is put back into the whole photo.
+
+/** How far two neighbouring quarters overlap: a plate smaller than this is whole in one of them. */
+export const SIGNBOARD_PART_OVERLAP = 0.2;
+
+/** One part of the photo, as fractions of the whole image. */
+export type SignboardPart = { left: number; top: number; width: number; height: number };
+
+/** The four overlapping quarters a board too full for one answer is read in. */
+export function signboardQuarters(): SignboardPart[] {
+  const size = (1 + SIGNBOARD_PART_OVERLAP) / 2;
+  const far = 1 - size;
+  return [
+    { height: size, left: 0, top: 0, width: size },
+    { height: size, left: far, top: 0, width: size },
+    { height: size, left: 0, top: far, width: size },
+    { height: size, left: far, top: far, width: size },
+  ];
+}
+
+/** Did the reader fail because its answer did not fit — the one failure that reading in parts cures? */
+export function readerRanOutOfRoom(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /max_tokens|max_output_tokens/i.test(message);
+}
+
+/** What one part's reading carries, before the reader that answered is added back. */
+export type SignboardPartReading = {
+  signs: PhoenixCrmSign[];
+  signPresent: boolean | null;
+  note: string | null;
+  problem: SignboardPhotoProblem | null;
+  turn: "clockwise" | "counterclockwise" | "upside_down" | null;
+};
+
+/**
+ * The four parts' readings as one reading of the whole photo. Each sign's box is put back into the
+ * whole image; a plate the overlap shows twice is listed twice, which no rule minds — any sign that
+ * names him is a match, and a flag needs one clear sign. The reader's word on the photo stands only
+ * where the parts agree: "none" when any part found a legible plate, a turn only when all four say it.
+ */
+export function mergeSignboardParts(
+  readings: readonly SignboardPartReading[],
+  parts: readonly SignboardPart[],
+): SignboardPartReading {
+  const signs = readings.flatMap((reading, index) =>
+    reading.signs.map((sign) => {
+      const part = parts[index];
+      if (!sign.box || !part) return { ...sign };
+      return {
+        ...sign,
+        box: {
+          height: sign.box.height * part.height,
+          left: part.left + sign.box.left * part.width,
+          top: part.top + sign.box.top * part.height,
+          width: sign.box.width * part.width,
+        },
+      };
+    }),
+  );
+  const problems = readings.map((reading) => reading.problem);
+  const turns = readings.map((reading) => reading.turn);
+  const notes = readings.map((reading) => reading.note).filter((note): note is string => Boolean(note));
+  return {
+    note: ["A board of many plates, read in four parts.", ...notes].join(" "),
+    problem: problems.includes("none") ? "none" : (problems.find((problem) => problem !== null) ?? null),
+    signPresent: readings.some((reading) => reading.signPresent === true)
+      ? true
+      : readings.length > 0 && readings.every((reading) => reading.signPresent === false)
+        ? false
+        : null,
+    signs,
+    turn: turns.length > 0 && turns.every((turn) => turn !== null && turn === turns[0]) ? turns[0] : null,
+  };
+}
+
 /**
  * Turn every sign in the photograph into one verdict.
  *
@@ -753,6 +936,8 @@ export function judgeSignboards(input: {
   signs: readonly PhoenixCrmSign[];
   note: string | null;
   croppedFraction: number;
+  /** The reader's own word on what stops the name being read; kept, never judged on. */
+  problem?: SignboardPhotoProblem | null;
 }): PhoenixCrmSignboardCheck {
   const signs = [...input.signs];
   const anythingRead = signs.some(signCarriesAName);
@@ -774,6 +959,7 @@ export function judgeSignboards(input: {
     signText: chosen?.text ?? null,
     signs,
     verdict,
+    ...(input.problem !== undefined ? { problem: input.problem } : {}),
   });
 
   const fallback = chooseSignboard(signs, input.listType);
@@ -781,12 +967,18 @@ export function judgeSignboards(input: {
   // 1 · NO SIGNBOARD AT ALL, said confidently — the owner's first ruling, unchanged.
   if (input.signPresent === false && !anythingRead) return record(fallback, "no_name", "sign_no_name", null);
 
-  // 2 · ANY sign that names him is a match.
+  // 2 · ANY sign that names him is a match — 🔴 UNLESS THE READER SAYS THE PHOTO HOLDS NO NAMEPLATE AT
+  //     ALL, ON A PM CAPTURE (owner, 2026-10-18: a paper photo is sent back for a nameplate). Four places
+  //     had confirmed that way: two prescription pads held in the hand, a printed clinic schedule, and a
+  //     street seen through a car windscreen — a name on paper travels with the rep and proves no
+  //     doorway. It is the photo's fault, so it is asked for again (`signboardAsksForAPhoto`). AM keeps
+  //     his own rule: a hospital signs itself.
+  const paperOnly = input.listType === "PM" && input.problem === "no_plate";
   let best: number | null = null;
   for (const sign of signs) {
     const { matches, score } = signNamesCustomerOnSign(sign, input);
     if (score !== null) best = best === null ? score : Math.max(best, score);
-    if (matches === true) return record(sign, "match", null, score ?? best);
+    if (matches === true) return paperOnly ? record(sign, "unjudged", "unreadable", score ?? best) : record(sign, "match", null, score ?? best);
   }
 
   // 3 · Nothing in the frame was read CLEARLY, so nothing in it can hold the place.
@@ -939,7 +1131,11 @@ export function signboardNextAttempt(
 ): PhoenixCrmSignboardCheck {
   const attempts = Math.max(1, priorAttempts) + 1;
   const exhausted = attempts >= SIGNBOARD_MAX_READ_ATTEMPTS;
-  const spent = exhausted && check.verdict === "unjudged" && check.reason === "unreadable";
+  // 🔴 THE STRONG READER'S "UNREADABLE" IS FINAL AT ONCE (owner, 2026-10-18: re-reading the same photo
+  // is "a total wasting of money"). The three attempts were bought for a cheap reader that misread
+  // plates a person reads at a glance; the same photo read again by the same strong reader is the same
+  // answer, paid for again. Only a fallback's answer — after the strong one lost its call — keeps a try.
+  const spent = (exhausted || check.strongRead === true) && check.verdict === "unjudged" && check.reason === "unreadable";
   return { ...check, attempts, reason: spent ? "unreadable_final" : check.reason };
 }
 
@@ -1048,10 +1244,16 @@ export function signboardDoorHolds(check: PhoenixCrmSignboardCheck): boolean {
 
 /**
  * How many times the system reads a HELD place before it is the Super Admin's alone: the door's read
- * and three re-reads (owner, 2026-10-17, "re-read up to 3 times"). Counted on the place's own
- * `signboard_check.attempts`, the door's read being the first.
+ * and ONE re-read. Counted on the place's own `signboard_check.attempts`, the door's read being the first.
+ *
+ * 🔴 IT WAS 4 UNTIL 2026-10-18 (owner, 2026-10-17, "re-read up to 3 times"), AND THE OWNER STOPPED IT THE
+ * NEXT DAY: one held photo cost typically 10 and at most 13 answered model calls, on a photograph that
+ * never changes between reads. The one re-read keeps what earned its place — its second look and the
+ * guided spot check confirmed one more of the 21 replayed photos than the door alone — and a photo
+ * still not confirmed after it is fixed by a NEW photo (the door's scanner, the rep's retake), never by
+ * reading the old one again.
  */
-export const SIGNBOARD_HELD_MAX_READS = 4;
+export const SIGNBOARD_HELD_MAX_READS = 2;
 
 /**
  * Reads recorded on a place's stored `signboard_check`: none is 0, and a check written before the count
@@ -1146,4 +1348,250 @@ export function heldSignboardCheckToKeep(
 /** A one-token name is not evidence of anything, here as everywhere else in this repository. */
 export function signboardNameIsUsable(customerName: string | null): boolean {
   return isMatchableName(normalizeContactName(customerName));
+}
+
+// ── The signboard scanner at the door (2026-10-18) ──────────────────────────────────────────────
+//
+// 🔴 THE SIGNBOARD IS READ AT THE DOOR LIKE THE TIMETABLE: A PHOTO THAT DOES NOT SHOW A READABLE NAME
+// IS REFUSED ON THE SPOT WITH WHAT TO FIX, 3 TRIES, THEN SAVED AND HELD. The owner's timetable rule of
+// 2026-10-17 ("3 tries then held to confirmation by admin"), carried to the signboard on 2026-10-18
+// after the audit of 532 places filed "Not readable": every one of them had been ACCEPTED at the door
+// and found unreadable afterwards, when the rep had left and only a new photo could fix it. 10 reps
+// carried half of them — a habit of photographing the street or the hospital front, which a refusal
+// with the reason teaches in one visit.
+
+/** The code a refused signboard photo is raised with; the rep's screen returns to the photo step on it. */
+export const SIGNBOARD_RETAKE_CODE = "phoenix_crm_photo_signboard_retake";
+
+/** Photos the door refuses before it saves and holds instead. The timetable's number, his. */
+export const SIGNBOARD_DOOR_MAX_TRIES = 3;
+
+/** The two refusal reasons the tries are counted under, as `phoenix_crm_refused_readings` stores them. */
+export type SignboardRetakeReason = "signboard_unreadable" | "signboard_no_plate";
+
+export type SignboardDoorAction =
+  | { kind: "save" }
+  | { kind: "hold"; tries: number }
+  | { kind: "retake"; reason: SignboardRetakeReason; message: string; nextTry: number };
+
+/**
+ * Does this reading ask the rep for another photograph — is the PHOTO what stops the name being read?
+ *
+ * A read that ANSWERED and found no name it can use: no nameplate at a PM door (`no_name`), or nothing
+ * read (`unreadable`) where the reader names something a new photo can fix — too far, blurred, dark,
+ * cut off, no plate. Never `other_name` — a clear plate naming somebody else
+ * is evidence, held for the Super Admin, not a bad photo — and never the absence of an answer
+ * (`call_failed`, `no_api_key`, `no_bytes`): refusing on those would stop every validation in the field
+ * the day the reader is down.
+ *
+ * 🔴 AND NEVER A PHOTO THE READER CALLS LEGIBLE (2026-10-18, the dry run's 20 photos opened by eye). A
+ * clear plate reading "د. محمد زكي" for محمد ذكي, a clear board reading "مركز الدكتور رضوان التخصصي" for
+ * رضوان محمد: the reader said `none`, the name did not confirm, and a new photograph of the same plate
+ * reads the same. Nor decorative lettering (`stylised`): the one-off pass read "دكتور سلامة السيد البيودي"
+ * twice off a clear board for سلامة اللبودي — one letter wrong, the same on every photo of that plate.
+ * Nor an AM place's building sign — on an AM capture the building's sign IS the photo (the owner's AM
+ * rule), so "building sign only" is not a fault there. All three go to the Super Admin.
+ * A reading with no word on the problem (an older or fallback read) still asks, as before.
+ */
+export function signboardAsksForAPhoto(check: PhoenixCrmSignboardCheck, listType: PhoenixCrmListType): boolean {
+  if (check.verdict === "no_name") return true;
+  if (check.verdict !== "unjudged" || (check.reason !== "unreadable" && check.reason !== "unreadable_final")) return false;
+  const problem = check.problem ?? null;
+  if (problem === "none") return false;
+  if (problem === "stylised") return false;
+  if (problem === "building_sign_only" && listType !== "PM") return false;
+  return true;
+}
+
+/**
+ * The sentence the rep reads: what to photograph differently, by what the reader said was wrong.
+ *
+ * 🔴 "customer", never the word the owner uses in chat — tests/phoenix-crm-am-pm-words.test.ts refuses
+ * it in any string of this tree, as `schedule-rules.ts`'s own advice records.
+ */
+export function signboardRetakeAdvice(check: Pick<PhoenixCrmSignboardCheck, "verdict" | "problem" | "signs">): string {
+  if (check.verdict === "no_name" && check.signs.length === 0) {
+    return "This photo does not show the customer's nameplate. Photograph the nameplate or signboard that carries the customer's name.";
+  }
+  switch (check.problem) {
+    case "no_plate":
+      return "This photo does not show the customer's nameplate. Photograph the nameplate or signboard that carries the customer's name.";
+    case "building_sign_only":
+      return "This photo shows the building's sign, not the customer's own nameplate. Photograph the plate at the clinic's own door, or the board inside that lists the clinics.";
+    case "too_far":
+      return "The nameplate is too far away to read. Step closer so the name fills the box.";
+    case "blurred":
+      return "The photo is blurred. Hold the phone still and take it again.";
+    case "dark_or_glare":
+      return "The nameplate is too dark or a reflection covers it. Use the light or step to one side, and take it again.";
+    case "cut_off":
+      return "Part of the nameplate is cut off. Fit the whole nameplate inside the box.";
+    case "stylised":
+      return "The lettering on this sign cannot be read. Photograph a plate that shows the customer's name in plain letters, close and straight on.";
+    case "sideways":
+      return "This photo is on its side. Hold the phone upright, with the nameplate inside the box, and take it again.";
+    default:
+      return check.verdict === "no_name"
+        ? "The sign in this photo does not show the customer's name. Photograph the nameplate that carries the name."
+        : "The customer's name cannot be read in this photo. Step closer, hold the phone straight and put the nameplate inside the box.";
+  }
+}
+
+/**
+ * What the door does with one reading of the signboard, given how many photos of this customer's
+ * signboard this rep has had refused today (Cairo visit day).
+ *
+ *   save   — the name is read; or a place another check already holds, or a name nothing can be
+ *            compared to (`signboardDoorHolds` false) — exactly as before the scanner;
+ *   retake — no readable name in the photo, and tries are left: refused with the advice and the try;
+ *   hold   — the third photo still fails, or anything else that is not a match (another name, a lost
+ *            call): saved and held, and the system re-reads it once (`server/signboard-holds.ts`).
+ */
+export function signboardDoorAction(
+  check: PhoenixCrmSignboardCheck,
+  earlierTries: number,
+  listType: PhoenixCrmListType,
+): SignboardDoorAction {
+  if (check.verdict === "match") return { kind: "save" };
+  const tried = Math.max(0, Math.floor(Number.isFinite(earlierTries) ? earlierTries : 0));
+  if (signboardAsksForAPhoto(check, listType)) {
+    if (tried + 1 >= SIGNBOARD_DOOR_MAX_TRIES) return { kind: "hold", tries: tried + 1 };
+    const nextTry = tried + 2;
+    return {
+      kind: "retake",
+      message: `${signboardRetakeAdvice(check)} Try ${nextTry} of ${SIGNBOARD_DOOR_MAX_TRIES}.`,
+      nextTry,
+      reason: check.verdict === "no_name" ? "signboard_no_plate" : "signboard_unreadable",
+    };
+  }
+  return signboardDoorHolds(check) ? { kind: "hold", tries: tried + 1 } : { kind: "save" };
+}
+
+/**
+ * The key a rep's refused signboard photos are counted under: the customer when he has a row, else the
+ * folded name a new customer is being added under. Null when there is nothing to count against.
+ */
+export function signboardRefusalKey(input: { placeId?: string | null; customerId: string | null; customerName: string | null }): string | null {
+  if (input.placeId) return `place:${input.placeId.toLowerCase()}`;
+  if (input.customerId) return `customer:${input.customerId.toLowerCase()}`;
+  const folded = normalizeContactName(input.customerName);
+  return folded ? `name:${folded}` : null;
+}
+
+// ── The places filed "Not readable" before the scanner (2026-10-18) ────────────────────────────
+
+/**
+ * What the one-off read of an old place's photo does with the place:
+ *
+ *   confirm — the name is read: the place is confirmed, and a held one is approved by the system;
+ *   flag    — a clear plate names somebody else: filed for the Super Admin once a second reading agrees;
+ *   retake  — the PHOTO stops the name being read (`signboardAsksForAPhoto`): final for the reader, and
+ *             the rep is asked for a new photo of that door with the reason;
+ *   keep    — an answer no new photo changes: a legible sign whose name did not confirm, an AM
+ *             building's sign, a name that cannot be compared across scripts. Written final, and the
+ *             Super Admin's to judge on the board;
+ *   lost    — the reader never answered: nothing is written, and the place keeps its old record.
+ */
+export type SignboardBacklogOutcome = "confirm" | "flag" | "retake" | "keep" | "lost";
+
+export function signboardBacklogOutcome(check: PhoenixCrmSignboardCheck, listType: PhoenixCrmListType): SignboardBacklogOutcome {
+  if (check.verdict === "match") return "confirm";
+  if (check.verdict === "other_name") return "flag";
+  if (check.reason === "call_failed" || check.reason === "no_api_key") return "lost";
+  // The photo cannot be opened at all: only a new one can ever be read.
+  if (check.reason === "no_bytes") return "retake";
+  return signboardAsksForAPhoto(check, listType) ? "retake" : "keep";
+}
+
+/** The retake request kept on the place: when, why, and the sentence the rep reads. */
+export function signboardRetakeRequest(
+  check: Pick<PhoenixCrmSignboardCheck, "verdict" | "problem" | "signs">,
+  now: Date = new Date(),
+): SignboardRetakeRequest {
+  return { advice: signboardRetakeAdvice(check), problem: check.problem ?? null, requestedAt: now.toISOString() };
+}
+
+/**
+ * The check kept on an old place after its one read. 🔴 AN UNREADABLE PHOTO IS WRITTEN
+ * `unreadable_final` — which no backlog, night or held re-read ever takes — and NEVER `unreadable`,
+ * which the deployed night pass would read again: this record has to stop the reads whichever build
+ * is serving when it is written. That holds for a legible sign kept for the Super Admin (`keep`) as
+ * much as for one sent back: the same photo read again reads the same.
+ */
+export function signboardBacklogCheckToKeep(
+  read: PhoenixCrmSignboardCheck,
+  priorAttempts: number,
+  outcome: SignboardBacklogOutcome,
+  now: Date = new Date(),
+): PhoenixCrmSignboardCheck {
+  const attempts = Math.max(1, priorAttempts) + 1;
+  const unread = read.verdict === "unjudged" && (read.reason === "unreadable" || read.reason === "no_bytes");
+  if (outcome !== "retake") return { ...read, attempts, reason: unread ? "unreadable_final" : read.reason, retake: null };
+  const reason = read.verdict === "unjudged" ? "unreadable_final" : read.reason;
+  return { ...read, attempts, reason, retake: signboardRetakeRequest(read, now) };
+}
+
+/**
+ * A stored reading judged again under today's rules — NO model call — and the one change it makes, or
+ * null. 🔴 ONLY TWO CHANGES ARE EVER WRITTEN (owner's rulings, 2026-10-18): a place whose stored plate
+ * now names the customer is confirmed (فؤاد/فواد, ذكي/زكي), and a PM confirm whose photo the reader said
+ * holds no nameplate at all is sent back for one (a prescription, a paper schedule). Every other
+ * difference a re-judge might find is left exactly as it is — the stored record does not keep
+ * `sign_present`, so a verdict that leaned on it must not be redrawn from what is stored.
+ */
+export function signboardRejudge(
+  stored: PhoenixCrmSignboardCheck,
+  input: { customerName: string; listType: PhoenixCrmListType },
+  now: Date = new Date(),
+): { outcome: "confirm" | "retake"; check: PhoenixCrmSignboardCheck } | null {
+  if (!Array.isArray(stored.signs) || stored.signs.length === 0) return null;
+  const again = judgeSignboards({
+    croppedFraction: stored.croppedFraction ?? 0,
+    customerName: input.customerName,
+    listType: input.listType,
+    note: stored.note ?? null,
+    problem: stored.problem ?? null,
+    signPresent: null,
+    signs: stored.signs,
+  });
+  // Not a read: the photo's count and the time it was read stay as stored. A row written before
+  // `attempts` existed has had one.
+  const kept = { attempts: Number.isFinite(stored.attempts) && stored.attempts > 0 ? stored.attempts : 1, checkedAt: stored.checkedAt };
+  if (stored.verdict !== "match" && again.verdict === "match") {
+    return { check: { ...stored, ...again, ...kept, retake: null }, outcome: "confirm" };
+  }
+  if (stored.verdict === "match" && input.listType === "PM" && stored.problem === "no_plate" && again.verdict !== "match") {
+    const unread: PhoenixCrmSignboardCheck = { ...stored, ...again, ...kept, reason: "unreadable_final", verdict: "unjudged" };
+    return { check: { ...unread, retake: signboardRetakeRequest(unread, now) }, outcome: "retake" };
+  }
+  return null;
+}
+
+/**
+ * How far from the place's frozen point a retaken signboard photo may be: a visit's own 500 m line,
+ * widened by the photo's claimed radius up to a place's 250 m — so an iPhone handing the camera an
+ * approximate position is not refused at the right door, and a photo from across town still is.
+ */
+export const SIGNBOARD_RETAKE_MAX_METERS = 500;
+export const SIGNBOARD_RETAKE_MAX_SLACK_METERS = 250;
+
+export function signboardRetakeIsAtThePlace(distanceMeters: number, accuracyMeters: number | null): boolean {
+  if (!Number.isFinite(distanceMeters)) return false;
+  const slack = accuracyMeters !== null && Number.isFinite(accuracyMeters) && accuracyMeters > 0 ? Math.min(accuracyMeters, SIGNBOARD_RETAKE_MAX_SLACK_METERS) : 0;
+  return distanceMeters <= SIGNBOARD_RETAKE_MAX_METERS + slack;
+}
+
+/** Is this place waiting on a new signboard photo from its rep? */
+export function signboardRetakeWaiting(stored: unknown): SignboardRetakeRequest | null {
+  if (!stored || typeof stored !== "object") return null;
+  const retake = (stored as Record<string, unknown>).retake;
+  if (!retake || typeof retake !== "object") return null;
+  const raw = retake as Record<string, unknown>;
+  const advice = typeof raw.advice === "string" && raw.advice.trim() ? raw.advice : null;
+  if (!advice) return null;
+  return {
+    advice,
+    problem: parseSignboardPhotoProblem(raw.problem),
+    requestedAt: typeof raw.requestedAt === "string" ? raw.requestedAt : "",
+  };
 }

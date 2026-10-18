@@ -1011,6 +1011,27 @@ function PlaceCard({
         <TimingsReadout timings={place.timings} />
       </div>
 
+      {place.signboardRetake ? (
+        // The system sent this place back for a new photo of its nameplate (2026-10-18): the reason is
+        // HIS to read, because it says what to photograph differently.
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <CrmNote title="New signboard photo needed" tone="warn">
+            {place.signboardRetake}
+          </CrmNote>
+          {view.canEdit ? (
+            <div className="mt-2 grid gap-2 sm:flex sm:flex-wrap">
+              <CrmButton
+                onClick={() => onOpen({ name: "retake-signboard", customerId: customer.customerId, placeId: place.placeId })}
+                size="sm"
+                variant="primary"
+              >
+                Retake the signboard photo
+              </CrmButton>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {editsHours || view.canMovePlaces ? (
         <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
           {confirming ? (

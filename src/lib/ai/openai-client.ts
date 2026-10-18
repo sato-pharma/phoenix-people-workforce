@@ -153,6 +153,16 @@ export function planAiProviders(
   return nowMs < unavailableUntilMs ? ["anthropic", "openai"] : ["openai", "anthropic"];
 }
 
+/**
+ * The plan with `prefer` moved to the front — the caller that measured one provider reading its own
+ * task better (the signboard reader, 2026-10-18). A pin or a missing key leaves the plan one entry
+ * long, and no preference adds the provider it left out.
+ */
+export function preferAiProvider(plan: AiProviderName[], prefer?: AiProviderName): AiProviderName[] {
+  if (!prefer || plan[0] === prefer || !plan.includes(prefer)) return plan;
+  return [prefer, ...plan.filter((provider) => provider !== prefer)];
+}
+
 // The two failures that mean the ACCOUNT is dead — a retry, a wait or another model would not help, but
 // another provider would. A timeout or a rate limit stays with the provider that gave it.
 export function shouldFailOverToNextProvider(code: PhoenixOpenAiErrorCode) {
@@ -313,17 +323,28 @@ export type CreateResponseTextParams = {
    * passes 0: the signboard read at the door budgeted 8 s and waited 16.4 s, five times in three days.
    */
   maxRetries?: number;
+  /**
+   * Which provider answers FIRST when both keys are set and `AI_PROVIDER` pins neither — the other is
+   * still the second resort when this one's account is dead. Unset keeps the default order.
+   */
+  preferProvider?: AiProviderName;
+  /**
+   * The Claude model this call asks for when Anthropic answers. Unset maps `model` onto a Claude tier
+   * (`resolveAnthropicModel`); `ANTHROPIC_MODEL` still overrides both.
+   */
+  anthropicModel?: string;
 };
 
 /**
- * One AI text call, answered by whichever provider `planAiProviders` names first and — only when that
+ * One AI text call, answered by whichever provider `planAiProviders` names first (the caller's
+ * `preferProvider`, when it gives one and both keys are set) and — only when that
  * provider's ACCOUNT is dead (out of credit, key rejected) — by the next. The name predates Anthropic and
  * is kept: renaming it would touch every AI feature and a dozen source-pinning tests for no behaviour.
  * What comes back is the same `{ model, outputText, requestId }` whichever provider answered.
  */
 export async function createOpenAiResponseText(params: CreateResponseTextParams) {
   const requestedModel = params.model?.trim() || resolveOpenAiEmailModel();
-  const plan = planAiProviders();
+  const plan = preferAiProvider(planAiProviders(), params.preferProvider);
   const budgetMs = params.timeoutMs ?? OPENAI_EMAIL_TIMEOUT_MS;
   const startedAt = Date.now();
   let lastFailure: PhoenixOpenAiError | null = null;
@@ -368,7 +389,7 @@ export function failoverLegTimeoutMs(budgetMs: number, elapsedMs: number) {
 
 async function runAnthropicResponse(params: CreateResponseTextParams, requestedModel: string) {
   const component = params.component ?? "openai_client";
-  const model = resolveAnthropicModel(requestedModel);
+  const model = resolveAnthropicModel(params.anthropicModel?.trim() || requestedModel);
   const startedAt = Date.now();
 
   try {

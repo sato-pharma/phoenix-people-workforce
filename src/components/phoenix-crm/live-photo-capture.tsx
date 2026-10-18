@@ -46,10 +46,11 @@ import {
   wrapWatermarkText,
 } from "@/components/outstation/evidence-watermark";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { PLACE_PHOTO_CAMERA_IDEAL, placePhotoCanvasSize } from "@/lib/phoenix-crm/place-photo-size";
 import type { PhotoSlot } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
-/** The bucket takes 2 MB; a 1280-pixel JPEG is usually a few hundred KB. */
+/** The bucket takes 2 MB; a 1920-pixel JPEG is usually well under one. */
 const MAX_UPLOAD_BYTES = 1_900_000;
 const LOCATION_ENDPOINT = "/api/phoenix-crm/location";
 /** A newer reading replaces a sharper one once the sharper one is this old (the person may have moved). */
@@ -60,15 +61,17 @@ const FIX_STALE_MS = 15_000;
 // 🔴 THE BOTTOM EDGE IS LOAD-BEARING, NOT A LOOK. The server reads the signboard out of the stored
 // photo, and before it can it must crop off `drawStamp`'s caption box — which carries the customer's
 // own name, burned in below, and would otherwise be read as the sign. The band's height is
-// `stampBandFraction` in src/lib/phoenix-crm/signboard-rules.ts, measured against the two canvas
-// shapes `getCompressedEvidenceCanvasSize` produces:
+// `stampBandFraction` in src/lib/phoenix-crm/signboard-rules.ts, measured against the canvas shapes a
+// signboard capture produces — `placePhotoCanvasSize` (long side 1920) since 2026-10-18, and the
+// 1280 shapes every photo stored before it still has:
 //
-//   portrait  720 x 1280 -> 0.18 of the height is stamp, so 0.82 survives
-//   landscape 1280 x 720 -> 0.49 of the height is stamp, so 0.51 survives
+//   portrait  1080 x 1920 -> 0.18 of the height is stamp, so 0.82 survives
+//   landscape 1920 x 1080 -> 0.49 of the height is stamp, so 0.51 survives
+//   portrait   720 x 1280 -> 0.18,  landscape 1280 x 720 -> 0.49 (the same, the band scales with width)
 //
-// so a box ending at 0.44 clears the crop in BOTH, with 38 points of room in portrait and 7 in
+// so a box ending at 0.44 clears the crop in every one, with 38 points of room in portrait and 7 in
 // landscape. Moving it down silently crops signboards away and reports them as unreadable.
-// tests/phoenix-crm-signboard-check.test.ts asserts the clearance for both shapes.
+// tests/phoenix-crm-signboard-check.test.ts asserts the clearance for each shape.
 const SIGNBOARD_FRAME_TOP = 0.06;
 const SIGNBOARD_FRAME_BOTTOM = 0.44;
 const SIGNBOARD_FRAME_SIDE = 0.1;
@@ -333,9 +336,12 @@ export function LivePhotoCapture({
     try {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       if (!navigator.mediaDevices?.getUserMedia) throw new DOMException("No camera", "NotSupportedError");
+      // A signboard capture asks for more, so a nameplate a few metres away keeps its letters
+      // (place-photo-size.ts); every other capture asks for what it always did.
+      const ideal = frameGuide ? PLACE_PHOTO_CAMERA_IDEAL : { height: 1080, width: 1920 };
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: { facingMode: { ideal: "environment" }, height: { ideal: 1080 }, width: { ideal: 1920 } },
+        video: { facingMode: { ideal: "environment" }, height: { ideal: ideal.height }, width: { ideal: ideal.width } },
       });
       streamRef.current = stream;
       const video = videoRef.current;
@@ -432,7 +438,9 @@ export function LivePhotoCapture({
     setError(null);
     const takenAt = new Date().toISOString();
     const usedFix = fix;
-    const size = getCompressedEvidenceCanvasSize(video);
+    // A signboard keeps the camera's frame up to 1920 on the long side; every other photo keeps the
+    // shared evidence size (place-photo-size.ts — the outstation helper is never changed).
+    const size = frameGuide ? placePhotoCanvasSize(video.videoWidth, video.videoHeight) : getCompressedEvidenceCanvasSize(video);
     const canvas = document.createElement("canvas");
     canvas.width = size.width;
     canvas.height = size.height;

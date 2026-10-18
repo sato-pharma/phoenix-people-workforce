@@ -18,8 +18,28 @@ import {
   signboardUnjudged,
   signNamesCustomer,
   stampBandFraction,
+  SIGNBOARD_DOOR_MAX_TRIES,
+  SIGNBOARD_PHOTO_PROBLEMS,
+  SIGNBOARD_RETAKE_CODE,
+  parseSignboardPhotoProblem,
+  signboardAsksForAPhoto,
+  signboardBacklogCheckToKeep,
+  signboardBacklogOutcome,
+  signboardDoorAction,
+  signboardRefusalKey,
+  signboardRetakeAdvice,
+  signboardRetakeIsAtThePlace,
+  signboardRetakeWaiting,
+  mergeSignboardParts,
+  readerRanOutOfRoom,
+  spelledOneWay,
+  signboardRejudge,
+  SIGNBOARD_PART_OVERLAP,
+  signboardQuarters,
   type PhoenixCrmSign,
+  type PhoenixCrmSignboardCheck,
 } from "../src/lib/phoenix-crm/signboard-rules.ts";
+import { PLACE_PHOTO_MAX_LONG_SIDE, placePhotoCanvasSize } from "../src/lib/phoenix-crm/place-photo-size.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -62,6 +82,26 @@ function checkStampBand(): void {
   assert.equal(landscape, 0.4917, "landscape crops the eight-line worst case");
   assert.ok(1 - portrait > bottom, "portrait: the crop never reaches the framed signboard");
   assert.ok(1 - landscape > bottom, "landscape: the crop never reaches the framed signboard");
+
+  // 🔴 A SIGNBOARD IS STORED AT UP TO 1920 ON THE LONG SIDE SINCE 2026-10-18 (place-photo-size.ts). Every
+  // place photo was 720 x 1280 before — the outstation helper's cap — and a plate a few metres away came
+  // out a few pixels per letter. The band scales with the width, so the guide clears it here too.
+  assert.equal(PLACE_PHOTO_MAX_LONG_SIDE, 1920, "a signboard keeps up to 1920 on its long side");
+  assert.deepEqual(placePhotoCanvasSize(2560, 1440), { height: 1080, width: 1920 }, "a 1440p frame is stored at 1920 x 1080");
+  assert.deepEqual(placePhotoCanvasSize(1080, 1920), { height: 1920, width: 1080 }, "a portrait 1080p frame is kept whole");
+  assert.deepEqual(placePhotoCanvasSize(1280, 720), { height: 720, width: 1280 }, "a smaller frame is never enlarged");
+  assert.deepEqual(placePhotoCanvasSize(0, 0), { height: 1080, width: 1920 }, "a frame with no size yet falls back to 1920 x 1080");
+  const bigPortrait = stampBandFraction(1080, 1920);
+  const bigLandscape = stampBandFraction(1920, 1080);
+  assert.equal(bigPortrait, SIGNBOARD_CROP_MIN_FRACTION, "1080 x 1920 clamps to the one-line floor");
+  assert.equal(bigLandscape, 0.4889, "1920 x 1080 crops the eight-line worst case");
+  assert.ok(1 - bigPortrait > bottom && 1 - bigLandscape > bottom, "at 1920 the crop never reaches the framed signboard either");
+  const wired = stripComments(capture);
+  assert.ok(
+    wired.includes("frameGuide ? placePhotoCanvasSize(video.videoWidth, video.videoHeight) : getCompressedEvidenceCanvasSize(video)"),
+    "only a framed signboard capture takes the larger size; every other photo keeps the shared evidence size",
+  );
+  assert.ok(wired.includes("frameGuide ? PLACE_PHOTO_CAMERA_IDEAL"), "and only it asks the camera for more");
 
   // The crop restates drawStamp line for line; if one changes without the other this goes red.
   for (const line of [
@@ -135,7 +175,7 @@ function checkServerAndSweep(): void {
   const server = stripComments(readFileSync("src/lib/phoenix-crm/server/signboard-check.ts", "utf8"));
   assert.ok(server.includes("PHOENIX_CRM_SIGNBOARD_TIMEOUT_MS = 8_000"), "a rep at the door waits eight seconds at most");
   assert.ok(
-    /maxRetries: 0,\s*\n\s*model: input\.model/.test(server),
+    /maxRetries: 0,\s*\n\s*\.\.\.readerParams\(input\.reader\)/.test(server),
     "readSigns must pass maxRetries: 0 — the SDK retries a timeout with a fresh copy of the budget, so the 8-second door waited 16.4 s, five times in three days (production, 2026-10-12)",
   );
   const client = stripComments(readFileSync("src/lib/ai/openai-client.ts", "utf8"));
@@ -563,22 +603,37 @@ function checkTwoReaders(): void {
     stripped.includes("PHOENIX_CRM_SIGNBOARD_SWEEP_BUDGET_MS = 25_000"),
     "the night gets 25 s for the WHOLE place, every call it makes included",
   );
-  assert.ok(
-    stripped.includes("PHOENIX_CRM_SIGNBOARD_SWEEP_MODEL = OPENAI_STRONG_MODEL"),
-    "the night reads with the strong model; three of the four false holds were a board the cheap one could not read",
-  );
-  // 🔴 The door's reader moved from the cheapest tier to the middle one on 2026-10-17: replayed on 30
-  // production photos the cheap one had filed "unreadable", it confirmed 1 and the middle tier 12, at
-  // 5.9 s p95 — inside the rep's 8 s. The cheap one is the fallback for a LOST call only.
-  assert.ok(stripped.includes('PHOENIX_CRM_SIGNBOARD_DOOR_MODEL = "gpt-5.4-mini"'), "the door reads with the middle tier");
-  assert.ok(
-    stripped.includes("DOOR_MODELS = [PHOENIX_CRM_SIGNBOARD_DOOR_MODEL, OPENAI_NANO_MODEL]"),
-    "and falls back to the cheap one only when the call is lost",
+  // 🔴 Claude reads the signboard first since 2026-10-18: replayed on 21 production photos stored 19
+  // "unreadable", Claude Sonnet confirmed 14 where the stored OpenAI readings had confirmed 1. OpenAI is
+  // asked only when Claude's account is dead, with the models it read with before.
+  assert.match(
+    stripped,
+    /PHOENIX_CRM_SIGNBOARD_STRONG_READER: SignboardReader = \{\s*anthropicModel: "claude-sonnet-5-5",\s*model: OPENAI_STRONG_MODEL,\s*\}/,
+    "the night and the held re-read read with Claude Sonnet, the strong OpenAI model behind it",
   );
   assert.ok(
-    stripped.includes("atTheDoor ? DOOR_MODELS : [PHOENIX_CRM_SIGNBOARD_SWEEP_MODEL]"),
-    "while the night keeps its one strong model",
+    stripped.includes("PHOENIX_CRM_SIGNBOARD_SWEEP_READER = PHOENIX_CRM_SIGNBOARD_STRONG_READER"),
+    "the night reads with the strong reader; three of the four false holds were a board the cheap one could not read",
   );
+  assert.match(
+    stripped,
+    /PHOENIX_CRM_SIGNBOARD_DOOR_READER: SignboardReader = \{\s*anthropicModel: "claude-(?:sonnet|haiku)-5-5",\s*model: "gpt-5\.4-mini",\s*\}/,
+    "the door reads with Claude, the middle OpenAI tier behind it — never nano again without a replay",
+  );
+  assert.match(
+    stripped,
+    /DOOR_READERS = \[\s*PHOENIX_CRM_SIGNBOARD_DOOR_READER,\s*\{ anthropicModel: CLAUDE_FAST_MODEL, model: OPENAI_NANO_MODEL \},\s*\]/,
+    "and falls back to the fast one only when the call is lost",
+  );
+  assert.ok(
+    stripped.includes("atTheDoor ? DOOR_READERS : [PHOENIX_CRM_SIGNBOARD_SWEEP_READER]"),
+    "while the night keeps its one strong reader",
+  );
+  assert.ok(
+    stripped.includes('preferProvider: "anthropic" as const'),
+    "every signboard call asks Claude first",
+  );
+  assert.ok(!/\bmodel: input\.model\b/.test(stripped), "no call names a bare model any more; each names a reader");
 
   // The prompt asks for EVERY sign, with the three fields the verdict turns on.
   for (const clause of [
@@ -612,10 +667,11 @@ function checkTwoReaders(): void {
 
   // The second look: taken only when the first found nobody, and then it decides.
   assert.ok(
-    stripped.includes("if (!input.secondLook || judged.verdict === \"match\") return judged;") && stripped.includes("secondLook: !atTheDoor,"),
-    "one look at the door, and no second look once a sign has named him",
+    stripped.includes("if (!input.secondLook || judged.verdict === \"match\") return judged;") &&
+      stripped.includes("secondLook: atTheDoor ? false : input.secondLook ?? true,"),
+    "one look at the door, and no second look once a sign has named him — the one-off read of the old places asks for none either",
   );
-  assert.ok(stripped.includes("cropToBox(cropped.jpeg, chosen.box)"), "the second look is the chosen sign, cropped out of the frame");
+  assert.ok(stripped.includes("cropToBox(image, chosen.box)"), "the second look is the chosen sign, cropped out of the frame");
   assert.ok(
     stripped.includes("chooseSignToReadAgain(wide.signs, input.listType)"),
     "and it crops the sign that would ANSWER, not the one already read clearly",
@@ -850,8 +906,418 @@ function checkSeatedRowsAreNotSwept(): void {
   );
 }
 
+/**
+ * THE SIGNBOARD SCANNER AT THE DOOR (owner, 2026-10-18: "fix all the unreadable", and the timetable's
+ * rule of 2026-10-17 carried to the signboard). Every one of the 532 places filed "Not readable" had been
+ * ACCEPTED at the door and found unreadable later, when the rep had left. A photo with no readable name is
+ * refused on the spot with what to fix, twice; the third is saved and held. Another name and a lost call
+ * are never refused.
+ */
+function checkDoorScanner(): void {
+  const unreadable = (over: Partial<PhoenixCrmSignboardCheck> = {}): PhoenixCrmSignboardCheck => ({
+    ...signboardUnjudged("unreadable"),
+    ...over,
+  });
+  const named = judge({ personNames: ["د. احمد سمير"], signText: "د. احمد سمير" });
+  const otherName = judge({ personNames: ["د. محمود حسن"], signText: "د. محمود حسن" });
+  const noPlate = judge({ placeNames: ["مركز الشفاء الطبي"] });
+  assert.equal(named.verdict, "match");
+  assert.equal(noPlate.verdict, "no_name");
+
+  assert.equal(SIGNBOARD_DOOR_MAX_TRIES, 3, "three photos, the timetable's number");
+  assert.deepEqual(signboardDoorAction(named, 0, "PM"), { kind: "save" }, "a photo that names him saves at once");
+  const first = signboardDoorAction(unreadable({ problem: "too_far" }), 0, "PM");
+  assert.ok(first.kind === "retake", "a photo with no readable name is refused at the door");
+  assert.equal(first.reason, "signboard_unreadable");
+  assert.equal(first.nextTry, 2);
+  assert.ok(first.message.includes("Step closer") && first.message.endsWith("Try 2 of 3."), `the rep reads what to fix and which try: ${first.message}`);
+  const second = signboardDoorAction(unreadable(), 1, "PM");
+  assert.ok(second.kind === "retake" && second.nextTry === 3, "refused again on the second photo");
+  assert.deepEqual(signboardDoorAction(unreadable(), 2, "PM"), { kind: "hold", tries: 3 }, "🔴 the third photo is saved and held — never a fourth refusal");
+  assert.deepEqual(signboardDoorAction(unreadable(), 9, "PM"), { kind: "hold", tries: 10 }, "and never refused past it");
+  const plate = signboardDoorAction(noPlate, 0, "PM");
+  assert.ok(plate.kind === "retake" && plate.reason === "signboard_no_plate", "no nameplate at a PM door is refused too, counted as its own reason");
+  assert.deepEqual(signboardDoorAction(otherName, 0, "PM"), { kind: "hold", tries: 1 }, "🔴 a clear plate naming somebody else is evidence — held, never refused");
+  for (const reason of ["call_failed", "no_api_key", "no_bytes"] as const) {
+    assert.equal(signboardDoorAction(signboardUnjudged(reason), 0, "PM").kind, "hold", `${reason}: saved and held — a reader that did not answer never turns a rep away`);
+    assert.equal(signboardAsksForAPhoto(signboardUnjudged(reason), "PM"), false, `${reason} never asks for a photo`);
+  }
+  for (const reason of ["name_unusable", "held_elsewhere"] as const) {
+    assert.deepEqual(signboardDoorAction(signboardUnjudged(reason), 0, "PM"), { kind: "save" }, `${reason} saves exactly as before the scanner`);
+  }
+
+  // 🔴 A PHOTO THE READER CALLS LEGIBLE IS NEVER SENT BACK (2026-10-18, the dry run opened by eye): a
+  // clear plate reading "د. محمد زكي" for محمد ذكي read the same on any new photo. Held for the Super
+  // Admin instead. And on an AM capture the building's sign IS the photo, so it is not a fault there.
+  const legible = unreadable({ problem: "none", signText: "د. محمد زكي" });
+  assert.equal(signboardAsksForAPhoto(legible, "PM"), false, "🔴 a legible plate whose name did not confirm never asks for another photo");
+  assert.deepEqual(signboardDoorAction(legible, 0, "PM"), { kind: "hold", tries: 1 }, "it is saved and held for the Super Admin");
+  const hospital = unreadable({ problem: "building_sign_only" });
+  assert.equal(signboardAsksForAPhoto(hospital, "AM"), false, "🔴 an AM building's sign is the AM photo — not a fault");
+  assert.equal(signboardAsksForAPhoto(hospital, "PM"), true, "at a PM door the building's sign is not the clinic's plate");
+  assert.equal(signboardAsksForAPhoto(unreadable({ problem: "too_far" }), "AM"), true, "a plate too far to read is a bad photo on either list");
+  assert.equal(signboardAsksForAPhoto(unreadable(), "AM"), true, "a reading with no word on the problem still asks, as before");
+  assert.equal(signboardAsksForAPhoto(unreadable({ problem: "none", reason: "unreadable_final" }), "PM"), false);
+  assert.equal(
+    signboardAsksForAPhoto(unreadable({ problem: "stylised", signText: "دكتور سلامة السيد البيودي" }), "PM"),
+    false,
+    "🔴 a decorative plate reads the same on any new photo — held for the Super Admin, never the rep's to retake",
+  );
+  assert.equal(signboardAsksForAPhoto(unreadable({ problem: "cut_off" }), "PM"), true, "a plate running out of the frame is fixed by a whole-plate photo");
+
+  // The words: one per cause, never a code, never truncated, never the word the AM/PM test refuses.
+  const advice = SIGNBOARD_PHOTO_PROBLEMS.filter((problem) => problem !== "none").map((problem) =>
+    signboardRetakeAdvice({ problem, signs: [], verdict: "unjudged" }),
+  );
+  assert.ok(new Set(advice).size === advice.length, "each cause has its own sentence");
+  for (const sentence of [...advice, signboardRetakeAdvice({ problem: null, signs: [], verdict: "unjudged" })]) {
+    assert.ok(!/_/.test(sentence) && !sentence.includes("…") && !/doctor|account/i.test(sentence), `a sentence a rep can read: ${sentence}`);
+  }
+  assert.ok(
+    signboardRetakeAdvice({ problem: "building_sign_only", signs: [], verdict: "unjudged" }).includes("building's sign"),
+    "a hospital front is told it shows the building, not the customer's plate",
+  );
+  assert.equal(parseSignboardPhotoProblem("Too_Far"), "too_far");
+  assert.equal(parseSignboardPhotoProblem("smudged"), null, "an answer outside the list is no answer");
+
+  // Tries are counted per rep, per customer: the place, else the customer, else the new name.
+  assert.equal(signboardRefusalKey({ customerId: "C-1", customerName: "x", placeId: "P-1" }), "place:p-1");
+  assert.equal(signboardRefusalKey({ customerId: "C-1", customerName: "x" }), "customer:c-1");
+  assert.ok(signboardRefusalKey({ customerId: null, customerName: "احمد سمير" })?.startsWith("name:"));
+  assert.equal(signboardRefusalKey({ customerId: null, customerName: " " }), null);
+
+  // Wired at both doors — a new place and a retake — with the refusal recorded BEFORE it is thrown.
+  const list = stripComments(readFileSync("src/lib/phoenix-crm/server/list.ts", "utf8"));
+  assert.equal((list.match(/signboardDoorAction\(check, earlierTries, (?:subject\.)?listType\)/g) ?? []).length, 2, "the new-place door and the retake both ask the scanner, with the list");
+  assert.equal(list.split("throw validationError(action.message, SIGNBOARD_RETAKE_CODE)").length - 1, 2, "both refuse with the one code");
+  assert.equal(
+    (list.match(/await signboardRefusalRecorded\(key, action\.reason, [^\n]*\)\)\)?\s*(?:;\s*if \(refused\)|\{)\s*throw validationError\(action\.message, SIGNBOARD_RETAKE_CODE\)/g) ?? []).length,
+    2,
+    "🔴 each refuses only once the refusal is RECORDED — so the next photo is the next try, and an unrecorded one is never 'try 2 of 3' for ever",
+  );
+  assert.ok(/const id = await recordSignboardRefusal\([\s\S]{0,300}return id !== null;/.test(list), "recorded means the row landed");
+  assert.ok(list.includes('holds: action.kind !== "save"'), "a refusal that could not be recorded saves and holds instead");
+  assert.ok(
+    /: key\s*\? await countSignboardRefusals\([^)]*\)\s*: SIGNBOARD_DOOR_MAX_TRIES;/.test(list),
+    "a photo with nothing to count tries against holds at once — never refused for ever",
+  );
+  assert.ok(SIGNBOARD_RETAKE_CODE.startsWith("phoenix_crm_photo_"), "the code the screens already return to the photo on");
+  assert.ok(
+    readFileSync("src/components/phoenix-crm/list-screens.tsx", "utf8").includes('code?.startsWith("phoenix_crm_photo_")'),
+    "and the validate screen still does",
+  );
+  const migration = readFileSync("supabase/migrations/20261018230000_phoenix_crm_signboard_scanner.sql", "utf8");
+  for (const reason of ["signboard_unreadable", "signboard_no_plate"]) {
+    assert.ok(migration.includes(`'${reason}'`), `the refusals table accepts ${reason}`);
+  }
+}
+
+/**
+ * THE STRONG READER'S "UNREADABLE" IS FINAL, AND THE OLD PLACES ARE READ ONCE (owner, 2026-10-18:
+ * "a total wasting of money"). The night read the same unchanged photo up to three nights at two to four
+ * calls a night; the one-off pass reads each old photo once and ends it confirmed, filed, or sent back.
+ */
+function checkOneReadPerPhoto(): void {
+  const unreadable = (over: Partial<PhoenixCrmSignboardCheck> = {}): PhoenixCrmSignboardCheck => ({
+    ...signboardUnjudged("unreadable"),
+    ...over,
+  });
+  assert.equal(signboardNextAttempt(unreadable({ strongRead: true }), 1).reason, "unreadable_final", "🔴 the strong reader's unreadable is final at once");
+  assert.equal(signboardNextAttempt(unreadable(), 1).reason, "unreadable", "a fallback's answer keeps a try");
+  assert.equal(signboardNextAttempt(unreadable({ reason: "call_failed", strongRead: true }), 1).reason, "call_failed", "a lost call is never final");
+  assert.equal(signboardNextAttempt(judge({ personNames: ["د. احمد سمير"] }), 1).reason, null, "a match keeps no reason");
+
+  const named = judge({ personNames: ["د. احمد سمير"], signText: "د. احمد سمير" });
+  assert.equal(signboardBacklogOutcome(named, "PM"), "confirm");
+  assert.equal(signboardBacklogOutcome(judge({ personNames: ["د. محمود حسن"] }), "PM"), "flag");
+  assert.equal(signboardBacklogOutcome(judge({ placeNames: ["مركز الشفاء الطبي"] }), "PM"), "retake", "no nameplate: sent back");
+  for (const reason of ["unreadable", "unreadable_final", "no_bytes"] as const) {
+    assert.equal(signboardBacklogOutcome(signboardUnjudged(reason), "PM"), "retake", `${reason}: only a new photo can be read`);
+  }
+  for (const reason of ["call_failed", "no_api_key"] as const) {
+    assert.equal(signboardBacklogOutcome(signboardUnjudged(reason), "PM"), "lost", `${reason}: nothing written, the old record stays`);
+  }
+  assert.equal(signboardBacklogOutcome(signboardUnjudged("name_unusable"), "PM"), "keep");
+  // 🔴 A legible sign is kept for the Super Admin, never sent back — and kept FINAL, never re-read.
+  assert.equal(signboardBacklogOutcome(unreadable({ problem: "none" }), "PM"), "keep", "🔴 a legible plate that did not confirm is not the rep's to retake");
+  assert.equal(signboardBacklogOutcome(unreadable({ problem: "building_sign_only" }), "AM"), "keep", "🔴 an AM building's sign is kept, not sent back");
+  assert.equal(signboardBacklogOutcome(unreadable({ problem: "blurred" }), "AM"), "retake");
+  assert.equal(signboardBacklogOutcome(unreadable({ problem: "stylised" }), "PM"), "keep", "a decorative plate is kept for the Super Admin");
+  const keptLegible = signboardBacklogCheckToKeep(unreadable({ problem: "none" }), 1, "keep", new Date("2026-10-18T19:00:00.000Z"));
+  assert.equal(keptLegible.reason, "unreadable_final", "🔴 kept final, so no night pass reads the same legible photo again");
+  assert.equal(keptLegible.retake, null, "and the rep is asked for nothing");
+
+  const now = new Date("2026-10-18T19:00:00.000Z");
+  const sentBack = signboardBacklogCheckToKeep(unreadable({ problem: "building_sign_only" }), 1, "retake", now);
+  assert.equal(sentBack.reason, "unreadable_final", "🔴 written final, so the deployed night pass never reads it again");
+  assert.equal(sentBack.attempts, 2, "and the count is carried, never reset");
+  assert.deepEqual(sentBack.retake, {
+    advice: signboardRetakeAdvice({ problem: "building_sign_only", signs: [], verdict: "unjudged" }),
+    problem: "building_sign_only",
+    requestedAt: now.toISOString(),
+  });
+  assert.deepEqual(signboardRetakeWaiting(sentBack), sentBack.retake, "the rep's list reads the same request back");
+  const confirmed = signboardBacklogCheckToKeep(named, 3, "confirm", now);
+  assert.equal(confirmed.retake, null, "a confirmed place asks for nothing");
+  assert.equal(confirmed.attempts, 4);
+  assert.equal(signboardRetakeWaiting({ retake: { advice: "  " } }), null, "a request with no sentence is no request");
+  assert.equal(signboardRetakeWaiting(null), null);
+
+  // The retake is taken at the place: a visit's 500 m, widened by the photo's own radius up to 250 m.
+  assert.equal(signboardRetakeIsAtThePlace(480, null), true);
+  assert.equal(signboardRetakeIsAtThePlace(520, null), false);
+  assert.equal(signboardRetakeIsAtThePlace(600, 150), true, "an approximate iPhone reading at the right door");
+  assert.equal(signboardRetakeIsAtThePlace(760, 5_000), false, "the slack stops at 250 m");
+  assert.equal(signboardRetakeIsAtThePlace(Number.NaN, null), false);
+
+  const sweep = stripComments(readFileSync("src/lib/phoenix-crm/server/signboard-sweep.ts", "utf8"));
+  assert.ok(sweep.includes("readStoredPlaceSignboard(input, { secondLook: false })"), "one look per old photo");
+  assert.ok(
+    sweep.includes("return !stored || (!stored.retake && stored.strongRead !== true);"),
+    "a second run reads nothing the first already read",
+  );
+  assert.ok(sweep.includes('if (options.apply && outcome !== "lost")'), "a dry run writes nothing, and a lost call never overwrites the old record");
+  assert.ok(
+    sweep.includes("Math.max(kept.attempts, SIGNBOARD_HELD_MAX_READS)"),
+    "a held place's count is spent, so the hourly re-read never reads that photo again",
+  );
+  const pass = stripComments(readFileSync("scripts/phoenix-crm-reread-signboards.mjs", "utf8"));
+  assert.ok(pass.includes("signboardNextAttempt(") && pass.includes("signboardReadsRecorded(place.signboard_check)"), "🔴 the script's --apply carries the count, never resets it to 1");
+  assert.ok(/await rereadUnreadablePlacesOnce\(\{\s*apply: APPLY,/.test(pass), "and --unreadable writes only with --apply");
+  assert.ok(sweep.includes("loadUnreadableBacklog(options.placeIds)"), "a person can name the places to read again");
+  assert.ok(
+    sweep.includes('if (named) return stored?.verdict !== "match" && stored?.verdict !== "other_name";'),
+    "🔴 and a confirmed or flagged place is never read again, named or not",
+  );
+
+  // 🔴 A SIDEWAYS SCENE IS TURNED UPRIGHT AND READ ONCE MORE, OFF THE DOOR (2026-10-18): 38 of the first
+  // 157 old photos were on their side, and Claude read none of their plates until the image was turned
+  // (هبة المصري: "too far" on its side, confirmed upright). The door has no time, so it asks the rep to
+  // hold the phone upright instead.
+  const reader = stripComments(readFileSync("src/lib/phoenix-crm/server/signboard-check.ts", "utf8"));
+  assert.ok(reader.includes('required: ["sign_present", "signs", "note", "problem", "upright"]'), "the reader always says how the scene stands");
+  assert.ok(reader.includes("turnUpright: !atTheDoor"), "🔴 the door never spends a second call turning a photo — a rep is waiting");
+  assert.ok(reader.includes("const tight = await cropToBox(image, chosen.box);"), "the close look crops the UPRIGHT image its boxes came from");
+  assert.ok(/if \(again\.turn !== null\) continue;/.test(reader), "a reading still on its side tries the other way once, then stops");
+  const sideways = unreadable({ problem: "sideways" });
+  assert.equal(signboardAsksForAPhoto(sideways, "PM"), true, "a photo nobody turned upright is the rep's to retake");
+  assert.ok(signboardRetakeAdvice(sideways).includes("Hold the phone upright"), "and he is told to hold the phone upright");
+}
+
+/**
+ * 🔴 A BOARD TOO FULL FOR ONE ANSWER IS READ IN FOUR QUARTERS (2026-10-18). Two places were a hospital
+ * wall of about forty plates, د. طلعت فواد among them; the whole-photo answer ran out of room on every
+ * call, so a lost call would have been paid for nightly and never read. Read in quarters, it confirmed.
+ */
+function checkBoardTooFullForOneAnswer(): void {
+  const parts = signboardQuarters();
+  assert.equal(parts.length, 4, "four parts");
+  for (const part of parts) {
+    assert.ok(part.left >= 0 && part.top >= 0 && part.left + part.width <= 1 + 1e-9 && part.top + part.height <= 1 + 1e-9, "each part lies inside the photo");
+  }
+  // A plate of the forty-plate wall's size (about 13% of the photo tall and 18% wide), anywhere in the
+  // photo, is whole inside one part — the number is the photo's, never derived from the overlap.
+  const plate = 0.19;
+  for (let x = 0; x + plate <= 1; x += 0.01) {
+    for (let y = 0; y + plate <= 1; y += 0.01) {
+      assert.ok(
+        parts.some((part) => x >= part.left - 1e-9 && y >= part.top - 1e-9 && x + plate <= part.left + part.width + 1e-9 && y + plate <= part.top + part.height + 1e-9),
+        `🔴 a plate at ${x.toFixed(2)},${y.toFixed(2)} is whole in one quarter — none is cut by the split`,
+      );
+    }
+  }
+
+  const plateSign = (name: string, box: PhoenixCrmSign["box"]): PhoenixCrmSign => ({
+    box,
+    kind: "medical",
+    legibility: "clear",
+    personNames: [name],
+    placeNames: [],
+    text: `د. ${name}`,
+  });
+  const reading = (signs: PhoenixCrmSign[], over: Partial<{ problem: "none" | "cut_off" | null; turn: "clockwise" | null; signPresent: boolean | null; note: string | null }> = {}) => ({
+    note: over.note ?? null,
+    problem: over.problem ?? "cut_off",
+    signPresent: over.signPresent ?? true,
+    signs,
+    turn: over.turn ?? null,
+  });
+  const merged = mergeSignboardParts(
+    [
+      reading([plateSign("ريمون صالح", { height: 0.2, left: 0.1, top: 0.1, width: 0.3 })]),
+      reading([]),
+      reading([]),
+      reading([plateSign("طلعت فؤاد", { height: 0.5, left: 0, top: 0, width: 0.5 })], { problem: "none" }),
+    ],
+    parts,
+  );
+  const talaat = merged.signs.find((sign) => sign.personNames.includes("طلعت فؤاد"));
+  const far = 1 - (1 + SIGNBOARD_PART_OVERLAP) / 2;
+  const size = (1 + SIGNBOARD_PART_OVERLAP) / 2;
+  assert.ok(talaat?.box, "a plate read in the last quarter keeps its box");
+  assert.ok(Math.abs(talaat.box.left - far) < 1e-9 && Math.abs(talaat.box.top - far) < 1e-9, "🔴 and its box is put back where it sits in the WHOLE photo");
+  assert.ok(Math.abs(talaat.box.width - 0.5 * size) < 1e-9 && Math.abs(talaat.box.height - 0.5 * size) < 1e-9, "at the whole photo's scale");
+  assert.equal(merged.signs.length, 2, "every quarter's plates are kept");
+  assert.equal(merged.problem, "none", "one quarter with a legible plate makes the photo's word \"none\"");
+  assert.equal(merged.turn, null, "a turn stands only when every quarter says it");
+  assert.equal(
+    mergeSignboardParts([0, 1, 2, 3].map(() => reading([], { turn: "clockwise" })), parts).turn,
+    "clockwise",
+    "and all four saying it is a turn",
+  );
+  assert.equal(mergeSignboardParts([0, 1, 2, 3].map(() => reading([], { signPresent: false })), parts).signPresent, false, "no sign only when no quarter has one");
+  assert.ok(merged.note?.startsWith("A board of many plates, read in four parts."), "the stored note says how it was read");
+
+  // The judge sees the merged plates exactly as it sees one photo's.
+  const verdict = judgeSignboards({ croppedFraction: 0.1, customerName: "د.طلعت فؤاد", listType: "PM", note: merged.note, problem: merged.problem, signPresent: merged.signPresent, signs: merged.signs });
+  assert.equal(verdict.verdict, "match", "the customer's plate among forty is a match");
+
+  const fallback = readFileSync("src/lib/ai/anthropic-fallback.ts", "utf8").match(/"(Claude ran out of room[^"]*)"/)?.[1] ?? "";
+  assert.ok(fallback.length > 0, "the Anthropic leg still names an answer that ran out of room");
+  assert.equal(readerRanOutOfRoom(new Error(fallback)), true, "🔴 an answer that ran out of room is the one failure read again in parts");
+  assert.equal(readerRanOutOfRoom(new Error("Response incomplete: max_output_tokens")), true, "the OpenAI leg's spelling too");
+  assert.equal(readerRanOutOfRoom(new Error("The AI request timed out.")), false, "a timeout is a lost call, never four more");
+
+  const reader = stripComments(readFileSync("src/lib/phoenix-crm/server/signboard-check.ts", "utf8"));
+  assert.ok(
+    reader.includes("if (!input.inPartsWhenFull || !readerRanOutOfRoom(error)) return null;"),
+    "only a whole-photo read that ran out of room is read again in parts",
+  );
+  assert.ok(
+    reader.includes("return readInParts({ ...input, timeoutMs: input.timeoutMs - (Date.now() - startedAt) });"),
+    "🔴 with the time the whole read LEFT, so a place still costs at most its budget",
+  );
+  assert.equal(
+    (reader.match(/readSigns\(\{ inPartsWhenFull: true, jpeg: (?:cropped\.jpeg|turned), question: WIDE_QUESTION,/g) ?? []).length,
+    2,
+    "both whole-photo reads, upright and turned, fall back to the quarters",
+  );
+  assert.ok(!/inPartsWhenFull: true[^\n]*CLOSE_QUESTION/.test(reader), "a single plate's close look never splits into four calls");
+  assert.ok(reader.includes("if (answered.length !== parts.length) return null;"), "a board read three-quarters is a lost call, never a reading");
+}
+
+/**
+ * 🔴 THE OWNER'S RULINGS OF 18 OCT 2026, asked one by one after each was measured on the stored readings:
+ * ؤ/ئ are و/ي, ذ/ز/د are one letter and ح/خ are one; long vowels are NOT forgiven; and a paper photo on a
+ * PM capture is sent back for a nameplate, however clearly it names him.
+ */
+function checkOwnersSpellingRulings(): void {
+  const pm = (customerName: string, personNames: string[]) =>
+    signNamesCustomer({ customerName, listType: "PM", personNames, placeNames: [], signText: null }).matches;
+  assert.equal(pm("د.طلعت فؤاد", ["طلعت فواد"]), true, "🔴 فؤاد and فواد are one name");
+  assert.equal(pm("ناشى نبيل", ["ناشئ نبيل"]), true, "ناشئ and ناشي are one name");
+  assert.equal(pm("احمد دكى", ["أحمد ذكي"]), true, "🔴 ذ, ز and د are one letter");
+  assert.equal(pm("اسامة ذكي", ["أسامه زكى"]), true, "ذكي and زكى are one name");
+  assert.equal(pm("شريف مصطفي ابوخشبه", ["شريف أبو حشبة"]), true, "ح and خ are one letter");
+  assert.equal(pm("محمود السيد", ["محمد السيد"]), false, "🔴 a long vowel is never forgiven: محمود is not محمد");
+  assert.equal(pm("سعيد علي حسن", ["سعد علي"]), false, "nor سعيد سعد");
+  assert.equal(pm("محمد ابو العنيين", ["مجدي أبو العينين"]), false, "and another given name is still another person");
+  assert.equal(spelledOneWay("فؤاد ذكي خليل"), "فواد دكي حليل", "the comparison writes each ruled pair one way");
+
+  const plate: PhoenixCrmSign = {
+    box: null,
+    kind: "medical",
+    legibility: "clear",
+    personNames: ["أسامة عبد الحميد عبد النبي"],
+    placeNames: [],
+    text: "دكتور أسامة عبد الحميد عبد النبي للأمراض الصدرية والباطنية",
+  };
+  const paper = judgeSignboards({ croppedFraction: 0.18, customerName: "د.اسامه عبدالنبي", listType: "PM", note: "a prescription held in a hand", problem: "no_plate", signPresent: true, signs: [plate] });
+  assert.equal(paper.verdict, "unjudged", "🔴 a prescription naming him is not a nameplate — it never confirms the place");
+  assert.equal(signboardAsksForAPhoto(paper, "PM"), true, "and the rep is asked for a photo of the nameplate");
+  const onTheDoor = judgeSignboards({ croppedFraction: 0.18, customerName: "د.اسامه عبدالنبي", listType: "PM", note: null, problem: "none", signPresent: true, signs: [plate] });
+  assert.equal(onTheDoor.verdict, "match", "the same name on his plate is a match");
+  const hospital: PhoenixCrmSign = { ...plate, personNames: [], placeNames: ["مستشفى حميات منوف"], text: "مستشفى حميات منوف" };
+  assert.equal(
+    judgeSignboards({ croppedFraction: 0.18, customerName: "مستشفي حميات منوف", listType: "AM", note: null, problem: "no_plate", signPresent: true, signs: [hospital] }).verdict,
+    "match",
+    "AM keeps its own rule: a hospital signs itself",
+  );
+}
+
+/**
+ * 🔴 THE RULINGS REACH THE PLACES ALREADY READ THROUGH THEIR STORED READINGS, WITH NO MODEL CALL — and
+ * only two changes are ever written: a stored plate that now names him confirms, and a PM confirm on a
+ * photo with no nameplate is sent back for one. A case on his board is listed, never settled.
+ */
+function checkStoredReadingsRejudged(): void {
+  const now = new Date("2026-10-18T21:30:00.000Z");
+  const plate = (text: string, personNames: string[]): PhoenixCrmSign => ({ box: null, kind: "medical", legibility: "clear", personNames, placeNames: [], text });
+  const stored = (customerName: string, listType: "AM" | "PM", signs: PhoenixCrmSign[], over: Partial<PhoenixCrmSignboardCheck>): PhoenixCrmSignboardCheck => ({
+    ...judgeSignboards({ croppedFraction: 0.12, customerName, listType, note: null, problem: "none", signPresent: true, signs }),
+    attempts: 2,
+    checkedAt: "2026-10-18T19:05:00.000Z",
+    strongRead: true,
+    ...over,
+  });
+
+  const fawad = [plate("عيادة د / طلعت فواد", ["طلعت فواد"])];
+  const was = stored("د.طلعت فؤاد", "PM", fawad, { reason: null, verdict: "other_name" });
+  const confirm = signboardRejudge(was, { customerName: "د.طلعت فؤاد", listType: "PM" }, now);
+  assert.equal(confirm?.outcome, "confirm", "🔴 a stored plate that names him under the rulings confirms the place");
+  assert.equal(confirm?.check.verdict, "match", "and the kept record is a match");
+  assert.equal(confirm?.check.retake, null, "with no retake left waiting");
+  assert.equal(confirm?.check.attempts, 2, "🔴 a re-judge is not a read: the count stays as stored");
+  assert.equal(confirm?.check.checkedAt, "2026-10-18T19:05:00.000Z", "and so does the time the photo was read");
+  assert.equal(confirm?.check.strongRead, true, "and who read it");
+  assert.equal(
+    signboardRejudge({ ...was, attempts: 0 }, { customerName: "د.طلعت فؤاد", listType: "PM" }, now)?.check.attempts,
+    1,
+    "a row written before the count existed has had one read",
+  );
+
+  const prescription = [plate("دكتور أسامة عبد الحميد عبد النبي", ["أسامة عبد الحميد عبد النبي"])];
+  const paperConfirm = stored("د.اسامه عبدالنبي", "PM", prescription, { problem: "no_plate", reason: null, verdict: "match" });
+  const retake = signboardRejudge(paperConfirm, { customerName: "د.اسامه عبدالنبي", listType: "PM" }, now);
+  assert.equal(retake?.outcome, "retake", "🔴 a PM confirm on a photo with no nameplate is sent back for one");
+  assert.equal(retake?.check.verdict, "unjudged", "it no longer stands as a match");
+  assert.equal(retake?.check.reason, "unreadable_final", "and is final, so no night or held pass reads that photo again");
+  assert.equal(retake?.check.retake?.problem, "no_plate", "the rep is told why");
+  assert.ok(retake?.check.retake?.advice, "with the sentence the rep reads");
+  assert.equal(retake?.check.retake?.requestedAt, now.toISOString(), "and when it was asked");
+  assert.equal(retake?.check.attempts, 2, "the count stays as stored");
+
+  assert.equal(
+    signboardRejudge({ ...paperConfirm, problem: "none" }, { customerName: "د.اسامه عبدالنبي", listType: "PM" }, now),
+    null,
+    "a confirm on his own plate is left alone",
+  );
+  const hospital = [{ ...prescription[0], personNames: [], placeNames: ["مستشفى حميات منوف"], text: "مستشفى حميات منوف" }];
+  assert.equal(
+    signboardRejudge(stored("مستشفي حميات منوف", "AM", hospital, { problem: "no_plate", verdict: "match" }), { customerName: "مستشفي حميات منوف", listType: "AM" }, now),
+    null,
+    "AM is never sent back by the paper ruling",
+  );
+  const mahmoud = [plate("د / محمد السيد", ["محمد السيد"])];
+  assert.equal(
+    signboardRejudge(stored("محمود السيد", "PM", mahmoud, { reason: null, verdict: "other_name" }), { customerName: "محمود السيد", listType: "PM" }, now),
+    null,
+    "🔴 a long vowel is still not forgiven: another name stays another name",
+  );
+  assert.equal(
+    signboardRejudge({ ...was, signs: [] }, { customerName: "د.طلعت فؤاد", listType: "PM" }, now),
+    null,
+    "a record with no stored reading has nothing to judge again",
+  );
+
+  const sweep = stripComments(readFileSync("src/lib/phoenix-crm/server/signboard-sweep.ts", "utf8"));
+  const pass = sweep.slice(sweep.indexOf("export async function rejudgeStoredSignboardsOnce"));
+  assert.ok(pass.length > 100, "the re-judge pass exists");
+  assert.ok(!/readStoredPlaceSignboard|rereadHeldPlaceSignboard/.test(pass), "🔴 the re-judge reads no photo: it costs no model call");
+  assert.ok(!/settled_at:|settleIntegrityCase|\.delete\(/.test(pass), "🔴 it never settles or removes a case on the board: that is his click");
+  assert.ok(pass.includes(`.is("settled_at", null)`), "it lists the open cases the confirms no longer support");
+  const script = readFileSync("scripts/phoenix-crm-reread-signboards.mjs", "utf8");
+  assert.ok(script.includes(`"--rejudge"`), "the script takes --rejudge");
+  assert.ok(script.includes("if (!REJUDGE && !process.env.ANTHROPIC_API_KEY"), "and the re-judge needs no AI key");
+}
+
 export function runPhoenixCrmSignboardCheckTests(): void {
+  checkOwnersSpellingRulings();
+  checkStoredReadingsRejudged();
+  checkBoardTooFullForOneAnswer();
   checkStampBand();
+  checkDoorScanner();
+  checkOneReadPerPhoto();
   checkVerdicts();
   checkRecords();
   checkServerAndSweep();

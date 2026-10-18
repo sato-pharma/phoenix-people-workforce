@@ -66,6 +66,7 @@ import type { CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture"
 import { PharmacyDetailsScreen } from "@/components/phoenix-crm/pharmacy-details";
 import { PlaceMoveScreen } from "@/components/phoenix-crm/place-move-screen";
 import { VenueTimetableScreen } from "@/components/phoenix-crm/venue-timetable-screen";
+import { SignboardRetakeScreen } from "@/components/phoenix-crm/signboard-retake-screen";
 import { SeatInVenueScreen } from "@/components/phoenix-crm/seat-in-venue-screen";
 import type { PlaceDraftState } from "@/components/phoenix-crm/place-editor";
 import type { SeatedDraftState } from "@/components/phoenix-crm/shared-place-screens";
@@ -459,6 +460,20 @@ export function ListTab({
             {...base}
             customerId={customerId}
             key={`edit-place-${placeId}`}
+            onBack={() => openCustomer(customerId)}
+            onDone={(next) => customerChanged(customerId, next)}
+            placeId={placeId}
+          />
+        );
+        break;
+      }
+      case "retake-signboard": {
+        const { customerId, placeId } = current;
+        body = (
+          <SignboardRetakeScreen
+            {...base}
+            customerId={customerId}
+            key={`retake-signboard-${placeId}`}
             onBack={() => openCustomer(customerId)}
             onDone={(next) => customerChanged(customerId, next)}
             placeId={placeId}

@@ -158,6 +158,9 @@ const ROUTE_GATES: RouteGate[] = [
   get("list/timeline"),
   post("list/places", "create"),
   post("list/places/update", "create"),
+  // A new signboard photo for a place the system sent back to its rep (2026-10-18): his own write on
+  // his own seat, and only a place waiting on one (`retakePlaceSignboard`) — never a free swap.
+  post("list/places/signboard", "create"),
   // Moving or removing a validated place (owner, 2026-09-29): the Super Admin and the SFE Manager only.
   post("list/places/move", "approve"),
   // Seating customers in a validated polyclinic (owner, 2026-10-10): the Super Admin alone — `update` at the route, `canDecideSharedPlaces` in the service.
@@ -937,6 +940,9 @@ const LATER_MIGRATIONS = [
   // It REPLACES two functions whose earlier definer is 20261017000000, above it, and adds columns and
   // CHECKs on that migration's own tables — no new table and no new function, so it appends at the end.
   "supabase/migrations/20261017213000_phoenix_crm_manager_plan_wider_writers.sql",
+  // The signboard scanner (2026-10-18): a new photo for a place sent back to its rep. One new function,
+  // replacing nothing, plus a widened CHECK and a column on the refusals table — it appends at the end.
+  "supabase/migrations/20261018230000_phoenix_crm_signboard_scanner.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

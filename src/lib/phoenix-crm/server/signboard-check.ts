@@ -11,6 +11,10 @@ import {
   chooseSignToReadAgain,
   jsonbSafe,
   judgeSignboards,
+  mergeSignboardParts,
+  parseSignboardPhotoProblem,
+  readerRanOutOfRoom,
+  signboardQuarters,
   signboardReadsCustomerName,
   signboardUnjudged as unjudged,
   signNamesCustomerOnSign,
@@ -19,6 +23,8 @@ import {
   type PhoenixCrmSignboardCheck,
   type SignboardKind,
   type SignboardLegibility,
+  type SignboardPart,
+  type SignboardPhotoProblem,
 } from "@/lib/phoenix-crm/signboard-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -69,8 +75,24 @@ export const PHOENIX_CRM_SIGNBOARD_TIMEOUT_MS = 8_000;
 export const PHOENIX_CRM_SIGNBOARD_SWEEP_BUDGET_MS = 25_000;
 
 /**
+ * One reader, named on each provider: `anthropicModel` is the Claude model asked, `model` the OpenAI
+ * one asked only when Claude's ACCOUNT is dead (out of credit, key rejected).
+ *
+ * 🔴 CLAUDE READS THE SIGNBOARD FIRST SINCE 2026-10-18 (`preferProvider: "anthropic"` on every call),
+ * AND THE NUMBER IS A MEASUREMENT. The owner, of a rep whose places were 19 of 21 "Not readable": *"The
+ * photos are clearly readable. Why can't you read them?"* Those 21 production photos, replayed through
+ * this file's own code and prompt: Claude Sonnet confirmed **14** at the door and the held re-read
+ * behind it one more, Claude Haiku 12 at the door, where the stored readings (OpenAI's nano, then
+ * mini) had confirmed 1. Of the 6 left, one is another doctor's plate, four show no plate a person
+ * can read either, and one is a calligraphy board the reader takes a letter wrong on. No reader matched
+ * a random other customer's name on any of them. Account: docs/phoenix-crm-validation-feedback.md,
+ * "Claude reads the signboard".
+ */
+export type SignboardReader = { anthropicModel: string; model: string };
+
+/**
  * 🔴 THE NIGHT READS WITH THE STRONG MODEL AND THE DOOR WITH A CHEAPER ONE, DELIBERATELY (the door's
- * moved from the cheapest tier to the middle one on 2026-10-17 — `PHOENIX_CRM_SIGNBOARD_DOOR_MODEL`).
+ * moved from the cheapest tier to the middle one on 2026-10-17 — `PHOENIX_CRM_SIGNBOARD_DOOR_READER`).
  * Of the five places the cheap reader held on its first night (read 2026-10-09), four were held
  * wrongly and three of those were a board it could not read properly — "دكتور أحمد الشرباوي" for
  * الشعراوي, "محمد فريد" for فرج, a room sign for عبدالعال. The door cannot afford this model inside
@@ -79,8 +101,15 @@ export const PHOENIX_CRM_SIGNBOARD_SWEEP_BUDGET_MS = 25_000;
  *
  * The extra cost is small because the SECOND look is only taken when the first found nobody: 5 of
  * the 60 places read on that night, 8%.
+ *
+ * Claude Opus was replayed on the same 21 photos for the night and confirmed the same 14 as Sonnet,
+ * at 15.4 s p95 against 10.7 s — no gain for the slower model.
  */
-export const PHOENIX_CRM_SIGNBOARD_SWEEP_MODEL = OPENAI_STRONG_MODEL;
+export const PHOENIX_CRM_SIGNBOARD_STRONG_READER: SignboardReader = {
+  anthropicModel: "claude-sonnet-5-5",
+  model: OPENAI_STRONG_MODEL,
+};
+export const PHOENIX_CRM_SIGNBOARD_SWEEP_READER = PHOENIX_CRM_SIGNBOARD_STRONG_READER;
 
 /**
  * 🔴 THE DOOR READS WITH THE MIDDLE TIER SINCE 2026-10-17, AND THE NUMBER IS A MEASUREMENT. 40
@@ -90,19 +119,36 @@ export const PHOENIX_CRM_SIGNBOARD_SWEEP_MODEL = OPENAI_STRONG_MODEL;
  * one is now only the fallback for a LOST call (owner, 2026-10-17: "fall back on other way"), asked
  * with whatever time is left. Never move the door back to nano to save money without replaying those
  * photos first. Account: docs/phoenix-crm-validation-feedback.md, "The door reader and the held re-read".
+ *
+ * 🔴 SINCE 2026-10-18 THE DOOR ASKS CLAUDE SONNET, NOT HAIKU, AND THAT TOO IS A MEASUREMENT. 81
+ * production photos (one rep's 21, 45 other places stored "unreadable", 15 stored matches) replayed at
+ * the door: Sonnet confirmed 14 / 2 / 13 of them, Haiku 12 / 2 / 12, at 6.6 s p95 against Haiku's
+ * 7.1 s, and 2 of Sonnet's 81 calls ran past 8 s. Neither matched a random other customer's name on
+ * any photo. Haiku is the fallback for a lost call, as nano was.
  */
-export const PHOENIX_CRM_SIGNBOARD_DOOR_MODEL = "gpt-5.4-mini";
-const DOOR_MODELS = [PHOENIX_CRM_SIGNBOARD_DOOR_MODEL, OPENAI_NANO_MODEL] as const;
+export const PHOENIX_CRM_SIGNBOARD_DOOR_READER: SignboardReader = {
+  anthropicModel: "claude-sonnet-5-5",
+  model: "gpt-5.4-mini",
+};
+/** The fast Claude model: what a lost call falls back to, at the door and on the held re-read. */
+const CLAUDE_FAST_MODEL = "claude-haiku-5-5";
+const DOOR_READERS = [
+  PHOENIX_CRM_SIGNBOARD_DOOR_READER,
+  { anthropicModel: CLAUDE_FAST_MODEL, model: OPENAI_NANO_MODEL },
+] as const;
 
 /**
- * A HELD place is re-read by the strong model, falling back to the door's on a lost call, and the
+ * A HELD place is re-read by the strong reader, falling back to the fast one on a lost call, and the
  * whole re-read of one place — the blind look, its second look, the guided look and its check — gets
  * this long. Nobody waits on it: it runs after the rep's reply and in the hourly re-check.
  */
 export const PHOENIX_CRM_SIGNBOARD_HELD_BUDGET_MS = 45_000;
 /** No single call may take the whole re-read, or a hung call would leave no time for the fallback. */
 const HELD_CALL_CAP_MS = 20_000;
-const HELD_MODELS = [OPENAI_STRONG_MODEL, PHOENIX_CRM_SIGNBOARD_DOOR_MODEL] as const;
+const HELD_READERS = [
+  PHOENIX_CRM_SIGNBOARD_STRONG_READER,
+  { anthropicModel: CLAUDE_FAST_MODEL, model: PHOENIX_CRM_SIGNBOARD_DOOR_READER.model },
+] as const;
 
 /** How much of the frame around a sign's own box is kept when the sign is read again on its own. */
 export const SIGNBOARD_CROP_MARGIN = 0.06;
@@ -138,6 +184,30 @@ const INSTRUCTIONS =
   "cannot tell. A confident wrong answer is worse than no answer, because a real practice would be " +
   "doubted on the strength of it.";
 
+/**
+ * 🔴 THE BLIND READ ALSO SAYS WHAT STOPS A NAMEPLATE BEING READ (2026-10-18). It is what the door tells
+ * the rep to fix and what the audit of the old "Not readable" places counts; a stored "unreadable" with
+ * no reason could not say whether the photo or the old reader was at fault. Only the blind read asks it:
+ * the guided read's schema has no such field.
+ */
+const PROBLEM_EXTRA =
+  "\n\nFinally, in problem, say what — if anything — stops a practice's own nameplate being read in " +
+  "this photograph: \"none\" when the nameplate or practice sign is legible; \"no_plate\" when the photo " +
+  "shows no nameplate or practice sign at all (a street, a wall, a bare door, a vehicle); " +
+  "\"building_sign_only\" when it shows only a building's, a hospital's or another trade's sign and no " +
+  "plate of the practice itself; \"too_far\" when a plate is there but too small to read; \"blurred\"; " +
+  "\"dark_or_glare\" when it is too dark or a reflection covers it; \"cut_off\" when the plate runs out " +
+  "of the frame; \"stylised\" when decorative or calligraphic lettering cannot be followed.\n\n" +
+  "And in upright, say how the scene stands in this image: \"upright\" when its lettering reads the " +
+  "normal way up; otherwise how the IMAGE must be turned for the lettering to stand upright — " +
+  "\"turn_clockwise\", \"turn_counterclockwise\" or \"upside_down\". A phone held sideways stores the " +
+  "scene on its side.";
+
+const PROBLEM_SCHEMA = {
+  enum: ["none", "no_plate", "building_sign_only", "too_far", "blurred", "dark_or_glare", "cut_off", "stylised"] as const,
+  type: "string" as const,
+};
+
 const BOX_SCHEMA = {
   additionalProperties: false,
   properties: {
@@ -171,10 +241,15 @@ const TEXT_FORMAT = {
       additionalProperties: false,
       properties: {
         note: { type: ["string", "null"] as const },
+        problem: PROBLEM_SCHEMA,
         sign_present: { type: ["boolean", "null"] as const },
         signs: { items: SIGN_SCHEMA, type: ["array", "null"] as const },
+        upright: {
+          enum: ["upright", "turn_clockwise", "turn_counterclockwise", "upside_down"] as const,
+          type: "string" as const,
+        },
       },
-      required: ["sign_present", "signs", "note"],
+      required: ["sign_present", "signs", "note", "problem", "upright"],
       strict: true as const,
       type: "object" as const,
     },
@@ -342,7 +417,43 @@ type SignboardReading = {
   signs: PhoenixCrmSign[];
   signPresent: boolean | null;
   note: string | null;
+  /** The blind read's word on what stops the nameplate being read; null from the guided read. */
+  problem: SignboardPhotoProblem | null;
+  /** Which reader answered, and whether it was Claude itself rather than the account fallback. */
+  reader: SignboardReader;
+  byClaude: boolean;
+  /** How the image must be turned for its lettering to stand upright; null when it already does. */
+  turn: SignboardTurn | null;
 };
+
+/** How the reader says the IMAGE must be turned for the lettering in it to stand upright. */
+type SignboardTurn = "clockwise" | "counterclockwise" | "upside_down";
+
+const TURN_DEGREES: Record<SignboardTurn, number> = { clockwise: 90, counterclockwise: 270, upside_down: 180 };
+const OPPOSITE_TURN: Record<SignboardTurn, SignboardTurn> = {
+  clockwise: "counterclockwise",
+  counterclockwise: "clockwise",
+  upside_down: "upside_down",
+};
+
+/** An answer outside the list is "upright" — never a guess at which way to turn a photo. */
+function turnOf(value: unknown): SignboardTurn | null {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "turn_clockwise") return "clockwise";
+  if (raw === "turn_counterclockwise") return "counterclockwise";
+  if (raw === "upside_down") return "upside_down";
+  return null;
+}
+
+/** The image turned upright (sharp's `rotate` turns clockwise). `sharp` imported inside, as above. */
+async function turnJpeg(jpeg: Buffer, turn: SignboardTurn): Promise<Buffer | null> {
+  try {
+    const { default: sharp } = await import("sharp");
+    return await sharp(jpeg).rotate(TURN_DEGREES[turn]).jpeg({ quality: 90 }).toBuffer();
+  } catch {
+    return null;
+  }
+}
 
 /**
  * One look at one image. Returns null for every failure — a timeout, a refusal, unparseable JSON —
@@ -354,11 +465,14 @@ type SignboardReading = {
  */
 async function readSigns(input: {
   jpeg: Buffer;
-  model: string;
+  reader: SignboardReader;
   timeoutMs: number;
   question: string;
+  /** The whole photo's read: an answer that runs out of room is read again in quarters. */
+  inPartsWhenFull?: boolean;
 }): Promise<SignboardReading | null> {
   if (input.timeoutMs <= 0) return null;
+  const startedAt = Date.now();
   try {
     const response = await createOpenAiResponseText({
       component: "phoenix_crm_signboard",
@@ -377,13 +491,15 @@ async function readSigns(input: {
           role: "user" as const,
         },
       ],
-      instructions: INSTRUCTIONS,
-      // Several signs, each with a box, do not fit in the 400 one sign needed.
-      maxOutputTokens: 1_400,
+      instructions: INSTRUCTIONS + PROBLEM_EXTRA,
+      // Several signs, each with a box, do not fit in the 400 one sign needed — and Claude spends more
+      // tokens on Arabic than OpenAI did: at 1,400, 2 of 81 replayed street photos came back cut off
+      // mid-answer (2026-10-18). A cap is a ceiling, never a cost; only what is written is billed.
+      maxOutputTokens: 2_400,
       // `timeoutMs` is the time LEFT on this check's deadline. The SDK would retry a timeout with a fresh
       // copy of it, and the rep stands at the door for the doubled wait (16.4 s against an 8 s budget).
       maxRetries: 0,
-      model: input.model,
+      ...readerParams(input.reader),
       purpose: "phoenix-crm-signboard",
       reasoning: { effort: "low" },
       text: TEXT_FORMAT,
@@ -392,13 +508,77 @@ async function readSigns(input: {
 
     const parsed = parseAiJson(response.outputText);
     return {
+      byClaude: answeredByClaude(response.model),
       note: text(parsed.note),
+      problem: parseSignboardPhotoProblem(parsed.problem),
+      reader: input.reader,
       signPresent: typeof parsed.sign_present === "boolean" ? parsed.sign_present : null,
       signs: signsFrom(parsed.signs),
+      turn: turnOf(parsed.upright),
     };
+  } catch (error) {
+    if (!input.inPartsWhenFull || !readerRanOutOfRoom(error)) return null;
+    return readInParts({ ...input, timeoutMs: input.timeoutMs - (Date.now() - startedAt) });
+  }
+}
+
+/**
+ * A board too full for one answer, read again as four overlapping quarters side by side — each with
+ * the time the whole read left, never more, so a place still costs at most its budget. Any quarter that
+ * fails fails the read: a board read three-quarters is the partial reading this file refuses.
+ */
+async function readInParts(input: {
+  jpeg: Buffer;
+  reader: SignboardReader;
+  timeoutMs: number;
+  question: string;
+}): Promise<SignboardReading | null> {
+  // Under two seconds is not a read, it is a timeout with a model call attached to it.
+  if (input.timeoutMs < 2_000) return null;
+  const parts = signboardQuarters();
+  const images = await Promise.all(parts.map((part) => cropToPart(input.jpeg, part)));
+  if (images.some((image) => image === null)) return null;
+  const readings = await Promise.all(
+    images.map((jpeg) =>
+      readSigns({ jpeg: jpeg as Buffer, question: input.question, reader: input.reader, timeoutMs: input.timeoutMs }),
+    ),
+  );
+  const answered = readings.filter((reading): reading is SignboardReading => reading !== null);
+  if (answered.length !== parts.length) return null;
+  return {
+    ...mergeSignboardParts(answered, parts),
+    byClaude: answered.every((reading) => reading.byClaude),
+    reader: input.reader,
+  };
+}
+
+/** Exactly one part of the image, with no margin — its fractions are what the boxes are mapped back by. */
+async function cropToPart(jpeg: Buffer, part: SignboardPart): Promise<Buffer | null> {
+  try {
+    const { default: sharp } = await import("sharp");
+    const metadata = await sharp(jpeg).metadata();
+    const width = metadata.width ?? 0;
+    const height = metadata.height ?? 0;
+    if (width <= 0 || height <= 0) return null;
+    const left = Math.floor(part.left * width);
+    const top = Math.floor(part.top * height);
+    const keepWidth = Math.min(width - left, Math.round(part.width * width));
+    const keepHeight = Math.min(height - top, Math.round(part.height * height));
+    if (keepWidth < 64 || keepHeight < 32) return null;
+    return await sharp(jpeg).extract({ height: keepHeight, left, top, width: keepWidth }).jpeg({ quality: 90 }).toBuffer();
   } catch {
     return null;
   }
+}
+
+/** The reply names the model that answered; a Claude model id starts with its family name. */
+function answeredByClaude(model: unknown): boolean {
+  return typeof model === "string" && model.trim().toLowerCase().startsWith("claude");
+}
+
+/** Claude first, by name; the OpenAI model only when Claude's account is dead. */
+function readerParams(reader: SignboardReader) {
+  return { anthropicModel: reader.anthropicModel, model: reader.model, preferProvider: "anthropic" as const };
 }
 
 const WIDE_QUESTION = "What signs are in this photograph, and who is named on each of them?";
@@ -453,7 +633,7 @@ type GuidedReading = SignboardReading & { nameAsWritten: string | null; nameBox:
 /** The guided look: the name is in the question. Null for every failure, as `readSigns` is. */
 async function readGuided(input: {
   jpeg: Buffer;
-  model: string;
+  reader: SignboardReader;
   timeoutMs: number;
   nameGiven: string;
   listType: PhoenixCrmListType;
@@ -475,9 +655,9 @@ async function readGuided(input: {
         },
       ],
       instructions: INSTRUCTIONS + GUIDED_EXTRA,
-      maxOutputTokens: 1_800,
+      maxOutputTokens: 2_800,
       maxRetries: 0,
-      model: input.model,
+      ...readerParams(input.reader),
       purpose: "phoenix-crm-signboard",
       reasoning: { effort: "low" },
       text: GUIDED_TEXT_FORMAT,
@@ -485,9 +665,13 @@ async function readGuided(input: {
     });
     const parsed = parseAiJson(response.outputText);
     return {
+      byClaude: answeredByClaude(response.model),
       nameAsWritten: text(parsed.name_as_written),
       nameBox: box(parsed.name_box),
       note: text(parsed.note),
+      problem: null,
+      reader: input.reader,
+      turn: null,
       signPresent: typeof parsed.sign_present === "boolean" ? parsed.sign_present : null,
       signs: signsFrom(parsed.signs),
     };
@@ -501,16 +685,16 @@ async function readGuided(input: {
  * Each call gets what is left, capped so one hung call cannot spend the fallback's time too.
  */
 async function firstAnswer<T>(
-  models: readonly string[],
+  readers: readonly SignboardReader[],
   remaining: () => number,
   capMs: number,
-  ask: (model: string, timeoutMs: number) => Promise<T | null>,
+  ask: (reader: SignboardReader, timeoutMs: number) => Promise<T | null>,
 ): Promise<T | null> {
-  for (const model of models) {
+  for (const reader of readers) {
     const left = Math.min(remaining(), capMs);
     // Under two seconds is not a read, it is a timeout with a model call attached to it.
     if (left < 2_000) return null;
-    const answer = await ask(model, left);
+    const answer = await ask(reader, left);
     if (answer) return answer;
   }
   return null;
@@ -529,14 +713,16 @@ async function firstAnswer<T>(
  *      cannot read the sign either then nothing in this photograph was read clearly and the place
  *      goes back in the queue rather than onto the owner's flag list.
  *
- * The door takes neither the strong model nor the second look: a rep is standing in the street on an
- * 8-second budget, and the night picks his place up a few hours later.
+ * The door takes no second look: a rep is standing in the street on an 8-second budget, and the held
+ * re-read picks his place up straight after his reply.
  */
 async function judgeBytes(input: {
   bytes: Uint8Array;
   customerName: string;
   listType: PhoenixCrmListType;
   mode: SignboardReadMode;
+  /** The night's second, cropped look; the door never takes one. */
+  secondLook?: boolean;
 }): Promise<PhoenixCrmSignboardCheck> {
   const cropped = await cropStampBand(input.bytes);
   if (!cropped) return unjudged("call_failed");
@@ -548,12 +734,13 @@ async function judgeBytes(input: {
     cropped,
     customerName: input.customerName,
     listType: input.listType,
-    // The door asks the middle tier and falls back to the cheap one on a lost call; the night keeps
-    // its one strong model, whose lost call `signboard-sweep.ts` retries itself.
-    models: atTheDoor ? DOOR_MODELS : [PHOENIX_CRM_SIGNBOARD_SWEEP_MODEL],
+    // The door asks its reader and falls back to the fast one on a lost call; the night keeps its one
+    // strong reader, whose lost call `signboard-sweep.ts` retries itself.
+    readers: atTheDoor ? DOOR_READERS : [PHOENIX_CRM_SIGNBOARD_SWEEP_READER],
     callCapMs: atTheDoor ? PHOENIX_CRM_SIGNBOARD_TIMEOUT_MS : PHOENIX_CRM_SIGNBOARD_SWEEP_BUDGET_MS,
     remaining: () => deadline - Date.now(),
-    secondLook: !atTheDoor,
+    secondLook: atTheDoor ? false : input.secondLook ?? true,
+    turnUpright: !atTheDoor,
   });
 }
 
@@ -566,35 +753,75 @@ async function blindRead(input: {
   cropped: { jpeg: Buffer; croppedFraction: number };
   customerName: string;
   listType: PhoenixCrmListType;
-  models: readonly string[];
+  readers: readonly SignboardReader[];
   callCapMs: number;
   remaining: () => number;
   secondLook: boolean;
+  /** Turn a sideways scene upright and read it again — everywhere but the door. */
+  turnUpright: boolean;
 }): Promise<PhoenixCrmSignboardCheck> {
   const { cropped } = input;
-  const wide = await firstAnswer(input.models, input.remaining, input.callCapMs, (model, timeoutMs) =>
-    readSigns({ jpeg: cropped.jpeg, model, question: WIDE_QUESTION, timeoutMs }),
+  const first = await firstAnswer(input.readers, input.remaining, input.callCapMs, (reader, timeoutMs) =>
+    readSigns({ inPartsWhenFull: true, jpeg: cropped.jpeg, question: WIDE_QUESTION, reader, timeoutMs }),
   );
-  if (!wide) return unjudged("call_failed", cropped.croppedFraction);
+  if (!first) return unjudged("call_failed", cropped.croppedFraction);
+  const judge = (reading: SignboardReading): PhoenixCrmSignboardCheck =>
+    judgeSignboards({
+      croppedFraction: cropped.croppedFraction,
+      customerName: input.customerName,
+      listType: input.listType,
+      note: reading.note,
+      problem: reading.problem,
+      signPresent: reading.signPresent,
+      signs: reading.signs,
+    });
 
-  const judged = judgeSignboards({
-    croppedFraction: cropped.croppedFraction,
-    customerName: input.customerName,
-    listType: input.listType,
-    note: wide.note,
-    signPresent: wide.signPresent,
-    signs: wide.signs,
-  });
+  // 🔴 A SIDEWAYS SCENE IS TURNED UPRIGHT AND READ ONCE MORE (2026-10-18). The one-off pass over the old
+  // "Not readable" places found 38 of its first 157 photos on their side — a phone held sideways stores
+  // the scene turned while the caption stays upright — and Claude, which said so in its own note, read
+  // none of their plates: "cut off", "stylised", "too far". Off the door the image is turned the way the
+  // reader says and read again, the other way once if that reading is still on its side; the door has no
+  // time for it, and a photo nobody turned upright asks the rep to hold the phone upright (`sideways`).
+  let wide = first;
+  let image = cropped.jpeg;
+  let onItsSide = first.turn !== null && judge(first).verdict !== "match";
+  if (onItsSide && input.turnUpright && first.turn) {
+    const turns: SignboardTurn[] = first.turn === "upside_down" ? ["upside_down"] : [first.turn, OPPOSITE_TURN[first.turn]];
+    for (const turn of turns) {
+      if (input.remaining() < 2_000) break;
+      const turned = await turnJpeg(cropped.jpeg, turn);
+      if (!turned) break;
+      const again = await firstAnswer(input.readers, input.remaining, input.callCapMs, (reader, timeoutMs) =>
+        readSigns({ inPartsWhenFull: true, jpeg: turned, question: WIDE_QUESTION, reader, timeoutMs }),
+      );
+      if (!again) break;
+      if (again.turn !== null) continue;
+      wide = again;
+      image = turned;
+      onItsSide = false;
+      break;
+    }
+  }
+
+  // The strong reader is always the first in the list; an answer from it through Claude is the one
+  // whose "unreadable" is final (`signboardNextAttempt`). A fallback's answer keeps the photo a try.
+  const strongRead = wide.byClaude && wide.reader === input.readers[0];
+  const read = judge(wide);
+  const judged: PhoenixCrmSignboardCheck = {
+    ...read,
+    problem: onItsSide && read.verdict !== "match" && read.verdict !== "other_name" ? "sideways" : read.problem,
+    strongRead,
+  };
   if (!input.secondLook || judged.verdict === "match") return judged;
 
   const chosen = chooseSignToReadAgain(wide.signs, input.listType);
   // Under two seconds left is not a read, it is a timeout with a model call attached to it.
   if (!chosen?.box || input.remaining() < 2_000) return judged;
-  const tight = await cropToBox(cropped.jpeg, chosen.box);
+  const tight = await cropToBox(image, chosen.box);
   if (!tight) return judged;
 
-  const close = await firstAnswer(input.models, input.remaining, input.callCapMs, (model, timeoutMs) =>
-    readSigns({ jpeg: tight, model, question: CLOSE_QUESTION, timeoutMs }),
+  const close = await firstAnswer(input.readers, input.remaining, input.callCapMs, (reader, timeoutMs) =>
+    readSigns({ jpeg: tight, question: CLOSE_QUESTION, reader, timeoutMs }),
   );
   if (!close || close.signs.length === 0) return judged;
 
@@ -610,10 +837,16 @@ async function blindRead(input: {
     customerName: input.customerName,
     listType: input.listType,
     note: close.note ?? wide.note,
+    problem: wide.problem,
     signPresent: close.signPresent ?? wide.signPresent,
     signs: evidence,
   });
-  return { ...closer, signs: evidence };
+  return {
+    ...closer,
+    problem: onItsSide && closer.verdict !== "match" && closer.verdict !== "other_name" ? "sideways" : closer.problem,
+    signs: evidence,
+    strongRead,
+  };
 }
 
 /**
@@ -649,15 +882,28 @@ export async function readPlaceSignboard(input: {
  * `downloadPhoto` is legitimate here and only here: the sweep runs as the system over rows it found
  * itself, which is the one case that function's own doc permits.
  */
-export async function readStoredPlaceSignboard(input: {
-  photoPath: string;
-  customerName: string;
-  listType: PhoenixCrmListType;
-}): Promise<PhoenixCrmSignboardCheck> {
+export async function readStoredPlaceSignboard(
+  input: {
+    photoPath: string;
+    customerName: string;
+    listType: PhoenixCrmListType;
+  },
+  /**
+   * `secondLook: false` is the one-off read of the old "Not readable" places (2026-10-18): one look per
+   * photo, because on 81 replayed photos the second, cropped look confirmed nothing the first had not.
+   */
+  options: { secondLook?: boolean } = {},
+): Promise<PhoenixCrmSignboardCheck> {
   if (!hasAiApiKey()) return unjudged("no_api_key");
   const bytes = await downloadPhoto(input.photoPath).catch(() => null);
   if (!bytes) return unjudged("no_bytes");
-  return judgeBytes({ bytes, customerName: input.customerName, listType: input.listType, mode: "sweep" });
+  return judgeBytes({
+    bytes,
+    customerName: input.customerName,
+    listType: input.listType,
+    mode: "sweep",
+    secondLook: options.secondLook ?? true,
+  });
 }
 
 /**
@@ -699,9 +945,10 @@ export async function rereadHeldPlaceSignboard(input: {
     cropped,
     customerName: input.customerName,
     listType: input.listType,
-    models: HELD_MODELS,
+    readers: HELD_READERS,
     remaining,
     secondLook: true,
+    turnUpright: true,
   });
   if (blind.verdict === "match") return blind;
   const spotted = await spotCheck({ cropped, customerName: input.customerName, listType: input.listType, remaining });
@@ -728,8 +975,8 @@ async function spotCheck(input: {
   remaining: () => number;
 }): Promise<PhoenixCrmSignboardCheck | null> {
   const subject = { customerName: input.customerName, listType: input.listType };
-  const guided = await firstAnswer(HELD_MODELS, input.remaining, HELD_CALL_CAP_MS, (model, timeoutMs) =>
-    readGuided({ jpeg: input.cropped.jpeg, listType: input.listType, model, nameGiven: input.customerName, timeoutMs }),
+  const guided = await firstAnswer(HELD_READERS, input.remaining, HELD_CALL_CAP_MS, (reader, timeoutMs) =>
+    readGuided({ jpeg: input.cropped.jpeg, listType: input.listType, nameGiven: input.customerName, reader, timeoutMs }),
   );
   if (!guided) return null;
   const claimed: PhoenixCrmSign[] = guided.nameAsWritten
@@ -754,8 +1001,8 @@ async function spotCheck(input: {
   if (!spot || input.remaining() < 2_000) return null;
   const tight = await cropToBox(input.cropped.jpeg, spot, { minLongSide: 1_024 });
   if (!tight) return null;
-  const close = await firstAnswer(HELD_MODELS, input.remaining, HELD_CALL_CAP_MS, (model, timeoutMs) =>
-    readSigns({ jpeg: tight, model, question: CLOSE_QUESTION, timeoutMs }),
+  const close = await firstAnswer(HELD_READERS, input.remaining, HELD_CALL_CAP_MS, (reader, timeoutMs) =>
+    readSigns({ jpeg: tight, question: CLOSE_QUESTION, reader, timeoutMs }),
   );
   if (!close || !signboardReadsCustomerName(close.signs, subject)) return null;
   return judgeSignboards({

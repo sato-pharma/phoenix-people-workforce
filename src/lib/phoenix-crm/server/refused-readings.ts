@@ -28,6 +28,7 @@ import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import { PLACE_MAX_ACCURACY_METERS, refusedReadingOf, type PlaceDraft } from "@/lib/phoenix-crm/entry-rules";
 import { type BlockedPermission } from "@/lib/phoenix-crm/refused-readings-rules";
 import { type ScheduleRetakeReason } from "@/lib/phoenix-crm/schedule-rules";
+import { type SignboardRetakeReason } from "@/lib/phoenix-crm/signboard-rules";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type RecordRefusedReadingInput = {
@@ -268,6 +269,82 @@ export async function countTimetableRefusals(input: { sharedPlaceId: string; rep
     return count ?? 0;
   } catch (error) {
     console.error("[phoenix-crm] timetable refusal count failed", { sharedPlaceId: input.sharedPlaceId, error });
+    return 0;
+  }
+}
+
+export type SignboardRefusalInput = {
+  reason: SignboardRetakeReason;
+  /** `signboardRefusalKey`: the place, the customer, or a new customer's folded name — the count's key. */
+  key: string;
+  photoPath: string | null;
+  seatId: string;
+  repHrId: string;
+  customerId: string | null;
+  isTest: boolean;
+};
+
+/**
+ * File one signboard photo the door refused — the reader answered, and the photo shows no name it can
+ * read (2026-10-18: the signboard scanner, the timetable's "3 tries then held" carried to the signboard).
+ * Counted, like the timetable's: awaited, and a failed insert costs the rep only a try he would
+ * otherwise have had — never his refusal message, never a 500.
+ */
+export async function recordSignboardRefusal(input: SignboardRefusalInput): Promise<string | null> {
+  if (!input.key) return null;
+  try {
+    const refusedAt = new Date();
+    const { data, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_refused_readings")
+      .insert({
+        subject_kind: "place",
+        reason: input.reason,
+        // Paired with the reason by the table's own CHECK (20261018230000): no other reason carries a key.
+        signboard_key: input.key,
+        seat_id: input.seatId,
+        rep_hr_id: input.repHrId.toUpperCase(),
+        customer_id: input.customerId,
+        refused_at: refusedAt.toISOString(),
+        visit_date: cairoBusinessDay(refusedAt),
+        photo_path: input.photoPath,
+        is_test: input.isTest,
+      })
+      .select("id")
+      .maybeSingle();
+    if (error) {
+      console.error("[phoenix-crm] signboard refusal not recorded", { seatId: input.seatId, message: error.message });
+      return null;
+    }
+    const row = (data ?? null) as { id?: unknown } | null;
+    return row && row.id ? String(row.id) : null;
+  } catch (error) {
+    console.error("[phoenix-crm] signboard refusal record failed", { seatId: input.seatId, error });
+    return null;
+  }
+}
+
+/**
+ * How many signboard photos under this key this rep has had refused today (Cairo visit day). Zero on any
+ * error, for the timetable's reason: a count the door cannot read asks for another photo rather than hold.
+ */
+export async function countSignboardRefusals(input: { key: string; repHrId: string; isTest: boolean; now?: Date }): Promise<number> {
+  if (!input.key) return 0;
+  try {
+    const { count, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_refused_readings")
+      .select("id", { count: "exact", head: true })
+      .eq("signboard_key", input.key)
+      .eq("rep_hr_id", input.repHrId.toUpperCase())
+      .eq("visit_date", cairoBusinessDay(input.now ?? new Date()))
+      .in("reason", ["signboard_unreadable", "signboard_no_plate"])
+      .eq("is_test", input.isTest);
+    if (error) {
+      console.error("[phoenix-crm] signboard refusal count failed", { message: error.message });
+      return 0;
+    }
+    return count ?? 0;
+  } catch (error) {
+    console.error("[phoenix-crm] signboard refusal count failed", { error });
     return 0;
   }
 }

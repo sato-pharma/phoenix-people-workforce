@@ -66,24 +66,27 @@ function checkTheDoorHolds(): void {
 }
 
 function checkTheReReads(): void {
-  assert.equal(SIGNBOARD_HELD_MAX_READS, 4, "the door's read and three re-reads (his 'reread up to 3 times')");
-  assert.equal(heldSignboardOutcome(check("match", null), 2), "approve", "a confirmed reading approves");
+  // 🔴 TWO, NOT FOUR, SINCE 2026-10-18 (owner: re-reading the same photo is "a total wasting of money").
+  // One held photo cost typically 10 and at most 13 answered calls at four reads; a photo the one
+  // re-read cannot confirm is fixed by a new photo, never by reading the old one again.
+  assert.equal(SIGNBOARD_HELD_MAX_READS, 2, "the door's read and ONE re-read");
+  assert.equal(heldSignboardOutcome(check("match", null), 1), "approve", "a confirmed reading approves");
   assert.equal(heldSignboardOutcome(check("match", null), SIGNBOARD_HELD_MAX_READS), "approve", "even on the last read");
-  assert.equal(heldSignboardOutcome(check("unjudged", "unreadable"), 2), "again", "reads left: read again later");
-  assert.equal(heldSignboardOutcome(check("unjudged", "unreadable"), 3), "again");
-  assert.equal(heldSignboardOutcome(check("unjudged", "unreadable"), 4), "done", "every read spent: it is his");
-  assert.equal(heldSignboardOutcome(check("other_name", "sign_other_name"), 4), "done", "the system never rejects — a negative is his too");
+  assert.equal(heldSignboardOutcome(check("unjudged", "unreadable"), 1), "again", "the door's read alone: one re-read left");
+  assert.equal(heldSignboardOutcome(check("unjudged", "unreadable"), 2), "done", "the one re-read spent: it is his");
+  assert.equal(heldSignboardOutcome(check("unjudged", "unreadable"), 4), "done", "a place counted under the old four stays done");
+  assert.equal(heldSignboardOutcome(check("other_name", "sign_other_name"), 2), "done", "the system never rejects — a negative is his too");
 
   // The count lives on the row, so a crash cannot reset it.
   assert.equal(signboardReadsRecorded(null), 0, "no check is no read");
   assert.equal(signboardReadsRecorded({ verdict: "unjudged" }), 1, "a check from before the count had one read");
   assert.equal(signboardReadsRecorded({ attempts: 3 }), 3);
 
-  const spent = heldSignboardCheckToKeep(check("unjudged", "unreadable"), 4, "done");
-  assert.equal(spent.attempts, 4, "the count is written");
+  const spent = heldSignboardCheckToKeep(check("unjudged", "unreadable"), 2, "done");
+  assert.equal(spent.attempts, 2, "the count is written");
   assert.equal(spent.reason, "unreadable_final", "and the last unreadable read says every read was spent");
-  assert.equal(heldSignboardCheckToKeep(check("unjudged", "unreadable"), 2, "again").reason, "unreadable", "not before it");
-  assert.equal(heldSignboardCheckToKeep(check("unjudged", "call_failed"), 4, "done").reason, "call_failed", "a lost call is never called unreadable");
+  assert.equal(heldSignboardCheckToKeep(check("unjudged", "unreadable"), 1, "again").reason, "unreadable", "not before it");
+  assert.equal(heldSignboardCheckToKeep(check("unjudged", "call_failed"), 2, "done").reason, "call_failed", "a lost call is never called unreadable");
 
   // 🔴 A READER THAT NEVER ANSWERED READ NOTHING (18 Oct 2026, 01:00 Cairo: the AI account ran out of
   //    credit and 241 re-reads came back `call_failed`). Counted, every held place would spend its four
@@ -100,9 +103,9 @@ function checkTheReReads(): void {
   assert.equal(heldSignboardReaderIsDown({ answered: 0, unread: 2 }), false, "two may be two bad photographs");
   assert.equal(heldSignboardReaderIsDown({ answered: 1, unread: 9 }), false, "a reader that answered once is up");
 
-  const still = { isTest: false, pending: true, signboardHold: true, stored: { attempts: 2 } };
-  assert.equal(signboardHoldStillReading(still), true, "a held sign with reads left is still being read");
-  assert.equal(signboardHoldStillReading({ ...still, stored: { attempts: 4 } }), false, "not once every read is spent");
+  const still = { isTest: false, pending: true, signboardHold: true, stored: { attempts: 1 } };
+  assert.equal(signboardHoldStillReading(still), true, "a held sign with its re-read still to come is still being read");
+  assert.equal(signboardHoldStillReading({ ...still, stored: { attempts: 2 } }), false, "not once the re-read is spent");
   assert.equal(signboardHoldStillReading({ ...still, pending: false }), false, "nor once it is decided");
   assert.equal(signboardHoldStillReading({ ...still, signboardHold: false }), false, "nor for a Google or a timetable hold");
   assert.equal(signboardHoldStillReading({ ...still, isTest: true }), false, "nor a test entry, which the hourly pass never reads");
@@ -130,7 +133,10 @@ function checkTheNameMustBeRead(): void {
 function checkTheDoorPaths(): void {
   const list = stripComments(read("src/lib/phoenix-crm/server/list.ts"));
   assert.ok(!list.includes("signboardHoldsForReview"), "🔴 the door no longer asks the narrow question");
-  assert.equal(list.split("signboardDoorHolds(signboard.check)").length - 1, 2, "both doors — a first validation and another clinic — hold on anything but a match");
+  // Since 2026-10-18 both doors hold through the scanner's own answer (`signboardDoorAction`), which
+  // refuses a photo with no readable name up to twice first and holds on anything else but a match.
+  assert.equal(list.split("signboard.holds").length - 1, 2, "both doors — a first validation and another clinic — hold on the scanner's answer");
+  assert.ok(list.includes('holds: action.kind !== "save"'), "and the scanner's answer is its door action, never a second rule");
   assert.equal(list.split("await settleHeldSignboard(").length - 1, 2, "and both re-read it straight after the reply");
   assert.equal(list.split("&& !signboardHold) {").length - 1, 2, "neither tells the Super Admin at the door: the system has not finished");
 

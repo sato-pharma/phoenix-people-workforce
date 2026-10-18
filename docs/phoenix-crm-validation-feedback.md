@@ -387,6 +387,187 @@ reads within hours and page the Super Admin once for each place, about a photogr
 Every door capture is still held while the reader is down. That is the ruling ("If you couldn't read
 them, then hold for manual review"); the holds wait and are read when credit returns.
 
+### Claude reads the signboard (2026-10-18)
+
+The owner, on Place checks, of a rep whose places read 21 places, 19 "Not readable": *"The photos are
+clearly readable. Why can't you read them?"* He was right. Opened one by one, most of the 21 carry a
+doctor's plate a person reads at a glance; every one had been read once, at the door, by OpenAI's
+cheap model (nano until 17 Oct, then mini), and never again — the night's backlog was 690 places deep
+and its 18 Oct run lost every call to the out-of-credit account.
+
+The photographs were replayed through `signboard-check.ts`'s own code and prompt, nothing written to
+the database, each reading judged against the real name, a random other customer's name and a
+one-letter near miss:
+
+| Reader | His 21 (stored: 1 match) | 45 other places stored "unreadable" | 15 stored matches | p95 | Random name matched |
+| --- | --- | --- | --- | --- | --- |
+| Claude Haiku, door | 12 | 2 | 12 | 7.1 s | 0 of 81 |
+| Claude Sonnet, door | **14** | 2 | **13** | 6.6 s | 0 of 81 |
+| Claude Sonnet, night (with its second look) | 14 | 2 | 13 | 10.1 s | 0 of 81 |
+| Claude Opus, night | 14 | — | — | 15.4 s | 0 of 21 |
+| Claude Sonnet, held re-read (blind, then guided + checked) | 14 | — | — | 16.9 s | 0 of 21 |
+
+OpenAI could not be replayed: the account answered every call "no credits remaining".
+
+- **His photos were readable; the other 45 mostly are not.** Door and held re-read together confirm 15
+  of his 21. Of the 6 left, one is another doctor's plate (ريمون رفعت عبدالنور for جوزيف رفعت
+  عبدالنور), four show no plate a person can read either (a shopfront, a street, a faded board, a
+  steep angle), and one is a calligraphy board read "أشرف صبحي فارس" for أشرف سميح فارس. The 45 other
+  places opened by eye are hospital fronts, a blank door plate and blurred night shots: there the
+  system is right to leave the decision to the owner.
+- **The near-miss matches (3 of 81) are the judge's one-word allowance, not the reader.** A
+  three-word name may lose one word, so "عتمان هشام عثمان" matches a plate reading "عثمان هشام عثمان"
+  on هشام عثمان. Unchanged.
+- **Opus reads no more than Sonnet** and is half as slow again; Sonnet is the strong reader.
+
+**What was built.** Every signboard call asks Claude first (`preferProvider: "anthropic"`; a reader is
+a `SignboardReader`, a Claude model and the OpenAI model it used before): Sonnet at the door, at night
+and on the held re-read, Haiku for a lost call. OpenAI answers only when Claude's account is dead;
+`AI_PROVIDER` and `ANTHROPIC_MODEL` still override. The answer's token ceiling rose 1,400 → 2,400
+(guided 1,800 → 2,800): Claude spends more tokens on Arabic, and at 1,400, 2 of 81 street photos came
+back cut off mid-answer. Pinned by `checkTwoReaders` (`tests/phoenix-crm-signboard-check.test.ts`) and
+`planningTests` (`tests/ai-provider-failover.test.ts`).
+
+### Every "Not readable" place: the root cause, and one read each (2026-10-18)
+
+The owner, the same evening: fix ALL the unreadable places, not one rep's — find the root cause, then
+one plan for the places already on the system and for new ones — and stop paying to read the same
+photos again ("a total wasting of money").
+
+**What production held** (read-only audit, no model calls): 532 active places filed "Not readable"
+(462 `unreadable`, 70 `unreadable_final`), 93 whose read was lost when the OpenAI account ran dry, and
+151 never read — 776 with no trustworthy reading.
+
+**Why, in order of weight:**
+
+1. **The reader could not read Arabic plates.** 451 of the 532 had exactly one read, at the door, by
+   OpenAI's cheapest model; it filed clear plates "unreadable", misread names, and called two practice
+   boards another trade. System-wide, 1,092 of 1,509 confirmed places were confirmed only on a later
+   re-read by a stronger model. So a stored "Not readable" did not even say whether the photo was bad.
+2. **Every place photo was stored at 720 x 1280.** `live-photo-capture.tsx` drew the frame through the
+   outstation module's `getCompressedEvidenceCanvasSize` (long side 1280) and asked the camera for
+   only 1920 x 1080; a plate three or four metres away came out a few pixels per letter.
+3. **Many photos show no plate at all, and the door never refused one.** A hospital front, a night
+   shopfront, a blurred street, a blank door; on 45 such places Claude Sonnet confirmed 2. The app told
+   the rep to photograph "the clinic sign or door", accepted whatever came, and the problem was found
+   after the rep had left. It is a habit of a few reps: 10 carry half the unreadable places.
+4. **Not the light:** 25% unreadable in daylight, 19% at dusk, 27% after dark.
+5. **The cost:** the night re-read the same unchanged photo for up to three nights at two to four
+   calls a night; a held place was re-read up to four times (typically 10, at most 13 answered calls
+   for one photo); the reread script's `--apply` reset the attempt count to 1; and nothing recorded
+   which reader had already read a photo.
+
+**What was built:**
+
+- **One read per photo.** The strong reader's `unreadable` is final at once (`strongRead` on the
+  check, `signboardNextAttempt`); only a fallback reader's answer keeps a try. A held place is read by
+  the door and re-read ONCE (`SIGNBOARD_HELD_MAX_READS` 4 → 2). A lost call is still retried without
+  a cap — a failed call is not an answered read, and a cap would strand places after an outage.
+- **The signboard is a scanner at the door**, as the timetable has been since 17 Oct: a photo with no
+  readable name is refused on the spot with what to fix ("Step closer so the name fills the box",
+  "This photo shows the building's sign, not the customer's own nameplate"), twice; the third is saved
+  and held. Another name and a lost call are never refused. Counted per rep, per customer, per Cairo
+  day in `phoenix_crm_refused_readings` (`signboard_unreadable`, `signboard_no_plate`), so the SFE's
+  refused-readings board sees them. A refusal that could not be recorded is never thrown — the photo
+  is saved and held — or it would be "try 2 of 3" for ever.
+- **The reader names the cause** (`problem`: no plate, building sign only, too far, blurred, dark or
+  glare, cut off, stylised), and the rep reads the matching sentence.
+- **A signboard photo keeps up to 1920 px** on its long side and the camera is asked for 2560 x 1440
+  (`place-photo-size.ts`, only for a framed signboard capture). The outstation helper is not touched.
+  The stamp crop stays clear of the frame guide at the new size (1080 x 1920 → 0.18, 1920 x 1080 →
+  0.4889).
+- **One instruction everywhere:** photograph the customer's own nameplate, close enough that the name
+  fills the box.
+- **The old places, once.** `rereadUnreadablePlacesOnce` (`scripts/phoenix-crm-reread-signboards.mjs
+  --unreadable`, a dry run unless `--apply`) reads each with Claude Sonnet, one look, and ends it:
+  confirmed (a held one approved by the system), filed with another name for the Super Admin when a
+  second reading agrees, or **sent back to its rep** — `signboard_check.retake` carries the reason and
+  the check is written `unreadable_final`, so no deployed pass reads that photo again. The rep sees "New
+  signboard photo needed" with the reason and retakes it at the place (within 500 m, plus the photo's
+  own radius up to 250 m) through the same door scanner; the location never moves and the replaced
+  photo is kept in the place's `place_signboard_retaken` event.
+- **Only a photo at fault is sent back** (`signboardAsksForAPhoto`). The dry run of 20, opened by eye,
+  caught the first version sending back clear plates: "د. محمد زكي" filed for محمد ذكي, a clear board
+  for رضوان محمد, and five AM hospitals photographed at their own building's sign (the AM rule: a
+  hospital signs itself). A new photo of the same plate reads the same, so a sign the reader calls
+  legible that did not confirm — and an AM building's sign — is kept final for the Super Admin (held
+  at the door, `keep` in the one-off pass), never sent back and never re-read. Too far, blurred, dark,
+  cut off, no plate, or a building's sign at a PM door is the photo's fault and is sent back.
+- **A decorative plate is kept too** (`stylised`). The first 157 places of the full run showed it: the
+  reader read "دكتور سلامة السيد البيودي" off a clear board for سلامة اللبودي, the same letter wrong on
+  both reads, and a new photo of the same plate reads the same. The Super Admin's board says "check it
+  yourself" for it, and the scorecard does not count it against the rep.
+- **A sideways photo is turned upright and read once more** — a fifth cause the audit had not seen.
+  A phone held on its side stores the scene turned while the caption stays upright: 38 of the first 157
+  photos, and 30 of the 97 sent back, were on their side by the reader's own note, and it read none of
+  those plates ("too far", "cut off", "stylised"). The reader now says how the scene stands (`upright`),
+  and off the door the image is turned that way and read again, the other way once if it is still on
+  its side. Proven on four of them: هبة المصري went from "too far" to confirmed, and محمد شعيب from an
+  unread board to "محمد شعي", truly cut off. The door has no time for a second call, so a sideways photo
+  there is refused with "Hold the phone upright" (`sideways`), which the rep can fix on the spot.
+- **A board too full for one answer is read in four quarters** — a sixth cause. Two places of one rep
+  are the same hospital wall of about forty plates, د. طلعت فواد among them; Claude ran out of room
+  before it finished listing them (`max_tokens`) on all four calls, so the place stayed a lost call,
+  read and paid for every night and never answered. A whole-photo read that runs out of room is now
+  read again as four overlapping quarters side by side (`signboardQuarters`, overlap 0.2, wider than
+  one of those plates), within the time the first read left, and each plate's box is put back into the
+  whole photo (`mergeSignboardParts`). A quarter that fails fails the read; a timeout is never split.
+  Both places then answered in about 26 s.
+
+**What the one read found, on the 842 places of the pre-image** (taken 18 Oct 21:43 Cairo, before the
+run; every place read once, the 35 sideways ones once more upright, the two walls once more in
+quarters; then the owner's spelling and paper rulings applied to the stored readings, below):
+
+| Now | Places |
+| --- | ---: |
+| Confirmed | 128 |
+| Sent back to the rep, with the reason | 292 |
+| Kept for the Super Admin to look at (a legible sign that did not confirm, a decorative plate, an AM building's sign) | 152 |
+| Another name, on the Super Admin's board | 77 |
+| A plate naming nobody, on the board | 25 |
+| Already held by another check, so its sign is never read (`held_elsewhere`, by design) | 71 |
+| A shared copy or a retired place, read through its main place | 92 |
+| Two readings disagreed (`unconfirmed`, the night settles it) | 4 |
+| No usable name | 1 |
+
+Ahmed Mohamed Abd-Elnaim, whose 19 started it: 13 confirmed, 1 another name, 2 kept, 3 sent back. Opened
+by eye, 5 confirmed and 5 sent back at random: 4 of each were right; one confirm was a prescription sheet
+held in the hand (the reader said "no plate", the letterhead named him — 4 such places system-wide), and
+one sent back, وحيد محمد شومان, is readable by eye with its first letter clipped at the edge.
+
+**Spelling, measured, then ruled by the owner (18 Oct, asked one by one).** The comparer refused some
+plates the reader read right ("طلعت فواد" for طلعت فؤاد, "أحمد ذكي" for احمد دكى). Each candidate rule
+was first judged on the stored readings — no model call — with the 18 Oct decoy measure (each confirmed
+place against 20 other customers' names, about 32,000 tries):
+
+| Candidate | More confirms | Stranger matches | His ruling |
+| --- | ---: | ---: | --- |
+| Today's rules | — | 52 | — |
+| ؤ read as و, ئ as ي | +2 | 53 | **one name** (فؤاد = فواد, ناشئ = ناشي) |
+| ذ, ز and د one letter; ح and خ one | +6 | 53 (no new one) | **one letter, all of them** |
+| Long vowels dropped | +35 | 220, and 96 confirms lost (محمود = محمد) | refused, never asked |
+| The three-word allowance tightened | — | — | **kept as it is** (137 of 219 had the same name spelt another way in the missing slot) |
+| A name on paper on a PM capture (a prescription, a printed schedule) | — | — | **sent back for a nameplate** |
+
+The letters are written one way word against word, Arabic on both sides (`spelledOneWay` inside
+`nameWordIsThere`), never in `normalizeContactName`, so the SQL fold and the cross-script compiler are
+untouched. The paper rule is step 2 of `judgeSignboards`: on PM, the reader's `no_plate` turns a match
+into `unjudged`, which the door refuses and the backlog sends back; AM keeps "a hospital signs itself".
+
+**The rulings reached the places already read without one model call** —
+`rejudgeStoredSignboardsOnce` (`scripts/phoenix-crm-reread-signboards.mjs --rejudge`, dry unless
+`--apply`) judges every stored reading again and writes only two changes (`signboardRejudge`): a stored
+plate that now names the customer confirms, and a PM confirm whose photo holds no nameplate is sent
+back. Run 18 Oct on production after saving the 12 rows (`rejudge-12-before.json` in the pre-image
+folder): 2,346 stored readings judged, **8 confirmed** (6 had been filed as another doctor, 2 kept), **4
+sent back** — exactly the 4 paper photos opened by eye — read back from the database, and a second run
+changes nothing. Its 6 open board cases (`sign_other_name`) are listed and NOT settled; closing them is
+the Super Admin's click.
+
+Pinned by `checkDoorScanner`, `checkOneReadPerPhoto`, `checkBoardTooFullForOneAnswer`,
+`checkOwnersSpellingRulings` and `checkStoredReadingsRejudged` (`tests/phoenix-crm-signboard-check.test.ts`) and `checkTheReReads`
+(`tests/phoenix-crm-held-signboard.test.ts`).
+
 ## The same-seat duplicate merge
 
 A one-off script and a guarded database function, never a feature.

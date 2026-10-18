@@ -100,16 +100,27 @@ import { blindTerritoryList } from "@/lib/phoenix-crm/server/blind-payloads";
 import { callPhoenixCrm, chunk, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { googleMismatchMessage, mismatchIsHeld, type LocationCheckState } from "@/lib/phoenix-crm/google-place-rules";
 import { checkPlaceOnGoogle, googleCheckRecord, type GooglePlaceCheck } from "@/lib/phoenix-crm/server/google-place-check";
-import { filePlaceCaptureTrust, judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
+import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
+import { filePlaceCaptureTrust, filePlaceSignboardFlag, judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
 import { readPlaceSignboard, recordPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
-import { settleHeldSignboard } from "@/lib/phoenix-crm/server/signboard-holds";
+import { approveHeldSignboardBySystem, settleHeldSignboard } from "@/lib/phoenix-crm/server/signboard-holds";
 import {
+  SIGNBOARD_DOOR_MAX_TRIES,
+  SIGNBOARD_RETAKE_CODE,
+  jsonbSafe,
   signboardApplies,
-  signboardDoorHolds,
+  signboardAsksForAPhoto,
+  signboardDoorAction,
   signboardHoldRecord,
   signboardNameIsUsable,
+  signboardNextAttempt,
+  signboardReadsRecorded,
+  signboardRefusalKey,
+  signboardRetakeIsAtThePlace,
+  signboardRetakeWaiting,
   signboardUnjudged,
   type PhoenixCrmSignboardCheck,
+  type SignboardRetakeReason,
 } from "@/lib/phoenix-crm/signboard-rules";
 import {
   loadLocationChecks,
@@ -140,9 +151,11 @@ import {
 } from "@/lib/phoenix-crm/server/shared-places";
 import {
   countOffListingRefusals,
+  countSignboardRefusals,
   countTimetableRefusals,
   recordOffListingRefusal,
   recordRefusedReading,
+  recordSignboardRefusal,
   recordTimetableRefusal,
 } from "@/lib/phoenix-crm/server/refused-readings";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
@@ -281,6 +294,12 @@ export type ListPlace = {
   photoReading?: PlaceReading | null;
   /** Set once the place was moved: when, and the written reason. */
   moved?: { at: string; reason: string | null } | null;
+  /**
+   * "New signboard photo needed" (2026-10-18): the sentence telling the rep what to photograph, set while
+   * the place waits on a new photo of its door (`signboardRetakeWaiting`). NOT a measurement — it is the
+   * thing he must read to fix it, as `validateAgainReason` is — so the rep keeps it.
+   */
+  signboardRetake?: string | null;
 };
 
 export type PlaceReading = { lat: number; lon: number; accuracyMeters: number | null };
@@ -691,6 +710,7 @@ export function mapPlaceRow(row: Row): ListPlace {
     pinReading: readingOf(row.pin_lat, row.pin_lon, row.pin_accuracy_meters),
     photoReading: readingOf(row.photo_lat, row.photo_lon, row.photo_accuracy_meters),
     moved: text(row.moved_at) ? { at: String(row.moved_at), reason: text(row.move_reason) } : null,
+    signboardRetake: signboardRetakeWaiting({ retake: row.signboard_retake })?.advice ?? null,
   };
 }
 
@@ -741,9 +761,11 @@ function mapPharmacyPin(row: Row, names: PeopleNames): PharmacyPin | null {
 // here must already exist on the database the branch deploys against: `brick_lookup` arrived in
 // migration 20261008023051, `reopened_at` in 20261008023801 and `shared_place_id` in
 // 20261010013001 and `session` in 20261010180118, each applied to staging and production before this line shipped.
+// `signboard_retake` is a JSON PATH into `signboard_check` (20261008023051), never the whole check: the
+// check carries every sign's transcription, and the List needs only the one sentence the rep reads.
 const PLACE_COLUMNS =
   "id, customer_id, label, address, brick_id, brick_name, brick_distance_km, brick_lookup, area_code, area_name, region_code, region_name, zone, lat, lon, accuracy_meters, timings, photo_path, captured_at, device_skew_minutes, " +
-  "pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, point_source, moved_at, move_reason, shared_place_id, session";
+  "pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, point_source, moved_at, move_reason, shared_place_id, session, signboard_retake:signboard_check->retake";
 const CUSTOMER_COLUMNS =
   "id, list_type, name, speciality, grade, potential_grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, reopened_at, primary_pharmacy_name, phone, intake_where, intake_note, intake_timings, " +
   // A pinned pharmacy's own location (2026-10-09). Every one is nullable and null on every doctor.
@@ -2005,7 +2027,7 @@ async function signboardCheckForSave(
   place: PlaceDraft,
   who: { seatId: string; repHrId: string; isTest: boolean },
   heldElsewhere: boolean,
-): Promise<{ check: PhoenixCrmSignboardCheck; record: Row } | null> {
+): Promise<{ check: PhoenixCrmSignboardCheck; record: Row; holds: boolean } | null> {
   if (!subject || !signboardApplies(subject.listType) || !signboardNameIsUsable(subject.name)) return null;
   const point = placePoint(place);
   const check = heldElsewhere
@@ -2018,7 +2040,45 @@ async function signboardCheckForSave(
         repHrId: who.repHrId,
         seatId: who.seatId,
       });
-  return { check, record: signboardHoldRecord(check, point) };
+  // 🔴 THE SIGNBOARD SCANNER (2026-10-18): a photo with no readable name is refused HERE, before anything
+  // is written, with what to fix and which try this is; the third is saved and held. Tries are counted
+  // only when the reading could ask for a photo — a match or a lost call never pays a count.
+  // With nothing to count tries against, the photo holds at once — a refusal that can never reach its
+  // third try would turn the rep away for ever.
+  const key = signboardRefusalKey({ customerId: subject.customerId, customerName: subject.name });
+  const earlierTries = !signboardAsksForAPhoto(check, subject.listType)
+    ? 0
+    : key
+      ? await countSignboardRefusals({ key, repHrId: who.repHrId, isTest: who.isTest })
+      : SIGNBOARD_DOOR_MAX_TRIES;
+  const action = signboardDoorAction(check, earlierTries, subject.listType);
+  // Recorded BEFORE the refusal is thrown, and awaited: the row is what makes the next photo the next
+  // try. 🔴 A refusal that could not be recorded is never thrown — uncounted, it would be "try 2 of 3"
+  // for ever — so that photo is saved and held instead.
+  const refused =
+    action.kind === "retake" &&
+    (await signboardRefusalRecorded(key, action.reason, { ...who, customerId: subject.customerId, photoPath: place.photoPath }));
+  if (refused) throw validationError(action.message, SIGNBOARD_RETAKE_CODE);
+  return { check, holds: action.kind !== "save", record: signboardHoldRecord(check, point) };
+}
+
+/** Record one refused signboard photo; true only when the row landed, so the next try is counted. */
+async function signboardRefusalRecorded(
+  key: string | null,
+  reason: SignboardRetakeReason,
+  input: { seatId: string; repHrId: string; isTest: boolean; customerId: string | null; photoPath: string | null },
+): Promise<boolean> {
+  if (!key) return false;
+  const id = await recordSignboardRefusal({
+    customerId: input.customerId,
+    isTest: input.isTest,
+    key,
+    photoPath: input.photoPath,
+    reason,
+    repHrId: input.repHrId,
+    seatId: input.seatId,
+  });
+  return id !== null;
 }
 
 /**
@@ -2156,7 +2216,7 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     mode === "new" || mode === "outside"
       ? { name: String(payload.name), listType: parseListType(payload.list_type), customerId: null }
       : await validationSubject(seat.seatId, isTest, mode, body);
-  let signboard: { check: PhoenixCrmSignboardCheck; record: Record<string, unknown> } | null = null;
+  let signboard: { check: PhoenixCrmSignboardCheck; record: Record<string, unknown>; holds: boolean } | null = null;
   let schedule: PhoenixCrmScheduleCheck | null = null;
   let heldBecause: ScheduleHeldBecause | null = null;
   // Held by the signboard ALONE — then the system re-reads it before the Super Admin is asked.
@@ -2198,11 +2258,12 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     // The owner's third step, 2026-10-08: and does the signboard in the photo name this customer. A
     // confident negative rides the SAME `hold_review` the Google hold rides, so the already-atomic hold
     // path does all of it — the customer stays under To validate, one review row is raised, and the rep
-    // reads only that the system is checking. 🔴 Since 2026-10-17 EVERYTHING BUT A MATCH holds here
-    // (`signboardDoorHolds`) — an unreadable sign included — and `settleHeldSignboard` below re-reads it
-    // and approves it itself once the name is read; the Super Admin is asked only when it cannot be.
+    // reads only that the system is checking. 🔴 Since 2026-10-17 EVERYTHING BUT A MATCH holds here, and
+    // since 2026-10-18 a photo with no readable name is first refused up to twice with what to fix
+    // (`signboardDoorAction`); `settleHeldSignboard` below re-reads a held one once and approves it
+    // itself if the name is read; the Super Admin is asked only when it cannot be.
     signboard = await signboardCheckForSave(subject, place, { seatId: seat.seatId, repHrId: viewer.hrId, isTest }, payload.hold_review !== undefined);
-    if (signboard && payload.hold_review === undefined && signboardDoorHolds(signboard.check)) {
+    if (signboard && payload.hold_review === undefined && signboard.holds) {
       payload.hold_review = signboard.record;
       heldBySignboard = true;
     }
@@ -2557,7 +2618,7 @@ export async function addPlace(
   const placeRowRead = place ? placePayload(place, seat) : null;
   placeRowRead?.catch(() => undefined);
   const subject = await subjectRead;
-  let signboard: { check: PhoenixCrmSignboardCheck; record: Row } | null = null;
+  let signboard: { check: PhoenixCrmSignboardCheck; record: Row; holds: boolean } | null = null;
   let schedule: PhoenixCrmScheduleCheck | null = null;
   let heldBecause: ScheduleHeldBecause | null = null;
   let matched: Row | null = null;
@@ -2583,7 +2644,7 @@ export async function addPlace(
     const googleHolds = google !== null && google.check.verdict.kind !== "match";
     signboard = await signboardCheckForSave(subject, place, { seatId: seat.seatId, repHrId: viewer.hrId, isTest }, googleHolds);
     // Everything but a match holds at the door since 2026-10-17, and is re-read below (`validateCustomer`).
-    heldBySignboard = !googleHolds && signboard !== null && signboardDoorHolds(signboard.check);
+    heldBySignboard = !googleHolds && signboard !== null && signboard.holds;
     holdRecord = googleHolds ? (google as { record: Row }).record : heldBySignboard && signboard ? signboard.record : null;
     if (google?.check.verdict.kind === "match") matched = google.record;
   }
@@ -2644,6 +2705,114 @@ export async function addPlace(
     }
   });
   return added;
+}
+
+/** What the rep is told once a new signboard photo is saved. Never names a check or a model. */
+export const SIGNBOARD_RETAKE_SAVED_TEXT: Record<"confirmed" | "checking", string> = {
+  confirmed: "The customer's name was read on the new photo. This place is confirmed.",
+  checking: "The new photo is saved. The system is checking this place.",
+};
+
+/**
+ * "Retake the signboard photo" — a rep replaces the photo of a place the system sent back to him
+ * (2026-10-18: the old places filed "Not readable" whose photo shows no readable name). The new photo is
+ * read at once by the SAME door scanner a new place meets: refused up to twice with what to fix, then
+ * saved. A confirmed name confirms the place, and approves it by the system when it was held.
+ *
+ * 🔴 ONLY A PLACE WAITING ON A NEW PHOTO TAKES ONE (`signboardRetakeWaiting`). A place's photo is its
+ * evidence; a door that swapped it on request would let any validated place be re-dressed after the
+ * fact. The location never moves (20260923020000): only the photo and what was read in it change, and
+ * the replaced photo is kept in the place's own event.
+ */
+export async function retakePlaceSignboard(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ placeId: string; customerId: string; confirmed: boolean; message: string }> {
+  const body = record(raw);
+  if (!isUuid(body.placeId)) throw validationError("Choose the place to photograph again.");
+  const placeId = String(body.placeId).toLowerCase();
+  const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
+  const photoPath = text(body.photoPath);
+  if (!photoPath) throw validationError("Take a live photo of the customer's nameplate.");
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_places")
+    .select("id, customer_id, seat_id, status, shared_place_id, lat, lon, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)")
+    .eq("id", placeId)
+    .eq("seat_id", seat.seatId)
+    .eq("is_test", isTest)
+    .maybeSingle();
+  throwIfError(error);
+  const row = (data ?? null) as Row | null;
+  if (!row || row.status !== "active" || row.shared_place_id) throw notFoundError("This place is no longer on the list. Reload the list.");
+  if (!signboardRetakeWaiting(row.signboard_check)) throw validationError("This place's signboard photo is not waiting for a new one.");
+  const customer = (Array.isArray(row.customer) ? row.customer[0] : row.customer) as Row | null;
+  const customerName = String(customer?.name ?? "");
+  const listType = parseListType(customer?.list_type);
+  const customerId = String(row.customer_id);
+
+  // Taken at the place: the photo's own reading must put it within a visit's line of the frozen point.
+  const fix = { lat: Number(body.shutterLat), lon: Number(body.shutterLon) };
+  if (!isUsableFix(body.shutterLat, body.shutterLon)) throw validationError("Turn on location for this site, then take the photo again.");
+  const accuracy = Number(body.shutterAccuracyMeters);
+  const away = distanceMeters(fix, { lat: Number(row.lat), lon: Number(row.lon) });
+  if (!signboardRetakeIsAtThePlace(away, Number.isFinite(accuracy) ? accuracy : null)) {
+    throw validationError(`This photo was taken ${Math.round(away)} m from the place. Take it at the place's own door.`);
+  }
+
+  const check = await readPlaceSignboard({ customerName, isTest, listType, photoPath, repHrId: viewer.hrId, seatId: seat.seatId });
+  const key = signboardRefusalKey({ customerId, customerName, placeId });
+  const earlierTries = signboardAsksForAPhoto(check, listType) && key ? await countSignboardRefusals({ key, repHrId: viewer.hrId, isTest }) : 0;
+  const action = signboardDoorAction(check, earlierTries, listType);
+  if (action.kind === "retake") {
+    if (await signboardRefusalRecorded(key, action.reason, { customerId, isTest, photoPath, repHrId: viewer.hrId, seatId: seat.seatId })) {
+      throw validationError(action.message, SIGNBOARD_RETAKE_CODE);
+    }
+  }
+
+  // Saved: the request is answered whatever was read. A photo still not read after the tries is final
+  // for the reader and the Super Admin's on the board — never sent back to the rep a second time.
+  const kept = signboardNextAttempt({ ...check, retake: null }, signboardReadsRecorded(row.signboard_check));
+  await callPhoenixCrm<Row>("phoenix_crm_retake_place_signboard", {
+    p: {
+      seat_id: seat.seatId,
+      actor_hr_id: viewer.hrId,
+      is_test: isTest,
+      place_id: placeId,
+      photo_path: photoPath,
+      signboard_check: jsonbSafe(kept),
+    },
+  });
+
+  const confirmed = check.verdict === "match";
+  await afterResponse("phoenix-crm signboard retake: settle", async () => {
+    const { data: reviews } = await getSupabaseAdmin()
+      .from("phoenix_crm_validation_reviews")
+      .select("id")
+      .eq("place_id", placeId)
+      .eq("status", "pending")
+      .eq("google->>verdict", "signboard")
+      .limit(1);
+    const reviewId = text(((reviews ?? []) as Row[])[0]?.id);
+    if (confirmed && reviewId) {
+      if ((await approveHeldSignboardBySystem(reviewId)) && !isTest) await withdrawValidationNotConfirmed(customerId);
+      return;
+    }
+    // Another clear name on a place nobody is holding goes to the Super Admin's board, as the night files it.
+    if (!reviewId && check.verdict === "other_name") {
+      await filePlaceSignboardFlag({
+        placeId,
+        seatId: seat.seatId,
+        repHrId: viewer.hrId,
+        customerId,
+        isTest,
+        flag: "sign_other_name",
+        signals: { signText: check.signText, personNames: check.personNames, placeNames: check.placeNames, note: check.note },
+        fixed: { lat: Number(row.lat), lon: Number(row.lon), accuracyMeters: null, capturedAt: new Date() },
+      });
+    }
+  });
+  return { confirmed, customerId, message: SIGNBOARD_RETAKE_SAVED_TEXT[confirmed ? "confirmed" : "checking"], placeId };
 }
 
 /**

@@ -27,7 +27,6 @@
  */
 
 import { SCHEDULE_MAX_TRIES, type ScheduleHeldBecause, type ScheduleLegibility, type ScheduleProblem } from "@/lib/phoenix-crm/schedule-rules";
-import { SIGNBOARD_MAX_READ_ATTEMPTS } from "@/lib/phoenix-crm/signboard-rules";
 import type { ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
 
 export type PlaceCheckAdviceKind = "approve" | "reject" | "look";
@@ -49,8 +48,11 @@ export const PLACE_CHECK_ADVICE_LABEL: Record<PlaceCheckAdviceKind, string> = {
   look: "Check it yourself",
 };
 
-/** What was read on a sign — the same shape the clinic rows, the held rows and the buildings carry. */
-export type SignEvidence = { verdict: string; reason: string | null; signText: string | null } | null;
+/**
+ * What was read on a sign — the same shape the clinic rows, the held rows and the buildings carry.
+ * `problem` is what the reader said stops the name being read (2026-10-18); absent on older reads.
+ */
+export type SignEvidence = { verdict: string; reason: string | null; signText: string | null; problem?: string | null } | null;
 
 /** What was read on a timetable for one customer. */
 export type TimetableEvidence = {
@@ -110,11 +112,20 @@ export function adviseOnSign(sign: SignEvidence, subject: "customer" | "building
   if (sign.verdict === "no_name") return reject(`No sign naming ${who} is in the photo.`, sign.signText, "no_signboard");
   switch (sign.reason) {
     case "unreadable_final":
-      return reject(
-        `The sign was read ${SIGNBOARD_MAX_READ_ATTEMPTS} times and could not be read once, so it cannot show that this is ${who}.`,
-        sign.signText,
-        null,
-      );
+      // 🔴 A LEGIBLE SIGN IS NOT AN UNREADABLE PHOTO (2026-10-18). The reader said the sign reads clearly
+      // ("د. محمد زكي" for محمد ذكي), that its lettering is decorative, or that it is a building's own
+      // sign, and the name still did not confirm: the system has no verdict, so it is the admin's look —
+      // never a Reject on a photo a new one would not change.
+      if (sign.problem === "none") {
+        return look(`The sign reads clearly, but the system cannot tell whether it names ${who}. Compare it with the photo yourself.`, sign.signText);
+      }
+      if (sign.problem === "stylised") {
+        return look(`The lettering on this sign is decorative, and the system could not read the name with confidence. Compare it with ${who}'s name yourself.`, sign.signText);
+      }
+      if (sign.problem === "building_sign_only") {
+        return look(`The photo shows the building's own sign, and the system cannot tell whether it is ${who}. Look at the photo yourself.`, sign.signText);
+      }
+      return reject(`The sign could not be read, so it cannot show that this is ${who}.`, sign.signText, null);
     case "unreadable":
       return look("The sign could not be read on the first try, and it is read again tonight. Look at the photo yourself.", sign.signText);
     case "unconfirmed":

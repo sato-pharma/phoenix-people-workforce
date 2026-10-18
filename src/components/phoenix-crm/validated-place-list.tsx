@@ -79,7 +79,11 @@ const SIGNBOARD_UNJUDGED_TEXT: Record<string, string> = {
   unreadable_final: "The signboard could not be read",
 };
 
+/** A place whose photo shows no readable name, sent back to its rep for a new one (2026-10-18). */
+const SIGNBOARD_RETAKE_TEXT = "Sent back to the rep for a new photo";
+
 function signboardText(signboard: NonNullable<ValidatedPlaceRow["signboard"]>): string {
+  if (signboard.retake) return SIGNBOARD_RETAKE_TEXT;
   if (signboard.verdict !== "unjudged") return SIGNBOARD_TEXT[signboard.verdict];
   return SIGNBOARD_UNJUDGED_TEXT[signboard.reason ?? ""] ?? SIGNBOARD_TEXT.unjudged;
 }
