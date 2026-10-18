@@ -73,9 +73,11 @@ export type PortalNsmDsmExport = {
 /**
  * Build the NSM/DSM workbook for ONE manager and ONE month, scoped to him server-side.
  *
- * `requestedMonth` is the only thing the client may choose. Anything that is not a cycle month is
- * ignored rather than rejected: the fallback is the latest uploaded month, which is the month he
- * would have picked anyway.
+ * `requestedMonth` is the only thing the client may choose, and the page always names one — the
+ * months its Month filter holds (nsm-dsm-export-months.ts). The route REFUSES a month that is named
+ * but is not a cycle month (400); it used to swap in the latest uploaded month, which exported a
+ * different month from the one on screen without a word. Only an absent month falls back to the
+ * latest, for a direct call to the route.
  */
 export async function buildPortalNsmDsmExport(
   ctx: AccessContext,

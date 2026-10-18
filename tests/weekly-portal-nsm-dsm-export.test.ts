@@ -7,6 +7,12 @@ import ExcelJS from "exceljs";
 import { buildNsmDsmWorkbook } from "../src/lib/sales/weekly/nsm-dsm-workbook.ts";
 import type { WeeklyManagerIndex } from "../src/lib/sales/weekly/manager-attribution.ts";
 import {
+  PORTAL_NSM_DSM_MAX_MONTHS,
+  cairoCycleMonthNow,
+  isPortalNsmDsmCycleMonth,
+  portalNsmDsmExportMonths,
+} from "../src/lib/sales/weekly/nsm-dsm-export-months.ts";
+import {
   PORTAL_NSM_DSM_EXPORT_ROLES,
   PORTAL_WEEKLY_ROLES,
   mayDownloadPortalNsmDsmExport,
@@ -286,8 +292,84 @@ export async function runWeeklyPortalNsmDsmExportTests() {
   );
   assert.match(
     view,
-    /if \(nsmDsmMonth\) params\.set\("month", nsmDsmMonth\)/,
+    /new URLSearchParams\(\{ month \}\)/,
     "and sends the month alone — buildQuery()'s filters must never reach this book",
+  );
+  assert.match(
+    view,
+    /selected: selection\.months/,
+    "the months come from the page's own Month filter (owner, 2026-10-18: the export ignored it and sent November)",
+  );
+  assert.doesNotMatch(
+    withoutLineComments(view),
+    /nsmDsmMonth\b|nsm-dsm-month/,
+    "no separate month box beside the button — a second month control is what exported a different month from the filter",
+  );
+
+  // ── the months it exports follow the Month filter ───────────────────────────────────────────────
+  // November here is real: Finance booked one approved Direct order (Lacto Advanced) to November 2026,
+  // so it is offered as the newest month while the sheets everyone else uploads stop in October.
+  const AVAILABLE = ["2026-11-01", "2026-10-01", "2026-09-01", "2026-08-01"];
+  assert.deepEqual(
+    portalNsmDsmExportMonths({ available: AVAILABLE, mode: "include", selected: ["2026-10-01"] }),
+    ["2026-10-01"],
+    "October picked → October, never the newest month",
+  );
+  assert.deepEqual(
+    portalNsmDsmExportMonths({ available: AVAILABLE, mode: "include", selected: ["2026-10-01", "2026-09-01"] }),
+    ["2026-09-01", "2026-10-01"],
+    "September and October picked → both, one workbook each, oldest first",
+  );
+  assert.deepEqual(
+    portalNsmDsmExportMonths({ available: AVAILABLE, mode: "exclude", selected: ["2026-11-01", "2026-08-01"] }),
+    ["2026-09-01", "2026-10-01"],
+    "an excluding filter exports every month it leaves in",
+  );
+  assert.deepEqual(
+    portalNsmDsmExportMonths({ available: AVAILABLE, currentMonth: "2026-10-01", mode: "include", selected: [] }),
+    ["2026-10-01"],
+    "nothing picked → the month Cairo is in, never a month Finance booked ahead",
+  );
+  assert.deepEqual(
+    portalNsmDsmExportMonths({ available: AVAILABLE, currentMonth: "2026-12-01", mode: "include", selected: [] }),
+    ["2026-11-01"],
+    "and when the current month is not offered, the newest offered month before it",
+  );
+  assert.deepEqual(
+    portalNsmDsmExportMonths({ available: ["2026-11-01"], currentMonth: "2026-10-01", mode: "include", selected: [] }),
+    ["2026-11-01"],
+    "when every offered month is ahead, the newest one is used rather than nothing",
+  );
+  assert.deepEqual(
+    portalNsmDsmExportMonths({ available: AVAILABLE, mode: "include", selected: [] }),
+    ["2026-11-01"],
+    "with no current month supplied the newest offered month is used",
+  );
+  assert.equal(cairoCycleMonthNow(new Date("2026-10-31T21:30:00Z")), "2026-10-01", "23:30 on 31 October in Cairo is still October");
+  assert.equal(cairoCycleMonthNow(new Date("2026-10-31T22:30:00Z")), "2026-11-01", "00:30 on 1 November in Cairo is November");
+  assert.deepEqual(
+    portalNsmDsmExportMonths({ available: AVAILABLE, mode: "exclude", selected: AVAILABLE }),
+    [],
+    "a filter that excludes every month leaves nothing to export",
+  );
+  assert.deepEqual(
+    portalNsmDsmExportMonths({ available: [], mode: "include", selected: [] }),
+    [],
+    "no months at all → no month, never an invented one",
+  );
+  assert.deepEqual(
+    portalNsmDsmExportMonths({ available: AVAILABLE, mode: "include", selected: ["October 2026"] }),
+    ["2026-11-01"],
+    "a label that is not a cycle month is ignored, never sent to the route",
+  );
+  assert.equal(isPortalNsmDsmCycleMonth("2026-10-01"), true);
+  assert.equal(isPortalNsmDsmCycleMonth("2026-10"), false, "the route takes the stored first-of-month shape only");
+  assert.equal(isPortalNsmDsmCycleMonth("October 2026"), false);
+  assert.ok(PORTAL_NSM_DSM_MAX_MONTHS <= 10, "each month is a download and the route allows ten a minute");
+  assert.match(
+    route,
+    /!isPortalNsmDsmCycleMonth\(month\)[\s\S]{0,200}status: 400/,
+    "a month that is named but unreadable is refused with 400 — it used to fall back to the latest and export November",
   );
   assert.match(
     sourceOf("src/lib/sales/weekly/portal-weekly-dashboard.ts"),
