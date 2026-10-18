@@ -36,7 +36,7 @@
 // (crm/unmapped-alert.ts is a different tripwire — it covers unmapped AGENTS.)
 // If a new code ever appears, classify it in visit-type-meaning.ts, deliberately.
 
-import { queryVisits, scanVisitsForRangeCreditingPartners } from "@/lib/crm/reads";
+import { queryOwnVisitsOfDepartedAgents, queryVisits, scanVisitsForRangeCreditingPartners } from "@/lib/crm/reads";
 import {
   describePhoenixWorkEvidence,
   indexPhoenixWorkEvidence,
@@ -172,6 +172,52 @@ export function mergeDayMapVisitPages<T extends { id: string }>(pages: ReadonlyA
   return [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
+type DayMapKeyedRow = CrmDayVisitRow & { id: string };
+
+/**
+ * The CRM reads the day map is assembled from — the real doors by default. Swappable so the rule that
+ * assembles them is provable without a database (tests/crm-day-map-departed-own-visits.test.ts).
+ */
+export type DayMapVisitReaders = {
+  /** Every company visit in the window, a departed agent's row kept for its partner only. */
+  companyWindow: (dateFromIso: string, dateToIso: string) => Promise<DayMapKeyedRow[]>;
+  asAgent: (dateFromIso: string, dateToIso: string, wantedIds: string[]) => Promise<DayMapKeyedRow[]>;
+  asDouble: (dateFromIso: string, dateToIso: string, wantedIds: string[]) => Promise<DayMapKeyedRow[]>;
+  /** What the departed people among `wantedIds` logged themselves, through their last working day. */
+  ownRowsOfDeparted: (dateFromIso: string, dateToIso: string, wantedIds: string[]) => Promise<DayMapKeyedRow[]>;
+};
+
+const CRM_DOOR_DAY_MAP_READERS: DayMapVisitReaders = {
+  companyWindow: (dateFromIso, dateToIso) =>
+    scanVisitsForRangeCreditingPartners<DayMapKeyedRow>({
+      dateFrom: dateFromIso,
+      dateTo: dateToIso,
+      columns: DAY_MAP_VISIT_COLUMNS,
+    }),
+  asAgent: (dateFromIso, dateToIso, wantedIds) =>
+    queryVisits<DayMapKeyedRow>({ dateFrom: dateFromIso, dateTo: dateToIso, columns: DAY_MAP_VISIT_COLUMNS, agentHrIds: wantedIds }),
+  // The double-role read asks about the people named on the DOUBLE side, so a row whose AGENT has
+  // since resigned must still reach them: otherwise a manager's field day vanishes the day the rep
+  // he spent it with leaves, and the fingerprint report then shows "no CRM activity" for a day he
+  // provably worked (owner report 2026-10-07). The door nulls the departed agent's `agent_hr_id`,
+  // and the gate below only ever credits an hr id in `wanted`, so nothing is credited to a leaver.
+  asDouble: (dateFromIso, dateToIso, wantedIds) =>
+    queryVisits<DayMapKeyedRow>({
+      dateFrom: dateFromIso,
+      dateTo: dateToIso,
+      columns: DAY_MAP_VISIT_COLUMNS,
+      doubleHrIds: wantedIds,
+      creditDepartedAgentPartners: true,
+    }),
+  ownRowsOfDeparted: (dateFromIso, dateToIso, wantedIds) =>
+    queryOwnVisitsOfDepartedAgents<DayMapKeyedRow>({
+      columns: DAY_MAP_VISIT_COLUMNS,
+      dateFrom: dateFromIso,
+      dateTo: dateToIso,
+      hrIds: wantedIds,
+    }),
+};
+
 /**
  * Fetch exactly the visits the day map needs for `wantedIds` over the window.
  *
@@ -189,43 +235,45 @@ export function mergeDayMapVisitPages<T extends { id: string }>(pages: ReadonlyA
  * the fetched set is a superset of the rows the caller's own `normalizeAttendanceHrId` gate keeps —
  * the gate below stays the exact decision. Stored `agent_hr_id`/`double_hr_id` are already canonical
  * (upper, no whitespace — 0 of 123,657 rows differ), so the superset is exact in practice.
+ *
+ * A LEAVER IS STILL JUDGED ON THEIR OWN VISITS. The fingerprint report keeps a resigned or terminated
+ * person in scope up to their last working day, and the exclusion behind both reads above hides
+ * every row they logged from the minute HR records the resignation — notice period included, every
+ * day of it. So a leaver who punched late on a day they also logged real CRM visits lost the cancel
+ * and was charged. `ownRowsOfDeparted` puts those rows back, through the last working day only, and
+ * comes FIRST in the merge so its copy wins over the partner door's anonymised one of the same row.
  */
-async function fetchDayMapVisits(
+export async function fetchDayMapVisits(
   dateFromIso: string,
   dateToIso: string,
   wantedIds: string[],
+  readers: DayMapVisitReaders = CRM_DOOR_DAY_MAP_READERS,
 ): Promise<CrmDayVisitRow[]> {
   if (wantedIds.length > DAY_MAP_PUSHDOWN_MAX_IDS) {
-    return scanVisitsForRangeCreditingPartners<CrmDayVisitRow>({
-      dateFrom: dateFromIso,
-      dateTo: dateToIso,
-      columns: DAY_MAP_VISIT_COLUMNS,
-    });
+    const [company, ownDeparted] = await Promise.all([
+      readers.companyWindow(dateFromIso, dateToIso),
+      readers.ownRowsOfDeparted(dateFromIso, dateToIso, wantedIds),
+    ]);
+    if (ownDeparted.length === 0) return company;
+    return mergeDayMapVisitPages<DayMapKeyedRow>([ownDeparted, company]);
   }
-  type KeyedRow = CrmDayVisitRow & { id: string };
-  const [asAgent, asDouble] = await Promise.all([
-    queryVisits<KeyedRow>({ dateFrom: dateFromIso, dateTo: dateToIso, columns: DAY_MAP_VISIT_COLUMNS, agentHrIds: wantedIds }),
-    // The double-role read asks about the people named on the DOUBLE side, so a row whose AGENT has
-    // since resigned must still reach them: otherwise a manager's field day vanishes the day the rep
-    // he spent it with leaves, and the fingerprint report then shows "no CRM activity" for a day he
-    // provably worked (owner report 2026-10-07). The door nulls the departed agent's `agent_hr_id`,
-    // and the gate below only ever credits an hr id in `wanted`, so nothing is credited to a leaver.
-    queryVisits<KeyedRow>({
-      dateFrom: dateFromIso,
-      dateTo: dateToIso,
-      columns: DAY_MAP_VISIT_COLUMNS,
-      doubleHrIds: wantedIds,
-      creditDepartedAgentPartners: true,
-    }),
+  const [ownDeparted, asAgent, asDouble] = await Promise.all([
+    readers.ownRowsOfDeparted(dateFromIso, dateToIso, wantedIds),
+    readers.asAgent(dateFromIso, dateToIso, wantedIds),
+    readers.asDouble(dateFromIso, dateToIso, wantedIds),
   ]);
-  return mergeDayMapVisitPages<KeyedRow>([asAgent, asDouble]);
+  return mergeDayMapVisitPages<DayMapKeyedRow>([ownDeparted, asAgent, asDouble]);
 }
 
-async function scanCompanyVisitsByEmployee(input: {
-  dateFromIso: string;
-  dateToIso: string;
-  employeeHrIds: string[];
-}): Promise<Map<string, Map<string, CrmDayVisitRow[]>>> {
+/** Exported for its unit test; callers use {@link getCrmActivityDayMaps}. */
+export async function scanCompanyVisitsByEmployee(
+  input: {
+    dateFromIso: string;
+    dateToIso: string;
+    employeeHrIds: string[];
+  },
+  readers: DayMapVisitReaders = CRM_DOOR_DAY_MAP_READERS,
+): Promise<Map<string, Map<string, CrmDayVisitRow[]>>> {
   const result = new Map<string, Map<string, CrmDayVisitRow[]>>();
   if (!isIsoDate(input.dateFromIso) || !isIsoDate(input.dateToIso)) return result;
 
@@ -234,7 +282,7 @@ async function scanCompanyVisitsByEmployee(input: {
   );
   if (wanted.size === 0) return result;
 
-  const visits = await fetchDayMapVisits(input.dateFromIso, input.dateToIso, [...wanted]);
+  const visits = await fetchDayMapVisits(input.dateFromIso, input.dateToIso, [...wanted], readers);
 
   for (const visit of visits) {
     const dateIso = (visit.visit_date ?? "").slice(0, 10);

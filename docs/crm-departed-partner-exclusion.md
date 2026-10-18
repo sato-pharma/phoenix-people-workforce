@@ -128,6 +128,58 @@ for.
 not, 2026-10-07), the 29 July approval is no longer inert: it would be picked up if July were ever
 recomputed or republished, and it rests on erased evidence.
 
+## The person being judged: a leaver's own rows (2026-10-18)
+
+Found while building the Field Absence Calendar (PR 6089). The live tier keys on employment
+**status**, never on a date, and recording a resignation sets that status at once
+(`resignations/service.ts` writes it with `exit_status: submitted`). So a rep serving notice —
+status `resigned`, last working day still ahead — loses **every** row they logged, on every day of
+the period, from the minute HR records it. Measured on production for October 2026: Georgette Hany
+Awad Aiad (last working day 17 Oct) read 0 of 13 visit days, Hana Abdelaziz Samir Abdelaziz
+(31 Oct, recorded 18 Oct 15:47 Cairo, still working) 0 of 14, Karen George Saleh Salama (10 Oct)
+0 of 3.
+
+### Which money paths read a leaver's own days, and through what
+
+| Path | Reads | Leaver's own rows? |
+| --- | --- | --- |
+| CRM no-activity, leaver in their last month (`crm.ts` leaver path) | `scanVisitsForRangeIncludingDeparted` | Kept |
+| CRM no-activity, every other month (`crm.ts` → FWC matrix) | `scanVisitsForRangeCreditingPartners` | Hidden — but a non-active person is not on the matrix at all (`eligible_for_headcount`), so nobody is charged |
+| Half day, unpaid vacation | `scanVisitsForRangeIncludingDeparted` | Kept |
+| DSM no-record, holiday bridge | partner-crediting door | Population is `employment_status = active` only |
+| No-records (office staff) | private calendar, plain scan | Population is the active directory only, field titles excluded |
+| Automated Payroll leaver ruling (`resignationCrmDays`) | the Deductions module's `crm` lines | Same as the CRM leaver path |
+| **Fingerprint report, per-employee day report** (`attendance/crm-day-maps.ts`) | partner-crediting door | **Hidden, and the leaver IS judged** — kept in scope to the last working day, and a CRM field visit cancels the day's charge |
+
+The last row is the only real gap. Since 2026-10-18 `fetchDayMapVisits` adds
+`queryOwnVisitsOfDepartedAgents` (`src/lib/crm/reads.ts`): the departed people among the ones being
+judged get the rows they logged **themselves**, through their own last working day only — a later
+row on the same slot is the successor's (`crm-resigned-slot-reused-for-new-hire`). An active person
+the static list hides on purpose (the CEO) is not departed and stays hidden. Every live board keeps
+the exclusion exactly as it was. Pinned by `tests/crm-day-map-departed-own-visits.test.ts`.
+
+### Why the exclusion itself was not made date-aware
+
+"Hide a departed agent's rows only after the last working date", applied in the exclusion, would
+bring every leaver's history back onto every live CRM board — KPIs, Double Visit Analytics, Reps
+List, plan adherence, month-over-month — which is a change to what those boards show, the owner's to
+make (`crm-month-over-month-does-not-compare-the-same-reps` is the same population question). It
+also cannot reach the static tier, which carries no dates and holds owner-excluded ACTIVE people.
+
+### What it cost: nothing, as of 2026-10-18
+
+Every leaver whose last working day fell between 15 July and 31 October, every `crm`, `fingerprint`
+and `no_records_activity` candidate since July, live or superseded, joined to the leaver's own
+non-vacation rows: **no fingerprint and no no-records candidate falls on such a day.** The only
+leavers who punch (Nahed Tarek Hassan Omar Hattab, Nada Ali Mohamed El Saghir, Youmna Mohamed
+Salaheldeen Ahmed Kotb, Ahmed Mohamed Rabiee Fayk Elkawas, Sameh Ahmed Ezzat Mohamed Hussien) have
+0 punch days with own CRM rows — Nahed's CRM work is all as a double partner on active reps' rows,
+which the hide never touched. The `crm` overlaps are superseded, undecided and on no publication
+line (2–3 August collected on the morning of 3 August, before those days had synced), plus July's
+pre-fix leaver rows for Fatma Momen Ahmed Hassan (4,645.16) and Samia Raafat Khaled Mohamed Elgendy
+(2,064.52), still live and undecided — the late-attribution defect above, not this one. None reached
+a payroll batch.
+
 ## Totals as of 2026-10-07
 
 **15 days across two money paths — 12 still undecided (10,817.74 EGP) and 3 already decided

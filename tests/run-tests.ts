@@ -1753,6 +1753,7 @@ import { runClosingRegionGroupingPerLineTests } from "./closing-region-grouping-
 import { runPayrollFractionalDeductionDayScalingTests } from "./payroll-fractional-deduction-day-scaling.test.ts";
 import { runDeductionsCrmSingleMonthScanTests } from "./deductions-crm-single-month-scan.test.ts";
 import { runCrmDayMapPushdownTests } from "./crm-day-map-pushdown.test.ts";
+import { runCrmDayMapDepartedOwnVisitsTests } from "./crm-day-map-departed-own-visits.test.ts";
 import { runSfeManagerNavDeadLinksTests } from "./sfe-manager-nav-dead-links.test.ts";
 import { runOrganogramNavLinkExistsTests } from "./organogram-nav-link-exists-for-every-role-that-can-open-it.test.ts";
 import { runHrSeatsCompanyOrganogramTests } from "./hr-seats-see-the-company-organogram.test.ts";
@@ -6334,6 +6335,11 @@ await runTest(
 await runTest(
   "CRM day-map pushdown (a bounded employee set is fetched by index and merged into the exact one-row-per-id, id-ascending shape a single company-wide scan produced)",
   runCrmDayMapPushdownTests,
+);
+
+await runTest(
+  "CRM day map keeps a leaver's own visits through the last working day (recording a resignation hides every row they logged, notice period included, and the fingerprint report still judges them up to that day — so a real field visit stopped cancelling their charge; a row after the last working day is the successor's and stays hidden)",
+  runCrmDayMapDepartedOwnVisitsTests,
 );
 
 await runTest(
