@@ -117,6 +117,7 @@ function VenueHeader({ mode, row }: { mode: PlaceCheckNotesMode; row: SharedPlac
         <CrmPill tone={row.seated === 0 ? "neutral" : "info"}>
           {row.seated === 0 ? "Nobody seated yet" : `${row.seated} ${row.seated === 1 ? "customer seated" : "customers seated"}`}
         </CrmPill>
+        {row.timetableExempt ? <CrmPill tone="info">No timetable</CrmPill> : null}
         {row.isTest ? <CrmPill>Test entry</CrmPill> : null}
       </div>
       <p className="break-words text-sm font-semibold text-slate-700">
@@ -164,9 +165,43 @@ function SignPhoto({ headed, row }: { headed: boolean; row: SharedPlaceBoardRow 
  * the same on every customer's row; it is taken from the first that carries it. A building with
  * customers seated in it and no timetable on file is the fault the owner named first ("no timetables"),
  * so that empty frame says so in rose rather than in grey.
+ *
+ * 🔴 A BUILDING THE ADMINISTRATOR DECLARED HAS NO TIMETABLE IS NOT THAT FAULT (owner, 2026-10-18, City
+ * clinic: "it does not have a timetable … make those doctors validated by the admin as an exception for
+ * this polyclinic and show this"). It draws the exception in grey instead — and never the photograph on
+ * file, which is the door of the clinic, not a timetable. A manager's board states the fact and not who
+ * decided it (owner, 2026-10-13).
  */
-function TimetablePhoto({ customers, headed, row }: { customers: VenueGroup["customers"]; headed: boolean; row: SharedPlaceBoardRow }) {
+function TimetablePhoto({
+  customers,
+  headed,
+  mode,
+  row,
+}: {
+  customers: VenueGroup["customers"];
+  headed: boolean;
+  mode: PlaceCheckNotesMode;
+  row: SharedPlaceBoardRow;
+}) {
   const read = customers.find((customer) => customer.timetable?.scheduleText)?.timetable?.scheduleText ?? null;
+  if (row.timetableExempt) {
+    return (
+      <div className="min-w-0 space-y-1.5">
+        {headed ? <PhotoHeading>The timetable inside</PhotoHeading> : null}
+        <div className="flex min-h-32 w-full flex-col items-center justify-center gap-1 border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-center">
+          <p className="break-words text-sm font-black text-slate-700">This building has no timetable.</p>
+          {mode === "team" ? null : (
+            <>
+              <p className="break-words text-xs text-slate-700">Its customers are validated by the administrator as an exception.</p>
+              <p className="break-words text-xs text-slate-500">
+                Set by {row.timetableExempt.byName}, {row.timetableExempt.atText}
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="min-w-0 space-y-1.5">
       {headed ? <PhotoHeading>The timetable inside</PhotoHeading> : null}
@@ -483,13 +518,13 @@ export function SharedPlaceList({
               </div>
               <div className="grid min-w-0 gap-4 sm:grid-cols-2">
                 <SignPhoto headed row={row} />
-                <TimetablePhoto customers={customers} headed row={row} />
+                <TimetablePhoto customers={customers} headed mode={mode} row={row} />
               </div>
               <Where row={row} />
               <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="cards" />
             </div>
             <div className="border-t border-slate-100 bg-slate-50/60 pb-2">
-              <SeatedCustomers customers={customers} layout="cards" mode={mode} noteIndex={noteIndex} total={total} venueTimetablePath={row.schedulePhotoPath} />
+              <SeatedCustomers customers={customers} layout="cards" mode={mode} noTimetable={row.timetableExempt !== null} noteIndex={noteIndex} total={total} venueTimetablePath={row.schedulePhotoPath} />
             </div>
           </div>
         ))}
@@ -518,7 +553,7 @@ export function SharedPlaceList({
                 <SignPhoto headed={false} row={row} />
               </td>
               <td className={crmTdClassName}>
-                <TimetablePhoto customers={customers} headed={false} row={row} />
+                <TimetablePhoto customers={customers} headed={false} mode={mode} row={row} />
               </td>
               <td className={crmTdClassName}>
                 <Where row={row} />
@@ -529,7 +564,7 @@ export function SharedPlaceList({
             </tr>
             <tr>
               <td className="border-b border-slate-200 bg-slate-50/60 p-0" colSpan={4}>
-                <SeatedCustomers customers={customers} layout="table" mode={mode} noteIndex={noteIndex} total={total} venueTimetablePath={row.schedulePhotoPath} />
+                <SeatedCustomers customers={customers} layout="table" mode={mode} noTimetable={row.timetableExempt !== null} noteIndex={noteIndex} total={total} venueTimetablePath={row.schedulePhotoPath} />
               </td>
             </tr>
           </tbody>

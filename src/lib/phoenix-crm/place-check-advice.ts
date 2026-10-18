@@ -126,8 +126,18 @@ export function adviseOnSign(sign: SignEvidence, subject: "customer" | "building
   }
 }
 
-/** The timetable inside a polyclinic, for one customer seated behind its door. */
-export function adviseOnTimetable(timetable: TimetableEvidence): PlaceCheckAdvice {
+/**
+ * The timetable inside a polyclinic, for one customer seated behind its door.
+ *
+ * `buildingHasNone` is the administrator's own exception (owner, 2026-10-18: City clinic is itself the
+ * polyclinic and has no timetable, so its customers are validated by him instead): no photograph can
+ * name anybody there, so the system has no verdict to give and says so, rather than calling the missing
+ * timetable a fault and recommending a rejection the rep would be told is about his photo.
+ */
+export function adviseOnTimetable(timetable: TimetableEvidence, buildingHasNone = false): PlaceCheckAdvice {
+  if (buildingHasNone) {
+    return look("This building has no timetable, so none can show this customer's name. You validate its customers yourself, as an exception.");
+  }
   if (!timetable) return look("The timetable has not been read for this customer yet. Look at the photo yourself.");
   const read = timetable.scheduleText;
   if (timetable.verdict === "match") {

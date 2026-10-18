@@ -573,3 +573,27 @@ Looking at the live page that evening, the owner said: *"don't put for me non-re
   - the reason list, the note and the cost appear only after "Refuse this validation" is pressed.
 
 Measured on production that evening before the change: Needs you 9,965 px, Not confirmed 14,083 px, Polyclinics 12,741 px and History 14,521 px tall. There was no sideways scroll at a 2,124 px window, no rounded corner, no broken photo and no test entry on any tab.
+
+## A polyclinic with no timetable — owner, 2026-10-18
+
+City clinic (Giza, captured by the Pedia seat of Hadeer Abdelnaser) is the polyclinic itself and has no timetable on its wall. Six customers were seated in it — Ahmed Abdelazim, Sherif El-Segini, Mohamed El-Ghandour, Radwa Shama, Ahmed Samir Abdelsalam and Ahmed Nasr — and every one had been rejected, because a polyclinic's customers are validated by the building's timetable and there was none.
+
+His ruling, in his words: *"the city clinic is the polyclinic itself … this polyclinic does not have a timetable. So you will make the place verified, and make those doctors validated by the admin as an exception for this polyclinic and show this."*
+
+**What was done to the data (production, in the session):**
+
+- The building is approved by the administrator on the strength of its door sign, which matches; its note says it has no timetable and its customers are validated by him as an exception.
+- All six customers are active, validated, seated in City clinic, with an approved review whose note says the same. Their stale "validate again" bells were withdrawn, and four visits were measured again against the seat. The rep was told nothing.
+- A settle never undoes an approved review, so a later read of the board does not reject them again.
+
+**What the screen shows (this change):** two columns on `phoenix_crm_shared_places`, `timetable_exempt_at` and `timetable_exempt_by_hr_id` (set together or not at all), set on City clinic by the administrator.
+
+- The building's "timetable inside" frame is replaced by "This building has no timetable. Its customers are validated by the administrator as an exception", with who set it and when, instead of the rose "No timetable on file, and 6 customers are seated here" — and the door photo on file is not drawn as a timetable. The header carries a "No timetable" pill.
+- Each customer's cell reads "This building has no timetable" and, once approved, "Validated by the administrator as an exception"; the system's recommendation is silent on an approved customer and is "look" on one still waiting (`adviseOnTimetable(timetable, true)`), never a rejection and never a pre-picked timetable reason.
+- "Reject — not on the timetable" is not offered there, since its refusal would tell the rep something false about his photograph.
+- The building is not sorted up as a problem (`venueHasProblem`).
+- 🔴 A manager's board states that the building has no timetable and never who decided it.
+
+**What it is NOT.** The columns are a marker for the screen. Nothing in the database or the settle reads them to validate anybody, so a customer seated in City clinic later is still held, and the administrator's Approve on him is the exception. Declaring another building without a timetable is a deliberate act on that one row; there is no screen for it yet.
+
+Pinned by `tests/phoenix-crm-shared-place-groups.test.ts` and `tests/phoenix-crm-place-check-advice.test.ts`.

@@ -58,9 +58,9 @@ function defaultReason(customer: SeatedCustomer): ValidationRefusalReason {
  * or read as named, opens on NOTHING, so a reject is never one click away from telling a rep that
  * the timetable does not name him when it may have.
  */
-function evidenceReason(customer: SeatedCustomer): ValidationRefusalReason | "" {
+function evidenceReason(customer: SeatedCustomer, noTimetable: boolean): ValidationRefusalReason | "" {
   // The recommendation's own refusal, which is set ONLY on a confident reading — the same rule, one home.
-  return adviseOnTimetable(customer.timetable).refusal ?? "";
+  return adviseOnTimetable(customer.timetable, noTimetable).refusal ?? "";
 }
 
 /** Whether a decision can be made on this customer's review row — the route that keeps the evidence. */
@@ -92,11 +92,37 @@ function Who({ customer, mode }: { customer: SeatedCustomer; mode: PlaceCheckNot
   );
 }
 
-function Timetable({ customer, venueTimetablePath }: { customer: SeatedCustomer; venueTimetablePath: string | null }) {
+function Timetable({
+  customer,
+  mode,
+  noTimetable,
+  venueTimetablePath,
+}: {
+  customer: SeatedCustomer;
+  mode: PlaceCheckNotesMode;
+  noTimetable: boolean;
+  venueTimetablePath: string | null;
+}) {
   // The photograph THIS customer's rep took is always on their row — what the checker called unreadable or
   // empty must be seen with his own eyes, and it can be the very photograph the building shows above.
   const own = customer.photoPath;
   const sameAsBuilding = own !== null && own === venueTimetablePath;
+  if (noTimetable && customer.state !== "sent_back") {
+    // The administrator's exception (owner, 2026-10-18): this building has no timetable, so there is no
+    // verdict to draw and no photograph to show as one — the door photo on file is not a timetable.
+    // 🔴 A manager's board states the fact and not who decides it (owner, 2026-10-13).
+    return (
+      <div className="min-w-0 space-y-1 text-sm text-slate-700">
+        <CrmPill tone="neutral">This building has no timetable</CrmPill>
+        {mode === "team" ? null : customer.state === "in_use" && customer.reviewStatus === "approved" ? (
+          <p className="break-words text-xs text-slate-700">Validated by the administrator as an exception.</p>
+        ) : customer.state === "waiting" ? (
+          <p className="break-words text-xs text-slate-700">Waits for the administrator, who validates this building&apos;s customers as an exception.</p>
+        ) : null}
+        {customer.state === "rejected" && customer.reasonLabel ? <p className="break-words text-xs text-slate-600">The rep was told: {customer.reasonLabel}.</p> : null}
+      </div>
+    );
+  }
   if (customer.state === "sent_back") {
     return (
       <div className="min-w-0 space-y-0.5 text-sm text-slate-700">
@@ -265,10 +291,10 @@ function RejectNotOnTimetable({ customer, scope }: { customer: SeatedCustomer; s
 }
 
 /** A customer the system is still checking: approve him, or reject him with a timetable reason. */
-function WaitingDecision({ customer, scope }: { customer: SeatedCustomer; scope: string }) {
+function WaitingDecision({ customer, noTimetable, scope }: { customer: SeatedCustomer; noTimetable: boolean; scope: string }) {
   const router = useRouter();
   const [note, setNote] = useState("");
-  const [reason, setReason] = useState<ValidationRefusalReason | "">(evidenceReason(customer));
+  const [reason, setReason] = useState<ValidationRefusalReason | "">(evidenceReason(customer, noTimetable));
   const [saving, setSaving] = useState<"approve" | "reject" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -364,10 +390,12 @@ function RestoreSeated({ customer, scope }: { customer: SeatedCustomer; scope: s
 }
 
 /** The decision control that fits where this customer stands. */
-function Decision({ customer, scope }: { customer: SeatedCustomer; scope: string }) {
-  if (customer.state === "waiting" && customer.reviewId) return <WaitingDecision customer={customer} scope={scope} />;
+function Decision({ customer, noTimetable, scope }: { customer: SeatedCustomer; noTimetable: boolean; scope: string }) {
+  if (customer.state === "waiting" && customer.reviewId) return <WaitingDecision customer={customer} noTimetable={noTimetable} scope={scope} />;
   if (customer.state === "rejected") return customer.restorable ? <RestoreSeated customer={customer} scope={scope} /> : null;
-  if (customer.state === "in_use" && customer.placeId) return <RejectNotOnTimetable customer={customer} scope={scope} />;
+  // "Reject — not on the timetable" is meaningless where the administrator declared there is none, and
+  // its refusal would tell the rep something false about his photograph.
+  if (customer.state === "in_use" && customer.placeId && !noTimetable) return <RejectNotOnTimetable customer={customer} scope={scope} />;
   return null;
 }
 
@@ -378,14 +406,26 @@ function Decision({ customer, scope }: { customer: SeatedCustomer; scope: string
  * retires his seat and can send him back to To validate — the Super Admin's alone. A manager reads the
  * timetable evidence, comments on it and recommends.
  */
-function LastColumn({ customer, mode, noteIndex, scope }: { customer: SeatedCustomer; mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; scope: string }) {
+function LastColumn({
+  customer,
+  mode,
+  noTimetable,
+  noteIndex,
+  scope,
+}: {
+  customer: SeatedCustomer;
+  mode: PlaceCheckNotesMode;
+  noTimetable: boolean;
+  noteIndex: PlaceNoteIndex;
+  scope: string;
+}) {
   const key = customer.placeId ? placeNoteSubjectKey("place", customer.placeId) : null;
   return (
     <div className="min-w-0 space-y-2">
       {/* The system's recommendation and its reason (owner, 2026-10-17) — the Super Admin's board only,
           and never on a customer already sent back, where there is nothing left to decide. */}
-      {mode === "team" || customer.state === "sent_back" ? null : <SystemAdvice advice={adviseOnTimetable(customer.timetable)} />}
-      {mode === "team" ? null : <Decision customer={customer} scope={scope} />}
+      {mode === "team" || customer.state === "sent_back" || (noTimetable && customer.state !== "waiting") ? null : <SystemAdvice advice={adviseOnTimetable(customer.timetable, noTimetable)} />}
+      {mode === "team" ? null : <Decision customer={customer} noTimetable={noTimetable} scope={scope} />}
       {customer.placeId && key ? (
         <PlaceCheckNotes
           integrity={noteIndex.integrity[key] ?? []}
@@ -404,6 +444,7 @@ export function SeatedCustomers({
   customers,
   layout = "both",
   mode,
+  noTimetable,
   noteIndex,
   total,
   venueTimetablePath,
@@ -416,6 +457,8 @@ export function SeatedCustomers({
    */
   layout?: "both" | "cards" | "table";
   mode: PlaceCheckNotesMode;
+  /** The administrator declared this building has no timetable — see `SharedPlaceBoardRow.timetableExempt`. */
+  noTimetable: boolean;
   noteIndex: PlaceNoteIndex;
   /** How many are seated in the building before the filters, so a narrowed list says so. */
   total: number;
@@ -439,8 +482,8 @@ export function SeatedCustomers({
           {customers.map((customer) => (
             <div key={customer.key} className="space-y-3 px-4 py-4">
               <Who customer={customer} mode={mode} />
-              <Timetable customer={customer} venueTimetablePath={venueTimetablePath} />
-              <LastColumn customer={customer} mode={mode} noteIndex={noteIndex} scope="cards" />
+              <Timetable customer={customer} mode={mode} noTimetable={noTimetable} venueTimetablePath={venueTimetablePath} />
+              <LastColumn customer={customer} mode={mode} noTimetable={noTimetable} noteIndex={noteIndex} scope="cards" />
             </div>
           ))}
         </CrmCardsOnPhone>
@@ -461,10 +504,10 @@ export function SeatedCustomers({
                   <Who customer={customer} mode={mode} />
                 </td>
                 <td className={crmTdClassName}>
-                  <Timetable customer={customer} venueTimetablePath={venueTimetablePath} />
+                  <Timetable customer={customer} mode={mode} noTimetable={noTimetable} venueTimetablePath={venueTimetablePath} />
                 </td>
                 <td className={crmTdClassName}>
-                  <LastColumn customer={customer} mode={mode} noteIndex={noteIndex} scope="table" />
+                  <LastColumn customer={customer} mode={mode} noTimetable={noTimetable} noteIndex={noteIndex} scope="table" />
                 </td>
               </tr>
             ))}

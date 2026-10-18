@@ -7,6 +7,7 @@ import {
   narrowVenueGroups,
   seatedCustomersByVenue,
   seatedPassesOutcome,
+  venueHasProblem,
   venueNeedsDecision,
   withoutSeated,
   type SeatedCustomer,
@@ -73,6 +74,7 @@ function venue(overrides: Partial<SharedPlaceBoardRow>): SharedPlaceBoardRow {
     decidedAtText: null,
     decidedByName: null,
     decisionNote: null,
+    timetableExempt: null,
     restorable: false,
     ...overrides,
   };
@@ -438,12 +440,45 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   assert.match(customersSource, /armed \?/, "a rejection is confirmed before it is sent");
   assert.match(customersSource, /disabled=\{reason === "" \|\| saving\}/, "and cannot be armed before a reason is chosen");
   assert.doesNotMatch(customersSource, /note\.trim\(\)\.length === 0/, "never gated on the free-text note — it is optional");
-  assert.match(customersSource, /mode === "team" \? null : <Decision customer=\{customer\} scope=\{scope\} \/>/, "🔴 a manager's board renders no decision control");
+  assert.match(customersSource, /mode === "team" \? null : <Decision customer=\{customer\} noTimetable=\{noTimetable\} scope=\{scope\} \/>/, "🔴 a manager's board renders no decision control");
   assert.ok(customersSource.indexOf("<CrmCardsOnPhone") < customersSource.indexOf("<CrmTable"), "phone cards first, then the table");
   assert.doesNotMatch(customersSource, /\brounded-(?!none\b)|\boverflow-x-auto\b|\btruncate\b|\bmin-w-\[|line-clamp|text-ellipsis/, "square, no sideways scroll, no ellipsis");
   assert.doesNotMatch(customersSource.toLowerCase(), /\b(doctor|doctors|account|accounts)\b/, "AM and PM customers — never the old words");
   for (const forbidden of ["waiting for approval", "pending approval", "awaiting a decision", "sent to the administrator"]) {
     assert.ok(!customersSource.toLowerCase().includes(forbidden), `never renders "${forbidden}"`);
   }
+  // ── A building the administrator declared has NO timetable is his exception, not a fault ──────
+  // (owner, 2026-10-18, City clinic: "make the place validated, and make those doctors validated by the
+  // admin as an exception for this polyclinic and show this")
+  const city = venue({ sharedPlaceId: "venue-city", name: "City clinic", seated: 2, schedulePhotoPath: null, capturedAt: "2026-10-05T08:00:00.000Z" });
+  const cityExempt = venue({
+    sharedPlaceId: "venue-city",
+    name: "City clinic",
+    seated: 2,
+    schedulePhotoPath: null,
+    capturedAt: "2026-10-05T08:00:00.000Z",
+    timetableExempt: { atText: "18 Oct 2026, 20:44", byName: "Omar Gawish" },
+  });
+  assert.equal(venueHasProblem({ venue: city, customers: [] }), true, "customers seated and no timetable on file is the fault the owner named first");
+  assert.equal(venueHasProblem({ venue: cityExempt, customers: [] }), false, "🔴 the same building with his exception on it is not a problem");
+  const inOrder = (list: SharedPlaceBoardRow[]) =>
+    narrowVenueGroups({ venues: list, seated: new Map(), filters: EMPTY_VALIDATION_REVIEW_FILTERS, cutoff: null }).map((group) => group.venue.name);
+  assert.deepEqual(inOrder([quiet, city]), ["City clinic", "Quiet Centre"], "a building with a problem is sorted above an ordinary one");
+  assert.deepEqual(inOrder([quiet, cityExempt]), ["Quiet Centre", "City clinic"], "🔴 and the exception is sorted as an ordinary building, newest first");
+
+  const serverPlaces = read("src/lib/phoenix-crm/server/shared-places.ts");
+  assert.ok(serverPlaces.includes("timetable_exempt_at, timetable_exempt_by_hr_id"), "the board read selects the exception marker");
+  assert.ok(serverPlaces.includes("timetableExempt: text(row.timetable_exempt_at)"), "and puts it on the row");
+  assert.match(customersSource, /!noTimetable\) return <RejectNotOnTimetable/, "🔴 no 'Reject — not on the timetable' where the administrator says there is none");
+  assert.match(customersSource, /noTimetable && customer\.state !== "sent_back"/, "a customer in that building is drawn without a timetable verdict");
+  assert.match(customersSource, /mode === "team" \? null : customer\.state === "in_use" && customer\.reviewStatus === "approved"/, "🔴 and only the Super Admin's board says WHO validated him");
+  assert.match(
+    customersSource,
+    /noTimetable && customer\.state !== "waiting"\) \? null : <SystemAdvice advice=\{adviseOnTimetable\(customer\.timetable, noTimetable\)\}/,
+    "the system's advice is silent there except on a customer still waiting",
+  );
+  assert.match(list, /if \(row\.timetableExempt\) \{/, "the building's timetable frame is replaced by the exception");
+  assert.match(list, /\{mode === "team" \? null : \(\s*<>/, "🔴 a manager's board is told the building has no timetable and not who decided it");
+  assert.ok(board.includes("adviseOnTimetable(customer.timetable, group.venue.timetableExempt !== null)"), "the Needs-you summary reads the same exception");
   console.log("phoenix-crm shared place groups: OK");
 }

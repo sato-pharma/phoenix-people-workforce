@@ -360,10 +360,13 @@ export function narrowVenueGroups(input: {
 /**
  * A building worth a look even with nothing open (owner, 2026-10-17: "a fucken chaos no timetables"):
  * customers are seated in it and no timetable is on file, or a customer in use is one its timetable was
- * never seen to name. A rejected building has nothing left to look at.
+ * never seen to name. A rejected building has nothing left to look at, and neither has one the
+ * administrator declared has no timetable (owner, 2026-10-18): a missing timetable there is his
+ * exception, not a fault, so it is not sorted up as one.
  */
 export function venueHasProblem(group: Pick<VenueGroup, "venue" | "customers">): boolean {
   if (group.venue.status === "retired") return false;
+  if (group.venue.timetableExempt) return false;
   if (group.venue.seated > 0 && !group.venue.schedulePhotoPath) return true;
   return group.customers.some((customer) => customer.state === "in_use" && customer.timetable?.verdict !== "match");
 }
