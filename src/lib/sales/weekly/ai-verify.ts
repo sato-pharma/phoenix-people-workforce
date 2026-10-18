@@ -330,12 +330,17 @@ export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<Week
   // ── AI overlay (graceful: never throws out of here) ──
   const aiAvailable = hasAiProvider();
   let aiUsed = false;
-  let aiNote: string | null =
-    "AI verification is not configured here — review the column mapping below and confirm it matches your file before uploading.";
-
   const judgeItems = columns
     .filter((c) => c.status !== "empty" && c.status !== "missing")
     .map((c, index) => ({ id: index, ref: c, sheetRole: c.sheetRole, label: c.label, columnIndex: c.columnIndex, expectedHeaderHint: c.expectedHeaderHint, observedHeader: c.observedHeader }));
+
+  // With AI switched on, an empty column list is the file's doing, never "not configured" — that wording
+  // sent operators looking for a missing key that was there all along.
+  let aiNote: string | null = !aiAvailable
+    ? "AI verification is not configured here — review the column mapping below and confirm it matches your file before uploading."
+    : judgeItems.length === 0
+      ? "No filled columns were found for AI to check — confirm the file has data under the expected headers before uploading."
+      : null;
 
   if (aiAvailable && judgeItems.length > 0) {
     try {

@@ -10,13 +10,14 @@
 // raw calls rather than going through the shared createOpenAiResponseText, so they stayed dark while every
 // other AI feature failed over. They now plan their providers HERE, with the same rules as the shared call
 // (src/lib/ai/openai-client.ts): OpenAI-compatible first, Anthropic only when that account is dead
-// (quota_exceeded or auth_failed), AI_PROVIDER=openai|anthropic pins one, and the shared 10-minute
-// "OpenAI is unavailable" memory is read and written so a failure seen by one caller spares the rest.
+// (quota_exceeded or auth_failed), AI_PROVIDER=openai|anthropic pins one, and the shared "OpenAI is
+// unavailable" memory (ten minutes, doubling to an hour while the account stays dead) is read and
+// written so a failure seen by one caller spares the rest.
 //
 // With no key configured planSalesAi returns [] and callers degrade to a no-op (aiUsed=false).
 
 import { callAnthropicMessages, AnthropicRequestError, hasAnthropicApiKey, resolveAnthropicModel } from "@/lib/ai/anthropic-fallback";
-import { isOpenAiUnavailable, noteOpenAiUnavailable, resolveAiProviderMode, shouldFailOverToNextProvider } from "@/lib/ai/openai-client";
+import { isOpenAiUnavailable, noteOpenAiAvailable, noteOpenAiUnavailable, resolveAiProviderMode, shouldFailOverToNextProvider } from "@/lib/ai/openai-client";
 import { aiErrorCodeForResponse, isQuotaExhaustedBody, recordAiCall, type AiCallComponent } from "@/lib/observability/ai-metrics";
 
 type AiEnv = Record<string, string | undefined>;
@@ -122,7 +123,10 @@ export async function runWithSalesAiFailover<T>(
 
   for (const [index, leg] of plan.entries()) {
     try {
-      return await attempt(leg);
+      const result = await attempt(leg);
+      // OpenAI answered, so its account is alive: the shared wait starts from ten minutes again.
+      if (leg.kind === "chat" && leg.provider.name === "openai") noteOpenAiAvailable();
+      return result;
     } catch (error) {
       const code = error instanceof SalesAiError ? error.code : "failed";
       const failOver = shouldFailOverToNextProvider(code);

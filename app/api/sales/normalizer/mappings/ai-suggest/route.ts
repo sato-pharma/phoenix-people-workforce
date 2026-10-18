@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     // The free customer pass needs no AI key; everything else does.
     const freeOnly = kind === "customer" && body.freeOnly === true;
     if (!freeOnly && !hasAiKey()) {
-      return NextResponse.json({ success: false, error: "AI is not configured. Add an OPENAI_API_KEY to enable suggestions." }, { status: 400 });
+      return NextResponse.json({ success: false, error: "AI is not configured. Add an OPENAI_API_KEY or an ANTHROPIC_API_KEY to enable suggestions." }, { status: 400 });
     }
     const unknowns = (Array.isArray(body.unknowns) ? body.unknowns : []).filter((u) => u && u.raw).slice(0, 300);
     if (unknowns.length === 0) return NextResponse.json({ success: true, data: { suggestions: [] } });

@@ -9,11 +9,19 @@
 // 🔴 PLAIN `fetch`, NO SDK. A new dependency cannot be installed from a worktree (pnpm there purges the
 // shared node_modules junction), and the request is small enough that an SDK adds nothing but weight.
 //
-// 🔴 THE REQUEST IS DELIBERATELY THE PLAIN ONE — model, max_tokens, system, messages, and nothing
-// optional. No structured-output parameter, no thinking budget, no temperature: this was written
-// without being able to call the live API, and an optional field a given model rejects would fail every
-// call with a 400. JSON replies are asked for in the system prompt instead and cleaned on the way out;
-// every caller already parses and validates the reply, as it did for OpenAI.
+// 🔴 TWO OPTIONAL FIELDS, AND THE PLAIN REQUEST BEHIND THEM (measured live 18 Oct 2026, after the first
+// version shipped with neither). The first version sent model, max_tokens, system and messages only,
+// because it was written before the live API could be called. Two things it left out were costing real
+// failures once Claude was the only provider answering:
+//   1. `output_config.effort`, translated from the caller's OpenAI `reasoning.effort`. Without it Claude
+//      thinks at its own default (medium on Haiku 5.5, high on Sonnet 5.5) while OpenAI was told "low":
+//      the signboard read took 3.5–3.8 s where low takes 2.2–2.4 s, and a door read timed out at 8 s.
+//   2. `output_config.format`, Claude's own JSON outputs, for a caller that sends a JSON Schema. Asked
+//      for in the system prompt alone, Haiku at low effort answered the signboard schema WITH THE SCHEMA
+//      ITSELF, which parses as JSON and reads as "no signs at all". The constrained reply cannot do that.
+// A request either field makes the API refuse (HTTP 400 naming it) is sent again once in the plain shape,
+// and that model + format pair stays plain for the life of the process, so the worst case is the old
+// behaviour. JSON is still asked for in the prompt on the plain path, and still cleaned on the way out.
 
 type AnthropicEnv = Record<string, string | undefined>;
 
@@ -80,12 +88,116 @@ export type AnthropicMessage = {
   role: "assistant" | "user";
 };
 
+export type AnthropicEffort = "high" | "low" | "medium";
+
+export type AnthropicOutputFormat = { schema: unknown; type: "json_schema" };
+
 export type AnthropicRequestBody = {
   max_tokens: number;
   messages: AnthropicMessage[];
   model: string;
+  output_config?: { effort?: AnthropicEffort; format?: AnthropicOutputFormat };
   system: string;
 };
+
+// The families that take `output_config.effort` (Opus 4.5 onward, Sonnet 4.6 onward, every 5-series
+// model). Anything else — an older model forced through ANTHROPIC_MODEL — is sent no effort at all.
+const EFFORT_MODELS = /^claude-(?:(?:fable|mythos|opus|sonnet|haiku)-5|opus-4-[5-8]|sonnet-4-6)(?:-|$)/i;
+
+// The families that take `output_config.format` (Claude's JSON outputs).
+const STRUCTURED_OUTPUT_MODELS = /^claude-(?:(?:fable|mythos|opus|sonnet|haiku)-5|opus-4-[158]|haiku-4-5)(?:-|$)/i;
+
+/**
+ * The Claude effort for the caller's OpenAI `reasoning.effort`, or null to send none. `xhigh` is capped
+ * at `high`, the top level every effort-taking model accepts; an unknown value sends nothing.
+ */
+export function anthropicEffortFor(effort: unknown, model: string): AnthropicEffort | null {
+  if (!EFFORT_MODELS.test(model)) return null;
+  switch (String(effort ?? "").trim().toLowerCase()) {
+    case "none":
+    case "minimal":
+    case "low":
+      return "low";
+    case "medium":
+      return "medium";
+    case "high":
+    case "xhigh":
+      return "high";
+    default:
+      return null;
+  }
+}
+
+// JSON Schema keywords Claude's JSON outputs refuse (numeric and string bounds, array-size rules) plus
+// OpenAI's own `strict` flag, which some callers carry inside the schema object. Dropped, never rewritten:
+// every caller validates the parsed reply itself, exactly as it did for OpenAI.
+const DROPPED_SCHEMA_KEYWORDS = new Set([
+  "exclusiveMaximum",
+  "exclusiveMinimum",
+  "maxItems",
+  "maxLength",
+  "maxProperties",
+  "maximum",
+  "minItems",
+  "minLength",
+  "minProperties",
+  "minimum",
+  "multipleOf",
+  "pattern",
+  "strict",
+  "uniqueItems",
+]);
+const SUPPORTED_STRING_FORMATS = new Set(["date", "date-time", "duration", "email", "hostname", "ipv4", "ipv6", "time", "uri", "uuid"]);
+
+/**
+ * A copy of an OpenAI JSON Schema that Claude's JSON outputs accept. Property NAMES are never touched —
+ * a field called "pattern" or "format" is data, only a keyword in a schema position is dropped.
+ */
+export function schemaForAnthropic(schema: unknown): unknown {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(schema as Record<string, unknown>)) {
+    if (DROPPED_SCHEMA_KEYWORDS.has(key)) continue;
+    if (key === "format" && typeof value === "string" && !SUPPORTED_STRING_FORMATS.has(value)) continue;
+    if ((key === "properties" || key === "$defs" || key === "definitions") && value && typeof value === "object") {
+      out[key] = Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([name, sub]) => [name, schemaForAnthropic(sub)]));
+    } else if ((key === "anyOf" || key === "allOf") && Array.isArray(value)) {
+      out[key] = value.map(schemaForAnthropic);
+    } else if (key === "items" || key === "not" || (key === "additionalProperties" && typeof value === "object")) {
+      out[key] = schemaForAnthropic(value);
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+// Model + format pairs the API refused `output_config` for, in this process. They are sent plain from
+// then on, so a refused schema costs one extra round trip once, never on every call.
+const plainOnlyRequests = new Set<string>();
+
+function plainOnlyKey(format: unknown, model: string) {
+  const wanted = (format ?? {}) as { name?: unknown; schema?: unknown; type?: unknown };
+  const name = typeof wanted.name === "string" && wanted.name ? wanted.name : JSON.stringify(wanted.schema ?? wanted.type ?? null);
+  return `${model}|${name}`;
+}
+
+export function resetAnthropicPlainOnlyMemory() {
+  plainOnlyRequests.clear();
+}
+
+/** Claude's JSON outputs for an OpenAI `json_schema` format, or null when this call cannot use them. */
+export function anthropicOutputFormatFor(format: unknown, model: string): AnthropicOutputFormat | null {
+  const wanted = (format ?? {}) as { schema?: unknown; type?: string };
+  if (wanted.type !== "json_schema" || !wanted.schema || typeof wanted.schema !== "object") return null;
+  if (!STRUCTURED_OUTPUT_MODELS.test(model)) return null;
+  return { schema: schemaForAnthropic(wanted.schema), type: "json_schema" };
+}
+
+// An HTTP 400 that names one of the optional fields — the one answer the plain resend exists for.
+export function isOptionalFieldRefusal(status: number, rawBody: string) {
+  return status === 400 && /output_config|output_format|\bschema\b|\beffort\b/i.test(rawBody);
+}
 
 const DATA_URL = /^data:([^;,]+);base64,([\s\S]*)$/;
 
@@ -137,9 +249,10 @@ function blocksFromContent(content: unknown): AnthropicContentBlock[] {
 export function jsonInstructionFor(format: unknown): string | null {
   const wanted = (format ?? {}) as { schema?: unknown; type?: string };
   if (wanted.type === "json_schema") {
+    // "the data itself, never the schema": without it Haiku answered with the schema (see the header).
     return (
-      "Reply with ONLY one JSON object that conforms to the JSON Schema below. No prose before or after it, "
-      + "no markdown fences, no comments.\nJSON Schema:\n"
+      "Reply with ONLY one JSON object that conforms to the JSON Schema below: the data itself, never the "
+      + "schema. No prose before or after it, no markdown fences, no comments.\nJSON Schema:\n"
       + JSON.stringify(wanted.schema ?? {})
     );
   }
@@ -153,10 +266,13 @@ export function jsonInstructionFor(format: unknown): string | null {
  * Turns the OpenAI-shaped call `createOpenAiResponseText` receives into a Messages API body.
  * `input` is a plain string or a list of role + content items (input_text / input_image / input_file
  * parts); system and developer items join the system prompt, everything else becomes a turn.
+ * `plain` builds the request with no `output_config` at all — the shape the API is resent in when it
+ * refuses one of the optional fields (see the header).
  */
 export function buildAnthropicRequest(
-  params: { format?: unknown; input: unknown; instructions: string; maxOutputTokens: number },
+  params: { format?: unknown; input: unknown; instructions: string; maxOutputTokens: number; reasoningEffort?: unknown },
   model: string,
+  options: { plain?: boolean } = {},
 ): AnthropicRequestBody {
   const system: string[] = [params.instructions];
   const messages: AnthropicMessage[] = [];
@@ -189,15 +305,37 @@ export function buildAnthropicRequest(
     return unsupported("a request with no user content");
   }
 
-  const jsonInstruction = jsonInstructionFor(params.format);
+  const plain = options.plain === true || plainOnlyRequests.has(plainOnlyKey(params.format, model));
+  const effort = plain ? null : anthropicEffortFor(params.reasoningEffort, model);
+  const format = plain ? null : anthropicOutputFormatFor(params.format, model);
+
+  // With Claude's JSON outputs the API hands the model the schema itself; repeating it in the prompt
+  // would pay for it twice and is what invited the schema-echo answer in the first place.
+  const jsonInstruction = format ? null : jsonInstructionFor(params.format);
   if (jsonInstruction) system.push(jsonInstruction);
 
   return {
     max_tokens: params.maxOutputTokens,
     messages,
     model,
+    ...(effort || format ? { output_config: { ...(effort ? { effort } : {}), ...(format ? { format } : {}) } } : {}),
     system: system.filter((part) => part.trim().length > 0).join("\n\n"),
   };
+}
+
+// The answer a model gives when it repeats a JSON Schema back instead of filling it in: the schema's own
+// top-level keywords, where the schema itself has no property of that name.
+export function isEchoedSchema(reply: string, format: unknown) {
+  const wanted = (format ?? {}) as { schema?: { properties?: Record<string, unknown> }; type?: string };
+  if (wanted.type !== "json_schema") return false;
+  try {
+    const parsed = JSON.parse(reply) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    const own = wanted.schema?.properties ?? {};
+    return parsed.type === "object" && typeof parsed.properties === "object" && !("properties" in own) && !("type" in own);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -268,10 +406,15 @@ export type AnthropicReply = {
   requestId?: string;
 };
 
+// The plain resend gets what is left of the call's own timeout, never a fresh one, but never under this.
+const PLAIN_RESEND_MIN_MS = 1_000;
+
 /**
  * One Messages API round trip, with the same retry budget shape as the OpenAI client (`maxRetries`
- * extra tries on a 429 / 5xx / 529, never on a timeout). Throws `AnthropicRequestError`; never logs,
- * and never puts the key in a message.
+ * extra tries on a 429 / 5xx / 529, never on a timeout). A 400 naming `output_config` is answered by
+ * ONE resend in the plain shape, which is not a retry and spends none of `maxRetries`. Throws
+ * `AnthropicRequestError` — also for a refusal, a JSON answer cut off at max_tokens, and a schema
+ * repeated back instead of filled in; never logs, and never puts the key in a message.
  */
 export async function callAnthropicMessages(params: {
   apiKey?: string;
@@ -282,46 +425,58 @@ export async function callAnthropicMessages(params: {
   maxOutputTokens: number;
   maxRetries: number;
   model: string;
+  /** The caller's OpenAI `reasoning.effort`, translated by `anthropicEffortFor`. */
+  reasoningEffort?: unknown;
   timeoutMs: number;
 }): Promise<AnthropicReply> {
   const apiKey = (params.apiKey ?? process.env.ANTHROPIC_API_KEY)?.trim();
   if (!apiKey) throw new AnthropicRequestError("failed", "ANTHROPIC_API_KEY is not configured.");
 
-  const body = JSON.stringify(
-    buildAnthropicRequest(
-      {
-        format: params.format,
-        input: params.input,
-        instructions: params.instructions,
-        maxOutputTokens: params.maxOutputTokens,
-      },
-      params.model,
-    ),
-  );
+  const shape = {
+    format: params.format,
+    input: params.input,
+    instructions: params.instructions,
+    maxOutputTokens: params.maxOutputTokens,
+    reasoningEffort: params.reasoningEffort,
+  };
+  let request = buildAnthropicRequest(shape, params.model);
   const doFetch = params.fetchImpl ?? fetch;
 
-  for (let attempt = 0; ; attempt += 1) {
-    let response: Response;
+  const post = async (body: AnthropicRequestBody, timeoutMs: number) => {
     try {
-      response = await doFetch(ANTHROPIC_MESSAGES_URL, {
-        body,
+      return await doFetch(ANTHROPIC_MESSAGES_URL, {
+        body: JSON.stringify(body),
         headers: {
           "anthropic-version": ANTHROPIC_API_VERSION,
           "content-type": "application/json",
           "x-api-key": apiKey,
         },
         method: "POST",
-        signal: AbortSignal.timeout(params.timeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
       if (isTimeout(error)) throw new AnthropicRequestError("timeout", "The Anthropic request timed out.");
       throw new AnthropicRequestError("failed", error instanceof Error ? error.message : "The Anthropic request failed.");
     }
+  };
+
+  for (let attempt = 0; ; attempt += 1) {
+    const sentAt = Date.now();
+    let response = await post(request, params.timeoutMs);
+    let rawBody = response.ok ? "" : await response.text().catch(() => "");
+
+    if (!response.ok && request.output_config && isOptionalFieldRefusal(response.status, rawBody)) {
+      request = buildAnthropicRequest(shape, params.model, { plain: true });
+      response = await post(request, Math.max(PLAIN_RESEND_MIN_MS, params.timeoutMs - (Date.now() - sentAt)));
+      rawBody = response.ok ? "" : await response.text().catch(() => "");
+      // Remembered only when the plain shape is what worked: a request the API refuses either way is
+      // broken for another reason, and must not switch the optional fields off for the whole process.
+      if (response.ok) plainOnlyRequests.add(plainOnlyKey(params.format, params.model));
+    }
 
     const requestId = response.headers.get("request-id") ?? undefined;
 
     if (!response.ok) {
-      const rawBody = await response.text().catch(() => "");
       if (RETRYABLE_STATUSES.has(response.status) && attempt < params.maxRetries) {
         // A 429 that means "out of credit" will not clear on a retry, so it must not wait for one.
         if (anthropicErrorCodeFor(response.status, rawBody) !== "quota_exceeded") {
@@ -339,17 +494,38 @@ export async function callAnthropicMessages(params: {
     const json = (await response.json()) as {
       content?: { text?: string; type?: string }[];
       model?: string;
+      stop_reason?: string | null;
       usage?: { input_tokens?: number; output_tokens?: number };
     };
     const text = (json.content ?? [])
       .filter((block) => block.type === "text")
       .map((block) => block.text ?? "")
       .join("");
+    const wantsJson = jsonInstructionFor(params.format) !== null;
+    const outputText = wantsJson ? cleanJsonReply(text) : text;
+
+    // Each of these used to come back as an ordinary answer — an empty string, half an object, or the
+    // schema — which every caller then misread as "the model found nothing". A named failure instead.
+    if (json.stop_reason === "refusal") {
+      throw new AnthropicRequestError("failed", "Claude declined to answer this request.", { requestId, status: response.status });
+    }
+    if (wantsJson && json.stop_reason === "max_tokens") {
+      throw new AnthropicRequestError("failed", "Claude ran out of room before it finished the JSON answer (max_tokens).", {
+        requestId,
+        status: response.status,
+      });
+    }
+    if (isEchoedSchema(outputText, params.format)) {
+      throw new AnthropicRequestError("failed", "Claude repeated the JSON Schema instead of answering it.", {
+        requestId,
+        status: response.status,
+      });
+    }
 
     return {
       inputTokens: json.usage?.input_tokens,
       model: json.model || params.model,
-      outputText: jsonInstructionFor(params.format) ? cleanJsonReply(text) : text,
+      outputText,
       outputTokens: json.usage?.output_tokens,
       requestId,
     };

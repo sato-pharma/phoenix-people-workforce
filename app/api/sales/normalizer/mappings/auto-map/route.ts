@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as { distributorCode?: string; freeOnly?: boolean; unknowns?: AiUnknown[] };
     const freeOnly = body.freeOnly === true;
     if (!freeOnly && !hasAiKey()) {
-      return NextResponse.json({ success: false, error: "AI is not configured. Add an OPENAI_API_KEY to enable auto-mapping." }, { status: 400 });
+      return NextResponse.json({ success: false, error: "AI is not configured. Add an OPENAI_API_KEY or an ANTHROPIC_API_KEY to enable auto-mapping." }, { status: 400 });
     }
     const distributorCode = String(body.distributorCode ?? "").trim();
     if (!distributorCode) return NextResponse.json({ success: false, error: "distributorCode is required." }, { status: 400 });

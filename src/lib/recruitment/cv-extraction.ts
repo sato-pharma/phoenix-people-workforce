@@ -586,28 +586,29 @@ export function candidateIdentityFromCvFields(
 // and that branch silently becomes escalatable again — which is the defect this whole change fixes.
 function cvExtractionErrorFromOpenAi(error: PhoenixOpenAiError): CvExtractionError {
   switch (error.code) {
+    // Provider-neutral since Anthropic answers too (see ai-assist.ts for why).
     case "not_configured":
       return new CvExtractionError(
         "ai_not_configured",
-        "This isn't configured yet. Add the OpenAI key as OPENAI_API_KEY.",
+        "This isn't configured yet. Add OPENAI_API_KEY or ANTHROPIC_API_KEY on the server.",
         error.code,
       );
     case "quota_exceeded":
       return new CvExtractionError(
         "ai_rate_limited",
-        "The OpenAI account is out of credit. Add billing/credit on platform.openai.com and try again.",
+        "The reading service is out of credit. Add credit to its account and try again.",
         error.code,
       );
     case "rate_limited":
       return new CvExtractionError(
         "ai_rate_limited",
-        "The OpenAI rate limit was reached for now. Wait a minute and try again.",
+        "The reading service is busy right now. Wait a minute and try again.",
         error.code,
       );
     case "auth_failed":
       return new CvExtractionError(
         "ai_failed",
-        "OpenAI rejected the API key. Check OPENAI_API_KEY on the server.",
+        "The reading service rejected the API key. Check OPENAI_API_KEY and ANTHROPIC_API_KEY on the server.",
         error.code,
       );
     case "timeout":
@@ -822,7 +823,7 @@ export async function extractCvFieldsFromBytes(input: {
     if (scanned) return scanned;
     throw new CvExtractionError(
       "ai_not_configured",
-      "This isn't configured yet. Add the OpenAI key as OPENAI_API_KEY.",
+      "This isn't configured yet. Add OPENAI_API_KEY or ANTHROPIC_API_KEY on the server.",
     );
   }
 
