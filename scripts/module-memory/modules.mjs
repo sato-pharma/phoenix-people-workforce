@@ -484,6 +484,23 @@ export const MODULES = [
     keywords: ["phoenix ranks", "rep ranks", "integrity pillar", "pillar", "insignia", "rank certificate", "standings", "ladder", "field accuracy", "am start"],
     tables: ["rep_rank_standings"],
   },
+  // 🔴 SPLIT 2026-10-18, FOR THE REASON `rep-ranks` ABOVE RECORDS: `crm`'s injected pointer measured 4,116
+  // bytes against the 4,000-byte margin the moment the Group Product Manager's half-day rule landed. The
+  // legacy Weekly / Monthly Plan form (the Plans tab, `employee_plan_headers`) is the clean cut: its
+  // workweek, completeness and week-key rules are read while editing that form, never while editing an
+  // iReports360 sync or a KPI board. `crm` KEEPS EVERY GLOB IT HAD, so a weekly-planning file loads the PAIR.
+  {
+    id: "weekly-planning",
+    title: "Weekly and Monthly Plan — the Plans tab form",
+    scope: "The legacy Weekly / Monthly Plan form in the portal Plans tab: each role's workweek, which days and halves must be planned before submit, week keys and deadlines, and its approval chain.",
+    globs: [
+      "src/lib/weekly-planning/**",
+      "src/components/employee-portal/plans-{workspace,history}.tsx",
+      "tests/{plan-workweek-linkage,plan-slot-merge,weekly-plan-*,weekly-planning-*,weekly-plans-*}*",
+    ],
+    keywords: ["weekly plan", "monthly plan", "plans tab", "workweek", "full day", "half day", "am only", "pm only", "week key"],
+    tables: ["employee_plan_"],
+  },
   // 🔴 SPLIT 2026-10-15, FOR THE REASON `rep-ranks` ABOVE RECORDS: `crm` reached 31 rules and its
   // injected pointer measured 4,101 bytes against the 4,000-byte margin `tests/module-memory.test.ts`
   // holds, the moment the one-read rule for `crm_contact_master_refresh` landed. The doctor list is the
