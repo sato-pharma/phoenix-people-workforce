@@ -163,6 +163,7 @@ import { runMarketingBulkImportAtomicityTests } from "./marketing-bulk-import-at
 import { runSalesBulkImportGatingTests } from "./sales-bulk-import-gating.test.ts";
 import { runMarketingAccessGatesTests } from "./marketing-access-gates.test.ts";
 import { runValidatedCustomerTransferTests } from "./validated-customer-transfer.test.ts";
+import { runPhotoPinTerritoryTests } from "./photo-pin-territory.test.ts";
 import { runAreaConsolidationTests } from "./area-consolidation.test.ts";
 import { runLoginBridgeResyncHardeningTests } from "./login-bridge-resync-hardening.test.ts";
 import { runOperationalEventsTests } from "./operational-events.test.ts";
@@ -3057,6 +3058,7 @@ await runTest("marketing bulk-import atomicity", runMarketingBulkImportAtomicity
 await runTest("sales bulk-import gating (idle/untouched never blocks Confirm & Import All)", runSalesBulkImportGatingTests);
 await runTest("marketing access gates (bulk-upload preview/template + direct-tracking read)", runMarketingAccessGatesTests);
 await runTest("validated customer register + Direct Order transfer gates", runValidatedCustomerTransferTests);
+await runTest("a marketing transfer files a venue's territory from its photo pin, never the inherited label", runPhotoPinTerritoryTests);
 await runTest("area consolidation gates + table coverage", runAreaConsolidationTests);
 await runTest("login bridge resync hardening", runLoginBridgeResyncHardeningTests);
 await runTest("operational events", runOperationalEventsTests);
