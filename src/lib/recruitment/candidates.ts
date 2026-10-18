@@ -86,6 +86,7 @@ import {
   type RecruitmentFileDbRow,
 } from "@/lib/recruitment/db";
 import { logError } from "@/lib/observability/log";
+import { readCandidateStoragePaths, removeCandidateStorageObjects } from "@/lib/recruitment/candidate-storage-cleanup";
 import { positionFolderLabel } from "@/lib/recruitment/position-folder";
 import { loadManagerShelves } from "@/lib/recruitment/district-manager-folders-db";
 import { chooseFolderForPush, OTHER_CVS_FOLDER_LABEL } from "@/lib/recruitment/manager-cv-folders";
@@ -1968,19 +1969,40 @@ export async function getCandidateProfile(id: string): Promise<CandidateProfile 
 // about the deletion. Do not "fix" that with ON DELETE CASCADE - the table is append-only,
 // enforced by a BEFORE UPDATE OR DELETE trigger, so the cascade would raise 23001 and this
 // delete would fail outright. See 20260815210000_candidate_status_vocabulary.sql.
+//
+// TWO MORE THINGS A FOREIGN KEY DOES NOT REACH, both handled here (2026-10-18):
+//   - ats_cv_folder_items, ats_candidate_manager_folders and ats_candidate_comments carry NO foreign
+//     key, by design (a filing must never block this delete), so they orphaned: a folder or a
+//     manager's shelf went on counting a CV nobody could open.
+//   - the BYTES behind ats_files. The rows cascade away; the object each one names in the
+//     `recruitment-files` bucket did not, so deleted people's CVs and job offers stayed in storage
+//     (89 objects with no row on production). The paths are read BEFORE the cascade and the objects
+//     removed through the Storage API AFTER the candidate row is gone; a storage failure is logged
+//     and never raised, so it cannot block or undo the delete. See candidate-storage-cleanup.ts.
 export async function deleteCandidate(access: AccessContext, id: string): Promise<void> {
   assertCanDeleteRecruitment(access);
   const candidate = await getCandidate(id);
   if (!candidate) throw new Error("Candidate not found.");
   const supabase = recruitmentDb();
+  // The ats_files rows cascade away with the candidate and take the only record of where their bytes
+  // are, so the paths are read now. This read never throws.
+  const storagePaths = await readCandidateStoragePaths(id);
   // ats_cv_folder_items has NO foreign key, by design (a filing must never block this delete), so
   // nothing else removes the filings. Left behind, a hand-built folder keeps counting a CV that no
   // longer exists (audit, 2026-09-12). Removed FIRST: if the candidate delete below then fails, the
   // worst case is a candidate who survives unfiled — back in the pool, visible — never a ghost.
+  // The manager shelves go with them, and the comments LAST of the three: a filing or a shelf comes
+  // back with one press, while a comment is the one thing a person wrote that a re-send cannot remake.
   const { error: filingError } = await supabase.from("ats_cv_folder_items").delete().eq("candidate_id", id);
   if (filingError) throw filingError;
+  const { error: shelfError } = await supabase.from("ats_candidate_manager_folders").delete().eq("candidate_id", id);
+  if (shelfError) throw shelfError;
+  const { error: commentError } = await supabase.from("ats_candidate_comments").delete().eq("candidate_id", id);
+  if (commentError) throw commentError;
   const { error } = await supabase.from("ats_candidates").delete().eq("id", id);
   if (error) throw error;
+  // Only now, with the record gone: take its bytes out of storage. Never throws, never undoes the delete.
+  await removeCandidateStorageObjects(id, storagePaths);
 }
 
 // Create-or-attach: dedupes on National ID, else email, else phone.

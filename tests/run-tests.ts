@@ -2599,6 +2599,7 @@ import { runDomTranslateGuardTests } from "./dom-translate-guard.test.ts";
 import { runServerFreezeGuardsTests } from "./server-freeze-guards.test.ts";
 import { runSharedReadCacheTests } from "./shared-read-cache.test.ts";
 import { runClosingFunctionsPriceOnceTests } from "./closing-functions-price-once.test.ts";
+import { runRecruitmentCandidateDeleteStorageTests } from "./recruitment-candidate-delete-storage.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -10327,6 +10328,10 @@ await runTest(
 await runTest(
   "the Field Absence Calendar lists a field person on a working day only when no source recorded anything — Friday, a Saturday off for an RSM or NSM, a holiday and a future day list nobody, Thursday is a half day, today is so far, a joiner, a leaver and a transfer are judged only on their own seat days, a fingerprint punch counts, an unreadable source lists nobody, and only the owner's four roles reach it, an NSM on his own line alone",
   runFieldAbsenceCalendarTests,
+);
+await runTest(
+  "deleting a candidate removes the bytes behind their files from the recruitment bucket through the Storage API after the record delete succeeds — the paths are read before the cascade, a path a surviving row still names is kept, an unconfirmed one is never deleted, a storage failure is logged and never raised, and the comments and manager shelves go with the filings while a merge moves files and drops none",
+  runRecruitmentCandidateDeleteStorageTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
