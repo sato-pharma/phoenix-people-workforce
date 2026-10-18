@@ -322,6 +322,7 @@ function runWritePathTests() {
   // that read out to a separate "capture location" step and reintroduce it.
   for (const path of [
     "../src/components/outstation/departure-photo-card.tsx",
+    "../src/components/outstation/journey-stop-card.tsx",
     "../src/components/outstation/mobile-outstation-wizard.tsx",
   ]) {
     const source = read(path);

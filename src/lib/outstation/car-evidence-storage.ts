@@ -121,6 +121,48 @@ export async function uploadOutstationDepartureEvidenceImage(params: {
   return path;
 }
 
+/**
+ * A chained-journey STOP photo's storage path (owner rule, 2026-10-18). Its own `stops/` prefix,
+ * keyed on the request, the stop number and the capture instant, so no stop photo can ever land on
+ * another photo's path — the arrival, the departure or an earlier stop.
+ */
+export function buildOutstationJourneyStopImagePath(input: {
+  capturedAtMs: number;
+  employeeHrId: string;
+  requestId: string | number;
+  stopNumber: number;
+}) {
+  const employeeHrId = sanitizeStorageSegment(input.employeeHrId, "unknown-employee");
+  const requestId = sanitizeStorageSegment(String(input.requestId), "unknown-request");
+  const stopNumber = Math.max(2, Math.trunc(input.stopNumber));
+  return `stops/${employeeHrId}/${requestId}-s${stopNumber}-${Math.trunc(input.capturedAtMs)}.jpg`;
+}
+
+export async function uploadOutstationJourneyStopImage(params: {
+  capturedAtMs: number;
+  employeeHrId: string;
+  imageDataUrl: string;
+  requestId: string | number;
+  stopNumber: number;
+}) {
+  // The same JPEG-only, 2MB, live-capture parser as the arrival and departure photos — a stop
+  // photo pasted from the gallery fails on exactly the same rule.
+  const parsed = parseOutstationCarEvidenceImageDataUrl(params.imageDataUrl);
+  const path = buildOutstationJourneyStopImagePath(params);
+  const { error } = await getSupabaseAdmin()
+    .storage.from(OUTSTATION_EVIDENCE_BUCKET)
+    .upload(path, parsed.bytes, {
+      cacheControl: "31536000",
+      contentType: parsed.contentType,
+      // Never overwrite: a stop photo is evidence, and a collision means two captures raced.
+      upsert: false,
+    });
+  if (error) {
+    throw new Error(`Unable to store the stop photo: ${error.message}`);
+  }
+  return path;
+}
+
 export function buildOutstationTicketAttachmentPath(input: {
   employeeHrId: string;
   fileName: string;
