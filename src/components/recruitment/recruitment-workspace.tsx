@@ -3624,7 +3624,13 @@ function poolSharedCells(
             >
               {facts.years.confirmed ? "" : "~"}
               {formatYearsOfExperience(facts.years.value)}
-              {touch ? <span className="not-italic text-slate-400"> (CV)</span> : null}
+              {/* Standing in for a missing answer it says "(from CV)", like the cells beside it and
+                  the folded card's "Show 3 from CV" (George Samir Lotfy's read "<1 mo (CV)" under
+                  that button, 2026-10-19). Under their own answer it stays "(CV)": the CV's figure
+                  set against what they said, not a stand-in. */}
+              {touch ? (
+                <span className="not-italic text-slate-400">{experienceFromCvOnly ? " (from CV)" : " (CV)"}</span>
+              ) : null}
             </span>
           ) : facts.declaredExperience ? null : (
             <span className="text-slate-300">—</span>

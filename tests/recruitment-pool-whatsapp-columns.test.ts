@@ -518,8 +518,16 @@ export async function runRecruitmentPoolWhatsAppColumnsTests() {
     "a cell stands in from the CV exactly when WhatsApp has no answer and the CV has one",
   );
   assert.ok(
-    sharedCellsSource.includes(") : backgroundFromCv ? (") && sharedCellsSource.includes("{touch && regionFromCv ? ("),
+    sharedCellsSource.includes(") : backgroundFromCv ? (") &&
+      sharedCellsSource.includes("{touch && regionFromCv ? (") &&
+      sharedCellsSource.includes('{experienceFromCvOnly ? " (from CV)" : " (CV)"}'),
     "the card's (from CV) markers are drawn from the same flags the button counts, so the two cannot disagree",
+  );
+  // George's years read "<1 mo (CV)" under "Show 3 from CV" while his faculty and region said
+  // "(from CV)" (owner, 2026-10-19 — "Years say (from CV)"). Under a WhatsApp answer it stays "(CV)".
+  assert.ok(
+    !sharedCellsSource.includes('<span className="not-italic text-slate-400"> (CV)</span>'),
+    'a stand-in year says "(from CV)" like its neighbours — "(CV)" is kept only beside their own answer',
   );
   assert.deepEqual(
     [...sharedCellsSource.matchAll(/fromCvOnly: (\w+),/g)].map((match) => match[1]),
