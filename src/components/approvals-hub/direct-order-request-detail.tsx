@@ -207,7 +207,8 @@ export function DirectOrderRequestDetail({
     shownInvoice?.slots != null &&
     shownInvoice.slots.used >= shownInvoice.slots.limit;
   const statusBanner = resolveDirectOrderStatusBanner(detail);
-  const pricingBreakdown = computeDirectOrderPricingBreakdown(request);
+  // Every line's working, not the order row's — the row is line one only on a basket.
+  const pricingBreakdown = computeDirectOrderPricingBreakdown(request, detail.items);
   const narrativeSteps = buildDirectOrderApprovalNarrative(steps, {
     requestStatus: request.status,
     requesterName: detail.requesterName,

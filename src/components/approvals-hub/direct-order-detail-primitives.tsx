@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
-import type { DirectOrderPricingBreakdown } from "@/lib/direct-orders/approval-fields";
+import type { DirectOrderPricingBreakdown, DirectOrderPricingLine } from "@/lib/direct-orders/approval-fields";
 
 /**
  * Direct Order's own copy of the Expense-Approvals detail-panel look (owner request, 2026-08-08:
@@ -234,32 +234,66 @@ export function PriceUsageField({
   return bare ? rendered : <Field label={label} value={rendered} />;
 }
 
+function PricingLineWorking({ line }: { line: DirectOrderPricingLine }) {
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-sm text-slate-700">
+      <span>{units(line.qty)} units</span>
+      <span className="text-slate-400">×</span>
+      <span>{money(line.unitPrice)}</span>
+      {line.basis === "discount" ? (
+        <>
+          <span className="text-slate-400">×</span>
+          <span>(1 − {line.discountPct ?? 0}%)</span>
+        </>
+      ) : null}
+      <span className="text-slate-400">=</span>
+      <span className="font-bold text-slate-900">{money(line.computedValue)}</span>
+      {line.basis === "bonus" && line.bonusUnits ? (
+        <span className="text-phx-xs font-semibold text-slate-500">
+          (+{units(line.bonusUnits)} bonus units, not counted in value)
+        </span>
+      ) : null}
+    </p>
+  );
+}
+
 /**
- * "Show your working" for `request.salesValue` — qty × price (× discount), the approver reads the
- * arithmetic instead of a bare total with nothing to check it against.
+ * "Show your working" for `request.salesValue` — qty × price (× discount) for EVERY line, then the
+ * total, so the approver reads the arithmetic behind the number they decide instead of a bare total.
+ * A basket names each product above its own working; a one-product order reads exactly as before.
  */
 export function PricingBreakdownFact({ breakdown }: { breakdown: DirectOrderPricingBreakdown }) {
+  const isBasket = breakdown.lines.length > 1;
   return (
     <div className="border-t border-slate-200 pt-3">
       <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Pricing</p>
-      <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-sm text-slate-700">
-        <span>{units(breakdown.qty)} units</span>
-        <span className="text-slate-400">×</span>
-        <span>{money(breakdown.unitPrice)}</span>
-        {breakdown.basis === "discount" ? (
-          <>
-            <span className="text-slate-400">×</span>
-            <span>(1 − {breakdown.discountPct ?? 0}%)</span>
-          </>
-        ) : null}
-        <span className="text-slate-400">=</span>
-        <span className="font-bold text-slate-900">{money(breakdown.computedValue)}</span>
-        {breakdown.basis === "bonus" && breakdown.bonusUnits ? (
-          <span className="text-phx-xs font-semibold text-slate-500">
-            (+{units(breakdown.bonusUnits)} bonus units, not counted in value)
-          </span>
-        ) : null}
-      </p>
+      {isBasket ? (
+        <>
+          <ul className="mt-1 space-y-2">
+            {breakdown.lines.map((line) => (
+              <li key={line.lineNo}>
+                <p className="text-phx-xs font-bold text-slate-900">{line.productName || `Line ${line.lineNo}`}</p>
+                <PricingLineWorking line={line} />
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-slate-100 pt-2 font-mono text-sm text-slate-700">
+            <span className="font-sans text-phx-xs font-black uppercase tracking-wider text-slate-500">Total</span>
+            {breakdown.lines.map((line, index) => (
+              <span key={line.lineNo} className="flex items-center gap-x-2">
+                {index > 0 ? <span className="text-slate-400">+</span> : null}
+                <span>{money(line.computedValue)}</span>
+              </span>
+            ))}
+            <span className="text-slate-400">=</span>
+            <span className="font-bold text-slate-900">{money(breakdown.computedValue)}</span>
+          </p>
+        </>
+      ) : breakdown.lines[0] ? (
+        <div className="mt-1">
+          <PricingLineWorking line={breakdown.lines[0]} />
+        </div>
+      ) : null}
       {breakdown.computedValue == null ? (
         <p className="mt-1 text-phx-xs font-semibold text-amber-700">
           Price not on file — the stored sales value is shown as entered, not re-derived.

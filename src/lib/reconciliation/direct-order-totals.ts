@@ -146,18 +146,19 @@ export function findLineFormulaMismatches(
 export type ApprovalPanelMismatch = {
   order: DirectOrderAuditOrder;
   lineCount: number;
-  /** What the panel's Pricing row works out, unrounded, exactly as it prints it. Null = "not set". */
+  /** The total the panel's Pricing row arrives at, exactly as it prints it. Null = a line "not set". */
   panelValue: number | null;
 };
 
 /**
  * Every order whose approval-panel working does not arrive at the order's value. The panel's own
- * function is called, so this reads what an approver reads — including its known flaw: it prices the
- * order ROW, which holds line one only and keeps the discount to 3 decimals where the line keeps 4.
+ * function is called with the same lines the panel passes it, so this reads what an approver reads.
  *
- * The tolerance is the harness's one piastre: the working is printed unrounded and the value is
- * stored to 2 decimals, so a rounding tie (50 × 32.7375 = 1,636.875 beside 1,636.87) is not a gap
- * anyone could act on.
+ * Until 19 Oct 2026 the panel priced the order ROW, which holds line one only and keeps the discount
+ * to 3 decimals where the line keeps 4 — 11 orders on the day this check shipped. It now prices every
+ * line, so a gap here means the working and the stored value have parted again.
+ *
+ * The tolerance is the harness's one piastre, the same as every other money comparison here.
  */
 export function findApprovalPanelMismatches(
   orders: readonly DirectOrderAuditOrder[],
@@ -166,18 +167,22 @@ export function findApprovalPanelMismatches(
   const byOrder = linesByOrder(lines);
   const mismatches: ApprovalPanelMismatch[] = [];
   for (const order of orders) {
-    const breakdown = computeDirectOrderPricingBreakdown({
-      dealType: order.dealType,
-      qty: order.qty,
-      bonus: order.bonus,
-      pharmacyPriceSnapshot: order.pharmacyPriceSnapshot,
-      publicPriceSnapshot: order.publicPriceSnapshot,
-      discountPct: order.discountPct,
-      salesValue: order.salesValue,
-    });
+    const own = byOrder.get(order.id) ?? [];
+    const breakdown = computeDirectOrderPricingBreakdown(
+      {
+        dealType: order.dealType,
+        qty: order.qty,
+        bonus: order.bonus,
+        pharmacyPriceSnapshot: order.pharmacyPriceSnapshot,
+        publicPriceSnapshot: order.publicPriceSnapshot,
+        discountPct: order.discountPct,
+        salesValue: order.salesValue,
+      },
+      own,
+    );
     const panelValue = breakdown.computedValue;
     if (panelValue == null || !moneyMatches(panelValue, order.salesValue)) {
-      mismatches.push({ order, lineCount: (byOrder.get(order.id) ?? []).length, panelValue });
+      mismatches.push({ order, lineCount: own.length, panelValue });
     }
   }
   return mismatches;
