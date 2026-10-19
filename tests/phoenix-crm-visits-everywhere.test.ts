@@ -683,24 +683,44 @@ function runNoDoubleCountTests(code: string): void {
   assert.ok(vendorBranch && visitBranch && activityBranch, "three branches: iReports360, Phoenix visits, Phoenix day activities");
 
   const vendor = flat(vendorBranch);
+  // THE ENTRY DAYS ARE BUILT ONCE PER READ (2026-10-19). The function rebuilds every Phoenix entry day from all
+  // of Phoenix CRM's history, and calling it once per check made every read of this door pay for it twice —
+  // 47% of the database's time on 19 October, with the Approvals hub's queue timing out behind it.
+  assert.ok(
+    vendor.includes("with entry_days as materialized ( select e.hr_key, e.agent_crm_id, e.entry_day from public.phoenix_crm_rep_entry_days() e )"),
+    "the entry days are one materialized set per read",
+  );
+  assert.equal(view.split("phoenix_crm_rep_entry_days()").length - 1, 1, "and the function is named once in the whole door, never once per check");
+  // BEFORE PHOENIX CRM'S FIRST DAY no rep can have an entry, so that run of vendor rows asks nothing: the bound
+  // is the earliest team start, or its earlier day_activities_from, and no entry day precedes it (the
+  // entry-day clauses pinned below). The run from that day on keeps both checks, with the same bound.
+  const firstDay =
+    "( select coalesce(min(least(t.starts_on, coalesce(t.day_activities_from, t.starts_on))), 'infinity'::date) from public.phoenix_crm_team_starts t )";
+  const cutover = "x.visit_date < coalesce((select c.cutover_date from public.crm_cutover c where c.id), 'infinity'::date)";
   assert.ok(
     vendor.includes(
-      "and not exists ( select 1 from public.phoenix_crm_rep_entry_days() e where e.hr_key = lower(btrim(v.agent_hr_id)) " +
-        "and e.entry_day = v.visit_date )",
+      `from ( select x.* from public.ireports360_visits x where ${cutover} and x.visit_date < ${firstDay} union all ` +
+        `select x.* from public.ireports360_visits x where ${cutover} and x.visit_date >= ${firstDay} and not exists`,
     ),
+    "the vendor rows are read in two runs split at Phoenix CRM's first day, the same bound on both sides, and only the second asks",
+  );
+  assert.ok(
+    vendor.includes("and not exists ( select 1 from entry_days e where e.hr_key = lower(btrim(x.agent_hr_id)) and e.entry_day = x.visit_date )"),
     "PHOENIX WINS THE DAY: an iReports360 row leaves the branch only on a day its rep has a Phoenix entry",
   );
   assert.ok(
     vendor.includes(
-      "and not exists ( select 1 from public.phoenix_crm_rep_entry_days() e where nullif(btrim(v.agent_hr_id), '') is null " +
-        "and e.agent_crm_id = v.agent_crm_id and e.entry_day = v.visit_date )",
+      "and not exists ( select 1 from entry_days e where nullif(btrim(x.agent_hr_id), '') is null " +
+        "and e.agent_crm_id = x.agent_crm_id and e.entry_day = x.visit_date ) ) v",
     ),
     "a vendor row with no hr id is still his, by his CRM id",
   );
   assert.doesNotMatch(vendor, /phoenix_crm_started_team_reps|counted_from|counted_until/, "and no longer from the start's window: a day with no Phoenix entry keeps its iReports360 rows");
 
   // The entry days themselves: a real visit by a REP on a started rep seat, or a recorded day activity of a
-  // counted kind on one — the team's OWN seat is left out, so a district manager keeps both systems.
+  // counted kind on one — the team's OWN seat is left out, so a district manager keeps both systems. Their two
+  // lower bounds (a visit from its start, an activity from the earlier of the start and day_activities_from)
+  // are what make the doors' split at Phoenix CRM's first day safe: loosen either and that bound must move too.
   const entryDays = flat(
     functionSql(lastDefinerSql(/create or replace function public\.phoenix_crm_rep_entry_days\(/, "phoenix_crm_rep_entry_days"), "phoenix_crm_rep_entry_days"),
   );
@@ -1001,7 +1021,7 @@ function runRowShapeTests(code: string): void {
     "and nothing below the select list tests them — the countable view alone decides which visits count",
   );
 
-  const vendorItems = itemsOf(vendorBranch, "from public.ireports360_visits v");
+  const vendorItems = itemsOf(vendorBranch, "from (\n");
   const phoenixItems = itemsOf(visitBranch, "from public.phoenix_crm_countable_visits p");
   assert.equal(vendorItems.length, 63, "the 30 columns, the four appended in #5477, and the 29 of the Phoenix field set");
   assert.equal(phoenixItems.length, vendorItems.length, "both branches carry the same columns, item for item");
@@ -1069,8 +1089,10 @@ function runRowShapeTests(code: string): void {
     assert.match(item, /^null::[a-z ]+(\[\])? as [a-z0-9_]+$/, `the vendor branch's "${item}" is a typed null, not a value`);
   }
   assert.ok(
-    flat(vendorBranch).includes("from public.ireports360_visits v where v.visit_date < coalesce((select c.cutover_date from public.crm_cutover c where c.id), 'infinity'::date) and not exists"),
-    "the iReports360 branch keeps its source and its cutover clause, and gains its two clauses",
+    flat(vendorBranch).includes(
+      "from ( select x.* from public.ireports360_visits x where x.visit_date < coalesce((select c.cutover_date from public.crm_cutover c where c.id), 'infinity'::date) and x.visit_date < (",
+    ),
+    "the iReports360 branch keeps its source and its cutover clause, on both of its runs",
   );
 
   const expected: Record<string, string> = {
@@ -1474,16 +1496,32 @@ function runCheckinDoorTests(plans: string): void {
   const [vendorBranch, phoenixBranch] = view.split("\nunion all\n");
   assert.ok(vendorBranch && phoenixBranch, "two branches: iReports360 check-ins, and positioned Phoenix visits");
 
-  const vendorItems = itemsOf(vendorBranch, "from public.ireports360_checkins c");
+  const vendorItems = itemsOf(vendorBranch, "from (\n");
   assert.deepEqual(vendorItems, previousItems("crm_checkins_unified", "from public.ireports360_checkins c"), "the 16 columns keep their names, types and order");
   const vendor = flat(vendorBranch);
-  assert.ok(vendor.includes("where c.check_date < coalesce( (select k.cutover_date::timestamp at time zone 'UTC' from public.crm_cutover k where k.id), 'infinity'::timestamptz ) and not exists"), "its cutover clause as it was, then the two clauses");
+  // The visit door's split and once-built entry days, on the check-in's wall-clock day: a check-in before the
+  // first day's midnight "UTC" (the vendor's Cairo wall clock) is on a day before it.
   assert.ok(
-    vendor.includes("where e.hr_key = lower(btrim(c.agent_hr_id)) and e.entry_day = (c.check_date at time zone 'UTC')::date"),
+    vendor.includes("with entry_days as materialized ( select e.hr_key, e.agent_crm_id, e.entry_day from public.phoenix_crm_rep_entry_days() e )"),
+    "the same once-built entry days as the visit door",
+  );
+  assert.equal(view.split("phoenix_crm_rep_entry_days()").length - 1, 1, "and the function is named once in the whole door");
+  const cutover = "x.check_date < coalesce( (select k.cutover_date::timestamp at time zone 'UTC' from public.crm_cutover k where k.id), 'infinity'::timestamptz )";
+  const firstDay =
+    "( select coalesce(min(least(t.starts_on, coalesce(t.day_activities_from, t.starts_on))), 'infinity'::date)::timestamp at time zone 'UTC' from public.phoenix_crm_team_starts t )";
+  assert.ok(
+    vendor.includes(
+      `from ( select x.* from public.ireports360_checkins x where ${cutover} and x.check_date < ${firstDay} union all ` +
+        `select x.* from public.ireports360_checkins x where ${cutover} and x.check_date >= ${firstDay} and not exists`,
+    ),
+    "its cutover clause as it was on both runs, split at Phoenix CRM's first day, and only the second run asks",
+  );
+  assert.ok(
+    vendor.includes("where e.hr_key = lower(btrim(x.agent_hr_id)) and e.entry_day = (x.check_date at time zone 'UTC')::date"),
     "PHOENIX WINS THE DAY on a check-in too: it is ignored only on a day its rep has a Phoenix entry, as his visits are",
   );
   assert.ok(
-    vendor.includes("where nullif(btrim(c.agent_hr_id), '') is null and e.agent_crm_id = c.agent_crm_id and e.entry_day = (c.check_date at time zone 'UTC')::date"),
+    vendor.includes("where nullif(btrim(x.agent_hr_id), '') is null and e.agent_crm_id = x.agent_crm_id and e.entry_day = (x.check_date at time zone 'UTC')::date ) ) c"),
     "by CRM id on a check-in with no hr id",
   );
   assert.doesNotMatch(vendor, /phoenix_crm_started_team_reps|counted_from|counted_until/, "no longer from the start's window");
