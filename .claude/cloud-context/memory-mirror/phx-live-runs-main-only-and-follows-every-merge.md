@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: 164a490b-b177-4b7c-a3bc-cd2c15da8076
-  modified: 2026-10-18T18:34:35.775Z
+  modified: 2026-10-19T05:47:29.062Z
 ---
 
 **His words (2026-10-17, ~19:31 Cairo):** "I want the PHX live to always run on main. Any update I
@@ -56,7 +56,12 @@ not a pre-production gate. He was told so once; do not re-argue it.
   so there was no red to fold in. 2026-10-18 ~22:15: "blank sheets" was offered as the first fix but is
   ALREADY LIVE as #6073 (`sheet-match.ts`, tested); the only open shape is `adaptDirect` reading
   `worksheets[0]` (`weekly/parser.ts` ~1503), and he chose "hold for a real failing file" — do not re-offer it.
-  After it ships, retire both `_wt-contract-reds` and `_wt-phx-live-folder-docs`
-  with his approval and delete `codex/phx-live-folder-docs`.
+  **CARRIER OPENED (2026-10-19 ~02:20 Cairo): PR 6104** (`codex/contract-reds`, 9 files) = the docs commit
+  (rebased, `66ad9bf62`) + two real fixes he chose ("Both fixes in one PR"): `--remove` surviving a folder
+  that vanishes mid-gate (new `folder-gone` verdict, prune, exit 0; only the slow-gh window covered) and
+  `verify-shipped.mjs --wait [minutes]`. **SHIPPED: 6104 merged 02:10 Cairo (b4fc30712), live 02:20 — the
+  phx-live docs are now correct on main.** **Cleanup DONE 2026-10-19 ~02:35 Cairo on his word:** both worktrees
+  retired, `codex/contract-reds` and `codex/phx-live-folder-docs` deleted locally and on origin. Nothing
+  left from this thread.
 
 Supersedes the `-Folder` lines of [[phx-preview-is-retired-phx-live-is-the-one-dev-server]].

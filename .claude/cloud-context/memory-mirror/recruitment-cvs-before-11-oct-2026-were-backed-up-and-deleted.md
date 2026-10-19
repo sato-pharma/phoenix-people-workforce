@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: a3d4c51a-88b6-429e-a48d-9ce3040cba29
-  modified: 2026-10-18T22:16:04.368Z
+  modified: 2026-10-18T22:44:18.403Z
 ---
 
 On 2026-10-18 (~23:00 Cairo) the owner asked to back up every CV on the system in a zip "foldered as in
@@ -58,7 +58,8 @@ stops), `media_fetch_error` = a "Cleared 2026-10-19" note. The 363 chat messages
 name and "This attachment could not be copied from WhatsApp." with no Open button. Images, videos and every
 document since 11 Oct were left alone. Scripts: session scratchpad `wa/` (wa-backup, wa-clear). Copied to the company Drive 2026-10-19 ~01:15 Cairo
 (folder "CV Backup before 11 Oct 2026", MD5 identical to the local file, `railway run` as the app's Drive
-identity). The MAIN zip (804 MB, 2,029 objects + restore JSON) was NOT in Drive then — still laptop-only.
+identity). The MAIN zip (804 MB, 2,029 objects + restore JSON) was copied the same way ~01:25 Cairo, MD5
+c1097eeae88c75400c1751c357f1697f identical, one copy in that folder. Both backups now exist off the laptop.
 
 **Why:** production has no PITR; that zip and its restore JSON are the way back.
 **How to apply:** a question about a missing pre-11-Oct candidate or CV is answered from the zip's index,
