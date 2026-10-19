@@ -158,6 +158,7 @@ function ManagerPlanReportBody({ view }: { view: ManagerPlanReportView }) {
                               {customer.own ? <CrmPill tone="orange">Own list</CrmPill> : null}
                               {customer.flagLabel ? <CrmPill tone="warn">{customer.flagLabel}</CrmPill> : null}
                               <CrmPill tone={OUTCOME_TONE[customer.outcome]}>{customer.outcomeLabel}</CrmPill>
+                              {customer.place ? <ReportVisitPlace place={customer.place} /> : null}
                             </li>
                           ))}
                         </ul>
@@ -179,6 +180,7 @@ function ManagerPlanReportBody({ view }: { view: ManagerPlanReportView }) {
                       {visit.name}
                     </span>
                     {visit.own ? <CrmPill tone="orange">Own list</CrmPill> : null}
+                    {visit.place ? <ReportVisitPlace place={visit.place} /> : null}
                   </li>
                 ))}
               </ul>
@@ -191,6 +193,19 @@ function ManagerPlanReportBody({ view }: { view: ManagerPlanReportView }) {
         </CrmBlock>
       )}
     </>
+  );
+}
+
+/**
+ * A single visit in a vacant area: where it says the customer is — the address, area and brick he recorded
+ * (owner, 2026-10-19). A full line under the customer, so a long address wraps instead of widening the row.
+ */
+function ReportVisitPlace({ place }: { place: string }) {
+  return (
+    <span className="basis-full break-words text-xs font-semibold leading-5 text-slate-600">
+      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Vacant area · where the customer is </span>
+      <span dir="auto">{place}</span>
+    </span>
   );
 }
 

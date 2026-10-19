@@ -27,7 +27,7 @@ import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
-import { MANAGER_CUSTOMER_ADDRESS_MAX, vacantVisitPlaceError, type ManagerPlanWriter } from "@/lib/phoenix-crm/manager-plan-rules";
+import { MANAGER_CUSTOMER_ADDRESS_MAX, vacantVisitPlaceError, vacantVisitPlaceText, type ManagerPlanWriter } from "@/lib/phoenix-crm/manager-plan-rules";
 import { assertManagerPlanWriter } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { managerWriterReach } from "@/lib/phoenix-crm/server/manager-plan-writers";
 import {
@@ -69,10 +69,14 @@ export type ManagerVisitRow = {
   hasPin: boolean;
   capturedAt: string | null;
   isTest: boolean;
+  /** The territory was vacant when he logged it (owner, 2026-10-19). */
+  inVacantTerritory: boolean;
+  /** Where a vacant area's visit says its customer is — address, area and brick — or null (`vacantVisitPlaceText`). */
+  placeText: string | null;
 };
 
 const VISIT_COLUMNS =
-  "id, manager_hr_id, plan_slot_id, is_unplanned, visit_date, half, customer_id, manager_customer_id, products, comment, lat, captured_at, is_test";
+  "id, manager_hr_id, plan_slot_id, is_unplanned, visit_date, half, customer_id, manager_customer_id, products, comment, lat, captured_at, is_test, in_vacant_territory, address, area_name, brick_name";
 
 function visitRowOf(raw: unknown): ManagerVisitRow | null {
   const row = record(raw);
@@ -80,6 +84,8 @@ function visitRowOf(raw: unknown): ManagerVisitRow | null {
   const managerHrId = personKey(textOrNull(row.manager_hr_id));
   const visitDate = textOrNull(row.visit_date)?.slice(0, 10) ?? null;
   if (!id || !managerHrId || !visitDate) return null;
+  const hasPin = row.lat !== null && row.lat !== undefined;
+  const inVacantTerritory = row.in_vacant_territory === true;
   return {
     id,
     managerHrId,
@@ -91,9 +97,17 @@ function visitRowOf(raw: unknown): ManagerVisitRow | null {
     managerCustomerId: textOrNull(row.manager_customer_id),
     products: Array.isArray(row.products) ? row.products.map(String) : [],
     comment: textOrNull(row.comment),
-    hasPin: row.lat !== null && row.lat !== undefined,
+    hasPin,
     capturedAt: textOrNull(row.captured_at),
     isTest: row.is_test === true,
+    inVacantTerritory,
+    placeText: vacantVisitPlaceText({
+      vacant: inVacantTerritory,
+      address: textOrNull(row.address),
+      areaName: textOrNull(row.area_name),
+      brickName: textOrNull(row.brick_name),
+      captured: hasPin,
+    }),
   };
 }
 
@@ -131,6 +145,8 @@ export type ManagerTodayCustomer = {
   vacant: boolean;
   /** The territory whose list he is on — the hint Capture location reads against; null on his own list. */
   seatId: string | null;
+  /** Once logged in a vacant area: the address, area and brick the visit recorded (`vacantVisitPlaceText`). */
+  place: string | null;
 };
 
 export type ManagerTodayView = {
@@ -211,7 +227,7 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
   const slots = plan ? (await loadManagerSlotRows([plan.planId])).filter((slot) => slot.date === day && slot.kind === "single_visit") : [];
   const slotCustomers = await loadManagerSlotCustomers(slots.map((slot) => slot.slotId));
   const halfOfSlot = new Map(slots.map((slot) => [slot.slotId, slot.half]));
-  const loggedKey = new Set(visits.map((visit) => (visit.customerId ? `c:${visit.customerId}` : `m:${visit.managerCustomerId}`)));
+  const visitOf = new Map(visits.map((visit) => [visit.customerId ? `c:${visit.customerId}` : `m:${visit.managerCustomerId}`, visit]));
   const unplannedVisits = visits.filter((visit) => visit.isUnplanned);
   // The territory each rep customer is on TODAY decides whether it is vacant — the same reading the save makes.
   const repCustomers = await loadRepCustomerNames([
@@ -232,8 +248,9 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
       name: row.name,
       speciality: row.speciality,
       own: row.managerCustomerId !== null,
-      logged: loggedKey.has(row.customerId ? `c:${row.customerId}` : `m:${row.managerCustomerId}`),
+      logged: visitOf.has(row.customerId ? `c:${row.customerId}` : `m:${row.managerCustomerId}`),
       ...placeOf(row.customerId),
+      place: visitOf.get(row.customerId ? `c:${row.customerId}` : `m:${row.managerCustomerId}`)?.placeText ?? null,
     }))
     .sort((left, right) => String(left.half).localeCompare(String(right.half)) || left.name.localeCompare(right.name));
 
@@ -251,6 +268,9 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
       own: visit.managerCustomerId !== null,
       logged: true,
       ...placeOf(visit.customerId),
+      // What the visit recorded, never what the territory is today: it was vacant when he logged it.
+      vacant: visit.inVacantTerritory,
+      place: visit.placeText,
     };
   });
   return {

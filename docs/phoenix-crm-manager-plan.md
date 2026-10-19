@@ -432,6 +432,13 @@ a multiple choice whether that binds the visit log, adding a customer to his own
   in an area of his reach, as on Add a customer). Nothing is written to the rep's list: the vacant seat's
   customer record is untouched.
 - **Adding a customer to Manager's own list is unchanged** — its address and brick stay optional.
+- **What it recorded is shown back** (his multiple-choice answer the same day, "Show the recorded place").
+  A logged vacant-area visit reads "Where the customer is", then the address, `Area:` and `Brick:`
+  (`vacantVisitPlaceText`), under the customer on his Visits tab, planned or not, and under the customer
+  in the actual-versus-planned report, a done single visit and a visit without a plan alike. A capture
+  nothing could be read from says so. Any other visit shows no place, since it keeps no address. The
+  unplanned card's "Vacant area" comes from the visit (`in_vacant_territory`), never from the territory
+  today, so a seat filled since does not rewrite it.
 
 Migration `20261019103745` (staging and production, 19 Oct; additive, the 6 visits already logged keep
 `in_vacant_territory` false). Pinned at the end of `tests/phoenix-crm-manager-plan.test.ts`.
