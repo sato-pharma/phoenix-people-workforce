@@ -83,14 +83,14 @@ import { phxSelectClassName } from "@/components/ui/form-tokens";
  * every row; a line costs nothing horizontally beyond its own text. Same facts, same order of
  * reading, 1,555px instead of 2,460px — it now fits the owner's screen with 203px to spare.
  *
- * NOTHING TRUNCATES AND NOTHING WRAPS. Every line of every cell is whitespace-nowrap; the table is
- * allowed to be as wide as its widest real value and PortalDesktopTable scrolls it. truncate and
- * line-clamp are deliberately absent — an ellipsis is exactly what the owner's rule forbids, and a
- * further line here is a separate element, never a wrapped one. That is also the honest limit of
- * this fix: a handful of CVs carry 90-100 character free-text job titles and institute names, and
- * a string that wide cannot be made narrower without breaking one of those two rules. They set the
- * 1,555px floor, so a container below that scrolls again — there is no layout that avoids it while
- * the text may neither wrap nor truncate.
+ * NOTHING TRUNCATES, AND A LONG VALUE WRAPS. Until 2026-10-19 every line of every cell was
+ * whitespace-nowrap and the table was allowed to be as wide as its widest real value. That rule
+ * was written on 2026-08-30 and the owner superseded it on 2026-09-01: no horizontal scroll, and
+ * where the two collide, wrapping wins. The Screening column then made the gap plain. Its question
+ * labels run to 60 characters, and measured on production at 1,440px the table was 1,912px inside
+ * a 1,405px holder. Every line now wraps inside its own fixed column (break-words): the table
+ * fits, and a long job title or institute name takes a second line instead of a scroll. truncate
+ * and line-clamp stay absent, because an ellipsis is the other half of the same rule.
  *
  * THE MOBILE CARDS AND THE EXPORT ARE UNCHANGED. Folding a column is a layout decision about one
  * screen: the export still declares all thirteen columns and the phone card still lists every
@@ -155,10 +155,10 @@ function ScreeningAnswersCell({ row }: { row: CvLibraryRow }) {
     <td className={cellClassName}>
       {row.screeningAnswers.map((entry) => (
         <div className="mb-1.5 last:mb-0" key={entry.label}>
-          <div className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
+          <div className="break-words text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
             {entry.label}
           </div>
-          <div className="whitespace-nowrap font-semibold text-phx-ink">{entry.answer}</div>
+          <div className="break-words font-semibold text-phx-ink">{entry.answer}</div>
         </div>
       ))}
     </td>
@@ -170,8 +170,8 @@ function regionTitle(row: CvLibraryRow): string | undefined {
   return row.regionDeclared ? DECLARED_REGION_TITLE : undefined;
 }
 
-const headCellClassName = "whitespace-nowrap px-3 py-3";
-const cellClassName = "whitespace-nowrap px-3 py-4 align-top text-[13px] text-phx-ink-soft";
+const headCellClassName = "break-words px-3 py-3";
+const cellClassName = "break-words px-3 py-4 align-top text-[13px] text-phx-ink-soft";
 
 /**
  * One table cell, two facts.
@@ -194,16 +194,16 @@ function StackedCell({
 }) {
   return (
     <td className={cellClassName}>
-      <div className="whitespace-nowrap font-semibold text-phx-ink" title={title}>
+      <div className="break-words font-semibold text-phx-ink" title={title}>
         {primary}
       </div>
       {secondary ? (
-        <div className="mt-0.5 whitespace-nowrap text-phx-xs text-slate-500" title={title}>
+        <div className="mt-0.5 break-words text-phx-xs text-slate-500" title={title}>
           {secondary}
         </div>
       ) : null}
       {tertiary ? (
-        <div className="mt-0.5 whitespace-nowrap text-phx-xs text-slate-500" title={title}>
+        <div className="mt-0.5 break-words text-phx-xs text-slate-500" title={title}>
           {tertiary}
         </div>
       ) : null}
@@ -759,42 +759,42 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
                   <tr className="transition-colors hover:bg-phx-paper" key={row.id}>
                     <td className={cellClassName}>
                       <Link
-                        className="whitespace-nowrap font-bold text-phx-ink underline-offset-2 hover:text-phx-accent-press hover:underline"
+                        className="break-words font-bold text-phx-ink underline-offset-2 hover:text-phx-accent-press hover:underline"
                         href={`/recruitment?candidate=${encodeURIComponent(row.id)}`}
                       >
                         {emptyText(row.name)}
                       </Link>
-                      <div className="mt-0.5 whitespace-nowrap text-phx-xs text-slate-500">
+                      <div className="mt-0.5 break-words text-phx-xs text-slate-500">
                         {`CV received ${emptyText(row.receivedOn)}`}
                       </div>
                       {row.cvFileName ? (
-                        <div className="mt-0.5 whitespace-nowrap text-phx-xs text-slate-500">
+                        <div className="mt-0.5 break-words text-phx-xs text-slate-500">
                           {row.cvFileName}
                         </div>
                       ) : null}
                     </td>
                     <td className={cellClassName}>
-                      <div className="whitespace-nowrap font-semibold text-phx-ink">
+                      <div className="break-words font-semibold text-phx-ink">
                         {emptyText(row.currentJobTitle)}
                       </div>
                       {row.currentEmployer ? (
-                        <div className="mt-0.5 whitespace-nowrap text-phx-xs text-slate-500">
+                        <div className="mt-0.5 break-words text-phx-xs text-slate-500">
                           {row.currentEmployer}
                         </div>
                       ) : null}
-                      <span className="mt-1.5 inline-flex items-center gap-2 whitespace-nowrap">
+                      <span className="mt-1.5 inline-flex flex-wrap items-center gap-2">
                         <RecruitmentPill tone={experiencePillTone(row.medicalSales)}>
                           {experienceLabel(row.medicalSales)}
                         </RecruitmentPill>
                         {row.medicalSalesDuration ? <span>{row.medicalSalesDuration}</span> : null}
                       </span>
                       {row.medicalSalesEmployer ? (
-                        <div className="mt-0.5 whitespace-nowrap text-phx-xs text-slate-500">
+                        <div className="mt-0.5 break-words text-phx-xs text-slate-500">
                           {row.medicalSalesEmployer}
                         </div>
                       ) : null}
                       {row.totalExperience ? (
-                        <div className="mt-0.5 whitespace-nowrap text-phx-xs text-slate-500">
+                        <div className="mt-0.5 break-words text-phx-xs text-slate-500">
                           {`${row.totalExperience} in total`}
                         </div>
                       ) : null}

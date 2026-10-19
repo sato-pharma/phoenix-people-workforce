@@ -3026,7 +3026,10 @@ function CandidateActionsControl({
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-1">
+      {/* flex-wrap: a manager's row holds seven 28px buttons (about 232px) in an 11% column that is
+          153px at 1,440px, so on one line they ran past the table and scrolled the pool sideways.
+          Measured on production 2026-10-19: 1,482px inside 1,405px before, flush after. */}
+      <div className="flex flex-wrap items-center gap-1">
         <PoolIconButton disabled={pending} label="Open profile" onClick={() => void openProfile(candidate.id)}>
           <Eye className="h-3.5 w-3.5" />
         </PoolIconButton>
