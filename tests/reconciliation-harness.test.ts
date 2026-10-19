@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { systemClock, type ReconciliationClock } from "../src/lib/reconciliation/clock.ts";
 import {
@@ -13,6 +14,15 @@ import {
   shouldAlert,
   summarizeReconciliationResults,
 } from "../src/lib/reconciliation/compare.ts";
+import {
+  expectedRemainder,
+  findApprovalPanelMismatches,
+  findLineFormulaMismatches,
+  findOrderValueMismatches,
+  findRemainderMismatches,
+  type DirectOrderAuditLine,
+  type DirectOrderAuditOrder,
+} from "../src/lib/reconciliation/direct-order-totals.ts";
 import { findDuplicateEmployeeDays } from "../src/lib/reconciliation/duplicate-days.ts";
 import { partitionLoginsWithoutEmployeeRow } from "../src/lib/reconciliation/logins-without-employee-row.ts";
 import { retryOnceIfBreached } from "../src/lib/reconciliation/retry.ts";
@@ -549,5 +559,142 @@ export async function runReconciliationHarnessTests() {
     flagOnARealLogin.unexplained,
     ["AYA-IBRAHIM", "TEST-AYA", "TEST-AYA"],
     "is_test_persona on a login that is not a valid TEST-… id, or a TEST-… login without the flag, stays a breach — flipping one column must never silence this check for a real person's account",
+  );
+
+  // ── Direct orders: the stored value, each line, the approval panel and the remainder ──────────
+  // 18 Oct 2026: a requester added Lacto Advanced 2 and the order's total stayed at line one's
+  // 24,750 EGP (#6085). The read-only audit that followed checked these four things by hand.
+  const order = (overrides: Partial<DirectOrderAuditOrder> & Pick<DirectOrderAuditOrder, "id">): DirectOrderAuditOrder => ({
+    label: `order ${overrides.id}`,
+    dealType: "bonus",
+    qty: 0,
+    bonus: 0,
+    discountPct: null,
+    publicPriceSnapshot: null,
+    pharmacyPriceSnapshot: null,
+    salesValue: 0,
+    paidAmount: null,
+    remainingAmount: null,
+    ...overrides,
+  });
+  const line = (overrides: Partial<DirectOrderAuditLine> & Pick<DirectOrderAuditLine, "requestId">): DirectOrderAuditLine => ({
+    lineNo: 1,
+    productName: "Lacto Advanced 1",
+    dealType: "bonus",
+    qty: 0,
+    discountPct: null,
+    publicPriceSnapshot: null,
+    pharmacyPriceSnapshot: null,
+    salesValue: 0,
+    ...overrides,
+  });
+
+  // The 18 Oct basket, as it was stored before #6085 and as it is stored now.
+  const lactoLine1 = line({ requestId: "lacto", lineNo: 1, qty: 300, pharmacyPriceSnapshot: 82.5, salesValue: 24750 });
+  const lactoLine2 = line({ requestId: "lacto", lineNo: 2, productName: "Lacto Advanced 2", qty: 300, pharmacyPriceSnapshot: 75, salesValue: 22500 });
+  const lactoBefore = order({ id: "lacto", qty: 300, bonus: 30, pharmacyPriceSnapshot: 82.5, salesValue: 24750 });
+  const lactoNow = { ...lactoBefore, salesValue: 47250 };
+
+  const stale = findOrderValueMismatches([lactoBefore], [lactoLine1, lactoLine2]);
+  assert.equal(stale.length, 1, "an order still holding line one's value beside a two-line basket is the 18 Oct defect itself");
+  assert.equal(stale[0].linesTotal, 47250, "the finding has to carry what the lines add up to, or nobody can tell how far off it is");
+  assert.equal(stale[0].lineCount, 2);
+  assert.deepEqual(findOrderValueMismatches([lactoNow], [lactoLine1, lactoLine2]), [], "the corrected basket holds");
+
+  const lineless = findOrderValueMismatches([order({ id: "empty", salesValue: 0 })], []);
+  assert.equal(
+    lineless.length,
+    1,
+    "an order with NO lines is a finding even when its value reads 0 — every order since the items migration has at least one, and 0 = 0 would wave it through",
+  );
+  assert.equal(lineless[0].lineCount, 0);
+
+  // A bonus line valued on the PUBLIC price (99 × 100) instead of the pharmacy price it is sold at.
+  const wrongBasis = line({ requestId: "basis", qty: 100, publicPriceSnapshot: 99, pharmacyPriceSnapshot: 74.25, salesValue: 9900 });
+  const wrongBasisFound = findLineFormulaMismatches([order({ id: "basis" })], [wrongBasis]);
+  assert.equal(wrongBasisFound.length, 1, "a bonus line priced on the public price instead of the pharmacy price is credited 2,475 EGP too much");
+  assert.equal(wrongBasisFound[0].formulaValue, 7425);
+  assert.equal(wrongBasisFound[0].order?.label, "order basis", "the line is named by its order, never by an id");
+
+  const noPrice = line({ requestId: "noprice", dealType: "discount", qty: 10, discountPct: 10, publicPriceSnapshot: null, salesValue: 0 });
+  const noPriceFound = findLineFormulaMismatches([], [noPrice]);
+  assert.equal(noPriceFound.length, 1, "a line with no price is refused by the server, so one that exists is a finding even at a matching 0");
+  assert.equal(noPriceFound[0].basisPrice, null);
+  assert.equal(noPriceFound[0].order, null, "a line whose order is gone is still reported, not dropped");
+
+  // Zamzam Hospital's Ivyronc order, 7 Sep 2026: the line keeps the discount to 4 decimals, the order
+  // row to 3. The line is priced right; the approval panel, which prices the row, prints 6,999.975.
+  const zamzamLine = line({ requestId: "zamzam", productName: "Ivyronc", dealType: "discount", qty: 500, discountPct: 68.8889, publicPriceSnapshot: 45, salesValue: 7000 });
+  const zamzam = order({ id: "zamzam", dealType: "discount", qty: 500, discountPct: 68.889, publicPriceSnapshot: 45, salesValue: 7000 });
+  assert.deepEqual(findLineFormulaMismatches([zamzam], [zamzamLine]), [], "the Zamzam line itself is priced exactly by the locked formula");
+  const zamzamPanel = findApprovalPanelMismatches([zamzam], [zamzamLine]);
+  assert.equal(zamzamPanel.length, 1, "the panel's working on a 3-decimal discount misses the value by 2.5 piastres — above the 1-piastre tolerance");
+  assert.ok(Math.abs((zamzamPanel[0].panelValue ?? 0) - 6999.975) < 1e-6, "the finding reports what the panel actually prints");
+
+  const lactoPanel = findApprovalPanelMismatches([lactoNow], [lactoLine1, lactoLine2]);
+  assert.equal(lactoPanel.length, 1, "the panel prints line one's working beside the whole basket's value");
+  assert.equal(lactoPanel[0].panelValue, 24750);
+  assert.equal(lactoPanel[0].lineCount, 2, "the finding says how many lines the panel left out of its working");
+
+  // A rounding tie: 50 × 32.7375 = 1,636.875 printed unrounded beside 1,636.87 stored. Not a gap.
+  const tieLine = line({ requestId: "tie", qty: 50, pharmacyPriceSnapshot: 32.7375, salesValue: 1636.87 });
+  const tie = order({ id: "tie", qty: 50, pharmacyPriceSnapshot: 32.7375, salesValue: 1636.87 });
+  assert.deepEqual(findLineFormulaMismatches([tie], [tieLine]), [], "the line is the formula's own rounding of the tie");
+  assert.deepEqual(findOrderValueMismatches([tie], [tieLine]), []);
+  assert.deepEqual(
+    findApprovalPanelMismatches([tie], [tieLine]),
+    [],
+    "half a piastre between an unrounded working and a 2-decimal value is arithmetic, not a defect — paging on it would train everyone to ignore the panel check",
+  );
+
+  // The remainder: null until money moves, then value − cash − marketing settlements.
+  assert.equal(expectedRemainder({ salesValue: 10000, paidAmount: null, offsetTotal: 0 }), null, "an untouched order owes nothing on record yet");
+  assert.equal(expectedRemainder({ salesValue: 10000, paidAmount: 4000, offsetTotal: 0 }), 6000);
+  assert.equal(expectedRemainder({ salesValue: 10000, paidAmount: null, offsetTotal: 2500 }), 7500, "a settlement alone starts the remainder");
+  assert.equal(expectedRemainder({ salesValue: 10000, paidAmount: 4000, offsetTotal: 2500 }), 3500);
+
+  const remainderOrders = [
+    order({ id: "untouched", salesValue: 10000 }),
+    order({ id: "paid", salesValue: 10000, paidAmount: 4000, remainingAmount: 6000 }),
+    order({ id: "offset-only", salesValue: 10000, remainingAmount: 7500 }),
+    order({ id: "stale", salesValue: 10000, paidAmount: 4000, remainingAmount: 10000 }),
+    order({ id: "null-with-offset", salesValue: 10000 }),
+    order({ id: "negative", salesValue: 10000, paidAmount: 12000, remainingAmount: -2000 }),
+  ];
+  const remainderOffsets = [
+    { directOrderId: "offset-only", amount: 2500 },
+    { directOrderId: "null-with-offset", amount: 1000 },
+  ];
+  const remainderFound = findRemainderMismatches(remainderOrders, remainderOffsets);
+  assert.deepEqual(
+    remainderFound.map((mismatch) => mismatch.order.id),
+    ["stale", "null-with-offset", "negative"],
+    "untouched, paid and offset-only orders agree; a stale remainder, a settlement that never reached the remainder and a negative debt are each a finding",
+  );
+  assert.equal(remainderFound[0].expected, 6000, "the stale finding says what the remainder should read");
+  assert.equal(remainderFound[1].expected, 9000);
+  assert.equal(remainderFound[1].offsetTotal, 1000);
+  assert.equal(
+    remainderFound[2].expected,
+    -2000,
+    "a negative remainder is a finding even when the arithmetic agrees — it reads on a Finance screen as a credit nobody agreed",
+  );
+
+  // The four checks are registered, and the panel check is the only one allowed to sit open.
+  const directOrderChecks = readFileSync("src/lib/reconciliation/checks/direct-orders.ts", "utf8");
+  assert.match(
+    readFileSync("src/lib/reconciliation/checks/index.ts", "utf8"),
+    /\.\.\.directOrdersReconciliationChecks/,
+    "a check that is not in the registry never runs — the nightly cron reads the registry and nothing else",
+  );
+  assert.equal(
+    directOrderChecks.match(/expectation: "known-open"/g)?.length,
+    1,
+    "only the display-only approval-panel check may be known-open — the three money checks must page when they break",
+  );
+  assert.match(
+    directOrderChecks,
+    /id: "direct-orders-approval-panel-working-equals-the-order-value",[\s\S]{0,200}expectation: "known-open"/,
+    "the known-open expectation belongs to the panel check, not to a money check",
   );
 }
