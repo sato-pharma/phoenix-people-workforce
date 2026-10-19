@@ -60,8 +60,11 @@ export type DirectOrderGeographyCheck = {
     brick: { verdict: DirectOrderGeographyVerdict; declared: string | null; photo: string | null };
     area: { verdict: DirectOrderGeographyVerdict; declared: string | null; photo: string | null };
     distanceKm: number | null;
-    /** Why the photo could not speak, in words — null when it did. */
-    unusableReason: "no_photo" | "too_far" | null;
+    /**
+     * Why the photo could not speak — null when it did. `brick_map_unavailable` is a photo WITH a pin
+     * whose territory was never looked up, because the brick centres did not load: not a missing photo.
+     */
+    unusableReason: "brick_map_unavailable" | "no_photo" | "too_far" | null;
   };
   /** Distributor's recorded brick for the code vs the brick declared on the request. */
   brick: {
@@ -115,6 +118,16 @@ export type DirectOrderGeographyInput = {
    * photo with coordinates (an invoice-route venue, or none filed) — said in words, never skipped.
    */
   photoTerritory?: DirectOrderPhotoTerritory | null;
+  /**
+   * Why a photo that DOES carry a pin has no `photoTerritory`: the brick centres did not load, or no
+   * brick centre lies anywhere near the pin. Absent/null when there is no pin at all.
+   *
+   * 🔴 A MAP THAT DID NOT LOAD IS NOT A MISSING PHOTO (code review, 19 Oct 2026). `loadBrickCentroids`
+   * degrades to an empty list on a read failure, so the pin resolved to nothing and the panel told the
+   * approver "No live evidence photo with GPS" about a photo that had one — dropping the primary
+   * evidence check without saying it had not run.
+   */
+  photoPinUnresolved?: "brick_map_unavailable" | "no_brick_near" | null;
   /**
    * The venue kind's own name (for example "Nursery") when this kind of venue has NO distributor
    * account by definition. Such a venue can never be cross-checked against a customer code, so the
@@ -201,12 +214,17 @@ export function checkDirectOrderGeography(input: DirectOrderGeographyInput): Dir
   const photoTerritory = input.photoTerritory ?? null;
   const photoTooFar =
     photoTerritory !== null && photoTerritory.distanceKm !== null && photoTerritory.distanceKm > PHOTO_TERRITORY_TRUST_KM;
-  const photoUnusableReason: "no_photo" | "too_far" | null =
+  const photoUnusableReason: DirectOrderGeographyCheck["photo"]["unusableReason"] =
     !photoTerritory || (!photoTerritory.brickId && !photoTerritory.areaCode)
-      ? "no_photo"
+      ? input.photoPinUnresolved === "brick_map_unavailable"
+        ? "brick_map_unavailable"
+        : input.photoPinUnresolved === "no_brick_near"
+          ? "too_far"
+          : "no_photo"
       : photoTooFar
         ? "too_far"
         : null;
+  const photoNotLookedUp = photoUnusableReason === "brick_map_unavailable";
   const photoBrickVerdict: DirectOrderGeographyVerdict = photoUnusableReason
     ? "not_checkable"
     : compareCodes(input.declaredBrickId, photoTerritory?.brickId ?? null);
@@ -243,10 +261,17 @@ export function checkDirectOrderGeography(input: DirectOrderGeographyInput): Dir
         : "Checked and agrees — the distributor's own record places this customer in the brick this request declares.";
   } else if (brickVerdict === "not_checkable") {
     summary = noAccountLabel
-      ? `NOT CHECKED — a ${noAccountLabel} has no distributor account and this request carries no usable live photo, so nothing here has been verified. This is not a pass.`
+      ? photoNotLookedUp
+        ? `NOT CHECKED — a ${noAccountLabel} has no distributor account, and the brick map did not load, so its live photo's territory was not looked up. Nothing here has been verified; reload before deciding. This is not a pass.`
+        : `NOT CHECKED — a ${noAccountLabel} has no distributor account and this request carries no usable live photo, so nothing here has been verified. This is not a pass.`
       : "NOT CHECKED — there is no distributor customer code to check against, so nothing here has been verified against the master database. This is not a pass.";
   } else {
     summary = "NOT CHECKED — the request declares no brick, so there is nothing to compare.";
+  }
+  // The photo is the primary evidence, so a sentence that rests on the master alone must say the photo
+  // was never read — or "Checked and agrees" reads as a pass the photo never gave.
+  if (photoNotLookedUp && !(noAccountLabel && brickVerdict === "not_checkable")) {
+    summary = `${summary} The live photo has GPS, but the brick map did not load, so the photo's own territory — the primary evidence — was not checked; reload before deciding.`;
   }
 
   return {

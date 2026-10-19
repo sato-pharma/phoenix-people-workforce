@@ -324,10 +324,23 @@ export function applyLegacyMarketingAreaAlias(code: string | null | undefined): 
 /** Where each value came from, so the page can say so instead of implying certainty. */
 export type ResolvedDirectOrderGeography = PinnedGeography;
 
-/** The territory a captured pin falls in — the SAME brick centres the evidence stamp itself uses. */
-async function readPinTerritory(latitude: number | null, longitude: number | null): Promise<ResolvedBrickPoint | null> {
+/**
+ * The territory a captured pin falls in — the SAME brick centres the evidence stamp itself uses.
+ *
+ * 🔴 IT REFUSES WHEN THE BRICK MAP DID NOT LOAD (code review, 19 Oct 2026). `loadBrickCentroids` answers
+ * [] on a read failure, and about 700 bricks carry a centre, so an empty list is the map failing, never
+ * "no brick near". Read as no territory, the photo — the primary evidence — silently lost to the master
+ * code or the inherited marketing label, and a transfer filed the venue where its photo says it is not.
+ */
+async function readPinTerritory(
+  latitude: number | null,
+  longitude: number | null,
+  refusal: string,
+): Promise<ResolvedBrickPoint | null> {
   if (latitude === null || longitude === null) return null;
-  return resolveBrickForPoint(latitude, longitude, await loadBrickCentroids());
+  const centroids = await loadBrickCentroids();
+  if (centroids.length === 0) throw new Error(refusal);
+  return resolveBrickForPoint(latitude, longitude, centroids);
 }
 
 /**
@@ -965,7 +978,11 @@ async function assembleValidatedMarketingCustomerDetail(
   // The photo's own pin outranks the inherited marketing area AND the master's code answer (owner, 2026-10-18).
   const { geography: geographyBase, pinBrick } = applyPhotoPinTerritory(
     resolvedBase,
-    await readPinTerritory(num(customer, "captured_latitude"), num(customer, "captured_longitude")),
+    await readPinTerritory(
+      num(customer, "captured_latitude"),
+      num(customer, "captured_longitude"),
+      "Could not read the brick map, so the page cannot say which territory this customer's photo puts it in. Reload in a minute.",
+    ),
   );
   // Only fall back to a geometric guess when neither the master nor the photo had a brick to give.
   const brick = pinBrick
@@ -1354,7 +1371,14 @@ export async function transferValidatedCustomerToDirectOrders(
   const longitude = num(customer, "captured_longitude") ?? num(marketingPharmacy, "captured_longitude");
   // THE PHOTO IS THE PRIMARY SOURCE OF TRUST (owner, 2026-10-18): a venue the master did not place
   // is filed where its photo's pin falls, not in the area the marketing label inherited.
-  const { geography, pinBrick, overrode } = applyPhotoPinTerritory(resolvedGeography, await readPinTerritory(latitude, longitude));
+  const { geography, pinBrick, overrode } = applyPhotoPinTerritory(
+    resolvedGeography,
+    await readPinTerritory(
+      latitude,
+      longitude,
+      "Could not read the brick map, so the territory this customer's photo falls in could not be checked and nothing was transferred. Try again in a minute.",
+    ),
+  );
   // Only guess a brick when neither the photo nor the master had one to give.
   const brick = pinBrick
     ? pinBrick

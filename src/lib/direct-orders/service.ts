@@ -6443,10 +6443,15 @@ export async function getDirectOrderApprovalDetail(
   // panel can never disagree with the words printed on the photo. Read from the raw row — the
   // adjudicator-facing note is stripped for some viewers, the coordinates are not that note.
   let photoTerritory: DirectOrderPhotoTerritory | null = null;
+  let photoPinUnresolved: "brick_map_unavailable" | "no_brick_near" | null = null;
   const photoLat = rawEvidence?.capturedLatitude ?? null;
   const photoLon = rawEvidence?.capturedLongitude ?? null;
   if (photoLat !== null && photoLon !== null) {
-    const point = resolveBrickForPoint(photoLat, photoLon, await loadBrickCentroids());
+    // `loadBrickCentroids` answers [] when the read fails, and about 700 bricks carry a centre, so an
+    // empty list is the map not loading — said as such, never as a request with no GPS photo.
+    const centroids = await loadBrickCentroids();
+    const point = centroids.length > 0 ? resolveBrickForPoint(photoLat, photoLon, centroids) : null;
+    if (!point) photoPinUnresolved = centroids.length === 0 ? "brick_map_unavailable" : "no_brick_near";
     if (point) {
       photoTerritory = {
         brickId: point.brickId,
@@ -6460,6 +6465,7 @@ export async function getDirectOrderApprovalDetail(
   const geographyCheck = pharmacy
     ? checkDirectOrderGeography({
         photoTerritory,
+        photoPinUnresolved,
         noDistributorAccountVenueLabel: venueRequiresDistributorCode(pharmacy.venueType) ? null : venueTypeLabel(pharmacy.venueType),
         declaredBrickId: pharmacy.brickId,
         declaredBrickName: geo.brick?.name ?? null,
