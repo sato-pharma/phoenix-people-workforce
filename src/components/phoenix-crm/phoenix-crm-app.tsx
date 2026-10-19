@@ -320,6 +320,10 @@ export function PhoenixCrmApp({
   const validateParam = searchParams?.get("validate") ?? null;
   const [seenAddress, setSeenAddress] = useState<{ add: AddIntent | null; tab: string | null }>({ add: null, tab: tabParam });
   const [addVisitNonce, setAddVisitNonce] = useState(0);
+  // A district manager's own visit on a VACANT territory is saved from Add visit but lands in My single
+  // visits (owner, 2026-10-19), which is a sibling panel with its own read: bumping this remounts it, so
+  // the visit he just logged is on screen under it rather than one reload behind.
+  const [ownSingleVisitNonce, setOwnSingleVisitNonce] = useState(0);
   const [planWeekNonce, setPlanWeekNonce] = useState(0);
   // Nosiba Salah holds a rep seat AND plans as acting district manager (owner, 2026-10-16: she files
   // both): which of her two weeks the Plan tab shows. Everyone else has one of them, or none.
@@ -902,7 +906,7 @@ export function PhoenixCrmApp({
     if (key === "visits") {
       return (
         <div className="min-w-0 space-y-4">
-          {managerPlanner ? <ManagerSingleVisits key={`single|${test}`} test={test} /> : null}
+          {managerPlanner ? <ManagerSingleVisits key={`single|${test}|${ownSingleVisitNonce}`} test={test} /> : null}
           <VisitsTab
             addNonce={addVisitNonce}
             // Answered once: a Visits tab let go and remounted later must not see the same ask again.
@@ -910,6 +914,7 @@ export function PhoenixCrmApp({
             openingDay={overview.visitDay}
             key={`${seatId}|${test}`}
             onOpenList={() => openTab("list")}
+            onOwnSingleVisitSaved={() => setOwnSingleVisitNonce((current) => current + 1)}
             onPendingVisitDone={pendingVisitDone}
             onStartValidate={startValidate}
             onWorkChange={holdReporters.visits}

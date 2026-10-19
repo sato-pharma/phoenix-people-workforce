@@ -47,6 +47,9 @@ import {
   managerAskStage,
   matchCustomerName,
   MANAGER_CUSTOMER_ADDRESS_MAX,
+  MANAGER_OWN_VISIT_ON_VACANT_LINE,
+  MANAGER_OWN_VISIT_ON_VACANT_NOTE,
+  MANAGER_OWN_VISIT_ON_VACANT_SAVED,
   missingManagerCustomerField,
   nextManagerPlanStatus,
   parseManagerSlotDraft,
@@ -1565,4 +1568,73 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   const reportScreen = source("src/components/phoenix-crm/manager-plan-team.tsx");
   assert.match(reportScreen, /\{customer\.place \? <ReportVisitPlace place=\{customer\.place\} \/> : null\}/, "the report shows it under a planned customer");
   assert.match(reportScreen, /\{visit\.place \? <ReportVisitPlace place=\{visit\.place\} \/> : null\}/, "and under a visit made without a plan");
+
+  // ── His own visit on a VACANT territory is filed, not refused (owner, 2026-10-19) ───────────────
+  // "It is a vacant area. So he must submit it there single." Double and Chain both need a rep, so
+  // closing "My own visit" there too left Add visit a dead end: the option stayed pre-picked, he filled
+  // the form to step 4 of 4, and the save answered "choose Double visit or Chain visit" — with neither
+  // of them pickable. It now goes where it belongs instead.
+
+  assert.match(
+    visits,
+    /ownVisitVacant: enteredAs === "manager" && isVacantTerritory\(seat\) && \(await managerOwnVisitClosedNow\(viewer\)\)/,
+    "the option re-opens only where nobody holds the seat, and only where it was closed in the first place",
+  );
+  const saveBody = functionBody(visits, "export async function saveVisit(");
+  assert.match(
+    saveBody,
+    /if \(isVacantTerritory\(seat\)\) return await fileAsOwnSingleVisit\(viewer, visitId, visit, isTest\);\s*throw validationError\(MANAGER_OWN_VISIT_CLOSED\);/,
+    "a vacant territory routes the visit; every territory with a rep still refuses it",
+  );
+  assert.match(saveBody, /filedAsOwnSingleVisit: false,/, "an ordinary visit says it stayed on this territory");
+
+  const filedBody = functionBody(visits, "async function fileAsOwnSingleVisit(");
+  assert.match(
+    filedBody,
+    /const slotId = await plannedSingleVisitSlotFor\(viewer, visit\.customerId, isTest\);/,
+    "the half-day his own plan already holds is found FIRST — Add visit knows nothing about his week, and an unplanned filing would spend a half-day he planned",
+  );
+  assert.match(filedBody, /await logManagerVisit\(viewer, \{/, "there is ONE writer of his own single visits, and this hands over to it rather than copying its rules");
+  assert.match(
+    filedBody,
+    /pin: \{ lat: visit\.lat, lon: visit\.lon, accuracyMeters: visit\.accuracyMeters \}/,
+    "Add visit will not save without a reading, so the vacant place rule is already answered by the pin it sends",
+  );
+  assert.match(filedBody, /isUnplanned: slotId === null,/, "planned or not is his own plan's word");
+  assert.match(filedBody, /filedAsOwnSingleVisit: true,/, "and the answer says where the visit went");
+
+  const slotLookup = functionBody(visitsServer, "export async function plannedSingleVisitSlotFor(");
+  assert.match(slotLookup, /slot\.date === day && slot\.kind === "single_visit"/, "only TODAY's single-visit half-days are looked at");
+  assert.match(
+    slotLookup,
+    /held\.find\(\(row\) => !row\.gone && row\.customerId === customerId\)\?\.slotId \?\? null/,
+    "a customer since dropped from the half-day is not a planned visit",
+  );
+
+  assert.match(
+    visitForm,
+    /form\.ownVisitVacant\s*\? \{ value: "single", label: "My own visit", note: MANAGER_OWN_VISIT_ON_VACANT_NOTE \}/,
+    "the form offers My own visit on a vacant territory",
+  );
+  assert.match(visitForm, /\? MANAGER_OWN_VISIT_ON_VACANT_LINE/, "and says where the visit goes, instead of sending him to another screen");
+  assert.equal(MANAGER_OWN_VISIT_ON_VACANT_NOTE, "Filed under My single visits", "the option says where it lands before he picks it");
+  assert.match(
+    MANAGER_OWN_VISIT_ON_VACANT_LINE,
+    /It keeps the products, your comment and where you were\./,
+    "and the line says what this record keeps — his own visits table has no room for the pharmacy, the kept audio, the objection, the next step or what he left",
+  );
+  assert.match(MANAGER_OWN_VISIT_ON_VACANT_SAVED, /My single visits/, "after the save he is told where to look for it");
+
+  const visitsTab = source("src/components/phoenix-crm/visits-tab.tsx");
+  assert.match(visitsTab, /if \(visit\.filedAsOwnSingleVisit\) onOwnSingleVisitSaved\?\.\(\);/, "the Visits tab reloads My single visits, not the day it is showing");
+  assert.match(
+    visitsTab,
+    /\{visit\.filedAsOwnSingleVisit \? <span className="mt-1 block">\{MANAGER_OWN_VISIT_ON_VACANT_SAVED\}<\/span> : null\}/,
+    "and the saved note tells him so",
+  );
+  assert.match(
+    source("src/components/phoenix-crm/phoenix-crm-app.tsx"),
+    /onOwnSingleVisitSaved=\{\(\) => setOwnSingleVisitNonce\(\(current\) => current \+ 1\)\}/,
+    "the sibling panel holding the visit is the one remounted",
+  );
 }

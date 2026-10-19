@@ -66,6 +66,7 @@ import { CrmVisitRecordingPlayer, CrmVoiceNotePlayer } from "@/components/phoeni
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { isDayActivity, PHOENIX_CRM_DAY_ACTIVITIES } from "@/lib/phoenix-crm/day-activities";
 import type { ProductAvailability } from "@/lib/phoenix-crm/entry-rules";
+import { MANAGER_OWN_VISIT_ON_VACANT_SAVED } from "@/lib/phoenix-crm/manager-plan-rules";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import { movedDayReason } from "@/lib/phoenix-crm/offplan-day";
 import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
@@ -527,6 +528,9 @@ function SavedNote({ onOpenList, saved }: { onOpenList?: () => void; saved: Save
   return (
     <CrmNote title={`Visit saved · ${cairoClock(visit.capturedAt)}`} tone="good">
       <span className="block break-words">{customerName}</span>
+      {/* A district manager's own visit on a VACANT territory went into his own single visits, not this
+          territory's (owner, 2026-10-19) — so he is told where to look for it. */}
+      {visit.filedAsOwnSingleVisit ? <span className="mt-1 block">{MANAGER_OWN_VISIT_ON_VACANT_SAVED}</span> : null}
       {/* The server's own verdict, not what he chose on the first step — so a rep who picked Planned
           for a customer his plan no longer holds finds out here rather than a month later. */}
       {visit.unplannedNote ? <span className="mt-1 block">{visit.unplannedNote}</span> : null}
@@ -1051,6 +1055,7 @@ export function VisitsTab({
   addNonce,
   onAddHandled,
   onOpenList,
+  onOwnSingleVisitSaved,
   onPendingVisitDone,
   onWorkChange,
   openingDay,
@@ -1067,6 +1072,11 @@ export function VisitsTab({
   onAddHandled?: () => void;
   /** An out-of-list visit saved: open the List, where he chooses Request to add or Drop. */
   onOpenList?: () => void;
+  /**
+   * A district manager's own visit on a VACANT territory went into My single visits, not this day
+   * (owner, 2026-10-19) — the panel above this tab is the one holding it, so it is the one to reload.
+   */
+  onOwnSingleVisitSaved?: () => void;
   /** The hand-off from Today was used or abandoned. */
   onPendingVisitDone: () => void;
   /** Accepted for the page, which still passes it; this tab no longer offers "Validate now". */
@@ -1149,6 +1159,8 @@ export function VisitsTab({
           setSaved({ kind: "visit", visit, customerName });
           setDate(null);
           day.reload();
+          // It is not on this day at all — it is in My single visits, which is a sibling panel.
+          if (visit.filedAsOwnSingleVisit) onOwnSingleVisitSaved?.();
         }}
         onStep={setStep}
         seatId={seatId}

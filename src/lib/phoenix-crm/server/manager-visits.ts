@@ -298,6 +298,34 @@ function productsOf(value: unknown): string[] {
 }
 
 /**
+ * The single-visit half-day of TODAY his own plan already holds this customer on, or null.
+ *
+ * "My single visits" knows the slot because it listed the customer from the plan; the TERRITORY's Add
+ * visit form does not — it knows nothing about his week. A visit handed over from there with no slot
+ * would be filed UNPLANNED, spending one of his unplanned half-days and leaving the planned row "not
+ * done" in the actual-versus-planned report. So it is asked here, by the same reading `loadManagerToday`
+ * makes, before the visit is handed to `logManagerVisit`.
+ */
+export async function plannedSingleVisitSlotFor(viewer: PhoenixCrmViewer, customerId: string, isTest: boolean): Promise<string | null> {
+  const day = viewer.visitDay;
+  const plans = await fetchAllRowsKeyset<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_manager_plans")
+        .select("id")
+        .eq("manager_hr_id", viewer.hrId)
+        .eq("week_start", fieldWeekStart(day))
+        .eq("is_test", isTest),
+    { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+  );
+  if (plans.length === 0) return null;
+  const slots = (await loadManagerSlotRows(plans.map((plan) => String(plan.id)))).filter((slot) => slot.date === day && slot.kind === "single_visit");
+  if (slots.length === 0) return null;
+  const held = await loadManagerSlotCustomers(slots.map((slot) => slot.slotId));
+  return held.find((row) => !row.gone && row.customerId === customerId)?.slotId ?? null;
+}
+
+/**
  * POST: one single visit he logs himself, on the visit day. Planned when it names a single-visit half-day
  * of today that holds the customer; unplanned otherwise — a customer of his district's rep lists or of his
  * own list. One visit per customer and day: a second save answers that it is already logged.
