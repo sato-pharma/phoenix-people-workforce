@@ -53,3 +53,24 @@ export function parsePoolColumnLayouts(value: unknown): PoolColumnLayouts {
   }
   return out;
 }
+
+/**
+ * What one read of a reader's saved layouts found. "unavailable" is a read that FAILED and is never
+ * "nothing saved" (code review, 19 Oct 2026): a Supabase blip used to come back as "nothing saved",
+ * and the pool then carried this browser's older copy up over the account's newer layout. Only
+ * "none" may start that one-time carry.
+ */
+export type PoolColumnLayoutRead =
+  | { kind: "saved"; layouts: PoolColumnLayouts }
+  | { kind: "none" }
+  | { kind: "unavailable" };
+
+/**
+ * The browser's reading of the account's answer. "none" only for an answer that says so in as many
+ * words, `200 { success: true, data: null }`; a refused request, a body that did not parse or any
+ * other shape is "unavailable", because the pool cannot tell it from a read that failed.
+ */
+export function readPoolColumnLayoutAnswer(ok: boolean, body: unknown): PoolColumnLayoutRead {
+  if (!ok || !isPlainObject(body) || body.success !== true || !("data" in body)) return { kind: "unavailable" };
+  return body.data === null ? { kind: "none" } : { kind: "saved", layouts: parsePoolColumnLayouts(body.data) };
+}

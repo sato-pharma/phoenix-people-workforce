@@ -21,8 +21,16 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await requireRecruitmentAccess(request, "candidates", "read");
-    const layouts = await loadPoolColumnLayouts(layoutOwnerKey(access));
-    return NextResponse.json({ data: layouts, success: true });
+    const read = await loadPoolColumnLayouts(layoutOwnerKey(access));
+    // A failed read is answered as a failure, never as `data: null`: the pool reads null as "nothing
+    // saved" and carries the browser's older copy up over the account's layout.
+    if (read.kind === "unavailable") {
+      return NextResponse.json(
+        { error: "layout_unavailable", message: "Your column layout could not be read just now.", success: false },
+        { status: 503 },
+      );
+    }
+    return NextResponse.json({ data: read.kind === "saved" ? read.layouts : null, success: true });
   } catch (error) {
     return recruitmentApiError(error, "Unable to load your column layout.");
   }
