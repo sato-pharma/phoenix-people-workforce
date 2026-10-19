@@ -527,7 +527,26 @@ The reader (`server/schedule-check.ts`) now returns how legible the board is (`c
 
 ### Choosing the model — calibrated on the 40 production photographs, read-only
 
-The 40 distinct photographs behind the 74 production seatings were replayed through the door's own question (`readScheduleBytes`): `gpt-5.4-nano` read about 5; `gpt-5.4-mini` read 17, at a p95 of 6.2 s, inside the 8-second door. `gpt-5.4-mini` is the door's model. At 900 output tokens the stronger readers ran out of room on exactly the photographs that are real boards (a 25-name directory), so the ceiling is 1,600 and the transcription is kept short. Replayed through `scheduleDoorAction` as first tries, the 74 seatings would have been 11 save, 2 hold, 1 lost call (saved), 28 retake for no timetable and 32 retake for an unreadable one.
+The 40 distinct photographs behind the 74 production seatings were replayed through the door's own question (`readScheduleBytes`): `gpt-5.4-nano` read about 5; `gpt-5.4-mini` read 17, at a p95 of 6.2 s, inside the 8-second door. `gpt-5.4-mini` was the door's model until 2026-10-19 (see the next section; it is now the fallback). At 900 output tokens the stronger readers ran out of room on exactly the photographs that are real boards (a 25-name directory), so the ceiling is 1,600 and the transcription is kept short. Replayed through `scheduleDoorAction` as first tries, the 74 seatings would have been 11 save, 2 hold, 1 lost call (saved), 28 retake for no timetable and 32 retake for an unreadable one.
+
+### Claude reads the timetable first — 2026-10-19, measured on the 54 production photographs
+
+**Why it changed.** The OpenAI account ran out of credit on 18 Oct. The reader asked OpenAI first, so a door read paid a refused OpenAI round trip (about 1.5 s) and Claude then got only what was left of the 8 seconds. With no Claude model named, `gpt-5.4-mini` mapped to Haiku. On 19 Oct at 11:34 Cairo that read timed out after 6.5 s, and the customer was saved with his building's timetable unread (a lost call saves, by rule). Nothing reads that timetable again. The same happened on 17 Oct at 22:17, when `gpt-5.4-mini` itself timed out.
+
+**What it does now.** `readScheduleBytes` asks Claude first, by name (`preferProvider: "anthropic"`, `PHOENIX_CRM_SCHEDULE_CLAUDE_MODEL`), with the whole 8 seconds. `gpt-5.4-mini` is asked only when Claude's account is dead. The signboard door reads with the same model.
+
+**The measurement (read-only).** The 54 distinct production timetable photos were replayed through `readScheduleBytes`, the door's own question and crop, with 30 seconds to answer so the real time shows:
+
+| | Claude Haiku | Claude Sonnet |
+| --- | --- | --- |
+| Median | 4.6 s | 3.5 s |
+| 95th percentile | 8.7 s | 5.5 s |
+| Over the 8-second door | 5 | 1 |
+| Over the 6.5 s a dead OpenAI left | 12 | 2 |
+| Photos where the seated customer's name was read | 12 | 17 |
+| Seatings matched | 18 of 93 | 25 of 102 |
+
+Haiku also lost 2 photos to a failed download, which is why its seat count is lower. On these boards the stronger model is also the faster one, so nothing is traded. Then 10 photos went through the default path with nothing forced, on the real 8-second budget: all 10 were read, in 2.7–5.2 s, and no OpenAI call came first. Pinned by `tests/phoenix-crm-timetable-scanner.test.ts`, section 4.
 
 ### The 74 seatings re-read, 2026-10-17 16:44 Cairo
 
