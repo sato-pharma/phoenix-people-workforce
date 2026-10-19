@@ -511,8 +511,26 @@ function placeWordsOnSign(text: string): string[] {
  * apply: "مستشفي صحة بشتيل" matched a health-campaign poster from Asyum on صحة plus the brick, and
  * "جامعة اكتوبر" matched any board saying جامعة in 6th of October City, which holds several
  * universities. Each is one word of the list name that a poster or a neighbour carries as easily.
+ *
+ * 🔴 AND NO WORD THAT SAYS WHAT KIND OF PLACE IT IS (code review, 19 Oct 2026). "مستشفى المنيا الجامعي"
+ * matched "مستشفى النور الجامعي" photographed in the brick المنيا, and "مستشفى بنها التعليمي" a board
+ * reading only "التعليمي" in بنها: the brick gave the town, and the level word every other hospital in
+ * town can carry was taken for the name. These are the level, ownership and kind words the AM list
+ * repeats across dozens of names (counted on production that day: المركزي 61, الخاص 53, التخصصي 35,
+ * الصحي 29, الطبي 25, التأمين 25, الجامعي 22 …). A SPECIALTY is not one of them — صدر and حميات name
+ * the one chest or fever hospital a town has, and the stored readings confirmed beside the brick on
+ * them (مستشفى حميات منوف, مستشفي صدر أشمون) are the right buildings. Beside a brick the sign must carry
+ * a word of the name that is none of these; without a brick nothing here applies.
  */
-const NEVER_WHICH_BESIDE_A_BRICK: ReadonlySet<string> = new Set(placeWordsOnSign("صحة صحه جامعة جامعه"));
+const NEVER_WHICH_BESIDE_A_BRICK: ReadonlySet<string> = new Set(
+  placeWordsOnSign(
+    [
+      "صحة صحه جامعة جامعه",
+      "المركزي الخاص التخصصي الصحي الطبي التأمين الجامعي التعليمي الدولي العسكري الاسلامي النموذجي الاستثماري",
+      "مركز المركز دار مستوصف معهد وحدة شركة مصنع الجديدة",
+    ].join(" "),
+  ),
+);
 
 /** A hospital on the list never matches a board that calls itself a clinic and not a hospital. */
 function kindsClash(customerName: string, signText: string): boolean {
