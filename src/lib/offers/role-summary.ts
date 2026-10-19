@@ -85,6 +85,20 @@ export const OFFER_TALENT_ACQUISITION_ROLE_SUMMARY =
   + "hiring managers you support a shortlist they can decide on.";
 
 /**
+ * The training-manager paragraph — the second position worded for a role that carries no territory.
+ *
+ * A Training Manager builds the capability of the field force rather than leading a district, so
+ * this describes learning work and promises no sales number, territory or district plan. It is a
+ * starting point on the Job Titles screen like every other, reworded there, never in a design.
+ */
+export const OFFER_TRAINING_MANAGER_ROLE_SUMMARY =
+  "Throughout our selection process you demonstrated the expertise and the teaching skill this role "
+  + "calls for, and we would like you to bring both to {{territory}}. In this role you will own the "
+  + "learning of our teams — designing and delivering product-knowledge, selling-skills and induction "
+  + "programmes, coaching representatives in the field, measuring what each programme changes in "
+  + "practice, and giving managers a clear view of how ready every team is.";
+
+/**
  * The paragraph a letter prints for a position, given whatever is stored against it.
  *
  * `null`, absent and whitespace all answer the same way, because the three arrive from different

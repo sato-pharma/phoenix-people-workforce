@@ -3,7 +3,7 @@ import {
   OFFER_OUTSTATION_CLAUSE_HEADING,
   OFFER_OUTSTATION_CLAUSE_TEXT,
 } from "@/lib/offers/outstation-clause";
-import { OFFER_FIELD_FORCE_ROLE_SUMMARY } from "@/lib/offers/role-summary";
+import { OFFER_FIELD_FORCE_ROLE_SUMMARY, OFFER_TRAINING_MANAGER_ROLE_SUMMARY } from "@/lib/offers/role-summary";
 
 /**
  * The SATO offer as the owner designed it — the factory default, transcribed block for block
@@ -75,6 +75,16 @@ export const OFFER_SEED_JOB_TITLES: OfferJobTitleInput[] = [
     reportsTo: "District Sales Manager",
     roleSummary: OFFER_FIELD_FORCE_ROLE_SUMMARY,
     title: "Medical Representative",
+  },
+  {
+    // 3,500 is payroll's own pair for the title — 3,000 allowance plus 500 fuel — which is what the
+    // letter's table and the hire it produces must agree on. The current Training Manager reports to
+    // the Marketing Manager on the employee master, so that is where a new letter starts.
+    contractTerm: "One year, renewable",
+    costOfLiving: 3500,
+    reportsTo: "Marketing Manager",
+    roleSummary: OFFER_TRAINING_MANAGER_ROLE_SUMMARY,
+    title: "Training Manager",
   },
 ];
 

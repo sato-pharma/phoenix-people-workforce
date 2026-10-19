@@ -29,8 +29,10 @@ import type { OfferBlock } from "@/lib/offers/types";
  *
  * NOTHING IN HERE ROUNDS A CORNER OR CASTS A SHADOW — the base's `*{border-radius:0}` already holds.
  *
- * THE SEAL IS NOT TOUCHED. `.offer-seal` and `.sigcell` are the base's, left exactly as the offer
- * draws them: the company's signature rule only, the candidate's cell never stamped or signed.
+ * THE SEAL STAYS ON THE COMPANY'S RULE ONLY, BUT IT IS PLACED HERE. `.sigcell` and the signature ink
+ * are the base's, untouched, and the candidate's cell is never stamped or signed. The base centres a
+ * 30mm seal on the whole cell, which printed the word SIGNATURE under the impression, so the premium
+ * letter sets it smaller with its foot on the rule (owner, 19 Oct 2026: "Move the seal").
  *
  * NO BACKTICKS IN THE CSS BELOW — it is a template literal, and one would close it.
  */
@@ -139,7 +141,12 @@ const OFFER_RULES = `
 .accept .sub{color:${M}}
 /* Headroom on every signature row, both parties, so the four rules stay level while the company's
    impression, which the base lays across its rule, no longer lands on the signatory's name and title. */
-.accept .sigrow{padding-top:6mm}
+.accept .sigrow{padding-top:11mm}
+/* The company impression rides ABOVE the signatory's rule, clear of the SIGNATURE label under it and
+   of the name and title above. The base centres a 30mm seal on the whole cell, which puts the word
+   SIGNATURE under the ink; here it is 21mm, its foot sits on the rule, and it keeps to the left half
+   of the cell where the signature is made. The candidate's cell never carries one. */
+.accept .offer-seal{left:22mm;top:auto;bottom:4.6mm;width:21mm;height:21mm;transform:rotate(-7deg)}
 
 /* The closing note: a hairline over muted type. */
 .foot{margin-top:5mm;padding-top:2.4mm;border-top:.4pt solid ${H}}

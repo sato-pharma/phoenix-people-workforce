@@ -10,6 +10,7 @@ import {
   OFFER_FIELD_FORCE_ROLE_SUMMARY,
   OFFER_ROLE_SUMMARY_FALLBACK,
   OFFER_TALENT_ACQUISITION_ROLE_SUMMARY,
+  OFFER_TRAINING_MANAGER_ROLE_SUMMARY,
   offerRoleSummary,
 } from "../src/lib/offers/role-summary.ts";
 import { OFFER_PLACEHOLDER_KEYS } from "../src/lib/offers/placeholders.ts";
@@ -232,6 +233,7 @@ export function runOfferRoleSummaryTests(): void {
     ["the field-force paragraph", OFFER_FIELD_FORCE_ROLE_SUMMARY],
     ["the standard sentence", OFFER_ROLE_SUMMARY_FALLBACK],
     ["the talent-acquisition paragraph", OFFER_TALENT_ACQUISITION_ROLE_SUMMARY],
+    ["the training-manager paragraph", OFFER_TRAINING_MANAGER_ROLE_SUMMARY],
   ] as const) {
     assert.ok(
       !/&[a-zA-Z]+;|&#\d+;/.test(text),
@@ -239,6 +241,31 @@ export function runOfferRoleSummaryTests(): void {
     );
     assert.ok(!/<[a-zA-Z/]/.test(text), `${name} must carry no HTML tags`);
   }
+
+  // ─────────────────────────────────────── a Training Manager's letter is about learning ──
+  // The title is seeded with its own words, and those words promise no territory number, field team
+  // or district plan — the same defect the talent-acquisition paragraph exists to avoid.
+  assert.equal(
+    seeded.get("Training Manager"),
+    OFFER_TRAINING_MANAGER_ROLE_SUMMARY,
+    "the Training Manager title is seeded with its own paragraph",
+  );
+  for (const forbidden of ["sales performance", "district plan", "field team", "market expansion"]) {
+    assert.ok(
+      !OFFER_TRAINING_MANAGER_ROLE_SUMMARY.toLowerCase().includes(forbidden),
+      `the training-manager paragraph must not say "${forbidden}"`,
+    );
+  }
+  const trainingLetter = renderedBody(designs[0]![1], {
+    ...FIELDS,
+    roleSummary: OFFER_TRAINING_MANAGER_ROLE_SUMMARY,
+    territory: "Head Office",
+    title: "Training Manager",
+  });
+  assert.ok(
+    trainingLetter.includes("own the learning of our teams") && trainingLetter.includes("bring both to Head Office"),
+    "a Training Manager letter prints its own paragraph, naming the territory it was given",
+  );
 
   // ───────────────────────────── the premium letter takes the job title's words too ──
   // The premium design re-dresses the same blocks, so the paragraph must reach it through the whole
