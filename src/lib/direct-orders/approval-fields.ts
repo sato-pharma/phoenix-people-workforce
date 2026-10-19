@@ -1,3 +1,4 @@
+import { priceBasketLine } from "@/lib/direct-orders/basket-value";
 import { codeNameLabel } from "@/lib/direct-orders/geo-names";
 import { describeReturnedDirectOrderWait } from "@/lib/direct-orders/status-labels";
 import { venueRequiresDistributorCode, venueTypeLabel } from "@/lib/venues/venue-type";
@@ -6,6 +7,7 @@ import type {
   DirectOrderAreaRep,
   DirectOrderPharmacyGeo,
   DirectOrderRequest,
+  DirectOrderRequestItem,
   DirectOrderRetailHistoryRow,
   DirectOrderStepState,
 } from "@/lib/direct-orders/types";
@@ -489,54 +491,104 @@ export function buildDirectOrderSalesMatrix(
 
 // ── Pricing breakdown (the "show your working" the approval window never showed) ──────────────
 
-export type DirectOrderPricingBreakdown = {
+/** One product line's working, as the Pricing row prints it. */
+export type DirectOrderPricingLine = {
+  lineNo: number;
+  productName: string;
   basis: "bonus" | "discount";
   qty: number;
   /** The price the basis actually prices at — pharmacy price for bonus, public price for discount. */
   unitPrice: number | null;
   bonusUnits: number | null;
   discountPct: number | null;
-  /** qty × unitPrice (bonus) or qty × unitPrice × (1 − discountPct/100) (discount). Null when the
-   *  basis price was never set — the same "not set" a missing price means everywhere else here. */
+  /** The locked formula on this line's own prices. Null when the basis price was never set — the
+   *  same "not set" a missing price means everywhere else here. */
+  computedValue: number | null;
+};
+
+export type DirectOrderPricingBreakdown = {
+  /** Every line, in entry order. A one-product order has one. */
+  lines: DirectOrderPricingLine[];
+  /** The lines' values summed and rounded once, as the server stores the order's total. Null when
+   *  any line's basis price was never set, because a total with a line missing is not the total. */
   computedValue: number | null;
   salesValue: number;
 };
 
+/** The fields of one `direct_order_request_items` row the working needs. */
+export type DirectOrderPricingItem = Pick<
+  DirectOrderRequestItem,
+  "lineNo" | "productName" | "dealType" | "qty" | "discountPct" | "publicPriceSnapshot" | "pharmacyPriceSnapshot"
+> & { bonus?: number | null };
+
 /**
  * Re-derives the working behind `request.salesValue`, purely for display — an approver sees
- * "288 × 240.9 = 69,379.2 EGP" instead of a bare total with nothing to check it against. Does not
- * touch how `salesValue` is actually computed or stored (that stays `computeDirectOrderSalesValue`/
- * `computeDiscountSalesValue` in approval-flow.ts); this only re-runs the same arithmetic on
- * fields already present on the request.
+ * "288 × 240.9 = 69,379.2 EGP" instead of a bare total with nothing to check it against.
+ *
+ * EVERY LINE, and each on its OWN row (owner, 2026-10-19: "fix the direct-order approval panel to
+ * show every line's pricing"). This used to price the order row, which since baskets holds line one
+ * only: a Lacto Advanced 1 + 2 order printed line one's 24,750 working beside a 47,250 total, and
+ * the row keeps the discount to 3 decimals where the line keeps 4, so a one-product Ivyronc order at
+ * 68.8889% printed 6,999.98 beside 7,000.00. The nightly reconciliation check
+ * `direct-orders-approval-panel-working-equals-the-order-value` calls this same function.
+ *
+ * Each line is priced by `priceBasketLine` — the locked formulas and the normalisation the server
+ * prices with — so the working cannot drift from the money. Nothing here changes how `salesValue`
+ * is computed or stored. With no lines (a caller that did not load them), the order row stands in
+ * as its single line, which is complete for a one-product order.
  */
 export function computeDirectOrderPricingBreakdown(
   request: Pick<
     DirectOrderRequest,
     "dealType" | "qty" | "bonus" | "pharmacyPriceSnapshot" | "publicPriceSnapshot" | "discountPct" | "salesValue"
-  >,
+  > & { productName?: string | null },
+  items?: readonly DirectOrderPricingItem[] | null,
 ): DirectOrderPricingBreakdown {
-  if (request.dealType === "discount") {
-    const unitPrice = request.publicPriceSnapshot;
-    const discountPct = request.discountPct ?? 0;
-    const computedValue = unitPrice == null ? null : request.qty * unitPrice * (1 - discountPct / 100);
+  const source: readonly DirectOrderPricingItem[] =
+    items && items.length > 0
+      ? [...items].sort((a, b) => a.lineNo - b.lineNo)
+      : [
+          {
+            lineNo: 1,
+            productName: (request.productName ?? "").trim(),
+            dealType: request.dealType,
+            qty: request.qty,
+            bonus: request.bonus,
+            discountPct: request.discountPct,
+            publicPriceSnapshot: request.publicPriceSnapshot,
+            pharmacyPriceSnapshot: request.pharmacyPriceSnapshot,
+          },
+        ];
+
+  const lines = source.map((item): DirectOrderPricingLine => {
+    const priced = priceBasketLine({
+      productCode: "",
+      productName: item.productName,
+      dealType: item.dealType,
+      qty: item.qty,
+      discountPct: item.discountPct ?? 0,
+      publicPrice: item.publicPriceSnapshot,
+      pharmacyPrice: item.pharmacyPriceSnapshot,
+    });
+    const isDiscount = item.dealType === "discount";
     return {
-      basis: "discount",
-      qty: request.qty,
-      unitPrice,
-      bonusUnits: null,
-      discountPct,
-      computedValue,
-      salesValue: request.salesValue,
+      lineNo: item.lineNo,
+      productName: item.productName,
+      basis: isDiscount ? "discount" : "bonus",
+      qty: priced.qty,
+      unitPrice: priced.basisPrice,
+      bonusUnits: isDiscount ? null : (item.bonus ?? null),
+      discountPct: isDiscount ? priced.discountPct : null,
+      computedValue: priced.basisPrice == null ? null : priced.salesValue,
     };
-  }
-  const unitPrice = request.pharmacyPriceSnapshot;
+  });
+
+  const anyUnpriced = lines.some((line) => line.computedValue == null);
   return {
-    basis: "bonus",
-    qty: request.qty,
-    unitPrice,
-    bonusUnits: request.bonus,
-    discountPct: null,
-    computedValue: unitPrice == null ? null : request.qty * unitPrice,
+    lines,
+    computedValue: anyUnpriced
+      ? null
+      : Math.round(lines.reduce((sum, line) => sum + (line.computedValue ?? 0), 0) * 100) / 100,
     salesValue: request.salesValue,
   };
 }

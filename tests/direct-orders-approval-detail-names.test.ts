@@ -8,7 +8,9 @@ import {
   buildDirectOrderDetailFields,
   buildDirectOrderNotificationLine,
   buildDirectOrderNotificationMetrics,
+  computeDirectOrderPricingBreakdown,
   formatMedicalRep,
+  type DirectOrderPricingItem,
 } from "../src/lib/direct-orders/approval-fields.ts";
 import {
   codeNameLabel,
@@ -1694,6 +1696,82 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       topLevelBlock(primitives, primitives.indexOf("export function ApprovalTracker(")),
       /\btruncate\b/,
       "progress-bar labels wrap — never an ellipsis (owner rule)",
+    );
+  }
+
+  // ── The Pricing row shows EVERY line's working, then the total (owner, 2026-10-19) ─────────────
+  // It priced the order row, which on a basket is line one only: a Lacto Advanced 1 + 2 order
+  // printed 24,750 beside a 47,250 total, and a 68.8889% Ivyronc order printed 6,999.98 beside
+  // 7,000.00 because the row keeps the discount to 3 decimals. 11 orders on the day it was found.
+  {
+    const item = (overrides: Partial<DirectOrderPricingItem> & Pick<DirectOrderPricingItem, "lineNo">): DirectOrderPricingItem => ({
+      productName: "Lacto Advanced 1",
+      dealType: "bonus",
+      qty: 0,
+      bonus: 0,
+      discountPct: null,
+      publicPriceSnapshot: null,
+      pharmacyPriceSnapshot: null,
+      ...overrides,
+    });
+    const lactoRow = {
+      productName: "Lacto Advanced 1",
+      dealType: "bonus" as const,
+      qty: 300,
+      bonus: 30,
+      discountPct: null,
+      publicPriceSnapshot: 110,
+      pharmacyPriceSnapshot: 82.5,
+      salesValue: 47250,
+    };
+    const lactoLines = [
+      item({ lineNo: 2, productName: "Lacto Advanced 2", qty: 300, bonus: 30, pharmacyPriceSnapshot: 75 }),
+      item({ lineNo: 1, qty: 300, bonus: 30, pharmacyPriceSnapshot: 82.5 }),
+    ];
+    const basket = computeDirectOrderPricingBreakdown(lactoRow, lactoLines);
+    assert.deepEqual(
+      basket.lines.map((line) => [line.lineNo, line.productName, line.computedValue]),
+      [
+        [1, "Lacto Advanced 1", 24750],
+        [2, "Lacto Advanced 2", 22500],
+      ],
+      "every line gets its own working, in entry order — the approver must see what the whole total is made of",
+    );
+    assert.equal(basket.computedValue, 47250, "the working arrives at the basket's total, not at line one's 24,750");
+    assert.equal(basket.lines[1].bonusUnits, 30, "each bonus line carries its own bonus units");
+
+    const zamzam = computeDirectOrderPricingBreakdown(
+      { productName: "Ivyronc", dealType: "discount", qty: 500, bonus: 0, discountPct: 68.889, publicPriceSnapshot: 45, pharmacyPriceSnapshot: null, salesValue: 7000 },
+      [item({ lineNo: 1, productName: "Ivyronc", dealType: "discount", qty: 500, discountPct: 68.8889, publicPriceSnapshot: 45 })],
+    );
+    assert.equal(zamzam.lines[0].discountPct, 68.8889, "the discount is the LINE's 4 decimals, never the order row's 3");
+    assert.equal(zamzam.computedValue, 7000, "Zamzam Hospital's Ivyronc order works out to the 7,000.00 it is stored at, not 6,999.98");
+    assert.equal(zamzam.lines[0].bonusUnits, null, "a discount line carries no bonus units");
+
+    const oneUnpriced = computeDirectOrderPricingBreakdown(lactoRow, [
+      lactoLines[1],
+      item({ lineNo: 2, productName: "Lacto Advanced 2", qty: 300, pharmacyPriceSnapshot: null }),
+    ]);
+    assert.equal(oneUnpriced.lines[0].computedValue, 24750, "the priced line still shows its working");
+    assert.equal(oneUnpriced.lines[1].computedValue, null, "a line with no price reads 'not set', never 0");
+    assert.equal(oneUnpriced.computedValue, null, "a total with a line missing is not the total, so none is printed");
+
+    const noLinesLoaded = computeDirectOrderPricingBreakdown({ ...lactoRow, salesValue: 24750 }, []);
+    assert.equal(noLinesLoaded.lines.length, 1, "with no lines loaded, the order row stands in as its single line");
+    assert.equal(noLinesLoaded.lines[0].productName, "Lacto Advanced 1");
+    assert.equal(noLinesLoaded.computedValue, 24750);
+
+    const detailSource = readFileSync(new URL("../src/components/approvals-hub/direct-order-request-detail.tsx", import.meta.url), "utf8");
+    assert.match(
+      detailSource,
+      /computeDirectOrderPricingBreakdown\(request, detail\.items\)/,
+      "the order window must hand the breakdown its lines — called with the request alone it falls back to line one",
+    );
+    const primitives = readFileSync(new URL("../src/components/approvals-hub/direct-order-detail-primitives.tsx", import.meta.url), "utf8");
+    assert.match(
+      topLevelBlock(primitives, primitives.indexOf("export function PricingBreakdownFact(")),
+      /breakdown\.lines\.map\(/,
+      "the Pricing row renders every line, not one",
     );
   }
 }

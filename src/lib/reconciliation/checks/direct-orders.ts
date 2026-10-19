@@ -19,8 +19,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * in direct-order-totals.ts; this file only reads the rows and words the verdict.
  *
  * Measured on production before it shipped, 19 Oct 2026: 242 orders, 252 lines, 103 orders with
- * money recorded. Checks 1, 2 and 4 held on every row; check 3 found the 11 orders its known-open
- * note names, and nothing else.
+ * money recorded. Checks 1, 2 and 4 held on every row; check 3 found 11 orders where the approval
+ * panel printed line one's working (or a 3-decimal discount), and it holds since the panel prices
+ * every line (the same day).
  *
  * Every order is read, whatever its status: a returned or rejected order's value is still the
  * figure its requester and approvers were shown, and there are a few hundred rows in all.
@@ -216,19 +217,19 @@ const everyLineIsPricedByTheLockedFormula: ReconciliationCheck = {
 /**
  * Check 3 — the approval panel's Pricing working arrives at the order's value.
  *
- * KNOWN OPEN, and display only: checks 1 and 2 prove the stored money, so a gap here is a sentence
- * the approver reads, never a figure anyone is paid on. The day computeDirectOrderPricingBreakdown
- * shows every line's working this check holds, and its expectation should be tightened to "holds".
+ * The figure an approver decides on. Shipped known-open on 19 Oct 2026, when the panel priced the
+ * order row (line one only, discount to 3 decimals) and 11 orders printed a working that did not
+ * reach their value; tightened to "holds" the same day, when computeDirectOrderPricingBreakdown
+ * began pricing every line. Retried once on a breach for the same reason as check 1: a returned
+ * order's lines are replaced delete-then-insert, and a read between the halves sees them missing.
  */
 const approvalPanelWorkingEqualsTheOrderValue: ReconciliationCheck = {
   id: "direct-orders-approval-panel-working-equals-the-order-value",
   title: "The direct-order approval panel's Pricing working arrives at the order's value",
   domain: "direct-orders",
   severity: "high",
-  expectation: "known-open",
-  openDefect:
-    "computeDirectOrderPricingBreakdown (src/lib/direct-orders/approval-fields.ts) prices the order ROW, which holds line one only and keeps the discount to 3 decimals where the line keeps 4. On 19 Oct 2026 that left 10 multi-product orders showing line one's working beside the whole basket's value, and one single-line order (Zamzam Hospital, Ivyronc 500 at 68.8889%, 7 Sep 2026) showing 6,999.98 beside 7,000.00. Display only: checks 1 and 2 prove the stored values.",
-  run: async (): Promise<ReconciliationOutcome> => {
+  expectation: "holds",
+  run: retryOnceIfBreached(async (): Promise<ReconciliationOutcome> => {
     const { orders, lines } = await loadAuditRows({ offsets: false });
     const mismatches = findApprovalPanelMismatches(orders, lines);
     const multiLine = mismatches.filter((mismatch) => mismatch.lineCount > 1).length;
@@ -249,13 +250,13 @@ const approvalPanelWorkingEqualsTheOrderValue: ReconciliationCheck = {
           : `${formatCount(mismatches.length, "order")} (${multiLine} with more than one product): ` +
             formatList(
               mismatches.map((mismatch) => {
-                const shown = mismatch.panelValue == null ? "no working at all" : formatMoney(mismatch.panelValue);
-                const why = mismatch.lineCount > 1 ? ` (it prints line 1 of ${mismatch.lineCount})` : "";
-                return `${mismatch.order.label} shows ${shown} beside ${formatMoney(mismatch.order.salesValue)}${why}`;
+                const shown =
+                  mismatch.panelValue == null ? "no total (a line has no price)" : formatMoney(mismatch.panelValue);
+                return `${mismatch.order.label} works out ${shown} across ${formatCount(mismatch.lineCount, "line")}, beside a value of ${formatMoney(mismatch.order.salesValue)}`;
               }),
             ),
     };
-  },
+  }),
 };
 
 /**

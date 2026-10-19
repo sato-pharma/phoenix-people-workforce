@@ -21,16 +21,16 @@ const SCANNED_DIRS = ["src", "app", "scripts", "tests"];
 const SCANNED_EXTENSIONS = new Set([".ts", ".tsx", ".mts", ".cts", ".mjs", ".cjs", ".js"]);
 const SKIPPED_DIR_NAMES = new Set(["node_modules", ".next", ".git", "dist", "build", "coverage"]);
 
-// The ONE surviving multiplication of this shape, and it is a different rule entirely: a direct
-// order's negotiated deal percentage, part of the locked direct-order pricing. It never touches a
-// distributor sheet and never produces effective_units.
+// No live file is allow-listed any more. The last one, src/lib/direct-orders/approval-fields.ts,
+// spelled out a direct order's negotiated deal percentage for the approval panel's working — a
+// different rule entirely, never a distributor sheet. Since 2026-10-19 the panel prices each line
+// through priceBasketLine, so the entry was dropped rather than left to cover a future file there.
 // Per-LINE escape hatch, for a test that pins the factor's ABSENCE and therefore has to name it.
 // Deliberately ugly and greppable: `git grep units-are-units:allow` lists every exemption.
 const ALLOW_MARKER = "units-are-units:allow";
 
 const ALLOWED_FILES = new Set([
-  "src/lib/direct-orders/approval-fields.ts",
-  // And this file itself: a guard has to be able to spell the thing it forbids.
+  // This file itself: a guard has to be able to spell the thing it forbids.
   "tests/units-are-units-no-discount-factor.test.ts",
 ]);
 
@@ -185,13 +185,12 @@ export function runUnitsAreUnitsNoDiscountFactorTests() {
       offenders.join("\n"),
   );
 
-  // The allow-listed direct-order file must still BE there. If it is renamed or its rule is removed,
-  // the entry becomes dead weight that would silently permit a future file at that path.
-  const allowed = path.join(REPO_ROOT, "src/lib/direct-orders/approval-fields.ts");
-  const allowedCode = stripCommentsAndStrings(readFileSync(allowed, "utf8"));
-  assert.ok(
-    FACTOR_PATTERNS.some((pattern) => pattern.re.test(allowedCode)),
-    "approval-fields.ts no longer carries the direct-order deal discount — drop it from ALLOWED_FILES",
+  // Only this file may sit on the list. A live file added back would silently permit the factor at
+  // that path for ever, which is exactly the dead weight the old approval-fields.ts entry became.
+  assert.deepEqual(
+    [...ALLOWED_FILES],
+    ["tests/units-are-units-no-discount-factor.test.ts"],
+    "no live file is exempt from UNITS ARE UNITS — a deal discount belongs in priceBasketLine, not a new allow-list entry",
   );
 
   console.log("units-are-units-no-discount-factor: ok");
