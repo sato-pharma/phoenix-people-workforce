@@ -24,8 +24,9 @@ import type { OfferBlock, OfferTheme } from "@/lib/offers/types";
  * NOTHING SAYS PHOENIX. The offer goes to a candidate who has never heard of the app
  * (`src/lib/offers/identity.ts`), so the foot is the Sato-only one (`PREMIUM_COMPANY_DOCUMENT_BRAND`).
  *
- * THE COMPANY SEAL STAYS exactly where the offer has always drawn it — on the company's signature
- * rule and nowhere else. It belongs to the job offer alone; this design neither moves nor repeats it.
+ * THE COMPANY SEAL STAYS on the company's signature rule and nowhere else, drawn once. It belongs to
+ * the job offer alone; this design never repeats it. It is set smaller than the base draws it, with
+ * its foot on the rule, so it no longer prints over the word SIGNATURE (19 Oct 2026, the owner).
  *
  * The tokens map the offer's own slot names onto the house palette. `OfferTheme` has no `deep` or
  * `light` slot, so the skin reaches those two by literal; `brand` carries Blue, the accent.

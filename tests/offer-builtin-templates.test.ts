@@ -679,9 +679,24 @@ function premiumSkinTests(
     assert.ok(base, `the base sheet defines ${selector}`);
     assert.ok(premiumDoc.css.includes(base), `the premium letter keeps the base's own ${base.split("{")[0]} rule, untouched`);
   }
+  // The skin moves the seal and nothing else about the signature cells. The base drew a 30mm seal
+  // centred on the whole cell, which printed the word SIGNATURE under the ink (owner, 19 Oct 2026:
+  // "fix sato premium offer template", then "Move the seal"). So the premium skin may place
+  // `.offer-seal`, only inside `.accept`, only smaller, and only with its foot on the rule — and it
+  // still never restyles the cell or the signature ink.
+  const sealRule = /\.accept \.offer-seal\{([^}]*)\}/.exec(PREMIUM_OFFER_SKIN)?.[1];
+  assert.ok(sealRule, "the premium skin places the seal through `.accept .offer-seal`");
+  assert.ok(/bottom:[\d.]+mm/.test(sealRule) && /top:auto/.test(sealRule), "the seal's foot sits on the signatory's rule, never centred on the cell");
+  const sealSide = Number(/width:([\d.]+)mm/.exec(sealRule)?.[1]);
+  assert.ok(sealSide > 0 && sealSide < 30, `the premium seal is smaller than the base's 30mm (${sealSide}mm) so it clears the name above it`);
+  assert.equal(
+    PREMIUM_OFFER_SKIN.replace(/\.accept \.offer-seal\{[^}]*\}/, "").includes("offer-seal"),
+    false,
+    "the seal is placed in exactly one rule of the premium skin",
+  );
   assert.ok(
-    !PREMIUM_OFFER_SKIN.includes("offer-seal") && !PREMIUM_OFFER_SKIN.includes("sigcell") && !PREMIUM_OFFER_SKIN.includes("sigink"),
-    "the premium skin never touches the seal or the signature cells",
+    !PREMIUM_OFFER_SKIN.includes("sigcell") && !PREMIUM_OFFER_SKIN.includes("sigink"),
+    "the premium skin never touches the signature cells or the signature ink",
   );
 
   // ── Nothing in the letter says Phoenix: it is a company paper, in Sato's name ────────────────────
