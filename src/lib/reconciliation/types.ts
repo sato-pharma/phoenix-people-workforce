@@ -20,6 +20,7 @@ export const reconciliationDomains = [
   "crm-sales",
   "notifications-integrity",
   "recruitment",
+  "direct-orders",
 ] as const;
 
 export type ReconciliationDomain = (typeof reconciliationDomains)[number];
