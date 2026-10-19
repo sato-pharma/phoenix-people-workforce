@@ -293,6 +293,16 @@ export async function runRecruitmentCandidatePoolTableTests() {
     1,
     "exactly one flexible column, or the measured widths stop meaning anything",
   );
+  // The four answer columns after Applying for (graduated in, region · area, experience, expected
+  // salary) each keep at least 9% — at 7% Expected salary was 84px at a 1280px window, too narrow
+  // for its own answer editor (owner, 2026-10-19: "fix the cramped Expected salary column").
+  const answerShares = [...colgroup.slice(colgroup.indexOf("<col />")).matchAll(/w-\[(\d+)%\]/g)]
+    .map((match) => Number(match[1]))
+    .slice(0, 4);
+  assert.equal(answerShares.length, 4, "the four answer columns each carry a percentage width");
+  for (const share of answerShares) {
+    assert.ok(share >= 9, `every answer column keeps at least 9% of the table; found ${answerShares.join(" / ")}%`);
+  }
 
   // ── 13 · The Source column says WhatsApp or email, in words ────────────────
   //

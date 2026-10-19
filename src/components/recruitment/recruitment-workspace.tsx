@@ -5085,16 +5085,22 @@ function CandidatesTab({
                  * Since 2026-10-19 the columns are the WhatsApp questions, and Status and Received
                  * moved under the name (the Candidate cell's third line) to give them the room: the
                  * shared five are Applying for (the flexible one) and four narrow answers.
+                 *
+                 * Widened 2026-10-19 ("fix the cramped Expected salary column"): at a 1280px window
+                 * the table is 1,203px and the answers were 96 / 108 / 96 / 84px while Applying for
+                 * took 318px, so the answer editor opened in 84px and "Biotechnology" broke mid-word.
+                 * The answers now take 10 / 10 / 9 / 9%, leaving Applying for about 247px there and
+                 * about 104px at the ~924px the table renders from `xl`.
                  */
                 usesPinnedLayout ? (
                 <colgroup>
                   {canSelect ? <col className="w-[36px]" /> : null}
                   <col className="w-[332px]" />
                   <col />
-                  <col className="w-[8%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
                   <col className="w-[9%]" />
-                  <col className="w-[8%]" />
-                  <col className="w-[7%]" />
+                  <col className="w-[9%]" />
                   <col className="w-[11%]" />
                 </colgroup>
                 ) : (

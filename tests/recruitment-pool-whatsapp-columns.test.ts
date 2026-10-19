@@ -315,6 +315,24 @@ export async function runRecruitmentPoolWhatsAppColumnsTests() {
     /opacity-60|rounded/,
     "the thumb-sized pencil is neither faded nor rounded",
   );
+  // The card prints the question right above an open editor, so a lone field's visible label said it
+  // twice — "Expected salary", then "EXPECTED SALARY" (production, 375px, 2026-10-19; owner: "fix the
+  // repeated question label in the phone answer editor"). It stays for screen readers; the two-field
+  // place column keeps both labels, which tell its boxes apart; the desktop cell is untouched.
+  assert.match(
+    cells,
+    /<PoolAnswerEditor[\s\S]{0,300}?questionShownAbove=\{touch\}/,
+    "only the phone card tells the editor its question is already on screen",
+  );
+  assert.ok(
+    cells.includes("const labelOnlyForScreenReaders = questionShownAbove && column.editKeys.length === 1;"),
+    "only a lone field loses its visible label — region and area keep theirs",
+  );
+  assert.match(
+    cells,
+    /labelOnlyForScreenReaders \? "sr-only" : `mb-1 block break-words normal-case \$\{phxLabelTextClassName\}`/,
+    "hidden from sight, never removed: the input keeps its accessible name",
+  );
   for (const page of ["app/(admin)/recruitment/page.tsx", "app/employee-portals/recruitment/page.tsx"]) {
     const source = read(page);
     assert.ok(source.includes("whatsappQuestions: () => loadPoolWhatsAppQuestions(),"), `${page} must read the question list`);
