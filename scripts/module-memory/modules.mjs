@@ -382,7 +382,7 @@ export const MODULES = [
   {
     id: "phoenix-crm-place-checks",
     title: "Phoenix CRM — the Place checks page: groups, the same-place comparison and the decisions",
-    scope: "What the Place checks page draws and how the Super Admin decides on it — the polyclinics tab and its groups, the same-place comparison between reps, the bulk answers, a rejection taken back, the comments and a district manager's read-only board.",
+    scope: "What the Place checks page draws and how the Super Admin and the SFE Manager decide on it — the polyclinics tab and its groups, the same-place comparison between reps, the bulk answers, a rejection taken back, the comments and a district manager's read-only board.",
     globs: [
       "src/lib/phoenix-crm/{shared-place-groups,place-match-groups,validation-review-filters}.ts",
       "src/lib/phoenix-crm/server/{place-match-groups,validation-reviews}.ts",
@@ -396,7 +396,7 @@ export const MODULES = [
       "src/components/crm-integrity/integrity-review-slide.tsx",
       "app/api/admin/phoenix-crm/integrity/cases/**",
       "tests/place-review-deck*",
-      "tests/phoenix-crm-{place-match-groups,shared-place-groups,refuse-validation,validation-review-filters,place-checks-in-overflow}*",
+      "tests/phoenix-crm-{place-match-groups,shared-place-groups,refuse-validation,validation-review-filters,place-checks-in-overflow,sfe-place-checks}*",
     ],
     keywords: ["place checks", "same place", "place match", "polyclinic group", "bulk answer", "reject a customer", "approve after rejection", "district manager place checks"],
     tables: ["phoenix_crm_place_match_answers"],

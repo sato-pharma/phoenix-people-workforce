@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 // GET = the third tab of Place checks: every place two or more reps validated, side by side, with the
 // questions the system could not settle (owner, 2026-10-17). It is read when the tab is OPENED, not with
 // the page — it pages through every validated place and polyclinic, which the other two tabs never need.
-// The Super Admin ALONE: `read` here is gate one and the loader refuses everyone but the Super Admin
+// The Super Admin and the SFE Manager: `read` here is gate one and the loader refuses everyone but those two
 // before a row is read, so a district manager's board can never reach a colleague's comparison.
 export async function GET(request: Request) {
   try {
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "phoenix_crm", "update");
+    await assertPermission(access, "phoenix_crm", "approve");
     const viewer = await resolvePhoenixCrmViewer(access);
     const saved = await answerPlaceMatch(viewer, await request.json());
     return NextResponse.json({ saved, success: true });

@@ -209,7 +209,7 @@ function checkHisApprove(): void {
 
   const route = read("app/api/phoenix-crm/validation-reviews/approve/route.ts");
   assert.match(route, /assertSameOriginMutation\(request\)/, "the route checks the origin");
-  assert.match(route, /assertPermission\(access, "phoenix_crm", "update"\)/, "and the module's update right");
+  assert.match(route, /assertPermission\(access, "phoenix_crm", "approve"\)/, "and the module's approve right — both deciders hold it");
   assert.match(route, /approveValidatedPlace\(viewer, await request\.json\(\)\)/, "before the service decides who may press it");
   assert.ok(read("src/lib/security/access-registry.ts").includes('pattern: "/api/phoenix-crm/validation-reviews/approve"'), "and it is in the access registry");
 

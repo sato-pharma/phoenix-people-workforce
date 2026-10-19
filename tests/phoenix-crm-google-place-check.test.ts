@@ -183,7 +183,7 @@ export function runPhoenixCrmGooglePlaceCheckTests() {
   const decide = /export async function decideListRequest\([\s\S]*?\n\}/.exec(list)?.[0] ?? "";
   assert.ok(decide.includes("await pendingLocationReview(customerId)"), "SFE cannot admit a customer whose place the Super Admin has not decided");
 
-  // ── Only the Super Admin decides ──────────────────────────────────────────────
+  // ── Only the Super Admin and the SFE Manager decide ───────────────────────────
   //
   // `canDecideValidationReviews` was DECLARED in `server/validation-reviews.ts` until 2026-10-13,
   // when the district manager's own Place checks board needed the same viewer predicates without
@@ -194,7 +194,10 @@ export function runPhoenixCrmGooglePlaceCheckTests() {
   // a local declaration there would shadow the re-export silently, and it is the one sentence that
   // separates reading this board from deciding on it.
   const access = stripComments(readFileSync("src/lib/phoenix-crm/server/access.ts", "utf8"));
-  assert.match(access, /export function canDecideValidationReviews\(viewer: PhoenixCrmViewer\): boolean \{\s*return viewer\.isSuperAdmin && viewer\.canUpdate && !viewer\.isTestPersona;/, "the decider is the Super Admin, never a test account");
+  // Who the decider admits is a BEHAVIOUR, pinned by evaluating the function in
+  // `tests/phoenix-crm-sfe-place-checks.test.ts` (the Super Admin and the SFE Manager since 2026-10-19,
+  // never a test account, never a district manager) — here only that it is declared once, in this file.
+  assert.match(access, /export function canDecideValidationReviews\(viewer: PhoenixCrmViewer\): boolean \{\s*if \(viewer\.isTestPersona\) return false;/, "the decider refuses a test account first");
   const reviews = stripComments(readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8"));
   assert.match(reviews, /import \{ canDecideValidationReviews[^}]*\} from "@\/lib\/phoenix-crm\/server\/access";/, "and the decision module imports that one predicate, never a copy of its own");
   assert.doesNotMatch(reviews, /function canDecideValidationReviews\(/, "nothing re-declares it where it used to live");

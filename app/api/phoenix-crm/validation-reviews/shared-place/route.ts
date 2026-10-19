@@ -16,13 +16,13 @@ export const dynamic = "force-dynamic";
 //
 // POST = approve one, or reject it. A rejection retires the venue, retires every place seated in it and
 // sends each of those customers back to To validate (owner, 2026-10-09: the administrator has the right
-// to review the schedule). The Super Admin ALONE, as above.
+// to review the schedule). The Super Admin and the SFE Manager, as above (`approve` here is gate one).
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "phoenix_crm", "update");
+    await assertPermission(access, "phoenix_crm", "approve");
     const viewer = await resolvePhoenixCrmViewer(access);
     const decided = await decideSharedPlace(viewer, await request.json());
     return NextResponse.json({ decided, success: true });

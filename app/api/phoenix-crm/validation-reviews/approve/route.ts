@@ -11,14 +11,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // POST = confirm a validation the system could not read (owner, 2026-10-17: "make me able to approve").
-// The Super Admin ALONE, exactly as the refusal beside it: `update` here is gate one, and the service
-// refuses everyone but the Super Admin before anything is read.
+// The Super Admin and the SFE Manager, exactly as the refusal beside it: `approve` here is gate one, and the service
+// refuses everyone but those two before anything is read.
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "phoenix_crm", "update");
+    await assertPermission(access, "phoenix_crm", "approve");
     const viewer = await resolvePhoenixCrmViewer(access);
     const approved = await approveValidatedPlace(viewer, await request.json());
     return NextResponse.json({ approved, success: true });

@@ -700,3 +700,45 @@ laptop; the pre-image check now uses the session pooler, as `scripts/apply-sql-f
 
 The owner also confirmed on 2026-10-08 that an AM photo with no signboard keeps holding, and that the
 PM "no name" holds are watched on the integrity board for their first week rather than sampled.
+
+## The SFE Manager decides on the company board (2026-10-19)
+
+Owner, 19 October 2026: *"show check place to sfe manager exactly as it in the admin account to be
+able validate approve and refuse."* The Place checks page (`/admin/field-crm/validation-reviews`) was
+the Super Admin's alone from 3 October (*"only system admin can approve or reject"*). It is now the
+Super Admin's and the SFE Manager's, and the SFE Manager takes every decision the Super Admin takes
+there: approve and reject a held place, refuse or confirm a validated one, take a rejection back,
+approve, reject or restore a polyclinic, and answer the same-place comparison.
+
+**What changed.** `canDecideValidationReviews` (`server/access.ts`) admits the Super Admin on `update`
+and the SFE Manager on `approve`, and still refuses a test account and every district manager. The
+page, the Place Checks card in the CRM hub, and the seven decision routes are gated on `approve`.
+
+**Why `approve` and not `update`.** The SFE Manager holds `phoenix_crm` read + approve and no `update`.
+Handing him `update` would have cleared every gate at once and opened every other `update` route in
+the module to him, so the gates moved to the grant both deciders already hold. A district manager, a
+regional or national manager and the CEO also hold `approve`, so the route gate alone admits them —
+the service's `canDecideValidationReviews` is the boundary, exactly as it already was for the comment
+and recommendation routes.
+
+**What did not widen — each is its own ruling and is pinned beside the widening:**
+
+- *Seating a customer in a polyclinic* (2026-10-10, "never the SFE Manager"). `canDecideSharedPlaces`
+  used to be the venue's decider as well; it now gates seating only, and approving, rejecting or
+  restoring a venue asks `canDecideValidationReviews`.
+- *Settling a location-integrity case* (2026-10-09). The deck tells him "Settling a case is the Super
+  Admin's alone" and draws no settle control.
+- *The position cases and the phone's mock-location answer* (2026-10-02). The board's evidence read,
+  `loadPlaceCheckIntegrity`, serves the SFE Manager the photo cases only (`SFE_SOURCES`) and leaves
+  `device_mocked` out of the select. The Super Admin reads everything; the district manager on his own
+  team's board keeps the device's evidence (2026-10-13).
+- *The notice of a new hold* — email, in-app and Telegram — is still sent to the Super Admin alone.
+  The SFE Manager sees the queue on the page and, through the same predicate, on his Needs you board.
+- *`readsTeamPlaceChecks`* is the district manager's own team board and stays `{DM, ACTING_DM}`.
+
+**What the rep sees.** Nothing different. The decisions run through the same functions, so the rep is
+still told only what is wrong with his photograph, in the system's words. The SFE Manager's comments
+are filed as `system_admin`, which is what the rep reads ("From the System Administrator").
+
+Pinned by `tests/phoenix-crm-sfe-place-checks.test.ts`, which evaluates the predicates rather than
+spelling-checking them, and by the boundary and refusal suites it sits beside.

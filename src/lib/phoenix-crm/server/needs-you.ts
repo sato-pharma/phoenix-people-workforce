@@ -34,15 +34,17 @@
  * holds a territory in scope, so a gate on "has any scope" would have handed him a readiness figure
  * about his own list on a board built for the people above him.
  *
- * 🔴 **THE HELD-PLACE COUNT IS THE SUPER ADMIN'S ALONE, AND IT LINKS OFF THE TEAM TAB.** Added
+ * 🔴 **THE HELD-PLACE COUNT IS THE DECIDERS' ALONE, AND IT LINKS OFF THE TEAM TAB.** Added
  * 2026-10-05, after the owner put that queue on email, in-app and Telegram by name — the board is the
  * fourth way the same hold reaches him, and the only one that still shows it tomorrow if he reads a
  * notice and does nothing. `countValidationReviewsWaiting` is asked only when
- * `canDecideValidationReviews` is true, so every other viewer gets a true zero with no query; and its
- * row carries its OWN href to `/admin/field-crm/validation-reviews`, because the Team tab cannot
- * decide one. Both halves look like tidying and are not: narrowing the href to the source's default
- * would send him to a screen with no decision on it, and widening the gate would put the queue on the
- * screens of people who cannot act on it.
+ * `canDecideValidationReviews` is true (the Super Admin, and the SFE Manager since 2026-10-19, who
+ * decides the same queue), so every other viewer gets a true zero with no query; and its row carries
+ * its OWN href to `/admin/field-crm/validation-reviews`, because the Team tab cannot decide one. Both
+ * halves look like tidying and are not: narrowing the href to the source's default would send him to a
+ * screen with no decision on it, and widening the gate would put the queue on the screens of people who
+ * cannot act on it. The email, in-app and Telegram notice of a new hold is still the Super Admin's
+ * alone (`notifyValidationReviewWaiting`) — the SFE Manager is not sent a message he was not given.
  *
  * 🔴 **THE RECORDED-VISIT COUNT IS THE ADMINISTRATOR'S ALONE, AND LINKS TO THE VISIT RECORDING PAGE.**
  * Added 2026-10-16, the day the owner ruled that a recorded visit of any type waits for his approval
@@ -86,10 +88,10 @@ export type PhoenixCrmDecisionCounts = {
   /** How many territories that figure covers, so the sentence can say so. */
   territories: number;
   /**
-   * Places the Google Maps check could not settle, waiting on the Super Admin's own page — and 0,
-   * with no query at all, for every other viewer, because he is the only person who decides one
+   * Places the Google Maps check could not settle, waiting on the deciders' own page — and 0, with no
+   * query at all, for every other viewer, because only the Super Admin and the SFE Manager decide one
    * (`canDecideValidationReviews`). It is the one count here that is BLOCKED on a decision nobody
-   * else can take, which is why it reaches his own lane rather than the worth-knowing band.
+   * else can take, which is why it reaches the decider's own lane rather than the worth-knowing band.
    */
   placeChecks: number;
   /** When the oldest of those was held, so the row can state its age. */

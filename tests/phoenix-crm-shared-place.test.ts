@@ -845,15 +845,15 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   );
   const restoreGate = venueServer.slice(venueServer.indexOf("export async function restoreSharedPlace"));
   assert.ok(
-    restoreGate.includes("if (!canDecideSharedPlaces(viewer)) throw forbiddenError("),
-    "🔴 the Super Admin ALONE brings a venue back — the same gate that rejected it",
+    restoreGate.includes("if (!canDecideValidationReviews(viewer)) throw forbiddenError("),
+    "🔴 the deciders ALONE (Super Admin and SFE Manager) bring a venue back — the same gate that rejected it",
   );
   const restoreRoute = stripComments(readFileSync("app/api/phoenix-crm/validation-reviews/shared-place/restore/route.ts", "utf8"));
   assert.ok(restoreRoute.includes("export async function POST(request: Request)"), "the route answers POST");
   assert.ok(!/export async function (GET|PUT|PATCH|DELETE)\b/.test(restoreRoute), "and nothing else");
   assert.ok(restoreRoute.includes("assertSameOriginMutation(request)"), "a mutation is same-origin only");
   assert.ok(
-    restoreRoute.includes('await assertPermission(access, "phoenix_crm", "update")'),
+    restoreRoute.includes('await assertPermission(access, "phoenix_crm", "approve")'),
     "and the server-side permission is the security boundary, never the screen",
   );
   const registry = readFileSync("src/lib/security/access-registry.ts", "utf8");

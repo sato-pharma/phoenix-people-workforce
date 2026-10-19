@@ -11,14 +11,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // POST = refuse a validation the Google check never held (every PM customer, and the AM ones that
-// matched). The Super Admin ALONE, exactly as the held reviews beside it: `update` here is gate one,
-// and the service refuses everyone but the Super Admin before anything is read.
+// matched). The Super Admin and the SFE Manager, exactly as the held reviews beside it: `approve` here is gate one,
+// and the service refuses everyone but those two before anything is read.
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "phoenix_crm", "update");
+    await assertPermission(access, "phoenix_crm", "approve");
     const viewer = await resolvePhoenixCrmViewer(access);
     const refused = await refuseValidatedPlace(viewer, await request.json());
     return NextResponse.json({ refused, success: true });

@@ -30,19 +30,26 @@ export const dynamic = "force-dynamic";
  * (a moved hospital) — which the owner ruled "held for review and only system admin can approve or
  * reject".
  *
- * 🔴 THE SUPER ADMIN'S ALONE, not the SFE Manager's: `canDecideValidationReviews` gates the page and the
- * route. The redirect rather than a message is the integrity board's shape — a page that does not
- * describe itself to somebody who may not read it.
+ * 🔴 THE SUPER ADMIN'S AND THE SFE MANAGER'S (owner, 2026-10-19: "show check place to sfe manager exactly
+ * as it in the admin account to be able validate approve and refuse"): `canDecideValidationReviews` gates
+ * the page and the routes. The gate here is `approve`, which both hold — the SFE Manager has no `update`
+ * in this module and was not given one, because that would open every other `update` route to him. The
+ * redirect rather than a message is the integrity board's shape — a page that does not describe itself to
+ * somebody who may not read it.
+ *
+ * The SFE Manager is served exactly this board, with two things held back by earlier rulings of the
+ * owner's that this one did not touch: he cannot SETTLE an integrity case (the deck says so itself), and
+ * the phone's mock-location answer and the position cases are not in his evidence.
  */
 export default async function PhoenixCrmValidationReviewsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const access = await resolveAccessContextFromPage();
-  if (!(await canAccess(access, "phoenix_crm", "update"))) redirect("/admin");
+  if (!(await canAccess(access, "phoenix_crm", "approve"))) redirect("/admin");
   const viewer = await resolvePhoenixCrmViewer(access).catch(() => null);
   if (!viewer || !canDecideValidationReviews(viewer)) redirect("/admin");
 
-  // `loadSharedPlaceBoard` gates on `canDecideSharedPlaces`, which is the same predicate as
-  // `canDecideValidationReviews` above (Super Admin, `update`, not a test persona) — so it cannot 403 a
-  // viewer this page has already admitted, and it needs no second redirect.
+  // `loadSharedPlaceBoard` narrows by `placeChecksSeatScope`, which answers for exactly the viewers
+  // `canDecideValidationReviews` above admits — so it cannot 403 a viewer this page has already
+  // admitted, and it needs no second redirect.
   const [reviews, validatedRead, reopenedRead, sharedRead] = await Promise.all([
     loadValidationReviews(viewer),
     loadValidatedPlaces(viewer),

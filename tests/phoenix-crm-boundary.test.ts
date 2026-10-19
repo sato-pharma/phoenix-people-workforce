@@ -174,27 +174,27 @@ const ROUTE_GATES: RouteGate[] = [
   post("place-notes", "approve"),
   post("place-notes/recommendation", "approve"),
   // Approving or rejecting a place the Google Maps check could not confirm (owner, 2026-10-03): the
-  // Super Admin alone — `update` at the route, `canDecideValidationReviews` in the service.
-  post("validation-reviews", "update"),
+  // Super Admin and the SFE Manager (2026-10-19) — `approve` at the route (the SFE Manager holds no `update`), `canDecideValidationReviews` in the service.
+  post("validation-reviews", "approve"),
   // Refusing a validation the check never held — every PM customer, and the AM ones that matched
   // (2026-10-03). The same gate, the same decider, and the same reject underneath it.
-  post("validation-reviews/refuse", "update"),
+  post("validation-reviews/refuse", "approve"),
   // Confirming a validation the system could not read (owner, 2026-10-17): the same gate and decider.
-  post("validation-reviews/approve", "update"),
+  post("validation-reviews/approve", "approve"),
   // Approving a place AFTER it was rejected (owner, 2026-10-03): the same gate and the same decider.
-  post("validation-reviews/restore", "update"),
+  post("validation-reviews/restore", "approve"),
   // Deciding a POLYCLINIC or centre (owner, 2026-10-09: the administrator has the right to review the
-  // schedule and look). The same gate and the same decider as a place's review — `update` at the route
-  // and `canDecideSharedPlaces` in the service, which is the identical predicate — and a rejection
+  // schedule and look). The same gate and the same decider as a place's review — `approve` at the route
+  // and `canDecideValidationReviews` in the service (`canDecideSharedPlaces` now gates seating only) — and a rejection
   // retires every place seated in the venue.
-  post("validation-reviews/shared-place", "update"),
+  post("validation-reviews/shared-place", "approve"),
   // Approving a venue AFTER rejecting it (owner, 2026-10-15) — its own route, its own rules.
-  post("validation-reviews/shared-place/restore", "update"),
+  post("validation-reviews/shared-place/restore", "approve"),
   // The third tab of Place checks (owner, 2026-10-17): places several reps validated, side by side, and
-  // his answer to "are these the same place?". `read` to open it and `update` to answer, the Super Admin
-  // alone — the loader and the service refuse everyone else before a row is read.
+  // his answer to "are these the same place?". `read` to open it and `approve` to answer, the Super Admin and the SFE Manager
+  // only — the loader and the service refuse everyone else before a row is read.
   get("validation-reviews/same-place"),
-  post("validation-reviews/same-place", "update"),
+  post("validation-reviews/same-place", "approve"),
   // The venues themselves: the list a rep standing in one picks from, and the capture at its door.
   // `read` and `create`, the same pair a place has, and `territoryForValidation` narrows the capture
   // in the service exactly as it narrows `list/places`.

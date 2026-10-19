@@ -1,11 +1,13 @@
 /**
- * Phoenix CRM — places the Google Maps check could not confirm, and the Super Admin's decision on each.
+ * Phoenix CRM — places the Google Maps check could not confirm, and the administrator's decision on each.
  *
  * Owner, 2026-10-03: an account Google has no listing for is "held for review and only system admin can
  * approve or reject … but do not show the rep that a person is accepting or rejecting — show him that
- * it's automated from system". So:
- *   · ONE decider: the Super Admin (`canDecideValidationReviews`), never a test account — not the SFE,
- *     not a district manager. The page lives under /admin, a tree a rep cannot open.
+ * it's automated from system". Widened 2026-10-19 to the SFE Manager, who sees the same page and takes
+ * the same decisions. So:
+ *   · TWO deciders, one predicate: the Super Admin and the SFE Manager (`canDecideValidationReviews`),
+ *     never a test account and never a district manager. The page lives under /admin, a tree a rep
+ *     cannot open.
  *   · The rep reads only `locationCheck` on his own list ("checking" / "not_confirmed"), worded as the
  *     system's (google-place-rules.ts). Nothing he receives names who decided, or that anybody did.
  *
@@ -56,7 +58,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
 
-/** Where the Super Admin decides them. */
+/** Where the Super Admin and the SFE Manager decide them. */
 export const VALIDATION_REVIEWS_PATH = "/admin/field-crm/validation-reviews";
 
 /** How long a decided review stays on the page beside the waiting ones. */
@@ -654,7 +656,7 @@ export async function loadValidationReviews(viewer: PhoenixCrmViewer): Promise<V
  * `restoreValidation` below.
  */
 export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ reviewId: string; status: "approved" | "rejected" }> {
-  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   if (!isUuid(body.reviewId)) throw validationError("Choose the place to decide.");
   const decision = body.decision === "approve" ? "approve" : body.decision === "reject" ? "reject" : null;
@@ -700,7 +702,7 @@ export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unkn
  * either way (`decided_by_hr_id`, `decided_at`, and the `google` payload the function carries over).
  */
 export async function restoreValidation(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ reviewId: string; validated: boolean }> {
-  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   if (!isUuid(body.reviewId)) throw validationError("Choose the rejection to take back.");
   const note = cleanText(body.note, 500);
@@ -967,7 +969,7 @@ function signboardOf(value: unknown): ValidatedPlaceRow["signboard"] {
  * the first 24 refusals.
  */
 export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ placeId: string; reopened: boolean }> {
-  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   if (!isUuid(body.placeId)) throw validationError("Choose the place to refuse.");
   // What is wrong with the photo, because it is the one thing the rep is told (2026-10-08). The note
@@ -1049,7 +1051,7 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
  * is approved on its own review, keeping the evidence it was held on.
  */
 export async function approveValidatedPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ placeId: string; approved: boolean }> {
-  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   if (!isUuid(body.placeId)) throw validationError("Choose the place to approve.");
   const note = cleanText(body.note, 500);

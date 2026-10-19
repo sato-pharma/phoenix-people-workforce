@@ -1907,6 +1907,7 @@ import { runPhoenixCrmListSheetHoursTests } from "./phoenix-crm-list-sheet-hours
 import { runPhoenixCrmListTemplateTests } from "./phoenix-crm-list-template.test.ts";
 import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
 import { runPhoenixCrmSeatInVenueTests } from "./phoenix-crm-seat-in-venue.test.ts";
+import { runPhoenixCrmSfePlaceChecksTests } from "./phoenix-crm-sfe-place-checks.test.ts";
 import { runPhoenixCrmListCurationTests } from "./phoenix-crm-list-curation.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmRefuseValidationTests } from "./phoenix-crm-refuse-validation.test.ts";
@@ -7247,6 +7248,11 @@ await runTest(
 await runTest(
   "Phoenix CRM moves a standalone customer into a validated polyclinic only for the Super Admin (owner, 2026-10-10): one statement seats the place and frees its photo, the place takes the building's point exactly, a building with no timetable holds the customer out of the KPIs through validated_at while his visits still count, an unjudged read never holds, and a customer already in a building is never seated twice",
   runPhoenixCrmSeatInVenueTests,
+);
+
+await runTest(
+  "Phoenix CRM Place checks for the SFE Manager (owner, 2026-10-19): the Super Admin and the SFE Manager decide and nobody else does, on `approve` because the SFE Manager holds no `update`; seating a customer in a polyclinic, settling an integrity case and the mock-location evidence stay the Super Admin's; the notice of a new hold is still the Super Admin's alone",
+  runPhoenixCrmSfePlaceChecksTests,
 );
 
 await runTest(

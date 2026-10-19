@@ -23,7 +23,7 @@
  * into the searchable control.
  *
  * 🔴 ONE BOARD, TWO MODES, AND NEVER A SECOND COPY (owner, 2026-10-13: a district manager gets this
- * board for his own team). `mode="company"` is the Super Admin's — every decision control he has had
+ * board for his own team). `mode="company"` is the Super Admin's and the SFE Manager's (2026-10-19) — every decision control the Super Admin has had
  * since 2026-10-03, plus what the managers have written. `mode="team"` renders NO decision control at
  * all and no sentence about one: not "waiting for your decision", not who decided a settled row, not
  * what approving or refusing would do, and not the system's recommendation. He comments and he
@@ -213,7 +213,7 @@ export function ValidationReviewsBoard({
   noteIndex,
   reviewDeck,
 }: {
-  /** Whose board this is — see the header. "company" is the Super Admin's, "team" a district manager's. */
+  /** Whose board this is — see the header. "company" is the Super Admin's and the SFE Manager's, "team" a district manager's. */
   mode: PlaceCheckNotesMode;
   /** Every comment and recommendation on this page's subjects, keyed by `placeNoteSubjectKey`. */
   noteIndex: PlaceNoteIndex;
