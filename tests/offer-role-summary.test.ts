@@ -243,14 +243,16 @@ export function runOfferRoleSummaryTests(): void {
   }
 
   // ─────────────────────────────────────── a Training Manager's letter is about learning ──
-  // The title is seeded with its own words, and those words promise no territory number, field team
-  // or district plan — the same defect the talent-acquisition paragraph exists to avoid.
+  // The title is seeded with its own words, and those words promise no district plan or field team to
+  // lead — the same defect the talent-acquisition paragraph exists to avoid. "sales performance" is
+  // NOT on the list: the owner's own wording (2026-10-19) ends on "overall sales performance", as the
+  // goal the training serves, not a number the Training Manager is accountable for.
   assert.equal(
     seeded.get("Training Manager"),
     OFFER_TRAINING_MANAGER_ROLE_SUMMARY,
     "the Training Manager title is seeded with its own paragraph",
   );
-  for (const forbidden of ["sales performance", "district plan", "field team", "market expansion"]) {
+  for (const forbidden of ["district plan", "field team", "market expansion"]) {
     assert.ok(
       !OFFER_TRAINING_MANAGER_ROLE_SUMMARY.toLowerCase().includes(forbidden),
       `the training-manager paragraph must not say "${forbidden}"`,
@@ -263,8 +265,9 @@ export function runOfferRoleSummaryTests(): void {
     title: "Training Manager",
   });
   assert.ok(
-    trainingLetter.includes("own the learning of our teams") && trainingLetter.includes("bring both to Head Office"),
-    "a Training Manager letter prints its own paragraph, naming the territory it was given",
+    trainingLetter.includes("designing and delivering training programmes") &&
+      trainingLetter.includes("training capabilities required to develop and strengthen our field force"),
+    "a Training Manager letter prints its own paragraph",
   );
 
   // ───────────────────────────── the premium letter takes the job title's words too ──

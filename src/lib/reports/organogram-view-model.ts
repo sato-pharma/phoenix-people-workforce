@@ -119,6 +119,13 @@ export function isMarketingDepartment(row: OrganogramRow) {
 
 export function isOrganogramVisibleRow(row: OrganogramRow) {
   return (
+    // The CEO's seat row carries no department and no line (departmentName is null on every seat
+    // row, and the CEO seat belongs to no line), so none of the four tests below ever admitted him.
+    // filterOrganogramRows and buildOrganogramLanes both look for him — the spine's CEO box is
+    // backed by his row — but this predicate runs first in both pages, so the box read "Executive
+    // Leadership" with no name and no data, and everyone reporting to him was grouped under
+    // "Manager AA".
+    isChiefExecutive(row) ||
     isSalesDepartment(row) ||
     isMarketingDepartment(row) ||
     isOfficeLine(row) ||

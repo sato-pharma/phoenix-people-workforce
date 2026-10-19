@@ -78,11 +78,12 @@ export const OFFER_SEED_JOB_TITLES: OfferJobTitleInput[] = [
   },
   {
     // 3,500 is payroll's own pair for the title — 3,000 allowance plus 500 fuel — which is what the
-    // letter's table and the hire it produces must agree on. The current Training Manager reports to
-    // the Marketing Manager on the employee master, so that is where a new letter starts.
+    // letter's table and the hire it produces must agree on. The Training Manager reports to the CEO
+    // (owner, 2026-10-19: the open chair, its hiring request and this title all moved off the
+    // Marketing Manager together), so that is where a new letter starts.
     contractTerm: "One year, renewable",
     costOfLiving: 3500,
-    reportsTo: "Marketing Manager",
+    reportsTo: "Chief Executive Officer",
     roleSummary: OFFER_TRAINING_MANAGER_ROLE_SUMMARY,
     title: "Training Manager",
   },
