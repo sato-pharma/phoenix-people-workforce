@@ -435,8 +435,9 @@ export const MODULES = [
     title: "Phoenix CRM — the reports, the boards and how every figure is counted",
     scope: "The manager-facing reports, the exceptions board and the 06:55 digest's figures, and the arithmetic behind each — working days, brick coverage keyed by line, plan vs actual, counting visits through the KPI view, the tracking sheet and the workbook, and the report catalogue.",
     globs: [
-      "src/lib/phoenix-crm/{brick-report,daily-plan-report,exceptions,report-guide,report-rules,samples-report}.ts",
-      "src/lib/phoenix-crm/server/{brick-report,daily-digest,daily-plan-report,exceptions,insight-reports,reports,reports-workbook}.ts",
+      "src/lib/phoenix-crm/{brick-report,daily-plan-report,exceptions,report-guide,report-rules,samples-report,team-calendar}.ts",
+      "src/lib/phoenix-crm/server/{brick-report,daily-digest,daily-plan-report,exceptions,insight-reports,reports,reports-workbook,team-calendar}.ts",
+      "src/components/phoenix-crm/calendar-tab.tsx",
       "app/api/phoenix-crm/reports/**",
       "tests/phoenix-crm-{brick-coverage-report,daily-digest,daily-plan-report,exceptions,insight-reports,report-comparison,reports-export,wave2-reports}*",
     ],

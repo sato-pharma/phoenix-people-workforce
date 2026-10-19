@@ -25,12 +25,14 @@ import { addDaysIso } from "@/lib/crm/dates";
 import {
   isManagerPlanSent,
   managerAdminActivityLabel,
+  singleVisitHalfOfHour,
   type ManagerHalf,
   type ManagerPlannerKind,
   type ManagerPlanStatus,
   type ManagerSlotKind,
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
+import { cairoHourOf } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
 import { loadManagerSlotCustomers, loadManagerSlotRows, MANAGER_PLAN_COLUMNS, managerPlanRowOf, type ManagerPlanRow } from "@/lib/phoenix-crm/server/manager-plan-rows";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -397,7 +399,19 @@ export async function loadManagerPlanDecisions(managerHrIds: ReadonlyArray<strin
 // ── His own single visits, as "did he work that day" ───────────────────────────────────────────
 
 /** One manager, one day, and how many of his own single visits he logged on it. */
-export type ManagerOwnVisitDay = { hrId: string; date: string; visits: number };
+export type ManagerOwnVisitDay = {
+  hrId: string;
+  date: string;
+  visits: number;
+  /**
+   * How many of those fell in each half: a planned visit keeps its half, an unplanned one the Cairo half it
+   * was logged in (`singleVisitHalfOfHour`, the rule the weekly cap counts by). `loadManagerOwnVisitDays`
+   * always fills them, so `am + pm === visits`; OPTIONAL only so a caller that builds a day by hand for
+   * the "did he work" question (which reads `visits` alone) need not invent a split.
+   */
+  am?: number;
+  pm?: number;
+};
 
 /**
  * 🔴 A MANAGER'S OWN SINGLE VISIT IS A RECORD OF HIS DAY (owner, 2026-10-19, multiple choice: "count it
@@ -428,7 +442,7 @@ export async function loadManagerOwnVisitDays(input: {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let query: any = getSupabaseAdmin()
           .from("phoenix_crm_manager_visits")
-          .select("id, manager_hr_id, visit_date")
+          .select("id, manager_hr_id, visit_date, half, created_at")
           .gte("visit_date", input.start)
           .lte("visit_date", input.end)
           .eq("is_test", isTest);
@@ -452,9 +466,14 @@ export async function loadManagerOwnVisitDays(input: {
     const date = (textOrNull(row.visit_date) ?? "").slice(0, 10);
     if (!hrId || date.length !== 10) continue;
     const key = `${hrId}|${date}`;
-    const current = counts.get(key);
-    if (current) current.visits += 1;
-    else counts.set(key, { date, hrId, visits: 1 });
+    // An unplanned visit has no half of its own: the Cairo hour it was logged in decides, as it does for the cap.
+    const created = textOrNull(row.created_at);
+    const half: ManagerHalf = row.half === "AM" || row.half === "PM" ? row.half : singleVisitHalfOfHour(created ? cairoHourOf(created) : 0);
+    const current = counts.get(key) ?? { am: 0, date, hrId, pm: 0, visits: 0 };
+    current.visits += 1;
+    if (half === "AM") current.am = (current.am ?? 0) + 1;
+    else current.pm = (current.pm ?? 0) + 1;
+    counts.set(key, current);
   }
   return [...counts.values()].sort((left, right) => left.date.localeCompare(right.date) || left.hrId.localeCompare(right.hrId));
 }
