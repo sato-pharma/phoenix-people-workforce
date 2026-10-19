@@ -61,6 +61,8 @@ on the night of the outage.
 
 ## The deploy gate
 
+> 🔴 **Since 2026-10-19 this gate has a successor built beside it: "The release gate — Railway builds while CI runs", below.** Wait for CI stays ON until the owner switches it off; from then on a commit is held by `/api/readyz` and ci.yml's `release-gate` job instead, and everything in this section about a suite withholding a deploy describes the regime that ends then.
+
 🔴 **PRODUCTION IS GATED AND PROVEN. STAGING'S TOGGLE IS ON BUT IS NOT ENFORCING — do not read
 them as one setting.** Railway's **Wait for CI** is switched on for the `phoenix-people-workforce`
 service in **both** environments (owner's instruction, 2026-09-27: *"no i want 2 stop bad deploy"*;
@@ -639,7 +641,7 @@ Never push directly to `main`. Work happens on a branch/PR and merges after CI p
    are the same steps. See AGENTS.md § 7.
 4. **Apply any database migration by hand BEFORE the merge.** The Railway deploy applies none. See
    "Database Deployment" below.
-5. Merge to `main`. **The merge is the deploy.** Railway builds and ships the new commit to
+5. Merge to `main`. **The merge is the deploy.** (Once the owner switches Wait for CI off — "The release gate" below — Railway builds at the merge and the new container goes live when `release-gate` has recorded the checks green.) Railway builds and ships the new commit to
    production at **full traffic**, within minutes. There is no staged rollout, no no-traffic
    revision, no post-deploy smoke test, and no cron wait — nothing stands between the merge and
    employees using it.
@@ -692,6 +694,93 @@ four separate reasons that stacked. Read each from its own source, never from on
   the plugin lives at `@sentry/nextjs/config`, not the package root) and the fix took about 23 minutes.
   `tests/sentry-production-only.test.ts` now loads `next.config.ts` through Next's own loader with a
   dummy token, so a plugin that cannot load fails the PR instead.
+
+## The release gate — Railway builds while CI runs
+
+Built 2026-10-19 on the owner's instruction *"speed up the Railway deploy"* and his question *"which is
+faster and costs less"*. It replaces Railway's **Wait for CI** as the thing that stops an unchecked commit
+going live, so the build no longer waits for the checks to START.
+
+**Why.** Measured on the merge of #6163, 19 Oct 2026 (UTC): pushed 16:41:05, every check finished 16:46:12,
+Railway's build **scheduled 16:46:28** and the app answered from the new commit at **16:57** — about 16
+minutes, five of them checks and ten and a half Railway's build, on a day its shared builder was slow (that
+build reached "Finalizing page optimization" 6 min 57 s after it was scheduled, against 2 min 44 s on an earlier one). Wait for CI made the two add up. They
+should overlap: the merge then reaches production when the SLOWER of the two ends.
+
+**How it works.**
+
+1. With Wait for CI off, Railway starts the build the moment a commit lands on `main`.
+2. `app/api/readyz` — Railway's deploy healthcheck since 2026-09-30 — answers **503 until a row for the
+   container's own commit exists in `public.release_gates`**
+   (`src/lib/platform/release-gate.ts`, the read in `release-gate-store.ts`). Railway keeps the OLD version
+   serving until the probe answers 2xx, and marks the deploy failed if it never does within
+   `healthcheckTimeout` (900 s since this change, `railway.toml`).
+3. The last job of `ci.yml`, **`release-gate`**, writes that row. It runs on a push to `main` only, needs
+   exactly the required pair (`validate`, `checks`), uses `PRODUCTION_SUPABASE_SERVICE_ROLE_KEY` (the secret
+   `migration-drift-check.yml` and `synthetic-journeys.yml` already use) and reads the row back before it
+   passes. A red check means no row, so the new container never takes traffic and the old one keeps serving.
+
+**Nothing is skipped.** Every check still runs on every merge and a commit still cannot go live without all
+of them. What changes is that the build is no longer idle while they run.
+
+**What the probe does and does not hold.**
+
+| Container | Gate |
+|---|---|
+| Production on Railway, git commit known | **Held** until its row exists. An unreadable table is NOT ready (fail closed). |
+| Urgent `railway up` upload (`public/urgent-deploy.json` present) | Never held — it skips the checks by the owner's own words. |
+| `PHOENIX_RELEASE_GATE=off` | Never held. The emergency switch; only the exact word `off` counts. |
+| Anything that is not production on Railway (laptop, CI, staging) | Never held — nothing writes a row for it. |
+
+The table is never pruned: a container that restarts weeks after its deploy asks again, and a pruned row
+would fail that restart.
+
+**What it replaces, and what that changes.** Wait for CI also withheld a deploy for any failed or queued
+suite on the commit, scheduled workflows and Dependabot included (`engineering-deploys` rules). With the gate
+the deploy depends on exactly `validate` and `checks`. A red `mobile` job, a scheduled Security Scan that
+happens to attach to `main` HEAD, or a failing `staging-migrate` no longer holds production; each still
+shows red where it always did. That is the intended narrowing, not a loss: those suites were never the
+checks the owner asked for, and the nine-minute hold on 16 Oct came from one of them.
+
+**The order it goes live in — each step has its own proof.**
+
+1. Apply the `release_gates` migration to production BEFORE the merge (the deploy applies none).
+2. Merge. Wait for CI is still ON, so this first deploy behaves exactly as before AND proves the gate:
+   `/api/readyz` on the live container must read `checks.releaseGate` = `{required: true, passed: true,
+   reason: "recorded"}`, and the build log must print `Retry window: 15m0s`. Until both are seen, do not go on.
+3. Only on the owner's word, switch Wait for CI off on `phoenix-people-workforce` AND
+   `phoenix-workforce-worker` (the service trigger's `checkSuites`, from the dashboard toggle or one
+   `deploymentTriggerUpdate` call — never a whole-project `config apply`, whose variable list goes stale in
+   days). `.railway/railway.ts` already says `checkSuites: false`, the target; live reads `true` until then.
+4. Measure the next merge from the build log's `Healthcheck succeeded` line, per "A slow day is measured from
+   the build log". The first one that really overlaps shows `readyz` answering 503 `not_recorded` for a
+   while and then 200.
+
+🔴 **NEVER HAVE BOTH GATES OFF.** Wait for CI off AND `PHOENIX_RELEASE_GATE=off` means every merge goes live
+the moment it builds, with nothing red anywhere. The switch exists so a broken gate cannot strand a hotfix;
+turn Wait for CI back on in the same breath as setting it. The urgent route needs neither.
+
+**Failure modes, and what to do about each.**
+
+- **CI red.** No row, the container answers 503 for the whole window, Railway marks the deploy failed and
+  the old version keeps serving. Do nothing; the next green merge carries it.
+- **GitHub slow enough that CI outlasts the window** (19 Oct: results recorded 13 to 18 minutes late). The
+  container fails its window while CI later goes green. Same recovery — the next green merge carries it. A
+  Railway redeploy of that deployment would pass once the row exists, but that has not been tried, and
+  `railway redeploy` is otherwise forbidden here.
+- **The row cannot be written** (secret rotated, Supabase down). `release-gate` is red and loud; nothing goes
+  live. Fix the secret or wait; this is the closed answer on purpose.
+- **Two merges close together.** Each container waits for its own row; the newer one that passes becomes the
+  active deploy and the older is superseded, as with any queue here.
+- **A revert or hotfix** takes exactly the same path. For minutes, the urgent route is the one that skips it.
+
+**Rollback.** Switch Wait for CI back ON. Nothing else has to change: the gate still passes because
+`release-gate` still runs and writes the row first.
+
+**Not done, deliberately.** Building the Docker image in CI and deploying that digest: it needs a GitHub
+access token for Railway to pull a private image, moves the live service off its GitHub source, and was
+measured slower on a normal day (a 2-core runner against Railway's builder) and dearer (about six more runner
+minutes per merge plus image storage).
 
 ## The urgent route — "live in five minutes"
 

@@ -71,12 +71,12 @@ export function runCiRunnerSwitchTests() {
   // The scan above must have looked at something, or an empty directory would pass it.
   assert.ok(runsOnLines >= 20, `expected at least 20 \`runs-on\` lines across the workflows, found ${runsOnLines}`);
 
-  // ci.yml's own jobs: each of the six is in the count above, and none was dropped to dodge the check.
+  // ci.yml's own jobs: each of the seven is in the count above, and none was dropped to dodge the check.
   const ciJobs = live("ci.yml").filter(({ text }) => /^ {4}runs-on:/.test(text));
   assert.equal(
     ciJobs.length,
-    6,
-    `ci.yml should declare 6 jobs (validate, static, unit, checks, mobile, full-e2e) and has ${ciJobs.length} \`runs-on\` ` +
+    7,
+    `ci.yml should declare 7 jobs (validate, static, unit, checks, release-gate, mobile, full-e2e) and has ${ciJobs.length} \`runs-on\` ` +
       `lines. If a job was added or removed on purpose, update this number and tests/ci-suite-placement.test.ts together.`,
   );
 }

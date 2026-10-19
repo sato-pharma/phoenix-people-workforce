@@ -77,14 +77,19 @@ export default defineRailway(() => {
     // source branch is the 2026-08-13 incident (production silently pointing at a stale branch,
     // five merged green PRs stranded with nothing red), so whoever plans the apply CONFIRMS the
     // branch in the plan output before applying, and never leaves it to a default.
-    source: github("Gawish-1997/phoenix-people-workforce", { checkSuites: true }),
+    // 🔴 `checkSuites: false` IS THE TARGET STATE OF THE RELEASE GATE (2026-10-19), NOT YET WHAT IS LIVE: live reads
+    // `true` until the owner switches Wait for CI off (docs/deployment.md, "The release gate"). With it off Railway
+    // builds the moment a commit lands and /api/readyz holds the new container until ci.yml's `release-gate` job has
+    // recorded that the required checks passed. An apply of this file BEFORE that is safe only once the gate has
+    // been live for a deploy; like every apply it needs his word, and the variable list below goes stale in days.
+    source: github("Gawish-1997/phoenix-people-workforce", { checkSuites: false }),
     replicas: { "europe-west4-drams3a": 1 },
     domains: ["phoenix-hr.satopharma.com"],
     // From railway.toml, which a pull cannot see: config-as-code is applied at DEPLOY time and is
     // not stored as a service setting. Omitting these leaves production with no readiness gate.
     deploy: {
       healthcheckPath: "/api/readyz",
-      healthcheckTimeout: 300,
+      healthcheckTimeout: 900,
       restartPolicyType: "ON_FAILURE",
       restartPolicyMaxRetries: 10,
     },
@@ -99,11 +104,12 @@ export default defineRailway(() => {
   // (phoenix-workforce-worker-production.up.railway.app) is what the moved cron-job.org jobs call; a
   // re-pull before any apply must show it, or the apply would drop it and those jobs would fail.
   const phoenixWorkforceWorker = service("phoenix-workforce-worker", {
-    source: github("Gawish-1997/phoenix-people-workforce", { checkSuites: true }),
+    // Target state, as on the app above: the worker runs the same /api/readyz, so it is held by the same release gate.
+    source: github("Gawish-1997/phoenix-people-workforce", { checkSuites: false }),
     replicas: { "europe-west4-drams3a": 1 },
     deploy: {
       healthcheckPath: "/api/readyz",
-      healthcheckTimeout: 300,
+      healthcheckTimeout: 900,
       restartPolicyType: "ON_FAILURE",
       restartPolicyMaxRetries: 10,
     },
