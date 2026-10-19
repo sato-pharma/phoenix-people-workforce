@@ -283,6 +283,20 @@ export function goLiveFrom(deploymentsWithStatuses) {
   return earliest;
 }
 
+/**
+ * The defaults below would otherwise be read as the TYPES (`fresh` as never[], `liveMinutes` as null) by a TypeScript
+ * caller, since the repo compiles this file with allowJs; this says what each field really holds.
+ * @param {{
+ *   merged?: boolean,
+ *   live?: boolean,
+ *   appRead?: boolean,
+ *   fresh?: unknown[],
+ *   sentry?: { read: boolean, reason?: string, fresh?: unknown[] },
+ *   liveMinutes?: number | null,
+ *   windowMinutes?: number,
+ * }} reading
+ * @returns {{ code: number, label: string, note: string }}
+ */
 export function postDeployVerdict({ merged = true, live = true, appRead = true, fresh = [], sentry = { read: false }, liveMinutes = null, windowMinutes = DEFAULT_WINDOW_MINUTES }) {
   if (!merged) return { code: EXIT.NOT_MERGED, label: "NOT MERGED", note: "the PR is not merged, so nothing of it can be serving" };
   if (!live) return { code: EXIT.NOT_LIVE, label: "NOT LIVE", note: "production is not serving this merge yet; verify-shipped.mjs answers that" };
