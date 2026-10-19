@@ -557,6 +557,25 @@ export const MODULES = [
     keywords: ["doctor list", "contact master", "contact list", "contact assignments", "contact-lists cron", "doctor list changes", "drop a doctor", "regrade", "hand the vendor list over", "fifth pass"],
     tables: ["crm_contacts", "crm_contact_assignments"],
   },
+  // 🔴 SPLIT 2026-10-19, FOR THE REASON `crm-doctor-lists` ABOVE RECORDS: `crm` was at 3,952 bytes with
+  // 31 rules, 48 under the 4,000-byte margin `tests/module-memory.test.ts` holds, so no new rule of any
+  // length fitted, and the restart-marker hold took it to 4,116. The poller's schedule is the clean
+  // cut: the in-process loop, the deep runs it times and the markers a restart reads back are one
+  // mechanism with its own files and tests, and none of its rules are read while editing a call rate,
+  // a KPI board or a double visit. `crm` KEEPS EVERY GLOB IT HAD, so a poller file loads the PAIR and
+  // nothing that used to arrive stops arriving.
+  {
+    id: "crm-sync",
+    title: "Field CRM sync — the iReports360 live poller, its scheduled jobs and their restart markers",
+    scope: "The in-process iReports360 loop: the live probe, the rolling 10-day sync, the weekly 30-day reconcile, the plan sync, the contact-list sweep and the parity sweep, the order it runs them in, and the markers a deploy restart reads back so it does not run one again.",
+    globs: [
+      "src/lib/crm/{live-poller,sync,sync-run-groups,parity,plan-sync,cutover,housekeeping-scheduler}.ts",
+      "app/api/cron/ireports360-visits-{live-sync,reconcile,sync}/**",
+      "tests/crm-live-*",
+    ],
+    keywords: ["live poller", "crm poller", "rolling sync", "weekly reconcile", "wide reconcile", "parity sweep", "restart marker", "deep run", "scheduled work", "seed the markers"],
+    tables: ["ireports360_visits_sync_runs"],
+  },
   {
     id: "marketing",
     title: "Marketing requests, venues, pharmacies and ROI",
