@@ -71,6 +71,8 @@ export type HeldSignboardPlace = {
   photoPath: string;
   customerName: string;
   listType: PhoenixCrmListType;
+  /** The brick the place's GPS resolved to — an AM name's town word (`signNamesCustomer`). */
+  photoBrick: string | null;
   /** Reads already recorded on the place, the door's included. */
   readsSoFar: number;
 };
@@ -122,6 +124,7 @@ export async function settleHeldSignboard(
     const read = await rereadHeldPlaceSignboard({
       customerName: place.customerName,
       listType: place.listType,
+      photoBrick: place.photoBrick,
       photoPath: place.photoPath,
     });
     // No key, or a reader that never answered (out of credit, down, timing out), is no read at all:
@@ -179,7 +182,7 @@ export async function loadHeldSignboardPlaces(options: { limit?: number; include
   if (reviews.length === 0) return [];
 
   const [places, customers] = await Promise.all([
-    selectByIds<Row>("phoenix_crm_places", "id, photo_path, status, signboard_check, shared_place_id", "id", reviews.map((row) => String(row.place_id))),
+    selectByIds<Row>("phoenix_crm_places", "id, photo_path, brick_name, status, signboard_check, shared_place_id", "id", reviews.map((row) => String(row.place_id))),
     selectByIds<Row>("phoenix_crm_customers", "id, name, list_type", "id", reviews.map((row) => String(row.customer_id))),
   ]);
   const placeById = new Map(places.map((row) => [String(row.id), row]));
@@ -201,6 +204,7 @@ export async function loadHeldSignboardPlaces(options: { limit?: number; include
       customerName,
       isTest: review.is_test === true,
       listType,
+      photoBrick: typeof place.brick_name === "string" && place.brick_name.trim() ? place.brick_name : null,
       photoPath,
       placeId: String(review.place_id),
       readsSoFar,

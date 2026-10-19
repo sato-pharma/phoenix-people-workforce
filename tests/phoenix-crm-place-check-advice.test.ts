@@ -130,6 +130,10 @@ function checkTimetable() {
 
   const paper = note(adviseOnTimetable({ verdict: "unjudged", scheduleText: null, hoursRead: null, reason: "unreadable", problem: "not_a_timetable" }));
   assert.equal(paper.refusal, "schedule_missing");
+  const onScreen = note(adviseOnTimetable({ verdict: "no_schedule", scheduleText: null, hoursRead: null, reason: "schedule_missing", problem: "on_a_screen" }));
+  assert.equal(onScreen.kind, "reject", "🔴 a timetable photographed off a screen is rejected");
+  assert.equal(onScreen.refusal, "schedule_missing");
+  assert.match(onScreen.reason, /phone or computer screen/, "and the reason says it was a screen, not a missing timetable");
 
   for (const reason of ["call_failed", "no_api_key", "no_bytes", "held_elsewhere"]) {
     const advice = note(adviseOnTimetable({ verdict: "unjudged", scheduleText: null, hoursRead: null, reason }));

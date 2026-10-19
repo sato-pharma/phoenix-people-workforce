@@ -464,11 +464,15 @@ function readsTheCustomersName(
  * The short forms an AM list writes for a name its building spells out in full (owner, 2026-10-19,
  * choosing "teach the matcher" over approving them one by one): the list's "صدر منوف" is the board's
  * "مستشفى الأمراض الصدرية بمنوف", its "كهربا بشتيل" the electricity company's "… الكهرباء … بشتيل".
- * Each pair is written one way on BOTH sides, after the stem, so the quorum is unchanged.
+ * Each pair is written one way on BOTH sides, after the stem, so the quorum is unchanged. Two more from
+ * reading the Not readable tab by eye the same day: a company's plural is written both ways (the list's
+ * "تعاقد المقاولين العرب" is the board's "المقاولون العرب"), and the list spells النفسية as "النفسه".
  */
 const PLACE_SHORT_FORMS: ReadonlyMap<string, string> = new Map([
   ["صدريه", "صدر"],
   ["كهرباء", "كهربا"],
+  ["مقاولون", "مقاولين"],
+  ["نفسه", "نفسيه"],
 ]);
 
 /**
@@ -516,6 +520,8 @@ export function signNamesCustomer(input: {
   personNames: readonly string[];
   placeNames: readonly string[];
   signText: string | null;
+  /** The brick the photo's own GPS put the place in — on the place axis it may answer for the TOWN word. */
+  photoBrick?: string | null;
 }): { matches: boolean | null; score: number | null } {
   const wanted = normalizeContactName(input.customerName);
   if (!wanted) return { matches: null, score: null };
@@ -549,18 +555,28 @@ export function signNamesCustomer(input: {
   // row whose list word was dropped: the words left are the company and its TOWN, and losing the company
   // matched "تعاقد الكهرباء كفر الشيخ" on the Kafr El Sheikh fever hospital's board (replayed 2026-10-19).
   const allowedMisses = wantedWords.length >= 3 && !placeNameHasListWord(input.customerName, placeAxis) ? 1 : 0;
+  // 🔴 THE PHOTO'S OWN BRICK ANSWERS FOR THE TOWN, NEVER FOR THE PLACE (owner, 2026-10-19: "brick counts",
+  // under his rule that the evidence photo's GPS is the primary source of trust). "كهربا المرج" is North
+  // Cairo Electricity's board photographed in the brick المرج: the company is on the sign and the town is
+  // where the photo was taken. A word the brick supplies spends the whole allowance, and something on the
+  // sign itself must still say WHICH place — a board that matched on the town alone would match every
+  // building in it.
+  const brickWords = placeAxis && input.photoBrick ? wordsOf(input.photoBrick) : [];
 
   let best: number | null = null;
   let matched = false;
   for (const [index, candidate] of haystacks.entries()) {
     const read = wordsOf(candidate);
     if (read.length === 0) continue;
-    const missing = wantedWords.filter((name) => !nameWordIsThere(name, read)).length;
+    const onSign = wantedWords.filter((name) => nameWordIsThere(name, read));
+    const fromBrick = wantedWords.filter((name) => !nameWordIsThere(name, read) && nameWordIsThere(name, brickWords));
+    const missing = wantedWords.length - onSign.length - fromBrick.length;
+    const signSaysWhich = fromBrick.length === 0 || onSign.some((name) => !nameWordIsThere(name, brickWords));
     // On the person axis the allowance is never spent on his given name standing behind another
     // man's: a name read off the sign opens on one of HIS words, and the sign's whole text carries
     // his words as one run that opens on his given name (`readsTheCustomersName`).
     const isTheName = placeAxis || readsTheCustomersName(customerWords, read, allowedMisses, index >= preferred.length);
-    if (missing <= allowedMisses && isTheName) matched = true;
+    if (missing <= (fromBrick.length > 0 ? 0 : allowedMisses) && signSaysWhich && isTheName) matched = true;
     const score = jaccardSimilarity(nameTokens(candidate), nameTokens(input.customerName));
     best = best === null ? score : Math.max(best, score);
   }
@@ -779,12 +795,13 @@ export function nameMatchesAcrossScripts(input: {
 /** Does THIS sign name the customer — in his own script, or across the two? */
 export function signNamesCustomerOnSign(
   sign: PhoenixCrmSign,
-  input: { customerName: string | null; listType: PhoenixCrmListType },
+  input: { customerName: string | null; listType: PhoenixCrmListType; photoBrick?: string | null },
 ): { matches: boolean | null; score: number | null } {
   const sameScript = signNamesCustomer({
     customerName: input.customerName,
     listType: input.listType,
     personNames: sign.personNames,
+    photoBrick: input.photoBrick ?? null,
     placeNames: sign.placeNames,
     signText: sign.text,
   });
@@ -966,6 +983,8 @@ export function judgeSignboards(input: {
   croppedFraction: number;
   /** The reader's own word on what stops the name being read; kept, never judged on. */
   problem?: SignboardPhotoProblem | null;
+  /** The brick the photo's GPS resolved to — the town word of an AM name (`signNamesCustomer`). */
+  photoBrick?: string | null;
 }): PhoenixCrmSignboardCheck {
   const signs = [...input.signs];
   const anythingRead = signs.some(signCarriesAName);
@@ -1569,7 +1588,7 @@ export function signboardBacklogCheckToKeep(
  */
 export function signboardRejudge(
   stored: PhoenixCrmSignboardCheck,
-  input: { customerName: string; listType: PhoenixCrmListType },
+  input: { customerName: string; listType: PhoenixCrmListType; photoBrick?: string | null },
   now: Date = new Date(),
 ): { outcome: "confirm" | "retake"; check: PhoenixCrmSignboardCheck } | null {
   if (!Array.isArray(stored.signs) || stored.signs.length === 0) return null;
@@ -1578,6 +1597,7 @@ export function signboardRejudge(
     customerName: input.customerName,
     listType: input.listType,
     note: stored.note ?? null,
+    photoBrick: input.photoBrick ?? null,
     problem: stored.problem ?? null,
     signPresent: null,
     signs: stored.signs,

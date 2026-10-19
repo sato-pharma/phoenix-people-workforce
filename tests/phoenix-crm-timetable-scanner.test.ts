@@ -107,6 +107,15 @@ export function runPhoenixCrmTimetableScannerTests() {
   const street = judgeSchedule({ ...base, schedulePresent: null, scheduleText: null, personNames: [], problem: "not_a_timetable" });
   assert.equal(street.verdict, "no_schedule", "the reader's own 'not a timetable' with nothing read is no_schedule");
   assert.equal(judgeSchedule({ ...base, schedulePresent: null, scheduleText: null, personNames: [] }).verdict, "unjudged", "an unsure reader with nothing read is unreadable, not missing");
+  // 🔴 A TIMETABLE PHOTOGRAPHED OFF A SCREEN IS REFUSED AT THE DOOR, HIS NAME ON IT OR NOT (owner, 2026-10-19).
+  const offAScreen = judgeSchedule({ ...base, personNames: ["سارة محمود"], scheduleText: "سارة محمود", legibility: "clear", problem: "on_a_screen" });
+  assert.equal(offAScreen.verdict, "no_schedule", "🔴 a Facebook post on a laptop with the customer's name on it is still not the building's wall");
+  assert.equal(offAScreen.reason, "schedule_missing");
+  const screenDoor = scheduleDoorAction(offAScreen, 0);
+  assert.equal(screenDoor.kind, "retake", "the rep is asked for the wall, and it counts as a try");
+  assert.ok(screenDoor.kind === "retake" && screenDoor.reason === "timetable_missing");
+  assert.ok(screenDoor.kind === "retake" && /phone or computer screen/.test(screenDoor.message) && /building's own wall/.test(screenDoor.message), "and told why in words");
+  assert.equal(scheduleDoorAction(offAScreen, 2).kind, "hold", "the third screen photo holds like any third missing timetable");
 
   // The hold record carries the try and the reason for the queue.
   const record = scheduleHoldRecord({ ...UNREADABLE, tries: 3 }, { sharedPlaceId: "v1", name: "Polyclinic", lat: 30, lon: 31 }, { heldBecause: "timetable_unreadable", tries: 3 });
