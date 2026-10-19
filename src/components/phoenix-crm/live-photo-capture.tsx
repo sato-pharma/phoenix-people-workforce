@@ -47,6 +47,7 @@ import {
 } from "@/components/outstation/evidence-watermark";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { PLACE_PHOTO_CAMERA_IDEAL, placePhotoCanvasSize } from "@/lib/phoenix-crm/place-photo-size";
+import { openRearCamera } from "@/lib/phoenix-crm/rear-camera";
 import type { PhotoSlot } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -339,10 +340,9 @@ export function LivePhotoCapture({
       // A signboard capture asks for more, so a nameplate a few metres away keeps its letters
       // (place-photo-size.ts); every other capture asks for what it always did.
       const ideal = frameGuide ? PLACE_PHOTO_CAMERA_IDEAL : { height: 1080, width: 1920 };
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: { ideal: "environment" }, height: { ideal: ideal.height }, width: { ideal: ideal.width } },
-      });
+      // The rear lens is required, not preferred: a phone ranked its selfie lens higher on the size
+      // wishes alone (rear-camera.ts).
+      const stream = await openRearCamera(navigator.mediaDevices, ideal);
       streamRef.current = stream;
       const video = videoRef.current;
       if (video) {
