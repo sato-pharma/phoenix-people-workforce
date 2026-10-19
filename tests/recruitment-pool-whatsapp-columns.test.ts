@@ -5,6 +5,8 @@ import path from "node:path";
 import {
   applyPoolColumnLayout,
   poolAnswersByColumn,
+  poolAnswersOutsideColumns,
+  poolAnswerSummary,
   poolColumnCatalogue,
   poolColumnViewKey,
   poolDefaultColumns,
@@ -218,12 +220,100 @@ export async function runRecruitmentPoolWhatsAppColumnsTests() {
   );
   assert.ok(
     workspace.includes("canEdit={canFileCandidates}") &&
-      workspace.includes("`/api/recruitment/candidates/${candidate.id}/whatsapp-answer`"),
+      workspace.includes("`/api/recruitment/candidates/${candidateId}/whatsapp-answer`"),
     "every answer cell is editable by a reader holding candidates:update, through the one save route",
   );
   assert.ok(
-    workspace.includes('{ label: "WhatsApp answers", value: <WhatsAppAnswersList answers={whatsappAnswers} /> }'),
+    workspace.includes('<WhatsAppAnswersList answers={withoutFilterAudience(whatsappAnswers)} className="mt-1" />'),
     "a phone card has no header row, so it lists every answer under its question",
+  );
+
+  // ── 9 · A phone edits the same answers (owner, 2026-10-19 — "Add it on phones") ───────────────────
+  // The card lists the table's own columns, each with the table's pencil, and every other answer after
+  // them read-only — so hiding a column on a phone never hides what the applicant said.
+  const place = shared.find((column) => column.key === "place")!;
+  const extraStart = poolColumnCatalogue(QUESTIONS, none).find((column) => column.key === "extra:oc_start_date")!;
+  const cardAnswers = [
+    { key: "background" },
+    { key: "region" },
+    { key: "area" },
+    { key: "extra:oc_cairo" },
+    { key: "extra:oc_start_date" },
+  ];
+  assert.deepEqual(
+    poolAnswersOutsideColumns(cardAnswers, [place, extraStart]).map((answer) => answer.key),
+    ["background", "extra:oc_cairo"],
+    "region and area both sit in the place column; an answer with no column is still listed",
+  );
+  assert.deepEqual(poolAnswersOutsideColumns(cardAnswers, []).length, cardAnswers.length, "every column hidden — every answer listed");
+  assert.equal(poolAnswerSummary({ area: "Nasr City", region: "Cairo" }, place), "Cairo · Nasr City", "region, then area");
+  assert.equal(poolAnswerSummary({ area: "", region: "Cairo" }, place), "Cairo");
+  assert.equal(poolAnswerSummary({ area: " ", region: "" }, place), "", "nothing answered reads as nothing — the card shows a dash and Add");
+
+  const card = workspace.slice(workspace.indexOf("function CandidatePoolCard("), workspace.indexOf("type PoolDateFilter ="));
+  assert.ok(card.length > 0, "CandidatePoolCard must still exist");
+  assert.ok(
+    workspace.includes("answerColumns={tableColumns}") && workspace.includes("canEditAnswers={canFileCandidates}"),
+    "the card gets the table's own columns and the table's own grant — never a second permission",
+  );
+  assert.match(
+    card,
+    /<PoolEditableAnswer\s+canEdit\s+column=\{column\}[\s\S]{0,700}?savePoolColumnAnswers\(candidate\.id, column, values, currentValues\)[\s\S]{0,400}?pending=\{pending\}\s+touch\s*>/,
+    "each card answer is the table's pencil and editor, saved through the one shared save, drawn for a thumb",
+  );
+  assert.equal(
+    (workspace.match(/await savePoolColumnAnswers\(candidate\.id, column, values, currentValues\);/g) ?? []).length,
+    2,
+    "the desktop cell and the phone card save through the same function",
+  );
+  assert.ok(
+    /canEditAnswers\s*\?\s*answerColumns\.length > 0 \|\| answersOutsideColumns\.length > 0\s*:\s*whatsappAnswers\.length > 0/.test(card) &&
+      card.includes("answers={withoutFilterAudience(answersOutsideColumns)}"),
+    "a reader who cannot edit keeps the plain list; one who can sees the answers no column holds after the columns",
+  );
+
+  // ── 10 · The answers span the card (owner, 2026-10-19 — "fix the phone card's WhatsApp answers to
+  // span the full width"). As one of the two-column grid's fields the list ran about 900px down one
+  // half of the card with the other half empty (production, 375px, Medical Representative filter).
+  assert.doesNotMatch(card, /label: "WhatsApp answers"/, "the answers are never a half-width field of the grid again");
+  assert.match(
+    card,
+    /<PortalRecordFields[\s\S]*?\/>\s*\{whatsappAnswersSection\}\s*<PortalRecordFields/,
+    "the answers sit full width between the screening facts and the contact details",
+  );
+  // …and under a role filter, "Asked only to … applicants" is left off the questions that role is
+  // asked — it repeats the filter, and a question asked to five roles ran to five lines on a phone.
+  assert.ok(
+    workspace.includes(
+      "const roleQuestionKeys: ReadonlySet<string> = new Set(roleView ? defaultColumns.map((column) => column.key) : []);",
+    ) && workspace.includes("roleQuestionKeys={roleQuestionKeys}"),
+    "the role's own questions are its default columns, and only with a role picked",
+  );
+  assert.ok(
+    card.includes("column.askedTo && !roleQuestionKeys.has(column.key)") &&
+      card.includes("roleQuestionKeys.has(answer.key) ? { ...answer, askedTo: null } : answer"),
+    "the audience line is dropped only for the picked role's own questions; an answer from another role's question keeps it",
+  );
+  const medicalRepKeys = new Set(
+    poolDefaultColumns({ answeredKeys: none, roleFamily: "medical_rep", whatsapp: QUESTIONS }).map((column) => column.key),
+  );
+  assert.ok(medicalRepKeys.has("extra:oc_start_date"), "a question asked to several roles, medical reps among them, is a rep question");
+  assert.ok(!medicalRepKeys.has("extra:oc_cairo"), "an Office Coordinator's own question is not — it keeps its audience line");
+  const cells = read("src/components/recruitment/pool-question-columns.tsx");
+  assert.match(
+    cells,
+    /export function PoolEditableCell\([\s\S]{0,200}?<td className=\{className\}>\s*<PoolEditableAnswer \{\.\.\.answer\} \/>/,
+    "the desktop cell is the shared answer inside a <td> — one pencil, one editor",
+  );
+  assert.match(
+    cells,
+    /touch\s*\?\s*`[^`]*\bmin-h-8\b[^`]*\$\{adminControlDepthClassName\}`/,
+    "a phone has no hover: the card's pencil is full strength with room for a thumb, lifted like every recruitment control",
+  );
+  assert.doesNotMatch(
+    cells.slice(cells.indexOf("touch\n"), cells.indexOf(": \"mt-1 inline-flex")),
+    /opacity-60|rounded/,
+    "the thumb-sized pencil is neither faded nor rounded",
   );
   for (const page of ["app/(admin)/recruitment/page.tsx", "app/employee-portals/recruitment/page.tsx"]) {
     const source = read(page);
