@@ -33,6 +33,9 @@ concurrency:
 
 jobs:
   urgent:
+    # Deleting the branch (`stop`, or the guard's own hand-over) is a push too; there is nothing to
+    # check out or deploy, so that run does nothing.
+    if: ${{ !github.event.deleted }}
     runs-on: ubuntu-latest
     # Build ~3-4 min, then the guard watches up to 50 min for the normal route to take over.
     timeout-minutes: 75

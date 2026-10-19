@@ -5,6 +5,7 @@ import {
   DRY_RUN_BRANCH,
   MARKER_PATH,
   URGENT_BRANCH,
+  branchVerdict,
   classifyLive,
   formatTrailers,
   parseTrailers,
@@ -54,6 +55,24 @@ export function runUrgentDeployTests(): void {
       "merged, but the live build predates the merge: the fix is not serving",
     );
     assert.equal(classifyLive({ live: "live1", urgentSha, prs: [], contains }), "regressed", "an empty PR list never counts as handed over");
+    assert.equal(
+      classifyLive({ live: "live1", urgentSha: "live1", prs: [{ mergeSha: "m1" }], contains }),
+      "handed-over",
+      "every PR merged and the guard uploaded main's own tip: that build carries every merge, so the watch ends instead of reading as still urgent",
+    );
+  }
+
+  // ── 2b. The guard stands down only when the branch provably moved ─────────────────────────────
+  {
+    const mine = "a".repeat(40);
+    assert.equal(branchVerdict({ remote: mine, expected: mine }), "ours");
+    assert.equal(branchVerdict({ remote: "", expected: mine }), "gone", "stop (or the hand-over) deleted the branch");
+    assert.equal(branchVerdict({ remote: "b".repeat(40), expected: mine }), "replaced", "a newer launch owns the branch");
+    assert.equal(
+      branchVerdict({ remote: null, expected: mine }),
+      "unknown",
+      "an unreadable branch is never a reason to stand down — the guard keeps the fix live",
+    );
   }
 
   // ── 3. The workflow can never run on main ────────────────────────────────────────────────────
@@ -68,6 +87,7 @@ export function runUrgentDeployTests(): void {
       assert.ok(!on.includes(forbidden), `the on: block must not mention ${forbidden}`);
     }
     assert.match(workflow, /cancel-in-progress: true/, "a newer launch replaces an older guard");
+    assert.match(workflow, /if: \$\{\{ !github\.event\.deleted \}\}/, "deleting the branch (stop) starts no deploy");
     assert.match(
       workflow,
       /if: github\.ref_name == 'urgent-deploy\/production'\n\s+run: node scripts\/urgent-deploy\.mjs guard/,
