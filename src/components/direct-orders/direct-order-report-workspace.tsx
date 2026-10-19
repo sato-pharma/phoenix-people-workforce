@@ -66,8 +66,10 @@ const COLUMNS: Col[] = [
   { key: "line", label: "Line" },
   { key: "productCode", label: "Prod code" },
   { key: "productName", label: "Product" },
-  { key: "qty", label: "Qty", numeric: true, render: (r) => units(r.qty) },
-  { key: "bonus", label: "Bonus", numeric: true, render: (r) => units(r.bonus) },
+  // A basket prints its units per product ("72 + 24"), never a sum — the same text the xlsx and the
+  // live sheet carry in these two columns.
+  { key: "qty", label: "Qty", numeric: true, render: (r) => r.basketUnits?.qty ?? units(r.qty) },
+  { key: "bonus", label: "Bonus", numeric: true, render: (r) => r.basketUnits?.bonus ?? units(r.bonus) },
   {
     key: "pharmacyPriceSnapshot",
     label: "Pharmacy price",

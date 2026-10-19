@@ -7,6 +7,7 @@ import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName
 import type { StuckApprovalManagerOption } from "@/lib/approvals-hub/service";
 import type { WeeklyPlanManagerGapRecord } from "@/lib/weekly-planning/drift-check";
 import type { ExcuseManagerGapRecord } from "@/lib/excuses/drift-check";
+import { describeDirectOrderBasketUnits } from "@/lib/direct-orders/basket-label";
 import type { StrandedDirectOrderRow } from "@/lib/direct-orders/service";
 import type { StrandedVacationRow } from "@/lib/vacation/service";
 import {
@@ -172,7 +173,7 @@ function CloseStrandedOrderRow(props: { order: StrandedDirectOrderRow }) {
       <div className="min-w-0">
         <p className="break-words text-sm font-bold text-slate-900">{order.pharmacyName}</p>
         <p className="break-words text-xs text-slate-500">
-          {order.productName} × {order.qty} · {egp.format(order.salesValue)} EGP
+          {describeDirectOrderBasketUnits(order, order.items)} · {egp.format(order.salesValue)} EGP
         </p>
         <p className="mt-0.5 break-words text-xs text-rose-600">
           Raised by {order.requesterName}, who is {(order.requesterEmploymentStatus ?? "no longer active").replace(/_/g, " ")}

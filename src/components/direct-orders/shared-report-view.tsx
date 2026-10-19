@@ -154,7 +154,7 @@ export function SharedDirectOrderReport({ token }: Props) {
                 <td className="whitespace-nowrap px-3 py-1.5 text-slate-800">{r.requesterName}</td>
                 <td className="whitespace-nowrap px-3 py-1.5 font-semibold text-slate-900" dir="auto">{r.pharmacyName}</td>
                 <td className="whitespace-nowrap px-3 py-1.5 text-slate-700">{r.productName}</td>
-                <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">{r.qty.toLocaleString("en-US")}</td>
+                <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">{r.basketUnits?.qty ?? (r.qty == null ? "—" : r.qty.toLocaleString("en-US"))}</td>
                 <td className="whitespace-nowrap px-3 py-1.5 text-right font-bold tabular-nums">{money(r.salesValue)}</td>
                 <td className="whitespace-nowrap px-3 py-1.5 text-slate-600">{r.areaName || "—"}</td>
                 <td className="whitespace-nowrap px-3 py-1.5 text-slate-600">{r.salesMonth ?? "—"}</td>

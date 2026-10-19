@@ -595,8 +595,11 @@ export type DirectOrderApprovalListItem = {
   line: string;
   /** Every product joined with " + " on a basket; line 1's name on a one-product order. */
   productName: string;
-  /** Summed across the basket, so it always matches the products named above it. */
-  qty: number;
+  /**
+   * The one product's units; NULL on a basket. Never a sum — units of different products are never
+   * added (owner rule). A basket's units are each line's own, in `items`.
+   */
+  qty: number | null;
   /**
    * One entry per product, so a surface can show what the basket's single `salesValue` is FOR.
    * See @/lib/direct-orders/basket-label — the composed `productName` above cannot be split back
@@ -658,8 +661,20 @@ export type DirectOrderReportRow = {
   productName: string;
   /** The pharmacy price a bonus deal was valued at; null on a discount deal (public-priced). */
   pharmacyPriceSnapshot: number | null;
-  qty: number;
-  bonus: number;
+  /**
+   * The one product's units; NULL on a basket. Never a sum — units of different products are never
+   * added (owner rule). A basket's units are in `basketUnits`.
+   */
+  qty: number | null;
+  /** The one product's bonus units; NULL on a basket, for the same reason as `qty`. */
+  bonus: number | null;
+  /**
+   * A basket's units PER PRODUCT, as text in the order `productName` names them ("72 + 24" and
+   * "40 + 0"); null on a one-product order. The report's Qty and Bonus cells print these, so the
+   * columns keep their place for the owner's Google Sheet (owner, 2026-10-19). Optional because a
+   * hand-built row need not supply it.
+   */
+  basketUnits?: { qty: string; bonus: string } | null;
   bonusOverrideReason: string | null;
   dealType: DirectOrderDealType;
   discountPct: number | null;

@@ -18,6 +18,7 @@ import {
 
 import { DirectOrderStatusPill } from "@/components/direct-orders/direct-order-status-pill";
 import { DirectOrdersTabStrip } from "@/components/direct-orders/workspace/direct-orders-tab-strip";
+import { describeDirectOrderBasketUnits } from "@/lib/direct-orders/basket-label";
 import type {
   DirectOrderNeedsActionGroup,
   DirectOrderQueueRow,
@@ -416,6 +417,17 @@ function withReturnTo(href: string, returnTo: string | null): string {
   return returnTo ? `${href}?from=${encodeURIComponent(returnTo)}` : href;
 }
 
+/**
+ * One entry per product, each with its own units. A row built without `items` (one built before
+ * baskets, or a hand-built one) is a one-product order and is its own single line — `qty` is only
+ * ever null on a basket, which always carries its items.
+ */
+function orderRowLines(
+  row: DirectOrderQueueRow,
+): readonly { productCode: string; productName: string; qty: number | null }[] {
+  return row.items ?? [{ productCode: "", productName: row.productName, qty: row.qty }];
+}
+
 function OrderRow({
   row,
   basePath,
@@ -442,12 +454,12 @@ function OrderRow({
                 and an ellipsis is precisely what must never happen here. Each product gets its own
                 line instead, so the row grows by one line rather than hiding a product.
                 The fallback covers a row built before `items` existed, and any hand-built row. */}
-            {(row.items ?? [{ productCode: "", productName: row.productName, qty: row.qty }]).map((item, index) => (
+            {orderRowLines(row).map((item, index) => (
               <p
                 key={`${item.productCode || item.productName}-${index}`}
                 className="truncate text-sm font-bold text-slate-900"
               >
-                {item.productName} × {item.qty.toLocaleString("en-US")}
+                {describeDirectOrderBasketUnits(item)}
               </p>
             ))}
             <p className="truncate text-phx-xs text-slate-500">

@@ -29,6 +29,7 @@ import { resolvePlanCeoDecision } from "@/lib/weekly-planning/plan-v1";
 import { getMyResignations, getResignationsDashboardData } from "@/lib/resignations/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { listMyDirectOrders } from "@/lib/direct-orders/service";
+import { describeDirectOrderBasketQuantities } from "@/lib/direct-orders/basket-label";
 import type { DirectOrderApprovalListItem } from "@/lib/direct-orders/types";
 import type { VacationActionCenterRow, VacationRequestRecord } from "@/lib/vacation/types";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
@@ -173,7 +174,8 @@ function mapMyDirectOrder(row: DirectOrderApprovalListItem): MyRequestItem {
     submittedAt: row.createdAt,
     href: null,
     lines: [
-      { label: "Quantity", value: String(row.qty) },
+      // Per product, in the order the title names them ("72 + 24") — a basket has no single quantity.
+      { label: "Quantity", value: describeDirectOrderBasketQuantities(row, row.items) },
       directOrderDealLine(row),
       // Bonus units never enter value — see src/lib/direct-orders/approval-flow.ts.
       { label: "Sales value", value: egp(row.salesValue) },

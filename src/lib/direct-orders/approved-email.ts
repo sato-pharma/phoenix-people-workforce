@@ -85,18 +85,20 @@ export async function sendDirectOrderApprovedEmail(row: DirectOrderReportRow): P
   try {
     const cc = await resolveCeoSuperAdminEmails();
 
+    // A basket states its units per product ("72 + 24"), never a sum.
+    const bonusUnits = row.basketUnits?.bonus ?? units(row.bonus);
     const dealLine =
       row.dealType === "discount"
         ? `Discount ${row.discountPct ?? 0}% · public price ${money(row.publicPriceSnapshot)}`
-        : `Bonus ${units(row.bonus)} units · pharmacy price ${money(row.pharmacyPriceSnapshot)}`;
+        : `Bonus ${bonusUnits} units · pharmacy price ${money(row.pharmacyPriceSnapshot)}`;
     // Short form for the hero badge — the full price context still lives in the Deal row below.
     const dealBadge =
-      row.dealType === "discount" ? `Discount ${row.discountPct ?? 0}%` : `Bonus ${units(row.bonus)} units`;
+      row.dealType === "discount" ? `Discount ${row.discountPct ?? 0}%` : `Bonus ${bonusUnits} units`;
 
     const productDealRows: Array<{ label: string; value: string | number | null | undefined }> = [
       { label: "Product", value: codeName(row.productName, row.productCode) },
       { label: "Deal", value: dealLine },
-      { label: "Quantity", value: units(row.qty) },
+      { label: "Quantity", value: row.basketUnits?.qty ?? units(row.qty) },
     ];
     if (row.bonusOverrideReason) {
       productDealRows.push({ label: "Cap override reason", value: row.bonusOverrideReason });

@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { describeDirectOrderBasketUnits } from "@/lib/direct-orders/basket-label";
 import type { DirectOrderApprovalExceptionRow } from "@/lib/direct-orders/service";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { adminPanelClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
@@ -94,8 +95,11 @@ export function ApprovalExceptionsDesk({ rows }: Props) {
         <section key={row.stepId} className={adminPanelClassName}>
           <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 px-4 py-3">
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-slate-900">
-                {row.productName} × {row.qty.toLocaleString("en-US")}
+              {/* Each product with its own units — a basket has no single quantity. Wrapped, never
+                  truncated: a basket's label is longer than the header, and an ellipsis would hide
+                  the very product the value is for. */}
+              <p className="break-words text-sm font-bold text-slate-900">
+                {describeDirectOrderBasketUnits(row, row.items)}
               </p>
               <p className="truncate text-phx-xs text-slate-500">
                 {row.requesterName} · {row.pharmacyName}

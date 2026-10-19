@@ -1,4 +1,4 @@
-import type { DirectOrderBasketLine } from "@/lib/direct-orders/basket-label";
+import { describeDirectOrderBasketUnits, type DirectOrderBasketLine } from "@/lib/direct-orders/basket-label";
 import { describeDirectOrderStatus } from "@/lib/direct-orders/status-labels";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -38,8 +38,11 @@ export type DirectOrderQueueRow = {
   requesterName: string;
   /** Every product joined with " + " on a basket; line 1's name on a one-product order. */
   productName: string;
-  /** Summed across the basket, so it always matches the products named above it. */
-  qty: number;
+  /**
+   * The one product's units; NULL on a basket. Never a sum — units of different products are never
+   * added (owner rule). A basket's units are each line's own, in `items`.
+   */
+  qty: number | null;
   /**
    * One entry per product. A row's `salesValue` is the WHOLE basket, so naming only line 1 shows
    * one product's name against two products' money — see @/lib/direct-orders/basket-label.
@@ -116,7 +119,8 @@ function toItem(row: DirectOrderQueueRow, basePath: string): DirectOrderNeedsAct
   const subtitleParts = [pharmacy, area, row.medicalRepName, money(row.salesValue)].filter(Boolean);
   return {
     id: row.id,
-    title: `${row.requesterName} · ${row.productName} × ${row.qty.toLocaleString("en-US")}`,
+    // Each product with its own units — a basket has no single quantity to print.
+    title: `${row.requesterName} · ${describeDirectOrderBasketUnits(row, row.items)}`,
     subtitle: subtitleParts.join(" · "),
     salesValue: row.salesValue,
     createdAt: row.createdAt,

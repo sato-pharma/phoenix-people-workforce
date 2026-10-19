@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 
+import { describeDirectOrderBasketUnits } from "@/lib/direct-orders/basket-label";
 import type { ReturnedDirectOrderAgeingRow } from "@/lib/direct-orders/service";
 import { type ReturnedAgeBand, returnedAgeBand } from "@/lib/direct-orders/returned-ageing";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
@@ -167,7 +168,7 @@ export function ReturnedAgeingDesk({ rows }: Props) {
               {row.distributorCodes.length > 0 ? ` · ${row.distributorCodes.join(", ")}` : " · no code"}
             </p>
             <p className="mt-1 text-phx-sm text-slate-600">
-              {row.productName} × {row.qty.toLocaleString("en-US")} · {money(row.salesValue)}
+              {describeDirectOrderBasketUnits(row, row.items)} · {money(row.salesValue)}
             </p>
             <p className="mt-2 whitespace-pre-line break-words border-l-2 border-slate-300 pl-2 text-phx-sm text-slate-700" dir="auto">
               {row.returnReason || "No reason was recorded."}
