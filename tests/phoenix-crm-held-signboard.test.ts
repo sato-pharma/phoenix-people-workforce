@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  HELD_SIGNBOARD_MAX_LOST_READS,
   heldSignboardCheckToKeep,
+  heldSignboardLostReads,
+  heldSignboardLostReadToKeep,
   heldSignboardOutcome,
   heldSignboardReaderIsDown,
   heldSignboardReadHappened,
@@ -103,6 +106,24 @@ function checkTheReReads(): void {
   assert.equal(heldSignboardReaderIsDown({ answered: 0, unread: 2 }), false, "two may be two bad photographs");
   assert.equal(heldSignboardReaderIsDown({ answered: 1, unread: 9 }), false, "a reader that answered once is up");
 
+  // 🔴 BUT ONE PHOTO CAN NO LONGER LOSE EVERY CALL FOR EVER (code review, 19 Oct 2026): it stayed first in
+  //    the queue, was paid for every hour, and he was never told. Counted only on a run that read others.
+  const door = { ...check("unjudged", "unreadable"), attempts: 1 };
+  assert.equal(heldSignboardLostReadToKeep(door, 0), null, "a run that read nobody is an outage: nothing is counted");
+  assert.equal(heldSignboardLostReadToKeep(null, 3), null, "nor without a stored check to carry the count");
+  const once = heldSignboardLostReadToKeep(door, 2);
+  assert.ok(once && !once.done && once.check.lostReads === 1, "the first lost read on a run that read others is counted");
+  assert.equal(once?.check.attempts, 1, "and spends none of the place's reads");
+  let stored: unknown = door;
+  for (let run = 1; run < HELD_SIGNBOARD_MAX_LOST_READS; run += 1) stored = heldSignboardLostReadToKeep(stored, 1)?.check;
+  assert.equal(heldSignboardLostReads(stored), HELD_SIGNBOARD_MAX_LOST_READS - 1, "counted run after run");
+  const last = heldSignboardLostReadToKeep(stored, 1);
+  assert.ok(last?.done, `after ${HELD_SIGNBOARD_MAX_LOST_READS} lost runs in a row the place is handed to him`);
+  assert.equal(last?.check.attempts, SIGNBOARD_HELD_MAX_READS, "as a place with every read spent, which leaves the queue");
+  assert.equal(last?.check.reason, "unreadable_final", "and the board says every read was spent");
+  const answered = heldSignboardCheckToKeep(check("unjudged", "unreadable"), 2, "done");
+  assert.equal(heldSignboardLostReads(answered), 0, "a read that answers replaces the check, so the count is of runs IN A ROW");
+
   const still = { isTest: false, pending: true, signboardHold: true, stored: { attempts: 1 } };
   assert.equal(signboardHoldStillReading(still), true, "a held sign with its re-read still to come is still being read");
   assert.equal(signboardHoldStillReading({ ...still, stored: { attempts: 2 } }), false, "not once the re-read is spent");
@@ -176,6 +197,15 @@ function checkTheSystemOnlyApproves(): void {
   assert.ok(
     held.includes('if (!cropped) return unjudged("no_bytes");'),
     "a photo that cannot be opened is a read that answered — it never gets better",
+  );
+  assert.ok(
+    held.includes('if (!bytes) return unjudged("call_failed");') && !held.includes('if (!bytes) return unjudged("no_bytes");'),
+    "🔴 but a photo the bucket did not hand back was never read: a storage blip spends nothing",
+  );
+  const countedAt = holds.indexOf("for (const place of unanswered)");
+  assert.ok(
+    countedAt > holds.indexOf("await Promise.all(") && holds.includes("keepLostHeldSignboard(place, result.read,"),
+    "the hourly run counts its unanswered places after every read is in, against what the run READ",
   );
   assert.ok(/if \(outcome === "done" && !place\.isTest && context\.seat\)/.test(holds), "he is told only when every read is spent");
 

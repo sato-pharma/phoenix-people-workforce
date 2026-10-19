@@ -207,6 +207,11 @@ export type PhoenixCrmSignboardCheck = {
   strongRead?: boolean;
   /** Set when the rep has been asked for a new photograph of this place. */
   retake?: SignboardRetakeRequest | null;
+  /**
+   * Hourly runs in a row that read other held places but never got an answer for this one
+   * (`heldSignboardLostReadToKeep`). Gone with the next read that answers, which replaces the check.
+   */
+  lostReads?: number;
 };
 
 // ── The stamp band ──────────────────────────────────────────────────────────────────────────────
@@ -426,6 +431,11 @@ function nameWordIsThere(given: NameWord, read: readonly NameWord[]): boolean {
  */
 const PLATE_LEAD_WORDS: ReadonlySet<string> = new Set(["مركز", "عياده", "عيادات", "مستشفي", "مجمع"]);
 
+/** The quorum's floor: a word of the name under three letters is never one the quorum asks for. */
+function nameWordCountsInQuorum(name: NameWord): boolean {
+  return name.word.length >= 3;
+}
+
 /**
  * Does this candidate say HIS name, rather than carrying his words inside somebody else's?
  *
@@ -441,7 +451,13 @@ function readsTheCustomersName(
   if (customerWords.length === 0) return false;
   if (!isSignText) {
     const opening = read.find((word) => word.word.length > 1 && !PLATE_LEAD_WORDS.has(word.word));
-    return opening !== undefined && customerWords.some((name) => nameWordIsThere(name, [opening]));
+    if (opening === undefined) return false;
+    // 🔴 A GIVEN NAME UNDER THE QUORUM'S FLOOR MUST BE THE NAME'S OPENING WORD (code review, 19 Oct 2026).
+    // The floor leaves "مي" out of the words the quorum asks for, so if the opening could be any of her
+    // words, nothing anywhere would ask for her given name and "مي احمد" matched "د/ احمد سامي" on her
+    // father's name alone. A longer given name the plate's damage took still matches, as above.
+    if (!nameWordCountsInQuorum(customerWords[0])) return nameWordIsThere(customerWords[0], [opening]);
+    return customerWords.some((name) => nameWordIsThere(name, [opening]));
   }
   for (let start = 0; start < read.length; start += 1) {
     if (!nameWordIsThere(customerWords[0], [read[start]])) continue;
@@ -562,7 +578,7 @@ export function signNamesCustomer(input: {
   const wordsOf = (text: string): NameWord[] =>
     placeAxis ? placeWordsOnSign(text).map((word) => ({ core: null, word })) : personNameWords(text);
   const customerWords = wordsOf(input.customerName ?? "").filter((name) => name.word.length > 1);
-  const wantedWords = customerWords.filter((name) => name.word.length >= 3);
+  const wantedWords = customerWords.filter(nameWordCountsInQuorum);
   if (wantedWords.length === 0) return { matches: null, score: null };
   // A name of three tokens or more survives losing one; two tokens must both be there. 🔴 NOT a contract
   // row whose list word was dropped: the words left are the company and its TOWN, and losing the company
@@ -1380,8 +1396,9 @@ export function heldSignboardOutcome(check: PhoenixCrmSignboardCheck, readsSoFar
  * the same minute. Counted as reads, every place the door held that day would have spent its four in
  * the after-reply read and three hourly runs, been filed "every read spent", and paged him once each,
  * for photographs nobody had looked at — and then never been read again once the credit was back. So
- * a lost call, like a missing key, spends nothing and the place waits; the photo that cannot be opened
- * at all is `no_bytes`, which is a read that answered, and spends one.
+ * a lost call, like a missing key, spends nothing and the place waits; the photo that cannot be decoded
+ * at all is `no_bytes`, which is a read that answered, and spends one. A photo the bucket did not hand
+ * back is a lost call too, and one place that keeps losing them is counted (`HELD_SIGNBOARD_MAX_LOST_READS`).
  */
 export function heldSignboardReadHappened(check: PhoenixCrmSignboardCheck): boolean {
   return !(check.verdict === "unjudged" && (check.reason === "call_failed" || check.reason === "no_api_key"));
@@ -1396,6 +1413,42 @@ export const HELD_SIGNBOARD_READER_DOWN_AFTER = 3;
  */
 export function heldSignboardReaderIsDown(run: { unread: number; answered: number }): boolean {
   return run.answered === 0 && run.unread >= HELD_SIGNBOARD_READER_DOWN_AFTER;
+}
+
+/**
+ * Hourly runs in a row whose re-read of ONE held place went unanswered while the same run read others,
+ * after which that place is the Super Admin's.
+ *
+ * 🔴 A LOST CALL STILL SPENDS NOTHING, BUT ONE PHOTO CAN NO LONGER LOSE EVERY CALL FOR EVER (code review,
+ * 19 Oct 2026). A dense board whose quarters run the readers out of room, or a photo the bucket will not
+ * hand back, came back unread every hour: it never spent its re-read, stayed first in the oldest-first
+ * queue, was paid for every hour, and he was never told. Counted only when the run READ another place —
+ * a reader that is down answers nobody, so an outage still spends nothing — and reset by the first read
+ * that answers, so three is three hours in a row on which this photo alone was the trouble.
+ */
+export const HELD_SIGNBOARD_MAX_LOST_READS = 3;
+
+/** Unanswered re-reads in a row recorded on a held place's stored check; 0 when none. */
+export function heldSignboardLostReads(stored: unknown): number {
+  if (!stored || typeof stored !== "object") return 0;
+  const lost = Number((stored as Record<string, unknown>).lostReads ?? 0);
+  return Number.isFinite(lost) && lost > 0 ? Math.floor(lost) : 0;
+}
+
+/**
+ * What to keep on a held place an hourly run could not read: the stored check with one more lost read,
+ * or, at `HELD_SIGNBOARD_MAX_LOST_READS`, that check with every read spent — `done`, his to decide. Null
+ * when the run read nothing at all (the reader is down) or there is no stored check to carry the count.
+ */
+export function heldSignboardLostReadToKeep(
+  stored: unknown,
+  runAnswered: number,
+): { check: PhoenixCrmSignboardCheck; done: boolean } | null {
+  if (runAnswered <= 0 || !stored || typeof stored !== "object") return null;
+  const check = stored as PhoenixCrmSignboardCheck;
+  const lostReads = heldSignboardLostReads(stored) + 1;
+  if (lostReads < HELD_SIGNBOARD_MAX_LOST_READS) return { check: { ...check, lostReads }, done: false };
+  return { check: { ...heldSignboardCheckToKeep(check, SIGNBOARD_HELD_MAX_READS, "done"), lostReads }, done: true };
 }
 
 /**

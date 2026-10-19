@@ -577,6 +577,12 @@ function checkNameSpelling(): void {
   assert.equal(onSign("عادل البكري", [], "دكتور عادل البكاري البكري استشاري اطفال"), true, "one stray word between two of his");
   assert.equal(pm("مي احمد", ["مي احمد"]), true, "a two-letter given name is still read");
   assert.equal(pm("وائل احمد", ["مي احمد"]), false, "and is still another given name");
+  //      🔴 And the other direction (code review, 19 Oct 2026): the quorum's floor never asks for "مي", so
+  //      a name read off the sign that opened on her father's name matched any احمد's plate.
+  assert.equal(pm("مي احمد", ["احمد سامي"]), false, "her father's name alone, as another man's given name");
+  assert.equal(onSign("مي احمد", ["احمد سامي"], "د/ احمد سامي استشاري الباطنة"), false, "nor on the sign's whole text");
+  assert.equal(pm("مي احمد علي", ["احمد علي حسن"]), false, "nor her father's and grandfather's names behind no given name");
+  assert.equal(pm("مي احمد", ["د/ مي احمد"]), true, "her own plate still reads her");
 
   // 5 · A facility name is untouched: its quorum is the stemmed distinctive words, as before.
   assert.equal(

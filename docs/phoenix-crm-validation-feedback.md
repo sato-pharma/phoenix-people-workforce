@@ -295,6 +295,15 @@ not how hard the reader looks. Pinned by `checkNameSpelling` part 7, broken four
 the text run off, the three-letter floor put back on his words, no lead word skipped) and seen to fail
 each time.
 
+**A short given name must open (code review, 19 Oct 2026).** The quorum asks only for words of three
+letters or more, and the opening word could be any of his. So a two-letter given name was asked for
+nowhere: `مي احمد` matched a plate reading `د/ احمد سامي` on her father's name alone, and `مي احمد علي`
+matched `احمد علي حسن`. A given name under three letters must now BE the opening word of the name the
+reader split out; a longer given name the damage took still matches as before. Replayed on all 1,493
+stored PM confirmations in production (no model call, nothing written): none changes, the same as
+origin/main's rules. Pinned by `checkNameSpelling` part 7, broken (the any-of-his-words opening put
+back) and seen to fail.
+
 - **The refusal reason** (`validation-feedback.ts`). Six closed reasons: no signboard in the photo;
   the sign is not this customer; too dark or blurred to read; not taken at the entrance; a photo of
   paper, not a building; the location is not where the photo was taken. The free note stays on the
@@ -383,6 +392,15 @@ reads within hours and page the Super Admin once for each place, about a photogr
   an hour. One answered read means the reader is up, and the run carries on past a single bad call.
 - A photo that cannot be cropped is `no_bytes`, not `call_failed`: it never gets better, so it is a
   read that answered and it spends one, or that place would wait for ever.
+- A photo the storage bucket does not hand back (code review, 19 Oct 2026) was filed `no_bytes` too,
+  so one storage blip spent the place's only re-read and handed it to the Super Admin unseen. It is
+  `call_failed` now: nothing spent.
+- `HELD_SIGNBOARD_MAX_LOST_READS` (3) bounds the other side. A photo the bucket never hands back, or a
+  board too dense for the reader's room, came back unread every hour for ever: first in the
+  oldest-first queue, paid for every hour, and nobody told. The hourly run now counts `lostReads` on a
+  place it could not read while it read others, and on the third such run in a row records every read
+  spent and tells the Super Admin, as a spent read does. A run that read nobody counts nothing, so an
+  outage still spends nothing, and the first read that answers replaces the check and its count.
 
 Every door capture is still held while the reader is down. That is the ruling ("If you couldn't read
 them, then hold for manual review"); the holds wait and are read when credit returns.
