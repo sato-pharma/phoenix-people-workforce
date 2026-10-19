@@ -334,7 +334,7 @@ export function PoolColumnChooser({
               Back to the WhatsApp questions for {viewLabel}
             </button>
           ) : null}
-          <p className="mt-2 text-phx-xs text-slate-400">Saved in this browser, for this view only.</p>
+          <p className="mt-2 text-phx-xs text-slate-400">Saved to your account, for this view only — the same columns on every device you sign in on.</p>
         </div>
       ) : null}
     </div>

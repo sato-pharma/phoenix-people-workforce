@@ -1055,6 +1055,17 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // 01145439d9ae968ceaddc06aa63998ac (before ed3d6b906dee579b07ea4bdbd5867428). Re-applying it is a
   // no-op (`create or replace`); the rollback is the two earlier bodies.
   "20261018234000_phoenix_crm_manager_plan_ask_closes_with_its_week.sql",
+  // 2026-10-19, the candidate pool's column layouts saved to each reader's account (owner — "Columns
+  // follow you"). The MCP `apply_migration` answered `declined` on staging and on production — its
+  // `drop policy if exists` line — so it went through the standing route, `node
+  // scripts/apply-sql-file.mjs <file> staging` (cifwmndunmlxjhyjugxa) and then production
+  // (ozucdzovmcqvepbozvqf, PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com) at about 11:55
+  // Cairo; both printed {"applied":true,"count":0}, and neither ledger carries this version or name.
+  // It defines NO function, so there is no prosrc digest to compare: verified on BOTH projects in one
+  // query each — ats_pool_column_layouts exists with RLS on, one service-role policy, no SELECT for
+  // anon or authenticated, INSERT for service_role, and 0 rows. Purely additive (one new table);
+  // re-applying it is a no-op (`if not exists`, the policy dropped `if exists` before it is re-made).
+  "20261019120000_ats_pool_column_layouts.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
