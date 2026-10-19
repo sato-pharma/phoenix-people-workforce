@@ -9,6 +9,7 @@ import {
   deriveDirectOrderSalesMonthChange,
   DIRECT_ORDER_FINANCE_HR_ID,
 } from "../src/lib/direct-orders/finance-authority.ts";
+import { resolveCorrectionExtraLines } from "../src/lib/direct-orders/correction-lines.ts";
 import { buildDirectOrderNeedsAction } from "../src/lib/direct-orders/needs-action.ts";
 import { resolveDirectOrderWorkspaceTab } from "../src/lib/direct-orders/workspace-data.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
@@ -315,6 +316,84 @@ export async function runDirectOrderSecondReviewFixTests() {
   assert.ok(
     serviceSource.includes('.eq("event_type", "return")'),
     "the return comment must come from direct_order_events; the approval step never carries it",
+  );
+
+  // ── A returned BASKET is corrected whole (code review, 19 Oct 2026) ─────────
+  // The form sent line one alone, the route forwarded no lines, and the service rebuilt the order as
+  // [line 1, ...(input.items ?? [])]: the returned 86,625 EGP Lacto Advanced 1 + 2 order would have
+  // gone back to its approver at 49,500 with Lacto Advanced 2 deleted and no trace of it.
+  const storedLa2 = {
+    productCode: "LA2",
+    productName: "Lacto Advanced 2",
+    qty: 150,
+    dealType: "bonus" as const,
+    bonus: 15,
+    discountPct: null,
+  };
+  assert.deepEqual(
+    resolveCorrectionExtraLines({ headProductCode: "LA1", storedExtras: [storedLa2], sent: undefined }),
+    { ok: true, items: [{ productCode: "LA2", qty: 150, dealType: "bonus", bonus: 15, discountPct: null }] },
+    "A CORRECTION THAT SENDS NO LINES DROPPED THE BASKET'S SECOND LINE. Absent must keep every stored line as it is.",
+  );
+  assert.deepEqual(
+    resolveCorrectionExtraLines({
+      headProductCode: "LA1",
+      storedExtras: [storedLa2],
+      sent: [{ productCode: "LA2", qty: 120, dealType: "discount", bonus: 0, discountPct: 10 }],
+    }),
+    { ok: true, items: [{ productCode: "LA2", qty: 120, dealType: "discount", bonus: 0, discountPct: 10 }] },
+    "a corrected second line carries its own new quantity and deal",
+  );
+  const leftOut = resolveCorrectionExtraLines({ headProductCode: "LA1", storedExtras: [storedLa2], sent: [] });
+  assert.equal(leftOut.ok, false, "a correction that leaves a stored product out is refused, never a silent delete");
+  assert.match(leftOut.ok ? "" : leftOut.message, /^Lacto Advanced 2 is missing from this correction/);
+  const added = resolveCorrectionExtraLines({
+    headProductCode: "LA1",
+    storedExtras: [storedLa2],
+    sent: [
+      { productCode: "LA2", qty: 150 },
+      { productCode: "OTHER", qty: 10 },
+    ],
+  });
+  assert.match(added.ok ? "" : added.message, /cannot add a product/, "a correction never adds a product");
+  for (const sent of [
+    [{ productCode: "LA1", qty: 5 }, { productCode: "LA2", qty: 150 }],
+    [{ productCode: "LA2", qty: 150 }, { productCode: "LA2", qty: 10 }],
+  ]) {
+    const repeated = resolveCorrectionExtraLines({ headProductCode: "LA1", storedExtras: [storedLa2], sent });
+    assert.match(repeated.ok ? "" : repeated.message, /appears twice/, "each product is corrected once");
+  }
+  assert.deepEqual(
+    resolveCorrectionExtraLines({ headProductCode: "LA1", storedExtras: [], sent: [] }),
+    { ok: true, items: [] },
+    "a single-product order sends an empty list and keeps its one line",
+  );
+
+  // The wiring: the service reads the stored lines and feeds them through the rule, the route never
+  // turns an absent list into an empty one, the form sends every line, and the order passes them in.
+  const reviseCode = stripComments(revise);
+  assert.ok(
+    reviseCode.includes("loadDirectOrderItems(before.id)") && reviseCode.includes("resolveCorrectionExtraLines("),
+    "reviseDirectOrder must read the stored lines and keep them through resolveCorrectionExtraLines",
+  );
+  assert.ok(
+    reviseCode.includes("...extraLines.items") && !reviseCode.includes("...(input.items ?? [])"),
+    "THE BASKET IS REBUILT FROM THE CALLER'S LIST AGAIN — an absent list drops every line after the first",
+  );
+  const reviseRouteCode = stripComments(
+    readFileSync(new URL("../app/api/direct-orders/[id]/revise/route.ts", import.meta.url), "utf8"),
+  );
+  assert.ok(
+    reviseRouteCode.includes("Array.isArray(body.items)") && !reviseRouteCode.includes("body.items ?? []"),
+    "the revise route must forward the lines it was sent and leave an absent list absent",
+  );
+  assert.ok(
+    stripComments(panelSource).includes("items: nextExtras.map("),
+    "the correction form must send every line after the first",
+  );
+  assert.ok(
+    stripComments(detailSource).includes("extraLines={detail.items.slice(1)"),
+    "the order must hand the correction form its lines after the first",
   );
 
   // ── Phase 3: the workspace loads only what the open view can show ─────────

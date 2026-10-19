@@ -55,6 +55,7 @@ import { pingDirectOrderSheet } from "@/lib/direct-orders/sheet-webhook";
 import { loadOffsetTotalForOrder } from "@/lib/direct-orders/marketing-offset-service";
 import { deriveRemainingWhenCollectionCleared } from "@/lib/direct-orders/offset-rules";
 import { summarizeDirectOrderBasket } from "@/lib/direct-orders/basket-label";
+import { resolveCorrectionExtraLines } from "@/lib/direct-orders/correction-lines";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
 import {
   canViewDirectOrderEvidenceAiNote,
@@ -4535,15 +4536,37 @@ export type ReviseDirectOrderInput = {
   /** The requester's note back to the approver saying what they changed. Required. */
   correctionNote?: string | null;
   /**
-   * EXTRA lines beyond the one described above. Absent means the correction keeps a single line,
-   * which is what every correction before today did.
+   * The corrected values of every line AFTER the one described above — one per product already on
+   * the order, never a new product. ABSENT keeps every stored extra line exactly as it is.
    *
-   * A correction REPLACES the basket rather than editing it: sending one item drops a second line
-   * that was there before. Deliberate — a returned order is corrected as a whole, and "which of my
-   * lines survived" is a worse question for a requester than "what am I resubmitting".
+   * 🔴 It used to mean "a single-line order", and no screen or route ever sent it, so correcting a
+   * returned basket deleted its second line (code review, 19 Oct 2026). The rule now lives in
+   * `resolveCorrectionExtraLines` (correction-lines.ts): the products are the order's identity, and
+   * only their quantities and deals are corrected.
    */
   items?: DirectOrderItemInput[];
 };
+
+/** One line as the correction's audit row and timeline record it, before and after. */
+function auditLine(line: {
+  productCode: string;
+  productName: string;
+  qty: number;
+  dealType: DirectOrderDealType;
+  bonus: number;
+  discountPct: number | null;
+  salesValue: number;
+}) {
+  return {
+    productCode: line.productCode,
+    productName: line.productName,
+    qty: line.qty,
+    dealType: line.dealType,
+    bonus: line.bonus,
+    discountPct: line.discountPct,
+    salesValue: line.salesValue,
+  };
+}
 
 /**
  * Correct a returned direct order and put it back in front of the SAME approver.
@@ -4627,6 +4650,16 @@ export async function reviseDirectOrder(
   const caps = await loadDirectOrderCaps();
   const overrideReason = input.bonusOverrideReason?.trim() || null;
 
+  // Every line the order holds now, read BEFORE anything is written: the lines after the first are
+  // kept (or corrected) rather than dropped, and the audit row records the basket on both sides.
+  const storedLines = await loadDirectOrderItems(before.id);
+  const extraLines = resolveCorrectionExtraLines({
+    headProductCode: before.productCode,
+    storedExtras: storedLines.slice(1),
+    sent: input.items,
+  });
+  if (!extraLines.ok) badRequest(extraLines.message);
+
   // Repriced from scratch through the SAME helper `submitDirectOrder` uses, basket and all. A
   // correction submitted a week later must be valued on today's price basis, and validated by the
   // same family rule, exactly as a fresh order would be.
@@ -4641,7 +4674,7 @@ export async function reviseDirectOrder(
         bonus: input.bonus,
         discountPct: input.discountPct,
       },
-      ...(input.items ?? []),
+      ...extraLines.items,
     ],
   });
 
@@ -4711,9 +4744,22 @@ export async function reviseDirectOrder(
       discountPct: before.discountPct,
       salesValue: before.salesValue,
       collectionDate: before.collectionDate,
+      lines: storedLines.map(auditLine),
     },
-    newValues: { status: after.status, qty, bonus, dealType, discountPct, salesValue, collectionDate },
-    summary: `Direct order corrected and resubmitted by ${access.hrId} (${product.productName}, ${qty} units).`,
+    newValues: {
+      status: after.status,
+      qty,
+      bonus,
+      dealType,
+      discountPct,
+      salesValue,
+      collectionDate,
+      lines: lines.map(auditLine),
+    },
+    // Each product with its own units — units of different products are never added together.
+    summary: `Direct order corrected and resubmitted by ${access.hrId} (${lines
+      .map((line) => `${line.productName}, ${line.qty} units`)
+      .join("; ")}).`,
   });
   await insertEvent({
     requestId: after.id,
@@ -4731,6 +4777,7 @@ export async function reviseDirectOrder(
         discountPct: { from: before.discountPct, to: discountPct },
         salesValue: { from: before.salesValue, to: salesValue },
         collectionDate: { from: before.collectionDate, to: collectionDate },
+        lines: { from: storedLines.map(auditLine), to: lines.map(auditLine) },
       },
       basis: dealType === "bonus" ? "pharmacy_price" : "public_price",
       overCap,
