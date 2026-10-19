@@ -19,12 +19,20 @@
 // (src/lib/deductions/proven-worked-days.ts), so the day this calendar shows as worked and the day no
 // connector charges are one day by construction.
 //
+// 🔴 THE DAY CARRIES ITS VISITS IN FULL WHEN THE CALLER ASKS (owner, 2026-10-20: the entry said "Visits: 3"
+// and nothing else — "I want full details, name, address, brick, type, AM/PM, when, single, double"). The
+// detail read is OPT-IN (`details: true`) for the same reason the first one is a count: the company-wide
+// pass the Daily Deductions connector adjudicates needs only "did he work", and must stay light. A failed
+// detail read leaves the count-only entry, never an unreadable calendar.
+//
 // Read-only. Never mutates CRM, attendance or deduction data.
 
 import { hrIdLookupKeys } from "@/lib/hr-id";
+import { managerDayFigures, managerDaySummaryLine, managerVisitLine, type ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
 import {
   describeManagerOwnVisitDay,
   loadManagerOwnVisitDays,
+  loadManagerOwnVisitDetails,
   type ManagerOwnVisitDay,
 } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { privateCalendarActivityKindLabels } from "@/lib/private-calendar/activity-kinds";
@@ -35,18 +43,35 @@ function normalizedKey(value: string | null | undefined): string | null {
   return keys.length > 0 ? keys[0] : null;
 }
 
-/** One item per (manager, day) he logged at least one of his own single visits on. */
-export function managerOwnVisitItem(day: ManagerOwnVisitDay): PrivateCalendarItem {
+/** The customers of a day for a cramped chip: three names, then "+N more". Null when none is named. */
+function customersText(visits: readonly ManagerDayVisit[]): string | null {
+  const names = [...new Set(visits.map((visit) => visit.customerName.trim()).filter(Boolean))];
+  if (names.length === 0) return null;
+  return `${names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3} more` : ""}`;
+}
+
+/**
+ * One item per (manager, day) he logged at least one of his own single visits on. With `visits` the entry
+ * names every one of them — the count line stays first, so a reader who wanted the number still finds it.
+ */
+export function managerOwnVisitItem(day: ManagerOwnVisitDay, visits: readonly ManagerDayVisit[] = []): PrivateCalendarItem {
   const summary = describeManagerOwnVisitDay(day);
   const id = `manager-own-visit-${day.hrId}|${day.date}`;
+  const customers = customersText(visits);
+  const figures = managerDayFigures(visits);
   return {
     activityKind: "single_regular",
     approvalImpact:
       "A manager's own single visits are read-only here. They move no rep's figures and no territory's — they only stop a day that was worked being read as a day with no activity.",
-    chipLines: [privateCalendarActivityKindLabels.single_regular, summary],
+    chipLines: [privateCalendarActivityKindLabels.single_regular, summary, ...(customers ? [customers] : [])],
     description:
       "Single visits the manager made alone and logged in Phoenix CRM. They are kept in the manager's own record, which the CRM read door does not carry, so they are shown here for the day not to read as having no activity.",
-    detailLines: [`Kind: ${privateCalendarActivityKindLabels.single_regular}`, `Visits: ${day.visits}`],
+    detailLines: [
+      `Kind: ${privateCalendarActivityKindLabels.single_regular}`,
+      `Visits: ${day.visits}`,
+      ...(visits.length > 0 ? [`Counted: AM ${figures.am} · PM ${figures.pm}, in the manager's own report only`] : []),
+      ...visits.map((visit) => managerVisitLine(visit)),
+    ],
     employeeDepartmentName: null,
     employeeHrId: day.hrId,
     employeeJobTitle: null,
@@ -55,6 +80,7 @@ export function managerOwnVisitItem(day: ManagerOwnVisitDay): PrivateCalendarIte
     exceptionFlags: [],
     id,
     managerName: null,
+    ...(visits.length > 0 ? { managerVisits: [...visits] } : {}),
     employeeName: null,
     severity: "success",
     // `field_visit`, like its siblings: this is his own field work, and the engine's per-employee
@@ -67,7 +93,7 @@ export function managerOwnVisitItem(day: ManagerOwnVisitDay): PrivateCalendarIte
     startDate: day.date,
     status: "performed",
     time: summary,
-    title: summary,
+    title: visits.length > 0 ? `${summary}: ${managerDaySummaryLine(figures) || summary}${customers ? ` - ${customers}` : ""}` : summary,
     visitCounts: null,
   };
 }
@@ -83,20 +109,44 @@ export async function loadManagerOwnVisitPrivateCalendarItems(
   employeeHrIds: string[],
   start: string,
   end: string,
+  options: { details?: boolean } = {},
 ): Promise<{ items: PrivateCalendarItem[]; ready: boolean }> {
   try {
     const selected = new Set(employeeHrIds.map((value) => normalizedKey(value)).filter((value): value is string => Boolean(value)));
     if (selected.size === 0) return { items: [], ready: true };
 
     const days = await loadManagerOwnVisitDays({ end, managerHrIds: employeeHrIds, start });
+    const details = options.details && days.length > 0 ? await loadDetailsQuietly(employeeHrIds, start, end) : new Map<string, ManagerDayVisit[]>();
     const items: PrivateCalendarItem[] = [];
     for (const day of days) {
       const key = normalizedKey(day.hrId);
       if (!key || !selected.has(key)) continue;
-      items.push(managerOwnVisitItem(day));
+      items.push(managerOwnVisitItem(day, details.get(`${key}|${day.date}`) ?? []));
     }
     return { items, ready: true };
   } catch {
     return { items: [], ready: false };
   }
+}
+
+/**
+ * The visits behind the days, keyed `<manager>|<day>`. Its own failure is swallowed ON PURPOSE and only here:
+ * the count above already proves he worked, so a detail read that fails leaves a count-only entry rather than
+ * taking the day away — which would be the exact false "No Activity Recorded" this file exists to prevent.
+ */
+async function loadDetailsQuietly(employeeHrIds: string[], start: string, end: string): Promise<Map<string, ManagerDayVisit[]>> {
+  const byDay = new Map<string, ManagerDayVisit[]>();
+  try {
+    for (const visit of await loadManagerOwnVisitDetails({ end, managerHrIds: employeeHrIds, start })) {
+      const key = normalizedKey(visit.managerHrId);
+      if (!key) continue;
+      const at = `${key}|${visit.date}`;
+      const list = byDay.get(at);
+      if (list) list.push(visit);
+      else byDay.set(at, [visit]);
+    }
+  } catch {
+    return new Map();
+  }
+  return byDay;
 }

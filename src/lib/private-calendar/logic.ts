@@ -5,6 +5,7 @@ import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule";
 import { VACATION_DAY_PARTS } from "@/lib/vacation/types";
 import type { VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import type { ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
 import type { DisputeAttachment } from "@/lib/dispute-center/types.ts";
 import {
   summarizePrivateCalendarVisits,
@@ -97,6 +98,9 @@ export type PrivateCalendarItem = {
   // The physical visits behind a double or chain item. The same visit sits on the calendar of
   // everyone on it, so a team view counts it once by these ids (summarizePrivateCalendarVisits).
   visitRecords?: PrivateCalendarVisitRecord[];
+  // A district manager's OWN single visits behind a `manager-own-visit` item, in full — customer, address, brick,
+  // half, clock, who came along (owner, 2026-10-20). They count in no figure; the item still carries `visitCounts: null`.
+  managerVisits?: ManagerDayVisit[];
 };
 
 export type PrivateCalendarException = {

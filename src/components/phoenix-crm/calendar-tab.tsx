@@ -157,9 +157,30 @@ function opensForEntry(entrySeats: ReadonlySet<string>, through: string | null, 
   return entrySeats.has(seatId) && opensForMissedRecords(day.day, through);
 }
 
-/** The day's own address. `test` rides along so a test-mode calendar opens the test-mode day. */
-function dayHref(seatId: string, day: string, test: boolean): string {
-  return `${PHOENIX_CRM_PORTAL_BASE}/day/${encodeURIComponent(seatId)}/${day}${test ? "?test=1" : ""}`;
+/**
+ * The day's own address. `test` rides along so a test-mode calendar opens the test-mode day.
+ *
+ * 🔴 A MANAGER'S ROW OPENS HIS OWN PAGE (owner, 2026-10-20: his visits were a bare count — "I want full
+ * details"). A manager's seat is no territory, so `/day/<seat>` would refuse it; `/manager-day/<seat>` lists
+ * his own single visits and the visits he rode with a rep, card by card.
+ */
+function dayHref(row: { seatId: string; kind?: "rep" | "manager" }, day: string, test: boolean): string {
+  const page = row.kind === "manager" ? "manager-day" : "day";
+  return `${PHOENIX_CRM_PORTAL_BASE}/${page}/${encodeURIComponent(row.seatId)}/${day}${test ? "?test=1" : ""}`;
+}
+
+/**
+ * Whether a cell is a link. A rep's cell opens on a working day (or, for the Super Admin, to enter what was
+ * missed); a manager's opens only on a day he worked, because there is no record to enter on a manager's seat.
+ */
+function cellOpens(
+  row: { seatId: string; kind?: "rep" | "manager" },
+  day: TeamCalendarDay,
+  entrySeats: ReadonlySet<string>,
+  entryThrough: string | null,
+): boolean {
+  if (row.kind === "manager") return opensTheDay(day);
+  return opensTheDay(day) || opensForEntry(entrySeats, entryThrough, row.seatId, day);
 }
 
 /** What a cell prints: the figure its colour names, the two stacked, or his letter. */
@@ -404,7 +425,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                       ) : null}
                     </th>
                     {row.days.map((day) => {
-                      const opens = row.kind !== "manager" && (opensTheDay(day) || opensForEntry(entrySeats, entryThrough, row.seatId, day));
+                      const opens = cellOpens(row, day, entrySeats, entryThrough);
                       const face = cn(
                         "flex h-11 w-full items-center justify-center rounded-none border-0 px-0 text-center text-phx-3xs font-black transition",
                         SHAPE_INK[day.shape],
@@ -419,7 +440,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                             <a
                               aria-label={dayTitle(row.person, day, true)}
                               className={face}
-                              href={dayHref(row.seatId, day.day, test)}
+                              href={dayHref(row, day.day, test)}
                               rel="noopener noreferrer"
                               target="_blank"
                               title={dayTitle(row.person, day, true)}
@@ -476,7 +497,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                       <div key={`lead-${index}`} />
                     ))}
                     {row.days.map((day) => {
-                      const opens = row.kind !== "manager" && (opensTheDay(day) || opensForEntry(entrySeats, entryThrough, row.seatId, day));
+                      const opens = cellOpens(row, day, entrySeats, entryThrough);
                       const face = cn(
                         "flex min-h-11 min-w-0 flex-col items-center justify-center rounded-none border px-0 py-1 text-center text-phx-3xs font-black transition",
                         SHAPE_INK[day.shape],
@@ -494,7 +515,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                         <a
                           aria-label={dayTitle(row.person, day, true)}
                           className={face}
-                          href={dayHref(row.seatId, day.day, test)}
+                          href={dayHref(row, day.day, test)}
                           key={day.day}
                           rel="noopener noreferrer"
                           target="_blank"
@@ -540,8 +561,8 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
               ) : null}
               {chosen.row.kind === "manager" ? (
                 <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
-                  A manager&apos;s day: their own single visits plus the visits they joined a rep on. A day spent on
-                  admin, a meeting or travel is not drawn here.
+                  A manager&apos;s day: their own single visits plus the visits they joined a rep on. A day with
+                  either opens in full, in a new tab. A day spent on admin, a meeting or travel is not drawn here.
                 </p>
               ) : null}
             </CrmBlock>

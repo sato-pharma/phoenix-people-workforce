@@ -156,9 +156,11 @@ export function runPhoenixCrmWave2ReportTests(): void {
     // A ride-along is the rule the manager's plan report judges by, read from the countable view.
     assert.match(service, /countsAsManagersDoubleVisit\(visit, hrId\)/, "a ride-along is a double or chain visit naming him");
     assert.equal((service.match(/foldVisitRow\(fold, /g) ?? []).length, 2, "and it folds through the one function a rep's visit folds through");
-    // A manager's row never opens a rep's day page — that page is a territory's.
+    // A manager's row never opens a rep's day page — that page is a territory's. Since 2026-10-20 it opens ITS OWN
+    // page, `/manager-day/<seat>/<day>`, which lists his visits card by card.
     const tab = stripComments(readFileSync("src/components/phoenix-crm/calendar-tab.tsx", "utf8"));
-    assert.equal((tab.match(/row\.kind !== "manager" && \(/g) ?? []).length, 2, "neither the desktop row nor the phone card links a manager's day to a territory page");
+    assert.match(tab, /const page = row\.kind === "manager" \? "manager-day" : "day";/, "a manager's cell links to the manager's own day page, never to a territory page");
+    assert.equal((tab.match(/href=\{dayHref\(row, day\.day, test\)\}/g) ?? []).length, 2, "neither the desktop row nor the phone card builds the link any other way");
   }
 
   // ── The calendar's screen ────────────────────────────────────────────────────────────────────

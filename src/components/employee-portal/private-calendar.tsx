@@ -17,6 +17,7 @@ import {
 
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import { formatVisitCountSplit, visitCountSplitTotal } from "@/lib/crm/visit-count-buckets";
+import { managerVisitLine } from "@/lib/phoenix-crm/manager-visit-detail";
 import {
   privateCalendarActivityKindLabels,
   privateCalendarActivityKinds,
@@ -34,6 +35,7 @@ import {
   type PrivateCalendarViewMode,
   type PrivateCalendarWorkspace,
 } from "@/lib/private-calendar/logic";
+import { ManagerVisitList } from "@/components/phoenix-crm/manager-visit-card";
 import { PrivateCalendarReviewRequestThread } from "@/components/private-calendar/review-request-thread";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -1598,7 +1600,7 @@ function PrivateCalendarAgenda({
               const meta = [
                 viewMode === "team" ? item.employeeName : null,
                 item.time,
-                ...item.detailLines,
+                ...plainDetailLines(item),
                 item.description,
               ].filter((value): value is string => Boolean(value));
               return (
@@ -1625,6 +1627,11 @@ function PrivateCalendarAgenda({
                           {value}
                         </span>
                       ))}
+                    </div>
+                  ) : null}
+                  {item.managerVisits && item.managerVisits.length > 0 ? (
+                    <div className="mt-2.5 pl-[18px]">
+                      <ManagerVisitList visits={item.managerVisits} />
                     </div>
                   ) : null}
                   {item.exceptionFlags.length > 0 ? (
@@ -1888,6 +1895,17 @@ function ExceptionItem({ exception, showHrIds }: { exception: PrivateCalendarExc
   );
 }
 
+/**
+ * The lines an item prints as text. An item that carries its visits in full (`managerVisits`) draws them as cards,
+ * so the one-line versions of the same visits are held back here — they exist for the surfaces that print text
+ * only (the dispute view, the search box).
+ */
+function plainDetailLines(item: PrivateCalendarItem): string[] {
+  if (!item.managerVisits || item.managerVisits.length === 0) return item.detailLines;
+  const cards = new Set(item.managerVisits.map((visit) => managerVisitLine(visit)));
+  return item.detailLines.filter((line) => !cards.has(line));
+}
+
 function TimelineItem({
   item,
   showHrIds,
@@ -1945,10 +1963,18 @@ function TimelineItem({
           </div>
         ) : null}
 
-        {item.detailLines.length > 0 ? (
+        {plainDetailLines(item).length > 0 ? (
           <ul className="mt-3 space-y-1 text-xs font-semibold text-slate-600">
-            {item.detailLines.map((line) => <li key={line} className="flex items-start gap-1.5"><span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-slate-400" />{line}</li>)}
+            {plainDetailLines(item).map((line) => <li key={line} className="flex items-start gap-1.5"><span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-slate-400" />{line}</li>)}
           </ul>
+        ) : null}
+
+        {/* A district manager's own single visits, one card each — name, address, brick, type, half, clock, single or
+            double (owner, 2026-10-20). The same card the Phoenix CRM manager's day page draws. */}
+        {item.managerVisits && item.managerVisits.length > 0 ? (
+          <div className="mt-3">
+            <ManagerVisitList visits={item.managerVisits} />
+          </div>
         ) : null}
 
         {item.description ? (
