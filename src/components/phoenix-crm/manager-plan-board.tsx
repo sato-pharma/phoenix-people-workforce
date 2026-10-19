@@ -59,7 +59,7 @@ import {
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import {
-  DM_SINGLE_VISIT_HALF_DAYS_MAX,
+  dmSingleVisitLimitLine,
   MANAGER_PLAN_NOTE_MAX,
   MANAGER_PLAN_REASON_MAX,
   MANAGER_SLOT_CUSTOMER_MAX,
@@ -1153,15 +1153,14 @@ function SingleVisitPart({
     area.reload();
   }
 
-  // A district manager has two days of single visits a week at most — four half-days (owner, 2026-10-17).
-  const singleVisitHalves = view.days.flatMap((entry) => entry.slots).filter((entry) => entry.kind === "single_visit").length;
+  // A district manager has one day of single visits a week at most — two half-days (owner, 2026-10-19). The
+  // count is the server's — his planned halves AND the visits he has logged — so it never says "1 of 2"
+  // while the save refuses because a logged visit already holds the second half-day.
 
   return (
     <div className="grid min-w-0 gap-4">
-      {view.writer?.kind === "dm" ? (
-        <p className="break-words text-xs font-semibold leading-5 text-slate-500">
-          {`Single visits are limited to two days a week, which is four half-days. This week holds ${singleVisitHalves} of ${DM_SINGLE_VISIT_HALF_DAYS_MAX}.`}
-        </p>
+      {view.writer?.kind === "dm" && view.singleVisitHalvesUsed !== null ? (
+        <p className="break-words text-xs font-semibold leading-5 text-slate-500">{dmSingleVisitLimitLine(view.singleVisitHalvesUsed)}</p>
       ) : null}
       <CrmChoice columns={3} label="Area" onChange={(areaSeatId) => onDraft({ ...draft, areaSeatId, customers: [] })} options={areaOptions} value={draft.areaSeatId} />
 

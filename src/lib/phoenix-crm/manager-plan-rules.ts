@@ -81,13 +81,18 @@ export const MANAGER_PLAN_NOTE_MAX = 500;
 export const MANAGER_PLAN_REASON_MAX = 500;
 
 /**
- * 🔴 A DISTRICT SALES MANAGER HAS TWO DAYS OF SINGLE VISITS A WEEK AT MOST — FOUR HALF-DAYS, ANY MIX (owner,
- * 2026-10-17: "they cannot submit … in the same week more than two days single visits"; asked how the
- * halves add up he answered "four halves or 2 full days"; and the limit covers the visits he logs, not only
- * the plan). A morning on Saturday and an afternoon on Monday are one day together. It binds the district
- * manager only — a regional, national or product manager's single visits are not limited.
+ * 🔴 A DISTRICT SALES MANAGER HAS ONE DAY OF SINGLE VISITS A WEEK AT MOST — TWO HALF-DAYS, ANY MIX (owner,
+ * 2026-10-19: "currently the single visits are accepted in 2 days in a week no cap it to 1 day in the week",
+ * lowering his 2026-10-17 limit of two days, "four halves or 2 full days"; the limit covers the visits he
+ * logs, not only the plan). A morning on Saturday and an afternoon on Monday are one day together. It binds
+ * the district manager only — a regional, national or product manager's single visits are not limited.
  */
-export const DM_SINGLE_VISIT_HALF_DAYS_MAX = 4;
+export const DM_SINGLE_VISIT_HALF_DAYS_MAX = 2;
+
+/** The line his screens show under the limit: the board's Single visit part and "My single visits". */
+export function dmSingleVisitLimitLine(used: number): string {
+  return `Single visits are limited to one day a week, which is two half-days. This week holds ${used} of ${DM_SINGLE_VISIT_HALF_DAYS_MAX}.`;
+}
 
 /** One half-day of one date, the unit the limit counts. */
 export function singleVisitHalfKey(date: string, half: ManagerHalf): string {
@@ -120,8 +125,8 @@ export function managerVisitWindow(weekStart: string): { from: string; to: strin
 export function dmSingleVisitCapError(used: ReadonlySet<string>, next: string, what: "plan" | "visit"): string | null {
   if (used.has(next) || used.size < DM_SINGLE_VISIT_HALF_DAYS_MAX) return null;
   return what === "plan"
-    ? "A district manager has two days of single visits a week at most, which is four half-days. Your week already holds four, so this half-day cannot be a single visit."
-    : "A district manager has two days of single visits a week at most, which is four half-days. Your week already holds four, so this visit cannot be logged.";
+    ? "A district manager has one day of single visits a week at most, which is two half-days. Your week already holds two, so this half-day cannot be a single visit."
+    : "A district manager has one day of single visits a week at most, which is two half-days. Your week already holds two, so this visit cannot be logged.";
 }
 
 /** The grades he gives a customer he adds himself (owner, 2026-10-16: "A/B/C and potential grade"). */

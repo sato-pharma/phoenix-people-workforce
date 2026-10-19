@@ -40,7 +40,7 @@ import {
   type ManagerCustomerView,
 } from "@/lib/phoenix-crm/server/manager-customers";
 import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
-import { assertSingleVisitLogFits } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
+import { assertSingleVisitLogFits, loadSingleVisitAllowance, type SingleVisitAllowance } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
 import { loadManagerSlotCustomers, loadManagerSlotRows, MANAGER_PLAN_COLUMNS, managerPlanRowOf } from "@/lib/phoenix-crm/server/manager-plan-rows";
 import { lineProductsByFamily } from "@/lib/phoenix-crm/server/products";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -146,6 +146,8 @@ export type ManagerTodayView = {
   areas: ManagerAreaChoice[];
   /** His line's products, by family — what "Products discussed" offers. Optional on every visit. */
   products: string[];
+  /** A district manager's single-visit limit for the visit day's week, as the log counts it; null for every other manager. */
+  singleVisitLimit: SingleVisitAllowance | null;
 };
 
 /** His line's product families, or none when the line has none on file. */
@@ -188,7 +190,7 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
   const day = viewer.visitDay;
   const weekStart = fieldWeekStart(day);
   const reach = await managerWriterReach(viewer, writer);
-  const [planRows, visits, ownList, products, names] = await Promise.all([
+  const [planRows, visits, ownList, products, names, singleVisitLimit] = await Promise.all([
     fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
@@ -203,6 +205,7 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
     loadManagerCustomers(viewer.hrId, isTest),
     writerProductNames(viewer, writer),
     loadPeopleNames(reach.map((seat) => seat.occupantHrId)),
+    writer.kind === "dm" ? loadSingleVisitAllowance({ managerHrId: viewer.hrId, weekStart, date: day, isTest }) : Promise.resolve(null),
   ]);
   const plan = planRows.length > 0 ? managerPlanRowOf(planRows[0]) : null;
   const slots = plan ? (await loadManagerSlotRows([plan.planId])).filter((slot) => slot.date === day && slot.kind === "single_visit") : [];
@@ -258,6 +261,7 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
     ownList: ownList.filter((customer) => customer.status === "active"),
     areas: managerAreaChoices(reach, names),
     products,
+    singleVisitLimit,
   };
 }
 
