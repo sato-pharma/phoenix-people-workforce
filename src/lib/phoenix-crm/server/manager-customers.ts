@@ -30,6 +30,7 @@ import {
   MANAGER_CUSTOMER_ADDRESS_MAX,
   MANAGER_PLAN_NOTE_MAX,
   MANAGER_PLAN_REASON_MAX,
+  VACANT_LIST_LABEL,
   type ManagerPlanWriter,
   type NameCandidate,
 } from "@/lib/phoenix-crm/manager-plan-rules";
@@ -279,6 +280,32 @@ function areasOf(seats: ReadonlyArray<OrgSeat>): Array<{ seatId: string; areaNam
 
 // ── A single visit's customers: the area's rep list and his own ─────────────────────────────────
 
+/**
+ * One area he may make single visits in, by its AREA NAME. 🔴 A VACANT one is offered too, named as an area
+ * like any other (owner, 2026-10-19: "make the vacant areas appear named as areas"), and choosing it opens
+ * the list its seat still holds — the previous rep's, since a list belongs to the seat, not the person.
+ */
+export type ManagerAreaChoice = { seatId: string; areaName: string; repName: string | null; vacant: boolean };
+
+/** The areas of these territories, one per area, by name — a vacant one marked, never dropped. */
+export function managerAreaChoices(seats: ReadonlyArray<OrgSeat>, names: ReadonlyMap<string, string>): ManagerAreaChoice[] {
+  const seen = new Set<string>();
+  const out: ManagerAreaChoice[] = [];
+  for (const seat of seats) {
+    const key = seat.areaCode ?? seat.areaName ?? seat.seatId;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const occupant = personKey(seat.occupantHrId);
+    out.push({ seatId: seat.seatId, areaName: seat.areaName ?? territoryName(seat), repName: occupant ? nameOf(names, occupant) : null, vacant: !occupant });
+  }
+  return out.sort((left, right) => left.areaName.localeCompare(right.areaName));
+}
+
+/** A territory nobody holds: its list is the previous rep's, and a visit to one of its doctors records where he is. */
+export function isVacantTerritory(seat: Pick<OrgSeat, "occupantHrId"> | null | undefined): boolean {
+  return Boolean(seat) && !personKey(seat?.occupantHrId);
+}
+
 export type AreaCustomer = {
   customerId: string;
   name: string;
@@ -286,7 +313,10 @@ export type AreaCustomer = {
   speciality: string | null;
   listType: "AM" | "PM";
   seatId: string;
+  /** The rep holding the territory; null when it is vacant. */
   repName: string | null;
+  /** The territory is vacant: this is the previous rep's list, and a visit records an address or a location. */
+  vacant: boolean;
 };
 
 /** The customers of the rep lists of these seats — AM and PM, active or not validated yet; never a pharmacy. */
@@ -311,7 +341,8 @@ async function loadRepListCustomers(seatIds: ReadonlyArray<string>, isTest: bool
 }
 
 export type AreaCustomersView = {
-  area: { seatId: string; areaName: string } | null;
+  /** `vacant`: nobody holds the area, so `repList` is the previous rep's list. */
+  area: { seatId: string; areaName: string; vacant: boolean } | null;
   repList: AreaCustomer[];
   ownList: ManagerCustomerView[];
 };
@@ -339,6 +370,7 @@ export async function loadAreaCustomers(viewer: PhoenixCrmViewer, raw: { area: u
     loadPeopleNames(seats.map((seat) => seat.occupantHrId)),
   ]);
   const repOf = new Map(seats.map((seat) => [seat.seatId, seat.occupantHrId ? nameOf(names, seat.occupantHrId) : null]));
+  const vacantSeats = new Set(seats.filter((seat) => isVacantTerritory(seat)).map((seat) => seat.seatId));
   const repList = rows
     .flatMap((row): AreaCustomer[] => {
       const customerId = textOrNull(row.id);
@@ -354,12 +386,13 @@ export async function loadAreaCustomers(viewer: PhoenixCrmViewer, raw: { area: u
           listType,
           seatId,
           repName: repOf.get(seatId) ?? null,
+          vacant: vacantSeats.has(seatId),
         },
       ];
     })
     .sort((left, right) => left.name.localeCompare(right.name));
   return {
-    area: { seatId: chosen.seatId, areaName: chosen.areaName ?? territoryName(chosen) },
+    area: { seatId: chosen.seatId, areaName: chosen.areaName ?? territoryName(chosen), vacant: isVacantTerritory(chosen) },
     repList,
     ownList: ownList.filter((customer) => customer.status === "active"),
   };
@@ -367,7 +400,8 @@ export async function loadAreaCustomers(viewer: PhoenixCrmViewer, raw: { area: u
 
 // ── A name he typed: the match first ────────────────────────────────────────────────────────────
 
-export type CustomerMatch = NameCandidate & { detail: string };
+/** `vacant`: a doctor of a vacant territory's list — the previous rep's; `seatId` is that territory (null on his own list). */
+export type CustomerMatch = NameCandidate & { detail: string; vacant: boolean; seatId: string | null };
 
 /**
  * POST: the customers already on his reps' lists or his own list under the name he typed, so he can pick
@@ -393,9 +427,10 @@ export async function matchManagerCustomer(viewer: PhoenixCrmViewer, raw: unknow
       const name = textOrNull(row.name);
       const seat = seatById.get(String(row.seat_id ?? ""));
       if (!id || !name || !seat) return [];
-      const rep = seat.occupantHrId ? nameOf(names, seat.occupantHrId) : "No rep";
-      const detail = [textOrNull(row.speciality), `${rep}'s list`, seat.areaName].filter(Boolean).join(" · ");
-      return [{ id, name, source: "rep", detail }];
+      const vacant = isVacantTerritory(seat);
+      const whose = vacant ? VACANT_LIST_LABEL : `${seat.occupantHrId ? nameOf(names, seat.occupantHrId) : "No rep"}'s list`;
+      const detail = [textOrNull(row.speciality), whose, seat.areaName].filter(Boolean).join(" · ");
+      return [{ id, name, source: "rep", detail, vacant, seatId: seat.seatId }];
     }),
     ...own
       .filter((customer) => customer.status === "active")
@@ -404,6 +439,8 @@ export async function matchManagerCustomer(viewer: PhoenixCrmViewer, raw: unknow
         name: customer.name,
         source: "own",
         detail: [customer.speciality, "Manager's own list", customer.areaName].filter(Boolean).join(" · "),
+        vacant: false,
+        seatId: null,
       })),
   ];
   return matchCustomerName(typed, candidates);
@@ -480,7 +517,22 @@ export async function locateManagerCustomer(viewer: PhoenixCrmViewer, raw: unkno
   const fix = readCapturedFix(body);
   if (!fix) throw validationError("The location could not be read. Press Capture location again, or fill the address, area and brick in yourself.");
   const district = await managerWriterReach(viewer, writer);
-  const chosen = district.find((entry) => entry.seatId === body.areaSeatId) ?? null;
+  const { areaCode: _areaCode, ...located } = await locateInReach(district, fix, body.areaSeatId);
+  return located;
+}
+
+/**
+ * Where a captured fix is, read against the territories he plans in — the ONE reading behind Capture
+ * location on Add a customer and on a single visit to a vacant area's doctor (owner, 2026-10-19), so what
+ * the form fills in is what the save stores. `hintSeatId` is the territory he is working in, which breaks a
+ * near tie between brick centres. The brick is kept only when it sits in an area of his reach.
+ */
+export async function locateInReach(
+  district: ReadonlyArray<OrgSeat>,
+  fix: { lat: number; lon: number; accuracyMeters: number | null },
+  hintSeatId: unknown,
+): Promise<ManagerCustomerLocated & { areaCode: string | null }> {
+  const chosen = district.find((entry) => entry.seatId === hintSeatId) ?? null;
   const geography = await resolvePinGeography(fix, territoryOfSeat(chosen ?? {}));
   const inReach = geography.areaCode ? district.find((entry) => entry.areaCode === geography.areaCode) : undefined;
   const brickId = inReach && geography.brickId ? geography.brickId : null;
@@ -490,6 +542,7 @@ export async function locateManagerCustomer(viewer: PhoenixCrmViewer, raw: unkno
     brickName: brickId ? geography.brickName : null,
     areaName: geography.areaName,
     areaSeatId: inReach?.seatId ?? null,
+    areaCode: geography.areaCode,
   };
 }
 

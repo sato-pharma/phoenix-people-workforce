@@ -391,3 +391,39 @@ product manager keeps filing the legacy form, so his attendance still reads that
 
 Migration `20261017213000` (staging and production, 17 Oct). Pinned in section 10 of
 `tests/phoenix-crm-manager-plan.test.ts`.
+
+## A vacant area: named, its list the previous rep's, and a visit there says where (2026-10-19)
+
+His words, in chat on 19 Oct 2026: *"when a manager is planning or doing single visits make the vacant
+areas appear named as areas — when he chooses the vacant area he is able to see the dr list of the
+previous rep, so he can choose from the vacant area's list and make his plan or make single visits"*,
+then *"if the area is vacant make the district manager obligatory either to fill the dr address by hand
+or to capture location and the address, area and brick are auto filled — either this or this"*. Asked as
+a multiple choice whether that binds the visit log, adding a customer to his own list, or both, he chose
+**the visit log only**.
+
+- **Measured that day on production:** 39 vacant rep territories. 18 still hold the previous rep's list
+  on their seat (85 to 132 AM and PM customers each) — a list belongs to the seat, not the person; the
+  other 21 hold none, and have no iReports360 list either. So nothing is copied: choosing a vacant area
+  reads the list its seat still holds, and an area with none says so and offers Add a customer.
+- **Named as an area, everywhere he picks one.** The plan board's single-visit "Area" choice and My single
+  visits' new "Choose an area" both list the areas he plans in by area name, a vacant one marked
+  "Vacant · the previous rep's list" (`managerAreaChoices`, `VACANT_AREA_NOTE`). Its customers read "The
+  previous rep's list" where a rep's name would go, and the name search says the same.
+- **My single visits opens on the areas.** "Log an unplanned customer" now shows the areas first; choosing
+  one lists its customers with a search, a page at a time, each with Log this one. The name search stays
+  beneath it.
+- **The visit to a vacant area's customer needs one of two.** The log form shows Capture location — which
+  fills in the address and says the area and brick it fell in, read by the same `locateInReach` that Add a
+  customer uses — and an Address field to type by hand. Neither filled: refused, by the form, by the save
+  (`vacantVisitPlaceError`) and by the database (`phoenix_crm_manager_visits_vacant_place`). Elsewhere the
+  location stays optional and no address is kept. "Vacant" is read off the territory the customer is on
+  on the visit day, never off the plan.
+- **What the visit row keeps:** `in_vacant_territory`, the `address` he saw, and — only when he captured —
+  the `area_code`, `area_name`, `brick_id` and `brick_name` the capture fell in (the brick only when it is
+  in an area of his reach, as on Add a customer). Nothing is written to the rep's list: the vacant seat's
+  customer record is untouched.
+- **Adding a customer to Manager's own list is unchanged** — its address and brick stay optional.
+
+Migration `20261019103745` (staging and production, 19 Oct; additive, the 6 visits already logged keep
+`in_vacant_territory` false). Pinned at the end of `tests/phoenix-crm-manager-plan.test.ts`.

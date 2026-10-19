@@ -64,6 +64,8 @@ import {
   MANAGER_PLAN_REASON_MAX,
   MANAGER_SLOT_CUSTOMER_MAX,
   MANAGER_SLOT_KINDS,
+  VACANT_AREA_NOTE,
+  VACANT_LIST_LABEL,
   type ManagerHalf,
   type ManagerSlotKind,
 } from "@/lib/phoenix-crm/manager-plan-rules";
@@ -1122,12 +1124,14 @@ function SingleVisitPart({
     return <CrmEmpty message={choosesADistrict(view) ? "No area of this district is on file yet." : "No area of your district is on file yet."} title="No areas" />;
   }
 
+  // A vacant area is offered by its name like any other, and its list is the previous rep's (owner, 2026-10-19).
   const areaOptions: Array<CrmChoiceOption<string>> = view.areas.map((entry) => ({
     value: entry.seatId,
     label: entry.areaName,
-    note: entry.repName ?? "No rep",
+    note: entry.vacant ? VACANT_AREA_NOTE : (entry.repName ?? "No rep"),
     disabled: !canEdit,
   }));
+  const chosenVacant = view.areas.some((entry) => entry.seatId === draft.areaSeatId && entry.vacant);
   const ticked = new Set(draft.customers.map((customer) => customer.key));
   const words = query.trim().toLowerCase();
   const matches = (name: string) => !words || name.toLowerCase().includes(words);
@@ -1237,8 +1241,19 @@ function SingleVisitPart({
                 </div>
               ) : null}
               <div className="grid min-w-0 gap-2">
-                <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">The area&apos;s rep lists</p>
-                {repList.length === 0 ? <p className="text-sm font-semibold text-slate-500">No customer on these lists matches.</p> : null}
+                <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">
+                  {chosenVacant ? `${VACANT_LIST_LABEL} · this area has no rep` : "The area's rep lists"}
+                </p>
+                {chosenVacant ? (
+                  <p className="break-words text-xs font-semibold leading-5 text-slate-500">
+                    When you log the visit, type the customer&apos;s address or press Capture location — one of the two is needed in a vacant area.
+                  </p>
+                ) : null}
+                {repList.length === 0 ? (
+                  <p className="text-sm font-semibold text-slate-500">
+                    {chosenVacant && !words ? "The previous rep left no list in this area. Add a customer to Manager's own list instead." : "No customer on these lists matches."}
+                  </p>
+                ) : null}
                 <div className="grid min-w-0 gap-2 sm:grid-cols-2">
                   {shown.map((customer) => (
                     <CrmCheck
@@ -1250,7 +1265,9 @@ function SingleVisitPart({
                         {customer.name}
                       </span>
                       <span className="block break-words text-xs font-semibold text-slate-500">
-                        {[customer.listType, customer.grade ? `Grade ${customer.grade}` : null, customer.speciality, customer.repName ?? "No rep"].filter(Boolean).join(" · ")}
+                        {[customer.listType, customer.grade ? `Grade ${customer.grade}` : null, customer.speciality, customer.vacant ? VACANT_LIST_LABEL : (customer.repName ?? "No rep")]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </span>
                     </CrmCheck>
                   ))}
