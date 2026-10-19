@@ -157,7 +157,7 @@ export type {
   ManagerCustomerView,
   ManagerOwnListView,
 } from "@/lib/phoenix-crm/server/manager-customers";
-export type { ManagerTodayCustomer, ManagerTodayView } from "@/lib/phoenix-crm/server/manager-visits";
+export type { ManagerTodayCustomer, ManagerTodayOwnCustomer, ManagerTodayView } from "@/lib/phoenix-crm/server/manager-visits";
 export type {
   ManagerReport as ManagerPlanReport,
   ManagerReportView as ManagerPlanReportView,

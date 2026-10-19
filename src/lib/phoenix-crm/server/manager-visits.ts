@@ -7,12 +7,21 @@
  * planned (a customer of a single-visit half-day of today) or unplanned (shown apart). Capture location
  * is optional, there is NO photo and no accuracy gate, and the products and the comment are optional.
  *
- * 🔴 EXCEPT IN A VACANT AREA (owner, 2026-10-19). He picks his customers from a vacant area's list — the
- * previous rep's — and a visit to one of them needs the doctor's address typed by hand OR a captured
- * location, whose address, area and brick are filled in for him: "either this or this". Nobody holds the
- * territory, so this visit is the only record of where its doctor is (`vacantVisitPlaceError`, and the
- * database's `phoenix_crm_manager_visits_vacant_place`). It binds the visit only — adding a customer to
- * Manager's own list stays as it was (his choice, the same day).
+ * 🔴 EVERY SINGLE VISIT CARRIES THE ADD-A-CUSTOMER PLACE BLOCK (owner, 2026-10-20: the unplanned form
+ * "asks for a location or address and there is no place to write the address … it should be as the screen
+ * when adding new customer"). Capture location, the address, and the area → brick cascade, on every one of
+ * them; whatever he typed, chose or captured is stored on the visit and shown back on its card.
+ *
+ * 🔴 AND IN A VACANT AREA ONE OF THE TWO IS REQUIRED (owner, 2026-10-19). He picks his customers from a
+ * vacant area's list — the previous rep's — and a visit to one of them needs the doctor's address typed by
+ * hand OR a captured location, whose address, area and brick are filled in for him: "either this or this".
+ * Nobody holds the territory, so this visit is the only record of where its doctor is
+ * (`vacantVisitPlaceError`, and the database's `phoenix_crm_manager_visits_vacant_place`). It binds the
+ * visit only — adding a customer to Manager's own list stays as it was (his choice, the same day).
+ *
+ * 🔴 VACANT IS READ OFF THE CUSTOMER'S OWN TERRITORY, WHICHEVER LIST HE CAME FROM — a rep customer's seat,
+ * and a Manager's-own-list customer's `area_seat_id`. The own list used to be flatly "not vacant", so the
+ * area screen demanded an address for a customer the form then never asked one for (owner, 2026-10-20).
  *
  * 🔴 THESE VISITS COUNT IN HIS OWN REPORT AND NOWHERE ELSE. `phoenix_crm_manager_visits` is a table of its
  * own precisely so that no KPI, coverage, call-rate, frequency or target reader can pick a row of it up —
@@ -27,15 +36,17 @@ import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
-import { MANAGER_CUSTOMER_ADDRESS_MAX, vacantVisitPlaceError, vacantVisitPlaceText, type ManagerPlanWriter } from "@/lib/phoenix-crm/manager-plan-rules";
+import { MANAGER_CUSTOMER_ADDRESS_MAX, vacantVisitPlaceError, visitPlaceText, type ManagerPlanWriter } from "@/lib/phoenix-crm/manager-plan-rules";
 import { assertManagerPlanWriter } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { managerWriterReach } from "@/lib/phoenix-crm/server/manager-plan-writers";
 import {
+  areaChoiceSeatOf,
   isVacantTerritory,
   loadManagerCustomerRow,
   loadManagerCustomers,
   locateInReach,
   managerAreaChoices,
+  resolveChosenPlace,
   type ManagerAreaChoice,
   type ManagerCustomerView,
 } from "@/lib/phoenix-crm/server/manager-customers";
@@ -71,7 +82,7 @@ export type ManagerVisitRow = {
   isTest: boolean;
   /** The territory was vacant when he logged it (owner, 2026-10-19). */
   inVacantTerritory: boolean;
-  /** Where a vacant area's visit says its customer is — address, area and brick — or null (`vacantVisitPlaceText`). */
+  /** Where the visit says its customer is — address, area and brick — or null (`visitPlaceText`). */
   placeText: string | null;
 };
 
@@ -101,8 +112,7 @@ function visitRowOf(raw: unknown): ManagerVisitRow | null {
     capturedAt: textOrNull(row.captured_at),
     isTest: row.is_test === true,
     inVacantTerritory,
-    placeText: vacantVisitPlaceText({
-      vacant: inVacantTerritory,
+    placeText: visitPlaceText({
       address: textOrNull(row.address),
       areaName: textOrNull(row.area_name),
       brickName: textOrNull(row.brick_name),
@@ -143,11 +153,18 @@ export type ManagerTodayCustomer = {
   logged: boolean;
   /** A doctor of a vacant territory's list: the visit needs a typed address or a captured location (owner, 2026-10-19). */
   vacant: boolean;
-  /** The territory whose list he is on — the hint Capture location reads against; null on his own list. */
+  /** The territory whose list he is on — the hint Capture location reads against; null when it is unknown. */
   seatId: string | null;
-  /** Once logged in a vacant area: the address, area and brick the visit recorded (`vacantVisitPlaceText`). */
+  /** The area the place block opens on: the customer's own territory, so its brick list is the right one. */
+  areaSeatId: string | null;
+  /** The address already on file for a customer of his own list, so the form opens on what the system knows. */
+  knownAddress: string | null;
+  /** Once logged: the address, area and brick the visit recorded (`visitPlaceText`). */
   place: string | null;
 };
+
+/** A customer of Manager's own list as the Visits tab needs him: with whether his area has a rep today. */
+export type ManagerTodayOwnCustomer = ManagerCustomerView & { vacant: boolean };
 
 export type ManagerTodayView = {
   isTest: boolean;
@@ -156,8 +173,8 @@ export type ManagerTodayView = {
   planned: ManagerTodayCustomer[];
   /** What he logged today that was not planned — shown apart. */
   unplanned: ManagerTodayCustomer[];
-  /** His own list, for "Log an unplanned customer". */
-  ownList: ManagerCustomerView[];
+  /** His own list, for "Log an unplanned customer" — each with whether its area is vacant today. */
+  ownList: ManagerTodayOwnCustomer[];
   /** The areas he plans in, by name — a vacant one marked — to log an unplanned visit from an area's list. */
   areas: ManagerAreaChoice[];
   /** His line's products, by family — what "Products discussed" offers. Optional on every visit. */
@@ -234,10 +251,21 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
     ...slotCustomers.flatMap((row) => (row.customerId && !row.gone ? [row.customerId] : [])),
     ...unplannedVisits.flatMap((visit) => (visit.customerId ? [visit.customerId] : [])),
   ]);
-  const placeOf = (customerId: string | null): { vacant: boolean; seatId: string | null } => {
-    const seatId = customerId ? (repCustomers.get(customerId)?.seatId ?? null) : null;
-    return { vacant: seatId !== null && isVacantTerritory(viewer.org.seats.get(seatId)), seatId };
+  // The territory a customer is on TODAY decides whether it is vacant — a rep customer's seat, and a
+  // customer of his own list's `area_seat_id`. One reading, the same one the save makes: the own list
+  // used to be flatly "not vacant", so the area screen asked for an address the form never offered.
+  const placeOf = (customerId: string | null, managerCustomerId: string | null): Pick<ManagerTodayCustomer, "vacant" | "seatId" | "areaSeatId" | "knownAddress"> => {
+    const own = managerCustomerId ? ownById.get(managerCustomerId) : undefined;
+    const seatId = customerId ? (repCustomers.get(customerId)?.seatId ?? null) : (own?.areaSeatId ?? null);
+    return {
+      vacant: seatId !== null && isVacantTerritory(viewer.org.seats.get(seatId)),
+      seatId,
+      // The AREA's own seat, not the rep's: the form's area drop-list lists one seat per area.
+      areaSeatId: areaChoiceSeatOf(reach, seatId),
+      knownAddress: own?.address ?? null,
+    };
   };
+  const ownById = new Map(ownList.map((customer) => [customer.id, customer]));
   const planned = slotCustomers
     .filter((row) => !row.gone)
     .map((row): ManagerTodayCustomer => ({
@@ -249,12 +277,11 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
       speciality: row.speciality,
       own: row.managerCustomerId !== null,
       logged: visitOf.has(row.customerId ? `c:${row.customerId}` : `m:${row.managerCustomerId}`),
-      ...placeOf(row.customerId),
+      ...placeOf(row.customerId, row.managerCustomerId),
       place: visitOf.get(row.customerId ? `c:${row.customerId}` : `m:${row.managerCustomerId}`)?.placeText ?? null,
     }))
     .sort((left, right) => String(left.half).localeCompare(String(right.half)) || left.name.localeCompare(right.name));
 
-  const ownById = new Map(ownList.map((customer) => [customer.id, customer]));
   const unplanned = unplannedVisits.map((visit): ManagerTodayCustomer => {
     const rep = visit.customerId ? repCustomers.get(visit.customerId) : undefined;
     const own = visit.managerCustomerId ? ownById.get(visit.managerCustomerId) : undefined;
@@ -267,7 +294,7 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
       speciality: rep?.speciality ?? own?.speciality ?? null,
       own: visit.managerCustomerId !== null,
       logged: true,
-      ...placeOf(visit.customerId),
+      ...placeOf(visit.customerId, visit.managerCustomerId),
       // What the visit recorded, never what the territory is today: it was vacant when he logged it.
       vacant: visit.inVacantTerritory,
       place: visit.placeText,
@@ -278,7 +305,9 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
     visitDay: day,
     planned,
     unplanned,
-    ownList: ownList.filter((customer) => customer.status === "active"),
+    ownList: ownList
+      .filter((customer) => customer.status === "active")
+      .map((customer) => ({ ...customer, vacant: isVacantTerritory(viewer.org.seats.get(customer.areaSeatId ?? "")) })),
     areas: managerAreaChoices(reach, names),
     products,
     singleVisitLimit,
@@ -376,6 +405,12 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
     if (!own || own.managerHrId !== viewer.hrId || own.isTest !== isTest || own.status === "removed") {
       throw notFoundError("This customer is no longer on Manager's own list. Reload the page.");
     }
+    // His own list carries the area the customer is in, so it answers the same vacancy question a rep
+    // customer's seat does. Flatly "not vacant" left the area screen asking for an address that the form
+    // then never offered him (owner, 2026-10-20).
+    customerSeatId = own.areaSeatId;
+    customerLineCode = customerSeatId ? (viewer.org.seats.get(customerSeatId)?.lineCode ?? null) : null;
+    vacant = customerSeatId !== null && isVacantTerritory(viewer.org.seats.get(customerSeatId));
   }
 
   // Planned: a single-visit half-day of TODAY that holds this customer.
@@ -410,8 +445,10 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
     await assertSingleVisitLogFits({ managerHrId: viewer.hrId, weekStart: fieldWeekStart(day), date: day, isTest });
   }
 
-  // 🔴 A VACANT AREA'S DOCTOR: a typed address or a captured location, one or the other, never neither
-  // (owner, 2026-10-19). Elsewhere both stay optional and nothing is read off the location.
+  // 🔴 WHERE THE CUSTOMER IS — the Add-a-customer block, on every single visit (owner, 2026-10-20): the
+  // address he typed, the area and brick he chose, and the location he captured. All of it optional, EXCEPT
+  // in a vacant area, where the address or the capture is required — one or the other, never neither
+  // (owner, 2026-10-19). What he sent is what is stored: the capture only fills what he left empty.
   const orTyped = vacant ? "or type the address" : "or log the visit without it";
   let address: string | null = null;
   if (body.address !== undefined && body.address !== null) {
@@ -419,9 +456,10 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
     address = body.address.trim().replace(/\s+/g, " ") || null;
     if (address && address.length > MANAGER_CUSTOMER_ADDRESS_MAX) throw validationError(`Keep the address under ${MANAGER_CUSTOMER_ADDRESS_MAX} characters.`);
   }
+  const chosen = await resolveChosenPlace(writer, reach, body.areaSeatId, body.brickId);
 
   let pin: Row = {};
-  let place: Row = {};
+  let located: Awaited<ReturnType<typeof locateInReach>> | null = null;
   const rawPin = record(body.pin);
   if (rawPin.lat !== undefined || rawPin.lon !== undefined) {
     const fix = parseCapturedFix(rawPin, `The location could not be read. Press Capture location again, ${orTyped}.`);
@@ -431,14 +469,17 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
       throw validationError(`This location is outside Egypt. Capture it again, ${orTyped}.`);
     }
     pin = { lat, lon, accuracy_meters: accuracyMeters };
-    if (vacant) {
-      // The same reading the form showed him when he pressed Capture location (`locateInReach`): the
-      // address he sees is kept as it stands, the area and the brick are where the capture fell.
-      const located = await locateInReach(reach, { lat, lon, accuracyMeters }, customerSeatId);
-      address = address ?? located.address;
-      place = { area_code: located.areaCode, area_name: located.areaName, brick_id: located.brickId, brick_name: located.brickName };
-    }
+    // The same reading the form showed him when he pressed Capture location (`locateInReach`), so what he
+    // saw filled in is what is stored — and his own correction of it wins over the capture's.
+    located = await locateInReach(reach, { lat, lon, accuracyMeters }, chosen.areaSeatId ?? customerSeatId);
+    address = address ?? located.address;
   }
+  const place: Row = {
+    area_code: chosen.areaCode ?? located?.areaCode ?? null,
+    area_name: chosen.areaName ?? located?.areaName ?? null,
+    brick_id: chosen.brickId ?? located?.brickId ?? null,
+    brick_name: chosen.brickName ?? located?.brickName ?? null,
+  };
   const placeError = vacantVisitPlaceError({ vacant, address, captured: pin.lat !== undefined });
   if (placeError) throw validationError(placeError);
 
@@ -459,8 +500,8 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
       comment,
       ...pin,
       in_vacant_territory: vacant,
-      // The doctor's address is read only for a vacant area's doctor; elsewhere the visit keeps no address.
-      address: vacant ? address : null,
+      // Every single visit keeps what it recorded now, not only a vacant area's (owner, 2026-10-20).
+      address,
       ...place,
       client_ref: clientRef,
       entered_by_hr_id: viewer.hrId,

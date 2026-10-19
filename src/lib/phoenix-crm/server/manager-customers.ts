@@ -301,6 +301,20 @@ export function managerAreaChoices(seats: ReadonlyArray<OrgSeat>, names: Readonl
   return out.sort((left, right) => left.areaName.localeCompare(right.areaName));
 }
 
+/**
+ * The seat `managerAreaChoices` offers this seat's AREA under — one area holds several rep seats, and only
+ * the first of them is listed, so a form that opened its area drop-list on the customer's own rep seat
+ * would show a blank area (owner, 2026-10-20, the single-visit place block). Null when the seat is outside
+ * his reach, or when nothing was asked.
+ */
+export function areaChoiceSeatOf(seats: ReadonlyArray<OrgSeat>, seatId: string | null | undefined): string | null {
+  if (!seatId) return null;
+  const seat = seats.find((entry) => entry.seatId === seatId) ?? null;
+  if (!seat) return null;
+  const key = seat.areaCode ?? seat.areaName ?? seat.seatId;
+  return seats.find((entry) => (entry.areaCode ?? entry.areaName ?? entry.seatId) === key)?.seatId ?? seat.seatId;
+}
+
 /** A territory nobody holds: its list is the previous rep's, and a visit to one of its doctors records where he is. */
 export function isVacantTerritory(seat: Pick<OrgSeat, "occupantHrId"> | null | undefined): boolean {
   return Boolean(seat) && !personKey(seat?.occupantHrId);
@@ -400,8 +414,14 @@ export async function loadAreaCustomers(viewer: PhoenixCrmViewer, raw: { area: u
 
 // ── A name he typed: the match first ────────────────────────────────────────────────────────────
 
-/** `vacant`: a doctor of a vacant territory's list — the previous rep's; `seatId` is that territory (null on his own list). */
-export type CustomerMatch = NameCandidate & { detail: string; vacant: boolean; seatId: string | null };
+/** `vacant`: a doctor of a territory nobody holds — a rep list's, or one of his own list in a vacant area; `seatId` is that territory. */
+export type CustomerMatch = NameCandidate & {
+  detail: string;
+  vacant: boolean;
+  seatId: string | null;
+  /** The seat the AREA drop-list lists this customer's area under — one seat per area (`areaChoiceSeatOf`). */
+  areaSeatId: string | null;
+};
 
 /**
  * POST: the customers already on his reps' lists or his own list under the name he typed, so he can pick
@@ -430,7 +450,7 @@ export async function matchManagerCustomer(viewer: PhoenixCrmViewer, raw: unknow
       const vacant = isVacantTerritory(seat);
       const whose = vacant ? VACANT_LIST_LABEL : `${seat.occupantHrId ? nameOf(names, seat.occupantHrId) : "No rep"}'s list`;
       const detail = [textOrNull(row.speciality), whose, seat.areaName].filter(Boolean).join(" · ");
-      return [{ id, name, source: "rep", detail, vacant, seatId: seat.seatId }];
+      return [{ id, name, source: "rep", detail, vacant, seatId: seat.seatId, areaSeatId: areaChoiceSeatOf(district, seat.seatId) }];
     }),
     ...own
       .filter((customer) => customer.status === "active")
@@ -439,8 +459,11 @@ export async function matchManagerCustomer(viewer: PhoenixCrmViewer, raw: unknow
         name: customer.name,
         source: "own",
         detail: [customer.speciality, "Manager's own list", customer.areaName].filter(Boolean).join(" · "),
-        vacant: false,
-        seatId: null,
+        // His own list carries the area the customer is in, so it answers vacancy the way a rep seat does.
+        // Flatly false left the form asking nothing for a customer the area screen demanded an address for.
+        vacant: isVacantTerritory(seatById.get(customer.areaSeatId ?? "")),
+        seatId: customer.areaSeatId,
+        areaSeatId: customer.areaSeatId,
       })),
   ];
   return matchCustomerName(typed, candidates);
@@ -543,6 +566,37 @@ export async function locateInReach(
     areaName: geography.areaName,
     areaSeatId: inReach?.seatId ?? null,
     areaCode: geography.areaCode,
+  };
+}
+
+/** The area and brick a form sent back, checked the way Add a customer checks them. */
+export type ChosenPlace = { areaCode: string | null; areaName: string | null; brickId: string | null; brickName: string | null; areaSeatId: string | null };
+
+/**
+ * The area of his reach he chose, and a brick of THAT area when he chose one — the area → brick cascade's
+ * answer, checked on the server (owner, 2026-10-20: the single-visit form wears the same place block as
+ * Add a customer, so it is checked by the same reading). Neither is required: an empty choice reads as
+ * nothing chosen, and the capture's own reading fills the gaps.
+ */
+export async function resolveChosenPlace(writer: ManagerPlanWriter, district: ReadonlyArray<OrgSeat>, areaSeatId: unknown, brickId: unknown): Promise<ChosenPlace> {
+  const empty: ChosenPlace = { areaCode: null, areaName: null, brickId: null, brickName: null, areaSeatId: null };
+  const asked = typeof areaSeatId === "string" ? areaSeatId.trim() : "";
+  const askedBrick = cleanText(brickId, 40, "The brick");
+  if (!asked) {
+    // A brick belongs to an area: without the area there is nothing to check it against.
+    if (askedBrick) throw validationError("Choose the area the customer is in before the brick.");
+    return empty;
+  }
+  const area = district.find((entry) => entry.seatId === asked) ?? null;
+  if (!area) throw forbiddenError(outsideReach(writer));
+  const brick = askedBrick ? ((await activeBricksOfArea(area.areaCode)).find((entry) => entry.id === askedBrick) ?? null) : null;
+  if (askedBrick && !brick) throw validationError("Choose a brick of the area you chose.");
+  return {
+    areaCode: area.areaCode ?? null,
+    areaName: area.areaName ?? territoryName(area),
+    brickId: brick?.id ?? null,
+    brickName: brick?.name ?? null,
+    areaSeatId: area.seatId,
   };
 }
 

@@ -213,19 +213,21 @@ export function vacantVisitPlaceError(input: { vacant: boolean; address: string 
 }
 
 /**
- * Where a vacant area's visit says its customer is — the address, area and brick the manager recorded —
- * as his Visits tab and the actual-versus-planned report print it (owner, 2026-10-19: what the visit was
- * made to record is shown back). Null for any other visit: elsewhere the visit keeps no address. A capture
- * nothing could be read from still says that a location was captured.
+ * Where a visit says its customer is — the address, area and brick the manager recorded — as his Visits
+ * tab and the actual-versus-planned report print it (owner, 2026-10-19: what the visit was made to record
+ * is shown back). Null when the visit recorded nothing at all. A capture nothing could be read from still
+ * says that a location was captured.
+ *
+ * 🔴 IT IS NO LONGER A VACANT AREA'S PRIVILEGE (owner, 2026-10-20): every single visit now carries the
+ * Add-a-customer place block, so every single visit can record a place and every one shows back what it
+ * recorded. A visit that recorded nothing still prints nothing.
  */
-export function vacantVisitPlaceText(input: {
-  vacant: boolean;
+export function visitPlaceText(input: {
   address: string | null;
   areaName: string | null;
   brickName: string | null;
   captured: boolean;
 }): string | null {
-  if (!input.vacant) return null;
   const parts = [
     input.address?.trim() || null,
     input.areaName?.trim() ? `Area: ${input.areaName.trim()}` : null,
