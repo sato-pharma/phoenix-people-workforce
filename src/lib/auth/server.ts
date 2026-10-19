@@ -41,6 +41,7 @@ import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import {
   forgetRememberedBundle,
+  pageRequestMayUseRecentCopy,
   recallRememberedBundle,
   rememberAcceptedBundle,
   sessionBundleCacheKey,
@@ -743,7 +744,11 @@ const resolveAccessContextFromPageInner = cache(async (): Promise<AccessContext>
   const cookieStore = await cookies();
   const headerStore = await headers();
   const cookieValue = cookieStore.get(phoenixSessionCookieName)?.value;
-  const sessionContext = await resolveSessionAccessContext(cookieValue);
+  // A server action authorises a write here, so it never runs on the session copy (the GET/HEAD rule's
+  // page-side twin, session-bundle-cache.ts).
+  const sessionContext = await resolveSessionAccessContext(cookieValue, {
+    allowRecentCopy: pageRequestMayUseRecentCopy(headerStore),
+  });
 
   if (sessionContext) {
     return sessionContext;

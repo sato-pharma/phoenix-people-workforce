@@ -377,6 +377,11 @@ recruitment data.
 
    **What a copy can do — narrowed after the risk review of this change.** It authorises READS only: a
    page render, or an API request that is a GET or HEAD (`mayUseRecentSessionCopy` in `server.ts`). A
+   server action is a POST to a page, so it never reaches that API rule; until 19 Oct 2026 it could run
+   on a copy through `resolveAccessContextFromPage` (a code review found a vacation decision could be
+   recorded under a role removed minutes earlier). The page resolver now refuses the copy to any request
+   carrying the `next-action` header or a body (`pageRequestMayUseRecentCopy` in
+   `session-bundle-cache.ts`), which also covers a form submitted before the page's JavaScript loaded. A
    POST, PUT, PATCH or DELETE during an outage answers "Session verification is temporarily unavailable"
    exactly as before, and the passkey registration and listing routes and the change-password route ask
    for `allowRecentCopy: false` outright — a passkey or a password set from a copy would outlive the ten

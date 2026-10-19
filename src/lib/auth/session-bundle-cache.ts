@@ -21,8 +21,9 @@
  *     revocation, role, version, active, the employee lifecycle gate against TODAY'S date), and serving
  *     it never stores it again, so its age never resets and ten minutes is the most it can ever cover.
  *   - A COPY NEVER BINDS A CREDENTIAL AND NEVER AUTHORISES A WRITE. The passkey and password routes ask for
- *     `allowRecentCopy: false`, and an API request that is not a GET or HEAD does the same (server.ts), so
- *     what a copy can do is read pages and read-only API calls -- never leave lasting access behind.
+ *     `allowRecentCopy: false`, an API request that is not a GET or HEAD does the same (server.ts), and so
+ *     does a server action (`pageRequestMayUseRecentCopy`), so what a copy can do is read pages and
+ *     read-only API calls -- never leave lasting access behind.
  *   - A LOGOUT OR FORCED LOGOUT IN THIS PROCESS FORGETS THE COPY at once, and a read that began BEFORE that
  *     moment can no longer store itself afterwards (`forgetRememberedBundlesForSessions`), so a slow older
  *     answer cannot bring a revoked session back.
@@ -87,6 +88,17 @@ function raiseBarrier(sessionId: string, observedAt: number): void {
 
 export function sessionBundleCacheKey(input: { sid: string; loginId: string }): string {
   return `${input.sid}\u0000${input.loginId}`;
+}
+
+/**
+ * The page-side twin of the API rule (a copy only for a GET or HEAD). A server action is a POST to a
+ * PAGE, so it reaches resolveAccessContextFromPage and never the API resolver. Next marks one with the
+ * `next-action` header; a form submitted before the page's JavaScript loaded carries no such header but
+ * does carry a body. A page render -- a navigation, an RSC fetch, a prefetch -- carries neither, so
+ * either one means the request can write, and it never runs on a copy.
+ */
+export function pageRequestMayUseRecentCopy(headerStore: Pick<Headers, "get">): boolean {
+  return !headerStore.get("next-action") && !headerStore.get("content-type");
 }
 
 /**
