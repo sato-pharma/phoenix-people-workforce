@@ -391,6 +391,62 @@ a protected edit.
 its own bullet four lines below — and both settings files — deny it. The deny is the owner's decision
 (2026-08-23) and stands; the stale mention was removed from the grant.
 
+**2026-10-19: the repo file allows routine work.** The owner asked for "full repo end2end" and chose
+"no stops, whole repo", in this tracked file so every worktree and cloud session gets it. The list
+was built from what actually stopped sessions. 908 transcripts from the previous 7 days held 2,770
+refused tool calls:
+
+- 1,887 were the recursive-grep clause of a `bash-guard.mjs` (a hook, not a permission rule).
+- 315 were auto-mode classifier blocks.
+- 35 were classifier outages (no verdict, so the call was blocked).
+- 14 were classifier parse errors.
+
+Most classifier blocks were real protections (merges, production deploys, credentials,
+self-modification) and stay. The fixable stops were routine calls: a push of a feature branch, a
+PR create during an outage, `new-session.mjs` read as a CI bypass, `apply-sql-file.mjs` read as a
+production deploy (it is §8's standing route), browser-pane batches, and every edit in a worktree.
+A `.claude/worktrees/*` worktree sits under `.claude/`, and a `_wt-*` sibling sits outside a
+primary-folder session's working directory, so their edits went to the classifier. On 28 Sep 2026,
+10 such edits in a row were refused while it was down.
+
+The new allow entries cover:
+
+- commit, and push to a `codex/`, `claude/` or `HEAD` ref;
+- PR create, edit and comment, and `gh run rerun`;
+- the repo's helper scripts, named one by one;
+- the production and staging healthz reads, and read-only `railway` commands;
+- the whole browser pane;
+- edits to the code folders (`app`, `src`, `lib`, `tests`, `scripts`, `docs`, `supabase`, `public`,
+  `templates`, `.github`) of both worktree layouts.
+
+Deliberately NOT covered, so the classifier still judges them:
+
+- anything under `.claude/` (settings, hooks, rules) and root files such as `AGENTS.md`;
+- `gh pr merge` and `railway run`;
+- `urgent-deploy.mjs`;
+- a force push and a remote-branch delete;
+- `repo-doctor.mjs --fix`;
+- `git merge --ff-only` and `git checkout` in the shared checkout (he rejected an `--ff-only`
+  prompt on 18 Oct).
+
+`permissions.ask` stays empty and `deny` is unchanged.
+
+Proved with headless `claude -p --permission-mode dontAsk --settings <this file's permissions>`
+runs from a folder outside the repo:
+
+- a write to `_wt-repo-no-stops/docs/` ran, and a write to that worktree's root and to its
+  `.claude/` were refused;
+- a write under a `.claude/worktrees/*/docs/` pattern ran, so an allow rule does reach into a
+  `.claude/` worktree;
+- the healthz `curl` with its mid-pattern wildcard ran, and a read of a sibling worktree ran;
+- `git push origin --delete` was refused.
+
+One stop no setting removes: **`cd "<another folder>" && git …` is refused whatever the allow
+list says.** Each half alone runs. Listing the worktree, or its parent folder, in
+`additionalDirectories` did not change it; one early run that seemed to pass had only inherited a
+shell already standing in that folder. Claude Code guards git run in a different directory itself,
+so run git from the session's own folder.
+
 **Never read the absence of a prompt as approval** — that was already the rule while the entries
 existed, and it is the entire story now that they are gone. Ask the owner in plain words and wait for
 a plain answer.

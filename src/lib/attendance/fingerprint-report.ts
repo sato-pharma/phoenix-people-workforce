@@ -30,7 +30,8 @@ import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calcula
 import { getApprovedLeaveDayMap, isIsoDate } from "@/lib/attendance/working-days";
 import { getApprovedExcuseDayMap } from "@/lib/attendance/approved-excuse-days";
 import { getCrmActivityDayMaps } from "@/lib/attendance/crm-day-maps";
-import { getPlanOfficeDayMap } from "@/lib/attendance/plan-office-days";
+import { getPlanOfficeDayDetailMap } from "@/lib/attendance/plan-office-days";
+import { judgedHalfDayPart, planOfficeDayLabel } from "@/lib/attendance/plan-office-resolution";
 
 const reportTimeZone = process.env.ATTENDANCE_REPORT_TIME_ZONE || "Africa/Cairo";
 
@@ -247,9 +248,12 @@ export const fingerprintReportColumns: FingerprintReportColumn[] = [
   // approved excuse, weekly-plan office/field designation) to manually re-verify a day's deduction
   // the same way the Employee Day-by-Day Report's reconcileDay gate does -- this report's own
   // status/deduction math is intentionally left untouched (see statusFromFlexibleHours), these
-  // columns are supporting evidence only. Not `always`: the on-screen table hides them on a day
-  // with nothing to show, but the export always includes them (generateFingerprintReportWorkbook
-  // renders every entry in `columns`, not just the on-screen-visible subset).
+  // columns are supporting evidence only — with ONE exception since 2026-10-19 (owner: "deductions
+  // follow it too"): on an office-days-only seat, a half-Office plan day is judged on its office
+  // half (judgedHalfDayPart), and the Weekly Plan cell then names that half. Not `always`: the
+  // on-screen table hides them on a day with nothing to show, but the export always includes them
+  // (generateFingerprintReportWorkbook renders every entry in `columns`, not just the
+  // on-screen-visible subset).
   { key: "approvedLeave", label: "Approved Vacation/Leave" },
   { key: "approvedExcuse", label: "Approved Excuse" },
   { key: "crmActivity", label: "CRM Activity" },
@@ -715,7 +719,7 @@ export async function getFingerprintAttendanceReport(input: {
     getApprovedLeaveDayMap({ dateFromIso: dateFrom, dateToIso: dateTo, employeeHrIds }),
     getApprovedExcuseDayMap({ dateFromIso: dateFrom, dateToIso: dateTo, employeeHrIds }),
     getCrmActivityDayMaps({ dateFromIso: dateFrom, dateToIso: dateTo, employeeHrIds }),
-    getPlanOfficeDayMap({ dateFromIso: dateFrom, dateToIso: dateTo, employeeHrIds }),
+    getPlanOfficeDayDetailMap({ dateFromIso: dateFrom, dateToIso: dateTo, employeeHrIds }),
   ]);
 
   const buckets = new Map<string, PunchBucket>();
@@ -757,11 +761,17 @@ export async function getFingerprintAttendanceReport(input: {
     const firstPunchMinutes = firstPunch ? localMinutesOfDay(firstPunch) : null;
     const lastPunchMinutes = lastPunch ? localMinutesOfDay(lastPunch) : null;
     const halfDayVacationPart = halfDayVacationMap.get(`${bucket.employeeHrId}|${bucket.reportDate}`) ?? null;
+    const planDay = planOfficeMap.get(bucket.employeeHrId)?.get(bucket.reportDate);
+    // The half the day is JUDGED on: an approved half-day vacation's own half, or — on an
+    // office-days-only seat — the office half of a half-Office plan day (owner, 2026-10-19:
+    // "deductions follow it too"). Only the judgment reads it; the cancel rule and the labels
+    // below still read the real vacation alone.
+    const judgedHalfPart = judgedHalfDayPart({ halfDayVacationPart, judgmentMode: policy?.judgment_mode, planDay });
     const status = policy && policy.required_minutes != null
       ? statusFromFlexibleHours({
           baseSalary: employee?.base_salary ?? null,
           firstPunchMinutes,
-          halfDayVacationPart,
+          halfDayVacationPart: judgedHalfPart,
           lastPunchMinutes,
           policy,
           reportDate: bucket.reportDate,
@@ -775,7 +785,7 @@ export async function getFingerprintAttendanceReport(input: {
           // Passed here too, not only to the flexible-hours branch above: the two
           // policy groups with no required_minutes route through this engine, and
           // without it a half-day employee is judged against the whole scheduled day.
-          halfDayVacationPart,
+          halfDayVacationPart: judgedHalfPart,
           lastPunchMinutes,
           policy,
           reportDate: bucket.reportDate,
@@ -796,7 +806,6 @@ export async function getFingerprintAttendanceReport(input: {
     const hasCrmLeave = crmActivity.leaveMap.get(bucket.employeeHrId)?.has(bucket.reportDate) ?? false;
     const hasCrmFieldVisit = crmActivity.fieldVisitMap.get(bucket.employeeHrId)?.has(bucket.reportDate) ?? false;
     const crmDetail = crmActivity.detailMap.get(bucket.employeeHrId)?.get(bucket.reportDate) ?? "";
-    const planSaysOffice = planOfficeMap.get(bucket.employeeHrId)?.get(bucket.reportDate);
 
     // An approved EXCUSE cancels the day's attendance deduction, exactly as an
     // approved exception does. This was the documented policy in two places and
@@ -870,7 +879,9 @@ export async function getFingerprintAttendanceReport(input: {
       hasException: hasApprovedException,
       jobTitle: employee?.job_title?.trim() || "",
       lateMinutes: hasApprovedException ? "0" : status.lateMinutes,
-      weeklyPlan: planSaysOffice === true ? "Office" : planSaysOffice === false ? "Field" : "",
+      // The plan attendance followed, with the half when only one is Office, and the approved
+      // monthly plan beside it when the two disagree (owner, 2026-10-19: show both).
+      weeklyPlan: planOfficeDayLabel(planDay),
       recommendedAction: hasApprovedException
         ? `Exception: ${exception!.reason}`
         : hasPendingException

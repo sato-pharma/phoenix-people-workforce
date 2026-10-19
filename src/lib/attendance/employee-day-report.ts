@@ -23,7 +23,13 @@ import { getApprovedExcuseDayMap } from "@/lib/attendance/approved-excuse-days";
 import { getCrmActivityDayMaps } from "@/lib/attendance/crm-day-maps";
 import { getAttendanceExceptionMap } from "@/lib/attendance/exceptions";
 import { getCompanyWideOutageDates } from "@/lib/attendance/ingestion-health";
-import { getPlanOfficeDayMap } from "@/lib/attendance/plan-office-days";
+import { getPlanOfficeDayDetailMap } from "@/lib/attendance/plan-office-days";
+import {
+  officeHalfConfig,
+  planOfficeCoveredPart,
+  planOfficeDayNote,
+  type PlanOfficeDay,
+} from "@/lib/attendance/plan-office-resolution";
 import { loadEmployeeDayPunchMinutes } from "@/lib/attendance/punch-minutes";
 import { describeReconcileSkip, reconcileDay, type AttendanceJudgmentMode } from "@/lib/attendance/digest-reconcile";
 import {
@@ -238,7 +244,7 @@ export async function getEmployeeDayByDayReport(input: {
       getApprovedLeaveDayMap({ dateFromIso: input.dateFromIso, dateToIso: input.dateToIso, employeeHrIds: [hrId] }),
       getApprovedExcuseDayMap({ dateFromIso: input.dateFromIso, dateToIso: input.dateToIso, employeeHrIds: [hrId] }),
       getAttendanceExceptionMap([hrId], input.dateFromIso, input.dateToIso),
-      getPlanOfficeDayMap({ dateFromIso: input.dateFromIso, dateToIso: input.dateToIso, employeeHrIds: [hrId] }),
+      getPlanOfficeDayDetailMap({ dateFromIso: input.dateFromIso, dateToIso: input.dateToIso, employeeHrIds: [hrId] }),
       loadEmployeeDayPunchMinutes({ dateFromIso: input.dateFromIso, dateToIso: input.dateToIso, employeeHrIds: [hrId] }),
       getCompanyWideOutageDates(input.dateFromIso, input.dateToIso),
       getCrmActivityDayMaps({ dateFromIso: input.dateFromIso, dateToIso: input.dateToIso, employeeHrIds: [hrId] }),
@@ -293,7 +299,7 @@ export async function getEmployeeDayByDayReport(input: {
 
   const leaveDates = leaveMap.get(hrId) ?? new Set<string>();
   const excuseDates = excuseMap.get(hrId) ?? new Set<string>();
-  const officeDates = planMap.get(hrId) ?? new Map<string, boolean>();
+  const officeDates = planMap.get(hrId) ?? new Map<string, PlanOfficeDay>();
   const punches = punchMap.get(hrId) ?? new Map<string, { firstPunchMinutes: number | null; lastPunchMinutes: number | null; visiblePunchCount: number }>();
   const crmLeaveDates = crmActivity.leaveMap.get(hrId) ?? new Set<string>();
   const crmFieldVisitDates = crmActivity.fieldVisitMap.get(hrId) ?? new Set<string>();
@@ -340,9 +346,14 @@ export async function getEmployeeDayByDayReport(input: {
       hasPunch: visiblePunchCount > 0,
       isHoliday: classification.isHoliday,
       isWorkingDay: !classification.isWeeklyOff,
-      planSaysOffice: officeDates.get(dateIso) ?? null,
+      planSaysOffice: officeDates.get(dateIso)?.isOffice ?? null,
       tier: dayPolicy.policy.judgment_mode,
     });
+    // Only an office-days-only seat is judged by the plan, so only there does the plan need
+    // explaining: a half-day Office plan, or an approved monthly plan the weekly plan overrode.
+    const planDay = dayPolicy.policy.judgment_mode === "office_days_only" ? officeDates.get(dateIso) : undefined;
+    const planNote = planOfficeDayNote(planDay);
+    const withPlanNote = (reason: string) => (planNote ? `${reason} ${planNote}` : reason);
 
     if (decision.action === "skip") {
       // Same precedence reconcileDay itself uses (see digest-reconcile.ts), re-derived from
@@ -362,15 +373,10 @@ export async function getEmployeeDayByDayReport(input: {
       // an admin reviewing the day has no way to see the actual meeting/visit that covered it.
       const crmDetail = outcome === "crm_field_visit" || outcome === "crm_leave" ? crmDetailDates.get(dateIso) : null;
       const reason = crmDetail ? `${decision.reason} — ${crmDetail}` : decision.reason;
-      days.push(dayRow(dateIso, outcome, reason, firstPunchMinutes, lastPunchMinutes, visiblePunchCount));
-      continue;
-    }
-
-    if (decision.action === "flag") {
       days.push(dayRow(
         dateIso,
-        decision.flagType === "office_no_show" ? "office_no_show_flag" : "field_punch_anomaly_flag",
-        decision.reason,
+        outcome,
+        outcome === "no_plan_field_day" ? withPlanNote(reason) : reason,
         firstPunchMinutes,
         lastPunchMinutes,
         visiblePunchCount,
@@ -378,9 +384,24 @@ export async function getEmployeeDayByDayReport(input: {
       continue;
     }
 
-    // "judge" — run the exact same math the digest engine settles from.
+    if (decision.action === "flag") {
+      days.push(dayRow(
+        dateIso,
+        decision.flagType === "office_no_show" ? "office_no_show_flag" : "field_punch_anomaly_flag",
+        withPlanNote(decision.reason),
+        firstPunchMinutes,
+        lastPunchMinutes,
+        visiblePunchCount,
+      ));
+      continue;
+    }
+
+    // "judge" — run the exact same math the digest engine settles from. A half-day Office plan is
+    // half an office day (owner, 2026-10-19): the office half is judged with the same half-day math
+    // an approved half-day vacation uses — half the required presence, and an afternoon office half
+    // judged from where the afternoon begins.
     const result = evaluateFlexibleHoursDay({
-      config,
+      config: officeHalfConfig(config, planOfficeCoveredPart(planDay)),
       firstPunchMinutes,
       lastPunchMinutes,
       lateBrackets,
@@ -410,7 +431,7 @@ export async function getEmployeeDayByDayReport(input: {
       lastPunchMinutes,
       lateMinutes: result.lateMinutes,
       outcome,
-      reason: result.reason,
+      reason: withPlanNote(result.reason),
       shortMinutes: result.shortMinutes,
       visiblePunchCount,
       weekday: weekdayName(dateIso),

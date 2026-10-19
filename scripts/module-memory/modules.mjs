@@ -401,6 +401,28 @@ export const MODULES = [
     keywords: ["place checks", "same place", "place match", "polyclinic group", "bulk answer", "reject a customer", "approve after rejection", "district manager place checks"],
     tables: ["phoenix_crm_place_match_answers"],
   },
+  // 🔴 SPLIT, 2026-10-19, FOR THE SAME REASON AGAIN: `phoenix-crm-validation` measured a 4,144-byte
+  // pointer against the 4,000 margin the moment the AM short forms and the new-photo advice taught their
+  // rules. How the signboard READER reads a photo and judges it against the list — the nightly pass, the
+  // one-read-per-photo budget, the quorum and short forms, a person's name, the re-read script and the
+  // two-reading flag — is one family, so it moves together. `phoenix-crm-validation` KEEPS EVERY GLOB IT
+  // HAD (and the golden signboard rule itself), so a signboard file loads the PAIR and nothing that used
+  // to arrive stops arriving.
+  {
+    id: "phoenix-crm-signboard",
+    title: "Phoenix CRM — the signboard reader: reading a photo and judging it against the list",
+    scope: "How the signboard reader reads a place's photo and judges it against the customer list — the nightly pass and its budget, one read per photo, every sign in the frame, the facility quorum and the list's short forms, a person's name, the advice on a sign, the re-read script and the two-reading flag.",
+    globs: [
+      "src/lib/phoenix-crm/{signboard-rules,place-check-advice}.ts",
+      "src/lib/phoenix-crm/server/{signboard-check,signboard-sweep,signboard-holds}.ts",
+      "src/components/phoenix-crm/signboard-retake-screen.tsx",
+      "app/api/phoenix-crm/list/places/signboard/**",
+      "scripts/phoenix-crm-reread-signboards.mjs",
+      "tests/phoenix-crm-{signboard-check,held-signboard,place-check-advice}*",
+    ],
+    keywords: ["signboard reader", "unreadable sign", "re-read", "one read per photo", "short form", "quorum", "new photo asked", "sign advice"],
+    tables: [],
+  },
   // 🔴 SPLIT, 2026-10-09, FOR THE SAME REASON AS THE THREE ABOVE: `phoenix-crm` reached 33 rules and its
   // injected pointer measured 4,064 bytes against the 4,000 margin `tests/module-memory.test.ts` holds, the
   // moment the pharmacy's own pin added its rule. The manager-facing reports and boards and the ARITHMETIC

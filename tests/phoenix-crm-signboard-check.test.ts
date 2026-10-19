@@ -1233,6 +1233,29 @@ function checkOwnersSpellingRulings(): void {
     "match",
     "AM keeps its own rule: a hospital signs itself",
   );
+  checkPlaceShortForms();
+}
+
+/**
+ * 🔴 AN AM LIST WRITES SHORT FORMS ITS BUILDINGS SPELL OUT (owner, 2026-10-19, "teach the matcher"):
+ * صدر for الأمراض الصدرية, كهربا for الكهرباء, and تعاقد in front of a company it holds a contract with.
+ * Every case here is a stored production reading from the replay of that night.
+ */
+function checkPlaceShortForms(): void {
+  const am = (customerName: string, text: string) =>
+    signNamesCustomer({ customerName, listType: "AM", personNames: [], placeNames: [], signText: text }).matches;
+  assert.equal(am("مستشفى صدر منوف", "مستشفى الأمراض الصدرية بمنوف"), true, "🔴 the list's صدر منوف is the board's chest hospital in Menouf");
+  assert.equal(am("مستوصف صدر المحلة", "مديرية الشئون الصحية بالغربية مركز الأمراض الصدرية بالمحلة"), true, "and صدر المحلة the Mahalla chest centre");
+  assert.equal(am("كهربا بشتيل", "جنوب القاهرة لتوزيع الكهرباء خدمات الكهرباء بشتيل"), true, "🔴 كهربا is the electricity company's الكهرباء");
+  assert.equal(am("تعاقد الغزل", "شركة مصر شبين الكوم للغزل والنسيج"), true, "🔴 تعاقد is the list's word for a contract, never on a board");
+  assert.equal(am("مستشفى صدر منوف", "مستشفى الأمراض الصدرية ببنها"), false, "a chest hospital in another town is not this one");
+  assert.equal(am("كهربا المرج", "شمال القاهرة لتوزيع الكهرباء"), false, "the company alone does not name the branch the list names");
+  assert.equal(
+    am("تعاقد الكهرباء كفر الشيخ", "مستشفى حميات كفر الشيخ"),
+    false,
+    "🔴 a contract row never spends the one-word allowance on its company: the town alone is the fever hospital's board",
+  );
+  assert.equal(am("مستشفى الحميات", "مستشفى الأمراض الصدرية"), false, "and nothing else about the place axis moved");
 }
 
 /**

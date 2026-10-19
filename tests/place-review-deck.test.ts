@@ -13,6 +13,7 @@ import {
   deckStartOfBoardView,
   deckTabNeedsCases,
   parseDeckTab,
+  placeAwaitsNewPhoto,
   placeIsUnreadable,
   reviewIsUnreadable,
   slideIsSettled,
@@ -77,6 +78,7 @@ function sources(): DeckSources {
     unreadableVenues: ["v-blur"],
     unconfirmedPlaces: ["p1"],
     unconfirmedVenues: ["v-held", "v-active"],
+    newPhotoPlaces: ["p-retake"],
     historyReviews: ["r3"],
     historyVenues: ["v-retired"],
     cases: [
@@ -98,7 +100,8 @@ export function runPlaceReviewDeckTests(): void {
   const keys = (tab: Parameters<typeof buildDeckSlides>[0], kind: Parameters<typeof buildDeckSlides>[1] = "both", from = sources()) =>
     buildDeckSlides(tab, kind, from).map((slide) => slide.key);
 
-  assert.deepEqual(DECK_TABS, ["waiting", "unreadable", "unconfirmed", "integrity", "history", "all"], "the tabs, in the order the work is done");
+  assert.deepEqual(DECK_TABS, ["waiting", "unreadable", "unconfirmed", "newPhoto", "integrity", "history", "all"], "the tabs, in the order the work is done");
+  assert.deepEqual(keys("newPhoto"), ["place:p-retake"], "New photo asked is the places waiting on their rep's new photo");
   assert.deepEqual(keys("waiting"), ["review:r1", "review:r2", "venue:v-held"], "Waiting is the held places, then the buildings that need a decision");
   assert.deepEqual(keys("unreadable"), ["review:r-blur", "place:p-blur", "venue:v-blur"], "Not readable is the held places, then the places in use, then the buildings");
   assert.deepEqual(keys("unconfirmed"), ["place:p1", "venue:v-held", "venue:v-active"], "Not confirmed is the places in use, then the buildings");
@@ -106,7 +109,7 @@ export function runPlaceReviewDeckTests(): void {
   assert.deepEqual(keys("integrity"), ["case:c1", "case:c2"], "Integrity cases is the open cases, in the board's order");
   assert.deepEqual(
     keys("all"),
-    ["review:r1", "review:r2", "venue:v-held", "review:r-blur", "place:p-blur", "venue:v-blur", "place:p1", "venue:v-active", "case:c1", "case:c2", "review:r3", "venue:v-retired"],
+    ["review:r1", "review:r2", "venue:v-held", "review:r-blur", "place:p-blur", "venue:v-blur", "place:p1", "venue:v-active", "place:p-retake", "case:c1", "case:c2", "review:r3", "venue:v-retired"],
     "All walks every tab in order and keeps each slide ONCE — the held building is in Waiting and among the buildings in use",
   );
   assert.equal(new Set(keys("all")).size, keys("all").length, "All holds no slide twice");
@@ -133,6 +136,7 @@ export function runPlaceReviewDeckTests(): void {
       place("p-sign", blurredSign),
       place("p-legible", { verdict: "unjudged", reason: "unreadable", signText: null, problem: "none" }),
       place("p-approved", blurredSign, { reviewed: true }),
+      place("p-retake", { ...blurredSign, reason: "unreadable_final", retake: true }),
     ];
     const unreadableTimetable = { verdict: "unjudged", scheduleText: null, hoursRead: null, reason: "unreadable" };
     const venues = {
@@ -154,6 +158,8 @@ export function runPlaceReviewDeckTests(): void {
     assert.deepEqual(split.waitingReviews, ["r-clear", "r-sign-named", "r-not-a-timetable"], "and is MOVED out of Waiting — a sign naming somebody else, or a photo that is no timetable, stays");
     assert.deepEqual(split.unreadablePlaces, ["p-sign"], "a place in use is Not readable exactly when the scorecard counts it so");
     assert.deepEqual(split.unconfirmedPlaces, ["p-clear", "p-legible", "p-approved"], "and is MOVED out of Not confirmed — a legible sign, or one he approved, stays");
+    assert.deepEqual(split.newPhotoPlaces, ["p-retake"], "a place whose rep was asked for a new photo leaves Not readable for New photo asked (owner, 2026-10-19: only what needs you)");
+    assert.equal(placeAwaitsNewPhoto(places[4]), true);
     assert.deepEqual(split.unreadableVenues, ["v-seat", "v-sign"], "a polyclinic whose sign, or a waiting customer's timetable, could not be read is Not readable");
     assert.deepEqual([split.waitingVenues, split.unconfirmedVenues], [["v-clear"], ["v-clear", "v-past"]], "and leaves both tabs; a rejected customer's unread timetable is past the reading");
     const all = buildDeckSlides("all", "both", split).map((slide) => slide.key);

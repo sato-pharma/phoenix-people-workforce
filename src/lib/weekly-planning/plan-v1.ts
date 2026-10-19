@@ -157,17 +157,59 @@ export function planWorkweekAllowsHalfDays(workweek: PlanWorkweek): boolean {
 }
 
 /**
+ * The plan activity types that are time OFF, seeded from an approved (or pending) leave or excuse
+ * request and never planned by hand. "National Vacation" is not here: it is always seeded as the
+ * whole required day, so it completes the day on its own.
+ */
+export const PLAN_LEAVE_ACTIVITY_TYPES: readonly string[] = ["Vacation", "Excuse"];
+
+export function isPlanLeaveActivity(activityType: string | null | undefined): boolean {
+  return PLAN_LEAVE_ACTIVITY_TYPES.includes(String(activityType ?? "").trim());
+}
+
+/** The fixed times an AM or PM plan row is stored with; anything else is a full day. */
+export const PLAN_SLOT_TIMES: Record<Exclude<PlanSlot, "full">, { start: string; end: string }> = {
+  am: { start: "09:00", end: "13:00" },
+  pm: { start: "13:00", end: "17:00" },
+};
+
+/** Which half a stored plan row occupies, read back from its start and end times. */
+export function planSlotFromTimes(start: string | null | undefined, end: string | null | undefined): PlanSlot {
+  const s = String(start ?? "").slice(0, 5);
+  const e = String(end ?? "").slice(0, 5);
+  if (s === PLAN_SLOT_TIMES.am.start && e === PLAN_SLOT_TIMES.am.end) return "am";
+  if (s === PLAN_SLOT_TIMES.pm.start && e === PLAN_SLOT_TIMES.pm.end) return "pm";
+  return "full";
+}
+
+/**
  * What a working day still lacks, as the suffix the incomplete-day list shows after the day's name:
  * null when the day is complete, "" when nothing is planned on it, " (morning)" for a Field
  * Thursday with no morning, and " (morning missing)" / " (afternoon missing)" for a full day with
  * one half. The editor's banner and the server's submit check both read it, so they cannot drift.
+ *
+ * `workPresent` is the subset of `present` held by a row that is NOT leave (`isPlanLeaveActivity`).
+ * It matters only for a `half` day (the Group Product Manager's): a half-day vacation or excuse
+ * covers its own half and nothing more, so it never completes her day alone — the other half still
+ * needs a plan (owner, 2026-10-19). Leave on BOTH halves, or a full-day leave, does complete it.
+ * Callers that pass no `workPresent` are treated as if every row were work.
  */
-export function planDayGapText(requirement: PlanDayRequirement, present: ReadonlySet<PlanSlot>): string | null {
+export function planDayGapText(
+  requirement: PlanDayRequirement,
+  present: ReadonlySet<PlanSlot>,
+  workPresent: ReadonlySet<PlanSlot> = present,
+): string | null {
   if (present.has("full")) return null;
   const hasAm = present.has("am");
   const hasPm = present.has("pm");
   if (requirement === "am") return hasAm ? null : " (morning)";
-  if (requirement === "half") return hasAm || hasPm ? null : "";
+  if (requirement === "half") {
+    if (workPresent.has("full") || workPresent.has("am") || workPresent.has("pm")) return null;
+    if (hasAm && hasPm) return null;
+    if (!hasAm && !hasPm) return "";
+    // Only one half is spoken for, and by leave: the OTHER half is the one that needs a plan.
+    return hasAm ? " (afternoon missing)" : " (morning missing)";
+  }
   if (hasAm && hasPm) return null;
   if (!hasAm && !hasPm) return "";
   return hasAm ? " (afternoon missing)" : " (morning missing)";

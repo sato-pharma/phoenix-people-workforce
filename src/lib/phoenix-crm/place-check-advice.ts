@@ -52,7 +52,14 @@ export const PLACE_CHECK_ADVICE_LABEL: Record<PlaceCheckAdviceKind, string> = {
  * What was read on a sign — the same shape the clinic rows, the held rows and the buildings carry.
  * `problem` is what the reader said stops the name being read (2026-10-18); absent on older reads.
  */
-export type SignEvidence = { verdict: string; reason: string | null; signText: string | null; problem?: string | null } | null;
+export type SignEvidence = {
+  verdict: string;
+  reason: string | null;
+  signText: string | null;
+  problem?: string | null;
+  /** The rep has been asked for a new photo of this sign and has not sent it yet. */
+  retake?: boolean;
+} | null;
 
 /** What was read on a timetable for one customer. */
 export type TimetableEvidence = {
@@ -110,6 +117,12 @@ export function adviseOnSign(sign: SignEvidence, subject: "customer" | "building
     );
   }
   if (sign.verdict === "no_name") return reject(`No sign naming ${who} is in the photo.`, sign.signText, "no_signboard");
+  // 🔴 A NEW PHOTO HAS ALREADY BEEN ASKED FOR (owner, 2026-10-19: 289 of the 349 Not readable places were
+  // sent back and each still said "Reject"). Rejecting now would send the customer back to To validate
+  // on top of the photo the rep is already retaking, so the advice is to wait for it.
+  if (sign.retake) {
+    return look("The rep has been asked for a new photo of this sign. Nothing needs you until it arrives.", sign.signText);
+  }
   switch (sign.reason) {
     case "unreadable_final":
       // 🔴 A LEGIBLE SIGN IS NOT AN UNREADABLE PHOTO (2026-10-18). The reader said the sign reads clearly

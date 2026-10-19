@@ -93,6 +93,13 @@ function checkSign() {
     "a decorative plate is the admin's look: a new photo would read the same",
   );
   assert.equal(note(adviseOnSign({ verdict: "unjudged", reason: "unreadable_final", signText: null, problem: "too_far" })).kind, "reject", "a plate too far to read still cannot show who it is");
+
+  // 🔴 A NEW PHOTO ALREADY ASKED FOR IS WAITED FOR, NEVER REJECTED (owner, 2026-10-19: 289 of the 349
+  // Not readable places were sent back and each still recommended Reject).
+  const asked = note(adviseOnSign({ verdict: "unjudged", reason: "unreadable_final", signText: null, problem: "too_far", retake: true }));
+  assert.equal(asked.kind, "look", "🔴 a place whose rep is retaking the photo is never recommended for rejection");
+  assert.match(asked.reason, /asked for a new photo/, "and the advice says the new photo is on its way");
+  assert.equal(asked.refusal, null);
 }
 
 function checkTimetable() {

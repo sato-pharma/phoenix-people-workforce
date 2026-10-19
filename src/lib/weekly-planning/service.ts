@@ -137,12 +137,14 @@ import {
   isDistrictManagerPlanSubmitter,
   isDistrictManagerPlanTitle,
   isPastPlanWeek,
+  isPlanLeaveActivity,
   isWeeklyMonthlyPlanEligibleTitle,
   planDayGapText,
   movedPlanItemDate,
   planMoveRefusal,
   planPeriodMove,
   planRequiredSlotsByDate,
+  planSlotFromTimes,
   planWorkweekAllowsHalfDays,
   resolvePlanWorkweek,
   type EmployeePlanAction,
@@ -2961,19 +2963,6 @@ export type PlanPrefill = {
   nationalHolidayDates: string[];
 };
 
-const PLAN_SLOT_TIMES: Record<Exclude<PlanSlot, "full">, { start: string; end: string }> = {
-  am: { start: "09:00", end: "13:00" },
-  pm: { start: "13:00", end: "17:00" },
-};
-
-function planSlotFromTimes(start: string | null | undefined, end: string | null | undefined): PlanSlot {
-  const s = String(start ?? "").slice(0, 5);
-  const e = String(end ?? "").slice(0, 5);
-  if (s === PLAN_SLOT_TIMES.am.start && e === PLAN_SLOT_TIMES.am.end) return "am";
-  if (s === PLAN_SLOT_TIMES.pm.start && e === PLAN_SLOT_TIMES.pm.end) return "pm";
-  return "full";
-}
-
 function dayPartToSlot(dayPart: string | null | undefined): PlanSlot {
   const value = String(dayPart ?? "").toLowerCase();
   if (value === "am_only") return "am";
@@ -3408,24 +3397,35 @@ async function assertSubmissionComplete(input: {
   const { items, periodEndDate, periodStartDate, workweek } = input;
   const required = planRequiredSlotsByDate(periodStartDate, periodEndDate, workweek);
 
-  // Slots present per date.
+  // Slots present per date, and the subset held by work rather than leave — a half-day vacation or
+  // excuse never completes a Group Product Manager's day alone (planDayGapText).
   const slotsByDate = new Map<string, Set<PlanSlot>>();
+  const workSlotsByDate = new Map<string, Set<PlanSlot>>();
   for (const item of items) {
     const slot = planSlotFromTimes(item.startTime, item.endTime);
     const set = slotsByDate.get(item.activityDate) ?? new Set<PlanSlot>();
     set.add(slot);
     slotsByDate.set(item.activityDate, set);
+    if (!isPlanLeaveActivity(item.activityType)) {
+      const work = workSlotsByDate.get(item.activityDate) ?? new Set<PlanSlot>();
+      work.add(slot);
+      workSlotsByDate.set(item.activityDate, work);
+    }
   }
 
   const incomplete: string[] = [];
   for (const [date, requirement] of required) {
-    const gap = planDayGapText(requirement, slotsByDate.get(date) ?? new Set<PlanSlot>());
+    const gap = planDayGapText(
+      requirement,
+      slotsByDate.get(date) ?? new Set<PlanSlot>(),
+      workSlotsByDate.get(date) ?? new Set<PlanSlot>(),
+    );
     if (gap !== null) incomplete.push(`${formatPlanDayLabel(date)}${gap}`);
   }
 
   if (incomplete.length > 0) {
     const rule = planWorkweekAllowsHalfDays(workweek)
-      ? "every working day needs at least its morning or its afternoon before submit"
+      ? "every working day needs at least its morning or its afternoon planned before submit (an approved half-day leave covers only its own half)"
       : "every working day must be fully filled before submit";
     throw new Error(`Plan is incomplete — ${rule}. Missing: ${incomplete.join(", ")}.`);
   }

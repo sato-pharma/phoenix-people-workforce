@@ -1043,7 +1043,14 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   const officeDays = source("src/lib/attendance/plan-office-days.ts");
   assert.match(officeDays, /statuses: \["approved"\],/, "only an approved week sets an office day");
   assert.match(officeDays, /if \(halfDay\.plannerKind !== "rsm" && halfDay\.plannerKind !== "nsm"\) continue;/, "the new plan is read for the switched seat holders alone");
-  assert.match(officeDays, /const isOffice = halfDay\.kind === "admin" && halfDay\.activityType === "office";\s*if \(isOffice \|\| !byDate\.has\(halfDay\.date\)\) byDate\.set\(halfDay\.date, isOffice\);/, "any Office half wins the day");
+  // Each half is one WEEKLY entry; the resolver (plan-office-resolution.ts) makes any Office half of
+  // the governing plan an office day, and names the half when only one is Office (owner, 2026-10-19);
+  // a Meeting half beside an Office half counts as office too, so it is read as well.
+  assert.match(
+    officeDays,
+    /addEntry\(hrId, halfDay\.date, \{\s*kind: "weekly",\s*isOffice: halfDay\.kind === "admin" && halfDay\.activityType === "office",\s*isMeeting: halfDay\.kind === "admin" && halfDay\.activityType === "meeting",\s*slot: halfDay\.half === "AM" \? "am" : "pm",\s*\}\);/,
+    "a manager's Phoenix CRM half-day is read as a weekly plan entry for its own half",
+  );
   assert.equal(managerHalfLegacyType("admin", "office"), "Office", "every calendar reads an Office half-day as the legacy Office");
 
   // The report: a product manager stands with a rep in the visit's own product manager slot.

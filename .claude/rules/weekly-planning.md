@@ -29,6 +29,11 @@ Moved out of `crm` on 2026-10-18 so its injected pointer stays under the 4,000-b
 ### Which days and halves must be planned
 
 - 🔴 **THE GROUP PRODUCT MANAGER — AND ONLY SHE — MAY PLAN A WORKING DAY AS AM ONLY OR PM ONLY; SHE NEVER HAS TO SUBMIT A FULL DAY** (owner, 2026-10-18: *"only the group product manager make her okay to work only AM or only PM … doesn't have to submit a full day"*). `resolvePlanWorkweek` gives her `GROUP_PRODUCT_MANAGER_WORKWEEK` (Sunday–Thursday, every day `"half"`); every working day still needs one half. `planDayGapText` is the one completeness rule the form's banner and `assertSubmissionComplete` both read, and the form shows her "AM only" / "PM only" beside "Full day" and "AM / PM". A Product Manager, the Marketing Manager and everyone else keep full days. Pinned by `tests/plan-workweek-linkage.test.ts`.
+- 🔴 **AN APPROVED HALF-DAY VACATION OR EXCUSE COVERS ONLY ITS OWN HALF, SO THE OTHER HALF OF THAT DAY STILL NEEDS A PLAN** (owner, 2026-10-19). `planDayGapText` takes a third set: the halves held by work rather than leave (`isPlanLeaveActivity` names Vacation and Excuse). On a half-day planner's day, leave alone on one half reads "(afternoon missing)" or "(morning missing)". Leave on both halves, or a full-day leave, completes the day, and a National Vacation is seeded as the whole day. The form's banner and `assertSubmissionComplete` both pass the work-only halves. Pinned by `tests/plan-workweek-linkage.test.ts`.
+
+### Deadlines
+
+- 🔴 **THE NO-WEEKLY-PLAN DEDUCTION DEADLINE IS THE END OF THE MONDAY, 23:59:59.999 CAIRO, SO A PLAN SENT BEFORE MIDNIGHT IS ON TIME** (owner, 2026-10-19). `planDeductionGraceDeadlineForMonday` adds the last 59.999 seconds to the 23:59 instant. The loader tests `submittedAt > deadline`, so a plan sent at 23:59:30 used to read late. The deduction's reason text still says "(23:59 Cairo)". Pinned by `tests/daily-deductions-no-weekly-plan.test.ts`.
 
 ### Editing, reviewing and moving a plan (audit of 2026-10-18)
 

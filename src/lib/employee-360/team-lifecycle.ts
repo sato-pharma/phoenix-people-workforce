@@ -15,8 +15,11 @@
 
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
 import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
+import { countTeamPlanCompliance, type RepWeekPlanRow } from "@/lib/employee-360/team-plan-compliance";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
+import { ownTerritories } from "@/lib/phoenix-crm/scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type TeamProbationRep = { hrId: string; name: string; daysRemaining: number };
@@ -24,9 +27,9 @@ export type TeamProbationRep = { hrId: string; name: string; daysRemaining: numb
 export type TeamLifecycleSummary = {
   hasData: boolean;
   repCount: number;
-  // Weekly-plan compliance (all-time; a rep who has ever planned)
-  planSubmittedCount: number; // reps with >=1 non-draft weekly plan
-  planApprovedCount: number; // reps with >=1 fully-approved weekly plan
+  // Weekly-plan compliance in the window — the reps' Phoenix CRM weeks (team-plan-compliance.ts)
+  planSubmittedCount: number; // reps with >=1 week sent (submitted, approved or returned)
+  planApprovedCount: number; // reps with >=1 approved week
   planCoverageRate: number; // planSubmittedCount / repCount
   // Field discipline — confirmed no-activity deduction flags in the window's months.
   disciplineHasData: boolean;
@@ -51,7 +54,6 @@ const EMPTY: TeamLifecycleSummary = {
 };
 
 const PROBATION_DAYS = 90;
-const APPROVED_PLAN_STATUSES = new Set(["ceo_approved", "final_approved", "hr_acknowledged"]);
 
 /** The "YYYY-MM" month keys spanned by the window (capped at 24). */
 function monthKeysIn(from: string, to: string): string[] {
@@ -88,7 +90,6 @@ export async function getEmployee360TeamLifecycle(input: {
   });
   if (teamReps.length === 0) return EMPTY;
 
-  const repHrIdsUpper = teamReps.map((e) => e.hrId.toUpperCase());
   // Map the deduction-pipeline compact key back to a canonical HR_ID key.
   const compactToKey = new Map<string, string>();
   for (const e of teamReps) {
@@ -99,7 +100,7 @@ export async function getEmployee360TeamLifecycle(input: {
   const months = monthKeysIn(input.window.from, input.window.to);
 
   const [plans, discipline] = await Promise.all([
-    fetchPlanCompliance(repHrIdsUpper, input.window),
+    fetchPlanCompliance(teamReps, input.window),
     fetchFieldDiscipline([...compactToKey.keys()], months, compactToKey),
   ]);
 
@@ -133,39 +134,63 @@ export async function getEmployee360TeamLifecycle(input: {
   };
 }
 
+/**
+ * The team reps' Phoenix CRM weeks starting inside the window — a Medical Rep's weekly plan lives
+ * there, never in the legacy `employee_plan_headers` (the rules are in team-plan-compliance.ts).
+ * Best-effort like the rest of this panel: a failed read leaves the tiles at zero.
+ */
 async function fetchPlanCompliance(
-  repHrIdsUpper: string[],
+  teamReps: EmployeeDirectoryRow[],
   window: { from: string; to: string },
 ): Promise<{ submitted: number; approved: number }> {
-  const submitted = new Set<string>();
-  const approved = new Set<string>();
   try {
+    const org = await loadPhoenixCrmOrg();
+    const repKeyBySeat = new Map<string, string>();
+    const teamKeys = new Set<string>();
+    for (const rep of teamReps) {
+      const key = canonicalHrIdKey(rep.hrId);
+      if (!key) continue;
+      teamKeys.add(key);
+      for (const seat of ownTerritories(org, rep.hrId)) repKeyBySeat.set(seat.seatId, key);
+    }
+    const seatIds = [...repKeyBySeat.keys()];
+    const rows: RepWeekPlanRow[] = [];
     // PostgREST folds every .in() value into the request URL; an unbatched array of a few
     // hundred ids can push the URL past undici's ~16KB header limit and throw
-    // "TypeError: fetch failed" / HeadersOverflowError — teamHrIds can be a manager's whole
+    // "TypeError: fetch failed" / HeadersOverflowError — a manager's team can be his whole
     // org subtree (e.g. an NSM's line), so batch it.
-    for (let i = 0; i < repHrIdsUpper.length; i += 100) {
-      const batch = repHrIdsUpper.slice(i, i + 100);
-      const { data } = await getSupabaseAdmin()
-        .from("employee_plan_headers")
-        .select("employee_hr_id, status")
-        .eq("plan_kind", "weekly")
-        .in("employee_hr_id", batch)
-        .gte("period_start_date", window.from.slice(0, 10))
-        .lte("period_start_date", window.to.slice(0, 10));
-      for (const row of data ?? []) {
-        const r = row as Record<string, unknown>;
-        const key = canonicalHrIdKey(String(r.employee_hr_id ?? ""));
-        const status = String(r.status ?? "");
-        if (!key) continue;
-        if (status !== "draft" && status !== "cancelled") submitted.add(key);
-        if (APPROVED_PLAN_STATUSES.has(status)) approved.add(key);
+    for (let i = 0; i < seatIds.length; i += 100) {
+      const batch = seatIds.slice(i, i + 100);
+      const { data, error } = await getSupabaseAdmin()
+        .from("phoenix_crm_plans")
+        .select("seat_id, week_start, status, submitted_at, submitted_by_hr_id")
+        .in("seat_id", batch)
+        .eq("is_test", false)
+        .gte("week_start", window.from.slice(0, 10))
+        .lte("week_start", window.to.slice(0, 10));
+      if (error) throw error;
+      for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+        rows.push({
+          seatId: String(row.seat_id ?? ""),
+          weekStart: String(row.week_start ?? "").slice(0, 10),
+          status: String(row.status ?? ""),
+          submittedAt: typeof row.submitted_at === "string" ? row.submitted_at : null,
+          submittedByHrId: typeof row.submitted_by_hr_id === "string" ? row.submitted_by_hr_id : null,
+        });
       }
     }
+    return countTeamPlanCompliance({
+      rows,
+      repKeyBySeat,
+      repKeyOf: (hrId) => {
+        const key = canonicalHrIdKey(hrId ?? "");
+        return key && teamKeys.has(key) ? key : null;
+      },
+    });
   } catch {
-    // employee_plan_headers unavailable — leave empty.
+    // The org tree or phoenix_crm_plans unavailable — leave empty.
+    return { submitted: 0, approved: 0 };
   }
-  return { submitted: submitted.size, approved: approved.size };
 }
 
 async function fetchFieldDiscipline(

@@ -9,7 +9,7 @@
  * WHAT HE ASKED FOR, AND WHERE EACH LIVES:
  *   - full screen, opened from a button, sliding on by itself after a decision — the overlay below;
  *   - the Place checks tabs AND the integrity cases, as tabs (Waiting for you · Not readable · Not
- *     confirmed · Integrity cases · History · All) — `DECK_TABS`;
+ *     confirmed · New photo asked · Integrity cases · History · All) — `DECK_TABS`;
  *   - Places only, Polyclinics only, or Both — the switch beside the tabs;
  *   - a polyclinic split in two on one screen: the building's own validation, approved or rejected on
  *     its own, and the timetable, approved or rejected per customer — the venue slide;
@@ -79,6 +79,7 @@ const TAB_LABELS: Record<DeckTab, string> = {
   waiting: "Waiting for you",
   unreadable: "Not readable",
   unconfirmed: "Not confirmed",
+  newPhoto: "New photo asked",
   integrity: "Integrity cases",
   history: "History",
   all: "All",
