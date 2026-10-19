@@ -9,7 +9,8 @@
  *
  *   1. re-reads the place right after the rep's reply, then hourly, up to `SIGNBOARD_HELD_MAX_READS`
  *      reads in all (`rereadHeldPlaceSignboard`: a blind read, then a guided read whose answer only a
- *      blind close look may confirm);
+ *      blind close look may confirm). A read nobody answered spends nothing, but a place the hourly run
+ *      alone cannot read `HELD_SIGNBOARD_MAX_LOST_READS` runs in a row is handed over as if spent;
  *   2. 🔴 APPROVES THE HOLD ITSELF ON A CONFIRMED MATCH, through the SAME
  *      `phoenix_crm_decide_validation_review` approve the Super Admin's own button runs, as the actor
  *      `SYSTEM` — so one approve path, one audit shape, and the board can say "the system" approved it;
@@ -34,6 +35,7 @@ import { recordPlaceSignboard, rereadHeldPlaceSignboard } from "@/lib/phoenix-cr
 import { notifyValidationReviewWaiting, withdrawValidationReviewWaiting } from "@/lib/phoenix-crm/server/validation-reviews";
 import {
   heldSignboardCheckToKeep,
+  heldSignboardLostReadToKeep,
   heldSignboardOutcome,
   heldSignboardReaderIsDown,
   heldSignboardReadHappened,
@@ -75,6 +77,8 @@ export type HeldSignboardPlace = {
   photoBrick: string | null;
   /** Reads already recorded on the place, the door's included. */
   readsSoFar: number;
+  /** The place's stored `signboard_check`, which carries its lost reads; the hourly queue fills it. */
+  storedCheck?: unknown;
 };
 
 export type HeldSignboardSettlement = "approved" | "again" | "done" | "lost" | "unread";
@@ -211,6 +215,7 @@ export async function loadHeldSignboardPlaces(options: { limit?: number; include
       repHrId: String(review.created_by_hr_id ?? ""),
       reviewId: String(review.id),
       seatId: String(review.seat_id ?? ""),
+      storedCheck: place.signboard_check,
     });
   }
   return options.limit === undefined ? held : held.slice(0, options.limit);
@@ -251,6 +256,7 @@ export async function runHeldSignboardRecheck(
   const org = await loadPhoenixCrmOrg();
 
   let next = 0;
+  const unanswered: HeldSignboardPlace[] = [];
   const worker = async (): Promise<void> => {
     while (next < queue.length) {
       if (Date.now() >= deadline) {
@@ -268,6 +274,7 @@ export async function runHeldSignboardRecheck(
       const settled = await settleHeldSignboard(place, { seat: org.seats.get(place.seatId) });
       if (settled === "unread") {
         result.unread += 1;
+        unanswered.push(place);
         continue;
       }
       result.read += 1;
@@ -276,5 +283,41 @@ export async function runHeldSignboardRecheck(
     }
   };
   await Promise.all(Array.from({ length: Math.min(HELD_SIGNBOARD_RECHECK_CONCURRENCY, queue.length) }, () => worker()));
+  // A place the run could not read while it read others is counted, and handed to him after
+  // `HELD_SIGNBOARD_MAX_LOST_READS` such runs in a row; a run that read nobody counts nothing.
+  for (const place of unanswered) {
+    if (await keepLostHeldSignboard(place, result.read, { seat: org.seats.get(place.seatId) })) result.done += 1;
+  }
   return result;
+}
+
+/**
+ * Count one more lost read on a held place, and when that is its last, record every read spent and tell
+ * the Super Admin as a spent read does. True when the place became his. Never throws.
+ */
+async function keepLostHeldSignboard(
+  place: HeldSignboardPlace,
+  runAnswered: number,
+  context: { seat: OrgSeat | undefined },
+): Promise<boolean> {
+  try {
+    const kept = heldSignboardLostReadToKeep(place.storedCheck, runAnswered);
+    if (!kept) return false;
+    await recordPlaceSignboard(place.placeId, kept.check);
+    if (kept.done && !place.isTest && context.seat) {
+      await notifyValidationReviewWaiting({
+        customerName: place.customerName,
+        repHrId: place.repHrId,
+        reviewId: place.reviewId,
+        seat: context.seat,
+      });
+    }
+    return kept.done;
+  } catch (error) {
+    logError("Phoenix CRM held signboard lost read was not recorded", {
+      error,
+      labels: { event: "phoenix_crm_held_signboard_lost_read_failed" },
+    });
+    return false;
+  }
 }

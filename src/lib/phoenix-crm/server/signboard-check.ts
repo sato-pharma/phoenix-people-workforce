@@ -943,7 +943,11 @@ export async function rereadHeldPlaceSignboard(input: {
 }): Promise<PhoenixCrmSignboardCheck> {
   if (!hasAiApiKey()) return unjudged("no_api_key");
   const bytes = await downloadPhoto(input.photoPath).catch(() => null);
-  if (!bytes) return unjudged("no_bytes");
+  // 🔴 A PHOTO THE BUCKET DID NOT HAND BACK WAS NEVER READ (code review, 19 Oct 2026): a storage blip
+  // filed as `no_bytes` spent the place's one re-read and handed it to the Super Admin unseen. It is a
+  // lost call — nothing spent — and one that never comes back is handed over by the hourly run's count
+  // of lost reads (`heldSignboardLostReadToKeep`), so it no longer waits for ever.
+  if (!bytes) return unjudged("call_failed");
   const cropped = await cropStampBand(bytes);
   // A photo that cannot be opened is a read that answered — it never gets better — so it is `no_bytes`
   // here, never the `call_failed` that spends nothing (`heldSignboardReadHappened`).
