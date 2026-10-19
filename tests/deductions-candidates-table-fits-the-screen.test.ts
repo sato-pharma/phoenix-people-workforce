@@ -256,9 +256,10 @@ export function runDeductionsCandidatesTableFitsTheScreenTests() {
   // phone card's px-4, the editor's own border and p-3, the calendar box's border and p-2, six gap-1
   // gutters. A stacked cell needs the wider of the tick box and two digits, plus its 2px border.
   const unitPx = (classes: string, prefix: string): number => {
-    const token = classes.split(/\s+/).find((candidate) => new RegExp(`^${prefix}-\\d+(?:\\.\\d+)?$`).test(candidate));
+    const lead = `${prefix}-`;
+    const token = classes.split(" ").find((candidate) => candidate.startsWith(lead) && Number.isFinite(Number(candidate.slice(lead.length))) && candidate.length > lead.length);
     assert.ok(token, `${WORKSPACE}: no "${prefix}-N" class found in "${classes}".`);
-    return Number(token.slice(prefix.length + 1)) * 4;
+    return Number(token.slice(lead.length)) * 4;
   };
   const editorRoot = /return \(\s*<div className="([^"]*border border-orange-200[^"]*)"/.exec(editor);
   assert.ok(editorRoot, `${WORKSPACE}: the day editor's root panel is gone.`);
