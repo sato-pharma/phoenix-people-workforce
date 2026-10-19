@@ -1066,6 +1066,19 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // anon or authenticated, INSERT for service_role, and 0 rows. Purely additive (one new table);
   // re-applying it is a no-op (`if not exists`, the policy dropped `if exists` before it is re-made).
   "20261019120000_ats_pool_column_layouts.sql",
+  // 2026-10-19, a resignation stops opening a clearance checklist (owner — "Stop the trigger"). The
+  // MCP `apply_migration` answered `declined` on staging and on production — its `drop function`
+  // line — and production was read straight after: the trigger and its function were both still
+  // there. So it went through the standing route, `node scripts/apply-sql-file.mjs <file> staging`
+  // (cifwmndunmlxjhyjugxa) and then production (ozucdzovmcqvepbozvqf,
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com) at 16:08 Cairo; both printed
+  // {"applied":true,"count":0}, and neither ledger carries this version or name. It DROPS rather
+  // than defines, so there is no prosrc digest to compare: verified on BOTH projects in one query
+  // each — zero `trg_hr_clearance_on_resignation` triggers, zero `phx_hr_clearance_on_resignation`
+  // functions, the other four phx_hr_clearance_* functions still present, and on production the 35
+  // checklists and 245 items unchanged. The pre-image is 20260828160000's own trigger and function,
+  // which is also the rollback. Re-applying it is a no-op (both drops are `if exists`).
+  "20261019153000_resignation_stops_opening_a_clearance_checklist.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

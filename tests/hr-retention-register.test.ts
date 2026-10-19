@@ -39,7 +39,7 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
@@ -337,9 +337,11 @@ export async function runHrRetentionRegisterTests() {
   // their own settlement with the permission layer never consulted. CI's migration-check caught it;
   // this keeps it caught if the block is ever trimmed.
   //
-  // ALL FIVE ARE STILL LIVE FUNCTIONS IN PRODUCTION. The app stopped calling them on 2026-09-01;
-  // that removed the caller, not the function, and an unreachable-from-the-UI definer function with
-  // a loose ACL is the worst version of this, not the safe one.
+  // FOUR OF THE FIVE ARE STILL LIVE FUNCTIONS IN PRODUCTION. The app stopped calling them on
+  // 2026-09-01; that removed the caller, not the function, and an unreachable-from-the-UI definer
+  // function with a loose ACL is the worst version of this, not the safe one. The fifth,
+  // phx_hr_clearance_on_resignation, was dropped with its trigger on 2026-10-19 (pinned below); its
+  // revoke stays checked here because this file still creates it.
   const definerFunctions = [
     "phx_hr_clearance_refresh_status",
     "phx_hr_clearance_open",
@@ -363,6 +365,43 @@ export async function runHrRetentionRegisterTests() {
         "also strips service_role, so the route handlers would break",
     );
   }
+
+  // ── 6b. A resignation opens no clearance checklist any more ────────────────────────────────────
+  // Owner, 2026-10-19: "Stop the trigger". The module was removed on 2026-09-01 and its trigger was
+  // not, so every resignation for seven weeks opened a seven-desk checklist that no screen could
+  // tick — 34 of them, 238 pending items — which read exactly like 34 unsettled leavers. Read across
+  // EVERY migration in file order with comments stripped, because the files that explain the trigger
+  // name it in prose: the last statement to touch it must be a drop, so a later file that recreates
+  // it without a screen to close what it opens fails here.
+  const migrationsDir = path.join(process.cwd(), "supabase", "migrations");
+  const migrationStatements = (name: string) =>
+    readFileSync(path.join(migrationsDir, name), "utf8").replace(/--[^\n]*/g, "");
+  const triggerStatements = readdirSync(migrationsDir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort()
+    .flatMap((name) =>
+      [
+        ...migrationStatements(name)
+          .matchAll(/\b(create|drop)\s+trigger\s+(?:if\s+exists\s+)?trg_hr_clearance_on_resignation\b/gi),
+      ].map((match) => ({ name, kind: match[1].toLowerCase() })),
+    );
+  assert.ok(
+    triggerStatements.some((statement) => statement.kind === "create"),
+    "no migration creates trg_hr_clearance_on_resignation — the matcher is stale",
+  );
+  const lastTriggerStatement = triggerStatements[triggerStatements.length - 1];
+  assert.equal(
+    lastTriggerStatement.kind,
+    "drop",
+    `${lastTriggerStatement.name} recreates trg_hr_clearance_on_resignation. The Clearance screen ` +
+      "was removed on 2026-09-01, so every checklist it opens can never be closed, and an open " +
+      "checklist reads as an unsettled leaver",
+  );
+  assert.match(
+    migrationStatements(lastTriggerStatement.name),
+    /drop\s+function\s+if\s+exists\s+public\.phx_hr_clearance_on_resignation\(\)/i,
+    "the trigger was dropped but its trigger function was left behind with nothing to call it",
+  );
 
   // ── 7. Every route action has a caller, or it is a promise the UI never keeps ──────────────────
   // The retention route exported PATCH while the register only ever POSTed, so a stay discussion's
