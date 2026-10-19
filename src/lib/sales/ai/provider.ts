@@ -173,6 +173,7 @@ export async function anthropicJson(params: {
       latencyMs: Date.now() - startedAt,
       model: reply.model,
       outputTokens: reply.outputTokens,
+      provider: "anthropic",
       purpose: params.purpose,
       status: "success",
     });
@@ -185,6 +186,7 @@ export async function anthropicJson(params: {
       errorCode: code,
       latencyMs: Date.now() - startedAt,
       model: params.model,
+      provider: "anthropic",
       purpose: params.purpose,
       status: "error",
     });
@@ -253,6 +255,7 @@ export async function aiChatJson(
         latencyMs: Date.now() - startedAt,
         model: provider.model,
         outputTokens: json.usage?.completion_tokens,
+        provider: provider.name,
         purpose,
         status: "success",
       });
@@ -263,6 +266,7 @@ export async function aiChatJson(
         errorCode: upstreamCode ?? (upstreamStatus === undefined ? "no_http_status" : String(upstreamStatus)),
         latencyMs: Date.now() - startedAt,
         model: provider.model,
+        provider: provider.name,
         purpose,
         status: "error",
       });

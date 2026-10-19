@@ -343,6 +343,7 @@ export async function transcribeWithGroq(request: GroqTranscriptionRequest): Pro
       errorCode: code,
       latencyMs: Date.now() - startedAt,
       model: GROQ_TRANSCRIPTION_MODEL,
+      provider: "groq",
       purpose: request.purpose,
       status: "error",
     });
@@ -389,6 +390,7 @@ export async function transcribeWithGroq(request: GroqTranscriptionRequest): Pro
     component: "groq_transcription",
     latencyMs: Date.now() - startedAt,
     model: GROQ_TRANSCRIPTION_MODEL,
+    provider: "groq",
     purpose: request.purpose,
     status: "success",
   });

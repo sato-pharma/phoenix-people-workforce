@@ -10,7 +10,13 @@ import {
   FAILURE_THROTTLE_MS,
   type AiCallRecord,
 } from "../src/lib/observability/ai-metrics.ts";
-import { aiQuotaAlertEnabled, buildAiQuotaExhaustedMessage } from "../src/lib/notifications/ai-quota-alert.ts";
+import {
+  aiQuotaAlertEnabled,
+  aiQuotaAlertTitle,
+  aiQuotaIdempotencyKey,
+  buildAiQuotaExhaustedMessage,
+  takeAiQuotaAlertSlot,
+} from "../src/lib/notifications/ai-quota-alert.ts";
 
 // Guards the 2026-09-02 finding: AI telemetry was writing to GCP Cloud Monitoring with
 // GCP_PROJECT_ID unset on Railway, so it returned on its first line. When OPENAI_API_KEY held a
@@ -26,6 +32,7 @@ function record(over: Partial<AiCallRecord> = {}): AiCallRecord {
     component: "sales_normalizer_ai_suggest",
     purpose: "ai_suggest_customer",
     model: "gpt-4o",
+    provider: "openai",
     status: "error",
     latencyMs: 812,
     errorCode: "401",
@@ -125,6 +132,11 @@ export function runAiFailureVisibilityTests() {
     true,
     "CV extraction failing must not be hidden by the sales normalizer failing",
   );
+  assert.equal(
+    shouldReportFailure(failureThrottleKey(record({ model: "claude-sonnet-5-5", provider: "anthropic" })), t0, fresh),
+    true,
+    "a dead Claude account must not be hidden by a dead OpenAI one on the same feature — they are topped up in different places",
+  );
 
   // --- the throttle map cannot grow without bound ---------------------------------------------
   const many = new Map<string, number>();
@@ -173,7 +185,10 @@ export function runAiFailureVisibilityTests() {
   // and until 2026-09-28 the message hardcoded "OpenAI" and listed OpenAI's features — so a Groq
   // outage sent him to the wrong billing page and named six features that were working fine.
   const openAiAlert = buildAiQuotaExhaustedMessage(record({ component: "openai_client" }));
-  const groqAlert = buildAiQuotaExhaustedMessage(record({ component: "groq_transcription" }));
+  const groqAlert = buildAiQuotaExhaustedMessage(record({ component: "groq_transcription", provider: "groq" }));
+  const anthropicAlert = buildAiQuotaExhaustedMessage(
+    record({ component: "phoenix_crm_signboard", model: "claude-sonnet-5-5", provider: "anthropic" }),
+  );
   for (const [label, text] of [["OpenAI", openAiAlert], ["Groq", groqAlert]] as const) {
     assert.match(text, /top(ped)? up|Add credit/i, `the ${label} alert must say what fixes it`);
     assert.match(text, /no auto-recharge/i, `the ${label} alert must say waiting cannot fix it`);
@@ -186,6 +201,41 @@ export function runAiFailureVisibilityTests() {
       "during an outage, being pointed at the wrong account costs more than the outage",
   );
   assert.doesNotMatch(groqAlert, /CV extraction|Sales normalizer/, "the Groq alert must not list OpenAI's features");
+  // 🔴 THE ALARM NAMES THE ACCOUNT THE CALL WAS BILLED TO, NEVER ONE GUESSED FROM THE FEATURE (code review,
+  // 19 Oct 2026). Since the Anthropic failover one feature reaches two accounts: a Claude account out of
+  // credit on the shared client's fallback leg sent him to top up OpenAI.
+  const anthropicFallbackAlert = buildAiQuotaExhaustedMessage(
+    record({ component: "openai_client", model: "claude-haiku-5-5", provider: "anthropic" }),
+  );
+  for (const text of [anthropicAlert, anthropicFallbackAlert]) {
+    assert.match(text, /^💳 Anthropic says/, "a Claude account out of credit must be named as Anthropic");
+    assert.match(text, /Add credit, or raise the workspace spend limit, on the Anthropic billing page/, "it says what ends either refusal");
+    assert.doesNotMatch(text, /OpenAI billing page|CV extraction/, "a Claude outage must not send him to OpenAI's billing page");
+  }
+  assert.equal(aiQuotaAlertTitle("anthropic"), "Anthropic account is out of credit");
+  assert.equal(aiQuotaAlertTitle("openai"), "OpenAI account is out of credit", "the OpenAI title reads as it always has");
+  assert.match(
+    buildAiQuotaExhaustedMessage(record({ component: "sales_weekly_ai_verify", provider: "openrouter" })),
+    /OpenRouter billing page/,
+    "a sales path on OpenRouter names OpenRouter",
+  );
+  // 🔴 ONCE A DAY FOR EACH ACCOUNT, NOT ONCE A DAY FOR ALL OF THEM: a Claude account that runs dry in the
+  // afternoon is a second outage, and one shared slot swallowed it after the morning's OpenAI alarm.
+  const slots = new Map<AiCallRecord["provider"], string>();
+  assert.equal(takeAiQuotaAlertSlot(slots, "openai", "2026-10-19"), true, "the first OpenAI alarm of the day is sent");
+  assert.equal(takeAiQuotaAlertSlot(slots, "openai", "2026-10-19"), false, "a second OpenAI alarm the same day is not");
+  assert.equal(takeAiQuotaAlertSlot(slots, "anthropic", "2026-10-19"), true, "Anthropic running out the same afternoon is still told");
+  assert.equal(takeAiQuotaAlertSlot(slots, "openai", "2026-10-20"), true, "the next day starts again");
+  assert.equal(
+    aiQuotaIdempotencyKey("openai", "2026-10-19", "E-100"),
+    "ai-quota-exhausted:2026-10-19:E-100",
+    "the OpenAI key is the one it was always sent under, so the day this ships does not page him twice",
+  );
+  assert.notEqual(
+    aiQuotaIdempotencyKey("anthropic", "2026-10-19", "E-100"),
+    aiQuotaIdempotencyKey("openai", "2026-10-19", "E-100"),
+    "each account has its own key for the day, or the notification store would drop the second as a repeat",
+  );
   assert.equal(
     aiQuotaAlertEnabled(),
     false,

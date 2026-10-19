@@ -414,6 +414,7 @@ async function runAnthropicResponse(params: CreateResponseTextParams, requestedM
       latencyMs: Date.now() - startedAt,
       model: reply.model,
       outputTokens: reply.outputTokens,
+      provider: "anthropic",
       purpose: params.purpose,
       status: "success",
     });
@@ -426,6 +427,7 @@ async function runAnthropicResponse(params: CreateResponseTextParams, requestedM
       errorCode: normalized.code,
       latencyMs: Date.now() - startedAt,
       model,
+      provider: "anthropic",
       purpose: params.purpose,
       status: "error",
     });
@@ -475,6 +477,7 @@ async function runOpenAiResponse(params: CreateResponseTextParams, model: string
       latencyMs: Date.now() - startedAt,
       model,
       outputTokens: data.usage?.output_tokens,
+      provider: "openai",
       purpose: params.purpose,
       status: "success",
     });
@@ -491,6 +494,7 @@ async function runOpenAiResponse(params: CreateResponseTextParams, model: string
       errorCode: normalized.code,
       latencyMs: Date.now() - startedAt,
       model,
+      provider: "openai",
       purpose: params.purpose,
       status: "error",
     });

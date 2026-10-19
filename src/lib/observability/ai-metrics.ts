@@ -48,8 +48,19 @@ export type AiCallComponent =
 
 export type AiCallStatus = "success" | "error";
 
+/**
+ * The ACCOUNT a call was billed to, which is what the out-of-credit alarm names and where its credit is added.
+ *
+ * 🔴 NEVER INFERRED FROM THE COMPONENT (code review, 19 Oct 2026). Since the Anthropic failover (2026-10-18)
+ * one component reaches two accounts — the signboard read asks Claude first and OpenAI second, the shared
+ * client and the sales paths the other way round — so a Claude account out of credit paged him to top up
+ * OpenAI. Every call site says which leg it ran.
+ */
+export type AiCallProvider = "anthropic" | "generic" | "groq" | "openai" | "openrouter";
+
 export type AiCallRecord = {
   component: AiCallComponent;
+  provider: AiCallProvider;
   /** Short fixed label, e.g. "payroll_copilot_parse" — never a request ID or other unbounded value. */
   purpose: string;
   model: string;
@@ -87,7 +98,8 @@ export const FAILURE_THROTTLE_MS = 5 * 60_000;
 const lastReportedAt = new Map<string, number>();
 
 export function failureThrottleKey(record: AiCallRecord): string {
-  return `${record.component}|${record.purpose}|${record.errorCode ?? ""}`;
+  // The account too: a dead Claude account must not hide behind a dead OpenAI one on the same feature.
+  return `${record.provider}|${record.component}|${record.purpose}|${record.errorCode ?? ""}`;
 }
 
 /**
