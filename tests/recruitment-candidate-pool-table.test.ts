@@ -94,7 +94,7 @@ export async function runRecruitmentCandidatePoolTableTests() {
     "the full stored value must stay reachable on hover, so nothing is actually hidden from a recruiter",
   );
 
-  // ── 6 · The action strip is one line, not eight ─────────────────────────────
+  // ── 6 · The action strip is a strip, never one control per line ────────────
   //
   // The regression this guards: reintroducing a `w-full` field into the row's action flex row.
   // A full-width flex item claims an entire line, which is what stacked the buttons in the first
@@ -108,6 +108,15 @@ export async function runRecruitmentCandidatePoolTableTests() {
     actionsControl,
     /className=\{fieldClass\}/,
     "a bare fieldClass is w-full — inside the row's flex strip that forces one control per line",
+  );
+  // ...and the strip WRAPS rather than overflowing. A manager's row holds seven 28px buttons
+  // (about 232px) in the 11% Actions column, 153px at 1,440px; on one unwrapped line they ran past
+  // the table and scrolled the pool sideways (1,482px inside 1,405px, production, 2026-10-19).
+  // Matched on the div that opens the strip, so the comment explaining it cannot satisfy it.
+  assert.match(
+    actionsControl,
+    /<div className="flex flex-wrap items-center gap-1">\s*<PoolIconButton disabled=\{pending\} label="Open profile"/,
+    "the pool's action strip must flex-wrap — unwrapped, seven buttons overflow the 11% Actions column",
   );
 
   // Every control in the strip is a 28px square with no visible text, so the only thing naming it

@@ -220,12 +220,18 @@ export function runCvLibraryTests() {
     "the CV Database went back to owning its own row state",
   );
 
-  // The owner's standing rule: nothing truncates with an ellipsis and nothing wraps to a second
-  // line. The rebuilt table stacks two facts in a cell as two separate nowrap elements, which is
-  // the module's idiom — that is not wrapping, and `truncate` is what would make it clipping.
+  // The owner's standing rule: nothing truncates with an ellipsis, and a value too long for its
+  // column WRAPS (golden rule 2026-09-01: where no-ellipsis meets no-horizontal-scroll, wrapping
+  // wins). The table still stacks two facts in a cell as two separate elements, the module's idiom.
   assert.ok(
     !/line-clamp|truncate|text-ellipsis/.test(managerCode),
-    "the CV Database table clips or wraps text",
+    "the CV Database table clips text with an ellipsis",
+  );
+  // Until 2026-10-19 every cell was whitespace-nowrap, so the table grew to its widest value and
+  // scrolled sideways: 1,912px inside a 1,405px holder at 1,440px, measured on production.
+  assert.ok(
+    !/whitespace-nowrap/.test(managerCode),
+    "a CV Database cell is whitespace-nowrap again — a long title or screening question then scrolls the table sideways",
   );
 
   // Match the sibling pages; never invent a one-off look. The page this replaced wrapped itself in
