@@ -442,3 +442,41 @@ a multiple choice whether that binds the visit log, adding a customer to his own
 
 Migration `20261019103745` (staging and production, 19 Oct; additive, the 6 visits already logged keep
 `in_vacant_territory` false). Pinned at the end of `tests/phoenix-crm-manager-plan.test.ts`.
+
+## His own single visits are also proof he worked (2026-10-19)
+
+Asked, on 19 Oct 2026, whether a district manager's own single visit should become a record on the
+Field Absence Calendar **and** in the no-activity engine behind the deduction, the owner answered
+**"count it on both"** — explicitly leaving his report figures, KPIs, coverage and call rate untouched.
+
+**The gap this closes.** Since 16 Oct a manager's own visit is written to `phoenix_crm_manager_visits`
+and no longer to `phoenix_crm_visits`. That separation is the point of the table — no KPI, coverage,
+call-rate, frequency or target reader may pick one up, so his own work never moves a rep's figures or a
+territory's, and that half is unchanged. But nothing in that ruling was about whether he *worked*, and
+the two questions shared one source: when the visit left the visits door it left the Field Absence
+Calendar, the private calendar and the deduction engine with it.
+
+**Measured on production, 19 Oct 2026.** Mina Farouk Nawar Rizkallah (B-116) and Mohamed Alaa Eleiwa
+Abozaid (PD-0012) each spent the day on their own single visits and held **no other record at all** —
+no row in the visits door, no day-activity row, no old-CRM row, no fingerprint punch, no filed vacation,
+no business trip. Both were heading for "No Activity Recorded", which is exactly the exception the Daily
+Deductions no-records connector adjudicates. All 12 rows in the table carry a canonical upper-case
+`manager_hr_id`, so the person key is sound.
+
+**One door, three readers.** `loadManagerOwnVisitDays` and `describeManagerOwnVisitDay` live in
+`src/lib/phoenix-crm/server/manager-plan-readers.ts`, the adapter every screen outside Phoenix CRM
+already reads his week through, and they stay the only way out of that table — a calendar, attendance
+or deduction reader must never query it directly.
+
+- **Field Absence Calendar** — `src/lib/field-absence/server/evidence.ts` reads it as its own source,
+  settled with the rest under the `crm` label, whose wording now names it.
+- **Private calendar** — `src/lib/private-calendar/manager-own-visit-items.ts`, wired into all three
+  passes (workspace, company no-activity, day evidence) and into the single `field_visit` readiness
+  flag. Best-effort like its siblings: a failed read can only ever add a flag, never remove one.
+- **Deductions** — a third source in `selectProvenWorkedDays` / `loadProvenWorkedDays`
+  (`src/lib/deductions/proven-worked-days.ts`), folded **last**, so a day a business trip already
+  explains keeps the trip's reason line. Like the other two sources there it only ever removes a day
+  from a charge, and the loader fails closed.
+
+Pinned by `tests/deductions-phoenix-work-evidence.test.ts` (the fold, and a source fingerprint on the
+calendar's `addSeen` line) and `tests/field-absence-calendar.test.ts`.

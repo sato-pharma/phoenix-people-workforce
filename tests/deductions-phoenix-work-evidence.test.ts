@@ -13,11 +13,13 @@ import {
   phoenixWorkedDayReason,
   selectPhoenixWorkedDays,
 } from "../src/lib/deductions/phoenix-worked-days.ts";
-import { selectProvenWorkedDays } from "../src/lib/deductions/proven-worked-days.ts";
+import { provenWorkedDayReason, selectProvenWorkedDays } from "../src/lib/deductions/proven-worked-days.ts";
 import { excludeProvenWorkedDays } from "../src/lib/deductions/connectors/crm.ts";
 import { selectNoRecordsDrafts, type NoRecordsDay } from "../src/lib/daily-deductions/no-records-select.ts";
+import { describeManagerOwnVisitDay } from "../src/lib/phoenix-crm/server/manager-plan-readers.ts";
 import { phoenixWorkEvidenceActivityKind } from "../src/lib/private-calendar/phoenix-work-evidence-items.ts";
 import type { DeductionsCandidateDraft } from "../src/lib/deductions/types.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * NO DEDUCTION IS CHARGED FOR A DAY PHOENIX CRM PROVES WAS WORKED (owner, 2026-10-12: "you must also
@@ -310,7 +312,94 @@ function theCalendarShowsTheDayAsFieldWork(): void {
   );
 }
 
+/**
+ * A manager's OWN single visits are the third source of the suppression map (owner, 2026-10-19,
+ * asked in so many words and answered "count it on both").
+ *
+ * Since 16 Oct 2026 a district manager's own visit is written to a table of its own and no longer to
+ * `phoenix_crm_visits`, so source 1 above cannot see it: a manager who spent the whole day on his own
+ * single visits had no record anywhere a deduction reader looks. Measured on production 2026-10-19 —
+ * two district managers, no CRM row, no punch, no vacation, no trip between them.
+ */
+function aManagersOwnSingleVisitsSuppressHisDay(): void {
+  const proven = selectProvenWorkedDays({
+    managerOwnVisits: [{ date: "2026-10-19", hrId: "B-116", visits: 1 }],
+    phoenix: selectPhoenixWorkedDays([]),
+    trips: [],
+  });
+  const key = phoenixWorkedDayKey("B-116", "2026-10-19");
+  assert.ok(key, "the key is readable");
+  assert.equal(proven.keys.has(key), true, "a day he logged his own single visits on is a day he provably worked");
+  assert.equal(
+    provenWorkedDayReason(proven, key),
+    "Phoenix CRM: 1 own single visit",
+    "and the connector prints what proved it, in the singular for one",
+  );
+  assert.equal(
+    describeManagerOwnVisitDay({ date: "2026-10-19", hrId: "B-116", visits: 3 }),
+    "Phoenix CRM: 3 own single visits",
+    "plural above one",
+  );
+
+  // Nobody else's day moves, and a day with none of his visits is untouched.
+  const otherKey = phoenixWorkedDayKey("B-120", "2026-10-19");
+  assert.ok(otherKey);
+  assert.equal(proven.keys.has(otherKey), false, "another manager's day is not suppressed by his");
+  const anotherDay = phoenixWorkedDayKey("B-116", "2026-10-18");
+  assert.ok(anotherDay);
+  assert.equal(proven.keys.has(anotherDay), false, "nor is a day he logged nothing on");
+
+  // A day a trip already explains keeps the TRIP's reason: the fold runs last, and it only ever adds.
+  const withTrip = selectProvenWorkedDays({
+    managerOwnVisits: [{ date: "2026-10-19", hrId: "B-116", visits: 2 }],
+    phoenix: selectPhoenixWorkedDays([]),
+    trips: [{ date: "2026-10-19", destination: "Alexandria", hrId: "B-116", source: "request", status: "approved" }],
+  });
+  assert.equal(withTrip.keys.has(key), true, "the day is suppressed either way");
+  assert.notEqual(provenWorkedDayReason(withTrip, key), "Phoenix CRM: 2 own single visits", "the first writer's reason stands");
+
+  // 🔴 THE DIRECTION: it may only ever remove a charge. Omitting the source entirely must change
+  // nothing but the one day, never add a key.
+  const without = selectProvenWorkedDays({ phoenix: selectPhoenixWorkedDays([]), trips: [] });
+  assert.equal(without.keys.size, 0, "with no source at all nothing is suppressed — a failed read charges, never excuses");
+}
+
+/** The loader reads the third source, and the private calendar and the absence calendar read the same one. */
+function everyReaderOfHisOwnVisitsGoesThroughTheOneAdapter(): void {
+  const proven = stripComments(readFileSync("src/lib/deductions/proven-worked-days.ts", "utf8"));
+  assert.match(
+    proven,
+    /loadManagerOwnVisitDays\(\{ end: input\.end, start: input\.start \}\)/,
+    "the suppression map loads a manager's own single visits",
+  );
+  assert.match(proven, /@\/lib\/phoenix-crm\/server\/manager-plan-readers/, "through the one adapter, never the table");
+
+  const items = stripComments(readFileSync("src/lib/private-calendar/manager-own-visit-items.ts", "utf8"));
+  assert.match(items, /@\/lib\/phoenix-crm\/server\/manager-plan-readers/, "and so does the private calendar's item source");
+  assert.match(items, /source: "field_visit"/, "it is his own field work, so the engine's field-visit suppression treats it identically");
+  assert.match(items, /catch \{\s*return \{ items: \[\], ready: false \};/, "a failed read degrades the calendar rather than taking it down");
+
+  const service = stripComments(readFileSync("src/lib/private-calendar/service.ts", "utf8"));
+  assert.equal(
+    (service.match(/loadManagerOwnVisitPrivateCalendarItems\(/g) ?? []).length,
+    3,
+    "all three private-calendar passes read it — the workspace, the company-wide pass the deduction connector adjudicates, and the dispute review",
+  );
+  assert.equal(
+    (service.match(/\.\.\.managerOwnVisits\.items,/g) ?? []).length,
+    3,
+    "and all three fold its items in",
+  );
+  assert.match(service, /!managerOwnVisits\.ready/, "an unreadable read leaves the field-visit source unready rather than silently short");
+
+  const evidence = stripComments(readFileSync("src/lib/field-absence/server/evidence.ts", "utf8"));
+  assert.match(evidence, /loadManagerOwnVisitDays\(\{ end: input\.end, managerHrIds: \[\.\.\.input\.hrIds\], start: input\.start \}\)/, "the Field Absence Calendar reads it too");
+  assert.match(evidence, /addSeen\(seen, canonicalHrIdForDisplay\(day\.hrId\), day\.date, describeManagerOwnVisitDay\(day\)\)/, "and names the day by what it was");
+}
+
 export function runDeductionsPhoenixWorkEvidenceTests(): void {
+  aManagersOwnSingleVisitsSuppressHisDay();
+  everyReaderOfHisOwnVisitsGoesThroughTheOneAdapter();
   evidenceFoldCreditsEveryoneOnTheVisit();
   evidenceFoldDropsAnUnknownActivityKind();
   aDayStartAloneProvesNothing();

@@ -100,7 +100,7 @@ export type FieldAbsencePerson = {
 export type FieldAbsenceSource = "crm" | "leave" | "trips" | "punch";
 
 export const FIELD_ABSENCE_SOURCE_LABELS: Record<FieldAbsenceSource, string> = {
-  crm: "CRM visits (the old CRM and Phoenix CRM, double visits included)",
+  crm: "CRM visits (the old CRM and Phoenix CRM, double visits and a manager's own single visits included)",
   leave: "vacation requests",
   trips: "business trips",
   punch: "fingerprint punches",
