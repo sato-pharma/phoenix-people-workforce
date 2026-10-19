@@ -25,6 +25,7 @@ This file is loaded because this session opened a file of this module (or the mo
 ### Production hooks (moved from AGENTS.md §2.3)
 
 - 🔴 **An area holds SEVERAL `teams` (named for regions), so RENAMING one corrupts other lines.** Resolve from the seat region (`au.v_org_tree.region_name`); read `team_id`, never the dead `team_name`/`department_name`.
+- 🔴 **THE CEO'S SEAT ROW HAS NO LINE AND NO DEPARTMENT, SO `isOrganogramVisibleRow` ADMITS HIM BY IDENTITY (`isChiefExecutive`) — A PAGE FILTER THAT KNOWS ONLY LINES AND DEPARTMENTS DROPS HIM, AND THE TOP BOX READS "Executive Leadership" WITH NO DATA** (2026-10-19; `departmentName` is null on every seat row, and his reports then group under "Manager AA"). A test fixture that puts the CEO on line "Head Office" hides it: pin him in the seat shape. Pinned by `tests/organogram-line-picker-offers-head-office.test.ts` (4b).
 
 ### Owner rules (moved from AGENTS.md §4)
 

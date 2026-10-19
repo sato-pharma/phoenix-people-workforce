@@ -88,15 +88,19 @@ export const OFFER_TALENT_ACQUISITION_ROLE_SUMMARY =
  * The training-manager paragraph — the second position worded for a role that carries no territory.
  *
  * A Training Manager builds the capability of the field force rather than leading a district, so
- * this describes learning work and promises no sales number, territory or district plan. It is a
- * starting point on the Job Titles screen like every other, reworded there, never in a design.
+ * this describes training work and promises no territory or district plan. The words are the
+ * owner's own, supplied 2026-10-19 ("use this the training manager job offer"), and the live Job
+ * Titles row already carries them; this is only where a fresh install starts. The blank line between
+ * the two paragraphs is his; the letter's HTML prints them as one.
  */
 export const OFFER_TRAINING_MANAGER_ROLE_SUMMARY =
-  "Throughout our selection process you demonstrated the expertise and the teaching skill this role "
-  + "calls for, and we would like you to bring both to {{territory}}. In this role you will own the "
-  + "learning of our teams — designing and delivering product-knowledge, selling-skills and induction "
-  + "programmes, coaching representatives in the field, measuring what each programme changes in "
-  + "practice, and giving managers a clear view of how ready every team is.";
+  "Throughout our selection process, you demonstrated the expertise, leadership, and training "
+  + "capabilities required to develop and strengthen our field force.\n\n"
+  + "As Training Manager, you will be responsible for designing and delivering training programmes "
+  + "focused on selling skills, fieldwork effectiveness, communication, and soft skills. You will lead "
+  + "new-hire induction, conduct field coaching, identify development needs, and evaluate training "
+  + "effectiveness. Working closely with Sales Management, your role will be to continuously enhance "
+  + "our field force’s competencies, professionalism, productivity, and overall sales performance.";
 
 /**
  * The paragraph a letter prints for a position, given whatever is stored against it.

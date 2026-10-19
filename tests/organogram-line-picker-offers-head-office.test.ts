@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   buildLinePickerOptions,
+  buildOrganogramLanes,
   filterOrganogramRows,
   isOrganogramVisibleRow,
   type OrganogramRow,
@@ -149,6 +150,50 @@ export function runOrganogramLinePickerHeadOfficeTests() {
     pedia.some((candidate) => candidate.hrId === "HO-1"),
     false,
     "a Head Office person must never ride onto a sales line chart",
+  );
+
+  // ── 4b. The CEO as the SEAT MODEL emits him — the box that read "Executive Leadership" ──
+  // The CEO fixture above is the legacy shape (line and department both "Head Office"), which is why
+  // nothing here noticed him disappearing. Production's CEO seat row has NO line and NO department
+  // (`departmentName` is null on every seat row; the CEO seat belongs to no line). Both pages filter
+  // with isOrganogramVisibleRow BEFORE the chart runs, and none of its tests admitted that row — so
+  // the spine's CEO box had no row behind it and showed no name, no data, and was not pressable.
+  const seatCeo = row({
+    departmentName: null,
+    displayName: "Anwar Gaweesh",
+    fullName: "Anwar Gaweesh",
+    hrId: "AA",
+    jobTitle: "CEO",
+    lineId: null,
+    lineName: null,
+    managerHrId: null,
+    positionTitle: "CEO",
+  });
+  assert.equal(
+    isOrganogramVisibleRow(seatCeo),
+    true,
+    "the CEO's seat row (no line, no department) must pass the page's visibility filter",
+  );
+  const seatRows: OrganogramRow[] = [
+    seatCeo,
+    headOffice({ fullName: "Finance One", hrId: "HO-1" }),
+    row({ fullName: "Pedia Rep", hrId: "P-1", lineId: 1, lineName: "Pedia" }),
+  ];
+  const seatVisible = seatRows.filter((candidate) => isOrganogramVisibleRow(candidate));
+  for (const line of ["Head Office", "Pedia"]) {
+    const lanes = buildOrganogramLanes(filterOrganogramRows(seatVisible, line, ""));
+    assert.equal(
+      lanes.chiefExecutive?.hrId,
+      "AA",
+      `the ${line} chart must have the CEO behind its top box, with his own row`,
+    );
+  }
+  assert.equal(
+    buildOrganogramLanes(filterOrganogramRows(seatVisible, "Head Office", "")).groups.some(
+      (group) => group.name === "CEO Direct Reports",
+    ),
+    true,
+    "the Head Office people who report to the CEO are grouped under him, not under \"Manager AA\"",
   );
 
   // ── 5. The entitlement the page reads to set the flag ───────────────────────────────
