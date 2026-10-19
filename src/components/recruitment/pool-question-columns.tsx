@@ -91,6 +91,7 @@ export function PoolEditableAnswer({
         onCancel={onCancel}
         onSave={onSave}
         pending={pending}
+        questionShownAbove={touch}
       />
     );
   }
@@ -124,13 +125,22 @@ function PoolAnswerEditor({
   onCancel,
   onSave,
   pending,
+  questionShownAbove,
 }: {
   column: PoolTableColumn;
   currentValues: Readonly<Record<string, string>>;
   onCancel: () => void;
   onSave: (values: Record<string, string>) => void;
   pending: boolean;
+  /**
+   * The phone card prints the question right above the editor; a table cell has it only in the
+   * header row. Then a lone field's label would say the question a second time (owner, 2026-10-19 —
+   * "fix the repeated question label in the phone answer editor"), so it is kept for screen readers
+   * only. Two fields (region and area) keep both labels: they are what tells the boxes apart.
+   */
+  questionShownAbove: boolean;
 }) {
+  const labelOnlyForScreenReaders = questionShownAbove && column.editKeys.length === 1;
   const idBase = useId();
   const [drafts, setDrafts] = useState<Record<string, string>>(() =>
     Object.fromEntries(column.editKeys.map((key) => [key, currentValues[key] ?? ""])),
@@ -150,7 +160,12 @@ function PoolAnswerEditor({
         const listId = suggestions.length > 0 ? `${inputId}-list` : undefined;
         return (
           <label className="block" htmlFor={inputId} key={editKey}>
-            <span className={`mb-1 block break-words normal-case ${phxLabelTextClassName}`} dir="auto">
+            <span
+              className={
+                labelOnlyForScreenReaders ? "sr-only" : `mb-1 block break-words normal-case ${phxLabelTextClassName}`
+              }
+              dir="auto"
+            >
               {fieldLabel(editKey, column)}
             </span>
             <input
