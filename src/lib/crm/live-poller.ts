@@ -125,6 +125,11 @@ const CONTACT_LIST_JOB_SLUG = "phoenix-crm-contact-lists";
  * Measured on production: 8-10s for a full tick, so this is headroom, not a budget. */
 const CONTACT_LIST_SLICE_BUDGET_MS = 90_000;
 const STARTUP_DELAY_MS = 15_000;
+/**
+ * How long a job whose restart marker could not be read is HELD, its marker read again every tick,
+ * before it runs without one as it did before. Never longer: the rolling sync feeds payroll attendance.
+ */
+export const SEED_HOLD_MAX_MS = 30 * 60_000;
 const TICK_JITTER_MS = 5_000;
 // The vendor JWT is valid ~30 days; refresh well before that.
 const TOKEN_REFRESH_MS = 20 * 24 * 60 * 60 * 1000;
@@ -341,8 +346,12 @@ export function resolveDueScheduledWork(input: {
   lastReconcileSuccessMs: number | null;
   lastRollingFailureMs: number | null;
   lastRollingSuccessMs: number | null;
+  /** The marker groups a restart could not read yet (`seedMarkers`): their jobs wait for the marker. */
+  held?: Partial<Record<SeedGroup, boolean>>;
 }): ScheduledCrmWork {
+  const deepRunsKnown = !input.held?.deepRuns;
   const reconcileDue =
+    deepRunsKnown &&
     input.cairoDayOfWeek === RECONCILE_CAIRO_DAY_OF_WEEK &&
     input.minutesSinceMidnight >= RECONCILE_EARLIEST_CAIRO_MINUTES &&
     (input.lastReconcileSuccessMs === null || input.nowMs - input.lastReconcileSuccessMs >= RECONCILE_MIN_GAP_MS) &&
@@ -350,12 +359,14 @@ export function resolveDueScheduledWork(input: {
   if (reconcileDue) return "wide-reconcile";
 
   const rollingDue =
+    deepRunsKnown &&
     input.minutesSinceMidnight >= ROLLING_SYNC_EARLIEST_CAIRO_MINUTES &&
     (input.lastRollingSuccessMs === null || input.nowMs - input.lastRollingSuccessMs >= ROLLING_SYNC_MIN_GAP_MS) &&
     (input.lastRollingFailureMs === null || input.nowMs - input.lastRollingFailureMs >= ROLLING_SYNC_FAILURE_RETRY_GAP_MS);
   if (rollingDue) return "rolling-sync";
 
   const planSyncDue =
+    !input.held?.planSync &&
     input.minutesSinceMidnight >= PLAN_SYNC_EARLIEST_CAIRO_MINUTES &&
     (input.lastPlanSyncSuccessMs === null || input.nowMs - input.lastPlanSyncSuccessMs >= PLAN_SYNC_MIN_GAP_MS) &&
     (input.lastPlanSyncFailureMs === null || input.nowMs - input.lastPlanSyncFailureMs >= PLAN_SYNC_FAILURE_RETRY_GAP_MS);
@@ -378,6 +389,7 @@ export function resolveDueScheduledWork(input: {
   // plan, today's doctor list, and payroll. Its 02:00 window is also outside the hours the others
   // contend for: at 02:00 the three day jobs are closed and the contact sweep has not opened.
   const paritySweepDue =
+    !input.held?.paritySweep &&
     input.minutesSinceMidnight >= PARITY_SWEEP_EARLIEST_CAIRO_MINUTES &&
     (input.lastParitySweepSuccessMs === null ||
       input.nowMs - input.lastParitySweepSuccessMs >= PARITY_SWEEP_MIN_GAP_MS) &&
@@ -408,6 +420,8 @@ type PollerState = {
   lastRollingFailureMs: number | null;
   lastRollingSuccessMs: number | null;
   running: boolean;
+  /** When each marker group's read first failed, while its jobs are held; null once read or given up. */
+  seedHeldSinceMs: Record<SeedGroup, number | null>;
   stopped: boolean;
   tickIndex: number;
   timer: ReturnType<typeof setTimeout> | null;
@@ -428,6 +442,7 @@ const state: PollerState = {
   lastRollingFailureMs: null,
   lastRollingSuccessMs: null,
   running: false,
+  seedHeldSinceMs: { deepRuns: null, paritySweep: null, planSync: null },
   stopped: false,
   tickIndex: 0,
   timer: null,
@@ -514,50 +529,119 @@ export async function readDeepRunMarkers(
   return { lastReconcileSuccessMs, lastRollingSuccessMs };
 }
 
+/** The three marker groups a restart reads back, each one the clock of the jobs it holds. */
+export type SeedGroup = "deepRuns" | "paritySweep" | "planSync";
+const SEED_GROUPS: readonly SeedGroup[] = ["deepRuns", "planSync", "paritySweep"];
+
 /**
- * Seeds the scheduled-work markers from the most recent successful deep runs in
- * ireports360_visits_sync_runs, so a deploy restart (which happens on every merge to main)
- * doesn't immediately re-run a 10-day sync it just ran. Window WIDTH tells the runs apart —
- * rolling pulls span ~10 days, reconcile slices span ~30 — because both record trigger "cron"
- * (the trigger column's CHECK constraint predates in-process scheduling). Best-effort: on any
- * failure the markers stay null and the first due tick simply runs the work — idempotent, ~15s.
+ * What one marker read does to its group's hold: a read lifts it, a first failure starts it, and a
+ * failure SEED_HOLD_MAX_MS after the first gives up and lets the jobs run without the marker. Pure,
+ * so the hold is tested without a clock or a database.
  */
-async function seedScheduledWorkMarkers(): Promise<void> {
-  try {
+export function nextSeedHold(
+  heldSinceMs: number | null,
+  read: "failed" | "read",
+  nowMs: number,
+): { event: "gave-up" | "held" | "read" | "still-held"; heldSinceMs: number | null } {
+  if (read === "read") return { event: "read", heldSinceMs: null };
+  if (heldSinceMs === null) return { event: "held", heldSinceMs: nowMs };
+  if (nowMs - heldSinceMs >= SEED_HOLD_MAX_MS) return { event: "gave-up", heldSinceMs: null };
+  return { event: "still-held", heldSinceMs };
+}
+
+/**
+ * Each group's marker read. The deep runs come from the most recent successful deep runs in
+ * ireports360_visits_sync_runs, so a deploy restart (which happens on every merge to main) doesn't
+ * immediately re-run a 10-day sync it just ran. Window WIDTH tells the runs apart — rolling pulls
+ * span ~10 days, reconcile slices span ~30 — because both record trigger "cron" (the trigger
+ * column's CHECK constraint predates in-process scheduling).
+ */
+const SEED_READS: Record<SeedGroup, () => Promise<void>> = {
+  deepRuns: async () => {
     const markers = await readDeepRunMarkers(getSupabaseAdmin(), cairoTodayIso());
     if (state.lastReconcileSuccessMs === null) state.lastReconcileSuccessMs = markers.lastReconcileSuccessMs;
     if (state.lastRollingSuccessMs === null) state.lastRollingSuccessMs = markers.lastRollingSuccessMs;
-  } catch (error) {
-    logError("CRM live poller could not seed scheduled-work markers; deep runs will fire on the first due tick", {
-      error,
-      labels: { event: "crm_live_poll_seed_markers_failed", job: "crm-live-poll" },
-    });
-  }
-
+  },
   // The plan sync keeps no run table, so its own mirror rows are the marker: the newest synced_at
-  // inside this month IS the last time the month's lists were refreshed. Seeded separately so a
-  // failure in the block above cannot cost this one its marker, and vice versa.
-  try {
+  // inside this month IS the last time the month's lists were refreshed.
+  planSync: async () => {
     state.lastPlanSyncSuccessMs = await latestPlanSyncAtMs(resolvePlanSyncWindow(cairoTodayIso()));
-  } catch (error) {
-    logError("CRM live poller could not seed the plan-sync marker; the doctor lists will refresh on the first due tick", {
-      error,
-      labels: { event: "crm_live_poll_seed_plan_marker_failed", job: "ireports360-plan-sync" },
-    });
-  }
-
+  },
   // The parity sweep's own table is its marker — the newest checked_at across every window IS the
-  // last time it ran. Seeded in its own try so it cannot cost either block above its marker, and
-  // vice versa. Without this the sweep would fire on every deploy restart (~30 merges a day here),
+  // last time it ran. Without it the sweep would fire on every deploy restart (~30 merges a day here),
   // re-fetching 30-day windows from the vendor many times over instead of once daily.
-  try {
+  paritySweep: async () => {
     state.lastParitySweepSuccessMs = await latestParityCheckAtMs();
-  } catch (error) {
-    logError("CRM live poller could not seed the parity-sweep marker; the sweep will verify one window on the first due tick", {
-      error,
-      labels: { event: "crm_live_poll_seed_parity_marker_failed", job: "ireports360-parity-sweep" },
-    });
-  }
+  },
+};
+
+const SEED_GIVE_UP: Record<SeedGroup, { event: string; job: string; message: string }> = {
+  deepRuns: {
+    event: "crm_live_poll_seed_markers_failed",
+    job: "crm-live-poll",
+    message: "CRM live poller could not seed scheduled-work markers for 30 minutes; deep runs will fire on the first due tick",
+  },
+  paritySweep: {
+    event: "crm_live_poll_seed_parity_marker_failed",
+    job: "ireports360-parity-sweep",
+    message: "CRM live poller could not seed the parity-sweep marker for 30 minutes; the sweep will verify one window on the first due tick",
+  },
+  planSync: {
+    event: "crm_live_poll_seed_plan_marker_failed",
+    job: "ireports360-plan-sync",
+    message: "CRM live poller could not seed the plan-sync marker for 30 minutes; the doctor lists will refresh on the first due tick",
+  },
+};
+
+/**
+ * Reads the markers of `groups` side by side, each in its own try, so one failure cannot cost
+ * another group its marker.
+ *
+ * 🔴 A MARKER THAT CANNOT BE READ HOLDS ITS JOBS AND IS READ AGAIN EVERY TICK — IT NO LONGER RUNS THEM
+ * BLIND. A restart starts inside the database's busiest minute: at 15:21 Cairo on 19 Oct 2026 one
+ * timed-out read (a 6.5 ms query, in a burst that also timed out the heartbeats) left the markers
+ * null, so the first due tick would re-run the 10-day sync, and on a Sunday afternoon the 30-day
+ * reconcile #5990 stopped. A failure is a console line while the hold lasts and an error row only when
+ * it gives up, SEED_HOLD_MAX_MS later, and the jobs then run as they always did.
+ */
+async function seedMarkers(groups: readonly SeedGroup[]): Promise<void> {
+  await Promise.all(
+    groups.map(async (group) => {
+      let failure: unknown = null;
+      try {
+        await SEED_READS[group]();
+      } catch (error) {
+        failure = error ?? new Error("marker read failed");
+      }
+      const wasHeld = state.seedHeldSinceMs[group] !== null;
+      const next = nextSeedHold(state.seedHeldSinceMs[group], failure === null ? "read" : "failed", Date.now());
+      state.seedHeldSinceMs[group] = next.heldSinceMs;
+      if (next.event === "read" && wasHeld) {
+        console.log(`[crm:live-poll] the ${group} marker read on a later tick; its jobs are no longer held`);
+      } else if (next.event === "held") {
+        // A warning, never an error row: the hold is the handling, and a burst at a restart is not news.
+        logWarning(
+          `CRM live poller could not read the ${group} marker; its jobs wait and it is read again every tick, ` +
+            `for ${SEED_HOLD_MAX_MS / 60_000} minutes at most`,
+          { error: failure, labels: { event: "crm_live_poll_seed_marker_held", job: SEED_GIVE_UP[group].job } },
+        );
+      } else if (next.event === "gave-up") {
+        logError(SEED_GIVE_UP[group].message, {
+          error: failure,
+          labels: { event: SEED_GIVE_UP[group].event, job: SEED_GIVE_UP[group].job },
+        });
+      }
+    }),
+  );
+}
+
+/** The groups whose jobs are held, read off the state for `resolveDueScheduledWork`. */
+function heldSeedGroups(): Partial<Record<SeedGroup, boolean>> {
+  return {
+    deepRuns: state.seedHeldSinceMs.deepRuns !== null,
+    paritySweep: state.seedHeldSinceMs.paritySweep !== null,
+    planSync: state.seedHeldSinceMs.planSync !== null,
+  };
 }
 
 /**
@@ -983,6 +1067,10 @@ async function tick(): Promise<void> {
   // to src/lib/crm/housekeeping-scheduler.ts. Fails open: an unreadable setting keeps the poller on.
   if (await resolveVendorSyncStandDown()) return;
 
+  // A marker the restart could not read is read again before any deep run is weighed (`seedMarkers`).
+  const stillHeld = SEED_GROUPS.filter((group) => state.seedHeldSinceMs[group] !== null);
+  if (stillHeld.length > 0) await seedMarkers(stillHeld);
+
   const today = cairoTodayIso();
   const { hour, minute } = cairoHourMinute();
 
@@ -990,6 +1078,7 @@ async function tick(): Promise<void> {
   // serialized through this single loop, so the app never runs two engine pulls concurrently.
   const dueWork = resolveDueScheduledWork({
     cairoDayOfWeek: cairoDayOfWeek(),
+    held: heldSeedGroups(),
     lastContactListFailureMs: state.lastContactListFailureMs,
     lastContactListSuccessMs: state.lastContactListSuccessMs,
     lastParitySweepFailureMs: state.lastParitySweepFailureMs,
@@ -1134,7 +1223,7 @@ export function startLiveCrmPoller(): LivePollerStartResult {
   state.timer = setTimeout(() => {
     // Marker seeding must finish before the first tick, or a fresh deploy would immediately
     // re-run a 10-day sync the previous process ran minutes earlier.
-    void seedScheduledWorkMarkers()
+    void seedMarkers(SEED_GROUPS)
       .then(() => tick())
       .finally(scheduleNext);
   }, STARTUP_DELAY_MS);

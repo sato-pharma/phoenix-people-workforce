@@ -12,6 +12,7 @@ import {
   DAY_TICK_SECONDS,
   DEEP_RUN_MIN_SPAN_DAYS,
   FAST_TICK_SECONDS,
+  nextSeedHold,
   NIGHT_TICK_SECONDS,
   PARITY_SWEEP_EARLIEST_CAIRO_MINUTES,
   PARITY_SWEEP_FAILURE_RETRY_GAP_MS,
@@ -26,6 +27,7 @@ import {
   resolvePollPlan,
   ROLLING_SYNC_FAILURE_RETRY_GAP_MS,
   ROLLING_SYNC_MIN_GAP_MS,
+  SEED_HOLD_MAX_MS,
   stableStringify,
   startLiveCrmPoller,
   WIDE_PROBE_EVERY_N_TICKS,
@@ -689,5 +691,61 @@ export async function runCrmLivePollerTests() {
       nowMs: sundayAfternoon,
     });
     assert.notEqual(dueAfterRestart, "wide-reconcile", "with its 04:00 run remembered, a 17:35 restart must not run the reconcile again");
+  }
+
+  // 🔴 A MARKER THE RESTART COULD NOT READ HOLDS ITS JOBS, READ AGAIN EVERY TICK (19 Oct 2026, 15:21
+  //    Cairo: one marker read timed out in a database burst, and the first due tick would have re-run
+  //    the 10-day sync — on a Sunday afternoon, the 30-day reconcile the block above stops).
+  {
+    assert.equal(resolveDueScheduledWork({ ...sunday5amCairo, ...noHistory }), "wide-reconcile", "unheld, an unknown reconcile runs");
+    const deepHeld = resolveDueScheduledWork({ ...sunday5amCairo, ...noHistory, held: { deepRuns: true } });
+    assert.ok(deepHeld !== "wide-reconcile" && deepHeld !== "rolling-sync", "held, neither deep run is weighed without its marker");
+    assert.equal(
+      resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, held: { deepRuns: true } }),
+      "plan-sync",
+      "the jobs behind a held one still run",
+    );
+    assert.equal(
+      resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...contactListsParked, held: { deepRuns: true, planSync: true } }),
+      "parity-sweep",
+      "the doctor lists wait for their own marker",
+    );
+    assert.equal(
+      resolveDueScheduledWork({
+        ...monday10amCairo,
+        ...noHistory,
+        ...contactListsParked,
+        held: { deepRuns: true, paritySweep: true, planSync: true },
+      }),
+      null,
+      "and the parity sweep for its own: with all three held only the live poll runs",
+    );
+
+    assert.deepEqual(nextSeedHold(null, "read", 5), { event: "read", heldSinceMs: null }, "a marker read at the restart holds nothing");
+    assert.deepEqual(nextSeedHold(null, "failed", 1_000), { event: "held", heldSinceMs: 1_000 }, "a failed read starts the hold");
+    assert.deepEqual(
+      nextSeedHold(1_000, "failed", 1_000 + SEED_HOLD_MAX_MS - 1),
+      { event: "still-held", heldSinceMs: 1_000 },
+      "a failure inside the limit keeps the FIRST failure's time",
+    );
+    assert.deepEqual(nextSeedHold(1_000, "read", 61_000), { event: "read", heldSinceMs: null }, "a later read lifts the hold");
+    assert.deepEqual(
+      nextSeedHold(1_000, "failed", 1_000 + SEED_HOLD_MAX_MS),
+      { event: "gave-up", heldSinceMs: null },
+      "at the limit the jobs run without the marker, as they always did",
+    );
+    assert.ok(SEED_HOLD_MAX_MS <= 30 * 60_000, "never held past half an hour: the rolling sync feeds payroll attendance");
+
+    const source = stripComments(readFileSync("src/lib/crm/live-poller.ts", "utf8"));
+    const tickBody = source.slice(source.indexOf("async function tick()"), source.indexOf("function scheduleNext()"));
+    assert.ok(
+      /if \(stillHeld\.length > 0\) await seedMarkers\(stillHeld\);[\s\S]*resolveDueScheduledWork\(\{[\s\S]*held: heldSeedGroups\(\),/.test(tickBody),
+      "every tick reads a held marker again BEFORE it weighs a deep run, and passes the hold on",
+    );
+    assert.ok(source.includes("void seedMarkers(SEED_GROUPS)"), "a restart reads all three groups");
+    const seedBody = source.slice(source.indexOf("async function seedMarkers("), source.indexOf("function heldSeedGroups("));
+    assert.equal(seedBody.split("logError(").length - 1, 1, "one error row at most");
+    assert.ok(/next\.event === "gave-up"\) \{\s*logError\(/.test(seedBody), "and only when the hold gives up");
+    assert.ok(/next\.event === "held"\) \{\s*logWarning\(/.test(seedBody), "a first failure is a warning: the hold is the handling");
   }
 }
