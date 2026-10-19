@@ -269,16 +269,24 @@ export function runOutstationStaleApprovalTests() {
   assert.ok(rejectCheck > -1 && rejectDelete > -1, "reject must check the version and delete the payroll rows");
   assert.ok(rejectCheck < rejectDelete, "reject must check the version BEFORE any payroll row is deleted");
   assert.ok(
-    reject.includes("composeDecisionNote(existing.approvalReason, comment)"),
-    "a rejection reason is appended to the journey sentence too",
+    reject.includes("composeDecisionNote(stored.approvalReason, comment)"),
+    "a rejection reason is appended to the journey sentence too — the one stored at the write",
+  );
+  assert.ok(
+    reject.includes('.eq("updated_at", stored.updatedAt)'),
+    "the reject write is pinned to the reason it composed from, so a stop landing in between is never wiped",
   );
   assert.doesNotMatch(reject, /approval_reason: comment,/, "the old overwrite of approval_reason must not return");
 
-  // 3c. The queue's comment-only save keeps the journey sentence.
+  // 3c. The queue's comment-only save keeps the journey sentence — the CURRENT one.
   const noteWriter = functionSlice(service, "async function writeOutstationRequestDecisionNote");
   assert.ok(
-    noteWriter.includes("composeDecisionNote(input.request.approvalReason"),
-    "a comment saved from Expense Approvals must keep the journey sentence",
+    noteWriter.includes("composeDecisionNote(stored.approvalReason"),
+    "a comment saved from Expense Approvals must keep the journey sentence as stored now, not as the queue loaded it",
+  );
+  assert.ok(
+    noteWriter.includes('.eq("updated_at", stored.updatedAt)'),
+    "and its write is pinned to that version, so a stop saved in between is never overwritten",
   );
 
   // 3d. The queue's Save — money-moving rows carry the version; a comment-only edit does not need it.

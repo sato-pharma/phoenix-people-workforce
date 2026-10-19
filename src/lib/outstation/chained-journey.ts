@@ -193,8 +193,10 @@ export function classifyJourneyLeg(input: {
 }): { paid: boolean; reason: JourneyLegReason } {
   const distanceKm = finiteOrNull(input.distanceKm);
   if (!input.fromGovernorate || !input.toGovernorate) return { paid: false, reason: "governorate_unknown" };
-  if (distanceKm == null) return { paid: false, reason: "distance_unknown" };
+  // Before the distance: a drive inside one governorate pays nothing however long, so a road
+  // distance Google could not give it changes nothing and must not make the chain unpriceable.
   if (input.fromGovernorate === input.toGovernorate) return { paid: false, reason: "same_governorate" };
+  if (distanceKm == null) return { paid: false, reason: "distance_unknown" };
   if (distanceKm <= CHAINED_LEG_MINIMUM_KM) return { paid: false, reason: "under_minimum_km" };
   return { paid: true, reason: "different_governorates" };
 }
@@ -276,6 +278,11 @@ export function priceChainedJourney(input: ChainedJourneyInput): ChainedJourneyP
     const fromDeparture = index === 0 && stop.legFrom === "departure";
     const fromLabel = fromDeparture ? place("Departure photo", stop.legFromGovernorate) : previousLabel;
     const fromGovernorate = fromDeparture ? stop.legFromGovernorate : previousGovernorate;
+    // A departure photo in ANOTHER governorate than the arrival is a drive between them that nothing
+    // measured: it is listed with no road distance, so the journey is flagged and never priced on a guess.
+    if (fromDeparture && fromGovernorate && previousGovernorate && fromGovernorate !== previousGovernorate) {
+      pushLeg(previousLabel, fromLabel, previousGovernorate, fromGovernorate, null);
+    }
     pushLeg(fromLabel, label, fromGovernorate, stop.governorate, stop.legFromPreviousKm);
     stopLegs.push({ leg: legs[legs.length - 1], stop });
     previousLabel = label;
@@ -299,6 +306,11 @@ export function priceChainedJourney(input: ChainedJourneyInput): ChainedJourneyP
     // The drive to the first stop may start at the departure photo — time it from there.
     if (index === 0 && stop.legFrom === "departure") {
       previousAt = instantMs(stop.legFromCapturedAt) ?? previousAt;
+      // ...and judge a return against where he left from, not only where he arrived.
+      if (stop.legFromGovernorate) {
+        visited.add(stop.legFromGovernorate);
+        previousStopGovernorate = stop.legFromGovernorate;
+      }
     }
     if (gpsLimit != null && gpsLimit > 0) {
       const accuracy = finiteOrNull(stop.accuracyMeters);

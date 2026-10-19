@@ -2479,6 +2479,22 @@ export async function addPlanComment(access: AccessContext, planId: string, inpu
   if (!canViewPlan(access, employee, plan, viewerScope)) {
     throw new Error("Forbidden: you cannot comment on this plan.");
   }
+  // The reply and the day it is pinned to must be on THIS plan: the check above authorizes this plan
+  // only, and a parent or item from another plan would carry the comment into that plan's thread.
+  for (const [table, id, refusal] of [
+    ["employee_plan_comments", input.parentId, "The comment you are replying to is not on this plan."],
+    ["employee_plan_items", input.itemId, "The day you are commenting on is not on this plan."],
+  ] as const) {
+    if (!id) continue;
+    const { data: onPlan, error: onPlanError } = await getSupabaseAdmin()
+      .from(table)
+      .select("id")
+      .eq("id", id)
+      .eq("plan_id", planId)
+      .maybeSingle();
+    if (onPlanError) throw onPlanError;
+    if (!onPlan) throw new Error(refusal);
+  }
   const { data, error } = await getSupabaseAdmin()
     .from("employee_plan_comments")
     .insert({

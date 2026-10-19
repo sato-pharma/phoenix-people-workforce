@@ -59,6 +59,15 @@ async function withdraw(id: string, actor: string): Promise<void> {
   if (error) throw new Error(`customer-360: withdrawing a match failed — ${error.message}`);
 }
 
+/** Undoes `withdraw` when the decision meant to replace it could not be saved. */
+async function restore(id: string): Promise<void> {
+  const { error } = await getSupabaseAdmin()
+    .from("customer_360_pharmacy_matches")
+    .update({ withdrawn_at: null, withdrawn_by_hr_id: null })
+    .eq("id", id);
+  if (error) throw new Error(`customer-360: saving the match failed and the earlier decision could not be put back — ${error.message}`);
+}
+
 function pairsJson(pairs: readonly MatchPair[]) {
   return pairs.map((pair) => ({
     brick_id: pair.brickId,
@@ -79,7 +88,8 @@ async function assertPairsOnMap(pairs: readonly MatchPair[]): Promise<MatchPair[
     const { data, error } = await db
       .from("source_of_sales_customer_map")
       .select("id, distributor_code, customer_code, customer_name, brick_id")
-      .ilike("distributor_code", distributorCode)
+      // Case-blind but exact: `%`, `_` and `*` (PostgREST's `%`) are the characters, never wildcards.
+      .ilike("distributor_code", distributorCode.replace(/[\\%_*]/g, (character) => `\\${character}`))
       .eq("customer_code", customerCode)
       .eq("active", true)
       .limit(1);
@@ -123,6 +133,9 @@ export async function decidePharmacyMatch(input: MatchDecisionInput, actorHrId: 
     });
   if (error) {
     if (error.code === "23505") throw new MatchDecisionError("Someone decided this pharmacy a moment ago. Reload the page.", 409);
+    // The new row did not land: put his earlier decision back, so a failed save never silently
+    // hands the pharmacy back to the automatic rule.
+    if (current) await restore(current.id);
     throw new Error(`customer-360: saving the match failed — ${error.message}`);
   }
   bumpCustomer360Cache("customer-360 pharmacy match decided");

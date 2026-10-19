@@ -1991,18 +1991,19 @@ export async function deleteCandidate(access: AccessContext, id: string): Promis
   // nothing else removes the filings. Left behind, a hand-built folder keeps counting a CV that no
   // longer exists (audit, 2026-09-12). Removed FIRST: if the candidate delete below then fails, the
   // worst case is a candidate who survives unfiled — back in the pool, visible — never a ghost.
-  // The manager shelves go with them, and the comments LAST of the three: a filing or a shelf comes
-  // back with one press, while a comment is the one thing a person wrote that a re-send cannot remake.
+  // The manager shelves go with them. The comments go only once the candidate row is GONE: a filing or
+  // a shelf comes back with one press, while a comment is the one thing a person wrote that a re-send
+  // cannot remake, so a candidate delete that fails must leave every comment where it was.
   const { error: filingError } = await supabase.from("ats_cv_folder_items").delete().eq("candidate_id", id);
   if (filingError) throw filingError;
   const { error: shelfError } = await supabase.from("ats_candidate_manager_folders").delete().eq("candidate_id", id);
   if (shelfError) throw shelfError;
-  const { error: commentError } = await supabase.from("ats_candidate_comments").delete().eq("candidate_id", id);
-  if (commentError) throw commentError;
   const { error } = await supabase.from("ats_candidates").delete().eq("id", id);
   if (error) throw error;
   // Only now, with the record gone: take its bytes out of storage. Never throws, never undoes the delete.
   await removeCandidateStorageObjects(id, storagePaths);
+  const { error: commentError } = await supabase.from("ats_candidate_comments").delete().eq("candidate_id", id);
+  if (commentError) throw commentError;
 }
 
 // Create-or-attach: dedupes on National ID, else email, else phone.
