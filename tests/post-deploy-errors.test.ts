@@ -280,6 +280,16 @@ function entryPointTests() {
 
   const skill = readFileSync(resolve(REPO_ROOT, ".claude/skills/ship/SKILL.md"), "utf8");
   assert.match(skill, /node scripts\/post-deploy-errors\.mjs <n> --wait/, "the ship skill runs the check after the deploy is proven");
+
+  // A short --sha matched no release (they are stamped with all 40 characters), so the merge's own
+  // errors sat in the baseline and the verdict read CLEAN (code review, 19 Oct 2026).
+  const entrySource = readFileSync(resolve(REPO_ROOT, "scripts/post-deploy-errors.mjs"), "utf8");
+  assert.match(
+    entrySource,
+    /if \(shaArg\) \{[\s\S]*?gh\(\["api", `repos\/\$\{REPO\}\/commits\/\$\{shaArg\}`\]\)[\s\S]*?out\.mergeSha = commit\.sha;/,
+    "--sha is resolved to the full commit before it is compared with any release",
+  );
+  assert.doesNotMatch(entrySource, /out\.mergeSha = shaArg;/, "--sha is never used as typed");
 }
 
 export async function runPostDeployErrorsTests() {

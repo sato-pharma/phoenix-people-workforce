@@ -127,7 +127,12 @@ async function readOnce(classifierLoad) {
 
   // 1 · the merge
   if (shaArg) {
-    out.mergeSha = shaArg;
+    // Always the FULL sha. Releases on error rows and Sentry events are stamped with all 40
+    // characters, so a short `--sha` matched none of them: the merge's own errors fell into the
+    // baseline and the verdict read CLEAN (code review, 19 Oct 2026).
+    const commit = gh(["api", `repos/${REPO}/commits/${shaArg}`]);
+    if (!commit?.sha) return { ...out, verdict: { code: EXIT.CANNOT_TELL, label: "CANNOT TELL", note: `GitHub could not resolve --sha ${shaArg} to a commit` } };
+    out.mergeSha = commit.sha;
   } else {
     const view = gh(["pr", "view", prArg, "--repo", REPO, "--json", "number,title,state,mergedAt,mergeCommit"]);
     if (!view) return { ...out, verdict: { code: EXIT.CANNOT_TELL, label: "CANNOT TELL", note: "gh could not read the PR" } };
