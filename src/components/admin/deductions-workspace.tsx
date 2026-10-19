@@ -357,7 +357,15 @@ function DeductionDaysEditor({
               Sunday, a solid week, or scattered singles. Days the engine did not
               flag are still drawn, greyed and inert, because the gaps are half
               the picture. */}
-          <div className="inline-block border border-slate-200 bg-white p-2">
+          {/* FITS THE SCREEN. Seven `1fr` tracks inside a phone card are about 34px
+              each at 375px and 27px at 320px, but every cell used to hold a 2.4rem
+              (38px) floor, so the last column ran out of its own box and a 320px
+              phone pushed past the card's edge. Below `sm` the calendar takes the
+              full card width, the cell floor is dropped, and the tick box sits ABOVE
+              the day number instead of beside it — the number is the same size, and
+              the cell now needs about 17px rather than 33px. From `sm` up it is the
+              compact inline calendar it always was. */}
+          <div className="block w-full border border-slate-200 bg-white p-2 sm:inline-block sm:w-auto">
             <div className="grid grid-cols-7 gap-1">
               {WEEKDAY_LABELS.map((label, index) => (
                 <div
@@ -377,7 +385,7 @@ function DeductionDaysEditor({
                   return (
                     <div
                       className={[
-                        "flex h-9 min-w-[2.4rem] items-center justify-center text-xs tabular-nums",
+                        "flex h-9 min-w-0 items-center justify-center text-xs tabular-nums sm:min-w-[2.4rem]",
                         isFriday ? "bg-orange-50/60 text-slate-300" : "text-slate-300",
                       ].join(" ")}
                       key={date}
@@ -390,7 +398,7 @@ function DeductionDaysEditor({
                 return (
                   <label
                     className={[
-                      "flex h-9 min-w-[2.4rem] cursor-pointer items-center justify-center gap-1 whitespace-nowrap border text-xs font-bold tabular-nums transition",
+                      "flex h-9 min-w-0 cursor-pointer flex-col items-center justify-center gap-0.5 whitespace-nowrap border text-xs font-bold tabular-nums transition sm:min-w-[2.4rem] sm:flex-row sm:gap-1",
                       checked
                         ? "border-orange-400 bg-white text-slate-900"
                         : "border-slate-200 bg-slate-100 text-slate-400 line-through",
