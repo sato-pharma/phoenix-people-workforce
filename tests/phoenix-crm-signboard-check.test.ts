@@ -1273,6 +1273,21 @@ function checkPlaceShortForms(): void {
     false,
     "🔴 the brick never stands in for the COMPANY: the Kafr El Sheikh fever hospital's board stays refused",
   );
+  // Replayed before the first apply (2026-10-19): four confirms the brick must not make.
+  assert.equal(
+    inBrick("مستشفي صحة بشتيل", "إعلان هام تعلن الإدارة الصحية بأسيوم مبادرة 100 يوم صحة", "بشتيل"),
+    false,
+    "🔴 صحة beside the brick says nothing about WHICH place: a health poster from Asyum is not the Bashtil hospital",
+  );
+  assert.equal(inBrick("مستشفي جامعة اكتوبر", "مستشفى جامعة الكبير", "6 اكتوبر"), false, "🔴 nor جامعة in a city with several universities");
+  assert.equal(inBrick("مستشفى النصر حلوان", "عيادة النصر الشاملة", "حلوان"), false, "🔴 a board that calls itself a clinic is not the hospital on the list");
+  assert.equal(
+    signNamesCustomer({ customerName: "مستشفى النصر حلوان", listType: "AM", personNames: [], placeNames: ["النصر"], signText: "عيادة النصر الشاملة", photoBrick: "حلوان" }).matches,
+    false,
+    "🔴 even when the place name the reader split out has lost the word عيادة",
+  );
+  assert.equal(inBrick("مستشفي تبارك المريوطيه", "مستشفى تبارك للولادة والأطفال", "المريوطيه"), true, "a name that says which place still takes its town from the brick");
+  assert.equal(inBrick("مستشفى حميات منوف", "مستشفى حميات مدرف", "منوف"), true, "and the fever hospital in the brick منوف");
 }
 
 /**
