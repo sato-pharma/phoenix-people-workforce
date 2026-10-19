@@ -10,11 +10,16 @@
 //
 // The first time an account with nothing saved opens the pool in a browser that still holds the old
 // browser-only layout, that layout is sent up once — nobody loses the columns they already chose.
+// "Nothing saved" must be the account's own answer: a read that failed sends nothing up.
 // Any failure (offline, a missing table, a refused save) leaves the pool on what it already shows.
 
 import { useCallback, useSyncExternalStore } from "react";
 
-import { parsePoolColumnLayouts, type PoolColumnLayouts } from "@/lib/recruitment/pool-column-layout-rules";
+import {
+  parsePoolColumnLayouts,
+  readPoolColumnLayoutAnswer,
+  type PoolColumnLayouts,
+} from "@/lib/recruitment/pool-column-layout-rules";
 
 const STORAGE_KEY = "phoenix-recruitment-pool-columns-v1";
 const ENDPOINT = "/api/recruitment/pool-column-layout";
@@ -68,13 +73,16 @@ async function readAccount(): Promise<void> {
   accountRead = "reading";
   try {
     const response = await fetch(ENDPOINT, { cache: "no-store", credentials: "same-origin" });
-    if (!response.ok) return;
-    const body = (await response.json().catch(() => null)) as { data?: unknown } | null;
+    const body: unknown = response.ok ? await response.json().catch(() => null) : null;
     if (savedBeforeAccountRead) return;
-    if (body?.data !== null && body?.data !== undefined) {
-      setLayouts(parsePoolColumnLayouts(body.data));
+    const answer = readPoolColumnLayoutAnswer(response.ok, body);
+    if (answer.kind === "saved") {
+      setLayouts(answer.layouts);
       return;
     }
+    // A read that failed is not an empty account: carrying this browser's copy up on it wrote an
+    // older layout over the account's newer one. The pool keeps what it shows.
+    if (answer.kind === "unavailable") return;
     // Nothing on the account yet: carry the old browser-only layout up, once.
     const local = layouts ?? readLocal();
     if (Object.keys(local).length > 0) await putToAccount(local);

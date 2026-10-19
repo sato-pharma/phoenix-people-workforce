@@ -22,6 +22,7 @@ import {
   isPoolColumnLayouts,
   parsePoolColumnLayouts,
   POOL_LAYOUT_MAX_VIEWS,
+  readPoolColumnLayoutAnswer,
 } from "../src/lib/recruitment/pool-column-layout-rules.ts";
 import { whatsAppAnswerEditPayload, WHATSAPP_ANSWER_MAX_CHARS } from "../src/lib/recruitment/whatsapp-answer-edit-rules.ts";
 
@@ -454,6 +455,40 @@ export async function runRecruitmentPoolWhatsAppColumnsTests() {
   assert.ok(
     read("src/lib/security/access-registry.ts").includes('methods: ["PUT"], pattern: "/api/recruitment/pool-column-layout"'),
     "the registry declares the save",
+  );
+
+  // A read that FAILED is never "nothing saved" (code review, 19 Oct 2026). A Supabase blip came back
+  // as 200 { data: null }, the pool read that as an empty account and carried this browser's older
+  // layout up over the account's newer one. Only the account's own "nothing saved" starts the carry.
+  assert.deepEqual(readPoolColumnLayoutAnswer(true, { data: null, success: true }), { kind: "none" }, "only an explicit empty answer is an empty account");
+  assert.deepEqual(
+    readPoolColumnLayoutAnswer(true, { data: { all: ["salary"] }, success: true }),
+    { kind: "saved", layouts: { all: ["salary"] } },
+    "a saved layout is read",
+  );
+  for (const [ok, body, why] of [
+    [false, { error: "layout_unavailable", success: false }, "a refused or failed read"],
+    [true, null, "a body that did not parse"],
+    [true, { data: null }, "an answer that does not say it succeeded"],
+    [true, { success: true }, "an answer with no data field"],
+  ] as const) {
+    assert.deepEqual(readPoolColumnLayoutAnswer(ok, body), { kind: "unavailable" }, `${why} is not an empty account`);
+  }
+  assert.match(
+    layoutHook,
+    /if \(answer\.kind === "unavailable"\) return;[\s\S]*?if \(Object\.keys\(local\)\.length > 0\) await putToAccount\(local\);/,
+    "the hook sends nothing up when the read failed",
+  );
+  const layoutStore = read("src/lib/recruitment/pool-column-layout-store.ts");
+  assert.equal(
+    (layoutStore.match(/return \{ kind: "unavailable" \};/g) ?? []).length,
+    3,
+    "the store answers a read error, a thrown read and a missing owner as unavailable, never as nothing saved",
+  );
+  assert.match(
+    layoutRoute,
+    /if \(read\.kind === "unavailable"\) \{[\s\S]*?status: 503/,
+    "the route answers a failed read as a failure, never as data: null",
   );
   const migration = read("supabase/migrations/20261019120000_ats_pool_column_layouts.sql");
   assert.ok(
