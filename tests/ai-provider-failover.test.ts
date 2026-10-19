@@ -329,6 +329,16 @@ function errorCodeTests() {
     "out of credit arrives as a 400 here",
   );
   assert.equal(anthropicErrorCodeFor(400, '{"error":{"message":"max_tokens is required"}}'), "failed", "an ordinary 400 is not a dead account");
+  // 🔴 A workspace spend limit answers 400, not 429 (code review, 19 Oct 2026) — read as a plain failure it
+  // neither failed over nor paged anyone while every call Claude answers was refused.
+  assert.equal(
+    anthropicErrorCodeFor(
+      400,
+      '{"type":"error","error":{"type":"invalid_request_error","message":"You have reached your specified API usage limits. You will regain access on 2026-11-01 at 00:00 UTC."}}',
+    ),
+    "quota_exceeded",
+    "a spend limit reached is a dead account until it resets",
+  );
   assert.equal(anthropicErrorCodeFor(429, '{"error":{"type":"rate_limit_error","message":"Number of requests exceeded"}}'), "rate_limited");
   assert.equal(anthropicErrorCodeFor(429, '{"error":{"message":"You have reached your specified API usage limits."}}'), "quota_exceeded");
   assert.equal(anthropicErrorCodeFor(529, "overloaded"), "failed");

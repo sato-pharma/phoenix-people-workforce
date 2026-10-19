@@ -133,6 +133,7 @@ export async function judgeWithAi(
         errorCode: aiErrorCodeForResponse(res.status, body),
         latencyMs: Date.now() - startedAt,
         model: provider.model,
+        provider: provider.name,
         purpose: "weekly_verify_columns",
         status: "error",
       });
@@ -148,6 +149,7 @@ export async function judgeWithAi(
       latencyMs: Date.now() - startedAt,
       model: provider.model,
       outputTokens: json.usage?.completion_tokens,
+      provider: provider.name,
       purpose: "weekly_verify_columns",
       status: "success",
     });

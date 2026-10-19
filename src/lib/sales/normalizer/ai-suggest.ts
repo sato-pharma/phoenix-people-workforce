@@ -223,6 +223,7 @@ async function askChatProvider(provider: AiProvider, kind: AiKind, system: strin
           latencyMs: Date.now() - startedAt,
           model: provider.model,
           outputTokens: json.usage?.completion_tokens,
+          provider: provider.name,
           purpose: `ai_suggest_${kind}`,
           status: "success",
         });
@@ -249,6 +250,7 @@ async function askChatProvider(provider: AiProvider, kind: AiKind, system: strin
       errorCode: upstreamCode ?? (upstreamStatus === undefined ? "no_http_status" : String(upstreamStatus)),
       latencyMs: Date.now() - startedAt,
       model: provider.model,
+      provider: provider.name,
       purpose: `ai_suggest_${kind}`,
       status: "error",
     });

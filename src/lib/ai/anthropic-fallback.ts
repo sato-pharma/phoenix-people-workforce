@@ -371,18 +371,27 @@ export function cleanJsonReply(raw: string) {
  * What an Anthropic HTTP failure means for the app. Out of credit arrives as a 400 whose message says the
  * credit balance is too low (or as a 402, or a 429 naming a usage limit) — that one is `quota_exceeded`,
  * the code that fails the shared client over and pages the owner; a plain 429 is a rate limit.
+ *
+ * 🔴 A WORKSPACE SPEND LIMIT IS A 400 TOO (code review, 19 Oct 2026): "You have reached your specified API
+ * usage limits. You will regain access on …", type `invalid_request_error`. Read only at 429 it fell to
+ * `failed`: no failover to the next provider and no alarm, while every call Claude answers was refused.
  */
 export function anthropicErrorCodeFor(status: number, rawBody: string): AnthropicFailureCode {
   const body = rawBody.toLowerCase();
   if (status === 401 || status === 403) return "auth_failed";
   if (status === 402) return "quota_exceeded";
-  if (status === 400 && (body.includes("credit balance") || body.includes("billing"))) return "quota_exceeded";
+  if (status === 400 && (body.includes("credit balance") || body.includes("billing") || isSpendLimitBody(body))) {
+    return "quota_exceeded";
+  }
   if (status === 429) {
-    return body.includes("usage limit") || body.includes("spend limit") || body.includes("credit balance")
-      ? "quota_exceeded"
-      : "rate_limited";
+    return isSpendLimitBody(body) || body.includes("credit balance") ? "quota_exceeded" : "rate_limited";
   }
   return "failed";
+}
+
+/** A lowercased body naming the account's usage or spend limit — reached until the limit resets or is raised. */
+function isSpendLimitBody(body: string) {
+  return body.includes("usage limit") || body.includes("spend limit");
 }
 
 function errorMessageFrom(rawBody: string) {
