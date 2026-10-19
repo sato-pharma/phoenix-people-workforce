@@ -1,4 +1,4 @@
-import type { PlanWorkspaceData } from "@/lib/approvals-hub/service";
+import { planSourcesUnavailableNotice, type PlanWorkspaceData } from "@/lib/approvals-hub/service";
 import { ApprovalsWorkspace, type WorkspaceSection } from "@/components/approvals-hub/approvals-workspace";
 
 export function PlanApprovalsBody({ data }: { data: PlanWorkspaceData }) {
@@ -15,6 +15,7 @@ export function PlanApprovalsBody({ data }: { data: PlanWorkspaceData }) {
   return (
     <ApprovalsWorkspace
       sections={sections}
+      pendingNotice={planSourcesUnavailableNotice(data.unavailable)}
       history={data.history}
       pendingCount={data.pendingCount}
       slaModule="plan"

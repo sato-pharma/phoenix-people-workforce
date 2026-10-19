@@ -39,6 +39,8 @@ export type WorkspaceSection = {
 
 type Props = {
   sections: WorkspaceSection[];
+  // Shown above the pending lists when part of them could not be read, so empty never reads as "nothing waiting".
+  pendingNotice?: string | null;
   history: ResponderHistoryItem[];
   // The pending tab count shown in the tab (actionable-now only).
   pendingCount: number;
@@ -109,6 +111,7 @@ function Card({ card, readOnly, slaModule }: { card: PendingCard; readOnly?: boo
 
 export function ApprovalsWorkspace({
   sections,
+  pendingNotice,
   history,
   pendingCount,
   initialTab = "pending",
@@ -189,10 +192,17 @@ export function ApprovalsWorkspace({
 
       {tab === "pending" ? (
         <div className="space-y-6">
-          {sections.every((s) => s.cards.length === 0) ? (
-            <p className={`${adminSoftPanelClassName} px-4 py-8 text-center text-sm text-slate-500`}>
-              Nothing waiting on you right now.
+          {pendingNotice ? (
+            <p role="status" className={`${adminSoftPanelClassName} px-4 py-3 text-sm font-bold text-rose-700`}>
+              {pendingNotice}
             </p>
+          ) : null}
+          {sections.every((s) => s.cards.length === 0) ? (
+            pendingNotice ? null : (
+              <p className={`${adminSoftPanelClassName} px-4 py-8 text-center text-sm text-slate-500`}>
+                Nothing waiting on you right now.
+              </p>
+            )
           ) : (
             sections
               .filter((s) => s.cards.length > 0)
