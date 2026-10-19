@@ -113,6 +113,18 @@ function runNormalizationTests() {
   // An email split across a line break is rejoined; unrelated lines are not.
   const wrapped = normalizeCvText("bishoysamirfouad@example.or\ng\nCairo");
   assert.match(wrapped.text, /bishoysamirfouad@example\.org/);
+  assert.deepEqual(
+    findEmails(normalizeCvText("karimnabil3@gmail.co\nM\nCairo").text),
+    ["karimnabil3@gmail.com"],
+    'a ".com" cut after "co" is still rejoined — the endings list is what keeps that working',
+  );
+  // A COMPLETE address followed by a short word is not wrapped, and must not swallow the word: the
+  // join made "gmail.comcar", "gmail.comp", "gmail.comi", "gmail.come" and "gmail.comj" out of six
+  // real candidates' CVs (production, 2026-10-19), every one at high confidence.
+  for (const nextLine of ["Car license: B", "P: 01270000000", "I am a pharmacist", "Jan 2024", "E-mail me"]) {
+    const read = findEmails(normalizeCvText(`george.samir@gmail.com\n${nextLine}`).text);
+    assert.deepEqual(read, ["george.samir@gmail.com"], `"${nextLine}" on the next line is not part of the address`);
+  }
 
   // A markdown hyperlink keeps the URL, which is the half that is not truncated.
   const linked = normalizeCvText("[https://www.linkedin.com/in/bish](https://www.linkedin.com/in/bishoy-samir-fouad-362434244)");

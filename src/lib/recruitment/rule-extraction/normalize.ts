@@ -148,9 +148,21 @@ export function repairShreddedText(text: string): string {
 }
 
 /**
+ * The endings an address can be rejoined ONTO. A wrapped address is a cut-short ending plus its
+ * missing letters — "gmail.co" + "m", "example.or" + "g" — so the join is kept only when it lands on
+ * one of these. A complete address followed by a short word is the other shape, and it never does:
+ * "gmail.com" + "Car", "P" or "I" from the next line of the CV made "gmail.comcar", "gmail.comp" and
+ * "gmail.comi" — six production candidates, read at HIGH confidence, whose mail would bounce
+ * (George Samir Lotfy's among them, 2026-10-19; owner: "Fix broken Gmail endings").
+ */
+const WRAPPED_EMAIL_ENDINGS: ReadonlySet<string> = new Set([
+  "com", "net", "org", "edu", "gov", "info", "co", "io", "me", "eg", "sa", "ae", "kw", "qa", "uk", "us",
+]);
+
+/**
  * An email or URL broken by a line break, rejoined. Deliberately narrow: the email rule fires only
- * when the two halves TOGETHER form a valid address, so ordinary prose that happens to end a line
- * in "@" is left alone.
+ * when the two halves TOGETHER form a valid address ending in a real ending, so ordinary prose that
+ * happens to end a line in "@" — or a whole address followed by a short word — is left alone.
  */
 export function repairWrappedContacts(text: string): string {
   return (
@@ -167,7 +179,8 @@ export function repairWrappedContacts(text: string): string {
       // admits the wrapped "m" and rejects the next line of the CV.
       .replace(/([\w.+-]+@[\w-]+(?:\.[\w-]+)*)[ \t]*\n[ \t]*([A-Za-z]{1,3})\b/g, (match, head: string, tail: string) => {
         const joined = `${head}${tail}`;
-        return /^[\w.+-]+@[\w-]+\.[A-Za-z]{2,}$/.test(joined) ? joined : match;
+        const ending = joined.slice(joined.lastIndexOf(".") + 1).toLowerCase();
+        return /^[\w.+-]+@[\w-]+\.[A-Za-z]{2,}$/.test(joined) && WRAPPED_EMAIL_ENDINGS.has(ending) ? joined : match;
       })
       // "linkedin.com/in/bishoy-\nsamir" → joined, for a URL split at a hyphen or a slash.
       .replace(/((?:https?:\/\/|www\.)\S*[/-])[ \t]*\n[ \t]*(\S+)/g, "$1$2")
