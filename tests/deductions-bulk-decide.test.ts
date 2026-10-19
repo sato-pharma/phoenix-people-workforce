@@ -66,8 +66,8 @@ export function runDeductionsBulkDecideTests() {
     `${WORKSPACE}: the select-all controls are gone from the category tab.`,
   );
   assert.ok(
-    /colSpan=\{canDecide \? 10 : 9\}/.test(tab),
-    `${WORKSPACE}: the day editor row no longer spans the new checkbox column.`,
+    /colSpan=\{canDecide \? 7 : 6\}/.test(tab),
+    `${WORKSPACE}: the day editor row no longer spans every column of the table (7 with the checkbox and Action merged into Status, 6 without).`,
   );
   assert.ok(
     (tab.match(/type="checkbox"/g) ?? []).length >= 4,
