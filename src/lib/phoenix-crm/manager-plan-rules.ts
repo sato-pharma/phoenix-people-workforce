@@ -181,6 +181,32 @@ export function missingManagerCustomerField(input: {
   return null;
 }
 
+// ── A vacant area (owner, 2026-10-19) ───────────────────────────────────────────────────────────
+
+/**
+ * How a vacant area reads wherever a manager picks one: by its area name, with this beside it. Owner,
+ * 2026-10-19: "make the vacant areas appear named as areas … when he chooses the vacant area he is able to
+ * see the dr list of the previous rep". A territory's list belongs to the seat, not the person, so the list
+ * a vacant seat still holds IS the previous rep's.
+ */
+export const VACANT_AREA_NOTE = "Vacant · the previous rep's list";
+
+/** Where a customer of a vacant territory's list is said to come from, instead of a rep's name. */
+export const VACANT_LIST_LABEL = "The previous rep's list";
+
+/**
+ * Why a single visit to a doctor of a VACANT territory cannot be saved yet, or null when it can. Owner,
+ * 2026-10-19: "if the area is vacant make the district manager obligatory either to fill the dr address by
+ * hand or to capture location and the address area and brick are auto filled — either this or this". He
+ * chose that it binds the visit log only, not adding a customer to his own list. Nobody holds the territory,
+ * so this visit is the only record of where its doctor is. Asked by the form before it sends and by the
+ * server again; the database refuses the row too (`phoenix_crm_manager_visits_vacant_place`).
+ */
+export function vacantVisitPlaceError(input: { vacant: boolean; address: string | null; captured: boolean }): string | null {
+  if (!input.vacant || input.captured || (input.address ?? "").trim().length > 0) return null;
+  return "This customer's area has no rep. Type the customer's address, or press Capture location to fill in the address, area and brick.";
+}
+
 // ── Who plans ───────────────────────────────────────────────────────────────────────────────────
 
 /** The district manager seats a person holds (DM or acting DM). Empty for everyone else. */

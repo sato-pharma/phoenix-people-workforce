@@ -7,6 +7,13 @@
  * planned (a customer of a single-visit half-day of today) or unplanned (shown apart). Capture location
  * is optional, there is NO photo and no accuracy gate, and the products and the comment are optional.
  *
+ * 🔴 EXCEPT IN A VACANT AREA (owner, 2026-10-19). He picks his customers from a vacant area's list — the
+ * previous rep's — and a visit to one of them needs the doctor's address typed by hand OR a captured
+ * location, whose address, area and brick are filled in for him: "either this or this". Nobody holds the
+ * territory, so this visit is the only record of where its doctor is (`vacantVisitPlaceError`, and the
+ * database's `phoenix_crm_manager_visits_vacant_place`). It binds the visit only — adding a customer to
+ * Manager's own list stays as it was (his choice, the same day).
+ *
  * 🔴 THESE VISITS COUNT IN HIS OWN REPORT AND NOWHERE ELSE. `phoenix_crm_manager_visits` is a table of its
  * own precisely so that no KPI, coverage, call-rate, frequency or target reader can pick a row of it up —
  * `tests/phoenix-crm-manager-plan.test.ts` pins that no such reader names it. And the old "My own visit"
@@ -20,10 +27,19 @@ import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
-import type { ManagerPlanWriter } from "@/lib/phoenix-crm/manager-plan-rules";
+import { MANAGER_CUSTOMER_ADDRESS_MAX, vacantVisitPlaceError, type ManagerPlanWriter } from "@/lib/phoenix-crm/manager-plan-rules";
 import { assertManagerPlanWriter } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { managerWriterReach } from "@/lib/phoenix-crm/server/manager-plan-writers";
-import { loadManagerCustomerRow, loadManagerCustomers, type ManagerCustomerView } from "@/lib/phoenix-crm/server/manager-customers";
+import {
+  isVacantTerritory,
+  loadManagerCustomerRow,
+  loadManagerCustomers,
+  locateInReach,
+  managerAreaChoices,
+  type ManagerAreaChoice,
+  type ManagerCustomerView,
+} from "@/lib/phoenix-crm/server/manager-customers";
+import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
 import { assertSingleVisitLogFits } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
 import { loadManagerSlotCustomers, loadManagerSlotRows, MANAGER_PLAN_COLUMNS, managerPlanRowOf } from "@/lib/phoenix-crm/server/manager-plan-rows";
 import { lineProductsByFamily } from "@/lib/phoenix-crm/server/products";
@@ -111,6 +127,10 @@ export type ManagerTodayCustomer = {
   speciality: string | null;
   own: boolean;
   logged: boolean;
+  /** A doctor of a vacant territory's list: the visit needs a typed address or a captured location (owner, 2026-10-19). */
+  vacant: boolean;
+  /** The territory whose list he is on — the hint Capture location reads against; null on his own list. */
+  seatId: string | null;
 };
 
 export type ManagerTodayView = {
@@ -122,6 +142,8 @@ export type ManagerTodayView = {
   unplanned: ManagerTodayCustomer[];
   /** His own list, for "Log an unplanned customer". */
   ownList: ManagerCustomerView[];
+  /** The areas he plans in, by name — a vacant one marked — to log an unplanned visit from an area's list. */
+  areas: ManagerAreaChoice[];
   /** His line's products, by family — what "Products discussed" offers. Optional on every visit. */
   products: string[];
 };
@@ -144,16 +166,18 @@ async function writerProductNames(viewer: Pick<PhoenixCrmViewer, "org">, writer:
   return [...new Set(lists.flat())];
 }
 
-/** Customer names for the visits he logged on rep customers. */
-async function loadRepCustomerNames(customerIds: ReadonlyArray<string>): Promise<Map<string, { name: string; speciality: string | null }>> {
+/** Customer names, and the territory each is on today, for the rep customers of his day. */
+async function loadRepCustomerNames(customerIds: ReadonlyArray<string>): Promise<Map<string, { name: string; speciality: string | null; seatId: string | null }>> {
   const ids = dedupeIds(customerIds);
-  const out = new Map<string, { name: string; speciality: string | null }>();
+  const out = new Map<string, { name: string; speciality: string | null; seatId: string | null }>();
   if (ids.length === 0) return out;
   const rows = await fetchAllRowsKeyset<Row>(
-    () => getSupabaseAdmin().from("phoenix_crm_customers").select("id, name, speciality").in("id", ids),
+    () => getSupabaseAdmin().from("phoenix_crm_customers").select("id, name, speciality, seat_id").in("id", ids),
     { cursorColumn: "id", cursorOf: (row) => String(row.id) },
   );
-  for (const row of rows) out.set(String(row.id), { name: textOrNull(row.name) ?? "Customer", speciality: textOrNull(row.speciality) });
+  for (const row of rows) {
+    out.set(String(row.id), { name: textOrNull(row.name) ?? "Customer", speciality: textOrNull(row.speciality), seatId: textOrNull(row.seat_id) });
+  }
   return out;
 }
 
@@ -163,7 +187,8 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
   const isTest = testModeFor(viewer, raw.test);
   const day = viewer.visitDay;
   const weekStart = fieldWeekStart(day);
-  const [planRows, visits, ownList, products] = await Promise.all([
+  const reach = await managerWriterReach(viewer, writer);
+  const [planRows, visits, ownList, products, names] = await Promise.all([
     fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
@@ -177,12 +202,23 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
     loadManagerVisits([viewer.hrId], { from: day, to: day }, isTest),
     loadManagerCustomers(viewer.hrId, isTest),
     writerProductNames(viewer, writer),
+    loadPeopleNames(reach.map((seat) => seat.occupantHrId)),
   ]);
   const plan = planRows.length > 0 ? managerPlanRowOf(planRows[0]) : null;
   const slots = plan ? (await loadManagerSlotRows([plan.planId])).filter((slot) => slot.date === day && slot.kind === "single_visit") : [];
   const slotCustomers = await loadManagerSlotCustomers(slots.map((slot) => slot.slotId));
   const halfOfSlot = new Map(slots.map((slot) => [slot.slotId, slot.half]));
   const loggedKey = new Set(visits.map((visit) => (visit.customerId ? `c:${visit.customerId}` : `m:${visit.managerCustomerId}`)));
+  const unplannedVisits = visits.filter((visit) => visit.isUnplanned);
+  // The territory each rep customer is on TODAY decides whether it is vacant — the same reading the save makes.
+  const repCustomers = await loadRepCustomerNames([
+    ...slotCustomers.flatMap((row) => (row.customerId && !row.gone ? [row.customerId] : [])),
+    ...unplannedVisits.flatMap((visit) => (visit.customerId ? [visit.customerId] : [])),
+  ]);
+  const placeOf = (customerId: string | null): { vacant: boolean; seatId: string | null } => {
+    const seatId = customerId ? (repCustomers.get(customerId)?.seatId ?? null) : null;
+    return { vacant: seatId !== null && isVacantTerritory(viewer.org.seats.get(seatId)), seatId };
+  };
   const planned = slotCustomers
     .filter((row) => !row.gone)
     .map((row): ManagerTodayCustomer => ({
@@ -194,14 +230,13 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
       speciality: row.speciality,
       own: row.managerCustomerId !== null,
       logged: loggedKey.has(row.customerId ? `c:${row.customerId}` : `m:${row.managerCustomerId}`),
+      ...placeOf(row.customerId),
     }))
     .sort((left, right) => String(left.half).localeCompare(String(right.half)) || left.name.localeCompare(right.name));
 
-  const unplannedVisits = visits.filter((visit) => visit.isUnplanned);
-  const repNames = await loadRepCustomerNames(unplannedVisits.flatMap((visit) => (visit.customerId ? [visit.customerId] : [])));
   const ownById = new Map(ownList.map((customer) => [customer.id, customer]));
   const unplanned = unplannedVisits.map((visit): ManagerTodayCustomer => {
-    const rep = visit.customerId ? repNames.get(visit.customerId) : undefined;
+    const rep = visit.customerId ? repCustomers.get(visit.customerId) : undefined;
     const own = visit.managerCustomerId ? ownById.get(visit.managerCustomerId) : undefined;
     return {
       slotId: null,
@@ -212,9 +247,18 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
       speciality: rep?.speciality ?? own?.speciality ?? null,
       own: visit.managerCustomerId !== null,
       logged: true,
+      ...placeOf(visit.customerId),
     };
   });
-  return { isTest, visitDay: day, planned, unplanned, ownList: ownList.filter((customer) => customer.status === "active"), products };
+  return {
+    isTest,
+    visitDay: day,
+    planned,
+    unplanned,
+    ownList: ownList.filter((customer) => customer.status === "active"),
+    areas: managerAreaChoices(reach, names),
+    products,
+  };
 }
 
 // ── Logging one ─────────────────────────────────────────────────────────────────────────────────
@@ -255,8 +299,11 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
 
   // Whose customer: a rep's of a district he plans in, or one of his own list — in his world.
   let customerLineCode: string | null = null;
+  let customerSeatId: string | null = null;
+  let vacant = false;
+  const reach = await managerWriterReach(viewer, writer);
   if (customerId) {
-    const district = new Set((await managerWriterReach(viewer, writer)).map((entry) => entry.seatId));
+    const district = new Set(reach.map((entry) => entry.seatId));
     const rows = await fetchAllRowsKeyset<Row>(
       () => getSupabaseAdmin().from("phoenix_crm_customers").select("id, seat_id, status, is_test").eq("id", customerId),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
@@ -268,7 +315,10 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
     if (!district.has(String(row.seat_id ?? ""))) {
       throw forbiddenError(writer.kind === "dm" ? "Log a visit to a customer of your own district." : "Log a visit to a customer of a district you plan in.");
     }
-    customerLineCode = viewer.org.seats.get(String(row.seat_id))?.lineCode ?? null;
+    customerSeatId = String(row.seat_id);
+    customerLineCode = viewer.org.seats.get(customerSeatId)?.lineCode ?? null;
+    // Nobody holds the territory today: the doctor is on the previous rep's list (owner, 2026-10-19).
+    vacant = isVacantTerritory(viewer.org.seats.get(customerSeatId));
   } else if (managerCustomerId) {
     const own = await loadManagerCustomerRow(managerCustomerId);
     if (!own || own.managerHrId !== viewer.hrId || own.isTest !== isTest || own.status === "removed") {
@@ -308,17 +358,37 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
     await assertSingleVisitLogFits({ managerHrId: viewer.hrId, weekStart: fieldWeekStart(day), date: day, isTest });
   }
 
+  // 🔴 A VACANT AREA'S DOCTOR: a typed address or a captured location, one or the other, never neither
+  // (owner, 2026-10-19). Elsewhere both stay optional and nothing is read off the location.
+  const orTyped = vacant ? "or type the address" : "or log the visit without it";
+  let address: string | null = null;
+  if (body.address !== undefined && body.address !== null) {
+    if (typeof body.address !== "string") throw validationError("The address could not be read.");
+    address = body.address.trim().replace(/\s+/g, " ") || null;
+    if (address && address.length > MANAGER_CUSTOMER_ADDRESS_MAX) throw validationError(`Keep the address under ${MANAGER_CUSTOMER_ADDRESS_MAX} characters.`);
+  }
+
   let pin: Row = {};
+  let place: Row = {};
   const rawPin = record(body.pin);
   if (rawPin.lat !== undefined || rawPin.lon !== undefined) {
-    const fix = parseCapturedFix(rawPin, "The location could not be read. Press Capture location again, or log the visit without it.");
+    const fix = parseCapturedFix(rawPin, `The location could not be read. Press Capture location again, ${orTyped}.`);
     if (!fix.ok) throw validationError(fix.error);
     const { lat, lon, accuracyMeters } = fix.value;
     if (lat < EGYPT.latMin || lat > EGYPT.latMax || lon < EGYPT.lonMin || lon > EGYPT.lonMax) {
-      throw validationError("This location is outside Egypt. Capture it again, or log the visit without it.");
+      throw validationError(`This location is outside Egypt. Capture it again, ${orTyped}.`);
     }
     pin = { lat, lon, accuracy_meters: accuracyMeters };
+    if (vacant) {
+      // The same reading the form showed him when he pressed Capture location (`locateInReach`): the
+      // address he sees is kept as it stands, the area and the brick are where the capture fell.
+      const located = await locateInReach(reach, { lat, lon, accuracyMeters }, customerSeatId);
+      address = address ?? located.address;
+      place = { area_code: located.areaCode, area_name: located.areaName, brick_id: located.brickId, brick_name: located.brickName };
+    }
   }
+  const placeError = vacantVisitPlaceError({ vacant, address, captured: pin.lat !== undefined });
+  if (placeError) throw validationError(placeError);
 
   const { error } = await getSupabaseAdmin()
     .from("phoenix_crm_manager_visits")
@@ -336,6 +406,10 @@ export async function logManagerVisit(viewer: PhoenixCrmViewer, raw: unknown): P
       products,
       comment,
       ...pin,
+      in_vacant_territory: vacant,
+      // The doctor's address is read only for a vacant area's doctor; elsewhere the visit keeps no address.
+      address: vacant ? address : null,
+      ...place,
       client_ref: clientRef,
       entered_by_hr_id: viewer.hrId,
       is_test: isTest,

@@ -45,10 +45,13 @@ import {
   managerWeekState,
   managerAskStage,
   matchCustomerName,
+  MANAGER_CUSTOMER_ADDRESS_MAX,
   missingManagerCustomerField,
   nextManagerPlanStatus,
   parseManagerSlotDraft,
+  vacantVisitPlaceError,
 } from "../src/lib/phoenix-crm/manager-plan-rules.ts";
+import { isVacantTerritory, managerAreaChoices } from "../src/lib/phoenix-crm/server/manager-customers.ts";
 import {
   isOldCrmPlanAction,
   oldCrmActionToVerification,
@@ -478,9 +481,21 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     if (!tableRead.test(source(file))) continue;
     assert.match(file, /^src\/lib\/phoenix-crm\/server\/manager-[a-z-]+\.ts$/, `${file} reads a manager-plan table directly — outside screens go through manager-plan-readers.ts`);
   }
+  // A migration that only widens the table itself — its own columns, checks and comments — reads nothing from
+  // it. Named one by one, and each still may not read it, view it or wrap it in a function.
+  const widensOwnVisitsOnly = new Set(["20261019103745_phoenix_crm_manager_visit_place.sql"]);
   for (const file of readdirSync(new URL("../supabase/migrations/", import.meta.url))) {
     if (!file.endsWith(".sql") || file === "20261017000000_phoenix_crm_manager_plan.sql") continue;
     const text = readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8");
+    if (widensOwnVisitsOnly.has(file)) {
+      const body = stripSqlComments(text);
+      assert.equal(
+        /\b(from|join)\s+(public\.)?phoenix_crm_manager_visits\b|create\s+(or\s+replace\s+)?(view|function|materialized)/i.test(body),
+        false,
+        `${file} may widen his own visits' table, never read it into a view, a function or a KPI`,
+      );
+      continue;
+    }
     assert.equal(text.includes("phoenix_crm_manager_visits"), false, `${file} names his own visits — they count in his own report only, never a view or a KPI`);
   }
   for (const outside of [
@@ -1404,10 +1419,12 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(bricksOfArea, /brick\.areaCode === areaCode/, "the bricks of ONE area");
   const areaBricksBody = functionBody(customerServer, "export async function loadAreaBricks(");
   assert.match(areaBricksBody, /district\.find\(\(seat\) => seat\.seatId === raw\.area\)[\s\S]*throw forbiddenError\(outsideReach\(writer\)\)/, "only an area of his own reach lists its bricks");
-  const locateBody = functionBody(customerServer, "export async function locateManagerCustomer(");
+  const locateEntry = functionBody(customerServer, "export async function locateManagerCustomer(");
+  assert.match(locateEntry, /await locateInReach\(district, fix, body\.areaSeatId\)/, "Add a customer's capture is read by the one shared reader");
+  const locateBody = functionBody(customerServer, "export async function locateInReach(");
   assert.match(locateBody, /resolvePinGeography\(fix, territoryOfSeat\(chosen \?\? \{\}\)\)/, "the capture fills the fields from the same resolver the add uses");
   assert.match(locateBody, /const brickId = inReach && geography\.brickId \? geography\.brickId : null;/, "the capture offers a brick only when it sits in an area of his reach");
-  assert.equal(/\.insert\(|\.update\(|\.delete\(/.test(locateBody), false, "locating a capture writes nothing");
+  assert.equal(/\.insert\(|\.update\(|\.delete\(/.test(locateEntry + locateBody), false, "locating a capture writes nothing");
   const locateRoute = source("app/api/phoenix-crm/manager-plans/customers/locate/route.ts");
   assert.match(locateRoute, /assertSameOriginMutation\(request\)[\s\S]*assertPermission\(access, "phoenix_crm", "read"\)[\s\S]*locateManagerCustomer\(viewer, body\)/, "same-origin, then the module grant, then the located fields");
   const bricksRoute = source("app/api/phoenix-crm/manager-plans/customers/bricks/route.ts");
@@ -1428,4 +1445,68 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(customerForm, /label="Area \*"/, "the area stays chosen");
   assert.equal(/areas\.length > 1/.test(customerForm), false, "the area drop-list is always shown: the brick cascades from it");
   assert.equal(/\b(doctors?|accounts?)\b/i.test(customerForm), false, "the form says customers, never doctors or accounts");
+
+  // ── A vacant area: named as an area, its list the previous rep's, and a visit there says where ───────
+  // Owner, 2026-10-19: "make the vacant areas appear named as areas … when he chooses the vacant area he is able
+  // to see the dr list of the previous rep", then "if the area is vacant make the district manager obligatory
+  // either to fill the dr address by hand or to capture location and the address area and brick are auto
+  // filled". He chose (multiple choice) that it binds the visit log only.
+
+  assert.equal(vacantVisitPlaceError({ vacant: false, address: null, captured: false }), null, "outside a vacant area the address and the location stay optional");
+  assert.match(
+    vacantVisitPlaceError({ vacant: true, address: null, captured: false }) ?? "",
+    /Type the customer's address, or press Capture location to fill in the address, area and brick\./,
+    "a vacant area's visit with neither is refused, naming both ways out",
+  );
+  assert.match(vacantVisitPlaceError({ vacant: true, address: "   ", captured: false }) ?? "", /address/, "a blank address is no address");
+  assert.equal(vacantVisitPlaceError({ vacant: true, address: "12 El Bahr St, Shebin El Kom", captured: false }), null, "a typed address is enough");
+  assert.equal(vacantVisitPlaceError({ vacant: true, address: null, captured: true }), null, "a captured location is enough");
+
+  const vacantChoices = managerAreaChoices(managerDistrictSeats(dm, "B-12"), new Map([["B-7", "Karim Adel"]]));
+  assert.deepEqual(
+    vacantChoices.map((entry) => [entry.areaName, entry.vacant, entry.repName]),
+    [
+      ["Menoufia 1", false, "Karim Adel"],
+      ["Menoufia 2", true, null],
+    ],
+    "a vacant territory is offered by its AREA name, marked vacant — never dropped and never shown as a rep",
+  );
+  assert.equal(isVacantTerritory(D12), true, "a territory nobody holds is vacant");
+  assert.equal(isVacantTerritory(D11), false, "a held territory is not");
+  assert.equal(isVacantTerritory(null), false, "an unknown territory is not called vacant");
+
+  const visitsServer = source("src/lib/phoenix-crm/server/manager-visits.ts");
+  const logBody = functionBody(visitsServer, "export async function logManagerVisit(");
+  assert.match(logBody, /vacant = isVacantTerritory\(viewer\.org\.seats\.get\(customerSeatId\)\);/, "vacant is read off the territory the customer is on today");
+  assert.match(
+    logBody,
+    /const placeError = vacantVisitPlaceError\(\{ vacant, address, captured: pin\.lat !== undefined \}\);\s*if \(placeError\) throw validationError\(placeError\);/,
+    "the save asks the same question the form asks",
+  );
+  assert.match(logBody, /await locateInReach\(reach, \{ lat, lon, accuracyMeters \}, customerSeatId\)/, "the capture is read by the reader the form showed him");
+  assert.match(logBody, /in_vacant_territory: vacant,/, "the visit records that its territory was vacant");
+  const todayBody = functionBody(visitsServer, "export async function loadManagerToday(");
+  assert.match(todayBody, /areas: managerAreaChoices\(reach, names\),/, "My single visits offers the areas he plans in, a vacant one among them");
+  assert.match(functionBody(customerServer, "export async function loadAreaCustomers("), /vacant: isVacantTerritory\(chosen\)/, "an area's list says when it is the previous rep's");
+  assert.match(source("src/lib/phoenix-crm/server/manager-plans.ts"), /vacant: !personKey\(entry\.occupantHrId\),/, "the plan board marks a vacant area too");
+
+  const vacantPlaceSql = stripSqlComments(
+    readFileSync(new URL("../supabase/migrations/20261019103745_phoenix_crm_manager_visit_place.sql", import.meta.url), "utf8"),
+  ).replace(/\r\n/g, "\n");
+  assert.match(
+    vacantPlaceSql,
+    /add constraint phoenix_crm_manager_visits_vacant_place check \(not in_vacant_territory or address is not null or lat is not null\)/,
+    "the database refuses a vacant area's visit that carries neither",
+  );
+  assert.match(vacantPlaceSql, /check \(address is null or char_length\(address\) between 1 and 300\)/, "the address's limit in the database");
+  assert.equal(MANAGER_CUSTOMER_ADDRESS_MAX, 300, "the form's and the server's limit is the database's");
+
+  const boardWords = source("src/components/phoenix-crm/manager-plan-board.tsx");
+  assert.match(boardWords, /note: entry\.vacant \? VACANT_AREA_NOTE : \(entry\.repName \?\? "No rep"\)/, "the plan board names a vacant area and says its list is the previous rep's");
+  const singleVisits = source("src/components/phoenix-crm/manager-single-visits.tsx");
+  assert.match(singleVisits, /<CrmChoice columns=\{3\} label="Choose an area" onChange=\{setAreaSeatId\} options=\{areaOptions\} value=\{areaSeatId\} \/>/, "My single visits opens on the areas");
+  assert.match(singleVisits, /note: entry\.vacant \? VACANT_AREA_NOTE : \(entry\.repName \?\? "No rep"\)/, "a vacant area reads the same on both screens");
+  assert.match(singleVisits, /vacantVisitPlaceError\(\{ vacant: logging\.vacant, address, captured: pin !== null \}\)/, "the form asks before it sends");
+  assert.match(singleVisits, /\.\.\.\(logging\.vacant \? \{ address: address\.trim\(\) \|\| null \} : \{\}\)/, "the address goes only for a vacant area's customer");
+  assert.equal(/\bdoctors?\b/i.test(singleVisits), false, "My single visits says customers, never doctors");
 }

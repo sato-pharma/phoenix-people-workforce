@@ -284,7 +284,8 @@ export type ManagerBoardRep = {
   weekState: RepWeekState;
 };
 
-export type ManagerBoardArea = { seatId: string; areaName: string; repName: string | null; territoryName: string };
+/** One area to make single visits in. `vacant`: nobody holds it, and its list is the previous rep's (owner, 2026-10-19). */
+export type ManagerBoardArea = { seatId: string; areaName: string; repName: string | null; vacant: boolean; territoryName: string };
 
 export type ManagerBoardRepHalf = {
   seatId: string;
@@ -620,6 +621,7 @@ async function buildBoard(
       seatId: entry.seatId,
       areaName: entry.areaName ?? territoryName(entry),
       repName: entry.occupantHrId ? nameOf(names, entry.occupantHrId) : null,
+      vacant: !personKey(entry.occupantHrId),
       territoryName: territoryName(entry),
     }))
     .sort((left, right) => left.areaName.localeCompare(right.areaName));
