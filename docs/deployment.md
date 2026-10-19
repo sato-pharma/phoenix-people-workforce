@@ -707,9 +707,11 @@ waits are the deploy gate, and branch protection (`enforce_admins: true`) lets n
 
 **What the urgent route does.** `node scripts/urgent-deploy.mjs launch <pr>`:
 
-1. Builds ONE commit — the PR head merged onto the current `origin/main`, plus any earlier urgent PR
-   production still serves that has not merged — with `git merge-tree --write-tree` and
-   `git commit-tree`, so no checkout moves. A PR that does not merge cleanly onto `main` is refused.
+1. Builds ONE commit — the PR head merged onto the current `origin/main`, plus every earlier urgent
+   PR the `urgent-deploy/production` branch still carries that is open and unmerged (read from the
+   branch, never from what `/api/healthz` happens to answer, so a timeout cannot drop one) — with
+   `git merge-tree --write-tree` and `git commit-tree`, so no checkout moves. A PR that does not merge
+   cleanly onto `main` is refused, and so is a launch that cannot read the branch.
 2. Force-pushes it to `urgent-deploy/production`, which starts `.github/workflows/urgent-deploy.yml`.
 3. The workflow writes `public/urgent-deploy.json` (the commit sha) and uploads the tree with
    `railway up` to the production web service (`--worker` adds `phoenix-workforce-worker`). A CLI
@@ -720,7 +722,10 @@ waits are the deploy gate, and branch protection (`enforce_admins: true`) lets n
    already in flight, or another merge — would silently put the bug back; the guard sees it within
    30 seconds and re-uploads the PR on top of the newest `main` (Telegram says so, at most 3 times).
    It ends when production serves a `main` commit containing EVERY urgent PR's merge, and deletes the
-   branch. After 50 minutes without that, it alarms: the next normal deploy will remove the fix.
+   branch. After 50 minutes without that, it alarms: the next normal deploy will remove the fix. It
+   stands down (Telegram says why) when the branch is deleted or replaced by a newer launch, or when a
+   carried PR is closed without merging; a re-upload whose push fails for any other reason alarms and
+   fails the run rather than reading as "a newer launch took over".
 
 **What it costs.** The code serves BEFORE its checks finish — a defect the checks would have caught
 reaches employees, and the checks then report it after the fact. About 50-60 extra hosted Actions
@@ -740,6 +745,10 @@ minutes per use (the guard waits). Nothing else: the PR still merges the normal 
 - **A migration is not covered.** Apply it first, as always (§8); the route ships code only.
 - **Practise without deploying:** `launch <pr> --dry-run` pushes to `urgent-deploy/dry-run`, which
   builds the commit and proves the Railway credential reads the production service, and uploads nothing.
+- 🔴 **To take an urgent build back, `node scripts/urgent-deploy.mjs stop` comes FIRST — only on the
+  owner's word.** It deletes the branch and cancels the running guard. A Railway dashboard Redeploy or
+  a revert on its own reads to the guard as "a normal deploy lost the fix", and it uploads the urgent
+  build again within 30 seconds. `stop` changes nothing that is serving; Rollback below follows it.
 
 **How the live build is named.** A `railway up` upload carries no `RAILWAY_GIT_COMMIT_SHA`, so both
 probes read `src/lib/observability/urgent-deploy-marker.ts` first: `public/urgent-deploy.json`, which
@@ -1029,6 +1038,10 @@ preview model and are inert (nothing sets `APP_ENV=preview`).
 There is no traffic-splitting rollback any more. To roll back, **revert the commit on `main`** —
 the revert merge is itself a deploy and ships the previous code the same way. Confirm with
 `/api/healthz` that `revision` moved to the reverted SHA.
+
+🔴 **An URGENT build is rolled back with `node scripts/urgent-deploy.mjs stop` FIRST** (The urgent
+route, above), then a Redeploy from the dashboard. While its guard runs, either step below alone is
+read as "the fix was lost" and the urgent build is uploaded again within 30 seconds.
 
 Railway also keeps prior deployments and can redeploy the last-good one from the **dashboard**
 (project `Phoenix-HR-Workforce` → service `phoenix-people-workforce` → **Deployments** → **Redeploy**) —
