@@ -393,3 +393,73 @@ export async function loadManagerPlanDecisions(managerHrIds: ReadonlyArray<strin
   }
   return out.sort((left, right) => right.decidedAt.localeCompare(left.decidedAt));
 }
+
+// ── His own single visits, as "did he work that day" ───────────────────────────────────────────
+
+/** One manager, one day, and how many of his own single visits he logged on it. */
+export type ManagerOwnVisitDay = { hrId: string; date: string; visits: number };
+
+/**
+ * 🔴 A MANAGER'S OWN SINGLE VISIT IS A RECORD OF HIS DAY (owner, 2026-10-19, multiple choice: "count it
+ * on both").
+ *
+ * His own visits live in a table of their own precisely so that no KPI, coverage, call-rate, frequency
+ * or target reader can pick one up — and that is unchanged. **This reader answers a different question**:
+ * not how he performed, but whether anything at all is recorded for him that day. Since 2026-10-16 his
+ * own visit no longer lands in `phoenix_crm_visits`, so a district manager who spent a whole day on his
+ * own single visits reached the Field Absence Calendar and the no-activity engine as a man with NO
+ * record — measured on production the day this was written: Mina Farouk Nawar Rizkallah and Mohamed Alaa
+ * Eleiwa Abozaid, 19 Oct 2026, nothing in the visits door, no punch, no vacation, no trip.
+ *
+ * It ADDS days and never removes one, and it is read through this adapter like every other outside
+ * read of his week, so the table's shape stays inside the module.
+ */
+export async function loadManagerOwnVisitDays(input: {
+  start: string;
+  end: string;
+  managerHrIds?: ReadonlyArray<string> | null;
+  isTest?: boolean;
+}): Promise<ManagerOwnVisitDay[]> {
+  if (input.end < input.start) return [];
+  const isTest = input.isTest ?? false;
+  const read = (part: string[] | null) =>
+    fetchAllRowsKeyset<Row>(
+      () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let query: any = getSupabaseAdmin()
+          .from("phoenix_crm_manager_visits")
+          .select("id, manager_hr_id, visit_date")
+          .gte("visit_date", input.start)
+          .lte("visit_date", input.end)
+          .eq("is_test", isTest);
+        if (part) query = query.in("manager_hr_id", part);
+        return query;
+      },
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    );
+  const rows: Row[] = [];
+  if (input.managerHrIds) {
+    const keys = dedupeIds(input.managerHrIds.map((hrId) => personKey(hrId)));
+    if (keys.length === 0) return [];
+    for (const part of chunk(keys, 100)) rows.push(...(await read(part)));
+  } else {
+    rows.push(...(await read(null)));
+  }
+
+  const counts = new Map<string, ManagerOwnVisitDay>();
+  for (const row of rows) {
+    const hrId = personKey(textOrNull(row.manager_hr_id));
+    const date = (textOrNull(row.visit_date) ?? "").slice(0, 10);
+    if (!hrId || date.length !== 10) continue;
+    const key = `${hrId}|${date}`;
+    const current = counts.get(key);
+    if (current) current.visits += 1;
+    else counts.set(key, { date, hrId, visits: 1 });
+  }
+  return [...counts.values()].sort((left, right) => left.date.localeCompare(right.date) || left.hrId.localeCompare(right.hrId));
+}
+
+/** What a screen prints beside the day. Never a figure anybody is measured on — a record that he worked. */
+export function describeManagerOwnVisitDay(day: ManagerOwnVisitDay): string {
+  return `Phoenix CRM: ${day.visits} own single visit${day.visits === 1 ? "" : "s"}`;
+}
