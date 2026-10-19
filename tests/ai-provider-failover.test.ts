@@ -15,6 +15,7 @@ import {
   isEchoedSchema,
   isOptionalFieldRefusal,
   jsonInstructionFor,
+  resendShapesFor,
   resetAnthropicPlainOnlyMemory,
   resolveAnthropicModel,
   schemaForAnthropic,
@@ -253,6 +254,23 @@ function requestShapeTests() {
   );
   assert.equal(plainShape.output_config, undefined, "the plain resend carries no optional field");
   assert.ok(plainShape.system.includes(JSON.stringify(signSchema)), "and asks for the JSON in the prompt instead");
+  const formatless = buildAnthropicRequest(
+    { format: { name: "signs", schema: signSchema, type: "json_schema" }, input: "x", instructions: "i", maxOutputTokens: 10, reasoningEffort: "low" },
+    "claude-sonnet-5-5",
+    { withoutFormat: true },
+  );
+  assert.deepEqual(formatless.output_config, { effort: "low" }, "🔴 the format-only resend KEEPS the effort nobody refused");
+  assert.ok(formatless.system.includes(JSON.stringify(signSchema)), "and asks for the JSON in the prompt instead");
+
+  // Which resends a refusal earns: the format alone first when the refusal is about it, plain second.
+  assert.deepEqual(
+    resendShapesFor(CV_SCHEMA_REFUSAL, { effort: "low", format: {} }),
+    ["without_format", "plain"],
+    "🔴 a refused FORMAT is resent without it first, the effort kept, and plain only after that",
+  );
+  assert.deepEqual(resendShapesFor('{"error":{"message":"output_config.effort: not supported"}}', { effort: "low", format: {} }), ["plain"], "a refused effort goes straight to plain");
+  assert.deepEqual(resendShapesFor(CV_SCHEMA_REFUSAL, { format: {} }), ["plain"], "nothing else to keep, so plain");
+  assert.deepEqual(resendShapesFor('{"error":{"message":"output_config"}}', { effort: "low" }), ["plain"]);
 
   assert.equal(isOptionalFieldRefusal(400, '{"error":{"message":"output_config.format.schema: unsupported"}}'), true);
   // The CV reader's refusal on production, 18 Oct 2026 13:56 Cairo: it names neither field nor the bare word.
@@ -391,13 +409,14 @@ async function callTests() {
   assert.deepEqual(Object.keys(request.body).sort(), ["max_tokens", "messages", "model", "output_config", "system"]);
   assert.deepEqual(request.body.output_config, { format: { schema: { type: "object" }, type: "json_schema" } }, "the schema goes to Claude's JSON outputs");
 
-  // 🔴 A 400 that names an optional field is answered by ONE resend in the plain shape, and the pair is
-  //    remembered so the next call does not pay for the refusal again.
+  // 🔴 A 400 that refuses the FORMAT is answered by ONE resend without it — the effort KEPT (19 Oct 2026:
+  //    dropping it too let Haiku think at its own default and run out of room on a CV) — and the pair
+  //    is remembered so the next call does not pay for the refusal again.
   const sentBodies: Record<string, unknown>[] = [];
   const refusingFetch = (async (_url: unknown, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     sentBodies.push(body);
-    return body.output_config
+    return (body.output_config as { format?: unknown } | undefined)?.format
       ? jsonResponse({ error: { message: "output_config.format.schema: this schema is not supported", type: "invalid_request_error" } }, 400)
       : jsonResponse({ content: [{ text: '{"subject":"Hi"}', type: "text" }] });
   }) as typeof fetch;
@@ -414,14 +433,30 @@ async function callTests() {
     timeoutMs: 5_000,
   };
   const resent = await callAnthropicMessages(refusedCall);
-  assert.equal(resent.outputText, '{"subject":"Hi"}', "the plain resend answers the call");
+  assert.equal(resent.outputText, '{"subject":"Hi"}', "the format-only resend answers the call");
   assert.equal(sentBodies.length, 2);
   assert.deepEqual(sentBodies[0].output_config, { effort: "medium", format: { schema: { properties: { subject: { type: "string" } }, type: "object" }, type: "json_schema" } });
-  assert.equal(sentBodies[1].output_config, undefined, "the resend carries no optional field");
+  assert.deepEqual(sentBodies[1].output_config, { effort: "medium" }, "🔴 the resend drops the format and KEEPS the effort");
   assert.match(String(sentBodies[1].system), /ONLY one JSON object/, "and asks for the JSON in the prompt");
   await callAnthropicMessages(refusedCall);
-  assert.equal(sentBodies.length, 3, "the remembered pair is sent plain straight away");
-  assert.equal(sentBodies[2].output_config, undefined);
+  assert.equal(sentBodies.length, 3, "the remembered pair is sent in its smaller shape straight away");
+  assert.deepEqual(sentBodies[2].output_config, { effort: "medium" });
+  resetAnthropicPlainOnlyMemory();
+
+  // A refused EFFORT goes straight to plain: one resend, nothing optional left on it.
+  const effortBodies: Record<string, unknown>[] = [];
+  await callAnthropicMessages({
+    ...refusedCall,
+    fetchImpl: (async (_url: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      effortBodies.push(body);
+      return body.output_config
+        ? jsonResponse({ error: { message: "output_config.effort: this model does not take an effort", type: "invalid_request_error" } }, 400)
+        : jsonResponse({ content: [{ text: '{"subject":"Hi"}', type: "text" }] });
+    }) as typeof fetch,
+  });
+  assert.equal(effortBodies.length, 2, "one resend for a refused effort");
+  assert.equal(effortBodies[1].output_config, undefined, "and it is plain");
 
   // A request refused in BOTH shapes is broken for another reason: it is not remembered.
   resetAnthropicPlainOnlyMemory();
@@ -437,7 +472,7 @@ async function callTests() {
       }),
     "failed",
   );
-  assert.equal(refusedBoth, 2, "one plain resend, never a loop");
+  assert.equal(refusedBoth, 3, "the format-only resend, then plain — at most two resends, never a loop");
   assert.ok(buildAnthropicRequest(refusedCall, "claude-sonnet-5-5").output_config, "nothing was switched off for the process");
   resetAnthropicPlainOnlyMemory();
 
@@ -448,15 +483,15 @@ async function callTests() {
     fetchImpl: (async (_url: unknown, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       cvBodies.push(body);
-      return body.output_config
+      return (body.output_config as { format?: unknown } | undefined)?.format
         ? new Response(CV_SCHEMA_REFUSAL, { headers: { "content-type": "application/json" }, status: 400 })
         : jsonResponse({ content: [{ text: '{"subject":"CV"}', type: "text" }] });
     }) as typeof fetch,
     format: { name: "cv_extraction", schema: { properties: { subject: { type: ["string", "null"] } }, type: "object" }, type: "json_schema" },
   });
   assert.equal(cvRead.outputText, '{"subject":"CV"}', "a schema refused for its union types still gets its answer");
-  assert.equal(cvBodies.length, 2, "through one plain resend");
-  assert.equal(cvBodies[1].output_config, undefined);
+  assert.equal(cvBodies.length, 2, "through one resend");
+  assert.deepEqual(cvBodies[1].output_config, { effort: "medium" }, "🔴 with the effort KEPT — dropped, Haiku ran out of room on the 19 Oct 11:18 CV");
   resetAnthropicPlainOnlyMemory();
 
   // 🔴 Three answers that used to come back as an ordinary reply and were read as "the model found nothing".

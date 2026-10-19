@@ -514,6 +514,12 @@ export function runRecruitmentCvExtractionTests() {
     Number(capMatch[1].replace(/_/g, "")) >= 8000,
     "the output cap must stay large enough for a long work history; it was raised from 2,000 for exactly this reason",
   );
+  // 🔴 And it pays for Claude's THINKING as well as the answer (2026-10-19): Haiku spent up to 8,000
+  // tokens on a CV whose JSON was about 3,000, and ran out of room on one read in three.
+  assert.ok(
+    Number(capMatch[1].replace(/_/g, "")) >= 16000,
+    "the output cap must leave room for Claude's thinking on top of the answer — at 8,000 Haiku ran out on the 19 Oct 11:18 CV",
+  );
 
   // --- Migration (Phase 1 re-platform onto ats_ tables folded the original
   //     recruitment_candidate_cv_extraction + recruitment_position_schema_framework
