@@ -163,7 +163,8 @@ import {
   nonEgyptianFlagTitle,
 } from "@/lib/recruitment/nationality";
 import { NOT_A_CV_LABEL, NOT_A_CV_TITLE, isNotACv } from "@/lib/recruitment/not-a-cv";
-import { EXPERIENCE_GAP_LABEL, experienceAnswerGap } from "@/lib/recruitment/experience-answer-gap";
+import { EXPERIENCE_GAP_LABEL, experienceAnswerGap, factsHaveExperienceGap } from "@/lib/recruitment/experience-answer-gap";
+import { EMAIL_CHECK_LABEL, candidateEmailProblem } from "@/lib/recruitment/candidate-email-check";
 import {
   candidateCvTabDescriptions,
   candidateCvTabLabels,
@@ -3843,6 +3844,7 @@ function CandidatePoolCard({
   const answerValues = poolAnswersByColumn(candidate, whatsappQuestions);
   const sharedCells = poolSharedCells(candidate, { touch: true });
   const experienceGap = experienceAnswerGap(facts.declaredExperience?.value, facts.years?.value);
+  const emailProblem = candidateEmailProblem(candidate.email);
   const answersOutsideColumns = poolAnswersOutsideColumns(whatsappAnswers, answerColumns);
   const displayName = candidateDisplayName(candidate.fullName);
   // Under a role filter, "Asked only to … applicants" repeats the filter on every question that role is
@@ -4142,6 +4144,8 @@ function CandidatePoolCard({
           ...(isNotACv(candidate) ? [{ label: "CV file", value: NOT_A_CV_TITLE }] : []),
           { label: "Received", value: cairoDateTime(candidate.createdAt) },
           { label: "Email", value: candidate.email ?? "—" },
+          // A phone has no hover, so the reason is spelled out as its own line under the address.
+          ...(emailProblem ? [{ label: `⚠ ${EMAIL_CHECK_LABEL}`, value: emailProblem.explanation }] : []),
           { label: "Phone", value: candidate.phone ?? "—" },
           // Mobile gets the channel on EVERY row, same as the desktop badge. It used to appear
           // only when a shortLabel existed, so a WhatsApp CV with no caption showed no source at
@@ -4301,6 +4305,10 @@ function CandidatesTab({
   // or the same applicant applying again. The flag was already computed; there was no way to ask for
   // just those rows, which is the only way anyone is going to work through them.
   const [duplicatesOnly, setDuplicatesOnly] = useState(false);
+  // "A 'CV differs' filter" (owner, 2026-10-19): the rows whose WhatsApp experience band and CV
+  // count cannot both be right — 13 of the 52 that carry both on production that day. The amber
+  // flag was on each row; this is the way to ask for just those, to work through them in one go.
+  const [experienceGapOnly, setExperienceGapOnly] = useState(false);
   // The pool, split in two. Red means one thing on this screen and has since the flags were built:
   // this person cannot be hired — the CV states a nationality that is not Egyptian, or somebody has
   // already rejected them. Both were visible as a pill and neither could be asked for, so the CVs
@@ -4394,6 +4402,12 @@ function CandidatesTab({
   ).sort((left, right) => left.localeCompare(right));
 
   const duplicateCount = candidates.filter((candidate) => candidate.possibleDuplicate).length;
+  // The same resolution the row's "CV differs" flag reads, so the count, the filter and the flag
+  // can never disagree about who is in it.
+  const experienceGapIds = new Set(
+    candidates.filter((candidate) => factsHaveExperienceGap(candidateScreeningFacts(candidate))).map((candidate) => candidate.id),
+  );
+  const experienceGapCount = experienceGapIds.size;
   // Built over the WHOLE pool, not the filtered view: a duplicate's counterpart is very often
   // filtered out (different status, different source, older than the date filter), and a merge
   // button that cannot name what it merges into is a merge nobody will click.
@@ -4426,6 +4440,7 @@ function CandidatesTab({
       if (!candidateMatchesPoolQuery(c, q)) return false;
       if (sourceFilter && candidateSourceChannel(c.source, c.sourceContext).label !== sourceFilter) return false;
       if (duplicatesOnly && !c.possibleDuplicate) return false;
+      if (experienceGapOnly && !experienceGapIds.has(c.id)) return false;
       // Both are three-way for the same reason the experience filter is: "we were never told" is
       // not "none of the above", and on this pool it is the single commonest answer.
       //
@@ -5093,6 +5108,23 @@ function CandidatesTab({
                 <span className="tabular-nums opacity-70">{duplicateCount}</span>
               </button>
             ) : null}
+            {experienceGapCount > 0 || experienceGapOnly ? (
+              <button
+                aria-pressed={experienceGapOnly}
+                className={`inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap border px-3 text-xs font-semibold transition ${
+                  experienceGapOnly
+                    ? "border-phx-accent bg-orange-50 text-phx-accent-press"
+                    : "border-phx-line bg-white text-slate-600 hover:border-phx-accent-line hover:text-phx-accent"
+                }`}
+                onClick={() => setExperienceGapOnly((previous) => !previous)}
+                title="Only the CVs whose experience count disagrees with the band chosen on WhatsApp"
+                type="button"
+              >
+                <AlertTriangle className="h-3.5 w-3.5" />
+                {EXPERIENCE_GAP_LABEL}
+                <span className="tabular-nums opacity-70">{experienceGapCount}</span>
+              </button>
+            ) : null}
             {/* Group by the manager the CV was SENT to — the owner asked for this in those exact
                 terms: "the same area are listed together and the same title are listed together".
                 It reads the seat frozen onto the candidate at send time, so a manager who changes
@@ -5147,7 +5179,7 @@ function CandidatesTab({
               <Sparkles className="h-3.5 w-3.5" />
               Nobody has read
             </Link>
-            {dateFilter !== "all" || experienceFilter !== "all" || sourceFilter || roleFilter || regionFilter || query || duplicatesOnly ? (
+            {dateFilter !== "all" || experienceFilter !== "all" || sourceFilter || roleFilter || regionFilter || query || duplicatesOnly || experienceGapOnly ? (
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -5158,6 +5190,7 @@ function CandidatesTab({
                   setRegionFilter("");
                   setQuery("");
                   setDuplicatesOnly(false);
+                  setExperienceGapOnly(false);
                 }}
               >
                 Clear filters
@@ -5538,6 +5571,7 @@ function CandidatesTab({
                 {displayedCandidates.map((candidate) => {
                   const displayName = candidateDisplayName(candidate.fullName);
                   const contact = [candidate.email, candidate.phone].filter(Boolean).join(" · ");
+                  const emailProblem = candidateEmailProblem(candidate.email);
                   // The desktop half of the grouping. A full-width heading row rather than a
                   // nested table, so all 200 lines of the row renderer below stay exactly as they
                   // are and the columns cannot come to disagree between one pile and the next.
@@ -5637,6 +5671,16 @@ function CandidatesTab({
                         <div className="mt-0.5 break-words text-phx-xs text-slate-500" title={contact || undefined}>
                           {contact || <span className="text-slate-300">No contact details</span>}
                         </div>
+                        {/* An address that cannot receive mail (owner, 2026-10-19 — "Stop broken
+                            emails at intake"). Flagged with the likely address, never rewritten: the
+                            email is also the duplicate-check key, so a person confirms it. */}
+                        {emailProblem ? (
+                          <div className="mt-0.5">
+                            <StagePill tone="amber">
+                              <span title={emailProblem.explanation}>{EMAIL_CHECK_LABEL}</span>
+                            </StagePill>
+                          </div>
+                        ) : null}
                         {/* Status, then when it landed (Cairo time) and on which channel — under the
                             name since 2026-10-19, when their two columns went to the WhatsApp
                             questions. The reason for the status is the pill's tooltip; the sender's

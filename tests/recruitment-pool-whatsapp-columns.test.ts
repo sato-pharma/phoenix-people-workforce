@@ -16,7 +16,8 @@ import {
   type PoolWhatsAppQuestions,
 } from "../src/lib/recruitment/pool-whatsapp-columns.ts";
 import { BUILT_IN_ANSWER_QUESTIONS } from "../src/lib/recruitment/whatsapp-answers.ts";
-import { experienceAnswerGap, experienceBandYears } from "../src/lib/recruitment/experience-answer-gap.ts";
+import { experienceAnswerGap, experienceBandYears, factsHaveExperienceGap } from "../src/lib/recruitment/experience-answer-gap.ts";
+import { candidateEmailProblem, EMAIL_CHECK_LABEL } from "../src/lib/recruitment/candidate-email-check.ts";
 import {
   isPoolColumnLayouts,
   parsePoolColumnLayouts,
@@ -543,5 +544,46 @@ export async function runRecruitmentPoolWhatsAppColumnsTests() {
     card,
     /: answerCount > 0\s*\? `Show \$\{answerCount\} \$\{answerCount === 1 \? "answer" : "answers"\}`\s*: canEditAnswers && cvOnlyAnswerCount > 0\s*\? `Show \$\{cvOnlyAnswerCount\} from CV`\s*: "Add answers";/,
     'no WhatsApp answer but CV answers: "Show 3 from CV"; "Add answers" only when the fold holds nothing',
+  );
+
+  // ── 14 · An address that cannot receive mail is flagged, never rewritten (owner, 2026-10-19 — "Stop
+  // broken emails at intake"). Aya Ali's CV said "ayamamdouh78@yahoo.om"; the pool showed it as written.
+  assert.equal(EMAIL_CHECK_LABEL, "Check email");
+  assert.equal(candidateEmailProblem("ayamamdouh78@yahoo.om")?.likely, "ayamamdouh78@yahoo.com", "a known provider with the wrong ending");
+  assert.equal(candidateEmailProblem("someone@gmail.co")?.likely, "someone@gmail.com", "gmail has one ending");
+  assert.equal(candidateEmailProblem("someone@gmial.com")?.likely, "someone@gmail.com", "a misspelled provider");
+  assert.equal(candidateEmailProblem("someone@hotmial.com")?.likely, "someone@hotmail.com");
+  assert.ok(candidateEmailProblem("someone@@gmail.com"), "two @ is not an address");
+  assert.ok(candidateEmailProblem("someone.gmail.com"), "no @ is not an address");
+  assert.ok(candidateEmailProblem("someone@gmail.comp"), "the CV reader's old glue bug is still caught");
+  for (const good of ["someone@gmail.com", "x@yahoo.com.eg", "x@hotmail.co.uk", "hr@satopharma.com", "x@outlook.sa", "x@cu.edu.eg", null, ""]) {
+    assert.equal(candidateEmailProblem(good), null, `${String(good)} is left alone`);
+  }
+  assert.ok(
+    workspace.includes("<span title={emailProblem.explanation}>{EMAIL_CHECK_LABEL}</span>"),
+    "the desktop row's contact line carries the flag, the likely address in its tooltip",
+  );
+  assert.ok(
+    card.includes("...(emailProblem ? [{ label: `⚠ ${EMAIL_CHECK_LABEL}`, value: emailProblem.explanation }] : []),"),
+    "a phone has no hover, so the card spells the reason out under the address",
+  );
+
+  // ── 15 · The "CV differs" filter (owner, 2026-10-19 — "A 'CV differs' filter"). It keeps exactly the
+  // rows the amber flag marks: the same facts, the same rule.
+  assert.equal(factsHaveExperienceGap({ declaredExperience: { value: "3 - 5 years" }, years: { value: 12 } }), true);
+  assert.equal(factsHaveExperienceGap({ declaredExperience: { value: "3 - 5 years" }, years: { value: 4 } }), false);
+  assert.equal(factsHaveExperienceGap({ declaredExperience: null, years: { value: 12 } }), false, "no answer is never a gap");
+  assert.match(
+    workspace,
+    /candidates\.filter\(\(candidate\) => factsHaveExperienceGap\(candidateScreeningFacts\(candidate\)\)\)/,
+    "the count reads the same resolved facts the row's flag reads",
+  );
+  assert.ok(
+    workspace.includes("if (experienceGapOnly && !experienceGapIds.has(c.id)) return false;"),
+    "the toggle narrows the pool to those rows",
+  );
+  assert.ok(
+    workspace.includes("|| duplicatesOnly || experienceGapOnly ? (") && workspace.includes("setExperienceGapOnly(false);"),
+    "Clear filters shows for it and clears it",
   );
 }
