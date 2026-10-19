@@ -503,4 +503,37 @@ export async function runRecruitmentPoolWhatsAppColumnsTests() {
     workspace.includes('{isNewArrival(candidate) ? <StagePill tone="orange">New</StagePill> : null}'),
     "the desktop row keeps its own arrival pill — the date sits between it and the status there",
   );
+
+  // ── 13 · A folded card never says "Add answers" over CV answers (owner, 2026-10-19 — "fix the folded
+  // card's Add answers label when it holds CV answers"). George Samir Lotfy has no WhatsApp answer, so his
+  // card read "Add answers" — and opened onto his faculty, region and years, each marked "(from CV)".
+  const sharedCellsSource = workspace.slice(
+    workspace.indexOf("function poolSharedCells("),
+    workspace.indexOf("function poolCurrentAnswerValues("),
+  );
+  assert.ok(
+    sharedCellsSource.includes("const backgroundFromCv = !facts.background && Boolean(candidate.faculty || candidate.degree);") &&
+      sharedCellsSource.includes("const regionFromCv = Boolean(facts.region && !facts.region.value.declared);") &&
+      sharedCellsSource.includes("const experienceFromCvOnly = !facts.declaredExperience && Boolean(facts.years);"),
+    "a cell stands in from the CV exactly when WhatsApp has no answer and the CV has one",
+  );
+  assert.ok(
+    sharedCellsSource.includes(") : backgroundFromCv ? (") && sharedCellsSource.includes("{touch && regionFromCv ? ("),
+    "the card's (from CV) markers are drawn from the same flags the button counts, so the two cannot disagree",
+  );
+  assert.deepEqual(
+    [...sharedCellsSource.matchAll(/fromCvOnly: (\w+),/g)].map((match) => match[1]),
+    ["false", "backgroundFromCv", "regionFromCv", "experienceFromCvOnly", "false"],
+    "applied-for, background, place, experience, salary — salary's \"(typed in)\" is the record, not the CV",
+  );
+  assert.match(
+    card,
+    /const cvOnlyAnswerCount = answerColumns\.filter\(\s*\(column\) =>\s*\(poolSharedColumnKeys as readonly string\[\]\)\.includes\(column\.key\) &&\s*sharedCells\[column\.key as PoolSharedColumnKey\]\.fromCvOnly,\s*\)\.length;/,
+    "only the reader's own columns are counted — a hidden column hides its CV answer from the count too",
+  );
+  assert.match(
+    card,
+    /: answerCount > 0\s*\? `Show \$\{answerCount\} \$\{answerCount === 1 \? "answer" : "answers"\}`\s*: canEditAnswers && cvOnlyAnswerCount > 0\s*\? `Show \$\{cvOnlyAnswerCount\} from CV`\s*: "Add answers";/,
+    'no WhatsApp answer but CV answers: "Show 3 from CV"; "Add answers" only when the fold holds nothing',
+  );
 }

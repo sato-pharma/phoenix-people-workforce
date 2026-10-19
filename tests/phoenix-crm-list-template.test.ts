@@ -22,6 +22,7 @@ import {
   type TemplateColumnKey,
   type TemplateExistingColumnKey,
 } from "../src/lib/phoenix-crm/list-template-rules.ts";
+import { territoryName, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -657,6 +658,48 @@ function checkDaysAndHours(): void {
   }
 }
 
+/**
+ * The Customers sheet's territory line names the line ONCE.
+ *
+ * 🔴 `territoryName(seat)` already ends in the line, and the builder wrote `lineName` after it again, so
+ * every downloaded sheet read "Suez · Anti Infective · Anti Infective · seat vacant" (2026-10-19). Built
+ * with the caller's own `territoryName`, so a change to either end is seen, and read from the emitted
+ * bytes rather than the source.
+ */
+async function checkTerritoryLineNamesTheLineOnce(): Promise<void> {
+  const seat: OrgSeat = {
+    areaName: "Suez",
+    lineCode: "AI",
+    lineName: "Anti Infective",
+    occupantHrId: null,
+    parentSeatId: null,
+    path: ["SEAT-AI-REP-SUEZ"],
+    regionName: null,
+    seatId: "SEAT-AI-REP-SUEZ",
+    seatLabel: null,
+    tier: "rep",
+  };
+  for (const repName of [null, "A Rep"]) {
+    const bytes = await buildPhoenixCrmListTemplate({
+      existing: [],
+      generatedAtIso: "2026-10-19T06:00:00.000Z",
+      lineName: seat.lineName ?? "No line",
+      preparedFor: "Omar Gawish",
+      repName,
+      seatId: seat.seatId,
+      territoryName: territoryName(seat),
+    });
+    const workbook = await loadExcelWorkbook(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+    const territory = excelCellText(workbook.getWorksheet(TEMPLATE_SHEET)?.getCell("B2").value ?? null);
+    assert.equal(
+      territory.split("Anti Infective").length - 1,
+      1,
+      `the Customers sheet's territory line names the line exactly once — it read "${territory}"`,
+    );
+    assert.equal(territory, `Suez · Anti Infective · ${repName ?? "seat vacant"}`, "the area, the line, then the rep or the vacant seat");
+  }
+}
+
 export async function runPhoenixCrmListTemplateTests() {
   checkColumns();
   checkListCell();
@@ -669,4 +712,5 @@ export async function runPhoenixCrmListTemplateTests() {
   checkGradeOptional();
   checkDaysAndHours();
   await checkBuildsAndReadsBack();
+  await checkTerritoryLineNamesTheLineOnce();
 }
