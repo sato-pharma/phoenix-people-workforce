@@ -34,7 +34,9 @@
 // new status until the page is reloaded. This is deliberate and it is the single most important
 // interaction rule here: a queue that yanks a row out from under the cursor the moment it is
 // actioned loses the reader's place on every decision, which is precisely the cost this screen
-// exists to remove. The counts in the rail are the server's and are honest about being a snapshot.
+// exists to remove. The NUMBERS do move, since 2026-10-19: the rail's piles and the decision tabs
+// above it are the server's counts with this sitting's decisions applied (screening-session-counts.ts),
+// because a Shortlist press that changed no number read to the owner as a press that did nothing.
 //
 // THE RESPONSIVE COLLAPSE. Four panes at a workstation; three at a laptop; one at a time on a
 // phone, chosen by a segmented control. No pane ever overflows sideways — the fits-the-screen rule
@@ -102,6 +104,7 @@ import { Action, Band, BandSays } from "@/components/recruitment/workstation/wor
 import { EmptyNote, PaneSpine } from "@/components/recruitment/workstation/workstation-ui";
 import { cn } from "@/lib/utils";
 import { candidateDecisionTabLabels, type CandidateDecisionTab } from "@/lib/recruitment/candidate-decision-tabs";
+import { workQueueCountsAfterSession } from "@/lib/recruitment/screening-session-counts";
 
 /**
  * What one loaded candidate is: the profile, the CV read if there is one, and the wording of the
@@ -173,6 +176,7 @@ export function ScreeningWorkstation({
   focus,
   onToggleFocus,
   hiringManagers,
+  onDecidedChange,
   overdueManagerFeedback,
   ownPage,
   poolSize,
@@ -239,6 +243,12 @@ export function ScreeningWorkstation({
   focus: boolean;
   onToggleFocus: () => void;
   hiringManagers: readonly WorkspaceManager[];
+  /**
+   * Every decision of this sitting, by candidate — reported up so the decision tab strip, which the
+   * page draws above this component, can move its numbers too. Called with the empty map on mount,
+   * so a new tab starts from the server's counts.
+   */
+  onDecidedChange?: (decided: Readonly<Record<string, CandidateStatus>>) => void;
   overdueManagerFeedback: number;
   poolSize: number;
   /** Passed straight through to the send panel's free-typed inputs — see WorkstationReviewHeader. */
@@ -332,6 +342,14 @@ export function ScreeningWorkstation({
    */
   const [decidedNote, setDecidedNote] = useState<Record<string, string | null>>({});
   const [undoable, setUndoable] = useState<PendingUndo | null>(null);
+  // The rail's piles with this sitting's decisions applied — see screening-session-counts.ts.
+  const railCounts = useMemo(
+    () => workQueueCountsAfterSession(counts, rows, decided, decisionTab),
+    [counts, decided, decisionTab, rows],
+  );
+  useEffect(() => {
+    onDecidedChange?.(decided);
+  }, [decided, onDecidedChange]);
   /**
    * Candidates whose CV CONTENTS match the current search, from the server.
    *
@@ -1234,7 +1252,7 @@ export function ScreeningWorkstation({
             )}
           >
             <WorkstationQueuePanel
-              counts={counts}
+              counts={railCounts}
               onCollapse={() => setRailOpen(false)}
               onSelectQueue={(next) => {
                 setQueue(next);
