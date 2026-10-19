@@ -324,6 +324,13 @@ export type CreateResponseTextParams = {
    */
   maxRetries?: number;
   /**
+   * Stops the call once its answer is no longer needed. A call stopped this way is NOT a failure: it writes
+   * no failure row, logs nothing and never moves on to the next provider. The signboard door asks two
+   * readers at once and stops the one it no longer needs (`firstInListToAnswer`); before this, the
+   * abandoned read ran on and wrote "AI call failed — timeout" for a place that had already been checked.
+   */
+  signal?: AbortSignal;
+  /**
    * Which provider answers FIRST when both keys are set and `AI_PROVIDER` pins neither — the other is
    * still the second resort when this one's account is dead. Unset keeps the default order.
    */
@@ -365,6 +372,7 @@ export async function createOpenAiResponseText(params: CreateResponseTextParams)
       if (provider === "openai") noteOpenAiAvailable();
       return reply;
     } catch (error) {
+      if (params.signal?.aborted) throw cancelledByCaller();
       const failure = normalizeOpenAiError(error, params.purpose);
       lastFailure = failure;
       if (provider === "openai" && shouldFailOverToNextProvider(failure.code) && hasAnthropicApiKey()) {
@@ -380,6 +388,11 @@ export async function createOpenAiResponseText(params: CreateResponseTextParams)
 
 // Under a second is not a call, it is a timeout with a model call attached to it.
 export const AI_FAILOVER_MIN_LEG_MS = 1_000;
+
+/** What a call stopped by its own caller's `signal` throws: never recorded, never logged, never failed over. */
+function cancelledByCaller() {
+  return new PhoenixOpenAiError("failed", "The AI call was cancelled by its caller: its answer was no longer needed.");
+}
 
 /** The timeout the next provider gets: what is left of `budgetMs`, or null when too little is left. */
 export function failoverLegTimeoutMs(budgetMs: number, elapsedMs: number) {
@@ -405,6 +418,7 @@ async function runAnthropicResponse(params: CreateResponseTextParams, requestedM
       model,
       // The same effort the OpenAI leg sends (its default is "low" too, in runOpenAiResponse).
       reasoningEffort: params.reasoning?.effort ?? "low",
+      signal: params.signal,
       timeoutMs: params.timeoutMs ?? OPENAI_EMAIL_TIMEOUT_MS,
     });
 
@@ -421,6 +435,7 @@ async function runAnthropicResponse(params: CreateResponseTextParams, requestedM
 
     return { model: reply.model, outputText: reply.outputText, requestId: reply.requestId };
   } catch (error) {
+    if (params.signal?.aborted) throw cancelledByCaller();
     const normalized = normalizeAnthropicError(error, params.purpose);
     recordAiCall({
       component,
@@ -469,7 +484,7 @@ async function runOpenAiResponse(params: CreateResponseTextParams, model: string
       store: false,
       text: params.text,
     } satisfies ResponseCreateInput;
-    const { data, request_id: requestId } = await openAiClient(undefined, params.timeoutMs, params.maxRetries).responses.create(request).withResponse();
+    const { data, request_id: requestId } = await openAiClient(undefined, params.timeoutMs, params.maxRetries).responses.create(request, { signal: params.signal }).withResponse();
 
     recordAiCall({
       component,
@@ -488,6 +503,7 @@ async function runOpenAiResponse(params: CreateResponseTextParams, model: string
       requestId: requestId || (data as { _request_id?: string })._request_id,
     };
   } catch (error) {
+    if (params.signal?.aborted) throw cancelledByCaller();
     const normalized = normalizeOpenAiError(error, params.purpose);
     recordAiCall({
       component,

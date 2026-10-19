@@ -610,6 +610,34 @@ async function callTests() {
       }),
     "failed",
   );
+
+  // 🔴 A call its own caller STOPS is not a timeout. The signboard door asks two readers at once and stops
+  // the one it no longer needs; read as a timeout, that stop raised "AI call failed" for a checked place.
+  const waitForStop = (async (_url: unknown, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      // A real request holds the process open; `AbortSignal.timeout`'s own timer does not.
+      const open = setTimeout(() => undefined, 5_000);
+      init?.signal?.addEventListener("abort", () => {
+        clearTimeout(open);
+        reject(init.signal?.reason ?? new DOMException("stopped", "AbortError"));
+      });
+    })) as typeof fetch;
+  const stopCall = { apiKey: TEST_KEY, fetchImpl: waitForStop, input: "hello", instructions: "i", maxOutputTokens: 5, maxRetries: 0, model: "m" };
+  const stop = new AbortController();
+  setTimeout(() => stop.abort(), 20);
+  await assert.rejects(
+    () => callAnthropicMessages({ ...stopCall, signal: stop.signal, timeoutMs: 5_000 }),
+    (error: unknown) => {
+      assert.ok(error instanceof AnthropicRequestError);
+      assert.equal(error.code, "failed", "a stopped call is never reported as a timeout");
+      assert.match(error.message, /cancelled by its caller/);
+      return true;
+    },
+  );
+  await expectRequestError(
+    () => callAnthropicMessages({ ...stopCall, signal: new AbortController().signal, timeoutMs: 30 }),
+    "timeout",
+  );
 }
 
 function wiringTests() {
@@ -654,6 +682,25 @@ function wiringTests() {
   assert.match(anthropicRun, /recordAiCall\(\{[\s\S]*status: "success"/, "an Anthropic success lands on the AI telemetry board");
   assert.match(anthropicRun, /recordAiCall\(\{[\s\S]*status: "error"/, "an Anthropic failure raises the same alarm as an OpenAI one");
   assert.match(anthropicRun, /reasoningEffort: params\.reasoning\?\.effort \?\? "low"/, "Claude is sent the effort OpenAI is sent");
+  // A call stopped by its own caller writes no failure row, logs nothing and never fails over.
+  assert.match(
+    anthropicRun,
+    /\} catch \(error\) \{\s*if \(params\.signal\?\.aborted\) throw cancelledByCaller\(\);\s*const normalized = normalizeAnthropicError/,
+    "a stopped Claude call is not recorded",
+  );
+  assert.match(anthropicRun, /signal: params\.signal,/, "and the stop reaches the Claude request");
+  const openAiRun = client.slice(client.indexOf("async function runOpenAiResponse"));
+  assert.match(
+    openAiRun,
+    /\} catch \(error\) \{\s*if \(params\.signal\?\.aborted\) throw cancelledByCaller\(\);\s*const normalized = normalizeOpenAiError/,
+    "nor a stopped OpenAI call",
+  );
+  assert.match(openAiRun, /\.responses\.create\(request, \{ signal: params\.signal \}\)/, "whose request gets the stop too");
+  assert.match(
+    entry,
+    /\} catch \(error\) \{\s*if \(params\.signal\?\.aborted\) throw cancelledByCaller\(\);\s*const failure = normalizeOpenAiError/,
+    "and a stopped call never moves on to the next provider",
+  );
 
   const salesProvider = readFileSync("src/lib/sales/ai/provider.ts", "utf8");
   assert.match(

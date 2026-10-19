@@ -464,6 +464,8 @@ export async function callAnthropicMessages(params: {
   model: string;
   /** The caller's OpenAI `reasoning.effort`, translated by `anthropicEffortFor`. */
   reasoningEffort?: unknown;
+  /** The caller's own way to stop the call once its answer is no longer needed (the signboard door). */
+  signal?: AbortSignal;
   timeoutMs: number;
 }): Promise<AnthropicReply> {
   const apiKey = (params.apiKey ?? process.env.ANTHROPIC_API_KEY)?.trim();
@@ -489,9 +491,11 @@ export async function callAnthropicMessages(params: {
           "x-api-key": apiKey,
         },
         method: "POST",
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: params.signal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), params.signal]) : AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
+      // Stopped by the caller, not timed out: the caller already has its answer and records nothing for this one.
+      if (params.signal?.aborted) throw new AnthropicRequestError("failed", "The Anthropic request was cancelled by its caller.");
       if (isTimeout(error)) throw new AnthropicRequestError("timeout", "The Anthropic request timed out.");
       throw new AnthropicRequestError("failed", error instanceof Error ? error.message : "The Anthropic request failed.");
     }
