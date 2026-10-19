@@ -19,13 +19,14 @@ import {
 } from "@/lib/sales/monthly-distributor-import";
 import { loadClosingStoreSplit } from "@/lib/sales/closing-store-split-net";
 import { applyStoreSplitToMatrix } from "@/lib/sales/store-split-matrix";
+import { closingLoadConcurrency, createClosingLoadGate } from "@/lib/sales/closing-load-gate";
 
 /** The pair a store split is read for, trimmed exactly as loadClosingStoreSplit trims its arguments. */
 function storeSplitPairKey(line: string | null | undefined, period: string | null | undefined): string {
   return `${String(line ?? "").trim()}|${String(period ?? "").trim()}`;
 }
 
-export async function loadMonthlyClosingPartsWithStoreSplit(input?: {
+async function readMonthlyClosingPartsWithStoreSplit(input?: {
   line?: string | null;
   period?: string | null;
 }): Promise<MonthlyClosingParts> {
@@ -93,6 +94,20 @@ export async function loadMonthlyClosingPartsWithStoreSplit(input?: {
       ? applyStoreSplitToMatrix(parts.office, officeNet).matrix
       : parts.office,
   };
+}
+
+// Every closing read in the app comes through this gate: a few at a time, and one shared read per
+// line and month while it is loading (closing-load-gate.ts). `reuseMs` is for the read-only screens.
+const closingLoadGate = createClosingLoadGate<MonthlyClosingParts>({
+  load: readMonthlyClosingPartsWithStoreSplit,
+  maxConcurrent: closingLoadConcurrency(),
+});
+
+export function loadMonthlyClosingPartsWithStoreSplit(
+  input?: { line?: string | null; period?: string | null },
+  options?: { reuseMs?: number },
+): Promise<MonthlyClosingParts> {
+  return closingLoadGate.load(input, options);
 }
 
 export async function loadMonthlyClosingWithStoreSplit(input?: {

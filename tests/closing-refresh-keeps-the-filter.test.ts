@@ -39,7 +39,7 @@ export async function runClosingRefreshKeepsTheFilterTests() {
   // ── 1. The regression: Refresh asks to keep the filter, the two selects do not ────────────────
   const workspace = stripComments(readFileSync(WORKSPACE_SOURCE, "utf8"));
   assert.ok(
-    /reload\(selectedLine, selectedPeriods, \{ keepFilter: true \}\)/.test(workspace),
+    /reload\(selectedLine, selectedPeriods, \{ fresh: true, keepFilter: true \}\)/.test(workspace),
     `the Refresh button in ${WORKSPACE_SOURCE} must keep the reader's filter — it reloads the same line and the same months, so clearing it is pure loss`,
   );
   assert.ok(

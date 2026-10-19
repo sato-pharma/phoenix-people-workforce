@@ -283,7 +283,7 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
    * named on screen: a refresh exists because the closing can change underneath the page, and a
    * selection left pointing at an area that has just been merged away would read as an empty grid.
    */
-  async function reload(line: string, periods: string[], options?: { keepFilter?: boolean }) {
+  async function reload(line: string, periods: string[], options?: { fresh?: boolean; keepFilter?: boolean }) {
     setIsLoading(true);
     setError(null);
     // The reader has picked a line or a month themselves, so the arrival link's substitution notice
@@ -305,6 +305,8 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
       // reader who never opens the "Several months" side of the picker.
       if (periods.length === 1) query.set("period", periods[0]);
       else if (periods.length > 1) query.set("periods", periods.join(","));
+      // Refresh always asks the database; the server may reuse a read of a few seconds ago otherwise.
+      if (options?.fresh) query.set("fresh", "1");
       const response = await fetch(`/api/sales/monthly-closing?${query.toString()}`, { cache: "no-store" });
       const text = await response.text();
       const payload: ClosingResponse = text ? JSON.parse(text) : { success: response.ok };
@@ -599,7 +601,7 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
               disabled={isLoading}
               // Same line, same months: the reader's region / area / product filter survives the
               // press. Only the two selects above clear it, where the options themselves change.
-              onClick={() => void reload(selectedLine, selectedPeriods, { keepFilter: true })}
+              onClick={() => void reload(selectedLine, selectedPeriods, { fresh: true, keepFilter: true })}
               variant="secondary"
             >
               {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
