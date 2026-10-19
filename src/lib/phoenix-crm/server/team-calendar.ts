@@ -2,7 +2,8 @@ import { forbiddenError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { isDayActivity, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { pharmacyNameKey, pharmacyNamesOnVisit, visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
-import { personKey, territoryName, territoryReviewer, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { countsAsManagersDoubleVisit } from "@/lib/phoenix-crm/double-visit-plan-rules";
+import { managerChain, managersInScope, personKey, territoryName, territoryReviewer, type ChainMember, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
   buildTeamCalendar,
   monthDays,
@@ -20,8 +21,10 @@ import {
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
 import { chunk } from "@/lib/phoenix-crm/server/db";
+import { loadManagerOwnVisitDays } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readSeatGroups } from "@/lib/phoenix-crm/server/reports";
+import { seatTierTitle } from "@/lib/phoenix-crm/server/territory";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { loadApprovedLeaveDays, type ApprovedLeaveDay } from "@/lib/vacation/approved-leave-days";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -145,14 +148,27 @@ export async function loadTeamCalendar(
 
   // HR's leave is read beside the visits, not after them: it never throws (a failed read comes back
   // as `unread`), so running it alongside changes nothing but the wait.
-  const [visits, activities, people, leave] = await Promise.all([
+  // 🔴 THE MANAGERS ABOVE THESE TERRITORIES GET A ROW OF THEIR OWN (owner, 2026-10-19: "yes, all manager
+  //    levels" — district, regional and national). They were never on this grid because a row was a REP
+  //    seat; a manager showed only as the name in a rep's "Under" line. Never upward, as everywhere:
+  //    `managersInScope` is the same reach the Managers report uses. Only a manager with a territory in
+  //    THIS grid is drawn, so a district on a line that has not opened is not a row of blank days.
+  const managers = isTest ? [] : managersOnGrid(viewer, seats);
+
+  const [visits, activities, people, leave, managerPeople, managerVisits] = await Promise.all([
     loadVisitDays(seatIds, isTest, bounds),
     loadActivityDays(seatIds, isTest, bounds),
     describePeople(viewer, seats),
-    loadLeaveDays(seats, bounds),
+    loadLeaveDays([...seats, ...managers.map((member) => member.seat)], bounds),
+    describeManagers(viewer, managers),
+    loadManagerDays(managers, new Set(seatIds), isTest, bounds),
   ]);
 
-  const rows = buildTeamCalendar(month, people, { activities, leave: leave.days, visits });
+  const rows = buildTeamCalendar(month, [...managerPeople, ...people], {
+    activities,
+    leave: leave.days,
+    visits: [...visits, ...managerVisits],
+  });
   return {
     days: monthDays(month),
     isTest,
@@ -196,10 +212,8 @@ async function loadVisitDays(
   seatIds: readonly string[],
   isTest: boolean,
   bounds: { from: string; to: string },
-): Promise<{ seatId: string; day: string; counts: VisitCountSplit; awaitingValidation: number }[]> {
-  const amPm = new Map<string, { am: number; pm: number }>();
-  const pharmacies = new Map<string, Set<string>>();
-  const waiting = new Map<string, number>();
+): Promise<CalendarVisitDay[]> {
+  const fold = newVisitFold();
 
   // Groups of territories read four at a time, handed back as the one walk per batch of 150 returned
   // them — same rows, same order (`readSeatGroups`).
@@ -226,43 +240,174 @@ async function loadVisitDays(
     const day = cleanDay(row.visit_date);
     const seatId = String(row.seat_id ?? "");
     if (!day || !seatId) continue;
-    const at = `${seatId}|${day}`;
-    if (row.customer_validated !== true) {
-      waiting.set(at, (waiting.get(at) ?? 0) + 1);
-      continue;
-    }
-    const found = amPm.get(at) ?? { am: 0, pm: 0 };
-    // Through the golden rule's own helper: a pharmacy is a third list since 2026-10-02, and an
-    // `=== "AM" ? am : pm` would have filed every one of them among the doctors.
-    const bucket = visitCountBucketForListType(row.list_type);
-    if (bucket === "AM") found.am += 1;
-    else if (bucket === "PM") found.pm += 1;
-    amPm.set(at, found);
-    // Keyed as the day screen keys it (`todayPharmacies`), so the cell and the day it opens agree:
-    // a doctor's "ص.الفيومي" and the visit to "صيدلية الفيومي" itself are one pharmacy, and a box that
-    // names two pharmacies is two.
-    for (const name of pharmacyNamesOnVisit(row.list_type, String(row.pharmacy_name ?? ""))) {
-      const pharmacy = pharmacyNameKey(name);
-      if (!pharmacy) continue;
-      const seen = pharmacies.get(at) ?? new Set<string>();
-      seen.add(pharmacy);
-      pharmacies.set(at, seen);
-    }
+    foldVisitRow(fold, `${seatId}|${day}`, row);
   }
+  return visitDaysOf(fold);
+}
 
-  return [...new Set([...amPm.keys(), ...pharmacies.keys(), ...waiting.keys()])].map((at) => {
+type CalendarVisitDay = { seatId: string; day: string; counts: VisitCountSplit; awaitingValidation: number };
+
+/** AM, PM, the day's distinct pharmacies and the visits still waiting on a customer — keyed `<seat>|<day>`. */
+type VisitFold = {
+  amPm: Map<string, { am: number; pm: number }>;
+  pharmacies: Map<string, Set<string>>;
+  waiting: Map<string, number>;
+};
+
+function newVisitFold(): VisitFold {
+  return { amPm: new Map(), pharmacies: new Map(), waiting: new Map() };
+}
+
+/**
+ * One countable visit into the day it belongs to — the SAME rules for a rep's row and for the visits a
+ * manager rode, so the two can never count one visit two ways.
+ */
+function foldVisitRow(fold: VisitFold, at: string, row: Row): void {
+  if (row.customer_validated !== true) {
+    fold.waiting.set(at, (fold.waiting.get(at) ?? 0) + 1);
+    return;
+  }
+  const found = fold.amPm.get(at) ?? { am: 0, pm: 0 };
+  // Through the golden rule's own helper: a pharmacy is a third list since 2026-10-02, and an
+  // `=== "AM" ? am : pm` would have filed every one of them among the doctors.
+  const bucket = visitCountBucketForListType(row.list_type);
+  if (bucket === "AM") found.am += 1;
+  else if (bucket === "PM") found.pm += 1;
+  fold.amPm.set(at, found);
+  // Keyed as the day screen keys it (`todayPharmacies`), so the cell and the day it opens agree:
+  // a doctor's "ص.الفيومي" and the visit to "صيدلية الفيومي" itself are one pharmacy, and a box that
+  // names two pharmacies is two.
+  for (const name of pharmacyNamesOnVisit(row.list_type, String(row.pharmacy_name ?? ""))) {
+    const pharmacy = pharmacyNameKey(name);
+    if (!pharmacy) continue;
+    const seen = fold.pharmacies.get(at) ?? new Set<string>();
+    seen.add(pharmacy);
+    fold.pharmacies.set(at, seen);
+  }
+}
+
+function visitDaysOf(fold: VisitFold): CalendarVisitDay[] {
+  return [...new Set([...fold.amPm.keys(), ...fold.pharmacies.keys(), ...fold.waiting.keys()])].map((at) => {
     const [seatId = "", day = ""] = at.split("|");
     return {
-      awaitingValidation: waiting.get(at) ?? 0,
+      awaitingValidation: fold.waiting.get(at) ?? 0,
       counts: {
-        am: amPm.get(at)?.am ?? 0,
-        pharmacies: pharmacies.get(at)?.size ?? 0,
-        pm: amPm.get(at)?.pm ?? 0,
+        am: fold.amPm.get(at)?.am ?? 0,
+        pharmacies: fold.pharmacies.get(at)?.size ?? 0,
+        pm: fold.amPm.get(at)?.pm ?? 0,
       },
       day,
       seatId,
     };
   });
+}
+
+/**
+ * The managers who get a row: the ones this viewer reads (`managersInScope`, never upward) that stand
+ * above at least one territory on the grid. The CEO is never in that list, and neither is the sales-only
+ * "Others" bucket, which holds no reps.
+ */
+function managersOnGrid(viewer: PhoenixCrmViewer, seats: readonly OrgSeat[]): ChainMember[] {
+  return managersInScope(viewer.org, viewer.hrId, viewer.basis).filter(
+    (member) =>
+      !member.seat.isOtherPseudoDm && seats.some((territory) => territory.path.some((seatId) => seatId !== territory.seatId && seatId === member.seat.seatId)),
+  );
+}
+
+/** Highest seat first (national, regional, district), then by line and name — a chain read top-down. */
+async function describeManagers(viewer: PhoenixCrmViewer, members: readonly ChainMember[]): Promise<TeamCalendarPerson[]> {
+  if (members.length === 0) return [];
+  const above = new Map<string, string | null>();
+  for (const member of members) above.set(member.seat.seatId, managerChain(viewer.org, member.seat.seatId)[0]?.hrId ?? null);
+  const names = await loadPeopleNames([...members.map((member) => member.hrId), ...above.values()]);
+  const depth = new Map(members.map((member) => [member.seat.seatId, member.seat.path.length]));
+  return members
+    .map((member): TeamCalendarPerson => {
+      const managerHrId = above.get(member.seat.seatId) ?? null;
+      return {
+        kind: "manager",
+        manager: managerHrId ? nameOf(names, managerHrId) : null,
+        person: nameOf(names, member.hrId),
+        seatId: member.seat.seatId,
+        territory: [seatTierTitle(member.seat.tier), member.seat.lineName].filter(Boolean).join(" · "),
+      };
+    })
+    .sort(
+      (left, right) =>
+        (depth.get(left.seatId) ?? 0) - (depth.get(right.seatId) ?? 0) ||
+        left.territory.localeCompare(right.territory) ||
+        left.person.localeCompare(right.person),
+    );
+}
+
+/**
+ * A manager's days, each on the row of HIS seat: the single visits he logged himself (AM or PM by the
+ * half it was planned in, or the Cairo half it was logged in) and the visits he rode with a rep.
+ *
+ * 🔴 HIS OWN SINGLE VISITS COME THROUGH `loadManagerOwnVisitDays`, THE ONE DOOR OUT OF THAT TABLE
+ *    (`manager-plan-readers.ts`). They count in no KPI and the calendar keeps it so: the row shows that
+ *    he worked, and `teamCalendarTotals` leaves a manager's row out of the month's three figures.
+ *
+ * 🔴 A RIDE-ALONG IS A DOUBLE OR CHAIN VISIT THAT NAMES HIM (`countsAsManagersDoubleVisit`, the rule the
+ *    manager's plan report judges by), read from the countable view like every rep row, so a visit
+ *    nobody has validated waits exactly as it waits on the rep's own row. It is also on the rep's row —
+ *    each of the two people worked it — which is why nothing here reaches the totals. Only visits in
+ *    territories this viewer already reads are kept: never wider than the grid.
+ */
+async function loadManagerDays(
+  managers: readonly ChainMember[],
+  territorySeatIds: ReadonlySet<string>,
+  isTest: boolean,
+  bounds: { from: string; to: string },
+): Promise<CalendarVisitDay[]> {
+  if (managers.length === 0) return [];
+  const seatOf = new Map(managers.map((member) => [member.hrId, member.seat.seatId]));
+  const hrIds = [...seatOf.keys()];
+  const fold = newVisitFold();
+
+  const own = await loadManagerOwnVisitDays({ end: bounds.to, isTest, managerHrIds: hrIds, start: bounds.from });
+  for (const day of own) {
+    const seatId = seatOf.get(day.hrId);
+    if (!seatId) continue;
+    const at = `${seatId}|${day.date}`;
+    const found = fold.amPm.get(at) ?? { am: 0, pm: 0 };
+    found.am += day.am ?? 0;
+    found.pm += day.pm ?? 0;
+    fold.amPm.set(at, found);
+  }
+
+  const seen = new Set<string>();
+  for (const part of chunk(hrIds, 100)) {
+    for (const column of ["manager_hr_id", "senior_hr_id"] as const) {
+      const rows = await fetchAllRowsKeyset<Row>(
+        () =>
+          getSupabaseAdmin()
+            .from("phoenix_crm_countable_visits")
+            .select("id, seat_id, visit_date, list_type, pharmacy_name, customer_validated, kind, manager_hr_id, senior_hr_id")
+            .eq("is_test", isTest)
+            .gte("visit_date", bounds.from)
+            .lte("visit_date", bounds.to)
+            .in(column, part),
+        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+      );
+      for (const row of rows) {
+        const day = cleanDay(row.visit_date);
+        if (!day || !territorySeatIds.has(String(row.seat_id ?? ""))) continue;
+        const visit = { kind: row.kind, managerHrId: row.manager_hr_id, seniorHrId: row.senior_hr_id };
+        for (const hrId of new Set([personKey(String(row.manager_hr_id ?? "")), personKey(String(row.senior_hr_id ?? ""))])) {
+          const seatId = hrId ? seatOf.get(hrId) : undefined;
+          if (!hrId || !seatId || !countsAsManagersDoubleVisit(visit, hrId)) continue;
+          // The two reads overlap on a visit naming him in both slots, and a chain visit can name two
+          // managers — one visit, once per manager.
+          const once = `${String(row.id)}|${hrId}`;
+          if (seen.has(once)) continue;
+          seen.add(once);
+          foldVisitRow(fold, `${seatId}|${day}`, row);
+        }
+      }
+    }
+  }
+  return visitDaysOf(fold);
 }
 
 /** A working day that was not a call — Phoenix's replacement for his pink `CP` (Campaign). */

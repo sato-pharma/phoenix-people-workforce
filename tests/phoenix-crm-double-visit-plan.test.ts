@@ -497,8 +497,10 @@ export function runPhoenixCrmDoubleVisitPlanTests(): void {
         "src/lib/phoenix-crm/manager-plan-rules.ts",
         "src/lib/phoenix-crm/server/double-visit-plans.ts",
         "src/lib/phoenix-crm/server/manager-plan-reach.ts",
+        // The team calendar draws a manager's ride-alongs by the same "counts as his double visit" rule (2026-10-19).
+        "src/lib/phoenix-crm/server/team-calendar.ts",
       ],
-      "the rules are read by the service and by the weekly plan that replaced it",
+      "the rules are read by the service, by the weekly plan that replaced it and by the team calendar's manager rows",
     );
 
     // No notice of any kind: the service and its route import nothing that sends one.

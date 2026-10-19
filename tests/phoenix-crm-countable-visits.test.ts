@@ -259,17 +259,19 @@ export async function runPhoenixCrmCountableVisitsTests(): Promise<void> {
     // just started every visit is in that state. `code` is the stricter of the two to assert: the
     // body must NAME the column in its select (PostgREST fails the whole read for a column it was
     // not given) AND exclude it explicitly, so an omission cannot pass as a partition.
-    const filters: Array<{ path: string; from: string; reads: number; mode: "query" | "code" }> = [
+    const filters: Array<{ path: string; from: string; reads: number; mode: "query" | "code"; alsoIn?: string }> = [
       // AM · PM · Pharmacies per rep per day: what counts as work must be what colours a cell, and
       // the cell now also says how many of that day's visits are waiting on their customers.
-      { from: "async function loadVisitDays", mode: "code", path: "src/lib/phoenix-crm/server/team-calendar.ts", reads: 1 },
+      // `foldVisitRow` holds the partition since 2026-10-19: a rep's row and a manager's row fold a visit
+      // through the one function, so the exclusion is read there and the read is read here.
+      { alsoIn: "function foldVisitRow", from: "async function loadVisitDays", mode: "code", path: "src/lib/phoenix-crm/server/team-calendar.ts", reads: 1 },
       // The exceptions board, where an inflated tally REMOVES the row rather than showing a wrong
       // number: the board exists to raise the territory whose count is low.
       { from: "async function loadVisitTallies", mode: "query", path: "src/lib/phoenix-crm/server/exceptions.ts", reads: 1 },
       // Frequency and the tracking sheet.
       { from: "async function visitDaysByCustomer", mode: "code", path: "src/lib/phoenix-crm/server/reports.ts", reads: 1 },
     ];
-    for (const { path, from, reads, mode } of filters) {
+    for (const { path, from, reads, mode, alsoIn } of filters) {
       const text = source(path);
       const start = text.indexOf(from);
       if (start === -1) {
@@ -278,7 +280,12 @@ export async function runPhoenixCrmCountableVisitsTests(): Promise<void> {
       }
       // To the next top-level declaration, so one function's reads cannot be read as another's.
       const next = text.indexOf("\n}\n", start);
-      const body = text.slice(start, next === -1 ? text.length : next);
+      let body = text.slice(start, next === -1 ? text.length : next);
+      if (alsoIn) {
+        const also = text.indexOf(alsoIn);
+        if (also === -1) problems.push(`${path}: ${alsoIn} is gone — re-point this pin at whatever replaced it`);
+        else body += text.slice(also, text.indexOf("\n}\n", also));
+      }
       const found = [...body.matchAll(/\.from\("phoenix_crm_countable_visits"\)/g)].length;
       const filtered = [...body.matchAll(/\.eq\("customer_validated", true\)/g)].length;
       if (found !== reads) problems.push(`${path}: ${from} reads the countable view ${found} time(s), expected ${reads}`);

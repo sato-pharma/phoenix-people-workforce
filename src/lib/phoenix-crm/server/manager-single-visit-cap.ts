@@ -33,7 +33,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 type Row = Record<string, unknown>;
 
 /** The hour (0–23) an instant fell in, in Cairo. */
-function cairoHourOf(iso: string): number {
+export function cairoHourOf(iso: string): number {
   const hour = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: "Africa/Cairo" }).format(new Date(iso));
   return Number(hour);
 }

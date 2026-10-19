@@ -232,6 +232,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
   const own = view.data?.scope === "own";
   // A picker of one is no picker: a rep reads only himself, and a team of one has nobody to choose.
   const canChooseRep = !own && allRows.length > 1;
+  const hasManagers = allRows.some((row) => row.kind === "manager");
   const chosen = useMemo(() => {
     if (!open) return null;
     const row = rows.find((entry) => entry.seatId === open.seatId);
@@ -270,7 +271,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
       description={
         own
           ? "One column a day. The colour says which halves of the day you worked; the figures stay apart."
-          : "One row a person, one column a day. The colour says which halves of the day were worked; the figures stay apart."
+          : "One row a person, one column a day, managers first. The colour says which halves of the day were worked; the figures stay apart."
       }
       eyebrow="Phoenix CRM"
       title={`${own ? "Your month" : "The team's month"} · ${monthLabel(month)}`}
@@ -289,7 +290,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
         <>
           <CrmBlock title="The month">
             {canChooseRep ? (
-              <CrmField className="mb-3 sm:max-w-md" htmlFor="calendar-rep" label="Rep">
+              <CrmField className="mb-3 sm:max-w-md" htmlFor="calendar-rep" label="Person">
                 <CrmSelect
                   id="calendar-rep"
                   onChange={(event) => {
@@ -314,6 +315,15 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
               <CrmStat label="Pharmacies" note="Counted apart, never inside AM or PM" value={totals.pharmacies} />
               <CrmStat label="People" note={`${days.length} days each`} value={rows.length} />
             </CrmStatGrid>
+            {/* 🔴 A manager's row repeats the visits he rode with a rep, so the three figures above are
+                the REPS' alone — said where a manager reads them, or his row would look uncounted. */}
+            {hasManagers && !filtered ? (
+              <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
+                The AM, PM and Pharmacies figures count the reps&apos; visits only. A manager&apos;s row shows the
+                days they worked: their own single visits and the visits they joined a rep on, which are
+                already in that rep&apos;s row.
+              </p>
+            ) : null}
             {/* A cell that looks empty because the customer is not validated yet, not because the
                 rep stayed home. The same sentence the reports and both call-rate boards print. */}
             {awaitingValidationNote({ awaitingValidation: waitingThisMonth }) ? (
@@ -394,7 +404,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                       ) : null}
                     </th>
                     {row.days.map((day) => {
-                      const opens = opensTheDay(day) || opensForEntry(entrySeats, entryThrough, row.seatId, day);
+                      const opens = row.kind !== "manager" && (opensTheDay(day) || opensForEntry(entrySeats, entryThrough, row.seatId, day));
                       const face = cn(
                         "flex h-11 w-full items-center justify-center rounded-none border-0 px-0 text-center text-phx-3xs font-black transition",
                         SHAPE_INK[day.shape],
@@ -466,7 +476,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                       <div key={`lead-${index}`} />
                     ))}
                     {row.days.map((day) => {
-                      const opens = opensTheDay(day) || opensForEntry(entrySeats, entryThrough, row.seatId, day);
+                      const opens = row.kind !== "manager" && (opensTheDay(day) || opensForEntry(entrySeats, entryThrough, row.seatId, day));
                       const face = cn(
                         "flex min-h-11 min-w-0 flex-col items-center justify-center rounded-none border px-0 py-1 text-center text-phx-3xs font-black transition",
                         SHAPE_INK[day.shape],
@@ -526,6 +536,12 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
               {chosen.day.onLeave ? (
                 <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
                   HR has approved leave covering this day.
+                </p>
+              ) : null}
+              {chosen.row.kind === "manager" ? (
+                <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
+                  A manager&apos;s day: their own single visits plus the visits they joined a rep on. A day spent on
+                  admin, a meeting or travel is not drawn here.
                 </p>
               ) : null}
             </CrmBlock>

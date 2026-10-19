@@ -70,6 +70,13 @@ export type TeamCalendarPerson = {
   territory: string;
   /** His A.Manager column: the name above this seat, or null at the top of the viewer's scope. */
   manager: string | null;
+  /**
+   * `manager` for a district, regional or national manager's own row (owner, 2026-10-19: "yes, all
+   * manager levels"); absent means a rep's territory, which is what every row was before. A manager's
+   * row is HIS days — his own single visits, the visits he rode with a rep, and his leave — and it is
+   * never added into the month's totals: a ride-along is already on the rep's row.
+   */
+  kind?: "rep" | "manager";
 };
 
 export type TeamCalendarRow = TeamCalendarPerson & {
@@ -204,9 +211,15 @@ export function buildTeamCalendar(
   });
 }
 
-/** The whole month's totals, still three figures apart. */
+/**
+ * The whole month's totals, still three figures apart.
+ *
+ * 🔴 REPS' ROWS ALONE. A manager's row repeats the visits he rode with a rep, which are already on that
+ * rep's row, so adding it would count one visit twice — and his own single visits count in no figure
+ * at all (`manager-visits.ts`).
+ */
 export function teamCalendarTotals(rows: readonly TeamCalendarRow[]): VisitCountSplit {
   const total = emptyVisitCountSplit();
-  for (const row of rows) mergeVisitCountSplits(total, row.totals);
+  for (const row of rows) if (row.kind !== "manager") mergeVisitCountSplits(total, row.totals);
   return total;
 }

@@ -539,7 +539,11 @@ function writeCalendar(workbook: ExcelJS.Workbook, view: TeamCalendarView): void
     ],
     note:
       "Each cell says which halves of the day were worked — AM, PM, AM+PM — or why it was blank: F for Friday, Leave "
-      + "from HR's own rows, Act for a recorded day activity. Pharmacies are counted apart and never colour a day.",
+      + "from HR's own rows, Act for a recorded day activity. Pharmacies are counted apart and never colour a day."
+      + (view.rows.some((row) => row.kind === "manager")
+        ? " A manager's row is the days they worked — their own single visits and the visits they joined a rep on — and the"
+          + " totals at the foot count the reps' rows only."
+        : ""),
     rows: view.rows.map((row) => [
       row.person,
       row.territory,

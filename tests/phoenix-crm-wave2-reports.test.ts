@@ -123,6 +123,44 @@ export function runPhoenixCrmWave2ReportTests(): void {
   );
   assert.equal(buildTeamCalendar("nonsense", people).length, 0);
 
+  // ── The managers' rows (owner, 2026-10-19: "yes, all manager levels") ──────────────────────────
+  //
+  // 🔴 A MANAGER'S ROW IS HIS DAYS, AND IT NEVER REACHES THE MONTH'S THREE FIGURES. The visits he rode
+  //    with a rep are already on that rep's row, so adding his row would count one visit twice.
+  {
+    const withManager = buildTeamCalendar(
+      "2026-02",
+      [{ kind: "manager", manager: null, person: "Mina Farouk", seatId: "M1", territory: "District Sales Manager · Anti Infective" }, ...people],
+      {
+        visits: [
+          // His own single visits and a ride with the rep — the SAME visit appears on S1's row below.
+          { counts: { am: 1, pharmacies: 0, pm: 0 }, day: "2026-02-03", seatId: "M1" },
+          { counts: { am: 1, pharmacies: 2, pm: 6 }, day: "2026-02-03", seatId: "S1" },
+        ],
+      },
+    );
+    assert.equal(withManager[0]?.kind, "manager", "the manager keeps his kind on the row the screen draws");
+    assert.equal(withManager[0]?.days[2]?.shape, "am", "and his own worked half colours his day like anybody's");
+    assert.deepEqual(teamCalendarTotals(withManager), { am: 1, pharmacies: 2, pm: 6 }, "but only the reps' rows are summed");
+    assert.deepEqual(withManager[1]?.totals, { am: 1, pharmacies: 2, pm: 6 }, "a rep's row is exactly what it was");
+  }
+
+  {
+    const service = stripComments(readFileSync("src/lib/phoenix-crm/server/team-calendar.ts", "utf8"));
+    // Never upward, and the SAME reach the Managers report uses — not a second definition of "his managers".
+    assert.match(service, /managersInScope\(viewer\.org, viewer\.hrId, viewer\.basis\)/, "the managers drawn are the ones this viewer reads, never above him");
+    assert.match(service, /const managers = isTest \? \[\] : managersOnGrid\(viewer, seats\)/, "the test world draws none");
+    // His own single visits come through the ONE door out of that table; this file never names it.
+    assert.match(service, /loadManagerOwnVisitDays\(\{ end: bounds\.to, isTest, managerHrIds: hrIds, start: bounds\.from \}\)/, "his own visits come through the adapter");
+    assert.doesNotMatch(service, /phoenix_crm_manager_visits/, "and this file never names the table that adapter guards");
+    // A ride-along is the rule the manager's plan report judges by, read from the countable view.
+    assert.match(service, /countsAsManagersDoubleVisit\(visit, hrId\)/, "a ride-along is a double or chain visit naming him");
+    assert.equal((service.match(/foldVisitRow\(fold, /g) ?? []).length, 2, "and it folds through the one function a rep's visit folds through");
+    // A manager's row never opens a rep's day page — that page is a territory's.
+    const tab = stripComments(readFileSync("src/components/phoenix-crm/calendar-tab.tsx", "utf8"));
+    assert.equal((tab.match(/row\.kind !== "manager" && \(/g) ?? []).length, 2, "neither the desktop row nor the phone card links a manager's day to a territory page");
+  }
+
   // ── The calendar's screen ────────────────────────────────────────────────────────────────────
   {
     // COMMENTS STRIPPED, and that is not tidiness: this file's own header explains which classes
