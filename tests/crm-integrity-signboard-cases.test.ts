@@ -196,8 +196,8 @@ function runLoaderTests() {
   );
   assert.equal(
     (board.match(/\.in\("source", SFE_SOURCES\)/g) ?? []).length,
-    4,
-    "all four readers — the board, the weekly scan's copy, the visit report's evidence and the Place Checks screen's per-place cases (the SFE Manager decides there since 2026-10-19) — must narrow through the allow-list",
+    3,
+    "all three readers — the board, the weekly scan's copy and the visit report's evidence — must narrow through the allow-list",
   );
 
   // 🔴 AND THE WEEKLY SCAN'S IN-MEMORY TIER COMES FROM THAT SAME LIST. The scan reads the week ONCE

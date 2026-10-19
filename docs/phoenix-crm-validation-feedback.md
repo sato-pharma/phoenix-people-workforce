@@ -731,13 +731,20 @@ and recommendation routes.
   restoring a venue asks `canDecideValidationReviews`.
 - *Settling a location-integrity case* (2026-10-09). The deck tells him "Settling a case is the Super
   Admin's alone" and draws no settle control.
-- *The position cases and the phone's mock-location answer* (2026-10-02). The board's evidence read,
-  `loadPlaceCheckIntegrity`, serves the SFE Manager the photo cases only (`SFE_SOURCES`) and leaves
-  `device_mocked` out of the select. The Super Admin reads everything; the district manager on his own
-  team's board keeps the device's evidence (2026-10-13).
 - *The notice of a new hold* — email, in-app and Telegram — is still sent to the Super Admin alone.
   The SFE Manager sees the queue on the page and, through the same predicate, on his Needs you board.
 - *`readsTeamPlaceChecks`* is the district manager's own team board and stays `{DM, ACTING_DM}`.
+
+**The device's evidence on this screen (owner, 2026-10-19, the same day: "show the mock-location
+evidence to the SFE Manager too").** It was the one place his board still differed from the Super
+Admin's, held back by the 2 October ruling that the position cases and the phone's mock answer are the
+Super Admin's. On the Place checks screen it is now his as well: `loadPlaceCheckIntegrity` selects
+`device_mocked` and reads every detector for everybody it admits. There is no tier left inside it,
+because its audience is `placeChecksSeatScope`, which throws for anybody who may not open the board:
+the Super Admin, the district manager on his own team's board (2026-10-13) and the SFE Manager.
+**Nothing else moved.** The integrity board and the Visit report still narrow him to the photo cases
+(`readsPositionCases`, `SFE_SOURCES`) and leave `device_mocked` out of his select, and settling stays
+the Super Admin's.
 
 **What the rep sees.** Nothing different. The decisions run through the same functions, so the rep is
 still told only what is wrong with his photograph, in the system's words. The SFE Manager's comments

@@ -786,9 +786,10 @@ export function doubleVisitReportAudience(viewer: PhoenixCrmViewer): DoubleVisit
  * the same reason — see `access-registry.ts`.
  *
  * 🔴 WHAT THIS DOES NOT WIDEN, each its own ruling and each still the Super Admin's alone: settling a
- * location-integrity case (`canSettleIntegrityCases`, 2026-10-09), seating a standalone customer in a
- * polyclinic (`canDecideSharedPlaces`, 2026-10-10), and the mock-location evidence (`readsPositionCases`,
- * 2026-10-02) — so an SFE Manager on this board is served the photo evidence only.
+ * location-integrity case (`canSettleIntegrityCases`, 2026-10-09) and seating a standalone customer in a
+ * polyclinic (`canDecideSharedPlaces`, 2026-10-10). The mock-location evidence on THIS board was widened
+ * to him the same day by his word (`loadPlaceCheckIntegrity`); on the integrity board and the visit
+ * report it is still the Super Admin's alone (`readsPositionCases`, 2026-10-02).
  *
  * 🔴 IT LIVES HERE, AND `server/validation-reviews.ts` RE-EXPORTS IT UNDER ITS OWN NAME, because
  * `placeChecksSeatScope` below has to answer for all FOUR section reads and one of them is the venue

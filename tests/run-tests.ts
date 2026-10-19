@@ -7256,7 +7256,7 @@ await runTest(
 );
 
 await runTest(
-  "Phoenix CRM Place checks for the SFE Manager (owner, 2026-10-19): the Super Admin and the SFE Manager decide and nobody else does, on `approve` because the SFE Manager holds no `update`; seating a customer in a polyclinic, settling an integrity case and the mock-location evidence stay the Super Admin's; the notice of a new hold is still the Super Admin's alone",
+  "Phoenix CRM Place checks for the SFE Manager (owner, 2026-10-19): the Super Admin and the SFE Manager decide and nobody else does, on `approve` because the SFE Manager holds no `update`; seating a customer in a polyclinic and settling an integrity case stay the Super Admin's; the mock-location evidence is his on this screen too (2026-10-19) and still the Super Admin's on the integrity board and the visit report; the notice of a new hold is still the Super Admin's alone",
   runPhoenixCrmSfePlaceChecksTests,
 );
 
