@@ -234,7 +234,9 @@ export function DirectOrderRequestDetail({
   const photoUnusableText =
     photoReading?.unusableReason === "too_far"
       ? "The photo's pin is too far from any brick centre to name a territory"
-      : "No live evidence photo with GPS on this request";
+      : photoReading?.unusableReason === "brick_map_unavailable"
+        ? "The photo has GPS, but the brick map did not load, so its territory was not checked — reload the page"
+        : "No live evidence photo with GPS on this request";
   const photoRows = photoReading
     ? photoReading.unusableReason
       ? [{ label: "Live photo", declared: "—", master: photoUnusableText, verdict: photoReading.area.verdict, source: "photo" as const }]

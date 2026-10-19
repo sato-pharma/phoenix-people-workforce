@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { createAccessContext } from "../src/lib/auth/permissions.ts";
 import {
@@ -326,6 +327,16 @@ function testTransferredVenueBelongsToTheCapturingRep() {
 }
 
 export async function runValidatedCustomerTransferTests() {
+  // 🔴 A BRICK MAP THAT DID NOT LOAD REFUSES THE TRANSFER (code review, 19 Oct 2026). `loadBrickCentroids`
+  // answers [] on a read failure; read as "no territory", the photo — the primary evidence — silently lost
+  // to the master code or the inherited label, and the venue was filed where its photo says it is not.
+  const transferSource = readFileSync(new URL("../src/lib/marketing-requests/validated-customer-transfer.ts", import.meta.url), "utf8");
+  assert.match(
+    transferSource,
+    /const centroids = await loadBrickCentroids\(\);\s*if \(centroids\.length === 0\) throw new Error\(refusal\);/,
+    "an empty brick map refuses rather than filing the venue without its photo's territory",
+  );
+  assert.match(transferSource, /could not be checked and nothing was transferred/, "the transfer says nothing was transferred");
   await testReadGateRefusesNonAdmins();
   await testDetailGateRefusesNonAdmins();
   await testTransferGateRefusesNonAdmins();

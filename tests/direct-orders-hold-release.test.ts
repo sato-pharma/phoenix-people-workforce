@@ -646,6 +646,59 @@ export function runDirectOrderHoldReleaseTests() {
   assert.equal(noPhoto.photo.brick.verdict, "not_checkable");
   assert.doesNotMatch(noPhoto.summary, /PHOTO MISMATCH/);
 
+  // 🔴 A BRICK MAP THAT DID NOT LOAD IS NOT A MISSING PHOTO (code review, 19 Oct 2026).
+  // `loadBrickCentroids` answers [] on a read failure, so a photo WITH a pin resolved to nothing and
+  // the panel said "No live evidence photo with GPS" — dropping the primary evidence check unannounced.
+  const mapDownInput = {
+    declaredBrickId: "B201-9",
+    declaredBrickName: "منشأة سلطان",
+    declaredAreaCode: "D12",
+    declaredAreaName: "Menoufia 1",
+    masterBrickId: "B201-9",
+    masterBrickName: "منشأة سلطان",
+    masterAreaCode: "D12",
+    masterAreaName: "Menoufia 1",
+    address: null,
+    photoTerritory: null,
+    photoPinUnresolved: "brick_map_unavailable" as const,
+  };
+  const mapDown = checkDirectOrderGeography(mapDownInput);
+  assert.equal(mapDown.photo.unusableReason, "brick_map_unavailable", "a pin the map could not read is not a missing photo");
+  assert.equal(mapDown.photo.area.verdict, "not_checkable");
+  assert.match(mapDown.summary, /^Checked and agrees/, "the master check still runs and still speaks");
+  assert.match(
+    mapDown.summary,
+    /brick map did not load, so the photo's own territory — the primary evidence — was not checked/,
+    "a master pass must not read as a pass the photo never gave",
+  );
+  const nurseryMapDown = checkDirectOrderGeography({
+    ...mapDownInput,
+    masterBrickId: null,
+    masterBrickName: null,
+    masterAreaCode: null,
+    masterAreaName: null,
+    noDistributorAccountVenueLabel: "Nursery",
+  });
+  assert.match(nurseryMapDown.summary, /^NOT CHECKED — a nursery has no distributor account, and the brick map did not load/);
+  assert.doesNotMatch(nurseryMapDown.summary, /carries no usable live photo/, "the nursery's photo exists — the map is what failed");
+  assert.equal(nurseryMapDown.summary.match(/brick map did not load/g)?.length, 1, "said once, not twice");
+  // A pin with no brick centre anywhere near it is the far case, never "no photo".
+  assert.equal(checkDirectOrderGeography({ ...mapDownInput, photoPinUnresolved: "no_brick_near" }).photo.unusableReason, "too_far");
+  assert.doesNotMatch(noPhoto.summary, /brick map/, "a request with no pin says nothing about the map");
+  const panel = readFileSync(new URL("../src/components/approvals-hub/direct-order-request-detail.tsx", import.meta.url), "utf8");
+  assert.match(
+    panel,
+    /unusableReason === "brick_map_unavailable"\s*\?\s*"The photo has GPS, but the brick map did not load/,
+    "the panel row names a map that did not load instead of a missing GPS photo",
+  );
+  const detailService = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+  assert.match(
+    detailService,
+    /photoPinUnresolved = centroids\.length === 0 \? "brick_map_unavailable" : "no_brick_near"/,
+    "the approval detail tells an empty brick map apart from a pin with no brick near",
+  );
+  assert.match(detailService, /checkDirectOrderGeography\(\{\s*photoTerritory,\s*photoPinUnresolved,/, "and hands that reason to the check");
+
   // ── AUTO-LINK (owner rule, 2026-08-08: "if the pharmacy matches automatic link") ──────────
   //
   // The click was removed, so the match condition is now the ONLY thing standing between a
