@@ -63,7 +63,11 @@ const INSTRUCTIONS =
   "name on it, \"partial\" when some of it defeated you, \"unreadable\" when you can see a schedule is " +
   "there but cannot read its names. Say what is wrong with the photograph, if anything: " +
   "\"not_a_timetable\" when no schedule of any kind is in it (a street, a pavement, a floor, a door, a " +
-  "signboard, a person, a car), \"too_far\" when the names are too small to read, \"blurred\", " +
+  "signboard, a person, a car), \"on_a_screen\" when the schedule is shown on the screen of a phone, " +
+  "tablet or computer held in front of the camera — a photo, a chat message, a social-media post or a web " +
+  "page on a screen, where the device, an app's buttons or a browser bar shows (a display screen fixed on " +
+  "the clinic's own wall that shows its schedule is the clinic's board, never this), \"too_far\" when the " +
+  "names are too small to read, \"blurred\", " +
   "\"glare\" when a reflection covers it, \"cut_off\" when part of the schedule is outside the frame, " +
   "and \"none\" when nothing is wrong.\n\n" +
   "Set schedule_present to false only when you are sure no schedule or timetable of any kind is in the " +
@@ -82,7 +86,7 @@ const TEXT_FORMAT = {
         person_names: { items: { type: "string" as const }, type: ["array", "null"] as const },
         hours_read: { type: ["string", "null"] as const },
         legibility: { enum: ["clear", "partial", "unreadable"] as const, type: "string" as const },
-        problem: { enum: ["none", "not_a_timetable", "too_far", "blurred", "glare", "cut_off"] as const, type: "string" as const },
+        problem: { enum: ["none", "not_a_timetable", "on_a_screen", "too_far", "blurred", "glare", "cut_off"] as const, type: "string" as const },
         note: { type: ["string", "null"] as const },
       },
       required: ["schedule_present", "schedule_text", "person_names", "hours_read", "legibility", "problem", "note"],

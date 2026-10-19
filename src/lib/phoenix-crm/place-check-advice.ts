@@ -89,6 +89,7 @@ const NO_ANSWER = "The reading did not come back, so the system has no answer. L
 /** What is wrong with a timetable photograph, as a clause: "it was taken too far away". */
 const PROBLEM_CLAUSE: Record<ScheduleProblem, string> = {
   not_a_timetable: "it is not a timetable",
+  on_a_screen: "it was photographed off a phone or computer screen",
   too_far: "it was taken too far away",
   blurred: "the photo is blurred",
   glare: "a reflection covers it",
@@ -172,6 +173,9 @@ export function adviseOnTimetable(timetable: TimetableEvidence, buildingHasNone 
   }
   if (timetable.verdict === "other_name") {
     return reject("The timetable was read clearly and the customer's name is not on it.", read, "schedule_other_name");
+  }
+  if (timetable.verdict === "no_schedule" && timetable.problem === "on_a_screen") {
+    return reject("The timetable was photographed off a phone or computer screen, not on the building's wall.", read, "schedule_missing");
   }
   if (timetable.verdict === "no_schedule") return reject("The photo does not show a timetable.", read, "schedule_missing");
 

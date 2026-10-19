@@ -644,6 +644,29 @@ held places, places in use, and polyclinics whose sign or timetable the reader c
 
 Pinned by `checkPlaceShortForms` in `tests/phoenix-crm-signboard-check.test.ts`, by the retake case in `tests/phoenix-crm-place-check-advice.test.ts`, and by `tests/place-review-deck.test.ts`.
 
+### The 31 left in Not readable: the photo's brick, two more spellings, and timetables on a screen (2026-10-19)
+
+On 19 Oct he asked to "read the 31 left in Not readable and fix". Every photo was read by eye, at full zoom.
+
+**Single places (25).** Most show the right building, but the list names it differently from the board.
+
+- **The photo's brick answers for the town** (he chose "Yes, brick counts"). "كهربا المرج" is North Cairo Electricity's board, photographed in the brick المرج. The company is on the sign, and the town is where the photo was taken.
+- `signNamesCustomer` takes `photoBrick` (the place row's `brick_name`) on the place axis only. A word the brick supplies spends the whole one-word allowance.
+- Something on the sign must still say WHICH place. A sign that matches only on brick words never counts, and the brick never stands in for the company: "تعاقد الكهرباء كفر الشيخ" against the Kafr El Sheikh fever hospital stays refused.
+- Every reader path passes the brick: the door, the held re-read, the nightly sweep and `--rejudge`. The guided read (`spotCheck`) does not.
+- Two more list spellings join `PLACE_SHORT_FORMS`: المقاولين is المقاولون, and النفسه is النفسية.
+- The rest are misreads (الإنتاج الحربي read as الإنجاب العربي, منوف as مدرف), another sign in the frame (a lab, a pharmacy), or a photo nobody can read. Those stay his clicks.
+
+**Timetables (15 polyclinics, 29 seated customers).** None of the stored readings contains the customers' names, so no matcher change confirms them.
+
+- Three were photographed off a screen: a laptop showing the clinic's Facebook post, a phone showing a WhatsApp image, and a phone showing a photo of the sheet.
+- **He chose "Refuse at the door".** The reader now names `on_a_screen` as its own problem. `judgeSchedule` checks it before the name and answers `no_schedule`, so the door asks for the wall and counts the try.
+- The rep reads: "This photo shows the timetable on a phone or computer screen. Photograph the timetable on the building's own wall." The third try holds like any missing timetable.
+- A display fixed on the clinic's own wall is the clinic's board, never this.
+- Photos already read are not read again (one read per photo). Their advice to him says Reject only when the stored reading says `on_a_screen`.
+
+Pinned by `checkPlaceShortForms` in `tests/phoenix-crm-signboard-check.test.ts`, the screen case in `tests/phoenix-crm-timetable-scanner.test.ts`, and the screen advice in `tests/phoenix-crm-place-check-advice.test.ts`.
+
 ## The same-seat duplicate merge
 
 A one-off script and a guarded database function, never a feature.

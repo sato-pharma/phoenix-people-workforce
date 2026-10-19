@@ -2022,20 +2022,31 @@ async function googleCheckForSave(
  * (`signboardNameIsUsable`). Nothing is recorded in that case, and the nightly sweep's own read
  * excludes pharmacies for the same reason rather than picking them up for ever.
  */
+/** The brick the photo's own GPS put the place row in — the reader may take an AM name's TOWN from it. */
+async function photoBrickOf(placeRow: Promise<Row> | null): Promise<string | null> {
+  return placeRow ? placeRow.then((row) => text(row.brick_name)).catch(() => null) : null;
+}
+
 async function signboardCheckForSave(
   subject: ValidationSubject | null,
   place: PlaceDraft,
   who: { seatId: string; repHrId: string; isTest: boolean },
   heldElsewhere: boolean,
+  /** The place row being built (already started by the caller) — its `brick_name` is the photo's brick. */
+  placeRow: Promise<Row> | null,
 ): Promise<{ check: PhoenixCrmSignboardCheck; record: Row; holds: boolean } | null> {
   if (!subject || !signboardApplies(subject.listType) || !signboardNameIsUsable(subject.name)) return null;
   const point = placePoint(place);
+  // A failed geography read is the caller's to throw (it awaits the same row to save it); here it only
+  // means no brick to lend the town word.
+  const photoBrick = await photoBrickOf(placeRow);
   const check = heldElsewhere
     ? signboardUnjudged("held_elsewhere")
     : await readPlaceSignboard({
         customerName: subject.name,
         isTest: who.isTest,
         listType: subject.listType,
+        photoBrick,
         photoPath: place.photoPath,
         repHrId: who.repHrId,
         seatId: who.seatId,
@@ -2262,7 +2273,7 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     // since 2026-10-18 a photo with no readable name is first refused up to twice with what to fix
     // (`signboardDoorAction`); `settleHeldSignboard` below re-reads a held one once and approves it
     // itself if the name is read; the Super Admin is asked only when it cannot be.
-    signboard = await signboardCheckForSave(subject, place, { seatId: seat.seatId, repHrId: viewer.hrId, isTest }, payload.hold_review !== undefined);
+    signboard = await signboardCheckForSave(subject, place, { seatId: seat.seatId, repHrId: viewer.hrId, isTest }, payload.hold_review !== undefined, placeRowRead);
     if (signboard && payload.hold_review === undefined && signboard.holds) {
       payload.hold_review = signboard.record;
       heldBySignboard = true;
@@ -2347,6 +2358,7 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
           customerName: subject?.name ?? validated.customerName,
           isTest,
           listType: subject?.listType ?? validated.listType,
+          photoBrick: await photoBrickOf(placeRowRead),
           photoPath: judgedPlace.photoPath,
           placeId: validated.placeId,
           readsSoFar: 1,
@@ -2642,7 +2654,7 @@ export async function addPlace(
     // And its signboard is read exactly as the first one's is (2026-10-08) — a second doorway is a
     // second identification, not a free pass on the strength of the first.
     const googleHolds = google !== null && google.check.verdict.kind !== "match";
-    signboard = await signboardCheckForSave(subject, place, { seatId: seat.seatId, repHrId: viewer.hrId, isTest }, googleHolds);
+    signboard = await signboardCheckForSave(subject, place, { seatId: seat.seatId, repHrId: viewer.hrId, isTest }, googleHolds, placeRowRead);
     // Everything but a match holds at the door since 2026-10-17, and is re-read below (`validateCustomer`).
     heldBySignboard = !googleHolds && signboard !== null && signboard.holds;
     holdRecord = googleHolds ? (google as { record: Row }).record : heldBySignboard && signboard ? signboard.record : null;
@@ -2693,6 +2705,7 @@ export async function addPlace(
           customerName: subject.name,
           isTest,
           listType: subject.listType,
+          photoBrick: await photoBrickOf(placeRowRead),
           photoPath: judgedPlace.photoPath,
           placeId: added.placeId,
           readsSoFar: 1,
@@ -2737,7 +2750,7 @@ export async function retakePlaceSignboard(
 
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_places")
-    .select("id, customer_id, seat_id, status, shared_place_id, lat, lon, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)")
+    .select("id, customer_id, seat_id, status, shared_place_id, lat, lon, brick_name, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)")
     .eq("id", placeId)
     .eq("seat_id", seat.seatId)
     .eq("is_test", isTest)
@@ -2760,7 +2773,7 @@ export async function retakePlaceSignboard(
     throw validationError(`This photo was taken ${Math.round(away)} m from the place. Take it at the place's own door.`);
   }
 
-  const check = await readPlaceSignboard({ customerName, isTest, listType, photoPath, repHrId: viewer.hrId, seatId: seat.seatId });
+  const check = await readPlaceSignboard({ customerName, isTest, listType, photoBrick: text(row.brick_name), photoPath, repHrId: viewer.hrId, seatId: seat.seatId });
   const key = signboardRefusalKey({ customerId, customerName, placeId });
   const earlierTries = signboardAsksForAPhoto(check, listType) && key ? await countSignboardRefusals({ key, repHrId: viewer.hrId, isTest }) : 0;
   const action = signboardDoorAction(check, earlierTries, listType);

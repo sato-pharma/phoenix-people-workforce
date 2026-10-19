@@ -723,6 +723,8 @@ async function judgeBytes(input: {
   mode: SignboardReadMode;
   /** The night's second, cropped look; the door never takes one. */
   secondLook?: boolean;
+  /** The brick the photo's GPS resolved to: an AM name's town word (`signNamesCustomer`). */
+  photoBrick?: string | null;
 }): Promise<PhoenixCrmSignboardCheck> {
   const cropped = await cropStampBand(input.bytes);
   if (!cropped) return unjudged("call_failed");
@@ -734,6 +736,7 @@ async function judgeBytes(input: {
     cropped,
     customerName: input.customerName,
     listType: input.listType,
+    photoBrick: input.photoBrick ?? null,
     // The door asks its reader and falls back to the fast one on a lost call; the night keeps its one
     // strong reader, whose lost call `signboard-sweep.ts` retries itself.
     readers: atTheDoor ? DOOR_READERS : [PHOENIX_CRM_SIGNBOARD_SWEEP_READER],
@@ -759,6 +762,7 @@ async function blindRead(input: {
   secondLook: boolean;
   /** Turn a sideways scene upright and read it again — everywhere but the door. */
   turnUpright: boolean;
+  photoBrick?: string | null;
 }): Promise<PhoenixCrmSignboardCheck> {
   const { cropped } = input;
   const first = await firstAnswer(input.readers, input.remaining, input.callCapMs, (reader, timeoutMs) =>
@@ -771,6 +775,7 @@ async function blindRead(input: {
       customerName: input.customerName,
       listType: input.listType,
       note: reading.note,
+      photoBrick: input.photoBrick ?? null,
       problem: reading.problem,
       signPresent: reading.signPresent,
       signs: reading.signs,
@@ -837,6 +842,7 @@ async function blindRead(input: {
     customerName: input.customerName,
     listType: input.listType,
     note: close.note ?? wide.note,
+    photoBrick: input.photoBrick ?? null,
     problem: wide.problem,
     signPresent: close.signPresent ?? wide.signPresent,
     signs: evidence,
@@ -862,6 +868,8 @@ export async function readPlaceSignboard(input: {
   seatId: string;
   repHrId: string;
   isTest: boolean;
+  /** The brick the photo's GPS resolved to, when the caller has it. */
+  photoBrick?: string | null;
 }): Promise<PhoenixCrmSignboardCheck> {
   if (!hasAiApiKey()) return unjudged("no_api_key");
 
@@ -873,7 +881,7 @@ export async function readPlaceSignboard(input: {
   }).catch(() => null);
   if (!bytes) return unjudged("no_bytes");
 
-  return judgeBytes({ bytes, customerName: input.customerName, listType: input.listType, mode: "door" });
+  return judgeBytes({ bytes, customerName: input.customerName, listType: input.listType, mode: "door", photoBrick: input.photoBrick ?? null });
 }
 
 /**
@@ -887,6 +895,7 @@ export async function readStoredPlaceSignboard(
     photoPath: string;
     customerName: string;
     listType: PhoenixCrmListType;
+    photoBrick?: string | null;
   },
   /**
    * `secondLook: false` is the one-off read of the old "Not readable" places (2026-10-18): one look per
@@ -902,6 +911,7 @@ export async function readStoredPlaceSignboard(
     customerName: input.customerName,
     listType: input.listType,
     mode: "sweep",
+    photoBrick: input.photoBrick ?? null,
     secondLook: options.secondLook ?? true,
   });
 }
@@ -929,6 +939,7 @@ export async function rereadHeldPlaceSignboard(input: {
   photoPath: string;
   customerName: string;
   listType: PhoenixCrmListType;
+  photoBrick?: string | null;
 }): Promise<PhoenixCrmSignboardCheck> {
   if (!hasAiApiKey()) return unjudged("no_api_key");
   const bytes = await downloadPhoto(input.photoPath).catch(() => null);
@@ -945,6 +956,7 @@ export async function rereadHeldPlaceSignboard(input: {
     cropped,
     customerName: input.customerName,
     listType: input.listType,
+    photoBrick: input.photoBrick ?? null,
     readers: HELD_READERS,
     remaining,
     secondLook: true,

@@ -138,6 +138,8 @@ type SweepPlace = {
   capturedAt: Date;
   customerName: string;
   listType: PhoenixCrmListType;
+  /** The brick the place's GPS resolved to — an AM name's town word (`signNamesCustomer`). */
+  photoBrick: string | null;
   /** Verdicts recorded for this place so far. A row written before the field existed has had one. */
   priorAttempts: number;
 };
@@ -164,6 +166,7 @@ function toPlace(row: Row): SweepPlace | null {
     capturedAt,
     customerName: String(customer.name ?? ""),
     listType: String(customer.list_type ?? "") as PhoenixCrmListType,
+    photoBrick: typeof row.brick_name === "string" && row.brick_name.trim() ? row.brick_name : null,
   };
 }
 
@@ -189,7 +192,7 @@ async function loadBacklog(limit: number): Promise<SweepPlace[]> {
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_places")
     .select(
-      "id, customer_id, seat_id, created_by_hr_id, photo_path, lat, lon, accuracy_meters, captured_at, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)",
+      "id, customer_id, seat_id, created_by_hr_id, photo_path, lat, lon, accuracy_meters, captured_at, brick_name, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)",
     )
     .eq("status", "active")
     .eq("is_test", false)
@@ -223,7 +226,7 @@ async function loadBacklog(limit: number): Promise<SweepPlace[]> {
 async function readOne(place: SweepPlace): Promise<PhoenixCrmSignboardCheck> {
   if (!signboardApplies(place.listType)) return signboardUnjudged("name_unusable");
   if (!signboardNameIsUsable(place.customerName)) return signboardUnjudged("name_unusable");
-  const input = { customerName: place.customerName, listType: place.listType, photoPath: place.photoPath };
+  const input = { customerName: place.customerName, listType: place.listType, photoBrick: place.photoBrick, photoPath: place.photoPath };
   const first = await readStoredPlaceSignboard(input);
   if (first.verdict !== "unjudged" || first.reason !== "call_failed") return first;
   return readStoredPlaceSignboard(input);
@@ -364,7 +367,7 @@ export async function loadUnreadableBacklog(placeIds?: readonly string[]): Promi
       let query = getSupabaseAdmin()
         .from("phoenix_crm_places")
         .select(
-          "id, customer_id, seat_id, created_by_hr_id, photo_path, lat, lon, accuracy_meters, captured_at, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)",
+          "id, customer_id, seat_id, created_by_hr_id, photo_path, lat, lon, accuracy_meters, captured_at, brick_name, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)",
         )
         .eq("status", "active")
         .eq("is_test", false)
@@ -398,7 +401,7 @@ export async function loadUnreadableBacklog(placeIds?: readonly string[]): Promi
 /** One look, by the strong reader; a lost call is asked once more, as the night asks it. */
 async function readOnceForBacklog(place: SweepPlace): Promise<PhoenixCrmSignboardCheck> {
   if (!signboardApplies(place.listType) || !signboardNameIsUsable(place.customerName)) return signboardUnjudged("name_unusable");
-  const input = { customerName: place.customerName, listType: place.listType, photoPath: place.photoPath };
+  const input = { customerName: place.customerName, listType: place.listType, photoBrick: place.photoBrick, photoPath: place.photoPath };
   const first = await readStoredPlaceSignboard(input, { secondLook: false });
   if (first.verdict !== "unjudged" || first.reason !== "call_failed") return first;
   return readStoredPlaceSignboard(input, { secondLook: false });
@@ -513,7 +516,7 @@ async function loadStoredSignboards(): Promise<Row[]> {
   for (let from = 0; ; from += 500) {
     const { data, error } = await getSupabaseAdmin()
       .from("phoenix_crm_places")
-      .select("id, created_by_hr_id, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)")
+      .select("id, created_by_hr_id, brick_name, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)")
       .eq("status", "active")
       .eq("is_test", false)
       .is("shared_place_id", null)
@@ -551,7 +554,8 @@ export async function rejudgeStoredSignboardsOnce(options: {
     const listType = String(customer.list_type ?? "") as PhoenixCrmListType;
     const customerName = String(customer.name ?? "");
     if (!signboardApplies(listType) || !signboardNameIsUsable(customerName)) continue;
-    const change = signboardRejudge(check, { customerName, listType }, now);
+    const photoBrick = typeof raw.brick_name === "string" && raw.brick_name.trim() ? raw.brick_name : null;
+    const change = signboardRejudge(check, { customerName, listType, photoBrick }, now);
     if (!change) continue;
 
     const placeId = String(raw.id);

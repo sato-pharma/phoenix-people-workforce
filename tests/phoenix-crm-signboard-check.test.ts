@@ -1256,6 +1256,23 @@ function checkPlaceShortForms(): void {
     "🔴 a contract row never spends the one-word allowance on its company: the town alone is the fever hospital's board",
   );
   assert.equal(am("مستشفى الحميات", "مستشفى الأمراض الصدرية"), false, "and nothing else about the place axis moved");
+  // Read by eye on 2026-10-19, two of the 31 left in Not readable: the list's spelling, the board's word.
+  assert.equal(am("تعاقد المقاولين العرب", "شركة المقاولون العرب"), true, "🔴 the list's المقاولين is the board's المقاولون");
+  assert.equal(am("مستشفي الصحه النفسه", "مستشفى الصحة النفسية"), true, "🔴 and the list's النفسه the board's النفسية");
+
+  // 🔴 THE PHOTO'S OWN BRICK ANSWERS FOR THE TOWN (owner, 2026-10-19: "brick counts").
+  const inBrick = (customerName: string, text: string, photoBrick: string | null) =>
+    signNamesCustomer({ customerName, listType: "AM", personNames: [], placeNames: [], signText: text, photoBrick }).matches;
+  assert.equal(inBrick("كهربا المرج", "شمال القاهرة لتوزيع الكهرباء", "المرج"), true, "🔴 the company on the sign, the town from where the photo was taken");
+  assert.equal(inBrick("تعاقد الماليه كفر الزيات", "مصلحة الضرائب المصرية مأمورية المالية", "كفر الزيات"), true, "and the finance office in the brick كفر الزيات");
+  assert.equal(inBrick("كهربا المرج", "شمال القاهرة لتوزيع الكهرباء", "شبرا"), false, "a photo taken in another brick supplies nothing");
+  assert.equal(inBrick("كهربا المرج", "شمال القاهرة لتوزيع الكهرباء", null), false, "no brick, no town: the old answer");
+  assert.equal(inBrick("كهربا المرج", "صيدلية المرج", "المرج"), false, "🔴 the town alone, on the sign or from the brick, never names the place");
+  assert.equal(
+    inBrick("تعاقد الكهرباء كفر الشيخ", "مستشفى حميات كفر الشيخ", "كفر الشيخ"),
+    false,
+    "🔴 the brick never stands in for the COMPANY: the Kafr El Sheikh fever hospital's board stays refused",
+  );
 }
 
 /**
