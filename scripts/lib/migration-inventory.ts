@@ -1079,6 +1079,17 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // checklists and 245 items unchanged. The pre-image is 20260828160000's own trigger and function,
   // which is also the rollback. Re-applying it is a no-op (both drops are `if exists`).
   "20261019153000_resignation_stops_opening_a_clearance_checklist.sql",
+  // 2026-10-19 (the release gate, docs/deployment.md), applied BEFORE its PR merged. The production
+  // MCP `apply_migration` answered `declined`, so the owner chose the standing route and it ran that evening, 19 Oct:
+  // `node scripts/apply-sql-file.mjs <file> production` (ozucdzovmcqvepbozvqf,
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com) printed {"applied":true,"count":0}
+  // and wrote no ledger row — zero rows in supabase_migrations.schema_migrations carry this version
+  // or a name like release_gates. A NEW table has no older generation a probe could mistake for it,
+  // so existence is evidence here, and it was read by shape, not by presence alone: columns
+  // sha text not null, recorded_at timestamptz not null, workflow_run_id text; the CHECK
+  // `sha ~ '^[0-9a-f]{40}$'`; RLS on with the one policy phx_release_gates_service_role (ALL, role
+  // service_role); select and insert granted to service_role and none to anon or authenticated; 0 rows.
+  "20261019171347_release_gates.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

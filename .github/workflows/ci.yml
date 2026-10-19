@@ -110,6 +110,11 @@ on:
   # (PRs need not be up to date), and it is the only detector of a red `main` at all, because
   # next.config.ts sets `typescript: { ignoreBuildErrors: true }` — a red main builds, deploys and
   # serves perfectly. Account: docs/deployment.md, "The deploy gate".
+  #
+  # 🔴 STILL TRUE AFTER THE RELEASE GATE (2026-10-19): once Railway's Wait for CI is switched off, the gate is
+  # this run's `release-gate` job rather than the suite, but it is a job of THIS push run all the same, so the
+  # same deletion would leave production with no row ever written and nothing able to go live. The two
+  # mechanisms overlap on purpose until the owner switches Wait for CI off. docs/deployment.md, "The release gate".
   push:
     branches:
       - main
@@ -795,6 +800,93 @@ jobs:
 
       - name: Prove the unit suite ran every test exactly once
         run: node scripts/ci-unit-coverage.mjs unit-coverage
+
+  # release-gate — the row that lets a container Railway has ALREADY BUILT take traffic (added 2026-10-19).
+  #
+  # WHY. Railway's "Wait for CI" held every merge's build until the checks finished, so the build (4 to 10
+  # minutes, and its speed is Railway's shared builder's) started only after CI: a merge on 2026-10-19 took 16
+  # minutes to go live. With Wait for CI off, Railway builds the moment a commit lands, side by side with the
+  # jobs above, and /api/readyz — the healthcheck Railway asks of a NEW container before it moves traffic —
+  # answers 503 until THIS job has written a row for that container's commit. The old version keeps serving
+  # until it does, and a red check means the row is never written. Nothing is skipped; the build merely no
+  # longer waits for the checks to start. Account: docs/deployment.md, "The release gate".
+  #
+  # `needs: [validate, checks]` IS THE REQUIRED PAIR — the same two names branch protection requires, and
+  # `checks` already holds `static` and `unit` and refuses unless every test ran exactly once. `mobile` is
+  # left out on purpose: it reports and never gated a merge, so it must not gate a deploy (a red Expo
+  # typecheck used to withhold production under Wait for CI, which was a side effect, not a decision).
+  # tests/release-gate.test.ts pins the pair, the event and the branch.
+  #
+  # MAIN PUSH ONLY. A pull request has no production container to release, and a workflow_dispatch run on
+  # main must not mint a row for a commit whose own push run did not.
+  #
+  # FAILS LOUD, NEVER SKIPS: a missing secret, an unreachable database or a row that does not read back
+  # after the write is a red job. Red here means "do not ship this commit", which is exactly what the
+  # container's probe also says when the row is absent — the old version keeps serving and the next green
+  # merge carries the change. No `continue-on-error`, unlike the dashboard saves elsewhere in this repo,
+  # because those are reporting gaps and this is a gate.
+  #
+  # The secret is the one migration-drift-check.yml and synthetic-journeys.yml already use for production
+  # reads and writes — no new credential. The URL is written out for the same reason those two write it out.
+  release-gate:
+    needs: [validate, checks]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Record that every required check passed on this commit
+        env:
+          PRODUCTION_SUPABASE_URL: "https://ozucdzovmcqvepbozvqf.supabase.co"
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -u
+          if [ -z "${SUPABASE_SERVICE_ROLE_KEY}" ]; then
+            echo "::error::PRODUCTION_SUPABASE_SERVICE_ROLE_KEY is not set, so the release gate cannot be written and this commit will not go live."
+            exit 1
+          fi
+          if ! printf '%s' "${RELEASE_SHA}" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::the commit is not a full 40-character sha: ${RELEASE_SHA}"
+            exit 1
+          fi
+
+          body="{\"sha\":\"${RELEASE_SHA}\",\"workflow_run_id\":\"${RELEASE_RUN_ID}\"}"
+          written=0
+          for attempt in 1 2 3; do
+            code="$(curl -sS -o gate-write.txt -w '%{http_code}' --max-time 20 \
+              -X POST "${PRODUCTION_SUPABASE_URL}/rest/v1/release_gates?on_conflict=sha" \
+              -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+              -H "Content-Type: application/json" \
+              -H "Prefer: resolution=ignore-duplicates,return=minimal" \
+              -d "${body}" || true)"
+            case "${code}" in
+              2??) written=1; break ;;
+            esac
+            echo "write attempt ${attempt}: HTTP ${code}"
+            cat gate-write.txt 2>/dev/null || true
+            echo
+            sleep $((attempt * 3))
+          done
+          if [ "${written}" != "1" ]; then
+            echo "::error::the release gate could not be written after 3 attempts, so this commit will not go live."
+            exit 1
+          fi
+
+          # The write is not the proof; the row reading back is.
+          seen="$(curl -sS --max-time 20 \
+            "${PRODUCTION_SUPABASE_URL}/rest/v1/release_gates?sha=eq.${RELEASE_SHA}&select=sha" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" || true)"
+          case "${seen}" in
+            *"${RELEASE_SHA}"*) echo "release gate recorded for ${RELEASE_SHA}" ;;
+            *)
+              echo "::error::the row did not read back after the write, so this commit will not go live."
+              exit 1
+              ;;
+          esac
 
   # THE ONE JOB THAT LOOKS AT mobile/ (added 2026-09-18). Nothing else in this file does, and that
   # is structural rather than an oversight: the root project is pnpm, `mobile/` is npm with its own

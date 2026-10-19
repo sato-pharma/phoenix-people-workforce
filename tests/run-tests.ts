@@ -1520,6 +1520,7 @@ import { runMarketingRoiCohortsTests } from "./marketing-roi-cohorts.test.ts";
 import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.ts";
 import { runCiGateParityTests, runCiDocsOnlyClassifierTests } from "./ci-gate-parity.test.ts";
 import { runCiRunnerSwitchTests } from "./ci-runner-switch.test.ts";
+import { runReleaseGateTests } from "./release-gate.test.ts";
 import { runRemoteCheckTests } from "./remote-check.test.ts";
 import { runCheckContractsTests } from "./check-contracts.test.ts";
 import { runRunTestsRegistrationShapeTests } from "./run-tests-registration-shape.test.ts";
@@ -5601,6 +5602,10 @@ await runTest("CI <-> package.json gate parity (a check:* in the gate must run i
 await runTest(
   "every CI job runs on a GitHub-hosted runner (owner, 2026-10-19): each runs-on in every workflow is the literal ubuntu-latest, nothing reads the retired CI_SELF_HOSTED or CI_RUNNER_LABEL variables, and no step branches on runner.environment == 'self-hosted', so deleting the Hetzner box cannot leave a job queued for ever",
   runCiRunnerSwitchTests,
+);
+await runTest(
+  "the production release gate (owner, 2026-10-19): a production container with no row for its own commit is not ready, a container that is not production Railway is never held, only the word off switches it off, an unreadable table is closed and a released commit is remembered while a missing one is asked again; /api/readyz ANDs the gate into ready; ci.yml's release-gate job runs on a push to main only, needs exactly validate and checks, fails loud and reads the row back; the table has row level security and nothing for the browser roles; and the healthcheck window outlasts a slow day of CI",
+  runReleaseGateTests,
 );
 await runTest(
   "remote-check checks a commit on GitHub Actions and nothing else (owner, 2026-10-19): no ssh, box address, lock or box setting survives in live code, it spawns only git and gh, an unknown or retired flag is refused by name, every stage's job and step is read against the real ci.yml, the grading is PASS or FAIL only for a stage's own step (a skipped Build, a job that never started, a run about another commit, a cancelled run and a skipped coverage proof are NO VERDICT) with a matrix suite needing every part AND the coverage proof, a stage is answered the moment its own step concludes, and the whole script is run against a fake gh: an open PR's run is read and never dispatched beside, no PR is NO VERDICT without --dispatch, main is read and never dispatched on, an unpushed commit stops before GitHub is asked",

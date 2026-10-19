@@ -68,6 +68,16 @@
 # either is wrong. It is unauthenticated by declaration (`src/lib/security/access-registry.ts`) and
 # `proxy.ts` does not gate a GET, so the platform can reach it with no session.
 #
+# 🔴 THE WINDOW IS 900 s SINCE 2026-10-19 (it was 300) BECAUSE THE PROBE IS NOW ALSO THE RELEASE GATE. With
+# Railway's Wait for CI off, a commit's build starts the moment it lands and /api/readyz answers 503 until
+# ci.yml's `release-gate` job has recorded that the required checks passed (src/lib/platform/release-gate.ts,
+# docs/deployment.md "The release gate"). The window opens when the container starts, which is after the
+# build, so on a normal day the checks are long done; the headroom is for the day GitHub is slow to start
+# jobs (19 Oct 2026: the checks' results were recorded 13 to 18 minutes late). A container still waiting at
+# the end of the window is marked failed and the old version keeps serving, so the cost of too short a window
+# is a stranded deploy and the cost of a long one is a container held for a few minutes. Never shorten it
+# without reading that section.
+#
 # WHAT THIS BUYS AND WHAT IT COSTS. A broken deploy now fails its healthcheck and Railway keeps the
 # OLD version serving — nobody sees it. The cost is the other side of the same coin: a Supabase blip
 # during a deploy can fail that deploy and need a re-run. That trade was put to the owner on
@@ -78,7 +88,7 @@ healthcheckPath = "/api/readyz"
 # (see next.config.ts), so a cold container is slow to first response for reasons that have nothing
 # to do with whether it is healthy. The probe itself is bounded well under this: the DB ping is capped
 # at 4s and the registry audit at 4s of total wall clock. A tight window here would fail good deploys.
-healthcheckTimeout = 300
+healthcheckTimeout = 900
 
 # 🔴 ON_FAILURE, NOT ALWAYS — and the retry cap is the reason to say so. After 10 consecutive crashes
 # Railway stops restarting, and nothing here raises an alarm about that; the tell is `/api/healthz`

@@ -4,6 +4,8 @@ import { notificationConfigWarnings } from "@/lib/observability/config-drift";
 import { getDeployRevision } from "@/lib/observability/deploy-identity";
 import { readUrgentDeployRevision } from "@/lib/observability/urgent-deploy-marker";
 import { logWarning } from "@/lib/observability/log";
+import { evaluateReleaseGate, type ReleaseGateDecision } from "@/lib/platform/release-gate";
+import { releaseGateHasRecord } from "@/lib/platform/release-gate-store";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { auditWorkflowRegistryModules } from "@/lib/workflow-registry/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -84,6 +86,26 @@ export async function GET() {
     databaseError = clientSafeErrorMessage(error, "supabase unreachable");
   }
 
+  // THE RELEASE GATE (docs/deployment.md, "The release gate"). A production container is not ready until CI
+  // has recorded that every required check passed on ITS commit, so Railway can build while the checks run
+  // and still keep the old version serving until they pass. Anywhere that is not production on Railway this
+  // is `required: false` and always passes. Bounded like every other dependency here: a gate that cannot be
+  // read in time is the closed answer, never a hung probe.
+  let releaseGate: ReleaseGateDecision;
+  try {
+    releaseGate = await withDeadline(
+      evaluateReleaseGate({
+        env: process.env,
+        urgentRevision: readUrgentDeployRevision(),
+        hasRecord: releaseGateHasRecord,
+      }),
+      4000,
+      "release gate",
+    );
+  } catch {
+    releaseGate = { required: true, passed: false, reason: "unreadable", sha: null };
+  }
+
   // Which workflow modules the loader cannot load.
   //
   // An invalid module is SKIPPED — one bad row must not break every other module's transitions —
@@ -112,11 +134,14 @@ export async function GET() {
     registryCheckError = clientSafeErrorMessage(error, "registry unreadable");
   }
 
-  const ready = missingEnv.length === 0 && databaseOk;
+  const ready = missingEnv.length === 0 && databaseOk && releaseGate.passed;
   return NextResponse.json(
     {
       status: ready ? "ready" : "not_ready",
       checks: {
+        // `passed` is false only while CI has not released this commit (or could not be asked). Never a secret:
+        // the reason, and the commit this container was built from.
+        releaseGate: { required: releaseGate.required, passed: releaseGate.passed, reason: releaseGate.reason, sha: releaseGate.sha },
         env: missingEnv.length === 0,
         // Only the NAMES of any missing vars — never values.
         missingEnv,
