@@ -96,6 +96,74 @@ export function formatDealValueLabelled(
 }
 
 /**
+ * What the order is, in one line: every product with ITS OWN quantity.
+ *
+ * A basket's request row is line 1 only, so the approval window's header read "Lacto Advanced 1 ×
+ * 240" over an order that was also asking for 240 of Advanced 2 — the approver saw half the order as
+ * the whole (code review, 19 Oct 2026). The units are listed per product and never summed: units of
+ * different products are never added (owner rule).
+ */
+export function describeDirectOrderProducts(
+  request: Pick<DirectOrderRequest, "productName" | "qty">,
+  items?: readonly { productName: string; qty: number }[] | null,
+): string {
+  return items && items.length > 1
+    ? items.map((item) => `${item.productName} × ${units(item.qty)}`).join(" + ")
+    : `${request.productName} × ${units(request.qty)}`;
+}
+
+/** One basket line as the approval window's tiles and price rows state it. */
+export type DirectOrderBasketLineView = {
+  lineNo: number;
+  productName: string;
+  qty: number;
+  /** "40 bonus" / "20% discount" — the number with its kind, because a basket's lines can mix. */
+  deal: string;
+  overCap: boolean;
+  /**
+   * Each price as THIS line knows it, and whether it priced THIS line. A null value on the basis
+   * that did not price the line means "not used", never "not set" — a discount line stores no
+   * pharmacy price at all.
+   */
+  pharmacyPrice: { value: number | null; used: boolean };
+  publicPrice: { value: number | null; used: boolean };
+};
+
+/**
+ * The basket's lines for the approval window — null for a one-product order, which keeps the
+ * request-level tiles it always had.
+ *
+ * The window's Quantity and Deal tiles and its two price rows read the request row, which on a
+ * basket is line 1 only: a Lacto Advanced 1 + 2 order showed line 1's quantity, deal and prices as
+ * if they were the whole order. Each line now speaks for itself. The product's CURRENT price is
+ * loaded for the request's own product alone, so only that line can fall back to it.
+ */
+export function describeDirectOrderBasketLines(
+  detail: Pick<DirectOrderApprovalDetail, "request" | "items" | "productPharmacyPrice" | "productPublicPrice">,
+): DirectOrderBasketLineView[] | null {
+  const items = detail.items ?? [];
+  if (items.length <= 1) return null;
+  return items.map((item) => {
+    const isRequestProduct = item.productCode === detail.request.productCode;
+    return {
+      lineNo: item.lineNo,
+      productName: item.productName,
+      qty: item.qty,
+      deal: formatDealValueLabelled(item),
+      overCap: item.overCap,
+      pharmacyPrice: {
+        value: item.pharmacyPriceSnapshot ?? (isRequestProduct ? detail.productPharmacyPrice : null),
+        used: item.dealType === "bonus",
+      },
+      publicPrice: {
+        value: item.publicPriceSnapshot ?? (isRequestProduct ? detail.productPublicPrice : null),
+        used: item.dealType === "discount",
+      },
+    };
+  });
+}
+
+/**
  * Labels the approval window must ALWAYS carry.
  *
  * This is the machine-checked completeness bar: the approved-order email has always shown the
@@ -357,10 +425,7 @@ export function buildDirectOrderNotificationLine(ctx: DirectOrderNotifyContext):
   // A basket names every product, because "Lacto Advanced 1 × 100" for an order that is also
   // buying Advanced 2 tells the approver something false about what they are being asked to
   // approve. Bounded by DIRECT_ORDER_NOTIFICATION_MAX_CHARS below, as the whole line always was.
-  const productSummary =
-    ctx.items && ctx.items.length > 1
-      ? ctx.items.map((item) => `${item.productName} × ${units(item.qty)}`).join(" + ")
-      : `${request.productName} × ${units(request.qty)}`;
+  const productSummary = describeDirectOrderProducts(request, ctx.items);
 
   const parts = [
     `${ctx.requesterName} submitted ${productSummary}`,

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import { DecisionActions } from "@/components/approvals-hub/decision-actions";
@@ -24,10 +25,13 @@ import {
   buildDirectOrderSalesMatrix,
   computeDirectOrderPricingBreakdown,
   dealFieldLabel,
+  describeDirectOrderBasketLines,
+  describeDirectOrderProducts,
   DIRECT_ORDER_STATUS_BANNER_CLASSES,
   formatDealValue,
   resolveDirectOrderStatusBanner,
   type DirectOrderApprovalNarrativeStep,
+  type DirectOrderBasketLineView,
 } from "@/lib/direct-orders/approval-fields";
 import { describeResolvedAddressPlace, type DirectOrderGeographyVerdict } from "@/lib/direct-orders/geography-check";
 import { describeDirectOrderAutoLinkRefusal } from "@/lib/direct-orders/hold-decision";
@@ -81,7 +85,7 @@ const NARRATIVE_TONE: Record<DirectOrderApprovalNarrativeStep["state"], string> 
 // weight — a decision's headline numbers sat no differently than "Geography check". These three
 // buckets, plus HeroStat for the numbers that matter most, are display-only groupings over the
 // SAME buildDirectOrderDetailFields() output — the domain field list itself is untouched.
-const HERO_LABELS = new Set(["Sales value", "Quantity"]);
+const HERO_LABELS = new Set(["Sales value", "Sales value (total)", "Quantity"]);
 // Present elsewhere on screen already, in a form that makes the plain-grid copy redundant rather
 // than informative: the code rides in the Product/Venue field's own "(CODE)" suffix
 // (codeNameLabel), Discount % repeats the hero tile above verbatim, and the two prices get their
@@ -95,8 +99,11 @@ const GRID_HIDDEN_LABELS = new Set([
   "Discount %",
   "Pharmacy price",
   "Public price",
-  // Hero tiles above the tables carry these three; leaving them in the grid printed each twice.
+  // Hero tiles above the tables carry these; leaving them in the grid printed each twice. A
+  // basket's total is labelled "(total)" by the domain, and missing that spelling here put the
+  // order's value on screen twice.
   "Sales value",
+  "Sales value (total)",
   "Quantity",
   "Collection date",
   // The header pill and the approval tracker both state it — a third copy read as a third fact.
@@ -222,6 +229,10 @@ export function DirectOrderRequestDetail({
   // reserved for a product that genuinely has none — never confused with "0 EGP".
   const pharmacyPriceValue = request.pharmacyPriceSnapshot ?? productPharmacyPrice;
   const publicPriceValue = request.publicPriceSnapshot ?? productPublicPrice;
+  // A basket's request row is line 1 only, so its header, tiles and price rows speak per line
+  // instead. Null on a one-product order, which keeps the request-level rendering it always had.
+  const basketLines = describeDirectOrderBasketLines(detail);
+  const basketOverCap = basketLines?.some((line) => line.overCap) ?? false;
   const collectionDateLabel = request.collectionDate ? String(request.collectionDate).slice(0, 10) : "—";
   // The one candidate the Distributors block speaks about, read once so the FIELDS and the callout
   // below them can never describe different things — which is exactly how they came to contradict.
@@ -305,7 +316,7 @@ export function DirectOrderRequestDetail({
       <section className={adminPanelClassName}>
         <header className={`flex flex-wrap items-center justify-between gap-2 ${adminPanelHeaderClassName} px-4 py-3`}>
           <h2 className="flex flex-wrap items-center gap-2 text-base font-black text-white">
-            {request.productName} × {request.qty.toLocaleString("en-US")}
+            <span>{describeDirectOrderProducts(request, detail.items)}</span>
             <DirectOrderStatusPill status={request.status} salesMonth={request.salesMonth} variant="solid" />
           </h2>
           <span className="text-lg font-black text-orange-400">{money(request.salesValue)}</span>
@@ -406,18 +417,46 @@ export function DirectOrderRequestDetail({
             values is the defect that made this window unreadable at 375px once already, and
             "this particular grid is fine" is exactly the judgement call that let it back in. */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <HeroStat label="Sales value" value={money(request.salesValue)} tone="orange" />
-          <HeroStat label="Quantity" value={request.qty.toLocaleString("en-US")} />
-          <HeroStat
-            label={dealFieldLabel(request)}
-            tone={bonusOverCap ? "orange" : "slate"}
-            value={
-              <span className={bonusOverCap ? "text-rose-600" : undefined}>
-                {formatDealValue(request)}
-                {bonusOverCap ? " · over cap" : ""}
-              </span>
-            }
-          />
+          <HeroStat label={basketLines ? "Sales value (total)" : "Sales value"} value={money(request.salesValue)} tone="orange" />
+          {basketLines ? (
+            <>
+              {/* One row per product, never one summed number: units of different products are
+                  never added, and line 1's figures alone hid the rest of the order. */}
+              <HeroStat
+                label="Quantity"
+                value={<BasketTileLines lines={basketLines} render={(line) => line.qty.toLocaleString("en-US")} />}
+              />
+              <HeroStat
+                label="Deal"
+                tone={basketOverCap ? "orange" : "slate"}
+                value={
+                  <BasketTileLines
+                    lines={basketLines}
+                    render={(line) => (
+                      <span className={line.overCap ? "text-rose-600" : undefined}>
+                        {line.deal}
+                        {line.overCap ? " · over cap" : ""}
+                      </span>
+                    )}
+                  />
+                }
+              />
+            </>
+          ) : (
+            <>
+              <HeroStat label="Quantity" value={request.qty.toLocaleString("en-US")} />
+              <HeroStat
+                label={dealFieldLabel(request)}
+                tone={bonusOverCap ? "orange" : "slate"}
+                value={
+                  <span className={bonusOverCap ? "text-rose-600" : undefined}>
+                    {formatDealValue(request)}
+                    {bonusOverCap ? " · over cap" : ""}
+                  </span>
+                }
+              />
+            </>
+          )}
           {/* Promoted out of the field list (owner request) — a collection date buried beside
               "Geography check" was invisible, and it is a commitment somebody has to meet. */}
           <HeroStat label="Collection date" value={collectionDateLabel} />
@@ -447,7 +486,9 @@ export function DirectOrderRequestDetail({
                 .map((field) => ({ label: field.label, value: field.value })),
               {
                 label: "Pharmacy price",
-                value: (
+                value: basketLines ? (
+                  <BasketPriceLines lines={basketLines} pick={(line) => line.pharmacyPrice} />
+                ) : (
                   <PriceUsageField
                     label=""
                     used={request.dealType === "bonus"}
@@ -459,7 +500,9 @@ export function DirectOrderRequestDetail({
               },
               {
                 label: "Public price",
-                value: (
+                value: basketLines ? (
+                  <BasketPriceLines lines={basketLines} pick={(line) => line.publicPrice} />
+                ) : (
                   <PriceUsageField
                     label=""
                     used={request.dealType === "discount"}
@@ -494,7 +537,9 @@ export function DirectOrderRequestDetail({
         {fullFields.map((field) => (
           <dl key={field.label} className="mt-3 border-t border-[#eef1f3] pt-3">
             <dt className="text-phx-2xs font-black uppercase tracking-wider text-slate-400">{field.label}</dt>
-            <dd className="mt-0.5 text-sm font-semibold text-slate-900">{field.value}</dd>
+            {/* pre-line: a basket's "Products (n)" value is one product per line, and without it
+                the line breaks collapsed into one run-on sentence. */}
+            <dd className="mt-0.5 whitespace-pre-line text-sm font-semibold text-slate-900">{field.value}</dd>
           </dl>
         ))}
 
@@ -1277,5 +1322,60 @@ export function DirectOrderRequestDetail({
         key={request.id}
       />
     </div>
+  );
+}
+
+/**
+ * A hero tile's value on a basket: one product per row with its own figure. The tile's big single
+ * number would wrap or overflow at 375px with two product names in it, so the rows are smaller type
+ * and allowed to wrap.
+ */
+function BasketTileLines({
+  lines,
+  render,
+}: {
+  lines: DirectOrderBasketLineView[];
+  render: (line: DirectOrderBasketLineView) => ReactNode;
+}) {
+  return (
+    <span className="block space-y-0.5 whitespace-normal">
+      {lines.map((line) => (
+        <span key={line.lineNo} className="flex flex-wrap items-baseline justify-between gap-x-2 text-sm">
+          <span className="font-semibold text-slate-500">{line.productName}</span>
+          <span>{render(line)}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * One price row on a basket, per line. A basis that did not price a line and has no value on it is
+ * "Not used", never "Not set": a discount line stores no pharmacy price, and "Not set" told the
+ * approver a saved price had gone missing.
+ */
+function BasketPriceLines({
+  lines,
+  pick,
+}: {
+  lines: DirectOrderBasketLineView[];
+  pick: (line: DirectOrderBasketLineView) => { value: number | null; used: boolean };
+}) {
+  return (
+    <span className="block space-y-1">
+      {lines.map((line) => {
+        const price = pick(line);
+        return (
+          <span key={line.lineNo} className="flex flex-wrap items-center gap-x-2">
+            <span className="text-phx-xs font-bold text-slate-500">{line.productName}</span>
+            {price.value == null && !price.used ? (
+              <span className="text-slate-400">Not used</span>
+            ) : (
+              <PriceUsageField label="" used={price.used} notSet={price.value == null} value={price.value} bare />
+            )}
+          </span>
+        );
+      })}
+    </span>
   );
 }

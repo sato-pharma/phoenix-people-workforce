@@ -9,6 +9,8 @@ import {
   buildDirectOrderNotificationLine,
   buildDirectOrderNotificationMetrics,
   computeDirectOrderPricingBreakdown,
+  describeDirectOrderBasketLines,
+  describeDirectOrderProducts,
   formatMedicalRep,
   type DirectOrderPricingItem,
 } from "../src/lib/direct-orders/approval-fields.ts";
@@ -398,6 +400,77 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     // Quantity is deliberately ABSENT on a basket: one number cannot stand for lines that each
     // carry their own, and a single figure there would be read as the order's quantity.
     assert.ok(!basketLabels.includes("Quantity"), "a basket must not show one Quantity for many lines");
+
+    // ── The WINDOW's header, tiles and price rows speak per line (code review, 19 Oct 2026) ──
+    // The approval window read the request row, which on a basket is line 1 only, for its header,
+    // its Quantity and Deal tiles and both price rows: a Lacto Advanced 1 + 2 order was headed
+    // "Lacto Advanced 1 × 100" and priced at line 1's prices, so the approver saw half the order as
+    // the whole. Units of different products are never summed into one figure (owner rule).
+    {
+      const mixed: DirectOrderApprovalDetail["items"] = [
+        basketItems[0],
+        {
+          ...basketItems[1],
+          qty: 240,
+          dealType: "discount",
+          bonus: 0,
+          discountPct: 20,
+          publicPriceSnapshot: 30,
+          pharmacyPriceSnapshot: null,
+        },
+      ];
+      const basketDetail = detail({
+        items: mixed,
+        request: { ...request(), productCode: "LA001", productName: "Lacto Advanced 1", qty: 100, salesValue: 3000 },
+        productPharmacyPrice: 10,
+        productPublicPrice: 14,
+      });
+      const header = describeDirectOrderProducts(basketDetail.request, basketDetail.items);
+      assert.equal(header, "Lacto Advanced 1 × 100 + Lacto Advanced 2 × 240", "the header names every product with its own units");
+      assert.doesNotMatch(header, /340/, "units of different products are never added into one figure");
+      assert.equal(describeDirectOrderProducts(request(), singleItem()), "Roya × 100", "a one-product order keeps its header");
+
+      const views = describeDirectOrderBasketLines(basketDetail);
+      assert.ok(views, "a basket gets one view per line");
+      assert.deepEqual(
+        views.map((view) => [view.productName, view.qty, view.deal, view.overCap]),
+        [
+          ["Lacto Advanced 1", 100, "5 bonus", false],
+          ["Lacto Advanced 2", 240, "20% discount", true],
+        ],
+        "the Quantity and Deal tiles carry each line's own figure, and the over-cap mark sits on the line that is over",
+      );
+      assert.deepEqual(views[0].pharmacyPrice, { value: 10, used: true }, "line 1 is priced at its own pharmacy price");
+      assert.deepEqual(
+        views[0].publicPrice,
+        { value: 14, used: false },
+        "line 1's unused public price falls back to its product's current price, as a one-product order does",
+      );
+      assert.deepEqual(
+        views[1].pharmacyPrice,
+        { value: null, used: false },
+        "a discount line stores no pharmacy price: it reads Not used, and never borrows line 1's price",
+      );
+      assert.deepEqual(views[1].publicPrice, { value: 30, used: true }, "line 2 is priced at its own public price");
+      assert.equal(describeDirectOrderBasketLines(detail()), null, "a one-product order keeps the request-level tiles");
+
+      const windowSource = stripComments(
+        readFileSync(new URL("../src/components/approvals-hub/direct-order-request-detail.tsx", import.meta.url), "utf8"),
+      );
+      assert.match(windowSource, /describeDirectOrderProducts\(request, detail\.items\)/, "the window's header names every product");
+      assert.doesNotMatch(windowSource, /\{request\.productName\} × \{request\.qty/, "the window's header must not read line 1 alone");
+      assert.match(windowSource, /describeDirectOrderBasketLines\(detail\)/, "the window's tiles and price rows read the basket's lines");
+      assert.match(
+        windowSource,
+        /GRID_HIDDEN_LABELS = new Set\(\[[^\]]*"Sales value \(total\)"/,
+        "a basket's total sits in its hero tile and must not print a second time in the grid",
+      );
+      assert.match(
+        windowSource,
+        /<dd className="[^"]*whitespace-pre-line[^"]*">\{field\.value\}<\/dd>/,
+        "the Products (n) block keeps one product per line instead of collapsing into one sentence",
+      );
+    }
   }
 
     // Completeness bar: everything the approved-order email has always shown must also appear
