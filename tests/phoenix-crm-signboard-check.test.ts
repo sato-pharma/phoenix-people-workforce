@@ -1309,6 +1309,23 @@ function checkPlaceShortForms(): void {
   );
   assert.equal(inBrick("مستشفي تبارك المريوطيه", "مستشفى تبارك للولادة والأطفال", "المريوطيه"), true, "a name that says which place still takes its town from the brick");
   assert.equal(inBrick("مستشفى حميات منوف", "مستشفى حميات مدرف", "منوف"), true, "and the fever hospital in the brick منوف");
+
+  // 🔴 A WORD THAT SAYS WHAT KIND OF PLACE IT IS NEVER SAYS WHICH ONE BESIDE THE BRICK (code review,
+  // 19 Oct 2026). Every stored AM reading was replayed first: two confirmations moved, both below.
+  assert.equal(
+    inBrick("مستشفى المنيا الجامعي", "مستشفى النور الجامعي", "المنيا"),
+    false,
+    "🔴 another hospital's الجامعي in the brick المنيا is not Minya University Hospital",
+  );
+  assert.equal(inBrick("مستشفي بنها التعليمي", "التعليمي", "بنها"), false, "🔴 nor a board reading only التعليمي in بنها");
+  assert.equal(
+    inBrick("مستشفي القناطر الخيريه المركزي", "وزارة الصحة المصرية مستشفى القناطر البيطري المركزي", "القناطر الخيريه"),
+    false,
+    "🔴 and the town's VETERINARY central hospital is not its central hospital",
+  );
+  assert.equal(inBrick("مستشفى الرحمة التخصصي", "مستشفى الرحمة التخصصي", "بنها"), true, "a board that carries the name still matches");
+  assert.equal(inBrick("مستشفى المنيا الجامعي", "مستشفى المنيا الجامعي", "المنيا"), true, "and so does the hospital's own board");
+  assert.equal(inBrick("مستشفي صدر أشمون", "مدير مستشفى الصدر", "أشمون"), true, "a SPECIALTY still says which: the chest hospital in أشمون");
 }
 
 /**
