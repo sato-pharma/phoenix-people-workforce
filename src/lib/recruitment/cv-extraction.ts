@@ -62,6 +62,7 @@ import {
 } from "@/lib/recruitment/cv-extraction-merge";
 import { extractTextByOcr } from "@/lib/recruitment/cv-ocr";
 import { runRuleCvExtraction, type CvRuleContext, type RuleExtractionResult } from "@/lib/recruitment/rule-extraction";
+import { correctWebmailEnding } from "@/lib/recruitment/rule-extraction/patterns";
 import { chooseCvExtractionRoute, MAX_PDF_VISION_BYTES, type CvExtractionRoute } from "@/lib/recruitment/cv-text-layer";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { getFileForDownload, listCandidateFiles } from "@/lib/recruitment/files";
@@ -658,7 +659,25 @@ export function selectCvFile(files: readonly RecruitmentFile[], fileId?: string)
 // forwarded CV's OWN identity (name/email/phone) before deciding which candidate it belongs
 // to — see cv-intake-service.ts's "cv" identity source. The caller persists the very same
 // result afterwards via persistCvExtraction, so a bulk import still costs one AI call per CV.
-export async function extractCvFieldsFromBytes(input: {
+//
+// Every read of a CV leaves through here, whichever engine answered — the rules, the model, a scan
+// read by OCR, or the merge of two — so this is the one place a misspelt Gmail or Yahoo ending the
+// CV itself prints ("yahoo.om", "gmail.con") is put right before intake writes it to a candidate.
+export async function extractCvFieldsFromBytes(
+  input: Parameters<typeof readCvFieldsFromBytes>[0],
+): Promise<CvFieldExtraction> {
+  return withCorrectedWebmailEnding(await readCvFieldsFromBytes(input));
+}
+
+export function withCorrectedWebmailEnding(extraction: CvFieldExtraction): CvFieldExtraction {
+  const email = extraction.fields.email;
+  if (!email || typeof email.value !== "string") return extraction;
+  const corrected = correctWebmailEnding(email.value.trim());
+  if (corrected === email.value.trim()) return extraction;
+  return { ...extraction, fields: { ...extraction.fields, email: { ...email, value: corrected } } };
+}
+
+async function readCvFieldsFromBytes(input: {
   bytes: Buffer;
   mimeType: string;
   fileName: string;

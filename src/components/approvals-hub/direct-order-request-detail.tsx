@@ -514,6 +514,15 @@ export function DirectOrderRequestDetail({
             productName={request.productName}
             pharmacyName={detail.pharmacy?.pharmacyName ?? "this pharmacy"}
             returnComment={returnComment}
+            // Every line after the first — a basket is corrected whole, never as its first line alone.
+            extraLines={detail.items.slice(1).map((item) => ({
+              productCode: item.productCode,
+              productName: item.productName,
+              qty: item.qty,
+              dealType: item.dealType,
+              bonus: item.bonus,
+              discountPct: item.discountPct,
+            }))}
           />
         ) : null}
 
