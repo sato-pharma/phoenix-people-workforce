@@ -481,4 +481,26 @@ export async function runRecruitmentPoolWhatsAppColumnsTests() {
     card.includes('`Show ${answerCount} ${answerCount === 1 ? "answer" : "answers"}`') && card.includes('"Add answers"'),
     "folded, the button counts the answers, or offers to add the first",
   );
+
+  // ── 12 · One "New" on a card (owner, 2026-10-19 — "fix the double NEW pill on phone candidate cards").
+  // A candidate who arrived in the last day and whom nobody has looked at read "NEW NEW": the orange
+  // arrival pill and the status pill, touching. The orange one now speaks for both.
+  assert.ok(
+    read("src/lib/recruitment/candidate-status.ts").includes('  new: "New",'),
+    'the status the check compares against still reads "New"',
+  );
+  assert.match(
+    card,
+    /\{isNew && candidateStatusLabel\(candidate\.status\) === "New" \? null : \(\s*<StagePill tone=\{candidateStatusTone\(candidate\.status\)\}>\{candidateStatusLabel\(candidate\.status\)\}<\/StagePill>\s*\)\}/,
+    "a fresh, unread candidate shows the orange New alone; every other status pill still shows",
+  );
+  assert.equal(
+    (card.match(/<StagePill tone=\{candidateStatusTone\(candidate\.status\)\}>/g) ?? []).length,
+    1,
+    "the card draws its status pill in exactly one place, behind that check",
+  );
+  assert.ok(
+    workspace.includes('{isNewArrival(candidate) ? <StagePill tone="orange">New</StagePill> : null}'),
+    "the desktop row keeps its own arrival pill — the date sits between it and the status there",
+  );
 }

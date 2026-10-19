@@ -3956,7 +3956,13 @@ function CandidatePoolCard({
           {/* Amber, not rose: nothing is wrong with the person, the attachment is simply a
               certificate. Rose is reserved for "this candidate cannot be hired". */}
           {isNotACv(candidate) ? <StagePill tone="amber">{NOT_A_CV_LABEL}</StagePill> : null}
-          <StagePill tone={candidateStatusTone(candidate.status)}>{candidateStatusLabel(candidate.status)}</StagePill>
+          {/* One "New", never two side by side (owner, 2026-10-19 — "fix the double NEW pill on phone
+              candidate cards"). The orange one says it arrived in the last day, the status one that
+              nobody has looked yet; on a fresh candidate both read "New" and sat touching, so the
+              orange one speaks for both. The desktop row keeps both, the date between them. */}
+          {isNew && candidateStatusLabel(candidate.status) === "New" ? null : (
+            <StagePill tone={candidateStatusTone(candidate.status)}>{candidateStatusLabel(candidate.status)}</StagePill>
+          )}
         </span>
       }
       title={
