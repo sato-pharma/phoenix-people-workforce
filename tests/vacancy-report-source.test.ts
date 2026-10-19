@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
 
 import { publicVacancyLabel } from "../src/lib/reports/organogram-safety.ts";
 import {
@@ -223,4 +224,80 @@ export function runVacancyReportSourceTests() {
   // truncated substring of the timestamp — see organogram-safety.ts.
   assert.equal(publicVacancyLabel("resignation_vac_20260517123456_B180"), "VAC-RES-PIBHHX");
   assert.equal(publicVacancyLabel("resignation_b-180_20260101000000"), "VAC-RES-PH8AE7");
+
+  runVacancyListLightReadTests();
+}
+
+/** The source of one top-level function: from its signature to the next top-level declaration. */
+function functionSource(source: string, signature: string) {
+  const start = source.indexOf(signature);
+  assert.ok(start >= 0, `${signature} is missing`);
+  const rest = source.slice(start + signature.length);
+  const end = rest.search(/\n(?:export |async function |function |const |type )/);
+  return signature + (end < 0 ? rest : rest.slice(0, end));
+}
+
+// The Recruitment page's new-requisition list reads the vacancy LIST, never the whole vacancy report
+// (19 Oct 2026: the report also builds the employee directory, and the page missed the list at 10:37
+// and 11:42 Cairo). The light read asks the database for open rows only, so the one thing it rests on
+// is that de-duplicating the open rows alone keeps exactly the open rows the full report keeps.
+function runVacancyListLightReadTests() {
+  const seatRows = [
+    // District Sales Manager seat, newest first: a filled row, then two open ones.
+    vacancy({ id: 31, status: "filled", vacancyCode: "VAC-DSM-FILLED" }),
+    vacancy({ id: 32, vacancyCode: "VAC-DSM-OPEN-NEW" }),
+    vacancy({ id: 33, vacancyCode: "VAC-DSM-OPEN-OLD" }),
+    // Medical Representative seat: a closed row in front of the open one.
+    vacancy({
+      id: 34,
+      jobTitle: "Medical Representative",
+      positionId: 11,
+      positionTitle: "Medical Representative",
+      status: "closed",
+      vacancyCode: "VAC-MR-CLOSED",
+    }),
+    vacancy({
+      id: 35,
+      jobTitle: "Medical Representative",
+      positionId: 11,
+      positionTitle: "Medical Representative",
+      vacancyCode: "VAC-MR-OPEN",
+    }),
+    // Two open rows that map to no structural seat: neither is anybody's duplicate.
+    vacancy({ id: 36, jobTitle: "Pharmacist", lineId: null, lineName: null, positionId: null, positionTitle: null, vacancyCode: "VAC-FREE-1" }),
+    vacancy({ id: 37, jobTitle: "Pharmacist", lineId: null, lineName: null, positionId: null, positionTitle: null, vacancyCode: "VAC-FREE-2" }),
+  ];
+  const isOpen = (row: { status: string }) => row.status === "open";
+  const fromFullReport = dedupeVacancyReportRows(seatRows).filter(isOpen).map((row) => row.vacancyCode);
+  const fromOpenRowsOnly = dedupeVacancyReportRows(seatRows.filter(isOpen)).filter(isOpen).map((row) => row.vacancyCode);
+  assert.deepEqual(fromFullReport, ["VAC-DSM-OPEN-NEW", "VAC-MR-OPEN", "VAC-FREE-1", "VAC-FREE-2"]);
+  assert.deepEqual(fromOpenRowsOnly, fromFullReport);
+
+  const vacanciesSource = readFileSync(new URL("../src/lib/reports/vacancies.ts", import.meta.url), "utf8");
+  const listRows = functionSource(vacanciesSource, "export async function getVacancyListRows(");
+  // The light read never builds what only the organogram half of the report and its hire button use.
+  for (const heavy of ["getEmployeeDirectory", "loadEmployeePendingManagerReplacements", "loadOfferOutBySeat", "getVacancyReport"]) {
+    assert.doesNotMatch(listRows, new RegExp(`\\b${heavy}\\(`), `getVacancyListRows must not call ${heavy}`);
+  }
+  // One mapping for both, so the list and the report can never describe a seat differently.
+  assert.match(listRows, /mapVacancyReportRow\(/);
+  assert.match(listRows, /dedupeVacancyReportRows\(/);
+  assert.match(functionSource(vacanciesSource, "export async function getVacancyReport("), /mapVacancyReportRow\(/);
+  assert.equal(vacanciesSource.match(/areaName: row\.area_id/g)?.length, 1, "the vacancy row is mapped in one place");
+  // openOnly filters in the database, on every fallback select alike.
+  const loadRows = functionSource(vacanciesSource, "async function loadVacancyRows(");
+  assert.match(loadRows, /filter\.openOnly \? \{ status: "eq\.open" \} : \{\}/);
+  assert.equal(loadRows.match(/new URLSearchParams\(/g)?.length, 1, "every select goes through the one filtered params builder");
+
+  const requisitionsSource = readFileSync(new URL("../src/lib/recruitment/requisitions.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(requisitionsSource, /\bawait getVacancyReport\(|getVacancyReport\(\),/, "requisitions read the vacancy list, never the whole report");
+  assert.match(requisitionsSource, /import \{ getVacancyListRows, type VacancyReportRow \} from "@\/lib\/reports\/vacancies";/);
+  assert.match(
+    functionSource(requisitionsSource, "export async function listOpenVacanciesForRequisition("),
+    /getVacancyListRows\(\{ openOnly: true \}\)/,
+  );
+  assert.match(
+    functionSource(requisitionsSource, "export async function createRequisition("),
+    /\(await getVacancyListRows\(\)\)\.find\(\(row\) => row\.id === vacancyId\)/,
+  );
 }

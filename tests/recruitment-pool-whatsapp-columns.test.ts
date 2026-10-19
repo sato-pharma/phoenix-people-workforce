@@ -349,4 +349,26 @@ export async function runRecruitmentPoolWhatsAppColumnsTests() {
     ),
     "and the registry declares it on the same grant, ahead of the read-only catch-all",
   );
+
+  // ── 11 · Folded until asked for (owner, 2026-10-19 — "Fold answers on phones"). Open, the answers
+  // were 381px of a 793px median card on an 812px phone, so 65 cards ran to 52,000px of scroll.
+  assert.ok(card.includes("const [answersOpen, setAnswersOpen] = useState(false);"), "every card opens folded");
+  assert.match(
+    card,
+    /\{answersOpen \? \(\s*<div id=\{answersBodyId\}>\s*\{canEditAnswers \? \([\s\S]*?\) : null\}\s*<\/section>/,
+    "folded, the card draws no answer and no editor — only the heading row",
+  );
+  assert.match(
+    card,
+    /<button\s+aria-controls=\{answersBodyId\}\s+aria-expanded=\{answersOpen\}\s+className=\{`[^`]*\bmin-h-8\b[^`]*\$\{adminControlDepthClassName\}`\}/,
+    "one thumb-sized, lifted button opens and closes them, and says which it will do",
+  );
+  assert.ok(
+    card.includes("setAnswersOpen((open) => !open);\n            setEditingColumnKey(null);"),
+    "closing the answers closes an editor left open inside them",
+  );
+  assert.ok(
+    card.includes('`Show ${answerCount} ${answerCount === 1 ? "answer" : "answers"}`') && card.includes('"Add answers"'),
+    "folded, the button counts the answers, or offers to add the first",
+  );
 }

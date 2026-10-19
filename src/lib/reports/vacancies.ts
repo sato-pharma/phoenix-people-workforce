@@ -399,13 +399,23 @@ function isMissingManagerColumns(error: unknown) {
   );
 }
 
-async function loadVacancyRows() {
+type VacancyRowFilter = {
+  /** Ask the database for `status = open` rows only (the vacancy list's light read). */
+  openOnly?: boolean;
+};
+
+async function loadVacancyRows(filter: VacancyRowFilter = {}) {
   const baseSelect =
     "id,vacancy_code,department_id,line_id,area_id,team_id,position_id,job_title,source_row_number,status,note,created_at";
-  const params = new URLSearchParams({
-    select: `${baseSelect},manager_hr_id,manager_name,manager_replacement_for_hr_id,region_name,replacement_for_hr_id`,
-    order: "created_at.desc",
-  });
+  const vacancyParams = (select: string) =>
+    new URLSearchParams({
+      select,
+      order: "created_at.desc",
+      ...(filter.openOnly ? { status: "eq.open" } : {}),
+    });
+  const params = vacancyParams(
+    `${baseSelect},manager_hr_id,manager_name,manager_replacement_for_hr_id,region_name,replacement_for_hr_id`,
+  );
 
   try {
     return await supabaseRest<VacancyDbRow[]>(`position_vacancies?${params}`);
@@ -414,10 +424,7 @@ async function loadVacancyRows() {
       throw error;
     }
 
-    const managerOnlyParams = new URLSearchParams({
-      select: `${baseSelect},manager_hr_id,manager_name,region_name`,
-      order: "created_at.desc",
-    });
+    const managerOnlyParams = vacancyParams(`${baseSelect},manager_hr_id,manager_name,region_name`);
 
     try {
       return await supabaseRest<VacancyDbRow[]>(
@@ -428,16 +435,100 @@ async function loadVacancyRows() {
         throw fallbackError;
       }
 
-      const fallbackParams = new URLSearchParams({
-        select: baseSelect,
-        order: "created_at.desc",
-      });
+      const fallbackParams = vacancyParams(baseSelect);
 
       return supabaseRest<VacancyDbRow[]>(
         `position_vacancies?${fallbackParams}`,
       );
     }
   }
+}
+
+/** The vacancy rows plus the names they point at — the half of the report the vacancy LIST needs. */
+async function loadVacancyRowsWithLookups(filter: VacancyRowFilter = {}) {
+  const rows = await loadVacancyRows(filter);
+  const [departmentNames, lines, areas, teamNames, positionTitles, managerNames] = await Promise.all([
+    loadLookup("departments", ids(rows, "department_id")),
+    loadNameAndCodeLookup("lines", ids(rows, "line_id")),
+    loadNameAndCodeLookup("areas", ids(rows, "area_id")),
+    loadLookup("teams", ids(rows, "team_id")),
+    loadLookup("positions", ids(rows, "position_id"), "title"),
+    loadEmployeeNames(textValues(rows, "manager_hr_id")),
+  ]);
+  return {
+    lookups: { areas, departmentNames, lines, managerNames, positionTitles, teamNames },
+    rows,
+  };
+}
+
+type VacancyLookups = Awaited<ReturnType<typeof loadVacancyRowsWithLookups>>["lookups"];
+
+function mapVacancyReportRow(
+  row: VacancyDbRow,
+  { areas, departmentNames, lines, managerNames, positionTitles, teamNames }: VacancyLookups,
+  offerOutBySeat: ReadonlyMap<string, SeatOfferOut>,
+): VacancyReportRow {
+  return {
+    areaId: row.area_id,
+    // Ismailia and Suez are ONE area on Anti Infective from 2026-09 (owner, 2026-09-19), so the
+    // Delta (3) seat reads "Ismailia and Suez", not "Suez"; every other line keeps the plain name.
+    areaName: row.area_id
+      ? (row.line_id && areas.codes.get(row.area_id)
+          ? getMergedAreaName(lines.codes.get(row.line_id), areas.codes.get(row.area_id) ?? "")
+          : null) ?? areas.names.get(row.area_id) ?? null
+      : null,
+    createdAt: row.created_at,
+    departmentId: row.department_id,
+    departmentName: row.department_id
+      ? departmentNames.get(row.department_id) ?? null
+      : null,
+    id: row.id,
+    jobTitle: row.job_title,
+    lineId: row.line_id,
+    lineName: row.line_id ? lines.names.get(row.line_id) ?? null : null,
+    managerHrId: row.manager_hr_id ?? null,
+    managerReplacementForHrId: row.manager_replacement_for_hr_id ?? null,
+    managerName: row.manager_hr_id
+      ? managerNames.get(row.manager_hr_id) ?? row.manager_name ?? null
+      : row.manager_name ?? null,
+    note: row.note,
+    // An accepted/sent letter on this open seat, looked up by the vacancy's own id. Only open
+    // vacancies carry a key in the map, so a filled or cancelled row reads null here.
+    pendingOffer: offerOutBySeat.get(offerSeatKeyForVacancy(row.id)) ?? null,
+    positionId: row.position_id,
+    positionTitle: row.position_id
+      ? positionTitles.get(row.position_id) ?? null
+      : null,
+    regionName: row.region_name ?? null,
+    replacementForHrId: row.replacement_for_hr_id ?? null,
+    sourceRowNumber: row.source_row_number,
+    status: row.status,
+    teamId: row.team_id ?? null,
+    teamName: row.team_id ? teamNames.get(row.team_id) ?? null : null,
+    vacancyCode: row.vacancy_code,
+  };
+}
+
+const NO_OFFERS: ReadonlyMap<string, SeatOfferOut> = new Map();
+
+/**
+ * The vacancy LIST alone: the report's `rows`, mapped and de-duplicated exactly as getVacancyReport
+ * builds them, without the three reads only the report's organogram half and its hire button need —
+ * the whole employee directory, every employee's pending manager replacement (one `in.(…)` naming
+ * every hr_id) and the offers out against seats. `pendingOffer` is therefore null on every row.
+ *
+ * Why it exists: the Recruitment page's new-requisition list was built from the full report, and on
+ * 19 Oct 2026 it missed its eight-second deadline at 10:37 and timed out at 11:42 Cairo, so the page
+ * said "Not loaded: the open vacancy list" while the rows it needed were a few dozen open seats.
+ *
+ * `openOnly` filters in the database. The open rows that come back are the same ones the report's
+ * `rows.filter(status === "open")` gives: dedupeVacancyReportRows lets an open row speak for its seat
+ * whatever non-open rows sit beside it, and keeps the first (newest) of two open rows either way.
+ */
+export async function getVacancyListRows(filter: VacancyRowFilter = {}): Promise<VacancyReportRow[]> {
+  const { lookups, rows } = await loadVacancyRowsWithLookups(filter);
+  const listed = dedupeVacancyReportRows(rows.map((row) => mapVacancyReportRow(row, lookups, NO_OFFERS)));
+  return filter.openOnly ? listed.filter((row) => row.status === "open") : listed;
 }
 
 async function loadEmployeePendingManagerReplacements(hrIds: string[]) {
@@ -473,32 +564,11 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
   // lookups wait on the vacancy rows and only the replacement read waits on the directory. Each
   // chain keeps its own order, so every value below is the one the serial version produced.
   const [
-    [
-      vacancyRows,
-      [
-        departmentNames,
-        { codes: lineCodes, names: lineNames },
-        { codes: areaCodes, names: areaNames },
-        teamNames,
-        positionTitles,
-        managerNames,
-      ],
-    ],
+    { lookups: vacancyLookups, rows: vacancyRows },
     [employeeDirectory, pendingManagerReplacements],
     offerOutBySeat,
   ] = await Promise.all([
-    (async () => {
-      const rows = await loadVacancyRows();
-      const lookups = await Promise.all([
-        loadLookup("departments", ids(rows, "department_id")),
-        loadNameAndCodeLookup("lines", ids(rows, "line_id")),
-        loadNameAndCodeLookup("areas", ids(rows, "area_id")),
-        loadLookup("teams", ids(rows, "team_id")),
-        loadLookup("positions", ids(rows, "position_id"), "title"),
-        loadEmployeeNames(textValues(rows, "manager_hr_id")),
-      ]);
-      return [rows, lookups] as const;
-    })(),
+    loadVacancyRowsWithLookups(),
     (async () => {
       const directory = await getEmployeeDirectory();
       const replacements = await loadEmployeePendingManagerReplacements(
@@ -514,45 +584,7 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
     loadOfferOutBySeat(),
   ]);
 
-  const mappedRows = vacancyRows.map((row): VacancyReportRow => ({
-    areaId: row.area_id,
-    // Ismailia and Suez are ONE area on Anti Infective from 2026-09 (owner, 2026-09-19), so the
-    // Delta (3) seat reads "Ismailia and Suez", not "Suez"; every other line keeps the plain name.
-    areaName: row.area_id
-      ? (row.line_id && areaCodes.get(row.area_id)
-          ? getMergedAreaName(lineCodes.get(row.line_id), areaCodes.get(row.area_id) ?? "")
-          : null) ?? areaNames.get(row.area_id) ?? null
-      : null,
-    createdAt: row.created_at,
-    departmentId: row.department_id,
-    departmentName: row.department_id
-      ? departmentNames.get(row.department_id) ?? null
-      : null,
-    id: row.id,
-    jobTitle: row.job_title,
-    lineId: row.line_id,
-    lineName: row.line_id ? lineNames.get(row.line_id) ?? null : null,
-    managerHrId: row.manager_hr_id ?? null,
-    managerReplacementForHrId: row.manager_replacement_for_hr_id ?? null,
-    managerName: row.manager_hr_id
-      ? managerNames.get(row.manager_hr_id) ?? row.manager_name ?? null
-      : row.manager_name ?? null,
-    note: row.note,
-    // An accepted/sent letter on this open seat, looked up by the vacancy's own id. Only open
-    // vacancies carry a key in the map, so a filled or cancelled row reads null here.
-    pendingOffer: offerOutBySeat.get(offerSeatKeyForVacancy(row.id)) ?? null,
-    positionId: row.position_id,
-    positionTitle: row.position_id
-      ? positionTitles.get(row.position_id) ?? null
-      : null,
-    regionName: row.region_name ?? null,
-    replacementForHrId: row.replacement_for_hr_id ?? null,
-    sourceRowNumber: row.source_row_number,
-    status: row.status,
-    teamId: row.team_id ?? null,
-    teamName: row.team_id ? teamNames.get(row.team_id) ?? null : null,
-    vacancyCode: row.vacancy_code,
-  }));
+  const mappedRows = vacancyRows.map((row) => mapVacancyReportRow(row, vacancyLookups, offerOutBySeat));
   const rows = dedupeVacancyReportRows(mappedRows);
   const openRows = rows.filter((row) => row.status === "open");
 

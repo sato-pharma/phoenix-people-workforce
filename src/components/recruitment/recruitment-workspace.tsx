@@ -3520,6 +3520,7 @@ function CandidatePoolCard({
   // here too. The card lists the table's columns, each with the same pencil, editor and save; the
   // answers no column holds follow read-only. One answer open at a time, like the table.
   const [editingColumnKey, setEditingColumnKey] = useState<string | null>(null);
+  const [answersOpen, setAnswersOpen] = useState(false);
   const answerValues = poolAnswersByColumn(candidate, whatsappQuestions);
   const answersOutsideColumns = poolAnswersOutsideColumns(whatsappAnswers, answerColumns);
   const displayName = candidateDisplayName(candidate.fullName);
@@ -3532,60 +3533,88 @@ function CandidatePoolCard({
   const hasAnswersSection = canEditAnswers
     ? answerColumns.length > 0 || answersOutsideColumns.length > 0
     : whatsappAnswers.length > 0;
+  // Folded until asked for (owner, 2026-10-19 — "Fold answers on phones"): open, the answers were half
+  // of every card — 381px of a 793px median card on a 812px phone, so 65 cards were a 52,000px scroll
+  // (production, 375px). The heading row stays, with the count, and one tap opens them in place.
+  const answersBodyId = `pool-card-answers-${candidate.id}`;
+  const answerCount = whatsappAnswers.length;
+  const answersToggleLabel = answersOpen
+    ? "Hide answers"
+    : answerCount > 0
+      ? `Show ${answerCount} ${answerCount === 1 ? "answer" : "answers"}`
+      : "Add answers";
   // Full width between the screening facts and the contact details, never one of the half-width
   // fields: as a field the list ran about 900px down one half of the card with the other half empty
   // beside it (production, 375px, 2026-10-19), and an open editor needs the room.
   const whatsappAnswersSection = hasAnswersSection ? (
     <section aria-label={`WhatsApp answers of ${displayName}`} className="my-2 border border-slate-100 bg-slate-50 px-2.5 py-2">
-      <h4 className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">WhatsApp answers</h4>
-      {canEditAnswers ? (
-        <>
-          <dl className="mt-1 divide-y divide-slate-100">
-            {answerColumns.map((column) => {
-              const currentValues = poolCurrentAnswerValues(candidate, column, answerValues);
-              return (
-                <div className="min-w-0 py-1.5" key={column.key}>
-                  <dt className="break-words text-xs text-slate-500" dir="auto">
-                    {column.header}
-                    {column.askedTo && !roleQuestionKeys.has(column.key) ? (
-                      <span className="block text-phx-xs text-slate-400">{column.askedTo}</span>
-                    ) : null}
-                  </dt>
-                  <dd className="mt-0.5 min-w-0 text-xs">
-                    <PoolEditableAnswer
-                      canEdit
-                      column={column}
-                      currentValues={currentValues}
-                      editing={editingColumnKey === column.key}
-                      onCancel={() => setEditingColumnKey(null)}
-                      onSave={(values) =>
-                        run(async () => {
-                          await savePoolColumnAnswers(candidate.id, column, values, currentValues);
-                          setEditingColumnKey(null);
-                          return `Saved the answer to "${column.header}" for ${displayName}.`;
-                        })
-                      }
-                      onStartEdit={() => setEditingColumnKey(column.key)}
-                      pending={pending}
-                      touch
-                    >
-                      <PoolAnswerText answer={poolAnswerSummary(currentValues, column) || null} />
-                    </PoolEditableAnswer>
-                  </dd>
-                </div>
-              );
-            })}
-          </dl>
-          {answersOutsideColumns.length > 0 ? (
-            <WhatsAppAnswersList
-              answers={withoutFilterAudience(answersOutsideColumns)}
-              className="mt-1 border-t border-slate-100 pt-2"
-            />
-          ) : null}
-        </>
-      ) : (
-        <WhatsAppAnswersList answers={withoutFilterAudience(whatsappAnswers)} className="mt-1" />
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">WhatsApp answers</h4>
+        <button
+          aria-controls={answersBodyId}
+          aria-expanded={answersOpen}
+          className={`inline-flex min-h-8 items-center border border-slate-200 bg-white px-2.5 text-phx-xs font-semibold text-slate-600 transition hover:border-orange-300 hover:text-orange-600 ${adminControlDepthClassName}`}
+          onClick={() => {
+            setAnswersOpen((open) => !open);
+            setEditingColumnKey(null);
+          }}
+          type="button"
+        >
+          {answersToggleLabel}
+        </button>
+      </div>
+      {answersOpen ? (
+        <div id={answersBodyId}>
+          {canEditAnswers ? (
+            <>
+              <dl className="mt-1 divide-y divide-slate-100">
+                {answerColumns.map((column) => {
+                  const currentValues = poolCurrentAnswerValues(candidate, column, answerValues);
+                  return (
+                    <div className="min-w-0 py-1.5" key={column.key}>
+                      <dt className="break-words text-xs text-slate-500" dir="auto">
+                        {column.header}
+                        {column.askedTo && !roleQuestionKeys.has(column.key) ? (
+                          <span className="block text-phx-xs text-slate-400">{column.askedTo}</span>
+                        ) : null}
+                      </dt>
+                      <dd className="mt-0.5 min-w-0 text-xs">
+                        <PoolEditableAnswer
+                          canEdit
+                          column={column}
+                          currentValues={currentValues}
+                          editing={editingColumnKey === column.key}
+                          onCancel={() => setEditingColumnKey(null)}
+                          onSave={(values) =>
+                            run(async () => {
+                              await savePoolColumnAnswers(candidate.id, column, values, currentValues);
+                              setEditingColumnKey(null);
+                              return `Saved the answer to "${column.header}" for ${displayName}.`;
+                            })
+                          }
+                          onStartEdit={() => setEditingColumnKey(column.key)}
+                          pending={pending}
+                          touch
+                        >
+                          <PoolAnswerText answer={poolAnswerSummary(currentValues, column) || null} />
+                        </PoolEditableAnswer>
+                      </dd>
+                    </div>
+                  );
+                })}
+              </dl>
+              {answersOutsideColumns.length > 0 ? (
+                <WhatsAppAnswersList
+                  answers={withoutFilterAudience(answersOutsideColumns)}
+                  className="mt-1 border-t border-slate-100 pt-2"
+                />
+              ) : null}
+            </>
+          ) : (
+            <WhatsAppAnswersList answers={withoutFilterAudience(whatsappAnswers)} className="mt-1" />
+          )}
+        </div>
+      ) : null}
     </section>
   ) : null;
 
