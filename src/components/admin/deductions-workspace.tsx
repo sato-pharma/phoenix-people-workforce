@@ -149,7 +149,7 @@ function HolidayBridgeCell({ row }: { row: CandidateApiRow }) {
   return (
     <span className="flex flex-col gap-0.5">
       {bridges.map((bridge) => (
-        <span className="whitespace-nowrap text-phx-xs font-bold text-orange-700" key={`${bridge.date}:${bridge.adjacentTo}`}>
+        <span className="break-words text-phx-xs font-bold text-orange-700" key={`${bridge.date}:${bridge.adjacentTo}`}>
           {dayOfMonth(bridge.date)} {bridge.adjacentTo === "before" ? "before" : "after"} {bridge.holidayName}
         </span>
       ))}
@@ -177,7 +177,7 @@ function DayList({ row }: { row: CandidateApiRow }) {
   if (detected.length === 0) return <span className="text-slate-400">—</span>;
   const applied = new Set(appliedDatesOf(row));
   return (
-    <span className="whitespace-nowrap tabular-nums">
+    <span className="tabular-nums">
       {detected.map((date, index) => (
         <span className={applied.has(date) ? "text-slate-700" : "text-slate-400 line-through"} key={date}>
           {dayOfMonth(date)}
@@ -414,7 +414,7 @@ function DeductionDaysEditor({
               on the job title (isFieldWorkforceWeeklyOff), so it is deliberately
               not tinted here rather than asserting a rule that is wrong for half
               the company. */}
-          <p className="whitespace-nowrap text-phx-2xs font-semibold uppercase tracking-[0.08em] text-slate-400">
+          <p className="text-phx-2xs font-semibold uppercase tracking-[0.08em] text-slate-400">
             Tickable days are the ones detected · greyed days were not flagged · Friday column tinted
           </p>
         </div>
@@ -603,7 +603,7 @@ function StatusBadge({ status }: { status: string | null }) {
             ? "bg-amber-100 text-amber-700"
             : "bg-sky-50 text-sky-700";
   return (
-    <span className={["whitespace-nowrap rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]", tone].join(" ")}>
+    <span className={["inline-block rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]", tone].join(" ")}>
       {label}
     </span>
   );
@@ -837,12 +837,12 @@ function LeaveBalanceControl({ row, onChanged }: { row: CandidateApiRow; onChang
   if (charged) {
     return (
       <div className="mt-1.5 space-y-1">
-        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-sky-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-sky-800">
+        <span className="inline-block rounded-full bg-sky-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-sky-800">
           From leave balance · {daysText(charged.days)}
         </span>
         <p className="text-phx-xs text-slate-600">{charged.comment}</p>
         <button
-          className="whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600 disabled:opacity-50"
+          className="border border-slate-300 px-2 py-1 text-left text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600 disabled:opacity-50"
           disabled={busy}
           onClick={() => send({ action: "return" })}
           type="button"
@@ -859,7 +859,7 @@ function LeaveBalanceControl({ row, onChanged }: { row: CandidateApiRow; onChang
     return (
       <div className="mt-1.5">
         <button
-          className="whitespace-nowrap border border-sky-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-sky-800 transition hover:border-sky-500 hover:bg-sky-50"
+          className="border border-sky-300 px-2 py-1 text-left text-phx-2xs font-black uppercase tracking-[0.08em] text-sky-800 transition hover:border-sky-500 hover:bg-sky-50"
           onClick={openDialog}
           type="button"
         >
@@ -962,7 +962,7 @@ function SameDayBadge({ overlap }: { overlap: SameDayOverlap | undefined }) {
   if (!overlap) return null;
   const days = overlap.dates.map((date) => dayOfMonth(date)).join(", ");
   return (
-    <span className="mr-1.5 inline-block whitespace-nowrap rounded-sm border border-red-300 bg-red-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-red-700">
+    <span className="mb-1 mr-1.5 inline-block rounded-sm border border-red-300 bg-red-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-red-700">
       Same day on another row · {days}
     </span>
   );
@@ -1474,12 +1474,12 @@ function AddManualDeduction({
                     onClick={() => pick(match)}
                     type="button"
                   >
-                    <span className="whitespace-nowrap text-xs font-bold text-slate-900">{match.name}</span>
+                    <span className="text-xs font-bold text-slate-900">{match.name}</span>
                     {match.jobTitle ? (
-                      <span className="whitespace-nowrap text-phx-2xs text-slate-500">{match.jobTitle}</span>
+                      <span className="text-phx-2xs text-slate-500">{match.jobTitle}</span>
                     ) : null}
                     {match.isFinalSettlement ? (
-                      <span className="whitespace-nowrap text-phx-2xs font-bold text-amber-700">
+                      <span className="text-phx-2xs font-bold text-amber-700">
                         {`Left ${readableDate(match.lastWorkingDate) ?? "this month"} — final settlement`}
                       </span>
                     ) : null}
@@ -1565,7 +1565,7 @@ function AddManualDeduction({
       {/* A manual entry auto-approves on insert — there is nothing to decide
           about a number a human just typed — so the warning belongs here, before
           the click, not in a confirmation nobody reads. */}
-      <p className="whitespace-nowrap text-phx-xs font-bold text-amber-800">
+      <p className="text-phx-xs font-bold text-amber-800">
         This is added as “Approved for Payroll” immediately and will publish with the month.
       </p>
 
@@ -1749,13 +1749,47 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
               640-767px band was still handing a phone-sized viewport all NINE columns. That is the
               width tests/hr-shell-mobile-tables.test.ts measures, and `md` is the breakpoint every
               sibling uses — PortalResponsiveDataList emits `md:hidden` cards beside a `md:block`
-              table, so a screen splitting at `sm` disagrees with the rest of the shell. */}
-          <div className="hidden overflow-hidden md:block">
-            <table className="w-full text-left text-sm">
+              table, so a screen splitting at `sm` disagrees with the rest of the shell.
+
+              FITS THE SCREEN (owner golden rule; measured 2026-10-19 on production, a 1024px
+              window, Fingerprint tab: the table was 1,455px inside an 893px card, so Amount,
+              Reason, Status and Action fell off the right edge). It was TEN columns of
+              `whitespace-nowrap` cells, and the Dates cell alone listed up to a month of day
+              numbers on one line. Now `table-fixed` with a percentage colgroup that sums to 100,
+              and the width is bought by MERGING, never by shrinking type: Hire date sits under the
+              Employee, the day count sits over its dates, and Status carries the Action buttons.
+              Every cell wraps — the dates break at their commas, and nothing is cut with an
+              ellipsis. No `overflow-x-auto` and no `min-w-[…]` floor: either one is the bug. This
+              tab is one `CategoryTab` for CRM, Fingerprint, Half Day (CRM), Unpaid Vacation,
+              Insufficient Balance Vacation, Loan and Other, so all seven fit by this one table. */}
+          <div className="hidden md:block">
+            <table className="w-full table-fixed text-left text-sm">
+              <colgroup>
+                {canDecide ? (
+                  <>
+                    <col className="w-[5%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[20%]" />
+                  </>
+                ) : (
+                  <>
+                    <col className="w-[16%]" />
+                    <col className="w-[26%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[17%]" />
+                    <col className="w-[15%]" />
+                  </>
+                )}
+              </colgroup>
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
                   {canDecide ? (
-                    <th className="w-8 px-3 py-2">
+                    <th className="px-2 py-2">
                       <input
                         aria-label="Select all candidates"
                         checked={allSelected}
@@ -1766,15 +1800,12 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                       />
                     </th>
                   ) : null}
-                  <th className="px-4 py-2">Employee</th>
-                  <th className="whitespace-nowrap px-4 py-2">Hire date</th>
-                  <th className="px-4 py-2">Days</th>
-                  <th className="px-4 py-2">Dates deducted</th>
-                  <th className="whitespace-nowrap px-4 py-2">Holiday bridge</th>
-                  <th className="px-4 py-2">Amount</th>
-                  <th className="px-4 py-2">Reason</th>
-                  <th className="px-4 py-2">Status</th>
-                  {canDecide ? <th className="px-4 py-2">Action</th> : null}
+                  <th className="px-3 py-2">Employee</th>
+                  <th className="px-3 py-2">Days and dates deducted</th>
+                  <th className="px-3 py-2">Holiday bridge</th>
+                  <th className="px-2 py-2">Amount</th>
+                  <th className="px-3 py-2">Reason</th>
+                  <th className="px-3 py-2">{canDecide ? "Status and action" : "Status"}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1786,7 +1817,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                     <Fragment key={row.id}>
                       <tr className="border-b border-slate-100 odd:bg-slate-50/60 hover:bg-orange-50/40">
                         {canDecide ? (
-                          <td className="px-3 py-2.5">
+                          <td className="px-2 py-2.5 align-top">
                             <input
                               aria-label={`Select ${employeeLabel(row)}`}
                               checked={selectedIds.has(row.id)}
@@ -1800,43 +1831,46 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                         {/* Employee NAME only. Not "name, falling back to the HR
                             code" either — a raw code must never reach a screen, so
                             the name is resolved server-side from the employees
-                            directory when the candidate did not carry one. */}
-                        <td className="whitespace-nowrap px-4 py-2.5 font-semibold text-slate-900">
-                          {employeeLabel(row)}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-slate-600">
-                          {hireDateLabel(row.hireDate)}
+                            directory when the candidate did not carry one. The hire
+                            date rides under it: it was its own column until the table
+                            had to fit a 1024px window. */}
+                        <td className="px-3 py-2.5 align-top">
+                          <span className="block break-words font-semibold text-slate-900">{employeeLabel(row)}</span>
+                          <span className="mt-0.5 block text-xs tabular-nums text-slate-500">
+                            Hired {hireDateLabel(row.hireDate)}
+                          </span>
                         </td>
                         {/* What is CHARGED, with what was detected beside it when the
                             two differ. Showing rawValue alone made a reviewer's own
-                            reduction invisible in the column it changed. */}
-                        <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-slate-700">
-                          {row.unit === "days" ? (
-                            <>
-                              <span className={narrowed ? "font-black text-orange-600" : ""}>{appliedDays}</span>
-                              {narrowed ? <span className="text-xs text-slate-400"> of {row.rawValue}</span> : null}
-                            </>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        {/* WHICH days, not just how many. The candidate has always carried
+                            reduction invisible in the column it changed.
+
+                            WHICH days, not just how many. The candidate has always carried
                             the exact dates; the table simply never showed them, so a
                             reviewer could see "14 days" with no way to tell which 14 or to
                             check one against a calendar. Day numbers only — the whole view
                             is already scoped to one month, so the year/month would be
-                            repetition, and this keeps a 19-day row on a single line
-                            instead of wrapping or being cut off. */}
-                        <td className="whitespace-nowrap px-4 py-2.5 text-xs text-slate-700">
-                          <DayList row={row} />
+                            repetition. The list WRAPS at its commas: it used to be held on
+                            one line, and a long month of dates then pushed every column
+                            after it off the card. */}
+                        <td className="px-3 py-2.5 align-top tabular-nums text-slate-700">
+                          {row.unit === "days" ? (
+                            <p>
+                              <span className={narrowed ? "font-black text-orange-600" : ""}>{appliedDays}</span>
+                              {narrowed ? <span className="text-xs text-slate-400"> of {row.rawValue}</span> : null}
+                              <span className="text-xs text-slate-500"> day(s)</span>
+                            </p>
+                          ) : null}
+                          <p className={row.unit === "days" ? "mt-0.5 text-xs text-slate-700" : "text-xs text-slate-700"}>
+                            <DayList row={row} />
+                          </p>
                         </td>
-                        <td className="px-4 py-2.5">
+                        <td className="px-3 py-2.5 align-top">
                           <HolidayBridgeCell row={row} />
                         </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-slate-700">
+                        <td className="px-2 py-2.5 align-top tabular-nums text-slate-700">
                           {amount != null ? money(amount) : "requires review"}
                         </td>
-                        <td className="max-w-xs px-4 py-2.5 text-xs text-slate-600">
+                        <td className="break-words px-3 py-2.5 align-top text-xs text-slate-600">
                           {/* A candidate the engine could not settle on its own —
                               a vacation day that also carried real work, for
                               instance — must not read like every other row.
@@ -1857,18 +1891,19 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                               Pinned by tests/deductions-approved-not-pushed-feedback.test.ts. */}
                           {row.calculationStatus === "requires_review" &&
                           (row.decision?.decisionStatus ?? "Pending") === "Pending" ? (
-                            <span className="mr-1.5 whitespace-nowrap rounded-full bg-phx-warn-bg px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-phx-warn">
+                            <span className="mb-1 mr-1.5 inline-block rounded-full bg-phx-warn-bg px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-phx-warn">
                               Needs your review
                             </span>
                           ) : null}
                           <SameDayBadge overlap={overlaps.get(row.id)} />
                           {row.reason ?? "—"}
                         </td>
-                        <td className="px-4 py-2.5">
+                        {/* Status and the decision controls share one cell — Action was its own
+                            column until the table had to fit a 1024px window. The controls
+                            wrap under the badge, one per line when the cell is narrow. */}
+                        <td className="px-3 py-2.5 align-top">
                           <StatusBadge status={row.decision?.decisionStatus ?? null} />
-                        </td>
-                        {canDecide ? (
-                          <td className="px-4 py-2.5">
+                          {canDecide ? (
                             <div className="flex flex-wrap items-center gap-1.5">
                               {/* A pushed line is LOCKED — editing days or changing the
                                   decision would be refused server-side. Hide those and
@@ -1890,12 +1925,12 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                               )}
                               <PushControl onPushChange={handlePushChange} row={row} />
                             </div>
-                          </td>
-                        ) : null}
+                          ) : null}
+                        </td>
                       </tr>
                       {canDecide && editingId === row.id ? (
                         <tr className="border-b border-slate-200 bg-white">
-                          <td className="px-4 pb-3" colSpan={canDecide ? 10 : 9}>
+                          <td className="px-4 pb-3" colSpan={canDecide ? 7 : 6}>
                             <DeductionDaysEditor onClose={() => setEditingId(null)} onSaved={handleDecided} row={row} />
                           </td>
                         </tr>
@@ -1925,9 +1960,11 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                           type="checkbox"
                         />
                       ) : null}
-                      <span className="whitespace-nowrap font-semibold text-slate-900">{employeeLabel(row)}</span>
+                      <span className="break-words font-semibold text-slate-900">{employeeLabel(row)}</span>
                     </label>
-                    <StatusBadge status={row.decision?.decisionStatus ?? null} />
+                    <div className="max-w-[55%] shrink-0 text-right">
+                      <StatusBadge status={row.decision?.decisionStatus ?? null} />
+                    </div>
                   </div>
                   <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500">Hired {hireDateLabel(row.hireDate)}</p>
                   <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500">
