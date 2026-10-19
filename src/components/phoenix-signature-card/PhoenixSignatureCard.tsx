@@ -1,8 +1,63 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, type RefObject } from "react";
 import { EmployeePortrait } from "./EmployeePortrait";
 import type { PhoenixSignatureCardProps } from "./types";
+
+// Long full names (script font, one line, no wrap) can render wider than the card allows, so the
+// name is shrunk to fit by its measured width — never cut with an ellipsis (AGENTS.md §4).
+//
+// Every measure decides from scratch: it puts the box back on its DEFAULT size (the CSS clamp) for
+// one synchronous read, measures the name there, and sets a fitted size only when the name would
+// not fit at the default. The earlier version reset to the default whenever the name looked
+// comfortably narrow and never measured again, so when the script font swapped in after the first
+// measure the name went back to full size, overflowed, and showed "Dr. Momen Abd…" (2026-10-20).
+// It also re-measures when any font finishes loading: document.fonts.ready can resolve before the
+// script font has even been requested.
+function useFitNameFont(
+  boxRef: RefObject<HTMLParagraphElement | null>,
+  spanRef: RefObject<HTMLSpanElement | null>,
+  text: string,
+  defaultSize: string,
+) {
+  const [fontPx, setFontPx] = useState<number | null>(null);
+  const [width, setWidth] = useState<number | null>(null);
+
+  useEffect(() => {
+    const span = spanRef.current;
+    const box = boxRef.current;
+    if (!span || !box) return;
+    const measure = () => {
+      const applied = box.style.fontSize;
+      box.style.fontSize = defaultSize;
+      // getBoundingClientRect, not scrollWidth/offsetWidth — those are
+      // unreliable (often 0) on a plain `display: inline` element.
+      const containerWidth = box.getBoundingClientRect().width;
+      const naturalWidth = span.getBoundingClientRect().width;
+      const defaultPx = parseFloat(getComputedStyle(box).fontSize) || 16;
+      box.style.fontSize = applied;
+      if (containerWidth <= 0 || naturalWidth <= 0) return;
+      const fits = naturalWidth <= containerWidth;
+      const nextPx = fits ? null : Math.max((containerWidth / naturalWidth) * defaultPx * 0.97, defaultPx * 0.4);
+      setFontPx(nextPx);
+      setWidth(fits ? naturalWidth : (naturalWidth / defaultPx) * (nextPx ?? defaultPx));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(box);
+    document.fonts?.ready?.then(measure).catch(() => {});
+    document.fonts?.addEventListener?.("loadingdone", measure);
+    return () => {
+      ro.disconnect();
+      document.fonts?.removeEventListener?.("loadingdone", measure);
+    };
+  }, [boxRef, spanRef, text, defaultSize]);
+
+  return { fontPx, width };
+}
+
+const MOBILE_NAME_SIZE = "clamp(20px, 6.6vw, 34px)";
+const DESKTOP_NAME_SIZE = "clamp(1.1rem, 3.8cqw, 4.2rem)";
 
 function signatureNameFor(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -24,64 +79,20 @@ export function PhoenixSignatureCard({
   const sigName = prefix ? `${prefix} ${signatureNameFor(name)}` : signatureNameFor(name);
   const nameRef = useRef<HTMLSpanElement>(null);
   const nameBoxRef = useRef<HTMLParagraphElement>(null);
-  const [nameWidth, setNameWidth] = useState<number | null>(null);
-  const [nameFontPx, setNameFontPx] = useState<number | null>(null);
+  const { fontPx: nameFontPx, width: nameWidth } = useFitNameFont(
+    nameBoxRef,
+    nameRef,
+    sigName,
+    DESKTOP_NAME_SIZE,
+  );
   const mobileNameRef = useRef<HTMLSpanElement>(null);
   const mobileNameBoxRef = useRef<HTMLParagraphElement>(null);
-  const [mobileNameWidth, setMobileNameWidth] = useState<number | null>(null);
-  const [mobileNameFontPx, setMobileNameFontPx] = useState<number | null>(null);
-
-  // Long full names (script font, one line, no wrap) can render wider than the
-  // card allows — shrink-to-fit by actual measured width instead of clipping
-  // silently. Scale-invariant: divides by the font-size that produced the
-  // current measurement, so it converges without oscillating.
-  useEffect(() => {
-    const span = nameRef.current;
-    const box = nameBoxRef.current;
-    if (!span || !box) return;
-    const measure = () => {
-      // getBoundingClientRect, not scrollWidth/offsetWidth — those are
-      // unreliable (often 0) on a plain `display: inline` element.
-      const containerWidth = box.getBoundingClientRect().width;
-      const naturalWidth = span.getBoundingClientRect().width;
-      const currentPx = parseFloat(getComputedStyle(span).fontSize) || 16;
-      if (containerWidth > 0 && naturalWidth > containerWidth) {
-        const widthPerPx = naturalWidth / currentPx;
-        setNameFontPx(Math.max((containerWidth / widthPerPx) * 0.97, currentPx * 0.4));
-      } else if (containerWidth > 0 && naturalWidth < containerWidth * 0.92) {
-        setNameFontPx(null);
-      }
-      setNameWidth(naturalWidth);
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(box);
-    document.fonts?.ready?.then(measure).catch(() => {});
-    return () => ro.disconnect();
-  }, [sigName]);
-
-  useEffect(() => {
-    const span = mobileNameRef.current;
-    const box = mobileNameBoxRef.current;
-    if (!span || !box) return;
-    const measure = () => {
-      const containerWidth = box.getBoundingClientRect().width;
-      const naturalWidth = span.getBoundingClientRect().width;
-      const currentPx = parseFloat(getComputedStyle(span).fontSize) || 16;
-      if (containerWidth > 0 && naturalWidth > containerWidth) {
-        const widthPerPx = naturalWidth / currentPx;
-        setMobileNameFontPx(Math.max((containerWidth / widthPerPx) * 0.97, currentPx * 0.4));
-      } else if (containerWidth > 0 && naturalWidth < containerWidth * 0.92) {
-        setMobileNameFontPx(null);
-      }
-      setMobileNameWidth(naturalWidth);
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(box);
-    document.fonts?.ready?.then(measure).catch(() => {});
-    return () => ro.disconnect();
-  }, [sigName]);
+  const { fontPx: mobileNameFontPx, width: mobileNameWidth } = useFitNameFont(
+    mobileNameBoxRef,
+    mobileNameRef,
+    sigName,
+    MOBILE_NAME_SIZE,
+  );
 
   return (
     <>
@@ -161,12 +172,11 @@ export function PhoenixSignatureCard({
               fontStyle: "italic",
               fontWeight: 500,
               color: "#2a3a5c",
-              fontSize: mobileNameFontPx ? `${mobileNameFontPx}px` : "clamp(20px, 6.6vw, 34px)",
+              fontSize: mobileNameFontPx ? `${mobileNameFontPx}px` : MOBILE_NAME_SIZE,
               lineHeight: 1.1,
               margin: 0,
               whiteSpace: "nowrap",
               overflow: "hidden",
-              textOverflow: "ellipsis",
             }}
           >
             <span ref={mobileNameRef} style={{ display: "inline" }}>{sigName}</span>
@@ -266,11 +276,10 @@ export function PhoenixSignatureCard({
           className="italic font-medium text-[#2a3a5c]"
           style={{
             fontFamily: '"Pinyon Script", cursive',
-            fontSize: nameFontPx ? `${nameFontPx}px` : "clamp(1.1rem, 3.8cqw, 4.2rem)",
+            fontSize: nameFontPx ? `${nameFontPx}px` : DESKTOP_NAME_SIZE,
             lineHeight: 1.1,
             whiteSpace: "nowrap",
             overflow: "hidden",
-            textOverflow: "ellipsis",
           }}
         >
           <span ref={nameRef} style={{ display: "inline" }}>{sigName}</span>
