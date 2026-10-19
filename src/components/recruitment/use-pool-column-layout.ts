@@ -3,58 +3,110 @@
 // The candidate pool's column layout, one per view ("all", or a role family) — which WhatsApp
 // questions show and in what order (pool-whatsapp-columns.ts).
 //
-// Kept in this browser's localStorage, like the sidebar and the bottom-nav choices: it is how one
-// reader likes to look at the pool, not a fact about any candidate. An empty store, a private window
-// or a storage error all read as "nothing saved", which is the view's own WhatsApp questions.
+// Saved to the reader's ACCOUNT since 2026-10-19 (owner — "Columns follow you"): it used to live in
+// this browser's localStorage alone, so the columns set up at a desk were missing on the phone. The
+// account copy (/api/recruitment/pool-column-layout) is the truth; localStorage stays as the instant
+// copy the first paint reads, so the pool does not open on the default columns and then jump.
+//
+// The first time an account with nothing saved opens the pool in a browser that still holds the old
+// browser-only layout, that layout is sent up once — nobody loses the columns they already chose.
+// Any failure (offline, a missing table, a refused save) leaves the pool on what it already shows.
 
 import { useCallback, useSyncExternalStore } from "react";
 
+import { parsePoolColumnLayouts, type PoolColumnLayouts } from "@/lib/recruitment/pool-column-layout-rules";
+
 const STORAGE_KEY = "phoenix-recruitment-pool-columns-v1";
-const CHANGE_EVENT = "phoenix-recruitment-pool-columns-change";
+const ENDPOINT = "/api/recruitment/pool-column-layout";
 
-type Layouts = Readonly<Record<string, readonly string[]>>;
+const EMPTY: PoolColumnLayouts = {};
 
-const EMPTY: Layouts = {};
+let layouts: PoolColumnLayouts | null = null;
+let accountRead: "idle" | "reading" | "done" = "idle";
+// A save made before the account copy arrived already sent the whole document up; the late read must
+// not put the older one back over it.
+let savedBeforeAccountRead = false;
+const listeners = new Set<() => void>();
 
-function parse(raw: string | null): Layouts {
-  if (!raw) return EMPTY;
+function readLocal(): PoolColumnLayouts {
   try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return EMPTY;
-    const out: Record<string, string[]> = {};
-    for (const [view, keys] of Object.entries(parsed as Record<string, unknown>)) {
-      if (Array.isArray(keys)) out[view] = keys.filter((key): key is string => typeof key === "string");
-    }
-    return out;
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? parsePoolColumnLayouts(JSON.parse(raw)) : EMPTY;
   } catch {
     return EMPTY;
   }
 }
 
-// Cached so useSyncExternalStore gets a stable reference while nothing changed.
-let cache: { raw: string | null; value: Layouts } = { raw: null, value: EMPTY };
-
-function getSnapshot(): Layouts {
-  let raw: string | null = null;
+function writeLocal(next: PoolColumnLayouts) {
   try {
-    raw = window.localStorage.getItem(STORAGE_KEY);
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   } catch {
-    raw = null;
+    // Storage refused (private mode, quota): the account copy still holds it.
   }
-  if (raw !== cache.raw) cache = { raw, value: parse(raw) };
-  return cache.value;
 }
 
-function getServerSnapshot(): Layouts {
+function setLayouts(next: PoolColumnLayouts) {
+  layouts = next;
+  writeLocal(next);
+  for (const listener of listeners) listener();
+}
+
+async function putToAccount(next: PoolColumnLayouts): Promise<void> {
+  try {
+    await fetch(ENDPOINT, {
+      body: JSON.stringify({ layouts: next }),
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      method: "PUT",
+    });
+  } catch {
+    // Offline or refused: this browser keeps it, and the next save tries again.
+  }
+}
+
+async function readAccount(): Promise<void> {
+  accountRead = "reading";
+  try {
+    const response = await fetch(ENDPOINT, { cache: "no-store", credentials: "same-origin" });
+    if (!response.ok) return;
+    const body = (await response.json().catch(() => null)) as { data?: unknown } | null;
+    if (savedBeforeAccountRead) return;
+    if (body?.data !== null && body?.data !== undefined) {
+      setLayouts(parsePoolColumnLayouts(body.data));
+      return;
+    }
+    // Nothing on the account yet: carry the old browser-only layout up, once.
+    const local = layouts ?? readLocal();
+    if (Object.keys(local).length > 0) await putToAccount(local);
+  } catch {
+    // The pool keeps this browser's copy.
+  } finally {
+    accountRead = "done";
+  }
+}
+
+function getSnapshot(): PoolColumnLayouts {
+  if (layouts === null) layouts = readLocal();
+  return layouts;
+}
+
+function getServerSnapshot(): PoolColumnLayouts {
   return EMPTY;
 }
 
 function subscribe(callback: () => void) {
-  window.addEventListener("storage", callback);
-  window.addEventListener(CHANGE_EVENT, callback);
+  listeners.add(callback);
+  if (accountRead === "idle") void readAccount();
+  // Another tab of this browser saved: pick its copy up.
+  const onStorage = (event: StorageEvent) => {
+    if (event.key !== STORAGE_KEY) return;
+    layouts = readLocal();
+    callback();
+  };
+  window.addEventListener("storage", onStorage);
   return () => {
-    window.removeEventListener("storage", callback);
-    window.removeEventListener(CHANGE_EVENT, callback);
+    listeners.delete(callback);
+    window.removeEventListener("storage", onStorage);
   };
 }
 
@@ -63,20 +115,17 @@ function subscribe(callback: () => void) {
  * puts the view back on its WhatsApp questions.
  */
 export function usePoolColumnLayout(viewKey: string): [readonly string[] | null, (keys: readonly string[] | null) => void] {
-  const layouts = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  const saved = Object.prototype.hasOwnProperty.call(layouts, viewKey) ? layouts[viewKey] : null;
+  const current = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const saved = Object.prototype.hasOwnProperty.call(current, viewKey) ? current[viewKey] : null;
 
   const save = useCallback(
     (keys: readonly string[] | null) => {
-      try {
-        const next: Record<string, readonly string[]> = { ...getSnapshot() };
-        if (keys === null) delete next[viewKey];
-        else next[viewKey] = [...keys];
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
-      } catch {
-        // Storage refused (private mode, quota): the pool keeps showing the view's own questions.
-      }
+      const next: Record<string, readonly string[]> = { ...getSnapshot() };
+      if (keys === null) delete next[viewKey];
+      else next[viewKey] = [...keys];
+      if (accountRead !== "done") savedBeforeAccountRead = true;
+      setLayouts(next);
+      void putToAccount(next);
     },
     [viewKey],
   );

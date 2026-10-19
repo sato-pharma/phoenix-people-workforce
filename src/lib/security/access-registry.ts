@@ -1543,6 +1543,11 @@ export const accessRegistry = [
   // return to pool — is `update`. A single `/cv-folders/**` blanket would have been shorter and
   // would have reported the GET as an update, which is the false-comfort direction this registry
   // exists to prevent.
+  // The reader's own pool column layouts (owner, 2026-10-19 — "Columns follow you"). Cosmetic and
+  // keyed by the session alone, so anyone who may see the pool may arrange it; not audited, like the
+  // sidebar's personal layout, because it changes nobody's data.
+  sessionApi({ methods: ["GET"], pattern: "/api/recruitment/pool-column-layout", permission: { resource: "candidates", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["PUT"], pattern: "/api/recruitment/pool-column-layout", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/recruitment/cv-folders", permission: { resource: "candidates", action: "read" } }),
   sessionApi({ methods: ["POST"], pattern: "/api/recruitment/cv-folders", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: ["PATCH", "DELETE"], pattern: "/api/recruitment/cv-folders/:id", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),

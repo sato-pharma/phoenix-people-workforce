@@ -16,6 +16,12 @@ import {
   type PoolWhatsAppQuestions,
 } from "../src/lib/recruitment/pool-whatsapp-columns.ts";
 import { BUILT_IN_ANSWER_QUESTIONS } from "../src/lib/recruitment/whatsapp-answers.ts";
+import { experienceAnswerGap, experienceBandYears } from "../src/lib/recruitment/experience-answer-gap.ts";
+import {
+  isPoolColumnLayouts,
+  parsePoolColumnLayouts,
+  POOL_LAYOUT_MAX_VIEWS,
+} from "../src/lib/recruitment/pool-column-layout-rules.ts";
 import { whatsAppAnswerEditPayload, WHATSAPP_ANSWER_MAX_CHARS } from "../src/lib/recruitment/whatsapp-answer-edit-rules.ts";
 
 /**
@@ -348,6 +354,110 @@ export async function runRecruitmentPoolWhatsAppColumnsTests() {
       'pattern: "/api/recruitment/candidates/*/whatsapp-answer", permission: { resource: "candidates", action: "update" }',
     ),
     "and the registry declares it on the same grant, ahead of the read-only catch-all",
+  );
+
+  // ── Phone card shows the CV (owner, 2026-10-19) ─────────────────────────────
+  // The card printed its own bare answer, so George Samir Lotfy read "Faculty of Biotechnology" at a
+  // desk and "—" on a phone. Both now render the built-in columns through ONE function.
+  const workspaceSource = workspace;
+  assert.ok(card.includes("const sharedCells = poolSharedCells(candidate, { touch: true });"), "the phone card builds the table's own cells");
+  assert.match(
+    workspaceSource,
+    /\(poolSharedColumnKeys as readonly string\[\]\)\.includes\(column\.key\) \? \(\s*sharedCells\[column\.key as PoolSharedColumnKey\]\.content/,
+    "and shows them under each built-in question, CV stand-in and all, instead of a bare answer",
+  );
+  assert.ok(
+    workspaceSource.includes("const sharedCells = poolSharedCells(candidate);"),
+    "the desktop row reads the same function, so the two cannot drift",
+  );
+  assert.equal(
+    (workspaceSource.match(/title=\{POOL_CV_STAND_IN_TITLE\}/g) ?? []).length,
+    1,
+    "one copy of the CV stand-in, inside poolSharedCells",
+  );
+
+  // ── Flag CV vs WhatsApp gaps (owner, 2026-10-19) ────────────────────────────
+  // The bot's five bands all parse.
+  assert.deepEqual(experienceBandYears("Fresh graduate"), { max: 0, min: 0 });
+  assert.deepEqual(experienceBandYears("Less than 1 year"), { max: 1, min: 0 });
+  assert.deepEqual(experienceBandYears("1 - 3 years"), { max: 3, min: 1 });
+  assert.deepEqual(experienceBandYears("3 - 5 years"), { max: 5, min: 3 });
+  assert.deepEqual(experienceBandYears("More than 5 years"), { max: null, min: 5 });
+  // A hand-typed answer of the same shape parses; one we cannot read never flags.
+  assert.deepEqual(experienceBandYears("2 to 4"), { max: 4, min: 2 });
+  assert.deepEqual(experienceBandYears("7+"), { max: null, min: 7 });
+  assert.equal(experienceBandYears("a long time"), null);
+  assert.equal(experienceAnswerGap("a long time", 12), null, "an answer with no band is never flagged");
+  // Hossam Abdelrouf Abdelfattah, production 2026-10-19: "3 - 5 years" against a CV counting ~12.
+  const hossam = experienceAnswerGap("3 - 5 years", 12);
+  assert.ok(hossam, "3 - 5 years against 12 counted years must be flagged");
+  assert.match(hossam?.explanation ?? "", /WhatsApp says "3 - 5 years"; the CV counts about 12 years\./);
+  // A year either side is rounding, not a contradiction.
+  assert.equal(experienceAnswerGap("1 - 3 years", 3.5), null);
+  assert.equal(experienceAnswerGap("3 - 5 years", 2.2), null);
+  assert.equal(experienceAnswerGap("More than 5 years", 4.5), null);
+  assert.ok(experienceAnswerGap("More than 5 years", 2), "more than five against two counted years is a gap");
+  assert.ok(experienceAnswerGap("Fresh graduate", 4), "a fresh graduate with four counted years is a gap");
+  assert.equal(experienceAnswerGap("Fresh graduate", 0.5), null);
+  assert.equal(experienceAnswerGap("3 - 5 years", null), null, "no CV count, nothing to compare");
+  assert.equal(experienceAnswerGap(null, 12), null, "no answer, nothing to compare");
+  assert.ok(
+    workspaceSource.includes("const experienceGap = experienceAnswerGap(facts.declaredExperience?.value, facts.years?.value);") &&
+      workspaceSource.includes("<span title={experienceGap.explanation}>{EXPERIENCE_GAP_LABEL}</span>"),
+    "the experience cell runs the rule and shows the flag with its explanation",
+  );
+  // The phone's answers fold by default, so the card says it ABOVE the fold, to every reader.
+  const cardFields = card.slice(0, card.indexOf("{whatsappAnswersSection}"));
+  assert.ok(
+    cardFields.includes("{experienceGap ? (") && cardFields.includes("{experienceGap.explanation}</div>"),
+    "the phone card shows the flag and its reason in the Experience field, outside the folded answers",
+  );
+
+  // ── Columns follow you (owner, 2026-10-19) ──────────────────────────────────
+  const layouts = { all: ["appliedFor", "extra:oc_start_date", "salary"], medical_rep: ["experience", "place"] };
+  assert.ok(isPoolColumnLayouts(layouts), "a real layout document passes");
+  assert.ok(isPoolColumnLayouts({}), "an empty document is a valid 'nothing chosen'");
+  assert.equal(isPoolColumnLayouts([]), false, "an array is not a document");
+  assert.equal(isPoolColumnLayouts({ all: ["appliedFor", "appliedFor"] }), false, "a repeated column is refused");
+  assert.equal(isPoolColumnLayouts({ all: ["salary", "drop table"] }), false, "a key that is not a column is refused");
+  assert.equal(isPoolColumnLayouts({ "All Views": ["salary"] }), false, "a view that is not a view key is refused");
+  assert.equal(
+    isPoolColumnLayouts(Object.fromEntries(Array.from({ length: POOL_LAYOUT_MAX_VIEWS + 1 }, (_, i) => [`view_${i}`, []]))),
+    false,
+    "the view cap holds",
+  );
+  assert.deepEqual(
+    parsePoolColumnLayouts({ all: ["salary", 7, "salary", "nonsense"], "Bad View": ["salary"], medical_rep: "place" }),
+    { all: ["salary"] },
+    "the lenient reader keeps what still reads and drops the rest",
+  );
+  assert.deepEqual(parsePoolColumnLayouts("not json"), {}, "and never throws");
+  const layoutRoute = read("app/api/recruitment/pool-column-layout/route.ts");
+  assert.equal(
+    (layoutRoute.match(/PoolColumnLayouts\(layoutOwnerKey\(access\)/g) ?? []).length,
+    2,
+    "both GET and PUT key the row by the session, never by the request",
+  );
+  assert.ok(
+    layoutRoute.includes('requireRecruitmentAccess(request, "candidates", "read")') &&
+      layoutRoute.includes("assertSameOriginMutation(request)") &&
+      layoutRoute.includes("isPoolColumnLayouts(layouts)"),
+    "the route gates on candidates:read, refuses a cross-site save and validates before it stores",
+  );
+  const layoutHook = read("src/components/recruitment/use-pool-column-layout.ts");
+  assert.ok(layoutHook.includes('const ENDPOINT = "/api/recruitment/pool-column-layout";'), "the hook saves to the account");
+  assert.ok(
+    layoutHook.includes("if (Object.keys(local).length > 0) await putToAccount(local);"),
+    "and carries an old browser-only layout up once, so nobody loses the columns they chose",
+  );
+  assert.ok(
+    read("src/lib/security/access-registry.ts").includes('methods: ["PUT"], pattern: "/api/recruitment/pool-column-layout"'),
+    "the registry declares the save",
+  );
+  const migration = read("supabase/migrations/20261019120000_ats_pool_column_layouts.sql");
+  assert.ok(
+    migration.includes("check (hr_id = lower(hr_id))") && migration.includes("enable row level security"),
+    "the table keys by lowercased id and is service-role only",
   );
 
   // ── 11 · Folded until asked for (owner, 2026-10-19 — "Fold answers on phones"). Open, the answers

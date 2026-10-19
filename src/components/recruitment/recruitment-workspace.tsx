@@ -163,6 +163,7 @@ import {
   nonEgyptianFlagTitle,
 } from "@/lib/recruitment/nationality";
 import { NOT_A_CV_LABEL, NOT_A_CV_TITLE, isNotACv } from "@/lib/recruitment/not-a-cv";
+import { EXPERIENCE_GAP_LABEL, experienceAnswerGap } from "@/lib/recruitment/experience-answer-gap";
 import {
   candidateCvTabDescriptions,
   candidateCvTabLabels,
@@ -3372,6 +3373,297 @@ const POOL_PLACE_HEADER_TITLE =
   "Where they want to work. A second line naming an AREA is the applicant's own answer from WhatsApp; a second line naming a governorate is the address read off their CV.";
 
 /**
+ * The five built-in columns' cells, for the desktop row AND the phone card (owner, 2026-10-19 — "Phone
+ * card shows the CV"). The card used to print its own bare answer, so where the bot never asked a
+ * question it showed "—" while the row beside it showed the CV standing in — George Samir Lotfy read
+ * "Faculty of Biotechnology" on a desk and nothing on a phone. One function, so the two cannot drift.
+ *
+ * `touch` spells out what a desk reader gets from a tooltip: a phone has no hover.
+ */
+function poolSharedCells(
+  candidate: Candidate,
+  { touch = false }: { touch?: boolean } = {},
+): Record<PoolSharedColumnKey, { className: string; content: ReactNode }> {
+  const appliedFor = candidateRowAppliedFor(candidate);
+  // Resolved ONCE and handed to every cell, so the row can never show a region that disagrees with
+  // its own role cell — and so the filter above, which calls the same function, is answering about
+  // the same person the reader sees.
+  const facts = candidateScreeningFacts(candidate);
+  const roleFamily = candidateScreeningRoleFamily(facts, appliedFor.text);
+  // The family line is worth a row of height only when it adds something the line above does not
+  // already say. `normalizeJobTitle` rather than a string compare so "MEDICAL REPRESENTATIVE" and
+  // "Medical Representative" count as the same words.
+  const roleTitleAlreadySaysFamily =
+    roleFamily !== null &&
+    normalizeJobTitle(facts.roleTitle?.value ?? appliedFor.text) === normalizeJobTitle(candidateRoleFamilyLabels[roleFamily]);
+  // "Flag CV vs WhatsApp gaps" (owner, 2026-10-19): the band they tapped against the years the CV
+  // counts, by experience-answer-gap.ts's one rule.
+  const experienceGap = experienceAnswerGap(facts.declaredExperience?.value, facts.years?.value);
+  return {
+    appliedFor: {
+      className: "px-3 py-2.5",
+      content: (
+        <>
+          {/* Second column on purpose: after the name, "what does this person do" is
+              the fact that decides who a CV goes to.
+
+              The header is the bot's first question, "What are you applying for?", so
+              since 2026-10-19 the top line is their ANSWER — the applied-for ladder, whose
+              "stated" rung is what they tapped on WhatsApp — and the job they hold now
+              drops to a small "Now:" line under it. Until then the CV's current title led
+              and the answer sat beneath it. The bottom line is the FAMILY, a fixed vocabulary of eight,
+              and it is what makes 426 free-text titles scannable at all: "district
+              Manger", "District Sales Manager" and "SENIOR DISTRICT MANAGER |
+              PHARMACEUTICAL SALES & LEADERSHIP" are three spellings of one job, and all
+              three read District Manager here. It is also exactly what the Role filter
+              matches on, so what the reader sees is what the dropdown will find.
+
+              Grey italic still means "we were told this rather than shown it", the same
+              convention this cell has used since 2026-08-21 — now extended to the CV
+              reader's own hedged answers, which the tooltip names in plain words. */}
+          {appliedFor.text ? (
+            <span
+              className={`block break-words ${appliedFor.source === "stated" ? "text-slate-900" : "italic text-slate-500"}`}
+              title={
+                appliedFor.source === "stated"
+                  ? [candidate.appliedForJobTitle, candidate.appliedForEvidence].filter(Boolean).join("\n")
+                  : `${APPLIED_FOR_SOURCE_LABEL[appliedFor.source ?? "subject"]}:\n"${appliedFor.evidence ?? appliedFor.text}"`
+              }
+            >
+              {appliedFor.text}
+            </span>
+          ) : facts.roleTitle ? (
+            <span
+              className={`block break-words ${facts.roleTitle.confirmed ? "text-slate-900" : "italic text-slate-500"}`}
+              title={
+                facts.roleTitle.confirmed
+                  ? `Their current job title, as recorded.\n${facts.roleTitle.value}`
+                  : `${UNCONFIRMED_FACT_TITLE}\n\nRead off the CV as their current job title:\n"${facts.roleTitle.value}"`
+              }
+            >
+              {facts.roleTitle.value}
+            </span>
+          ) : null}
+          {/* The job they hold now, when it is not the job they asked for — the header
+              asks what they are applying for, so their current title is the second fact. */}
+          {appliedFor.text &&
+          facts.roleTitle &&
+          normalizeJobTitle(appliedFor.text) !== normalizeJobTitle(facts.roleTitle.value) ? (
+            <div
+              className="mt-0.5 break-words text-phx-xs text-slate-500"
+              title={facts.roleTitle.confirmed ? "Their current job title, as recorded." : UNCONFIRMED_FACT_TITLE}
+            >
+              Now: {facts.roleTitle.value}
+            </div>
+          ) : null}
+          {/* The family, under the words it was worked out from — and only when the
+              two differ. Repeating "Medical Representative" under a title that already
+              reads "Medical Representative" is another line that says nothing, which
+              is the exact fault this rebuild exists to fix. */}
+          {roleFamily && !roleTitleAlreadySaysFamily ? (
+            <div className="mt-0.5 break-words text-phx-xs font-semibold uppercase tracking-[0.06em] text-slate-400">
+              {candidateRoleFamilyLabels[roleFamily]}
+            </div>
+          ) : null}
+          {/* "Not stated" gives way to the badge — it is the weaker of the two facts,
+              and stacking both would say the same nothing twice. */}
+          {!appliedFor.text && !facts.roleTitle && !isNotACv(candidate) ? (
+            <span className="text-slate-300">Not stated</span>
+          ) : null}
+          {/* The badge lives in THIS cell rather than beside the name, deliberately
+              twice over. It is a fact about the attachment, not about the person, and
+              a warning pinned to someone's name reads as a judgement on them. And
+              this is the cell whose emptiness raises the question: a certificate
+              yields no job title, so the reader is already staring at this blank
+              space asking why. It is also the widest column, where the 332px
+              Candidate cell would have squeezed the name — which since 2026-09-03
+              wraps rather than truncating, so it needs that width more, not less. */}
+          {isNotACv(candidate) ? (
+            <div className={appliedFor.text || facts.roleTitle ? "mt-0.5" : undefined}>
+              <StagePill tone="amber">
+                <span title={NOT_A_CV_TITLE}>{NOT_A_CV_LABEL}</span>
+              </StagePill>
+            </div>
+          ) : null}
+        </>
+      ),
+    },
+    background: {
+      className: "px-2 py-2.5",
+      content: (
+        <>
+          {/* "What did you graduate in?" — their own answer from WhatsApp; where the bot
+              never asked, the faculty read off the CV in grey italic. */}
+          {facts.background ? (
+            <span className="block break-words font-semibold text-slate-800" dir="auto" title="Their own answer on WhatsApp.">
+              {facts.background.value}
+            </span>
+          ) : candidate.faculty || candidate.degree ? (
+            <span className="block break-words italic text-slate-500" dir="auto" title={POOL_CV_STAND_IN_TITLE}>
+              {candidate.faculty || candidate.degree}
+              {touch ? <span className="not-italic text-slate-400"> (from CV)</span> : null}
+            </span>
+          ) : (
+            <span className="text-slate-300">—</span>
+          )}
+        </>
+      ),
+    },
+    place: {
+      className: "px-2 py-2.5",
+      content: (
+        <>
+          {/* Where they are, which the pool could filter on but never showed — so a
+              screener narrowing to Alex-BHR had to take the filter's word for it and
+              could not tell, looking at the rows it returned, why any of them were
+              there. The region is the company's own map of Egypt, never geography's
+              (Beni Suef and Fayoum are Giza here, by the owner's call), so the
+              governorate it was derived from sits underneath: the reader needs to see
+              the working, not just the verdict. */}
+          {facts.region ? (
+            <span
+              className={`block break-words font-semibold ${facts.region.confirmed ? "text-slate-800" : "italic font-normal text-slate-500"}`}
+              title={
+                facts.region.value.declared
+                  ? `The applicant chose this themselves when they applied on WhatsApp.${
+                      facts.governorate ? ` Their CV gives the address as "${facts.governorate.value}".` : ""
+                    }`
+                  : facts.region.confirmed
+                    ? `Company region for ${facts.governorate?.value ?? ""}.`
+                    : `${UNCONFIRMED_FACT_TITLE}\n\nRead off the CV as: "${facts.governorate?.value ?? ""}"`
+              }
+            >
+              {facts.region.value.label}
+              {touch && !facts.region.value.declared ? (
+                <span className="font-normal not-italic text-slate-400"> (from CV)</span>
+              ) : null}
+            </span>
+          ) : null}
+          {/* The area they asked for outranks the governorate on their CV, and only one
+              of the two fits: it answers the same question more precisely, and it is
+              the only line on this row the applicant wrote himself. The governorate is
+              not lost — it moves into the tooltip.
+
+              ONE element, not a branch into two. That began as a no-ellipsis ratchet
+              argument — two sibling elements each carrying the class would have counted
+              as two sites — and since 2026-09-03 this line wraps instead of truncating,
+              so the ratchet no longer decides it. The choice stands on its own: the two
+              are alternative answers to one question, not facts to stack, and a second
+              line would add height to every row to repeat what the tooltip says. */}
+          {facts.area || facts.governorate ? (
+            <div
+              className={`mt-0.5 break-words text-phx-xs ${facts.area ? "text-slate-600" : "text-slate-500"}`}
+              title={
+                facts.area
+                  ? `Asked to work in ${facts.area.value}.${
+                      facts.governorate ? ` CV address: ${facts.governorate.value}.` : ""
+                    }`
+                  : facts.governorate!.value
+              }
+            >
+              {facts.area ? facts.area.value : facts.governorate!.value}
+            </div>
+          ) : facts.region ? null : (
+            <span className="text-slate-300">Not on file</span>
+          )}
+        </>
+      ),
+    },
+    experience: {
+      className: "px-2 py-2.5",
+      content: (
+        <>
+          {/* How long they have worked, and whether any of it was as a medical rep —
+              the two questions that decide whether a pharma CV is worth opening, and
+              neither had a column.
+
+              The years are the CV reader's arithmetic over the work history far more
+              often than a figure printed on the CV, which is why 117 of them are hedged
+              and why a hedged one shows in grey italic with a "~". Showing it is still
+              right: "~7 yrs, check it" is a decision a screener can act on and a blank
+              cell is not. */}
+          {/* Their WhatsApp answer leads — a band they chose about themselves. The CV's
+              counted years follow, smaller, because the two answer differently. */}
+          {facts.declaredExperience ? (
+            <span className="block break-words font-semibold text-slate-800" title="Their own answer on WhatsApp.">
+              {facts.declaredExperience.value}
+            </span>
+          ) : null}
+          {facts.years ? (
+            <span
+              className={`whitespace-nowrap ${
+                facts.declaredExperience
+                  ? "mt-0.5 block text-phx-xs italic text-slate-500"
+                  : facts.years.confirmed
+                    ? "font-semibold text-slate-800"
+                    : "italic text-slate-500"
+              }`}
+              title={
+                facts.years.confirmed
+                  ? "Total years of experience, as recorded."
+                  : `${UNCONFIRMED_FACT_TITLE}\n\nWorked out from the work history on the CV.`
+              }
+            >
+              {facts.years.confirmed ? "" : "~"}
+              {formatYearsOfExperience(facts.years.value)}
+              {touch ? <span className="not-italic text-slate-400"> (CV)</span> : null}
+            </span>
+          ) : facts.declaredExperience ? null : (
+            <span className="text-slate-300">—</span>
+          )}
+          {/* The answer and the CV cannot both be right. Amber, like "Not a CV": nothing is
+              wrong with the person, there is a question to ask before sending them on. The phone
+              card says it above its folded answers instead, so it is not said twice there. */}
+          {experienceGap && !touch ? (
+            <div className="mt-0.5">
+              <StagePill tone="amber">
+                <span title={experienceGap.explanation}>{EXPERIENCE_GAP_LABEL}</span>
+              </StagePill>
+            </div>
+          ) : null}
+          {/* `false` is an ANSWER here, not an absence: "never worked as a medical
+              rep" is exactly what a screener of a pharma pool wants to know, and
+              leaving it blank would hide the finding. Only a missing answer is blank. */}
+          {facts.pharmaRep ? (
+            <div className="mt-0.5">
+              <StagePill tone={facts.pharmaRep.value ? "emerald" : "slate"}>
+                <span title={facts.pharmaRep.confirmed ? undefined : UNCONFIRMED_FACT_TITLE}>
+                  {facts.pharmaRep.value ? "Pharma rep" : "No pharma"}
+                  {facts.pharmaRep.confirmed ? "" : " ?"}
+                </span>
+              </StagePill>
+            </div>
+          ) : null}
+        </>
+      ),
+    },
+    salary: {
+      className: "px-2 py-2.5",
+      content: (
+        <>
+          {/* "Expected salary" — verbatim, never a parsed figure: "25 k to 30 k" and
+              "negotiable" are the answer. Grey italic is a figure typed into the ATS. */}
+          {facts.expectedSalary ? (
+            <span
+              className={`block break-words ${candidate.declaredExpectedSalary ? "font-semibold text-slate-800" : "italic text-slate-500"}`}
+              dir="auto"
+              title={candidate.declaredExpectedSalary ? "Their own answer on WhatsApp." : "Typed into the candidate record — not a WhatsApp answer."}
+            >
+              {facts.expectedSalary.value}
+              {touch && !candidate.declaredExpectedSalary ? (
+                <span className="not-italic text-slate-400"> (typed in)</span>
+              ) : null}
+            </span>
+          ) : (
+            <span className="text-slate-300">—</span>
+          )}
+        </>
+      ),
+    },
+  };
+}
+
+/**
  * What each field of a column's editor opens with: the answer on the record now, "" for a missing one.
  * Read from the record's own columns, so the editor shows exactly what a save will replace — the
  * applied-for title even where the bot never asked it, and never the CV standing in for an answer.
@@ -3522,6 +3814,8 @@ function CandidatePoolCard({
   const [editingColumnKey, setEditingColumnKey] = useState<string | null>(null);
   const [answersOpen, setAnswersOpen] = useState(false);
   const answerValues = poolAnswersByColumn(candidate, whatsappQuestions);
+  const sharedCells = poolSharedCells(candidate, { touch: true });
+  const experienceGap = experienceAnswerGap(facts.declaredExperience?.value, facts.years?.value);
   const answersOutsideColumns = poolAnswersOutsideColumns(whatsappAnswers, answerColumns);
   const displayName = candidateDisplayName(candidate.fullName);
   // Under a role filter, "Asked only to … applicants" repeats the filter on every question that role is
@@ -3596,7 +3890,13 @@ function CandidatePoolCard({
                           pending={pending}
                           touch
                         >
-                          <PoolAnswerText answer={poolAnswerSummary(currentValues, column) || null} />
+                          {/* A built-in column shows exactly what its table cell shows, CV stand-in
+                              and all; an admin question's answer has no other source. */}
+                          {(poolSharedColumnKeys as readonly string[]).includes(column.key) ? (
+                            sharedCells[column.key as PoolSharedColumnKey].content
+                          ) : (
+                            <PoolAnswerText answer={poolAnswerSummary(currentValues, column) || null} />
+                          )}
                         </PoolEditableAnswer>
                       </dd>
                     </div>
@@ -3763,6 +4063,14 @@ function CandidatePoolCard({
                             facts.years.confirmed,
                           )
                         : "Not stated"}
+                      {/* Here, above the fold, for every reader: the answers below are folded by
+                          default ("Fold answers on phones"), and a flag hidden in them goes unseen. */}
+                      {experienceGap ? (
+                        <div className="mt-1">
+                          <StagePill tone="amber">{EXPERIENCE_GAP_LABEL}</StagePill>
+                          <div className="mt-0.5 break-words text-phx-xs text-amber-800">{experienceGap.explanation}</div>
+                        </div>
+                      ) : null}
                       {facts.pharmaRep ? (
                         <div className="mt-1">
                           <StagePill tone={facts.pharmaRep.value ? "emerald" : "slate"}>
@@ -5185,19 +5493,6 @@ function CandidatesTab({
                 {displayedCandidates.map((candidate) => {
                   const displayName = candidateDisplayName(candidate.fullName);
                   const contact = [candidate.email, candidate.phone].filter(Boolean).join(" · ");
-                  const appliedFor = candidateRowAppliedFor(candidate);
-                  // Resolved ONCE and handed to all three new cells, so the row can never show a
-                  // region that disagrees with its own role cell — and so the filter above, which
-                  // calls the same function, is answering about the same person the reader sees.
-                  const facts = candidateScreeningFacts(candidate);
-                  const roleFamily = candidateScreeningRoleFamily(facts, appliedFor.text);
-                  // The family line is worth a row of height only when it adds something the line
-                  // above does not already say. `normalizeJobTitle` rather than a string compare so
-                  // "MEDICAL REPRESENTATIVE" and "Medical Representative" count as the same words.
-                  const roleTitleAlreadySaysFamily =
-                    roleFamily !== null &&
-                    normalizeJobTitle(facts.roleTitle?.value ?? appliedFor.text) ===
-                      normalizeJobTitle(candidateRoleFamilyLabels[roleFamily]);
                   // The desktop half of the grouping. A full-width heading row rather than a
                   // nested table, so all 200 lines of the row renderer below stay exactly as they
                   // are and the columns cannot come to disagree between one pile and the next.
@@ -5206,256 +5501,7 @@ function CandidatesTab({
                   const whatsappAnswers = answersByCandidateId.get(candidate.id) ?? new Map<string, string>();
                   // The five built-in columns' cells — the same cells whichever view shows them, each
                   // keyed by its column so a reader's layout can put them in any order.
-                  const sharedCells: Record<PoolSharedColumnKey, { className: string; content: ReactNode }> = {
-                    appliedFor: {
-                      className: "px-3 py-2.5",
-                      content: (
-                        <>
-                          {/* Second column on purpose: after the name, "what does this person do" is
-                              the fact that decides who a CV goes to.
-
-                              The header is the bot's first question, "What are you applying for?", so
-                              since 2026-10-19 the top line is their ANSWER — the applied-for ladder, whose
-                              "stated" rung is what they tapped on WhatsApp — and the job they hold now
-                              drops to a small "Now:" line under it. Until then the CV's current title led
-                              and the answer sat beneath it. The bottom line is the FAMILY, a fixed vocabulary of eight,
-                              and it is what makes 426 free-text titles scannable at all: "district
-                              Manger", "District Sales Manager" and "SENIOR DISTRICT MANAGER |
-                              PHARMACEUTICAL SALES & LEADERSHIP" are three spellings of one job, and all
-                              three read District Manager here. It is also exactly what the Role filter
-                              matches on, so what the reader sees is what the dropdown will find.
-
-                              Grey italic still means "we were told this rather than shown it", the same
-                              convention this cell has used since 2026-08-21 — now extended to the CV
-                              reader's own hedged answers, which the tooltip names in plain words. */}
-                            {appliedFor.text ? (
-                              <span
-                                className={`block break-words ${appliedFor.source === "stated" ? "text-slate-900" : "italic text-slate-500"}`}
-                                title={
-                                  appliedFor.source === "stated"
-                                    ? [candidate.appliedForJobTitle, candidate.appliedForEvidence].filter(Boolean).join("\n")
-                                    : `${APPLIED_FOR_SOURCE_LABEL[appliedFor.source ?? "subject"]}:\n"${appliedFor.evidence ?? appliedFor.text}"`
-                                }
-                              >
-                                {appliedFor.text}
-                              </span>
-                            ) : facts.roleTitle ? (
-                              <span
-                                className={`block break-words ${facts.roleTitle.confirmed ? "text-slate-900" : "italic text-slate-500"}`}
-                                title={
-                                  facts.roleTitle.confirmed
-                                    ? `Their current job title, as recorded.\n${facts.roleTitle.value}`
-                                    : `${UNCONFIRMED_FACT_TITLE}\n\nRead off the CV as their current job title:\n"${facts.roleTitle.value}"`
-                                }
-                              >
-                                {facts.roleTitle.value}
-                              </span>
-                            ) : null}
-                            {/* The job they hold now, when it is not the job they asked for — the header
-                                asks what they are applying for, so their current title is the second fact. */}
-                            {appliedFor.text &&
-                            facts.roleTitle &&
-                            normalizeJobTitle(appliedFor.text) !== normalizeJobTitle(facts.roleTitle.value) ? (
-                              <div
-                                className="mt-0.5 break-words text-phx-xs text-slate-500"
-                                title={facts.roleTitle.confirmed ? "Their current job title, as recorded." : UNCONFIRMED_FACT_TITLE}
-                              >
-                                Now: {facts.roleTitle.value}
-                              </div>
-                            ) : null}
-                            {/* The family, under the words it was worked out from — and only when the
-                                two differ. Repeating "Medical Representative" under a title that already
-                                reads "Medical Representative" is another line that says nothing, which
-                                is the exact fault this rebuild exists to fix. */}
-                            {roleFamily && !roleTitleAlreadySaysFamily ? (
-                              <div className="mt-0.5 break-words text-phx-xs font-semibold uppercase tracking-[0.06em] text-slate-400">
-                                {candidateRoleFamilyLabels[roleFamily]}
-                              </div>
-                            ) : null}
-                            {/* "Not stated" gives way to the badge — it is the weaker of the two facts,
-                                and stacking both would say the same nothing twice. */}
-                            {!appliedFor.text && !facts.roleTitle && !isNotACv(candidate) ? (
-                              <span className="text-slate-300">Not stated</span>
-                            ) : null}
-                            {/* The badge lives in THIS cell rather than beside the name, deliberately
-                                twice over. It is a fact about the attachment, not about the person, and
-                                a warning pinned to someone's name reads as a judgement on them. And
-                                this is the cell whose emptiness raises the question: a certificate
-                                yields no job title, so the reader is already staring at this blank
-                                space asking why. It is also the widest column, where the 332px
-                                Candidate cell would have squeezed the name — which since 2026-09-03
-                                wraps rather than truncating, so it needs that width more, not less. */}
-                            {isNotACv(candidate) ? (
-                              <div className={appliedFor.text || facts.roleTitle ? "mt-0.5" : undefined}>
-                                <StagePill tone="amber">
-                                  <span title={NOT_A_CV_TITLE}>{NOT_A_CV_LABEL}</span>
-                                </StagePill>
-                              </div>
-                            ) : null}
-                        </>
-                      ),
-                    },
-                    background: {
-                      className: "px-2 py-2.5",
-                      content: (
-                        <>
-                          {/* "What did you graduate in?" — their own answer from WhatsApp; where the bot
-                              never asked, the faculty read off the CV in grey italic. */}
-                            {facts.background ? (
-                              <span className="block break-words font-semibold text-slate-800" dir="auto" title="Their own answer on WhatsApp.">
-                                {facts.background.value}
-                              </span>
-                            ) : candidate.faculty || candidate.degree ? (
-                              <span className="block break-words italic text-slate-500" dir="auto" title={POOL_CV_STAND_IN_TITLE}>
-                                {candidate.faculty || candidate.degree}
-                              </span>
-                            ) : (
-                              <span className="text-slate-300">—</span>
-                            )}
-                        </>
-                      ),
-                    },
-                    place: {
-                      className: "px-2 py-2.5",
-                      content: (
-                        <>
-                          {/* Where they are, which the pool could filter on but never showed — so a
-                              screener narrowing to Alex-BHR had to take the filter's word for it and
-                              could not tell, looking at the rows it returned, why any of them were
-                              there. The region is the company's own map of Egypt, never geography's
-                              (Beni Suef and Fayoum are Giza here, by the owner's call), so the
-                              governorate it was derived from sits underneath: the reader needs to see
-                              the working, not just the verdict. */}
-                            {facts.region ? (
-                              <span
-                                className={`block break-words font-semibold ${facts.region.confirmed ? "text-slate-800" : "italic font-normal text-slate-500"}`}
-                                title={
-                                  facts.region.value.declared
-                                    ? `The applicant chose this themselves when they applied on WhatsApp.${
-                                        facts.governorate ? ` Their CV gives the address as "${facts.governorate.value}".` : ""
-                                      }`
-                                    : facts.region.confirmed
-                                      ? `Company region for ${facts.governorate?.value ?? ""}.`
-                                      : `${UNCONFIRMED_FACT_TITLE}\n\nRead off the CV as: "${facts.governorate?.value ?? ""}"`
-                                }
-                              >
-                                {facts.region.value.label}
-                              </span>
-                            ) : null}
-                            {/* The area they asked for outranks the governorate on their CV, and only one
-                                of the two fits: it answers the same question more precisely, and it is
-                                the only line on this row the applicant wrote himself. The governorate is
-                                not lost — it moves into the tooltip.
-
-                                ONE element, not a branch into two. That began as a no-ellipsis ratchet
-                                argument — two sibling elements each carrying the class would have counted
-                                as two sites — and since 2026-09-03 this line wraps instead of truncating,
-                                so the ratchet no longer decides it. The choice stands on its own: the two
-                                are alternative answers to one question, not facts to stack, and a second
-                                line would add height to every row to repeat what the tooltip says. */}
-                            {facts.area || facts.governorate ? (
-                              <div
-                                className={`mt-0.5 break-words text-phx-xs ${facts.area ? "text-slate-600" : "text-slate-500"}`}
-                                title={
-                                  facts.area
-                                    ? `Asked to work in ${facts.area.value}.${
-                                        facts.governorate ? ` CV address: ${facts.governorate.value}.` : ""
-                                      }`
-                                    : facts.governorate!.value
-                                }
-                              >
-                                {facts.area ? facts.area.value : facts.governorate!.value}
-                              </div>
-                            ) : facts.region ? null : (
-                              <span className="text-slate-300">Not on file</span>
-                            )}
-                        </>
-                      ),
-                    },
-                    experience: {
-                      className: "px-2 py-2.5",
-                      content: (
-                        <>
-                          {/* How long they have worked, and whether any of it was as a medical rep —
-                              the two questions that decide whether a pharma CV is worth opening, and
-                              neither had a column.
-
-                              The years are the CV reader's arithmetic over the work history far more
-                              often than a figure printed on the CV, which is why 117 of them are hedged
-                              and why a hedged one shows in grey italic with a "~". Showing it is still
-                              right: "~7 yrs, check it" is a decision a screener can act on and a blank
-                              cell is not. */}
-                            {/* Their WhatsApp answer leads — a band they chose about themselves. The CV's
-                                counted years follow, smaller, because the two answer differently. */}
-                            {facts.declaredExperience ? (
-                              <span className="block break-words font-semibold text-slate-800" title="Their own answer on WhatsApp.">
-                                {facts.declaredExperience.value}
-                              </span>
-                            ) : null}
-                            {facts.years ? (
-                              <span
-                                className={`whitespace-nowrap ${
-                                  facts.declaredExperience
-                                    ? "mt-0.5 block text-phx-xs italic text-slate-500"
-                                    : facts.years.confirmed
-                                      ? "font-semibold text-slate-800"
-                                      : "italic text-slate-500"
-                                }`}
-                                title={
-                                  facts.years.confirmed
-                                    ? "Total years of experience, as recorded."
-                                    : `${UNCONFIRMED_FACT_TITLE}\n\nWorked out from the work history on the CV.`
-                                }
-                              >
-                                {facts.years.confirmed ? "" : "~"}
-                                {formatYearsOfExperience(facts.years.value)}
-                              </span>
-                            ) : facts.declaredExperience ? null : (
-                              <span className="text-slate-300">—</span>
-                            )}
-                            {/* `false` is an ANSWER here, not an absence: "never worked as a medical
-                                rep" is exactly what a screener of a pharma pool wants to know, and
-                                leaving it blank would hide the finding. Only a missing answer is blank. */}
-                            {facts.pharmaRep ? (
-                              <div className="mt-0.5">
-                                <StagePill tone={facts.pharmaRep.value ? "emerald" : "slate"}>
-                                  <span
-                                    title={
-                                      facts.pharmaRep.confirmed
-                                        ? undefined
-                                        : UNCONFIRMED_FACT_TITLE
-                                    }
-                                  >
-                                    {facts.pharmaRep.value ? "Pharma rep" : "No pharma"}
-                                    {facts.pharmaRep.confirmed ? "" : " ?"}
-                                  </span>
-                                </StagePill>
-                              </div>
-                            ) : null}
-                        </>
-                      ),
-                    },
-                    salary: {
-                      className: "px-2 py-2.5",
-                      content: (
-                        <>
-                          {/* "Expected salary" — verbatim, never a parsed figure: "25 k to 30 k" and
-                              "negotiable" are the answer. Grey italic is a figure typed into the ATS. */}
-                            {facts.expectedSalary ? (
-                              <span
-                                className={`block break-words ${candidate.declaredExpectedSalary ? "font-semibold text-slate-800" : "italic text-slate-500"}`}
-                                dir="auto"
-                                title={candidate.declaredExpectedSalary ? "Their own answer on WhatsApp." : "Typed into the candidate record — not a WhatsApp answer."}
-                              >
-                                {facts.expectedSalary.value}
-                              </span>
-                            ) : (
-                              <span className="text-slate-300">—</span>
-                            )}
-                        </>
-                      ),
-                    },
-                  };
+                  const sharedCells = poolSharedCells(candidate);
                   return (
                     <Fragment key={candidate.id}>
                       {groupHeader ? (
