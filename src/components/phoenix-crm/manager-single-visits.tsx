@@ -16,7 +16,13 @@
  * unplanned customer" opens on the areas he plans in, a vacant one among them; choosing one shows its
  * doctors. A visit to a vacant area's doctor needs the address typed OR a captured location, whose address,
  * area and brick are filled in for him — "either this or this" (`vacantVisitPlaceError`). Once logged, the
- * card says where the visit recorded the customer is (`vacantVisitPlaceText`).
+ * card says where the visit recorded the customer is (`visitPlaceText`).
+ *
+ * 🔴 AND THE PLACE BLOCK IS THE ADD-A-CUSTOMER SCREEN'S, ON EVERY SINGLE VISIT (owner, 2026-10-20: the
+ * unplanned form "asks for a location or address and there is no place to write the address … it should be
+ * as the screen when adding new customer"). Capture location, the address, and the area → brick cascade —
+ * the same fields in the same order as `manager-customer-form.tsx`, optional everywhere but a vacant area.
+ * It opens on what the system already knows: the customer's own area, and the address his own list holds.
  */
 
 import { useEffect, useId, useRef, useState } from "react";
@@ -38,17 +44,29 @@ import {
   CrmPanel,
   CrmPill,
   CrmSearchField,
+  CrmSelect,
   CrmShowMore,
   crmInputClassName,
   crmTextareaClassName,
   type CrmChoiceOption,
 } from "@/components/phoenix-crm/ui";
 import { dmSingleVisitLimitLine, MANAGER_CUSTOMER_ADDRESS_MAX, VACANT_AREA_NOTE, VACANT_LIST_LABEL, vacantVisitPlaceError } from "@/lib/phoenix-crm/manager-plan-rules";
-import type { AreaCustomer, AreaCustomersView, CustomerMatch, ManagerCustomerLocated, ManagerTodayCustomer, ManagerTodayView } from "@/lib/phoenix-crm/view-types";
+import type {
+  AreaCustomer,
+  AreaCustomersView,
+  CustomerMatch,
+  ManagerAreaBricks,
+  ManagerCustomerLocated,
+  ManagerTodayCustomer,
+  ManagerTodayOwnCustomer,
+  ManagerTodayView,
+} from "@/lib/phoenix-crm/view-types";
 
 const VISITS = "/api/phoenix-crm/manager-plans/visits";
 const AREA = "/api/phoenix-crm/manager-plans/customers/area";
 const LOCATE = "/api/phoenix-crm/manager-plans/customers/locate";
+/** The bricks of one area — the second drop-list of the cascade, exactly as Add a customer loads it. */
+const BRICKS = "/api/phoenix-crm/manager-plans/customers/bricks";
 /** The comment's limit, as the server reads it. */
 const COMMENT_MAX = 1000;
 /** An area's list is shown a page at a time. */
@@ -64,6 +82,10 @@ type Logging = {
   vacant: boolean;
   /** The territory whose list he is on — what Capture location reads against. */
   seatId: string | null;
+  /** The seat his area is listed under in the area drop-list (one seat per area), so it opens on his area. */
+  areaSeatId: string | null;
+  /** The address already on file, so the block opens on what the system knows rather than empty. */
+  address: string;
 };
 
 function loggingOf(customer: ManagerTodayCustomer): Logging {
@@ -75,14 +97,28 @@ function loggingOf(customer: ManagerTodayCustomer): Logging {
     name: customer.name,
     vacant: customer.vacant,
     seatId: customer.seatId,
+    areaSeatId: customer.areaSeatId,
+    address: customer.knownAddress ?? "",
   };
 }
 
-function ownLogging(customer: { id: string; name: string }): Logging {
-  return { clientRef: newClientId(), slotId: null, customerId: null, managerCustomerId: customer.id, name: customer.name, vacant: false, seatId: null };
+function ownLogging(customer: ManagerTodayOwnCustomer): Logging {
+  return {
+    clientRef: newClientId(),
+    slotId: null,
+    customerId: null,
+    managerCustomerId: customer.id,
+    name: customer.name,
+    // His own list carries the area the customer is in, so a customer of his in a vacant area asks for the
+    // address the area screen said it would (owner, 2026-10-20) — it used to ask for nothing at all.
+    vacant: customer.vacant,
+    seatId: customer.areaSeatId,
+    areaSeatId: customer.areaSeatId,
+    address: customer.address ?? "",
+  };
 }
 
-function areaLogging(customer: AreaCustomer): Logging {
+function areaLogging(customer: AreaCustomer, areaSeatId: string | null): Logging {
   return {
     clientRef: newClientId(),
     slotId: null,
@@ -91,6 +127,9 @@ function areaLogging(customer: AreaCustomer): Logging {
     name: customer.name,
     vacant: customer.vacant,
     seatId: customer.seatId,
+    // The area he chose to find the customer in — one area holds several rep seats, and the drop-list lists one.
+    areaSeatId,
+    address: "",
   };
 }
 
@@ -120,6 +159,7 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
             <div className="min-w-0 scroll-mt-24" ref={formRef}>
               <CrmBlock>
                 <LogForm
+                  areas={view.areas}
                   logging={logging}
                   onCancel={() => setLogging(null)}
                   onLogged={(next) => {
@@ -277,6 +317,9 @@ function FindCustomer({
   }
 
   function pick(match: CustomerMatch) {
+    // A match of his own list is the same customer the list below holds: open the block on that row's
+    // address, the way choosing him from the list does.
+    const own = match.source === "own" ? (ownList.find((customer) => customer.id === match.id) ?? null) : null;
     onPick({
       clientRef: newClientId(),
       slotId: null,
@@ -285,6 +328,8 @@ function FindCustomer({
       name: match.name,
       vacant: match.vacant,
       seatId: match.seatId,
+      areaSeatId: match.areaSeatId,
+      address: own?.address ?? "",
     });
   }
 
@@ -380,6 +425,8 @@ function AreaList({ areaSeatId, onPick, test }: { areaSeatId: string; onPick: (l
   if (area.error) return <CrmLoadError message={area.error} onRetry={area.reload} />;
   if (!area.data) return <CrmLoading label="Loading the area's customers" />;
   const vacant = area.data.area?.vacant === true;
+  // The area he chose, as the place block's area drop-list names it.
+  const areaOfList = area.data.area?.seatId ?? areaSeatId;
   const words = query.trim().toLowerCase();
   const list = area.data.repList.filter((customer) => !words || customer.name.toLowerCase().includes(words));
   const shown = list.slice(0, limit);
@@ -403,7 +450,7 @@ function AreaList({ areaSeatId, onPick, test }: { areaSeatId: string; onPick: (l
           <CrmCard
             accent={customer.vacant ? "border-l-amber-400" : "border-l-sky-400"}
             actions={
-              <CrmButton onClick={() => onPick(areaLogging(customer))} size="sm" variant="primary">
+              <CrmButton onClick={() => onPick(areaLogging(customer, areaOfList))} size="sm" variant="primary">
                 Log this one
               </CrmButton>
             }
@@ -425,12 +472,14 @@ function AreaList({ areaSeatId, onPick, test }: { areaSeatId: string; onPick: (l
 }
 
 function LogForm({
+  areas,
   logging,
   onCancel,
   onLogged,
   products,
   test,
 }: {
+  areas: ManagerTodayView["areas"];
   logging: Logging;
   onCancel: () => void;
   onLogged: (view: ManagerTodayView) => void;
@@ -441,35 +490,45 @@ function LogForm({
   const [picked, setPicked] = useState<string[]>([]);
   const [comment, setComment] = useState("");
   const [pin, setPin] = useState<CapturedPin | null>(null);
-  const [address, setAddress] = useState("");
+  const [address, setAddress] = useState(logging.address);
+  const [areaSeatId, setAreaSeatId] = useState(logging.areaSeatId ?? "");
+  const [brickId, setBrickId] = useState("");
   const [locating, setLocating] = useState(false);
   const [located, setLocated] = useState<{ text: string; complete: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const bricks = useCrmGet<ManagerAreaBricks>(areaSeatId ? crmUrl(BRICKS, { area: areaSeatId }) : null, "bricks");
+  const brickList = bricks.data?.bricks ?? [];
 
   /**
-   * In a vacant area, Capture location fills in the address, and says the area and brick it fell in — the
-   * same reading the save stores (owner, 2026-10-19). Elsewhere the location is only kept, as before.
+   * Capture location fills in the address, the area and the brick — the same reading the save stores
+   * (`locateInReach`). It only ever fills what the capture read: a street or brick it could not read is
+   * left as he had it, for him to fill in by hand (owner, 2026-10-20: as the Add a customer screen).
    */
   async function capture(next: CapturedPin | null) {
     setPin(next);
     setLocated(null);
-    if (!next || !logging.vacant) return;
+    if (!next) return;
     setLocating(true);
     setError(null);
     try {
       const found = await crmPost<ManagerCustomerLocated>(
         LOCATE,
-        { pin: { lat: next.lat, lon: next.lon, accuracyMeters: next.accuracyMeters }, areaSeatId: logging.seatId, test },
+        { pin: { lat: next.lat, lon: next.lon, accuracyMeters: next.accuracyMeters }, areaSeatId: areaSeatId || logging.seatId, test },
         "located",
       );
       if (found.address) setAddress(found.address);
+      // The area first, then the brick that sits in it: the brick drop-list loads for the area it is under.
+      if (found.areaSeatId) {
+        setAreaSeatId(found.areaSeatId);
+        setBrickId(found.brickId ?? "");
+      }
       const where = [found.areaName ? `Area: ${found.areaName}` : null, found.brickName ? `Brick: ${found.brickName}` : null].filter(Boolean).join(" · ");
       const complete = Boolean(found.address && found.areaName && found.brickName);
       setLocated({
         text: complete
           ? `The address, area and brick were filled in from the location. ${where}`
-          : `The location was captured${where ? ` (${where})` : ""}, but not everything could be read. It is enough to log the visit; correct the address if you know it.`,
+          : `The location was captured${where ? ` (${where})` : ""}, but not everything could be read. It is enough to log the visit; fill in what is missing if you know it.`,
         complete,
       });
     } catch (failure) {
@@ -497,7 +556,9 @@ function LogForm({
           managerCustomerId: logging.managerCustomerId,
           products: picked,
           comment: comment.trim() || null,
-          ...(logging.vacant ? { address: address.trim() || null } : {}),
+          address: address.trim() || null,
+          areaSeatId: areaSeatId || null,
+          brickId: brickId || null,
           ...(pin ? { pin: { lat: pin.lat, lon: pin.lon, accuracyMeters: pin.accuracyMeters } } : {}),
           test,
         },
@@ -541,31 +602,68 @@ function LogForm({
       <CrmField hint="Optional" label="Comment">
         <textarea className={crmTextareaClassName} dir="auto" maxLength={COMMENT_MAX} onChange={(event) => setComment(event.target.value)} value={comment} />
       </CrmField>
-      {logging.vacant ? (
-        <div className="grid min-w-0 gap-4 border-t border-orange-200 pt-4">
-          <p className="break-words text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-700">Where the customer is · one of the two is needed</p>
-          <CrmField hint="Stand at the customer and press it: the address, area and brick are filled in for you. No photo is needed." label="Capture location">
-            <CaptureLocation disabled={busy || locating} onChange={(next) => void capture(next)} value={pin} />
+      {/* 🔴 The Add-a-customer place block, on EVERY single visit (owner, 2026-10-20) — the same fields in
+          the same order as `manager-customer-form.tsx`. Optional everywhere but a vacant area, where the
+          address or the capture is required (owner, 2026-10-19). */}
+      <div className="grid min-w-0 gap-4 border-t border-orange-200 pt-4">
+        <p className="break-words text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-700">
+          Where the customer is · {logging.vacant ? "one of the first two is needed" : "optional"}
+        </p>
+        <CrmField hint="Stand at the customer and press it: the address, area and brick are filled in for you. Or fill them in below. No photo is needed." label="Location">
+          <CaptureLocation disabled={busy || locating} onChange={(next) => void capture(next)} value={pin} />
+        </CrmField>
+        {locating ? <CrmNote tone="info">Reading the address, area and brick from the location</CrmNote> : null}
+        {located ? <CrmNote tone={located.complete ? "good" : "warn"}>{located.text}</CrmNote> : null}
+        <CrmField hint="Or type the customer's address by hand." htmlFor={`${idPrefix}-address`} label="Address">
+          <input
+            autoComplete="off"
+            className={crmInputClassName}
+            dir="auto"
+            id={`${idPrefix}-address`}
+            maxLength={MANAGER_CUSTOMER_ADDRESS_MAX}
+            onChange={(event) => setAddress(event.target.value)}
+            value={address}
+          />
+        </CrmField>
+        <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+          <CrmField htmlFor={`${idPrefix}-area`} label="Area">
+            <CrmSelect
+              id={`${idPrefix}-area`}
+              onChange={(event) => {
+                // A brick belongs to one area, so a new area empties the brick.
+                setAreaSeatId(event.target.value);
+                setBrickId("");
+              }}
+              value={areaSeatId}
+            >
+              <option value="">Choose the area</option>
+              {areas.map((area) => (
+                <option key={area.seatId} value={area.seatId}>
+                  {area.areaName}
+                </option>
+              ))}
+            </CrmSelect>
           </CrmField>
-          {locating ? <CrmNote tone="info">Reading the address, area and brick from the location</CrmNote> : null}
-          {located ? <CrmNote tone={located.complete ? "good" : "warn"}>{located.text}</CrmNote> : null}
-          <CrmField hint="Or type the customer's address by hand." htmlFor={`${idPrefix}-address`} label="Address">
-            <input
-              autoComplete="off"
-              className={crmInputClassName}
-              dir="auto"
-              id={`${idPrefix}-address`}
-              maxLength={MANAGER_CUSTOMER_ADDRESS_MAX}
-              onChange={(event) => setAddress(event.target.value)}
-              value={address}
-            />
+          <CrmField htmlFor={`${idPrefix}-brick`} label="Brick">
+            <CrmSelect
+              disabled={!areaSeatId || bricks.loading || brickList.length === 0}
+              id={`${idPrefix}-brick`}
+              onChange={(event) => setBrickId(event.target.value)}
+              value={brickId}
+            >
+              <option value="">
+                {!areaSeatId ? "Choose the area first" : bricks.loading ? "Loading the bricks" : brickList.length === 0 ? "No bricks listed for this area" : "Choose the brick"}
+              </option>
+              {brickList.map((brick) => (
+                <option key={brick.id} value={brick.id}>
+                  {brick.name}
+                </option>
+              ))}
+            </CrmSelect>
           </CrmField>
         </div>
-      ) : (
-        <CrmField hint="Optional. No photo is needed." label="Location">
-          <CaptureLocation disabled={busy} onChange={setPin} value={pin} />
-        </CrmField>
-      )}
+        {bricks.error ? <CrmNote tone="warn">The bricks of this area could not be loaded. You can still log the visit without one.</CrmNote> : null}
+      </div>
       {error ? <CrmNote tone="bad">{error}</CrmNote> : null}
       <div className="flex flex-wrap gap-2">
         <CrmButton busy={busy} disabled={locating} onClick={() => void log()} variant="primary">

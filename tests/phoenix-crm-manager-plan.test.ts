@@ -54,7 +54,7 @@ import {
   nextManagerPlanStatus,
   parseManagerSlotDraft,
   vacantVisitPlaceError,
-  vacantVisitPlaceText,
+  visitPlaceText,
 } from "../src/lib/phoenix-crm/manager-plan-rules.ts";
 import { isVacantTerritory, managerAreaChoices } from "../src/lib/phoenix-crm/server/manager-customers.ts";
 import {
@@ -1506,7 +1506,11 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     /const placeError = vacantVisitPlaceError\(\{ vacant, address, captured: pin\.lat !== undefined \}\);\s*if \(placeError\) throw validationError\(placeError\);/,
     "the save asks the same question the form asks",
   );
-  assert.match(logBody, /await locateInReach\(reach, \{ lat, lon, accuracyMeters \}, customerSeatId\)/, "the capture is read by the reader the form showed him");
+  assert.match(
+    logBody,
+    /await locateInReach\(reach, \{ lat, lon, accuracyMeters \}, chosen\.areaSeatId \?\? customerSeatId\)/,
+    "the capture is read by the reader the form showed him, against the area he chose",
+  );
   assert.match(logBody, /in_vacant_territory: vacant,/, "the visit records that its territory was vacant");
   const todayBody = functionBody(visitsServer, "export async function loadManagerToday(");
   assert.match(todayBody, /areas: managerAreaChoices\(reach, names\),/, "My single visits offers the areas he plans in, a vacant one among them");
@@ -1530,13 +1534,49 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(singleVisits, /<CrmChoice columns=\{3\} label="Choose an area" onChange=\{setAreaSeatId\} options=\{areaOptions\} value=\{areaSeatId\} \/>/, "My single visits opens on the areas");
   assert.match(singleVisits, /note: entry\.vacant \? VACANT_AREA_NOTE : \(entry\.repName \?\? "No rep"\)/, "a vacant area reads the same on both screens");
   assert.match(singleVisits, /vacantVisitPlaceError\(\{ vacant: logging\.vacant, address, captured: pin !== null \}\)/, "the form asks before it sends");
-  assert.match(singleVisits, /\.\.\.\(logging\.vacant \? \{ address: address\.trim\(\) \|\| null \} : \{\}\)/, "the address goes only for a vacant area's customer");
   assert.equal(/\bdoctors?\b/i.test(singleVisits), false, "My single visits says customers, never doctors");
+
+  // ── The place block is the Add-a-customer screen's, on EVERY single visit (owner, 2026-10-20) ───
+  // His words: the unplanned form "asks for a location or address and there is no place to write the
+  // address … it should be as the screen when adding new customer". Before this the Address box existed
+  // only on a vacant area's customer, and a customer of his OWN list was flatly "not vacant" — so the
+  // area screen said an address was needed and the form that opened offered him nowhere to write one.
+  const addForm = source("src/components/phoenix-crm/manager-customer-form.tsx");
+  for (const field of [
+    /<CrmField hint="Stand at the customer and press it: the address, area and brick are filled in for you\. Or fill them in below\.[^"]*" label="Location">/,
+    /maxLength=\{MANAGER_CUSTOMER_ADDRESS_MAX\}/,
+    /setAreaSeatId\(event\.target\.value\);\s*setBrickId\(""\);/,
+  ]) {
+    assert.match(addForm, field, "the Add a customer screen is the template this block copies");
+    assert.match(singleVisits, field, "and the single-visit form wears the same field");
+  }
+  assert.match(
+    singleVisits,
+    /address: address\.trim\(\) \|\| null,\s*areaSeatId: areaSeatId \|\| null,\s*brickId: brickId \|\| null,/,
+    "every single visit sends what it recorded — the address, the area and the brick, vacant area or not",
+  );
+  assert.equal(
+    /\.\.\.\(logging\.vacant \? \{ address/.test(singleVisits),
+    false,
+    "the address is never sent only for a vacant area again — that is the defect he reported",
+  );
+  assert.match(
+    singleVisits,
+    /Where the customer is · \{logging\.vacant \? "one of the first two is needed" : "optional"\}/,
+    "the block says which of the two readings it is: required in a vacant area, optional everywhere else",
+  );
+  assert.match(singleVisits, /const \[address, setAddress\] = useState\(logging\.address\);/, "it opens on the address already on file, not empty");
+  assert.match(singleVisits, /const \[areaSeatId, setAreaSeatId\] = useState\(logging\.areaSeatId \?\? ""\);/, "and on the customer's own area, so the brick list is the right one");
+  assert.match(
+    functionBody(singleVisits, "function ownLogging("),
+    /vacant: customer\.vacant,/,
+    "a customer of Manager's own list carries his area's vacancy — flatly false was the bug",
+  );
 
   // What the vacant-area visit was made to record is shown back (owner, 2026-10-19, multiple choice: "Show the
   // recorded place") — on his Visits tab and in the actual-versus-planned report.
-  const placeOf = (input: Partial<Parameters<typeof vacantVisitPlaceText>[0]>) =>
-    vacantVisitPlaceText({ vacant: true, address: null, areaName: null, brickName: null, captured: false, ...input });
+  const placeOf = (input: Partial<Parameters<typeof visitPlaceText>[0]>) =>
+    visitPlaceText({ address: null, areaName: null, brickName: null, captured: false, ...input });
   assert.equal(
     placeOf({ address: "12 El Bahr St, Shebin El Kom", areaName: "Menoufia 2", brickName: "Shebin 3", captured: true }),
     "12 El Bahr St, Shebin El Kom · Area: Menoufia 2 · Brick: Shebin 3",
@@ -1544,17 +1584,35 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   );
   assert.equal(placeOf({ address: "  12 El Bahr St  " }), "12 El Bahr St", "a typed address alone reads as it stands");
   assert.equal(placeOf({ captured: true }), "Location captured · no address could be read from it", "a capture nothing was read from still says so");
+  assert.equal(placeOf({}), null, "a visit that recorded nothing at all prints nothing");
   assert.equal(
-    placeOf({ vacant: false, address: "12 El Bahr St", areaName: "Menoufia 1", brickName: "Shebin 1", captured: true }),
-    null,
-    "a visit outside a vacant area shows no place: elsewhere the visit keeps no address",
+    placeOf({ address: "12 El Bahr St", areaName: "Menoufia 1", brickName: "Shebin 1" }),
+    "12 El Bahr St · Area: Menoufia 1 · Brick: Shebin 1",
+    "a visit OUTSIDE a vacant area shows what it recorded too, now that every single visit can record it (owner, 2026-10-20)",
   );
   assert.match(visitsServer, /in_vacant_territory, address, area_name, brick_name";/, "the visit reader reads what the vacant visit recorded");
   assert.match(
     functionBody(visitsServer, "function visitRowOf("),
-    /placeText: vacantVisitPlaceText\(\{\s*vacant: inVacantTerritory,/,
-    "the place is read only for a visit that was in a vacant area",
+    /placeText: visitPlaceText\(\{\s*address: textOrNull\(row\.address\),/,
+    "the place is read off whatever the visit recorded",
   );
+  assert.match(
+    logBody,
+    /vacant = customerSeatId !== null && isVacantTerritory\(viewer\.org\.seats\.get\(customerSeatId\)\);/,
+    "a customer of Manager's own list answers the vacancy question off his own area, the way a rep customer's seat does",
+  );
+  assert.match(
+    logBody,
+    /const chosen = await resolveChosenPlace\(writer, reach, body\.areaSeatId, body\.brickId\);/,
+    "the area and brick he chose are checked the way Add a customer checks them",
+  );
+  assert.match(
+    logBody,
+    /area_code: chosen\.areaCode \?\? located\?\.areaCode \?\? null,/,
+    "what he chose wins over what the capture read — the capture only fills what he left empty",
+  );
+  assert.match(logBody, /in_vacant_territory: vacant,\s*address,\s*\.\.\.place,/, "and the address is stored on every single visit, beside the area and brick");
+  assert.equal(/address: vacant \? address : null/.test(visitsServer), false, "the save never throws away an address again");
   assert.match(
     todayBody,
     /place: visitOf\.get\(row\.customerId \? `c:\$\{row\.customerId\}` : `m:\$\{row\.managerCustomerId\}`\)\?\.placeText \?\? null,/,

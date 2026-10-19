@@ -425,23 +425,79 @@ a multiple choice whether that binds the visit log, adding a customer to his own
   fills in the address and says the area and brick it fell in, read by the same `locateInReach` that Add a
   customer uses — and an Address field to type by hand. Neither filled: refused, by the form, by the save
   (`vacantVisitPlaceError`) and by the database (`phoenix_crm_manager_visits_vacant_place`). Elsewhere the
-  location stays optional and no address is kept. "Vacant" is read off the territory the customer is on
-  on the visit day, never off the plan.
-- **What the visit row keeps:** `in_vacant_territory`, the `address` he saw, and — only when he captured —
-  the `area_code`, `area_name`, `brick_id` and `brick_name` the capture fell in (the brick only when it is
-  in an area of his reach, as on Add a customer). Nothing is written to the rep's list: the vacant seat's
-  customer record is untouched.
+  whole block stays optional (it is on every single visit since 20 Oct — "The place block" below).
+  "Vacant" is read off the territory the customer is on on the visit day, never off the plan — a rep
+  customer's seat, and since 20 Oct an own-list customer's `area_seat_id` too.
+- **What the visit row keeps:** `in_vacant_territory`, the `address` he saw, and the `area_code`,
+  `area_name`, `brick_id` and `brick_name` — from the capture, or (since 20 Oct) from the area and brick
+  he chose, which win over it. Nothing is written to the rep's list: the vacant seat's customer record is
+  untouched.
 - **Adding a customer to Manager's own list is unchanged** — its address and brick stay optional.
 - **What it recorded is shown back** (his multiple-choice answer the same day, "Show the recorded place").
   A logged vacant-area visit reads "Where the customer is", then the address, `Area:` and `Brick:`
-  (`vacantVisitPlaceText`), under the customer on his Visits tab, planned or not, and under the customer
+  (`visitPlaceText`), under the customer on his Visits tab, planned or not, and under the customer
   in the actual-versus-planned report, a done single visit and a visit without a plan alike. A capture
-  nothing could be read from says so. Any other visit shows no place, since it keeps no address. The
+  nothing could be read from says so. Since 20 Oct every single visit shows back what it recorded, not a
+  vacant area's alone; one that recorded nothing still shows nothing. The
   unplanned card's "Vacant area" comes from the visit (`in_vacant_territory`), never from the territory
   today, so a seat filled since does not rewrite it.
 
 Migration `20261019103745` (staging and production, 19 Oct; additive, the 6 visits already logged keep
 `in_vacant_territory` false). Pinned at the end of `tests/phoenix-crm-manager-plan.test.ts`.
+
+## The place block: the Add-a-customer screen's, on every single visit (2026-10-20)
+
+He sent three screenshots of My single visits with "Log an unplanned customer" ringed, and wrote: *"in
+district manager single visit unplanned the system asks for a location or address and their is no place
+to write the address it should be as the screen when adding new customer is plans in singled visits deep
+audit"*. Asked as a multiple choice how much of the Add-a-customer block to copy, he chose **the whole
+block** — Capture location, Address, Area and Brick — on every single visit he logs.
+
+**What his screenshots caught.** He chose the vacant area Menoufia 1, whose own line reads "Logging a
+visit here needs the customer's address typed by hand, or Capture location". That area's seat holds no
+list, so he picked the customer from **Manager's own list** underneath — and the form that opened showed
+"Location · Optional. No photo is needed." and no Address box at all. The screen had asked him for an
+address and then given him nowhere to write one.
+
+**Why.** The Address box was drawn only when `logging.vacant`, and a customer of Manager's own list was
+flatly `vacant: false` in all three places that answer the question: `ownLogging` on the screen,
+`matchManagerCustomer`'s own-list branch, and `logManagerVisit`, which never looked at an own customer's
+territory at all. His own list carries the area the customer is in (`area_seat_id`), so it can answer the
+same question a rep customer's seat answers — and now does, in all three.
+
+**What the block is.** The same fields, in the same order and with the same words, as
+`manager-customer-form.tsx`:
+
+- **Capture location**, which fills the address, selects the area and selects the brick, through the one
+  `locateInReach` reading the save stores. It fills only what the capture read, and only what he left
+  empty — his own typing or choosing wins over it.
+- **Address**, typed by hand, 300 characters, opening on the address his own list already holds for that
+  customer (a rep list's customer opens empty).
+- **Area → Brick**, cascading drop-lists over the areas he plans in, the brick list that area's own.
+  Choosing a new area empties the brick. Checked on the server by `resolveChosenPlace`, which is the same
+  check Add a customer makes: an area outside his reach is refused, and so is a brick that is not of the
+  area he chose.
+
+**Required, still, only in a vacant area** — "one of the first two is needed" there, "optional" elsewhere,
+and the heading says which. The refusal is unchanged (`vacantVisitPlaceError`, the save, and the database
+CHECK).
+
+**One seat per area.** `managerAreaChoices` lists one seat per area, while a customer sits on a rep seat,
+so opening the area drop-list on the customer's own seat would have shown a blank area. `areaChoiceSeatOf`
+maps a seat to the seat its area is listed under; the Visits tab sends it as `areaSeatId`, and a match
+carries it too.
+
+**Stored and shown back on every single visit.** `logManagerVisit` used to write `address: vacant ?
+address : null` and nothing else, so a typed address outside a vacant area was thrown away silently. It
+now stores the address, `area_code`, `area_name`, `brick_id` and `brick_name` for every visit, and
+`visitPlaceText` (was `vacantVisitPlaceText`) prints what the visit recorded rather than only what a
+vacant area's recorded. A visit that recorded nothing still prints nothing. **No migration:** the columns
+and the `_address` CHECK are from `20261019103745`, and the `_vacant_place` CHECK only ever constrained a
+vacant visit.
+
+**Audited and left alone:** the territory Add-visit hand-over (`fileAsOwnSingleVisit`) always sends a
+captured pin, so the place rule was already answered there; adding a customer to Manager's own list is
+unchanged, by his 19 Oct ruling.
 
 ## His own single visits are also proof he worked (2026-10-19)
 

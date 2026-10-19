@@ -10,7 +10,7 @@
  *   - ADMIN: never checkable.
  *   - His unplanned single visits are listed APART and never fill a planned row.
  *   - A single visit in a VACANT area shows where it says its customer is — the address, area and brick
- *     he recorded (`vacantVisitPlaceText`, owner, 2026-10-19).
+ *     he recorded (`visitPlaceText`, owner, 2026-10-19; every single visit since 2026-10-20).
  *   - Only a SENT week (`isManagerPlanSent`) is judged; a draft or a returned week shows its visits apart
  *     and counts nothing planned.
  *
