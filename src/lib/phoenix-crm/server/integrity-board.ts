@@ -96,7 +96,7 @@ import {
   type PhoenixCrmIntegrityFlag,
   type StoredSignboardVerdict,
 } from "@/lib/phoenix-crm/location-integrity";
-import { placeChecksSeatScope, readsTeamPlaceChecks, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
@@ -1618,12 +1618,14 @@ export async function settleManyIntegrityCases(
  * row, so a case filed on another district's place is dropped here, on the server, even if an id for
  * it somehow reached this call.
  *
- * 🔴 THE SFE MANAGER DECIDES ON THIS BOARD SINCE 2026-10-19 AND STILL DOES NOT RECEIVE THE POSITION
- * CASES OR THE PHONE'S MOCK ANSWER (owner, 2026-10-02 — `readsPositionCases`). `placeChecksSeatScope`
- * answers `null` for him exactly as for the Super Admin, so the seat scope alone cannot tell the two
- * apart; the tier is asked here. The Super Admin reads everything, and the district manager on his own
- * team's board reads the device's evidence too (owner, 2026-10-13). Anybody else is queried for
- * `SFE_SOURCES` only and `device_mocked` is not in his select — never fetched and filtered after.
+ * 🔴 EVERYBODY THIS FUNCTION ADMITS READS THE DEVICE'S EVIDENCE TOO, SO THERE IS NO TIER IN IT: the Super
+ * Admin, the district manager on his own team's board (owner, 2026-10-13: "system and device evidence
+ * the dm can see") and — since 2026-10-19 — the SFE Manager (owner: "show the mock-location evidence to
+ * the SFE Manager too", answering the one place this board still differed from the Super Admin's). The
+ * audience is the seat scope above, which throws for anybody else, so a narrowing here would be a branch
+ * nobody can reach. 🔴 THAT IS THIS PLACE ONLY: the integrity board and the visit report still narrow the
+ * SFE Manager to `SFE_SOURCES` and leave `device_mocked` out of the select (`readsPositionCases`,
+ * 2026-10-02), and they must — nothing about a place check's evidence reaches them.
  */
 export async function loadPlaceCheckIntegrity(
   viewer: PhoenixCrmViewer,
@@ -1633,13 +1635,11 @@ export async function loadPlaceCheckIntegrity(
   const ids = [...new Set([...input.placeIds, ...input.sharedPlaceIds].filter((id) => isUuid(id)))];
   if (ids.length === 0) return {};
 
-  const deviceEvidence = readsPositionCases(viewer) || readsTeamPlaceChecks(viewer);
   const rows = await selectByIds<Row>(
     "phoenix_crm_location_integrity",
-    `id, subject_kind, subject_id, seat_id, source, flags, strong${deviceEvidence ? ", device_mocked" : ""}, accuracy_meters, created_at, settled_at, settled_by, settled_note, settled_flags`,
+    "id, subject_kind, subject_id, seat_id, source, flags, strong, device_mocked, accuracy_meters, created_at, settled_at, settled_by, settled_note, settled_flags",
     "subject_id",
     ids,
-    deviceEvidence ? undefined : (query) => query.in("source", SFE_SOURCES),
   );
   const people = await loadPeopleNames(rows.map((row) => (typeof row.settled_by === "string" ? row.settled_by : null)));
   const allowed = seats === null ? null : new Set(seats);
@@ -1654,8 +1654,6 @@ export async function loadPlaceCheckIntegrity(
     if (!subjectId) continue;
     const flags = (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag));
     const source = (INTEGRITY_SOURCES as readonly string[]).includes(String(row.source)) ? (String(row.source) as IntegritySource) : "gps";
-    // The query above already asked for the allowed detectors only; this is the belt over those braces.
-    if (!deviceEvidence && !SFE_SOURCES.includes(source)) continue;
     const settlement = settlementOf(row, people);
     const noticedAt = formatPhoenixDateTime(String(row.created_at));
     const accuracy = typeof row.accuracy_meters === "number" ? row.accuracy_meters : null;
@@ -1663,7 +1661,7 @@ export async function loadPlaceCheckIntegrity(
       caseId: String(row.id),
       // The phone's own answer, in words, and ONLY when it said yes: a null is the phone never
       // forwarding one, and "it did not say" is not evidence about anybody.
-      deviceText: deviceEvidence && row.device_mocked === true ? "The phone reported a mock location" : null,
+      deviceText: row.device_mocked === true ? "The phone reported a mock location" : null,
       noticedText: accuracy === null ? `Noticed ${noticedAt}` : `Noticed ${noticedAt} · the phone reported ${Math.round(accuracy)} m of accuracy`,
       reasons: flags.map((flag) => FLAG_LABELS[flag] ?? flag),
       settledText: settlement ? `Settled by ${settlement.byName} · ${formatPhoenixDateTime(settlement.at)}` : null,

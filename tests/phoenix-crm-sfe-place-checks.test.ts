@@ -18,7 +18,9 @@ import { stripComments } from "./support/comment-strip.ts";
  *      route in the module to him;
  *   3. seating a customer in a polyclinic (2026-10-10) and settling an integrity case (2026-10-09) stay
  *      the Super Admin's alone;
- *   4. the position cases and the phone's mock-location answer stay out of his evidence (2026-10-02);
+ *   4. the position cases and the phone's mock-location answer ARE in his evidence on this screen
+ *      (2026-10-19, "show the mock-location evidence to the SFE Manager too") and stay out of the
+ *      integrity board and the visit report (2026-10-02);
  *   5. the email, in-app and Telegram notice of a new hold is still the Super Admin's alone.
  */
 
@@ -126,13 +128,26 @@ export function runPhoenixCrmSfePlaceChecksTests() {
   assert.equal(settles({ ...NOBODY, isSuperAdmin: true, canUpdate: true }), true, "the Super Admin still settles a case");
   assert.equal(settles({ ...NOBODY, isSfeManager: true, canApprove: true }), false, "🔴 the SFE Manager reads that board and does not settle on it (owner, 2026-10-09)");
 
-  // ── 6. HIS EVIDENCE ON THIS BOARD IS THE PHOTO CASES ONLY ────────────────────
+  // ── 6. HIS EVIDENCE ON THIS BOARD IS THE SUPER ADMIN'S: THE DEVICE'S TOO (2026-10-19) ──────────
+  // "Show the mock-location evidence to the SFE Manager too" — the one place this board still differed.
+  // The audience is the seat scope, which throws for anybody who may not open the board, so there is no
+  // tier left inside the read: every viewer it admits is served the position cases and the mock answer.
   const evidence = functionText(board, "loadPlaceCheckIntegrity");
-  assert.ok(evidence.includes("readsPositionCases(viewer) || readsTeamPlaceChecks(viewer)"), "the device's evidence goes to the Super Admin and the district manager on his own team's board — the owner's two rulings — and nobody else");
-  assert.ok(evidence.includes('${deviceEvidence ? ", device_mocked" : ""}'), "🔴 `device_mocked` is in the select only for them — never fetched and filtered after");
-  assert.ok(!/strong, device_mocked/.test(evidence), "and it is not also in the select unconditionally");
-  assert.ok(evidence.includes('.in("source", SFE_SOURCES)'), "everybody else is queried for the SFE allow-list of detectors only — the position cases are never queried for him");
-  assert.ok(evidence.includes("deviceEvidence && row.device_mocked === true"), "and the phone's mock answer is worded only for the same two");
+  assert.ok(evidence.includes("const seats = placeChecksSeatScope(viewer);"), "🔴 the audience is the seat scope, asked first — it throws for anybody who may not open this board");
+  assert.ok(/strong, device_mocked, accuracy_meters/.test(evidence), "🔴 `device_mocked` is in the select for everybody this read admits — the SFE Manager included");
+  assert.ok(!evidence.includes("SFE_SOURCES"), "🔴 and no detector is cut out of his evidence on a place check — position and mock-location cases are read for him");
+  assert.ok(!evidence.includes("deviceEvidence"), "and there is no second tier inside the read to be widened or narrowed by accident");
+  assert.ok(evidence.includes("row.device_mocked === true"), "and the phone's mock answer is worded for him, in words");
+
+  // ── 6b. NOTHING ELSE MOVED: THE INTEGRITY BOARD AND THE VISIT REPORT STILL NARROW HIM (2026-10-02) ──
+  const positions = predicate(board, "readsPositionCases");
+  assert.equal(positions({ ...NOBODY, isSuperAdmin: true }), true, "the Super Admin reads the position cases");
+  assert.equal(positions({ ...NOBODY, isSfeManager: true, canApprove: true }), false, "🔴 the SFE Manager still does NOT on the integrity board or the visit report — this widening is the Place Checks screen only");
+  for (const name of ["loadVisitReportEvidence"]) {
+    const text = functionText(board, name);
+    assert.ok(text.includes('.in("source", SFE_SOURCES)'), `${name} still narrows everybody but the Super Admin to the photo cases`);
+    assert.ok(text.includes('positions ? ", device_mocked" : ""'), `${name} still leaves \`device_mocked\` out of his select`);
+  }
 
   // ── 7. A NEW HOLD IS STILL TOLD TO THE SUPER ADMIN ALONE ─────────────────────
   const reviews = read("src/lib/phoenix-crm/server/validation-reviews.ts");

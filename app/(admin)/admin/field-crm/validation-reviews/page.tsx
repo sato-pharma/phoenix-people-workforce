@@ -37,9 +37,10 @@ export const dynamic = "force-dynamic";
  * redirect rather than a message is the integrity board's shape — a page that does not describe itself to
  * somebody who may not read it.
  *
- * The SFE Manager is served exactly this board, with two things held back by earlier rulings of the
- * owner's that this one did not touch: he cannot SETTLE an integrity case (the deck says so itself), and
- * the phone's mock-location answer and the position cases are not in his evidence.
+ * The SFE Manager is served exactly this board, with one thing held back by an earlier ruling of the
+ * owner's that this one did not touch: he cannot SETTLE an integrity case (the deck says so itself). The
+ * phone's mock-location answer and the position cases are in his evidence here since 2026-10-19 ("show
+ * the mock-location evidence to the SFE Manager too"), as they are in the Super Admin's.
  */
 export default async function PhoenixCrmValidationReviewsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const access = await resolveAccessContextFromPage();
