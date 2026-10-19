@@ -187,6 +187,8 @@ import { candidateWhatsAppAnswers, type ScreeningQuestionLabel } from "@/lib/rec
 import {
   applyPoolColumnLayout,
   poolAnswersByColumn,
+  poolAnswersOutsideColumns,
+  poolAnswerSummary,
   poolColumnCatalogue,
   poolColumnViewKey,
   poolDefaultColumns,
@@ -196,7 +198,7 @@ import {
   type PoolTableColumn,
   type PoolWhatsAppQuestions,
 } from "@/lib/recruitment/pool-whatsapp-columns";
-import { PoolColumnChooser, PoolEditableCell } from "@/components/recruitment/pool-question-columns";
+import { PoolColumnChooser, PoolEditableAnswer, PoolEditableCell } from "@/components/recruitment/pool-question-columns";
 import { usePoolColumnLayout } from "@/components/recruitment/use-pool-column-layout";
 import { WhatsAppAnswersList } from "@/components/recruitment/whatsapp-answers-list";
 import { CandidateScreeningSession } from "@/components/recruitment/candidate-screening-session";
@@ -3400,6 +3402,23 @@ function poolCurrentAnswerValues(
   return Object.fromEntries(column.editKeys.map((editKey) => [editKey, valueOf(editKey)]));
 }
 
+/**
+ * Saves one column's edit — one call per answer that changed, so the place column can make two. The
+ * desktop cell and the phone card both save through here, so they cannot drift apart.
+ */
+async function savePoolColumnAnswers(
+  candidateId: string,
+  column: PoolTableColumn,
+  values: Readonly<Record<string, string>>,
+  currentValues: Readonly<Record<string, string>>,
+): Promise<void> {
+  for (const editKey of column.editKeys) {
+    const next = (values[editKey] ?? "").trim();
+    if (next === (currentValues[editKey] ?? "").trim()) continue;
+    await patchJson(`/api/recruitment/candidates/${candidateId}/whatsapp-answer`, { key: editKey, value: next });
+  }
+}
+
 /** An admin question's answer under its column. Only the applicant can answer these, so no CV stands in. */
 function PoolAnswerText({ answer }: { answer: string | null }) {
   return answer ? (
@@ -3412,10 +3431,12 @@ function PoolAnswerText({ answer }: { answer: string | null }) {
 }
 
 function CandidatePoolCard({
+  answerColumns,
   areaOptions,
   candidate,
   candidateHref,
   canDelete,
+  canEditAnswers,
   canManage,
   folderJobTitles,
   hiringManagers,
@@ -3424,6 +3445,7 @@ function CandidatePoolCard({
   openRequisitions,
   openVacancies,
   pending,
+  roleQuestionKeys,
   run,
   sendFreeArea,
   sendFreeTitle,
@@ -3437,11 +3459,15 @@ function CandidatePoolCard({
   startReq,
   whatsappQuestions,
 }: {
+  /** The table's own columns, in the reader's order — the questions the card lists with a pencil each. */
+  answerColumns: readonly PoolTableColumn[];
   areaOptions: CandidateFolderAreaOption[];
   candidate: Candidate;
   /** The candidate's own page, in the shell the pool is in. */
   candidateHref: string;
   canDelete: boolean;
+  /** The table's grant, candidates:update — the same reader edits on a phone as at a desk. */
+  canEditAnswers: boolean;
   canManage: boolean;
   folderJobTitles: string[];
   hiringManagers: HiringManagerOption[];
@@ -3450,6 +3476,8 @@ function CandidatePoolCard({
   openRequisitions: Requisition[];
   openVacancies: VacancyReportRow[];
   pending: boolean;
+  /** The answer keys of the questions the Role filter's role is asked; empty with no role picked. */
+  roleQuestionKeys: ReadonlySet<string>;
   run: (work: () => Promise<string | void>) => void;
   sendFreeArea: Record<string, string>;
   sendFreeTitle: Record<string, string>;
@@ -3488,6 +3516,78 @@ function CandidatePoolCard({
   // The phone's half of "the headers are the WhatsApp questions": a card has no header row, so it
   // lists every answer under the question it answers — the same list the profile panel shows.
   const whatsappAnswers = candidateWhatsAppAnswers(candidate, whatsappQuestions?.questions ?? null);
+  // "Add it on phones" (owner, 2026-10-19): a reader who can edit the table's answers can edit them
+  // here too. The card lists the table's columns, each with the same pencil, editor and save; the
+  // answers no column holds follow read-only. One answer open at a time, like the table.
+  const [editingColumnKey, setEditingColumnKey] = useState<string | null>(null);
+  const answerValues = poolAnswersByColumn(candidate, whatsappQuestions);
+  const answersOutsideColumns = poolAnswersOutsideColumns(whatsappAnswers, answerColumns);
+  const displayName = candidateDisplayName(candidate.fullName);
+  // Under a role filter, "Asked only to … applicants" repeats the filter on every question that role is
+  // asked — and on a phone it ran to five lines for a question asked to five roles — so the card leaves
+  // it off those. An answer to a question that role is NOT asked keeps it: that is the line explaining
+  // why it is there.
+  const withoutFilterAudience = <Answer extends { key: string; askedTo: string | null }>(answers: readonly Answer[]) =>
+    answers.map((answer) => (roleQuestionKeys.has(answer.key) ? { ...answer, askedTo: null } : answer));
+  const hasAnswersSection = canEditAnswers
+    ? answerColumns.length > 0 || answersOutsideColumns.length > 0
+    : whatsappAnswers.length > 0;
+  // Full width between the screening facts and the contact details, never one of the half-width
+  // fields: as a field the list ran about 900px down one half of the card with the other half empty
+  // beside it (production, 375px, 2026-10-19), and an open editor needs the room.
+  const whatsappAnswersSection = hasAnswersSection ? (
+    <section aria-label={`WhatsApp answers of ${displayName}`} className="my-2 border border-slate-100 bg-slate-50 px-2.5 py-2">
+      <h4 className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">WhatsApp answers</h4>
+      {canEditAnswers ? (
+        <>
+          <dl className="mt-1 divide-y divide-slate-100">
+            {answerColumns.map((column) => {
+              const currentValues = poolCurrentAnswerValues(candidate, column, answerValues);
+              return (
+                <div className="min-w-0 py-1.5" key={column.key}>
+                  <dt className="break-words text-xs text-slate-500" dir="auto">
+                    {column.header}
+                    {column.askedTo && !roleQuestionKeys.has(column.key) ? (
+                      <span className="block text-phx-xs text-slate-400">{column.askedTo}</span>
+                    ) : null}
+                  </dt>
+                  <dd className="mt-0.5 min-w-0 text-xs">
+                    <PoolEditableAnswer
+                      canEdit
+                      column={column}
+                      currentValues={currentValues}
+                      editing={editingColumnKey === column.key}
+                      onCancel={() => setEditingColumnKey(null)}
+                      onSave={(values) =>
+                        run(async () => {
+                          await savePoolColumnAnswers(candidate.id, column, values, currentValues);
+                          setEditingColumnKey(null);
+                          return `Saved the answer to "${column.header}" for ${displayName}.`;
+                        })
+                      }
+                      onStartEdit={() => setEditingColumnKey(column.key)}
+                      pending={pending}
+                      touch
+                    >
+                      <PoolAnswerText answer={poolAnswerSummary(currentValues, column) || null} />
+                    </PoolEditableAnswer>
+                  </dd>
+                </div>
+              );
+            })}
+          </dl>
+          {answersOutsideColumns.length > 0 ? (
+            <WhatsAppAnswersList
+              answers={withoutFilterAudience(answersOutsideColumns)}
+              className="mt-1 border-t border-slate-100 pt-2"
+            />
+          ) : null}
+        </>
+      ) : (
+        <WhatsAppAnswersList answers={withoutFilterAudience(whatsappAnswers)} className="mt-1" />
+      )}
+    </section>
+  ) : null;
 
   return (
     <PortalRecordCard
@@ -3647,9 +3747,11 @@ function CandidatePoolCard({
                 },
               ]
             : []),
-          ...(whatsappAnswers.length > 0
-            ? [{ label: "WhatsApp answers", value: <WhatsAppAnswersList answers={whatsappAnswers} /> }]
-            : []),
+        ]}
+      />
+      {whatsappAnswersSection}
+      <PortalRecordFields
+        fields={[
           ...(isStatedNonEgyptian(candidate.nationality)
             ? [{ label: "Nationality", value: nonEgyptianFlagTitle(candidate.nationality) }]
             : []),
@@ -4079,6 +4181,9 @@ function CandidatesTab({
   const defaultColumns = poolDefaultColumns({ answeredKeys, roleFamily: roleView, whatsapp: whatsappQuestions });
   const columnCatalogue = poolColumnCatalogue(whatsappQuestions, answeredKeys);
   const tableColumns = applyPoolColumnLayout(defaultColumns, columnCatalogue, savedColumns);
+  // Every question the picked role is asked — its default columns, before the reader's layout. A phone
+  // card leaves "Asked only to …" off these, since the filter already says it.
+  const roleQuestionKeys: ReadonlySet<string> = new Set(roleView ? defaultColumns.map((column) => column.key) : []);
   // The measured, pinned widths below are for the shared five exactly as they ship; any other set of
   // columns shares the width equally instead.
   const usesPinnedLayout = !roleView && !savedColumns;
@@ -4908,10 +5013,12 @@ function CandidatesTab({
                   </div>
                 ) : null}
                 <CandidatePoolCard
+                  answerColumns={tableColumns}
                   areaOptions={areaOptions}
                   candidate={candidate}
                   candidateHref={candidatePageHref(candidatePageRoot, candidate.id)}
                   canDelete={canDelete}
+                  canEditAnswers={canFileCandidates}
                   canManage={canManage}
                   folderJobTitles={folderJobTitles}
                   hiringManagers={hiringManagers}
@@ -4920,6 +5027,7 @@ function CandidatesTab({
                   openRequisitions={openRequisitions}
                   openVacancies={openVacancies}
                   pending={pending}
+                  roleQuestionKeys={roleQuestionKeys}
                   run={run}
                   sendFreeArea={sendFreeArea}
                   sendFreeTitle={sendFreeTitle}
@@ -5443,15 +5551,7 @@ function CandidatesTab({
                             onCancel={() => setEditingCell(null)}
                             onSave={(values) =>
                               run(async () => {
-                                // One save per answer that changed; the place column can change two.
-                                for (const editKey of column.editKeys) {
-                                  const next = (values[editKey] ?? "").trim();
-                                  if (next === (currentValues[editKey] ?? "").trim()) continue;
-                                  await patchJson(`/api/recruitment/candidates/${candidate.id}/whatsapp-answer`, {
-                                    key: editKey,
-                                    value: next,
-                                  });
-                                }
+                                await savePoolColumnAnswers(candidate.id, column, values, currentValues);
                                 setEditingCell(null);
                                 return `Saved the answer to "${column.header}" for ${displayName}.`;
                               })

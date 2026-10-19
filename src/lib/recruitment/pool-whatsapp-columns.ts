@@ -235,6 +235,27 @@ export function poolAnswersByColumn(
   return new Map(candidateWhatsAppAnswers(candidate, whatsapp?.questions ?? null).map((entry) => [entry.key, entry.answer]));
 }
 
+/**
+ * The answers no drawn column holds. A phone card lists the columns one under another, each with its
+ * pencil (owner, 2026-10-19 — "Add it on phones"); every other answer the applicant gave follows them,
+ * read-only, so hiding a column never hides what somebody said.
+ */
+export function poolAnswersOutsideColumns<Answer extends { key: string }>(
+  answers: readonly Answer[],
+  columns: readonly PoolTableColumn[],
+): Answer[] {
+  const shown = new Set(columns.flatMap((column) => column.editKeys));
+  return answers.filter((answer) => !shown.has(answer.key));
+}
+
+/** What an answer column reads as on a card: its answers in order, region and area joined. "" when none. */
+export function poolAnswerSummary(values: Readonly<Record<string, string>>, column: PoolTableColumn): string {
+  return column.editKeys
+    .map((key) => (values[key] ?? "").trim())
+    .filter(Boolean)
+    .join(" · ");
+}
+
 /** The caption above a role's table, so the reader knows the headers changed and why. */
 export function poolRoleQuestionsCaption(roleFamily: CandidateRoleFamily, columnCount: number): string {
   const role = candidateRoleFamilyLabels[roleFamily];

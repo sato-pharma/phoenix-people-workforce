@@ -8,6 +8,7 @@
 import { ArrowDown, ArrowUp, Columns3, Pencil, RotateCcw, X } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 
+import { adminControlDepthClassName } from "@/components/admin/admin-design-tokens";
 import { Button } from "@/components/ui/button";
 import { phxFieldClassName, phxLabelTextClassName, phxSelectClassName } from "@/components/ui/form-tokens";
 import { candidateRegionLabels } from "@/lib/recruitment/candidate-region";
@@ -38,26 +39,9 @@ function suggestionsFor(editKey: string): readonly string[] {
   }
 }
 
-/**
- * One answer cell. Shows `children`; for a reader who may edit, a pencil opens the question's
- * field(s) in place — filled with the current answer, or empty for a missing one. Saving an empty
- * field clears that answer.
- */
-export function PoolEditableCell({
-  canEdit,
-  children,
-  className,
-  column,
-  currentValues,
-  editing,
-  onCancel,
-  onSave,
-  onStartEdit,
-  pending,
-}: {
+type PoolEditableAnswerProps = {
   canEdit: boolean;
   children: ReactNode;
-  className: string;
   column: PoolTableColumn;
   /** The answer each edit key holds now, "" for a missing one. */
   currentValues: Readonly<Record<string, string>>;
@@ -66,36 +50,71 @@ export function PoolEditableCell({
   onSave: (values: Record<string, string>) => void;
   onStartEdit: () => void;
   pending: boolean;
-}) {
+};
+
+/**
+ * One answer cell. Shows `children`; for a reader who may edit, a pencil opens the question's
+ * field(s) in place — filled with the current answer, or empty for a missing one. Saving an empty
+ * field clears that answer.
+ */
+export function PoolEditableCell({ className, ...answer }: PoolEditableAnswerProps & { className: string }) {
   return (
     <td className={className}>
-      {editing ? (
-        <PoolAnswerEditor
-          column={column}
-          currentValues={currentValues}
-          onCancel={onCancel}
-          onSave={onSave}
-          pending={pending}
-        />
-      ) : (
-        <div className="group/answer relative min-w-0">
-          {children}
-          {canEdit ? (
-            <button
-              aria-label={`Edit the answer to "${column.header}"`}
-              className="mt-1 inline-flex items-center gap-1 text-phx-xs font-semibold text-slate-400 opacity-60 transition hover:text-orange-600 group-hover/answer:opacity-100"
-              disabled={pending}
-              onClick={onStartEdit}
-              title={`Edit the answer to "${column.header}"`}
-              type="button"
-            >
-              <Pencil aria-hidden className="h-3 w-3" />
-              {Object.values(currentValues).some((value) => value.trim()) ? "Edit" : "Add"}
-            </button>
-          ) : null}
-        </div>
-      )}
+      <PoolEditableAnswer {...answer} />
     </td>
+  );
+}
+
+/**
+ * The answer and its pencil, wherever it sits: a table cell on a desktop, a line of the candidate card
+ * on a phone (owner, 2026-10-19 — "Add it on phones"). Same editor, same save, same limit. A phone has
+ * no hover, so there (`touch`) the pencil is drawn at full strength with room for a thumb instead of
+ * brightening under the mouse.
+ */
+export function PoolEditableAnswer({
+  canEdit,
+  children,
+  column,
+  currentValues,
+  editing,
+  onCancel,
+  onSave,
+  onStartEdit,
+  pending,
+  touch = false,
+}: PoolEditableAnswerProps & { touch?: boolean }) {
+  if (editing) {
+    return (
+      <PoolAnswerEditor
+        column={column}
+        currentValues={currentValues}
+        onCancel={onCancel}
+        onSave={onSave}
+        pending={pending}
+      />
+    );
+  }
+  return (
+    <div className="group/answer relative min-w-0">
+      {children}
+      {canEdit ? (
+        <button
+          aria-label={`Edit the answer to "${column.header}"`}
+          className={
+            touch
+              ? `mt-1.5 inline-flex min-h-8 items-center gap-1 border border-slate-200 bg-white px-2.5 text-phx-xs font-semibold text-slate-600 transition hover:border-orange-300 hover:text-orange-600 ${adminControlDepthClassName}`
+              : "mt-1 inline-flex items-center gap-1 text-phx-xs font-semibold text-slate-400 opacity-60 transition hover:text-orange-600 group-hover/answer:opacity-100"
+          }
+          disabled={pending}
+          onClick={onStartEdit}
+          title={`Edit the answer to "${column.header}"`}
+          type="button"
+        >
+          <Pencil aria-hidden className="h-3 w-3" />
+          {Object.values(currentValues).some((value) => value.trim()) ? "Edit" : "Add"}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
