@@ -15,7 +15,7 @@ import { stripComments } from "./support/comment-strip.ts";
 /**
  * The TREE-REUSE DRY RUN (owner, 2026-10-14, cost cuts: "build step 3 as a dry run").
  *
- * A push to `main` bills about 12.3 minutes and `checks` is 5.1 of them. The PR run already ran the
+ * A push to `main` bills about 12.3 minutes and `checks` was 5.1 of them. The PR run already ran the
  * same lint, typecheck and unit suite on its merge commit, so if the commit that lands has the very
  * same TREE the second run proves nothing new. Whether that is common is a measurement: this ships
  * only the measuring, and changes what runs on `main` by exactly nothing.
@@ -28,7 +28,7 @@ import { stripComments } from "./support/comment-strip.ts";
  *     tree out of the step names of the green PR run. Every failure becomes UNKNOWN with a reason and
  *     NOTHING throws: a dry run that can fail a deploy-gating job is not a dry run.
  *  3. THE WIRING: the recording steps run on a pull_request only, the dry-run steps on a push only,
- *     both continue-on-error, the dry-run steps are the LAST two in `checks` so they cannot delay it,
+ *     both continue-on-error, the dry-run steps are the LAST two in `static` so they cannot delay it,
  *     the permissions added are read-only, and NO `if:` anywhere reads the verdict to decide anything.
  *     That last one is the whole point: it must stay a measurement until the owner says otherwise.
  */
@@ -69,15 +69,20 @@ export function runCiTreeReuseDryrunTests() {
 
   const jobs = (...steps: string[]) => [
     { name: "validate", steps: [{ name: TESTED_TREE_PREFIX + TREE_B }] },
-    { name: "checks", steps: steps.map((name) => ({ name })) },
+    { name: "static", steps: steps.map((name) => ({ name })) },
   ];
-  assert.equal(testedTreeFromJobs(jobs("Install", TESTED_TREE_PREFIX + TREE_A, "Lint")), TREE_A, "the tree is read from the checks job's step names");
+  assert.equal(testedTreeFromJobs(jobs("Install", TESTED_TREE_PREFIX + TREE_A, "Lint")), TREE_A, "the tree is read from the static job's step names");
+  assert.equal(
+    testedTreeFromJobs([{ name: "checks", steps: [{ name: TESTED_TREE_PREFIX + TREE_A }] }]),
+    TREE_A,
+    "a PR run from before 2026-10-19 recorded it in `checks`, and a push can still be compared against one",
+  );
   assert.equal(testedTreeFromJobs(jobs("Install")), null, "no recording step reads null");
   assert.equal(testedTreeFromJobs(jobs(TESTED_TREE_PREFIX + "not-a-sha")), null, "a malformed recording reads null");
   assert.equal(testedTreeFromJobs(jobs(TESTED_TREE_PREFIX + TREE_A, TESTED_TREE_PREFIX + TREE_B)), null, "two different recorded trees are ambiguous, so null");
   assert.equal(testedTreeFromJobs(jobs(TESTED_TREE_PREFIX + TREE_A, TESTED_TREE_PREFIX + TREE_A)), TREE_A, "the same tree recorded twice is still one tree");
   assert.equal(testedTreeFromJobs(null as never), null);
-  assert.equal(testedTreeFromJobs([{ name: "validate", steps: [{ name: TESTED_TREE_PREFIX + TREE_A }] }]), null, "only the checks job counts");
+  assert.equal(testedTreeFromJobs([{ name: "validate", steps: [{ name: TESTED_TREE_PREFIX + TREE_A }] }]), null, "only the static (or older checks) job counts");
 
   const git = (tree: string, subject: string) => (_file: string, args: string[]) => (args[0] === "rev-parse" ? tree + "\n" : subject + "\n");
   const RUNS = `repos/${REPO}/actions/workflows/ci.yml/runs?event=pull_request&head_sha=${HEAD}&status=success&per_page=5`;
@@ -133,17 +138,17 @@ export function runCiTreeReuseDryrunTests() {
     readGh: ((path: string) =>
       path.includes("/runs?event=push")
         ? { workflow_runs: [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }] }
-        : { jobs: [{ name: "checks", steps: (stepsOf[Number(/runs\/(\d+)\/jobs/.exec(path)![1])] ?? []).map((name) => ({ name })) }] }) as never,
+        : { jobs: [{ name: "static", steps: (stepsOf[Number(/runs\/(\d+)\/jobs/.exec(path)![1])] ?? []).map((name) => ({ name })) }] }) as never,
   });
   assert.deepEqual(counted, { examined: 4, MATCH: 1, DIFFER: 1, UNKNOWN: 1, "no dry run": 1 }, "the report counts verdicts from step names alone");
 
   // 3. The wiring
   const live = yamlWithoutComments(".github/workflows/ci.yml");
-  const checks = live.split(/\n {2}(?=[A-Za-z0-9_-]+:\n)/).find((job) => /^ *checks:/.test(job));
-  assert.ok(checks, "ci.yml has a `checks` job");
+  const checks = live.split(/\n {2}(?=[A-Za-z0-9_-]+:\n)/).find((job) => /^ *static:/.test(job));
+  assert.ok(checks, "ci.yml has a `static` job");
 
-  assert.match(checks, /\n {4}permissions:\n {6}contents: read\n {6}actions: read\n {6}pull-requests: read\n/, "checks gains exactly three READ permissions");
-  assert.doesNotMatch(checks, /: write\b/, "nothing in checks may be granted write");
+  assert.match(checks, /\n {4}permissions:\n {6}contents: read\n {6}actions: read\n {6}pull-requests: read\n/, "static gains exactly three READ permissions");
+  assert.doesNotMatch(checks, /: write\b/, "nothing in static may be granted write");
 
   assert.match(
     checks,
@@ -171,7 +176,7 @@ export function runCiTreeReuseDryrunTests() {
   assert.deepEqual(
     stepNames.slice(-2),
     ["Tree reuse dry run (log only)", "Tree reuse dry run ${{ steps.reuse.outputs.verdict }}"],
-    "the dry-run pair must be the last two steps of checks",
+    "the dry-run pair must be the last two steps of static",
   );
 
   // THE POINT: nothing may decide anything from it. Every mention of the two ids is a step NAME or

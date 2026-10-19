@@ -236,9 +236,9 @@ export function runGithubWorkflowValidityTests() {
 
       // ── `runs-on:` must resolve to something, on EVERY event ─────────────────────────────────
       // A computed `runs-on` with no fallback resolves to empty on any event where its variables are
-      // unset, and an empty runs-on is a startup failure rather than a queued job. Since 2026-09-28 the
-      // live form is the per-branch switch in ci.yml and security-scan.yml, which ends
-      // `… && vars.CI_RUNNER_LABEL || 'ubuntu-latest'`; the `||` is what makes it safe, and dropping it
+      // unset, and an empty runs-on is a startup failure rather than a queued job. Since 2026-10-19 every
+      // runs-on is a literal `ubuntu-latest` (the per-branch runner switch left with the CI box), so this
+      // rule is idle today; a computed one must still carry its `||` fallback, and dropping it
       // is a one-character change with no local symptom.
       const runsOn = /^\s*runs-on:\s*(.+?)\s*$/.exec(line);
       if (runsOn && runsOn[1].includes("${{")) {

@@ -43,29 +43,12 @@ All commands run from the repo root.
 | Typecheck — **CI's job, not yours** (see below) | `pnpm run typecheck` |
 | Unit/integration tests | `pnpm run test` |
 | **The repo-wide contract gates + your changed files' lint + `check:migrations`, ~8s — the reds you did not write** | `pnpm run check:contracts` (optional, never a gate; types stay CI's) |
-| **Any heavy check, on the CI box instead of this laptop** | `node scripts/remote-check.mjs typecheck` (also `lint`, `test`, `build`, `all`) |
+| **What CI said about the pushed commit — read from GitHub, nothing runs here** | `node scripts/remote-check.mjs typecheck` (also `lint`, `test`, `build`, `all`; `--dispatch` starts a run) |
 | Whole gate, by hand — **only when the owner names it** | `pnpm run ci` |
 
-🔴 **`scripts/remote-check.mjs` IS THE ANSWER TO "I NEED A TYPECHECK NOW AND I AM NOT READY FOR A
-PR".** It pushes the committed sha to the self-hosted box over SSH and runs the check there —
-measured on the box 7-8 Oct 2026 (median, range): typecheck **~34s** (32-35s) on TypeScript 7, lint
-**~185s cold, 7-14s warm** from its persistent cache, unit suite **~125s** (105-212s), a full
-`next build` **~120s** (114-200s).
-Nothing heavy touches the 16 GB laptop, no Actions minutes are billed, and no PR is opened. It sends
-the **commit**, so it prints any uncommitted files it is ignoring. Pinned by
-`tests/remote-check.test.ts`.
+🔴 **`scripts/remote-check.mjs` ASKS GITHUB WHAT CI SAID ABOUT THE PUSHED COMMIT — THE HETZNER CI BOX IS RETIRED** (owner, 2026-10-19: *"retire the hetzner box and do not use it ever again because it is the source of slowness"*). It needs the commit on origin (it refuses otherwise and prints any uncommitted files it ignores), reads that commit's PR run by sha and prints `remote-check: PASS|FAIL — <sha9>` per stage from the jobs' own steps; with no PR it stops at NO VERDICT (exit 6), and `--dispatch` starts a `ci.yml` run on the branch. `lockfile` regenerates `pnpm-lock.yaml` through `.github/workflows/lockfile.yml`. The retired `--wait`, `--no-wait`, `--free`, `--no-actions` and `--else-actions` flags are refused by name. Pinned by `tests/remote-check.test.ts`.
 
-🔴 **THE PR'S OWN CI IS THE VERDICT — `remote-check` IS OPTIONAL, WITH ONE EXCEPTION: A PUSH THAT
-*ADDS* A TEST FILE RUNS `remote-check test` FIRST** (owner, 2026-10-12, after 26 of 59 PR runs went
-red in one day and 13 of them were repo-wide contract gates — 4 the comment-strip ratchet on a newly
-added test file; it narrows his 2026-10-08 recovery, which had retired the 2026-10-04 before-every-push
-step, a single-lane 7-9 minute box pass in front of a ~3 minute hosted CI). Otherwise commit, push and
-open the PR; its `validate` + `checks` decide. Either way run `remote-check` **once with
-`run_in_background: true` and act on the notification** — exit 0 PASS, 1 FAIL, 2-9 NO VERDICT, and
-only `remote-check: PASS|FAIL — <sha9>` for the sha you pushed counts; a NO VERDICT is never a pass —
-say so and push. Never a poll loop (bash-guard
-**C14**), never a foreground run (**C15**), never a sleep on a task output file (**C16**). The push guard only reads a recorded verdict for the exact sha, starts nothing, and says the new-test-file rule back without ever refusing over the suite (owner, 2026-10-04: "no guard"). Rule and
-account: `.claude/rules/engineering.md` (Validation), `docs/testing.md`.
+🔴 **THE PR'S OWN CI IS THE VERDICT, AND IT IS FAST BECAUSE IT IS PARALLEL** — `ci.yml` runs `validate` (build and login smoke), `static` (contracts, audit, lint, the type gate), three `unit` jobs and `checks` (the gate over `static` + `unit`) side by side on GitHub-hosted runners; `validate` and `checks` are the two required names. Commit, push and open the PR. **There is no pre-push suite run any more** — the 2026-10-12 "a push that ADDS a test file runs `remote-check test` first" step needed the box and ended with it; `node scripts/check-contracts.mjs` (~8s, local) is what the push guard now points that push at, and the PR's `unit` jobs run the suite. Run `remote-check` **once with `run_in_background: true` and act on the notification** — exit 0 PASS, 1 FAIL, 2-9 NO VERDICT, and only `remote-check: PASS|FAIL — <sha9>` for the sha you pushed counts; a NO VERDICT is never a pass. Never a poll loop (bash-guard **C14**), never a foreground run (**C15**), never a sleep on a task output file (**C16**). Rule and account: `.claude/rules/engineering.md` (Validation), `docs/testing.md`.
 
 **CI is the gate, and a local typecheck is denied** (`bash-guard.mjs` C8; `PHX_TYPECHECK_OK=1 <cmd>`
 stands it down for one command you will sit and watch) — the full rule, the required-check rotation,
@@ -73,7 +56,7 @@ the retired `check:harden` and `check:edit`, the per-change validation matrix an
 cold `tsc` no longer fits this machine are in [AGENTS.md §7](AGENTS.md), loaded with this file.
 **Push the branch — the PR's typecheck is cold, clean and under a minute** since the gate moved to
 TypeScript 7 (`typescript-native`, an `npm:typescript@7` alias; `typescript` 5 stays for the editor,
-Next and typescript-eslint). It is `--checkers 1` in both callers deliberately: nothing else names a
+Next and typescript-eslint). It is `--checkers 1` in the package script deliberately: nothing else names a
 version, and TypeScript 5 refuses that flag, so a lost alias fails loudly instead of quietly restoring
 the 3-minute compiler.
 

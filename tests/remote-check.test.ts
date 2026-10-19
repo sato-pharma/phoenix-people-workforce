@@ -1,1448 +1,449 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 import { stripComments } from "./support/comment-strip.ts";
 
 import {
-  BUSY_POLL_SECONDS,
-  DEFAULT_WAIT_MINUTES,
-  FREE_WAIT_MINUTES,
-  URGENT_WAIT_MINUTES,
-  WAIT_MINUTES_ENV,
-  buildBusyProbeScript,
-  buildRunScript,
-  decideBusyAction,
+  RETIRED_FLAGS,
+  STAGES,
+  STAGE_JOBS,
+  VERDICT_DIR_NAME,
   gradeActionsRun,
   gradeActionsStages,
   isProtectedDispatchRef,
-  newRunId,
-  parseBusyProbe,
-  parseEscalation,
-  STAGE_JOBS,
-  STAGE_JOBS_PR,
-  runPaths,
-  stageJobsFor,
-  stagesNotRunBy,
+  mergeVerdictRecord,
+  parseArgs,
   stoppedNoVerdictLine,
-  PHX_LIVE_RUN_ID,
 } from "../scripts/remote-check-plan.mjs";
 
-// scripts/remote-check.mjs runs the heavy checks on the self-hosted CI box instead of this laptop.
-// Its whole value is that NOTHING heavy executes locally, so the invariants worth pinning are about
-// where work happens and what it touches — not about its output, which depends on a live host.
+// scripts/remote-check.mjs checks a commit on GitHub Actions and prints one verdict line.
 //
-// 🔴 THIS TEST CANNOT REACH THE BOX AND MUST NOT TRY. A test that SSHes is a test that fails in CI,
-// on a laptop with no key, and in a cloud session — and would then be "fixed" by deleting it. It
-// reads the source instead, which is the right instrument for "this script never does X".
+// 🔴 THE CI BOX IS RETIRED AND THIS FILE PINS THAT IT STAYS RETIRED (owner, 2026-10-19: "retire the hetzner
+// box and do not use it ever again, it is the source of slowness"). It used to be 1,448 lines about an SSH
+// run on a self-hosted machine — a private tree per invocation, a busy probe, a lock, per-stage ceilings.
+// None of that exists. What is left is small and every part of it is something a mistake would turn into
+// a FALSE VERDICT, which is the one thing this tool must never produce: a FAIL is reported to the owner as
+// "your code is broken", and a PASS lets a push through. So the cases below are, in order:
+//   1. nothing in the live code can reach the box, or run a heavy tool on this laptop;
+//   2. the flags (an unknown or retired one is refused by name, never ignored);
+//   3. the stage map is read against the REAL ci.yml, so a renamed job or step cannot quietly turn every
+//      verdict into NO VERDICT;
+//   4. the grading, case by case — what is PASS, what is FAIL, and above all what is neither;
+//   5. the whole script, end to end, against a fake `gh` and a real git repository.
 const ROOT = path.resolve(import.meta.dirname, "..");
 const SRC = readFileSync(path.join(ROOT, "scripts", "remote-check.mjs"), "utf8");
 const PLAN_SRC = readFileSync(path.join(ROOT, "scripts", "remote-check-plan.mjs"), "utf8");
+const CI = readFileSync(path.join(ROOT, ".github", "workflows", "ci.yml"), "utf8").replace(/\r\n/g, "\n");
+
+type Step = { name: string; conclusion: string | null };
+type Job = { name: string; status: string; conclusion: string | null; steps: Step[] };
+
+/** A job as the jobs API reports it. A job that really ran always carries steps, so one is always given. */
+function job(name: string, steps: Record<string, string | null>, status = "completed", conclusion: string | null = "success"): Job {
+  return { name, status, conclusion, steps: [{ name: "Set up job", conclusion: "success" }, ...Object.entries(steps).map(([n, c]) => ({ name: n, conclusion: c }))] };
+}
+
+const PROVE = "Prove the unit suite ran every test exactly once";
+
+/** A fully green run of ci.yml on a dispatch — the build ran. */
+const green = (): Job[] => [
+  job("validate", { Build: "success" }),
+  job("static", { Lint: "success", Typecheck: "success" }),
+  job("unit (1)", { Test: "success" }),
+  job("unit (2)", { Test: "success" }),
+  job("unit (3)", { Test: "success" }),
+  job("checks", { [PROVE]: "success" }),
+  job("mobile", { "Typecheck the mobile app": "success" }),
+];
+
+/** The same run with one job's step replaced. */
+function with_(jobs: Job[], name: string, step: string, conclusion: string | null, jobConclusion?: string | null): Job[] {
+  return jobs.map((j) =>
+    j.name === name
+      ? { ...j, conclusion: jobConclusion === undefined ? j.conclusion : jobConclusion, steps: j.steps.map((s) => (s.name === step ? { ...s, conclusion } : s)) }
+      : j,
+  );
+}
 
 export async function runRemoteCheckTests(): Promise<void> {
-  // 1 — it must never run a check locally. The point of the script is that `tsc` does not start on
-  // a 16 GB laptop where mem-watchdog.ps1 reaps it silently (AGENTS.md §5, bash-guard C8). Every
-  // check command must be inside the CHECKS table, which is only ever interpolated into the remote
-  // bash script — never handed to a local spawn.
-  //
-  // 🔴 `gh` JOINED `ssh` AND `git` ON 2026-10-06, AND THE INVARIANT GOT STRONGER RATHER THAN WEAKER.
-  // The Actions fallback (section 10) has to talk to GitHub — dispatch ci.yml, ask whether a PR is
-  // already open, read a run's conclusion — and all three are API calls that cost this laptop nothing.
-  // What must never appear is a HEAVY RUNNER, so that is now asserted by name as well: the allow-list
-  // says what may run, and the ban below says what may not, whatever spelling it arrives in.
-  const localRunners = SRC.match(/(?:execFileSync|spawnSync)\(\s*["'](?!ssh|git|gh)(\w+)["']/g) ?? [];
+  // ── 1. THE BOX IS GONE, AND NOTHING HEAVY RUNS HERE ───────────────────────────────────────────
+  // The comments name the retired box on purpose (they say WHY it is gone), so only live code is read.
+  for (const [file, source] of [["remote-check.mjs", SRC], ["remote-check-plan.mjs", PLAN_SRC]] as const) {
+    const live = stripComments(source);
+    for (const [needle, what] of [
+      [/\bssh\b/i, "an ssh call"],
+      [/46\.225\.184\.142/, "the retired box's address"],
+      [/\bphxci\b/, "the retired box's user"],
+      [/PHX_CHECK_(?:HOST|USER|KEY|FORCE|WAIT_MINUTES)/, "a retired box setting"],
+      [/\bflock\b/, "a box lock"],
+      [/railway_phoenix_ed25519/, "the box's ssh key"],
+      [/\bBOX_LOCK|buildRunScript|buildBusyProbeScript|decideBusyAction|parseBusyProbe/, "box machinery"],
+    ] as const) {
+      assert.doesNotMatch(live, needle, `${file} still carries ${what}. The CI box is retired (owner, 2026-10-19) and nothing may reach it again.`);
+    }
+  }
+
+  // It may start `git` and `gh` and nothing else: no tsc, no eslint, no next, no pnpm, no node child.
+  const spawned = [...stripComments(SRC).matchAll(/(?:execFileSync|spawnSync|spawn)\(\s*["'](\w+)["']/g)].map((m) => m[1]);
+  assert.ok(spawned.length > 0, "found no spawned program at all — this scan stopped looking at the script");
   assert.deepEqual(
-    localRunners,
-    [],
-    "remote-check.mjs spawns something locally other than `ssh`, `git` and `gh`: " + localRunners.join(", ") +
-      ". The entire purpose of this script is that heavy work runs on the box — a local spawn of " +
-      "node/pnpm/tsc defeats it and reintroduces the silent OOM kill that C8 exists to prevent.",
-  );
-  const heavyRunners = SRC.match(
-    new RegExp("(?:execFileSync|spawnSync)\\(\\s*[\"']?(pnpm|npm|yarn|npx|tsc|node|eslint|next|playwright)[\"']", "g"),
-  ) ?? [];
-  assert.deepEqual(heavyRunners, [], "a heavy runner is spawned locally: " + heavyRunners.join(", "));
-
-  // 2 — the typecheck must carry the same COMPILER FLAGS CI gives it, or a PASS here does not predict
-  // CI. Until 2026-10-06 the flag that mattered was `--max-old-space-size=6144`, because tsc 5 is a
-  // node program that could OOM below node's default ceiling and report nothing. The gate is the
-  // NATIVE compiler now (a Go binary, which does not read a node heap flag), and the flag that
-  // matters is `--checkers`: TypeScript 5 refuses it, so it is also what makes a tree whose
-  // `typescript-native` alias went missing fail here loudly instead of answering with the old
-  // compiler. tests/typecheck-native-compiler.test.ts holds the other half — that both callers pass
-  // it; this one holds that the box's command is the same SHAPE as the one `checks` runs.
-  assert.ok(
-    /tsc --noEmit[^"']*--checkers \d+/.test(SRC),
-    "the remote typecheck no longer passes `--checkers`. A green result here is only useful because " +
-      "it runs the same command the required `checks` job runs — and without that flag it can run a " +
-      "DIFFERENT compiler from the one gating the merge and still report PASS.",
-  );
-  // Scoped to the typecheck COMMAND, not the file: the build's own note still explains why a node
-  // heap flag never bounded Turbopack either, and a guard that fired on that sentence would force
-  // the next reader to delete the account in order to keep the rule.
-  const typecheckCmd = /^\s*typecheck:\s*\n?\s*"([^"]+)"/m.exec(SRC)?.[1] ?? "";
-  assert.notEqual(typecheckCmd, "", "tests/remote-check.test.ts can no longer find the `typecheck` entry in the CHECKS table.");
-  assert.ok(
-    !/max-old-space-size/.test(typecheckCmd),
-    "the remote typecheck carries `--max-old-space-size` again. The type gate is the native compiler, " +
-      "which does not read a node heap flag — leaving one here reads as a memory guarantee that " +
-      "nothing honours. Memory is bounded by `--checkers` instead (5.06 GB peak at 1, measured). " +
-      "Command read: " + JSON.stringify(typecheckCmd),
+    [...new Set(spawned)].sort(),
+    ["gh", "git"],
+    "remote-check.mjs spawns something other than `git` and `gh`. It asks GitHub; it never runs a check on this laptop, " +
+      "where `tsc` is reaped without a word (AGENTS.md §5, bash-guard C8).",
   );
 
-  // 2b — and it must run COLD, or the PASS is a cache read rather than a check. `tsconfig.json` sets
-  // `"incremental": true`, and the box KEEPS its working directory between runs, so without this flag
-  // `tsc` answers from `tsconfig.tsbuildinfo`. CI checks out fresh and is therefore cold by
-  // construction — which is precisely why a warm pass here does not predict it. Measured 2026-09-30:
-  // `PASS in 12s` on b04b2e80a, whose required `checks` job then went RED on two TS2322 errors,
-  // against the ~112s a cold run takes. This finishes what assertion 2 promises: matching CI heap
-  // does not make a green here mean what a green in CI means if the run never looked at the code.
-  assert.ok(
-    /tsc --noEmit[^"']*--incremental false/.test(SRC),
-    "the remote typecheck no longer forces `--incremental false`. tsconfig sets `incremental: true` " +
-      "and the box reuses its working directory, so tsc answers from tsconfig.tsbuildinfo and reports " +
-      "a PASS for code it never rechecked — a false green in the one tool that exists to replace the " +
-      "local typecheck (AGENTS.md §5: a warm incremental cache lies).",
-  );
+  // The one dispatch the script can make is a literal workflow file on a branch — never `main`.
+  assert.match(SRC, /isProtectedDispatchRef\(branch\)/, "the script no longer asks whether it is on a protected branch");
 
-  // 2c — the build must take the SAME lock as the typecheck. It was killed with exit 137 on
-  // 2026-10-04 during "Collecting page data", AFTER compiling successfully, and the cause was
-  // CONTENTION rather than size: the uncapped build passes in ~118s on an idle box, but it needs
-  // ~7.4 GB of this 7.7 GB machine to do it, so it dies beside anything substantial. Three
-  // concurrent checks have left the box at 250 MB available on their own.
-  //
-  // 🔴 DO NOT REPLACE THIS WITH A CAP. PHX_BUILD_CPUS and --max-old-space-size were both
-  // measured and both inert — the "workers" are threads inside ONE next-build process and its
-  // memory is Turbopack's native allocation, so 2 workers to 1 returned 2 MB and cost 5s. The four
-  // runs are tabulated above the CHECKS entry; the lock is the only thing that changed the failure
-  // mode, so it is the only thing asserted.
-  const buildCmd = SRC.match(/^\s*build:\s*"([^"]+)"/m)?.[1] ?? "";
-  assert.ok(buildCmd !== "", "tests/remote-check.test.ts can no longer find the `build` entry in the CHECKS table.");
-  assert.ok(
-    /flock -w \d+ (?:-E \d+ )?\/tmp\/phx-typecheck\.lock/.test(buildCmd),
-    "the remote build no longer takes /tmp/phx-typecheck.lock. ci.yml's typecheck step and the " +
-      "typecheck above both take it; without it a build races a typecheck on a 7.7 GB box, which " +
-      "is the OOM kill (exit 137) this lock exists to prevent. Command read: " +
-      JSON.stringify(buildCmd),
-  );
-
-  // 2d — AND A STAGE THAT GIVES UP WAITING FOR THAT LOCK IS NOT A FAILING CHECK. `flock -w` expiring
-  // exits 1 — the same code `tsc` uses for type errors — so a box held for twenty minutes made a
-  // stage that NEVER RAN print `FAIL — <sha>` and block a push. The conflict is settled by a probe in
-  // front of the stage (buildRunScript), not by rewriting the command: tests/ci-typecheck-lock.test.ts
-  // pins this `flock -w <seconds> <file>` prefix so this caller and ci.yml cannot drift apart.
-  for (const [name, command] of [["typecheck", SRC.match(/^\s*typecheck:\s*\n?\s*"([^"]+)"/m)?.[1] ?? ""], ["build", buildCmd]]) {
-    const probed = buildRunScript({
-      remoteRoot: "/r",
-      runId: "aaaaaaaaaaaa-rs-aaaa",
-      sha: "a".repeat(40),
-      install: "true",
-      steps: [{ name, command }],
-    });
-    assert.match(
-      probed,
-      /STAGE_LOCK=0; flock -w \d+ -E 75 \/tmp\/phx-typecheck\.lock true \|\| STAGE_LOCK=\$\?/,
-      "the box script no longer probes the lock in front of the " + name + ", so a 20-minute wait that " +
-        "expires exits 1 and is graded as a failing check. Command read: " + JSON.stringify(command),
-    );
-    assert.match(
-      probed,
-      new RegExp('if \\[ "\\$STAGE_LOCK" = 75 \\]; then R=LOCK-TIMEOUT; LOCKED=1; elif ', "m"),
-      "the " + name + " step does not consult the lock probe, so the probe proves nothing",
-    );
+  // ── 2. FLAGS: NAMED, NEVER IGNORED ────────────────────────────────────────────────────────────
+  assert.deepEqual(parseArgs(["typecheck"]), { positional: ["typecheck"], dispatch: false, retired: [], unknown: [] });
+  for (const alias of ["--dispatch", "--actions", "--urgent"]) {
+    assert.equal(parseArgs(["test", alias]).dispatch, true, `${alias} must arm the dispatch`);
   }
-
-  // 2e — and `all` must INCLUDE the build. This is the one stage nothing else runs before `main`:
-  // ci.yml's Build step is gated off pull requests, so without it here the build first executes on
-  // the `main` commit, where a failure does not go red loudly — it makes Railway WITHHOLD the
-  // production deploy (AGENTS.md §2.3), which is indistinguishable from a successful one until
-  // `/api/healthz` `revision` is read. `all` omitting it is how the exit-137 regression went
-  // unnoticed: `all` was what sessions ran, and it could not see the broken stage.
-  const allList = SRC.match(/^const ALL = \[([^\]]*)\]/m)?.[1] ?? "";
-  assert.ok(
-    /"build"/.test(allList),
-    "`all` no longer includes the build. A PR's CI never builds, so dropping it here leaves the "
-      + "stage with NO pre-merge proof at all, and a failure first appears as a withheld production "
-      + "deploy rather than as a red check. ALL read: [" + allList + "]",
-  );
-  for (const name of ["lint", "typecheck", "test"]) {
-    assert.ok(
-      new RegExp('"' + name + '"').test(allList),
-      "`all` no longer includes " + name + " — ALL read: [" + allList + "]",
-    );
+  assert.deepEqual(parseArgs(["lint", "test"]).positional, ["lint", "test"]);
+  for (const flag of RETIRED_FLAGS) {
+    assert.deepEqual(parseArgs([flag]).retired, [flag], `${flag} belonged to the box and must be refused by name`);
   }
+  assert.deepEqual(parseArgs(["--wait=6"]).retired, ["--wait=6"], "the inline form of a retired flag too");
+  assert.deepEqual(parseArgs(["--dispach"]).unknown, ["--dispach"], "a misspelling must come back as unknown, never be dropped");
+  assert.equal(parseArgs(["--dispach"]).dispatch, false, "a misspelled dispatch flag must NOT arm a dispatch");
 
-  // 3 — it must not use the runner's own working directory. A CI job owns ~/actions-runner/_work
-  // and cleans it between runs; sharing it makes a real CI run fail for reasons nobody can
-  // reproduce, and a persistent runner already has stale-state hazards of its own.
-  assert.ok(
-    !/actions-runner[^"']*_work/.test(SRC),
-    "remote-check.mjs points at the runner's _work directory. Use its own directory — a CI job " +
-      "owns that tree, and a concurrent checkout there corrupts a required check.",
-  );
+  assert.equal(isProtectedDispatchRef("main"), true);
+  assert.equal(isProtectedDispatchRef("refs/heads/main"), true);
+  assert.equal(isProtectedDispatchRef("master"), true);
+  assert.equal(isProtectedDispatchRef("codex/main-fix"), false, "a branch merely containing `main` is not protected");
+  assert.equal(isProtectedDispatchRef(""), false);
 
-  // 4 — no GitHub credential may be placed on the box. It pushes over SSH into a bare repo, so the
-  // box never authenticates to GitHub and losing the box does not leak repository access.
-  assert.ok(
-    !/GH_TOKEN|GITHUB_TOKEN|gh auth|https:\/\/[^"'\s]*@github\.com/.test(SRC),
-    "remote-check.mjs would put a GitHub credential on the CI box. It must push over SSH into a " +
-      "bare repo instead: the box is shared infrastructure and holds repository-level trust already.",
-  );
-
-  // 5 — it must say what it did NOT check. It sends the committed sha, so uncommitted edits are
-  // invisible; a clean PASS that silently ignored the working tree is the failure mode that makes
-  // a tool like this actively dangerous.
-  assert.ok(
-    /status", "--porcelain/.test(SRC) && /NOT included/.test(SRC),
-    "remote-check.mjs no longer warns about uncommitted changes. It checks the COMMIT, so a dirty " +
-      "tree means the PASS refers to code that is not what the developer is looking at.",
-  );
-
-  // 6 — the exit code must be the check's own, or a script wrapper turns every failure green. This
-  // repo has been bitten by exactly that shape before (a pipeline reporting its last stage's 0).
-  // 🔴 SINCE 2026-10-08 THE VERDICT IS ALLOW-LISTED, NOT PASSED THROUGH: PASS only for status 0 with
-  // every asked stage's own PASS line, FAIL only for status 1 with a stage's FAIL line, and anything
-  // else NO VERDICT. `process.exit(status)` used to turn an unmapped 124/137 into the FAIL line.
-  assert.match(
-    SRC,
-    /status === 0 && names\.every\(\(name\) => stageVerdicts\[name\] === "PASS"\)[\s\S]{0,200}?remote-check: PASS — [\s\S]{0,60}?process\.exit\(0\)/,
-    "remote-check.mjs no longer requires exit 0 AND every stage's PASS line before printing PASS.",
-  );
-  assert.match(
-    SRC,
-    /status === 1 && Object\.values\(stageVerdicts\)\.includes\("FAIL"\)[\s\S]{0,240}?remote-check: FAIL — [\s\S]{0,60}?process\.exit\(1\)/,
-    "remote-check.mjs no longer exits 1 on a real stage FAIL — a failing typecheck would not stop anything.",
-  );
-  assert.doesNotMatch(
-    SRC,
-    /process\.exit\(status\)/,
-    "remote-check.mjs passes an unmapped box status straight through again — a ceiling (124) or a SIGKILL " +
-      "(137) would read as FAIL, and an odd 0 as PASS.",
-  );
-
-  // 6b — branch code runs as `phxci`, never `phx` (owner, 2026-10-08). `phx` has passwordless sudo and
-  // owns the preview env, so a default of "phx" hands every pushed branch the whole box.
-  const userDefault = /const USER = process\.env\.PHX_CHECK_USER \|\| "([^"]+)";/.exec(SRC);
-  assert.ok(userDefault, "remote-check.mjs no longer declares its box user as `process.env.PHX_CHECK_USER || \"<user>\"`.");
-  assert.equal(
-    userDefault[1],
-    "phxci",
-    "remote-check.mjs must default to the box user `phxci` (no sudo). Running branch code as `phx` gives it " +
-      "passwordless sudo and the preview env in /home/phx/secure.",
-  );
-
-  // 7 — every invocation gets a tree of its own. Until 2026-10-01 they all shared
-  // ~/remote-check/work and one `remote-check` branch, so a second session's checkout swapped the tree
-  // under a running check: 19442c382 printed its own `box head`, failed a typecheck with TS6053 on a
-  // file that commit HAS, and passed a suite with the OTHER commit's file count (2,085 against CI's
-  // 2,086). The shared directory, the shared branch and the `|| git checkout FETCH_HEAD` fallback
-  // (which ran whatever the shared branch held when the sha was missing) must not come back.
-  assert.ok(
-    !/REMOTE_ROOT \+ "\/work"/.test(SRC) && !/refs\/heads\/remote-check"/.test(SRC),
-    "remote-check.mjs is back on one shared directory or one shared branch for every invocation — " +
-      "two sessions then check out over each other mid-run and the verdict is about the wrong commit.",
-  );
-  assert.ok(
-    !/checkout -q -f/.test(SRC) && /worktree add -q --detach "\$RUN" "\$WANT"/.test(PLAN_SRC),
-    "the box script checks a commit out in place again. Each run must `git worktree add` exactly its " +
-      "own sha into its own directory.",
-  );
-  assert.ok(
-    /sha \+ ":" \+ paths\.ref/.test(SRC) && /buildRunScript\(/.test(SRC) && /buildLockfileScript\(/.test(SRC),
-    "remote-check.mjs must push to the per-run ref and run BOTH modes through remote-check-plan.mjs.",
-  );
-  assert.ok(
-    /status === 3[\s\S]*NO VERDICT[\s\S]*process\.exit\(3\)/.test(SRC),
-    "remote-check.mjs no longer turns the tree guard's exit 3 into NO VERDICT — a swapped tree would " +
-      "print PASS or FAIL for a commit it never checked.",
-  );
-
-  // 7b — THE BOX IS ASKED WHETHER IT IS BUSY, AND THE ANSWER FAILS CLOSED.
-  //
-  // The run-level lock cannot bind a branch cut before it existed, because remote-check runs the
-  // committed sha of whatever branch you invoke it from. The probe is what reaches those runs: it
-  // resolves /proc/*/cwd, so it sees ANY version of this script, which all `cd` into runs/<id>.
+  // ── 3. THE STAGE MAP IS READ AGAINST THE REAL ci.yml ──────────────────────────────────────────
+  // A renamed job or step would not fail anything here: every stage would silently become NO VERDICT, and a
+  // NO VERDICT is a retry rather than an alarm. So the names are checked against the file itself.
+  const jobsOfCi = new Map<string, string>();
   {
-    const probe = buildBusyProbeScript("/home/phx/remote-check");
-    assert.match(probe, /\/proc\/\[0-9\]\*/, "the probe must read /proc, so it sees runs older than this code");
-    assert.match(probe, /\/home\/phx\/remote-check\/runs\//, "the probe must look under this box's runs directory");
-    assert.match(probe, /echo PROBE_OK/, "the probe must mark its own completion, or a failed ssh reads as an idle box");
-    assert.ok(
-      !/pgrep|lsof|fuser/.test(probe),
-      "the probe must not depend on a lock file or a process-name match — neither sees a run from an older branch",
-    );
-
-    // 🔴 phx-live's dev server (production data, capped at 5.5 GB) is a run too: a `next build`
-    // started beside it wants ~7.4 GB on a 7.7 GB box and OOMs both.
-    assert.match(
-      probe,
-      /systemctl is-active --quiet phx-preview-3100\.scope/,
-      "the probe no longer counts phx-live's dev server as busy — a remote-check build would start beside it and OOM the box",
-    );
-    assert.ok(
-      parseBusyProbe("RUN " + PHX_LIVE_RUN_ID + " 0\nPROBE_OK\n").runs.includes(PHX_LIVE_RUN_ID),
-      "the phx-live marker line must parse as a run",
-    );
-
-    // An idle box: the marker, no runs.
-    assert.deepEqual(parseBusyProbe("PROBE_OK\n"), { known: true, runs: [] });
-    // Two processes of ONE run are one run, not two.
-    assert.deepEqual(
-      parseBusyProbe("RUN abc12345-aaa-bbbb 100\nRUN abc12345-aaa-bbbb 220\nPROBE_OK\n"),
-      { known: true, runs: ["abc12345-aaa-bbbb"] },
-    );
-    assert.deepEqual(
-      parseBusyProbe("RUN bbb12345-aaa-bbbb 1\nRUN aaa12345-aaa-bbbb 2\nPROBE_OK\n").runs,
-      ["aaa12345-aaa-bbbb", "bbb12345-aaa-bbbb"],
-    );
-    // 🔴 FAIL CLOSED. Every one of these is "I could not tell", never "the box is free".
-    for (const [label, text] of [
-      ["empty output", ""],
-      ["ssh wrote nothing but an error", "ssh: connect to host ... port 22: Connection timed out"],
-      ["runs listed but the probe never finished", "RUN abc12345-aaa-bbbb 100\n"],
-      ["not a string at all", null],
-    ] as ReadonlyArray<readonly [string, unknown]>) {
-      assert.equal(
-        parseBusyProbe(text as string).known,
-        false,
-        label + " must read as UNKNOWN, never as an idle box",
+    let name: string | null = null;
+    let body: string[] = [];
+    let inJobs = false;
+    for (const line of CI.split("\n")) {
+      if (/^jobs:\s*$/.test(line)) { inJobs = true; continue; }
+      if (!inJobs) continue;
+      const header = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(line);
+      if (header) {
+        if (name) jobsOfCi.set(name, body.join("\n"));
+        name = header[1];
+        body = [];
+      } else if (name) body.push(line);
+    }
+    if (name) jobsOfCi.set(name, body.join("\n"));
+  }
+  assert.deepEqual([...STAGES], ["lint", "typecheck", "test", "build"], "the stages `all` means");
+  for (const stage of STAGES) {
+    const proofs = (STAGE_JOBS as Record<string, Array<{ job: string | RegExp; step: string }>>)[stage];
+    assert.ok(proofs && proofs.length > 0, `stage ${stage} has no proof`);
+    for (const proof of proofs) {
+      // A matrix job is `unit (1)` in the jobs API and `unit` in the file.
+      const fileName = proof.job instanceof RegExp ? /^\^?([a-z-]+)/.exec(proof.job.source)?.[1] ?? "" : proof.job;
+      const body = jobsOfCi.get(fileName);
+      assert.ok(body, `stage ${stage} reads job \`${fileName}\`, which ci.yml no longer declares — every ${stage} verdict would be NO VERDICT`);
+      assert.ok(
+        body.includes(`- name: ${proof.step}\n`),
+        `stage ${stage} reads step "${proof.step}" in \`${fileName}\`, which ci.yml no longer has — every ${stage} verdict would be NO VERDICT`,
       );
+      if (proof.job instanceof RegExp) {
+        assert.match(body, /matrix:\s*\n\s*part: \[1, 2, 3\]/, "a regexp proof means a matrix job; ci.yml's `unit` must still have one");
+        assert.ok(proof.job.test("unit (1)") && proof.job.test("unit (3)") && !proof.job.test("unit"), "the matrix pattern must match `unit (N)` and nothing else");
+      }
     }
   }
-  // 🔴 THE PROBE STILL FAILS CLOSED, BUT NOT BY DYING — owner ruling, 2026-10-08: *"make an unreachable
-  // box escalate to Actions too, not only a busy one"*. The invariant worth pinning was never the
-  // `die(`: it is that an unreadable answer can never be read as an IDLE BOX and start a run beside
-  // somebody else's build. So this asserts the probe's own `known` flag reaches the decision, and the
-  // decision table in section 10b proves `probeKnown: false` can never return `run`. Pinning the old
-  // `die(` would now pin the behaviour the owner replaced — which is how a guard starts arguing for a bug.
-  assert.match(
-    SRC,
-    /parseBusyProbe\(state\)[\s\S]{0,2000}?probeKnown: busy\.known/,
-    "the probe's own known flag no longer reaches decideBusyAction — an unreadable answer could read as a free box",
-  );
-  assert.match(
-    SRC,
-    /probeKnown: again\.known/,
-    "the poll loop drops the probe's known flag, so a box that stopped answering mid-wait could read as free",
-  );
-  assert.doesNotMatch(
-    SRC,
-    /!busy\.known[\s\S]{0,120}?die\(/,
-    "remote-check.mjs still dies on an unreadable probe instead of escalating (owner ruling, 2026-10-08)",
-  );
-  // 🔴 AND THE PROBE'S OWN SSH MUST SOFT-FAIL, OR THE ESCALATION IS UNREACHABLE FOR THE CASE HE NAMED.
-  // `ssh()` dies on a failed connection, BEFORE any output is parsed — so without `softFail` the
-  // `probeKnown: false` branch could only ever describe a box that answered and said nothing useful,
-  // while a box that is genuinely DOWN still exited 2 in the transport. Measured on this branch: with
-  // the flag missing, a host it cannot reach printed `ssh failed: … Permission denied` and stopped.
-  // Anchored on `const state = ssh(` deliberately: `buildBusyProbeScript(REMOTE_ROOT)` appears in the
-  // poll loop's own call too, so a window around the NAME alone was satisfiable by the second probe
-  // while the FIRST one — the only probe a one-shot invocation ever reaches — had lost its flag.
-  assert.match(
-    SRC,
-    /const state = ssh\([\s\S]{0,1200}?softFail: true/,
-    "the FIRST busy probe's ssh no longer soft-fails, so an unreachable box dies before it can escalate",
-  );
-  assert.equal(
-    (SRC.match(/softFail: true/g) ?? []).length,
-    2,
-    "softFail belongs to the TWO probe calls only — a failed ssh around the real run must still die as " +
-      "the transport fault (exit 5), never be absorbed into a busy-box decision",
-  );
-  assert.equal(
-    parseBusyProbe(null).known,
-    false,
-    "parseBusyProbe must read a soft-failed ssh (null) as 'could not tell', never as an idle box",
-  );
-  assert.deepEqual(parseBusyProbe(null).runs, []);
-  // 🔴 THE REFUSAL MOVED BEHIND `decideBusyAction` ON 2026-10-06 AND MUST STILL END IN `die(`. The
-  // escalation (section 10) added two other routes out of a busy box, and the risk it introduces is
-  // precisely that the no-flag path quietly becomes "carry on anyway" — which is what OOM-kills a
-  // build. So this pins the whole chain: the plan is computed from the probe, the override is read
-  // once into FORCED, and the plan that is neither a wait nor an escalation reaches `die(`.
-  assert.match(
-    SRC,
-    /const FORCED = process\.env\.PHX_CHECK_FORCE === "1"/,
-    "the PHX_CHECK_FORCE override is gone — a busy box would have no escape hatch",
-  );
-  assert.match(
-    SRC,
-    /decideBusyAction\(\{[\s\S]{0,400}?busyRuns: busy\.runs/,
-    "the busy decision is no longer computed from the probe's own run list",
-  );
-  // 🔴 AND THE REFUSAL IS GATED ON THE DECISION, NOT ON THE RUN LIST. An unreachable box has ZERO runs,
-  // so the old `busy.runs.length > 0` condition skipped the refusal and FELL THROUGH TO THE PUSH once
-  // `!busy.known` stopped dying — the push then failed on ssh, after sending the sha, with a message
-  // about the transport rather than about the probe. `plan.action === "refuse"` is the only condition
-  // that covers a busy box and an unreachable one at once.
-  assert.match(
-    SRC,
-    /plan\.action === "refuse" && !FORCED[\s\S]{0,3600}?die\(/,
-    "remote-check.mjs does not refuse on the decision itself, so an unreachable box could fall through to the push",
-  );
-  assert.doesNotMatch(
-    SRC,
-    /busy\.runs\.length > 0 && plan\.action !== "run"/,
-    "the refusal is gated on the run list again — an unreachable box has zero runs and would skip it",
-  );
-  assert.ok(
-    SRC.indexOf("parseBusyProbe(state)") < SRC.indexOf("git\",\n    [\"push\""),
-    "the busy check must run BEFORE the sha is pushed, so a refusal costs the box nothing",
-  );
 
-  // 8 — the generated script re-reads HEAD after EVERY check, and two runs never share a path.
-  const sha = "a".repeat(40);
-  const runA = newRunId(sha, 1_000, "aaaa");
-  const runB = newRunId(sha, 1_000, "bbbb");
-  assert.notEqual(runPaths("/r", runA).runDir, runPaths("/r", runB).runDir, "two runs of the same sha got the same directory");
-  assert.notEqual(runPaths("/r", runA).ref, runPaths("/r", runB).ref, "two runs of the same sha got the same ref");
-  const script = buildRunScript({
-    remoteRoot: "/r",
-    runId: runA,
-    sha,
-    install: "true",
-    steps: [
-      { name: "lint", command: "true" },
-      { name: "typecheck", command: "true" },
-      { name: "test", command: "true" },
-    ],
-  });
-  assert.ok(
-    !/FETCH_HEAD|git checkout|git fetch/.test(script),
-    "the generated box script fetches or checks out in place again — a missing sha then falls back to " +
-      "whatever the box holds, which is how a run reports on a commit it never named.",
-  );
-  for (const name of ["lint", "typecheck", "test"]) {
-    const line = script.split("\n").find((l) => l.includes("=== " + name + " ===")) ?? "";
-    assert.match(line, new RegExp("fi; .*same_tree " + name + ";"), "the " + name + " step does not verify the tree after it ran");
-  }
-  // 8b — ONE RUN OWNS THE BOX. Per-stage locking left `lint` and `test` taking no lock at all, and
-  // a build was OOM-killed beside another session's node processes on 2026-10-05. The run-level
-  // lock must be a DIFFERENT file from the per-stage one: flock(2) locks an open file description,
-  // so re-taking /tmp/phx-typecheck.lock inside the typecheck would deadlock the run against itself.
-  assert.match(
-    script,
-    /exec 9>>\/tmp\/phx-remote-check\.lock/,
-    "the generated box script no longer takes a run-level lock, so two sessions' checks can collide on a 7.7 GB box",
-  );
-  // 🔴 REVERSED 2026-10-08 (owner, FUP-010): *"a heavy workload must NEVER proceed without successfully
-  // acquiring its required exclusive lock"*. The run used to "fall through to a warning" and start every
-  // stage beside the lock's holder. Now a missed lock exits 9 — NO VERDICT, never PASS or FAIL — before
-  // the install, and the wait is short (the busy probe already refused a live run).
-  assert.match(
-    script,
-    /flock -w 120 9 \|\| \{ [^}]*NOTHING was run[^}]*; exit 9; \}/,
-    "a run that cannot take the box lock must exit 9 (NO VERDICT) without running anything — never 'running anyway'",
-  );
-  assert.ok(
-    !/running anyway/.test(script),
-    "the run-level lock falls through to running anyway again — that is the overlap that OOM-kills a build",
-  );
-  assert.ok(
-    script.indexOf("flock -w 120 9") >= 0 && script.indexOf("flock -w 120 9") < script.indexOf("install failed"),
-    "the box lock must be taken before the install, so a run that misses it touches nothing",
-  );
-  assert.ok(
-    !/exec 9>>\/tmp\/phx-typecheck\.lock/.test(script),
-    "the run-level lock uses the per-stage lock file, which deadlocks the run against its own typecheck",
-  );
-
-  // 8c — EXIT 137 IS THE OOM KILLER, NEVER A FAILURE OF THE CODE. It must report NO VERDICT (4),
-  // and a real failure must still outrank it.
-  assert.match(
-    script,
-    /if \[ "\$RC" = 137 \]; then R=OOM-KILLED; KILLED=1; /,
-    "an OOM-killed stage is being reported as FAIL, which blocks a push for a reason that is not true",
-  );
-  assert.match(
-    script,
-    /if \[ "\$FAILED" = 0 \] && \[ "\$KILLED" = 1 \]; then exit 4; fi/,
-    "a killed run must exit 4 (NO VERDICT) and must never outrank a genuine failure",
-  );
-  assert.match(
-    SRC,
-    /status === 4[\s\S]{0,900}?NO VERDICT[\s\S]{0,400}?process\.exit\(4\)/,
-    "remote-check.mjs does not turn the box script's exit 4 into a NO VERDICT, so a kill still reads as FAIL",
-  );
-
-  // 8c-2 — AND NEITHER A LOCK TIMEOUT, A FAILED SETUP NOR A SIGNAL IS A VERDICT ABOUT THE CODE.
-  // All three arrived as the `FAIL — <sha>` line until 2026-10-06: a `flock -w 1200` that expired
-  // (exit 1, the same code tsc uses for type errors), an install or `git worktree add` that could
-  // not run on the box, and `exit 130` from the HUP/INT/TERM trap. Each blocks a push and tells the
-  // owner his code is broken for something that never read his code. Same cry-wolf shape as the OOM
-  // kill above, which is why they are pinned beside it.
-  assert.match(
-    script,
-    /elif \[ "\$RC" = 75 \]; then R=LOCK-TIMEOUT; LOCKED=1;/,
-    "a stage that waited out the box's typecheck lock is graded as a FAIL — it never ran its command at all",
-  );
-  assert.match(
-    script,
-    /if \[ "\$FAILED" = 0 \] && \[ "\$LOCKED" = 1 \]; then exit 9; fi/,
-    "a lock timeout must exit 9 (NO VERDICT), and must never outrank a genuine failure",
-  );
-  assert.match(
-    script,
-    /install failed[^\n]*exit 7/,
-    "a failed install on the box still exits 1, which prints FAIL for a commit nothing ever checked",
-  );
-  assert.match(
-    script,
-    /could not make a private tree[\s\S]{0,40}exit 7/,
-    "a run whose private tree could not be made still exits 1 — that is the box's disk or git, not the branch",
-  );
-  assert.ok(
-    /trap '[^']*exit 8' HUP INT TERM/.test(script) && !/exit 130/.test(script),
-    "the signal trap still exits 130, which falls through to the FAIL line — a run reaped by the box's " +
-      "memory watchdog or a hand `kill` then reads as a broken branch",
-  );
-  for (const name of ["EXIT_SETUP", "EXIT_INTERRUPTED", "EXIT_LOCK_TIMEOUT"]) {
-    assert.match(
-      SRC,
-      new RegExp("status === " + name + "[\\s\\S]{0,1200}?NO VERDICT[\\s\\S]{0,900}?process\\.exit\\(" + name + "\\)"),
-      "remote-check.mjs no longer routes " + name + " to a NO VERDICT arm of its own, so that run falls " +
-        "through to the `FAIL — <sha>` line at the bottom of the file",
-    );
-  }
-  // 🔴 AND A NO-VERDICT RUN MUST PRINT NOTHING THAT PARSES AS A VERDICT FOR THIS SHA. Other tools
-  // grep `^remote-check: (PASS|FAIL) — <sha>` out of an append-only log
-  // (`a-verdict-line-without-its-sha-matches-an-older-run`), so the arms must not print that line.
-  // The two allow-listed verdict arms (`status === 0 && …`, `status === 1 && …`) are the only ones
-  // that may print it; every other `if (status === …` arm is a NO VERDICT arm.
-  const noVerdictArms = SRC.split(/\nif \(status === /).slice(1).filter((arm) => !/^[01] && /.test(arm));
-  assert.ok(noVerdictArms.length >= 5, "the NO VERDICT arms could not be found — this check would pass vacuously");
-  for (const arm of noVerdictArms) {
-    assert.ok(
-      !/remote-check: (?:PASS|FAIL) — /.test(arm.split("\n}")[0]),
-      "a NO VERDICT arm prints a line that parses as a verdict for this sha:\n" + arm.split("\n}")[0],
-    );
-  }
-
-  // 8b-2 — THE LOCK PATH IS AN ARGUMENT, AND ITS DEFAULT IS THE REAL ONE. A run can contain
-  // another run: section 9 below launches two generated scripts while the suite itself is executing
-  // inside a run that already holds the real lock. With one hard-coded path those inner scripts
-  // blocked on their own parent and waited out the whole 1800s fall-through — measured 2026-10-05,
-  // the `test` stage sitting at 31 minutes with `flock -w 1800 9` waiting.
-  assert.match(
-    buildRunScript({ remoteRoot: "/r", runId: runA, sha, install: "true", steps: [], lockFile: "/tmp/other.lock" }),
-    /exec 9>>\/tmp\/other\.lock/,
-    "buildRunScript ignores the lockFile argument, so a nested run cannot avoid blocking on its parent",
-  );
-  assert.match(
-    script,
-    /exec 9>>\/tmp\/phx-remote-check\.lock/,
-    "the DEFAULT lock file is no longer the real one — a real run would stop excluding other runs",
-  );
-  assert.throws(
-    () => buildRunScript({ remoteRoot: "/r", runId: runA, sha, install: "true", steps: [], lockFile: "/tmp/x; rm -rf ~" }),
-    /unsafe lock file path/,
-    "the lock path is spliced into bash and must be refused unless it is plain",
-  );
-
-  // 8d — A DROPPED SSH CONNECTION IS NOT A FAILED BRANCH. The box script only ever exits 0, 1, 3 or
-  // 4, so 255 can only be the transport. Measured 2026-10-05: `Connection reset by peer` arrived
-  // after `lint PASS` and `typecheck PASS`, and the run reported FAIL, halting a push over a dropped
-  // TCP connection. Keepalives stop the common cause; the 255 arm stops the misreport either way.
-  assert.ok(
-    !/\bexit 255\b/.test(script),
-    "the box script must never exit 255 itself — the 255 arm in remote-check.mjs reads that code as " +
-      "the ssh transport dying, and a box script that could produce it would make a real failure read as a drop",
-  );
-  assert.match(
-    SRC,
-    /status === 255[\s\S]{0,900}?NO VERDICT[\s\S]{0,1500}?process\.exit\(5\)/,
-    "remote-check.mjs reports a dropped ssh connection (exit 255) as FAIL — it must be NO VERDICT, " +
-      "or a halted push gets blamed on the branch",
-  );
-  // 8e — THE 255 ARM MUST NOT CLAIM THE LOCK IS RELEASED. Measured 2026-10-05: after the client
-  // died, four processes were still working under the run directory with a LIVE sshd-session
-  // ancestor, so the run keeps the box lock and a plain re-run meets its own predecessor. Telling
-  // someone to "just run it again" is the one wrong instruction here.
-  assert.ok(
-    !/lock is released when the connection dies/.test(SRC),
-    "the 255 arm claims the box lock is released on a dropped connection — it is not: the remote run " +
-      "survives the drop and keeps the lock, so a re-run is refused by the busy probe",
-  );
-  assert.match(
-    SRC,
-    /STILL GOING on the box and still holds the lock/,
-    "the 255 arm must say the stranded run is still holding the box, not imply a re-run will just work",
-  );
-  assert.match(
-    SRC,
-    /reap that one by its own/,
-    "the busy refusal must print how to reap ONE stranded run by its own directory — a blanket pkill " +
-      "would take another session's live run with it",
-  );
-
-  for (const opt of ["ServerAliveInterval=30", "ServerAliveCountMax=10"]) {
-    assert.ok(
-      SRC.includes('"' + opt + '"'),
-      "SSH_OPTS lost " + opt + " — `next build` is silent for minutes between stages, and a quiet " +
-        "channel is exactly what a NAT or firewall idle timer reaps mid-run",
-    );
-  }
-
-  assert.throws(
-    () => buildRunScript({ remoteRoot: "/r", runId: runA, sha: "19442c382", install: "true", steps: [] }),
-    /40-character/,
-    "a short sha must be refused, never resolved on the box to whatever it happens to match",
-  );
-  assert.throws(
-    () => buildRunScript({ remoteRoot: "/r", runId: "x; rm -rf ~", sha, install: "true", steps: [] }),
-    /unsafe run id/,
-    "the run id is spliced into bash and must be refused unless it is plain",
-  );
-
-  // 10 — THE BUSY-BOX ESCALATION (owner's policy, 2026-10-06: the box by default because it is free,
-  // GitHub Actions when the work cannot wait). Several sessions share one 7,740 MB box, so a second
-  // run is refused — and until that day the refusal was the whole answer, which parked finished work
-  // behind another session's build while a session retried by hand. These pin the three properties
-  // that make the escalation trustworthy rather than merely convenient.
+  // ── 4. GRADING: PASS, FAIL, AND ABOVE ALL WHAT IS NEITHER ─────────────────────────────────────
   {
-    // 🔴 THESE READ THE CODE, NOT THE PROSE. The comment in remote-check.mjs explaining what was
-    // removed necessarily QUOTES the removed line, so a "must not appear" guard against raw source
-    // fails on its own documentation — it did, on the first run of this section. `stripComments` is
-    // the repo's one stripper for exactly this (tests/support/comment-strip.ts); the length check
-    // beside it is the guard against the opposite failure, a strip that ate the code and left every
-    // assertion passing vacuously.
-    const CODE = stripComments(SRC);
-    assert.ok(
-      CODE.includes("parseEscalation(process.argv.slice(2))") && CODE.length > SRC.length / 3,
-      "stripComments ate the code it was meant to expose — these assertions would pass on nothing",
-    );
-
-    // 10a — a flag is PARSED, never filtered away: a misspelled one used to run the plain behaviour
-    // and report success, the same defect scripts/rollup-prs.mjs refuses by name.
-    assert.deepEqual(parseEscalation(["--urgnet"]).unknown, ["--urgnet"], "a misspelled flag was swallowed");
-    assert.deepEqual(parseEscalation(["--wait", "999"]).unknown, ["--wait 999 (minutes, 0-60)"]);
-    assert.doesNotMatch(
-      CODE,
-      /filter\(\(a\) => !a\.startsWith\("-"\)\)/,
-      "remote-check.mjs is filtering flags away again — an unknown flag must die, not be ignored",
-    );
-
-    // A flag's VALUE is positional: `--wait 3` must not leave a bare `3` to be read as a check name.
-    assert.deepEqual(parseEscalation(["test", "--wait", "3"]).positional, ["test"]);
-    assert.equal(parseEscalation(["test", "--wait", "3"]).waitMinutes, 3);
-    assert.equal(parseEscalation(["all", "--wait=6"]).waitMinutes, 6);
-
-    // --urgent escalates AT ONCE ("make --urgent escalate immediately instead of after 4 minutes",
-    // 2026-10-06) — and since 2026-10-08 that is what a BARE invocation does too, so the flag survives
-    // as a documented alias: every caller already passing it must keep working, and it must still mean
-    // "immediately" when PHX_CHECK_WAIT_MINUTES has set a house wait (asserted in 10b).
-    const urgent = parseEscalation(["all", "--urgent"]);
-    assert.equal(urgent.waitMinutes, URGENT_WAIT_MINUTES);
-    assert.equal(URGENT_WAIT_MINUTES, 0, "--urgent must not queue at all: it escalates immediately");
-    assert.equal(urgent.actions, true, "--urgent must arm the Actions fallback, not only the wait");
-    assert.deepEqual(urgent.positional, ["all"]);
-    assert.equal(
-      decideBusyAction({ busyRuns: ["run-a"], waitedSeconds: 0, waitMinutes: urgent.waitMinutes, actions: true }).action,
-      "actions",
-      "--urgent on a busy box must dispatch at once, never poll first",
-    );
-
-    // 🔴 AN EXPLICIT BUDGET STILL WINS, IN EITHER ORDER. `--urgent`'s zero must never SHORTEN a wait
-    // the caller asked for, or `--wait 6 --urgent` would silently bill instead of waiting six minutes.
-    assert.equal(parseEscalation(["all", "--wait", "6", "--urgent"]).waitMinutes, 6);
-    assert.equal(parseEscalation(["all", "--urgent", "--wait", "6"]).waitMinutes, 6);
-
-    // 10b — 🔴 THE BOX WHEN FREE, GITHUB ACTIONS THE MOMENT IT IS BUSY — owner ruling, 2026-10-08:
-    // *"if free use it directly but if busy use github actions"*. So the default wait is ZERO and a
-    // bare invocation on a busy box DISPATCHES rather than polling: the ten-minute queue of 2026-10-06
-    // was the same policy with ten minutes of a session's time in front of it.
-    const bare = parseEscalation(["all"], {});
-    assert.equal(bare.waitMinutes, DEFAULT_WAIT_MINUTES);
-    assert.equal(DEFAULT_WAIT_MINUTES, 0, "a busy box must escalate at once, not queue for the box first");
-    assert.equal(bare.actions, true, "a bare invocation must escalate, never leave the caller with nothing");
-    assert.equal(
-      decideBusyAction({ busyRuns: ["run-a"], waitedSeconds: 0, waitMinutes: bare.waitMinutes, actions: bare.actions })
-        .action,
-      "actions",
-      "the default on a busy box must be a dispatch, with no poll in front of it",
-    );
-
-    // 🔴 AND THE WAIT SURVIVES EXACTLY WHERE IT IS THE ONLY ROUTE TO A VERDICT. `--free` says never
-    // bill, so a zero there would turn it into an instant refusal — the old `--no-wait --no-actions`
-    // behaviour under a flag that promises waiting. One shared default cannot serve both paths.
-    assert.ok(FREE_WAIT_MINUTES > 0, "--free must still wait: with Actions disarmed, the poll is the only route");
-    assert.equal(parseEscalation(["all", "--free"], {}).actions, false, "--free is the documented alias");
-    assert.equal(parseEscalation(["all", "--free"], {}).waitMinutes, FREE_WAIT_MINUTES, "--free waits, it never pays");
-    assert.equal(
-      decideBusyAction({ busyRuns: ["run-a"], waitedSeconds: 0, waitMinutes: FREE_WAIT_MINUTES, actions: false }).action,
-      "poll",
-      "--free on a busy box must keep asking the box, never bill and never refuse at once",
-    );
-
-    // 🔴 THE HOUSE DEFAULT IS AN ENV KNOB, AND AN EXPLICIT FLAG ALWAYS WINS OVER IT. That ordering is
-    // what keeps the push guard instant and free however this machine is configured.
-    assert.equal(parseEscalation(["all"], { [WAIT_MINUTES_ENV]: "10" }).waitMinutes, 10, "the knob must set the wait");
-    assert.equal(
-      parseEscalation(["all", "--urgent"], { [WAIT_MINUTES_ENV]: "10" }).waitMinutes,
-      0,
-      "--urgent must still mean immediately when the house default is a wait",
-    );
-    assert.equal(parseEscalation(["all", "--free"], { [WAIT_MINUTES_ENV]: "0" }).waitMinutes, 0);
-    // An unreadable value is REFUSED, not ignored: an ignored setting runs the other policy and reports
-    // success, which is the silent-ignore defect this parser exists to refuse for flags.
-    assert.deepEqual(
-      parseEscalation(["all"], { [WAIT_MINUTES_ENV]: "soon" }).unknown,
-      [WAIT_MINUTES_ENV + "=soon (minutes, 0-60)"],
-      "a garbage house default must die loudly, never fall back to a policy nobody asked for",
-    );
-    assert.deepEqual(parseEscalation(["all"], { [WAIT_MINUTES_ENV]: "" }).unknown, [], "an empty knob is not set");
-
-    // And the opt-out is what keeps a per-push hook free: `--no-wait --no-actions` is the instant
-    // "no verdict". Without it, a busy box would bill ~14 Actions minutes on EVERY push for a verdict
-    // the PR's own `checks` job produces anyway — and since 2026-10-08 it would do so immediately.
-    const free = parseEscalation(["typecheck", "--no-wait", "--no-actions"], {});
-    assert.equal(free.waitMinutes, 0, "--no-wait must mean no wait");
-    assert.equal(free.actions, false, "--no-actions must mean never bill");
-    assert.deepEqual(free.positional, ["typecheck"], "a negation flag must not leak into the check names");
-    assert.equal(
-      decideBusyAction({ busyRuns: ["run-a"], waitedSeconds: 0, waitMinutes: 0, actions: false }).action,
-      "refuse",
-      "the push guard's own argument list must still refuse at once, billing nothing",
-    );
-
-    // 🔴 10b-ii — AN UNREACHABLE BOX TAKES THE SAME ROUTES AS A BUSY ONE — owner ruling, 2026-10-08:
-    // *"make an unreachable box escalate to Actions too, not only a busy one"*. It used to die at exit 2
-    // with no verdict, on the one piece of evidence that most argues FOR Actions: the box cannot answer.
-    const down = { busyRuns: [] as string[], probeKnown: false };
-    assert.equal(
-      decideBusyAction({ ...down, waitedSeconds: 0, waitMinutes: 0, actions: true }).action,
-      "actions",
-      "an unreachable box must escalate at once, not refuse with no verdict",
-    );
-    assert.equal(
-      decideBusyAction({ ...down, waitedSeconds: 0, waitMinutes: 0, actions: true }).reason,
-      "unreachable",
-      "the reason must say which of the two happened — 'BUSY' about a box that is DOWN sends the reader to wait for a run that does not exist",
-    );
-    assert.equal(
-      decideBusyAction({ ...down, waitedSeconds: 0, waitMinutes: FREE_WAIT_MINUTES, actions: false }).action,
-      "poll",
-      "with a budget it must retry — a dropped ssh is often a blip, and a poll costs nothing",
-    );
-    assert.equal(
-      decideBusyAction({ ...down, waitedSeconds: 600, waitMinutes: FREE_WAIT_MINUTES, actions: false }).action,
-      "refuse",
-      "--free on an unreachable box must still refuse at the end of its wait, never bill",
-    );
-    // 🔴 THE FAIL-CLOSED INVARIANT, WHICH THIS RULING DOES NOT WEAKEN: `run` is unreachable from an
-    // unreadable probe, so nothing is ever STARTED on a box that did not answer — that is what OOM-kills
-    // another session's build. Every combination, not just the ones above.
-    for (const actions of [true, false]) {
-      for (const waitMinutes of [0, 1, 10, 60]) {
-        for (const waitedSeconds of [0, 30, 600, 36_000]) {
-          assert.notEqual(
-            decideBusyAction({ ...down, waitedSeconds, waitMinutes, actions }).action,
-            "run",
-            `probeKnown:false must never run on the box (actions=${actions} wait=${waitMinutes} waited=${waitedSeconds})`,
-          );
-        }
-      }
-    }
-    // A free, answering box is untouched by any of it.
-    assert.equal(
-      decideBusyAction({ busyRuns: [], waitedSeconds: 0, waitMinutes: 0, actions: true, probeKnown: true }).reason,
-      "free",
-      "an idle box that answered must still just run — the escalation may never change the free path",
-    );
-    // The flag DEFAULTS to true, so every caller written before the ruling keeps its old meaning rather
-    // than silently escalating.
-    assert.equal(
-      decideBusyAction({ busyRuns: [], waitedSeconds: 0, waitMinutes: 0, actions: true }).action,
-      "run",
-      "probeKnown must default to true: a caller that omits it gets the busy logic, not an escalation",
-    );
-
-    const GUARD = stripComments(
-      readFileSync(path.join(ROOT, ".claude", "hooks", "push-typecheck-guard.mjs"), "utf8"),
-    );
-    // 🔴 SINCE 2026-10-08 THE PUSH GUARD RUNS NOTHING AT ALL (owner: *"the push guard must not start a
-    // remote check that blocks a normal push"*) — it reads the verdict record remote-check writes.
-    // tests/push-typecheck-guard.test.ts drives it; this pins that no run can creep back in here.
-    assert.doesNotMatch(GUARD, /\bspawn(?:Sync)?\(/, "push-typecheck-guard is starting a process again — it must only read the record");
-    assert.doesNotMatch(GUARD, /'typecheck',\s*'--no-wait'/, "push-typecheck-guard is invoking remote-check again");
-
-    // 🔴 10b-iii — NOTHING IS DISPATCHED UNLESS ASKED (owner, 2026-10-08 performance recovery: *"do not
-    // dispatch paid Actions runs when the PR's own CI gives the same verdict"*). A bare call on a busy or
-    // unreachable box still goes to GitHub — to READ the open PR's run — but may not START a billed run.
-    assert.equal(parseEscalation(["all"], {}).dispatch, false, "a bare invocation must never bill a dispatch");
-    assert.equal(parseEscalation(["all"], {}).actions, true, "a bare invocation still reads an open PR's run");
-    assert.equal(parseEscalation(["all", "--actions"], {}).dispatch, true, "--actions must still be able to dispatch");
-    assert.equal(parseEscalation(["all", "--urgent"], {}).dispatch, true, "--urgent must still be able to dispatch");
-    assert.equal(parseEscalation(["all", "--free"], {}).dispatch, false, "--free never bills");
-    assert.equal(parseEscalation(["all"], { [WAIT_MINUTES_ENV]: "10" }).dispatch, false, "the house wait knob never arms a dispatch");
-
-    const busy = { busyRuns: ["run-a"] };
-    assert.equal(decideBusyAction({ ...busy, waitedSeconds: 0, waitMinutes: 0, actions: false }).action, "refuse");
-    assert.equal(decideBusyAction({ ...busy, waitedSeconds: 0, waitMinutes: 0, actions: true }).action, "actions");
-    assert.equal(decideBusyAction({ ...busy, waitedSeconds: 0, waitMinutes: 4, actions: true }).action, "poll");
-    assert.equal(decideBusyAction({ ...busy, waitedSeconds: 240, waitMinutes: 4, actions: true }).action, "actions");
-    assert.equal(decideBusyAction({ ...busy, waitedSeconds: 240, waitMinutes: 4, actions: false }).action, "refuse");
-    assert.equal(
-      decideBusyAction({ busyRuns: [], waitedSeconds: 0, waitMinutes: 0, actions: false }).action,
-      "run",
-      "an idle box must still just run — the escalation may never change the free path",
-    );
-    assert.ok(BUSY_POLL_SECONDS >= 10, "polling faster than 10s would hammer the box over ssh");
-
-    // 10c — THE VERDICT IS ALLOW-LISTED. A watcher that skips a DENY-list of unfinished states calls
-    // an unknown state green: measured in this repo when a loop skipping queued|in_progress|"" met a
-    // 422 body, matched none of them and printed its success line
-    // (`a-padded-short-sha-422s-and-a-fallthrough-watcher-calls-it-green`).
-    const sha = "a".repeat(40);
-    const ok = { headSha: sha, status: "completed", conclusion: "success", url: "u" };
-    assert.equal(gradeActionsRun(ok, sha).verdict, "pass");
-    assert.equal(gradeActionsRun({ ...ok, conclusion: "failure" }, sha).verdict, "fail");
-    for (const conclusion of ["cancelled", "timed_out", "skipped", "neutral", "action_required", "startup_failure", null]) {
-      const graded = gradeActionsRun({ ...ok, conclusion }, sha);
-      assert.equal(graded.verdict, "no-verdict", "completed/" + String(conclusion) + " must not read as a verdict");
-      assert.equal(graded.settled, true);
-    }
-    for (const status of ["queued", "in_progress", "waiting", "requested", undefined]) {
-      const graded = gradeActionsRun({ ...ok, status }, sha);
-      assert.equal(graded.settled, false, String(status) + " must stay unsettled, never fall through to a pass");
-      assert.equal(graded.verdict, "pending");
-    }
-    assert.equal(gradeActionsRun(null, sha).verdict, "pending", "no run yet is not a pass");
-    assert.equal(gradeActionsRun(undefined, sha).settled, false);
-
-    // 10d — AND A RUN IS ONLY EVIDENCE ABOUT THE SHA IT RAN. `gh workflow run` takes a REF, so a
-    // missing push would make the run about somebody else's commit. Both guards are pinned: the
-    // grader refuses a foreign headSha, and the script compares origin's ref before dispatching.
-    const other = gradeActionsRun({ ...ok, headSha: "b".repeat(40) }, sha);
-    assert.equal(other.verdict, "no-verdict", "a run on another sha was graded as a verdict about this one");
-    assert.match(other.why, /b{9}/);
-    assert.match(CODE, /ls-remote", "origin", "refs\/heads\/" \+ branch/, "the dispatch no longer checks origin's sha");
-    assert.match(CODE, /remoteSha !== sha/, "the pre-dispatch sha comparison is gone");
-    // The escalation must never run a check locally — the whole premise of this script (section 1).
-    assert.doesNotMatch(
-      CODE.slice(CODE.indexOf("function runOnActions")),
-      /execFileSync\(\s*"(pnpm|npx|tsc|node)"/,
-      "the Actions fallback is spawning a local check",
-    );
-    // It dispatches ci.yml, the workflow that produces the two REQUIRED checks, never a side workflow.
-    assert.match(CODE, /"workflow", "run", "ci\.yml"/, "the fallback must dispatch ci.yml itself");
-
-    // 10e — AND IT REFUSES TO PAY TWICE. A branch that already has an open PR is already running the
-    // same two required jobs on the same commit, so a dispatch beside them bills a second round for
-    // one answer (owner, 2026-09-27: every merge already costs ~28 billable CI minutes). That short
-    // circuit sits BEFORE the dispatch, and it names `gh pr checks` as the by-hand equivalent.
-    const fallback = CODE.slice(CODE.indexOf("function runOnActions"));
-    const prGate = fallback.indexOf('"pr", "list", "--head", branch');
-    const dispatch = fallback.indexOf('"workflow", "run", "ci.yml"');
-    assert.ok(prGate > 0, "the fallback no longer asks whether a PR is already open");
-    assert.ok(dispatch > 0, "the dispatch call is gone");
-    assert.ok(prGate < dispatch, "the open-PR check must come BEFORE the dispatch, or it bills before it looks");
-    assert.match(fallback, /gh pr checks/, "it must name the command that reads the PR's own checks");
-
-    // 🔴 AND IT READS THAT PR'S CHECKS RATHER THAN EXITING 6 (owner, 2026-10-08: "make the open-PR
-    // refusal read that PR's checks instead of exiting 6"). It used to print the command and leave with
-    // NO VERDICT — survivable while the box was waited out for ten minutes first, and not survivable
-    // once the same day's ruling made a busy box escalate at once: this arm is now reached immediately,
-    // and by the time anything is pushed most branches HAVE a PR, so a session left with nothing while a
-    // free, already-billed answer sat on that very commit.
-    // The no-dispatch stop (2026-10-08) sits between the PR read and the dispatch, and it MUST: with no
-    // PR and no --actions there is nothing to read and nothing may be billed.
-    const noDispatchStop = fallback.indexOf("if (!dispatch) {");
-    assert.ok(
-      noDispatchStop > prGate && noDispatchStop < dispatch,
-      "the no-PR, no-`--actions` stop must sit after the PR read and before the dispatch",
-    );
-    assert.match(
-      fallback.slice(noDispatchStop, dispatch),
-      /NO VERDICT[\s\S]{0,200}?process\.exit\(6\)/,
-      "with no PR and no --actions it must stop at NO VERDICT, billing nothing",
-    );
-    assert.match(CODE, /runOnActions\(\{[^}]*dispatch: escalation\.dispatch/, "the caller must hand runOnActions the parsed dispatch flag");
-    const prArm = fallback.slice(prGate, noDispatchStop);
-    assert.match(prArm, /settleActionsRun\(/, "the open-PR arm must settle that PR's run, not exit with no verdict");
-    assert.doesNotMatch(
-      prArm,
-      /process\.exit\(6\)/,
-      "the open-PR arm is back to exiting 6 without reading anything — that is the defect the owner named",
-    );
-    // 🔴 THE PR'S RUN IS ASKED FOR BY SHA, NEVER SCANNED FROM `gh run list` — that list is eventually
-    // consistent and has dropped a run that existed (AGENTS.md §2.1), which here reads as "the PR has no
-    // verdict" on a commit that already passed, and sends the reader to bill a dispatch for an answer
-    // they already had. It must also filter to ci.yml AND to the pull_request event: one commit can
-    // carry a dispatched run, a push run and a PR run, and only the PR run is already paid for.
-    const prFinder = CODE.slice(CODE.indexOf("function findPullRequestRun"));
-    assert.match(prFinder, /actions\/runs\?head_sha=/, "the PR's run must be asked for by head sha");
-    assert.match(prFinder, /\.github\/workflows\/ci\.yml/, "it must filter to ci.yml");
-    assert.match(prFinder, /\.event == "pull_request"/, "it must filter to the PR run, not a dispatch on the same sha");
-    assert.doesNotMatch(prFinder, /"run", "list"/, "findPullRequestRun is scanning the run list again");
-
-    // 🔴 AND THE DISPATCHED RUN IS ASKED FOR BY SHA TOO — THE ROUTE THAT HAS ALREADY SPENT THE MONEY
-    // MUST NOT USE THE READER THAT CAN FAIL TO SEE ITS OWN RUN. Until 2026-10-08 only the PR finder
-    // above had been moved off `gh run list`; the dispatch finder still scanned it by branch, which
-    // is the same eventually-consistent list, on the one route where ~14 billable Actions minutes are
-    // already committed before the finder runs. `sawRun` latches only on a run the finder returned, so
-    // a list omitting the brand-new run for three minutes of polling makes the watcher exit 6 saying
-    // "no run exists … and a run is registered the moment it is created, queued or not" — a sentence
-    // true of the runs API and never of `gh run list`, while the dispatched run completes unread.
-    // 🔴 BOUNDED TO THIS FUNCTION, NOT SLICED TO END OF FILE. `findPullRequestRun` sits BELOW this one
-    // and legitimately contains `actions/runs?head_sha=` and the ci.yml path, so an unbounded slice
-    // makes both assertions below pass on the SIBLING's text — measured here: with the pre-fix
-    // `gh run list` reader restored, the head_sha assertion passed and only the event filter fired.
-    // A test that reads the neighbouring function is not testing this one.
-    const dispatchStart = CODE.indexOf("function findDispatchedRun");
-    assert.notEqual(dispatchStart, -1, "findDispatchedRun must exist");
-    const dispatchFinder = CODE.slice(dispatchStart, CODE.indexOf("\n}", dispatchStart) + 2);
-    assert.match(dispatchFinder, /^function findDispatchedRun/, "the slice must start at the function");
-    assert.doesNotMatch(
-      dispatchFinder,
-      /function findPullRequestRun/,
-      "the slice must stop before the sibling finder, or these assertions read ITS text",
-    );
-    assert.match(dispatchFinder, /actions\/runs\?head_sha=/, "the dispatched run must be asked for by head sha");
-    assert.match(dispatchFinder, /\.github\/workflows\/ci\.yml/, "it must filter to ci.yml");
-    // Measured 2026-10-08 on `15bacd57a`: ONE sha carried both a pull_request run and a
-    // workflow_dispatch run of ci.yml, and `stageJobsFor` grades the two by DIFFERENT maps — so
-    // dropping this filter would let the dispatch route be answered by the PR's run, graded as a
-    // dispatch, which is exactly the no-verdict-on-green defect #5475 closed in the other direction.
-    assert.match(
-      dispatchFinder,
-      /\.event == "workflow_dispatch"/,
-      "it must filter to the dispatched run, not a PR run on the same sha",
-    );
-    assert.doesNotMatch(dispatchFinder, /"run", "list"/, "findDispatchedRun is scanning the run list again");
-    // The createdAt gate stays: it is what stops an EARLIER dispatch of this same sha being read as
-    // the run this invocation just started. By-sha alone would happily return last week's.
-    assert.match(
-      dispatchFinder,
-      /createdAt >= dispatchedAfter/,
-      "it must still gate on this invocation's own dispatch, not merely on the sha",
-    );
-
-    // 🔴 AND BOTH ROUTES SETTLE THROUGH ONE WATCHER, so there is a single allow-list of what counts as
-    // a verdict. Two copies is how one of them rots: the measured failure this allow-list exists for
-    // (a-padded-short-sha-422s-and-a-fallthrough-watcher-calls-it-green) was a watcher that fell out of
-    // its loop into a success line.
-    assert.equal(
-      (CODE.match(/function settleActionsRun/g) ?? []).length,
-      1,
-      "there must be exactly one Actions watcher",
-    );
-    assert.match(
-      CODE,
-      /settleActionsRun\(\{\s*\n\s*find: \(\) => findPullRequestRun\(sha\),/,
-      "the open-PR read must go through the one watcher",
-    );
-    assert.match(
-      CODE,
-      /settleActionsRun\(\{\s*\n\s*find: \(\) => findDispatchedRun\(sha, dispatchedAfter\),/,
-      "the dispatch must go through the one watcher, and hand it the SHA — not the branch, which is "
-        + "what the dropped-run reader keyed on",
-    );
-
-    // 10f — AND IT NEVER DISPATCHES ON `main`. ci.yml groups a non-PR run by SHA and never cancels
-    // one (`CI-<sha>`, concurrency block in .github/workflows/ci.yml), so a dispatch from `main`
-    // lands in the SAME group as the push run Railway's "Wait for CI" holds the production deploy
-    // on — and a cancelled or failed suite there makes Railway mark that deploy SKIPPED for good
-    // (AGENTS.md §2.3). It also buys nothing: main already runs the whole gate on every commit.
-    for (const ref of ["main", "master", "refs/heads/main", " main "]) {
-      assert.equal(isProtectedDispatchRef(ref), true, ref + " must never be dispatched onto");
-    }
-    for (const ref of ["codex/fix-x", "main-fix", "feat/main", "", null, undefined, "remote-check"]) {
-      assert.equal(isProtectedDispatchRef(ref as string), false, String(ref) + " is an ordinary branch and must still dispatch");
-    }
-    const refusal = fallback.indexOf("isProtectedDispatchRef(branch)");
-    assert.ok(refusal > 0, "the Actions fallback no longer refuses to dispatch on main — it would collide with the deploy gate");
-    assert.ok(refusal < dispatch, "the main refusal must come BEFORE the dispatch, or it refuses after billing");
-    assert.match(
-      fallback.slice(refusal, dispatch),
-      /NO VERDICT[\s\S]{0,200}?process\.exit\(6\)/,
-      "the main refusal must end in a NO VERDICT exit (6, like the open-PR refusal), never a FAIL",
-    );
-
-    // 10g — AND IT GRADES ONLY THE STAGE THAT WAS ASKED FOR. A workflow_dispatch runs the WHOLE
-    // workflow — `mobile` (which reports and never gates, AGENTS.md §7), the Build and the Playwright
-    // login smoke — so grading the run's own conclusion turned `remote-check typecheck` FAIL on a
-    // mobile lockfile break or a smoke flake: a verdict about somebody else's code, printed under
-    // this sha, blocking this push.
-    const job = (name: string, conclusion: string | null, steps: Array<[string, string | null]> = []) => ({
-      name,
-      status: "completed",
-      conclusion,
-      steps: steps.map(([n, c]) => ({ name: n, conclusion: c })),
-    });
-    const checksGreen = job("checks", "success", [["Lint", "success"], ["Typecheck", "success"]]);
-    const validateGreen = job("validate", "success", [["Test", "success"], ["Build", "success"]]);
-
-    // The whole point: the requested stage passed, something else in the run did not.
-    const smokeFlake = job("validate", "failure", [["Test", "success"], ["Run Playwright login smoke test", "failure"]]);
-    const typecheckOnMobileBreak = gradeActionsStages(["typecheck"], [checksGreen, job("mobile", "failure"), smokeFlake]);
-    assert.equal(typecheckOnMobileBreak.verdict, "pass", "a red `mobile` or smoke job must not fail the typecheck that passed");
-    assert.deepEqual(typecheckOnMobileBreak.otherRed, ["mobile", "validate"], "the other red jobs must still be REPORTED");
-    assert.equal(gradeActionsStages(["test"], [checksGreen, smokeFlake]).verdict, "pass", "a failed smoke step must not fail the unit suite");
-
-    // A genuine red in the requested stage is still a FAIL, and the step is what decides it.
-    const typeError = job("checks", "failure", [["Lint", "success"], ["Typecheck", "failure"]]);
-    assert.equal(gradeActionsStages(["typecheck"], [typeError, validateGreen]).verdict, "fail");
-    assert.equal(gradeActionsStages(["lint"], [typeError, validateGreen]).verdict, "pass", "lint passed in that same job");
-    assert.match(gradeActionsStages(["typecheck"], [typeError]).why, /Typecheck/);
-
-    // A stage that never ran is NO VERDICT, never FAIL — a missing job, an unfinished one, and a
-    // step skipped because an earlier step in its job died are all "nobody looked at your stage".
-    assert.equal(gradeActionsStages(["typecheck"], [validateGreen]).verdict, "no-verdict", "a missing `checks` job is not a failure");
-    assert.equal(
-      gradeActionsStages(["typecheck"], [{ ...checksGreen, status: "in_progress", conclusion: null }]).verdict,
-      "no-verdict",
-    );
-    assert.equal(
-      gradeActionsStages(["typecheck"], [job("checks", "failure", [["Install dependencies", "failure"], ["Typecheck", "skipped"]])]).verdict,
-      "no-verdict",
-      "a typecheck step skipped because the install died says nothing about the code",
-    );
-    assert.equal(gradeActionsStages(["typecheck"], [job("checks", "cancelled", [])]).verdict, "no-verdict");
-    assert.equal(gradeActionsStages(["typecheck"], null).verdict, "no-verdict", "an unreadable job list is not a verdict");
-    assert.equal(gradeActionsStages(["typecheck"], []).verdict, "no-verdict");
-
-    // 🔴 AND THE ONE THAT COST A FALSE VERDICT: a job GitHub never started reports `completed` /
-    // `failure` with `steps: []`. On 2026-10-12 jobs stopped starting account-wide ("recent account
-    // payments have failed or your spending limit needs to be increased") and #5792's `validate` and
-    // `checks` both ended failure in three seconds with no steps; grading fell through to
-    // `job.conclusion`, so `lint`, `typecheck` and `test` were all recorded FAIL for a commit nothing
-    // had compiled. A FAIL is reported to the owner as "your code is broken" and blocks a push, so a
-    // billing block must never wear one.
-    const neverStarted = job("checks", "failure", []);
-    const billingBlocked = gradeActionsStages(["lint", "typecheck"], [neverStarted, job("validate", "failure", [])]);
-    assert.equal(
-      billingBlocked.verdict,
-      "no-verdict",
-      "a job that reported failure with NO steps was never started — that is NO VERDICT, never FAIL",
-    );
-    assert.deepEqual(billingBlocked.stages, {}, "a never-started job must record no per-stage verdict at all");
-    assert.match(billingBlocked.why, /never started/, "the reason must say the job never started, not that a check failed");
-    assert.equal(
-      gradeActionsStages(["test"], [job("validate", "failure", [])], STAGE_JOBS_PR).verdict,
-      "no-verdict",
-      "the same on a pull_request run, which is the route the open-PR fallback reads",
-    );
-    assert.equal(
-      gradeActionsStages(["typecheck"], [{ name: "checks", status: "completed", conclusion: "failure" }]).verdict,
-      "no-verdict",
-      "a job whose steps could not be read at all is not a verdict either",
-    );
-
-    // A real failure still outranks an unknown, exactly as it does in the box script.
-    assert.equal(
-      gradeActionsStages(["lint", "typecheck", "test"], [typeError]).verdict,
-      "fail",
-      "a red typecheck beside a `validate` that is not in the run must stay a FAIL",
-    );
-
-    // 🔴 AND THE NAMES IT GRADES BY MUST BE ci.yml's OWN. STAGE_JOBS is a map into another file: a
-    // renamed job or step would make every stage read NO VERDICT for ever, which fails open and is
-    // therefore silent. Read the workflow and check both halves still exist.
-    //
-    // 🔴 THE STEP IS LOOKED FOR INSIDE ITS OWN JOB, AND THIS IS NOT PEDANTRY — IT IS THE WHOLE
-    // ASSERTION. Until 2026-10-06 both halves were matched against the WHOLE FILE, so "ci.yml has a
-    // `validate` job" and "ci.yml has a step named `Test`" could both be true while `validate` had no
-    // `Test` step at all. That is exactly what happened the day the unit suite gained a second home:
-    // `test` still pointed at `validate`, the step it names moved to `checks` on every non-PR event,
-    // and this guard passed. Split the file into jobs first and ask the named job.
-    const CI = readFileSync(path.join(ROOT, ".github", "workflows", "ci.yml"), "utf8");
-    const ciJobs = new Map<string, string>();
-    {
-      const lines = CI.split("\n");
-      const start = lines.findIndex((line) => /^jobs:\s*$/.test(line));
-      assert.notEqual(start, -1, "ci.yml has no top-level `jobs:` block");
-      let name: string | null = null;
-      let body: string[] = [];
-      for (const line of lines.slice(start + 1)) {
-        const header = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(line);
-        if (header) {
-          if (name) ciJobs.set(name, body.join("\n"));
-          name = header[1];
-          body = [];
-          continue;
-        }
-        if (name) body.push(line);
-      }
-      if (name) ciJobs.set(name, body.join("\n"));
-    }
-    // One step's own lines, cut at the next list item — never a fixed window, which can read the NEXT
-    // step's `if:` and fail a step that has none.
-    const stepBody = (jobBody: string, step: string): string | null => {
-      const at = jobBody.indexOf("      - name: " + step + "\n");
-      if (at === -1) return null;
-      const after = jobBody.slice(at);
-      const next = after.indexOf("\n      - ", 1);
-      return next === -1 ? after : after.slice(0, next);
-    };
-    const ifOf = (body: string): string | null => /^ {8}if: (.+)$/m.exec(body)?.[1] ?? null;
-
-    // 🔴 BOTH MAPS ARE CHECKED, AND AGAINST THE EVENT EACH ONE IS FOR. STAGE_JOBS grades a
-    // `workflow_dispatch`; STAGE_JOBS_PR grades the run an already-open PR produced (owner, 2026-10-08).
-    // ci.yml's two homes for the unit suite are exact complements, so a map checked against the wrong
-    // event passes while grading every stage from a SKIPPED step — NO VERDICT for ever, fail-open and
-    // therefore silent. `pr: true` below means "this map grades a pull_request run".
-    const maps: Array<[string, Record<string, { job: string; step: string } | null>, boolean]> = [
-      ["STAGE_JOBS", STAGE_JOBS, false],
-      ["STAGE_JOBS_PR", STAGE_JOBS_PR, true],
+    const all = gradeActionsStages([], green());
+    assert.equal(all.verdict, "pass", `a fully green run must pass: ${all.why}`);
+    assert.deepEqual(all.stages, { lint: "PASS", typecheck: "PASS", test: "PASS", build: "PASS" });
+    assert.deepEqual(all.passed, ["lint", "typecheck", "test", "build"]);
+    assert.deepEqual(all.otherRed, []);
+  }
+  {
+    // lint red: FAIL, and the stages that did pass are still named so the record is not thrown away.
+    const run = gradeActionsStages(["lint", "typecheck"], with_(green(), "static", "Lint", "failure", "failure"));
+    assert.equal(run.verdict, "fail");
+    assert.deepEqual(run.stages, { lint: "FAIL", typecheck: "PASS" }, "the failing stage and the passing one are both recorded");
+  }
+  {
+    // 🔴 THE SUITE IS A MATRIX: one red part is a FAIL for `test` even though `checks` never reached its proof.
+    let jobs = with_(green(), "unit (2)", "Test", "failure", "failure");
+    jobs = with_(jobs, "checks", PROVE, "skipped", "failure");
+    const run = gradeActionsStages(["test"], jobs);
+    assert.equal(run.verdict, "fail", `a red unit part must fail the suite stage: ${run.why}`);
+    assert.match(run.why, /`unit \(2\)` \/ Test failure/, "the failing part must be named");
+  }
+  {
+    // 🔴 ...AND ALL PARTS GREEN IS NOT ENOUGH WITHOUT THE COVERAGE PROOF. A suite that ran 2 of 3 parts is smaller.
+    const run = gradeActionsStages(["test"], with_(green(), "checks", PROVE, "failure", "failure"));
+    assert.equal(run.verdict, "fail", "a red coverage proof (a part missing, or a test run twice) must fail the suite stage");
+    const skipped = gradeActionsStages(["test"], with_(green(), "checks", PROVE, "skipped", "failure"));
+    assert.equal(skipped.verdict, "no-verdict", "a skipped coverage proof is NO VERDICT — the parts alone never prove the suite was whole");
+    assert.deepEqual(skipped.stages, {}, "and a no-verdict stage is never recorded as either");
+    const noChecks = gradeActionsStages(["test"], green().filter((j) => j.name !== "checks"));
+    assert.equal(noChecks.verdict, "no-verdict", "no `checks` job in the run means the suite was never proved");
+  }
+  {
+    // A pull request's Build is conditional. A skipped Build step must never read as a build PASS.
+    const prRun = with_(green(), "validate", "Build", "skipped");
+    const asked = gradeActionsStages(["build"], prRun);
+    assert.equal(asked.verdict, "no-verdict", `a skipped Build is NO VERDICT, never a pass: ${asked.why}`);
+    const everything = gradeActionsStages([], prRun);
+    assert.equal(everything.verdict, "no-verdict", "`all` on a run that did not build is a partial answer, not a pass");
+    assert.deepEqual(everything.passed, ["lint", "typecheck", "test"], "…but it says which three halves DID pass");
+    assert.deepEqual(everything.stages, { lint: "PASS", typecheck: "PASS", test: "PASS" }, "and only those three are recorded");
+  }
+  {
+    // 🔴 A JOB THAT NEVER STARTED (an Actions billing block) is `completed/failure` with NO STEPS — that is not a FAIL.
+    const unpaid = green().map((j) => (j.name === "static" ? { ...j, conclusion: "failure", steps: [] } : j));
+    const run = gradeActionsStages(["lint", "typecheck"], unpaid);
+    assert.equal(run.verdict, "no-verdict", "a job with no steps never ran: nobody looked at the code");
+    assert.match(run.why, /no steps at all/);
+    assert.deepEqual(run.stages, {});
+  }
+  {
+    // Red elsewhere is REPORTED, never charged: `mobile` failing must not fail `lint`.
+    const run = gradeActionsStages(["lint"], with_(green(), "mobile", "Typecheck the mobile app", "failure", "failure"));
+    assert.equal(run.verdict, "pass", "a red `mobile` job is not a verdict about lint");
+    assert.deepEqual(run.otherRed, ["mobile"], "but it is named");
+  }
+  {
+    // 🔴 AN ANSWER THE MOMENT THE STAGE ANSWERS: lint is decided while the rest of the run is still going.
+    const midRun: Job[] = [
+      job("static", { Lint: "success", Typecheck: null }, "in_progress", null),
+      job("validate", { Build: null }, "in_progress", null),
+      job("unit (1)", { Test: null }, "queued", null),
     ];
-    for (const [label, map, pr] of maps) {
-      assert.deepEqual(
-        Object.keys(map).sort(),
-        ["build", "lint", "test", "typecheck"],
-        label + " must cover every stage this script can be asked for, or one of them grades as a typo",
-      );
-      for (const [stage, spec] of Object.entries(map)) {
-        // 🔴 A `null` SPEC CLAIMS THE EVENT DOES NOT RUN THAT STAGE AT ALL, AND THAT CLAIM IS PROVED
-        // FROM ci.yml, never taken on trust. `build: null` in STAGE_JOBS_PR is why reading a green PR
-        // answers NO VERDICT for `remote-check build` instead of inheriting a pass from two green
-        // checks — so if a PR ever DOES build, this must fail and send someone to give it a real spec.
-        if (!spec) {
-          assert.ok(pr, label + " may not claim a stage is unrun outside the pull_request map");
-          const real = STAGE_JOBS[stage as keyof typeof STAGE_JOBS];
-          const body = real ? stepBody(ciJobs.get(real.job) ?? "", real.step) : null;
-          assert.ok(body, label + " says a pull request never runs " + stage + ", and ci.yml has no such step at all");
-          assert.match(
-            String(ifOf(body)),
-            /event_name\s*!=\s*'pull_request'/,
-            "STAGE_JOBS_PR says a pull request never runs the " + stage + ", but ci.yml's `" + real.job + "` / " +
-              real.step + " is not gated off a pull request any more — give " + stage + " a real spec, or reading a " +
-              "PR will keep answering NO VERDICT for a stage that now runs",
-          );
-          continue;
-        }
-        const jobBody = ciJobs.get(spec.job);
-        assert.ok(
-          jobBody !== undefined,
-          label + " says " + stage + " runs in the `" + spec.job + "` job, and ci.yml has no such job any more",
-        );
-        const body = stepBody(jobBody, spec.step);
-        assert.ok(
-          body,
-          label + " grades " + stage + " by a `" + spec.step + "` step inside ci.yml's `" + spec.job + "` job, and " +
-            "that job has no such step — every " + stage + " reading would silently answer NO VERDICT",
-        );
-
-        // 🔴 AND IT MUST RUN ON THE EVENT THAT MAP GRADES. A step gated the other way is SKIPPED on
-        // every run that map will ever see, and `gradeConclusion("skipped")` is no-verdict — the same
-        // silent failure, one level down. There is no need to evaluate GitHub's expression language:
-        // a condition that REQUIRES the other event can never hold, and that is the only shape ci.yml
-        // uses.
-        const condition = ifOf(body);
-        const fatal = pr ? /event_name\s*!=\s*'pull_request'/ : /event_name\s*==\s*'pull_request'/;
-        assert.ok(
-          !condition || !fatal.test(condition),
-          "`" + spec.job + "` / " + spec.step + " does not run on " + (pr ? "a pull request" : "a dispatch") +
-            " (`" + String(condition) + "`), but " + label + " grades " + stage + " from it — so it would be read " +
-            "from a SKIPPED step and answer NO VERDICT on every run",
-        );
-      }
-    }
-
-    // 🔴 AND THE MAP IS CHOSEN FROM THE RUN'S OWN EVENT, not from the route that asked. The same sha
-    // can carry a dispatched run AND a PR run, which disagree about where the unit suite lives.
-    assert.equal(stageJobsFor("pull_request"), STAGE_JOBS_PR);
-    for (const event of ["workflow_dispatch", "push", "", null, undefined, "schedule"]) {
-      assert.equal(stageJobsFor(event as string), STAGE_JOBS, String(event) + " is not a pull request");
-    }
-    assert.deepEqual(stagesNotRunBy(["lint", "typecheck", "test"], STAGE_JOBS_PR), [], "a PR runs all three");
-    assert.deepEqual(stagesNotRunBy(["test", "build"], STAGE_JOBS_PR), ["build"], "a PR never builds");
-    assert.deepEqual(stagesNotRunBy(["test", "build"], STAGE_JOBS), [], "a dispatch runs everything");
-
-    // 🔴 SO A PR'S OWN RUN IS GRADED IN `validate`, WHERE A DISPATCH'S SUITE IS IN `checks` — the one
-    // mistake that would make reading a green PR answer NO VERDICT, which is the defect being fixed.
-    // Shaped like a real green PR run, SKIPPED steps included: GitHub lists a step whose `if:` was
-    // false with `conclusion: "skipped"`, and that is what makes grading a PR with the dispatch map
-    // answer NO VERDICT rather than quietly reading the job around it.
-    const prValidateGreen = job("validate", "success", [["Test", "success"], ["Build", "skipped"]]);
-    const prChecksGreen = job("checks", "success", [["Lint", "success"], ["Typecheck", "success"], ["Test", "skipped"]]);
-    const prJobs = [prValidateGreen, prChecksGreen];
-    assert.equal(gradeActionsStages(["test"], prJobs, STAGE_JOBS_PR).verdict, "pass", "a green PR's suite is in `validate`");
-    assert.equal(
-      gradeActionsStages(["test"], prJobs).verdict,
-      "no-verdict",
-      "the dispatch map must NOT be what grades a PR run — `checks` has no Test step on a pull request",
-    );
-    assert.equal(gradeActionsStages(["lint", "typecheck", "test"], prJobs, STAGE_JOBS_PR).verdict, "pass");
-
-    // A green PR says NOTHING about the build, and the reason must say so — not "ended skipped", which
-    // reads like a fault in the run. The three stages it DID answer are still reported.
-    const all = gradeActionsStages(["lint", "typecheck", "test", "build"], prJobs, STAGE_JOBS_PR);
-    assert.equal(all.verdict, "no-verdict", "a pull request never builds, so `all` cannot be fully answered by one");
-    assert.match(all.why, /pull_request run never runs the build/);
-    assert.deepEqual(all.passed, ["lint", "typecheck", "test"], "the stages that did pass must still be named");
-    assert.equal(
-      gradeActionsStages(["test"], [job("validate", "failure", [["Test", "failure"]])], STAGE_JOBS_PR).verdict,
-      "fail",
-      "a red suite on a PR is still a FAIL",
-    );
-    // An unknown stage name is still a typo, and must not be reported as "the event does not run it".
-    assert.match(gradeActionsStages(["nope"], prJobs, STAGE_JOBS_PR).why, /not a stage any CI job runs/);
-
-    // And the script must actually USE it: the run's conclusion alone may not decide a FAIL, and the
-    // map it grades with must be the one chosen from the run's event.
-    assert.match(CODE, /gradeActionsStages\(names, jobs, stageJobs\)/, "the Actions fallback no longer grades per stage");
-    assert.match(CODE, /stageJobsFor\(run\?\.event\)/, "the watcher must pick the map from the run's own event");
-    // 🔴 AND A WHOLE-RUN `success` IS ONLY A PASS WHEN THAT RUN RAN EVERY STAGE ASKED FOR. A dispatch
-    // does; a green PR never built, so the short circuit must consult stagesNotRunBy or it would print
-    // PASS for `remote-check build` off a run that did not compile a line.
-    assert.match(
-      CODE,
-      /graded\.verdict === "pass" && notRun\.length === 0/,
-      "the whole-run success short circuit no longer checks that the run ran the requested stages",
-    );
-    // 🔴 AND A RUN THAT NEVER APPEARS IS GIVEN UP ON IN MINUTES, NOT AFTER THE SETTLE DEADLINE. A run
-    // object exists the moment it is created, queued or not, so "no run at all" never becomes a run by
-    // waiting — and the arm this replaced had exactly one virtue, that it ended at once. Burning the
-    // full 25 minutes on a dispatch that produced nothing would spend that virtue for no answer.
-    assert.match(
-      CODE,
-      /!sawRun && Date\.now\(\) - started > ACTIONS_APPEAR_MINUTES/,
-      "the watcher waits the whole settle deadline for a run that does not exist",
-    );
-    assert.ok(
-      /const ACTIONS_APPEAR_MINUTES = [1-5];/.test(CODE),
-      "the appear deadline must stay a few minutes — it is the only thing that keeps a missing run cheap",
-    );
-    assert.match(CODE, /"run", "view", String\(runId\), "--json", "jobs"/, "it must read the run's jobs to grade a stage");
-    assert.ok(
-      !/graded\.verdict === "fail"/.test(CODE),
-      "the fallback still fails on the RUN's conclusion — that is the mobile/smoke misreport this replaced",
-    );
+    const lint = gradeActionsStages(["lint"], midRun);
+    assert.equal(lint.verdict, "pass", `lint's own step already succeeded, so it is answered now: ${lint.why}`);
+    const typecheck = gradeActionsStages(["typecheck"], midRun);
+    assert.equal(typecheck.verdict, "pending", "a step still running is pending, not a verdict");
+    const both = gradeActionsStages(["lint", "typecheck"], midRun);
+    assert.equal(both.verdict, "pending", "one answered stage and one pending is still pending");
+    assert.deepEqual(both.stages, { lint: "PASS" }, "the answered one is recorded, the pending one is not");
+    // …and a failure is final the moment it happens, whatever else is still running.
+    const failing = gradeActionsStages(["lint", "typecheck"], [job("static", { Lint: "failure", Typecheck: null }, "in_progress", null)]);
+    assert.equal(failing.verdict, "fail", "an early FAIL must not wait for the rest of the run");
+    // A job that is merely queued has decided nothing.
+    assert.equal(gradeActionsStages(["build"], [job("validate", { Build: null }, "queued", null)]).verdict, "pending");
   }
+  assert.equal(gradeActionsStages(["lint"], null).verdict, "no-verdict", "an unreadable job list is NO VERDICT");
+  assert.equal(gradeActionsStages(["lint"], []).verdict, "no-verdict");
+  assert.equal(gradeActionsStages(["lint", "nonsense"], green()).verdict, "no-verdict", "a stage no CI job runs is NO VERDICT, never a pass");
+  assert.match(gradeActionsStages(["nonsense"], green()).why, /not a stage any CI job runs/);
 
-  // 8c — EVERY STOP ONCE THE COMMIT IS KNOWN ENDS IN A `NO VERDICT — <sha9>` LINE. `die()` exits 2
-  // (NO VERDICT) and used to print only the error, so the dispatch, push and ssh failures closed with no
-  // verdict line for any commit at all.
-  {
-    const line = stoppedNoVerdictLine("0123456789abcdef0123456789abcdef01234567");
-    assert.match(line, /^remote-check: NO VERDICT — .* 012345678$/, "the stop line must be a NO VERDICT line ending in the sha9");
-    assert.ok(!/PASS|FAIL/.test(line), "a stop must never print a word a session could grade as a verdict");
-    const dieStart = SRC.indexOf("function die(message) {");
-    const dieBody = dieStart < 0 ? "" : SRC.slice(dieStart, SRC.indexOf("\n}", dieStart));
-    const printAt = dieBody.indexOf("if (verdictSha) console.error(stoppedNoVerdictLine(verdictSha));");
-    assert.ok(printAt >= 0 && printAt < dieBody.indexOf("process.exit(2)"),
-      "die() must print the NO VERDICT line for the known commit before it exits 2");
-    assert.ok(
-      SRC.includes('die("not inside a git repository");\n}\nif (!LOCKFILE_MODE) verdictSha = sha;'),
-      "verdictSha must be set the moment the sha is read, and never in the lockfile mode, which claims no verdict");
-    assert.equal((SRC.match(/(?<!let )verdictSha = /g) ?? []).length, 1, "verdictSha is assigned in exactly one place, besides its null declaration");
+  // The run itself: only an explicit completed/success|failure is an answer; everything else is not.
+  const SHA = "a".repeat(40);
+  assert.equal(gradeActionsRun(undefined, SHA).verdict, "pending");
+  assert.deepEqual(gradeActionsRun({ headSha: SHA, status: "queued", conclusion: null }, SHA).settled, false);
+  assert.deepEqual(gradeActionsRun({ headSha: SHA, status: "in_progress", conclusion: null }, SHA).settled, false);
+  assert.equal(gradeActionsRun({ headSha: SHA, status: "completed", conclusion: "success" }, SHA).verdict, "pass");
+  assert.equal(gradeActionsRun({ headSha: SHA, status: "completed", conclusion: "failure" }, SHA).verdict, "fail");
+  for (const conclusion of ["cancelled", "timed_out", "skipped", "neutral", "action_required", "startup_failure", null, undefined]) {
+    const graded = gradeActionsRun({ headSha: SHA, status: "completed", conclusion: conclusion as string }, SHA);
+    assert.equal(graded.verdict, "no-verdict", `completed/${String(conclusion)} is NO VERDICT — a retry, never a green`);
   }
+  const wrong = gradeActionsRun({ headSha: "b".repeat(40), status: "completed", conclusion: "success" }, SHA);
+  assert.equal(wrong.verdict, "no-verdict", "a green run about ANOTHER commit is no evidence about this one");
+  assert.match(wrong.why, /bbbbbbbbb, not aaaaaaaaa/);
 
-  // 9 — BEHAVIOUR: run the generated bash for real against a throwaway bare repo. It needs bash, git
-  // and a POSIX `find`, so it runs on the Linux CI runners and is skipped on the Windows laptop, where
-  // `bash` may resolve to WSL. The required `validate` job is Linux, so it always runs where it gates.
-  if (process.platform === "win32") return;
-  if (spawnSync("bash", ["-c", "command -v git"], { encoding: "utf8" }).status !== 0) return;
+  // The verdict record: only PASS|FAIL are kept, a later run replaces an earlier one, another sha starts fresh.
+  assert.throws(() => mergeVerdictRecord(null, { sha: "abc", stages: {}, source: "x", at: "t" }), /40-character sha/);
+  const first = mergeVerdictRecord(null, { sha: SHA, stages: { lint: "PASS", typecheck: "FAIL", test: "MAYBE" as "PASS" }, source: "run 1", at: "t1" });
+  assert.deepEqual(Object.keys(first.stages).sort(), ["lint", "typecheck"], "a stage that is not PASS|FAIL is never stored");
+  const second = mergeVerdictRecord(first, { sha: SHA, stages: { typecheck: "PASS" }, source: "run 2", at: "t2" });
+  assert.equal(second.stages.typecheck.verdict, "PASS", "a re-run is newer evidence");
+  assert.equal(second.stages.lint.source, "run 1", "and does not erase the other stages");
+  assert.deepEqual(mergeVerdictRecord(second, { sha: "c".repeat(40), stages: { lint: "PASS" }, source: "x", at: "t" }).stages.typecheck, undefined, "another commit starts a fresh record");
+  assert.equal(VERDICT_DIR_NAME, "phx-remote-check", "the push guard reads this directory by name (tests/push-typecheck-guard.test.ts)");
+  assert.match(stoppedNoVerdictLine(SHA), /^remote-check: NO VERDICT — .* on aaaaaaaaa$/);
 
-  const tmp = mkdtempSync(path.join(os.tmpdir(), "phx-remote-check-"));
+  // ── 5. THE WHOLE SCRIPT, AGAINST A FAKE `gh` AND A REAL GIT REPOSITORY ───────────────────────
+  // POSIX only: a fake `gh` is an executable script found on PATH, which Windows does not resolve (it looks for
+  // gh.exe). The suite runs in CI on Linux; a laptop run skips this block and says so.
+  if (process.platform === "win32") {
+    console.log("remote-check.test: skipping the end-to-end block on Windows (a fake `gh` script is not resolvable there)");
+    return;
+  }
+  const work = mkdtempSync(path.join(os.tmpdir(), "phx-remote-check-"));
   try {
-    // Exercise the configured remote test command with the real shard runner and a tiny suite.
-    // No SSH, dependencies or production env: the fixture proves complete coverage and that a
-    // failed or incomplete shard propagates through the shell command as a failing remote stage.
-    const fixture = path.join(tmp, "sharded-suite");
-    for (const dir of ["bin", "scripts", "tests"]) mkdirSync(path.join(fixture, dir), { recursive: true });
-    for (const file of ["run-tests-sharded.mjs", "run-tests-sharded-plan.mjs"]) {
-      writeFileSync(path.join(fixture, "scripts", file), readFileSync(path.join(ROOT, "scripts", file)));
-    }
-    writeFileSync(path.join(fixture, "package.json"), JSON.stringify({ type: "module", scripts: { test: "node tests/fixture-suite.mjs" } }));
-    writeFileSync(path.join(fixture, "tests", "fixture-suite.mjs"), `
-const [index, total] = (process.env.PHX_TEST_SHARD || '1/1').split('/').map(Number);
-let ran = 0;
-for (let test = 1; test <= 6; test++) {
-  if ((test - 1) % total !== index - 1) continue;
-  console.log('FIXTURE_TEST ' + test);
-  ran++;
-}
-if (process.env.FIXTURE_FAIL_SHARD === String(index)) process.exit(1);
-if (process.env.FIXTURE_MISSING_MARKER !== String(index)) {
-  console.log('PHX_SHARD_RESULT shard=' + index + '/' + total + ' seen=6 ran=' + ran);
-}
-`);
-    writeFileSync(path.join(fixture, "bin", "corepack"), `#!${process.execPath}
-import { spawnSync } from 'node:child_process';
-const [manager, action, script] = process.argv.slice(2);
-const target = { test: 'tests/fixture-suite.mjs', 'test:sharded': 'scripts/run-tests-sharded.mjs' }[script];
-if (manager !== 'pnpm' || action !== 'run' || !target) process.exit(2);
-const result = spawnSync(process.execPath, [target], { stdio: 'inherit' });
-process.exit(result.status ?? 1);
-`, { mode: 0o755 });
-    const testCommand = /^\s*test:\s*"([^"]+)"/m.exec(SRC)?.[1];
-    assert.ok(testCommand, "the configured remote test command must be discoverable");
-    const runFixture = (extra: Record<string, string> = {}) => spawnSync("bash", ["-c", testCommand], {
-      cwd: fixture,
-      env: { ...process.env, PATH: path.join(fixture, "bin") + path.delimiter + process.env.PATH,
-        PHX_TEST_SHARDS: "2", FIXTURE_FAIL_SHARD: "", FIXTURE_MISSING_MARKER: "", ...extra },
-      encoding: "utf8",
-      timeout: 10_000,
-    });
-    const complete = runFixture();
-    assert.equal(complete.status, 0, "the remote test stage failed on a complete fixture suite:\n" + complete.stderr);
-    assert.match(complete.stdout, /6 test files passed .* across 2 shard\(s\)/,
-      "the remote test stage must use CI's shard runner instead of repeating the serial suite");
-    assert.deepEqual([...complete.stdout.matchAll(/FIXTURE_TEST (\d+)/g)].map((match) => Number(match[1])).sort((a, b) => a - b),
-      [1, 2, 3, 4, 5, 6], "every fixture test must execute exactly once through the remote test command");
-    const failed = runFixture({ FIXTURE_FAIL_SHARD: "2" });
-    assert.equal(failed.status, 1, "a failed shard must fail the remote test stage");
-    assert.match(failed.stderr, /shard 2 exited 1/);
-    const incomplete = runFixture({ FIXTURE_MISSING_MARKER: "2" });
-    assert.equal(incomplete.status, 1, "a shard with no coverage marker must fail the remote test stage");
-    assert.match(incomplete.stderr, /printed no PHX_SHARD_RESULT line/);
+    const bin = path.join(work, "bin");
+    mkdirSync(bin);
+    const fakeGh = path.join(bin, "gh");
+    writeFileSync(
+      fakeGh,
+      [
+        "#!/usr/bin/env node",
+        'const fs = require("node:fs");',
+        'const fx = JSON.parse(fs.readFileSync(process.env.RC_FIXTURE, "utf8"));',
+        "const argv = process.argv.slice(2);",
+        'fs.appendFileSync(process.env.RC_LOG, argv.join(" ") + "\\n");',
+        'const marker = process.env.RC_FIXTURE + ".dispatched";',
+        'if (argv[0] === "pr" && argv[1] === "list") { if (fx.openPr) process.stdout.write(String(fx.openPr) + "\\n"); process.exit(0); }',
+        'if (argv[0] === "api") {',
+        '  const jq = argv[argv.indexOf("--jq") + 1] || "";',
+        '  const m = /\\.path == "([^"]+)" and \\.event == "([^"]+)"/.exec(jq);',
+        '  const source = fs.existsSync(marker) && fx.runsAfterDispatch ? fx.runsAfterDispatch : fx.runs || [];',
+        "  const runs = source.filter((r) => !m || (r.path === m[1] && r.event === m[2]));",
+        "  process.stdout.write(JSON.stringify(runs.map(({ path, ...rest }) => rest)));",
+        "  process.exit(0);",
+        "}",
+        'if (argv[0] === "run" && argv[1] === "view") { process.stdout.write(JSON.stringify({ jobs: fs.existsSync(marker) && fx.jobsAfterDispatch ? fx.jobsAfterDispatch : fx.jobs || [] })); process.exit(0); }',
+        'if (argv[0] === "workflow" && argv[1] === "run") { if (fx.dispatchFails) { console.error("HTTP 422: boom"); process.exit(1); } fs.writeFileSync(marker, "1"); process.exit(0); }',
+        'console.error("fake gh: unexpected " + argv.join(" ")); process.exit(99);',
+      ].join("\n") + "\n",
+    );
+    chmodSync(fakeGh, 0o755);
 
-    const g = (cwd: string, ...args: string[]) => {
-      const r = spawnSync("git", args, { cwd, encoding: "utf8" });
-      assert.equal(r.status, 0, "git " + args.join(" ") + " failed: " + r.stderr);
-      return r.stdout.trim();
+    const git = (cwd: string, ...args: string[]) => {
+      const out = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
+      assert.equal(out.status, 0, `git ${args.join(" ")} failed: ${out.stderr}`);
+      return out.stdout.trim();
     };
-    const remoteRoot = path.join(tmp, "box");
-    mkdirSync(remoteRoot);
-    g(remoteRoot, "init", "-q", "--bare", "repo.git");
-    const src = path.join(tmp, "src");
-    mkdirSync(src);
-    g(src, "init", "-q");
-    g(src, "config", "user.email", "t@t");
-    g(src, "config", "user.name", "t");
-    writeFileSync(path.join(src, "base.txt"), "base\n");
-    g(src, "add", ".");
-    g(src, "commit", "-q", "-m", "base");
-    const without = g(src, "rev-parse", "HEAD");
-    writeFileSync(path.join(src, "new-test.ts"), "x\n"); // the file 19442c382 added
-    g(src, "add", ".");
-    g(src, "commit", "-q", "-m", "with");
-    const withFile = g(src, "rev-parse", "HEAD");
-    const bare = path.join(remoteRoot, "repo.git");
-    g(src, "push", "-q", bare, withFile + ":refs/remote-check/seed-with", without + ":refs/remote-check/seed-without");
+    const origin = path.join(work, "origin.git");
+    git(work, "init", "-q", "--bare", origin);
 
-    const runBox = (runId: string, want: string, command: string) =>
-      new Promise<{ status: number | null; out: string }>((resolve) => {
-        const child = spawn("bash", ["-s"], { stdio: ["pipe", "pipe", "pipe"] });
-        let out = "";
-        child.stdout.on("data", (d) => (out += d));
-        child.stderr.on("data", (d) => (out += d));
-        child.on("close", (status) => resolve({ status, out }));
-        // Its OWN lock file. These runs are nested inside the run executing this suite, which
-        // already holds the real one, so sharing it would make each wait out the full 1800s
-        // fall-through against its own parent — and 9a's whole point is that they OVERLAP.
-        child.stdin.end(
-          buildRunScript({
-            remoteRoot,
-            runId,
-            sha: want,
-            install: "true",
-            steps: [{ name: "probe", command }],
-            lockFile: path.join(remoteRoot, "lock-" + runId),
-          }),
-        );
+    /** A fresh clone on `branch`, pushed (or not), with one commit — returns the dir and the sha. */
+    function repo(name: string, branch: string, push: boolean) {
+      const dir = path.join(work, name);
+      mkdirSync(dir);
+      git(dir, "init", "-q", "-b", branch);
+      git(dir, "remote", "add", "origin", origin);
+      writeFileSync(path.join(dir, "a.txt"), name);
+      git(dir, "add", "a.txt");
+      git(dir, "commit", "-q", "-m", "c");
+      if (push) git(dir, "push", "-q", "origin", branch);
+      return { dir, sha: git(dir, "rev-parse", "HEAD") };
+    }
+
+    let n = 0;
+    /** Run the script in `dir` with a fixture, returning its exit code, output, the gh calls and the record. */
+    function run(dir: string, sha: string, fixture: Record<string, unknown>, ...args: string[]) {
+      n += 1;
+      const fx = path.join(work, `fixture-${n}.json`);
+      const log = path.join(work, `gh-${n}.log`);
+      writeFileSync(fx, JSON.stringify(fixture));
+      writeFileSync(log, "");
+      const out = spawnSync(process.execPath, [path.join(ROOT, "scripts", "remote-check.mjs"), ...args], {
+        cwd: dir,
+        encoding: "utf8",
+        timeout: 60_000,
+        env: { ...process.env, PATH: bin + path.delimiter + process.env.PATH, RC_FIXTURE: fx, RC_LOG: log },
       });
-
-    // 9a — THE 2026-10-01 SHAPE: two invocations at once on two commits, each sleeping mid-check so
-    // they overlap. Each must see ITS OWN tree for the whole check. On the shared directory the second
-    // checkout replaced the first's files; here neither can reach the other's.
-    const [a, b] = await Promise.all([
-      runBox(newRunId(withFile), withFile, "{ sleep 1; test -f new-test.ts; }"),
-      runBox(newRunId(without), without, "{ sleep 1; test ! -f new-test.ts; }"),
-    ]);
-    assert.equal(a.status, 0, "the run on the commit WITH the file did not see it — its tree was not its own:\n" + a.out);
-    assert.equal(b.status, 0, "the run on the commit WITHOUT the file saw it — its tree was not its own:\n" + b.out);
-    assert.match(a.out, new RegExp("box head: " + withFile.slice(0, 7)));
-    assert.match(b.out, new RegExp("box head: " + without.slice(0, 7)));
-
-    // 9b — and it cleans up after itself: no run directory and no per-run ref survive a run.
-    const leftoverRefs = g(bare, "for-each-ref", "--format=%(refname)", "refs/remote-check/")
-      .split("\n")
-      .filter((r) => r && !r.includes("/seed-"));
-    assert.deepEqual(leftoverRefs, [], "per-run refs survived their runs: " + leftoverRefs.join(", "));
-    const leftoverDirs = spawnSync("bash", ["-c", 'ls -A "$1" 2>/dev/null', "_", path.join(remoteRoot, "runs")], {
-      encoding: "utf8",
-    }).stdout.trim();
-    assert.equal(leftoverDirs, "", "run directories survived their runs: " + leftoverDirs);
-
-    // 9c — THE GUARD: if the tree moves under a check anyway, the run has NO VERDICT. The probe itself
-    // succeeds, so without the guard this would print PASS for a commit it never finished checking.
-    const swapped = await runBox(newRunId(withFile), withFile, "git checkout -q --detach " + without);
-    assert.equal(swapped.status, 3, "a tree that changed mid-run did not exit 3 (NO VERDICT):\n" + swapped.out);
-    assert.match(swapped.out, /TREE CHANGED UNDER THE RUN after probe/);
-    assert.doesNotMatch(swapped.out, /--- probe PASS/, "a swapped run printed a PASS line");
-
-    // 9d — A LOCK TIMEOUT IS NOT A FAILING CHECK, AND THIS RUNS THE REAL `flock` TO PROVE IT. The
-    // stage is shaped exactly like the typecheck — `flock -w <seconds> <file> <command>` — and another
-    // process holds that file for longer than the wait. Before the probe, the expiry arrived as exit 1
-    // (tsc's own code for type errors) and the run printed `FAIL — <sha>` for a stage that never read
-    // a line of the code; it must be LOCK-TIMEOUT and exit 9 (NO VERDICT).
-    const stageLock = path.join(tmp, "stage.lock");
-    writeFileSync(stageLock, "");
-    const holder = spawn("flock", [stageLock, "sleep", "6"], { stdio: "ignore" });
-    await new Promise((done) => setTimeout(done, 400));
-    const locked = await runBox(newRunId(withFile), withFile, "flock -w 1 " + stageLock + " true");
-    holder.kill();
-    assert.equal(locked.status, 9, "a stage that waited out its lock did not exit 9 (NO VERDICT):\n" + locked.out);
-    assert.match(locked.out, /--- probe LOCK-TIMEOUT in/, "the stage must be reported as a lock timeout, not as a failure");
-    assert.doesNotMatch(locked.out, /--- probe FAIL/, "a stage that never ran must not be reported as a failing check");
-
-    // 9e — AND NEITHER IS AN INSTALL THAT COULD NOT RUN. Nothing is checked out-of-order here: the
-    // install fails, no stage starts, and the run must say so rather than exit 1.
-    const noInstall = await new Promise<{ status: number | null; out: string }>((resolve) => {
-      const child = spawn("bash", ["-s"], { stdio: ["pipe", "pipe", "pipe"] });
-      let out = "";
-      child.stdout.on("data", (d) => (out += d));
-      child.stderr.on("data", (d) => (out += d));
-      child.on("close", (status) => resolve({ status, out }));
-      child.stdin.end(
-        buildRunScript({
-          remoteRoot,
-          runId: newRunId(withFile),
-          sha: withFile,
-          install: "false",
-          steps: [{ name: "probe", command: "true" }],
-          lockFile: path.join(remoteRoot, "lock-install"),
-        }),
-      );
-    });
-    assert.equal(noInstall.status, 7, "a failed install did not exit 7 (NO VERDICT):\n" + noInstall.out);
-    assert.doesNotMatch(noInstall.out, /=== probe ===/, "no stage may run after the install failed");
-
-    // 9f — AND A SIGNAL IS NOT THE BRANCH EITHER. The box's memory watchdog, a reboot and a `kill`
-    // aimed at a stranded run all arrive this way; the trap exited 130 until 2026-10-06, which fell
-    // through remote-check.mjs's NO-VERDICT arms and printed the FAIL line.
-    const signalled = await new Promise<{ status: number | null; out: string }>((resolve) => {
-      const child = spawn("bash", ["-s"], { stdio: ["pipe", "pipe", "pipe"], detached: true });
-      let out = "";
-      let killed = false;
-      const onData = (chunk: unknown) => {
-        out += String(chunk);
-        if (!killed && out.includes("=== probe ===")) {
-          killed = true;
-          // The whole group: bash defers a trap until the foreground command returns, so `sleep`
-          // has to go with it — which is exactly how a reap on the box arrives.
-          setTimeout(() => {
-            try {
-              process.kill(-(child.pid as number), "SIGTERM");
-            } catch {
-              /* already gone */
-            }
-          }, 200);
-        }
+      const record = path.join(dir, ".git", VERDICT_DIR_NAME, `${sha}.json`);
+      return {
+        code: out.status,
+        text: out.stdout + out.stderr,
+        calls: readFileSync(log, "utf8").split("\n").filter(Boolean),
+        record: existsSync(record) ? JSON.parse(readFileSync(record, "utf8")) : null,
+        dispatched: readFileSync(log, "utf8").split("\n").some((l) => l.startsWith("workflow run")),
       };
-      child.stdout.on("data", onData);
-      child.stderr.on("data", onData);
-      child.on("close", (status) => resolve({ status, out }));
-      child.stdin.end(
-        buildRunScript({
-          remoteRoot,
-          runId: newRunId(withFile),
-          sha: withFile,
-          install: "true",
-          steps: [{ name: "probe", command: "sleep 30" }],
-          lockFile: path.join(remoteRoot, "lock-signal"),
-        }),
-      );
+    }
+    const wf = ".github/workflows/ci.yml";
+    const prRun = (sha: string, over: Record<string, unknown> = {}) => ({
+      databaseId: 11, headSha: sha, status: "completed", conclusion: "success", url: "https://example.test/run/11", event: "pull_request", createdAt: "2026-10-19T10:00:00Z", path: wf, ...over,
     });
-    assert.equal(signalled.status, 8, "an interrupted run did not exit 8 (NO VERDICT):\n" + signalled.out);
-    assert.match(signalled.out, /INTERRUPTED by a signal/, "an interrupted run must say so");
-    assert.doesNotMatch(signalled.out, /--- probe FAIL/, "a reaped stage must not be reported as a failing check");
+    const short = (sha: string) => sha.slice(0, 9);
+
+    // a — an open PR with a green run: read it, PASS, bill nothing, record every stage.
+    {
+      const { dir, sha } = repo("a", "codex/feature-a", true);
+      const r = run(dir, sha, { openPr: 7, runs: [prRun(sha)], jobs: green() }, "all");
+      assert.equal(r.code, 0, `a green PR run must PASS:\n${r.text}`);
+      assert.match(r.text, new RegExp(`remote-check: PASS — ${short(sha)}`));
+      assert.equal(r.dispatched, false, "reading a PR's run must never dispatch beside it");
+      assert.deepEqual(r.record?.stages && Object.keys(r.record.stages).sort(), ["build", "lint", "test", "typecheck"]);
+    }
+    // b — typecheck red in the PR run: FAIL, named, and exit 1.
+    {
+      const { dir, sha } = repo("b", "codex/feature-b", true);
+      const r = run(dir, sha, { openPr: 8, runs: [prRun(sha, { conclusion: "failure" })], jobs: with_(green(), "static", "Typecheck", "failure", "failure") }, "typecheck");
+      assert.equal(r.code, 1, `a red typecheck must FAIL:\n${r.text}`);
+      assert.match(r.text, new RegExp(`remote-check: FAIL — ${short(sha)}`));
+      assert.equal(r.record?.stages.typecheck.verdict, "FAIL");
+    }
+    // c — a PR whose Build was skipped: `all` is NO VERDICT (exit 6) and prints NO PASS line for this sha.
+    {
+      const { dir, sha } = repo("c", "codex/feature-c", true);
+      const r = run(dir, sha, { openPr: 9, runs: [prRun(sha)], jobs: with_(green(), "validate", "Build", "skipped") }, "all");
+      assert.equal(r.code, 6, `a run that did not build cannot answer \`all\`:\n${r.text}`);
+      assert.doesNotMatch(r.text, /remote-check: PASS/, "a NO VERDICT must never print a PASS line");
+      assert.match(r.text, /lint \+ typecheck \+ test did pass/, "it says which half it has");
+    }
+    // d — the PR run is a green run about ANOTHER commit: no evidence about this one.
+    {
+      const { dir, sha } = repo("d", "codex/feature-d", true);
+      const r = run(dir, sha, { openPr: 10, runs: [prRun(sha, { headSha: "f".repeat(40) })], jobs: green() }, "lint");
+      assert.equal(r.code, 6, `a run about another commit is NO VERDICT:\n${r.text}`);
+      assert.doesNotMatch(r.text, /remote-check: PASS/);
+    }
+    // e — the answer arrives while the run is STILL RUNNING: lint is decided by its own step.
+    {
+      const { dir, sha } = repo("e", "codex/feature-e", true);
+      const midRun: Job[] = [job("static", { Lint: "success", Typecheck: null }, "in_progress", null), job("validate", { Build: null }, "in_progress", null)];
+      const r = run(dir, sha, { openPr: 11, runs: [prRun(sha, { status: "in_progress", conclusion: null })], jobs: midRun }, "lint");
+      assert.equal(r.code, 0, `lint is answered while the run is still going:\n${r.text}`);
+      assert.match(r.text, /still running/);
+      assert.match(r.text, new RegExp(`remote-check: PASS — ${short(sha)}`));
+    }
+    // f — no PR and no flag: NO VERDICT, and NOTHING is dispatched (it would bill ~14 minutes for what the PR gives).
+    {
+      const { dir, sha } = repo("f", "codex/feature-f", true);
+      const r = run(dir, sha, { runs: [] }, "test");
+      assert.equal(r.code, 6, `no PR and no --dispatch is NO VERDICT:\n${r.text}`);
+      assert.equal(r.dispatched, false, "nothing may be dispatched without the flag");
+      assert.match(r.text, /gh pr create/, "it says to open the PR");
+    }
+    // g — no PR with --dispatch: exactly ONE dispatch of ci.yml on THIS branch, then the new run is watched and graded.
+    {
+      const { dir, sha } = repo("g", "codex/feature-g", true);
+      const dispatched = { databaseId: 22, headSha: sha, status: "completed", conclusion: "success", url: "https://example.test/run/22", event: "workflow_dispatch", createdAt: "2999-01-01T00:00:00Z", path: wf };
+      const r = run(dir, sha, { runs: [], runsAfterDispatch: [dispatched], jobs: [], jobsAfterDispatch: green() }, "typecheck", "--dispatch");
+      assert.equal(r.code, 0, `a green dispatched run must PASS:\n${r.text}`);
+      assert.deepEqual(r.calls.filter((l) => l.startsWith("workflow run")), ["workflow run ci.yml --ref codex/feature-g"], "exactly one dispatch, on the branch, of ci.yml");
+    }
+    // h — a dispatch that GitHub refuses is exit 2 with a closing NO VERDICT line, never a pass.
+    {
+      const { dir, sha } = repo("h", "codex/feature-h", true);
+      const r = run(dir, sha, { runs: [], dispatchFails: true }, "lint", "--dispatch");
+      assert.equal(r.code, 2, `a refused dispatch could not start:\n${r.text}`);
+      assert.match(r.text, new RegExp(`remote-check: NO VERDICT — stopped on the error above, so nothing here is a verdict on ${short(sha)}`));
+    }
+    // i — the commit is not on origin: stop BEFORE asking GitHub anything, and say pushing is free.
+    {
+      const { dir, sha } = repo("i", "codex/feature-i", false);
+      const r = run(dir, sha, { openPr: 12, runs: [prRun(sha)], jobs: green() }, "lint");
+      assert.equal(r.code, 2, `an unpushed commit cannot be checked:\n${r.text}`);
+      assert.match(r.text, /origin does not hold this commit/);
+      assert.match(r.text, /costs NO Actions minutes/);
+      assert.equal(r.calls.length, 0, "nothing may be asked of GitHub about a commit it does not have");
+    }
+    // j — `main` is READ (its push run is the production deploy gate) and NEVER dispatched, even with the flag.
+    {
+      const { dir, sha } = repo("j", "main", true);
+      const pushRun = { databaseId: 33, headSha: sha, status: "completed", conclusion: "success", url: "https://example.test/run/33", event: "push", createdAt: "2026-10-19T10:00:00Z", path: wf };
+      const r = run(dir, sha, { runs: [pushRun], jobs: green() }, "lint", "--dispatch");
+      assert.equal(r.code, 0, `main's own green push run answers:\n${r.text}`);
+      assert.equal(r.dispatched, false, "a dispatch on main joins the production deploy gate's concurrency group — never");
+      assert.doesNotMatch(r.calls.join("\n"), /pr list/, "main is not looked up as a PR branch");
+    }
+    // k — the retired box flags and an unknown flag are refused before git or GitHub are touched.
+    {
+      const { dir, sha } = repo("k", "codex/feature-k", true);
+      const retired = run(dir, sha, {}, "lint", "--no-wait");
+      assert.equal(retired.code, 2);
+      assert.match(retired.text, /belonged to the retired CI box/);
+      assert.equal(retired.calls.length, 0);
+      assert.equal(run(dir, sha, {}, "lint", "--dispach").code, 2, "an unknown flag is refused, never ignored");
+    }
   } finally {
-    rmSync(tmp, { recursive: true, force: true });
+    rmSync(work, { recursive: true, force: true });
   }
 }

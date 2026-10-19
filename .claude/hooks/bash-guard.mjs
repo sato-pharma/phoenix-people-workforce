@@ -821,7 +821,8 @@ try {
   // Measured that afternoon from the transcripts, AFTER the PR's CI became the verdict: ~1
   // session-hour of foreground `remote-check.mjs all|test` in 6 hours, 19 minutes for one `all` —
   // a session sat blocked through a box pass that the ~3-minute PR run decides anyway. Only the
-  // check stages start a box run; `lockfile` produces a file the session needs, and every other
+  // check stages wait on a run (the box is retired, 2026-10-19: they read the PR's GitHub Actions run now,
+  // and the wait is still minutes); `lockfile` produces a file the session needs, and every other
   // form (--status, --help) only reads. Heredoc bodies are data.
   const REMOTE_FG_STAND_DOWN = /(?:^|[\s;&|(])\s*(?:\$env:)?PHX_REMOTE_FG_OK\s*=\s*['"]?1['"]?(?![\w.])/i;
   if (

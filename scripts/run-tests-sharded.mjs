@@ -23,15 +23,47 @@
 // the runner path — and a second copy of them is a thing to drift. If `test` ever stops being a
 // plain `node ...` invocation this script says so and exits rather than guessing.
 //
+// 🔴 PART MODE spreads the suite over several CI JOBS instead of one machine (2026-10-19). With
+// `PHX_TEST_PART=p/P` this process owns only global shards `(p-1)×L+1 .. p×L` of `P×L`, where L is
+// `PHX_TEST_SHARDS` — which part mode REQUIRES explicitly, because a count read from each runner's own
+// CPUs would give the parts different divisors and the windows would no longer tile the suite. A part
+// cannot prove the whole suite ran, so on success it writes a record (`PHX_TEST_RESULT_FILE`) of what it
+// ran, and `scripts/ci-unit-coverage.mjs` refuses unless every part's record is there and they add up.
+//
 // Usage:  node scripts/run-tests-sharded.mjs          (shards = CPUs, capped by free memory, max 4)
 //         PHX_TEST_SHARDS=1 node scripts/run-tests-sharded.mjs   (one shard = the serial run)
+//         PHX_TEST_PART=2/3 PHX_TEST_SHARDS=2 PHX_TEST_RESULT_FILE=out.json node scripts/run-tests-sharded.mjs
 
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { collectProblems, parseSlowest, ranTotal, shardCount } from "./run-tests-sharded-plan.mjs";
+import {
+  collectProblems,
+  parsePart,
+  parseResult,
+  parseSlowest,
+  partWindow,
+  ranTotal,
+  shardCount,
+} from "./run-tests-sharded-plan.mjs";
+import { refuseArguments } from "./lib/refuse-arguments.mjs";
+
+// It takes no arguments — what to run and how is read from the environment (PHX_TEST_SHARDS, PHX_TEST_PART,
+// PHX_TEST_RESULT_FILE) — so it says so instead of ignoring one: a file name passed to `pnpm run test:sharded`
+// would otherwise run the WHOLE suite and report success (scripts/lib/refuse-arguments.mjs).
+refuseArguments({
+  name: "run-tests-sharded",
+  usage: `run-tests-sharded: run tests/run-tests.ts as CPU/memory-bounded shards and refuse unless every test ran exactly once.
+
+  node scripts/run-tests-sharded.mjs      the whole suite, shards sized from this machine
+  node scripts/run-tests-sharded.mjs -h   this text
+
+It takes no arguments. Environment: PHX_TEST_SHARDS (shards in this process), PHX_TEST_PART=p/P with PHX_TEST_RESULT_FILE
+(one part of a P-part run, as ci.yml's unit job does).`,
+  hints: ["to run only some tests, run tests/run-tests.ts yourself with the node flags in package.json's `test` script"],
+});
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -96,21 +128,53 @@ async function runShard(args, index, total) {
 }
 
 const args = testScriptArgs();
-const total = shardCount(process.env.PHX_TEST_SHARDS);
+const part = parsePart(process.env.PHX_TEST_PART);
+const resultFile = process.env.PHX_TEST_RESULT_FILE;
+let total;
+let first = 1;
+let count;
+let window;
+if (part) {
+  // Part mode: refuse the two things that would let the parts disagree, before anything runs.
+  if (!process.env.PHX_TEST_SHARDS) {
+    throw new Error(
+      "PHX_TEST_PART needs an explicit PHX_TEST_SHARDS: every part must use the same shards-per-part, " +
+        "or the windows stop tiling the suite",
+    );
+  }
+  if (!resultFile) {
+    throw new Error("PHX_TEST_PART needs PHX_TEST_RESULT_FILE: a part's only proof of what it ran is its record");
+  }
+  count = shardCount(process.env.PHX_TEST_SHARDS);
+  ({ total, first } = partWindow(part.part, part.parts, count));
+  window = { first, count };
+} else {
+  total = shardCount(process.env.PHX_TEST_SHARDS);
+  count = total;
+}
 const startedAt = Date.now();
+const scope = part ? `part ${part.part}/${part.parts}, shards ${first}..${first + count - 1} of ${total}` : `${total} shard(s)`;
 console.log(
-  `run-tests-sharded: ${total} shard(s) of \`${["node", ...args].join(" ")}\`` +
+  `run-tests-sharded: ${scope} of \`${["node", ...args].join(" ")}\`` +
     (total === 1 ? " (one shard — identical to `pnpm run test`)" : ""),
 );
 
-const results = await Promise.all(Array.from({ length: total }, (_, i) => runShard(args, i + 1, total)));
+const results = await Promise.all(Array.from({ length: count }, (_, i) => runShard(args, first + i, total)));
 const wallSeconds = ((Date.now() - startedAt) / 1000).toFixed(1);
 
-const problems = collectProblems(results, total);
+const problems = collectProblems(results, total, window);
 
 if (problems.length === 0) {
   const ran = ranTotal(results);
-  console.log(`\n${ran} test files passed in ${wallSeconds}s wall clock across ${total} shard(s).`);
+  console.log(`\n${ran} test files passed in ${wallSeconds}s wall clock across ${count} shard(s)${part ? ` (part ${part.part}/${part.parts})` : ""}.`);
+  if (part) {
+    // Written ONLY on a clean run, so a red or silent part leaves no record and the coverage gate in
+    // `checks` names the gap instead of reading a stale one.
+    const seen = parseResult(results[0].out)?.seen;
+    mkdirSync(dirname(resolve(resultFile)), { recursive: true });
+    writeFileSync(resolve(resultFile), `${JSON.stringify({ part: part.part, parts: part.parts, perPart: count, seen, ran })}\n`);
+    console.log(`coverage record: ${resultFile}`);
+  }
   const slowest = results
     .flatMap((result) => parseSlowest(result.out))
     .sort((a, b) => b[0] - a[0])

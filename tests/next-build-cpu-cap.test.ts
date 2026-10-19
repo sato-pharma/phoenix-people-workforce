@@ -20,9 +20,9 @@ import { readFileSync } from "node:fs";
  * apply on GitHub's 4-core runners, where limiting workers would slow every build in the repo to buy
  * nothing. Two independent things have to hold for that, and both are easy to break by accident —
  * the config must leave `experimental.cpus` ABSENT when the variable is unset, and the workflow must
- * pass it only when `runner.environment` is `self-hosted`. A future edit that "simplifies" the
- * workflow to a plain `PHX_BUILD_CPUS: 4` passes any structural check while quietly capping every
- * hosted build, which is why the gate itself is asserted here by name.
+ * not pass it at all. Since 2026-10-19 CI is GitHub-hosted only and the self-hosted runner this cap
+ * served is retired, so ci.yml sets no `PHX_BUILD_CPUS`; a future edit that adds a plain
+ * `PHX_BUILD_CPUS: 4` would quietly cap every hosted build, which is why it is asserted by name.
  *
  * 🔴 AND WHY NO ENV VAR CAN DO THIS JOB DIRECTLY: read from the installed next@16.3.3,
  * `dist/build/index.js:371` decides the worker count from `config.experimental.cpus` alone. A
@@ -80,21 +80,20 @@ export function runNextBuildCpuCapTests() {
       "`config.experimental.cpus` against its default, and the string \"4\" is not that number",
   );
 
-  // ── the workflow half: the cap must reach ONLY a self-hosted runner ──────────────────────────
-  assert.match(
-    workflow,
-    /PHX_BUILD_CPUS:\s*\$\{\{\s*runner\.environment\s*==\s*'self-hosted'\s*&&\s*'\d+'\s*\|\|\s*''\s*\}\}/,
-    `${WORKFLOW} must pass PHX_BUILD_CPUS only when \`runner.environment == 'self-hosted'\`. A plain value ` +
-      "there caps the worker pool on GitHub's own 4-core runners too, which slows every build in the repo and " +
-      "buys nothing — the constrained container is the only place the cap helps.",
-  );
-  const buildStep = /- name: Build\n([\s\S]*?)\n\n/.exec(workflow);
-  assert.ok(buildStep, `${WORKFLOW} no longer has a \`- name: Build\` step this test can read`);
-  assert.match(
-    buildStep[1],
+  // ── the workflow half: NO job passes the cap any more ────────────────────────────────────────
+  // The cap existed for the self-hosted Railway replica that aborted with `os error 11`. CI is
+  // GitHub-hosted only since 2026-10-19 (tests/ci-runner-switch.test.ts), so the workflow has nothing
+  // to cap, and a value that reached a hosted build would slow every build in the repo for nothing.
+  // The config's spread above stays: it is inert without the variable, and it is the one place the cap
+  // can live if a constrained runner ever returns.
+  assert.doesNotMatch(
+    workflow
+      .split("\n")
+      .filter((line) => !/^\s*#/.test(line))
+      .join("\n"),
     /PHX_BUILD_CPUS/,
-    "the cap must sit on the Build step itself, not on the job: page-data collection is what aborts, and a " +
-      "job-wide value would also reach steps that have no worker pool to size",
+    `${WORKFLOW} sets PHX_BUILD_CPUS again. CI runs on GitHub-hosted runners only, where capping the ` +
+      "page-data worker pool slows every build and buys nothing; the cap was for the retired self-hosted container.",
   );
 
   // ── the dead knob must not come back as if it worked ─────────────────────────────────────────

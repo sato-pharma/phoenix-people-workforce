@@ -54,6 +54,7 @@ const GATED = [
   "scripts/generate-cairo-zone-transitions.mjs",
   "scripts/optimize-brand-assets.mjs",
   "scripts/phase14-controlled-mutation-smoke.mjs",
+  "scripts/run-tests-sharded.mjs",
   "scripts/searchable-select-migration.mjs",
   "scripts/sync-cloud-context.mjs",
   "scripts/sync-pdfjs-assets.mjs",

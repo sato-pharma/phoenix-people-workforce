@@ -82,7 +82,7 @@ function suiteFiles() {
   }
 }
 
-// Not `import.meta.main` — that is Node 24 only, and this has to keep working on the CI box's node.
+// Not `import.meta.main` — that is Node 24 only, and this has to keep working on every CI runner's node.
 const invokedDirectly = process.argv[1] && process.argv[1].endsWith('check-tests-parse.mjs');
 if (invokedDirectly) {
   const args = process.argv.slice(2);

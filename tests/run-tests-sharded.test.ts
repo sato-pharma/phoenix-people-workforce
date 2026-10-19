@@ -1,7 +1,8 @@
 // The shard runner's coverage refusal — the guard that makes sharding safe at all.
 //
 // WHY THIS EXISTS. `pnpm run test:sharded` splits the unit suite across N processes, and it is the
-// step the required `validate` (pull request) and `checks` (everything else) jobs run. Splitting a
+// step ci.yml's `unit` job runs (three parts of two shards, 2026-10-19) — the job the required `checks`
+// status stands for. Splitting a
 // suite has one catastrophic failure mode and it is silent: if the split drops tests — a bad
 // divisor, two shards handed the same index, a shard that dies between its last test and its exit
 // handler — then a SMALLER suite passes and every check goes green. That is strictly worse than not
@@ -15,14 +16,19 @@
 // never merely on "some problem was reported".
 
 import { strict as assert } from "node:assert";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 import {
   MAX_SHARDS,
   collectProblems,
+  coverageProblems,
+  parsePart,
   parseResult,
   parseSlowest,
+  partWindow,
   ranTotal,
   shardCount,
 } from "../scripts/run-tests-sharded-plan.mjs";
@@ -156,11 +162,122 @@ export function runRunTestsShardedTests() {
   // ── 9. The runner must still USE the refusal — importing it is not running it ─────────────────
   {
     const runner = readFileSync(resolve("scripts/run-tests-sharded.mjs"), "utf8");
-    assert.match(runner, /collectProblems\(results, total\)/, "the runner no longer asks for the coverage verdict");
+    assert.match(runner, /collectProblems\(results, total, window\)/, "the runner no longer asks for the coverage verdict");
     assert.match(
       runner,
       /if \(problems\.length > 0\) \{[\s\S]*?process\.exit\(1\)/,
       "the runner must exit non-zero on a problem — a refusal nobody acts on is not a refusal",
     );
+  }
+
+  // ── 10. PART MODE — the suite spread over CI jobs (2026-10-19) ───────────────────────────────
+  // Each job runs one part. The parts' windows must TILE the global shard space exactly, or a test is
+  // dropped or run twice while every part is individually green.
+  {
+    assert.equal(parsePart(undefined), null);
+    assert.equal(parsePart(""), null);
+    assert.deepEqual(parsePart("2/3"), { part: 2, parts: 3 });
+    for (const bad of ["0/3", "4/3", "2", "a/b", "2/0", "1/2/3", " 1/2"]) {
+      assert.throws(() => parsePart(bad), /PHX_TEST_PART must look like/, `"${bad}" must be refused`);
+    }
+
+    // Tiling: for several (parts, local) pairs, every global index 1..total is owned by exactly one part.
+    for (const [parts, local] of [[3, 2], [1, 4], [4, 1], [5, 3]] as const) {
+      const owners = new Map<number, number>();
+      for (let part = 1; part <= parts; part += 1) {
+        const window = partWindow(part, parts, local);
+        assert.equal(window.total, parts * local);
+        for (let i = 0; i < window.count; i += 1) {
+          const index = window.first + i;
+          assert.equal(owners.has(index), false, `global shard ${index} is owned by two parts at ${parts}x${local}`);
+          owners.set(index, part);
+        }
+      }
+      assert.equal(owners.size, parts * local, `the windows do not cover all ${parts * local} global shards at ${parts}x${local}`);
+    }
+
+    // A part's own check: its slice, told the global total, accepted WITHOUT the ran-sum.
+    const window = { first: 3, count: 2 };
+    assert.deepEqual(collectProblems([shard(3, 6, 2253, 380), shard(4, 6, 2253, 376)], 6, window), [], "a clean part must be accepted");
+    // …and the sum is skipped only because it is a slice: a full run with the same short counts is refused.
+    assert.ok(
+      collectProblems([shard(1, 2, 2253, 380), shard(2, 2, 2253, 376)], 2).some((problem) => /the shards ran 756 of 2253/.test(problem)),
+      "outside part mode the ran-sum must still be asked",
+    );
+    // A part handed the wrong window (two shards both claiming 3) is refused by index.
+    assert.ok(
+      collectProblems([shard(3, 6, 2253, 380), shard(3, 6, 2253, 376)], 6, window).some((p) => /expected shard indices 3\.\.4/.test(p)),
+      "a part whose shards report the wrong indices must be refused",
+    );
+    // A shard reporting a different global total than the part was told is refused.
+    assert.ok(
+      collectProblems([shard(3, 4, 2253, 380), shard(4, 4, 2253, 376)], 6, window).some((p) => /partitions by 6/.test(p)),
+      "a shard that reports a different divisor than the part computed must be refused",
+    );
+  }
+
+  // ── 11. THE COVERAGE VERDICT over every part's record — the half a part cannot do ────────────
+  {
+    const rec = (part: number, ran: number, over: Partial<{ parts: number; perPart: number; seen: number }> = {}) => ({
+      part,
+      parts: over.parts ?? 3,
+      perPart: over.perPart ?? 2,
+      seen: over.seen ?? 2253,
+      ran,
+    });
+    assert.deepEqual(coverageProblems([rec(1, 751), rec(2, 751), rec(3, 751)]), [], "three parts covering 2,253 of 2,253 must be accepted");
+    assert.deepEqual(coverageProblems([rec(3, 751), rec(1, 751), rec(2, 751)]), [], "record order must not matter");
+
+    assert.ok(coverageProblems([]).some((p) => /no unit-suite coverage record/.test(p)), "no records at all is a refusal, never a pass");
+    assert.ok(
+      coverageProblems([rec(1, 751), rec(2, 751)]).some((p) => /exactly one record for each of parts 1\.\.3, got 1, 2/.test(p)),
+      "a part that never reported must be named — this is the leg that silently did not run",
+    );
+    assert.ok(
+      coverageProblems([rec(1, 751), rec(2, 751), rec(2, 751)]).some((p) => /exactly one record for each of parts 1\.\.3, got 1, 2, 2/.test(p)),
+      "the same part twice (and another missing) must be refused even though the ran-sum adds up",
+    );
+    assert.ok(
+      coverageProblems([rec(1, 751), rec(2, 751), rec(3, 750)]).some((p) => /the parts ran 2252 of 2253/.test(p)),
+      "a short ran-sum across the parts must be refused with both numbers",
+    );
+    assert.ok(
+      coverageProblems([rec(1, 751), rec(2, 751), rec(3, 752)]).some((p) => /the parts ran 2254 of 2253/.test(p)),
+      "an overshoot is a test run twice and must be refused too",
+    );
+    assert.ok(
+      coverageProblems([rec(1, 751), rec(2, 751), rec(3, 751, { seen: 2240 })]).some((p) => /disagree about how many tests/.test(p)),
+      "parts that saw different suites must be refused",
+    );
+    assert.ok(
+      coverageProblems([rec(1, 751), rec(2, 751), rec(3, 751, { perPart: 3 })]).some((p) => /different numbers of shards/.test(p)),
+      "parts with different shards-per-part do not tile the suite and must be refused",
+    );
+    assert.ok(
+      coverageProblems([rec(1, 751), rec(2, 751, { parts: 4 })]).some((p) => /disagree about how many parts/.test(p)),
+      "records from different splits must be refused",
+    );
+  }
+
+  // ── 12. The gate SCRIPT is what `checks` runs: its exit code is the verdict ──────────────────
+  {
+    const dir = mkdtempSync(join(tmpdir(), "phx-unit-coverage-"));
+    try {
+      const run = (...extra: string[]) =>
+        spawnSync(process.execPath, ["scripts/ci-unit-coverage.mjs", dir, ...extra], { encoding: "utf8" });
+      writeFileSync(join(dir, "unit-coverage-1.json"), JSON.stringify({ part: 1, parts: 2, perPart: 2, seen: 10, ran: 5 }));
+      const short = run();
+      assert.equal(short.status, 1, `one of two parts is a failure, got ${short.status}: ${short.stderr}`);
+      assert.match(short.stderr, /expected exactly one record for each of parts 1\.\.2/);
+      writeFileSync(join(dir, "unit-coverage-2.json"), JSON.stringify({ part: 2, parts: 2, perPart: 2, seen: 10, ran: 5 }));
+      const whole = run();
+      assert.equal(whole.status, 0, `both parts covering 10 of 10 must pass: ${whole.stderr}`);
+      assert.match(whole.stdout, /ran 10 of 10 tests/);
+      writeFileSync(join(dir, "unit-coverage-2.json"), JSON.stringify({ part: 2, parts: 2, perPart: 2, seen: 10, ran: "5" }));
+      assert.equal(run().status, 1, "a record whose counts are not integers must be refused, not coerced");
+      assert.equal(run("--bogus").status, 2, "an unknown flag must be refused (exit 2), never ignored");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 }

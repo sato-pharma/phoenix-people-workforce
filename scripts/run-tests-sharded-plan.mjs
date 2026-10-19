@@ -85,12 +85,16 @@ export function parseSlowest(output) {
 
 /**
  * Everything wrong with a finished run, as human sentences. Empty means the shards between them ran
- * every declared test exactly once.
+ * every declared test exactly once — or, in PART mode, that this part's own shards ran exactly the
+ * slice they were handed and agree with each other. A part cannot prove the whole suite: only
+ * {@link coverageProblems}, over every part's record, can.
  *
  * @param {Array<{ index: number, out: string, code?: number, signal?: string|null, spawnError?: Error }>} results
- * @param {number} total
+ * @param {number} total the GLOBAL shard total every shard was told (parts × shards per part in part mode)
+ * @param {{ first: number, count: number }} [window] part mode: the global indices this process owns,
+ *   `first..first+count-1`. Omitted means the process owns all of `1..total` and the ran-sum is asked.
  */
-export function collectProblems(results, total) {
+export function collectProblems(results, total, window) {
   const problems = [];
   for (const result of results) {
     if (result.spawnError) problems.push(`shard ${result.index} could not start: ${result.spawnError.message}`);
@@ -125,11 +129,25 @@ export function collectProblems(results, total) {
         `ran different code — a stale worktree, or a shard reading a different checkout.`,
     );
   }
+  // A shard reports the total it was TOLD, so a different one means the divisor was not what the
+  // runner computed. In part mode that is the number the other parts partition by, so it matters more.
+  const totals = new Set(reported.map((entry) => entry.total));
+  if (totals.size !== 1 || !totals.has(total)) {
+    problems.push(`the shards reported a total of ${[...totals].join(", ")} but this run partitions by ${total}`);
+  }
+  const first = window?.first ?? 1;
+  const count = window?.count ?? total;
+  const wanted = Array.from({ length: count }, (_, i) => first + i);
   const indices = new Set(reported.map((entry) => entry.index));
-  if (indices.size !== total) problems.push(`expected shard indices 1..${total}, got ${[...indices].sort().join(", ")}`);
+  if (indices.size !== count || wanted.some((index) => !indices.has(index))) {
+    problems.push(`expected shard indices ${first}..${first + count - 1}, got ${[...indices].sort((a, b) => a - b).join(", ")}`);
+  }
   const seen = reported[0].seen;
   const ran = reported.reduce((sum, entry) => sum + entry.ran, 0);
-  if (ran !== seen) {
+  // 🔴 A PART SKIPS THE SUM ON PURPOSE — it ran a slice, so `ran` is legitimately short of `seen`.
+  // The sum is asked of ALL the records together, by coverageProblems, and the run is not green
+  // without it. Never skip it in a process that owns the whole range.
+  if (window === undefined && ran !== seen) {
     problems.push(
       `the shards ran ${ran} of ${seen} tests. Every test must run in exactly one shard; a gap here ` +
         `is a suite that silently shrank, which is the whole reason this check exists.`,
@@ -141,4 +159,77 @@ export function collectProblems(results, total) {
 /** How many tests a clean run executed, for the summary line. */
 export function ranTotal(results) {
   return results.reduce((sum, result) => sum + (parseResult(result.out)?.ran ?? 0), 0);
+}
+
+/**
+ * `PHX_TEST_PART=p/P` → `{ part, parts }`, or null when unset. Part mode is how the suite is spread
+ * over several CI JOBS: each job runs one part, and `scripts/ci-unit-coverage.mjs` proves the parts
+ * together ran every test exactly once.
+ *
+ * @param {string | undefined} raw
+ */
+export function parsePart(raw) {
+  if (raw === undefined || raw === "") return null;
+  const match = /^(\d+)\/(\d+)$/.exec(raw);
+  const part = match ? Number(match[1]) : 0;
+  const parts = match ? Number(match[2]) : 0;
+  if (!match || part < 1 || parts < 1 || part > parts) {
+    throw new Error(`PHX_TEST_PART must look like 2/3 (part 2 of 3), got ${raw}`);
+  }
+  return { part, parts };
+}
+
+/**
+ * The slice of the GLOBAL shard space part `part` of `parts` owns when each part runs `local`
+ * shards: the total is `parts × local`, and this part owns `(part-1)×local+1 .. part×local`.
+ *
+ * tests/run-tests.ts deals its `runTest` calls round-robin (`seenCount++ % total === index-1`), so
+ * ANY total partitions the suite and these windows tile it exactly, with no gap and no overlap.
+ */
+export function partWindow(part, parts, local) {
+  return { total: parts * local, first: (part - 1) * local + 1, count: local };
+}
+
+/**
+ * Everything wrong with the set of part records `checks` downloaded, as sentences. Empty means the
+ * parts are exactly 1..P of one total, every shard everywhere saw the same number of tests, and the
+ * tests the parts ran add up to that number — every test, exactly once.
+ *
+ * 🔴 THIS IS THE OTHER HALF OF {@link collectProblems}'s PART MODE, AND WITHOUT IT A PART'S GREEN
+ * PROVES NOTHING ABOUT THE SUITE. A leg that never ran, a leg run twice and a wrong divisor each
+ * leave every part individually green. Run on the records, they are named failures.
+ *
+ * @param {Array<{ part: number, parts: number, perPart: number, seen: number, ran: number }>} records
+ */
+export function coverageProblems(records) {
+  const problems = [];
+  if (records.length === 0) return ["no unit-suite coverage record was found, so nothing proves any test ran"];
+  const partsValues = new Set(records.map((record) => record.parts));
+  if (partsValues.size !== 1) {
+    return [`the records disagree about how many parts the suite was split into (${[...partsValues].join(", ")})`];
+  }
+  const parts = records[0].parts;
+  const have = records.map((record) => record.part).sort((a, b) => a - b);
+  const wanted = Array.from({ length: parts }, (_, i) => i + 1);
+  if (have.length !== parts || wanted.some((part, i) => have[i] !== part)) {
+    problems.push(`expected exactly one record for each of parts 1..${parts}, got ${have.join(", ")}`);
+  }
+  const perPartValues = new Set(records.map((record) => record.perPart));
+  if (perPartValues.size !== 1) {
+    problems.push(`the parts ran different numbers of shards (${[...perPartValues].join(", ")}), so their windows do not tile the suite`);
+  }
+  const seenValues = new Set(records.map((record) => record.seen));
+  if (seenValues.size !== 1) {
+    problems.push(`the parts disagree about how many tests the runner declares (${[...seenValues].join(", ")})`);
+  }
+  if (problems.length > 0) return problems;
+  const seen = records[0].seen;
+  const ran = records.reduce((sum, record) => sum + record.ran, 0);
+  if (ran !== seen) {
+    problems.push(
+      `the parts ran ${ran} of ${seen} tests. Every test must run in exactly one part; a gap here is a ` +
+        `suite that silently shrank, and an overshoot is a test run twice.`,
+    );
+  }
+  return problems;
 }
