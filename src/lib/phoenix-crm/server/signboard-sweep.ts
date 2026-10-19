@@ -26,7 +26,7 @@
  */
 
 import { hasAiApiKey } from "@/lib/ai/openai-client";
-import { throwIfError } from "@/lib/phoenix-crm/server/db";
+import { chunk, IN_ID_CHUNK, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { filePlaceSignboardFlag } from "@/lib/phoenix-crm/server/location-integrity";
 import { readStoredPlaceSignboard, recordPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
 import {
@@ -358,28 +358,33 @@ export async function loadUnreadableBacklog(placeIds?: readonly string[]): Promi
   const named = placeIds && placeIds.length > 0 ? [...new Set(placeIds.map((id) => id.toLowerCase()))] : null;
   const reasons = SIGNBOARD_BACKLOG_REASONS.join(",");
   const rows: Row[] = [];
-  for (let from = 0; ; from += 1000) {
-    let query = getSupabaseAdmin()
-      .from("phoenix_crm_places")
-      .select(
-        "id, customer_id, seat_id, created_by_hr_id, photo_path, lat, lon, accuracy_meters, captured_at, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)",
-      )
-      .eq("status", "active")
-      .eq("is_test", false)
-      .is("shared_place_id", null)
-      .neq("customer.list_type", "Pharmacy");
-    query = named
-      ? query.in("id", named)
-      : query.or(`signboard_check.is.null,and(signboard_check->>verdict.eq.unjudged,signboard_check->>reason.in.(${reasons}))`);
-    const { data, error } = await query
-      .order("captured_at", { ascending: true })
-      .order("id", { ascending: true })
-      .range(from, from + 999);
-    throwIfError(error);
-    const page = (data ?? []) as Row[];
-    rows.push(...page);
-    if (page.length < 1000) break;
+  // Named places in slices, so a long list never overflows the request URL of one `.in()`.
+  for (const part of named ? chunk(named, IN_ID_CHUNK) : [null]) {
+    for (let from = 0; ; from += 1000) {
+      let query = getSupabaseAdmin()
+        .from("phoenix_crm_places")
+        .select(
+          "id, customer_id, seat_id, created_by_hr_id, photo_path, lat, lon, accuracy_meters, captured_at, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)",
+        )
+        .eq("status", "active")
+        .eq("is_test", false)
+        .is("shared_place_id", null)
+        .neq("customer.list_type", "Pharmacy");
+      query = part
+        ? query.in("id", part)
+        : query.or(`signboard_check.is.null,and(signboard_check->>verdict.eq.unjudged,signboard_check->>reason.in.(${reasons}))`);
+      const { data, error } = await query
+        .order("captured_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, from + 999);
+      throwIfError(error);
+      const page = (data ?? []) as Row[];
+      rows.push(...page);
+      if (page.length < 1000) break;
+    }
   }
+  // Oldest first across the slices too.
+  if (named) rows.sort((a, b) => String(a.captured_at ?? "").localeCompare(String(b.captured_at ?? "")) || String(a.id).localeCompare(String(b.id)));
   return rows
     .filter((row) => {
       const stored = (row.signboard_check ?? null) as Row | null;
@@ -416,7 +421,7 @@ export async function rereadUnreadablePlacesOnce(
   if (!hasAiApiKey()) return { rows: [], skipped: "no_api_key" };
   const [backlog, held] = await Promise.all([
     loadUnreadableBacklog(options.placeIds),
-    loadHeldSignboardPlaces({ includeSpent: true, limit: 500 }),
+    loadHeldSignboardPlaces({ includeSpent: true }),
   ]);
   const heldByPlace = new Map(held.map((place) => [place.placeId, place]));
   const queue = backlog.slice(0, Math.max(0, options.limit ?? backlog.length));
@@ -535,7 +540,7 @@ export async function rejudgeStoredSignboardsOnce(options: {
   onRow?: (row: SignboardRejudgeRow) => void;
 }): Promise<{ scanned: number; rows: SignboardRejudgeRow[]; openCases: SignboardRejudgeOpenCase[] }> {
   const now = options.now ?? new Date();
-  const [stored, held] = await Promise.all([loadStoredSignboards(), loadHeldSignboardPlaces({ includeSpent: true, limit: 500 })]);
+  const [stored, held] = await Promise.all([loadStoredSignboards(), loadHeldSignboardPlaces({ includeSpent: true })]);
   const heldByPlace = new Map(held.map((place) => [place.placeId, place]));
   const rows: SignboardRejudgeRow[] = [];
 

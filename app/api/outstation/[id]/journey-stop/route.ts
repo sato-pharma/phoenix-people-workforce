@@ -33,6 +33,8 @@ function journeyStopStatus(error: unknown) {
   ) {
     return 409;
   }
+  // The trip itself is missing — checked before the 400 list, whose "not available" would catch it.
+  if (message.includes("outstation request is not available")) return 404;
   if (
     message.includes("required") ||
     message.includes("invalid") ||

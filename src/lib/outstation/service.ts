@@ -3285,6 +3285,24 @@ async function readOutstationRequestStoredUpdatedAt(requestId: number): Promise<
   return String((data as { updated_at?: unknown }).updated_at ?? "");
 }
 
+/** The stored approval reason with the raw `updated_at` it was read at — to compose a note and pin its write. */
+async function readOutstationRequestStoredReason(
+  requestId: number,
+): Promise<{ approvalReason: string | null; updatedAt: string }> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .select("approval_reason, updated_at")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Outstation request was not found.");
+  const row = data as { approval_reason?: unknown; updated_at?: unknown };
+  return {
+    approvalReason: row.approval_reason == null ? null : String(row.approval_reason),
+    updatedAt: String(row.updated_at ?? ""),
+  };
+}
+
 export async function approveOutstationRequestForPayroll(
   requestId: number,
   access: AccessContext,
@@ -4362,9 +4380,9 @@ export async function rejectOutstationRequestAsAdmin(
   }
 
   // Checked BEFORE anything below is touched: an accepted claim's payroll rows are deleted next, and
-  // that must not happen on the strength of a screen that is out of date. Only a check, not a pin on
-  // the final write — pinning it would let any unrelated stamp (a photo arriving) fail the update
-  // AFTER the payroll rows were gone, and a rejection pays nothing, so the stale window is harmless.
+  // that must not happen on the strength of a screen that is out of date. Only a check, not a pin to
+  // HIS version on the final write — that would let any unrelated stamp (a photo arriving) fail the
+  // update AFTER the payroll rows were gone. The final write pins only the reason it composes from.
   assertOutstationClaimUnchanged({
     current: await readOutstationRequestStoredUpdatedAt(requestId),
     expected: options.expectedRevision,
@@ -4411,20 +4429,29 @@ export async function rejectOutstationRequestAsAdmin(
     }
   }
 
-  const { data, error } = await supabase
-    .from("outstation_expense_requests")
-    .update({
-      // His reason, with the system's "Journey check:" group kept at the end (decision-note.ts).
-      approval_reason: composeDecisionNote(existing.approvalReason, comment),
-      approval_recommendation: "reject",
-      calculation_status: "rejected_by_admin",
-      status: "rejected_by_admin",
-      updated_at: now,
-    })
-    .eq("id", requestId)
-    .in("status", ["submitted", "approved", "rejected", "needs_review", "accepted_by_system", "accepted_by_admin", "rejected_by_system", "rejected_by_admin"])
-    .select("*")
-    .maybeSingle();
+  // His reason, with the system's "Journey check:" group kept at the end (decision-note.ts) —
+  // composed from the reason as stored at the moment of the write and pinned to that version, so a
+  // stop saved since the check above cannot have its group wiped. A miss re-reads and composes again
+  // rather than failing: the payroll rows may already be gone, and a rejection pays nothing.
+  let data: unknown = null;
+  let error: { message: string } | null = null;
+  for (let attempt = 0; attempt < 3 && !data && !error; attempt += 1) {
+    const stored = await readOutstationRequestStoredReason(requestId);
+    ({ data, error } = await supabase
+      .from("outstation_expense_requests")
+      .update({
+        approval_reason: composeDecisionNote(stored.approvalReason, comment),
+        approval_recommendation: "reject",
+        calculation_status: "rejected_by_admin",
+        status: "rejected_by_admin",
+        updated_at: now,
+      })
+      .eq("id", requestId)
+      .eq("updated_at", stored.updatedAt)
+      .in("status", ["submitted", "approved", "rejected", "needs_review", "accepted_by_system", "accepted_by_admin", "rejected_by_system", "rejected_by_admin"])
+      .select("*")
+      .maybeSingle());
+  }
 
   if (error) throw new Error(error.message);
   if (!data) {
@@ -4537,8 +4564,11 @@ async function writeOutstationRequestDecisionNote(input: {
 }): Promise<void> {
   // His words, with the system's "Journey check:" group kept at the end (decision-note.ts) — the
   // comment box is pre-filled with the whole stored reason, so clearing it must not erase the group.
-  const next = composeDecisionNote(input.request.approvalReason, cleanText(input.comment));
-  const previous = cleanText(input.request.approvalReason) ?? "";
+  // Composed from the reason as stored NOW and written only over that version: a journey stop saved
+  // since the queue loaded rewrites the group, and the older copy would put back stale flags.
+  const stored = await readOutstationRequestStoredReason(input.request.id);
+  const next = composeDecisionNote(stored.approvalReason, cleanText(input.comment));
+  const previous = cleanText(stored.approvalReason) ?? "";
   if (next === previous) return;
 
   await assertOutstationAdminAccess(input.access, "approve");
@@ -4547,11 +4577,12 @@ async function writeOutstationRequestDecisionNote(input: {
     .from("outstation_expense_requests")
     .update({ approval_reason: next, updated_at: new Date().toISOString() })
     .eq("id", input.request.id)
+    .eq("updated_at", stored.updatedAt)
     .select("id")
     .maybeSingle();
 
   if (error) throw new Error(error.message);
-  if (!data) throw new Error("Outstation request state changed. Refresh and retry.");
+  if (!data) throw new OutstationClaimChangedError("changed");
 
   await writeRequiredAuditLog({
     actorLoginId: input.access.loginId ?? resolveEmployeeIdentityId(input.access) ?? "system",
@@ -5282,12 +5313,20 @@ async function otherCarTripsByCairoDay(
   days: string[],
 ): Promise<Record<string, number[]>> {
   if (days.length === 0) return {};
+  // Only trips that can touch these days, a day wider each side than the exact test below: the whole
+  // history would ride every stop and fall under PostgREST's silent 1,000-row ceiling.
+  const sortedDays = [...days].sort();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const windowStart = new Date(Date.parse(`${sortedDays[0]}T00:00:00.000Z`) - dayMs).toISOString();
+  const windowEnd = new Date(Date.parse(`${sortedDays[sortedDays.length - 1]}T00:00:00.000Z`) + 2 * dayMs).toISOString();
   const { data, error } = await getSupabaseAdmin()
     .from("outstation_expense_requests")
     .select("id, employee_hr_id, status, expense_type, transportation_type, trip_start_date, trip_end_date")
     // The lookup keys, never one spelling: the column can hold "B-12" or "b12" for one person.
     .in("employee_hr_id", hrIdLookupKeys(request.employeeHrId))
-    .neq("id", request.id);
+    .neq("id", request.id)
+    .lt("trip_start_date", windowEnd)
+    .gte("trip_end_date", windowStart);
   if (error) throw new Error(`The employee's other trips could not be read: ${error.message}`);
   const owner = normalizeHrIdForAccess(request.employeeHrId);
   const byDay: Record<string, number[]> = {};
@@ -5310,7 +5349,10 @@ async function journeysWithStopsForEmployee(employeeHrId: string): Promise<Array
   const { data, error } = await getSupabaseAdmin()
     .from("outstation_expense_requests")
     .select("id, employee_hr_id, status, journey_stops")
-    .in("employee_hr_id", hrIdLookupKeys(employeeHrId));
+    .in("employee_hr_id", hrIdLookupKeys(employeeHrId))
+    // Only journeys that carry a stop (the column is NOT NULL, default []): the whole history would
+    // ride every car submit and fall under PostgREST's silent 1,000-row ceiling.
+    .neq("journey_stops", "[]");
   if (error) throw new Error(`The employee's other trips could not be read: ${error.message}`);
   const owner = normalizeHrIdForAccess(employeeHrId);
   return ((data ?? []) as Array<Record<string, unknown>>)

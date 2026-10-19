@@ -95,6 +95,38 @@ export function runOutstationChainedJourneyTests() {
       classifyJourneyLeg({ distanceKm: null, fromGovernorate: "Fayoum", toGovernorate: "Beni Suef" }).reason,
       "distance_unknown",
     );
+    assert.equal(
+      classifyJourneyLeg({ distanceKm: null, fromGovernorate: "Alexandria", toGovernorate: "Alexandria" }).reason,
+      "same_governorate",
+      "a drive inside one governorate pays nothing, so a missing road distance must not make it unpriceable",
+    );
+  }
+
+  // ── A lost Google route on a drive inside one governorate keeps the chain priced ──────────
+  {
+    const pricing = priceChainedJourney(
+      exampleOne([
+        BENI_SUEF_FROM_FAYOUM_CITY,
+        stop({ capturedAt: "2026-10-18T15:00:00.000Z", legFrom: "stop", legFromPreviousKm: null, stopNumber: 3 }),
+      ]),
+    );
+    assert.equal(pricing.mode, "chained", "Beni Suef → Beni Suef with no road distance still pays nothing, and the chain stands");
+    assert.ok(!pricing.flags.includes("chain_unpriceable"));
+  }
+
+  // ── A departure photo in another governorate than the arrival is a drive nobody measured ──
+  {
+    const pricing = priceChainedJourney(
+      exampleOne([{ ...BENI_SUEF_FROM_FAYOUM_CITY, governorate: "Fayoum", legFromGovernorate: "Giza" }]),
+    );
+    assert.ok(
+      pricing.legs.some((leg) => leg.fromGovernorate === "Fayoum" && leg.toGovernorate === "Giza" && leg.reason === "distance_unknown"),
+      "the arrival → departure drive is listed, with no road distance",
+    );
+    assert.equal(pricing.mode, "single_destination", "never priced on a guess");
+    assert.ok(pricing.flags.includes("chain_unpriceable"));
+    assert.ok(pricing.flags.includes("revisits_governorate"), "back to Fayoum after leaving from Giza is a return");
+    assert.equal(priceChainedJourney(exampleOne()).legs.length, 3, "a departure photo in the arrival's own governorate adds no drive");
   }
 
   // ── A trip with no extra stop is priced exactly as before ──────────────────────────────────

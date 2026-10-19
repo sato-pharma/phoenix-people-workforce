@@ -155,21 +155,27 @@ export async function settleHeldSignboard(
  * code, from the place's own stored check — a wrong JSON filter reads as an empty queue with nothing
  * going red (this module's own rule for the night's backlog).
  */
-export async function loadHeldSignboardPlaces(options: { limit: number; includeSpent?: boolean }): Promise<HeldSignboardPlace[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("phoenix_crm_validation_reviews")
-    .select("id, place_id, customer_id, seat_id, is_test, created_by_hr_id, created_at")
-    // Both kinds: a first validation, and another clinic of a customer already validated
-    // (`added_place`), whose approve settles the review and leaves the customer as he is.
-    .eq("status", "pending")
-    .eq("is_test", false)
-    .eq("google->>verdict", "signboard")
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true })
-    // One page, under PostgREST's 1,000-row ceiling by construction.
-    .limit(500);
-  throwIfError(error);
-  const reviews = (data ?? []) as Row[];
+export async function loadHeldSignboardPlaces(options: { limit?: number; includeSpent?: boolean } = {}): Promise<HeldSignboardPlace[]> {
+  // Every page, not the first 500: a caller asking "is this place held?" must never read a hold past
+  // the cap as no hold at all. `limit` (none = every one) trims the result, never the read.
+  const reviews: Row[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_validation_reviews")
+      .select("id, place_id, customer_id, seat_id, is_test, created_by_hr_id, created_at")
+      // Both kinds: a first validation, and another clinic of a customer already validated
+      // (`added_place`), whose approve settles the review and leaves the customer as he is.
+      .eq("status", "pending")
+      .eq("is_test", false)
+      .eq("google->>verdict", "signboard")
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + 999);
+    throwIfError(error);
+    const page = (data ?? []) as Row[];
+    reviews.push(...page);
+    if (page.length < 1000) break;
+  }
   if (reviews.length === 0) return [];
 
   const [places, customers] = await Promise.all([
@@ -203,12 +209,12 @@ export async function loadHeldSignboardPlaces(options: { limit: number; includeS
       seatId: String(review.seat_id ?? ""),
     });
   }
-  return held.slice(0, options.limit);
+  return options.limit === undefined ? held : held.slice(0, options.limit);
 }
 
 /** The ids of every place a signboard hold is waiting on — so the night's backlog leaves them to this file. */
 export async function loadHeldSignboardPlaceIds(): Promise<Set<string>> {
-  const held = await loadHeldSignboardPlaces({ includeSpent: true, limit: 500 });
+  const held = await loadHeldSignboardPlaces({ includeSpent: true });
   return new Set(held.map((place) => place.placeId));
 }
 

@@ -339,15 +339,15 @@ export async function runRecruitmentCandidateDeleteStorageTests() {
     readAt < Math.min(filingAt, shelfAt, commentAt, recordAt),
     "the paths are read BEFORE any delete — the cascade destroys the only record of where the bytes are",
   );
-  for (const [name, position] of [["folder filings", filingAt], ["manager shelves", shelfAt], ["comments", commentAt]] as const) {
+  for (const [name, position] of [["folder filings", filingAt], ["manager shelves", shelfAt]] as const) {
     assert.ok(position < recordAt, `${name} have no foreign key, so they must be deleted with the candidate, before the row`);
   }
-  assert.ok(
-    commentAt > filingAt && commentAt > shelfAt,
-    "comments go LAST of the three: a filing or a shelf comes back with one press, a comment does not",
-  );
   const guardAt = deleteBody.indexOf("if (error) throw error;", recordAt);
   assert.ok(guardAt > recordAt, "the candidate delete must still throw on failure");
+  assert.ok(
+    commentAt > guardAt,
+    "comments go only AFTER the candidate delete has succeeded: a failed delete must leave every comment in place — a filing or a shelf comes back with one press, a comment does not",
+  );
   assert.ok(
     removeAt > guardAt,
     "the bytes are removed only AFTER the record delete has succeeded — never before it, or a failed delete would leave a live record with its files gone",
