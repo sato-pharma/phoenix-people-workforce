@@ -12,7 +12,7 @@ import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { isReplacementRequisition, requisitionOpenBlock } from "@/lib/recruitment/requisition-open-gate";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { getVacancyReport, type VacancyReportRow } from "@/lib/reports/vacancies";
+import { getVacancyListRows, type VacancyReportRow } from "@/lib/reports/vacancies";
 import {
   assertRecruitmentTransition,
   mapRequisition,
@@ -108,25 +108,27 @@ export async function getRequisition(access: AccessContext, id: string): Promise
 }
 
 // Open vacancies that do not yet have an active requisition — the create-form list.
+// It reads the vacancy LIST (getVacancyListRows, open rows only), never the whole vacancy report: the
+// report also builds the employee directory for its organogram, which this list never shows, and on
+// 19 Oct 2026 that made the Recruitment page miss this list twice in one morning.
 export async function listOpenVacanciesForRequisition(): Promise<VacancyReportRow[]> {
   const supabase = recruitmentDb();
-  // Concurrently: the active-requisition read does not depend on the vacancy report, and run after
-  // it, it was a second round trip waiting on the first. A failed report still throws first.
-  const [report, { data, error }] = await Promise.all([
-    getVacancyReport(),
+  // Concurrently: the active-requisition read does not depend on the vacancy list, and run after
+  // it, it was a second round trip waiting on the first. A failed list still throws first.
+  const [openRows, { data, error }] = await Promise.all([
+    getVacancyListRows({ openOnly: true }),
     supabase
       .from("ats_requisitions")
       .select("vacancy_id,status")
       .in("status", activeRequisitionStatuses),
   ]);
-  const open = report.rows.filter((row) => row.status === "open");
   if (error) throw error;
   const wrapped = new Set(
     ((data ?? []) as RequisitionDbRow[])
       .map((row) => numberOrNull(row.vacancy_id))
       .filter((value): value is number => value !== null),
   );
-  return open.filter((vacancy) => !wrapped.has(vacancy.id));
+  return openRows.filter((vacancy) => !wrapped.has(vacancy.id));
 }
 
 // Owner-curated: positions that exist in the org catalogue but are not hired through
@@ -178,8 +180,8 @@ export async function createRequisition(
 
   let vacancy: VacancyReportRow | null = null;
   if (vacancyId) {
-    const report = await getVacancyReport();
-    vacancy = report.rows.find((row) => row.id === vacancyId) ?? null;
+    // The vacancy list, not the whole report: only the seat's own line, area and manager are read here.
+    vacancy = (await getVacancyListRows()).find((row) => row.id === vacancyId) ?? null;
     if (!vacancy) throw new Error("Selected vacancy was not found.");
     if (vacancy.status !== "open") throw new Error("Selected vacancy is not open.");
 
