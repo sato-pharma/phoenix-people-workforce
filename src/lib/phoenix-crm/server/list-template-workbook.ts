@@ -61,6 +61,7 @@ export type ListTemplateCustomer = {
 
 export type ListTemplateInput = {
   seatId: string;
+  /** `territoryName(seat)` — the area AND the line ("Suez · Anti Infective"), so nothing here appends the line again. */
   territoryName: string;
   lineName: string;
   /** Null when the seat is vacant, which is one of the cases this route exists for. */
@@ -149,7 +150,9 @@ function writeCustomersSheet(
   sheet.getCell("A1").value = TEMPLATE_SEAT_LABEL;
   sheet.getCell("B1").value = input.seatId;
   sheet.getCell("A2").value = "Territory";
-  sheet.getCell("B2").value = `${input.territoryName} · ${input.lineName} · ${input.repName ?? "seat vacant"}`;
+  // The territory name already ends in the line, so the line is not written again: every sheet read
+  // "Suez · Anti Infective · Anti Infective · seat vacant" until 2026-10-19.
+  sheet.getCell("B2").value = `${input.territoryName} · ${input.repName ?? "seat vacant"}`;
   for (const ref of ["A1", "B1", "A2", "B2"]) houseBodyStyle(sheet.getCell(ref), { size: 9.5 });
 
   // 🔴 Said on the sheet itself, because the one thing a filled sheet cannot carry is the place, and
