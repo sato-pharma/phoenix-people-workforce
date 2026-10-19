@@ -8,8 +8,10 @@ import {
   FIELD_WORKWEEK,
   GROUP_PRODUCT_MANAGER_WORKWEEK,
   HEAD_OFFICE_WORKWEEK,
+  isPlanLeaveActivity,
   planDayGapText,
   planRequiredSlotsByDate,
+  planSlotFromTimes,
   planWorkweekAllowsHalfDays,
   resolvePlanWorkweek,
   type PlanSlot,
@@ -91,6 +93,39 @@ export function runPlanWorkweekLinkageTests() {
   assert.equal(planDayGapText("half", slots("pm")), null, "PM only completes a Group Product Manager's day");
   assert.equal(planDayGapText("half", slots("full")), null);
   assert.equal(planDayGapText("half", slots()), "", "an empty day is still incomplete");
+  // A half-day vacation or excuse covers ONLY its own half (owner, 2026-10-19): alone it never
+  // completes her day — the other half still needs a plan.
+  assert.equal(
+    planDayGapText("half", slots("am"), slots()),
+    " (afternoon missing)",
+    "a morning vacation alone leaves a Group Product Manager's afternoon to plan",
+  );
+  assert.equal(planDayGapText("half", slots("pm"), slots()), " (morning missing)", "an afternoon excuse alone leaves the morning to plan");
+  assert.equal(planDayGapText("half", slots("am", "pm"), slots("pm")), null, "morning vacation plus a planned afternoon completes the day");
+  assert.equal(planDayGapText("half", slots("am", "pm"), slots()), null, "leave on both halves accounts for the whole day");
+  assert.equal(planDayGapText("half", slots("full"), slots()), null, "a full-day vacation completes the day");
+  assert.equal(planDayGapText("full", slots("am", "pm"), slots("pm")), null, "a full-day requirement is unchanged by the leave split");
+  assert.equal(isPlanLeaveActivity("Vacation"), true);
+  assert.equal(isPlanLeaveActivity("Excuse"), true);
+  assert.equal(isPlanLeaveActivity("Office"), false);
+  assert.equal(isPlanLeaveActivity("National Vacation"), false, "a national holiday is seeded as the whole day and completes it on its own");
+  assert.equal(planSlotFromTimes("09:00:00", "13:00:00"), "am");
+  assert.equal(planSlotFromTimes("13:00", "17:00"), "pm");
+  assert.equal(planSlotFromTimes("09:00", "17:00"), "full");
+  const workspaceSource = readFileSync("src/components/employee-portal/plans-workspace.tsx", "utf8");
+  const serviceSourceForGap = readFileSync("src/lib/weekly-planning/service.ts", "utf8");
+  for (const [label, source] of [["the form's banner", workspaceSource], ["the server's submit check", serviceSourceForGap]] as const) {
+    assert.match(
+      source,
+      /planDayGapText\(\s*requirement,\s*slotsByDate\.get\(date\) \?\? new Set<PlanSlot>\(\),\s*workSlotsByDate\.get\(date\) \?\? new Set<PlanSlot>\(\),\s*\)/,
+      `${label} must pass the work-only halves, or a half-day leave completes the day again`,
+    );
+    assert.match(
+      source,
+      /if \(!isPlanLeaveActivity\((?:item|row)\.activityType\)\) \{\s*const work = workSlotsByDate\.get\(/,
+      `${label} must keep a vacation or excuse out of the work-only halves`,
+    );
+  }
   assert.equal(planDayGapText("full", slots("am")), " (afternoon missing)", "everyone else still needs the full day");
   assert.equal(planDayGapText("full", slots("pm")), " (morning missing)");
   assert.equal(planDayGapText("full", slots("am", "pm")), null);

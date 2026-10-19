@@ -14,6 +14,7 @@ import { runSalesExportGeneratedStampCairoTests } from "./sales-export-generated
 import { runExportEmailGeneratedStampCairoTests } from "./export-email-generated-stamp-cairo.test.ts";
 import { runEmployee360VisitClassificationTests } from "./employee-360-visit-classification.test.ts";
 import { runEmployee360DoubleVisitCountTests } from "./employee-360-double-visit-count.test.ts";
+import { runEmployee360TeamPlanComplianceTests } from "./employee-360-team-plan-compliance.test.ts";
 import { runEmployee360PeriodCairoTests } from "./employee-360-period-cairo.test.ts";
 import { runErrorMonitorNewIssueDiffTests } from "./error-monitor-new-issue-diff.test.ts";
 import { runOutstationReviewMapRasterTests } from "./outstation-review-map-raster.test.ts";
@@ -4040,6 +4041,7 @@ await runTest("targets template round-trip (smart banner/dropdowns + legacy head
 await runTest("employee 360 expense-analysis role allowlist", runEmployee360ExpenseRoleTests);
 await runTest("employee 360 visit classification (CRM Unknown-type labeling)", runEmployee360VisitClassificationTests);
 await runTest("employee 360 double-visit count (canonical double_crm_id + type {0,-8}, no over-count)", runEmployee360DoubleVisitCountTests);
+await runTest("employee 360 team plan tiles read the reps' Phoenix CRM weeks, once per week by plan of record", runEmployee360TeamPlanComplianceTests);
 await runTest("employee 360 sales confidential-product masking", runEmployee360SalesMaskingTests);
 await runTest("employee 360 role-category scoping (six tabs, others excluded)", runEmployee360RoleCategoryTests);
 await runTest(

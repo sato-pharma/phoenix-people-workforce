@@ -461,6 +461,32 @@ function readsTheCustomersName(
 }
 
 /**
+ * The short forms an AM list writes for a name its building spells out in full (owner, 2026-10-19,
+ * choosing "teach the matcher" over approving them one by one): the list's "صدر منوف" is the board's
+ * "مستشفى الأمراض الصدرية بمنوف", its "كهربا بشتيل" the electricity company's "… الكهرباء … بشتيل".
+ * Each pair is written one way on BOTH sides, after the stem, so the quorum is unchanged.
+ */
+const PLACE_SHORT_FORMS: ReadonlyMap<string, string> = new Map([
+  ["صدريه", "صدر"],
+  ["كهرباء", "كهربا"],
+]);
+
+/**
+ * Words an AM list puts in front of a company it holds a CONTRACT with — "تعاقد المقاولين العرب" — and
+ * no board ever carries. They say what the list row is, never which company, so they are dropped.
+ */
+const PLACE_LIST_WORDS: ReadonlySet<string> = new Set(["تعاقد"]);
+
+function placeNameHasListWord(name: string | null, placeAxis: boolean): boolean {
+  return placeAxis && distinctiveWords(name ?? "").some((word) => PLACE_LIST_WORDS.has(word));
+}
+
+/** The words of a place's name the signboard comparison counts: `distinctiveWords`, short forms one way. */
+function placeWordsOnSign(text: string): string[] {
+  return [...new Set(distinctiveWords(text).filter((word) => !PLACE_LIST_WORDS.has(word)).map((word) => PLACE_SHORT_FORMS.get(word) ?? word))];
+}
+
+/**
  * Is the customer's name on this signboard?
  *
  * 🔴 FOLDED WITH `normalizeContactName` AND NOTHING ELSE. This repository holds six Arabic folds and
@@ -515,12 +541,14 @@ export function signNamesCustomer(input: {
   const placeAxis = input.listType !== "PM";
   // `wanted` being non-empty already proves the name is there; `?? ""` is what says so to the compiler.
   const wordsOf = (text: string): NameWord[] =>
-    placeAxis ? distinctiveWords(text).map((word) => ({ core: null, word })) : personNameWords(text);
+    placeAxis ? placeWordsOnSign(text).map((word) => ({ core: null, word })) : personNameWords(text);
   const customerWords = wordsOf(input.customerName ?? "").filter((name) => name.word.length > 1);
   const wantedWords = customerWords.filter((name) => name.word.length >= 3);
   if (wantedWords.length === 0) return { matches: null, score: null };
-  // A name of three tokens or more survives losing one; two tokens must both be there.
-  const allowedMisses = wantedWords.length >= 3 ? 1 : 0;
+  // A name of three tokens or more survives losing one; two tokens must both be there. 🔴 NOT a contract
+  // row whose list word was dropped: the words left are the company and its TOWN, and losing the company
+  // matched "تعاقد الكهرباء كفر الشيخ" on the Kafr El Sheikh fever hospital's board (replayed 2026-10-19).
+  const allowedMisses = wantedWords.length >= 3 && !placeNameHasListWord(input.customerName, placeAxis) ? 1 : 0;
 
   let best: number | null = null;
   let matched = false;

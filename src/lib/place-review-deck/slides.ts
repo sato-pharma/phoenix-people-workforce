@@ -29,11 +29,15 @@ import type { PlaceNoteIndex, ValidatedPlaceRow, ValidationReviewRow } from "@/l
  * every photo the reader could not read — a held place, a place in use, a polyclinic whose sign or
  * timetable could not be read — MOVED out of Waiting and Not confirmed, so each sits in one tab.
  *
+ * New photo asked (owner, 2026-10-19: "only what needs you") is the places in use whose rep has already
+ * been asked for a new photo. Nothing on them waits on him until it arrives, so they leave Not readable
+ * and Not confirmed for a tab of their own, after the work.
+ *
  * 🔴 THE BOARD IMPORTS NOTHING FROM THIS FILE BUT TYPES. The Place checks board is also a district
  * manager's portal page, so a value imported from here would put this module in that bundle; the tab
  * WORDS live in the review's own component, which only the Super Admin's page loads.
  */
-export const DECK_TABS = ["waiting", "unreadable", "unconfirmed", "integrity", "history", "all"] as const;
+export const DECK_TABS = ["waiting", "unreadable", "unconfirmed", "newPhoto", "integrity", "history", "all"] as const;
 export type DeckTab = (typeof DECK_TABS)[number];
 
 /** Places only, polyclinics only, or both (owner, 2026-10-18: "view polyclinics only, or places only, or both"). */
@@ -59,6 +63,8 @@ export type DeckSources = {
   unreadableVenues: ReadonlyArray<string>;
   unconfirmedPlaces: ReadonlyArray<string>;
   unconfirmedVenues: ReadonlyArray<string>;
+  /** Places in use whose rep has been asked for a new photo — out of every tab above. */
+  newPhotoPlaces: ReadonlyArray<string>;
   historyReviews: ReadonlyArray<string>;
   historyVenues: ReadonlyArray<string>;
   /** Null until the cases have been read: they are fetched the first time they are needed, never with the page. */
@@ -106,6 +112,11 @@ export function placeIsUnreadable(row: Parameters<typeof standingOfPlaceInUse>[0
   return standingOfPlaceInUse(row) === "notReadable";
 }
 
+/** A place in use whose rep has been asked for a new photo of its sign, not yet sent. */
+export function placeAwaitsNewPhoto(row: Pick<ValidatedPlaceRow, "signboard">): boolean {
+  return row.signboard?.retake === true;
+}
+
 /**
  * A polyclinic whose building sign could not be read, or where a customer still waiting or in use has a
  * timetable that could not be read. A rejected or sent-back customer is past the reading.
@@ -120,14 +131,16 @@ export function deckSourcesOf(input: PlaceReviewDeckInput, cases: DeckSources["c
   const unreadableVenues = new Set([...input.waiting.venues, ...input.unconfirmed.venues].filter(venueIsUnreadable).map(venueId));
   const readable = <T>(rows: ReadonlyArray<T>, unreadable: (row: T) => boolean) => rows.filter((row) => !unreadable(row));
   const venuesLeft = (groups: ReadonlyArray<VenueGroup>) => groups.map(venueId).filter((id) => !unreadableVenues.has(id));
+  const placesNeedingHim = readable(input.unconfirmed.places, placeAwaitsNewPhoto);
   return {
     waitingReviews: readable(input.waiting.reviews, reviewIsUnreadable).map((row) => row.reviewId),
     waitingVenues: venuesLeft(input.waiting.venues),
     unreadableReviews: input.waiting.reviews.filter(reviewIsUnreadable).map((row) => row.reviewId),
-    unreadablePlaces: input.unconfirmed.places.filter(placeIsUnreadable).map((row) => row.placeId),
+    unreadablePlaces: placesNeedingHim.filter(placeIsUnreadable).map((row) => row.placeId),
     unreadableVenues: [...unreadableVenues],
-    unconfirmedPlaces: readable(input.unconfirmed.places, placeIsUnreadable).map((row) => row.placeId),
+    unconfirmedPlaces: readable(placesNeedingHim, placeIsUnreadable).map((row) => row.placeId),
     unconfirmedVenues: venuesLeft(input.unconfirmed.venues),
+    newPhotoPlaces: input.unconfirmed.places.filter(placeAwaitsNewPhoto).map((row) => row.placeId),
     historyReviews: input.history.reviews.map((row) => row.reviewId),
     historyVenues: input.history.venues.map(venueId),
     cases,
@@ -153,6 +166,8 @@ function slidesOf(tab: OneTab, sources: DeckSources): DeckSlide[] {
         ...sources.unconfirmedPlaces.map((id): DeckSlide => ({ key: deckSlideKey("place", id), kind: "place", polyclinic: false })),
         ...venues(sources.unconfirmedVenues),
       ];
+    case "newPhoto":
+      return sources.newPhotoPlaces.map((id): DeckSlide => ({ key: deckSlideKey("place", id), kind: "place", polyclinic: false }));
     case "integrity":
       return (sources.cases ?? []).map((entry): DeckSlide => ({ key: deckSlideKey("case", entry.id), kind: "case", polyclinic: entry.polyclinic }));
     case "history":

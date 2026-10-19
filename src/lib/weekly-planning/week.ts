@@ -212,7 +212,11 @@ export function submissionDeadlineForWeek(weekKey: string): Date {
 }
 
 /**
- * The DEDUCTION grace deadline: 23:59 Africa/Cairo on the given Monday.
+ * The DEDUCTION grace deadline: the END of the given Monday in Africa/Cairo — 23:59:59.999.
+ *
+ * Owner, 2026-10-19: the deadline is the end of the day, 23:59:59, so anything sent before midnight
+ * Cairo is on time. Until then it was 23:59:00 exactly, and the loader's `submittedAt > deadline`
+ * test called a plan sent at 23:59:30 late — a day's pay for the last minute of the day.
  *
  * Owner, 2026-10-12: "if not submitted a weekly plan till monday of this week a 1 day deduction".
  * Deliberately LATER and more forgiving than `submissionDeadlineForWeek` above (Thursday 17:00 of
@@ -231,7 +235,8 @@ export function submissionDeadlineForWeek(weekKey: string): Date {
  */
 export function planDeductionGraceDeadlineForMonday(mondayIso: string): Date {
   const [year, month, day] = mondayIso.split("-").map(Number);
-  return cairoWallClockUtcInstant(year, month - 1, day, 23, 59);
+  // cairoWallClockUtcInstant resolves to the whole minute, so the last 59.999 seconds are added here.
+  return new Date(cairoWallClockUtcInstant(year, month - 1, day, 23, 59).getTime() + 59_999);
 }
 
 /**

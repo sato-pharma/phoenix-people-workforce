@@ -8,8 +8,13 @@ office employees only for now"*.
 ## The rule
 
 One day's deduction, charged on that week's **Monday**, for a head-office employee on the allow-list
-who had not submitted a weekly plan for that week by **Monday 23:59 Cairo**. It is a **daily-module
-connector only**, and nothing is ever charged without the Super Admin releasing the line.
+who had not submitted a weekly plan for that week by the **end of Monday, Cairo (23:59:59)**. It is a
+**daily-module connector only**, and nothing is ever charged without the Super Admin releasing the
+line.
+
+The deadline was 23:59:00 exactly until 2026-10-19, so a plan sent at 23:59:30 read as late. The
+owner chose the end of the day that morning: anything sent before midnight Cairo is on time
+(`planDeductionGraceDeadlineForMonday` in `src/lib/weekly-planning/week.ts`).
 
 ## Who it applies to — his own ruling, not an inference
 

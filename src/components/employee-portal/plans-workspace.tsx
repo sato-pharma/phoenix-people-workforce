@@ -84,6 +84,7 @@ import {
   HEAD_OFFICE_WORKWEEK,
   isDistrictManagerPlanTitle,
   isPastPlanWeek,
+  isPlanLeaveActivity,
   planDayGapText,
   planRequiredSlotsByDate,
   planWorkweekAllowsHalfDays,
@@ -1432,14 +1433,26 @@ export function PlansWorkspace({
   // a Field Thursday needs only AM. Server re-enforces this on submit.
   const incompleteDays = useMemo(() => {
     const slotsByDate = new Map<string, Set<PlanSlot>>();
+    // The halves held by work, not leave: a half-day vacation or excuse never completes a Group
+    // Product Manager's day alone (planDayGapText, the same rule the server's submit check reads).
+    const workSlotsByDate = new Map<string, Set<PlanSlot>>();
     for (const row of rows) {
       const set = slotsByDate.get(row.activityDate) ?? new Set<PlanSlot>();
       set.add(row.slot);
       slotsByDate.set(row.activityDate, set);
+      if (!isPlanLeaveActivity(row.activityType)) {
+        const work = workSlotsByDate.get(row.activityDate) ?? new Set<PlanSlot>();
+        work.add(row.slot);
+        workSlotsByDate.set(row.activityDate, work);
+      }
     }
     const issues: string[] = [];
     for (const [date, requirement] of requiredSlotsByDate) {
-      const gap = planDayGapText(requirement, slotsByDate.get(date) ?? new Set<PlanSlot>());
+      const gap = planDayGapText(
+        requirement,
+        slotsByDate.get(date) ?? new Set<PlanSlot>(),
+        workSlotsByDate.get(date) ?? new Set<PlanSlot>(),
+      );
       if (gap !== null) issues.push(`${formatDayName(date)} ${formatDate(date)}${gap}`);
     }
     return issues;

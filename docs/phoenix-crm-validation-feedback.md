@@ -612,6 +612,38 @@ the screen. Location integrity links to it on the Integrity cases tab, for the S
 
 Pinned by `tests/place-review-deck.test.ts`.
 
+### Not readable, New photo asked, and the AM short forms (2026-10-19)
+
+**The tabs.** On 19 Oct he asked to "put the unreadable in a separate tab" and chose "every unreadable
+one" and "move them out". Not readable takes three things out of Waiting for you and Not confirmed:
+held places, places in use, and polyclinics whose sign or timetable the reader could not read.
+
+- The sign rule is one function, `signCouldNotBeRead`. The scorecard's Not readable column uses it too.
+- The tab opened at 349. Looking at it on production, he asked to "try to read and fix".
+
+**What the photos showed.** I read them at full zoom in the app's own viewer.
+
+- The ones sent back to their reps (289 of the 320 single places counted) are genuinely dark, blurred, cut off or too far. A person cannot read more on them than the reader did.
+- One example: فاخر فريد. Its sign gives "بشاي … طب الأطفال … الولادة", and the given name is lost in glare.
+- He chose "only what needs you". Those places now sit in their own tab, **New photo asked** (`placeAwaitsNewPhoto`, `signboard.retake`).
+- Their advice now says to wait for the new photo (`adviseOnSign`, `retake`). Before, every one of them said Reject.
+- The board's "pick the ones the system recommends rejecting" takes none of them any more.
+
+**The AM short forms.** Of the 31 that waited on him, 30 were AM buildings with the sign read clearly, under a fuller name than the list uses. He chose to "teach the matcher" over approving them one by one.
+
+- `placeWordsOnSign` (`signboard-rules.ts`) writes صدرية as صدر and الكهرباء as كهربا, on both sides, after the stem.
+- It drops تعاقد, the list's word for a contract account.
+- A contract row keeps no one-word allowance. Without that, "تعاقد الكهرباء كفر الشيخ" matched the Kafr El Sheikh fever hospital's board on the two town words.
+- The Google listing comparison is untouched.
+
+**The replay.** All 304 stored AM readings were replayed offline, with no new reads.
+
+- The new rule confirms 7 places, and each is correct by eye: صدر منوف (twice, one building listed twice), الصدر in Beni Suef, صدر المحلة, كهربا بشتيل, تعاقد الكهرباء, تعاقد الغزل.
+- No new match falls inside a territory. The new decoy pairs are list names that are generic on their own ("مستشفى الصدر", "تعاقد الكهرباء"), the same building listed twice, or pairs from different territories.
+- The other 24 are misreads (اريزا for تريزا, مدرف for منوف), another place's sign, or nothing legible. No safe rule reads them, so they stay his to decide.
+
+Pinned by `checkPlaceShortForms` in `tests/phoenix-crm-signboard-check.test.ts`, by the retake case in `tests/phoenix-crm-place-check-advice.test.ts`, and by `tests/place-review-deck.test.ts`.
+
 ## The same-seat duplicate merge
 
 A one-off script and a guarded database function, never a feature.

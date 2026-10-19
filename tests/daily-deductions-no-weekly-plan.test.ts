@@ -107,7 +107,7 @@ export async function runDailyDeductionsNoWeeklyPlanTests(): Promise<void> {
     assert.match(migration, /'no_weekly_plan',\s*'No Weekly Plan',\s*'weekly_plan_submission',\s*true/, "requires_approval is TRUE");
   }
 
-  // ── THE DEADLINE IS 23:59 CAIRO ON THE MONDAY BEING CHARGED ───────────────
+  // ── THE DEADLINE IS THE END OF THE MONDAY BEING CHARGED, CAIRO (23:59:59) ─
   {
     const format = (date: Date) =>
       new Intl.DateTimeFormat("en-GB", {
@@ -119,7 +119,16 @@ export async function runDailyDeductionsNoWeeklyPlanTests(): Promise<void> {
     assert.match(cairo, /^Monday, 12\/10\/2026, 23:59$/, `the grace deadline must be Monday 12 Oct 23:59 Cairo, got "${cairo}"`);
     // Summer: 23:59 EEST (UTC+3) is 20:59 UTC — a flat offset would drift across the DST change.
     assert.equal(format(planDeductionGraceDeadlineForMonday("2026-06-08")), "Monday, 08/06/2026, 23:59");
-    assert.equal(planDeductionGraceDeadlineForMonday("2026-06-08").toISOString(), "2026-06-08T20:59:00.000Z");
+    // Owner, 2026-10-19: the END of the day, 23:59:59 — a plan sent at 23:59:30 Cairo is on time.
+    assert.equal(planDeductionGraceDeadlineForMonday("2026-06-08").toISOString(), "2026-06-08T20:59:59.999Z");
+    {
+      // Winter (Egypt's summer time ends on the last Thursday of October): 23:59:30 EET (UTC+2) on
+      // Monday 9 Nov 2026 is 21:59:30 UTC, and midnight Cairo is 22:00:00 UTC.
+      const deadline = planDeductionGraceDeadlineForMonday("2026-11-09").getTime();
+      assert.ok(Date.parse("2026-11-09T21:59:30Z") <= deadline, "a plan sent at 23:59:30 Cairo on the Monday is on time");
+      assert.ok(Date.parse("2026-11-09T21:59:59.500Z") <= deadline, "so is one sent half a second before midnight");
+      assert.ok(Date.parse("2026-11-09T22:00:00Z") > deadline, "midnight Cairo is the Tuesday, and late");
+    }
 
     // 🔴 IT TAKES THE MONDAY, NOT THE WEEK KEY. Production's own plan rows follow buildWeekKey:
     // 2026-W41 runs 11–15 Oct 2026 (read live 2026-10-12).
