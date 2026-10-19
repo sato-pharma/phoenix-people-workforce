@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { phxButtonApproveDenseClassName } from "@/components/ui/form-tokens";
 
 import { maxBonusUnits } from "@/lib/direct-orders/approval-flow";
+import { describeDirectOrderBasketQuantities } from "@/lib/direct-orders/basket-label";
 import { previewBasketValue } from "@/lib/direct-orders/basket-value";
 import type {
   DirectOrderApprovalListItem,
@@ -1541,7 +1542,9 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                         <div className="text-phx-xs text-slate-500">{r.line}</div>
                       </td>
                       <td className="break-words px-3 py-2 text-right tabular-nums">
-                        <div>{r.qty.toLocaleString("en-US")}</div>
+                        {/* Per product, in the order the Product cell names them — "72 + 24" —
+                            never a sum: a basket has no single quantity. */}
+                        <div>{describeDirectOrderBasketQuantities(r, r.items)}</div>
                         <div className="mt-0.5 text-phx-xs text-slate-500">
                           {bonusCell(r)}
                           {r.bonusOverCap ? (
@@ -1601,7 +1604,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   <p className="mt-2 text-sm font-semibold text-slate-700">{r.pharmacyName}</p>
                   <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
                     <p className="text-slate-600">
-                      Qty: <span className="font-bold text-slate-900">{r.qty.toLocaleString("en-US")}</span>
+                      Qty: <span className="font-bold text-slate-900">{describeDirectOrderBasketQuantities(r, r.items)}</span>
                     </p>
                     <p className="text-slate-600">
                       Bonus: <span className="font-bold text-slate-900">{bonusCell(r)}</span>

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { describeDirectOrderBasketUnits } from "@/lib/direct-orders/basket-label";
 import type { HeldDirectOrderRow } from "@/lib/direct-orders/service";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { cn } from "@/lib/utils";
@@ -214,7 +215,8 @@ export function HeldDesk({ rows }: Props) {
                   <p className="text-phx-xs text-slate-500">{row.phoenixPharmacyCode}</p>
                 </td>
                 <td className="px-3 py-2 text-slate-700">
-                  {row.productName} × {row.qty.toLocaleString("en-US")}
+                  {/* Each product with its own units — a basket has no single quantity. */}
+                  {describeDirectOrderBasketUnits(row, row.items)}
                 </td>
                 <td className="px-3 py-2 font-bold text-slate-900">{money(row.salesValue)}</td>
                 <td className="px-3 py-2 text-slate-600">{cairoStamp(row.heldAt)}</td>
@@ -245,7 +247,7 @@ export function HeldDesk({ rows }: Props) {
               {row.pharmacyName} <span className="text-phx-xs font-normal text-slate-500">({row.phoenixPharmacyCode})</span>
             </p>
             <p className="text-phx-sm text-slate-600">
-              {row.productName} × {row.qty.toLocaleString("en-US")} · {money(row.salesValue)}
+              {describeDirectOrderBasketUnits(row, row.items)} · {money(row.salesValue)}
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-phx-xs text-slate-500">
               <span>Held {cairoStamp(row.heldAt)}</span>

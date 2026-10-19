@@ -54,7 +54,11 @@ import { resolveSubmittedCampaignId } from "@/lib/direct-orders/campaign-link";
 import { pingDirectOrderSheet } from "@/lib/direct-orders/sheet-webhook";
 import { loadOffsetTotalForOrder } from "@/lib/direct-orders/marketing-offset-service";
 import { deriveRemainingWhenCollectionCleared } from "@/lib/direct-orders/offset-rules";
-import { summarizeDirectOrderBasket } from "@/lib/direct-orders/basket-label";
+import {
+  joinDirectOrderBasketUnits,
+  summarizeDirectOrderBasket,
+  type DirectOrderBasketLine,
+} from "@/lib/direct-orders/basket-label";
 import { resolveCorrectionExtraLines } from "@/lib/direct-orders/correction-lines";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
 import {
@@ -2556,8 +2560,12 @@ export type HeldDirectOrderRow = {
   requesterHrId: string;
   requesterName: string;
   requesterRole: PhoenixRole;
+  /** Every product joined with " + " on a basket; the one product's name otherwise. */
   productName: string;
-  qty: number;
+  /** The one product's units; NULL on a basket — units of different products are never added. */
+  qty: number | null;
+  /** One entry per product, each with ITS OWN units. What the desk prints. */
+  items: DirectOrderBasketLine[];
   salesValue: number;
   pharmacyId: string;
   pharmacyName: string;
@@ -2608,8 +2616,12 @@ export type ReturnedDirectOrderAgeingRow = {
   id: string;
   requesterHrId: string;
   requesterName: string;
+  /** Every product joined with " + " on a basket; the one product's name otherwise. */
   productName: string;
-  qty: number;
+  /** The one product's units; NULL on a basket — units of different products are never added. */
+  qty: number | null;
+  /** One entry per product, each with ITS OWN units. What the desk and Stuck Approvals print. */
+  items: DirectOrderBasketLine[];
   salesValue: number;
   pharmacyId: string;
   pharmacyName: string;
@@ -2654,9 +2666,12 @@ export async function listReturnedDirectOrdersAgeing(
   const requests = ((data ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
   if (requests.length === 0) return [];
 
-  const [pharmacies, resolveName, eventResult] = await Promise.all([
+  const [pharmacies, resolveName, itemsByRequest, eventResult] = await Promise.all([
     loadPharmaciesByIds(requests.map((request) => request.pharmacyId)),
     nameLookup(),
+    // Every product on every returned order. Without it a basket named line 1 alone beside the
+    // whole basket's value — on this desk and on Stuck Approvals, which reads these same rows.
+    loadDirectOrderItemsForRequests(requests.map((request) => request.id)),
     // Newest first, so the FIRST row seen per request is its latest return — an order can be
     // returned, corrected and returned again, and only the last comment is still open.
     supabase
@@ -2683,12 +2698,14 @@ export async function listReturnedDirectOrdersAgeing(
     // dropping it would hide exactly the case most likely to be a defect.
     const returnedAt = event?.createdAt ?? request.createdAt ?? null;
     const daysWaiting = daysWaitingSince(returnedAt, now);
+    const basket = summarizeDirectOrderBasket(request, itemsByRequest.get(request.id));
     return {
       id: request.id,
       requesterHrId: request.requesterHrId,
       requesterName: resolveName(request.requesterHrId) || request.requesterHrId,
-      productName: request.productName,
-      qty: request.qty,
+      productName: basket.productName,
+      qty: basket.qty,
+      items: basket.lines,
       salesValue: request.salesValue,
       pharmacyId: request.pharmacyId,
       pharmacyName: pharmacy?.pharmacyName ?? "—",
@@ -3007,6 +3024,7 @@ export async function listHeldDirectOrders(access: AccessContext): Promise<HeldD
       requesterRole: request.requesterRole,
       productName: basket.productName,
       qty: basket.qty,
+      items: basket.lines,
       salesValue: request.salesValue,
       pharmacyId: request.pharmacyId,
       pharmacyName: pharmacy?.pharmacyName ?? "(pharmacy missing)",
@@ -7203,16 +7221,18 @@ export async function getDirectOrderReport(
     //
     // No column is ADDED. The 39 columns are positional twins consumed by the owner's Google Sheet
     // every 60 seconds, so an insert would shift live formulas. Instead the existing columns are
-    // made truthful: names and codes joined the same way the approval detail joins them, units
-    // summed the same way sales value already is. For a single line both are what they were.
+    // made truthful: names and codes joined the same way the approval detail joins them, and the
+    // units kept PER PRODUCT. A basket's Qty and Bonus cells are text ("72 + 24") — never a sum,
+    // because units of different products are never added (owner, 2026-10-19: "Per product as
+    // text"). They keep their column, so no position moves; the sheet's totals skip a text cell.
+    // For a single line both are what they were: the request's own numbers.
     //
     // Prices and deal terms stay the FIRST line's. Averaging two prices would invent a number, and
     // a mixed-deal basket has no single discount to report — the order's own screen shows each line.
     const items = itemsByRequest.get(request.id) ?? [];
-    const isBasket = items.length > 1;
     // The composition rule itself lives in basket-label.ts — the report defined it first, and the
     // approvals list, Orders list, Held Desk and exception desk now read the same function rather
-    // than each carrying a copy. Output here is unchanged: same join, same sum.
+    // than each carrying a copy.
     const basket = summarizeDirectOrderBasket(request, items);
     return {
       id: request.id,
@@ -7225,7 +7245,13 @@ export async function getDirectOrderReport(
       productName: basket.productName,
       pharmacyPriceSnapshot: request.pharmacyPriceSnapshot,
       qty: basket.qty,
-      bonus: isBasket ? items.reduce((total, item) => total + item.bonus, 0) : request.bonus,
+      bonus: basket.isBasket ? null : request.bonus,
+      basketUnits: basket.isBasket
+        ? {
+            qty: joinDirectOrderBasketUnits(items.map((item) => item.qty)),
+            bonus: joinDirectOrderBasketUnits(items.map((item) => item.bonus)),
+          }
+        : null,
       bonusOverrideReason: request.bonusOverrideReason,
       dealType: request.dealType,
       discountPct: request.discountPct,
@@ -8641,8 +8667,12 @@ export type DirectOrderApprovalExceptionRow = {
   requesterHrId: string;
   requesterName: string;
   requesterRole: PhoenixRole;
+  /** Every product joined with " + " on a basket; the one product's name otherwise. */
   productName: string;
-  qty: number;
+  /** The one product's units; NULL on a basket — units of different products are never added. */
+  qty: number | null;
+  /** One entry per product, each with ITS OWN units. What the desk prints. */
+  items: DirectOrderBasketLine[];
   salesValue: number;
   pharmacyName: string;
   createdAt: string | null;
@@ -8755,6 +8785,7 @@ export async function listDirectOrderApprovalExceptions(
       requesterRole: request.requesterRole,
       productName: basket.productName,
       qty: basket.qty,
+      items: basket.lines,
       salesValue: request.salesValue,
       pharmacyName: pharmacies.get(request.pharmacyId)?.pharmacyName ?? "—",
       createdAt: request.createdAt,

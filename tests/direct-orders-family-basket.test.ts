@@ -228,10 +228,12 @@ export async function runDirectOrderFamilyBasketTests() {
   const reportEnd = service.indexOf("\nexport ", reportStart + 1);
   const report = service.slice(reportStart, reportEnd > 0 ? reportEnd : undefined);
 
-  // Guarded on MORE THAN ONE line, never on "has items". Every order raised before this feature
-  // must come out of the report byte-identical, and that is only guaranteed if the single-line path
-  // still reads the request's own columns rather than reconstructing them from the items table.
-  assert.match(report, /const isBasket = items\.length > 1;/, "the basket path must be gated on a second line");
+  // Guarded on MORE THAN ONE line, never on "has items" — the gate lives in summarizeDirectOrderBasket
+  // (basket-label.ts, pinned by direct-orders-basket-label.test.ts) and the report reads its answer.
+  // Every order raised before this feature must come out of the report byte-identical, and that is
+  // only guaranteed if the single-line path still reads the request's own columns rather than
+  // reconstructing them from the items table.
+  assert.match(report, /basket\.isBasket/, "the basket path must be gated on the shared summary's isBasket");
 
   // The composition itself was lifted into summarizeDirectOrderBasket (basket-label.ts) so the
   // report, the approvals list, the Orders list, the Held Desk and the exception desk share ONE
@@ -251,16 +253,24 @@ export async function runDirectOrderFamilyBasketTests() {
     );
   }
 
-  // bonus is not part of DirectOrderBasketSummary — it still falls back to the request's own column
-  // inline, exactly as before the lift.
+  // bonus is not part of DirectOrderBasketSummary — it is the request's own column for one line. On a
+  // basket it is NULL and the units ride in basketUnits, per product: units of different products are
+  // never added (owner, 2026-10-19).
   assert.match(
     report,
-    /bonus: isBasket \? items\.reduce\(\(total, item\) => total \+ item\.bonus, 0\) : request\.bonus/,
-    "the report's bonus must fall back to the request's own column for one line",
+    /bonus: basket\.isBasket \? null : request\.bonus/,
+    "the report's bonus must be the request's own column for one line and null on a basket",
+  );
+  assert.match(report, /basketUnits: basket\.isBasket/, "a basket's units must travel per product in basketUnits");
+  assert.doesNotMatch(
+    report,
+    /items\.reduce\(\(total, item\) => total \+ item\.(bonus|qty)/,
+    "the report must never SUM a basket's units — they are different products",
   );
 
-  // Sales value is ALREADY the basket total. Summing the units is what makes the row internally
-  // consistent — money and units describing the same set of products.
+  // Sales value is ALREADY the basket total, and it stays so. The UNITS are not summed to match it:
+  // they are listed per product, because a Lacto Advanced 1 pack added to a Lacto Advanced 2 pack
+  // gives a number of nothing that exists.
   assert.doesNotMatch(
     report,
     /salesValue: isBasket/,

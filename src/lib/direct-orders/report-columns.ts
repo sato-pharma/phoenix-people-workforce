@@ -173,8 +173,10 @@ export function directOrderReportRowCells(
     row.line,
     row.productCode,
     row.productName,
-    row.qty,
-    row.bonus,
+    // A basket prints its units PER PRODUCT as text ("72 + 24") in the same two columns; every
+    // other order prints the request's own number, exactly as before. Never a sum.
+    row.basketUnits?.qty ?? row.qty,
+    row.basketUnits?.bonus ?? row.bonus,
     row.pharmacyPriceSnapshot ?? "",
     row.salesValue,
     row.dealType,
@@ -239,7 +241,7 @@ export function summariseDirectOrderReport(rows: DirectOrderReportRow[]): {
   totalUnits: number;
   byStatus: Array<{ status: string; count: number; value: number }>;
 } {
-  const finite = (value: number): number => (Number.isFinite(value) ? value : 0);
+  const finite = (value: number | null): number => (value !== null && Number.isFinite(value) ? value : 0);
   const byStatus = new Map<string, { count: number; value: number }>();
   for (const row of rows) {
     const entry = byStatus.get(row.status) ?? { count: 0, value: 0 };
@@ -250,6 +252,8 @@ export function summariseDirectOrderReport(rows: DirectOrderReportRow[]): {
   return {
     totalValue: rows.reduce((sum, r) => sum + finite(r.salesValue), 0),
     approvedValue: rows.filter((r) => r.status === "approved").reduce((sum, r) => sum + finite(r.salesValue), 0),
+    // A basket's qty is null — its units are per product and are never added, so it counts as zero
+    // here. The same single-product orders still total exactly as before.
     totalUnits: rows.reduce((sum, r) => sum + finite(r.qty), 0),
     byStatus: Array.from(byStatus.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))

@@ -15,11 +15,17 @@
  *
  * `getDirectOrderReport` already solved this for the report's own columns. This module is that same
  * rule, lifted out so there is ONE definition rather than a copy per surface — the report, the
- * approvals list, the Orders list, the Held Desk and the approval-exception desk all read it here.
+ * approvals list, the Orders list, the Held Desk, the approval-exception desk, the returned desk and
+ * Stuck Approvals all read it here.
  *
- * THE RULE, unchanged from the report's implementation:
+ * THE RULE:
  *   - one line  → the request's own columns, exactly as before baskets existed
- *   - a basket  → names and codes joined with " + ", quantities SUMMED
+ *   - a basket  → names and codes joined with " + ", and the units stay PER PRODUCT. A basket has
+ *     no single quantity: units of different products or concentrations are NEVER added together —
+ *     a unit total is valid for one product code only (owner rule,
+ *     `units-of-different-products-are-never-added`). The first version summed them, so a
+ *     Lacto Advanced 1 × 72 + Lacto Advanced 2 × 24 order read "Lacto Advanced 1 + Lacto Advanced 2
+ *     × 96" on every list — 96 of nothing that exists.
  *   - prices and deal terms are NEVER composed: averaging two prices would invent a number, and a
  *     mixed-deal basket has no single discount. The order's own screen shows each line.
  */
@@ -35,8 +41,12 @@ export type DirectOrderBasketSummary = {
   productName: string;
   /** Same composition as `productName`, for the code. */
   productCode: string;
-  /** Line 1's quantity for a single-product order; the SUM of every line for a basket. */
-  qty: number;
+  /**
+   * The order's quantity when it is ONE product. NULL on a basket — never a sum: units of different
+   * products are never added. A surface that wants the basket's units reads `lines`, or
+   * `describeDirectOrderBasketUnits` for the one-line label.
+   */
+  qty: number | null;
   /**
    * One entry per product, ALWAYS populated — a single-product order returns its one line here, so
    * no caller has to branch on "is this a basket" before rendering. Mirrors the guarantee
@@ -70,7 +80,7 @@ export function summarizeDirectOrderBasket(
     // loaded and might differ. Two reasons, and both matter more than the tidiness of preferring
     // items uniformly:
     //
-    //   1. It is what the report has always done, and the report's 39 columns are positional twins
+    //   1. It is what the report has always done, and the report's columns are positional twins
     //      consumed by the owner's Google Sheet every 60 seconds. This function exists to REMOVE a
     //      duplicated rule, not to change what any surface prints.
     //   2. They cannot disagree by construction: submitDirectOrder writes the singular columns from
@@ -87,8 +97,64 @@ export function summarizeDirectOrderBasket(
   return {
     productName: lines.map((line) => line.productName).join(" + "),
     productCode: lines.map((line) => line.productCode).join(" + "),
-    qty: lines.reduce((total, line) => total + line.qty, 0),
+    qty: null,
     lines,
     isBasket: true,
   };
+}
+
+/** Whole units, grouped the en-US way — the same rendering the approval window uses. */
+function formatUnits(qty: number | null): string {
+  if (qty === null) return "—";
+  const n = Number(qty);
+  return Number.isFinite(n) ? Math.round(n).toLocaleString("en-US") : "—";
+}
+
+/**
+ * One number per product, joined in line order: "72 + 24". The ONLY place a basket's units are put
+ * side by side — never summed. Used for the report's Qty and Bonus cells, which keep their column
+ * and become text on a basket (owner, 2026-10-19).
+ */
+export function joinDirectOrderBasketUnits(values: readonly (number | null)[]): string {
+  return values.map(formatUnits).join(" + ");
+}
+
+/**
+ * The lines a label speaks for: the item rows on a basket, otherwise the request's own columns —
+ * the same "one product reads its own columns" choice `summarizeDirectOrderBasket` makes.
+ */
+function labelLines<T extends { qty: number | null }>(head: T, items?: readonly T[] | null): readonly T[] {
+  return items && items.length > 1 ? items : [head];
+}
+
+/**
+ * What the order is, in one line: every product with ITS OWN quantity.
+ *
+ *   one product → "Lacto Advanced 1 × 72"
+ *   a basket    → "Lacto Advanced 1 × 72 + Lacto Advanced 2 × 24"
+ *
+ * The same shape the approval window's header prints, so a basket reads identically on a list and on
+ * the order it opens. Takes the request's singular columns and its item rows rather than a summary,
+ * so a client component holding a row with `items` can call it directly.
+ */
+export function describeDirectOrderBasketUnits(
+  head: { productName: string; qty: number | null },
+  items?: readonly { productName: string; qty: number }[] | null,
+): string {
+  return labelLines<{ productName: string; qty: number | null }>(head, items)
+    .map((line) => `${line.productName} × ${formatUnits(line.qty)}`)
+    .join(" + ");
+}
+
+/**
+ * Just the units, per product, in the order the products are named: "72" or "72 + 24".
+ *
+ * For a column that sits beside a composed product name ("Lacto Advanced 1 + Lacto Advanced 2"),
+ * where repeating every name would double the cell. Never a sum.
+ */
+export function describeDirectOrderBasketQuantities(
+  head: { qty: number | null },
+  items?: readonly { qty: number }[] | null,
+): string {
+  return joinDirectOrderBasketUnits(labelLines<{ qty: number | null }>(head, items).map((line) => line.qty));
 }
