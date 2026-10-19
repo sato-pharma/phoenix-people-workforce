@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Merge an approved PR and prove it reached production — read the required checks live from branch protection (never a count from a doc), merge with a plain `gh pr merge` from a non-git directory, settle the PR state (a merge run from a worktree exits non-zero AFTER it already succeeded), then prove the live `/api/healthz` revision contains the merge and read main's own CI run (a docs-only PR's green checks ran no tests at all). Use when the owner's own message approves merging a specific PR — "merge it", "merge 3805 when green" — never on your own initiative.
+description: Merge an approved PR and prove it reached production — read the required checks live from branch protection (never a count from a doc), merge with a plain `gh pr merge` from a non-git directory, settle the PR state (a merge run from a worktree exits non-zero AFTER it already succeeded), then prove the live `/api/healthz` revision contains the merge, read whether it brought a new error (the app's own error table and Sentry), and read main's own CI run (a docs-only PR's green checks ran no tests at all). Use when the owner's own message approves merging a specific PR — "merge it", "merge 3805 when green" — never on your own initiative.
 argument-hint: '[PR number, e.g. 3947]'
 ---
 
@@ -248,6 +248,40 @@ What it protects you from, and what to do if you read the sources by hand instea
   deploy "take". The git source is service-level, so `source connect --environment staging` has
   repointed PRODUCTION and rolled back everything merged since.
 
+## 7b · Did it bring a new error? The app's error table and Sentry
+
+Once phase 7 says SHIPPED, run this with `run_in_background: true` and act on the notification:
+
+```bash
+node scripts/post-deploy-errors.mjs <n> --wait
+```
+
+It reads the releases that carry the merge (the merge commit, plus every later commit production served
+since) and calls an error **new** only when no other release produced it in the week before. An error that
+was already happening before the merge never reads as this merge's doing. It reads two sources:
+
+- **The app's own error table** (`app_error_events` on production, read-only). It records every server and
+  browser error with the commit it came from, so it always answers. The browser's own network-failure wording
+  and a locked module's refusal are left out by the repo's own rules (`browser-noise.ts`, `expected-refusal.ts`).
+- **Sentry**, through its Discover events read, when `SENTRY_READ_TOKEN` is set (a Windows user variable on
+  the laptop since 2026-10-19). If it is not set, or Sentry refuses it, the report says "Sentry not read", and
+  that is never a pass about Sentry. 🔴 `SENTRY_AUTH_TOKEN` is not a read token: in `.env.local` it was the
+  retired account's on 2026-10-19, and on Railway it is the build plugin's. The read token is refused on
+  Sentry's issue list and answered on Discover, which is why the script asks Discover.
+
+`--wait` re-reads every 90 seconds until the merge has served for the whole window (15 minutes; change it with
+`--window <minutes>`) or a new error shows, whichever comes first. 30 minutes past the window it gives up and
+says the last reading is NOT a pass.
+
+Exit codes: `0` clean · `1` new errors · `2` too early, NOT a pass · `3` not live · `4` not merged · `5` cannot
+tell.
+
+- **`1`:** name each new error in the report: what it says, how many times, the page, and the release it came
+  from. When a later merge also served inside the window, its new errors are reported as that release's, not
+  this PR's. Fix what this merge caused. Never roll back on the verdict alone; read the error first (see "If it
+  went wrong" below).
+- **`5`:** say which source could not be read, and never report it as clean.
+
 ## 8 · Read main's own CI
 
 ```bash
@@ -270,8 +304,9 @@ do it by hand only when it could not.
 ## 9 · Report, in Cairo time
 
 One short block: what merged (number and title), the merge sha, the live revision and whether it
-contains the merge, the production deployment's state, main's CI verdict, the migration you applied,
-and anything you skipped. If a build or a run is still in flight, **background the wait and report
+contains the merge, the production deployment's state, main's CI verdict, the post-deploy error verdict
+(each new error named, or clean after how many minutes, and whether Sentry was read), the migration you
+applied, and anything you skipped. If a build or a run is still in flight, **background the wait and report
 the real end** — never hand back "check it in a minute".
 
 The one thing left that needs the owner is retiring the worktree and deleting the branch, which
