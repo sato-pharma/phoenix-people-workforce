@@ -167,7 +167,15 @@ const MAX_CV_TEXT_CHARS = 20_000;
 // separate roles with their responsibilities will not fit in 2,000 output tokens. A truncated
 // structured-output response fails to parse and the applicant is dropped, so the cap has to clear
 // the worst realistic CV rather than the typical one.
-const MAX_CV_EXTRACTION_OUTPUT_TOKENS = 8_000;
+//
+// 🔴 RAISED FROM 8,000 TO 16,000 ON 2026-10-19, BECAUSE THE CAP PAYS FOR THE THINKING TOO. Claude's
+// thinking is counted inside max_tokens, and Claude reads every CV while the OpenAI account is out of
+// credit. The 11:18 Cairo CV, replayed: Haiku wrote about 10,000 characters of JSON (≈3,000 tokens) and
+// spent 5,791–6,816 tokens in all at effort low — up to 8,000 before anthropic-fallback.ts stopped
+// dropping the effort, when one read in three ran out of room and was lost to the escalation. 16,000 is
+// about 2.3x the worst measured read, still inside OPENAI_ROUTE_BUDGET_MS (60 s) at Haiku's pace, and
+// costs nothing on a normal CV: the cap is a ceiling, and only the tokens used are billed.
+const MAX_CV_EXTRACTION_OUTPUT_TOKENS = 16_000;
 
 /**
  * How hard the model is allowed to think, chosen per ROUTE rather than once for everything.

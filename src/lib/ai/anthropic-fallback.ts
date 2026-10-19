@@ -19,9 +19,11 @@
 //   2. `output_config.format`, Claude's own JSON outputs, for a caller that sends a JSON Schema. Asked
 //      for in the system prompt alone, Haiku at low effort answered the signboard schema WITH THE SCHEMA
 //      ITSELF, which parses as JSON and reads as "no signs at all". The constrained reply cannot do that.
-// A request either field makes the API refuse (HTTP 400 naming it) is sent again once in the plain shape,
-// and that model + format pair stays plain for the life of the process, so the worst case is the old
-// behaviour. JSON is still asked for in the prompt on the plain path, and still cleaned on the way out.
+// A request either field makes the API refuse (HTTP 400 naming it) is sent again without the format
+// when the refusal is about the format — the effort kept — and plain only after that or when the effort
+// is what was refused; that model + format pair keeps the shape that answered for the life of the
+// process, so the worst case is the old behaviour. JSON is still asked for in the prompt whenever the
+// format is dropped, and still cleaned on the way out.
 
 type AnthropicEnv = Record<string, string | undefined>;
 
@@ -172,9 +174,19 @@ export function schemaForAnthropic(schema: unknown): unknown {
   return out;
 }
 
-// Model + format pairs the API refused `output_config` for, in this process. They are sent plain from
-// then on, so a refused schema costs one extra round trip once, never on every call.
-const plainOnlyRequests = new Set<string>();
+// Model + format pairs the API refused part of `output_config` for, in this process, and the shape that
+// answered instead. They are sent in that shape from then on, so a refused schema costs one extra round
+// trip once, never on every call.
+//
+// 🔴 TWO SHAPES, NOT ONE (19 Oct 2026). `without_format` drops only Claude's JSON outputs and KEEPS the
+// effort; `plain` drops both. The resend used to be plain for every refusal, and the CV reader's refusal
+// is about its SCHEMA alone ("too many parameters with union types" — 39 of a 16 limit), so the plain
+// resend threw away an effort nobody had refused. Haiku then thought at its own default: replayed on the
+// 11:18 Cairo CV three times, 7,280, 8,000 and 7,841 output tokens for about 10,000 characters of JSON —
+// the rest a thinking block — and once it ran out of room at 8,000, which is the failure the escalation
+// had to catch with a 37-second Sonnet read.
+type DegradedShape = "plain" | "without_format";
+const degradedRequests = new Map<string, DegradedShape>();
 
 function plainOnlyKey(format: unknown, model: string) {
   const wanted = (format ?? {}) as { name?: unknown; schema?: unknown; type?: unknown };
@@ -183,7 +195,7 @@ function plainOnlyKey(format: unknown, model: string) {
 }
 
 export function resetAnthropicPlainOnlyMemory() {
-  plainOnlyRequests.clear();
+  degradedRequests.clear();
 }
 
 /** Claude's JSON outputs for an OpenAI `json_schema` format, or null when this call cannot use them. */
@@ -199,6 +211,16 @@ export function anthropicOutputFormatFor(format: unknown, model: string): Anthro
 // with "Schemas contains too many parameters with union types", which a whole-word match never saw.
 export function isOptionalFieldRefusal(status: number, rawBody: string) {
   return status === 400 && /output_config|output_format|schema|\beffort\b|union types/i.test(rawBody);
+}
+
+/**
+ * The resends a refusal earns, in order. A refusal that does not name the effort is about the FORMAT, so
+ * the first resend keeps the effort and drops only the format; plain is the second resort. A refusal
+ * that names the effort, or a request that has nothing but one of the two to drop, goes straight to plain.
+ */
+export function resendShapesFor(rawBody: string, sent: { effort?: unknown; format?: unknown } | undefined): DegradedShape[] {
+  if (sent?.effort && sent?.format && !/\beffort\b/i.test(rawBody)) return ["without_format", "plain"];
+  return ["plain"];
 }
 
 const DATA_URL = /^data:([^;,]+);base64,([\s\S]*)$/;
@@ -268,13 +290,14 @@ export function jsonInstructionFor(format: unknown): string | null {
  * Turns the OpenAI-shaped call `createOpenAiResponseText` receives into a Messages API body.
  * `input` is a plain string or a list of role + content items (input_text / input_image / input_file
  * parts); system and developer items join the system prompt, everything else becomes a turn.
- * `plain` builds the request with no `output_config` at all — the shape the API is resent in when it
- * refuses one of the optional fields (see the header).
+ * `plain` builds the request with no `output_config` at all, and `withoutFormat` keeps the effort and
+ * drops only the JSON outputs — the two shapes the API is resent in when it refuses one of the optional
+ * fields (see the header and `resendShapesFor`).
  */
 export function buildAnthropicRequest(
   params: { format?: unknown; input: unknown; instructions: string; maxOutputTokens: number; reasoningEffort?: unknown },
   model: string,
-  options: { plain?: boolean } = {},
+  options: { plain?: boolean; withoutFormat?: boolean } = {},
 ): AnthropicRequestBody {
   const system: string[] = [params.instructions];
   const messages: AnthropicMessage[] = [];
@@ -307,9 +330,11 @@ export function buildAnthropicRequest(
     return unsupported("a request with no user content");
   }
 
-  const plain = options.plain === true || plainOnlyRequests.has(plainOnlyKey(params.format, model));
+  const remembered = degradedRequests.get(plainOnlyKey(params.format, model));
+  const plain = options.plain === true || remembered === "plain";
+  const withoutFormat = plain || options.withoutFormat === true || remembered === "without_format";
   const effort = plain ? null : anthropicEffortFor(params.reasoningEffort, model);
-  const format = plain ? null : anthropicOutputFormatFor(params.format, model);
+  const format = withoutFormat ? null : anthropicOutputFormatFor(params.format, model);
 
   // With Claude's JSON outputs the API hands the model the schema itself; repeating it in the prompt
   // would pay for it twice and is what invited the schema-echo answer in the first place.
@@ -423,7 +448,8 @@ const PLAIN_RESEND_MIN_MS = 1_000;
 /**
  * One Messages API round trip, with the same retry budget shape as the OpenAI client (`maxRetries`
  * extra tries on a 429 / 5xx / 529, never on a timeout). A 400 naming `output_config` is answered by
- * ONE resend in the plain shape, which is not a retry and spends none of `maxRetries`. Throws
+ * at most two resends in smaller shapes (`resendShapesFor`), which are not retries and spend none of
+ * `maxRetries`. Throws
  * `AnthropicRequestError` — also for a refusal, a JSON answer cut off at max_tokens, and a schema
  * repeated back instead of filled in; never logs, and never puts the key in a message.
  */
@@ -477,12 +503,20 @@ export async function callAnthropicMessages(params: {
     let rawBody = response.ok ? "" : await response.text().catch(() => "");
 
     if (!response.ok && request.output_config && isOptionalFieldRefusal(response.status, rawBody)) {
-      request = buildAnthropicRequest(shape, params.model, { plain: true });
-      response = await post(request, Math.max(PLAIN_RESEND_MIN_MS, params.timeoutMs - (Date.now() - sentAt)));
-      rawBody = response.ok ? "" : await response.text().catch(() => "");
-      // Remembered only when the plain shape is what worked: a request the API refuses either way is
-      // broken for another reason, and must not switch the optional fields off for the whole process.
-      if (response.ok) plainOnlyRequests.add(plainOnlyKey(params.format, params.model));
+      // At most two resends, each a smaller shape, and never a loop: the format alone first when the
+      // refusal is about it, then plain (see `degradedRequests`).
+      for (const resend of resendShapesFor(rawBody, request.output_config)) {
+        request = buildAnthropicRequest(shape, params.model, resend === "plain" ? { plain: true } : { withoutFormat: true });
+        response = await post(request, Math.max(PLAIN_RESEND_MIN_MS, params.timeoutMs - (Date.now() - sentAt)));
+        rawBody = response.ok ? "" : await response.text().catch(() => "");
+        // Remembered only when a smaller shape is what worked: a request the API refuses every way is
+        // broken for another reason, and must not switch the optional fields off for the whole process.
+        if (response.ok) {
+          degradedRequests.set(plainOnlyKey(params.format, params.model), resend);
+          break;
+        }
+        if (!request.output_config || !isOptionalFieldRefusal(response.status, rawBody)) break;
+      }
     }
 
     const requestId = response.headers.get("request-id") ?? undefined;
