@@ -129,6 +129,7 @@ const PINNED = [
   "scripts/new-session.mjs",
   "scripts/phase19-fixture-cleanup-smoke.ts",
   "scripts/pin-coverage-report.mjs",
+  "scripts/post-deploy-errors.mjs",
   "scripts/probe-weekly-xlsx.ts",
   "scripts/provision-missing-employee-accounts.ts",
   "scripts/push-apps-script.mjs",

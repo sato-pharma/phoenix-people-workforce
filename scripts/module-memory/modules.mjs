@@ -982,6 +982,13 @@ export const MODULES = [
       "app/api/readyz/**",
       ".claude/skills/ship/verify-shipped.mjs",
       "tests/verify-shipped-selftest.test.ts",
+      // The ship skill's phase 7b: did the deploy bring a new error (the error table and Sentry).
+      "scripts/lib/post-deploy-errors.mjs",
+      "tests/post-deploy-errors.test.ts",
+      // 🔴 Added 2026-10-19 with the deploy NOTES moved here from `engineering` (it sat at 71,001 of its 72,000
+      // bytes): a session editing a deploy or Railway script or workflow still gets them, as it did before.
+      "scripts/*{railway,deploy}*",
+      ".github/workflows/*{railway,deploy}*",
       "scripts/check-dockerfile.mjs",
       "tests/dockerfile-parse-gate.test.ts",
       "tests/railway-deploy-config.test.ts",
