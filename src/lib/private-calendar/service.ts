@@ -429,7 +429,8 @@ export async function getPrivateCalendarWorkspace(input: {
       loadPhoenixWorkEvidencePrivateCalendarItems(scopeHrIds, start, end),
       // His OWN single visits (owner, 2026-10-19): since 16 Oct they are written to his own record,
       // which no door above reads — a manager's whole day of them rendered empty here.
-      loadManagerOwnVisitPrivateCalendarItems(scopeHrIds, start, end),
+      // The workspace names every visit in full (owner, 2026-10-20); the company-wide pass below stays a count.
+      loadManagerOwnVisitPrivateCalendarItems(scopeHrIds, start, end, { details: true }),
       // The approved weekly plan — the only evidence a manager-approved Travel, Admin or Meeting day
       // ever produces. It covers the day for those types only; see lib/private-calendar/plan-items.ts.
       loadPlanPrivateCalendarItems(scopeHrIds, start, end),
@@ -712,7 +713,7 @@ export async function getPrivateCalendarDayEvidence(
     loadPhoenixWorkEvidencePrivateCalendarItems(hrIds, start, end),
     // Load-bearing here for the same reason: a district manager disputing a day he spent on his own
     // single visits would otherwise be read against a blank (owner, 2026-10-19).
-    loadManagerOwnVisitPrivateCalendarItems(hrIds, start, end),
+    loadManagerOwnVisitPrivateCalendarItems(hrIds, start, end, { details: true }),
     loadPlanPrivateCalendarItems(hrIds, start, end),
     ...months.map(({ year, month }) => loadHolidayItems(year, month, start, end)),
   ]);

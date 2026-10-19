@@ -478,6 +478,15 @@ export async function loadManagerOwnVisitDays(input: {
   return [...counts.values()].sort((left, right) => left.date.localeCompare(right.date) || left.hrId.localeCompare(right.hrId));
 }
 
+// His visits in full — who, where, which half, when, single or double (owner, 2026-10-20). The count above says
+// that he worked; this says what he did, and is read through this same door.
+export {
+  loadManagerOwnVisitDetails,
+  loadManagerRideAlongDetails,
+  loadManagerVisitDetails,
+  type ManagerVisitDetailInput,
+} from "@/lib/phoenix-crm/server/manager-visit-details";
+
 /** What a screen prints beside the day. Never a figure anybody is measured on — a record that he worked. */
 export function describeManagerOwnVisitDay(day: ManagerOwnVisitDay): string {
   return `Phoenix CRM: ${day.visits} own single visit${day.visits === 1 ? "" : "s"}`;

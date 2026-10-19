@@ -1928,6 +1928,7 @@ import { runPhoenixCrmPlanEditRequestTests } from "./phoenix-crm-plan-edit-reque
 import { runPhoenixCrmApprovalNoticeTests } from "./phoenix-crm-approval-notices.test.ts";
 import { runPhoenixCrmDoubleVisitPlanTests } from "./phoenix-crm-double-visit-plan.test.ts";
 import { runPhoenixCrmManagerPlanTests } from "./phoenix-crm-manager-plan.test.ts";
+import { runPhoenixCrmManagerVisitDetailTests } from "./phoenix-crm-manager-visit-details.test.ts";
 import { runPhoenixCrmVisitAsksTests } from "./phoenix-crm-visit-asks.test.ts";
 import { runPhoenixCrmPlanDayEdgesTests } from "./phoenix-crm-plan-day-edges.test.ts";
 import { runPhoenixCrmPlanReviewTests } from "./phoenix-crm-plan-review.test.ts";
@@ -7352,6 +7353,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's district manager plans his own week (owner, 2026-10-16): each half-day is with a rep, admin or a single visit, read strictly; the coming Saturday's week only, Thursday a morning, never a Friday or a holiday; his RSM or NSM approves, Hany Saad's district managers then Ali Mohamed Ali, and the Administrator may act in place; a rep's draft customer reads not sent and a dropped one stays flagged; the rep is refused everywhere, the acting district manager files both weeks and her own rep seat is never one of her reps; every table is RLS-locked to the service role, nothing outside the module reads them and his visits reach no KPI; no notice emails, the Hub counts each week once; a switched district manager loses the legacy form and the Plans tab and keeps the calendar; and his old My own visit is closed",
   runPhoenixCrmManagerPlanTests,
+);
+
+await runTest(
+  "Phoenix CRM shows a manager's visits in full (owner, 2026-10-20: a count was not enough): each of his own single visits and each ride-along with a rep carries its customer, address, brick, type, AM or PM, the Cairo clock, single or double or chain, who came along, products and comment, in ONE shape and ONE card that his team-calendar day page and the private calendar both draw; the page's AM · PM · Pharmacies are the calendar cell's own figures, apart, with an unvalidated ride-along held out; his cell opens his own page, gated by the list the calendar draws his row from, never in the test world; the private calendar's detail read is opt-in so the deduction connector's company-wide pass stays a count, and a failed detail read leaves the day standing; the new screens are square, never scroll sideways and never cut a word with an ellipsis",
+  runPhoenixCrmManagerVisitDetailTests,
 );
 
 await runTest(

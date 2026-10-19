@@ -380,9 +380,16 @@ export async function runPhoenixCrmMissedRecordsTests(): Promise<void> {
   {
     const calendar = source("src/components/phoenix-crm/calendar-tab.tsx");
     assert.equal(
-      (calendar.match(/const opens = row\.kind !== "manager" && \(opensTheDay\(day\) \|\| opensForEntry\(entrySeats, entryThrough, row\.seatId, day\)\);/g) ?? []).length,
+      (calendar.match(/const opens = cellOpens\(row, day, entrySeats, entryThrough\);/g) ?? []).length,
       2,
       "both grids — the desktop row and the phone card — open his days the same way",
+    );
+    // The one rule behind both: a manager row opens only on a day he worked, and never to enter a missed record
+    // (there is no record to enter on a manager seat); a rep row opens on work or, for the Super Admin, to enter one.
+    assert.match(
+      calendar,
+      /if \(row\.kind === "manager"\) return opensTheDay\(day\);\s*return opensTheDay\(day\) \|\| opensForEntry\(entrySeats, entryThrough, row\.seatId, day\);/,
+      "a manager cell never opens for entry; a rep cell does",
     );
     const calendarService = source("src/lib/phoenix-crm/server/team-calendar.ts");
     assert.match(
