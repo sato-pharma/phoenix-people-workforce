@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 9c89c8e2-707a-4c93-b3a5-c2e5af87cfa2
-  modified: 2026-10-18T22:24:20.335Z
+  modified: 2026-10-18T22:43:45.668Z
 ---
 
 The one-by-one review (Place checks, "Review one by one") shipped in PR 6090 and was live at 00:11 Cairo on
@@ -45,7 +45,11 @@ assertion was seen to fire when broken.
 **Why:** he refuses a small PR on its own (each merge is ~28 CI minutes), so he chose "hold it for the next
 change" when asked.
 
-**How to apply:** the next session that opens a Place checks or field-CRM PR cherry-picks 448ae8589,
+**UPDATE 2026-10-19 ~01:40 Cairo:** once the Not readable tab made it a real feature, he chose "Open one
+PR now" — all five are PR 6102, MERGED 01:43 Cairo 19 Oct 2026 (a04475f58) on his "merge 6102 when green".
+Nothing is parked any more; this note is history.
+
+**How to apply (superseded by PR 6102):** the next session that opens a Place checks or field-CRM PR cherry-picks 448ae8589,
 1c49683fa, 35d7782cb, 8ab14cadf and 8235a315c onto its own branch and names them in that PR's body, then deletes
 `codex/place-review-deck-phone` once merged. Never put them to him as a PR of their own. Related:
 [[the-evidence-photo-is-the-primary-source-of-trust]].

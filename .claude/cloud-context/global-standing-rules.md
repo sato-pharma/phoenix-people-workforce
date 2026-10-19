@@ -32,18 +32,25 @@ The dates, his words and the incidents behind each line: `~/.claude/docs/standin
   pending items" and every closing message are done in the turn and never suggested. **Nothing needs
   him → say what finished and quote the next REAL action, named with its real target.** Never filler,
   never invented work. The old "nothing waits on you", with no quoted words, is dead.
+- 🔴 **The target in those words must be LIVE — read it in the same turn, before writing the line**
+  (owner, 2026-10-19: "add the live PR and worktree check before every Next step line"). Naming a PR,
+  a worktree or a branch? `gh pr view <number> --json state,mergedAt` / `git worktree list` first:
+  another session or his own click may already have merged or removed it, and a dead target in his
+  box is a turn he spends for nothing. Clause 8 of the hook below re-reads it live and warns.
 - **That opening line is MECHANICAL.** `~/.claude/hooks/next-step-capture.mjs` is a Stop hook: it
-  WARNS on a reply with no `**Next step:**` line, and on one wrong in six measured ways — a merge
+  WARNS on a reply with no `**Next step:**` line, and on one wrong in seven measured ways — a merge
   YOU will do, a placeholder inside the quoted words, a closing word or a re-check, a bare "merge it"
-  while the reply names the PR number, a money move in the quoted words, or quoted words that never
-  reached a `wrap_up` reply button (clause 7, 2026-10-15). 🔴 **It WARNS, it NEVER
+  while the reply names the PR number, a money move in the quoted words, quoted words that never
+  reached a `wrap_up` reply button (clause 7, 2026-10-15), or a target that is no longer there — a PR
+  that does not exist or is already merged or closed, a worktree or branch already removed (clause 8,
+  2026-10-19; it fails open on any read it cannot make). 🔴 **It WARNS, it NEVER
   BLOCKS (owner, 2026-10-15: "never stop suggestions from appearing in the text box even if the
   usuage is 99.99%") — never restore `{decision:"block"}`:** a blocked Stop hook makes the app
   auto-continue, and the suggestion gate skips an `auto_continuation` turn by name, so the block
   spent the very suggestion the hook exists to fill. The warning reaches the model as a
   `systemMessage` and the NEXT reply carries the line. A warned line is deliberately NOT captured —
   the bar keeps its last good line rather than offering him a placeholder to send. Both halves are
-  pinned by `node ~/.claude/hooks/next-step-capture.mjs selftest` (40 cases). It nudges at most once
+  pinned by `node ~/.claude/hooks/next-step-capture.mjs selftest` (57 cases). It nudges at most once
   per turn and fails open on any error. Never remove it.
 - **Track the work visibly.** Multi-step requests get every planned step created up front and marked
   done as it lands.
@@ -61,6 +68,14 @@ The dates, his words and the incidents behind each line: `~/.claude/docs/standin
   paragraph.** If no choice is genuinely his, do not ask: decide and report. A session without the tool
   writes the same lettered options in chat. An XLSX is only for long per-item lists. The `**Next step:**`
   line is not a place to ask: it quotes the recommended option's words.
+- 🔴 **SHARED DATA PLUS A SHORT VERB MEANS DO IT — act on the obvious meaning, never ask what the data
+  is for** (owner, 2026-10-19: "add the act-on-the-obvious-meaning rule for shared data"). A receipt,
+  screenshot, sheet or pasted row with a few words ("code this pharmacy with this data") is the job:
+  read the data, take the plain reading of his verb, carry it to the end, report what changed.
+  Typos and missing words do not make it unclear. On 18 Oct 15:33 Cairo that exact message got a
+  search and "what is the receipt for?", and he restated it in full 18 minutes later. Ask (MCQ) only
+  when two readings lead to different outcomes. The data never widens the job past his verb, and the
+  approval rules below still hold.
 - **Report faithfully.** If tests failed, say so with output; if a step was skipped, say that. Never
   call something sent, applied, deployed or green without reading the real source of that fact.
 - **Never say his work was built with AI in anything written about him** (owner rule, 2026-10-05 —

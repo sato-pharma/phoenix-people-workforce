@@ -9,8 +9,8 @@
 //      on any failure the previous value simply stays on screen.
 //
 // MODE: `node ~/.claude/hooks/next-step-capture.mjs selftest` runs the decision table against the
-// REAL hook as a child process and prints `0 failed` — 40 cases as of 2026-10-15 (clause 7, the
-// turn box, added that day). Added originally on 2026-10-06
+// REAL hook as a child process and prints `0 failed` — 57 cases as of 2026-10-19 (clause 8, a target
+// that is no longer there, added that day; clause 7, the turn box, 2026-10-15). Added originally on 2026-10-06
 // because this file lives OUTSIDE the repository, so no CI job and no repo test could ever see it
 // weaken: every clause below was added after a measured failure reached his input box, and a
 // regression would simply let that failure through again, silently, on every reply.
@@ -23,6 +23,7 @@
 // The hourly off-machine backup (~/.claude/scripts/claude-scripts-backup.mjs, HOOK_SELFTESTS) runs
 // that mode AFTER pushing the source, so a weakened hook reaches the backup branch and only then
 // fails the task into one Telegram message.
+import { execFileSync as runLive } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -598,6 +599,223 @@ function boxViolation(step, jsonl) {
   ].join('\n');
 }
 
+/**
+ * CLAUSE 8 - A TARGET THAT IS NO LONGER THERE (owner, 2026-10-19: "add the live PR and worktree
+ * check before every Next step line").
+ *
+ * His usage report for 22 Aug - 18 Oct 2026 put this first among the handoff frictions: a session
+ * quoted "merge 6101 when green" for a PR that did not exist, and offered to merge 6099 and remove two
+ * worktrees that other sessions - or his own click - had already handled. He sent the words back and
+ * the turn bought nothing. Each session knows only the state IT last saw, and he runs a dozen.
+ *
+ * So the quoted words are read against LIVE state before they are captured:
+ *   - a merge-family verb (merge, widen, rebase, close, roll up) makes every bare 3-6 digit number in
+ *     the words a PR that must exist AND be open - a date (2026-10-20) or a time (01:43) is not one;
+ *   - an explicit `#N` / `PR N` anywhere else must exist;
+ *   - a `_wt-<task>` must still be a registered worktree, or at least a folder on disk (a husk is still
+ *     something to retire);
+ *   - a `codex/...` or `claude/...` branch must still exist, locally or as origin's.
+ * One GraphQL call answers every PR (~0.6 s, measured 2026-10-19); the rest is local git.
+ *
+ * IT FAILS OPEN, ALWAYS. No repo, no network, no gh auth, a timeout, an answer it cannot parse: no
+ * warning. Only a POSITIVE reading is a verdict - GitHub answering NOT_FOUND, MERGED or CLOSED, git
+ * listing the worktrees with this one not among them and no folder on disk. A false warning costs a
+ * real suggestion (a warned line is not captured), so doubt always resolves toward silence.
+ *
+ * `NSC_LIVE_FIXTURE=<json file>` replaces every live read with a fixture. The selftest sets it so the
+ * suite never touches the network; nothing else does.
+ */
+const MERGE_FAMILY = /\b(?:merge|widen|rebase|close|roll[\s-]?up)\b/i;
+const PR_MENTION = /(?:#|\bpr\s*#?\s*)(\d{3,6})\b/gi;
+const BARE_NUMBER = /(?<![\w:/.-])(\d{3,6})(?![\w:/.-])/g;
+// The leading underscore is OPTIONAL because extractNextStep strips every `_` (the statusline cannot
+// render markdown), so "_wt-gone" arrives here as "wt-gone". It is put back before the lookup.
+const WORKTREE_NAME = /(?<![\w-])_?wt-[a-z0-9][a-z0-9-]*/gi;
+const BRANCH_NAME = /(?<![\w/-])(?:codex|claude)\/[a-z0-9][a-z0-9._/-]*/gi;
+
+function liveFixture() {
+  const file = process.env.NSC_LIVE_FIXTURE;
+  if (!file) return null;
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function live(cmd, args, cwd, timeout) {
+  try {
+    const out = runLive(cmd, args, {
+      cwd,
+      encoding: 'utf8',
+      timeout,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    return { ok: true, out };
+  } catch (err) {
+    // `gh api graphql` exits 1 on a NOT_FOUND and still prints the JSON - keep it.
+    return { ok: false, out: String(err?.stdout || '') };
+  }
+}
+
+/** number -> { state, mergedAt, closedAt }, or null when GitHub said NOT_FOUND. Absent = unknown. */
+function livePrs(numbers, cwd, fixture) {
+  const found = new Map();
+  if (fixture) {
+    const prs = fixture.prs || {};
+    for (const n of numbers) if (Object.prototype.hasOwnProperty.call(prs, n)) found.set(n, prs[n]);
+    return found;
+  }
+  const remote = live('git', ['-C', cwd, 'remote', 'get-url', 'origin'], cwd, 3000);
+  const slug = /github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\s*$/i.exec(remote.out || '');
+  if (!slug) return found;
+  const fields = numbers.map((n) => `p${n}: pullRequest(number: ${n}) { state mergedAt closedAt }`).join(' ');
+  const query = `{ repository(owner: ${JSON.stringify(slug[1])}, name: ${JSON.stringify(slug[2])}) { ${fields} } }`;
+  let body;
+  try {
+    body = JSON.parse(live('gh', ['api', 'graphql', '-f', `query=${query}`], cwd, 8000).out);
+  } catch {
+    return found;
+  }
+  const repo = body?.data?.repository;
+  if (!repo) return found;
+  const missing = new Set(
+    (body.errors || [])
+      .filter((e) => e?.type === 'NOT_FOUND' && Array.isArray(e.path))
+      .map((e) => e.path[e.path.length - 1]),
+  );
+  for (const n of numbers) {
+    const pr = repo['p' + n];
+    if (pr && pr.state) found.set(n, pr);
+    else if (pr === null && missing.has('p' + n)) found.set(n, null);
+  }
+  return found;
+}
+
+/** 'registered' | 'husk' (a folder git no longer lists) | 'gone' | null (could not tell). */
+function liveWorktree(name, cwd, fixture) {
+  const key = name.toLowerCase();
+  if (fixture) {
+    if (!Array.isArray(fixture.worktrees)) return null;
+    if (fixture.worktrees.some((w) => w.toLowerCase() === key)) return 'registered';
+    return (fixture.dirs || []).some((d) => d.toLowerCase() === key) ? 'husk' : 'gone';
+  }
+  const r = live('git', ['-C', cwd, 'worktree', 'list', '--porcelain'], cwd, 4000);
+  if (!r.ok) return null;
+  // --porcelain, never the plain list: every path here holds a space, and the plain list's first
+  // column is "F:/Phoenix" for all of them.
+  const paths = r.out
+    .split('\n')
+    .filter((l) => l.startsWith('worktree '))
+    .map((l) => l.slice('worktree '.length).trim());
+  if (!paths.length) return null;
+  if (paths.some((p) => path.basename(p).toLowerCase() === key)) return 'registered';
+  const primary = paths[0];
+  const places = [
+    path.join(path.dirname(primary), name),
+    path.join(primary, name),
+    path.join(primary, '.codex-worktrees', name),
+    path.join(primary, '.claude', 'worktrees', name),
+  ];
+  const onDisk = places.some((p) => {
+    try {
+      return fs.statSync(p).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+  return onDisk ? 'husk' : 'gone';
+}
+
+/** true / false, or null when git could not be read. */
+function liveBranch(branch, cwd, fixture) {
+  if (fixture) return Array.isArray(fixture.branches) ? fixture.branches.includes(branch) : null;
+  const r = live(
+    'git',
+    ['-C', cwd, 'for-each-ref', '--format=%(refname)', `refs/heads/${branch}`, `refs/remotes/origin/${branch}`],
+    cwd,
+    3000,
+  );
+  if (!r.ok) return null;
+  return r.out.trim().length > 0;
+}
+
+function cairoTime(iso) {
+  try {
+    const at = new Date(iso).toLocaleString('en-GB', {
+      timeZone: 'Africa/Cairo',
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    return at && at !== 'Invalid Date' ? ` (${at} Cairo)` : '';
+  } catch {
+    return '';
+  }
+}
+
+function staleTargetViolation(step, cwd) {
+  const quoted = quotedWords(step);
+  if (!quoted) return '';
+  const plain = quoted.toLowerCase().replace(/[.!?]+$/, '').trim();
+  const fixture = liveFixture();
+  const dir = cwd && fs.existsSync(cwd) ? cwd : process.cwd();
+  const gone = [];
+
+  const mustBeOpen = new Set();
+  if (MERGE_FAMILY.test(plain)) for (const m of plain.matchAll(BARE_NUMBER)) mustBeOpen.add(m[1]);
+  const mustExist = new Set(mustBeOpen);
+  for (const m of plain.matchAll(PR_MENTION)) mustExist.add(m[1]);
+  if (mustExist.size) {
+    const numbers = [...mustExist].slice(0, 6);
+    let prs;
+    try {
+      prs = livePrs(numbers, dir, fixture);
+    } catch {
+      prs = new Map();
+    }
+    for (const n of numbers) {
+      if (!prs.has(n)) continue;
+      const pr = prs.get(n);
+      if (pr === null) gone.push(`PR ${n} does not exist on GitHub`);
+      else if (mustBeOpen.has(n) && pr.state === 'MERGED') gone.push(`PR ${n} is already merged${cairoTime(pr.mergedAt)}`);
+      else if (mustBeOpen.has(n) && pr.state === 'CLOSED') gone.push(`PR ${n} is closed${cairoTime(pr.closedAt)}`);
+    }
+  }
+
+  const worktrees = [
+    ...new Set([...quoted.matchAll(WORKTREE_NAME)].map((m) => '_' + m[0].replace(/^_/, '').replace(/-+$/, ''))),
+  ];
+  for (const name of worktrees.slice(0, 4)) {
+    let state = null;
+    try {
+      state = liveWorktree(name, dir, fixture);
+    } catch {}
+    if (state === 'gone') gone.push(`worktree ${name} is no longer registered and no folder of that name is on disk`);
+  }
+
+  const branches = [...new Set([...quoted.matchAll(BRANCH_NAME)].map((m) => m[0].replace(/[./-]+$/, '')))];
+  for (const branch of branches.slice(0, 4)) {
+    let exists = null;
+    try {
+      exists = liveBranch(branch, dir, fixture);
+    } catch {}
+    if (exists === false) gone.push(`branch ${branch} no longer exists here or on origin`);
+  }
+
+  if (!gone.length) return '';
+  return [
+    `The quoted words in your opening line are "${quoted}", and live state says that target is gone: ${gone.join('; ')}. Another session, or his own click, got there first - he runs many sessions at once and each one knows only the state it last saw. A stale target in his box is a turn he spends for nothing (his usage report, 22 Aug - 18 Oct 2026: a PR that never existed, PRs already merged, worktrees already removed).`,
+    '',
+    'Read the live state of that target now (gh pr view with --json state,mergedAt; git worktree list) and replace ONLY the opening line: say what is already done, and quote the next REAL action whose target is still live.',
+    '',
+    'Do not redo the task. The one read allowed is the live state of the target.',
+  ].join('\n');
+}
+
 function contentViolation(step, text) {
   const quoted = quotedWords(step);
   // Read what the reply SAID, never what it quoted (stripQuoted). The number matters as much
@@ -747,11 +965,28 @@ if (process.argv[2] === 'selftest') {
   let ran = 0;
   let failed = 0;
 
+  // Clause 8's live reads come from this fixture, never the network - so every case below is
+  // deterministic, and GOOD's PR 5371 is OPEN here whatever it is on GitHub today. A key ABSENT from
+  // `prs` is a lookup that could not be read; a key holding null is GitHub answering NOT_FOUND.
+  const LIVE = {
+    prs: {
+      5371: { state: 'OPEN' },
+      6099: { state: 'MERGED', mergedAt: '2026-10-18T22:43:34Z' },
+      6090: { state: 'CLOSED', closedAt: '2026-10-18T10:00:00Z' },
+      6101: null,
+    },
+    worktrees: ['phoenix-workforce', '_wt-cloud-mirror-sync', '_wt-weekly-plan-rulings'],
+    dirs: ['_wt-old-husk'],
+    branches: ['codex/weekly-plan-rulings', 'codex/cloud-mirror-sync'],
+  };
+
   const decide = (reply, opts = {}) => {
     const sessionId = opts.sessionId || 'selftest-' + ran;
     const tp = path.join(TMP, sessionId + '.jsonl');
     const entries = opts.entries || [{ type: 'assistant', message: { content: [{ type: 'text', text: reply }] } }];
     fs.writeFileSync(tp, entries.map((e) => JSON.stringify(e)).join('\n') + '\n', 'utf8');
+    const fixture = path.join(TMP, sessionId + '.live.json');
+    fs.writeFileSync(fixture, JSON.stringify(opts.live || LIVE), 'utf8');
     const out = execFileSync(process.execPath, [process.argv[1]], {
       input: JSON.stringify({
         session_id: sessionId,
@@ -759,7 +994,7 @@ if (process.argv[2] === 'selftest') {
         stop_hook_active: opts.stopHookActive === true,
       }),
       encoding: 'utf8',
-      env: { ...process.env, USERPROFILE: HOME_T, HOME: HOME_T },
+      env: { ...process.env, USERPROFILE: HOME_T, HOME: HOME_T, NSC_LIVE_FIXTURE: fixture },
     });
     const capFile = path.join(HOME_T, '.claude', '.next-step', sessionId + '.txt');
     const captured = fs.existsSync(capFile) ? fs.readFileSync(capFile, 'utf8') : null;
@@ -817,6 +1052,20 @@ if (process.argv[2] === 'selftest') {
     ['a message HE sends to a person', '**Next step:** the pack is assembled — “tell HR to start scanning the hiring documents”', 'block', 'message HE sends to a person'],
     // clause 4 — a bare "merge it" beside a number
     ['a bare "merge it" while the reply names the PR', 'PR #5371 is green.\n\n**Next step:** it is ready — “merge it”', 'block', 'merge 5371'],
+    // clause 8 — a target that is no longer there (owner, 2026-10-19)
+    ['a merge of a PR that does not exist', '**Next step:** it is pushed — “merge 6101 when green”', 'block', 'PR 6101 does not exist'],
+    ['a merge of a PR another session already merged', '**Next step:** both checks are green — “merge 6099 when green”', 'block', 'PR 6099 is already merged (19 Oct, 01:43 Cairo)'],
+    ['a merge of a closed PR', '**Next step:** it is green — “merge 6090 when green”', 'block', 'PR 6090 is closed'],
+    ['two merges where the second is already done', '**Next step:** both are green — “merge 5371 and 6099 when green”', 'block', 'PR 6099 is already merged'],
+    ['retiring a worktree another session already removed', '**Next step:** it is merged — “retire _wt-gone-already and delete its branch”', 'block', 'worktree _wt-gone-already is no longer registered'],
+    ['deleting a branch that is already gone', '**Next step:** it is merged — “delete codex/gone-branch”', 'block', 'branch codex/gone-branch no longer exists'],
+    ['an explicit #N that never existed, outside a merge', '**Next step:** the cause is found — “fix the export bug from #6101”', 'block', 'PR 6101 does not exist'],
+    // clause 8's allow path — a live target, a husk, a mention, an unreadable lookup
+    ['retiring a live worktree and its live branch', '**Next step:** it is merged — “retire _wt-weekly-plan-rulings and delete codex/weekly-plan-rulings”', 'allow', ''],
+    ['retiring a husk that is still a folder on disk', '**Next step:** git no longer lists it — “retire _wt-old-husk”', 'allow', ''],
+    ['a merged PR named outside a merge verb only has to exist', '**Next step:** the cause is found — “fix the export bug that #6099 left behind”', 'allow', ''],
+    ['a PR the lookup could not read fails open', '**Next step:** it is pushed — “merge 7777 when green”', 'allow', ''],
+    ['a date beside a live merge is not a PR', '**Next step:** it is green — “merge 5371 before 2026-10-20 at 09:00”', 'allow', ''],
     // the allow path — none of these may fire
     ['a merge approval naming its number', GOOD, 'allow', ''],
     ['retiring a worktree', '**Next step:** it is merged — “retire _wt-cloud-mirror-sync and delete its branch”', 'allow', ''],
@@ -881,6 +1130,19 @@ if (process.argv[2] === 'selftest') {
     warned.captured === null,
     'captured ' + JSON.stringify(warned.captured),
   );
+
+  // Clause 8, beyond the table: a stale target never reaches the bar, the continuation pass makes no
+  // live read at all, and a fixture with nothing in it (every read failed) says nothing.
+  const staleCap = decide('**Next step:** it is green — “merge 6099 when green”', { sessionId: 'stalecap' });
+  check(
+    'a stale target is warned AND not captured, so it never becomes his ghost text',
+    staleCap.blocked && staleCap.captured === null,
+    'blocked ' + staleCap.blocked + ', captured ' + JSON.stringify(staleCap.captured),
+  );
+  const staleCont = decide('**Next step:** it is green — “merge 6099 when green”', { sessionId: 'stalecont', stopHookActive: true });
+  check('the continuation pass makes no live read and warns nothing', !staleCont.blocked, 'it warned on the continuation pass');
+  const blind = decide('**Next step:** it is pushed — “merge 6101 and retire _wt-gone-already”', { sessionId: 'blind', live: {} });
+  check('when every live read fails, clause 8 fails open', !blind.blocked, 'it warned with nothing read: ' + blind.reason.slice(0, 160));
 
   // stop_hook_active is the infinite-loop guard: the continuation pass must never block again,
   // however wrong the reply still is.
@@ -1068,6 +1330,15 @@ try {
       ].join('\n');
     } else {
       reason = contentViolation(step, text);
+      // Clause 8 reads the network, so it runs only when every cheap check passed, and never on the
+      // continuation pass (which is never warned anyway).
+      if (!reason && input?.stop_hook_active !== true) {
+        try {
+          reason = staleTargetViolation(step, input?.cwd) || null;
+        } catch {
+          reason = null;
+        }
+      }
       if (!reason) {
         const miss = boxViolation(step, jsonl);
         if (miss) {
