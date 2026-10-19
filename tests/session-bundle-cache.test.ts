@@ -7,6 +7,7 @@ import {
   forgetRememberedBundle,
   forgetRememberedBundlesForSessions,
   mayServeRememberedBundle,
+  pageRequestMayUseRecentCopy,
   recallRememberedBundle,
   rememberAcceptedBundle,
   SESSION_BUNDLE_CACHE_MAX_ENTRIES,
@@ -229,6 +230,25 @@ export function runSessionBundleCacheTests() {
     (server.match(/\{ allowRecentCopy \}/g) ?? []).length,
     2,
     "both the cookie and the bearer path of the API resolver pass the method rule",
+  );
+  // A server action is a POST to a PAGE: it reaches resolveAccessContextFromPage, never the API resolver,
+  // and used to accept the copy there (code review, 19 Oct 2026 -- a vacation decision under an old role).
+  const pageRequest = (entries: Record<string, string>) => new Headers(entries);
+  assert.equal(pageRequestMayUseRecentCopy(pageRequest({})), true, "a page navigation may read on a copy");
+  assert.equal(pageRequestMayUseRecentCopy(pageRequest({ rsc: "1" })), true, "an RSC fetch or prefetch may read on a copy");
+  assert.equal(
+    pageRequestMayUseRecentCopy(pageRequest({ "next-action": "7f3a" })),
+    false,
+    "a server action never runs on a copy",
+  );
+  assert.equal(
+    pageRequestMayUseRecentCopy(pageRequest({ "content-type": "multipart/form-data; boundary=x" })),
+    false,
+    "a form posted before the page's JavaScript loaded has no next-action header, but its body still refuses the copy",
+  );
+  assert.ok(
+    /resolveSessionAccessContext\(cookieValue, \{\s*allowRecentCopy: pageRequestMayUseRecentCopy\(headerStore\),\s*\}\)/.test(server),
+    "the page resolver applies the server-action rule",
   );
   for (const route of [
     "app/api/auth/biometric/register/options/route.ts",
