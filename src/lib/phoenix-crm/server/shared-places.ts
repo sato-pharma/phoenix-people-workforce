@@ -35,7 +35,14 @@ import { logError } from "@/lib/observability/log";
 import { deviceClockSkewMinutes } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { placeChecksSeatScope, readTestFlag, territoryForRead, territoryForValidation, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import {
+  canDecideValidationReviews,
+  placeChecksSeatScope,
+  readTestFlag,
+  territoryForRead,
+  territoryForValidation,
+  type PhoenixCrmViewer,
+} from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
@@ -71,7 +78,15 @@ function text(value: unknown): string | null {
   return cleaned ? cleaned : null;
 }
 
-/** The Super Admin, and nobody else — the same decider every place check has. */
+/**
+ * The Super Admin, and nobody else — the gate on SEATING a standalone customer in a validated polyclinic
+ * (owner, 2026-10-10: "never the SFE Manager"; `place-move.ts`, `list.ts`).
+ *
+ * 🔴 IT NO LONGER GATES DECIDING A VENUE. Approving, rejecting and restoring a polyclinic is the same
+ * decider as every other place check — `canDecideValidationReviews`, the Super Admin and the SFE Manager
+ * since 2026-10-19 — so widening one did not widen the other. Do not point this back at the shared
+ * decider, and do not point the venue decision back here.
+ */
 export function canDecideSharedPlaces(viewer: PhoenixCrmViewer): boolean {
   return viewer.isSuperAdmin && viewer.canUpdate && !viewer.isTestPersona;
 }
@@ -659,7 +674,7 @@ export type SharedPlaceDecision = {
  * allow-list and already worded as the system's rather than a person's (golden rule #1).
  */
 export async function decideSharedPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<SharedPlaceDecision> {
-  if (!canDecideSharedPlaces(viewer)) throw forbiddenError("Only the Super Admin decides these.");
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
   const body = record(raw);
   if (!isUuid(body.sharedPlaceId)) throw validationError("Choose the polyclinic or centre to decide.");
   const decision = body.decision === "approve" ? "approve" : body.decision === "reject" ? "reject" : null;
@@ -851,7 +866,7 @@ export type SharedPlaceRestore = {
  * rule #1). The notice he already has is withdrawn by the customer's own validation, by prefix.
  */
 export async function restoreSharedPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<SharedPlaceRestore> {
-  if (!canDecideSharedPlaces(viewer)) throw forbiddenError("Only the Super Admin decides these.");
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
   const body = record(raw);
   if (!isUuid(body.sharedPlaceId)) throw validationError("Choose the polyclinic or centre to bring back.");
 

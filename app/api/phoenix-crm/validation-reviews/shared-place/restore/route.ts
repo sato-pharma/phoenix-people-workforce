@@ -16,13 +16,13 @@ export const dynamic = "force-dynamic";
 // `/validation-reviews`: the rules are different ones — a rejection may be taken back only while the
 // venue is still retired — and they belong to a function of their own.
 //
-// The Super Admin ALONE, gated in the service by `canDecideSharedPlaces` as well as here.
+// The Super Admin and the SFE Manager, gated in the service by `canDecideValidationReviews` as well as here (`approve` is gate one).
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "phoenix_crm", "update");
+    await assertPermission(access, "phoenix_crm", "approve");
     const viewer = await resolvePhoenixCrmViewer(access);
     const restored = await restoreSharedPlace(viewer, await request.json());
     return NextResponse.json({ restored, success: true });

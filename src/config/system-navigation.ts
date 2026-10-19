@@ -4617,15 +4617,20 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
   },
   {
     // Places the Google Maps check could not confirm (owner, 2026-10-03: "held for review and only
-    // system admin can approve or reject"). The Super Admin's ALONE — not the SFE Manager — and the
-    // enforcing gate is `canDecideValidationReviews` inside the page and the route; this card only draws
-    // the link. The rep reads the outcome as the system's, never a person's.
+    // system admin can approve or reject"; the SFE Manager added 2026-10-19: "show check place to sfe
+    // manager exactly as it in the admin account to be able validate approve and refuse"). The enforcing
+    // gate is `canDecideValidationReviews` inside the page and the routes; this card only draws the link.
+    // The rep reads the outcome as the system's, never a person's.
+    //
+    // 🔴 `approve`, NOT `update`: the SFE Manager holds `phoenix_crm` read + approve and no `update`, and
+    // `tests/nav-roles-name-only-permission-holders.test.ts` refuses a roles entry whose role lacks the
+    // card's permission. Both listed roles hold `approve`.
     href: "/admin/field-crm/validation-reviews",
     icon: MapPinCheck,
     label: "Place Checks",
     description: "Validations Google Maps had no listing for. Each waits for you to approve or reject; the rep is told only that the system is checking.",
-    permissions: [{ resource: "phoenix_crm", action: "update" }],
-    roles: ["Super Admin"],
+    permissions: [{ resource: "phoenix_crm", action: "approve" }],
+    roles: ["Super Admin", "SFE Manager"],
   },
   {
     // Every tap, press and keystroke on Phoenix CRM (owner, 2026-10-03: "every single thing is saved,
@@ -5279,7 +5284,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/phoenix-crm/duplicates",
           // A rep turned away on his location: housekeeping like the duplicates row, same band.
           "/admin/phoenix-crm/refused-readings",
-          // A place Google Maps could not confirm: the same band, the Super Admin's alone.
+          // A place Google Maps could not confirm: the same band, the Super Admin's and the SFE Manager's.
           "/admin/field-crm/validation-reviews",
           // Beside it, and in the same band for the same reason: the raw evidence under those
           // integrity rows, and the Super Admin's alone.

@@ -730,8 +730,9 @@ const TEAM_PLACE_CHECKS_TIERS = new Set(["DM", "ACTING_DM"]);
  * because the next session reads the paragraph above as an open question. Only his own word, naming
  * the rung, changes it.
  *
- * It decides NOTHING. `canDecideValidationReviews` is still the Super Admin alone, and the manager's
- * screen never says so (his own instruction, the same day: "don't show this on the screen").
+ * It decides NOTHING. `canDecideValidationReviews` is the Super Admin and the SFE Manager, never the
+ * district manager, and the manager's screen never says so (his own instruction, the same day: "don't
+ * show this on the screen").
  */
 export function readsTeamPlaceChecks(viewer: PhoenixCrmViewer): boolean {
   return viewer.managerSeats.some((seat) => TEAM_PLACE_CHECKS_TIERS.has(seat.tier));
@@ -774,9 +775,20 @@ export function doubleVisitReportAudience(viewer: PhoenixCrmViewer): DoubleVisit
 }
 
 /**
- * The Super Admin, and nobody else, decides a place check (owner, 2026-10-03: "only system admin can
- * approve or reject"). Never a test account, never the SFE Manager, and — since 2026-10-13 — never the
- * district manager who now READS his own team's board and writes a recommendation on it.
+ * The Super Admin and the SFE Manager decide a place check (owner, 2026-10-03: "only system admin can
+ * approve or reject"; widened 2026-10-19: "show check place to sfe manager exactly as it in the admin
+ * account to be able validate approve and refuse"). Never a test account, and never the district
+ * manager, who READS his own team's board and writes a recommendation on it (2026-10-13).
+ *
+ * The Super Admin holds `phoenix_crm` `update`; the SFE Manager holds `approve` and no `update`, so the
+ * gate is each role's own grant rather than a new `update` handed to the SFE Manager (which would also
+ * open every other `update` route in the module to him). The decision routes are gated on `approve` for
+ * the same reason — see `access-registry.ts`.
+ *
+ * 🔴 WHAT THIS DOES NOT WIDEN, each its own ruling and each still the Super Admin's alone: settling a
+ * location-integrity case (`canSettleIntegrityCases`, 2026-10-09), seating a standalone customer in a
+ * polyclinic (`canDecideSharedPlaces`, 2026-10-10), and the mock-location evidence (`readsPositionCases`,
+ * 2026-10-02) — so an SFE Manager on this board is served the photo evidence only.
  *
  * 🔴 IT LIVES HERE, AND `server/validation-reviews.ts` RE-EXPORTS IT UNDER ITS OWN NAME, because
  * `placeChecksSeatScope` below has to answer for all FOUR section reads and one of them is the venue
@@ -787,7 +799,9 @@ export function doubleVisitReportAudience(viewer: PhoenixCrmViewer): DoubleVisit
  * from deciding on it.
  */
 export function canDecideValidationReviews(viewer: PhoenixCrmViewer): boolean {
-  return viewer.isSuperAdmin && viewer.canUpdate && !viewer.isTestPersona;
+  if (viewer.isTestPersona) return false;
+  if (viewer.isSuperAdmin) return viewer.canUpdate;
+  return viewer.isSfeManager && viewer.canApprove;
 }
 
 /**
@@ -799,8 +813,9 @@ export function canDecideValidationReviews(viewer: PhoenixCrmViewer): boolean {
  * on an empty array answers ZERO ROWS WITH NO ERROR — so the page would draw itself, empty, for
  * somebody it must not draw for at all, and read as "nothing waiting" rather than as a refusal.
  *
- * It does not widen the decider by one person: `canDecideValidationReviews` is unchanged above, and a
- * manager's board renders none of the decision controls.
+ * It does not widen the decider by one person: `canDecideValidationReviews` is unchanged by it, and a
+ * manager's board renders none of the decision controls. A decider (Super Admin or SFE Manager) reads
+ * the whole company.
  */
 export function placeChecksSeatScope(viewer: PhoenixCrmViewer): string[] | null {
   if (canDecideValidationReviews(viewer)) return null;

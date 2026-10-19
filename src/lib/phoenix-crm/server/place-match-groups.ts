@@ -1,10 +1,11 @@
 /**
- * Phoenix CRM — the same place validated by more than one rep: the read and the Super Admin's answers
+ * Phoenix CRM — the same place validated by more than one rep: the read and the administrator's answers
  * (owner, 2026-10-17, the third tab of Place checks).
  *
  * The rule is `place-match-groups.ts`; this file is only what feeds it and what stores what he says.
  *
- * 🔴 THE SUPER ADMIN'S ALONE — the same decider as every Place check (`canDecideValidationReviews`). The
+ * 🔴 THE DECIDERS' ALONE — the same decider as every Place check (`canDecideValidationReviews`: the Super
+ * Admin, and the SFE Manager since 2026-10-19). The
  * comparison sets one rep's readings beside another's, across teams, so a district manager's own board
  * never carries it: it would show him a colleague's work.
  *
@@ -48,7 +49,7 @@ function text(value: unknown): string | null {
 }
 
 
-/** The Super Admin, and nobody else. Named here so the page, the route and the test say one thing. */
+/** The Super Admin and the SFE Manager, and nobody else. Named here so the page, the route and the test say one thing. */
 export function canReadPlaceMatches(viewer: PhoenixCrmViewer): boolean {
   return canDecideValidationReviews(viewer);
 }
@@ -98,7 +99,7 @@ const VENUE_COLUMNS =
 export type PlaceMatchRead = { board: PlaceMatchBoard; capped: boolean };
 
 export async function loadPlaceMatchBoard(viewer: PhoenixCrmViewer): Promise<PlaceMatchRead> {
-  if (!canReadPlaceMatches(viewer)) throw forbiddenError("Only the Super Admin reads this.");
+  if (!canReadPlaceMatches(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager read this.");
   const seats = placeChecksSeatScope(viewer);
 
   const [placeRead, venueRead, answerRead] = await Promise.all([
@@ -247,7 +248,7 @@ export type PlaceMatchAnswerResult = { answer: "same" | "different" | "forget"; 
  * subject that no longer exists is inert.
  */
 export async function answerPlaceMatch(viewer: PhoenixCrmViewer, raw: unknown): Promise<PlaceMatchAnswerResult> {
-  if (!canReadPlaceMatches(viewer)) throw forbiddenError("Only the Super Admin answers this.");
+  if (!canReadPlaceMatches(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager answer this.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   const answer = body.answer === "same" ? "same" : body.answer === "different" ? "different" : body.answer === "forget" ? "forget" : null;
   if (!answer) throw validationError("Choose same place, different places, or take the answer back.");

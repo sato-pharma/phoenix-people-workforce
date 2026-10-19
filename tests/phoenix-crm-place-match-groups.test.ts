@@ -281,9 +281,9 @@ export function runPhoenixCrmPlaceMatchGroupsTests(): void {
   assert.equal(board([subject({ meters: 0 }), { ...subject({ meters: 5 }), point: { lat: Number.NaN, lon: 31 } }]).groups.length, 0, "a reading with no usable point is left out");
   assert.equal(MAX_ANSWER_PAIRS, 80, "the route's per-request ceiling, which the screen sends a bigger question in pieces to stay under");
 
-  // ── The server: the Super Admin's alone, read in full, a seated customer never a subject ──────
+  // ── The server: the deciders' alone, read in full, a seated customer never a subject ──────
   const server = read("src/lib/phoenix-crm/server/place-match-groups.ts");
-  assert.match(server, /export function canReadPlaceMatches\(viewer: PhoenixCrmViewer\): boolean \{\s*return canDecideValidationReviews\(viewer\);/, "🔴 the same decider as every Place check — the Super Admin alone");
+  assert.match(server, /export function canReadPlaceMatches\(viewer: PhoenixCrmViewer\): boolean \{\s*return canDecideValidationReviews\(viewer\);/, "🔴 the same decider as every Place check — the Super Admin and the SFE Manager");
   assert.equal(server.split("throw forbiddenError(").length - 1, 2, "both the read and the answer refuse everyone else");
   assert.ok(/export async function loadPlaceMatchBoard[\s\S]*?if \(!canReadPlaceMatches\(viewer\)\) throw forbiddenError/.test(server), "the read checks first");
   assert.ok(/export async function answerPlaceMatch[\s\S]*?if \(!canReadPlaceMatches\(viewer\)\) throw forbiddenError/.test(server), "and so does the answer");
@@ -299,14 +299,14 @@ export function runPhoenixCrmPlaceMatchGroupsTests(): void {
   assert.ok(server.includes('.delete().eq("subject_a", low).eq("subject_b", high)'), "and taking one back deletes the pair");
   assert.ok(server.includes("rawPairs.length > MAX_ANSWER_PAIRS"), "a request is bounded");
 
-  // ── The route: read behind `read`, write behind `update` and the origin check ─────────────────
+  // ── The route: read behind `read`, write behind `approve` and the origin check ─────────────────
   const route = read("app/api/phoenix-crm/validation-reviews/same-place/route.ts");
   const getPart = route.slice(route.indexOf("export async function GET"), route.indexOf("export async function POST"));
   const postPart = route.slice(route.indexOf("export async function POST"));
   assert.ok(getPart.includes('assertPermission(access, "phoenix_crm", "read")') && getPart.includes("loadPlaceMatchBoard(viewer)"), "the read is a read of the module and the loader checks the viewer");
   assert.ok(!getPart.includes("assertSameOriginMutation"), "a GET carries no origin check");
   assert.ok(postPart.includes("assertSameOriginMutation(request)"), "the write checks the origin");
-  assert.ok(postPart.includes('assertPermission(access, "phoenix_crm", "update")') && postPart.includes("answerPlaceMatch(viewer, await request.json())"), "behind `update`, and the service refuses everyone but the Super Admin");
+  assert.ok(postPart.includes('assertPermission(access, "phoenix_crm", "approve")') && postPart.includes("answerPlaceMatch(viewer, await request.json())"), "behind `approve`, and the service refuses everyone but the Super Admin and the SFE Manager");
   assert.ok(getPart.includes("board: { ...board, capped }") && postPart.includes("{ saved, success: true }"), "under the keys the screen reads");
 
   // ── The screen and the board ──────────────────────────────────────────────────────────────────

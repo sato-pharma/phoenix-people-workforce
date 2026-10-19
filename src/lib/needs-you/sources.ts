@@ -959,8 +959,9 @@ const phoenixCrmDecisions: NeedsYouAdapter = {
         key: "phoenix-crm-decisions:place-checks",
         sourceId: "phoenix-crm-decisions",
         kind: "approval",
-        // HIS OWN LANE, and the strongest claim to it in this module: the Super Admin is the only
-        // person who can decide a held place, so nobody else can clear this row for him.
+        // HIS OWN LANE, and the strongest claim to it in this module: only the Super Admin and the SFE
+        // Manager can decide a held place (`canDecideValidationReviews`, which asked for the count), so
+        // nobody below them can clear this row — and either of the two clearing it clears it for both.
         lane: "yours",
         label: `${counts.placeChecks} ${plural(counts.placeChecks, "place is", "places are")} held for your approval`,
         count: counts.placeChecks,

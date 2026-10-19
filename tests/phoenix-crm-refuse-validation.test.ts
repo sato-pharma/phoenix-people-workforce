@@ -50,8 +50,8 @@ function checkService(): void {
   const firstRead = refuse.indexOf('.from("phoenix_crm_places")');
   assert.ok(gate > -1, "refuseValidatedPlace asks who is refusing");
   assert.ok(firstRead > -1, "refuseValidatedPlace reads the place");
-  assert.ok(gate < firstRead, "and it asks BEFORE it reads — the Super Admin alone, as the queue beside it");
-  assert.match(refuse, /throw forbiddenError\("Only the Super Admin decides these\."\)/, "with the queue's own refusal");
+  assert.ok(gate < firstRead, "and it asks BEFORE it reads — the deciders alone, as the queue beside it");
+  assert.match(refuse, /throw forbiddenError\("Only the Super Admin and the SFE Manager decide these\."\)/, "with the queue's own refusal");
 
   // A hand refusal carries no Google evidence, so the one sentence the REP is told is the record.
   assert.match(refuse, /if \(!refusalReason\) throw validationError\(VALIDATION_REASON_REQUIRED\)/, "a refusal with no chosen reason is refused");
@@ -300,13 +300,13 @@ function checkBulkDecide(): void {
 function checkRoute(): void {
   const route = read("app/api/phoenix-crm/validation-reviews/refuse/route.ts");
   assert.match(route, /assertSameOriginMutation\(request\)/, "the refusal route checks the origin");
-  assert.match(route, /assertPermission\(access, "phoenix_crm", "update"\)/, "and the module's update right");
+  assert.match(route, /assertPermission\(access, "phoenix_crm", "approve"\)/, "and the module's approve right — both deciders hold it, and the SFE Manager holds no update");
   assert.match(route, /refuseValidatedPlace\(viewer, await request\.json\(\)\)/, "before the service decides who may actually press it");
   assert.match(route, /export const runtime = "nodejs"/, "it runs on node, like every CRM route");
 
   const restore = read("app/api/phoenix-crm/validation-reviews/restore/route.ts");
   assert.match(restore, /assertSameOriginMutation\(request\)/, "the restore route checks the origin too");
-  assert.match(restore, /assertPermission\(access, "phoenix_crm", "update"\)/, "and the same module right");
+  assert.match(restore, /assertPermission\(access, "phoenix_crm", "approve"\)/, "and the same module right");
   assert.match(restore, /restoreValidation\(viewer, await request\.json\(\)\)/, "before the service decides who may press it");
 
   const registry = read("src/lib/security/access-registry.ts");
@@ -317,7 +317,7 @@ function checkRoute(): void {
 
 function checkScreens(): void {
   const page = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
-  assert.match(page, /canDecideValidationReviews\(viewer\)\) redirect\("\/admin"\)/, "the page stays the Super Admin's alone");
+  assert.match(page, /canDecideValidationReviews\(viewer\)\) redirect\("\/admin"\)/, "the page stays the deciders' alone — the Super Admin and the SFE Manager");
   assert.match(page, /loadValidatedPlaces\(viewer\)/, "and now also loads the validations the system did not question");
   // The prop names rather than one literal line: the sixth set (the polyclinics, 2026-10-09) made the
   // call multi-line, and a single-line fingerprint would go red on formatting alone.

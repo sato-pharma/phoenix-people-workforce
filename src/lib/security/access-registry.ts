@@ -897,9 +897,9 @@ export const accessRegistry = [
   // A new signboard photo for a place the system sent back to its rep (2026-10-18) — only a place
   // waiting on one (`retakePlaceSignboard`), never a free swap of a place's evidence.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/signboard", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
-  // Approving or rejecting a place the Google Maps check could not confirm (owner, 2026-10-03): the
-  // Super Admin ALONE — `update` at the route, `canDecideValidationReviews` in the service.
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // Approving or rejecting a place the Google Maps check could not confirm (owner, 2026-10-03; the SFE Manager too, 2026-10-19): the
+  // Super Admin and the SFE Manager — `approve` at the route (both hold it; the SFE Manager holds no `update`), `canDecideValidationReviews` in the service.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // A comment on a place check, and a manager's recommendation about it (owner, 2026-10-13). NEITHER
   // decides anything — the decision is still the Super Admin's alone, above.
   //
@@ -912,10 +912,10 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/place-notes/recommendation", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // Refusing a validation the check never held — every PM customer, and the AM ones that matched
   // (2026-10-03). The same gate and the same decider; the reject underneath is the one above.
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/refuse", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/refuse", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // Confirming a validation the system could not read (owner, 2026-10-17): the same gate and decider
   // as the refusal, and the same approve underneath it.
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/approve", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/approve", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // Settling a location-integrity case, and putting a settled one back (owner, 2026-10-09): the Super
   // Admin ALONE — `update` at the route, `canSettleIntegrityCases` in the service, so the SFE Manager
   // reads that board without being able to close a case on it. Neither route deletes anything.
@@ -943,19 +943,19 @@ export const accessRegistry = [
   // territory; POST captures one, and the service gates it to the territory's own rep or a manager.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/shared-places", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/shared-places", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
-  // Deciding one of those venues: the Super Admin ALONE — `canDecideSharedPlaces` in the service. A
+  // Deciding one of those venues: the Super Admin and the SFE Manager — `canDecideValidationReviews` in the service. A
   // rejection retires the venue and sends every customer seated in it back to To validate. POST only:
   // the Polyclinics section is read on the page itself, so there is no GET to gate.
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/shared-place", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/shared-place/restore", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/shared-place", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/shared-place/restore", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // The third tab of Place checks: every place several reps validated, side by side (owner, 2026-10-17).
-  // The Super Admin ALONE — `canDecideValidationReviews` in the loader and the answer, so a `read` here is
+  // The Super Admin and the SFE Manager — `canDecideValidationReviews` in the loader and the answer, so a `read` here is
   // only gate one. GET is read when the tab is first opened; POST stores his "same place or different
   // places" answer on the ordered pair, or takes it back.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/validation-reviews/same-place", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/same-place", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/same-place", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // Approving a place AFTER it was rejected (owner, 2026-10-03). The same gate and the same decider.
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/restore", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/restore", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // Moving or removing a validated place: the Super Admin and the SFE Manager only (owner, 2026-09-29),
   // `approve` at the route and the movers' own check in the service.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/move", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
