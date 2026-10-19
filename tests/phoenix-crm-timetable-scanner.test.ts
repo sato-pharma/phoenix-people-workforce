@@ -153,6 +153,18 @@ export function runPhoenixCrmTimetableScannerTests() {
   // ── 4 · The reader: no hidden retry, and one reading per photograph ────────────────────────────────
   const reader = stripComments(read("src/lib/phoenix-crm/server/schedule-check.ts"));
   assert.ok(reader.includes("maxRetries: 0"), "🔴 no SDK retry inside the rep's 8 seconds");
+  // 🔴 Claude first, by name (2026-10-19): asked second, it got what a dead OpenAI account left of the
+  // 8 seconds, under the unnamed Haiku fallback, and the 11:34 read timed out with the board never read.
+  assert.ok(reader.includes('preferProvider: "anthropic"'), "🔴 Claude reads the timetable FIRST, with the whole 8 seconds");
+  assert.ok(
+    reader.includes("anthropicModel: options.anthropicModel ?? PHOENIX_CRM_SCHEDULE_CLAUDE_MODEL"),
+    "🔴 and the Claude model is NAMED — unnamed, gpt-5.4-mini maps to Haiku, which was slower AND read fewer boards",
+  );
+  assert.match(
+    reader,
+    /export const PHOENIX_CRM_SCHEDULE_CLAUDE_MODEL = "claude-sonnet-5-5";/,
+    "the measured reader: Sonnet, p95 5.5 s on the 54 production boards against Haiku's 8.7 s",
+  );
   assert.ok(reader.includes("legibility:") && reader.includes("problem:"), "the reader says how well it read and what is wrong");
   const board = reader.slice(reader.indexOf("export async function readScheduleBoard("), reader.indexOf("export async function readScheduleBytes("));
   assert.ok(board.indexOf("storedBoardReading(") > -1, "a reused board is judged against the reading already stored");
