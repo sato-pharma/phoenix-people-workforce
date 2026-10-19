@@ -44,22 +44,24 @@ import { SeatedLastColumn, SeatedTimetableEvidence, SeatedWho } from "@/componen
 import { VenueDecision, VenueHeader, venueSignboardText, VenueWhere } from "@/components/phoenix-crm/shared-place-list";
 import { CrmSurfaceProvider } from "@/components/phoenix-crm/surface";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
-import { CrmButton, CrmNote, CrmPill } from "@/components/phoenix-crm/ui";
+import { CrmButton, CrmNote, CrmPill, type PillTone } from "@/components/phoenix-crm/ui";
 import { PlaceInUseApprove, PlaceInUseEvidence, PlaceInUseRefuse, placeInUsePhotoAlt } from "@/components/phoenix-crm/validated-place-list";
 import { ReviewDecision, ReviewEvidence, reviewPhotoAlt } from "@/components/phoenix-crm/validation-review-queue";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { integrityBoardRow } from "@/lib/crm-integrity/integrity-board-rows";
 import { adviseOnBuilding, adviseOnPlaceInUse, adviseOnReview } from "@/lib/phoenix-crm/place-check-advice";
-import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
+import { placeNoteAdviceLabel, placeNoteSubjectKey, type PlaceNoteAdvice } from "@/lib/phoenix-crm/place-note-rules";
 import type { VenueGroup } from "@/lib/phoenix-crm/shared-place-groups";
 import type { IntegrityCase } from "@/lib/phoenix-crm/server/integrity-board";
 import type { PlaceNoteIndex, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 import {
+  adviceOnSubject,
   buildDeckSlides,
   DECK_ADVANCE_MS,
   DECK_KINDS,
   DECK_TABS,
+  deckAdviceRanker,
   deckArrowStep,
   deckSeatItem,
   deckSlideKey,
@@ -182,6 +184,22 @@ function Comments({ kind, noteIndex, subjectId }: { kind: "place" | "shared_plac
   );
 }
 
+const ADVICE_TONES: Record<PlaceNoteAdvice, PillTone> = { approve: "good", your_call: "info", new_photo: "warn", reject: "bad" };
+
+/**
+ * The by-eye advice, as a coloured tag beside the buttons it is about (owner, 2026-10-19: "Show my
+ * advice by the buttons"). It decides nothing: the buttons under it are his.
+ */
+function AdviceTag({ advice }: { advice: PlaceNoteAdvice | null }) {
+  if (!advice) return null;
+  return (
+    <p className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-black text-slate-500">
+      <span className="break-words">Looked at by eye</span>
+      <CrmPill tone={ADVICE_TONES[advice]}>{placeNoteAdviceLabel(advice)}</CrmPill>
+    </p>
+  );
+}
+
 function photoWord(kind: "signboard" | "schedule"): string {
   return kind === "schedule" ? "The timetable" : "The signboard";
 }
@@ -222,7 +240,12 @@ function reviewSlide(row: ValidationReviewRow, noteIndex: PlaceNoteIndex): Slide
         <Comments kind="place" noteIndex={noteIndex} subjectId={row.placeId} />
       </>
     ),
-    footer: <ReviewDecision row={row} scope="deck-" />,
+    footer: (
+      <div className="space-y-2">
+        <AdviceTag advice={adviceOnSubject(noteIndex, "place", row.placeId)} />
+        <ReviewDecision row={row} scope="deck-" />
+      </div>
+    ),
     wideButtons: true,
   };
 }
@@ -263,6 +286,7 @@ function placeSlide(row: ValidatedPlaceRow, noteIndex: PlaceNoteIndex): SlideVie
     ),
     footer: (
       <div className="space-y-2">
+        <AdviceTag advice={adviceOnSubject(noteIndex, "place", row.placeId)} />
         <PlaceInUseApprove row={row} />
         <PlaceInUseRefuse row={row} scope="deck-" />
       </div>
@@ -347,7 +371,8 @@ function venueSlide(group: VenueGroup, noteIndex: PlaceNoteIndex): SlideView {
           ) : null}
           <VenueWhere row={venue} />
           <SystemAdvice advice={adviseOnBuilding(venue)} />
-          <div className="border-t border-slate-100 pt-3 [&_button]:w-full">
+          <div className="space-y-2 border-t border-slate-100 pt-3 [&_button]:w-full">
+            <AdviceTag advice={adviceOnSubject(noteIndex, "shared_place", venue.sharedPlaceId)} />
             <PlaceCheckDoneItem item={deckSlideKey("venue", venue.sharedPlaceId)}>
               <VenueDecision row={venue} scope="deck" />
             </PlaceCheckDoneItem>
@@ -375,7 +400,8 @@ function venueSlide(group: VenueGroup, noteIndex: PlaceNoteIndex): SlideView {
                 <PlaceCheckDoneItem item={deckSeatItem(customer.key)}>
                   <SeatedWho customer={customer} mode="company" />
                   <SeatedTimetableEvidence customer={customer} mode="company" noTimetable={noTimetable} venueTimetablePath={venue.schedulePhotoPath} />
-                  <div className="[&_button]:w-full">
+                  <div className="space-y-2 [&_button]:w-full">
+                    <AdviceTag advice={adviceOnSubject(noteIndex, "place", customer.placeId)} />
                     <SeatedLastColumn customer={customer} mode="company" noTimetable={noTimetable} noteIndex={noteIndex} scope="deck" />
                   </div>
                 </PlaceCheckDoneItem>
@@ -455,7 +481,9 @@ export function PlaceReviewDeck({ input, onClose, start }: { input: PlaceReviewD
     [cases.first],
   );
   const sources = useMemo(() => deckSourcesOf(frozen, casesForSlides), [frozen, casesForSlides]);
-  const slides = useMemo(() => buildDeckSlides(tab, kind, sources), [tab, kind, sources]);
+  // The by-eye "approve" ones first in every tab, ranked from the notes as the review opened them.
+  const rankSlide = useMemo(() => deckAdviceRanker(frozen), [frozen]);
+  const slides = useMemo(() => buildDeckSlides(tab, kind, sources, rankSlide), [tab, kind, sources, rankSlide]);
   const counts = useMemo(() => {
     const result = {} as Record<DeckTab, number | null>;
     for (const one of DECK_TABS) result[one] = deckTabNeedsCases(one) && casesForSlides === null ? null : buildDeckSlides(one, kind, sources).length;

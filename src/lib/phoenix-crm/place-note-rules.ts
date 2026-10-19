@@ -16,6 +16,33 @@ export type PlaceNoteSource = "system_admin" | "manager";
 /** What a manager recommends. `reject` is "do not validate this", never "rejected". */
 export type PlaceRecommendation = "validate" | "reject";
 
+/**
+ * The verdict a System Administrator's by-eye note closes on (owner, 2026-10-19: show it by the
+ * buttons in the one-by-one review, and put the "approve" ones first). It decides nothing; the
+ * database CHECK allows it on a `system_admin` note only, and a manager's word is his recommendation.
+ * The order is the review's order within a tab.
+ */
+export const PLACE_NOTE_ADVICE = ["approve", "your_call", "new_photo", "reject"] as const;
+export type PlaceNoteAdvice = (typeof PLACE_NOTE_ADVICE)[number];
+
+export function parsePlaceNoteAdvice(value: unknown): PlaceNoteAdvice | null {
+  return (PLACE_NOTE_ADVICE as ReadonlyArray<unknown>).includes(value) ? (value as PlaceNoteAdvice) : null;
+}
+
+/** What the tag beside the decision buttons says. */
+export function placeNoteAdviceLabel(advice: PlaceNoteAdvice): string {
+  switch (advice) {
+    case "approve":
+      return "Approve";
+    case "your_call":
+      return "Your call";
+    case "new_photo":
+      return "Ask for a new photo";
+    case "reject":
+      return "Reject";
+  }
+}
+
 /** The two subjects a note or a recommendation can be about: a place, or a polyclinic. */
 export type PlaceNoteSubjectKind = "place" | "shared_place";
 

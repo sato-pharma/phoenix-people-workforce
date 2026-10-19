@@ -19,6 +19,7 @@
  */
 
 import { signCouldNotBeRead, standingOfPlaceInUse, timetableCouldNotBeRead } from "@/lib/phoenix-crm/place-check-scorecard";
+import { PLACE_NOTE_ADVICE, placeNoteSubjectKey, type PlaceNoteAdvice, type PlaceNoteSubjectKind } from "@/lib/phoenix-crm/place-note-rules";
 import type { VenueGroup } from "@/lib/phoenix-crm/shared-place-groups";
 import type { PlaceNoteIndex, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 
@@ -184,19 +185,80 @@ function kindTakes(kind: DeckKind, slide: DeckSlide): boolean {
  * The slides of one tab under one switch position, in order. `all` walks the other tabs in their own
  * order and keeps each slide the first time it appears — a polyclinic held for a decision is in
  * Waiting AND among the buildings in use, and is one slide, not two.
+ *
+ * `rank` reorders WITHIN each tab, stably: the by-eye "approve" slides first (owner, 2026-10-19), and
+ * every slide of equal rank keeps the board's own order. "All" ranks inside each of its tabs, never
+ * across them, so the work still runs tab by tab.
  */
-export function buildDeckSlides(tab: DeckTab, kind: DeckKind, sources: DeckSources): DeckSlide[] {
+export function buildDeckSlides(tab: DeckTab, kind: DeckKind, sources: DeckSources, rank?: (slide: DeckSlide) => number): DeckSlide[] {
   const tabs: OneTab[] = tab === "all" ? DECK_TABS.filter((one): one is OneTab => one !== "all") : [tab];
   const seen = new Set<string>();
   const slides: DeckSlide[] = [];
   for (const one of tabs) {
-    for (const slide of slidesOf(one, sources)) {
+    const ordered = slidesOf(one, sources);
+    const inOrder = rank
+      ? ordered
+          .map((slide, at) => ({ at, rank: rank(slide), slide }))
+          .sort((left, right) => left.rank - right.rank || left.at - right.at)
+          .map((entry) => entry.slide)
+      : ordered;
+    for (const slide of inOrder) {
       if (seen.has(slide.key) || !kindTakes(kind, slide)) continue;
       seen.add(slide.key);
       slides.push(slide);
     }
   }
   return slides;
+}
+
+/** The by-eye advice on one subject: the newest of its notes that closes on one (the index is newest first). */
+export function adviceOnSubject(noteIndex: PlaceNoteIndex, kind: PlaceNoteSubjectKind, id: string | null): PlaceNoteAdvice | null {
+  if (!id) return null;
+  for (const note of noteIndex.notes[placeNoteSubjectKey(kind, id)] ?? []) {
+    if (note.advice) return note.advice;
+  }
+  return null;
+}
+
+/** Where an advice sorts: approve, your call, new photo, reject — and a slide with none after them all. */
+export function deckAdviceRank(advice: PlaceNoteAdvice | null): number {
+  return advice ? PLACE_NOTE_ADVICE.indexOf(advice) : PLACE_NOTE_ADVICE.length;
+}
+
+/**
+ * The advice a slide sorts by. A held place and a place in use carry their place's own; a polyclinic
+ * the best of its building's and every seated customer's, so a building with one "approve" customer
+ * comes up with the approvals; an integrity case none.
+ */
+export function deckSlideAdvice(slide: DeckSlide, input: Pick<PlaceReviewDeckInput, "lookup" | "noteIndex">): PlaceNoteAdvice | null {
+  const id = slide.key.slice(slide.kind.length + 1);
+  switch (slide.kind) {
+    case "review":
+      return adviceOnSubject(input.noteIndex, "place", input.lookup.reviews.find((row) => row.reviewId === id)?.placeId ?? null);
+    case "place":
+      return adviceOnSubject(input.noteIndex, "place", id);
+    case "venue": {
+      const group = input.lookup.venues.find((one) => one.venue.sharedPlaceId === id);
+      const all = [adviceOnSubject(input.noteIndex, "shared_place", id), ...(group?.customers ?? []).map((customer) => adviceOnSubject(input.noteIndex, "place", customer.placeId))];
+      const best = all.filter((advice): advice is PlaceNoteAdvice => advice !== null).sort((left, right) => deckAdviceRank(left) - deckAdviceRank(right))[0];
+      return best ?? null;
+    }
+    case "case":
+      return null;
+  }
+}
+
+/** The rank `buildDeckSlides` sorts each tab by, taken from the review's input as it was opened. */
+export function deckAdviceRanker(input: Pick<PlaceReviewDeckInput, "lookup" | "noteIndex">): (slide: DeckSlide) => number {
+  const ranks = new Map<string, number>();
+  return (slide) => {
+    let rank = ranks.get(slide.key);
+    if (rank === undefined) {
+      rank = deckAdviceRank(deckSlideAdvice(slide, input));
+      ranks.set(slide.key, rank);
+    }
+    return rank;
+  };
 }
 
 /** Whether a tab needs the cases read before it can be listed. */
