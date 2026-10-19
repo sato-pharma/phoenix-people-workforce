@@ -216,4 +216,63 @@ export function runDeductionsCandidatesTableFitsTheScreenTests() {
   assert.match(table, /<HolidayBridgeCell row=\{row\} \/>/, `${WORKSPACE}: the holiday bridge is no longer shown in the table.`);
   assert.match(table, /<PushControl /, `${WORKSPACE}: the push control left the Status and action cell.`);
   assert.match(table, /<CandidateDecideRow /, `${WORKSPACE}: the Decide control left the Status and action cell.`);
+
+  // 8. The day editor's month calendar opens inside the phone card, so it has to fit a phone too. Its
+  //    seven `1fr` tracks are narrower than the 2.4rem floor the cells used to carry (34px against 38px
+  //    at 375px), which pushed the last column out of its own box and, at 320px, out of the card.
+  const editor = functionBody(source, "function DeductionDaysEditor(");
+  const calendar = /<div className="([^"]*)">\s*<div className="(grid grid-cols-7[^"]*)">/.exec(editor);
+  assert.ok(calendar, `${WORKSPACE}: the day editor's calendar box and its seven-column grid are gone.`);
+  const [, boxClasses, gridClasses] = calendar;
+  const boxTokens = boxClasses.split(/\s+/);
+  assert.ok(
+    boxTokens.includes("block") && boxTokens.includes("w-full") && boxTokens.includes("sm:inline-block") && boxTokens.includes("sm:w-auto"),
+    `${WORKSPACE}: the calendar box must take the full card width on a phone ("block w-full") and shrink to its content ` +
+      `from "sm" up ("sm:inline-block sm:w-auto"). Got "${boxClasses}".`,
+  );
+  assert.ok(
+    !boxTokens.includes("inline-block"),
+    `${WORKSPACE}: the calendar box is a bare "inline-block" again, so on a phone it sizes to its cells and not to the card.`,
+  );
+  assert.doesNotMatch(
+    editor,
+    /(^|[\s"'`])min-w-\[/,
+    `${WORKSPACE}: a cell in the day editor carries a bare min-width floor. Seven 1fr tracks are narrower than 2.4rem ` +
+      `on a phone, so the floor belongs behind "sm:" only.`,
+  );
+  const sizedCells = editor.match(/min-w-0[^"]*sm:min-w-\[2\.4rem\]/g) ?? [];
+  assert.equal(
+    sizedCells.length,
+    2,
+    `${WORKSPACE}: both calendar cell kinds (the greyed day and the ticked day) must be "min-w-0 … sm:min-w-[2.4rem]"; found ${sizedCells.length}.`,
+  );
+  assert.match(
+    editor,
+    /"[^"]*\bflex-col\b[^"]*\bsm:flex-row\b[^"]*"/,
+    `${WORKSPACE}: the ticked day must stack its tick box over the number below "sm" and sit side by side from "sm" up.`,
+  );
+
+  // The arithmetic, at the narrowest phone this is read on: 320px, 16px of page padding a side, the
+  // phone card's px-4, the editor's own border and p-3, the calendar box's border and p-2, six gap-1
+  // gutters. A stacked cell needs the wider of the tick box and two digits, plus its 2px border.
+  const unitPx = (classes: string, prefix: string): number => {
+    const token = classes.split(/\s+/).find((candidate) => new RegExp(`^${prefix}-\\d+(?:\\.\\d+)?$`).test(candidate));
+    assert.ok(token, `${WORKSPACE}: no "${prefix}-N" class found in "${classes}".`);
+    return Number(token.slice(prefix.length + 1)) * 4;
+  };
+  const editorRoot = /return \(\s*<div className="([^"]*border border-orange-200[^"]*)"/.exec(editor);
+  assert.ok(editorRoot, `${WORKSPACE}: the day editor's root panel is gone.`);
+  const PHONE_PX = 320;
+  const pagePadding = 16 * 2;
+  const cardPadding = 16 * 2;
+  const editorSpace = 1 * 2 + unitPx(editorRoot[1], "p") * 2;
+  const boxSpace = 1 * 2 + unitPx(boxClasses, "p") * 2;
+  const gutters = unitPx(gridClasses, "gap") * 6;
+  const trackPx = (PHONE_PX - pagePadding - cardPadding - editorSpace - boxSpace - gutters) / 7;
+  const stackedCellNeeds = Math.max(12, Math.round(2 * FIGURE_14PX * (12 / 14) * 10) / 10) + 2;
+  assert.ok(
+    trackPx >= stackedCellNeeds,
+    `${WORKSPACE}: at ${PHONE_PX}px a calendar column is ${trackPx.toFixed(1)}px but a stacked day cell needs ` +
+      `${stackedCellNeeds}px. Take padding or gutter out of the editor, never shrink the type.`,
+  );
 }
