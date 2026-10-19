@@ -116,6 +116,10 @@ then open http://localhost:3000/api/dev-auth?role=Super%20Admin in a browser.
   threshold, restarting...` after three or four page compiles under the 4 GB cap. Requests in
   flight die `ERR_CONNECTION_RESET`/`REFUSED`; the driver waits for `/api/healthz` and retries
   (4 attempts). Console errors printed during that window are the restart, not the page.
+- **A lower heap cap makes it worse, not lighter**: `PHOENIX_DEV_HEAP_MB=3072` restarted ten times
+  in twenty minutes, served `ChunkLoadError` pages between restarts, then died with exit 134 (V8
+  out of memory). Keep the default 4,096 MB; when free RAM is too low for that, prove a single
+  component outside Next instead (bundle it with React and drive it in Playwright).
 - **The restart moves the PID**: the listener on 3000 is a new child, not the one you launched.
 - **Heavy pages stream after the network is quiet** — the first Needs You shot was a "Loading
   Needs You" skeleton. The driver now waits up to 120 s for any `Loading …` heading to go; use
