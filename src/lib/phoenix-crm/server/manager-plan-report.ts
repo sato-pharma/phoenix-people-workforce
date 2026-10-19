@@ -9,6 +9,8 @@
  *   - SINGLE VISIT: DONE when he logged it himself (`phoenix_crm_manager_visits`), planned or not.
  *   - ADMIN: never checkable.
  *   - His unplanned single visits are listed APART and never fill a planned row.
+ *   - A single visit in a VACANT area shows where it says its customer is — the address, area and brick
+ *     he recorded (`vacantVisitPlaceText`, owner, 2026-10-19).
  *   - Only a SENT week (`isManagerPlanSent`) is judged; a draft or a returned week shows its visits apart
  *     and counts nothing planned.
  *
@@ -77,6 +79,8 @@ export type ManagerReportCustomer = {
   flagLabel: string | null;
   outcome: ManagerOutcome;
   outcomeLabel: string;
+  /** His single visit was in a vacant area: where it says the customer is. Null otherwise. */
+  place: string | null;
 };
 
 export type ManagerReportHalf = {
@@ -91,7 +95,7 @@ export type ManagerReportHalf = {
 
 export type ManagerReportDay = { date: string; dateText: string; halves: ManagerReportHalf[] };
 
-export type ManagerReportUnplanned = { date: string; dateText: string; name: string; own: boolean };
+export type ManagerReportUnplanned = { date: string; dateText: string; name: string; own: boolean; place: string | null };
 
 export type ManagerReport = {
   managerHrId: string;
@@ -218,10 +222,10 @@ export async function computeManagerReports(
   ]);
   const customersBySlot = new Map<string, typeof slotCustomers>();
   for (const row of slotCustomers) customersBySlot.set(row.slotId, [...(customersBySlot.get(row.slotId) ?? []), row]);
-  const visitedBy = new Map<string, Set<string>>();
+  const visitedBy = new Map<string, Map<string, (typeof visits)[number]>>();
   for (const visit of visits) {
-    const keys = visitedBy.get(visit.managerHrId) ?? new Set<string>();
-    keys.add(`${visit.visitDate}|${visit.customerId ? `c:${visit.customerId}` : `m:${visit.managerCustomerId}`}`);
+    const keys = visitedBy.get(visit.managerHrId) ?? new Map<string, (typeof visits)[number]>();
+    keys.set(`${visit.visitDate}|${visit.customerId ? `c:${visit.customerId}` : `m:${visit.managerCustomerId}`}`, visit);
     visitedBy.set(visit.managerHrId, keys);
   }
   const [repNames, deciderNames] = await Promise.all([
@@ -260,12 +264,15 @@ export async function computeManagerReports(
     for (const slot of mySlots) {
       const customers = (customersBySlot.get(slot.slotId) ?? []).map((row): ManagerReportCustomer => {
         let done = false;
+        let place: string | null = null;
         if (slot.kind === "with_rep" && row.customerId && slot.repSeatId) {
           done = withRepDone.get(managerHrId)?.has(`${slot.repSeatId}|${slot.date}|${row.customerId}`) ?? false;
         } else if (slot.kind === "single_visit") {
           const key = `${slot.date}|${row.customerId ? `c:${row.customerId}` : `m:${row.managerCustomerId}`}`;
           plannedKeys.add(key);
-          done = visitedBy.get(managerHrId)?.has(key) ?? false;
+          const visit = visitedBy.get(managerHrId)?.get(key);
+          done = visit !== undefined;
+          place = visit?.placeText ?? null;
         }
         const outcome = managerOutcome({ kind: slot.kind, date: slot.date, done, cairoToday: viewer.cairoToday, visitDay: viewer.visitDay });
         // Every row is listed; `countManagerOutcomes` decides what it adds to the counts (a customer who has left
@@ -287,6 +294,7 @@ export async function computeManagerReports(
           flagLabel: row.gone ? managerCustomerFlagLabel("dropped") : null,
           outcome,
           outcomeLabel: managerOutcomeLabel(outcome),
+          place,
         };
       });
       const activity = managerAdminActivityLabel(slot.activityType) ?? "Admin";
@@ -309,6 +317,7 @@ export async function computeManagerReports(
         dateText: formatPhoenixLongDate(visit.visitDate),
         name: customerName.get(String(visit.customerId ?? visit.managerCustomerId)) ?? "Customer",
         own: visit.managerCustomerId !== null,
+        place: visit.placeText,
       }))
       .sort((left, right) => left.date.localeCompare(right.date) || left.name.localeCompare(right.name));
     const summary: ManagerPlanSummary = { ...countManagerOutcomes(countRows), unplanned: unplanned.length };

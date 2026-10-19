@@ -15,7 +15,8 @@
  * 🔴 A VACANT AREA IS CHOSEN BY ITS NAME, AND ITS LIST IS THE PREVIOUS REP'S (owner, 2026-10-19). "Log an
  * unplanned customer" opens on the areas he plans in, a vacant one among them; choosing one shows its
  * doctors. A visit to a vacant area's doctor needs the address typed OR a captured location, whose address,
- * area and brick are filled in for him — "either this or this" (`vacantVisitPlaceError`).
+ * area and brick are filled in for him — "either this or this" (`vacantVisitPlaceError`). Once logged, the
+ * card says where the visit recorded the customer is (`vacantVisitPlaceText`).
  */
 
 import { useEffect, useId, useRef, useState } from "react";
@@ -162,7 +163,9 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
                         {customer.name}
                       </span>
                     }
-                  />
+                  >
+                    {customer.place ? <VisitPlace place={customer.place} /> : null}
+                  </CrmCard>
                 ))}
               </div>
             )}
@@ -184,13 +187,20 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
                     accent="border-l-slate-300"
                     key={customer.customerId ?? customer.managerCustomerId ?? customer.name}
                     meta={customer.speciality ?? undefined}
-                    status={<CrmPill tone="good">Logged · not planned</CrmPill>}
+                    status={
+                      <>
+                        {customer.vacant ? <CrmPill tone="warn">Vacant area</CrmPill> : null}
+                        <CrmPill tone="good">Logged · not planned</CrmPill>
+                      </>
+                    }
                     title={
                       <span className="break-words" dir="auto">
                         {customer.name}
                       </span>
                     }
-                  />
+                  >
+                    {customer.place ? <VisitPlace place={customer.place} /> : null}
+                  </CrmCard>
                 ))}
               </div>
             ) : null}
@@ -214,6 +224,16 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
         </>
       ) : null}
     </CrmPanel>
+  );
+}
+
+/** Where a vacant area's logged visit says its customer is — the address, area and brick he recorded. */
+function VisitPlace({ place }: { place: string }) {
+  return (
+    <p className="break-words text-xs font-semibold leading-5 text-slate-600">
+      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Where the customer is </span>
+      <span dir="auto">{place}</span>
+    </p>
   );
 }
 

@@ -212,6 +212,29 @@ export function vacantVisitPlaceError(input: { vacant: boolean; address: string 
   return "This customer's area has no rep. Type the customer's address, or press Capture location to fill in the address, area and brick.";
 }
 
+/**
+ * Where a vacant area's visit says its customer is — the address, area and brick the manager recorded —
+ * as his Visits tab and the actual-versus-planned report print it (owner, 2026-10-19: what the visit was
+ * made to record is shown back). Null for any other visit: elsewhere the visit keeps no address. A capture
+ * nothing could be read from still says that a location was captured.
+ */
+export function vacantVisitPlaceText(input: {
+  vacant: boolean;
+  address: string | null;
+  areaName: string | null;
+  brickName: string | null;
+  captured: boolean;
+}): string | null {
+  if (!input.vacant) return null;
+  const parts = [
+    input.address?.trim() || null,
+    input.areaName?.trim() ? `Area: ${input.areaName.trim()}` : null,
+    input.brickName?.trim() ? `Brick: ${input.brickName.trim()}` : null,
+  ].filter((part): part is string => part !== null);
+  if (parts.length > 0) return parts.join(" · ");
+  return input.captured ? "Location captured · no address could be read from it" : null;
+}
+
 // ── Who plans ───────────────────────────────────────────────────────────────────────────────────
 
 /** The district manager seats a person holds (DM or acting DM). Empty for everyone else. */
