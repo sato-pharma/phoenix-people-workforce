@@ -9,6 +9,7 @@ import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { downloadIssuedPlacePhoto, downloadPhoto } from "@/lib/phoenix-crm/server/photos";
 import {
   chooseSignToReadAgain,
+  firstInListToAnswer,
   jsonbSafe,
   judgeSignboards,
   mergeSignboardParts,
@@ -470,6 +471,8 @@ async function readSigns(input: {
   question: string;
   /** The whole photo's read: an answer that runs out of room is read again in quarters. */
   inPartsWhenFull?: boolean;
+  /** Stops the read once the door has the answer it needs (`firstInListToAnswer`). */
+  signal?: AbortSignal;
 }): Promise<SignboardReading | null> {
   if (input.timeoutMs <= 0) return null;
   const startedAt = Date.now();
@@ -502,6 +505,7 @@ async function readSigns(input: {
       ...readerParams(input.reader),
       purpose: "phoenix-crm-signboard",
       reasoning: { effort: "low" },
+      signal: input.signal,
       text: TEXT_FORMAT,
       timeoutMs: input.timeoutMs,
     });
@@ -517,7 +521,7 @@ async function readSigns(input: {
       turn: turnOf(parsed.upright),
     };
   } catch (error) {
-    if (!input.inPartsWhenFull || !readerRanOutOfRoom(error)) return null;
+    if (input.signal?.aborted || !input.inPartsWhenFull || !readerRanOutOfRoom(error)) return null;
     return readInParts({ ...input, timeoutMs: input.timeoutMs - (Date.now() - startedAt) });
   }
 }
@@ -532,6 +536,7 @@ async function readInParts(input: {
   reader: SignboardReader;
   timeoutMs: number;
   question: string;
+  signal?: AbortSignal;
 }): Promise<SignboardReading | null> {
   // Under two seconds is not a read, it is a timeout with a model call attached to it.
   if (input.timeoutMs < 2_000) return null;
@@ -540,7 +545,7 @@ async function readInParts(input: {
   if (images.some((image) => image === null)) return null;
   const readings = await Promise.all(
     images.map((jpeg) =>
-      readSigns({ jpeg: jpeg as Buffer, question: input.question, reader: input.reader, timeoutMs: input.timeoutMs }),
+      readSigns({ jpeg: jpeg as Buffer, question: input.question, reader: input.reader, signal: input.signal, timeoutMs: input.timeoutMs }),
     ),
   );
   const answered = readings.filter((reading): reading is SignboardReading => reading !== null);
@@ -701,6 +706,33 @@ async function firstAnswer<T>(
 }
 
 /**
+ * Ask every reader AT ONCE and take the first one in the list that answers — the door's version of
+ * `firstAnswer`, for the one look a rep's save waits on.
+ *
+ * 🔴 IN TURN, THE DOOR'S FALLBACK COULD NEVER ANSWER A TIMEOUT. The door gives its reader the whole
+ * 8 s, so when Sonnet ran long there was nothing left for Haiku and the place was saved unchecked:
+ * "timeout (model claude-sonnet-5-5, 8005ms)", 4 times on 19 Oct 2026 alone. Asked side by side, the
+ * fast reader is already reading when the strong one runs out of time. The strong reader's answer
+ * still wins whenever it comes, so nothing a match rests on changes.
+ */
+async function hedgedAnswer<T>(
+  readers: readonly SignboardReader[],
+  remaining: () => number,
+  capMs: number,
+  ask: (reader: SignboardReader, timeoutMs: number, signal?: AbortSignal) => Promise<T | null>,
+): Promise<T | null> {
+  const left = Math.min(remaining(), capMs);
+  // Under two seconds is not a read, it is a timeout with a model call attached to it.
+  if (left < 2_000) return null;
+  // Just before the deadline an answer already in hand is taken and the strong read stopped, so its
+  // running out of time is a stopped call, not an "AI call failed — timeout" row for a checked place.
+  return firstInListToAnswer(readers, (reader, signal) => ask(reader, left, signal), left - DOOR_SETTLE_MARGIN_MS);
+}
+
+/** How long before the door's deadline an answer already in hand is taken over a reader still reading. */
+const DOOR_SETTLE_MARGIN_MS = 250;
+
+/**
  * Read a place photo and judge it.
  *
  * TWO LOOKS ON THE NIGHTLY PASS, ONE AT THE DOOR.
@@ -744,6 +776,8 @@ async function judgeBytes(input: {
     remaining: () => deadline - Date.now(),
     secondLook: atTheDoor ? false : input.secondLook ?? true,
     turnUpright: !atTheDoor,
+    // The door asks both readers side by side (`hedgedAnswer`); the night asks one, with time to spare.
+    sideBySide: atTheDoor,
   });
 }
 
@@ -762,12 +796,16 @@ async function blindRead(input: {
   secondLook: boolean;
   /** Turn a sideways scene upright and read it again — everywhere but the door. */
   turnUpright: boolean;
+  /** Ask the readers for the first look at once rather than in turn — the door only. */
+  sideBySide?: boolean;
   photoBrick?: string | null;
 }): Promise<PhoenixCrmSignboardCheck> {
   const { cropped } = input;
-  const first = await firstAnswer(input.readers, input.remaining, input.callCapMs, (reader, timeoutMs) =>
-    readSigns({ inPartsWhenFull: true, jpeg: cropped.jpeg, question: WIDE_QUESTION, reader, timeoutMs }),
-  );
+  const readWhole = (reader: SignboardReader, timeoutMs: number, signal?: AbortSignal) =>
+    readSigns({ inPartsWhenFull: true, jpeg: cropped.jpeg, question: WIDE_QUESTION, reader, signal, timeoutMs });
+  const first = input.sideBySide
+    ? await hedgedAnswer(input.readers, input.remaining, input.callCapMs, readWhole)
+    : await firstAnswer(input.readers, input.remaining, input.callCapMs, readWhole);
   if (!first) return unjudged("call_failed", cropped.croppedFraction);
   const judge = (reading: SignboardReading): PhoenixCrmSignboardCheck =>
     judgeSignboards({

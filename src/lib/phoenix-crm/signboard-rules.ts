@@ -947,6 +947,73 @@ export function signboardQuarters(): SignboardPart[] {
   ];
 }
 
+/**
+ * Ask every reader AT ONCE and keep the answer of the FIRST ONE IN THE LIST that gives one: a later
+ * reader's answer is used only once every reader before it has come back empty, however early it
+ * arrived — or once `settleAfterMs` has passed with it in hand, when the readers before it are given up
+ * on. A reader that throws counts as empty. The moment the answer is settled, every read still running
+ * is stopped through `signal`, so a read nobody needs any more never runs on into a failure row.
+ *
+ * The door's first look (`hedgedAnswer` in `server/signboard-check.ts`): the fast reader is already
+ * reading when the strong one runs long.
+ */
+export function firstInListToAnswer<R, T>(
+  readers: readonly R[],
+  ask: (reader: R, signal: AbortSignal) => Promise<T | null>,
+  settleAfterMs?: number,
+): Promise<T | null> {
+  return new Promise((resolve) => {
+    const stop = new AbortController();
+    // undefined: still reading. null: came back empty.
+    const answers: (T | null | undefined)[] = readers.map(() => undefined);
+    let late = false;
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const settle = (value: T | null) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      stop.abort();
+      resolve(value);
+    };
+    const decide = () => {
+      for (const answer of answers) {
+        if (answer === undefined) {
+          // Before the deadline a reader still reading outranks every answer behind it.
+          if (!late) return;
+          continue;
+        }
+        if (answer !== null) return settle(answer);
+      }
+      // Late with nothing in hand: the readers still reading are left to answer or run out themselves.
+      if (!answers.includes(undefined)) settle(null);
+    };
+
+    readers.forEach((reader, index) => {
+      Promise.resolve()
+        .then(() => ask(reader, stop.signal))
+        .then(
+          (answer) => {
+            answers[index] = answer ?? null;
+            decide();
+          },
+          () => {
+            answers[index] = null;
+            decide();
+          },
+        );
+    });
+    if (settleAfterMs !== undefined) {
+      timer = setTimeout(() => {
+        late = true;
+        decide();
+      }, Math.max(0, settleAfterMs));
+    }
+    decide();
+  });
+}
+
 /** Did the reader fail because its answer did not fit — the one failure that reading in parts cures? */
 export function readerRanOutOfRoom(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? "");

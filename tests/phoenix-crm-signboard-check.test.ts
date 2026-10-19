@@ -31,6 +31,7 @@ import {
   signboardRetakeIsAtThePlace,
   signboardRetakeWaiting,
   mergeSignboardParts,
+  firstInListToAnswer,
   readerRanOutOfRoom,
   spelledOneWay,
   signboardRejudge,
@@ -631,6 +632,20 @@ function checkTwoReaders(): void {
     /DOOR_READERS = \[\s*PHOENIX_CRM_SIGNBOARD_DOOR_READER,\s*\{ anthropicModel: CLAUDE_FAST_MODEL, model: OPENAI_NANO_MODEL \},\s*\]/,
     "and falls back to the fast one only when the call is lost",
   );
+  // 🔴 The door asks the two side by side (`checkSideBySideDoor`); the night and the held re-read in turn.
+  assert.ok(stripped.includes("sideBySide: atTheDoor,"), "the door's first look asks both readers at once");
+  assert.ok(
+    /input\.sideBySide\s*\?\s*await hedgedAnswer\(input\.readers, input\.remaining, input\.callCapMs, readWhole\)\s*:\s*await firstAnswer\(/.test(stripped),
+    "every other first look still asks in turn",
+  );
+  assert.ok(
+    stripped.includes("firstInListToAnswer(readers, (reader, signal) => ask(reader, left, signal), left - DOOR_SETTLE_MARGIN_MS)"),
+    "each reader gets the whole time left, and an answer in hand is taken just before the deadline",
+  );
+  assert.ok(
+    stripped.includes("signal: input.signal,") && stripped.includes("if (input.signal?.aborted || !input.inPartsWhenFull"),
+    "a stopped read reaches the model call, and is never read again in parts",
+  );
   assert.ok(
     stripped.includes("atTheDoor ? DOOR_READERS : [PHOENIX_CRM_SIGNBOARD_SWEEP_READER]"),
     "while the night keeps its one strong reader",
@@ -1186,8 +1201,8 @@ function checkBoardTooFullForOneAnswer(): void {
 
   const reader = stripComments(readFileSync("src/lib/phoenix-crm/server/signboard-check.ts", "utf8"));
   assert.ok(
-    reader.includes("if (!input.inPartsWhenFull || !readerRanOutOfRoom(error)) return null;"),
-    "only a whole-photo read that ran out of room is read again in parts",
+    reader.includes("if (input.signal?.aborted || !input.inPartsWhenFull || !readerRanOutOfRoom(error)) return null;"),
+    "only a whole-photo read that ran out of room, and was not stopped, is read again in parts",
   );
   assert.ok(
     reader.includes("return readInParts({ ...input, timeoutMs: input.timeoutMs - (Date.now() - startedAt) });"),
@@ -1372,7 +1387,77 @@ function checkStoredReadingsRejudged(): void {
   assert.ok(script.includes("if (!REJUDGE && !process.env.ANTHROPIC_API_KEY"), "and the re-judge needs no AI key");
 }
 
-export function runPhoenixCrmSignboardCheckTests(): void {
+/**
+ * 🔴 THE DOOR ASKS BOTH READERS AT ONCE (2026-10-19). Asked in turn, a Sonnet read that ran its 8 s
+ * left nothing for Haiku, and the place was saved unchecked: 4 times that day. Replayed on 56 production
+ * place photos: Sonnet ran past 8 s on 4, and Haiku answered all 4 inside 8 s.
+ */
+async function checkSideBySideDoor(): Promise<void> {
+  type Read = { aborted: boolean; started: boolean };
+  const reads = new Map<string, Read>();
+  // A reader that answers `value` after `ms`, or stops (and answers nothing) when told to.
+  const after = (ms: number, value: string | null | Error) => (name: string, signal: AbortSignal) => {
+    const read: Read = { aborted: false, started: true };
+    reads.set(name, read);
+    return new Promise<string | null>((resolve, reject) => {
+      const timer = setTimeout(() => (value instanceof Error ? reject(value) : resolve(value)), ms);
+      signal.addEventListener("abort", () => {
+        read.aborted = true;
+        clearTimeout(timer);
+        resolve(null);
+      });
+    });
+  };
+  const ask = (plan: Record<string, ReturnType<typeof after>>) => (name: string, signal: AbortSignal) => plan[name](name, signal);
+
+  // The strong reader's answer wins even when the fast one is quicker: nothing a match rests on changes.
+  reads.clear();
+  assert.equal(
+    await firstInListToAnswer(["sonnet", "haiku"], ask({ haiku: after(5, "haiku"), sonnet: after(40, "sonnet") }), 1_000),
+    "sonnet",
+    "Sonnet's answer stands whenever it comes inside the deadline",
+  );
+  assert.ok(reads.get("sonnet")?.started && reads.get("haiku")?.started, "both readers were asked");
+
+  // The fast one is used when the strong one comes back empty, or fails.
+  reads.clear();
+  assert.equal(await firstInListToAnswer(["sonnet", "haiku"], ask({ haiku: after(5, "haiku"), sonnet: after(20, null) })), "haiku");
+  reads.clear();
+  assert.equal(
+    await firstInListToAnswer(["sonnet", "haiku"], ask({ haiku: after(5, "haiku"), sonnet: after(20, new Error("timeout")) })),
+    "haiku",
+  );
+
+  // Once the answer is settled the read nobody needs is STOPPED, so it never runs on into a failure row.
+  reads.clear();
+  const startedAt = Date.now();
+  assert.equal(await firstInListToAnswer(["sonnet", "haiku"], ask({ haiku: after(500, "haiku"), sonnet: after(5, "sonnet") })), "sonnet");
+  assert.ok(Date.now() - startedAt < 300, "it does not wait for the slower reader");
+  assert.equal(reads.get("haiku")?.aborted, true, "and the slower read is stopped");
+
+  // Just before the deadline an answer in hand is taken and the strong read stopped: the slow Sonnet case.
+  reads.clear();
+  const late = Date.now();
+  assert.equal(
+    await firstInListToAnswer(["sonnet", "haiku"], ask({ haiku: after(5, "haiku"), sonnet: after(2_000, "sonnet") }), 40),
+    "haiku",
+  );
+  assert.ok(Date.now() - late < 1_000, "the fast reader's answer is taken at the deadline, not after Sonnet runs out");
+  assert.equal(reads.get("sonnet")?.aborted, true, "and Sonnet is stopped rather than left to time out");
+
+  // At the deadline with nothing in hand, the readers still reading are left to answer.
+  reads.clear();
+  assert.equal(
+    await firstInListToAnswer(["sonnet", "haiku"], ask({ haiku: after(5, null), sonnet: after(60, "sonnet") }), 20),
+    "sonnet",
+  );
+  reads.clear();
+  assert.equal(await firstInListToAnswer(["sonnet", "haiku"], ask({ haiku: after(5, null), sonnet: after(10, null) }), 20), null);
+  assert.equal(await firstInListToAnswer<string, string>([], () => Promise.resolve("never")), null, "no readers, no answer");
+}
+
+export async function runPhoenixCrmSignboardCheckTests(): Promise<void> {
+  await checkSideBySideDoor();
   checkOwnersSpellingRulings();
   checkStoredReadingsRejudged();
   checkBoardTooFullForOneAnswer();
