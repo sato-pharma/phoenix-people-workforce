@@ -251,9 +251,14 @@ async function archiveStaleApprovalNotifications(access: AccessContext, rows: In
 
   if (candidatesByDomain.plan.length > 0) {
     try {
-      const { awaiting } = await getPlanApprovalsForResponder(access);
-      const awaitingIds = new Set(awaiting.map((item) => item.id));
-      for (const candidate of candidatesByDomain.plan) if (!awaitingIds.has(candidate.requestId)) stale.add(candidate.id);
+      const { awaiting, unavailable } = await getPlanApprovalsForResponder(access);
+      // A source that could not be read is missing from `awaiting`, so every one of its notices
+      // would read as decided and be archived for good — leave the whole domain visible instead,
+      // as the catch below does.
+      if (unavailable.length === 0) {
+        const awaitingIds = new Set(awaiting.map((item) => item.id));
+        for (const candidate of candidatesByDomain.plan) if (!awaitingIds.has(candidate.requestId)) stale.add(candidate.id);
+      }
     } catch {
       // fail-open — leave plan candidates visible
     }

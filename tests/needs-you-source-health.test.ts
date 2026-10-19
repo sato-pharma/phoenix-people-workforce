@@ -107,9 +107,11 @@ export function runNeedsYouSourceHealthTests() {
     assert.ok(start > 0, `${badge} not found in ${APPROVALS_HUB}`);
     const body = hubSource.slice(start, hubSource.indexOf("\n}\n", start));
 
+    // The plan badge says `available: unavailable.length === 0`: its read succeeds but can come back
+    // with a source missing (PlanApprovalsBuckets.unavailable), and that short count is not available.
     assert.match(
       body,
-      /available:\s*true/,
+      /available:\s*(?:true|unavailable\.length === 0)/,
       `${badge} never returns \`available: true\`, so its caller cannot tell a successful read from a ` +
         "swallowed failure.",
     );

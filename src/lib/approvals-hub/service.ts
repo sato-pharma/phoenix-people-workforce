@@ -1477,10 +1477,33 @@ function crmManagerPlanBucketItem(
   };
 }
 
+// The two reads behind the plan lists: the legacy weekly/monthly plans, and the district manager's
+// week in Phoenix CRM.
+export type PlanApprovalsSource = "plans" | "phoenix_crm";
+
 export type PlanApprovalsBuckets = {
   awaiting: PlanBucketItem[];
   upcoming: PlanBucketItem[];
+  // 🔴 A FAILED READ IS NOT AN EMPTY RESULT. Each source named here could not be read, so its items
+  // are missing from both lists. Before this field the read just dropped them: the badge counted a
+  // confident short number, the page said "Nothing waiting on you", and the bell's auto-archive
+  // read every one of their "please decide" notices as decided and archived it for good. The
+  // Phoenix CRM read failed 11 times in 48 hours (18–19 Oct 2026), each one inside an app-wide
+  // database timeout burst. Every caller gates on this being empty.
+  unavailable: PlanApprovalsSource[];
 };
+
+const PLAN_SOURCE_LABELS: Record<PlanApprovalsSource, string> = {
+  plans: "Weekly and monthly plans",
+  phoenix_crm: "District managers' Phoenix CRM weeks",
+};
+
+/** The line the plan approvals page shows above its lists when a source could not be read; null when both were. */
+export function planSourcesUnavailableNotice(unavailable: PlanApprovalsSource[]): string | null {
+  if (unavailable.length === 0) return null;
+  const what = unavailable.length > 1 ? "Plans" : PLAN_SOURCE_LABELS[unavailable[0]];
+  return `${what} could not be loaded just now, so any waiting on you are missing from this list. Reload the page to try again.`;
+}
 
 /**
  * Partition the active plans relevant to the responder into:
@@ -1495,6 +1518,7 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
   const hrId = access.hrId?.trim() ?? "";
   const isCeo = access.role === "CEO";
   const hrActor = isPlanHrActor(access);
+  const unavailable: PlanApprovalsSource[] = [];
 
   const [{ data, error }, directory, crmQueue] = await Promise.all([
     fetchAllApprovalRows<Record<string, unknown>>(() =>
@@ -1507,12 +1531,14 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
     ),
     getEmployeeDirectory(),
     // The district manager's weekly plan in Phoenix CRM (owner, 2026-10-16). A failed read costs these
-    // items only, logged, never the legacy plans beside them — the same trade the legacy read makes.
+    // items only, logged and named in `unavailable`, never the legacy plans beside them — the same
+    // trade the legacy read makes.
     loadManagerPlanQueue(hrId, Boolean(access.testPersona)).catch((crmError: unknown) => {
       logLoadFailure("Approvals hub Phoenix CRM manager plan queue failed", {
         labels: { event: "approvals_hub_crm_manager_plan_queue_failed", hrId: access.hrId, role: access.role, scope: access.scope },
         error: crmError,
       });
+      unavailable.push("phoenix_crm");
       return null;
     }),
   ]);
@@ -1521,13 +1547,13 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
       labels: { event: "approvals_hub_plan_approvals_query_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
-    return { awaiting: [], upcoming: [] };
+    unavailable.push("plans");
   }
 
   const awaiting: PlanBucketItem[] = [];
   const upcoming: PlanBucketItem[] = [];
 
-  for (const raw of (data as Array<Record<string, unknown>> | null) ?? []) {
+  for (const raw of error ? [] : ((data as Array<Record<string, unknown>> | null) ?? [])) {
     const status = String(raw.status ?? "") as EmployeePlanStatus;
     const employeeHrId = String(raw.employee_hr_id ?? "");
     // Own submissions live on the dedicated "My Requests" tab, never as an approvable item.
@@ -1604,7 +1630,7 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
   const byMostOverdue = (a: PlanBucketItem, b: PlanBucketItem) => b.ageDays - a.ageDays || a.submittedAt.localeCompare(b.submittedAt);
   awaiting.sort(byMostOverdue);
   upcoming.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
-  return { awaiting, upcoming };
+  return { awaiting, upcoming, unavailable };
 }
 
 /**
@@ -1667,12 +1693,13 @@ export async function isPlanAwaitingOverdue(access: AccessContext): Promise<bool
  * `Promise<number>` could not express "the query failed" separately from "nothing is awaiting" —
  * every caller collapsed both into the same 0, which read on the portal home card and the sidebar
  * badge as a confident "0 plans awaiting your approval" even when the lookup never ran. `count` on
- * a failure is a placeholder value only; callers must gate on `available` before trusting it.
+ * a failure is a placeholder value only; callers must gate on `available` before trusting it. A read
+ * that came back with a source missing (`unavailable`) is the same failure: its count is short.
  */
 export async function countPlanAwaiting(access: AccessContext): Promise<{ count: number; available: boolean }> {
   try {
-    const { awaiting } = await getPlanApprovalsForResponder(access);
-    return { count: awaiting.length, available: true };
+    const { awaiting, unavailable } = await getPlanApprovalsForResponder(access);
+    return { count: awaiting.length, available: unavailable.length === 0 };
   } catch (error) {
     logLoadFailure("Approvals hub count plan awaiting failed", {
       labels: { event: "approvals_hub_count_plan_awaiting_failed", hrId: access.hrId, role: access.role, scope: access.scope },
@@ -1688,11 +1715,11 @@ export async function countPlanAwaiting(access: AccessContext): Promise<{ count:
  */
 export async function getPlanAwaitingBadge(access: AccessContext): Promise<{ count: number; overdue: boolean; available: boolean }> {
   try {
-    const { awaiting } = await getPlanApprovalsForResponder(access);
+    const { awaiting, unavailable } = await getPlanApprovalsForResponder(access);
     return {
       count: awaiting.length,
       overdue: awaiting.some((item) => slaTone(item.ageDays, APPROVALS_SLA_THRESHOLDS.plan) === "overdue"),
-      available: true,
+      available: unavailable.length === 0,
     };
   } catch (error) {
     logLoadFailure("Approvals hub plan awaiting badge computation failed", {
@@ -2547,6 +2574,8 @@ export async function getSecondApproverPlanRequests(access: AccessContext): Prom
 export type PlanWorkspaceData = {
   awaiting: ApprovalPendingCard[];
   upcoming: ApprovalPendingCard[];
+  // The plan sources that could not be read — the page says so above the lists (see PlanApprovalsBuckets).
+  unavailable: PlanApprovalsSource[];
   myRequests: MyRequestItem[];
   history: ResponderHistoryItem[];
   pendingCount: number;
@@ -2604,6 +2633,7 @@ export async function getPlanWorkspaceData(access: AccessContext): Promise<PlanW
   return {
     awaiting: buckets.awaiting.map(toCard),
     upcoming: buckets.upcoming.map(toCard),
+    unavailable: buckets.unavailable,
     myRequests,
     history,
     pendingCount: buckets.awaiting.length,

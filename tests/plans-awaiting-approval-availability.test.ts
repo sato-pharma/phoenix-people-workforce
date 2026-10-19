@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { resolvePlansAwaitingApproval } from "../src/lib/employee-portal/home-snapshot.ts";
-import { countPlanAwaiting } from "../src/lib/approvals-hub/service.ts";
+import { countPlanAwaiting, planSourcesUnavailableNotice } from "../src/lib/approvals-hub/service.ts";
+import { stripComments } from "./support/comment-strip.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
 
 // The employee-portal home snapshot used to fold a FAILED plans-awaiting-approval lookup into the
@@ -128,4 +130,75 @@ export async function runPlansAwaitingApprovalAvailabilityTests() {
     null,
     "a genuine countPlanAwaiting failure must never resolve to a numeric plan count on the dashboard",
   );
+  await runPlanSourceUnavailableTests();
+}
+
+function source(path: string): string {
+  return stripComments(readFileSync(new URL(`../${path}`, import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+}
+
+/** One top-level function's body: from its declaration to the next top-level `export` or `function`. */
+function functionBody(text: string, declaration: string): string {
+  const start = text.indexOf(declaration);
+  assert.ok(start >= 0, `${declaration} must exist`);
+  const rest = text.slice(start + declaration.length);
+  const next = rest.search(/\n(export |async function |function )/);
+  return next >= 0 ? rest.slice(0, next) : rest;
+}
+
+// A PLAN SOURCE THAT COULD NOT BE READ IS NOT AN EMPTY ONE (19 Oct 2026). The Phoenix CRM read of the
+// district managers' weeks failed 11 times in 48 hours, each inside an app-wide database timeout
+// burst, and the Hub simply dropped those items: the badge counted a confident short number, the page
+// said "Nothing waiting on you", and the bell's auto-archive read each of their "please decide"
+// notices as decided and archived it for good. The legacy read did the same with an empty return.
+async function runPlanSourceUnavailableTests() {
+  const hub = source("src/lib/approvals-hub/service.ts");
+  const merge = functionBody(hub, "export async function getPlanApprovalsForResponder(");
+  assert.match(
+    merge,
+    /loadManagerPlanQueue\(hrId, Boolean\(access\.testPersona\)\)\.catch\([\s\S]*?unavailable\.push\("phoenix_crm"\);\s*return null;/,
+    "a failed Phoenix CRM read must be named in unavailable, not silently dropped",
+  );
+  assert.match(merge, /if \(error\) \{[\s\S]*?unavailable\.push\("plans"\);/, "a failed legacy plans read must be named in unavailable");
+  assert.doesNotMatch(
+    merge,
+    /return \{ awaiting: \[\], upcoming: \[\] \}/,
+    "a failed legacy read must not return an empty list that reads as nothing waiting (and drops the Phoenix CRM weeks beside it)",
+  );
+  assert.match(merge, /return \{ awaiting, upcoming, unavailable \};/, "the merge must hand unavailable to every caller");
+
+  for (const declaration of ["export async function countPlanAwaiting(", "export async function getPlanAwaitingBadge("]) {
+    assert.match(
+      functionBody(hub, declaration),
+      /available: unavailable\.length === 0/,
+      `${declaration} must report a short count as unavailable, never as a confident number`,
+    );
+  }
+
+  const bell = functionBody(source("src/lib/notifications/in-app.ts"), "async function archiveStaleApprovalNotifications(");
+  assert.match(
+    bell,
+    /const \{ awaiting, unavailable \} = await getPlanApprovalsForResponder\(access\);\s*if \(unavailable\.length === 0\) \{[\s\S]*?stale\.add\(candidate\.id\)/,
+    "the bell must archive a plan notice only when every plan source was read; a missing source would archive its notices for good",
+  );
+
+  const workspace = source("src/components/approvals-hub/approvals-workspace.tsx");
+  assert.match(
+    workspace,
+    /pendingNotice \? null : \([\s\S]*?Nothing waiting on you right now\./,
+    'the page must not say "Nothing waiting on you" while a plan source could not be read',
+  );
+  assert.match(
+    source("src/components/approvals-hub/plan-approvals-body.tsx"),
+    /pendingNotice=\{planSourcesUnavailableNotice\(data\.unavailable\)\}/,
+    "the plan approvals page must pass the notice to the workspace",
+  );
+
+  assert.equal(planSourcesUnavailableNotice([]), null, "both sources read: no notice");
+  assert.equal(
+    planSourcesUnavailableNotice(["phoenix_crm"]),
+    "District managers' Phoenix CRM weeks could not be loaded just now, so any waiting on you are missing from this list. Reload the page to try again.",
+  );
+  assert.match(planSourcesUnavailableNotice(["plans"]) ?? "", /^Weekly and monthly plans could not be loaded/);
+  assert.match(planSourcesUnavailableNotice(["phoenix_crm", "plans"]) ?? "", /^Plans could not be loaded/);
 }
