@@ -42,7 +42,7 @@ import {
   crmTextareaClassName,
   type CrmChoiceOption,
 } from "@/components/phoenix-crm/ui";
-import { MANAGER_CUSTOMER_ADDRESS_MAX, VACANT_AREA_NOTE, VACANT_LIST_LABEL, vacantVisitPlaceError } from "@/lib/phoenix-crm/manager-plan-rules";
+import { dmSingleVisitLimitLine, MANAGER_CUSTOMER_ADDRESS_MAX, VACANT_AREA_NOTE, VACANT_LIST_LABEL, vacantVisitPlaceError } from "@/lib/phoenix-crm/manager-plan-rules";
 import type { AreaCustomer, AreaCustomersView, CustomerMatch, ManagerCustomerLocated, ManagerTodayCustomer, ManagerTodayView } from "@/lib/phoenix-crm/view-types";
 
 const VISITS = "/api/phoenix-crm/manager-plans/visits";
@@ -169,6 +169,14 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
           </CrmBlock>
 
           <CrmBlock className="border-t border-slate-100" title="Not planned">
+            {/* A district manager's limit, counted as the log counts it — shown BEFORE he finds a customer,
+                so a full week is not learned from a refusal after the form (owner, 2026-10-19). */}
+            {view.singleVisitLimit ? (
+              <p className="mb-3 break-words text-xs font-semibold leading-5 text-slate-500">
+                {dmSingleVisitLimitLine(view.singleVisitLimit.used)}
+                {view.singleVisitLimit.unplannedFitsNow ? "" : " Your week has no half-day of single visits left, so an unplanned customer cannot be logged now."}
+              </p>
+            ) : null}
             {view.unplanned.length > 0 ? (
               <div className="mb-3 grid min-w-0 gap-2">
                 {view.unplanned.map((customer) => (
@@ -197,7 +205,7 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
                 ownList={view.ownList}
                 test={test}
               />
-            ) : !logging ? (
+            ) : !logging && view.singleVisitLimit?.unplannedFitsNow !== false ? (
               <CrmButton onClick={() => setFinding(true)} size="sm">
                 Log an unplanned customer
               </CrmButton>

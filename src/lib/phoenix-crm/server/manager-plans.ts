@@ -84,7 +84,7 @@ import {
   seniorPlanSeatOf,
   type ManagerPlanDeciderRole,
 } from "@/lib/phoenix-crm/server/manager-plan-reach";
-import { assertSingleVisitPlanFits } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
+import { assertSingleVisitPlanFits, loadLoggedSingleVisitHalves, plannedSingleVisitHalves } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
 import { managerApproversFor, managerWriterScopes } from "@/lib/phoenix-crm/server/manager-plan-writers";
 import {
   EDIT_ASK_COLUMNS,
@@ -401,6 +401,11 @@ export type ManagerPlanBoardView = {
   areas: ManagerBoardArea[];
   activities: Array<{ key: string; label: string }>;
   days: ManagerBoardDay[];
+  /**
+   * A district manager's single-visit half-days this week, counted as the save counts them — his planned
+   * ones AND the halves of visits he has already logged. Null for every other planner.
+   */
+  singleVisitHalvesUsed: number | null;
 };
 
 export { managerPlace };
@@ -441,6 +446,7 @@ function emptyView(viewer: PhoenixCrmViewer, isTest: boolean, mode: "own" | "pic
     areas: [],
     activities: managerAdminActivities("dm"),
     days: [],
+    singleVisitHalvesUsed: null,
   };
 }
 
@@ -526,9 +532,10 @@ async function buildBoard(
   // The reps' own weeks: the chosen scope's, and every rep a saved half-day already names — so a ticked
   // customer is still flagged when the board shows another district.
   const repSeatIds = dedupeIds([...team.map((entry) => entry.seatId), ...slots.map((slot) => slot.repSeatId)]);
-  const [slotCustomers, repWeeks] = await Promise.all([
+  const [slotCustomers, repWeeks, loggedSingleVisitHalves] = await Promise.all([
     loadManagerSlotCustomers(slots.map((slot) => slot.slotId)),
     loadRepWeeks(repSeatIds, weekStart, isTest, oldCrmRepsOf([...team.map((entry) => ({ seatId: entry.seatId, hrId: entry.occupantHrId })), ...slots.map((slot) => ({ seatId: slot.repSeatId, hrId: slot.repHrId }))])),
+    writer.kind === "dm" ? loadLoggedSingleVisitHalves({ managerHrId, weekStart, isTest }) : Promise.resolve(null),
   ]);
   const scopeSeatOccupants = [...scopes, ...slots.map((slot) => ({ dmSeatId: slot.scopeDmSeatId }))].map((scope) =>
     scope.dmSeatId ? viewer.org.seats.get(scope.dmSeatId)?.occupantHrId : null,
@@ -553,6 +560,8 @@ async function buildBoard(
   view.scopes = scopeChoices(viewer, writer, scopes, names);
   view.scope = chosen?.key ?? null;
   view.activities = managerAdminActivities(writer.kind);
+  // The count the save refuses by: the plan's single-visit halves and the visits he has already logged.
+  view.singleVisitHalvesUsed = loggedSingleVisitHalves ? new Set([...plannedSingleVisitHalves(slots), ...loggedSingleVisitHalves]).size : null;
 
   const latestAsk = asks[0] ?? null;
   // An ask is open at either of its two steps: with the regional manager, then with the NSM above him.
@@ -880,7 +889,7 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
     );
   }
 
-  // A district manager's single visits are two days a week at most — four half-days (owner, 2026-10-17).
+  // A district manager's single visits are one day a week at most — two half-days (owner, 2026-10-19).
   if (draft.kind === "single_visit" && own) {
     await assertSingleVisitPlanFits({ managerHrId: viewer.hrId, weekStart: fieldWeekStart(draft.date), date: draft.date, half: draft.half, isTest });
   }

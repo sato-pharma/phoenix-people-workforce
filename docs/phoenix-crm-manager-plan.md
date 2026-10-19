@@ -164,19 +164,27 @@ A rep can never read it.
 
 ## The district manager's single-visit limit
 
-Owner, 2026-10-17: a district sales manager may not submit more than two days of single visits in a week,
-counted as **four half-days in any mix** (his answer to how the halves add up was "four halves or 2 full
-days"), and the limit covers **the visits he logs** as well as his plan.
+Owner, 2026-10-19: a district sales manager may not submit more than **one day** of single visits in a week
+(*"currently the single visits are accepted in 2 days in a week no cap it to 1 day in the week"*), counted
+as **two half-days in any mix**, and the limit covers **the visits he logs** as well as his plan. It
+lowers his 2026-10-17 limit of two days, which he had counted as "four halves or 2 full days" — the
+any-mix counting stays.
 
-- **Planning.** `saveManagerPlanSlot` refuses a Single visit half when the week already holds four other
+- **Planning.** `saveManagerPlanSlot` refuses a Single visit half when the week already holds two other
   single-visit half-days. Re-saving a half he already planned as a single visit is no new half-day.
-- **Logging.** `logManagerVisit` refuses an unplanned visit that would open a fifth half-day. A planned
+- **Logging.** `logManagerVisit` refuses an unplanned visit that would open a third half-day. A planned
   visit answers a half-day the plan already holds, so it is never refused. An unplanned visit falls in the
   morning or the afternoon of the Cairo time it was logged, before noon being the morning.
 - **Who.** The district manager only. A regional, national or product manager's single visits are not
   limited.
-- **On screen.** The Single visit part tells a district manager the limit and how many of the four
-  half-days the week holds.
+- **On screen.** The Single visit part of the board and "My single visits" both tell a district manager
+  the limit and how many of the two half-days the week holds — counted by the server exactly as the save
+  and the log count them, his planned half-days AND the half-days of visits he has already logged
+  (`singleVisitHalvesUsed` on the board, `singleVisitLimit` on My single visits). Until 2026-10-19 the
+  board counted the plan alone, so it could say "1 of 2" while the save refused a second half-day that a
+  logged visit already held. When no half-day is left for an unplanned visit at the time he opens My
+  single visits, "Log an unplanned customer" is replaced by a sentence saying so, so a full week is not
+  learned from a refusal after the form.
 - **Where it lives.** `server/manager-single-visit-cap.ts` counts; the rule is
   `dmSingleVisitCapError` in `manager-plan-rules.ts`. There is no database constraint, so two saves sent
   at the same instant could both pass the count.
