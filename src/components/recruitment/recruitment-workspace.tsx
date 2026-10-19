@@ -3372,6 +3372,16 @@ const POOL_CV_STAND_IN_TITLE = "Not answered on WhatsApp — read off the CV ins
 const POOL_PLACE_HEADER_TITLE =
   "Where they want to work. A second line naming an AREA is the applicant's own answer from WhatsApp; a second line naming a governorate is the address read off their CV.";
 
+type PoolSharedCell = {
+  className: string;
+  content: ReactNode;
+  /**
+   * The cell shows a CV answer and no WhatsApp one — the cells a card marks "(from CV)". The folded
+   * card counts these, so its button never says "Add answers" over answers it is hiding.
+   */
+  fromCvOnly: boolean;
+};
+
 /**
  * The five built-in columns' cells, for the desktop row AND the phone card (owner, 2026-10-19 — "Phone
  * card shows the CV"). The card used to print its own bare answer, so where the bot never asked a
@@ -3383,7 +3393,7 @@ const POOL_PLACE_HEADER_TITLE =
 function poolSharedCells(
   candidate: Candidate,
   { touch = false }: { touch?: boolean } = {},
-): Record<PoolSharedColumnKey, { className: string; content: ReactNode }> {
+): Record<PoolSharedColumnKey, PoolSharedCell> {
   const appliedFor = candidateRowAppliedFor(candidate);
   // Resolved ONCE and handed to every cell, so the row can never show a region that disagrees with
   // its own role cell — and so the filter above, which calls the same function, is answering about
@@ -3399,6 +3409,11 @@ function poolSharedCells(
   // "Flag CV vs WhatsApp gaps" (owner, 2026-10-19): the band they tapped against the years the CV
   // counts, by experience-answer-gap.ts's one rule.
   const experienceGap = experienceAnswerGap(facts.declaredExperience?.value, facts.years?.value);
+  // Where the CV stands in for a WhatsApp answer. The cells' "(from CV)" markers and the folded
+  // card's count both read these, so the button and what it opens cannot disagree.
+  const backgroundFromCv = !facts.background && Boolean(candidate.faculty || candidate.degree);
+  const regionFromCv = Boolean(facts.region && !facts.region.value.declared);
+  const experienceFromCvOnly = !facts.declaredExperience && Boolean(facts.years);
   return {
     appliedFor: {
       className: "px-3 py-2.5",
@@ -3487,6 +3502,7 @@ function poolSharedCells(
           ) : null}
         </>
       ),
+      fromCvOnly: false,
     },
     background: {
       className: "px-2 py-2.5",
@@ -3498,7 +3514,7 @@ function poolSharedCells(
             <span className="block break-words font-semibold text-slate-800" dir="auto" title="Their own answer on WhatsApp.">
               {facts.background.value}
             </span>
-          ) : candidate.faculty || candidate.degree ? (
+          ) : backgroundFromCv ? (
             <span className="block break-words italic text-slate-500" dir="auto" title={POOL_CV_STAND_IN_TITLE}>
               {candidate.faculty || candidate.degree}
               {touch ? <span className="not-italic text-slate-400"> (from CV)</span> : null}
@@ -3508,6 +3524,7 @@ function poolSharedCells(
           )}
         </>
       ),
+      fromCvOnly: backgroundFromCv,
     },
     place: {
       className: "px-2 py-2.5",
@@ -3534,7 +3551,7 @@ function poolSharedCells(
               }
             >
               {facts.region.value.label}
-              {touch && !facts.region.value.declared ? (
+              {touch && regionFromCv ? (
                 <span className="font-normal not-italic text-slate-400"> (from CV)</span>
               ) : null}
             </span>
@@ -3568,6 +3585,7 @@ function poolSharedCells(
           )}
         </>
       ),
+      fromCvOnly: regionFromCv,
     },
     experience: {
       className: "px-2 py-2.5",
@@ -3636,6 +3654,7 @@ function poolSharedCells(
           ) : null}
         </>
       ),
+      fromCvOnly: experienceFromCvOnly,
     },
     salary: {
       className: "px-2 py-2.5",
@@ -3659,6 +3678,8 @@ function poolSharedCells(
           )}
         </>
       ),
+      // "(typed in)" is the ATS record, not the CV.
+      fromCvOnly: false,
     },
   };
 }
@@ -3832,11 +3853,23 @@ function CandidatePoolCard({
   // (production, 375px). The heading row stays, with the count, and one tap opens them in place.
   const answersBodyId = `pool-card-answers-${candidate.id}`;
   const answerCount = whatsappAnswers.length;
+  // "Add answers" promised an empty list, yet a card with no WhatsApp answers opens onto every CV
+  // answer standing in for one — George Samir Lotfy's opened onto his faculty, region and years, each
+  // marked "(from CV)" (production, 375px, 2026-10-19; owner: "fix the folded card's Add answers label
+  // when it holds CV answers"). The reader's columns that carry that marker are counted, so the button
+  // says what it is hiding.
+  const cvOnlyAnswerCount = answerColumns.filter(
+    (column) =>
+      (poolSharedColumnKeys as readonly string[]).includes(column.key) &&
+      sharedCells[column.key as PoolSharedColumnKey].fromCvOnly,
+  ).length;
   const answersToggleLabel = answersOpen
     ? "Hide answers"
     : answerCount > 0
       ? `Show ${answerCount} ${answerCount === 1 ? "answer" : "answers"}`
-      : "Add answers";
+      : canEditAnswers && cvOnlyAnswerCount > 0
+        ? `Show ${cvOnlyAnswerCount} from CV`
+        : "Add answers";
   // Full width between the screening facts and the contact details, never one of the half-width
   // fields: as a field the list ran about 900px down one half of the card with the other half empty
   // beside it (production, 375px, 2026-10-19), and an open editor needs the room.
