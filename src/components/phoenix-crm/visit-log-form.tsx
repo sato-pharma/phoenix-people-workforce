@@ -85,6 +85,7 @@ import {
   VISIT_PRODUCTS_MAX,
   type ProductAvailability,
 } from "@/lib/phoenix-crm/entry-rules";
+import { MANAGER_OWN_VISIT_ON_VACANT_LINE, MANAGER_OWN_VISIT_ON_VACANT_NOTE } from "@/lib/phoenix-crm/manager-plan-rules";
 import { SAMPLE_MATERIALS, SAMPLE_QUANTITY_MAX, type SamplesGiven } from "@/lib/phoenix-crm/samples";
 import type { PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 import { OUT_OF_LIST_REP_NOTE, UNPLANNED_REASON_MAX, UNPLANNED_REASON_MIN } from "@/lib/phoenix-crm/unplanned-rules";
@@ -248,10 +249,14 @@ function participantsOf(form: VisitFormView, seniorHrId: string | null): Partici
     return {
       options: [
         // Closed for a district manager (owner, 2026-10-16): he logs his own visits under My single
-        // visits on the Visits tab, where they count in his own report only.
-        form.ownVisitClosed
-          ? { value: "single", label: "My own visit", note: "Log it under My single visits", disabled: true }
-          : { value: "single", label: "My own visit", note: "Without the rep" },
+        // visits on the Visits tab, where they count in his own report only. 🔴 OPEN AGAIN where nobody
+        // holds the seat (owner, 2026-10-19): there is no rep for a Double or a Chain, so closing it too
+        // left him nothing to pick — this one saves straight into My single visits.
+        form.ownVisitVacant
+          ? { value: "single", label: "My own visit", note: MANAGER_OWN_VISIT_ON_VACANT_NOTE }
+          : form.ownVisitClosed
+            ? { value: "single", label: "My own visit", note: "Log it under My single visits", disabled: true }
+            : { value: "single", label: "My own visit", note: "Without the rep" },
         { value: "double", label: "Double visit", note: rep ? `With ${rep}` : "This territory has no rep", disabled: !rep },
         {
           value: "chain",
@@ -961,7 +966,11 @@ export function VisitLogForm({
           />
           {form.enteredAs === "manager" && form.ownVisitClosed && !enteringManagerHasRep(form) ? (
             <p className="text-xs font-semibold leading-5 text-amber-800">
-              This territory has no rep to go with. Log a visit you make alone under My single visits on the Visits tab.
+              {/* A vacant seat is not a dead end any more (owner, 2026-10-19): the line says where this
+                  visit goes and what it keeps, instead of sending him to another screen. */}
+              {form.ownVisitVacant
+                ? MANAGER_OWN_VISIT_ON_VACANT_LINE
+                : "This territory has no rep to go with. Log a visit you make alone under My single visits on the Visits tab."}
             </p>
           ) : null}
           {form.enteredAs === "rep" && (kind === "double" || kind === "chain") ? (

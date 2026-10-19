@@ -48,9 +48,10 @@ import {
   parseVisitDraft,
   VISIT_PRODUCTS_MAX,
   type ProductAvailability,
+  type VisitDraft,
 } from "@/lib/phoenix-crm/entry-rules";
 import { checkVisitLocation } from "@/lib/phoenix-crm/geo";
-import { visitLocationFor, type VisitLocationFlag } from "@/lib/phoenix-crm/visit-location-words";
+import { BLIND_LOCATION, visitLocationFor, type VisitLocationFlag } from "@/lib/phoenix-crm/visit-location-words";
 import { pickLastVisitProducts, type LastVisitProducts } from "@/lib/phoenix-crm/last-visit-products";
 import { isEnteredForRep } from "@/lib/phoenix-crm/missed-records";
 import { deriveOfflineCaptureTime, parseOfflineCaptureClaim } from "@/lib/phoenix-crm/offline-clock";
@@ -80,6 +81,8 @@ import { visitDetailEditable } from "@/lib/phoenix-crm/visit-detail-edit-rules";
 import { PHOENIX_VISIT_KIND_LABELS } from "@/lib/phoenix-crm/visit-kind-labels";
 import { MANAGER_OWN_VISIT_CLOSED } from "@/lib/phoenix-crm/manager-plan-rules";
 import { managerOwnVisitClosedNow } from "@/lib/phoenix-crm/server/manager-plan-switch";
+import { isVacantTerritory } from "@/lib/phoenix-crm/server/manager-customers";
+import { logManagerVisit, plannedSingleVisitSlotFor } from "@/lib/phoenix-crm/server/manager-visits";
 import { describeDayWindows, isPlanSentForReview, isUuid, planDayStatus } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, personKey, resolveVisitParticipants, territoryReviewer, type OrgIndex } from "@/lib/phoenix-crm/scope";
 import {
@@ -696,6 +699,13 @@ export type VisitFormView = {
    */
   ownVisitClosed: boolean;
   /**
+   * 🔴 AND OPEN AGAIN ON A VACANT TERRITORY (owner, 2026-10-19): nobody holds the seat, so there is no
+   * rep to make a double or a chain with. "My own visit" stays pickable and the save files it under My
+   * single visits (`MANAGER_OWN_VISIT_ON_VACANT_LINE`). False for a rep, and false on a territory that
+   * has a rep — there the option stays closed.
+   */
+  ownVisitVacant: boolean;
+  /**
    * The product managers of the territory's LINE, listed beside the managers under "Double visit" and
    * "Chain visit" on "Who was on the visit" (owner, 2026-10-02; one list since 2026-10-06, so the rep
    * ticks one person for a double and two for a chain) — the same list the rep's own ask offers
@@ -1082,6 +1092,8 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     })),
     viewerPosition: enteredAs === "manager" ? (chain.find((member) => member.hrId === viewer.hrId)?.position ?? null) : null,
     ownVisitClosed: enteredAs === "manager" && (await managerOwnVisitClosedNow(viewer)),
+    // Vacant is asked FIRST, so a territory with a rep never pays for the switch read twice.
+    ownVisitVacant: enteredAs === "manager" && isVacantTerritory(seat) && (await managerOwnVisitClosedNow(viewer)),
     productManagers: lineProductManagers.map((manager) => ({
       hrId: manager.hrId,
       name: nameOf(productManagerNames, manager.hrId),
@@ -1136,6 +1148,12 @@ export type SavedVisit = {
   pharmacyNote: string | null;
   /** A recorded visit's own line (owner, 2026-10-16): it counts once it is approved. Null otherwise. */
   recordingNote: string | null;
+  /**
+   * The district manager's own visit on a VACANT territory went into his own single visits, not this
+   * territory's visits (owner, 2026-10-19) — so the Visits tab reloads My single visits rather than the
+   * day it is showing. False for every other visit.
+   */
+  filedAsOwnSingleVisit: boolean;
 };
 
 /**
@@ -1167,6 +1185,55 @@ async function isFirstVisitSubmittedBy(actorHrId: string, visitId: string, isTes
     .limit(1);
   if (error) return false;
   return (data ?? []).length === 0;
+}
+
+/**
+ * 🔴 THE DISTRICT MANAGER'S OWN VISIT ON A VACANT TERRITORY, FILED WHERE IT BELONGS (owner,
+ * 2026-10-19: "It is a vacant area. So he must submit it there single").
+ *
+ * It is handed to `logManagerVisit` exactly as "My single visits" would have sent it — his own table,
+ * his own report only, the same one-day-a-week cap, the same vacant place rule — so there is still ONE
+ * writer of these visits and no second copy of their rules here. The slot is looked up first, because
+ * Add visit knows nothing about his week and an unplanned filing would cost him a half-day he planned.
+ *
+ * 🔴 THE PLACE RULE IS ALREADY ANSWERED: Add visit will not save without a reading (`NO_FIX_FOR_A_VISIT`),
+ * so the pin always travels and `locateInReach` fills the address, area and brick from it.
+ *
+ * What `phoenix_crm_manager_visits` has no column for is not carried — the pharmacy's stock answers,
+ * the kept audio of a spoken note, the objection, the next step and what he left. Dictated words land
+ * in the comment, which IS carried; the rest start folded, and the form says in one line what this
+ * record keeps (`MANAGER_OWN_VISIT_ON_VACANT_LINE`) before he fills any of it in.
+ */
+async function fileAsOwnSingleVisit(viewer: PhoenixCrmViewer, visitId: string, visit: VisitDraft, isTest: boolean): Promise<SavedVisit> {
+  const slotId = await plannedSingleVisitSlotFor(viewer, visit.customerId, isTest);
+  await logManagerVisit(viewer, {
+    clientRef: visitId,
+    customerId: visit.customerId,
+    products: visit.products,
+    comment: visit.comment,
+    slotId,
+    pin: { lat: visit.lat, lon: visit.lon, accuracyMeters: visit.accuracyMeters },
+    test: isTest,
+  });
+  return {
+    visitId,
+    visitDate: viewer.visitDay,
+    capturedAt: new Date().toISOString(),
+    customerId: visit.customerId,
+    duplicate: false,
+    // Golden Rule #1, and his own visits are measured against no saved place at all: there is nothing
+    // about a location to tell him.
+    ...BLIND_LOCATION,
+    // His plan's own word, not a rep's: planned when today's plan already held this customer.
+    isUnplanned: slotId === null,
+    unplannedKind: null,
+    unplannedNote: null,
+    visitAskNote: null,
+    doubleVisitNote: null,
+    pharmacyNote: null,
+    recordingNote: null,
+    filedAsOwnSingleVisit: true,
+  };
 }
 
 /**
@@ -1203,6 +1270,10 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
   // his single visits go on his own plan and count in his own report, never under a rep's seat. One still
   // on the legacy form keeps it. Double and chain are unchanged.
   if (enteredAs === "manager" && visit.kind === "single" && (await managerOwnVisitClosedNow(viewer))) {
+    // 🔴 EXCEPT WHERE NOBODY HOLDS THE SEAT (owner, 2026-10-19). Double and Chain need a rep, so on a
+    // vacant territory the closed option left the form a dead end — filled to the last step and refused
+    // here. His own visit is filed under My single visits instead, never under the vacant seat.
+    if (isVacantTerritory(seat)) return await fileAsOwnSingleVisit(viewer, visitId, visit, isTest);
     throw validationError(MANAGER_OWN_VISIT_CLOSED);
   }
 
@@ -1561,6 +1632,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     visitAskNote: visitAskSavedNote(visitAsk),
     doubleVisitNote: doubleVisitSavedNote(doubleVisit),
     pharmacyNote: savedPharmacyNote(result),
+    filedAsOwnSingleVisit: false,
   };
 }
 

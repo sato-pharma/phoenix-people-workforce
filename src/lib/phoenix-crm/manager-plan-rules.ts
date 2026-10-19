@@ -260,6 +260,23 @@ export const MANAGER_OWN_VISIT_CLOSED =
   "A district manager's own visits are logged under My single visits on the Visits tab now. Here, choose Double visit or Chain visit.";
 
 /**
+ * 🔴 EXCEPT ON A VACANT TERRITORY, WHERE "MY OWN VISIT" STAYS OPEN AND THE VISIT IS FILED UNDER MY
+ * SINGLE VISITS (owner, 2026-10-19: "It is a vacant area. So he must submit it there single"). Nobody
+ * holds the seat, so there is no rep to make a double or a chain with — the closed option left the form
+ * a dead end, filled to the last step and refused at the save. The save routes it to `logManagerVisit`
+ * instead: his own single visits, counting in his own report only, against the same one-day-a-week cap
+ * and under the same vacant place rule. The customer still comes from that ONE territory's list — the
+ * previous rep's — never a merged list of every vacant area, which would be thousands of doctors.
+ */
+export const MANAGER_OWN_VISIT_ON_VACANT_NOTE = "Filed under My single visits";
+
+export const MANAGER_OWN_VISIT_ON_VACANT_LINE =
+  "Nobody holds this territory, so there is no rep to go with. Your own visit here is filed under My single visits and counts in your own report only. It keeps the products, your comment and where you were.";
+
+/** What he is told after the save, where a rep would read whether the visit was on his plan. */
+export const MANAGER_OWN_VISIT_ON_VACANT_SAVED = "Filed under My single visits — it counts in your own report only.";
+
+/**
  * 🔴 WHEN A DISTRICT MANAGER PLANS IN PHOENIX CRM INSTEAD OF THE LEGACY FORM (owner, 2026-10-16): he
  * holds a DM or acting DM seat AND that seat's team is live. Each district manager switches by himself
  * the day his team starts — Mohamed Alaa Eleiwa keeps the legacy form until his does. `liveSeat` is the
