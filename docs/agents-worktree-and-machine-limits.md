@@ -1287,6 +1287,8 @@ route 23.2 s, the approvals hub 4.6 s. The proof that needs no measurement: a de
 
 ## A browser look at pushed code goes on the Hetzner preview box, not a local dev server
 
+> 🔴 **RETIRED 2026-10-19 with the Hetzner box (owner).** This section is history: nothing here is to be started, repaired or proposed. The dev server is the laptop's `pnpm run dev` (above).
+
 A local `next dev` is the single heaviest thing that runs on this 16 GB machine — measured
 2026-09-30: **4,126 MB and 3.05 of 12 cores**, sitting at `dev-server.mjs`'s own 4 GB heap cap and
 GC-looping, i.e. HALF of all CPU actually in use. That one server ending took the laptop from
@@ -1329,6 +1331,8 @@ holding 13 Supabase/auth/Maps keys and never `SUPABASE_DB_URL`, the mailbox pass
 Telegram or OpenAI.
 
 ## phx-live — the owner's dev server on the box, live edits, PRODUCTION data
+
+> 🔴 **RETIRED 2026-10-19 with the Hetzner box (owner).** This section is history: nothing here is to be started, repaired or proposed. The dev server is the laptop's `pnpm run dev` (above).
 
 **What it is for** (owner, 2026-10-12): the old `pnpm run dev` in the main folder — edit, see it
 live before the merge, and use `/admin/dev-preview` (Dev Preview — Real Data) to open the system as

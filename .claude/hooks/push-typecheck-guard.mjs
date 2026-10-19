@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // PreToolUse(Bash|PowerShell) — before a `git push`, REUSE what remote-check already proved about the
-// pushed commit. It starts nothing, waits for nothing and never touches the CI box.
+// pushed commit. It starts nothing and waits for nothing. (The CI box remote-check once ran on is retired,
+// 2026-10-19: remote-check now reads the PR's GitHub Actions run, so a record exists only for a commit that
+// was already pushed — which is why a push adding a test file is pointed at `check-contracts` instead.)
 //
 // 🔴 WHAT CHANGED ON 2026-10-08, AND WHY (owner, performance recovery: *"the push guard must not start
 // a remote check that blocks a normal push. Previously completed verification for the exact commit SHA
@@ -26,8 +28,10 @@
 // command. It still allows: on 2026-10-04 the owner was offered a hook that REFUSES a push over the suite
 // and answered *"keep the pre-push test as a rule, no guard"* — that ruling stands until he lifts it in
 // his own words, so this hook may remind and may not refuse. Measured 12 Oct 2026: 4 of 25 red PR runs
-// that day were the comment-strip ratchet firing on a newly added test file, which the suite catches in
-// ~125s on the box. Account: `docs/testing.md`, "Before every push".
+// that day were the comment-strip ratchet firing on a newly added test file. Since 2026-10-19 the command
+// the reminder names is `node scripts/check-contracts.mjs` (about 8s, local, catches that ratchet), because
+// the suite runs on GitHub and GitHub can only run a commit origin already holds.
+// Account: `docs/testing.md`, "Before every push".
 //
 // WHAT IT DECIDES ABOUT (unchanged): a `git push` that sends the CHECKED-OUT commit. A push of another
 // ref, a delete, a tag, a dry run, `--all`/`--mirror`, a push to a non-branch ref or one that sends
@@ -46,7 +50,7 @@ import { basename, isAbsolute, join, resolve } from 'node:path';
 /** remote-check-plan.mjs `VERDICT_DIR_NAME` — tests/push-typecheck-guard.test.ts pins the two together. */
 const VERDICT_DIR_NAME = 'phx-remote-check';
 
-/** A test file of this repo. A NEW one is what makes `remote-check test` mandatory before the push. */
+/** A test file of this repo. A NEW one is what makes `check-contracts` mandatory before the push. */
 const TEST_FILE_RE = /^tests\/.+\.test\.tsx?$/;
 
 /** How many added test files the note names before it stops listing them. */
@@ -325,14 +329,14 @@ function newTestFileReminder(added, short, recorded) {
   const listed = added.slice(0, NAMED_TEST_FILES).map((path) => `  ${path}`);
   if (added.length > NAMED_TEST_FILES) listed.push(`  …and ${added.length - NAMED_TEST_FILES} more`);
   return (
-    `THE RULE (owner, 2026-10-12): a push that ADDS a test file runs \`node scripts/remote-check.mjs test\` ` +
-    `FIRST — once, with \`run_in_background: true\`, acting on the notification (bash-guard C15 refuses a ` +
-    `foreground run) — and pushes on a final \`remote-check: PASS — ${short}\`.\n` +
+    `THE RULE (owner, 2026-10-12; the CI box is retired, 2026-10-19): a push that ADDS a test file runs ` +
+    `\`node scripts/check-contracts.mjs\` FIRST — about 8 seconds, nothing heavy, and it holds the repo-wide ` +
+    `gates a newly added test file trips. The suite itself runs in the PR's three parallel \`unit\` jobs ` +
+    `because GitHub can only run a commit origin already holds, so a pre-push suite run is no longer possible.\n` +
     `This push adds ${added.length} test file${added.length === 1 ? '' : 's'} and ${recorded} for ${short}:\n` +
     `${listed.join('\n')}\n` +
-    `The suite is ~125s on the box and is the only thing that sees a new test before \`validate\` does — ` +
-    `on 12 Oct 2026 four red PR runs were one repo-wide ratchet firing on a newly added test file. ` +
-    `If the box answers NO VERDICT (exit 2-9), say so and push: the PR's \`validate\` is still the gate.`
+    `On 12 Oct 2026 four red PR runs were one repo-wide ratchet firing on a newly added test file — ` +
+    `\`check-contracts\` finds that one before the push. The PR's \`validate\` + \`checks\` are still the gate.`
   );
 }
 

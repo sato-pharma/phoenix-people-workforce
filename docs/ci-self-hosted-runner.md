@@ -1,4 +1,24 @@
-# CI on a self-hosted runner
+# CI on a self-hosted runner — RETIRED 2026-10-19, kept as history
+
+> 🔴 **THE CI BOX IS RETIRED AND EVERYTHING BELOW ABOUT IT IS HISTORY.** Owner, 2026-10-19: *"make all ci actions to be on github and be able to make checks on one or more or ten or even 100 at the same time … as fast as you can safely without skipping any check"* and *"retire the hetzner box and do not use it … it is the source of slowness"*.
+>
+> **What runs now.** Every job in `ci.yml`, `security-scan.yml` and `lockfile.yml` runs on GitHub-hosted `ubuntu-latest`, written as a literal; `tests/ci-runner-switch.test.ts` fails a workflow that names anything else. No `CI_RUNNER_LABEL`, no `CI_SELF_HOSTED`, no runner registration, and `scripts/setup-self-hosted-runner.sh` is deleted.
+>
+> | `ci.yml` job | Does | Waits for |
+> | --- | --- | --- |
+> | `validate` (required name) | the production build and the Playwright login smoke | nothing |
+> | `static` | the `check:*` contracts, `pnpm audit`, ESLint, `next typegen`, the type gate, the tree-reuse dry run | nothing |
+> | `unit` | the unit suite, 3 parallel jobs of 2 shards each, every test in exactly one shard | nothing |
+> | `checks` (required name) | the gate: green only when `static` and `unit` are `success` and the three coverage records add up to every test the runner declares | `static`, `unit` |
+> | `mobile`, `full-e2e` | unchanged | nothing |
+>
+> Nothing is skipped: every step that ran before still runs, on the same events, in exactly one of these jobs. The wall clock is now the slowest single job instead of the sum of the steps that used to share one. Several PRs run side by side with no queue of ours — the only ceiling is GitHub's concurrent-job cap for the plan (Free 20, Pro 40, Team 60, Enterprise 500).
+>
+> **`scripts/remote-check.mjs` asks GitHub.** It needs the commit on origin, reads that commit's PR run by sha (`--dispatch` starts a `ci.yml` run) and grades each stage from the jobs' own steps. The retired `--wait`, `--no-wait`, `--free`, `--no-actions` and `--else-actions` flags are refused by name. `remote-check lockfile` dispatches `lockfile.yml` and writes both files back.
+>
+> **Capabilities that changed.** The pre-push `remote-check test` for a push that ADDS a test file is gone — GitHub runs only a commit origin already holds; `node scripts/check-contracts.mjs` (~8s) plus the PR's parallel `unit` jobs replace it. `phx-live` and `phx-preview` went with the box.
+>
+> **Not decided, his call:** deleting the Hetzner server (money, his click in the provider's console); building the production Docker image in CI and deploying that digest on Railway (changes the deploy path); moving the repository into a GitHub organization (larger runners, a higher concurrency cap). The sections below describe the box era; read "the box" as "retired".
 
 Why this exists, how to turn it on, how to turn it off, and the rules that keep it safe.
 

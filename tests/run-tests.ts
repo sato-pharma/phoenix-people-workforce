@@ -1524,9 +1524,7 @@ import { runRemoteCheckTests } from "./remote-check.test.ts";
 import { runCheckContractsTests } from "./check-contracts.test.ts";
 import { runRunTestsRegistrationShapeTests } from "./run-tests-registration-shape.test.ts";
 import { runPhxLiveBannerTests } from "./phx-live-banner.test.ts";
-import { runRemoteCheckLintCacheTests } from "./remote-check-lint-cache.test.ts";
 import { runSelectCensusTests } from "./select-census.test.ts";
-import { runCiTypecheckLockTests } from "./ci-typecheck-lock.test.ts";
 import { runCiPrSkipsBuildAndSmokeTests } from "./ci-pr-skips-build-and-smoke.test.ts";
 import { runCiBuildRiskTests } from "./ci-build-risk.test.ts";
 import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-resolution.test.ts";
@@ -5601,15 +5599,11 @@ await runTest("marketing ROI cohorts (efficiency, coverage, forecast accuracy, m
 await runTest("GitHub workflow validity (no `secrets` context inside `if:` — it invalidates the whole file)", runGithubWorkflowValidityTests);
 await runTest("CI <-> package.json gate parity (a check:* in the gate must run in a workflow)", runCiGateParityTests);
 await runTest(
-  "the self-hosted runner takes EVERY same-repo PR (owner, 2026-09-30): six byte-identical runs-on lines, no branch-name clause, main and forks and dispatches can never be self-hosted, an unset label resolves hosted rather than queueing for ever, and the retired repo-wide vars.CI_RUNNER never comes back",
+  "every CI job runs on a GitHub-hosted runner (owner, 2026-10-19): each runs-on in every workflow is the literal ubuntu-latest, nothing reads the retired CI_SELF_HOSTED or CI_RUNNER_LABEL variables, and no step branches on runner.environment == 'self-hosted', so deleting the Hetzner box cannot leave a job queued for ever",
   runCiRunnerSwitchTests,
 );
 await runTest(
-  "one typecheck at a time on the self-hosted CI box: ci.yml's Typecheck step takes /tmp/phx-typecheck.lock in the same shell as tsc with a bounded wait that falls through, remote-check takes the same lock, and where flock exists a held lock makes the step wait then run while a free one runs at once",
-  runCiTypecheckLockTests,
-);
-await runTest(
-  "remote-check runs the heavy checks on the CI box and never locally: no local spawn but ssh/git, ci.yml's 6144MB heap, its own directory rather than the runner's _work, no GitHub credential on the box, a warning for uncommitted work, the remote exit code, and a private tree per invocation (own ref, own git worktree, removed on exit) re-verified after every check so a tree swapped mid-run exits 3 with NO VERDICT, proven by running two overlapping invocations on two commits; and one run owns the whole box, because a per-stage lock left lint and test unguarded and that contention OOM-killed a build - the run takes its own lock around every stage and, if it cannot get it within 120s, runs NOTHING and exits 9 as NO VERDICT (FUP-010, 2026-10-08 — never 'running anyway'), exit 137 is reported as NO VERDICT rather than a failure, `all` includes the build, and before anything is pushed the box itself is asked whether another run is already live, a probe that fails CLOSED so an unreadable answer can never read as an idle box - a busy box with no open PR is NO VERDICT (exit 6) and dispatches GitHub Actions only on --actions/--urgent (2026-10-08) - a branch that already has an open PR has that PR's own run READ by head sha rather than a second one dispatched beside it, graded by the pull_request job map because ci.yml runs the suite in validate there and never builds at all, both routes settling through one allow-list whose whole-run success is a pass only when that run ran every stage asked for - and a dropped ssh connection (255) is NO VERDICT rather than FAIL with keepalives to stop the silent-stage drop that caused it",
+  "remote-check checks a commit on GitHub Actions and nothing else (owner, 2026-10-19): no ssh, box address, lock or box setting survives in live code, it spawns only git and gh, an unknown or retired flag is refused by name, every stage's job and step is read against the real ci.yml, the grading is PASS or FAIL only for a stage's own step (a skipped Build, a job that never started, a run about another commit, a cancelled run and a skipped coverage proof are NO VERDICT) with a matrix suite needing every part AND the coverage proof, a stage is answered the moment its own step concludes, and the whole script is run against a fake gh: an open PR's run is read and never dispatched beside, no PR is NO VERDICT without --dispatch, main is read and never dispatched on, an unpushed commit stops before GitHub is asked",
   runRemoteCheckTests,
 );
 await runTest(
@@ -5623,10 +5617,6 @@ await runTest(
 await runTest(
   "phx-live's PRODUCTION DATA banner renders only under PHX_LIVE=1 (never on production or staging, which have no PHX_LIVE), stays server-rendered and square, and app/layout.tsx renders it",
   runPhxLiveBannerTests,
-);
-await runTest(
-  "remote-check's persistent ESLint cache only ever changes how long lint takes (2026-10-08, box lint 182s cold): the store sits outside the per-run tree with the run's path swapped for a placeholder, seeded back with THIS tree's path, keyed by the lockfile, manifests, eslint config, tsconfig and node version so a config or dependency change starts cold in a new store, a corrupt store is a cold run, lint's exit code passes through untouched, and unsafe paths are refused; the run sits under the box's own `timeout` ceiling sized from its stages (under 45 min for `all`) with a later local deadline that TERMs then KILLs ssh, and a ceiling, SIGKILL, lost status or unprinted verdict is NO VERDICT; the per-sha verdict record stores only PASS/FAIL stages and never merges another sha's",
-  runRemoteCheckLintCacheTests,
 );
 await runTest(
   "the select census finds every PostgREST read and write of a table and the columns each names: an embedded relation does not swallow the columns after it, aliases/casts/JSON paths reduce to the real column, a constant select is resolved in the same file or one import away, a template with ${CONST} is resolved, .or()/.eq()/.order() filters and write keys are listed, a run-time select is UNRESOLVED rather than clean, another table or schema is not counted, and on the real tree it finds every .from(\"employees\") a raw count finds",

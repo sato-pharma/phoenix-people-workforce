@@ -1,0 +1,74 @@
+name: Lockfile
+
+# REGENERATE pnpm-lock.yaml (and pnpm-workspace.yaml) FOR A BRANCH WHOSE MANIFESTS CHANGED, on GitHub.
+#
+# WHY IT EXISTS (owner, 2026-10-19: the CI box is retired and everything runs on GitHub). A session that bumps
+# a dependency has to bring the lockfile with it, and cannot do it locally: `.claude/hooks/bash-guard.mjs`
+# clause C6 denies pnpm inside every linked worktree (its node_modules is a junction to the primary
+# checkout's, and pnpm offers to delete the PRIMARY's), and the primary belongs to whichever session is live
+# in it. This used to run on the self-hosted CI box through `scripts/remote-check.mjs lockfile`; it is this
+# workflow now, and that command dispatches it, downloads what it made and writes it into the checkout:
+#
+#   node scripts/remote-check.mjs lockfile        # run in the background; commit the two files it wrote
+#
+# It resolves the PUSHED commit, so the manifests must be committed and pushed first (the command refuses
+# otherwise). It runs on a dispatch only: no pull request, push or schedule can start it, so it adds nothing
+# to a PR's checks and cannot hold a production deploy. It needs no secret — `contents: read` is the whole
+# of its permissions, and the artifact it uploads is two public-in-the-repo files.
+#
+# 🔴 NOT `--frozen-lockfile`. CI sets CI=true, which makes pnpm freeze the lockfile by default — the one
+# mode guaranteed to fail here, because the whole point is that the lockfile does not yet match the
+# manifests. `--no-frozen-lockfile` states it, and `--lockfile-only` writes no node_modules at all.
+#
+# 🔴 BOTH FILES COME BACK. pnpm writes `minimumReleaseAgeExclude` into pnpm-workspace.yaml when it adopts a
+# version younger than its release-age quarantine, and a `--frozen-lockfile` install needs those entries;
+# returning only the lockfile would lose them silently.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One regeneration per branch at a time; a second dispatch on the same ref supersedes the first.
+concurrency:
+  group: lockfile-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CI_NODE_VERSION: "24"
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+
+      # corepack must be enabled BEFORE setup-node runs — see the note in ci.yml's `validate`.
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
+
+      - name: Regenerate the lockfile
+        run: pnpm install --lockfile-only --no-frozen-lockfile
+
+      - name: Upload the regenerated files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: lockfile
+          path: |
+            pnpm-lock.yaml
+            pnpm-workspace.yaml
+          if-no-files-found: error
+          retention-days: 1

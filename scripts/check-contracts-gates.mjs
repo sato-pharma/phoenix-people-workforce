@@ -436,7 +436,7 @@ export const TYPECHECK_NOTE =
   'Types are NOT covered here beyond the one shape above (run-tests-registration-shape, 3 of the 17\n' +
   '  checks/Typecheck reds 9-13 Oct 2026). The other 14 were ordinary type errors only a compiler\n' +
   '  finds, and a local typecheck is denied on this machine (bash-guard C8). For those:\n' +
-  '      node scripts/remote-check.mjs typecheck      # ~34s on the CI box, nothing on this laptop';
+  '      node scripts/remote-check.mjs typecheck      # reads the PR\'s `static` job on GitHub, nothing on this laptop';
 
 /**
  * Resident set one gate shard needs. Measured on this repo: a shard loads only its own gates'

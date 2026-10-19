@@ -10,11 +10,10 @@
 // compilers accept (`src/lib/customer-360/service.ts`, `src/lib/verified-captures/distributor-codes.ts`);
 // they are the ONLY places this cost anything.
 //
-// 🔴 WHAT CAN GO WRONG, AND WHY IT IS INVISIBLE. Nothing in `package.json`'s `typecheck` script, in
-// `ci.yml` or in `scripts/remote-check.mjs` names a version — all three run `tsc`, and WHICH `tsc`
-// that is comes from pnpm linking `node_modules/.bin/tsc` to the higher of the two installed
-// versions. So dropping the `typescript-native` alias, or letting `typescript` float past 7, does
-// not fail: the gate silently reverts to the ~180s compiler, or silently moves to one nobody chose,
+// 🔴 WHAT CAN GO WRONG, AND WHY IT IS INVISIBLE. Nothing in `package.json`'s `typecheck` script or in
+// `ci.yml` names a version — both run `tsc`, and WHICH `tsc` that is comes from pnpm linking
+// `node_modules/.bin/tsc` to the higher of the two installed versions. So dropping the
+// `typescript-native` alias, or letting `typescript` float past 7, does not fail: the gate silently reverts to the ~180s compiler, or silently moves to one nobody chose,
 // with every command and every doc still reading correctly. The `--checkers` flag is the one
 // mechanical tell, because TypeScript 5 rejects it outright — which is why it is passed rather than
 // left at its default, and why this file asserts it is still there.
@@ -49,8 +48,8 @@ export function runTypecheckNativeCompilerTests() {
   assert.ok(
     typeof alias === "string" && alias.startsWith("npm:typescript@"),
     "devDependencies['typescript-native'] must be an `npm:typescript@<version>` alias — it is what " +
-      "pnpm links `node_modules/.bin/tsc` to, and therefore what `pnpm run typecheck`, ci.yml's " +
-      "`checks` job and scripts/remote-check.mjs all actually run. Read: " + JSON.stringify(alias),
+      "pnpm links `node_modules/.bin/tsc` to, and therefore what `pnpm run typecheck` and ci.yml's " +
+      "`static` job actually run. Read: " + JSON.stringify(alias),
   );
   assert.ok(
     major(alias) >= 7,
@@ -69,8 +68,8 @@ export function runTypecheckNativeCompilerTests() {
 
   // 3 — `--checkers` is the mechanical tell. TypeScript 5 refuses the flag, so if the alias is ever
   // lost the typecheck fails loudly on an unknown option instead of quietly running the old
-  // compiler. Both callers must carry it, for the same reason remote-check already pins CI's heap:
-  // a result on the box is only useful because it is the same command the required check runs.
+  // compiler. The one caller left is ci.yml's `static` job, which runs the package script — so the
+  // flag lives there, and the job must still run that script rather than a spelling of its own.
   assert.match(
     pkg.scripts.typecheck,
     /--checkers\s+\d+/,
@@ -78,14 +77,15 @@ export function runTypecheckNativeCompilerTests() {
       "that makes a lost `typescript-native` alias FAIL rather than silently fall back to " +
       "TypeScript 5 — every other part of the command is identical between the two compilers.",
   );
-  const remoteCheck = read("scripts/remote-check.mjs");
-  const remoteTypecheck = /^\s*typecheck:\s*\n?\s*"([^"]+)"/m.exec(remoteCheck)?.[1] ?? "";
-  assert.notEqual(remoteTypecheck, "", "tests/typecheck-native-compiler.test.ts can no longer find remote-check's `typecheck` entry.");
+  const ci = read(".github/workflows/ci.yml")
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .join("\n");
   assert.match(
-    remoteTypecheck,
-    /--checkers\s+\d+/,
-    "the box's typecheck no longer passes `--checkers`, so it can run a different compiler from the " +
-      "one gating the merge and still report PASS. Command read: " + JSON.stringify(remoteTypecheck),
+    ci,
+    /- name: Typecheck\n\s+run: pnpm run typecheck\n/,
+    "ci.yml's Typecheck step must run `pnpm run typecheck` — the script that carries `--checkers`. A spelling of " +
+      "its own (`tsc --noEmit`, `npx tsc`) would not, and a lost alias would then pass silently.",
   );
 
   // 4 — and the thing actually linked IS 7. This is the assertion the three above only approximate:

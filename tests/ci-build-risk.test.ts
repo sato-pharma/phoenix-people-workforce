@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { BUILD_PATHS, classifyBuildRisk } from "../scripts/ci-build-risk.mjs";
-import { STAGE_JOBS_PR } from "../scripts/remote-check-plan.mjs";
+import { gradeActionsStages } from "../scripts/remote-check-plan.mjs";
 
 const SCRIPT = resolve("scripts/ci-build-risk.mjs");
 const WORKFLOW = resolve(".github/workflows/ci.yml");
@@ -158,6 +158,19 @@ export function runCiBuildRiskTests(): void {
   assert.match(onBlock, /push:\s*\n(?:\s*#.*\n)*\s*branches:\s*\n\s*- main/, "`push: main` — the production deploy gate — must stay");
 
   // 8 — remote-check must never read a PR's skipped-or-run Build as a build verdict: the job can be
-  // green with the Build skipped, so a pull_request run answers NO VERDICT for `build`.
-  assert.equal((STAGE_JOBS_PR as Record<string, unknown>).build, null, "STAGE_JOBS_PR.build must stay null — a green PR validate is not a build PASS");
+  // green with the Build skipped, so a run whose Build step was skipped answers NO VERDICT for `build`.
+  const skippedBuild = [
+    {
+      name: "validate",
+      status: "completed",
+      conclusion: "success",
+      steps: [
+        { name: "Set up job", conclusion: "success" },
+        { name: "Build", conclusion: "skipped" },
+      ],
+    },
+  ];
+  const graded = gradeActionsStages(["build"], skippedBuild);
+  assert.equal(graded.verdict, "no-verdict", "a green PR validate whose Build was skipped is not a build PASS");
+  assert.deepEqual(graded.stages, {}, "and it must not be recorded as a build verdict either");
 }

@@ -107,18 +107,15 @@ env:
   SEMGREP_VERSION: "1.171.0"
 
 jobs:
-  # This `runs-on` is byte-identical to the four in ci.yml and is pinned that way by
-  # `tests/ci-runner-switch.test.ts`, which requires exactly six identical copies across the two
-  # files. Do not edit one copy alone.
+  # Every `runs-on` in this repository is the literal `ubuntu-latest` (2026-10-19, owner: "make all ci
+  # actions to be on github"). It used to be a computed expression that could send a pull request to the
+  # self-hosted Hetzner box; the box is retired and tests/ci-runner-switch.test.ts now pins the literal in
+  # every workflow file, so a computed or self-hosted label cannot quietly come back.
   #
-  # 🔴 Corrected 2026-09-30: this comment used to justify the pin by saying `secret-scan` is "a
-  # REQUIRED check", and it is not — it was demoted from branch protection on 2026-09-29 and taken
-  # off `pull_request` in the same change. The pin still stands, for a different reason: the six
-  # lines are one switch, and a runner label that moves on five of them and not the sixth splits the
-  # fleet silently. The reason a comment gives for a rule outlives the rule, so it is worth keeping
-  # accurate — a session reading the old text would also have believed this job gates a merge.
+  # NOTE: `secret-scan` is not a required check — it was demoted from branch protection on 2026-09-29 and
+  # taken off `pull_request` in the same change; gitleaks runs in `bash-guard.mjs` C12 before a push.
   secret-scan:
-    runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     # 🔴 EVERY `continue-on-error` STEP BELOW CARRIES ITS OWN `timeout-minutes`, AND THIS CEILING
     # SITS ABOVE THEIR SUM (2026-10-13). A JOB that hits its ceiling concludes `cancelled`, which
     # withholds that `main` commit's production deploy exactly as a failure does — and a timeout is
@@ -383,18 +380,10 @@ jobs:
   # A real PR gate means removing the `if:` below and paying ~60 Actions minutes a day; that was
   # weighed and declined. What this failure DOES buy is a red daily run over `main` — a regression
   # surfaces within a day, with a notification, instead of sitting in a summary nobody opens.
-  # 🔴 sast-scan's `runs-on` CAN NEVER RESOLVE SELF-HOSTED, and that is fine — but an audit counting
-  # "six switched lines" should know one of them is dead. The `if:` below requires
-  # `github.event_name != 'pull_request'`, while the self-hosted branch of the expression requires
-  # `== 'pull_request'`: mutually exclusive, so on every event where this job actually runs the
-  # expression yields `ubuntu-latest`. Confirmed empirically too — `sast-scan` is `skipped` in every
-  # recent security run and has never had a runner assigned. The line is kept identical to the other
-  # five on purpose, so the six stay byte-identical and the parity test keeps its grip. **If semgrep is
-  # ever wanted on a replica, the `if:` is what has to change, not the label.**
   sast-scan:
     # Never on a PR. github.event_name is `schedule` or `workflow_dispatch` here.
     if: github.event_name != 'pull_request'
-    runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     # 🔴 EVERY `continue-on-error` STEP BELOW CARRIES ITS OWN `timeout-minutes`, AND THIS CEILING
     # SITS ABOVE THEIR SUM (2026-10-13). A JOB that hits its ceiling concludes `cancelled`, which
     # withholds that `main` commit's production deploy exactly as a failure does — and a timeout is

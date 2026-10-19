@@ -17,7 +17,9 @@
 // 🔴 AND THE NEW-TEST-FILE REMINDER IS PINNED AS A NOTE, NEVER A DENY (owner, 2026-10-12: *"make
 // remote-check test mandatory before a push that adds a test file"*). A push whose commits add a
 // `tests/**.test.ts(x)` file with no recorded `test` PASS for that sha is told the rule, with the files
-// and the command — and is ALLOWED. The ruling it respects is also the owner's word: offered a hook that
+// and the command — and is ALLOWED. The command it names became `node scripts/check-contracts.mjs` on
+// 2026-10-19, when the CI box was retired: GitHub runs only a commit origin already holds, so a pre-push
+// suite run no longer exists and the suite is the PR's parallel `unit` jobs. The ruling it respects is also the owner's word: offered a hook that
 // REFUSES a push over the suite on 2026-10-04, he answered *"keep the pre-push test as a rule, no
 // guard"*. The deny arm stays typecheck-only, and the cases below fail if it ever grows.
 //
@@ -293,9 +295,10 @@ function runNewTestFileReminderTests() {
     //    the one thing the owner ruled out (2026-10-04, "keep the pre-push test as a rule, no guard") ─
     const addedSha = fx.commit("tests/door-caps.test.ts");
     const reminded = expect(fx, "git push -u origin feat/x", "allow");
-    assert.match(reminded.context, /THE RULE \(owner, 2026-10-12\)/, `the rule must be said.\n${reminded.context}`);
-    assert.match(reminded.context, /remote-check\.mjs test/, "it must name the command to run");
-    assert.match(reminded.context, /run_in_background/, "it must say to run it in the background — C15 refuses a foreground run");
+    assert.match(reminded.context, /THE RULE \(owner, 2026-10-12;/, `the rule must be said.\n${reminded.context}`);
+    assert.match(reminded.context, /node scripts\/check-contracts\.mjs/, "it must name the command to run");
+    assert.match(reminded.context, /parallel `unit` jobs/, "it must say where the suite itself runs now that the CI box is retired");
+    assert.doesNotMatch(reminded.context, /remote-check\.mjs test|CI box answers/, "it must not send a session to a pre-push suite run GitHub cannot do");
     assert.match(reminded.context, /tests\/door-caps\.test\.ts/, "it must name the test file that was added");
     assert.match(reminded.context, /adds 1 test file\b/, `one file reads in the singular.\n${reminded.context}`);
     assert.match(reminded.context, /no `test` verdict is recorded/, "it must say why it is reminding");

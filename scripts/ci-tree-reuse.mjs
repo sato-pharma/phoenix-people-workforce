@@ -57,14 +57,22 @@ export function prNumberFromSubject(subject) {
 }
 
 /**
- * The tree a PR run recorded, read from the step names of its jobs, or `null`.
- * Only the `checks` job counts: it is the job a reuse would skip, and the recording step lives there.
- * Two different recorded trees in one run (a re-run attempt that re-merged) read as `null`.
+ * The jobs whose step names may carry the recording. The lint/typecheck work a reuse would skip lives
+ * in `static` since 2026-10-19; PR runs from before that carry it in `checks`, and a push can still be
+ * compared against one of those, so both count.
  */
-export function testedTreeFromJobs(jobs, jobName = "checks") {
+export const RECORDING_JOBS = ["static", "checks"];
+
+/**
+ * The tree a PR run recorded, read from the step names of its jobs, or `null`.
+ * Only a job in {@link RECORDING_JOBS} counts: it is the job a reuse would skip, and the recording
+ * step lives there. Two different recorded trees in one run (a re-run attempt that re-merged) read as `null`.
+ */
+export function testedTreeFromJobs(jobs, jobNames = RECORDING_JOBS) {
   const found = new Set();
+  const names = Array.isArray(jobNames) ? jobNames : [jobNames];
   for (const job of Array.isArray(jobs) ? jobs : []) {
-    if (job?.name !== jobName) continue;
+    if (!names.includes(job?.name)) continue;
     for (const step of Array.isArray(job.steps) ? job.steps : []) {
       const name = String(step?.name ?? "");
       if (!name.startsWith(TESTED_TREE_PREFIX)) continue;

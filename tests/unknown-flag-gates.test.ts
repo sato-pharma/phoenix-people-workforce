@@ -88,6 +88,7 @@ const PINNED = [
   "scripts/check-unbacked-branches.ts",
   "scripts/check-workbook-integrity.mjs",
   "scripts/ci-tree-reuse.mjs",
+  "scripts/ci-unit-coverage.mjs",
   "scripts/cloud-mirror-drift-refresh.mjs",
   "scripts/codemod-badge-tones.mjs",
   "scripts/codemod-hex-to-tokens.mjs",
@@ -474,6 +475,7 @@ export async function runUnknownFlagGatesTests() {
   // an unknown one, or be listed here with the reason it must not.
   const EXEMPT: Record<string, string> = {
     "scripts/dev-server.mjs": "forwards every flag it does not own to `next dev`, so refusing one would break the passthrough",
+    "scripts/remote-check-plan.mjs": "a pure library: its parseArgs only SORTS argv into dispatch, retired and unknown, and its one caller, remote-check.mjs, refuses every retired and unknown flag by name from that result (tests/remote-check.test.ts)",
     "scripts/office-rule-unlock.ts": "its own mode switch prints usage and exits 1 on anything but --set-password or --unlock",
     "scripts/weekly-export-design-unlock.ts": "its own mode switch prints usage and exits 1 on anything but --set-password or --unlock",
   };

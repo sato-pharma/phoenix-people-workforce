@@ -114,8 +114,10 @@ rather than gates.
 
 | Check | Workflow | What it runs |
 |---|---|---|
-| `validate` | ci.yml | Structural checks (routes, migrations, sql-backups, deductions contract, stale-domains), `pnpm audit`, the **unit/integration suite on a pull request**, and on every OTHER event the production **build** and the Playwright **login smoke test** — all in one job. 🔴 **The suite runs in whichever required job is idle, and `checks` has it on a push.** Since 2026-10-06 the two `Test` steps are exact complements: `validate` on `pull_request`, `checks` on everything else — because on a PR this job does ~40s of work while `checks` carries the typecheck, and on `main` it is the other way round and `main`'s wall clock IS the production deploy gate. `tests/ci-suite-placement.test.ts` asserts an event can never fall through both. 🔴 **It is NOT a job called `test` and must not become one** — that is a retired check name, and a job protection does not require reads exactly like one that gates (#3950). **So a NEW pinned test belongs in this suite; which job runs it on a given event is ci.yml's business, not yours.** |
-| `checks` | ci.yml | `pnpm run lint`, `pnpm exec next typegen`, `pnpm run typecheck` — and the unit suite on every event that is not a pull request (see `validate`). 🔴 **They were separate jobs named `lint`, `typecheck` and `test` until 2026-09-27 (#4527)**, which merged them so GitHub's per-job minute rounding is paid once instead of three times (~14% fewer billable minutes). Those three names **no longer exist as check names**, so a gate waiting for them waits forever. 🔴 **The typecheck is TypeScript 7 since 2026-10-06** — the `typescript-native` alias in package.json, which pnpm links `.bin/tsc` to; ~180s became ~50s. Nothing names the version, so `--checkers 1` is passed as the tell that the alias survives: TypeScript 5 refuses the flag. `docs/ci-self-hosted-runner.md`, "The typecheck moved to TypeScript 7". |
+| `validate` | ci.yml | The production **build** and the Playwright **login smoke test**. On a pull request the build runs only when `scripts/ci-build-risk.mjs` says the diff can change one; on every OTHER event it always runs. 🔴 **It is NOT a job called `test` and must not become one** — that is a retired check name, and a job protection does not require reads exactly like one that gates (#3950). Since 2026-10-19 it no longer carries the structural checks or the suite: they moved to `static` and `unit` so they run beside the build, not in front of it. |
+| `static` | ci.yml | Structural checks (routes, migrations, sql-backups, deductions contract, stale-domains), `pnpm audit`, ESLint, `next typegen`, the type gate and the tree-reuse dry run — in parallel with `validate` and `unit`. Not a required name: `checks` gates on it. |
+| `unit` | ci.yml | The **unit/integration suite**, as a matrix of three parallel jobs of two shards each, on every event. Each leg writes a coverage record. 🔴 **So a NEW pinned test belongs in this suite; which job runs it is ci.yml's business, not yours.** Not a required name: `checks` gates on it. |
+| `checks` | ci.yml | **The gate over `static` and `unit`** — green only when both are literally `success` AND the three `unit-coverage-N` records add up to every test the runner declares (`scripts/ci-unit-coverage.mjs`). It runs even when a job it needs failed, so a red leg is reported rather than hidden behind a skipped gate. 🔴 **`lint`, `typecheck` and `test` were separate jobs until 2026-09-27 (#4527)** and those three names **no longer exist as check names**, so a gate waiting for them waits forever. 🔴 **The typecheck is TypeScript 7 since 2026-10-06** — the `typescript-native` alias in package.json, which pnpm links `.bin/tsc` to. Nothing names the version, so `--checkers 1` is passed as the tell that the alias survives: TypeScript 5 refuses the flag. `docs/ci-self-hosted-runner.md`, "The typecheck moved to TypeScript 7". |
 **Not required, and not on a pull request either — corrected 2026-09-30.** The two rows below used to
 sit in the table above as required checks. Both were demoted on 2026-09-29 and taken off
 `pull_request` in the same change, so neither reports on a PR at all:
@@ -236,7 +238,7 @@ pins that call shape — accepting a single- **or** double-quoted name and a nam
 `+`, because 68 of the registrations are one of those and a stricter gate would have called every
 one of them an offender. The other **14** were ordinary type errors across `src/` and `app/`
 (TS18047, TS2741, TS2322, TS2559, TS2366, TS2345, TS2339, TS2769), and only a compiler finds one of
-those. So the run ends by naming `node scripts/remote-check.mjs typecheck` (~34s on the box): a
+those. So the run ends by naming `node scripts/remote-check.mjs typecheck` (it reads the PR's `static` job on GitHub): a
 check that read as *"the types are fine"* while covering 3 of 17 would be worse than no check,
 because a green run would buy a confidence it has not earned.
 
@@ -307,7 +309,9 @@ invisible to the old walk — and watching the assertion fire with
 It is still not a proof of purity: a bare package or a dynamic `await import(…)` is beyond any source
 walk, so judge a new gate by reading it.
 
-### Before every push: the PR's own CI is the verdict; `remote-check` is optional — except on a push that ADDS a test file (owner, 2026-10-12)
+### Before every push: the PR's own CI is the verdict; there is no pre-push suite run (owner, 2026-10-19)
+
+🔴 **THE CI BOX IS RETIRED, AND WITH IT THE PRE-PUSH SUITE RUN (owner, 2026-10-19: _"retire the hetzner box and do not use it fucken again because it is the source of slowness"_).** `node scripts/remote-check.mjs` now asks GitHub: it needs the commit on origin, reads that commit's PR run by sha (or starts one with `--dispatch`) and grades each stage from the jobs' own steps. GitHub can only run a commit origin already holds, so the 2026-10-12 step *"a push that ADDS a test file runs `remote-check test` first"* cannot exist any more. What stands in its place: `node scripts/check-contracts.mjs` (~8s, local) finds the repo-wide gates a new test file trips — 4 of the 25 red PR runs on 12 Oct were the comment-strip ratchet — and the PR's three parallel `unit` jobs run the suite. The push guard still says the note back for a push that adds a test file, naming `check-contracts`, and never refuses over the suite. **Everything below this paragraph is the box-era account, kept for its evidence: where it says "the box", read "retired".**
 
 🔴 **ONE STEP CAME BACK, FOR ONE KIND OF PUSH (owner, 2026-10-12: _"make remote-check test mandatory
 before a push that adds a test file"_).** A push whose commits add a `tests/**.test.ts(x)` file runs
@@ -478,13 +482,12 @@ AGENTS.md loads on every request and again after every compaction, so on 2026-10
 reintroduce them or invent a replacement — no "quick subset" of lint + typecheck before pushing, no
 `pnpm run ci` as a pre-push ritual. 🔴 **No step stands in front of the push any more: commit, push,
 open the PR, and its checks are the verdict** (owner, 2026-10-08, retiring the 2026-10-04 "remote-check
-test before every push"). `node scripts/remote-check.mjs <check>` is optional — once, with
+test before every push"). `node scripts/remote-check.mjs <check>` is optional and READS the PR's GitHub run since 2026-10-19 — once, with
 `run_in_background: true`, acting on the notification, never a poll loop or a foreground run (bash-guard C14, C15) — and
 `.claude/hooks/push-typecheck-guard.mjs` only reads a recorded verdict for the exact sha, refusing
 solely on a recorded typecheck FAIL (`docs/testing.md`, "Before every push"). The two
-**required** checks — `validate` (the `check:*` contracts, **the unit suite**, the build on a PR whose
-diff can change it, and on non-PR events the build and login smoke) and `checks` (lint, `next typegen`, typecheck) — run on the PR head commit
-and block the merge if either is red. 🔴 **THE UNIT SUITE MOVED BACK INTO `validate` ON 2026-09-30, FOR
+**required** checks — `validate` (the build on a PR whose diff can change it, and on non-PR events the build and login smoke) and `checks` (the gate over the parallel `static` — the `check:*` contracts, audit, lint, `next typegen`, typecheck — and `unit`, **the unit suite**) — run on the PR head commit
+and block the merge if either is red. (Until 2026-10-19 the contracts and the suite sat inside `validate` and `checks`; the history below describes that layout.) 🔴 **THE UNIT SUITE MOVED BACK INTO `validate` ON 2026-09-30, FOR
 WALL CLOCK, AND IT IS STILL INSIDE A REQUIRED CHECK.** `checks` ran typecheck (111s) then the suite
 (97s) in SERIES on one runner — 80% of a PR's ~260s wait — while `validate` sat on ~37s of work since
 the build was gated off pull requests. Beside the typecheck instead of behind it, a PR is ~163s.

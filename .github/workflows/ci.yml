@@ -35,6 +35,26 @@ name: CI
 # `validate` drops to ~268s and the wall clock with it. Full reasoning on that job — including
 # why `test` had to be added to branch protection's required checks, which happened on
 # 2026-09-18, a day after the split had left the tests gating nothing at all.
+#
+# 🔴 GITHUB-HOSTED ONLY, AND NOTHING WAITS FOR ANYTHING IT DOES NOT NEED (owner, 2026-10-19: "retire
+# the hetzner box and do not use it ever again, it is the source of slowness", and "make all ci
+# actions to be on github … checks on one or ten or even 100 at the same time … as fast as you can
+# safely without skipping any check"). Every job below runs on `ubuntu-latest`, written as a literal:
+# no label, variable or kill switch can send one to a machine of ours, and
+# tests/ci-runner-switch.test.ts fails a workflow that tries. The graph, four jobs side by side:
+#
+#   validate  the production Build and the Playwright login smoke against it (a PR builds only when
+#             scripts/ci-build-risk.mjs says its diff can change a build)
+#   static    the check:* contracts, the dependency audit, ESLint, the type gate, the tree-reuse dry run
+#   unit      the unit suite as 3 parallel jobs of 2 shards, every test in exactly one shard
+#   checks    the gate for static + unit: green only when both are literally `success` AND the three
+#             coverage records add up to every test the runner declares (scripts/ci-unit-coverage.mjs)
+#
+# `validate` and `checks` are still the two required check names. NOTHING IS SKIPPED: every step that
+# ran before still runs, on the same events, in exactly one of those jobs — they just no longer queue
+# behind each other. Before (2026-10-19, run 39267143638 on `main` and 39267504616 on a PR) the slowest
+# required job read 417 s on `main` (`checks`: lint, the type gate and the 302 s suite in series) and
+# 616 s on a PR (`validate`: the 247 s suite in front of a 306 s build).
 
 # 🔴 THERE IS NO DOCS-ONLY FAST PATH ANY MORE, AND RE-ADDING ONE IS THE 2026-10-02 INCIDENT.
 # Removed 2026-10-06. Every job runs every step on every PR; the only conditional work left is the
@@ -154,53 +174,29 @@ env:
   COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
 
 jobs:
-  # Structural checks + build + login smoke test, in one job. The smoke test lives here
-  # (rather than in a downstream job) purely to avoid shipping .next between runners — see
-  # note 1 in the header. The unit tests left for the `test` job on 2026-09-17; everything
-  # else this job ever verified, it still verifies.
+  # WHERE THEY RUN, AND WHAT CAPS HOW MANY RUN AT ONCE. GitHub's own `ubuntu-latest`, a literal, on
+  # purpose. It used to be a computed expression that could send a pull request to a self-hosted box (the
+  # Hetzner box, `CI_SELF_HOSTED` / `CI_RUNNER_LABEL`); the owner retired that box on 2026-10-19 as the
+  # source of the slowness and ruled it is never used again, so there is no switch left to flip. `main`
+  # was always hosted, because its CI is the production deploy gate (AGENTS.md §2).
   #
-  # THE JOB ALWAYS RUNS AND ALWAYS REPORTS, and is never `if`-ed out: a skipped job reports no
-  # status, and a required check with no status blocks a PR forever — the exact breakage
-  # ci-docs-fallback.yml was invented to paper over. The only conditional steps left are the ones
-  # gated on the EVENT (the build and the Playwright smoke, and the unit suite's two homes).
-  # ── WHICH RUNNER, AND WHY IT IS AN EXPRESSION (2026-09-28) ─────────────────────────────────
-  # The six `runs-on` lines in this repo (four here, two in security-scan.yml) are BYTE-IDENTICAL
-  # and pinned that way by tests/ci-gate-parity.test.ts. 🔴 SELF-HOSTED IS NOW EVERY SAME-REPO PULL
-  # REQUEST, NOT AN OPT-IN BRANCH PREFIX — the owner widened it on 2026-09-30 ("widen self-hosted CI
-  # to all PRs"), once #4844 fixed the ESLint cache key that had made the box look 60% slower. Four
-  # conditions remain, each of which exists for a reason a past incident paid for:
+  # Capacity is GitHub's: the account's plan caps how many jobs run at once (GitHub Pro 40; more is a
+  # request to GitHub Support), and a job past the cap QUEUES — it does not fail. A superseded pull
+  # request run is cancelled by the `concurrency` block above, which hands its slots to the newest push.
   #
-  #   vars.CI_SELF_HOSTED != 'off'          a one-word kill switch that does not need you to
-  #                                         remember the label you configured
-  #   vars.CI_RUNNER_LABEL != ''            NOTHING is baked in. A job whose label has no online
-  #                                         runner does NOT fall back to hosted — it QUEUES, for
-  #                                         ever, with nothing red. So the label must be named
-  #                                         explicitly and an unset variable means hosted.
-  #   github.event_name == 'pull_request'   `main` can NEVER be self-hosted. main's CI IS the
-  #                                         production deploy gate (AGENTS.md §2): a runner that
-  #                                         fails or queues there stops shipping.
-  #   head.repo.full_name == repository     same-repo only. A fork PR on a self-hosted runner is
-  #                                         arbitrary code execution on our own machine.
+  # THE JOBS ARE SHORT ON PURPOSE: GitHub bills and caps by job, so the unit suite is three jobs (not
+  # twelve) — the point where another job costs a whole minute of setup and buys under ten seconds.
+
+  # validate — the production Build and the Playwright login smoke against that very artifact.
   #
-  # 🔴 THE `startsWith(github.head_ref, 'ci-runner/')` CLAUSE IS GONE ON PURPOSE. It was the
-  # per-branch opt-in the owner required on 2026-09-27 after a repo-wide flip took two `main` runs
-  # red and made Railway skip two production deploys. That risk is unchanged and is covered by the
-  # `github.event_name == 'pull_request'` clause above, which is now the ONLY thing keeping `main`
-  # hosted — do not weaken it. What changed is the reason the opt-in existed: widening was refused
-  # while the pool looked slower than hosted, and #4844 showed that reading was an artefact of an
-  # ESLint cache keyed by absolute path. 🔴 THE KILL SWITCH IS NOW THE WHOLE ROLLBACK, and unlike a
-  # branch name it IS re-resolved per run ATTEMPT: `gh variable set CI_SELF_HOSTED --body off`
-  # returns every PR to hosted on its next attempt, and `gh run rerun --failed` re-resolves it.
-  #
-  # It replaced the repo-wide `CI_RUNNER` variable, which had no per-branch override and moved
-  # `secret-scan` — then a required check, in security-scan.yml — along with it, in a workflow nobody
-  # flipping it was watching. (It is NOT required now, and no longer runs on a PR at all: the
-  # 2026-09-29 note above `checks` has it.) `PHX_BUILD_CPUS` below still keys off
-  # `runner.environment`, which is true on ANY self-hosted runner whatever its labels, so the CPU
-  # cap is unaffected.
-  # Turn-on procedure and the label situation: docs/ci-self-hosted-runner.md.
+  # THE JOB ALWAYS RUNS AND ALWAYS REPORTS, and is never `if`-ed out: a skipped job reports no status, and
+  # a required check with no status blocks a PR forever — the exact breakage ci-docs-fallback.yml was
+  # invented to paper over. The only conditional steps are the ones gated on the EVENT (and, on a pull
+  # request, `Build risk`, which can only ADD the Build). It no longer carries the check:* contracts, the
+  # audits or the unit suite: those are `static` and `unit` since 2026-10-19, so `main`'s slowest job is
+  # the build alone and not the build behind forty seconds of checks.
   validate:
-    runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
@@ -243,127 +239,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Check routes
-        run: pnpm run check:routes
-
-      - name: Check migrations
-        run: pnpm run check:migrations
-
-      - name: Check no snapshot tables land in the anon-readable public schema
-        run: pnpm run check:sql-backups
-
-      # Runs as its own process, NOT inside `pnpm run test`. The aggregated runner
-      # shares one process across 500+ files and getSupabaseAdmin() memoizes its
-      # client, so a suite that successfully constructs one poisons every later
-      # test (PR #1596 took `validate` from ~3m30s to 20m17s, twice). Here the
-      # client dies with the process and cannot leak.
-      - name: Check the deductions write contract (what reaches the wire)
-        run: pnpm run check:deductions-write-contract
-
-      - name: Check no stale Vercel domains/deps in shipped source
-        run: pnpm run check:no-stale-domains
-
-      # 🔴 THE ONLY CI COVERAGE A DOCKERFILE GETS, AND IT IS DELIBERATELY IN `validate` RATHER THAN
-      # BEHIND THE BUILD. The Build step below is gated off pull requests on purpose (see
-      # tests/ci-pr-skips-build-and-smoke.test.ts), and the container image is built only by Railway
-      # AFTER the merge — so before this step a Dockerfile typo or an undeclared $VAR reached
-      # production on a commit whose required checks were green, surfacing as a failed deploy, which
-      # AGENTS.md §2.3 calls the hardest failure here to notice.
-      #
-      # Milliseconds, no docker daemon, no build context. It does NOT replace the build; it catches
-      # the four things that break one. Added 2026-10-01 after #4981 removed a dead build ARG and
-      # proving that safe took a hand-rolled audit nothing in the repo could do.
-      - name: Check both Dockerfiles parse and declare every variable they use
-        run: pnpm run check:dockerfile
-
-      # 🔴 THE UNIT SUITE RUNS IN WHICHEVER REQUIRED JOB IS IDLE — HERE ON A PULL REQUEST, IN `checks`
-      # ON EVERY OTHER EVENT. One step, two homes, because the two jobs have opposite shapes:
-      #
-      #   pull_request   validate = structural checks only (~40s), checks = lint + typecheck (~60s)
-      #   push to main   validate = ALSO the build + the Playwright smoke (~230s), checks = ~60s
-      #
-      # So on a PR the suite is free here and would be the critical path in `checks`; on `main` it is
-      # exactly the other way round, and `main`'s wall clock is the production deploy gate (§2) —
-      # every second of it is a second production is not serving the merge. Measured 2026-10-06 on
-      # run 37523699412, before this change: validate 386s (Test 123s THEN Build 196s THEN smoke 24s,
-      # all in series) against checks 246s. Beside the build instead of in front of it, `main`'s wall
-      # clock is max(~270s, ~250s) rather than ~390s.
-      #
-      # BOTH JOBS ARE REQUIRED (`validate` and `checks`, read live from
-      # branches/main/protection/required_status_checks), so wherever the step lands it still blocks
-      # the merge and still gates the deploy. Nothing is skipped on either event: the two `if:`
-      # conditions are exact complements, and tests/ci-suite-placement.test.ts asserts that — a suite
-      # that ran on NEITHER event would be invisible here and catastrophic, which is the 2026-09-17
-      # shape (#3950) arriving from a third direction.
-      #
-      # 🔴 WHY NOT A NEW `test` JOB, which is the obvious shape: two reasons, both hard.
-      #   1. `test` is a RETIRED check name (#4527). tests/required-check-names.test.ts refuses any
-      #      workflow declaring a job with a retired name that protection does not require — a job
-      #      named like a former gate reads on a PR exactly like one that gates, which is the
-      #      2026-09-17 incident (#3950).
-      #   2. A new required check blocks every open PR whose branch predates it — "Expected — waiting
-      #      for status", for ever, until each one is rebased at ~16 Actions minutes apiece.
-      #
-      # 🔴 AND NOT BECAUSE OF QUEUEING: every one of the last twelve runs queued for 0s. No number of
-      # runners, no larger runner and no public-repository free tier touches this — the time was
-      # always real work on a runner that was available immediately.
-      #
-      # No typegen and no build in front of it: tests/run-tests.ts is run straight by node with
-      # --experimental-strip-types. `test:sharded` runs that same runner once per CPU with
-      # PHX_TEST_SHARD, and REFUSES unless the shards between them ran every test exactly once —
-      # see scripts/run-tests-sharded.mjs.
-      - name: Test
-        if: github.event_name == 'pull_request'
-        run: pnpm run test:sharded
-
-      - name: Dependency audit (fail on high+ vulnerabilities)
-        # GHSA-mh99-v99m-4gvg is ignored via pnpm-workspace.yaml's auditConfig — see the
-        # comment there for why (forcing a fix broke eslint; the app's real exposure isn't
-        # exploitable).
-        #
-        # Runs the SAME `pnpm audit --audit-level=high --prod`; the wrapper only tells an npm
-        # outage apart from a real advisory. A bare audit exits non-zero for both, and an outage
-        # takes the whole required check red — twice on 2026-09-04, once on `main` itself. A genuine
-        # high or critical finding still fails the build. See scripts/ci-dependency-audit.mjs.
-        run: node scripts/ci-dependency-audit.mjs
-
-      # 🔴 THE GATE ABOVE IS BLIND THREE WAYS, AND THIS STEP IS THE SECOND OPINION. `pnpm audit`
-      # reads npm's feed, which LAGS: on 2026-09-30 it reported
-      # `{"info":0,"low":0,"moderate":0,"high":0,"critical":0}` at the same moment OSV reported a HIGH
-      # against `@grpc/grpc-js@1.14.4` (GHSA-m9gg-hp2v-232j, `getAuthContext` returning unauthorized
-      # certificates as authorized). `--prod` also hides the dev graph and `--audit-level=high` hides
-      # everything below high — pnpm-workspace.yaml records three advisories that slipped through for
-      # exactly that reason, each noting "Dependabot alone saw it".
-      #
-      # DELIBERATELY NON-BLOCKING, for now. Two advisory feeds will sometimes disagree, and `main` is
-      # production's own branch: a false positive here would freeze deploys, which is the very outage
-      # this step exists to shorten. So it reports and `pnpm audit` gates. Promote it to blocking only
-      # after watching the two agree. `continue-on-error` also absorbs an OSV outage, on the same
-      # reasoning as the audit wrapper's bounded fail-open.
-      #
-      # 🔴 AND IT NEEDS ITS OWN TIMEOUT, WHICH `continue-on-error` DOES NOT GIVE IT. The script
-      # fetches advisory detail one package at a time with a 30s ceiling EACH and no cap on how many
-      # it will ask for, so a slow or half-down advisory API does not fail this step — it hangs it,
-      # and `continue-on-error` cannot absorb a step that never ends. What ends instead is the JOB,
-      # on `timeout-minutes: 20`, which is a FAILED required check on `main` and therefore a withheld
-      # production deploy (§2.3) caused by a step that is explicitly not a gate. Three minutes is
-      # ~6x its measured runtime (2026-10-06, run 37522986755: 2.2s for 1,099 packages).
-      - name: Vulnerability scan, whole graph, all severities (reports, does not gate)
-        continue-on-error: true
-        timeout-minutes: 3
-        run: node scripts/vuln-scan.mjs
-
-      # 🔴 THE SUITE HAS MOVED FOUR TIMES AND THE COMMENT SAYING WHERE IT LIVES HAS BEEN WRONG AFTER
-      # THREE OF THEM — `validate` (2026-09-17 out, to its own `test` job), `checks` (09-27),
-      # `validate` again (09-30), and now BOTH, split by event (10-06). Do not re-state its home
-      # here: the `if:` on the two `Test` steps is the only thing that cannot go stale, and
-      # tests/ci-suite-placement.test.ts reads them rather than any prose.
-      #
-      # What stays true whatever moves: the suite only gates anything while it is inside a check
-      # branch protection NAMES. For one day after the 2026-09-17 split it was not, and a PR whose
-      # tests were red showed every required check green and merged. Never move work out of a
-      # required check without putting it into another one in the same change.
 
       # THE .next BUILD CACHE WAS DELETED HERE ON 2026-08-29. Do not re-add it.
       #
@@ -464,20 +339,6 @@ jobs:
       # step above records the evidence.
       - name: Build
         if: github.event_name != 'pull_request' || steps.buildrisk.outputs.build == 'true'
-        env:
-          # 🔴 ONLY on a self-hosted runner, and only because a container lies about its CPUs.
-          # `next build` sizes its page-data worker pool from the CPUs it can SEE — the HOST's count
-          # inside a container — so on the Railway runner it read 47, spawned 47 tokio workers against
-          # a much lower pid/thread limit, and aborted AFTER compiling successfully with
-          # `OS can't spawn worker thread: Resource temporarily unavailable (os error 11)`. Measured
-          # 2026-09-27 on jobs 108695670880 and 108696483287, on two different runners.
-          #
-          # `runner.environment` is `github-hosted` on GitHub's runners, so this resolves to the empty
-          # string there and `next.config.ts` leaves `experimental.cpus` ABSENT — a hosted build is
-          # byte-for-byte the configuration it was before this existed. Do not replace this with a
-          # plain value: capping workers on a 4-core hosted runner would slow every build here to buy
-          # nothing.
-          PHX_BUILD_CPUS: ${{ runner.environment == 'self-hosted' && '4' || '' }}
         run: pnpm run build
 
       # The ONE thing a PR could not previously answer. #2299 shipped a canvas fix that was correct
@@ -512,9 +373,8 @@ jobs:
       # `install-deps` step below, so a cache saved on one Ubuntu and restored on another hands the
       # browser a system it was never given the libraries for. `ubuntu-latest` migrates to Ubuntu 26
       # from 2026-10-19 — every run since early October carries GitHub's notice saying so — and the
-      # old key could not tell the two images apart. Same `${{ env.ImageOS }}` discriminator as the
-      # ESLint cache key's `runner.name` in `checks`, and for the same class of reason: a cache whose
-      # key omits what makes it valid reports a hit and poisons the step it was meant to save.
+      # old key could not tell the two images apart. A cache whose key omits what makes it valid
+      # reports a hit and poisons the step it was meant to save.
       - name: Cache Playwright browsers
         if: github.event_name != 'pull_request'
         id: playwright-cache
@@ -603,56 +463,14 @@ jobs:
           path: output/playwright-report
           retention-days: 5
 
-  # Split out of the old lint-typecheck job so it runs beside `typecheck` instead of
-  # in front of it. eslint keeps its own incremental --cache; the restore-keys fallback
-  # matters more than the exact key here, since a partial cache still skips most files.
-  # ONE JOB FOR LINT + TYPECHECK + TESTS (2026-09-27). It was three jobs; they shared a
-  # byte-identical preamble (checkout, corepack, setup-node, pnpm install)
-  # and diverged only in their final step.
-  #
-  # WHY, AND WHY IT IS A COST CHANGE RATHER THAN A SPEED ONE. Everything above this line was
-  # tuned for WALL CLOCK, and splitting work across parallel runners is the right move for
-  # latency. It is the wrong move for BILLING: GitHub bills each job separately and rounds it
-  # UP to a whole minute, so five jobs pay five roundings and five preambles.
-  #
-  # MEASURED on run 36277556391 (a normal code PR):
-  #   validate 273s -> 5 min | typecheck 196s -> 4 | test 139s -> 3 | lint 50s -> 1 | mobile 8s -> 1
-  #   = 14 billable minutes for 4m33s of wall clock.
-  # The preamble is ~29s of that per job (set up job 1s, checkout 4s, corepack 1s, node 11s,
-  # install 12s). Dropping two redundant copies and two roundings puts lint+typecheck+test at
-  # 29 + 21 + 167 + 110 = ~327s -> 6 billable minutes, against 8 for the same work before.
-  # ~2 minutes per run, over ~929 PR+push runs/week, is ~12,000 minutes a month.
-  #
-  # THE TRADE IS EXPLICIT: these three now run in SERIES, so the run's wall clock moves from
-  # validate's ~273s to this job's ~327s (+~55s). That was accepted deliberately to cut the
-  # bill; if latency ever matters more than cost again, splitting them back out is the lever.
-  #
-  # `mobile` IS DELIBERATELY NOT FOLDED IN. It is npm with its own package-lock.json and is
-  # excluded from the root tsconfig.json and eslint.config.mjs, so it shares no preamble with
-  # this job — merging it would buy one rounding at disproportionate risk.
-  #
-  # 🔴 THE REQUIRED CHECK NAMES CHANGED, AND THE SWAP IS DONE. Branch protection was repointed
-  # on 2026-09-27 at the owner's instruction, in the same window #4527 merged: `lint`, `typecheck`
-  # and `test` no longer exist as check names — they are the steps below.
-  #
-  # 🔴 AND AGAIN ON 2026-09-29: the required contexts are now just `validate` and `checks`.
-  # `mobile` and `secret-scan` were dropped from protection — both still run and still report,
-  # neither blocks a merge. Verified live against branches/main/protection/required_status_checks;
-  # `node scripts/check-required-checks.mjs` re-checks it and is the only thing that will catch the
-  # sixth rotation. Do not restate the list anywhere without running that script first.
-  #
-  # WHAT IT COST, so the next rename is done differently: nineteen places in the repo went on
-  # saying "6 required checks" and naming the three dead ones, including .claude/skills/ship and
-  # .claude/skills/verify-context — the two files a session follows in order to merge. A session
-  # followed `ship`, counted to six, and sat waiting on three checks that can never report again.
-  # A required check that never reports blocks every PR forever, and a session told to count to a
-  # number that no longer exists blocks itself just as completely. So if a name here ever changes
-  # again: repoint protection in the same window, and fix every doc that states the list in the
-  # same PR. tests/required-check-names.test.ts now fails if this job's name and the docs drift
-  # apart, which is the only part of that a machine can hold.
-  checks:
-    runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
-    timeout-minutes: 30
+  # static — everything that needs a checkout and an install but no build: the check:* contracts, the
+  # dependency audit, ESLint and the type gate. These used to be split between `validate` and `checks`,
+  # each behind work it did not depend on. One job now means one setup, and it runs BESIDE the build and
+  # the suite instead of in front of them. Nothing here is conditional on the diff: every step runs on
+  # every event, which is the 2026-10-06 rule (see the header).
+  static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     # READ-ONLY additions for the tree-reuse DRY RUN (owner, 2026-10-14): `actions: read` lets the push
     # run read a PR run's step names, `pull-requests: read` lets it find the PR's final head. Nothing
     # here can write. Account: scripts/ci-tree-reuse.mjs, docs/ci-self-hosted-runner.md.
@@ -665,24 +483,8 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # depth 2, not 1 — and 🔴 NOT for the reason this comment gave until 2026-10-06, which
-          # was wrong in a way worth recording because it told its reader a gate runs that does not.
-          # It claimed depth 2 keeps `scripts/check-migrations.mjs`'s cross-branch timestamp-collision
-          # check alive. It does not, at any depth: on a `pull_request`, actions/checkout fetches the
-          # merge ref alone, so there is no `refs/remotes/origin/main` to compare against, and that
-          # script FAILS OPEN by design (check-migrations.mjs:101) — it says so itself, naming
-          # `fetch-depth: 2` as the case it degrades on. That check is therefore SKIPPED on every PR
-          # today, which is a real gap (it is the step behind 10 of 14 recent `validate` failures,
-          # and the collision it finds is one the branch cannot see), but closing it means fetching
-          # `origin/main` explicitly, not changing this number.
-          #
-          # What depth 2 is actually worth now: nothing in THIS job reads a second commit since the
-          # per-job docs-only classifier was removed on 2026-10-06, so it is kept only because the
-          # `mobile` job genuinely needs it (HEAD^1..HEAD, line ~793), one spelling across the file is
-          # cheaper to reason about than three, and the extra commit costs no measurable time.
+          # depth 2, for the reasons recorded on `validate`'s checkout (one spelling across the file).
           fetch-depth: 2
-
-      # Answered inline, per job — see the note on this step in `validate`.
 
       # TREE-REUSE DRY RUN, half one (owner, 2026-10-14, cost cuts). A PR run writes down the tree it is
       # about to test, in the NAME of the next step: a step name is readable from the jobs API with
@@ -711,6 +513,76 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check routes
+        run: pnpm run check:routes
+
+      - name: Check migrations
+        run: pnpm run check:migrations
+
+      - name: Check no snapshot tables land in the anon-readable public schema
+        run: pnpm run check:sql-backups
+
+      # Runs as its own process, NOT inside `pnpm run test`. The aggregated runner
+      # shares one process across 500+ files and getSupabaseAdmin() memoizes its
+      # client, so a suite that successfully constructs one poisons every later
+      # test (PR #1596 took `validate` from ~3m30s to 20m17s, twice). Here the
+      # client dies with the process and cannot leak.
+      - name: Check the deductions write contract (what reaches the wire)
+        run: pnpm run check:deductions-write-contract
+
+      - name: Check no stale Vercel domains/deps in shipped source
+        run: pnpm run check:no-stale-domains
+
+      # 🔴 THE ONLY CI COVERAGE A DOCKERFILE GETS, AND IT IS DELIBERATELY IN `static` (WHICH NEVER SKIPS)
+      # RATHER THAN BEHIND THE BUILD. `validate`'s Build is gated off most pull requests on purpose (see
+      # tests/ci-pr-skips-build-and-smoke.test.ts), and the container image is built only by Railway
+      # AFTER the merge — so before this step a Dockerfile typo or an undeclared $VAR reached
+      # production on a commit whose required checks were green, surfacing as a failed deploy, which
+      # AGENTS.md §2.3 calls the hardest failure here to notice.
+      #
+      # Milliseconds, no docker daemon, no build context. It does NOT replace the build; it catches
+      # the four things that break one. Added 2026-10-01 after #4981 removed a dead build ARG and
+      # proving that safe took a hand-rolled audit nothing in the repo could do.
+      - name: Check both Dockerfiles parse and declare every variable they use
+        run: pnpm run check:dockerfile
+
+      - name: Dependency audit (fail on high+ vulnerabilities)
+        # GHSA-mh99-v99m-4gvg is ignored via pnpm-workspace.yaml's auditConfig — see the
+        # comment there for why (forcing a fix broke eslint; the app's real exposure isn't
+        # exploitable).
+        #
+        # Runs the SAME `pnpm audit --audit-level=high --prod`; the wrapper only tells an npm
+        # outage apart from a real advisory. A bare audit exits non-zero for both, and an outage
+        # takes the whole required check red — twice on 2026-09-04, once on `main` itself. A genuine
+        # high or critical finding still fails the build. See scripts/ci-dependency-audit.mjs.
+        run: node scripts/ci-dependency-audit.mjs
+
+      # 🔴 THE GATE ABOVE IS BLIND THREE WAYS, AND THIS STEP IS THE SECOND OPINION. `pnpm audit`
+      # reads npm's feed, which LAGS: on 2026-09-30 it reported
+      # `{"info":0,"low":0,"moderate":0,"high":0,"critical":0}` at the same moment OSV reported a HIGH
+      # against `@grpc/grpc-js@1.14.4` (GHSA-m9gg-hp2v-232j, `getAuthContext` returning unauthorized
+      # certificates as authorized). `--prod` also hides the dev graph and `--audit-level=high` hides
+      # everything below high — pnpm-workspace.yaml records three advisories that slipped through for
+      # exactly that reason, each noting "Dependabot alone saw it".
+      #
+      # DELIBERATELY NON-BLOCKING, for now. Two advisory feeds will sometimes disagree, and `main` is
+      # production's own branch: a false positive here would freeze deploys, which is the very outage
+      # this step exists to shorten. So it reports and `pnpm audit` gates. Promote it to blocking only
+      # after watching the two agree. `continue-on-error` also absorbs an OSV outage, on the same
+      # reasoning as the audit wrapper's bounded fail-open.
+      #
+      # 🔴 AND IT NEEDS ITS OWN TIMEOUT, WHICH `continue-on-error` DOES NOT GIVE IT. The script
+      # fetches advisory detail one package at a time with a 30s ceiling EACH and no cap on how many
+      # it will ask for, so a slow or half-down advisory API does not fail this step — it hangs it,
+      # and `continue-on-error` cannot absorb a step that never ends. What ends instead is the JOB,
+      # on `timeout-minutes: 20`, which is a FAILED required check on `main` and therefore a withheld
+      # production deploy (§2.3) caused by a step that is explicitly not a gate. Three minutes is
+      # ~6x its measured runtime (2026-10-06, run 37522986755: 2.2s for 1,099 packages).
+      - name: Vulnerability scan, whole graph, all severities (reports, does not gate)
+        continue-on-error: true
+        timeout-minutes: 3
+        run: node scripts/vuln-scan.mjs
+
       # STRATEGY MATTERS MORE THAN THE KEY HERE, and it is not obvious from the logs.
       # eslint's --cache defaults to --cache-strategy metadata, which decides a file is unchanged
       # by comparing size + MTIME. actions/checkout writes every file fresh on every run, so every
@@ -723,26 +595,18 @@ jobs:
       # unreadable to a content-strategy run, so without the discriminator the first runs after this
       # change would download and extract a cache they must then throw away, and still log
       # "Cache restored successfully". Renaming the key retires the old entries by letting them expire.
-      # 🔴 AND THE KEY CARRIES THE WORKSPACE FOR A THIRD VERSION OF THE SAME BUG, FOUND 2026-09-30.
-      # .eslintcache is a JSON object keyed by ABSOLUTE file path — read off the runner:
-      #   [{"/home/phx/actions-runner/_work/phoenix-people-workforce/phoenix-people-workforce/app/…
-      # A GitHub-hosted runner works in /home/runner/work/<repo>/<repo>; this repo's self-hosted
-      # runners work in /home/phx/actions-runner[-2]/_work/<repo>/<repo>. So a cache saved on
-      # ubuntu-latest and restored on the box matches NOT ONE path and eslint re-lints all 6,597
-      # files — while this step logs a hit, which is exactly how the 2026-08-29 mtime bug hid too.
-      # Measured on the self-hosted `checks` job: Lint 165s and 169s against 5-6s hosted. That 160s,
-      # not CPU, is the entire reason self-hosted `checks` read 324-339s — on the same box Typecheck
-      # is 115s against 153-162s hosted, i.e. the box WINS the one pure-CPU step. Lint on that box
-      # with a cache its own workspace wrote: 4.16s.
-      # ${{ runner.name }} is stable per registered runner and separates the two runner directories;
-      # hosted runner names are per-job, so they share one 'hosted' lineage and keep today's hit
-      # rate. Do not collapse this to runner.environment alone — it cannot tell -2 from the first.
+      # 🔴 .eslintcache is a JSON object keyed by ABSOLUTE file path, so a cache is only valid in the
+      # workspace that wrote it. Every run is on a GitHub-hosted runner now (/home/runner/work/<repo>),
+      # which is one lineage; the key carried the runner name too until 2026-10-19, to keep a self-hosted
+      # box's cache apart from the hosted one (a cache restored across the two matched not one path and
+      # re-linted all 6,597 files while logging a hit). A hosted run's key string is unchanged by
+      # dropping that, so the existing entries keep hitting.
       - name: Restore ESLint cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .eslintcache
-          key: eslintcache-${{ runner.environment == 'self-hosted' && runner.name || 'hosted' }}-content-${{ hashFiles('app/**', 'src/**', 'tests/**', 'scripts/**', 'eslint.config.mjs', 'pnpm-lock.yaml') }}
-          restore-keys: eslintcache-${{ runner.environment == 'self-hosted' && runner.name || 'hosted' }}-content-
+          key: eslintcache-hosted-content-${{ hashFiles('app/**', 'src/**', 'tests/**', 'scripts/**', 'eslint.config.mjs', 'pnpm-lock.yaml') }}
+          restore-keys: eslintcache-hosted-content-
 
       - name: Lint
         run: pnpm run lint
@@ -764,48 +628,19 @@ jobs:
       #
       # MEASURED on this tree, same tsconfig, both cold: tsc 5.9.3 276s / 5.8 GB peak against the
       # native compiler at 28s on 4 vCPU and 45s on 2. `--checkers 1` trades ~20s for a 5.06 GB peak,
-      # BELOW what TypeScript 5 already needed — which is what makes it safe on the 7.7 GB self-hosted
-      # box, where `scripts/remote-check.mjs` runs the identical command. It was adopted on evidence
-      # rather than on the speed: every one of the 19 typecheck errors that failed CI across the 14
-      # most recent red PRs is reported by 7 on the same commit (docs/ci-self-hosted-runner.md).
+      # BELOW what TypeScript 5 already needed (it was sized for a 7.7 GB box that is now retired, and
+      # fits a 2-vCPU / 7 GB hosted runner with room). It was adopted on evidence rather than on the
+      # speed: every one of the 19 typecheck errors that failed CI across the 14 most recent red PRs
+      # is reported by 7 on the same commit (docs/ci-self-hosted-runner.md).
       #
       # NO `NODE_OPTIONS` ANY MORE, DELIBERATELY. `--max-old-space-size=6144` was here because tsc 5
       # is a node program that could OOM below node's default ceiling before reporting any diagnostic.
       # The native compiler is a Go binary; a node heap flag does not reach it, and leaving one here
       # would read as a memory guarantee that nothing honours.
       #
-      # ONE TYPECHECK AT A TIME ON THE SELF-HOSTED BOX (owner, 2026-09-30: "fix the CI box so two PR
-      # typechecks never run at once"). Both runners live on one 7.7 GB box as the same user, and a
-      # typecheck here climbs past 4 GB. A kernel lock on a shared file makes the second one WAIT for
-      # the first instead, while lint and the unit suite keep running in parallel.
-      # scripts/remote-check.mjs takes the SAME lock, so a hand-run check queues too. On a
-      # GitHub-hosted runner the lock is always free.
-      #
-      # 🔴 A TIMED-OUT WAIT FAILS THE STEP — IT NEVER RUNS WITHOUT THE LOCK (2026-10-08, FUP-010).
-      # It used to warn and run anyway after 20 minutes, which is exactly the two-typechecks-at-once
-      # overlap the lock exists to prevent, on a box that has OOM-killed 7 processes in 8 days. A red
-      # step is the honest answer — re-run the job — and it is never a false green. Only reachable
-      # self-hosted; a hosted runner's lock is always free.
+      # (The self-hosted box's typecheck lock was here until 2026-10-19; the box is retired.)
       - name: Typecheck
-        run: |
-          exec 9>/tmp/phx-typecheck.lock
-          if ! flock -n 9; then
-            echo "Another typecheck is running on this box — waiting for it to finish (at most 20 minutes)."
-            SECONDS=0
-            flock -w 1200 9 || { echo "::error::Waited 20 minutes for the box's typecheck lock and did NOT run without it — re-run this job once the box is free."; exit 1; }
-            echo "Waited ${SECONDS}s for the typecheck lock."
-          fi
-          pnpm run typecheck
-
-      # The OTHER home of the unit suite — see the long note on `validate`'s `Test` step. On a PUSH,
-      # a DISPATCH or a SCHEDULE this job is ~60s of work while `validate` carries the build and the
-      # Playwright smoke, so the suite runs here and `main`'s wall clock — which is the production
-      # deploy gate — drops by the suite's whole duration. The two `if:` conditions are exact
-      # complements and tests/ci-suite-placement.test.ts asserts it: the suite must run on EVERY
-      # event, in exactly one of the two required jobs, never in neither.
-      - name: Test
-        if: github.event_name != 'pull_request'
-        run: pnpm run test:sharded
+        run: pnpm run typecheck
 
       # TREE-REUSE DRY RUN, half two. On a push, ask whether the tree that just landed is the very tree
       # the PR's green run tested, and say the answer in the NEXT step's name so it can be counted later
@@ -825,6 +660,141 @@ jobs:
         continue-on-error: true
         run: echo "recorded"
 
+  # unit — the unit suite, as THREE jobs of TWO shards each (2026-10-19). One runner has two CPUs, so the
+  # old single-job run (`test:sharded`, two shards) cost 170-320 s on every event; six shards spread over
+  # three runners cost one setup (~45 s) plus about a sixth of the work each.
+  #
+  # 🔴 EVERY TEST RUNS EXACTLY ONCE, AND THE PROOF IS THE POINT. Each part runs global shards
+  # `(part-1)*2+1 .. part*2` of `parts*2` (tests/run-tests.ts deals calls round-robin, so any total
+  # partitions the suite), checks its own shards locally and writes a record of what it ran. `checks`
+  # downloads the records and REFUSES unless the parts are exactly 1..N of one total and their `ran`
+  # counts add up to the `seen` count every shard reports (scripts/ci-unit-coverage.mjs). A leg that is
+  # missing, a wrong divisor or a part handed the same index twice is then a named failure rather than a
+  # smaller suite reporting success — the 2026-09-17 shape (#3950), arriving from a new direction.
+  #
+  # NOT a required check by name: `checks` is, and it needs this job, so a red or missing part is red there.
+  # `test` is a RETIRED check name (tests/required-check-names.test.ts) and must never come back as a job.
+  # The unit suite runs on EVERY event, in this job and nowhere else (tests/ci-suite-placement.test.ts).
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      # Every part reports whatever the others did: `checks` judges the whole set, and one red part must
+      # not cancel a second red one out of view.
+      fail-fast: false
+      matrix:
+        part: [1, 2, 3]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # depth 2 for the same reason as the other jobs: one spelling across the file.
+          fetch-depth: 2
+
+      # corepack must be enabled BEFORE setup-node runs — see the note in `validate`.
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # No typegen and no build in front of it: tests/run-tests.ts is run straight by node with
+      # --experimental-strip-types. PHX_TEST_PART picks this job's slice of the global shard space;
+      # PHX_TEST_SHARDS is explicit (2) rather than read from the CPU count, because every part must
+      # agree on the global total or the coverage gate in `checks` refuses the run.
+      - name: Test
+        env:
+          PHX_TEST_PART: ${{ matrix.part }}/${{ strategy.job-total }}
+          PHX_TEST_SHARDS: "2"
+          PHX_TEST_RESULT_FILE: ${{ runner.temp }}/unit-coverage-${{ matrix.part }}.json
+        run: pnpm run test:sharded
+
+      - name: Upload this part's coverage record
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: unit-coverage-${{ matrix.part }}
+          path: ${{ runner.temp }}/unit-coverage-${{ matrix.part }}.json
+          if-no-files-found: error
+          retention-days: 1
+
+  # checks — the gate for `static` and `unit`. It does no checking of its own: it reports ONE required
+  # status that is green only when both jobs it stands for finished with the word `success` (an
+  # allow-list: `failure`, `cancelled`, `skipped` and anything unexpected all read red) and the unit
+  # suite's three coverage records add up to every test. It needs `always()`-style semantics — a job whose
+  # `needs` failed is SKIPPED by default, and a skipped job reports no status, which on a required check
+  # blocks the PR for ever instead of failing it — but `!cancelled()`, not `always()`: a superseded
+  # pull request run is cancelled on purpose, and must not spend a runner finishing a verdict nobody reads.
+  #
+  # IT USED TO BE THE LINT + TYPE GATE + (ON `main`) UNIT SUITE JOB, ALL IN SERIES. That work is `static`
+  # and `unit` now, running beside `validate`; the check NAME is unchanged, so branch protection needed no
+  # change and no open PR sat waiting for a status that never arrives.
+  #
+  # 🔴 THE REQUIRED CHECK NAMES CHANGED, AND THE SWAP IS DONE. Branch protection was repointed
+  # on 2026-09-27 at the owner's instruction, in the same window #4527 merged: `lint`, `typecheck`
+  # and `test` no longer exist as check names — they are the steps below.
+  #
+  # 🔴 AND AGAIN ON 2026-09-29: the required contexts are now just `validate` and `checks`.
+  # `mobile` and `secret-scan` were dropped from protection — both still run and still report,
+  # neither blocks a merge. Verified live against branches/main/protection/required_status_checks;
+  # `node scripts/check-required-checks.mjs` re-checks it and is the only thing that will catch the
+  # sixth rotation. Do not restate the list anywhere without running that script first.
+  #
+  # WHAT IT COST, so the next rename is done differently: nineteen places in the repo went on
+  # saying "6 required checks" and naming the three dead ones, including .claude/skills/ship and
+  # .claude/skills/verify-context — the two files a session follows in order to merge. A session
+  # followed `ship`, counted to six, and sat waiting on three checks that can never report again.
+  # A required check that never reports blocks every PR forever, and a session told to count to a
+  # number that no longer exists blocks itself just as completely. So if a name here ever changes
+  # again: repoint protection in the same window, and fix every doc that states the list in the
+  # same PR. tests/required-check-names.test.ts now fails if this job's name and the docs drift
+  # apart, which is the only part of that a machine can hold.
+  checks:
+    needs: [static, unit]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Every job this check stands for finished with success
+        env:
+          STATIC_RESULT: ${{ needs.static.result }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+        run: |
+          set -u
+          failed=0
+          for pair in "static=${STATIC_RESULT}" "unit=${UNIT_RESULT}"; do
+            job="${pair%%=*}"
+            result="${pair#*=}"
+            if [ "${result}" = "success" ]; then
+              echo "${job}: success"
+            else
+              echo "::error::${job} finished '${result}', not 'success' — this check stays red until it does."
+              failed=1
+            fi
+          done
+          exit "${failed}"
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+
+      - name: Download the unit suite's coverage records
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: unit-coverage-*
+          path: unit-coverage
+          merge-multiple: true
+
+      - name: Prove the unit suite ran every test exactly once
+        run: node scripts/ci-unit-coverage.mjs unit-coverage
 
   # THE ONE JOB THAT LOOKS AT mobile/ (added 2026-09-18). Nothing else in this file does, and that
   # is structural rather than an oversight: the root project is pnpm, `mobile/` is npm with its own
@@ -866,7 +836,7 @@ jobs:
   # EAS, not through this repo's deploy — so the cost is a fix-forward, not an outage.
   mobile:
     if: github.event_name != 'pull_request'
-    runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
@@ -925,7 +895,7 @@ jobs:
 
   full-e2e:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.full_e2e == 'true'
-    runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     # `test` joined this list when it was split out of `validate` (2026-09-17) — dropping it
     # here would have quietly stopped the full E2E suite waiting on the unit tests.
     # `lint`, `typecheck` and `test` merged into `checks` on 2026-09-27 — a `needs:` naming a
