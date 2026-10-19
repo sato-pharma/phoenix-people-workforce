@@ -64,17 +64,20 @@ function byOwnPeriod(matrices: MonthlyClosingMatrix[]): ReadonlyMap<string, Mont
 export async function loadMergedMonthlyClosingParts(input: {
   line?: string | null;
   periods: string[];
+  /** Lets a read-only screen take a read that settled this many ms ago (closing-load-gate.ts). */
+  reuseMs?: number;
 }): Promise<MergedMonthlyClosingParts> {
+  const reuse = { reuseMs: input.reuseMs };
   const requested = Array.from(new Set(input.periods.filter(Boolean))).sort();
   // Most recent wins when a selection is over the cap — a reader who over-selects wants the recent
   // months, and silently keeping the OLDEST would answer a question nobody asked.
   const wanted = requested.slice(Math.max(0, requested.length - MAX_PERIOD_SELECTION));
 
   if (wanted.length <= 1) {
-    const parts = await loadMonthlyClosingPartsWithStoreSplit({
-      line: input.line ?? null,
-      period: wanted[0] ?? null,
-    });
+    const parts = await loadMonthlyClosingPartsWithStoreSplit(
+      { line: input.line ?? null, period: wanted[0] ?? null },
+      reuse,
+    );
     const resolved = parts.combined.period;
     return {
       byPeriod: byOwnPeriod([parts.combined]),
@@ -90,7 +93,7 @@ export async function loadMergedMonthlyClosingParts(input: {
   const loaded = await Promise.all(
     wanted.map(async (period) => {
       try {
-        const parts = await loadMonthlyClosingPartsWithStoreSplit({ line: input.line ?? null, period });
+        const parts = await loadMonthlyClosingPartsWithStoreSplit({ line: input.line ?? null, period }, reuse);
         if (parts.combined.period !== period) return { parts: null, period };
         return { parts, period };
       } catch {
@@ -106,7 +109,7 @@ export async function loadMergedMonthlyClosingParts(input: {
   if (usable.length === 0) {
     // Nothing readable: fall back to the plain loader's own default month rather than inventing an
     // empty closing, which would render as a real month that happens to be all zeros.
-    const parts = await loadMonthlyClosingPartsWithStoreSplit({ line: input.line ?? null, period: null });
+    const parts = await loadMonthlyClosingPartsWithStoreSplit({ line: input.line ?? null, period: null }, reuse);
     return {
       byPeriod: byOwnPeriod([parts.combined]),
       combined: parts.combined,

@@ -1701,6 +1701,7 @@ import { runClosingPerformanceReviewManagerScopeTests } from "./closing-performa
 import { runClosingQuarterGapTests } from "./closing-quarter-gap.test.ts";
 import { runClosingMatrixNoOfficeTests } from "./closing-matrix-no-office.test.ts";
 import { runClosingMergedAreaSplitFoldTests } from "./closing-merged-area-split-fold.test.ts";
+import { runClosingLoadGateTests } from "./closing-load-gate.test.ts";
 import { runClosingPublishEmailDestinationTests } from "./closing-publish-email-destination.test.ts";
 import { runClosingDeepLinkSilentSubstitutionTests } from "./closing-deep-link-silent-substitution.test.ts";
 import { runClosingDetailsSpanNoticeTests } from "./closing-details-span-notice.test.ts";
@@ -6096,6 +6097,11 @@ await runTest(
 await runTest(
   "a merged area row receives BOTH halves of the store split (Fayoum + Beni Suef, and Suez + Ismailia from its own month, each fold dated — the leg keyed to the folded-away area used to land on no row at all, so the merged row, its region subtotal and the line's national total all lost it; Pedia 2026-08 was 45,559.99 EGP short of its own inputs, a line with no rule in force is untouched, a month before the owner's July start renders as published, and a FILTERED sheet still discloses the money belonging outside it)",
   runClosingMergedAreaSplitFoldTests,
+);
+
+await runTest(
+  "the Monthly Closing load gate (at most four loads read the database at once per process, the same line and month asked for while it loads is read once, every caller gets its own copy, only the screen feed may reuse a read of the last ten seconds and Refresh never does, a failed read is never kept and gives its slot back; 19 Oct 2026 15:18:50 Cairo, twenty loads in ten seconds stalled every request the app made)",
+  runClosingLoadGateTests,
 );
 
 await runTest(

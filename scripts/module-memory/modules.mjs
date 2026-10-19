@@ -139,10 +139,10 @@ export const MODULES = [
     title: "Monthly Closing — the screens, the deep links and the drift detectors",
     scope: "The surfaces a closing is READ on and the checks that report on it, none of which decides a number: the matrix screen's head, filter and Details tab, the publish email's one link and the stale-deep-link notice, the publication-drift and Office-allocation-drift detectors, the month-completeness gate and the coverage banner, and the SoS dashboard cache. What a number IS stays in `sales-closing`.",
     globs: [
-      "src/lib/sales/{closing-deep-link,closing-details-span,closing-filter-narrowing,closing-publication-drift,closing-publish-destination,office-allocation-drift,source-coverage,source-quiet-periods,sos-month-complete,sos-dashboard,portal-sos-dashboard}.ts",
+      "src/lib/sales/{closing-deep-link,closing-details-span,closing-filter-narrowing,closing-load-gate,closing-publication-drift,closing-publish-destination,office-allocation-drift,source-coverage,source-quiet-periods,sos-month-complete,sos-dashboard,portal-sos-dashboard}.ts",
       "src/components/sales/{closing-details-panel,closing-details-standalone,closing-matrix-table,monthly-closing-workspace}.tsx",
       "scripts/check-{closing-publication-drift,office-allocation-drift,sos-month-complete}.ts",
-      "tests/closing-{deep-link-silent-substitution,details-span-notice,matrix-head-never-ellipsises,office-respread,publication-drift,publish-email-destination,refresh-keeps-the-filter}*",
+      "tests/closing-{deep-link-silent-substitution,details-span-notice,load-gate,matrix-head-never-ellipsises,office-respread,publication-drift,publish-email-destination,refresh-keeps-the-filter}*",
       "tests/{needs-you-board,sos-dashboard-packed-cache,sos-month-complete,source-coverage}*",
     ],
     keywords: ["closing screen", "closing matrix head", "closing details tab", "publication drift", "office allocation drift", "month completeness", "coverage banner", "deep link", "publish email link"],

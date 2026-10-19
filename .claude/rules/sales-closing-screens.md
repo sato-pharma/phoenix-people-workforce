@@ -1,9 +1,9 @@
 ---
 paths:
-  - "src/lib/sales/{closing-deep-link,closing-details-span,closing-filter-narrowing,closing-publication-drift,closing-publish-destination,office-allocation-drift,source-coverage,source-quiet-periods,sos-month-complete,sos-dashboard,portal-sos-dashboard}.ts"
+  - "src/lib/sales/{closing-deep-link,closing-details-span,closing-filter-narrowing,closing-load-gate,closing-publication-drift,closing-publish-destination,office-allocation-drift,source-coverage,source-quiet-periods,sos-month-complete,sos-dashboard,portal-sos-dashboard}.ts"
   - "src/components/sales/{closing-details-panel,closing-details-standalone,closing-matrix-table,monthly-closing-workspace}.tsx"
   - "scripts/check-{closing-publication-drift,office-allocation-drift,sos-month-complete}.ts"
-  - "tests/closing-{deep-link-silent-substitution,details-span-notice,matrix-head-never-ellipsises,office-respread,publication-drift,publish-email-destination,refresh-keeps-the-filter}*"
+  - "tests/closing-{deep-link-silent-substitution,details-span-notice,load-gate,matrix-head-never-ellipsises,office-respread,publication-drift,publish-email-destination,refresh-keeps-the-filter}*"
   - "tests/{needs-you-board,sos-dashboard-packed-cache,sos-month-complete,source-coverage}*"
 ---
 
@@ -22,6 +22,7 @@ This file is loaded because this session opened a file of this module (or the mo
 <!-- module-memory:rules:begin — hand-written; add this module's rules here -->
 ## Rules
 
+- 🔴 **EVERY CLOSING LOAD GOES THROUGH `closing-load-gate.ts` — AT MOST 4 AT ONCE PER PROCESS, ONE SHARED READ PER LINE AND MONTH WHILE IT LOADS, AND ONLY THE SCREEN FEED MAY REUSE A READ OF THE LAST 10 SECONDS** (19 Oct 2026, 15:18:50 Cairo: about twenty loads started inside ten seconds, the database median went from 0.15 s to 8.7 s and every other request hit its 15 s limit together). `loadMonthlyClosingPartsWithStoreSplit` is the gate; `reuseMs` is passed only by `app/api/sales/monthly-closing/route.ts`, and Refresh sends `fresh=1` to skip it. Exports, publish, lock and the drift and truth checks never pass it. Every caller gets a copy. Never raise the cap to hide a slow screen; `CLOSING_LOAD_CONCURRENCY` overrides it. Pinned by `tests/closing-load-gate.test.ts`.
 - 🔴 **A COMMITTED OFFICE BATCH KEEPS THE AREA SHARES OF ITS UPLOAD MOMENT FOR EVER, AND `scripts/check-office-allocation-drift.ts` IS THE ONE THING THAT SAYS SO — the line total agrees on both sides, so no units-based check can.** `src/lib/sales/office-allocation-drift.ts` compares the stored rows with today's shares applied to each line's OWN stored total — never a re-run of the allocator, which drops a net-negative product and moves the total — and names the batches re-touched after the commit. 🔴 **It REPORTS, never repairs, and exits 0 even on drift:** a published month is never corrected, and the read-time respread rule (`closing-office-respread.ts`) is what absorbs this from the October closing. 🔴 **TWO TRUE AUGUST CNS NUMBERS, MEASURED AT DIFFERENT POINTS — NOT A CONTRADICTION TO CHASE:** 3,698 units (3.37%) comparing the Office BATCH's own rows with today's shares, and 6,834 packs (6.23%) through the closing LOADER after the city-split rails. The commit instant is the batch's `created_at`, because a 2026-09-04 18:33 UTC backfill rewrote every older `updated_at` — reading that as the commit reports Jan–Jul clean.
 
 - 🔴 **A month the respread covers is NOT a task on the Needs You board** — the stored-row drift row moves to `worth-knowing` and says the closing figures are already right. Pinned by `tests/closing-office-respread.test.ts`, which also reads the three derivation points and the three Office grids out of SOURCE, and compares the shares with the LOCKED `buildOfficeAreaWeights` because importing it is a cycle. Account: `docs/agents-owner-rules.md`, "The Office channel's read-time respread".

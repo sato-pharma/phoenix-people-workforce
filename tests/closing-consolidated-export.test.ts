@@ -630,7 +630,7 @@ async function runReviewMatchesConsolidatedClosingTests(read: (file: string) => 
   );
   const periodLoad = read("src/lib/sales/monthly-closing-period-load.ts");
   assert.ok(
-    periodLoad.includes("loadMonthlyClosingPartsWithStoreSplit({ line: input.line ?? null, period })"),
+    periodLoad.includes("loadMonthlyClosingPartsWithStoreSplit({ line: input.line ?? null, period }, reuse)"),
     "every month of a selection is read WITH its own store split",
   );
   assert.ok(

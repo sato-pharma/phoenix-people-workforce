@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { CLOSING_SCREEN_REUSE_MS } from "@/lib/sales/closing-load-gate";
 import { loadMergedMonthlyClosingParts } from "@/lib/sales/monthly-closing-period-load";
 import { parsePeriodSelection } from "@/lib/sales/monthly-closing-period-merge";
 import { loadMonthlySourceCoverage } from "@/lib/sales/source-coverage";
@@ -42,9 +43,13 @@ export async function GET(request: Request) {
     // `periods` is the multi-month form; `period` stays the single-month one every existing caller
     // already sends, and a selection of exactly one behaves identically to the way it always has.
     const selection = parsePeriodSelection(searchParams.get("periods"));
+    // The Refresh button sends fresh=1 and always reads the database; a line or month change may
+    // take a read that settled a few seconds ago, so a second tab opening the same closing does not
+    // load it again (closing-load-gate.ts).
     const parts = await loadMergedMonthlyClosingParts({
       line,
       periods: selection.length > 0 ? selection : period ? [period] : [],
+      reuseMs: searchParams.get("fresh") === "1" ? 0 : CLOSING_SCREEN_REUSE_MS,
     });
     const data = parts.combined;
     // Completeness ride-along: which of last month's sources are still absent from this month.
