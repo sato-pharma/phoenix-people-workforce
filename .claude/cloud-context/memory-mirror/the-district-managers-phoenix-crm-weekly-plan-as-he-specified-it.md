@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 551fda9a-c5f4-4b2d-b228-a1f47c253abd
-  modified: 2026-10-17T17:49:49.411Z
+  modified: 2026-10-19T07:35:12.145Z
 ---
 
 Owner, **2026-10-16**, specifying the managers' weekly plan starting with the district manager:
@@ -159,9 +159,10 @@ and Group Product Manager only, so no DM is ever charged. Related:
 
 **Later rulings, 2026-10-17 evening (owner, in chat).** (1) A manager who has moved to Phoenix CRM keeps the
 old Plans tab as a **read-only history** of what they filed on the old module — no submit (PR 6059).
-(2) A **district sales manager may not plan or log more than two days of single visits a week —
-four half-days in any mix** ("four halves or 2 full days"); the limit covers the visits logged as well
-as the plan (PR 6061). (3) A rep who is **still in the old CRM** (all 21 district teams are live, so it is
+(2) A **district sales manager may not plan or log more than ONE day of single visits a week —
+two half-days in any mix** (lowered 2026-10-19 from his 17 Oct two days / "four halves or 2 full days":
+"currently the single visits are accepted in 2 days in a week no cap it to 1 day in the week"); the limit
+covers the visits logged as well as the plan (PR 6061, lowered by codex/dm-single-visit-cap-one-day). (3) A rep who is **still in the old CRM** (all 21 district teams are live, so it is
 per rep: 25 reps had no Phoenix plan for the week of 17 Oct, under 11 district managers) — their
 iReports360 week must appear on the DM's board "tickable" (matched to the rep's Phoenix customer, the
 half taken from the customer's AM/PM list because the old plan has no AM/PM; unmatched shown and not

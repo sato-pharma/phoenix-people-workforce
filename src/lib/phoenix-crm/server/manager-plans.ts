@@ -878,7 +878,7 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
     );
   }
 
-  // A district manager's single visits are two days a week at most — four half-days (owner, 2026-10-17).
+  // A district manager's single visits are one day a week at most — two half-days (owner, 2026-10-19).
   if (draft.kind === "single_visit" && own) {
     await assertSingleVisitPlanFits({ managerHrId: viewer.hrId, weekStart: fieldWeekStart(draft.date), date: draft.date, half: draft.half, isTest });
   }
