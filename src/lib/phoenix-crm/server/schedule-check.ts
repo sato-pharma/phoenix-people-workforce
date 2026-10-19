@@ -37,15 +37,34 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export const PHOENIX_CRM_SCHEDULE_TIMEOUT_MS = 8_000;
 
 /**
- * The model the door reads a timetable with. Chosen by replaying the production timetables through
- * each candidate before the scanner shipped (2026-10-17) — see docs/phoenix-crm-shared-places.md,
- * "The timetable scanner". A scanner that refuses a REAL timetable is worse than no scanner, so the
- * choice is the measured one, never the cheapest by default: on the 40 production photos the cheap
- * tier read a name off 5 and called the clear 25-name directory board "unreadable"; this one read
- * names off 17, the seated customer's included, at 2.6 s median and 6.2 s at p95 — inside the door's
- * 8 s. Never move it back to nano to save money without replaying those photos first.
+ * The OpenAI model the door reads a timetable with — asked only when Claude's ACCOUNT is dead (out of
+ * credit, key rejected), since Claude reads first (`PHOENIX_CRM_SCHEDULE_CLAUDE_MODEL`). Chosen by
+ * replaying the production timetables through each candidate before the scanner shipped (2026-10-17) —
+ * see docs/phoenix-crm-shared-places.md, "The timetable scanner". A scanner that refuses a REAL
+ * timetable is worse than no scanner, so the choice is the measured one, never the cheapest by
+ * default: on the 40 production photos the cheap tier read a name off 5 and called the clear 25-name
+ * directory board "unreadable"; this one read names off 17, the seated customer's included, at 2.6 s
+ * median and 6.2 s at p95 — inside the door's 8 s. Never move it back to nano to save money without
+ * replaying those photos first.
  */
 export const PHOENIX_CRM_SCHEDULE_MODEL = "gpt-5.4-mini";
+
+/**
+ * 🔴 CLAUDE READS THE TIMETABLE FIRST SINCE 2026-10-19 (`preferProvider: "anthropic"`), AND BY NAME.
+ * The OpenAI account ran out of credit on 18 Oct, so every door read paid a dead OpenAI round trip
+ * (about 1.5 s) before Claude, which then had only what was left of the 8 s — and the unnamed fallback
+ * was Haiku, mapped from `gpt-5.4-mini`. On 19 Oct 11:34 Cairo that read timed out after 6.5 s and the
+ * customer was saved with his building's timetable never read; nothing reads it again.
+ *
+ * Measured the same day, read-only: the 54 distinct production timetable photos through
+ * `readScheduleBytes`, with 30 s to answer. Sonnet: median 3.5 s, p95 5.5 s, 1 over 8 s, and the
+ * seated customer's name read on 17 photos (25 seatings matched). Haiku: median 4.6 s, p95 8.7 s,
+ * 5 over 8 s, 12 over the 6.5 s it was being left, and the name read on 12 (18 matched). The stronger
+ * model is the FASTER one on these boards, so nothing is traded. The signboard door reads with the
+ * same model (`PHOENIX_CRM_SIGNBOARD_DOOR_READER`). Account: docs/phoenix-crm-shared-places.md,
+ * "Claude reads the timetable first".
+ */
+export const PHOENIX_CRM_SCHEDULE_CLAUDE_MODEL = "claude-sonnet-5-5";
 
 const INSTRUCTIONS =
   "You are looking at a photograph a pharmaceutical sales representative took of the TIMETABLE on the " +
@@ -225,7 +244,7 @@ export async function readScheduleBoard(input: {
  */
 export async function readScheduleBytes(
   bytes: Uint8Array,
-  options: { model?: string; timeoutMs?: number } = {},
+  options: { model?: string; anthropicModel?: string; timeoutMs?: number } = {},
 ): Promise<ScheduleBoardReading> {
   const cropped = await cropStampBand(bytes);
   if (!cropped) return { kind: "unread", check: unjudged("call_failed") };
@@ -257,6 +276,9 @@ export async function readScheduleBytes(
       // answer arrived cut off — `call_failed`, measured 2026-10-17 on 11 of 40 production photos. The
       // prompt now keeps the transcription short and the names whole; the ceiling leaves room for both.
       maxOutputTokens: 1_600,
+      // Claude first, by name, with the whole budget; the OpenAI model only when Claude's account is dead.
+      anthropicModel: options.anthropicModel ?? PHOENIX_CRM_SCHEDULE_CLAUDE_MODEL,
+      preferProvider: "anthropic",
       model: options.model ?? PHOENIX_CRM_SCHEDULE_MODEL,
       purpose: "phoenix-crm-schedule",
       reasoning: { effort: "low" },
