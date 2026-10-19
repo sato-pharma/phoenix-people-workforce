@@ -82,3 +82,15 @@ export function experienceAnswerGap(
     explanation: `WhatsApp says "${String(declared).trim()}"; the CV counts about ${years(cvYears)}. Check which is right before sending them on.`,
   };
 }
+
+/**
+ * The same question asked of the pool's resolved facts — what the "CV differs" filter keeps. It takes
+ * the facts rather than the candidate so this module stays free of the pool's types, and the filter
+ * reads exactly the pair the row's flag reads.
+ */
+export function factsHaveExperienceGap(facts: {
+  declaredExperience?: { value?: string | null } | null;
+  years?: { value?: number | null } | null;
+}): boolean {
+  return experienceAnswerGap(facts.declaredExperience?.value, facts.years?.value) !== null;
+}
