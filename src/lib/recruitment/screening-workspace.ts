@@ -236,7 +236,7 @@ function text(value: string | null | undefined): string | null {
 /**
  * Where this CV is filed, in words - or null when it is filed nowhere.
  *
- * An undecided filed CV is in this queue again (isShelvedFromReview), so the row has to be able to
+ * A shelved CV is in this queue, decided or not (isShelvedFromReview), so the row has to be able to
  * say where it came from. Two shapes answer that, and only the first has a name to print: the four
  * shelves carry a kind and a key, while a hand-built folder is a membership id this loader never
  * resolves to a name. The second says so in words rather than printing the id, which is the owner's
@@ -385,11 +385,14 @@ export async function loadScreeningWorkspace(
     }
   }
 
-  // A DECIDED shelved CV leaves the workstation exactly as it leaves the queue: the whole purpose of
-  // the shelf is that a good-but-not-now CV stops being offered for review again. Taken off BEFORE
-  // `filteredOut` is counted, so that number means the filters and never the archive.
+  // A SHELF TAKES NOBODY OFF THIS PAGE, since 2026-10-19. A DECIDED shelved CV used to leave it, so
+  // the shelf's "stops being offered for review again" held — but the decision tabs already do that
+  // (the page opens on "Not decided yet"), and the exclusion left only its harm: a CV shortlisted
+  // here vanished from Shortlisted too. 11 of the 19 shortlisted in the three days to 19 Oct were on
+  // a shelf and none of them could be found. Only the duplicate archive and the hand-built folders
+  // are taken off, BEFORE `filteredOut` is counted, so that number means the filters and never them.
   //
-  // AN UNDECIDED ONE STAYS, since 2026-09-18, and that is the bug this queue was reported for. The
+  // AN UNDECIDED ONE STAYED first, since 2026-09-18, and that is the bug this queue was reported for. The
   // owner's complaint was "cvs lost ... i cannot reach what i want", and filing was the mechanism:
   // 417 of 1,121 production candidates were filed and 371 of them were still `new`, so a fifth of
   // the whole pipeline had left this page unread — out of the pool, out of "New CVs" (252 against a

@@ -295,6 +295,7 @@ import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.t
 import { runRecruitmentScreeningWorkstationTests } from "./recruitment-screening-workstation.test.ts";
 import { runCandidateFolderTests } from "./candidate-folders.test.ts";
 import { runScreeningFiledPoolTests } from "./recruitment-screening-filed-pool.test.ts";
+import { runScreeningSessionCountsTests } from "./recruitment-screening-session-counts.test.ts";
 import { runScreeningShortcutTests } from "./recruitment-screening-shortcuts.test.ts";
 import { runScreeningRowLinkTests } from "./recruitment-screening-row-link.test.ts";
 import { runCvFolderTreeTests } from "./cv-folder-tree.test.ts";
@@ -3322,6 +3323,10 @@ await runTest(
 await runTest(
   "recruitment screening pool (an UNDECIDED filed CV is still in the queue — filing hid 371 of them, unreachable even by name)",
   runScreeningFiledPoolTests,
+);
+await runTest(
+  "recruitment screening numbers (a Shortlist press moved no number on the page, and the next tab could be a 30-second-old copy)",
+  runScreeningSessionCountsTests,
 );
 await runTest(
   "recruitment screening shortcuts (7 of the 8 bound keys were named NOWHERE on the screen)",

@@ -59,7 +59,16 @@
 // press on the cv i am redirected into a new tab and page with full details".
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useOptimistic, useState, useSyncExternalStore, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useOptimistic,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from "react";
 import { ArrowLeft, ChevronDown, ChevronUp, Minimize2, ScanLine } from "lucide-react";
 
 import { adminChipDepthClassName, adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
@@ -98,6 +107,7 @@ import {
   type ScreeningSeenFilter,
 } from "@/lib/recruitment/screening-link";
 import type { WorkQueueCounts } from "@/lib/recruitment/screening-queues";
+import { decisionCountsAfterSession } from "@/lib/recruitment/screening-session-counts";
 import type {
   WorkspaceCandidateRow,
   WorkspaceManager,
@@ -311,6 +321,27 @@ export function WorkstationPageClient({
   // The list is fetched by the ROUTER, so `pending` is the only honest signal that it is on its way.
   const [pending, startTransition] = useTransition();
 
+  // ── THE NUMBERS MOVE WITH THE DECISIONS ─────────────────────────────────────────────────────
+  //
+  // The tab strip's counts are the server's at load time. The workstation below reports every
+  // decision of this sitting, and the strip applies them (screening-session-counts.ts), so a
+  // Shortlist press takes one off "Not decided yet" and puts one on "Shortlisted" the moment it
+  // lands. The owner, 19 Oct 2026: "the numbers do not change".
+  const [sessionDecided, setSessionDecided] = useState<Readonly<Record<string, CandidateStatus>>>({});
+  const liveDecisionCounts = useMemo(
+    () => decisionCountsAfterSession(decisionCounts, rows, sessionDecided),
+    [decisionCounts, rows, sessionDecided],
+  );
+  // AND THE NEXT TAB IS READ FRESH. The router keeps a page it has shown for 30 s (staleTimes.dynamic
+  // in next.config.ts), so pressing "Shortlisted" within half a minute of the last look at it served
+  // that old copy — without the CV just shortlisted. Once anything was decided here, the move to
+  // another tab drops that cache first. Nothing decided, nothing dropped: the fast path is unchanged.
+  const decidedHere = useRef(false);
+  const onDecidedChange = useCallback((decided: Readonly<Record<string, CandidateStatus>>) => {
+    setSessionDecided(decided);
+    if (Object.keys(decided).length > 0) decidedHere.current = true;
+  }, []);
+
   // How many of the URL narrowings are actually holding something — the decision tab excepted, which
   // is always on one tab and says so on its own strip. It is what the folded
   // filter bar says about itself: a bar that hides how many filters are on is a bar that makes
@@ -390,6 +421,13 @@ export function WorkstationPageClient({
       // BOTH INSIDE THE ONE TRANSITION. The optimistic value lives exactly as long as the navigation
       // it belongs to: dispatched outside it, React drops it on the very next render and the
       // dropdown snaps back again — which is the whole bug.
+      // A decision since the last move: drop the router's cached copies first, so the tab this press
+      // opens is read fresh. Before the transition, which stays the optimistic value and its
+      // navigation alone; the push that follows discards the refresh's own fetch.
+      if (decidedHere.current) {
+        decidedHere.current = false;
+        router.refresh();
+      }
       startTransition(() => {
         showImmediately(next);
         router.push(href);
@@ -468,6 +506,7 @@ export function WorkstationPageClient({
       focus={focus}
       openCandidateId={openCandidateId}
       hiringManagers={hiringManagers}
+      onDecidedChange={onDecidedChange}
       onToggleFocus={toggleFocus}
       overdueManagerFeedback={overdueManagerFeedback}
       onSelectVacancy={(next) => goTo({ vacancy: next })}
@@ -670,7 +709,7 @@ export function WorkstationPageClient({
           <div className="shrink-0 border-b border-phx-line bg-white px-3 py-2">
             <CandidateDecisionTabStrip
               active={shownTab}
-              counts={decisionCounts}
+              counts={liveDecisionCounts}
               onSelect={(tab) => goTo({ status: statusFilterForDecisionTab(tab) })}
             />
           </div>

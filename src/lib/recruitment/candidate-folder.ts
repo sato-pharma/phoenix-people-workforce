@@ -410,9 +410,14 @@ export type ReviewQueueCandidate = FiledCandidate & { status?: string | null };
  * count (252 against a true 624) and its search. A live applicant filed to Sohag1 on 15 September
  * could not be found by name, and the full-text CV search answered "0 CVs mention" for her.
  *
- * So being filed takes a CV off the queue only once a DECISION exists. An undecided filed CV has
- * never been offered a first time, so nothing about it can be "again". The shelf keeps working
- * exactly as the owner designed it for every CV somebody has shortlisted, rejected, sent or hired.
+ * So being filed took a CV off the queue only once a DECISION existed — and since 2026-10-19 a
+ * shelf takes nobody off it at all. The decision tabs came after this rule: the page opens on "Not
+ * decided yet", so a decided CV is no longer offered for review again whatever shelf it sits on, and
+ * the old exclusion was left doing only harm. It took the CV out of the pile it had just been decided
+ * INTO. On 19 Oct 2026, 11 of the 19 CVs shortlisted on Screening in the previous three days sat on a
+ * District Manager, Medical Rep or Other shelf, and none of the 11 could be found under Shortlisted —
+ * the owner's report, "when i filter on the shortlisted i donot find what i short listed". A shelved
+ * CV now sits on the tab its decision names, exactly as an unfiled one does.
  *
  * THE DUPLICATE ARCHIVE IS NOT A SHELF and is exempt on purpose: that filing is a discard of a
  * redundant record rather than a CV parked for a seat, so it stays out whatever its status says —
@@ -423,21 +428,13 @@ export type ReviewQueueCandidate = FiledCandidate & { status?: string | null };
  * moves CVs into it precisely so they stop crowding his lists, and he chose, asked directly, that
  * such a CV appear "only inside that folder". See `isInCvFolder`.
  *
- * AN UNREADABLE STATUS LEAVES THE CV VISIBLE, which is the one place this disagrees with
- * `isUnreviewedCandidateStatus` in candidate-status.ts: that one reads unrecognised free text as
- * "somebody typed it, which is itself the review". Right for a count on a landing page, wrong here.
- * This function is the only thing deciding whether a human is ever offered the CV again, so a value
- * it cannot read must not be allowed to hide one — the same direction `isFiledCandidate` takes for
- * a folder list nobody loaded. Production carries no such value today: all 1,121 rows sit on the
- * five codes and `status` is NOT NULL defaulting to `new` (measured 2026-09-18), so this costs
- * nothing now and stays right through any future backfill window.
+ * The status is no longer read here at all: what was decided about a CV picks its TAB, never whether
+ * it is on the page.
  */
 export function isShelvedFromReview(candidate: ReviewQueueCandidate | null | undefined): boolean {
   if (!isFiledCandidate(candidate)) return false;
   if (isDuplicateArchive(candidate?.folder?.kind)) return true;
-  if (isInCvFolder(candidate)) return true;
-  const status = normalizeCandidateStatus(candidate?.status ?? null);
-  return status !== null && status !== "new";
+  return isInCvFolder(candidate);
 }
 
 /** One folder, with its contents. */

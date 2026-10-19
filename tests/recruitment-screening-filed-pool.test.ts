@@ -34,8 +34,10 @@ import {
  * other way round — a CV arrives on WhatsApp, its declared area files it to a position shelf the
  * same evening, and it leaves the review queue before any human has opened it.
  *
- * So the queue asks a narrower question than the pool does: a filed CV is off the SCREENING queue
- * once a DECISION exists on it. Nothing about an undecided CV can be "not appearing AGAIN". Every
+ * So the queue asks a narrower question than the pool does: a filed CV was off the SCREENING queue
+ * once a DECISION existed on it, and since 2026-10-19 no shelf takes it off at all — the decision
+ * tabs keep a decided CV out of "Not decided yet", which is the "not appearing again" he asked for,
+ * and the old exclusion hid it from the tab it was decided into (section 2). Every
  * other filed-CV surface — the pool, the CV database, the folder tab, the folder suggestions —
  * keeps asking `isFiledCandidate` and is deliberately untouched by this.
  *
@@ -100,12 +102,26 @@ export async function runScreeningFiledPoolTests() {
     );
   }
 
-  // ── 2 · A DECIDED FILED CV LEAVES IT — the owner's design, unchanged ────────────────────────
-  for (const status of ["shortlisted", "rejected", "sent_to_manager", "hired"]) {
+  // ── 2 · A DECIDED CV ON A SHELF STAYS TOO — on the tab its decision names ───────────────────
+  //
+  // Until 2026-10-19 a decision took a shelved CV off this page, which made sense before the decision
+  // tabs and made none after them: the page opens on "Not decided yet", so the CV is already out of
+  // the way, and the exclusion only took it out of the pile it had been decided INTO. 11 of the 19 CVs
+  // shortlisted in the three days to 19 Oct sat on a District Manager, Medical Rep or Other shelf and
+  // could not be found under Shortlisted — "when i filter on the shortlisted i donot find what i
+  // short listed".
+  for (const status of ["shortlisted", "backup", "rejected", "sent_to_manager", "hired"]) {
     assert.equal(
       shelved(row({ key: "Sohag1", kind: "medical_rep" }, status)),
-      true,
-      `a ${status} CV on a shelf is off the queue — "it is not appearing now on the main page"`,
+      false,
+      `a ${status} CV on a shelf must stay on Screening, under its own decision tab`,
+    );
+  }
+  for (const kind of ["district_manager", "other", "paramedical"]) {
+    assert.equal(
+      shelved(row({ key: "Nasr City", kind }, "shortlisted")),
+      false,
+      `a CV shortlisted on the ${kind} shelf must be findable under Shortlisted`,
     );
   }
 
