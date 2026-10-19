@@ -1,6 +1,6 @@
 ---
 name: the-one-by-one-review-phone-fix-is-parked-on-its-own-branch
-description: "Owner 2026-10-19 ~00:30 Cairo chose to HOLD four fixes for the Place checks one-by-one review (live since PR 6090) — the phone layout (448ae8589), the zoom-close focus return in the shared dialog hook (1c49683fa), polyclinic photos side by side on a phone (35d7782cb) a waiting seated customer reading \"Waiting for you\" to him (8ab14cadf) and the new Not readable tab (8235a315c, 2026-10-19 ~01:30) sit on branch codex/place-review-deck-phone and ride along with the NEXT Place checks or field-CRM PR; cherry-pick all five onto that branch, never open them alone."
+description: "HISTORY, nothing is parked: the five one-by-one review fixes once held on codex/place-review-deck-phone (the phone layout, the zoom-close focus return, polyclinic photos side by side on a phone, \"Waiting for you\" on a waiting seated customer, the Not readable tab) all shipped in PR 6102, merged 19 Oct 2026 01:43 Cairo; never cherry-pick them again - main has every one, and that remote branch holds stale copies."
 metadata:
   node_type: memory
   type: project

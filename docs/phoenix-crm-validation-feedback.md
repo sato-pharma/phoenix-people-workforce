@@ -688,6 +688,32 @@ On 19 Oct he asked to "read the 31 left in Not readable and fix". Every photo wa
 
 Pinned by `checkPlaceShortForms` in `tests/phoenix-crm-signboard-check.test.ts`, the screen case in `tests/phoenix-crm-timetable-scanner.test.ts`, and the screen advice in `tests/phoenix-crm-place-check-advice.test.ts`.
 
+### The by-eye advice in the review (2026-10-19)
+
+On the morning of 19 October, 63 hidden by-eye notes were written on the places and seated customers
+still open in Place checks. Each was written as the System Administrator, hidden from the rep, and starts
+"By eye:". Asked for suggestions, the owner chose **"Show my advice by the buttons"**: each slide shows
+the note's verdict as a coloured tag beside Approve and Reject, and each tab puts the "approve" ones first
+so he can go through them fast.
+
+- **A column, not a reading of the sentence.** `phoenix_crm_place_notes.advice` holds approve, your_call,
+  new_photo or reject. The CHECK allows it on a `system_admin` note only, so a district manager's comment
+  never carries one; his word stays in `phoenix_crm_place_recommendations`.
+- **The 63 were backfilled from their own closing sentence** by the migration
+  (`20261019150453_phoenix_crm_place_note_advice.sql`): "Recommend approve." → approve, "Recommend reject"
+  → reject, "Approve if" → your_call, anything else → new_photo. Production read back 39 · 21 · 2 · 1 with
+  none left unset. A by-eye note written after this sets `advice` in its own insert.
+- **The tag** sits directly above the decision it is about: a held place's Approve and Reject, a place in
+  use's Approve and Refuse, a polyclinic building's decision, and each seated customer's own.
+- **The order** is ranked inside each tab and stable: approve, your call, new photo, reject, then
+  everything with no advice in the board's own order. "All" ranks inside each of its tabs, never across
+  them. A polyclinic sorts by the best advice among its building and its seated customers. The rank is
+  taken from the notes as the review opened, like the list itself, so nothing moves under his finger.
+- **It decides nothing.** The buttons are his; the rep's own read of notes never selects the column.
+
+Pinned by section 7 of `tests/place-review-deck.test.ts`; each of its eight rules was broken and seen to
+fire.
+
 ## The same-seat duplicate merge
 
 A one-off script and a guarded database function, never a feature.

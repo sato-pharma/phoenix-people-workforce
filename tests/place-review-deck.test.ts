@@ -4,8 +4,12 @@ import { readFileSync } from "node:fs";
 import { stripComments } from "./support/comment-strip.ts";
 
 import {
+  adviceOnSubject,
   buildDeckSlides,
   DECK_TABS,
+  deckAdviceRank,
+  deckAdviceRanker,
+  deckSlideAdvice,
   deckArrowStep,
   deckSeatItem,
   deckSlideKey,
@@ -24,8 +28,9 @@ import {
   type PlaceReviewDeckInput,
 } from "../src/lib/place-review-deck/slides.ts";
 import { standingOfPlaceInUse } from "../src/lib/phoenix-crm/place-check-scorecard.ts";
+import { parsePlaceNoteAdvice, placeNoteAdviceLabel } from "../src/lib/phoenix-crm/place-note-rules.ts";
 import type { VenueGroup } from "../src/lib/phoenix-crm/shared-place-groups.ts";
-import type { ValidatedPlaceRow, ValidationReviewRow } from "../src/lib/phoenix-crm/view-types.ts";
+import type { PlaceNoteIndex, ValidatedPlaceRow, ValidationReviewRow } from "../src/lib/phoenix-crm/view-types.ts";
 
 /**
  * Place checks — the one-by-one review (owner, 2026-10-18: "I want to have the picture in a very wide
@@ -352,5 +357,91 @@ export function runPlaceReviewDeckTests(): void {
     assert.match(route, /canSettle: canSettleIntegrityCases\(viewer\)/, "the review never offers a button the settle route would refuse");
     const cases = stripComments(read("src/components/place-review-deck/deck-cases.ts"));
     assert.match(cases, /first: current\.first \?\? board\.cases/, "the tab keeps the cases as first read, so a settled case keeps its slide");
+  }
+
+  // ── 7 · The by-eye advice: a tag by the buttons, and the "approve" ones first ────────────────────
+  // Owner, 2026-10-19: "Show my advice by the buttons" — each slide's tag beside Approve and Reject, and
+  // the approvals first in every tab, so he can go through them fast. It decides nothing.
+  {
+    assert.equal(parsePlaceNoteAdvice("approve"), "approve");
+    assert.equal(parsePlaceNoteAdvice("new_photo"), "new_photo");
+    assert.equal(parsePlaceNoteAdvice("validate"), null, "a manager's recommendation word is not an advice");
+    assert.equal(parsePlaceNoteAdvice(null), null);
+    assert.equal(placeNoteAdviceLabel("new_photo"), "Ask for a new photo");
+
+    const note = (advice: string | null, writtenAtText: string) => ({ advice, authorLabel: "x", body: "By eye: x", noteId: writtenAtText, repVisible: false, source: "system_admin", writtenAtText });
+    const noteIndex = {
+      integrity: {},
+      recommendations: {},
+      notes: {
+        "place:p-approve": [note(null, "newest, no advice"), note("approve", "older")],
+        "place:p-reject": [note("reject", "only")],
+        "place:p-call": [note("your_call", "only")],
+        "place:seat-photo": [note("new_photo", "only")],
+        "place:seat-approve": [note("approve", "only")],
+      },
+    } as unknown as PlaceNoteIndex;
+    assert.equal(adviceOnSubject(noteIndex, "place", "p-approve"), "approve", "the newest note that carries an advice speaks, past a newer one without");
+    assert.equal(adviceOnSubject(noteIndex, "place", "p-none"), null);
+    assert.equal(adviceOnSubject(noteIndex, "place", null), null, "a customer with no place has no advice");
+
+    const lookup = {
+      reviews: [{ reviewId: "r-held", placeId: "p-reject" }],
+      places: [],
+      venues: [{ venue: { sharedPlaceId: "v-mixed" }, customers: [{ placeId: "seat-photo" }, { placeId: null }, { placeId: "seat-approve" }] }],
+    } as unknown as PlaceReviewDeckInput["lookup"];
+    const advice = (key: string, kind: "review" | "place" | "venue" | "case") => deckSlideAdvice({ key, kind, polyclinic: kind === "venue" }, { lookup, noteIndex });
+    assert.equal(advice("review:r-held", "review"), "reject", "a held place's slide carries its place's advice, found through the review row");
+    assert.equal(advice("place:p-call", "place"), "your_call");
+    assert.equal(advice("venue:v-mixed", "venue"), "approve", "a polyclinic sorts by the best advice among its building and its seated customers");
+    assert.equal(advice("case:c1", "case"), null, "an integrity case has no by-eye advice");
+    assert.deepEqual(
+      ["approve", "your_call", "new_photo", "reject", null].map((one) => deckAdviceRank(one as Parameters<typeof deckAdviceRank>[0])),
+      [0, 1, 2, 3, 4],
+      "approve, your call, new photo, reject, then no advice",
+    );
+
+    const from: DeckSources = {
+      ...sources(),
+      waitingReviews: ["r-none", "r-held"],
+      waitingVenues: ["v-mixed"],
+      unconfirmedPlaces: ["p-none", "p-reject", "p-approve", "p-call"],
+      unconfirmedVenues: [],
+    };
+    const rank = deckAdviceRanker({ lookup, noteIndex });
+    const ranked = (tab: Parameters<typeof buildDeckSlides>[0]) => buildDeckSlides(tab, "both", from, rank).map((slide) => slide.key);
+    assert.deepEqual(ranked("unconfirmed"), ["place:p-approve", "place:p-call", "place:p-reject", "place:p-none"], "every tab puts the by-eye approvals first, then your call, new photo, reject, then the rest");
+    assert.deepEqual(ranked("waiting"), ["venue:v-mixed", "review:r-held", "review:r-none"], "a building with an approved customer comes up with the approvals");
+    assert.deepEqual(ranked("integrity"), ["case:c1", "case:c2"], "slides of equal rank keep the board's own order");
+    const all = ranked("all");
+    assert.ok(all.indexOf("review:r-none") < all.indexOf("place:p-approve"), "All ranks inside each of its tabs, never across them — the work still runs tab by tab");
+    assert.deepEqual(buildDeckSlides("unconfirmed", "both", from).map((slide) => slide.key), ["place:p-none", "place:p-reject", "place:p-approve", "place:p-call"], "with no rank the order is the board's");
+
+    const loader = stripComments(read("src/lib/phoenix-crm/server/place-notes.ts"));
+    assert.match(loader, /const noteColumns = "[^"]*\badvice\b[^"]*";/, "the board's note read brings the advice");
+    assert.match(loader, /advice: source === "system_admin" \? parsePlaceNoteAdvice\(row\.advice\) : null,/, "only a System Administrator's note carries an advice");
+    const repRead = loader.slice(loader.indexOf("export async function loadRepVisiblePlaceNotes("));
+    assert.ok(repRead.length > 0 && loader.includes("export async function loadRepVisiblePlaceNotes("), "the rep's own read must still exist — this check has lost its anchor");
+    assert.doesNotMatch(repRead.slice(0, repRead.indexOf("\nexport ", 1)), /advice/, "the rep's own read never names it");
+
+    const deck = stripComments(read("src/components/place-review-deck/review-deck.tsx"));
+    assert.match(deck, /const rankSlide = useMemo\(\(\) => deckAdviceRanker\(frozen\), \[frozen\]\);/, "the order is taken from the notes as the review opened, so a slide never jumps under his finger");
+    assert.match(deck, /buildDeckSlides\(tab, kind, sources, rankSlide\)/, "the slides he moves through are the ranked ones");
+    assert.match(
+      functionBody(deck, "reviewSlide"),
+      /<AdviceTag advice=\{adviceOnSubject\(noteIndex, "place", row\.placeId\)\} \/>\s*<ReviewDecision /,
+      "a held place's tag sits right above its Approve and Reject",
+    );
+    assert.match(
+      functionBody(deck, "placeSlide"),
+      /<AdviceTag advice=\{adviceOnSubject\(noteIndex, "place", row\.placeId\)\} \/>\s*<PlaceInUseApprove /,
+      "a place in use's tag sits right above its Approve and Refuse",
+    );
+    const venueBody = functionBody(deck, "venueSlide");
+    assert.match(venueBody, /<AdviceTag advice=\{adviceOnSubject\(noteIndex, "shared_place", venue\.sharedPlaceId\)\} \/>\s*<PlaceCheckDoneItem item=\{deckSlideKey\("venue"/, "the building's tag sits above the building's decision");
+    assert.match(venueBody, /<AdviceTag advice=\{adviceOnSubject\(noteIndex, "place", customer\.placeId\)\} \/>\s*<SeatedLastColumn /, "and each seated customer's above his own");
+
+    const migration = read("supabase/migrations/20261019150453_phoenix_crm_place_note_advice.sql");
+    assert.match(migration, /advice is null\s+or \(author_source = 'system_admin' and advice in \('approve', 'your_call', 'new_photo', 'reject'\)\)/, "the database allows an advice on a System Administrator's note only, from the four words");
   }
 }

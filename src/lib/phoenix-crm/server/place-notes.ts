@@ -29,6 +29,7 @@ import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { cleanText } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import {
+  parsePlaceNoteAdvice,
   parsePlaceNoteSource,
   type PlaceCheckIntegrityIndex,
   parsePlaceNoteSubjectKind,
@@ -40,6 +41,7 @@ import {
   PLACE_NOTE_REQUIRED,
   PLACE_NOTE_VISIBILITY_REQUIRED,
   PLACE_RECOMMENDATION_REQUIRED,
+  type PlaceNoteAdvice,
   type PlaceNoteSource,
   type PlaceNoteSubjectKind,
   type PlaceRecommendation,
@@ -74,6 +76,8 @@ export type PlaceNoteView = {
   /** Whether the rep may read this one. Both boards say which it is, on every row. */
   repVisible: boolean;
   writtenAtText: string;
+  /** The verdict a System Administrator's by-eye note closes on; null on every other note. */
+  advice: PlaceNoteAdvice | null;
 };
 
 /** One manager's recommendation on a subject. It decides nothing — see the module header. */
@@ -124,7 +128,7 @@ export async function loadPlaceNoteIndex(input: {
   const sharedPlaceIds = [...new Set(input.sharedPlaceIds.filter((id) => isUuid(id)))];
   if (placeIds.length === 0 && sharedPlaceIds.length === 0) return EMPTY_PLACE_NOTE_INDEX;
 
-  const noteColumns = "id, place_id, shared_place_id, author_hr_id, author_source, body, rep_visible, created_at";
+  const noteColumns = "id, place_id, shared_place_id, author_hr_id, author_source, body, rep_visible, created_at, advice";
   const recColumns = "id, place_id, shared_place_id, manager_hr_id, recommendation, updated_at";
   const [placeNotes, venueNotes, placeRecs, venueRecs] = await Promise.all([
     selectByIds<Row>("phoenix_crm_place_notes", noteColumns, "place_id", placeIds),
@@ -149,6 +153,7 @@ export async function loadPlaceNoteIndex(input: {
     // skipped rather than guessed at: the label it would carry is the one thing a rep may be told.
     if (!source) continue;
     (notes[key] ??= []).push({
+      advice: source === "system_admin" ? parsePlaceNoteAdvice(row.advice) : null,
       authorLabel: placeNoteAuthorLabel(source, text(row.author_hr_id) ? nameOf(names, text(row.author_hr_id), "") || null : null),
       body: String(row.body ?? ""),
       noteId: String(row.id),
