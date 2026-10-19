@@ -17,6 +17,7 @@ import {
   cvTextRetryModel,
   CvExtractionError,
   shouldEscalateAfterFailure,
+  withCorrectedWebmailEnding,
 } from "../src/lib/recruitment/cv-extraction.ts";
 import {
   OPENAI_COPILOT_DEFAULT_MODEL,
@@ -972,4 +973,35 @@ export function runRecruitmentCvExtractionTests() {
     engine.indexOf("runRuleCvExtraction") < engine.indexOf("if (!hasAiApiKey()) {"),
     "the free rule pass must run BEFORE the key check, or removing the key removes the free read",
   );
+
+  // --- a misspelt Gmail or Yahoo ending is put right at the ONE exit ------------
+  //
+  // Aya Ali's CV prints "ayamamdouh78@yahoo.om" and the reader copied it at high confidence
+  // (production, 2026-10-19; owner: "make the CV reader correct a misspelt Yahoo or Gmail ending").
+  // The rules, the model, OCR and the merge each return from their own place inside the engine, so
+  // the correction sits on the exported entry that every one of them leaves through.
+  assert.match(
+    cvEngineSource,
+    /export async function extractCvFieldsFromBytes\([\s\S]{0,120}\): Promise<CvFieldExtraction> \{\s*return withCorrectedWebmailEnding\(await readCvFieldsFromBytes\(input\)\);\s*\}/,
+    "every CV read leaves through the one exported entry, and that entry corrects the email",
+  );
+  const ayasRead = {
+    fields: {
+      email: { confidence: "high" as const, value: "ayamamdouh78@yahoo.om" },
+      fullName: { confidence: "high" as const, value: "Aya Ali" },
+    },
+    isCv: true,
+    model: "gpt-5.4-nano+rules",
+    positionKey: "universal",
+  };
+  const corrected = withCorrectedWebmailEnding(ayasRead);
+  assert.deepEqual(
+    corrected.fields.email,
+    { confidence: "high", value: "ayamamdouh78@yahoo.com" },
+    "the misspelt ending is put right and the read keeps its confidence",
+  );
+  assert.equal(corrected.fields.fullName, ayasRead.fields.fullName, "no other field is touched");
+  assert.equal(ayasRead.fields.email.value, "ayamamdouh78@yahoo.om", "the read handed in is not mutated");
+  const clean = { ...ayasRead, fields: { email: { confidence: "high" as const, value: "noha@yahoo.fr" } } };
+  assert.equal(withCorrectedWebmailEnding(clean), clean, "a correct address returns the very same read");
 }

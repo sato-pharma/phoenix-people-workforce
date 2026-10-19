@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 551fda9a-c5f4-4b2d-b228-a1f47c253abd
-  modified: 2026-10-19T07:35:12.145Z
+  modified: 2026-10-19T09:14:03.775Z
 ---
 
 Owner, **2026-10-16**, specifying the managers' weekly plan starting with the district manager:
@@ -162,7 +162,8 @@ old Plans tab as a **read-only history** of what they filed on the old module �
 (2) A **district sales manager may not plan or log more than ONE day of single visits a week —
 two half-days in any mix** (lowered 2026-10-19 from his 17 Oct two days / "four halves or 2 full days":
 "currently the single visits are accepted in 2 days in a week no cap it to 1 day in the week"); the limit
-covers the visits logged as well as the plan (PR 6061, lowered by codex/dm-single-visit-cap-one-day). (3) A rep who is **still in the old CRM** (all 21 district teams are live, so it is
+covers the visits logged as well as the plan (PR 6061; lowered by PR 6124, live 19 Oct 12:13 Cairo, which
+also made the board's "N of 2" and My single visits show the server's count — planned halves plus logged visits). (3) A rep who is **still in the old CRM** (all 21 district teams are live, so it is
 per rep: 25 reps had no Phoenix plan for the week of 17 Oct, under 11 district managers) — their
 iReports360 week must appear on the DM's board "tickable" (matched to the rep's Phoenix customer, the
 half taken from the customer's AM/PM list because the old plan has no AM/PM; unmatched shown and not

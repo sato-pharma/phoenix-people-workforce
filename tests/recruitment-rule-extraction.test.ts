@@ -17,6 +17,7 @@ import {
 } from "../src/lib/recruitment/rule-extraction/normalize.ts";
 import {
   decodeEgyptianNationalId,
+  correctWebmailEnding,
   findEgyptianMobiles,
   findEmails,
   findLinkedInUrl,
@@ -124,6 +125,21 @@ function runNormalizationTests() {
   for (const nextLine of ["Car license: B", "P: 01270000000", "I am a pharmacist", "Jan 2024", "E-mail me"]) {
     const read = findEmails(normalizeCvText(`george.samir@gmail.com\n${nextLine}`).text);
     assert.deepEqual(read, ["george.samir@gmail.com"], `"${nextLine}" on the next line is not part of the address`);
+  }
+  // A misspelt Gmail or Yahoo ending the CV ITSELF prints is put right — Aya Ali's CV prints
+  // "ayamamdouh78@yahoo.om" (production, 2026-10-19). Yahoo's real country domains, and every other
+  // provider, come back exactly as given.
+  for (const [printed, meant] of [
+    ["ayamamdouh78@yahoo.om", "ayamamdouh78@yahoo.com"],
+    ["ayamamdouh78@yahoo.con", "ayamamdouh78@yahoo.com"],
+    ["karimnabil3@gmail.co", "karimnabil3@gmail.com"],
+    ["karimnabil3@gmail.con", "karimnabil3@gmail.com"],
+    ["karimnabil3@gmail.cm", "karimnabil3@gmail.com"],
+  ]) {
+    assert.equal(correctWebmailEnding(printed!), meant, `"${printed}" is a misspelt ending`);
+  }
+  for (const real of ["noha@yahoo.com", "noha@yahoo.fr", "noha@yahoo.co.uk", "noha@gmail.com", "noha@hotmail.co", "noha@sato.com.eg", "noha"]) {
+    assert.equal(correctWebmailEnding(real), real, `"${real}" is left exactly as printed`);
   }
 
   // A markdown hyperlink keeps the URL, which is the half that is not truncated.

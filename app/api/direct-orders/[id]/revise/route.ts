@@ -30,6 +30,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       bonusOverrideReason?: string | null;
       collectionDate?: string | null;
       correctionNote?: string | null;
+      /** Every line after the first, corrected — see `resolveCorrectionExtraLines`. */
+      items?: Array<{
+        productCode?: string;
+        qty?: number | string;
+        dealType?: string;
+        bonus?: number | string;
+        discountPct?: number | string | null;
+      }>;
     };
     const updated = await reviseDirectOrder(access, {
       requestId: id,
@@ -40,6 +48,18 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       bonusOverrideReason: body.bonusOverrideReason ?? null,
       collectionDate: body.collectionDate ?? null,
       correctionNote: body.correctionNote ?? null,
+      // 🔴 ABSENT STAYS ABSENT — never `?? []`. An empty list says "no other lines", and the service
+      // keeps every stored line only when nothing was sent; defaulting here is what dropped a returned
+      // basket's second line (code review, 19 Oct 2026).
+      items: Array.isArray(body.items)
+        ? body.items.map((item) => ({
+            productCode: String(item.productCode ?? "").trim(),
+            qty: Number(item.qty ?? 0),
+            dealType: item.dealType === "discount" ? "discount" : "bonus",
+            bonus: Number(item.bonus ?? 0),
+            discountPct: item.discountPct == null ? null : Number(item.discountPct),
+          }))
+        : undefined,
     });
     return NextResponse.json({ success: true, status: updated.status, id: updated.id });
   } catch (error) {

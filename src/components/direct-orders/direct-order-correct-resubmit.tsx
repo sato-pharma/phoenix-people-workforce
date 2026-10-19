@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { FormActions, FormError, FormField, FormGrid } from "@/components/ui/form-kit";
+import { FormActions, FormBlock, FormError, FormField, FormGrid } from "@/components/ui/form-kit";
 import {
   phxButtonAccentClassName,
   phxButtonGhostClassName,
@@ -31,6 +31,13 @@ import {
  * over in one screen. It wears the design the way an inline form does: every label, field, hint and
  * button comes from `form-kit.tsx` / `form-tokens.ts` instead of a hand-written near-copy of the
  * same classes, which is what it carried until 2026-10-07.
+ *
+ * 🔴 EVERY PRODUCT ON THE ORDER IS ON THE FORM (code review, 19 Oct 2026). A Lacto basket holds two
+ * lines; this form used to show and send the first alone, and the server rebuilt the order from it —
+ * a returned 86,625 EGP order of both concentrations would have gone back at 49,500 with the second
+ * line deleted. Each line now has its own quantity and deal, exactly as on the submit form, and the
+ * request always names every line after the first (`items`), so the server can refuse a screen
+ * that lost one rather than drop it.
  */
 export function DirectOrderCorrectResubmit({
   requestId,
@@ -42,6 +49,7 @@ export function DirectOrderCorrectResubmit({
   productName,
   pharmacyName,
   returnComment,
+  extraLines = [],
 }: {
   requestId: string;
   dealType: "bonus" | "discount";
@@ -52,6 +60,15 @@ export function DirectOrderCorrectResubmit({
   productName: string;
   pharmacyName: string;
   returnComment: { message: string; byName: string | null; at: string } | null;
+  /** The order's lines after the first, in line order. Empty for a single-product order. */
+  extraLines?: ReadonlyArray<{
+    productCode: string;
+    productName: string;
+    qty: number;
+    dealType: "bonus" | "discount";
+    bonus: number;
+    discountPct: number | null;
+  }>;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -60,9 +77,29 @@ export function DirectOrderCorrectResubmit({
   const [nextBonus, setNextBonus] = useState(String(bonus ?? 0));
   const [nextDiscount, setNextDiscount] = useState(discountPct == null ? "" : String(discountPct));
   const [nextCollectionDate, setNextCollectionDate] = useState(collectionDate ?? "");
+  const [nextExtras, setNextExtras] = useState(() =>
+    extraLines.map((line) => ({
+      productCode: line.productCode,
+      productName: line.productName,
+      qty: String(line.qty),
+      dealType: line.dealType,
+      bonus: String(line.bonus ?? 0),
+      discount: line.discountPct == null ? "" : String(line.discountPct),
+    })),
+  );
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isBasket = nextExtras.length > 0;
+  const productNames = [productName, ...nextExtras.map((line) => line.productName)];
+  const productList =
+    productNames.length === 1
+      ? productNames[0]
+      : `${productNames.slice(0, -1).join(", ")} and ${productNames[productNames.length - 1]}`;
+
+  function updateExtra(index: number, patch: Partial<(typeof nextExtras)[number]>) {
+    setNextExtras((previous) => previous.map((line, at) => (at === index ? { ...line, ...patch } : line)));
+  }
 
   async function submit() {
     setBusy(true);
@@ -78,6 +115,15 @@ export function DirectOrderCorrectResubmit({
           discountPct: nextDeal === "discount" ? Number(nextDiscount) : null,
           collectionDate: nextCollectionDate,
           correctionNote: note,
+          // Always sent, empty for a single product: the server keeps the order's products and
+          // refuses a correction that leaves one out, rather than deleting it.
+          items: nextExtras.map((line) => ({
+            productCode: line.productCode,
+            qty: Number(line.qty),
+            dealType: line.dealType,
+            bonus: line.dealType === "bonus" ? Number(line.bonus) : 0,
+            discountPct: line.dealType === "discount" ? Number(line.discount) : null,
+          })),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
@@ -122,66 +168,65 @@ export function DirectOrderCorrectResubmit({
       ) : (
         <div className="mt-3 space-y-3">
           <p className="text-phx-xs font-semibold text-slate-600">
-            Correcting <span className="font-black text-slate-900">{productName}</span> for{" "}
+            Correcting <span className="font-black text-slate-900">{productList}</span> for{" "}
             <span className="font-black text-slate-900">{pharmacyName}</span>. This stays the same
             order and goes back to the same approver — it does not start again from the beginning.
-            To change the product or the pharmacy, raise a new order instead.
+            {isBasket
+              ? " Each product keeps its own quantity and deal. To add or remove a product, or change the pharmacy, raise a new order instead."
+              : " To change the product or the pharmacy, raise a new order instead."}
           </p>
 
-          <FormGrid className="sm:grid-cols-2">
-            <FormField label="Quantity" required>
-              <input
-                className={phxFieldClassName}
-                min={1}
-                onChange={(event) => setNextQty(event.target.value)}
-                type="number"
-                value={nextQty}
+          {isBasket ? (
+            <div className="space-y-3">
+              <FormBlock label={productNames[0]}>
+                <FormGrid className="sm:grid-cols-3">
+                  <CorrectionLineFields
+                    bonus={nextBonus}
+                    deal={nextDeal}
+                    discount={nextDiscount}
+                    onBonus={setNextBonus}
+                    onDeal={setNextDeal}
+                    onDiscount={setNextDiscount}
+                    onQty={setNextQty}
+                    qty={nextQty}
+                  />
+                </FormGrid>
+              </FormBlock>
+              {nextExtras.map((line, index) => (
+                <FormBlock key={line.productCode} label={line.productName}>
+                  <FormGrid className="sm:grid-cols-3">
+                    <CorrectionLineFields
+                      bonus={line.bonus}
+                      deal={line.dealType}
+                      discount={line.discount}
+                      onBonus={(value) => updateExtra(index, { bonus: value })}
+                      onDeal={(value) => updateExtra(index, { dealType: value })}
+                      onDiscount={(value) => updateExtra(index, { discount: value })}
+                      onQty={(value) => updateExtra(index, { qty: value })}
+                      qty={line.qty}
+                    />
+                  </FormGrid>
+                </FormBlock>
+              ))}
+              <FormGrid className="sm:grid-cols-2">
+                <CollectionDateField onChange={setNextCollectionDate} value={nextCollectionDate} />
+              </FormGrid>
+            </div>
+          ) : (
+            <FormGrid className="sm:grid-cols-2">
+              <CorrectionLineFields
+                bonus={nextBonus}
+                deal={nextDeal}
+                discount={nextDiscount}
+                onBonus={setNextBonus}
+                onDeal={setNextDeal}
+                onDiscount={setNextDiscount}
+                onQty={setNextQty}
+                qty={nextQty}
               />
-            </FormField>
-
-            <FormField label="Deal" required>
-              <select
-                className={phxSelectClassName}
-                onChange={(event) => setNextDeal(event.target.value === "discount" ? "discount" : "bonus")}
-                value={nextDeal}
-              >
-                <option value="bonus">Bonus</option>
-                <option value="discount">Discount</option>
-              </select>
-            </FormField>
-
-            {nextDeal === "bonus" ? (
-              <FormField label="Bonus units" required>
-                <input
-                  className={phxFieldClassName}
-                  min={0}
-                  onChange={(event) => setNextBonus(event.target.value)}
-                  type="number"
-                  value={nextBonus}
-                />
-              </FormField>
-            ) : (
-              <FormField label="Discount %" required>
-                <input
-                  className={phxFieldClassName}
-                  max={100}
-                  min={0}
-                  onChange={(event) => setNextDiscount(event.target.value)}
-                  type="number"
-                  value={nextDiscount}
-                />
-              </FormField>
-            )}
-
-            <FormField label="Money-collection date" required>
-              <input
-                className={phxFieldClassName}
-                onChange={(event) => setNextCollectionDate(event.target.value)}
-                type="date"
-                value={nextCollectionDate}
-              />
-            </FormField>
-          </FormGrid>
+              <CollectionDateField onChange={setNextCollectionDate} value={nextCollectionDate} />
+            </FormGrid>
+          )}
 
           <FormField hint="The approver sees this beside your correction." label="What did you change?" required>
             <textarea
@@ -215,5 +260,83 @@ export function DirectOrderCorrectResubmit({
         </div>
       )}
     </div>
+  );
+}
+
+/** One line's quantity, deal and bonus-or-discount — the same three boxes for every product on the order. */
+function CorrectionLineFields({
+  qty,
+  deal,
+  bonus,
+  discount,
+  onQty,
+  onDeal,
+  onBonus,
+  onDiscount,
+}: {
+  qty: string;
+  deal: "bonus" | "discount";
+  bonus: string;
+  discount: string;
+  onQty: (value: string) => void;
+  onDeal: (value: "bonus" | "discount") => void;
+  onBonus: (value: string) => void;
+  onDiscount: (value: string) => void;
+}) {
+  return (
+    <>
+      <FormField label="Quantity" required>
+        <input
+          className={phxFieldClassName}
+          min={1}
+          onChange={(event) => onQty(event.target.value)}
+          type="number"
+          value={qty}
+        />
+      </FormField>
+
+      <FormField label="Deal" required>
+        <select
+          className={phxSelectClassName}
+          onChange={(event) => onDeal(event.target.value === "discount" ? "discount" : "bonus")}
+          value={deal}
+        >
+          <option value="bonus">Bonus</option>
+          <option value="discount">Discount</option>
+        </select>
+      </FormField>
+
+      {deal === "bonus" ? (
+        <FormField label="Bonus units" required>
+          <input
+            className={phxFieldClassName}
+            min={0}
+            onChange={(event) => onBonus(event.target.value)}
+            type="number"
+            value={bonus}
+          />
+        </FormField>
+      ) : (
+        <FormField label="Discount %" required>
+          <input
+            className={phxFieldClassName}
+            max={100}
+            min={0}
+            onChange={(event) => onDiscount(event.target.value)}
+            type="number"
+            value={discount}
+          />
+        </FormField>
+      )}
+    </>
+  );
+}
+
+/** The order's one money-collection date — it belongs to the order, not to a line. */
+function CollectionDateField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <FormField label="Money-collection date" required>
+      <input className={phxFieldClassName} onChange={(event) => onChange(event.target.value)} type="date" value={value} />
+    </FormField>
   );
 }

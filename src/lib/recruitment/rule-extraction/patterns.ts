@@ -48,6 +48,29 @@ export function findEmails(text: string): string[] {
   return [...seen];
 }
 
+/** ".com" as a CV misspells it. A closed list: Yahoo's real country domains must stay untouched. */
+const MISSPELT_COM: ReadonlySet<string> = new Set(["om", "cm", "co", "con", "cpm", "xom", "vom", "cim", "ocm", "comm", "coom"]);
+
+/**
+ * A Gmail or Yahoo address whose ending the CV ITSELF misspells, put right — Aya Ali's CV prints
+ * "ayamamdouh78@yahoo.om", the reader copied it faithfully at high confidence, and mail to it
+ * fails (production, 2026-10-19; owner: "make the CV reader correct a misspelt Yahoo or Gmail
+ * ending"). Gmail has exactly one domain, so any other ending after "gmail." is a typo. Yahoo also
+ * runs real country domains (yahoo.fr, yahoo.co.uk), so only a misspelt ".com" is corrected there.
+ * Every other address comes back exactly as given.
+ */
+export function correctWebmailEnding(address: string): string {
+  const at = address.lastIndexOf("@");
+  if (at < 1) return address;
+  const local = address.slice(0, at);
+  const domain = address.slice(at + 1).toLowerCase();
+  const gmail = /^gmail\.([a-z]+)$/.exec(domain);
+  if (gmail && gmail[1] !== "com") return `${local}@gmail.com`;
+  const yahoo = /^yahoo\.([a-z]+)$/.exec(domain);
+  if (yahoo && MISSPELT_COM.has(yahoo[1]!)) return `${local}@yahoo.com`;
+  return address;
+}
+
 // ---------------------------------------------------------------------------
 // Egyptian mobile numbers
 // ---------------------------------------------------------------------------

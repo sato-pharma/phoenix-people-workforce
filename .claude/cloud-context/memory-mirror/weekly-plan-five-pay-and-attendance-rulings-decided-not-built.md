@@ -1,14 +1,14 @@
 ---
 name: weekly-plan-five-pay-and-attendance-rulings-decided-not-built
-description: "Owner 2026-10-19, BUILT in PR 6103 (awaiting his merge): half-day leave does not complete a Group Product Manager's day; a half-Office day is judged on its office half in the reports AND the deductions; a Meeting half beside Office counts as office; attendance follows the approved weekly plan, monthly shown beside it; Employee 360 team plan tiles count Phoenix CRM weeks; deadline 23:59:59 Cairo. Rasha Sabry Sayed Khalifa's Pending 2 Aug full-day row (1,387.10 EGP) would become no deduction on a fresh August collection; it is untouched and decided on the Deductions screen."
+description: "Owner 2026-10-19, SHIPPED 19 Oct 09:05 Cairo (PR 6103, carried by roll-up 6109; worktree and branch retired): half-day leave does not complete a Group Product Manager's day; a half-Office day is judged on its office half in the reports AND the deductions; a Meeting half beside Office counts as office; attendance follows the approved weekly plan, monthly shown beside it; Employee 360 team plan tiles count Phoenix CRM weeks; deadline 23:59:59 Cairo. Rasha Sabry Sayed Khalifa's Pending 2 Aug full-day row (1,387.10 EGP) would become no deduction on a fresh August collection; it is untouched and decided on the Deductions screen."
 metadata:
   node_type: memory
   type: project
   originSessionId: ebec7ccf-3c18-4300-a436-8b50d37c9f49
-  modified: 2026-10-18T23:20:50.986Z
+  modified: 2026-10-19T06:14:22.326Z
 ---
 
-The five items parked after the weekly plan audit (PR 6095, PR 6099) were put to the owner as choices on 2026-10-19. He chose all five and said "build the five weekly plan rulings in one PR". The risk review then raised two more questions, and he answered those too. Everything is in **PR 6103** (branch `codex/weekly-plan-rulings`, worktree `_wt-weekly-plan-rulings`, commits `e723d1354` and `103a67b2a`):
+The five items parked after the weekly plan audit (PR 6095, PR 6099) were put to the owner as choices on 2026-10-19. He chose all five and said "build the five weekly plan rulings in one PR". The risk review then raised two more questions, and he answered those too. Everything was built in **PR 6103** (commits `e723d1354` and `103a67b2a`). It was carried by roll-up **PR 6109**, merged 19 Oct 08:46 Cairo as `5ceb260c2`, and live from 09:05 Cairo (production revision `7fe0bf7e5` contains it). The worktree `_wt-weekly-plan-rulings` and the branch `codex/weekly-plan-rulings` are retired.
 
 1. **Half-day leave alone does not complete a Group Product Manager's day.** A half-day vacation or excuse covers only its own half (`planDayGapText`'s third argument, `isPlanLeaveActivity`).
 2. **A half-Office day is judged on its office half, in the Day-by-Day Report AND in the deductions.** He answered "Deductions follow it too" when told that the fingerprint report, the deduction engine, had ignored the plan by design since 24 Jul 2026. This applies on an office-days-only seat only, through `judgedHalfDayPart`, which is passed to both of the engine's judgments. A half-day vacation keeps its own half, and the cancel rule still reads the real vacation.
