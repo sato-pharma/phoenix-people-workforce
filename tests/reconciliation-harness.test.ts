@@ -623,20 +623,29 @@ export async function runReconciliationHarnessTests() {
   assert.equal(noPriceFound[0].order, null, "a line whose order is gone is still reported, not dropped");
 
   // Zamzam Hospital's Ivyronc order, 7 Sep 2026: the line keeps the discount to 4 decimals, the order
-  // row to 3. The line is priced right; the approval panel, which prices the row, prints 6,999.975.
+  // row to 3. Until 19 Oct the panel priced the row and printed 6,999.975; it now prices the line.
   const zamzamLine = line({ requestId: "zamzam", productName: "Ivyronc", dealType: "discount", qty: 500, discountPct: 68.8889, publicPriceSnapshot: 45, salesValue: 7000 });
   const zamzam = order({ id: "zamzam", dealType: "discount", qty: 500, discountPct: 68.889, publicPriceSnapshot: 45, salesValue: 7000 });
   assert.deepEqual(findLineFormulaMismatches([zamzam], [zamzamLine]), [], "the Zamzam line itself is priced exactly by the locked formula");
-  const zamzamPanel = findApprovalPanelMismatches([zamzam], [zamzamLine]);
-  assert.equal(zamzamPanel.length, 1, "the panel's working on a 3-decimal discount misses the value by 2.5 piastres — above the 1-piastre tolerance");
-  assert.ok(Math.abs((zamzamPanel[0].panelValue ?? 0) - 6999.975) < 1e-6, "the finding reports what the panel actually prints");
+  assert.deepEqual(
+    findApprovalPanelMismatches([zamzam], [zamzamLine]),
+    [],
+    "the panel works out the LINE's 4-decimal discount, so Zamzam's working reaches its 7,000.00",
+  );
 
-  const lactoPanel = findApprovalPanelMismatches([lactoNow], [lactoLine1, lactoLine2]);
-  assert.equal(lactoPanel.length, 1, "the panel prints line one's working beside the whole basket's value");
-  assert.equal(lactoPanel[0].panelValue, 24750);
-  assert.equal(lactoPanel[0].lineCount, 2, "the finding says how many lines the panel left out of its working");
+  assert.deepEqual(
+    findApprovalPanelMismatches([lactoNow], [lactoLine1, lactoLine2]),
+    [],
+    "the panel works out every line of the basket and arrives at its 47,250 total",
+  );
+  // The check still catches a working and a value that have parted: the pre-#6085 order, stored at
+  // line one's 24,750 beside two lines, works out at 47,250.
+  const partedPanel = findApprovalPanelMismatches([lactoBefore], [lactoLine1, lactoLine2]);
+  assert.equal(partedPanel.length, 1, "a working that does not reach the stored value is still a finding");
+  assert.equal(partedPanel[0].panelValue, 47250, "the finding reports the total the panel actually prints");
+  assert.equal(partedPanel[0].lineCount, 2);
 
-  // A rounding tie: 50 × 32.7375 = 1,636.875 printed unrounded beside 1,636.87 stored. Not a gap.
+  // A rounding tie: 50 × 32.7375 = 1,636.875 before rounding, 1,636.87 stored. Not a gap.
   const tieLine = line({ requestId: "tie", qty: 50, pharmacyPriceSnapshot: 32.7375, salesValue: 1636.87 });
   const tie = order({ id: "tie", qty: 50, pharmacyPriceSnapshot: 32.7375, salesValue: 1636.87 });
   assert.deepEqual(findLineFormulaMismatches([tie], [tieLine]), [], "the line is the formula's own rounding of the tie");
@@ -644,7 +653,7 @@ export async function runReconciliationHarnessTests() {
   assert.deepEqual(
     findApprovalPanelMismatches([tie], [tieLine]),
     [],
-    "half a piastre between an unrounded working and a 2-decimal value is arithmetic, not a defect — paging on it would train everyone to ignore the panel check",
+    "a rounding tie is arithmetic, not a defect — paging on it would train everyone to ignore the panel check",
   );
 
   // The remainder: null until money moves, then value − cash − marketing settlements.
@@ -680,7 +689,8 @@ export async function runReconciliationHarnessTests() {
     "a negative remainder is a finding even when the arithmetic agrees — it reads on a Finance screen as a credit nobody agreed",
   );
 
-  // The four checks are registered, and the panel check is the only one allowed to sit open.
+  // The four checks are registered, and none may sit open: the panel check was tightened to "holds"
+  // the day the panel began pricing every line (19 Oct 2026).
   const directOrderChecks = readFileSync("src/lib/reconciliation/checks/direct-orders.ts", "utf8");
   assert.match(
     readFileSync("src/lib/reconciliation/checks/index.ts", "utf8"),
@@ -688,13 +698,9 @@ export async function runReconciliationHarnessTests() {
     "a check that is not in the registry never runs — the nightly cron reads the registry and nothing else",
   );
   assert.equal(
-    directOrderChecks.match(/expectation: "known-open"/g)?.length,
-    1,
-    "only the display-only approval-panel check may be known-open — the three money checks must page when they break",
+    directOrderChecks.match(/expectation: "holds"/g)?.length,
+    4,
+    "all four direct-order checks page when they break — a known-open panel check would let the line-one working come back unnoticed",
   );
-  assert.match(
-    directOrderChecks,
-    /id: "direct-orders-approval-panel-working-equals-the-order-value",[\s\S]{0,200}expectation: "known-open"/,
-    "the known-open expectation belongs to the panel check, not to a money check",
-  );
+  assert.equal(/expectation: "known-open"|openDefect:/.test(directOrderChecks), false, "no direct-order check carries a known-open note any more");
 }
