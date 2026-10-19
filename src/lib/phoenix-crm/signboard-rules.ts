@@ -491,6 +491,19 @@ function placeWordsOnSign(text: string): string[] {
 }
 
 /**
+ * 🔴 WORDS THAT NEVER SAY WHICH PLACE BESIDE THE PHOTO'S BRICK. Replayed on 2026-10-19 before the first
+ * apply: "مستشفي صحة بشتيل" matched a health-campaign poster from Asyum on صحة plus the brick, and
+ * "جامعة اكتوبر" matched any board saying جامعة in 6th of October City, which holds several
+ * universities. Each is one word of the list name that a poster or a neighbour carries as easily.
+ */
+const NEVER_WHICH_BESIDE_A_BRICK: ReadonlySet<string> = new Set(placeWordsOnSign("صحة صحه جامعة جامعه"));
+
+/** A hospital on the list never matches a board that calls itself a clinic and not a hospital. */
+function kindsClash(customerName: string, signText: string): boolean {
+  return /مستشف|hospital/i.test(customerName) && /عياد|clinic/i.test(signText) && !/مستشف|hospital/i.test(signText);
+}
+
+/**
  * Is the customer's name on this signboard?
  *
  * 🔴 FOLDED WITH `normalizeContactName` AND NOTHING ELSE. This repository holds six Arabic folds and
@@ -571,7 +584,14 @@ export function signNamesCustomer(input: {
     const onSign = wantedWords.filter((name) => nameWordIsThere(name, read));
     const fromBrick = wantedWords.filter((name) => !nameWordIsThere(name, read) && nameWordIsThere(name, brickWords));
     const missing = wantedWords.length - onSign.length - fromBrick.length;
-    const signSaysWhich = fromBrick.length === 0 || onSign.some((name) => !nameWordIsThere(name, brickWords));
+    // With the brick's help, the sign's own word must say WHICH place (never صحة or جامعة), and the
+    // sign must not call itself a clinic when the list holds a hospital ("عيادة النصر الشاملة" is not
+    // مستشفى النصر in Helwan). The WHOLE reading is asked, because the place name the reader split out
+    // ("النصر") has already lost the word عيادة.
+    const signSaysWhich =
+      fromBrick.length === 0 ||
+      (onSign.some((name) => !nameWordIsThere(name, brickWords) && !NEVER_WHICH_BESIDE_A_BRICK.has(name.word)) &&
+        !kindsClash(input.customerName ?? "", haystacks.join(" ")));
     // On the person axis the allowance is never spent on his given name standing behind another
     // man's: a name read off the sign opens on one of HIS words, and the sign's whole text carries
     // his words as one run that opens on his given name (`readsTheCustomersName`).

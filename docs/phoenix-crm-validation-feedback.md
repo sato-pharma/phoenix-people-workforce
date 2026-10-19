@@ -654,6 +654,9 @@ On 19 Oct he asked to "read the 31 left in Not readable and fix". Every photo wa
 - `signNamesCustomer` takes `photoBrick` (the place row's `brick_name`) on the place axis only. A word the brick supplies spends the whole one-word allowance.
 - Something on the sign must still say WHICH place. A sign that matches only on brick words never counts, and the brick never stands in for the company: "تعاقد الكهرباء كفر الشيخ" against the Kafr El Sheikh fever hospital stays refused.
 - Every reader path passes the brick: the door, the held re-read, the nightly sweep and `--rejudge`. The guided read (`spotCheck`) does not.
+- **The first replay was too loose, so nothing was applied from it.** The dry run after PR 6116 confirmed 12, and four were wrong: مستشفي صحة بشتيل on a health-campaign poster from Asyum (صحة plus the brick), both جامعة اكتوبر rows on any board saying جامعة in a city with several universities, and مستشفى النصر حلوان on "عيادة النصر الشاملة".
+- The fix: beside the brick, the sign's own word is never صحة or جامعة (`NEVER_WHICH_BESIDE_A_BRICK`), and a reading that calls itself a clinic and never a hospital does not match a listed hospital (`kindsClash`, asked of the WHOLE reading, because the place name the reader split out had already lost عيادة).
+- The replay then confirmed 8, each checked by eye: المقاولين العرب, بنها التعليمي, الصحه النفسه, صدر أشمون (a tuberculosis notice signed by the chest hospital's director), حميات منوف, الماليه كفر الزيات, كهربا المرج and تبارك المريوطيه.
 - Two more list spellings join `PLACE_SHORT_FORMS`: المقاولين is المقاولون, and النفسه is النفسية.
 - The rest are misreads (الإنتاج الحربي read as الإنجاب العربي, منوف as مدرف), another sign in the frame (a lab, a pharmacy), or a photo nobody can read. Those stay his clicks.
 
