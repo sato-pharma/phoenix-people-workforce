@@ -28,3 +28,8 @@ export function primaryCvFile(files: readonly RecruitmentFile[]): RecruitmentFil
   // correct chronological compare and avoids constructing 426 Date objects to pick one file.
   return [...renderable].sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))[0];
 }
+
+/** The CV file's own download — an attachment by default, exactly what the viewer's Download link points at. */
+export function cvFileDownloadPath(fileId: string): string {
+  return `/api/recruitment/files/${encodeURIComponent(fileId)}/download`;
+}

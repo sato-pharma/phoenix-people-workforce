@@ -179,6 +179,7 @@ import { runRecruitmentRejectionReasonsTests } from "./recruitment-rejection-rea
 import { runRecruitmentTaFenceTests } from "./recruitment-ta-fence.test.ts";
 import { runRecruitmentWorkspaceScreenTests } from "./recruitment-workspace-screen.test.ts";
 import { runRecruitmentWorkspaceTableTests } from "./recruitment-workspace-table.test.ts";
+import { runRecruitmentCvTakeAwayTests } from "./recruitment-cv-take-away.test.ts";
 import { runRecruitmentWhatsAppAnswersSavedTests } from "./recruitment-whatsapp-answers-saved.test.ts";
 import { runRecruitmentHireFromCandidateTests } from "./recruitment-hire-from-candidate.test.ts";
 import { runRecruitmentAutoArchiveTests } from "./recruitment-auto-archive.test.ts";
@@ -3115,6 +3116,7 @@ await runTest("recruitment rejection reasons", runRecruitmentRejectionReasonsTes
 await runTest("recruitment ta fence", runRecruitmentTaFenceTests);
 await runTest("recruitment workspace screen", runRecruitmentWorkspaceScreenTests);
 await runTest("recruitment workspace table, half-page CV and placing by hand", runRecruitmentWorkspaceTableTests);
+await runTest("recruitment opened CV: download CV, download CV + application, print CV + application", runRecruitmentCvTakeAwayTests);
 await runTest("recruitment whatsapp answers saved as given", runRecruitmentWhatsAppAnswersSavedTests);
 await runTest("recruitment Mark as hired (seats ranked area > region > tab; the fifth door marks the candidate hired and closes the requisition)", runRecruitmentHireFromCandidateTests);
 await runTest("recruitment auto-archive (rejections older than 30 days, from the rejection; returns held; never deleted)", runRecruitmentAutoArchiveTests);
