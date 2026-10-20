@@ -1455,6 +1455,7 @@ import { runDirectOrdersArabicSearchTests } from "./direct-orders-arabic-search.
 import { runDirectOrderSearchShortProbeFastPathTests } from "./direct-order-search-short-probe-fast-path.test.ts";
 import { runCrmBrickCentroidsCacheTests } from "./crm-brick-centroids-cache.test.ts";
 import { runOrgTreeCacheInvalidationTests } from "./org-tree-cache-invalidation.test.ts";
+import { runVacationRowsCacheExpiresAtOnceTests } from "./vacation-rows-cache-expires-at-once.test.ts";
 import { runSosReferenceReadLoadTests } from "./sos-reference-read-load.test.ts";
 import { runBrickCentroidCoverageTests } from "./brick-centroid-coverage.test.ts";
 import { runDirectOrdersAreaAutofillTests } from "./direct-orders-area-autofill.test.ts";
@@ -5614,6 +5615,7 @@ await runTest(
 );
 await runTest("CRM brick-centroids cache (shared Data Cache not a per-segment module var, 300s TTL unchanged, sos-reference tag, DB read byte-identical, catch OUTSIDE the cache so a transient error is never cached as [], concurrent callers share ONE lookup)", runCrmBrickCentroidsCacheTests);
 await runTest("org tree cache invalidation (a hire, seat transfer, resignation or decline busts the shared sos-reference tag instead of only self-healing after its 300s TTL; seat-transfer's own RPC call now invalidates too)", runOrgTreeCacheInvalidationTests);
+await runTest("vacation rows cache expires at once (a save is visible on the refresh that follows it, not one load later)", runVacationRowsCacheExpiresAtOnceTests);
 await runTest("SoS reference read load (a burst of concurrent centroid lookups runs ONE load and every caller gets that value, the slot clears on settle and on failure, the Master Map exact count asks for a one-row page)", runSosReferenceReadLoadTests);
 await runTest("brick centroid coverage (numerator and denominator count the SAME population — an orphan centroid whose brick is retired can never make Geo readiness report more located bricks than exist, which is what kept the Build geo index button hidden)", runBrickCentroidCoverageTests);
 await runTest("direct orders area auto-fill (the body carries pointers only, the server copies the catalogue row and fails closed, a picked pharmacy never carries client geography)", runDirectOrdersAreaAutofillTests);

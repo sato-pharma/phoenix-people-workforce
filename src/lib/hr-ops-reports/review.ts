@@ -57,7 +57,10 @@ export async function reviewLines(access: AccessContext, reportId: string, body:
   }
 
   const now = new Date().toISOString();
-  const reviewer = access.hrId ?? access.loginId ?? null;
+  // `access.hrId` is the lowercase comparison key, never the stored spelling: the same
+  // `hrIdForStorage` the submit below and `decide.ts` use, so one row's reviewer and decider resolve
+  // to a name the same way.
+  const reviewer = hrIdForStorage(access.hrId) ?? access.loginId ?? null;
   for (const review of reviews) {
     const { error: writeError } = await getSupabaseAdmin()
       .from(LINES_TABLE)
