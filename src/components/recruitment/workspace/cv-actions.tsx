@@ -647,6 +647,9 @@ export function CvActions({
             onChange={(event) => {
               const result = event.target.value as CallResult | "";
               if (result) actions.callResult(row.id, result, null, viewerName);
+              // Let go of the drop-down: left focused, its own arrow keys would log another call on this
+              // CV when ↓ is pressed for the next one.
+              event.currentTarget.blur();
             }}
             title={lastCall ?? "Record how the call went"}
             value=""

@@ -51,6 +51,7 @@ import { workspaceOverdue } from "@/lib/recruitment/workspace/overdue";
 import { listPlacementsFor, type PlacementRecord } from "@/lib/recruitment/workspace/placements-db";
 import {
   allowedTabsForViewer,
+  FOLDERS_TAB,
   isWorkspaceRoleTab,
   NEEDS_PLACING,
   personVisibleToViewer,
@@ -147,8 +148,8 @@ type PoolPerson = { id: string; full_name: string | null; phone_norm: string | n
 // ---------------------------------------------------------------------------------------------
 
 /** Folder ids with every subfolder beneath them — "a folder holds what its subfolders hold". */
-async function expandFolderIds(folderIds: readonly string[]): Promise<string[]> {
-  if (folderIds.length === 0) return [];
+async function expandFolderIds(folderIds: readonly string[], everyFolder = false): Promise<string[]> {
+  if (folderIds.length === 0 && !everyFolder) return [];
   const { data, error } = await recruitmentDb()
     .from("ats_cv_folders")
     .select("id,parent_id,name,created_at,created_by_hr_id");
@@ -160,6 +161,8 @@ async function expandFolderIds(folderIds: readonly string[]): Promise<string[]> 
     name: String(row.name ?? ""),
     parentId: textOrNull(row.parent_id),
   }));
+  // No folder chosen on the Folders tab = "every folder's CVs": every folder there is.
+  if (folderIds.length === 0) return rows.map((row) => row.id);
   const ids = new Set<string>();
   for (const folderId of folderIds) for (const id of collectCvFolderSubtreeIds(rows, folderId)) ids.add(id);
   return [...ids];
@@ -174,7 +177,7 @@ function searchesEverywhere(filters: WorkspaceFilters): boolean {
 export async function resolveWorkspaceParams(filters: WorkspaceFilters, viewer: WorkspaceViewer): Promise<WorkspaceDbParams> {
   const [searchIds, folderIdsExpanded] = await Promise.all([
     filters.search ? workspaceCvSearchIds(viewer, filters.search) : Promise.resolve([] as string[]),
-    expandFolderIds(filters.folderIds),
+    expandFolderIds(filters.folderIds, filters.tab === FOLDERS_TAB),
   ]);
   return workspaceDbParams(filters, viewer, {
     folderIdsExpanded,

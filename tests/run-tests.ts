@@ -175,6 +175,7 @@ import { runRecruitmentOnboardingMetricsTests } from "./recruitment-onboarding-m
 import { runRecruitmentCandidateMatchingTests } from "./recruitment-candidate-matching.test.ts";
 import { runRecruitmentRoleTabsTests } from "./recruitment-role-tabs.test.ts";
 import { runRecruitmentWorkspaceFiltersTests } from "./recruitment-workspace-filters.test.ts";
+import { runRecruitmentWorkspaceExcludeFiltersTests } from "./recruitment-workspace-exclude-filters.test.ts";
 import { runRecruitmentRejectionReasonsTests } from "./recruitment-rejection-reasons.test.ts";
 import { runRecruitmentTaFenceTests } from "./recruitment-ta-fence.test.ts";
 import { runRecruitmentWorkspaceScreenTests } from "./recruitment-workspace-screen.test.ts";
@@ -3113,6 +3114,7 @@ await runTest("recruitment onboarding metrics", runRecruitmentOnboardingMetricsT
 await runTest("recruitment candidate matching", runRecruitmentCandidateMatchingTests);
 await runTest("recruitment role tabs", runRecruitmentRoleTabsTests);
 await runTest("recruitment workspace filters", runRecruitmentWorkspaceFiltersTests);
+await runTest("recruitment workspace hide filters (status, source, call result) and the page sweep", runRecruitmentWorkspaceExcludeFiltersTests);
 await runTest("recruitment rejection reasons", runRecruitmentRejectionReasonsTests);
 await runTest("recruitment ta fence", runRecruitmentTaFenceTests);
 await runTest("recruitment workspace screen", runRecruitmentWorkspaceScreenTests);

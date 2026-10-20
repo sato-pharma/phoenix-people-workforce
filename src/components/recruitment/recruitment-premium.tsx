@@ -150,6 +150,9 @@ export function RecruitmentPanel({
  */
 export const recruitmentToolbarClassName = `flex flex-wrap items-end gap-3 border border-slate-200 bg-slate-50/80 px-3 py-3 sm:px-4 ${adminRecessedDepthClassName}`;
 
+/** The same tray, stacked: lines of controls one under another (the workspace's filter bar). */
+export const recruitmentStackedToolbarClassName = `space-y-3 border border-slate-200 bg-slate-50/80 px-3 py-3 sm:px-4 ${adminRecessedDepthClassName}`;
+
 /** Nothing to show — said in words, with the module's own mark, never a blank box or a bare "0". */
 export function RecruitmentEmptyState({
   action,

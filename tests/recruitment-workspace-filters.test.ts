@@ -257,5 +257,5 @@ export function runRecruitmentWorkspaceFiltersTests() {
   const toggleAt = bar.indexOf("decisionModes.map(");
   assert.ok(toggleAt > 0, "the filter bar draws the decided toggle");
   assert.ok(toggleAt < bar.indexOf("{expanded ? ("), "the decided toggle is on the top line, always in view");
-  assert.ok(bar.includes("onClick={() => set({ statuses: statusesForDecisionMode(mode) })}"), "a press sets the status filter");
+  assert.ok(bar.includes("onClick={() => set({ statuses: statusesForDecisionMode(mode), excludeStatuses: [] })}"), "a press sets the status filter");
 }

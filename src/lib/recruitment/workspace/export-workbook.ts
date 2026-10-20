@@ -232,14 +232,20 @@ export function workspaceExportFilterLine(
   const parts: string[] = [tab ? workspaceTabLabels[tab] : "Every tab"];
   if (filters.region) parts.push(regionName(filters.region, rows));
   if (filters.area) parts.push(areaName(filters.area, rows));
-  const decision = decisionModeOf(filters.statuses);
+  const decision = decisionModeOf(filters.statuses, filters.excludeStatuses);
   if (decision === "decided" || decision === "undecided") {
     parts.push(decisionModeLabels[decision].toLowerCase());
   } else if (filters.statuses.length > 0) {
     parts.push(filters.statuses.map((status) => candidateStatusLabels[status as CandidateStatus] ?? "Other status").join(" or "));
   }
+  if (filters.excludeStatuses.length > 0) {
+    parts.push(`hiding ${filters.excludeStatuses.map((status) => candidateStatusLabels[status as CandidateStatus] ?? "Other status").join(" and ")}`);
+  }
   if (filters.sources.length > 0) {
     parts.push(`from ${filters.sources.map((source) => candidateSourceLabels[source]).join(" or ")}`);
+  }
+  if (filters.excludeSources.length > 0) {
+    parts.push(`not from ${filters.excludeSources.map((source) => candidateSourceLabels[source]).join(" or ")}`);
   }
   if (filters.datePick) parts.push(`received ${quickDatePickLabels[filters.datePick].toLowerCase()}`);
   else if (filters.fromDate || filters.toDate) {
@@ -253,6 +259,9 @@ export function workspaceExportFilterLine(
   if (filters.missing === false) parts.push("every answer given");
   if (filters.callResults.length > 0) {
     parts.push(`latest call ${filters.callResults.map((result) => callResultLabels[result].toLowerCase()).join(" or ")}`);
+  }
+  if (filters.excludeCallResults.length > 0) {
+    parts.push(`latest call not ${filters.excludeCallResults.map((result) => callResultLabels[result].toLowerCase()).join(" or ")}`);
   }
   if (filters.returned === true) parts.push("returned by a manager");
   if (filters.returned === false) parts.push("not returned");

@@ -69,7 +69,9 @@ export function useWorkspaceRows(initial: { page: WorkspacePage | null; error: s
       setState({ error: null, loading: false, loadingMore: false, nextCursor: page.nextCursor, rows: page.rows });
     } catch (error) {
       if (mine !== sequence.current) return;
-      setState((current) => ({ ...current, error: errorText(error, "The CVs could not be loaded."), loading: false }));
+      // The old view's rows go: left under the new tab or filter, they could be acted on as if they belonged.
+      cursorRef.current = null;
+      setState({ error: errorText(error, "The CVs could not be loaded."), loading: false, loadingMore: false, nextCursor: null, rows: [] });
     }
   }, []);
 

@@ -575,6 +575,12 @@ export function useWorkspaceActions({
           } else if (!hadTab) {
             await patchJson(`${CANDIDATES}/${row.id}/placement`, { remove: true, roleTab: tab });
           }
+          // The save took the person out of every other tab their own answers had filed them in; put
+          // those back, or Undo of a role change would leave them in Needs placing.
+          for (const earlier of row.placements) {
+            if (earlier.tab === tab || placements.some((placement) => placement.tab === earlier.tab)) continue;
+            await patchJson(`${CANDIDATES}/${row.id}/placement`, { areaCode: earlier.areaCode, regionCode: earlier.regionCode, roleTab: earlier.tab });
+          }
         },
       });
       return placements;
