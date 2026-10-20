@@ -42,6 +42,7 @@ import { WorkstationNotesTab, WorkstationTimelineTab } from "@/components/recrui
 import { AnswerChip, type AnswerOption } from "@/components/recruitment/workspace/answer-chip";
 import { CandidateChat } from "@/components/recruitment/workspace/candidate-chat";
 import { CvActions, saveRating, type CvPanel } from "@/components/recruitment/workspace/cv-actions";
+import { CvTakeAway } from "@/components/recruitment/workspace/cv-take-away";
 import { RowFlag } from "@/components/recruitment/workspace/candidate-row";
 import type { WorkspaceActions } from "@/components/recruitment/workspace/use-workspace-actions";
 import {
@@ -432,6 +433,7 @@ export function OpenedCv({
               viewerName={viewerName}
               viewingTab={viewingTab}
             />
+            <CvTakeAway candidateId={row.id} className="mt-2" key={row.id} name={row.name} />
           </div>
         ) : null}
         {row.duplicate && hr ? (
@@ -617,6 +619,7 @@ export function OpenedCv({
             viewingTab={viewingTab}
           />
         ) : null}
+        {hr && canWork && actions ? <CvTakeAway candidateId={row.id} key={row.id} name={row.name} /> : null}
         {!hr && managerSlot ? <div className="space-y-3">{managerSlot}</div> : null}
 
         {hr && canWork && actions ? (
