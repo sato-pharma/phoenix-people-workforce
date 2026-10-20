@@ -11,7 +11,9 @@
  *
  * 🔴 Owner, 2026-10-01: a rep no longer takes a sent week back himself. "Ask to edit this week" — one
  * button, no reason — sends a request to his district manager, then SFE, and SFE's approval
- * opens the week again (plan-edits.ts). Where the request stands is said on the week.
+ * opens the week again (plan-edits.ts). Where the request stands is said on the week. A week can be
+ * asked to edit twice at most (owner, 2026-10-20): the count left sits under the button, and once both
+ * asks are spent the button gives way to a note saying so.
  *
  * Its six days sit under it as tabs; the day on screen is PlanDayPanel.
  *
@@ -42,7 +44,7 @@ import { decisionBusy, PlanDecision, type PlanDecisionAction } from "@/component
 import { CrmBlock, CrmButton, CrmChoice, CrmFacts, CrmNote, CrmPill, type NoteTone, type PillTone } from "@/components/phoenix-crm/ui";
 import { monthStartOf } from "@/lib/phoenix-crm/calendar";
 import { dayActivityLabel, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
-import { planEditRepNote, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
+import { planEditAsksLeftLine, planEditAsksNote, planEditRepNote, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { startsOn, type PlanDayStarts, type PlannedDayStart } from "@/lib/phoenix-crm/plan-day-starts";
 import type { DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
 import { returnableDays } from "@/lib/phoenix-crm/plan-review-rules";
@@ -541,6 +543,13 @@ export function PlanWeekPanel({
           </CrmNote>
         ) : null}
 
+        {/* Both asks spent (owner, 2026-10-20: twice a week at most): the button is gone, and the week says why. */}
+        {viewerIsRep && plan && week.repState === "sent" && week.editAsksLeft === 0 ? (
+          <CrmNote className="mt-3" title="No asks left this week" tone="warn">
+            {planEditAsksNote(0)}
+          </CrmNote>
+        ) : null}
+
         {week.canAskToEdit && plan ? (
           confirm === "ask" ? (
             <div className="mt-3 grid min-w-0 gap-2 border border-slate-200 bg-slate-50 px-3.5 py-3">
@@ -549,6 +558,7 @@ export function PlanWeekPanel({
                 Your district manager decides first, then SFE. The week opens again once SFE approves it, and until you send it
                 again your visits this week count as off-plan.
               </p>
+              <p className="break-words text-sm font-semibold leading-6 text-slate-700">{planEditAsksNote(week.editAsksLeft)}</p>
               <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                 <CrmButton
                   busy={busy === "ask"}
@@ -571,6 +581,7 @@ export function PlanWeekPanel({
               <CrmButton busy={busy === "ask"} disabled={locked} onClick={() => setConfirm("ask")}>
                 Ask to edit this week
               </CrmButton>
+              <span className="text-xs font-semibold leading-5 text-slate-500">{planEditAsksLeftLine(week.editAsksLeft)}</span>
             </div>
           )
         ) : null}

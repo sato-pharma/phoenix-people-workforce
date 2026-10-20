@@ -25,7 +25,7 @@
 
 import { afterResponse } from "@/lib/http/after-response";
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
-import { PLACE_MAX_ACCURACY_METERS, refusedReadingOf, type PlaceDraft } from "@/lib/phoenix-crm/entry-rules";
+import { PLACE_MAX_ACCURACY_METERS, refusedReadingOf, type PlaceDraft, type VisitDraft } from "@/lib/phoenix-crm/entry-rules";
 import { type BlockedPermission } from "@/lib/phoenix-crm/refused-readings-rules";
 import { type ScheduleRetakeReason } from "@/lib/phoenix-crm/schedule-rules";
 import { type SignboardRetakeReason } from "@/lib/phoenix-crm/signboard-rules";
@@ -155,6 +155,71 @@ export async function recordOffListingRefusal(input: OffListingRefusalInput): Pr
   } catch (error) {
     console.error("[phoenix-crm] off-listing refusal record failed", { seatId: input.seatId, error });
     return null;
+  }
+}
+
+export type FarVisitRefusalInput = {
+  /** The visit draft that already parsed — its reading was good enough to measure, which is the point. */
+  visit: Pick<
+    VisitDraft,
+    "lat" | "lon" | "accuracyMeters" | "photoLat" | "photoLon" | "photoAccuracyMeters" | "photoPath" | "deviceCapturedAt" | "deviceMocked"
+  >;
+  seatId: string;
+  repHrId: string;
+  customerId: string;
+  /** The nearest validated place the visit was measured to, and the metres to its photograph. */
+  placeId: string | null;
+  metres: number | null;
+  /** The far line the visit was refused against, stored in `max_accuracy_meters` (see the reason's note). */
+  farMeters: number;
+  isTest: boolean;
+};
+
+/**
+ * File a rep's visit refused for being logged past the far line from the customer's validated
+ * photograph (owner, 2026-10-20 — `visitAwayFromValidatedPlace`, entry-rules.ts).
+ *
+ * Its own entry point for the same reason as `recordOffListingRefusal`: `refusedReadingOf` answers null
+ * here, correctly — the reading was within the visit's accuracy line, so nothing was wrong with the
+ * phone. What refused it was WHERE it was, so the row carries the metres and the place they were
+ * measured to, and the SFE reads it as its own reason, never as "too rough".
+ *
+ * The same three rules as above hold: the rep learns nothing beyond the refusal he already reads, it
+ * never throws, and it is awaited.
+ */
+export async function recordFarVisitRefusal(input: FarVisitRefusalInput): Promise<void> {
+  try {
+    const refusedAt = new Date();
+    const { error } = await getSupabaseAdmin()
+      .from("phoenix_crm_refused_readings")
+      .insert({
+        subject_kind: "visit",
+        reason: "far_from_place",
+        seat_id: input.seatId,
+        rep_hr_id: input.repHrId.toUpperCase(),
+        customer_id: input.customerId,
+        refused_at: refusedAt.toISOString(),
+        visit_date: cairoBusinessDay(refusedAt),
+        lat: input.visit.lat,
+        lon: input.visit.lon,
+        accuracy_meters: input.visit.accuracyMeters,
+        photo_lat: input.visit.photoLat,
+        photo_lon: input.visit.photoLon,
+        photo_accuracy_meters: input.visit.photoAccuracyMeters,
+        photo_path: input.visit.photoPath,
+        max_accuracy_meters: Math.round(input.farMeters),
+        place_id: input.placeId,
+        // Whole metres, as every distance in this module is stored.
+        distance_meters: input.metres === null || !Number.isFinite(input.metres) ? null : Math.round(input.metres),
+        device_captured_at: input.visit.deviceCapturedAt,
+        device_mocked: input.visit.deviceMocked,
+        is_test: input.isTest,
+      });
+    if (error) {
+      console.error("[phoenix-crm] far-visit refusal not recorded", { seatId: input.seatId, message: error.message });
+    }
+  } catch (error) {
+    console.error("[phoenix-crm] far-visit refusal record failed", { seatId: input.seatId, error });
   }
 }
 

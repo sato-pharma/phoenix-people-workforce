@@ -266,6 +266,26 @@ export const MODULES = [
     keywords: ["list admission", "off-plan", "off plan", "bring back", "bring-back", "plan review", "decision queue", "awaiting decision", "validated at the door", "refused reading", "rough location", "drop from the list", "move the customer", "another rep", "curate"],
     tables: ["phoenix_crm_refused_readings", "phoenix_crm_customer_moves"],
   },
+  // 🔴 SPLIT, 2026-10-20, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `phoenix-crm-approvals`
+  // measured a 4,047-byte pointer against the 4,000 margin `tests/module-memory.test.ts` holds, the moment
+  // the two-asks-a-week cap on editing a sent week taught its rule. The rep's weekly plan — the one week he
+  // plans, its send, its review, the plan status words and asking to edit a sent week — is one family, so its
+  // rules move together. `phoenix-crm-approvals` KEEPS EVERY GLOB IT HAD, so a plan file loads the PAIR and
+  // nothing that used to arrive stops arriving.
+  {
+    id: "phoenix-crm-week-plan",
+    title: "Phoenix CRM — the rep's weekly plan, its review and asking to edit it",
+    scope: "The one week a rep plans and sends, the caps re-checked on the send, its review by the district manager, the words that say whose turn it is, the board that chases a sent week, and asking to edit a sent week — the district manager, then SFE, twice a week at most.",
+    globs: [
+      "src/lib/phoenix-crm/{monthly-plan-rules,plan-board-answer,plan-edit-rules,plan-review-rules,plan-rules,approval-nudge-rules}.ts",
+      "src/lib/phoenix-crm/server/{plans,monthly-plans,plan-edits,plan-edit-expiry,plan-review,plan-day-status,approval-nudge,awaiting-decisions,decision-queues}.ts",
+      "src/components/phoenix-crm/plan-*.tsx",
+      "app/api/phoenix-crm/plans/{copy-source,decide,edit-requests,history,reviews,submit}/**",
+      "tests/phoenix-crm-plan-*",
+    ],
+    keywords: ["weekly plan", "ask to edit", "edit request", "plan edit", "send this week", "sent week", "plan status", "week to review"],
+    tables: ["phoenix_crm_plan"],
+  },
   // 🔴 SPLIT AGAIN, 2026-10-04, FOR THE SAME REASON AS THE ONE ABOVE: `phoenix-crm` reached 33 rules and its
   // injected pointer measured 4,019 bytes against the 4,000 margin `tests/module-memory.test.ts` holds, the
   // moment the SFE's refused-readings board added its rule. The silent detectors (location, behaviour and

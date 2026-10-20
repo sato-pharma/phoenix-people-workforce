@@ -2,8 +2,12 @@ import { canAccess, type AccessContext } from "@/lib/auth/permissions";
 import { ApiError, forbiddenError, validationError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { managerDayFigures, type ManagerDayFigures, type ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
+import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
+import type { ManagerDayPlan } from "@/lib/phoenix-crm/manager-day-plan";
+import { isManagerPlanSent } from "@/lib/phoenix-crm/manager-plan-rules";
 import { managerChain, managersInScope, territoryName } from "@/lib/phoenix-crm/scope";
 import { readsCalendar, resolvePhoenixCrmViewer, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { computeManagerReports } from "@/lib/phoenix-crm/server/manager-plan-report";
 import { loadManagerVisitDetails } from "@/lib/phoenix-crm/server/manager-visit-details";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { seatTierTitle } from "@/lib/phoenix-crm/server/territory";
@@ -26,6 +30,12 @@ import { loadApprovedLeaveDays } from "@/lib/vacation/approved-leave-days";
  *    PRINT TWO NUMBERS FOR ONE DAY. AM · PM · Pharmacies stay three figures apart, and his own single visits
  *    count in his own report only — said on the page, never added to a rep's row.
  *
+ * 🔴 THE PLAN IS THE WEEKLY REPORT'S, NOT A SECOND READ (owner, 2026-10-20: "plan vs actual vs detail per visit in
+ *    actual"). The day's planned half-days come out of `computeManagerReports` — the rule every outside reader of a
+ *    manager's plan already uses — so this page and the report cannot say two things about one day. A week that was
+ *    never sent is not judged (`isManagerPlanSent`); a read that fails is SAID (`planUnread`), never shown as
+ *    "no plan".
+ *
  * 🔴 NO LOCATION INTEGRITY, NO DISTANCE, NO FLAG. The page names where the doctor is and whether a pin was
  *    captured; the measured location line is the integrity board's and stays there.
  */
@@ -42,6 +52,10 @@ export type PhoenixCrmManagerDayDetail = {
     reportsTo: string | null;
   };
   visits: ManagerDayVisit[];
+  /** The day's planned half-days with their outcomes; null when the plan could not be read (`planUnread`). */
+  plan: ManagerDayPlan | null;
+  /** The weekly report could not be read, so `plan` is null for a reason that is not about him (said on the page). */
+  planUnread: boolean;
   figures: ManagerDayFigures;
   /** HR's own approved leave covering the day. */
   onLeave: boolean;
@@ -102,6 +116,22 @@ export async function loadPhoenixCrmManagerDayDetail(
     logError("Phoenix CRM manager day could not read approved leave", { error, labels: { event: "phoenix_crm_manager_day_leave_unread" } });
   }
 
+  // The plan of the week this day sits in, through the weekly report. Only ever an addition to the visits above:
+  // losing it must not lose the day, and a failed read is said, not swallowed.
+  let plan: ManagerDayPlan | null = null;
+  let planUnread = false;
+  try {
+    const report = (await computeManagerReports(viewer, [member.hrId], fieldWeekStart(date), isTest, names)).get(member.hrId) ?? null;
+    plan = {
+      halves: (report?.days.find((day) => day.date === date)?.halves ?? []).map((half) => ({ ...half })),
+      sent: isManagerPlanSent(report?.status ?? null),
+      statusLine: report?.statusLine ?? "",
+    };
+  } catch (error) {
+    planUnread = true;
+    logError("Phoenix CRM manager day could not read the weekly plan", { error, labels: { event: "phoenix_crm_manager_day_plan_unread" } });
+  }
+
   const above = managerChain(viewer.org, member.seat.seatId)[0]?.hrId ?? null;
   return {
     date,
@@ -115,6 +145,8 @@ export async function loadPhoenixCrmManagerDayDetail(
       title: [seatTierTitle(member.seat.tier), member.seat.lineName].filter(Boolean).join(" · "),
     },
     onLeave,
+    plan,
+    planUnread,
     visits,
   };
 }

@@ -5,6 +5,7 @@ import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule";
 import { VACATION_DAY_PARTS } from "@/lib/vacation/types";
 import type { VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import type { ManagerDayPlan } from "@/lib/phoenix-crm/manager-day-plan";
 import type { ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
 import type { DisputeAttachment } from "@/lib/dispute-center/types.ts";
 import {
@@ -101,6 +102,10 @@ export type PrivateCalendarItem = {
   // A district manager's OWN single visits behind a `manager-own-visit` item, in full — customer, address, brick,
   // half, clock, who came along (owner, 2026-10-20). They count in no figure; the item still carries `visitCounts: null`.
   managerVisits?: ManagerDayVisit[];
+  // The day's plan behind those visits, so a screen can set the two side by side (owner, 2026-10-20). Absent when the
+  // plan was not asked for; `managerPlanUnread` says it was asked for and could not be read.
+  managerPlan?: ManagerDayPlan;
+  managerPlanUnread?: boolean;
 };
 
 export type PrivateCalendarException = {
@@ -844,7 +849,7 @@ export function derivePrivateCalendarExceptions(input: {
         exceptions.push(createException({
           code: "no_activity_recorded",
           date,
-          description: `${employee.fullName}: no CRM field or double visit, no fingerprint attendance, no approved vacation and no approved excuse recorded for this workday. An approved weekly plan is not a record of work and never clears this day (owner, 2026-10-12).`,
+          description: `${employee.fullName}: no CRM field or double visit, no fingerprint attendance, no approved vacation and no approved excuse recorded for this workday. An approved weekly plan is not a record of work and never clears this day.`,
           employeeHrId: employee.hrId,
           employeeName: employee.fullName,
           relatedItemIds: [],

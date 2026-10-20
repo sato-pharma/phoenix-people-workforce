@@ -3432,6 +3432,65 @@ owner's ruling above, never as part of the audit fix.
 Pinned by `tests/phoenix-crm-blind-payloads.test.ts`, which builds each payload through the loader's
 own mapper, calls the real day-page loader with a locked account and counts any request it makes.
 
+## A rep's visit away from the validated photo is refused — owner ruling, 2026-10-20
+
+His words, in the small hours of 2026-10-20 (Cairo): *"MAKE THE SYSTEM NOT ACCEPT MEDICAL REPS VISITS LOGGED AWAYS FROM
+THE VALIDATED PICTURE OF THE CUSTOMER WITH MAXIMUM 300 M APPART"*. It is the third exception to Golden
+rule #1, beside Phoenix Ranks' field accuracy and the timetable hold, and only his word made it one.
+
+**What it was before.** The same 300 m line (`visit_far_meters` in the module's settings) already
+measured every visit against the customer's validated place, but it only FLAGGED a far visit
+(`location_flag = 'far'`) for the managers' place-vs-actual report and the integrity board's
+photograph detector. The visit saved, counted, and the rep was told nothing.
+
+**What it is now.** `saveVisit` (`src/lib/phoenix-crm/server/visits.ts`) asks
+`visitAwayFromValidatedPlace` (`src/lib/phoenix-crm/entry-rules.ts`) on the REP's own save and refuses it
+when the reading is more than the line from every validated place of that customer on that seat.
+
+- **The anchor is the photograph** — the reading the shutter took at the door — **when it is sharp**:
+  within the place's own 250 m line, or with no accuracy reported. Since 2026-10-11 a place validates on
+  its pin alone, because iPhone Safari hands the camera an approximate position (650-2,000 m) while the
+  pin reads 11-30 m; measuring against such a photograph would refuse an honest rep at the door for good.
+  Then the place's own validated point is the anchor. Measured 2026-10-20 on production: 2,627 active
+  places, 2,510 anchor on the photograph, 11 carry a photograph reading wider than 250 m, and the 104
+  customers seated in a polyclinic carry none and anchor on the building's point.
+- **The nearest place decides** — a customer with two clinics is at whichever door the rep stood at.
+- **No validated place, no refusal** — a pharmacy (which needs no validation) or a customer still waiting
+  for one has nothing to be away from.
+- **The visit's own accuracy excuses nothing.** The integrity board drops a finding whose radius reaches
+  the door, because a board must not accuse; a door that did the same would let a rep log from 500 m on a
+  rough reading. Not one of the measured visits past the line was within its own radius.
+- **Only the medical rep's own save.** A double or chain visit a manager enters still saves and is
+  flagged; a district manager's own single visits go through their own path (`logManagerVisit`) and never
+  reach this door; the Super Admin's "Record a missed visit" carries no reading.
+- **Before anything is written.** The refusal comes before a required recording is claimed and before
+  `phoenix_crm_save_visit`, so a refused visit leaves no row, no claimed recording and no notice.
+
+**From today, never backwards.** His second message the same morning: *"DONOT REFURE HISTORICAL START FROM
+TODAY WHIS RULE"* — do not refuse historical, start this rule from today. The rule lives only in the save,
+so no visit already saved is re-judged, un-counted or moved, and nothing was backfilled onto the
+refused-readings board. `FAR_VISIT_REFUSAL_FROM_DAY` (2026-10-20) closes the one way an old visit could
+still meet it: the day judged is the day the visit was CAPTURED, exactly as the save dates it — the app's
+offline anchor, else the photo slot, else now — so a visit taken with no signal before the rule and synced
+after it is never refused (`farVisitRefusalApplies`).
+
+**What the rep reads** (`VISIT_AWAY_FROM_PLACE`): *"This visit can be logged only at the customer's place,
+and your location now is not there. If you are at the place, step outside, wait a moment for the location
+to settle, then tap Log visit again."* His own work, never the line, never his metres, never a word for a
+check — and never a dead end for a rep who IS at the door on a reading that has not settled.
+
+**What the SFE reads.** Every refused attempt is kept in `phoenix_crm_refused_readings` as reason
+`far_from_place` (migration `20261020034610`), with `distance_meters`, `place_id` and the far line in
+`max_accuracy_meters`, and the refused-readings board prints *"The visit was logged 1.2 km away from this
+customer's validated photo, so it was not saved. A medical rep's visit is taken only within 300 m of it."*
+A rep who then logs the visit at the door reads as "Got through afterwards".
+
+**What it costs.** Measured on production for 6-19 October 2026: 97 of 2,558 measurable rep visits (3.8%)
+were logged more than 300 m from the validated photo, 38 of them over a kilometre out, across 94
+customer-seats — about seven a day that will now be refused until logged at the place.
+
+Pinned by `tests/phoenix-crm-visit-far-refusal.test.ts`.
+
 ## The visit type, the off-plan approval and the monthly plan's due date — owner rulings, 2026-09-26
 
 He described the whole cycle he wants a medical rep to live in and asked, first, whether it was
@@ -3736,6 +3795,17 @@ of day buttons, the same square buttons as the Week and the Day pickers — beli
 - **While a week is reopened it is a draft**, so the day's visits count as off-plan until he sends it
   again — the same rule the planned-visit check has always kept (a plan that had reached review BEFORE
   the visit). The request form and the reopened note say so.
+
+- 🔴 **Twice a week at most (owner, 2026-10-20).** His words: *"for reps cap weekly plan edit requests + plan it self to 2 to be the rep makes the plan and send s to manager after the approval he have only 2 times to request edit per week"*. Read as: one week, two
+  asks. Every request raised on the week counts, whatever became of it — a refused or expired one
+  included — because what he capped is the asking, not the edits granted. `PLAN_EDIT_ASKS_PER_WEEK`
+  (`plan-edit-rules.ts`); `raisePlanEdit` counts the week's requests with no status filter and refuses
+  the third with a sentence, before anything is written; the week's `canAskToEdit` needs an ask left,
+  the count left sits under the button ("1 ask left this week"), the confirmation says when it is the
+  last one, and once both are spent the button gives way to "No asks left this week". No migration: the
+  database already lets only one request wait on a week, under the plan's own lock, so two presses at
+  once still end at two. A district manager's own week (`phoenix_crm_manager_plan_edit_requests`) is not
+  capped by it — he named reps.
 
 **What this supersedes:** "the month is due the last Thursday of the month before" and the rep's own
 month send; "Take this week back"; the month-hopping "+ Make weekly plan" search; and "Copy last month"

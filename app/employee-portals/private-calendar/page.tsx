@@ -43,7 +43,7 @@ export default async function EmployeePrivateCalendarPage() {
   return (
     <EmployeePortalPageShell
       badge="Private Calendar"
-      description="The actual activity the system recognized for you this month — attendance punches, approved vacations, approved excuses, CRM double visits, and national vacations. Planned activity is not shown here."
+      description="The actual activity the system recognized for you this month — attendance punches, approved vacations, approved excuses, CRM visits (single, double and chain) and national holidays. A day slot shows only what was recorded; the plan reads in the day's detail below, against the actual."
       title="Private Calendar"
     >
       {workspace ? (

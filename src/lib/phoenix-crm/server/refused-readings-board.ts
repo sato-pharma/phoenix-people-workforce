@@ -179,7 +179,9 @@ export async function loadRefusedReadingsBoard(viewer: PhoenixCrmViewer, now: Da
   // two readers see the same one. It is the mock-location answer, not the photo, that is the Super Admin's.
   // `blocked_permission` is asked for EVERYONE: it is the difference between "this phone's location
   // switch is off" and "the reading was wide", and the SFE is exactly who acts on the first.
-  const columns = `id, subject_kind, reason, blocked_permission, rep_hr_id, customer_id, refused_at, accuracy_meters, photo_accuracy_meters, max_accuracy_meters, photo_path${mock ? ", device_mocked" : ""}`;
+  // `distance_meters` is asked for EVERYONE: on a visit refused for being logged away from the customer's
+  // validated photo (owner, 2026-10-20) the metres ARE the refusal, and both readers act on them.
+  const columns = `id, subject_kind, reason, blocked_permission, rep_hr_id, customer_id, refused_at, accuracy_meters, photo_accuracy_meters, max_accuracy_meters, distance_meters, photo_path${mock ? ", device_mocked" : ""}`;
   const { data, error } = await supabase
     .from("phoenix_crm_refused_readings")
     .select(columns)
@@ -204,6 +206,7 @@ export async function loadRefusedReadingsBoard(viewer: PhoenixCrmViewer, now: Da
     photoAccuracyMeters: numberOrNull(row.photo_accuracy_meters),
     maxAccuracyMeters: numberOrNull(row.max_accuracy_meters),
     blockedPermission: parseBlockedPermission(row.blocked_permission),
+    distanceMeters: numberOrNull(row.distance_meters),
   }));
   if (attempts.length === 0) {
     return { windowDays: REFUSED_READINGS_WINDOW_DAYS, total: 0, truncated: false, reps: [], stuckReps: 0, latest: [] };

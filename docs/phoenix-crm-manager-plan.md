@@ -189,6 +189,19 @@ any-mix counting stays.
   `dmSingleVisitCapError` in `manager-plan-rules.ts`. There is no database constraint, so two saves sent
   at the same instant could both pass the count.
 
+### After midnight is the evening before, and a full week says so (2026-10-20)
+
+He wrote *"no button to add the single unplanned visit"*. The button is hidden on purpose once a week holds
+its two half-days — but one of them could be a phantom. A visit logged at 00:08 Cairo is filed on the day
+before (`cairoBusinessDay` subtracts the 2-hour `VISIT_DAY_CUTOFF_HOURS`), while `singleVisitHalfOfHour`
+read the clock hour, 0, as a MORNING. So a manager who worked one evening into the night held that day's
+afternoon AND a morning he never worked: "2 of 2", and the button gone for the rest of the week. On 20 Oct
+the test persona Dina Hamdy was in exactly that state. Hours before the cutoff now read as the afternoon;
+the cap, the actual-versus-planned report and the visit details all read through that one function.
+
+And the full week no longer hides the button silently: a warn note stands where it was, saying the
+unplanned log is closed for the week and a planned single visit can still be logged.
+
 ## A rep who still works in the old CRM
 
 Owner, 2026-10-17: *"if the district manager's reps are still working on the old CRM … their weekly plans
@@ -536,3 +549,47 @@ or deduction reader must never query it directly.
 
 Pinned by `tests/deductions-phoenix-work-evidence.test.ts` (the fold, and a source fingerprint on the
 calendar's `addSeen` line) and `tests/field-absence-calendar.test.ts`.
+
+## A manager's day: plan, actual, and the detail of every visit
+
+Owner, 2026-10-20: the manager's visits were a bare count (*"I want full details, name, address, brick, type,
+AM/PM, when, single, double, every single detail"*), then *"show a premium table, plan vs actual vs detail per
+visit in actual"*. The day is one table, drawn by `ManagerPlanActualTable`
+(`src/components/phoenix-crm/manager-plan-actual-table.tsx`) on the manager's own page
+(`/employee-portals/field-crm/manager-day/<seat>/<day>`, `manager-day-detail.ts`) and in the private calendar's
+manager entry (`manager-own-visit-items.ts`, `ManagerPlanActual`).
+
+- **One row per planned customer, one per visit nobody planned** (`buildPlanVsActual`,
+  `src/lib/phoenix-crm/manager-day-plan.ts`). ONE table, four columns (owner, 2026-10-20: *"one table: plan a
+  header, then actual status, matching or not, then area and brick of the actual, then address and time"*): **Plan**
+  (the half, the kind, the planned customer) · **Actual status** (done / not done / still open / not on the plan,
+  with a sentence, and the customer who was visited) · **Area · Brick** of the actual visit · **Address · Time**. Under
+  each row one spanning line carries the rest of the record: territory, who came along, products, location pin,
+  comment.
+- **The verdict is the weekly report's** (`computeManagerReports`, read through `loadManagerDayPlans` on the
+  private calendar and directly on the manager's page). The table sets that verdict beside the visit that proves
+  it; it never re-derives done / not done.
+- **Matching**: by customer key (`c:<id>` on a rep's list, `m:<id>` on his own — `planCustomerKey`), and by
+  source: a with-a-rep row is answered only by a rep's visit that names him, a single-visit row only by his own
+  visit. A visit that answers no row is listed as "Not on the plan".
+- **A week that was never sent is not judged**: its rows read "No plan sent" and the visits are still listed in
+  full. **A plan that fails to load is said** (`planUnread`), never shown as "no plan"; on the private calendar it
+  leaves the visits standing.
+- **Layout**: a fixed-layout table with named column widths when the PANEL is at least 720px wide (`@container`,
+  because the private calendar's day sits in a narrow column on a wide desktop), cards below that. Square edges,
+  nothing truncated, an Arabic name keeps its own direction.
+- **The address is the DETAILS', never the calendar's** (owner, 2026-10-20: *"do not show address in the private
+  calendar itself, show area/brick, and in details show address"*). The private calendar's own chip lines
+  (`managerVisitChipLine`) print the brick and the area (`managerVisitAreaLines`); the table, the cards and the
+  detail text (`managerVisitWhereLines`, `managerVisitLine`) print the street address first.
+- **The day slot shows the RECORD, of every type, and never the plan** (owner, 2026-10-20: *"on the day slot itself
+  never show plan, show actual only … not only visits, show actual record of any type"*). The month cell and the
+  phone markers draw every entry but an approved plan (`isRecordedEntry` in `private-calendar.tsx`: attendance,
+  leave, holiday, visits, other CRM). The plan reads in the day's detail below, inside the table, and a manager's
+  own half-day plan cards are left out there (`withoutPlanDrawnByATable`) because the table already draws them.
+  A person with no table keeps his plan entry in the detail.
+- **Cost**: the plan is read only when the visits are (the opt-in detail passes), one report per week the window
+  touches for all the managers at once. The company-wide pass the Daily Deductions connector adjudicates stays a
+  count and reads neither.
+
+Pinned by `tests/phoenix-crm-manager-visit-details.test.ts`.

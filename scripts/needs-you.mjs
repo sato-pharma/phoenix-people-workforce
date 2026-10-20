@@ -215,8 +215,8 @@ export function buildBoard({ prs, protection, production, now }) {
     } else {
       knowing.push(
         `Production is ${p.behindBy} commit${p.behindBy === 1 ? '' : 's'} behind main — serving ${short(p.liveRevision)}, main is at ${short(p.mainTip)}. ` +
-          `Railway holds a deploy until that commit's CI finishes, and a red or cancelled run makes it SKIP with nothing turning red (AGENTS.md §2.3). ` +
-          `The next green merge carries a skipped one forward by itself — never redeploy or re-merge to chase it.`,
+          `The release gate keeps the old version serving until that commit's CI has passed, and a red or cancelled run leaves it unserved with nothing turning red (AGENTS.md §2). ` +
+          `The next green merge carries an unserved one forward by itself — never redeploy or re-merge to chase it.`,
       );
     }
   }

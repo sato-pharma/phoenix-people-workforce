@@ -5,7 +5,8 @@
  *   - a rep plans ONE week, the week that begins on the coming Saturday (calendar.ts `repPlanWeek`).
  *     He cannot enter a week that has passed or a week ahead of it. `assertRepMayChangeWeek` is that
  *     rule on the server: every save and every send of a week goes through it;
- *   - a SENT week is no longer taken back by the rep. He asks to edit it — one button, no reason —
+ *   - a SENT week is no longer taken back by the rep. He asks to edit it — one button, no reason, and
+ *     TWICE A WEEK AT MOST (owner, 2026-10-20; `raisePlanEdit` counts every request raised on the week) —
  *     and the request runs: his district manager approves, then SFE approves, then HR (Omar Gawish)
  *     acknowledges; only then does the week open again (`phoenix_crm_decide_plan_edit_request`
  *     reopens it inside the same transaction). One refusal ends it;
@@ -26,9 +27,11 @@ import { editablePlanDays, fieldWeekStart, repPlanWeek } from "@/lib/phoenix-crm
 import {
   isPlanEditStatus,
   isPlanEditWaiting,
+  PLAN_EDIT_ASKS_USED_UP,
   PLAN_EDIT_NOTE_MAX,
   PLAN_EDIT_WAITING_STATUSES,
   planEditDecisionsFor,
+  planEditAsksLeft,
   planEditFirstStatus,
   planEditStageOf,
   planEditStatusLabel,
@@ -166,8 +169,11 @@ export async function loadPlanEditRows(seatIds: ReadonlyArray<string>, isTest: b
   return pages.flat().sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)));
 }
 
-/** Per plan: the request a week's own panel shows — the one on its way, else the latest settled. */
-export type PlanEditState = { waiting: PlanEditRequestView | null; latest: PlanEditRequestView | null };
+/**
+ * Per plan: the request a week's own panel shows — the one on its way, else the latest settled — and how
+ * many requests were ever raised on it, every outcome counted (two a week at most, owner 2026-10-20).
+ */
+export type PlanEditState = { waiting: PlanEditRequestView | null; latest: PlanEditRequestView | null; asked: number };
 
 export async function loadPlanEditState(
   planIds: ReadonlyArray<string>,
@@ -193,7 +199,8 @@ export async function loadPlanEditState(
   for (const row of rows) {
     const planId = String(row.plan_id);
     const view = mapPlanEditRow(row, names);
-    const entry = state.get(planId) ?? { waiting: null, latest: null };
+    const entry = state.get(planId) ?? { waiting: null, latest: null, asked: 0 };
+    entry.asked += 1;
     if (!entry.latest) entry.latest = view;
     if (!entry.waiting && isPlanEditWaiting(view.status)) entry.waiting = view;
     state.set(planId, entry);
@@ -324,6 +331,18 @@ export async function raisePlanEdit(viewer: PhoenixCrmViewer, raw: unknown): Pro
   }
   const weekStart = String(planRow.week_start);
   if (editablePlanDays(weekStart, viewer.cairoToday).length === 0) throw conflictError("This week is over. Reload the planner.");
+
+  // 🔴 TWICE A WEEK AT MOST (owner, 2026-10-20). Every request ever raised on this week counts — refused,
+  // expired and reopened alike — so this count reads the week's requests with no status filter. Two
+  // presses at once still end at two: the database lets only one request wait on a week at a time, under
+  // the plan's own lock (`plan_edit_already_open`).
+  const { count: asked, error: askedError } = await getSupabaseAdmin()
+    .from("phoenix_crm_plan_edit_requests")
+    .select("id", { count: "exact", head: true })
+    .eq("plan_id", planId)
+    .eq("is_test", isTest);
+  throwIfError(askedError);
+  if (planEditAsksLeft(asked ?? 0) === 0) throw conflictError(PLAN_EDIT_ASKS_USED_UP);
 
   const reviewer = territoryReviewer(viewer.org, seat.seatId);
   const result = await callPhoenixCrm<Row>("phoenix_crm_raise_plan_edit_request", {

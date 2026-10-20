@@ -1168,6 +1168,11 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.equal(dmSingleVisitCapError(twoUsed, singleVisitHalfKey("2026-10-26", "PM"), "visit"), null, "a half-day the week already spends on single visits is no new one");
   assert.equal(singleVisitHalfOfHour(11), "AM", "before noon is the morning");
   assert.equal(singleVisitHalfOfHour(12), "PM", "from noon is the afternoon");
+  // A visit logged after midnight is filed on the day before (the 2-hour visit-day cutoff), so it is that
+  // day's evening — read as a morning it opened a phantom half-day and hid the button (owner, 2026-10-20).
+  assert.equal(singleVisitHalfOfHour(0), "PM", "00:08 belongs to the previous day's afternoon, never its morning");
+  assert.equal(singleVisitHalfOfHour(1), "PM", "01:59 too");
+  assert.equal(singleVisitHalfOfHour(2), "AM", "from the cutoff on, the new day's morning");
   assert.equal(/\b(he|his|him|doctors?|accounts?)\b/i.test(dmSingleVisitCapError(twoUsed, "x|AM", "plan") ?? ""), false, "the words say you and customers, never he or doctors");
 
   const capSource = source("src/lib/phoenix-crm/server/manager-single-visit-cap.ts");
@@ -1196,7 +1201,8 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(capSource, /unplannedFitsNow: dmSingleVisitCapError\(used, singleVisitHalfKey\(input\.date, halfNow\(\)\), "visit"\) === null/, "whether an unplanned visit fits now is the log's own test");
   const singleVisitsScreen = source("src/components/phoenix-crm/manager-single-visits.tsx");
   assert.match(singleVisitsScreen, /dmSingleVisitLimitLine\(view\.singleVisitLimit\.used\)/, "My single visits shows the count before he finds a customer");
-  assert.match(singleVisitsScreen, /!logging && view\.singleVisitLimit\?\.unplannedFitsNow !== false \?/, "a full week offers no unplanned log to be refused after the form");
+  assert.match(singleVisitsScreen, /logging \? null : view\.singleVisitLimit\?\.unplannedFitsNow === false \? \(/, "a full week offers no unplanned log to be refused after the form");
+  assert.match(singleVisitsScreen, /<CrmNote tone="warn">\s*Log an unplanned customer is closed for the rest of this week/, "and says so where the button would be, so it never reads as a missing button (owner, 2026-10-20)");
 
   // ── The weekly-plan audit, group C (owner, 2026-10-18) ──────────────────────────────────────────
 

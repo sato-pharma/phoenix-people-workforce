@@ -62,6 +62,14 @@
  * to fix. They carry `signboard_key` (the place, the customer, or a new customer's folded name) instead of
  * a building, because the tries are counted per rep, per customer, per Cairo day.
  */
+/**
+ * 🔴 `far_from_place` (owner, 2026-10-20: "not accept medical reps visits logged away from the
+ * validated picture of the customer with maximum 300 m apart") is a VISIT turned away for where it was
+ * logged, not for how well the phone read it: the reading was good enough to measure, and it sat past
+ * the line from the customer's validated photograph. It carries the metres (`distance_meters`) and the
+ * place they were measured to (`place_id`), and `max_accuracy_meters` holds the far LINE the save was
+ * refused against, so an old row reads against its own rule. Never printed as "too rough".
+ */
 export type RefusedReason =
   | "no_fix"
   | "rough"
@@ -70,7 +78,8 @@ export type RefusedReason =
   | "timetable_unreadable"
   | "timetable_missing"
   | "signboard_unreadable"
-  | "signboard_no_plate";
+  | "signboard_no_plate"
+  | "far_from_place";
 export type RefusedSubject = "visit" | "place";
 /** Which permission the browser blocked. Only these two are capable of ending a capture. */
 export type BlockedPermission = "location" | "camera";
@@ -85,6 +94,7 @@ export const REFUSED_REASONS: readonly RefusedReason[] = [
   "timetable_missing",
   "signboard_unreadable",
   "signboard_no_plate",
+  "far_from_place",
 ];
 
 /**
@@ -166,6 +176,11 @@ export type RefusedAttempt = {
   maxAccuracyMeters: number | null;
   /** Which permission the browser blocked, for `blocked` only. Null for every server refusal. */
   blockedPermission: BlockedPermission | null;
+  /**
+   * For `far_from_place` only: the metres from the visit's reading to the customer's validated
+   * photograph. Absent or null for every other reason, and never printed as 0 m when unknown.
+   */
+  distanceMeters?: number | null;
 };
 
 /** A capture of the same kind that LATER saved, which is how a refusal reads as resolved. */
@@ -205,7 +220,24 @@ function metres(value: number | null): string {
  * the photo?") and because the two can differ by an order of magnitude. A reading the phone did not
  * send reads "not reported" and is never printed as 0 m, which is a rep standing exactly on the pin.
  */
-export function refusalSentence(attempt: Pick<RefusedAttempt, "subjectKind" | "reason" | "accuracyMeters" | "photoAccuracyMeters" | "maxAccuracyMeters" | "blockedPermission">): string {
+export function refusalSentence(
+  attempt: Pick<RefusedAttempt, "subjectKind" | "reason" | "accuracyMeters" | "photoAccuracyMeters" | "maxAccuracyMeters" | "blockedPermission" | "distanceMeters">,
+): string {
+  if (attempt.reason === "far_from_place") {
+    // Never the accuracy radius: the reading was good enough to measure. What refused it was WHERE it
+    // was, so the SFE reads the metres and the line, and can tell a rep in the car outside from one
+    // across town (owner, 2026-10-20).
+    const line = attempt.maxAccuracyMeters !== null && Number.isFinite(attempt.maxAccuracyMeters) ? Math.round(attempt.maxAccuracyMeters) : null;
+    const distance = attempt.distanceMeters;
+    const away =
+      distance === null || distance === undefined || !Number.isFinite(distance)
+        ? "away"
+        : distance < 1000
+          ? `${Math.round(distance)} m away`
+          : `${(distance / 1000).toFixed(1)} km away`;
+    const rule = line === null ? "" : ` A medical rep's visit is taken only within ${line} m of it.`;
+    return `The visit was logged ${away} from this customer's validated photo, so it was not saved.${rule}`;
+  }
   if (attempt.reason === "blocked") {
     // Never a radius here: the capture never produced one. What the SFE needs is the one sentence
     // that tells him this is a phone SETTING and not a place, a line or a reading — and which of the

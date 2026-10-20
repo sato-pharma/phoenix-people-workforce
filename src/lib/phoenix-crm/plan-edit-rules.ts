@@ -14,6 +14,11 @@
  * starts at SFE, exactly as an off-plan visit does (unplanned-rules.ts). A request whose week has
  * passed before it is settled expires: there is nothing left to change.
  *
+ * 🔴 TWICE A WEEK AT MOST (owner, 2026-10-20: the rep makes the plan and sends it, and after the
+ * approval "he has only 2 times to request edit per week"). Every request raised on a week counts,
+ * whatever became of it — a refused one included — because what is capped is the asking
+ * (`PLAN_EDIT_ASKS_PER_WEEK`, refused on the server in plan-edits.ts `raisePlanEdit`).
+ *
  * Every step tells the next person to act, the rep, the district manager and the SFE Manager — by
  * email, in-app and Telegram (his ruling; the one Phoenix CRM notice that emails, see
  * phoenix-crm-channel-guard.ts).
@@ -39,6 +44,34 @@ export const PHOENIX_CRM_ADMINISTRATOR_HR_ID = "B-10";
 export const PLAN_EDIT_EXPIRY_ACTOR_HR_ID = "SYSTEM";
 
 export const PLAN_EDIT_NOTE_MAX = 500;
+
+/**
+ * 🔴 How many times a rep may ask to edit one week (owner, 2026-10-20). The week's own plan is the unit —
+ * one plan per territory per week — and every request raised on it counts, refused and expired ones too.
+ */
+export const PLAN_EDIT_ASKS_PER_WEEK = 2;
+
+/** The asks a week has left, from the requests already raised on it. */
+export function planEditAsksLeft(asked: number): number {
+  const used = Number.isFinite(asked) && asked > 0 ? Math.floor(asked) : 0;
+  return Math.max(0, PLAN_EDIT_ASKS_PER_WEEK - used);
+}
+
+/** What the server answers a third ask with. */
+export const PLAN_EDIT_ASKS_USED_UP =
+  "You have already asked to edit this week twice, the most a week allows. The week stays as it is now.";
+
+/** What the rep reads about the asks a week has left: beside the button, in its confirmation, and once both are spent. */
+export function planEditAsksNote(left: number): string {
+  if (left <= 0) return "You have asked to edit this week twice, the most a week allows. The week stays as it is now.";
+  if (left === 1) return "This is your last ask to edit this week. A week can be asked to edit twice.";
+  return "A week can be asked to edit twice.";
+}
+
+/** The short count under the button. */
+export function planEditAsksLeftLine(left: number): string {
+  return left === 1 ? "1 ask left this week" : `${Math.max(0, left)} asks left this week`;
+}
 
 export const PLAN_EDIT_WAITING_STATUSES = ["manager_pending", "sfe_pending"] as const;
 
