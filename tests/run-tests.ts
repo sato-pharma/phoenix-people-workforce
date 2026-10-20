@@ -183,6 +183,7 @@ import { runRecruitmentWhatsAppAnswersSavedTests } from "./recruitment-whatsapp-
 import { runRecruitmentHireFromCandidateTests } from "./recruitment-hire-from-candidate.test.ts";
 import { runRecruitmentAutoArchiveTests } from "./recruitment-auto-archive.test.ts";
 import { runRecruitmentDigestByTabTests } from "./recruitment-digest-by-tab.test.ts";
+import { runRecruitmentAnswerEditFenceTests } from "./recruitment-answer-edit-fence.test.ts";
 import { runRecruitmentWorkspaceExportTests } from "./recruitment-workspace-export.test.ts";
 import { runRecruitmentPipelineStateMachineTests } from "./recruitment-pipeline-state-machine.test.ts";
 import { runRecruitmentReadinessTests } from "./recruitment-readiness.test.ts";
@@ -3112,6 +3113,7 @@ await runTest("recruitment whatsapp answers saved as given", runRecruitmentWhats
 await runTest("recruitment Mark as hired (seats ranked area > region > tab; the fifth door marks the candidate hired and closes the requisition)", runRecruitmentHireFromCandidateTests);
 await runTest("recruitment auto-archive (rejections older than 30 days, from the rejection; returns held; never deleted)", runRecruitmentAutoArchiveTests);
 await runTest("recruitment daily CVs by tab and place (fenced for Talent Acquisition; every notice lands on its filtered pile)", runRecruitmentDigestByTabTests);
+await runTest("recruitment typing a role is filing a CV (the answer edit refuses an HR tab for Talent Acquisition and the CEO's read-only seat)", runRecruitmentAnswerEditFenceTests);
 await runTest("recruitment workspace export (one column per question; blank when never asked; names link; two gates)", runRecruitmentWorkspaceExportTests);
 await runTest("recruitment pipeline state machine", runRecruitmentPipelineStateMachineTests);
 await runTest("recruitment readiness", runRecruitmentReadinessTests);
