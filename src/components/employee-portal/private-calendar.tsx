@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { Fragment, useEffect, useMemo, useState, useTransition } from "react";
 import {
   AlertTriangle,
   ChevronDown,
@@ -17,7 +17,14 @@ import {
 
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import { formatVisitCountSplit, visitCountSplitTotal } from "@/lib/crm/visit-count-buckets";
-import { managerVisitLine } from "@/lib/phoenix-crm/manager-visit-detail";
+import {
+  managerVisitAreaLines,
+  managerVisitClock,
+  managerVisitCustomerType,
+  managerVisitHalfLabel,
+  managerVisitLine,
+  type ManagerDayVisit,
+} from "@/lib/phoenix-crm/manager-visit-detail";
 import {
   privateCalendarActivityKindLabels,
   privateCalendarActivityKinds,
@@ -35,7 +42,7 @@ import {
   type PrivateCalendarViewMode,
   type PrivateCalendarWorkspace,
 } from "@/lib/private-calendar/logic";
-import { ManagerVisitList } from "@/components/phoenix-crm/manager-visit-card";
+import { ManagerPlanActual } from "@/components/phoenix-crm/manager-plan-actual-table";
 import { PrivateCalendarReviewRequestThread } from "@/components/private-calendar/review-request-thread";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -380,6 +387,25 @@ function sortTimelineItems(items: PrivateCalendarItem[]) {
   });
 }
 
+/** A recorded entry of any type — everything but an approved plan, which is an intention and never a record of work. */
+function isRecordedEntry(item: PrivateCalendarItem) {
+  return privateCalendarItemKind(item) !== "plan";
+}
+
+/**
+ * A district manager's day carries ONE table — his plan against what was recorded — so the plan's own half-day
+ * entries, which that table already draws, are left out of the detail instead of repeating under it.
+ */
+function withoutPlanDrawnByATable(items: PrivateCalendarItem[]) {
+  const drawn = new Set(
+    items
+      .filter((item) => item.managerVisits && item.managerVisits.length > 0 && item.employeeHrId)
+      .map((item) => privateCalendarHrIdKey(item.employeeHrId as string)),
+  );
+  if (drawn.size === 0) return items;
+  return items.filter((item) => isRecordedEntry(item) || !item.employeeHrId || !drawn.has(privateCalendarHrIdKey(item.employeeHrId)));
+}
+
 type PrivateCalendarSurface = "employee" | "workspace";
 
 function chipTitle(item: PrivateCalendarItem, viewMode: PrivateCalendarViewMode) {
@@ -393,8 +419,51 @@ function personLabel(name: string, hrId: string | null | undefined, showHrId: bo
   return showHrId && hrId ? `${name} (${hrId})` : name;
 }
 
-function employeeOptionLabel(employee: { fullName: string; hrId: string; jobTitle: string | null; lineName: string | null }) {
-  return `${employee.fullName} (${employee.hrId})${employee.lineName ? ` - ${employee.lineName}` : ""}${employee.jobTitle ? ` - ${employee.jobTitle}` : ""}`;
+// A person in the employee list: the name, then the line and the title. The HR ID rides beside the name only on a
+// desk (`showHrId`) — on the employee surface a person is their name, never a code (owner rule: names, never codes).
+function employeeOptionLabel(employee: { fullName: string; hrId: string; jobTitle: string | null; lineName: string | null }, showHrId: boolean) {
+  return `${employee.fullName}${showHrId ? ` (${employee.hrId})` : ""}${employee.lineName ? ` - ${employee.lineName}` : ""}${employee.jobTitle ? ` - ${employee.jobTitle}` : ""}`;
+}
+
+/**
+ * A district manager's visits inside a month cell, one block per visit, each field on its own line (owner, 2026-10-20:
+ * "list them under each other, full details" — and "show area/brick on the calendar itself, the address in the details").
+ * The old flat line ("8:17 PM · PM half · <Arabic name> · Neurology · Grade A · Brick …") let the browser's bidirectional
+ * text rules shuffle an Arabic name against the Latin separators; here the clock + half, the name, the type and the
+ * place are separate lines and every Arabic-capable value is isolated (`bdi`), so nothing reorders across a dot.
+ * Fragment on purpose: each block is a direct child of the chip, so the chip's `divide-y` rules the visits too.
+ */
+function ManagerVisitChipRows({ visits }: { visits: readonly ManagerDayVisit[] }) {
+  return (
+    <>
+      {visits.map((visit) => {
+        const type = managerVisitCustomerType(visit);
+        const place = managerVisitAreaLines(visit);
+        return (
+          <span className="block py-1 [overflow-wrap:anywhere]" key={visit.id}>
+            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <span className="font-black tabular-nums text-slate-900">{managerVisitClock(visit.loggedAt)}</span>
+              <span className="bg-white/80 px-1 font-black uppercase tracking-[0.08em] text-slate-700 ring-1 ring-inset ring-black/10">
+                {managerVisitHalfLabel(visit)}
+              </span>
+            </span>
+            <bdi className="mt-0.5 block font-black text-slate-900">{visit.customerName}</bdi>
+            {type ? <bdi className="block">{type}</bdi> : null}
+            {place.length > 0 ? (
+              <span className="block text-slate-500">
+                {place.map((part, index) => (
+                  <Fragment key={part}>
+                    {index > 0 ? " · " : ""}
+                    <bdi>{part}</bdi>
+                  </Fragment>
+                ))}
+              </span>
+            ) : null}
+          </span>
+        );
+      })}
+    </>
+  );
 }
 
 export function PrivateCalendar({
@@ -565,6 +634,10 @@ export function PrivateCalendar({
     return map;
   }, [exceptionOnly, filteredExceptions, filteredItems, weeks]);
 
+  // The weeks the grid draws: a week with no day of THIS month (the sixth row, when a month ends on a Saturday and
+  // the next begins on a Sunday) is a whole row of greyed next-month cells that says nothing, so it is not drawn.
+  const shownWeeks = useMemo(() => weeks.filter((week) => week.some((day) => day.inMonth)), [weeks]);
+
   const exceptionsByDay = useMemo(() => {
     const map = new Map<string, PrivateCalendarException[]>();
     for (const exception of filteredExceptions) {
@@ -585,7 +658,7 @@ export function PrivateCalendar({
       .map((date) => ({
         date,
         dayExceptions: exceptionsByDay.get(date) ?? [],
-        dayItems: sortTimelineItems(itemsByDay.get(date) ?? []),
+        dayItems: sortTimelineItems(withoutPlanDrawnByATable(itemsByDay.get(date) ?? [])),
       }));
   }, [exceptionsByDay, itemsByDay, month]);
 
@@ -618,7 +691,7 @@ export function PrivateCalendar({
     [filteredItems, selectedDate],
   );
   const selectedExceptions = useMemo(() => filteredExceptions.filter((exception) => exception.date === selectedDate), [filteredExceptions, selectedDate]);
-  const timelineItems = useMemo(() => sortTimelineItems(selectedItems), [selectedItems]);
+  const timelineItems = useMemo(() => sortTimelineItems(withoutPlanDrawnByATable(selectedItems)), [selectedItems]);
   // "Exceptions" and "Days w/ Issues" count what needs review only. An info exception is a review
   // request's own status (pending, verified) — news for the employee, never an issue; counting it
   // made a verified correction read as one more problem day.
@@ -1055,7 +1128,7 @@ export function PrivateCalendar({
                     >
                       {visibleEmployees.map((employee) => (
                         <option key={employee.hrId} value={employee.hrId}>
-                          {employeeOptionLabel(employee)}
+                          {employeeOptionLabel(employee, showHrIds)}
                         </option>
                       ))}
                     </SearchableSelect>
@@ -1167,12 +1240,12 @@ export function PrivateCalendar({
 
       {isTeamView ? <TeamSummaryPanel rows={teamSummary} /> : null}
 
-      {/* ── Colour key — one toggle per kind, plus No Activity Recorded ── */}
-      {presentKinds.length > 0 || noActivityDays > 0 ? (
+      {/* ── Colour key — one toggle per RECORDED kind (the day slot never draws a plan), plus No Activity Recorded ── */}
+      {presentKinds.some((kind) => kind !== "plan") || noActivityDays > 0 ? (
         <section className={[secondaryPanelClass, "px-4 py-3"].join(" ")}>
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="mr-1 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Key</span>
-            {presentKinds.map((kind) => {
+            {presentKinds.filter((kind) => kind !== "plan").map((kind) => {
               const hidden = hiddenKinds.has(kind);
               return (
                 <button
@@ -1240,7 +1313,7 @@ export function PrivateCalendar({
                   type="button"
                 >
                   <span aria-hidden="true" className={["h-2 w-2 shrink-0", tone.dot].join(" ")} />
-                  <span className="whitespace-nowrap font-mono text-phx-xs font-semibold text-slate-500">{reportDateLabel(exception.date)}</span>
+                  <span className="whitespace-nowrap text-phx-xs font-bold tabular-nums text-slate-500">{reportDateLabel(exception.date)}</span>
                   <span className="text-sm font-black text-slate-900">{exception.title}</span>
                   {exception.employeeName ? (
                     <span className="inline-flex items-center bg-white px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-200">
@@ -1289,9 +1362,12 @@ export function PrivateCalendar({
             ))}
           </div>
           <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)] divide-x divide-y divide-slate-100">
-            {weeks.flatMap((week) => week).map((day, index) => {
+            {shownWeeks.flatMap((week) => week).map((day, index) => {
               const date = day.date;
-              const dayItems = date ? itemsByDay.get(date) ?? [] : [];
+              // The day slot draws what was RECORDED, of every type (attendance, leave, holiday, visits, other CRM) and never
+              // the plan: an approved plan is an intention, and it reads in the day's detail below, against the actual
+              // (owner, 2026-10-20).
+              const dayItems = (date ? itemsByDay.get(date) ?? [] : []).filter(isRecordedEntry);
               const dayExceptions = date ? exceptionsByDay.get(date) ?? [] : [];
               const selected = date === selectedDate;
               const isToday = date === today;
@@ -1309,6 +1385,13 @@ export function PrivateCalendar({
               const dayKinds = [...new Set(dayItems.map(privateCalendarItemKind))];
               return (
                 <button
+                  aria-current={isToday ? "date" : undefined}
+                  aria-label={
+                    date
+                      ? `${dayLabel(date)}${isToday ? ", today" : ""}: ${dayItems.length} entr${dayItems.length === 1 ? "y" : "ies"}${dayExceptions.length > 0 ? `, ${dayExceptions.length} to review` : ""}`
+                      : undefined
+                  }
+                  aria-pressed={selected}
                   className={[
                     // PHONE: a day column is ~49px wide, where the entries wrapped one letter per
                     // line down a 600px-tall cell. Below md the cell is a compact square — the date
@@ -1380,7 +1463,12 @@ export function PrivateCalendar({
                     ))}
                     {dayItems.slice(0, visibleItemCount).map((item) => {
                       const baseLines = item.chipLines ?? [item.title];
-                      const lines = viewMode === "team" && item.employeeName ? [item.employeeName, ...baseLines] : baseLines;
+                      // A manager's own visits arrive as the LAST `managerVisits.length` lines of `chipLines` (one flat line
+                      // per visit, for the text surfaces); the cell draws them structured instead (ManagerVisitChipRows).
+                      const visitRows = item.managerVisits ?? [];
+                      const structured = visitRows.length > 0 && baseLines.length >= visitRows.length;
+                      const headLines = structured ? baseLines.slice(0, baseLines.length - visitRows.length) : baseLines;
+                      const lines = viewMode === "team" && item.employeeName ? [item.employeeName, ...headLines] : headLines;
                       return (
                         <span
                           className={[
@@ -1396,6 +1484,7 @@ export function PrivateCalendar({
                           {lines.map((line, lineIndex) => (
                             <span className="block py-1 [overflow-wrap:anywhere]" key={lineIndex}>{line}</span>
                           ))}
+                          {structured ? <ManagerVisitChipRows visits={visitRows} /> : null}
                         </span>
                       );
                     })}
@@ -1631,7 +1720,7 @@ function PrivateCalendarAgenda({
                   ) : null}
                   {item.managerVisits && item.managerVisits.length > 0 ? (
                     <div className="mt-2.5 pl-[18px]">
-                      <ManagerVisitList visits={item.managerVisits} />
+                      <ManagerPlanActual plan={item.managerPlan ?? null} planUnread={item.managerPlanUnread === true} visits={item.managerVisits} />
                     </div>
                   ) : null}
                   {item.exceptionFlags.length > 0 ? (
@@ -1667,27 +1756,43 @@ type KeyFiguresProps = {
 
 // One narrow cell: the kind's swatch, its name, and its figure. A source that could not be read
 // says so instead of showing a zero it never measured.
+// One figure as a tile: the colour swatch and the label on top, the number under it. Tiles sit in a grid, so the
+// figures line up in columns instead of running on in one ragged sentence, and a long value wraps inside its tile.
 function KeyFigure({
   alert = false,
+  big = false,
   label,
   ready = true,
+  strong = false,
   swatch,
   value,
 }: {
   alert?: boolean;
+  /** A single number (a count of days) reads larger than a split ("AM 1 · PM 4"). */
+  big?: boolean;
   label: string;
   ready?: boolean;
+  /** The total tile: a darker frame so it reads as the sum of the colours beside it. */
+  strong?: boolean;
   swatch?: string;
   value: string;
 }) {
   return (
-    <span className="inline-flex min-w-0 items-center gap-1.5 py-0.5">
-      {swatch ? <span aria-hidden="true" className={["h-2.5 w-2.5 shrink-0", swatch].join(" ")} /> : null}
-      <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">{label}</span>
-      <span className={["text-xs font-black tabular-nums [overflow-wrap:anywhere]", !ready ? "text-amber-700" : alert ? "text-red-700" : "text-slate-900"].join(" ")}>
+    <div className={["min-w-0 border bg-white px-3 py-2", strong ? "border-slate-900" : "border-slate-200"].join(" ")}>
+      <p className="flex items-center gap-1.5">
+        {swatch ? <span aria-hidden="true" className={["h-2.5 w-2.5 shrink-0", swatch].join(" ")} /> : null}
+        <span className="min-w-0 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500 [overflow-wrap:anywhere]">{label}</span>
+      </p>
+      <p
+        className={[
+          "mt-1 font-black tabular-nums leading-tight [overflow-wrap:anywhere]",
+          big ? "text-lg" : "text-sm",
+          !ready ? "text-amber-700" : alert ? "text-red-700" : "text-slate-900",
+        ].join(" ")}
+      >
         {ready ? value : "Unavailable"}
-      </span>
-    </span>
+      </p>
+    </div>
   );
 }
 
@@ -1732,8 +1837,9 @@ function KeyFigures({
       {open ? (
         <div id="private-calendar-key-figures">
           {/* Row one — every visit, per colour, AM · PM · Pharmacies apart. */}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-slate-100 bg-white px-4 py-2">
-            <span className="w-full text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400 sm:w-auto">Visits</span>
+          <div className="border-t border-slate-100 bg-white px-4 py-3">
+            <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Visits · AM, PM and Pharmacies counted apart</p>
+            <div className="grid grid-cols-1 gap-2 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {privateCalendarVisitKinds.map((kind) => {
               const split = visits?.[kind];
               return (
@@ -1746,20 +1852,23 @@ function KeyFigures({
                 />
               );
             })}
-            <KeyFigure label="All visits" ready={visitsReady} value={allVisits} />
+            <KeyFigure label="All visits" ready={visitsReady} strong value={allVisits} />
+            </div>
           </div>
           {/* Row two — every other kind of day. */}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-slate-100 bg-slate-50 px-4 py-2">
-            <span className="w-full text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400 sm:w-auto">Days</span>
-            <KeyFigure label="Attendance" ready={sourceReadiness.attendance} swatch={kindSwatchColor("attendance")} value={String(summary.attendance)} />
-            <KeyFigure label="Vacations" ready={sourceReadiness.vacation} swatch={kindSwatchColor("vacation")} value={String(summary.vacation)} />
-            <KeyFigure label="Excuses" ready={sourceReadiness.excuse} swatch={kindSwatchColor("excuse")} value={String(summary.excuse)} />
-            <KeyFigure label="National" ready={sourceReadiness.holiday} swatch={kindSwatchColor("holiday")} value={String(summary.holiday)} />
-            <KeyFigure label="Planned" ready={sourceReadiness.plan} swatch={kindSwatchColor("plan")} value={String(summary.plan ?? 0)} />
-            <KeyFigure label="Other CRM" ready={sourceReadiness.field_visit} swatch={kindSwatchColor("other_crm")} value={String(otherCrmDays)} />
-            <KeyFigure alert={noActivityDays > 0} label="No activity" swatch={noActivitySwatch} value={String(noActivityDays)} />
-            <KeyFigure alert={exceptionCount > 0} label="Exceptions" value={String(exceptionCount)} />
-            <KeyFigure alert={daysWithIssues > 0} label="Days w/ issues" value={String(daysWithIssues)} />
+          <div className="border-t border-slate-100 bg-slate-50 px-4 py-3">
+            <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Days</p>
+            <div className="grid grid-cols-2 gap-2 min-[560px]:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
+            <KeyFigure big label="Attendance" ready={sourceReadiness.attendance} swatch={kindSwatchColor("attendance")} value={String(summary.attendance)} />
+            <KeyFigure big label="Vacations" ready={sourceReadiness.vacation} swatch={kindSwatchColor("vacation")} value={String(summary.vacation)} />
+            <KeyFigure big label="Excuses" ready={sourceReadiness.excuse} swatch={kindSwatchColor("excuse")} value={String(summary.excuse)} />
+            <KeyFigure big label="National" ready={sourceReadiness.holiday} swatch={kindSwatchColor("holiday")} value={String(summary.holiday)} />
+            <KeyFigure big label="Planned" ready={sourceReadiness.plan} swatch={kindSwatchColor("plan")} value={String(summary.plan ?? 0)} />
+            <KeyFigure big label="Other CRM" ready={sourceReadiness.field_visit} swatch={kindSwatchColor("other_crm")} value={String(otherCrmDays)} />
+            <KeyFigure alert={noActivityDays > 0} big label="No activity" swatch={noActivitySwatch} value={String(noActivityDays)} />
+            <KeyFigure alert={exceptionCount > 0} big label="Exceptions" value={String(exceptionCount)} />
+            <KeyFigure alert={daysWithIssues > 0} big label="Days with issues" value={String(daysWithIssues)} />
+            </div>
           </div>
         </div>
       ) : null}
@@ -1924,6 +2033,9 @@ function TimelineItem({
         "overflow-hidden border-l-4 bg-white shadow-sm ring-1",
         item.severity === "danger" ? "ring-red-300" : item.severity === "warning" ? "ring-orange-300" : "ring-slate-200/70",
         kindAccentColor(privateCalendarItemKind(item)),
+        // A day that carries a table (a manager's plan against his visits) takes the whole row, so the table gets a
+        // desk's width instead of a third of it.
+        item.managerVisits && item.managerVisits.length > 0 ? "lg:col-span-full" : "",
       ].join(" ")}
     >
       <div className="p-4">
@@ -1947,7 +2059,7 @@ function TimelineItem({
             ) : null}
           </div>
           {item.status ? (
-            <span className="min-w-0 max-w-[45%] break-words bg-phx-paper px-2.5 py-0.5 text-right text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-ink-soft">
+            <span className="max-w-[45%] shrink-0 break-words bg-phx-paper px-2.5 py-0.5 text-right text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-ink-soft">
               {statusLabel(item.status)}
             </span>
           ) : null}
@@ -1969,11 +2081,11 @@ function TimelineItem({
           </ul>
         ) : null}
 
-        {/* A district manager's own single visits, one card each — name, address, brick, type, half, clock, single or
-            double (owner, 2026-10-20). The same card the Phoenix CRM manager's day page draws. */}
+        {/* A district manager's day as ONE table — the plan, the actual, and the detail of every visit in the actual
+            (owner, 2026-10-20). The same table the Phoenix CRM manager's day page draws. */}
         {item.managerVisits && item.managerVisits.length > 0 ? (
           <div className="mt-3">
-            <ManagerVisitList visits={item.managerVisits} />
+            <ManagerPlanActual plan={item.managerPlan ?? null} planUnread={item.managerPlanUnread === true} visits={item.managerVisits} />
           </div>
         ) : null}
 

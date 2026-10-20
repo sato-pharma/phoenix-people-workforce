@@ -67,6 +67,7 @@ import {
   type MonthlyListMeter,
 } from "@/lib/phoenix-crm/monthly-plan-rules";
 import type { PlanDayStarts } from "@/lib/phoenix-crm/plan-day-starts";
+import { planEditAsksLeft } from "@/lib/phoenix-crm/plan-edit-rules";
 import { sentChangesOf, type PlanSentChanges, type SentEvent } from "@/lib/phoenix-crm/plan-review-rules";
 import {
   isPlanEditable,
@@ -262,8 +263,13 @@ export type MonthlyWeekView = {
   /** The rep ticks, saves and sends it. */
   canEdit: boolean;
   canSubmit: boolean;
-  /** The rep may press "Ask to edit this week": it is sent, still has days ahead, and nothing is asked yet. */
+  /**
+   * The rep may press "Ask to edit this week": it is sent, still has days ahead, nothing is asked yet, and
+   * an ask is left — two a week at most (owner, 2026-10-20).
+   */
   canAskToEdit: boolean;
+  /** The asks this week has left, 0 to 2: every request ever raised on it counts, whatever became of it. */
+  editAsksLeft: number;
   /**
    * The request a week shows: the one on its way, else the last one while its answer still stands — a
    * refusal on a week still sent, an acknowledgement on a week still open again. Null otherwise.
@@ -461,6 +467,7 @@ function buildMonthlyWeekView(inputs: MonthlyWeekInputs, weekStart: string, plan
   const staleOpen = days.some((day) => day.editable && day.items.some((item) => item.stale));
   const repState: RepWeekState = repForWeeks ? repStateOf({ weekStart, cairoToday: today, status: weekStatus, edit }) : "closed";
   const canEdit = repState === "plan";
+  const editAsksLeft = planEditAsksLeft(edit?.asked ?? 0);
   const latest = edit?.latest ?? null;
   const editRequest =
     edit?.waiting ??
@@ -501,7 +508,8 @@ function buildMonthlyWeekView(inputs: MonthlyWeekInputs, weekStart: string, plan
     repState,
     canEdit,
     canSubmit: canEdit && weekStatus !== null && isPlanEditable(weekStatus) && weekItems.length > 0 && !staleOpen,
-    canAskToEdit: repState === "sent" && weekPlan !== null,
+    canAskToEdit: repState === "sent" && weekPlan !== null && editAsksLeft > 0,
+    editAsksLeft,
     editRequest,
     canApprove: (reviewerForWeeks || canOverrideDecision(viewer, isTest)) && weekStatus === "submitted",
     canReturn: open && returnerForWeeks && (weekStatus === "submitted" || weekStatus === "approved"),

@@ -42,6 +42,7 @@ import {
   type ManagerPlanSummary,
   type ManagerSlotKind,
 } from "@/lib/phoenix-crm/manager-plan-rules";
+import { planCustomerKey } from "@/lib/phoenix-crm/manager-day-plan";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
@@ -75,6 +76,8 @@ function reportWeekName(weekStart: string, cairoToday: string): string {
 
 export type ManagerReportCustomer = {
   name: string;
+  /** `c:<id>` / `m:<id>` — what the day page sets a planned customer against the visit that answers it by. */
+  key: string | null;
   own: boolean;
   flagLabel: string | null;
   outcome: ManagerOutcome;
@@ -289,6 +292,7 @@ export async function computeManagerReports(
           }),
         });
         return {
+          key: planCustomerKey(row.customerId, row.managerCustomerId),
           name: row.name,
           own: row.managerCustomerId !== null,
           flagLabel: row.gone ? managerCustomerFlagLabel("dropped") : null,

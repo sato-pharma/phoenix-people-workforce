@@ -1,11 +1,11 @@
 ---
 name: a-production-postgres-crash-restart-wears-cloudflare-codes
-description: "The 521/520/525 bursts are the WHOLE DATABASE INSTANCE being hard-restarted, not a Cloudflare flap and not a Postgres crash — three days running (10 Oct 11:05:48, 11 Oct 13:14:01, 12 Oct 19:04:50 Cairo), each 'not properly shut down' with no shutdown request and no PANIC, and PgBouncer/PostgREST/GoTrue all booting in the same second BEFORE the postmaster; confirm it with pg_postmaster_start_time() and the sidecars' own boot lines, never with the edge status codes. CORRECTED 2026-10-16: the hourly recovery.take_snapshots() was NOT cleared — the 10 Oct restart landed 48 s into its 11:05 run, and its 36-50 s runs (8, 11, 14 Oct at :05) were database-wide stalls; it now streams a fingerprint (20261016103901)."
+description: "The 521/520/525 bursts are the WHOLE DATABASE INSTANCE being hard-restarted, not a Cloudflare flap and not a Postgres crash — three days running (10 Oct 11:05:48, 11 Oct 13:14:01, 12 Oct 19:04:50 Cairo), each 'not properly shut down' with no shutdown request and no PANIC, and PgBouncer/PostgREST/GoTrue all booting in the same second BEFORE the postmaster; confirm it with pg_postmaster_start_time() and the sidecars' own boot lines, never with the edge status codes. CORRECTED 2026-10-16: the hourly recovery.take_snapshots() was NOT cleared — the 10 Oct restart landed 48 s into its 11:05 run, and its 36-50 s runs (8, 11, 14 Oct at :05) were database-wide stalls; it now streams a fingerprint (20261016103901). ADDED 2026-10-19: SEVEN restarts by then (10, 11, 12, 14, 17, 18, 19 Oct, all 11:05-19:05 Cairo, none at night); before each, EVERY service on the box (PgBouncer, PostgREST, Auth, Postgres) goes silent for 30-70 s at once, then all restart — the machine hung and was rebooted, consistent with the 2 GB box swapping (node_vmstat_pswpout 1.75 GB on 19 Oct 16:30 Cairo, boot time not exported, oom_kill 0); read it from /customer/v1/privileged/metrics."
 metadata:
   node_type: memory
   type: project
   originSessionId: 7227dfbc-9a64-48b5-a8d0-94f28cee391e
-  modified: 2026-10-16T03:13:41.380Z
+  modified: 2026-10-19T13:10:54.077Z
 ---
 
 Reported 2026-10-12 as "a 38-second Supabase edge outage, 79 requests failed". The edge codes verify

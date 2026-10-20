@@ -15,7 +15,7 @@
 
 import { mergeDayMapVisitPages } from "@/lib/attendance/crm-day-maps";
 import { collapseDuplicateVisitSubmissions, CRM_DOUBLE_VISIT_TYPE_CODES, queryVisits, scanVisitsForRange } from "@/lib/crm/reads.ts";
-import { addVisitToSplit, emptyVisitCountSplit, formatVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import { addVisitToSplit, emptyVisitCountSplit, formatVisitCountSplit, visitCountBucket, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
 import { CRM_LEAVE_VISIT_TYPE_CODES } from "@/lib/crm/visit-type-meaning";
 import { resolveVisitTypeLabel } from "@/lib/crm/visit-types";
@@ -96,6 +96,7 @@ export function fieldVisitActivityKind(
 
 type FieldVisitGroup = {
   activities: Map<string, number>;
+  /** One line per customer visited, in the order the rows came: "AM · Dr X · ENT". Never shortened to "+N more". */
   customers: Set<string>;
   date: string;
   hrId: string;
@@ -235,7 +236,12 @@ export async function loadFieldVisitPrivateCalendarItems(
         split: emptyVisitCountSplit(),
       };
       const customer = String(row.contact_name ?? "").trim();
-      if (customer) existing.customers.add(customer);
+      if (customer) {
+        // The half the visit is counted in, then who, then what kind of customer — the detail the mirror holds.
+        // A day with seven customers lists seven lines (owner, 2026-10-20: "list them under each other, see full details").
+        const speciality = String(row.speciality ?? "").trim();
+        existing.customers.add([visitCountBucket(row), customer, speciality].filter(Boolean).join(" · "));
+      }
       // `partners` is a Set of NAMES, so naming a chain visit's second manager cannot move a count —
       // it only stops one of the two people on the row going unnamed on the day's card.
       for (const value of [row.double_name, row.double2_name]) {
@@ -252,13 +258,10 @@ export async function loadFieldVisitPrivateCalendarItems(
     for (const [key, group] of byKey) {
       const kindLabel = privateCalendarActivityKindLabels[group.kind];
       const customerList = [...group.customers];
-      const shown = customerList.slice(0, 3).join(", ");
-      const more = customerList.length > 3 ? ` +${customerList.length - 3} more` : "";
-      // Null, never a placeholder word: an unnamed day is a day whose visits the CRM does not name,
+      // Empty, never a placeholder word: an unnamed day is a day whose visits the CRM does not name,
       // and the count alone is the honest chip. Counting VISITS (not distinct names) also matters —
       // reading the number off the name set showed "? field visits" on every day once customer_name
       // turned out to be empty everywhere.
-      const customers = customerList.length > 0 ? `${shown}${more}` : null;
       const partners = group.partners.size > 0 ? [...group.partners].join(", ") : null;
       const isVisit = group.kind !== "vacation" && group.kind !== "other_crm";
       const counts = isVisit ? formatVisitCountSplit(group.split, { compact: true }) : countedList(group.activities);
@@ -271,7 +274,7 @@ export async function loadFieldVisitPrivateCalendarItems(
           headline,
           ...(group.kind === "vacation" ? [] : [counts]),
           ...(partners ? [`With ${partners}`] : []),
-          ...(customers ? [customers] : []),
+          ...customerList,
         ],
         description: isVisit
           ? "Logged CRM field visits from the live iReports360 visit mirror, AM · PM · Pharmacies apart."
@@ -282,7 +285,7 @@ export async function loadFieldVisitPrivateCalendarItems(
           `Kind: ${headline}`,
           ...(isVisit ? [`Visits: ${formatVisitCountSplit(group.split)}`] : [`Logged: ${countedList(group.activities)}`]),
           ...(partners ? [`With: ${partners}`] : []),
-          ...(customers ? [`Customers: ${customers}`] : []),
+          ...customerList.map((line, index) => `Customer ${index + 1}: ${line}`),
         ],
         employeeDepartmentName: null,
         employeeHrId: group.hrId,
@@ -303,7 +306,7 @@ export async function loadFieldVisitPrivateCalendarItems(
         startDate: group.date,
         status: "performed",
         time: group.kind === "vacation" ? "Full day" : counts,
-        title: group.kind === "vacation" ? headline : customers ? `${headline}: ${counts} - ${customers}` : `${headline}: ${counts}`,
+        title: group.kind === "vacation" ? headline : `${headline}: ${counts}`,
         visitCounts: isVisit ? group.split : null,
       });
     }

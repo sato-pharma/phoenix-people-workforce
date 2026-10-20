@@ -52,6 +52,12 @@ export type ManagerDayVisit = {
   loggedHalf: "AM" | "PM" | null;
   planned: boolean;
   customerName: string;
+  /**
+   * Who the visit was to, as the plan keys a customer: `c:<id>` for a customer on a rep's list, `m:<id>` for one on
+   * the manager's own list. What the plan-against-actual table matches a planned customer to the visit that answers
+   * it by — never the name, which two customers can share. Null when the row carries neither.
+   */
+  customerKey?: string | null;
   speciality: string | null;
   grade: string | null;
   /** The customer's list for a ride-along; null for an own visit, whose customer sits on a list of his own. */
@@ -102,14 +108,39 @@ export function managerVisitClock(iso: string | null | undefined): string {
  * Cardiology · Grade A · 12 Mostafa St, Brick Nasr City 3, Area Cairo East".
  */
 export function managerVisitLine(visit: ManagerDayVisit): string {
-  const half = visit.listType === "Pharmacy" && visit.source === "ride_along" ? "Pharmacy" : visit.source === "own" ? `${visit.bucket} half` : `${visit.bucket} list`;
+  const half = managerVisitHalfLabel(visit);
   const head = [managerVisitClock(visit.loggedAt), half, visit.kindLabel, visit.planned ? "Planned" : "Not on the plan"].join(" · ");
   const body = [visit.customerName, managerVisitCustomerType(visit), managerVisitWhereLines(visit).join(", ")].filter(Boolean).join(" · ");
   const withText = visit.withPeople.length > 0 ? ` · With ${visit.withPeople.map((person) => `${person.name} (${person.role})`).join(", ")}` : "";
   return `${head} — ${body}${withText}`;
 }
 
-/** The address line a reader sees: the street, then the brick, then the area — each once, none empty. */
+/**
+ * One visit as the line a cramped calendar chip prints, one per visit, listed under each other (owner, 2026-10-20:
+ * the chip said "Name, Name, Name +4 more" and he wanted every visit under the last, in full): "10:42 AM · AM half ·
+ * Dr X · ENT · Grade A · Brick Nasr City 3, Area Cairo East". The kind and the plan state stay with the day's cards;
+ * the rest of the record is here.
+ *
+ * 🔴 NO STREET ADDRESS ON THE CALENDAR ITSELF — the brick and the area only (owner, 2026-10-20: "do not show the
+ *    address in the private calendar itself, show area/brick, and in the details show the address"). The address
+ *    is the detail's: the day's table and cards, and `managerVisitLine`, still print it.
+ */
+export function managerVisitChipLine(visit: ManagerDayVisit): string {
+  return [managerVisitClock(visit.loggedAt), managerVisitHalfLabel(visit), visit.customerName, managerVisitCustomerType(visit), managerVisitAreaLines(visit).join(", ")].filter(Boolean).join(" · ");
+}
+
+/** The half a visit is counted in, in words: "AM half" (his own), "PM list" (a rep's list), "Pharmacy" (a pharmacy, counted apart). */
+export function managerVisitHalfLabel(visit: Pick<ManagerDayVisit, "bucket" | "listType" | "source">): string {
+  if (visit.listType === "Pharmacy" && visit.source === "ride_along") return "Pharmacy";
+  return visit.source === "own" ? `${visit.bucket} half` : `${visit.bucket} list`;
+}
+
+/** Where a visit was, without the street: the brick, then the area — each once, none empty. What the calendar itself prints. */
+export function managerVisitAreaLines(visit: Pick<ManagerDayVisit, "brickName" | "areaName">): string[] {
+  return managerVisitWhereLines({ address: null, areaName: visit.areaName, brickName: visit.brickName, placeLabel: null });
+}
+
+/** The address line a reader sees in the details: the street, then the brick, then the area — each once, none empty. */
 export function managerVisitWhereLines(visit: Pick<ManagerDayVisit, "address" | "brickName" | "areaName" | "placeLabel">): string[] {
   const seen = new Set<string>();
   const out: string[] = [];

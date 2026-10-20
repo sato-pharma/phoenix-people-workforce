@@ -7,7 +7,11 @@
  *   - each visit records a location check against the customer's validated place, the products
  *     discussed (from the line's products), a live photo of the clinic sign or door, and a comment;
  *   - double and chain visits count straight away — there is no confirmation step;
- *   - a visit saved far from the validated place still saves, flagged for the manager;
+ *   - a visit saved far from the validated place still saves, flagged for the manager — EXCEPT a
+ *     medical rep's own, which since 2026-10-20 is REFUSED past the far line from the customer's
+ *     validated photograph (owner: "not accept medical reps visits logged away from the validated
+ *     picture of the customer with maximum 300 m apart"; `visitAwayFromValidatedPlace`). A visit a
+ *     manager enters still saves and is flagged;
  *   - the Super Admin's visits are test entries, left out of every report.
  *
  * The visit's date and time are the server's (when the PHOTO's upload slot was issued), never the
@@ -36,17 +40,20 @@
 
 import { refreshSharedCrmWindows } from "@/lib/crm/shared-windows";
 import { validationError } from "@/lib/http/api-errors";
-import { fieldWeekStart, isIsoDay, isRamadanDay, monthStartOf } from "@/lib/phoenix-crm/calendar";
+import { cairoBusinessDay, fieldWeekStart, isIsoDay, isRamadanDay, monthStartOf } from "@/lib/phoenix-crm/calendar";
 import { gradeTarget } from "@/lib/phoenix-crm/coverage";
 import type { DayStartView } from "@/lib/phoenix-crm/day-start-rules";
 import { loadDayStartOn } from "@/lib/phoenix-crm/server/day-start";
 import {
   DEVICE_CLOCK_TOLERANCE_MINUTES,
   deviceClockSkewMinutes,
+  farVisitRefusalApplies,
   parseGrade,
   parseProductAvailability,
   parseVisitDraft,
+  VISIT_AWAY_FROM_PLACE,
   VISIT_PRODUCTS_MAX,
+  visitAwayFromValidatedPlace,
   type ProductAvailability,
   type VisitDraft,
 } from "@/lib/phoenix-crm/entry-rules";
@@ -108,7 +115,7 @@ import { offPlanAllowance, offPlanWeekWindow, type OffPlanAllowance } from "@/li
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
-import { recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
+import { recordFarVisitRefusal, recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
 import { readTimeAnchor } from "@/lib/phoenix-crm/server/time-anchor";
 import {
   claimRequiredRecording,
@@ -1359,7 +1366,8 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
   const [placesResult, issuedAt, listedPharmacies] = await Promise.all([
     supabase
       .from("phoenix_crm_places")
-      .select("id, lat, lon")
+      // The photograph's own reading travels too: it is what a rep's visit is measured against below.
+      .select("id, lat, lon, photo_lat, photo_lon, photo_accuracy_meters")
       .eq("customer_id", visit.customerId)
       .eq("seat_id", seat.seatId)
       .eq("is_test", isTest)
@@ -1376,8 +1384,49 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
   // on its own and sent in `linked_pharmacies`.
   const pharmacyLinks = linkNamedPharmacies(visit.pharmacyName, listedPharmacies);
   throwIfError(placesResult.error);
-  const places = ((placesResult.data ?? []) as Row[]).map((row) => ({ id: String(row.id), lat: Number(row.lat), lon: Number(row.lon) }));
+  const placeRows = (placesResult.data ?? []) as Row[];
+  const places = placeRows.map((row) => ({ id: String(row.id), lat: Number(row.lat), lon: Number(row.lon) }));
   const settings = viewer.config.settings;
+
+  // 🔴 A MEDICAL REP'S VISIT IS LOGGED AT THE CUSTOMER'S VALIDATED PLACE, OR NOT AT ALL (owner,
+  // 2026-10-20: "not accept medical reps visits logged away from the validated picture of the customer
+  // with maximum 300 m apart"). Asked of the REP's own save only — a visit a manager enters, and the
+  // Super Admin's "Record a missed visit", keep saving as before — and asked HERE, before the recording
+  // is claimed and before the save writes anything, so a refused visit leaves no row, no claimed
+  // recording and no notice behind. The refused reading itself is kept for the SFE's board, and the rep
+  // reads one plain sentence about his own work: never the line, never his metres.
+  //
+  // 🔴 AND ONLY FROM 2026-10-20 ON (owner: "do not refuse historical — start from today this rule"). The
+  // day is the day the visit was CAPTURED, as the save itself will date it — the offline anchor, else the
+  // photo slot, else now — so a visit taken before the rule existed and arriving after it is never refused.
+  const captureDay = cairoBusinessDay(new Date(offlineCapturedAt ?? issuedAt ?? Date.now()));
+  if (enteredAs === "rep" && farVisitRefusalApplies(captureDay)) {
+    const away = visitAwayFromValidatedPlace({
+      fix: { lat: visit.lat, lon: visit.lon },
+      places: placeRows.map((row) => ({
+        id: String(row.id),
+        lat: Number(row.lat),
+        lon: Number(row.lon),
+        photoLat: numberOrNull(row.photo_lat),
+        photoLon: numberOrNull(row.photo_lon),
+        photoAccuracyMeters: numberOrNull(row.photo_accuracy_meters),
+      })),
+      farMeters: settings.visitFarMeters,
+    });
+    if (away.refused) {
+      await recordFarVisitRefusal({
+        visit,
+        seatId: seat.seatId,
+        repHrId: viewer.hrId,
+        customerId: visit.customerId,
+        placeId: away.placeId,
+        metres: away.metres,
+        farMeters: away.farMeters,
+        isTest,
+      });
+      throw validationError(VISIT_AWAY_FROM_PLACE);
+    }
+  }
   const check = checkVisitLocation({
     fix: { lat: visit.lat, lon: visit.lon, accuracyMeters: visit.accuracyMeters },
     places,

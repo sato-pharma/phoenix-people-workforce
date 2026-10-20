@@ -1,7 +1,8 @@
 import { dayLabelLong } from "@/components/phoenix-crm/format";
-import { ManagerVisitList } from "@/components/phoenix-crm/manager-visit-card";
+import { ManagerPlanActualTable } from "@/components/phoenix-crm/manager-plan-actual-table";
 import { CrmBlock, CrmEmpty, CrmNote, CrmPanel, CrmStat, CrmStatGrid } from "@/components/phoenix-crm/ui";
 import { awaitingValidationNote } from "@/lib/crm/call-rate";
+import { buildPlanVsActual } from "@/lib/phoenix-crm/manager-day-plan";
 import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
 // Through `view-types`, never `server/manager-day-detail`: a component may not import server code.
 import type { PhoenixCrmManagerDayDetail } from "@/lib/phoenix-crm/view-types";
@@ -17,12 +18,13 @@ import type { PhoenixCrmManagerDayDetail } from "@/lib/phoenix-crm/view-types";
  * 🔴 THE FIGURES ARE THE CALENDAR CELL'S OWN, and AM · PM · Pharmacies stay three figures apart: there is no
  *    combined number on this page. His own single visits count in his own report only — said here in words, so
  *    nobody reads a manager's "3" as three more calls on a territory.
- * 🔴 Each visit is the SAME card the private calendar draws (`ManagerVisitCard`), so the two never describe one
+ * 🔴 The day is the SAME table the private calendar draws (`ManagerPlanActualTable`), so the two never describe one
  *    visit two ways.
  */
 export function ManagerDayView({ view }: { view: PhoenixCrmManagerDayDetail }) {
   const { figures, manager, visits } = view;
   const waiting = awaitingValidationNote({ awaitingValidation: figures.awaitingValidation });
+  const { rows, summary } = buildPlanVsActual(view.plan, visits);
 
   return (
     <div className="grid min-w-0 gap-3">
@@ -60,14 +62,14 @@ export function ManagerDayView({ view }: { view: PhoenixCrmManagerDayDetail }) {
           ) : null}
         </CrmBlock>
 
-        <CrmBlock title="The visits, in the order they happened">
-          {visits.length === 0 ? (
+        <CrmBlock title="Plan against actual, with the detail of every visit">
+          {rows.length === 0 ? (
             <CrmEmpty
-              message="No single visit of their own and no ride-along with a rep was recorded on this day."
-              title="Nothing was logged"
+              message="Nothing was planned for this day and no single visit of their own or ride-along with a rep was recorded."
+              title="Nothing planned, nothing logged"
             />
           ) : (
-            <ManagerVisitList visits={visits} />
+            <ManagerPlanActualTable plan={view.plan} planUnread={view.planUnread} rows={rows} summary={summary} />
           )}
         </CrmBlock>
       </CrmPanel>

@@ -61,7 +61,7 @@ on the night of the outage.
 
 ## The deploy gate
 
-> 🔴 **Since 2026-10-19 this gate has a successor built beside it: "The release gate — Railway builds while CI runs", below.** Wait for CI stays ON until the owner switches it off; from then on a commit is held by `/api/readyz` and ci.yml's `release-gate` job instead, and everything in this section about a suite withholding a deploy describes the regime that ends then.
+> 🔴 **This gate ENDED on production on 2026-10-19/20: Wait for CI is OFF on `phoenix-people-workforce` (19 Oct) and `phoenix-workforce-worker` (20 Oct), and a commit is held by `/api/readyz` and ci.yml's `release-gate` job instead — see "The release gate — Railway builds while CI runs", below.** Everything in this section about a suite withholding a deploy is the account of the regime before that, and of what a service whose `checkSuites` is switched back ON would do.
 
 🔴 **PRODUCTION IS GATED AND PROVEN. STAGING'S TOGGLE IS ON BUT IS NOT ENFORCING — do not read
 them as one setting.** Railway's **Wait for CI** is switched on for the `phoenix-people-workforce`
@@ -564,8 +564,9 @@ The safe sequence, for whoever does this before the deadline:
 
 Two things `pull` confirmed that are worth knowing on their own:
 
-- **`phoenix-people-workforce`'s source carries `checkSuites: true`.** That is the Wait-for-CI deploy
-  gate of "The deploy gate" above, visible in configuration rather than inferred from behaviour.
+- **`phoenix-people-workforce`'s source carried `checkSuites: true`** on 10 Oct (it reads `false` since the
+  release gate went live, 19 Oct). That was the Wait-for-CI deploy gate of "The deploy gate" above, visible in
+  configuration rather than inferred from behaviour.
 - 🔴 **`phoenix-cron` is NOT a dormant leftover.** Its start command fires nine production routes on a
   time-of-day schedule — `notifications/process`, `cron/inbound-intake`,
   `cron/recruitment-email-intake`, the three iReports360 syncs, `notifications/daily`,
@@ -641,7 +642,7 @@ Never push directly to `main`. Work happens on a branch/PR and merges after CI p
    are the same steps. See AGENTS.md § 7.
 4. **Apply any database migration by hand BEFORE the merge.** The Railway deploy applies none. See
    "Database Deployment" below.
-5. Merge to `main`. **The merge is the deploy.** (Once the owner switches Wait for CI off — "The release gate" below — Railway builds at the merge and the new container goes live when `release-gate` has recorded the checks green.) Railway builds and ships the new commit to
+5. Merge to `main`. **The merge is the deploy.** (Railway builds at the merge, and the new container goes live when `release-gate` has recorded the checks green — "The release gate" below.) Railway builds and ships the new commit to
    production at **full traffic**, within minutes. There is no staged rollout, no no-traffic
    revision, no post-deploy smoke test, and no cron wait — nothing stands between the merge and
    employees using it.
@@ -742,18 +743,26 @@ happens to attach to `main` HEAD, or a failing `staging-migrate` no longer holds
 shows red where it always did. That is the intended narrowing, not a loss: those suites were never the
 checks the owner asked for, and the nine-minute hold on 16 Oct came from one of them.
 
-**The order it goes live in — each step has its own proof.**
+**The order it went live in, and what each step proved — 19-20 October 2026 (the order to repeat if a
+trigger is ever switched back on and off again).**
 
-1. Apply the `release_gates` migration to production BEFORE the merge (the deploy applies none).
-2. Merge. Wait for CI is still ON, so this first deploy behaves exactly as before AND proves the gate:
-   `/api/readyz` on the live container must read `checks.releaseGate` = `{required: true, passed: true,
-   reason: "recorded"}`, and the build log must print `Retry window: 15m0s`. Until both are seen, do not go on.
-3. Only on the owner's word, switch Wait for CI off on `phoenix-people-workforce` AND
-   `phoenix-workforce-worker` (the service trigger's `checkSuites`, from the dashboard toggle or one
-   `deploymentTriggerUpdate` call — never a whole-project `config apply`, whose variable list goes stale in
-   days). `.railway/railway.ts` already says `checkSuites: false`, the target; live reads `true` until then.
-4. Measure the next merge from the build log's `Healthcheck succeeded` line, per "A slow day is measured from
-   the build log". The first one that really overlaps shows `readyz` answering 503 `not_recorded` for a
+1. Apply the `release_gates` migration to production BEFORE the merge (the deploy applies none). Done through
+   `apply-sql-file.mjs` after the production MCP declined it; the table was read back by shape.
+2. Merge (PR 6166, with Wait for CI still ON). That first deploy proved the gate: live `/api/readyz` read
+   `checks.releaseGate` = `{required: true, passed: true, reason: "recorded"}`, and the build log printed
+   `Retry window: 15m0s` and `Healthcheck succeeded`.
+3. On the owner's word, switch Wait for CI off — one `deploymentTriggerUpdate` per service (app trigger
+   `d0cc31dc`, worker trigger `47c42ce8`), never a whole-project `config apply`, whose variable list goes stale
+   in days. The app went first (19 Oct). 🔴 **The worker had NO healthcheck at all** (`healthcheckPath: null`
+   at service level; `railway.toml` is what gave the app its probe), so the gate could not have held it:
+   its probe (`/api/readyz`, 900 s) was set on the service on 19 Oct, its next builds showed `Path: /api/readyz`,
+   `Retry window: 15m0s`, `Healthcheck succeeded`, and only then was its trigger switched off (20 Oct).
+   `.railway/railway.ts` says the same for both.
+4. Measured on the first merges with the app's trigger off (19 Oct, `3f207be29` and `085d869d1`): live 6 min 06 s
+   and 7 min 51 s after the push — each 10-18 s after `ci.yml`'s last job, because the build now finishes first
+   and the gate holds it. Under Wait for CI the same merges took 8.5-9.8 min on a normal day and 16 min on 19 Oct.
+   Read the build log's `Healthcheck succeeded` line, per "A slow day is measured from the build log"; an overlap
+   that is working shows `readyz` answering 503 `not_recorded` for a
    while and then 200.
 
 🔴 **NEVER HAVE BOTH GATES OFF.** Wait for CI off AND `PHOENIX_RELEASE_GATE=off` means every merge goes live
@@ -917,8 +926,9 @@ place's log says it did not start.
 
 **Every other variable on the worker is a Railway reference to the website's own**
 (`${{phoenix-people-workforce.NAME}}`), so the GitHub → Railway secret sync, which writes the website,
-reaches the worker with nothing to keep in step. Its source is `main` with "Wait for CI" on, the same
-gate as the website, and its healthcheck is `/api/readyz`. Both are in `.railway/railway.ts`.
+reaches the worker with nothing to keep in step. Its source is `main` with "Wait for CI" off since 20 Oct, held
+by the same release gate as the website, and its healthcheck is `/api/readyz` (set on the service itself on
+19 Oct — until then it had none). Both are in `.railway/railway.ts`.
 
 **Which cron-job.org jobs call the worker** (moved 16 Oct 2026, the address only; schedule, switch
 and bearer unchanged and read back):

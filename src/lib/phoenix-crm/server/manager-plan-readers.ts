@@ -22,6 +22,9 @@
  */
 
 import { addDaysIso } from "@/lib/crm/dates";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { cairoBusinessDay, fieldWeekStart } from "@/lib/phoenix-crm/calendar";
+import type { ManagerDayPlan } from "@/lib/phoenix-crm/manager-day-plan";
 import {
   isManagerPlanSent,
   managerAdminActivityLabel,
@@ -486,6 +489,35 @@ export {
   loadManagerVisitDetails,
   type ManagerVisitDetailInput,
 } from "@/lib/phoenix-crm/server/manager-visit-details";
+
+/**
+ * The plan behind each of these managers' days, keyed `<manager>|<day>` — the weekly report's own read, so a
+ * screen that shows a day beside the plan cannot disagree with the report (owner, 2026-10-20: "plan vs actual vs
+ * detail per visit in actual"). EVERY day of every week the window touches has an entry for every manager asked
+ * about: a day he planned nothing on is a sent week with no half-day, not a missing plan, and a week with no sent
+ * plan reads `sent: false`. A failed read throws; the caller decides how loud to be.
+ */
+export async function loadManagerDayPlans(input: { end: string; managerHrIds: ReadonlyArray<string>; start: string }): Promise<Map<string, ManagerDayPlan>> {
+  const keys = dedupeIds(input.managerHrIds.map((hrId) => personKey(hrId)));
+  const out = new Map<string, ManagerDayPlan>();
+  if (keys.length === 0 || input.end < input.start) return out;
+  const weeks: string[] = [];
+  for (let week = fieldWeekStart(input.start); week <= input.end; week = addDaysIso(week, 7)) weeks.push(week);
+  const day = { cairoToday: currentCairoDateOnlyIso(), visitDay: cairoBusinessDay(new Date()) };
+  // Loaded here, not at the top: the report reaches the visit and customer services, which send notices.
+  const { computeManagerReports } = await import("@/lib/phoenix-crm/server/manager-plan-report");
+  const reports = await Promise.all(weeks.map((week) => computeManagerReports(day, keys, week, false, new Map())));
+  weeks.forEach((week, index) => {
+    for (const [hrId, report] of reports[index]) {
+      const sent = isManagerPlanSent(report.status);
+      for (let offset = 0; offset < 7; offset += 1) {
+        const date = addDaysIso(week, offset);
+        out.set(`${hrId}|${date}`, { halves: report.days.find((entry) => entry.date === date)?.halves ?? [], sent, statusLine: report.statusLine });
+      }
+    }
+  });
+  return out;
+}
 
 /** What a screen prints beside the day. Never a figure anybody is measured on — a record that he worked. */
 export function describeManagerOwnVisitDay(day: ManagerOwnVisitDay): string {

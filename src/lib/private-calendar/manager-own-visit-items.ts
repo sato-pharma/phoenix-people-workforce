@@ -28,42 +28,41 @@
 // Read-only. Never mutates CRM, attendance or deduction data.
 
 import { hrIdLookupKeys } from "@/lib/hr-id";
-import { managerDayFigures, managerDaySummaryLine, managerVisitLine, type ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
+import type { ManagerDayPlan } from "@/lib/phoenix-crm/manager-day-plan";
+import { managerDayFigures, managerDaySummaryLine, managerVisitChipLine, managerVisitLine, type ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
 import {
   describeManagerOwnVisitDay,
+  loadManagerDayPlans,
   loadManagerOwnVisitDays,
   loadManagerOwnVisitDetails,
   type ManagerOwnVisitDay,
 } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { privateCalendarActivityKindLabels } from "@/lib/private-calendar/activity-kinds";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
+import { personKey } from "@/lib/phoenix-crm/scope";
 
 function normalizedKey(value: string | null | undefined): string | null {
   const keys = hrIdLookupKeys(String(value ?? ""));
   return keys.length > 0 ? keys[0] : null;
 }
 
-/** The customers of a day for a cramped chip: three names, then "+N more". Null when none is named. */
-function customersText(visits: readonly ManagerDayVisit[]): string | null {
-  const names = [...new Set(visits.map((visit) => visit.customerName.trim()).filter(Boolean))];
-  if (names.length === 0) return null;
-  return `${names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3} more` : ""}`;
-}
-
 /**
  * One item per (manager, day) he logged at least one of his own single visits on. With `visits` the entry
  * names every one of them — the count line stays first, so a reader who wanted the number still finds it.
  */
-export function managerOwnVisitItem(day: ManagerOwnVisitDay, visits: readonly ManagerDayVisit[] = []): PrivateCalendarItem {
+export function managerOwnVisitItem(
+  day: ManagerOwnVisitDay,
+  visits: readonly ManagerDayVisit[] = [],
+  plan: { plan: ManagerDayPlan | null; unread: boolean } = { plan: null, unread: false },
+): PrivateCalendarItem {
   const summary = describeManagerOwnVisitDay(day);
   const id = `manager-own-visit-${day.hrId}|${day.date}`;
-  const customers = customersText(visits);
   const figures = managerDayFigures(visits);
   return {
     activityKind: "single_regular",
     approvalImpact:
       "A manager's own single visits are read-only here. They move no rep's figures and no territory's — they only stop a day that was worked being read as a day with no activity.",
-    chipLines: [privateCalendarActivityKindLabels.single_regular, summary, ...(customers ? [customers] : [])],
+    chipLines: [privateCalendarActivityKindLabels.single_regular, summary, ...visits.map((visit) => managerVisitChipLine(visit))],
     description:
       "Single visits the manager made alone and logged in Phoenix CRM. They are kept in the manager's own record, which the CRM read door does not carry, so they are shown here for the day not to read as having no activity.",
     detailLines: [
@@ -81,6 +80,8 @@ export function managerOwnVisitItem(day: ManagerOwnVisitDay, visits: readonly Ma
     id,
     managerName: null,
     ...(visits.length > 0 ? { managerVisits: [...visits] } : {}),
+    ...(visits.length > 0 && plan.plan ? { managerPlan: plan.plan } : {}),
+    ...(visits.length > 0 && plan.unread ? { managerPlanUnread: true } : {}),
     employeeName: null,
     severity: "success",
     // `field_visit`, like its siblings: this is his own field work, and the engine's per-employee
@@ -93,7 +94,7 @@ export function managerOwnVisitItem(day: ManagerOwnVisitDay, visits: readonly Ma
     startDate: day.date,
     status: "performed",
     time: summary,
-    title: visits.length > 0 ? `${summary}: ${managerDaySummaryLine(figures) || summary}${customers ? ` - ${customers}` : ""}` : summary,
+    title: visits.length > 0 ? `${summary}: ${managerDaySummaryLine(figures) || summary}` : summary,
     visitCounts: null,
   };
 }
@@ -117,11 +118,17 @@ export async function loadManagerOwnVisitPrivateCalendarItems(
 
     const days = await loadManagerOwnVisitDays({ end, managerHrIds: employeeHrIds, start });
     const details = options.details && days.length > 0 ? await loadDetailsQuietly(employeeHrIds, start, end) : new Map<string, ManagerDayVisit[]>();
+    const plans = options.details && details.size > 0 ? await loadPlansQuietly(employeeHrIds, start, end) : { plans: new Map<string, ManagerDayPlan>(), unread: false };
     const items: PrivateCalendarItem[] = [];
     for (const day of days) {
       const key = normalizedKey(day.hrId);
       if (!key || !selected.has(key)) continue;
-      items.push(managerOwnVisitItem(day, details.get(`${key}|${day.date}`) ?? []));
+      items.push(
+        managerOwnVisitItem(day, details.get(`${key}|${day.date}`) ?? [], {
+          plan: plans.plans.get(`${personKey(day.hrId)}|${day.date}`) ?? null,
+          unread: plans.unread,
+        }),
+      );
     }
     return { items, ready: true };
   } catch {
@@ -149,4 +156,17 @@ async function loadDetailsQuietly(employeeHrIds: string[], start: string, end: s
     return new Map();
   }
   return byDay;
+}
+
+/**
+ * The plan behind the same days, so the entry can set it beside the visits. Swallowed on purpose and only here, for
+ * the reason the detail read is: the count and the visits already prove he worked, so a plan that fails to load
+ * says so on the entry (`managerPlanUnread`) and never takes the day away.
+ */
+async function loadPlansQuietly(employeeHrIds: string[], start: string, end: string): Promise<{ plans: Map<string, ManagerDayPlan>; unread: boolean }> {
+  try {
+    return { plans: await loadManagerDayPlans({ end, managerHrIds: employeeHrIds, start }), unread: false };
+  } catch {
+    return { plans: new Map(), unread: true };
+  }
 }

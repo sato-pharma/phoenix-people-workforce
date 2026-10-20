@@ -194,7 +194,11 @@ export function runPhoenixCrmPlanWeeklyOnlyTests(): void {
     for (const flag of ["canEdit: false,", "canSubmit: false,", "canReopen: false,"]) {
       assert.ok(monthly.includes(flag), `the month's own ${flag.split(":")[0]} is off`);
     }
-    assert.match(monthly, /canAskToEdit: repState === "sent" && weekPlan !== null,/, "a sent week offers Ask to edit, and only a sent one");
+    assert.match(
+      monthly,
+      /canAskToEdit: repState === "sent" && weekPlan !== null && editAsksLeft > 0,/,
+      "a sent week offers Ask to edit, and only a sent one with an ask left (two a week, owner 2026-10-20)",
+    );
   }
 
   // ── 6. The rep's own board: one path ───────────────────────────────────────────────────────────

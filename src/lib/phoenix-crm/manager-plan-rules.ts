@@ -44,7 +44,7 @@
 
 import { addDaysIso } from "@/lib/crm/dates";
 import { normalizeContactName } from "@/lib/crm/campaign-contact-match";
-import { fieldWeekDays, fieldWeekStart, isIsoDay, planDayListTypes, repPlanWeek } from "@/lib/phoenix-crm/calendar";
+import { fieldWeekDays, fieldWeekStart, isIsoDay, planDayListTypes, repPlanWeek, VISIT_DAY_CUTOFF_HOURS } from "@/lib/phoenix-crm/calendar";
 import { dayActivityLabel, isDayActivity, PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { countsAsManagersDoubleVisit, DOUBLE_VISIT_PLANNER_TIERS } from "@/lib/phoenix-crm/double-visit-plan-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
@@ -99,9 +99,15 @@ export function singleVisitHalfKey(date: string, half: ManagerHalf): string {
   return `${date}|${half}`;
 }
 
-/** The half an unplanned visit falls in, from the Cairo hour it was logged: before noon is the morning. */
+/**
+ * The half an unplanned visit falls in, from the Cairo hour it was logged: before noon is the morning.
+ * 🔴 The hours before the visit-day cutoff (00:00–01:59) belong to the PREVIOUS day's evening — the visit is
+ * filed on that day (`cairoBusinessDay`) — so they are its afternoon, never a morning. Read as a morning, a
+ * visit logged at 00:08 opened a phantom second half-day on the day before, the week read "2 of 2", and the
+ * "Log an unplanned customer" button vanished for the rest of the week (owner, 2026-10-20: "no button").
+ */
 export function singleVisitHalfOfHour(cairoHour: number): ManagerHalf {
-  return cairoHour < 12 ? "AM" : "PM";
+  return cairoHour >= VISIT_DAY_CUTOFF_HOURS && cairoHour < 12 ? "AM" : "PM";
 }
 
 /**

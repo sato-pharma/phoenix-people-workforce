@@ -6,6 +6,7 @@ import {
   type ManagerDayVisit,
   type ManagerVisitPlaceSource,
 } from "@/lib/phoenix-crm/manager-visit-detail";
+import { planCustomerKey } from "@/lib/phoenix-crm/manager-day-plan";
 import { singleVisitHalfOfHour } from "@/lib/phoenix-crm/manager-plan-rules";
 import { parseListType, PHARMACY_LIST_TYPE } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { personKey } from "@/lib/phoenix-crm/scope";
@@ -214,6 +215,7 @@ export async function loadManagerOwnVisitDetails(input: ManagerVisitDetailInput)
       brickName,
       bucket,
       comment: textOrNull(row.comment),
+      customerKey: planCustomerKey(row.customer_id, row.manager_customer_id),
       customerName: customer?.name ?? own?.name ?? "Customer",
       date,
       grade: customer?.grade ?? own?.grade ?? null,
@@ -306,6 +308,7 @@ export async function loadManagerRideAlongDetails(
         brickName: place?.brickName ?? null,
         bucket: listType,
         comment: textOrNull(row.comment),
+        customerKey: planCustomerKey(row.customer_id, null),
         customerName: customer?.name ?? "Customer",
         date,
         grade: customer?.grade ?? null,

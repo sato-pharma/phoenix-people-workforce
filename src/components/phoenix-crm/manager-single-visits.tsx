@@ -217,7 +217,6 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
             {view.singleVisitLimit ? (
               <p className="mb-3 break-words text-xs font-semibold leading-5 text-slate-500">
                 {dmSingleVisitLimitLine(view.singleVisitLimit.used)}
-                {view.singleVisitLimit.unplannedFitsNow ? "" : " Your week has no half-day of single visits left, so an unplanned customer cannot be logged now."}
               </p>
             ) : null}
             {view.unplanned.length > 0 ? (
@@ -255,11 +254,17 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
                 ownList={view.ownList}
                 test={test}
               />
-            ) : !logging && view.singleVisitLimit?.unplannedFitsNow !== false ? (
+            ) : logging ? null : view.singleVisitLimit?.unplannedFitsNow === false ? (
+              // Where the button would be, in words — a button that silently vanished read as a missing
+              // button (owner, 2026-10-20: "no button to add the single unplanned visit").
+              <CrmNote tone="warn">
+                Log an unplanned customer is closed for the rest of this week: your week already holds its two half-days of single visits. A planned single visit can still be logged.
+              </CrmNote>
+            ) : (
               <CrmButton onClick={() => setFinding(true)} size="sm">
                 Log an unplanned customer
               </CrmButton>
-            ) : null}
+            )}
           </CrmBlock>
         </>
       ) : null}
