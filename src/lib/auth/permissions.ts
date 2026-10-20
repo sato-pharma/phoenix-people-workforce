@@ -448,6 +448,20 @@ export type TestPersonaLink = {
   mirrorsHrId: string;
 };
 
+/**
+ * The Super Admin's read-only "View as Seat" (src/lib/auth/seat-view.ts). Present ONLY while the owner
+ * is looking at another seat: `role` (and, for a portal seat, `hrId`) are then the viewed seat's, and
+ * nothing may write — the guard refuses every mutation except leaving the view.
+ */
+export type SeatViewLink = {
+  /** The owner's own login id — the real session underneath the view. */
+  ownerLoginId: string;
+  /** The person being viewed, for a portal seat; null for an office seat viewed by role alone. */
+  personName: string | null;
+  /** Epoch seconds when the view ends on its own. */
+  expiresAt: number;
+};
+
 export type AccessContext = {
   hrId: string | null;
   loginId?: string | null;
@@ -459,6 +473,8 @@ export type AccessContext = {
    * read is hers — and nothing may write as her: see src/lib/auth/test-persona.ts for the guard.
    */
   testPersona?: TestPersonaLink | null;
+  /** Set ONLY during the Super Admin's read-only View as Seat — see src/lib/auth/seat-view.ts. */
+  seatView?: SeatViewLink | null;
 };
 
 export type PermissionMap = Record<PhoenixRole, Partial<Record<PermissionResource, PermissionAction[]>>>;
@@ -2010,6 +2026,7 @@ export function createAccessContext(input: {
   role?: string | null;
   source?: AccessContext["source"];
   testPersona?: TestPersonaLink | null;
+  seatView?: SeatViewLink | null;
 }): AccessContext {
   const role = normalizeRole(input.role);
   const hrId = normalizeHrId(input.hrId);
@@ -2023,6 +2040,8 @@ export function createAccessContext(input: {
     source,
     // Only present on a test account's session, so every other context keeps its exact shape.
     ...(input.testPersona ? { testPersona: input.testPersona } : {}),
+    // Only present during the Super Admin's read-only View as Seat — same reason.
+    ...(input.seatView ? { seatView: input.seatView } : {}),
   };
 }
 

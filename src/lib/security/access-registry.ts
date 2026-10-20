@@ -195,6 +195,11 @@ export const accessRegistry = [
   // Same Super Admin + dev-only gate as the preview route above: read-only candidate listing
   // that powers the picker's Line -> Region -> Area -> Name cascade client-side.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/dev-auth/candidates", permission: null, guard: "domain-helper" }),
+  // View as Seat (src/lib/auth/seat-view.ts): the Super Admin opens a read-only view of a seat on top of
+  // the live session; assertSeatViewOwner is the in-route gate and the start writes a required audit row.
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/admin/seat-view/start", permission: null, guard: "domain-helper" }),
+  // Leaving the view: the one write a seat view may send. Clears the view cookie; the audit row is best effort.
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/admin/seat-view/exit", permission: null, guard: "domain-helper" }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/resend", reason: "Resend webhook signature/secret protected." }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/brevo", reason: "Brevo transactional webhook is protected by a shared secret token (?token= / x-brevo-token) verified against BREVO_WEBHOOK_SECRET." }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/sentry", reason: "Sentry alert webhook is protected by the HMAC-SHA256 signature in sentry-hook-signature, verified against SENTRY_WEBHOOK_SECRET; it only forwards a short error summary to the owner's Telegram." }),

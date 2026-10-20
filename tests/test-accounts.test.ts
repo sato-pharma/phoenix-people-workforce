@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { stripComments } from "./support/comment-strip.ts";
 
 import { createAccessContext } from "../src/lib/auth/permissions.ts";
+import { isReadOnlyViewer } from "../src/lib/auth/read-only-viewer.ts";
 import {
   assertNotTestAccount,
   assertTestAccountMayRun,
@@ -301,16 +302,18 @@ export function runTestAccountTests(): void {
 
     // MEDIUM: no push identity — OneSignal.login(her id) would move the device onto HER push user.
     assert.ok(
-      /const hrId = access\.testPersona \? null :/.test(source("app/api/notifications/push/context/route.ts")),
+      /const hrId = isReadOnlyViewer\(access\) \? null :/.test(source("app/api/notifications/push/context/route.ts")),
       "a test login is given no push identity",
     );
 
     // Reads that write: none of them may write for a test login.
-    assert.ok(/if \(stale\.size > 0 && !access\.testPersona\)/.test(source("src/lib/notifications/in-app.ts")), "the bell never archives HER rows for a test login");
+    assert.ok(/if \(stale\.size > 0 && !isReadOnlyViewer\(access\)\)/.test(source("src/lib/notifications/in-app.ts")), "the bell never archives HER rows for a test login");
     assert.ok(/assertNotTestAccount\(access\);/.test(source("app/api/recruitment/interview-calendar/my-calendar-feed/route.ts")), "no lasting link to HER interview calendar");
     assert.ok(/if \(input\.access\.testPersona\) return;/.test(source("src/lib/marketing-requests/roi-report-service.ts")), "no export audit row names her");
     const outstation = source("src/lib/outstation/service.ts");
-    assert.equal((outstation.match(/getResidenceLocationForEmployee\(identity\.employeeHrId, \{ persist: !access\.testPersona \}\)/g) ?? []).length, 3, "her residence is never geocoded into her row by a test login");
+    assert.equal((outstation.match(/getResidenceLocationForEmployee\(identity\.employeeHrId, \{ persist: !isReadOnlyViewer\(access\) \}\)/g) ?? []).length, 3, "her residence is never geocoded into her row by a test login");
+    // isReadOnlyViewer must keep counting a test login — the three sites above lean on it for that.
+    assert.equal(isReadOnlyViewer({ testPersona: { loginId: "TEST-AYA", mirrorsHrId: "B-7" } }), true, "a test login is a read-only viewer");
     assert.ok(/if \(geocoded && options\.persist === false\) \{/.test(outstation), "persist: false answers without writing");
 
     // Every password path skips the Supabase bridge for a test login.

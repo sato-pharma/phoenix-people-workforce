@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
+import { isReadOnlyViewer } from "@/lib/auth/read-only-viewer";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { onesignalAppId } from "@/lib/notifications/push";
@@ -30,8 +31,9 @@ export async function GET(request: Request) {
     //
     // A test login gets NO push identity: its hrId is the real person it mirrors, and OneSignal.login()
     // with that id would move this device onto HER push user — every notice sent to her would then also
-    // ring the test device (src/lib/auth/test-persona.ts; risk review, 2026-09-28).
-    const hrId = access.testPersona ? null : access.hrId ? access.hrId.trim().toUpperCase() : null;
+    // ring the test device (src/lib/auth/test-persona.ts; risk review, 2026-09-28). The Super Admin's
+    // View as Seat gets none either — the owner's device must never move onto the person he is viewing.
+    const hrId = isReadOnlyViewer(access) ? null : access.hrId ? access.hrId.trim().toUpperCase() : null;
     return NextResponse.json({ data: { appId: onesignalAppId(), hrId }, success: true });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
