@@ -111,6 +111,19 @@ type Day = {
   onTerritoryMinutes: number | null;
   partners: Array<{ hrId: string | null; name: string }>;
   partnerSoloCalls: number;
+  /** A manager's own single visits, display only (owner, 2026-10-20). Optional: a report built before them has none. */
+  ownVisits?: Array<{
+    comment: string | null;
+    customerName: string;
+    grade: string | null;
+    half: "AM" | "PM";
+    inVacantTerritory: boolean;
+    loggedAt: string | null;
+    planned: boolean;
+    products: string[];
+    speciality: string | null;
+    where: string | null;
+  }>;
   punches: { count: number; firstTime: string | null; lastTime: string | null } | null;
   stops: Stop[];
   trip: {
@@ -181,6 +194,7 @@ const DAY_LABEL: Record<string, string> = {
   "field-no-gps": "Field record with no GPS",
   field: "Field day",
   leave: "Approved leave",
+  "own-visits": "Own visits, made alone",
   office: "Head office day",
   weekend: "Weekend",
 };
@@ -200,6 +214,13 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
       <p className="mt-0.5 text-sm font-bold text-slate-900">{value}</p>
     </div>
   );
+}
+
+/** An own visit's second line: who the customer is, where, what was presented and what was noted. */
+function ownVisitDetail(item: NonNullable<Day["ownVisits"]>[number]): string {
+  return [item.speciality, item.grade ? `Grade ${item.grade}` : null, item.where, item.products.join(", ") || null, item.comment]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function DayCard({ day, subjectName }: { day: Day; subjectName: string }) {
@@ -377,6 +398,28 @@ function DayCard({ day, subjectName }: { day: Day; subjectName: string }) {
                   <span className="mt-0.5 block text-phx-2xs font-semibold leading-4 text-slate-500">
                     {phoenixLine(item.phoenix)}
                   </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {(day.ownVisits ?? []).length > 0 ? (
+        <div className="px-4 pb-3">
+          <h4 className="mb-1 text-phx-2xs font-black uppercase tracking-wide text-slate-500">
+            {/* Owner, 2026-10-20 ("Show, keep out of reps"): the single visits a manager logged alone are shown on
+                the manager's own day and counted in nothing — no figure above includes them, and none is asked
+                for a position or a photo. */}
+            Own visits, made alone — listed, counted in no figure
+          </h4>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
+            {(day.ownVisits ?? []).map((item, index) => (
+              <li key={`own-${index}`}>
+                <strong>{clock12(item.loggedAt)}</strong> · {item.half} half · {item.planned ? "Planned" : "Not on the plan"}
+                {item.inVacantTerritory ? " · vacant area" : ""} · {item.customerName}
+                {ownVisitDetail(item) ? (
+                  <span className="mt-0.5 block break-words text-phx-2xs font-semibold leading-4 text-slate-500">{ownVisitDetail(item)}</span>
                 ) : null}
               </li>
             ))}

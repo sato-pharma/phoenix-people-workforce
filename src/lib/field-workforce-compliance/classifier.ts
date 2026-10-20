@@ -514,6 +514,7 @@ function buildEmployeeSummary(input: {
     lineName: input.employeeReference?.lineName ?? null,
     managerHrId: input.employeeReference?.managerHrId ?? null,
     managerName: input.employeeReference?.managerName ?? null,
+    managersAbove: input.employeeReference?.managersAbove ?? null,
     matchedEmployeeName: input.employeeReference?.fullName ?? null,
     matchedHrId: input.employeeReference?.hrId ?? null,
     matchStatus: input.employeeReference ? "matched" : "unmatched",

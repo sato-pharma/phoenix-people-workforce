@@ -57,6 +57,32 @@ export function isPortalWeeklyRole(role: PhoenixRole): boolean {
 }
 
 /**
+ * The company-wide readers, who open this same dashboard on the admin Field Sales page rather than
+ * the portal: the CEO, the Super Admin and the SFE Manager.
+ *
+ * The SFE Manager holds full weekly access in access.ts (company-wide oversight, minus the
+ * confidential Lacto Basic), and his own overview links him to that page — yet the page and every
+ * one of its five feeds admitted the CEO and the Super Admin alone and sent him back to /admin
+ * (owner, 2026-10-20: every role a module applies to must find it). One list, so the next gate
+ * cannot be written with the old two.
+ */
+export const COMPANY_WEEKLY_READER_ROLES = ["CEO", "Super Admin", "SFE Manager"] as const satisfies readonly PhoenixRole[];
+
+const COMPANY_WEEKLY_READER_ROLE_SET = new Set<PhoenixRole>(COMPANY_WEEKLY_READER_ROLES);
+
+export function isCompanyWeeklyReader(role: PhoenixRole): boolean {
+  return COMPANY_WEEKLY_READER_ROLE_SET.has(role);
+}
+
+/**
+ * Who may read the managers' Weekly Sales feeds and their downloads: the portal roles above, and the
+ * company-wide readers. A Medical Rep is neither — he reads his own area's screen.
+ */
+export function mayReadManagersWeeklySales(role: PhoenixRole): boolean {
+  return isPortalWeeklyRole(role) || isCompanyWeeklyReader(role);
+}
+
+/**
  * Who may download the NSM/DSM workbook from the PORTAL (owner, 2026-10-17): a national sales
  * manager and a regional manager, each scoped to his own numbers, choosing nothing but the month.
  *

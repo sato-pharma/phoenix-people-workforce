@@ -41,7 +41,7 @@ import {
   type BrickTerritory,
 } from "@/lib/phoenix-crm/brick-report";
 import { resolveReportPeriod, type ReportPeriod } from "@/lib/phoenix-crm/report-rules";
-import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { territoriesUnderManager, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { readsTeamReports, reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm } from "@/lib/phoenix-crm/server/db";
 import { loadAreaBrickMaster, loadClosingBrickSales, upperCode } from "@/lib/sales/closing-brick-sales";
@@ -105,7 +105,7 @@ export function landedMonthsIn(period: ReportPeriod, uploaded: Iterable<string>)
  */
 export async function loadBrickCoverageReport(
   viewer: PhoenixCrmViewer,
-  raw: { seatId?: unknown; lineCode?: unknown; includeTest?: unknown; from?: unknown; to?: unknown },
+  raw: { seatId?: unknown; lineCode?: unknown; managerHrId?: unknown; includeTest?: unknown; from?: unknown; to?: unknown },
 ): Promise<BrickCoverageView> {
   if (!readsTeamReports(viewer)) throw forbiddenError("Coverage against sales is for managers.");
 
@@ -118,6 +118,14 @@ export async function loadBrickCoverageReport(
   if (wantedLine) {
     seats = seats.filter((seat) => seat.lineCode === wantedLine);
     if (seats.length === 0) throw forbiddenError("This line is outside your scope.");
+  }
+  // The manager filter (owner, 2026-10-20: "when filter by manager u find no manager") — the same narrowing as
+  // `chooseTerritories`: the territories under the seats he holds, and refused when he is not one of the viewer's.
+  const wantedManager = text(raw.managerHrId);
+  if (wantedManager) {
+    const under = territoriesUnderManager(viewer.org, viewer.hrId, viewer.basis, wantedManager);
+    if (under) seats = seats.filter((seat) => under.has(seat.seatId));
+    if (!under || seats.length === 0) throw forbiddenError("This manager is outside your scope.");
   }
   const wantedSeat = text(raw.seatId);
   if (wantedSeat) {

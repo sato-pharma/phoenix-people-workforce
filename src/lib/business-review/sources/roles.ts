@@ -154,7 +154,22 @@ export type ReviewPersonRow = {
    */
   dmSeatId: string | null;
   areaCode: string | null;
+  /**
+   * The rides he LED, by the district seat the rep he rode with stood in that month — and the same
+   * by area. `dmSeatId` above comes from his OWN field visits, so it is null for a manager who logs
+   * rides and no visits of his own, and that left every National Sales Manager, the Regional
+   * Manager, the Product Managers, the SFE Manager and a riding-only District Manager out of every
+   * district and area view (owner, 2026-10-20). `people-view.ts` reads these to find him there.
+   *
+   * Absent when he rode with nobody, which is every rep. A payload from before this existed finds a
+   * person by his own seat alone, exactly as it did then.
+   */
+  ridesBySeat?: Record<string, ReviewRideTally>;
+  ridesByArea?: Record<string, ReviewRideTally>;
 };
+
+/** Rides led in one seat or area, and the distinct reps ridden with there. */
+export type ReviewRideTally = { rides: number; reps: number };
 
 /** One scope's tables: the company's, or one line's. */
 export type RoleFacts = {
@@ -281,7 +296,30 @@ type PersonAcc = {
   /** How many field visits this person made while placed in each district seat / area. */
   seatVisits: Map<string, number>;
   areaVisits: Map<string, number>;
+  /** The rides he led, by the seat / area of the rep ridden with — see `ridesBySeat` on the row. */
+  rideSeats: Map<string, RideAcc>;
+  rideAreas: Map<string, RideAcc>;
 };
+
+type RideAcc = { rides: number; reps: Set<string> };
+
+function tallyRide(into: Map<string, RideAcc>, key: string, rep: string, rides: number) {
+  let acc = into.get(key);
+  if (!acc) {
+    acc = { rides: 0, reps: new Set() };
+    into.set(key, acc);
+  }
+  acc.rides += rides;
+  acc.reps.add(rep);
+}
+
+/** Plain JSON for the cached bundle, and nothing at all for somebody who rode with nobody. */
+function rideTallies(from: Map<string, RideAcc>): Record<string, ReviewRideTally> | undefined {
+  if (from.size === 0) return undefined;
+  const out: Record<string, ReviewRideTally> = {};
+  for (const [key, acc] of from) out[key] = { rides: acc.rides, reps: acc.reps.size };
+  return out;
+}
 
 type RoleAcc = {
   role: string;
@@ -394,6 +432,7 @@ function collect(input: RoleFactsInput, lineCode: string | null): RoleFacts {
         outstationClaimed: 0, marketingRequests: 0,
         months: new Set(),
         customersByMonth: new Map(), seatVisits: new Map(), areaVisits: new Map(),
+        rideSeats: new Map(), rideAreas: new Map(),
       };
       people.set(key, acc);
     }
@@ -477,6 +516,13 @@ function collect(input: RoleFactsInput, lineCode: string | null): RoleFacts {
     for (const rep of reps) {
       person.reps.add(rep);
       role.reps.add(rep);
+      // Where the ride happened: the seat and area THE REP stood in that month, never the manager's
+      // own — the same rule `ridesInScope` splits the lines by.
+      const count = fact.ridesByRep.get(rep) ?? 0;
+      if (count <= 0) continue;
+      const placed = attribution.place(rep, fact.period);
+      if (placed?.dmSeatId) tallyRide(person.rideSeats, placed.dmSeatId, rep, count);
+      if (placed?.areaCode) tallyRide(person.rideAreas, placed.areaCode, rep, count);
     }
     for (const acc of [person, role]) {
       // The rides' visits judge the customers they add — a Phoenix CRM ride logs no pharmacy visit.
@@ -584,6 +630,8 @@ function collect(input: RoleFactsInput, lineCode: string | null): RoleFacts {
       ),
       dmSeatId: busiest(acc.seatVisits),
       areaCode: busiest(acc.areaVisits),
+      ridesBySeat: rideTallies(acc.rideSeats),
+      ridesByArea: rideTallies(acc.rideAreas),
     };
   });
   personRows.sort((a, b) => b.fieldVisits + b.ridesLed - (a.fieldVisits + a.ridesLed));

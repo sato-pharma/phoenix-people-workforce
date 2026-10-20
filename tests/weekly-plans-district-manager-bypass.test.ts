@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
 import { getNextEmployeePlanStatus, isDistrictManagerPlanSubmitter } from "../src/lib/weekly-planning/plan-v1.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // District Manager plans skip the CEO stage entirely: the manager's (National Manager's)
 // approval IS the final approval -- it lands straight on final_approved in ONE decision that
@@ -173,11 +174,36 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
 
   // 4. summarizePlans must not count a District Manager's manager_approved plan as CEO-pending
   // work, or the CEO's dashboard badge would advertise a decision that will never be theirs.
+  // Since owner, 2026-10-20 an acting District Manager (DM app role, rep title) whose plan waits on
+  // a second approver is left out too: the DM-ness is title OR app role (isDistrictManagerPlanSubmitter),
+  // fed by the login-row read loadActingDistrictManagerKeys. Read with comments stripped.
+  const serviceCode = stripComments(serviceSource);
   assert.match(
-    serviceSource,
-    /if \(plan\.status === "manager_approved"\) \{\s*\n\s*if \(!isDistrictManagerPlanTitle\(plan\.employeeJobTitle\)\) \{\s*\n\s*summary\.ceoPending \+= 1;/,
-    "summarizePlans must exclude District Manager plans from ceoPending",
+    serviceCode,
+    /if \(plan\.status === "manager_approved"\) \{\s*const isDistrictManagerPlan = isDistrictManagerPlanSubmitter\(\s*plan\.employeeJobTitle,\s*actingDistrictManagerKeys\.has\(normalizeHrId\(plan\.employeeHrId\)\) \? "District Manager" : null,\s*\);\s*if \(\s*!isDistrictManagerPlanTitle\(plan\.employeeJobTitle\) &&\s*!planHasSecondApprover\(plan\.managerHrId, isDistrictManagerPlan\)\s*\) \{\s*summary\.ceoPending \+= 1;/,
+    "summarizePlans must exclude District Manager plans (title, or app role with a second approver) from ceoPending",
   );
+  assert.match(
+    serviceCode,
+    /summary: summarizePlans\(plans, actingDistrictManagerKeys\),/,
+    "the workspace summary must be fed the acting District Manager keys",
+  );
+  assert.match(
+    serviceCode,
+    /loadActingDistrictManagerKeys\(mapped\)\.catch\(\(\) => new Set<string>\(\)\)/,
+    "the acting District Manager read must fail open to the title-only answer",
+  );
+  const actingLoader = serviceCode.slice(
+    serviceCode.indexOf("async function loadActingDistrictManagerKeys("),
+    serviceCode.indexOf("function summarizePlans("),
+  );
+  assert.match(actingLoader, /if \(isDistrictManagerPlanTitle\(plan\.employeeJobTitle\)\) continue;/, "a DM by title needs no role read");
+  assert.match(
+    actingLoader,
+    /if \(!planHasSecondApprover\(plan\.managerHrId, true\)\) continue;/,
+    "only a plan whose manager has a second approver pays a role read",
+  );
+  assert.match(actingLoader, /if \(role === "District Manager"\) keys\.add\(key\);/, "the APP role decides, never the title");
 
   // 5. resolveApproverPlanStage -- the single source of truth mirrored by both the server
   // decide guards and the approvals-hub bucketing -- must return null for the CEO on a

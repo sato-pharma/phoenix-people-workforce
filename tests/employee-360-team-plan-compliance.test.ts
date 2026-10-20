@@ -1,7 +1,10 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
+import { selectTeamLifecycleMembers } from "../src/lib/employee-360/team-lifecycle.ts";
 import { countTeamPlanCompliance, type RepWeekPlanRow } from "../src/lib/employee-360/team-plan-compliance.ts";
+import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // Employee 360's "Plans submitted" / "Plans approved" tiles: a Medical Rep's week is a Phoenix CRM
 // plan, counted once per week by its plan of record (owner, 2026-10-19).
@@ -76,4 +79,68 @@ export function runEmployee360TeamPlanComplianceTests() {
   assert.match(loader, /\.eq\("is_test", false\)/, "and only the real world");
   assert.doesNotMatch(loader, /\.from\("employee_plan_headers"\)/, "the legacy Plans tab holds no Medical Rep plan, so it read 0 for every field team");
   assert.match(loader, /countTeamPlanCompliance\(\{/, "the counting goes through the one pure rule");
+
+  // ── The team is the reps AND the district and regional managers beneath the subject ──
+  // Owner, 2026-10-20: "every single role that is applicable to appear in a module — find it and
+  // show it." A Regional or National Sales Manager's Team Compliance kept Medical Reps only, so the
+  // district managers under him — their probation, weekly plans and no-activity flags — were absent.
+  const person = (hrId: string, jobTitle: string) =>
+    ({ hrId, jobTitle, positionTitle: jobTitle, displayName: hrId, fullName: hrId }) as EmployeeDirectoryRow;
+  const nsm = person("N-1", "National Sales Manager");
+  const rsm = person("R-1", "Regional Manager");
+  const dsm = person("D-1", "District Manager");
+  const rep = person("M-1", "Medical Representative");
+  const pm = person("P-1", "Product Manager");
+  const outsider = person("D-9", "District Manager");
+  const members = selectTeamLifecycleMembers({
+    subjectHrId: "N-1",
+    teamHrIds: ["N-1", "R-1", "D-1", "M-1", "P-1"],
+    employees: [nsm, rsm, dsm, rep, pm, outsider, rep],
+  });
+  assert.deepEqual(members.reps.map((e) => e.hrId), ["M-1"], "the Medical Reps beneath him, each once");
+  assert.deepEqual(
+    members.managers.map((e) => e.hrId),
+    ["R-1", "D-1"],
+    "the regional and district managers beneath a National Sales Manager are on his team",
+  );
+  assert.ok(
+    ![...members.reps, ...members.managers].some((e) => e.hrId === "N-1"),
+    "the subject is never a member of his own team",
+  );
+  assert.ok(
+    ![...members.reps, ...members.managers].some((e) => e.hrId === "D-9"),
+    "a manager outside his subtree is not his",
+  );
+  assert.ok(
+    ![...members.reps, ...members.managers].some((e) => e.hrId === "P-1"),
+    "only the field chain's managers join — a Product Manager is not a district or regional manager",
+  );
+  const forRegional = selectTeamLifecycleMembers({
+    subjectHrId: "r-1",
+    teamHrIds: ["R-1", "D-1", "M-1"],
+    employees: [rsm, dsm, rep],
+  });
+  assert.deepEqual(
+    forRegional.managers.map((e) => e.hrId),
+    ["D-1"],
+    "a Regional Manager's page carries his district managers, and never himself (HR ids compared canonically)",
+  );
+
+  // A manager's Phoenix CRM week climbs a two-step chain: `first_approved` is sent, not approved.
+  assert.deepEqual(
+    countTeamPlanCompliance({ rows: [week({ status: "first_approved" })], repKeyBySeat, repKeyOf }),
+    { submitted: 1, approved: 0 },
+    "a manager week waiting on its second approver counts as submitted, never as approved",
+  );
+  const lifecycleSource = stripComments(loader);
+  assert.match(
+    lifecycleSource,
+    /loadManagerPlansInRange\(\{/,
+    "the managers' weeks are read through the manager-plan adapter",
+  );
+  assert.match(
+    lifecycleSource,
+    /fetchManagerPlanCompliance\(teamManagers, input\.window\)/,
+    "the team managers' weeks are counted beside the reps'",
+  );
 }

@@ -39,6 +39,7 @@ function scope(overrides: Partial<MarketingRoiScope>): MarketingRoiScope {
     visibleProductCodes: null,
     visibleAreaIds: new Set<number>(),
     visibleAreaLineNames: new Set<string>(),
+    visibleLineRouteNames: new Set<string>(),
     canRevealRestricted: false,
     ...overrides,
   };
@@ -119,5 +120,29 @@ export function runMarketingCoverageActualsReliabilityTests() {
     const requests = [request({ id: "a" }), request({ id: "b" })];
     const result = narrowRequestsForFanOut(requests, scope({ isCompanyWide: false, visibleRequesterHrIds: new Set() }));
     assert.deepEqual(result, [], "an empty (but non-null) visible set must narrow to nothing, not fall through to unfiltered");
+  }
+
+  // ── narrowRequestsForFanOut: a National Sales Manager's LINE route (owner, 2026-10-20) is NOT
+  //    pre-narrowed by requester. The route admits a Product Manager's campaign on his line, and the
+  //    products that put it on his line are exactly what has not been fetched yet — narrowing here
+  //    dropped it before the entries loop's line check could ever see it.
+  {
+    const requests = [
+      request({ id: "subtree", requesterHrId: "D-1" }),
+      request({ id: "pm-campaign", requesterHrId: "PM-1" }),
+    ];
+    const result = narrowRequestsForFanOut(
+      requests,
+      scope({
+        role: "National Sales Manager",
+        visibleRequesterHrIds: new Set(["d-1"]),
+        visibleLineRouteNames: new Set(["anti inf"]),
+      }),
+    );
+    assert.deepEqual(
+      result.map((r) => r.id),
+      ["subtree", "pm-campaign"],
+      "a line-route viewer keeps every request for the fan-out; the entries loop decides by line",
+    );
   }
 }

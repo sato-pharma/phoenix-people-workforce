@@ -45,6 +45,7 @@ import type { TrainingManagerAnalytics } from "@/lib/employee-360/tm-analytics";
 import type { PmMarketingSummary } from "@/lib/employee-360/pm-marketing";
 import type { Employee360Comparison, MetricDelta } from "@/lib/employee-360/period";
 import { EMPLOYEE_360_ROLE_META, type Employee360RoleCategory } from "@/lib/employee-360/roles";
+import { planEmployee360Sections } from "@/lib/employee-360/report-sections";
 
 const CHART_COLORS = { regular: "#0ea5e9", campaign: "#f97316", sales: "#10b981", target: "#94a3b8", coverage: "#6366f1" };
 
@@ -761,15 +762,22 @@ export function Employee360View({
 
   // Role-driven section composition. A leader (DM / RM / NSM / PM / TM) leads with
   // what they DELIVER (team sales + coaching/double-visits given); a Medical Rep
-  // leads with their own field work and the received-side coaching/impact.
-  const isLeader = category !== "medical-rep";
-  const showCampaign = category === "medical-rep" || category === "product-manager";
-  // Only Medical Reps submit their own regular visits, so only they log GPS
-  // check-ins. Managers (DM/RM/NSM) and Product Managers coach/join in the field
-  // via double-visits (shown in Leadership Activity) — a GPS check-in section for
-  // them would be empty and misleading, so it is a Medical-Rep authenticity view.
-  const showCheckin = category === "medical-rep";
-  const showReceivedSide = category === "medical-rep";
+  // leads with their own field work and the received-side coaching/impact. The plan
+  // lives in the domain so its tests read the same answer this page renders; a
+  // Regional Manager's report drops any section with nothing to show (owner,
+  // 2026-10-20: "bring him back but do not show empty data, tailor the report on him").
+  const plan = planEmployee360Sections(
+    category,
+    {
+      productiveVisits: summary.productiveVisits,
+      doublesReceived: summary.doublesReceived,
+      leadershipHasData: Boolean(summary.leadership?.hasData),
+      salesHasData: summary.sales.hasData,
+      expensesHaveData: summary.expenses.payroll.hasData || summary.expenses.outstation.hasData,
+    },
+    showExpenses,
+  );
+  const { isLeader, showCampaign, showCheckin, showReceivedSide } = plan;
 
   return (
     <div className={bare ? "space-y-6" : "mx-auto max-w-5xl space-y-6 p-4 sm:p-6"}>
@@ -797,10 +805,10 @@ export function Employee360View({
       </div>
 
       {/* Period-over-period — own field-performance trend (reps). */}
-      {!isLeader && comparison ? <ComparisonStrip comparison={comparison} /> : null}
+      {plan.showComparison && comparison ? <ComparisonStrip comparison={comparison} /> : null}
 
       {/* Leaders lead with what they DELIVER. */}
-      {isLeader && summary.leadership ? (
+      {plan.showLeadership && summary.leadership ? (
         <LeadershipSection leadership={summary.leadership} isTM={category === "training-manager"} suppressCoaching={suppressCoaching} />
       ) : null}
 
@@ -808,7 +816,7 @@ export function Employee360View({
       {tmAnalytics && !suppressCoaching ? <TrainingManagerSection a={tmAnalytics} /> : null}
 
       {/* Team / line sales — leaders show it up top (reps see their own further down). */}
-      {isLeader && category !== "training-manager" ? <SalesSection sales={summary.sales} field={summary.fieldBenchmarks} /> : null}
+      {plan.showTeamSales ? <SalesSection sales={summary.sales} field={summary.fieldBenchmarks} /> : null}
 
       {/* Team development — coaching coverage of a field manager's own reps. */}
       {teamHealth ? <TeamHealthSection teamHealth={teamHealth} /> : null}
@@ -820,6 +828,7 @@ export function Employee360View({
       {pmMarketing ? <MarketingRoiSection m={pmMarketing} /> : null}
 
       {/* Visits & Coverage — reps: full field performance; leaders: their OWN field presence. */}
+      {plan.showOwnVisits ? (
       <Card className={PREMIUM_CARD}>
         <SectionHeader
           icon={Footprints}
@@ -840,7 +849,9 @@ export function Employee360View({
           <KpiTile label="Distinct customers" value={intFmt.format(summary.distinctCustomers)} benchmark={companyAvg(b.distinctCustomers)} />
           <KpiTile label="Regular visits" value={intFmt.format(summary.regularVisits)} benchmark={companyAvg(intFmt.format(b.regularVisits))} />
           <KpiTile label="Campaign visits" value={intFmt.format(summary.campaignVisits)} benchmark={companyAvg(intFmt.format(b.campaignVisits))} />
-          <KpiTile label="Doubles received" value={intFmt.format(summary.doublesReceived)} benchmark={companyAvg(b.doublesReceived)} hint="visits with a manager alongside" />
+          {plan.showDoublesReceived ? (
+            <KpiTile label="Doubles received" value={intFmt.format(summary.doublesReceived)} benchmark={companyAvg(b.doublesReceived)} hint="visits with a manager alongside" />
+          ) : null}
           <KpiTile label="Admin / non-visit" value={intFmt.format(summary.adminVisits + summary.trainingVisits)} hint="meetings, training, leave, etc." />
         </div>
 
@@ -853,7 +864,10 @@ export function Employee360View({
         <div className="mt-5 grid gap-5 sm:grid-cols-2">
           <div>
             <DayOfWeekBars counts={summary.visitDayOfWeek} title="Visits by day of week — Sat–Wed full · Thu AM · Fri off" />
-            <div className="mt-3 text-xs text-slate-400">Single visits {intFmt.format(summary.singleVisits)} · Double visits {intFmt.format(summary.doublesReceived)}</div>
+            <div className="mt-3 text-xs text-slate-400">
+              Single visits {intFmt.format(summary.singleVisits)}
+              {plan.showDoublesReceived ? ` · Double visits ${intFmt.format(summary.doublesReceived)}` : ""}
+            </div>
           </div>
           <div>
             <div className="mb-1.5 text-xs font-bold text-slate-500">Activity mix (all visit types)</div>
@@ -863,6 +877,7 @@ export function Employee360View({
 
         <MostVisitedCustomers top={summary.topCustomers} />
       </Card>
+      ) : null}
 
       {/* Campaign vs Regular */}
       {showCampaign ? (
@@ -984,13 +999,13 @@ export function Employee360View({
       ) : null}
 
       {/* Sales & Achievement — reps see their own here (leaders saw team sales up top). */}
-      {!isLeader ? <SalesSection sales={summary.sales} field={summary.fieldBenchmarks} /> : null}
+      {plan.showOwnSales ? <SalesSection sales={summary.sales} field={summary.fieldBenchmarks} /> : null}
 
       {/* Bricks — the rep's area against the rep's CURRENT list (Medical Reps only; null otherwise). */}
-      {!isLeader && summary.bricks ? <BrickCoverageSection panel={summary.bricks} /> : null}
+      {plan.showBricks && summary.bricks ? <BrickCoverageSection panel={summary.bricks} /> : null}
 
       {/* Expenses & Outstation — leaders only (DM / RM / NSM / PM / TM). */}
-      {showExpenses ? (
+      {plan.showExpenses ? (
         <ExpensesSection
           expenses={summary.expenses}
           activity={{
@@ -1999,24 +2014,31 @@ function TeamHealthSection({ teamHealth }: { teamHealth: TeamHealthSummary }) {
 // are their reps planning, showing up in the field, and who is still on probation.
 function TeamLifecycleSection({ lifecycle }: { lifecycle: TeamLifecycleSummary }) {
   const cov = lifecycle.planCoverageRate;
+  // The team is the Medical Reps AND the district and regional managers beneath this manager
+  // (owner, 2026-10-20), so every count here reads "team", never "reps".
+  const teamCount = lifecycle.repCount + lifecycle.managerCount;
   return (
     <Card className={PREMIUM_CARD}>
       <SectionHeader
         icon={ClipboardCheck}
         tone="amber"
-        sub="The operational health of this manager's reps — weekly-plan compliance, confirmed field no-activity flags, and who is still inside their 90-day probation."
+        sub="The operational health of this manager's team — the Medical Reps and the district and regional managers beneath them: weekly-plan compliance, confirmed field no-activity flags, and who is still inside their 90-day probation."
       >
         Team Compliance — Plans, Field Discipline &amp; Probation
       </SectionHeader>
       {!lifecycle.hasData ? (
-        <EmptyState>No Medical Reps roll up to this manager, so there is no team compliance to show.</EmptyState>
+        <EmptyState>No Medical Rep, district manager or regional manager rolls up to this manager, so there is no team compliance to show.</EmptyState>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <KpiTile
               label="Plans submitted"
-              value={`${intFmt.format(lifecycle.planSubmittedCount)} / ${intFmt.format(lifecycle.repCount)}`}
-              hint={`${Math.round(cov * 100)}% of reps`}
+              value={`${intFmt.format(lifecycle.planSubmittedCount)} / ${intFmt.format(teamCount)}`}
+              hint={
+                lifecycle.managerCount > 0
+                  ? `${Math.round(cov * 100)}% of ${intFmt.format(lifecycle.repCount)} reps and ${intFmt.format(lifecycle.managerCount)} managers`
+                  : `${Math.round(cov * 100)}% of reps`
+              }
               goodWhenAbove={cov >= 0.6}
             />
             <KpiTile label="Plans approved" value={intFmt.format(lifecycle.planApprovedCount)} />

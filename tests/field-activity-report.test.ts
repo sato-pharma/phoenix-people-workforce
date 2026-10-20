@@ -12,6 +12,7 @@ import {
   weekdayOf,
   type FieldActivityCheckinRow,
   type FieldActivityLeaveRow,
+  type FieldActivityOwnVisitRow,
   type FieldActivitySubject,
   type FieldActivityTripRow,
   type FieldActivityVisitRow,
@@ -763,5 +764,60 @@ export async function runFieldActivityReportTests() {
       ["A District Manager", "A Medical Rep"],
       "both other people on a chain visit are named as who he was out with, not just one",
     );
+  }
+
+  // ── A MANAGER'S OWN SINGLE VISITS: listed on the day, counted in nothing (owner, 2026-10-20) ──
+  // His multiple-choice answer: "Show, keep out of reps — his own visits appear under his name in the Visit Report and
+  // the Field Activity day, never in a rep's totals. Still no GPS or photo required."
+  {
+    const own: FieldActivityOwnVisitRow = {
+      comment: "Asked for samples",
+      customerName: "Dr. Hala Mansour",
+      date: "2026-09-20",
+      grade: "A",
+      half: "AM",
+      inVacantTerritory: true,
+      loggedAt: "2026-09-20T11:42:00",
+      planned: true,
+      products: ["Lacto Advanced"],
+      speciality: "Cardiology",
+      where: "12 Mostafa El-Nahas St, Brick Nasr City 3",
+    };
+
+    // A day spent on his own visits alone is a day he WORKED — never "no activity", and never "a field record with no
+    // GPS", since his own visit is asked for no position at all.
+    const alone = run({ ownVisits: [own] });
+    assert.equal(alone.days[0].kind, "own-visits", "a day of own visits alone is named as such");
+    assert.equal(alone.days[0].ownVisits.length, 1, "and the visit is listed on it");
+    assert.equal(alone.days[0].ownVisits[0].loggedAt, "11:42:00", "its clock is the Cairo wall clock the loader handed in, unshifted");
+    assert.equal(alone.days[0].ownVisits[0].customerName, "Dr. Hala Mansour");
+    assert.equal(alone.days[0].countedTotal, 0, "it is counted in none of the day's figures");
+    assert.deepEqual(alone.totals, run().totals, "and the period's totals are exactly what they are without it");
+
+    // Beside a day of calls with a rep: the calls are counted as before, his own visit is listed beside them.
+    const withRep = run({ checkins: [checkin()], ownVisits: [own], visits: [visit()] });
+    const withoutOwn = run({ checkins: [checkin()], visits: [visit()] });
+    assert.equal(withRep.days[0].kind, "field", "a field day stays a field day");
+    assert.equal(withRep.days[0].countedTotal, withoutOwn.days[0].countedTotal, "the day's count is the calls with the rep only");
+    assert.deepEqual(withRep.days[0].counts, withoutOwn.days[0].counts, "AM, PM and pharmacies are untouched");
+    assert.deepEqual(withRep.totals, withoutOwn.totals, "and so is every total");
+    assert.equal(withRep.days[0].ownVisits.length, 1, "while his own visit is still listed");
+    assert.deepEqual(withoutOwn.days[0].ownVisits, [], "a day with none lists none");
+
+    // A visit outside the period is not drawn on a day that is not in it.
+    assert.deepEqual(run({ ownVisits: [{ ...own, date: "2026-09-25" }] }).days[0].ownVisits, [], "an own visit lands on its own date only");
+
+    // The loader reads them through the ONE door out of their table, for the subject alone, and converts the real
+    // instant once.
+    const loader = stripComments(readFileSync("src/lib/field-activity/report.ts", "utf8"));
+    assert.match(loader, /import \{ loadManagerOwnVisitRows \} from "@\/lib\/phoenix-crm\/server\/manager-plan-readers";/, "through the adapter");
+    assert.match(
+      loader,
+      /loadManagerOwnVisitRows\(\{ end: toIso\.slice\(0, 10\), managerHrIds: \[employee\.hrId\], start: fromIso\.slice\(0, 10\) \}\)/,
+      "for the subject the report's access admitted, over the report's period",
+    );
+    assert.match(loader, /loggedAt: cairoWallClockIso\(own\.loggedAt\)/, "the log instant becomes a Cairo wall clock at the loader");
+    assert.doesNotMatch(loader, /phoenix_crm_manager_visits/, "and the loader never names the table");
+    assert.match(loader, /\n\s+ownVisits,\n/, "they are handed to the model as display rows");
   }
 }

@@ -7,6 +7,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { canAccess, normalizeHrIdForAccess, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getContactListAvailability } from "@/lib/crm/contact-lists/service";
+import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
 import { getVacationDayRequestAvailability } from "@/lib/crm/native-visits/vacation-days";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -34,8 +35,20 @@ export const dynamic = "force-dynamic";
  *
  * Seat-continuity aware via isWithinManagerHierarchy, so a district whose manager seat is mid
  * replacement is not silently dropped.
+ *
+ * The National Sales Manager is `line`-scoped, so the subtree rule above gave him an empty tab while
+ * every DSM and RM beneath him had one (owner, 2026-10-20: every role that applies must appear). He
+ * gets his own line's people through the doctor-coverage line scope — the downward rule's chain cut
+ * and seat-rank ladder, plus any line override — so a peer or a manager above him never lands in it.
  */
 async function resolveVisitsTeamHrIds(access: AccessContext): Promise<string[]> {
+  if (access.role === "National Sales Manager") {
+    const viewerKey = normalizeHrIdForAccess(access.hrId);
+    if (!viewerKey) return [];
+    const lineScope = await getDoctorCoverageScope(access);
+    if (lineScope.kind !== "agents") return [];
+    return lineScope.agentHrIds.filter((hrId) => normalizeHrIdForAccess(hrId) !== viewerKey);
+  }
   if (access.scope !== "hierarchy" && access.scope !== "team") return [];
   const viewerKey = normalizeHrIdForAccess(access.hrId);
   if (!viewerKey) return [];

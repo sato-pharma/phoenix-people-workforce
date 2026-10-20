@@ -7,10 +7,10 @@ import { PerformanceReconciliationNote } from "@/components/employee-portal/perf
 import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { Card } from "@/components/ui/card";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
-import { assertPermission, isNationalSalesManager, resolveNavigationMode } from "@/lib/auth/permissions";
+import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
-import { getDsmTeamPerformance } from "@/lib/employee-portal/service";
+import { getMedRepsPerformance } from "@/lib/employee-portal/service";
 import { buildSalesManagerPerformanceGroups } from "@/lib/sales/metrics";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 
@@ -58,9 +58,16 @@ function achievementColorOnDark(pct: number): string {
 const statBorders: Record<string, string> = {
   "Line Target": "border-l-orange-400",
   "Line Sales": "border-l-emerald-400",
+  "Region Target": "border-l-orange-400",
+  "Region Sales": "border-l-emerald-400",
   Achievement: "border-l-amber-400",
   "Eligible Reps": "border-l-sky-400",
 };
+
+// The National Sales Manager reads his line here; the Regional Manager, since 2026-10-20 (owner),
+// reads his own region — the same builder, bounded to his seat's areas. The nav flag
+// (showMedRepsPerformanceTab) offers the page to exactly these two roles.
+const PERFORMANCE_ROLLUP_ROLES = new Set(["National Sales Manager", "Regional Manager"]);
 
 // Print stylesheet + dir="auto" + page-level error boundary are now
 // provided automatically by EmployeePortalPageShell.
@@ -78,20 +85,24 @@ export default async function MedRepsPerformancePage({
     redirect("/overview");
   }
 
-  if (!isNationalSalesManager(access.role)) {
+  if (!PERFORMANCE_ROLLUP_ROLES.has(access.role)) {
     redirect("/employee-portals");
   }
 
   await assertPermission(access, "sales", "read");
 
+  const isRegionView = access.role === "Regional Manager";
+  const scopeWord = isRegionView ? "Region" : "Line";
+  const inScope = isRegionView ? "in your region" : "in line";
+
   const resolvedParams = await searchParams;
   const requestedPeriod = resolvedParams.period?.trim() ?? null;
-  const data = await getDsmTeamPerformance(access, { period: requestedPeriod });
+  const data = await getMedRepsPerformance(access, { period: requestedPeriod });
 
   if (!data) {
     return (
       <EmployeePortalEmptyState
-        message="Unable to load medical reps performance data for your line."
+        message={`Unable to load medical reps performance data for your ${isRegionView ? "region" : "line"}.`}
         title="Performance Data Unavailable"
       />
     );
@@ -123,8 +134,8 @@ export default async function MedRepsPerformancePage({
   const totalMembers = members.length || 1;
 
   const stats = [
-    { label: "Line Target", value: egp(teamTotalTarget) },
-    { label: "Line Sales", value: egp(teamTotalSales) },
+    { label: `${scopeWord} Target`, value: egp(teamTotalTarget) },
+    { label: `${scopeWord} Sales`, value: egp(teamTotalSales) },
     { label: "Achievement", value: `${teamAchievementPercent.toFixed(1)}%` },
     { label: "Eligible Reps", value: `${eligibleCount} / ${teamMemberCount}` },
   ];
@@ -138,7 +149,7 @@ export default async function MedRepsPerformancePage({
       badge="Team Performance"
       description={`${validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"} across ${
         teamMemberCount > 0
-          ? `${teamMemberCount} medical reps in line`
+          ? `${teamMemberCount} medical reps ${inScope}`
           : "no available medical reps data"
       }.`}
       errorBoundaryTitle="Medical Reps Performance unavailable"
@@ -156,18 +167,18 @@ export default async function MedRepsPerformancePage({
                 Medical Reps View
               </span>
               <h2 className="mt-3 break-words text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
-                Line Snapshot
+                {scopeWord} Snapshot
               </h2>
               <p className="mt-1.5 max-w-2xl text-sm font-medium text-slate-500">
                 {validPeriod ? `Period: ${toPeriodLabel(validPeriod)}` : "All periods"}
                 {" | "}
-                {teamMemberCount > 0 ? `${teamMemberCount} medical reps in line` : "No data"}
+                {teamMemberCount > 0 ? `${teamMemberCount} medical reps ${inScope}` : "No data"}
               </p>
             </div>
 
             <div className="w-full rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 text-left sm:w-auto sm:text-right">
               <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
-                Line achievement
+                {scopeWord} achievement
               </p>
               <p className={`mt-1 text-2xl font-bold ${achievementColor(teamAchievementPercent)}`}>
                 {teamAchievementPercent.toFixed(1)}%
@@ -218,7 +229,7 @@ export default async function MedRepsPerformancePage({
           {/* Reconciliation: Line Sales includes Direct Orders + vacant seats no rep below carries */}
           <PerformanceReconciliationNote
             className="mt-3 rounded-md"
-            totalLabel="Line Sales"
+            totalLabel={`${scopeWord} Sales`}
             unattributedSales={unattributedSales}
           />
         </Card>
@@ -314,7 +325,7 @@ export default async function MedRepsPerformancePage({
               )}
               <div className="text-right">
                 <p className="text-phx-3xs font-semibold uppercase tracking-wider text-slate-400">
-                  Line achievement
+                  {scopeWord} achievement
                 </p>
                 <p className={`text-sm font-black ${achievementColorOnDark(teamAchievementPercent)}`}>
                   {teamAchievementPercent.toFixed(1)}%
@@ -384,7 +395,8 @@ export default async function MedRepsPerformancePage({
                         {formatEmployeeDisplayName(group.managerName)}
                       </p>
                       <p className="text-phx-2xs font-medium text-slate-400">
-                        District Manager &middot; {group.members.length} medical reps
+                        {/* A vacant district has no manager to title (owner, 2026-10-20). */}
+                        {group.isVacantSeat ? "Vacant seat" : "District Manager"} &middot; {group.members.length} medical reps
                       </p>
                     </div>
                   </div>

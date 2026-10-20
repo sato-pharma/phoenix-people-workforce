@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { permissionMatrix } from "../src/lib/auth/permissions.ts";
 import { resolveEmployeePortalNavVisibility } from "../src/lib/employee-portal/navigation.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 const VISIBILITY_FN = "resolveEmployeePortalNavVisibility";
 const REQUIRED_ARG_COUNT = 6; // roleLabel, accessRole, line, department, hrId, hasDeviceMapping
@@ -71,15 +73,17 @@ function countTopLevelArgs(argText: string): number {
  * an active device mapping. These tests pin the contract and fail if any app/ caller drops it.
  */
 export function runEmployeePortalFingerprintVisibilityTests() {
-  // 1. Behavioural contract: hasDeviceMapping is what gates the Fingerprint Report tab.
-  const withMapping = resolveEmployeePortalNavVisibility("Manager", "Manager", null, null, "A-3", true);
+  // 1. Behavioural contract: for an ordinary employee, hasDeviceMapping is what gates the
+  //    Fingerprint Report tab. (It was asserted on the "Manager" seat until 2026-10-20, when that
+  //    seat began getting the tab for its team — see the Manager assertion below.)
+  const withMapping = resolveEmployeePortalNavVisibility("Employee", "Employee", null, null, "A-30", true);
   assert.equal(
     withMapping.showFingerprintReportTab,
     true,
     "an active device mapping must surface the Fingerprint Report tab",
   );
 
-  const withoutMapping = resolveEmployeePortalNavVisibility("Manager", "Manager", null, null, "A-3", false);
+  const withoutMapping = resolveEmployeePortalNavVisibility("Employee", "Employee", null, null, "A-30", false);
   assert.equal(
     withoutMapping.showFingerprintReportTab,
     false,
@@ -87,12 +91,24 @@ export function runEmployeePortalFingerprintVisibilityTests() {
   );
 
   // Omitting the argument entirely (the original bug) must also hide it — never crash.
-  const argOmitted = resolveEmployeePortalNavVisibility("Manager", "Manager", null, null, "A-3");
+  const argOmitted = resolveEmployeePortalNavVisibility("Employee", "Employee", null, null, "A-30");
   assert.equal(
     argOmitted.showFingerprintReportTab,
     false,
     "omitting hasDeviceMapping defaults the tab off — which is exactly why callers must pass it",
   );
+
+  // The generic "Manager" seat (the R&D Manager, who has reports) gets the tab without a device
+  // mapping (owner, 2026-10-20): the page admits him by his attendance:read grant and its picker
+  // lists his team. The tab and the page gate must agree, so the grant is asserted with it.
+  const managerSeat = resolveEmployeePortalNavVisibility("Manager", "Manager", null, null, "A-3", false);
+  assert.equal(managerSeat.showFingerprintReportTab, true, "the Manager seat must be offered Attendance Analytics for his team");
+  assert.ok(
+    permissionMatrix.Manager.attendance?.includes("read"),
+    "the Manager seat must hold attendance:read, or the tab would open onto the page's redirect",
+  );
+  const pageSource = stripComments(readFileSync(fileURLToPath(new URL("../app/employee-portals/fingerprint-analytics/page.tsx", import.meta.url)), "utf8"));
+  assert.match(pageSource, /canAccess\(access, "attendance", "read"\)/, "the page's gate is attendance:read — the grant asserted above");
 
   // 2. Source guard: every app/ caller must pass the 6th (hasDeviceMapping) argument.
   const files = walkTsFiles(appDir()).filter((file) =>

@@ -111,6 +111,8 @@ export async function GET(request: Request) {
     const filters: ReportFilterInput = {
       seatId: search.get("seatId"),
       lineCode: search.get("lineCode"),
+      // The screen's "Manager" filter, so the file holds what the screen held (owner, 2026-10-20).
+      managerHrId: search.get("managerHrId"),
       includeTest: search.get("includeTest"),
       from: search.get("from"),
       to: search.get("to"),
@@ -232,6 +234,8 @@ export async function GET(request: Request) {
 
     const chosenLine = scope.lines.find((line) => line.lineCode === filters.lineCode)?.lineName ?? null;
     const chosenTerritory = scope.territories.find((territory) => territory.seatId === filters.seatId)?.name ?? null;
+    const chosenManagerEntry = scope.managers.find((manager) => manager.hrId === filters.managerHrId) ?? null;
+    const chosenManager = chosenManagerEntry ? `${chosenManagerEntry.name} · ${chosenManagerEntry.title}` : null;
 
     const buffer = await buildPhoenixCrmReportsWorkbook({
       adoption,
@@ -255,7 +259,7 @@ export async function GET(request: Request) {
       samples,
       stock,
       tracking,
-      scopeText: [chosenTerritory, chosenLine, `${scope.territories.length} territories in scope`]
+      scopeText: [chosenTerritory, chosenManager, chosenLine, `${scope.territories.length} territories in scope`]
         .filter((part): part is string => Boolean(part))
         .join(" · "),
       viewerName: nameOf(names, viewer.hrId),

@@ -344,6 +344,114 @@ export function runSalesRankingsTests() {
   assert.deepEqual(byName.overall.map((entry) => entry.name), ["Aya Ibrahim"], "one person can be looked up by name");
   assert.equal(byName.seats, null, "a search is a slice too — the seat denominator switches off with it");
 
+  // ── 7b. A manager's reps, found by his NAME (owner, 2026-10-20) ───────────────────────────────
+  // "When filter by manager you find no manager": the board had no manager filter at all, so a
+  // District Manager's reps could not be pulled out of a company board. Choosing a manager keeps
+  // everybody beneath him — a Regional or National Sales Manager reaches the reps two levels down —
+  // and the board still ranks exactly the people it shows; the arithmetic does not move.
+  const managerPeople = peopleOf(
+    ["B-1", { name: "Rep One", managerName: "Dina District" }],
+    ["B-2", { name: "Rep Two", managerName: "Omar District" }],
+    ["B-3", { name: "Rep Three", managerName: "Dina District" }],
+    ["D-1", { name: "Dina District", managerName: "Reda Regional", title: "District Sales Manager" }],
+    ["D-2", { name: "Omar District", managerName: "Nour National", title: "District Sales Manager" }],
+    ["R-1", { name: "Reda Regional", managerName: "Nour National", title: "Regional Manager" }],
+  );
+  const managerRows = [
+    row({ repHrId: "B-1", actualValue: 300, targetValue: 100 }),
+    row({ repHrId: "B-2", actualValue: 150, targetValue: 100 }),
+    row({ repHrId: "B-3", actualValue: 200, targetValue: 100 }),
+  ];
+  const byDistrictManager = boardsOf({ rows: managerRows, people: managerPeople, filters: { manager: "Dina District" } });
+  assert.deepEqual(byDistrictManager.overall.map((entry) => entry.hrId), ["B-1", "B-3"], "a District Manager's filter keeps his own reps");
+  assert.deepEqual(byDistrictManager.overall.map((entry) => entry.rank), [1, 2], "the filtered board ranks exactly the people it shows");
+  assert.equal(byDistrictManager.seats, null, "a manager filter is a slice — the seat denominator switches off with it");
+  assert.deepEqual(
+    boardsOf({ rows: managerRows, people: managerPeople, filters: { manager: "Reda Regional" } }).overall.map((entry) => entry.hrId),
+    ["B-1", "B-3"],
+    "a Regional Manager reaches the reps under his District Managers",
+  );
+  assert.deepEqual(
+    boardsOf({ rows: managerRows, people: managerPeople, filters: { manager: "Nour National" } }).overall.map((entry) => entry.hrId),
+    ["B-1", "B-3", "B-2"],
+    "a National Sales Manager reaches every rep on his chain, at any depth",
+  );
+  const unfilteredManagers = boardsOf({ rows: managerRows, people: managerPeople });
+  assert.equal(
+    byDistrictManager.overall.find((entry) => entry.hrId === "B-3")?.achievementPercent,
+    unfilteredManagers.overall.find((entry) => entry.hrId === "B-3")?.achievementPercent,
+    "the manager filter changes who is shown, never a rep's own achievement",
+  );
+  assert.equal(unfilteredManagers.overall.length, 3, "with no manager chosen, everybody is ranked");
+
+  // ── 7c. The District Manager board (owner, 2026-10-20) ────────────────────────────────────────
+  // "A second board ranks the District Managers by their team's sales against target, read from the
+  // published Monthly Closing." His figure is the closing's own district grain (vs-target's
+  // rollupByDm → totalRows): every row carrying his name as district manager, VALUES only, graded
+  // the way the closing divides — so a vacant area in his district and an untargeted product in a
+  // targeted month both count, exactly as the closing counts them, though the rep board shows neither.
+  const dmRow = (dmHrId: string | null, partial: Parameters<typeof row>[0]): AchievementRow => ({ ...row(partial), dmHrId });
+  const dmRows = [
+    dmRow("D-1", { repHrId: "B-1", actualValue: 300, targetValue: 100 }),
+    dmRow("D-1", { repHrId: "B-3", actualValue: 100, targetValue: 100 }),
+    dmRow("D-1", { repHrId: "B-3", actualValue: 60, targetValue: null }),
+    dmRow("D-2", { repHrId: "B-2", actualValue: 150, targetValue: 100 }),
+    // A vacant area in Omar's district: no rep seat, so no place on the rep board — but his team's.
+    dmRow("D-2", { repHrId: "", actualValue: 50, targetValue: 100 }),
+    // No district manager on the row: it belongs to nobody on this board.
+    dmRow(null, { repHrId: "B-2", actualValue: 999, targetValue: 1 }),
+    // July, for the trend: Omar led then.
+    dmRow("D-1", { repHrId: "B-1", period: "2026-07", actualValue: 50, targetValue: 100 }),
+    dmRow("D-2", { repHrId: "B-2", period: "2026-07", actualValue: 90, targetValue: 100 }),
+  ];
+  const dmBoards = boardsOf({ rows: dmRows, people: managerPeople, periods: ["2026-08"], priorPeriods: ["2026-07"] });
+  assert.deepEqual(
+    dmBoards.districtManagers.map((entry) => entry.name),
+    ["Dina District", "Omar District"],
+    "the District Managers are ranked by their team's achievement, named — never by an HR code",
+  );
+  const dina = dmBoards.districtManagers[0];
+  const omar = dmBoards.districtManagers[1];
+  assert.equal(dina.salesValue, 460, "a district's sales are every closing row under its manager, by VALUE");
+  assert.equal(dina.targetValue, 200, "a district's target is the closing's target VALUE for those rows");
+  assert.equal(Math.round(dina.achievementPercent), 230, "inside a targeted month every pound counts, as the closing divides");
+  assert.equal(omar.salesValue, 200, "a vacant area's sales stay with the district manager who owns it");
+  assert.equal(Math.round(omar.achievementPercent), 100, "team sales VALUE divided by team target VALUE");
+  assert.deepEqual([dina.rank, omar.rank], [1, 2], "ranked by achievement, best first");
+  assert.equal(dina.trend, 1, "Dina was second in July and is first now");
+  assert.equal(omar.trend, -1, "Omar was first in July and is second now");
+  assert.ok(
+    !dmBoards.districtManagers.some((entry) => entry.salesValue >= 999),
+    "a row with no district manager on it is never credited to somebody",
+  );
+  assert.deepEqual(
+    boardsOf({ rows: dmRows, people: managerPeople, periods: ["2026-08"], filters: { manager: "Reda Regional" } })
+      .districtManagers.map((entry) => entry.name),
+    ["Dina District"],
+    "a Regional Manager's filter keeps the District Managers beneath him",
+  );
+  assert.deepEqual(
+    boardsOf({ rows: dmRows, people: managerPeople, periods: ["2026-08"], filters: { query: "omar" } })
+      .districtManagers.map((entry) => entry.rank),
+    [1],
+    "the District Manager board ranks exactly the managers it shows",
+  );
+  assert.deepEqual(
+    boardsOf({
+      rows: dmRows,
+      people: managerPeople,
+      periods: ["2026-08"],
+      activeKeys: new Set(["B1", "B2", "B3", "D1", "R1"]),
+    }).districtManagers.map((entry) => entry.name),
+    ["Dina District"],
+    "a District Manager who has left comes off before the ranking",
+  );
+  assert.deepEqual(
+    boardsOf({ rows: dmRows, people: managerPeople, periods: ["2026-08"], filters: { lines: ["pedia"] } }).districtManagers,
+    [],
+    "the line filter narrows the money — a CNS district has nothing on Pedia",
+  );
+
   // ── 8. The company seat count, and the move since the window before ──────────────────────────
   assert.equal(
     boardsOf({ rows: [row({ repHrId: "B-1", actualValue: 300, targetValue: 100 })] }).seats,
@@ -414,6 +522,15 @@ export function runSalesRankingsTests() {
       "board starts disagreeing with the rep's own badge",
   );
 
+  assert.ok(
+    /manager: String\(params\.manager \?\? ""\)\.trim\(\)/.test(loader) && loader.includes("managerFilterOptions("),
+    "the loader must read the manager filter from the URL and offer the managers above the board by name",
+  );
+  assert.ok(
+    /managerOptions: managerNames\.map\(\(name\) => \(\{ value: name, label: name \}\)\)/.test(loader),
+    "a manager option is his NAME on both sides — never an HR code (owner rule)",
+  );
+
   // ── 10. The page itself: its gate, and the two locked looks ──────────────────────────────────
   const page = stripComments(readFileSync("app/(admin)/sales/rankings/page.tsx", "utf8"));
   assert.ok(
@@ -426,6 +543,19 @@ export function runSalesRankingsTests() {
   );
 
   const ui = stripComments(readFileSync("src/components/sales/rankings/rankings-explorer.tsx", "utf8"));
+  assert.ok(
+    ui.includes('params.set("manager", manager.trim())') && ui.includes("data.managerOptions.map("),
+    "the explorer must offer the manager filter and carry it in the URL like every other filter",
+  );
+  assert.ok(
+    ui.includes("<BoardTable entries={data.boards.districtManagers}"),
+    "the District Manager board is drawn by the same BoardTable as the rep board — one design, one fit",
+  );
+  const rankingsSource = stripComments(readFileSync("src/lib/sales/rankings.ts", "utf8"));
+  assert.ok(
+    rankingsSource.includes("rollupByDm(") && !/actualUnits|targetUnits/.test(rankingsSource),
+    "the District Manager figure is the closing's own district roll-up, by value — never units, never re-derived",
+  );
   assert.ok(!/\brounded-/.test(ui), "THE SQUARE-EDGE GOLDEN RULE — no rounded corners anywhere on this page");
   assert.ok(
     !/\btruncate\b/.test(ui) && !ui.includes("text-ellipsis") && !ui.includes("…"),

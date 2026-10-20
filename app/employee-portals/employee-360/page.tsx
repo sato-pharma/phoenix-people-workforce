@@ -19,6 +19,7 @@ import {
   resolveEmployee360VisibleRows,
 } from "@/lib/employee-360/access";
 import { getEmployee360Profile } from "@/lib/employee-360/deep-service";
+import { buildEmployee360ListItems } from "@/lib/employee-360/list-items";
 import { getEmployee360TeamHealth, type TeamHealthSummary } from "@/lib/employee-360/team-health";
 import { getEmployee360TeamLifecycle, type TeamLifecycleSummary } from "@/lib/employee-360/team-lifecycle";
 import { getTrainingManagerAnalytics, type TrainingManagerAnalytics } from "@/lib/employee-360/tm-analytics";
@@ -76,25 +77,8 @@ async function buildEmployee360Picker(
   try {
     const activeRows = await getEmployeeDirectoryRows({ includeInactive: false });
     const visibleRows = await resolveEmployee360VisibleRows(activeRows, access);
-    return visibleRows
-      .map((row) => {
-        const category = resolveEmployee360RoleCategory(row.jobTitle ?? row.positionTitle);
-        if (!category) return null;
-        return {
-          hrId: row.hrId,
-          displayName: row.displayName || row.fullName,
-          jobTitle: row.jobTitle,
-          // Canonical line spelling — collapses the duplicate "Anti Inf" / "Anti infective" master rows.
-          lineName: bridgeEmployeeLineToOfficial(row.lineName),
-          areaName: row.areaName,
-          regionName: row.regionName,
-          managerName: row.managerName,
-          employmentStatus: row.employmentStatus,
-          category,
-        } satisfies Employee360ListItem;
-      })
-      .filter((e): e is Employee360ListItem => e !== null)
-      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    // The shared card builder: canonical line spelling, and each card's manager chain for the filter.
+    return buildEmployee360ListItems(visibleRows, activeRows);
   } catch (rosterError) {
     logPortalFailure(
       { route: PORTAL_BASE_PATH, module: "employee-360-team-roster", role: access.role, hrId: viewerHrId },
@@ -130,25 +114,7 @@ export default async function EmployeePortalEmployee360Page({
   if ((!target || !roleCategory) && isCompany360Viewer(access)) {
     const activeRows = await getEmployeeDirectoryRows({ includeInactive: false });
     const visibleRows = await resolveEmployee360VisibleRows(activeRows, access);
-    const employees: Employee360ListItem[] = visibleRows
-      .map((row) => {
-        const category = resolveEmployee360RoleCategory(row.jobTitle ?? row.positionTitle);
-        if (!category) return null;
-        return {
-          hrId: row.hrId,
-          displayName: row.displayName || row.fullName,
-          jobTitle: row.jobTitle,
-          // Canonical line spelling — collapses the duplicate "Anti Inf" / "Anti infective" master rows.
-          lineName: bridgeEmployeeLineToOfficial(row.lineName),
-          areaName: row.areaName,
-          regionName: row.regionName,
-          managerName: row.managerName,
-          employmentStatus: row.employmentStatus,
-          category,
-        } satisfies Employee360ListItem;
-      })
-      .filter((e): e is Employee360ListItem => e !== null)
-      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    const employees: Employee360ListItem[] = buildEmployee360ListItems(visibleRows, activeRows);
 
     return (
       <Shell description="Company-wide field-force directory." title="Employee 360">
@@ -350,6 +316,7 @@ export default async function EmployeePortalEmployee360Page({
   ) {
     try {
       teamLifecycle = await getEmployee360TeamLifecycle({
+        subjectHrId: target.hrId,
         teamHrIds,
         employees: rows,
         window: { from: period.current.from, to: period.current.to },

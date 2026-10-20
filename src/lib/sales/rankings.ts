@@ -38,9 +38,10 @@
 
 import { periodLabel, windowLabel } from "@/lib/business-review/period-format";
 import type { RepEstablishment } from "@/lib/employee-portal/rep-establishment";
+import { buildManagerChain, matchesManagerFilter } from "@/lib/org/manager-filter";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 import { lineName } from "@/lib/sales/monthly-targets";
-import { isRowPublished } from "@/lib/sales/vs-target";
+import { isRowPublished, rollupByDm, type VsTargetNode } from "@/lib/sales/vs-target";
 
 /** How a window is chosen. `published` is every published month there is — the cumulative board. */
 export type RankingWindowMode = "month" | "quarter" | "semester" | "year" | "published";
@@ -213,9 +214,15 @@ export type RankingFilters = {
   regions: readonly string[];
   /** A name (or HR id) typed into the search box. Empty means everybody. */
   query: string;
+  /**
+   * A manager's NAME. Keeps everybody beneath him — a District Manager's reps, a Regional or
+   * National Sales Manager's whole chain (src/lib/org/manager-filter.ts). Empty or absent means
+   * everybody. Added so a manager's reps can be found on the board (owner, 2026-10-20).
+   */
+  manager?: string;
 };
 
-export const EMPTY_RANKING_FILTERS: RankingFilters = { lines: [], titles: [], regions: [], query: "" };
+export const EMPTY_RANKING_FILTERS: RankingFilters = { lines: [], titles: [], regions: [], query: "", manager: "" };
 
 export type RankingEntry = {
   key: string;
@@ -257,9 +264,14 @@ export type RankingBoards = {
   /** How many people the window could actually score. */
   ranked: number;
   /**
+   * The District Managers, ranked by their TEAM's achievement — the closing's own district grain,
+   * not a sum of this board's rows (see districtManagerBoard). Owner, 2026-10-20.
+   */
+  districtManagers: RankingEntry[];
+  /**
    * Rep seats behind the board — the organogram's own count, vacancies included (owner rule).
    *
-   * NULL whenever a title, region or name filter is on: the seat model counts REP seats, so it
+   * NULL whenever a title, region, manager or name filter is on: the seat model counts REP seats, so it
    * answers a question the filtered board is no longer asking. The board then says how many it
    * ranked, which is true of any slice.
    */
@@ -413,6 +425,12 @@ export function buildRankingBoards(options: {
   const titles = new Set(filters.titles.map((title) => title.toLowerCase()));
   const regions = new Set(filters.regions.map((region) => region.toLowerCase()));
   const query = filters.query.trim().toLowerCase();
+  const manager = String(filters.manager ?? "").trim();
+  // The chain is read from every person the board knows — managers included, though they carry no
+  // sales of their own — so a manager two levels up still finds the reps at the bottom.
+  const chain = manager
+    ? buildManagerChain([...options.people.values()].map((person) => ({ employeeName: person.name, managerName: person.managerName })))
+    : null;
   const active = options.activeKeys && options.activeKeys.size > 0 ? options.activeKeys : null;
 
   const admits = (key: string, lineCode: string): boolean => {
@@ -421,6 +439,7 @@ export function buildRankingBoards(options: {
     const person = options.people.get(key);
     if (titles.size > 0 && !titles.has((person?.title ?? "").toLowerCase())) return false;
     if (regions.size > 0 && !regions.has((person?.regionName ?? "").toLowerCase())) return false;
+    if (chain && !matchesManagerFilter({ employeeName: person?.name, managerName: person?.managerName }, manager, chain)) return false;
     if (query) {
       const haystack = `${person?.name ?? ""} ${person?.hrId ?? key}`.toLowerCase();
       if (!haystack.includes(query)) return false;
@@ -445,7 +464,7 @@ export function buildRankingBoards(options: {
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([lineCode, totals]) => {
       const seat = options.establishment?.byLine.get(lineCode) ?? null;
-      const unsliced = titles.size === 0 && regions.size === 0 && !query;
+      const unsliced = titles.size === 0 && regions.size === 0 && !query && !manager;
       return {
         lineCode,
         lineLabel: lineName(lineCode),
@@ -463,7 +482,7 @@ export function buildRankingBoards(options: {
   // The seat count answers "out of how many rep seats" — which only means anything while the board
   // still IS the rep population. Any slice narrower than a line turns it off rather than quoting a
   // denominator the board no longer matches.
-  const unsliced = titles.size === 0 && regions.size === 0 && !query;
+  const unsliced = titles.size === 0 && regions.size === 0 && !query && !manager;
   let seats: number | null = null;
   let vacant: number | null = null;
   if (unsliced && options.establishment) {
@@ -484,5 +503,119 @@ export function buildRankingBoards(options: {
     }
   }
 
-  return { overall, byLine, ranked: overall.length, seats, vacant };
+  const districtManagers = districtManagerBoard({
+    rows: options.rows,
+    priorRows: options.priorRows,
+    publishedKeys: options.publishedKeys,
+    periods: options.periods,
+    priorPeriods: options.priorPeriods,
+    people: options.people,
+    active,
+    lines,
+    admitsPerson: (key) => {
+      const person = options.people.get(key);
+      if (regions.size > 0 && !regions.has((person?.regionName ?? "").toLowerCase())) return false;
+      if (chain && !matchesManagerFilter({ employeeName: person?.name, managerName: person?.managerName }, manager, chain)) return false;
+      if (query) {
+        const haystack = `${person?.name ?? ""} ${person?.hrId ?? key}`.toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+      return true;
+    },
+  });
+
+  return { overall, byLine, ranked: overall.length, districtManagers, seats, vacant };
+}
+
+/**
+ * THE DISTRICT MANAGER BOARD (owner, 2026-10-20: "a second board ranks the District Managers by
+ * their team's sales against target, read from the published Monthly Closing").
+ *
+ * A District Manager's figure is the closing's OWN district grain — `rollupByDm`, the managers level
+ * of /sales/vs-target — over the same published rows the rep board reads: his team's sales VALUE
+ * divided by his team's target VALUE, graded the way the closing divides (`totalRows`). Never a sum
+ * of the rep board's percentages and never units, so a manager's place cannot disagree with the
+ * closing his team is reported in. Ranked by that achievement, then by full sales, like every board.
+ *
+ * A row with no District Manager on it (a vacant district seat) belongs to nobody here, as a row
+ * with no rep belongs to nobody on the rep board, and a manager who has left comes off before the
+ * ranking. The line filter narrows the MONEY; the region, manager and name filters choose WHICH
+ * District Managers stand on the board, and it ranks exactly those. The title filter is the rep
+ * board's — its options are the reps' titles — so it does not reach this one.
+ */
+function districtManagerBoard(options: {
+  rows: readonly AchievementRow[];
+  priorRows: readonly AchievementRow[];
+  publishedKeys: ReadonlySet<string>;
+  periods: readonly string[];
+  priorPeriods: readonly string[];
+  people: ReadonlyMap<string, RankingPerson>;
+  active: ReadonlySet<string> | null;
+  lines: ReadonlySet<string>;
+  admitsPerson: (key: string) => boolean;
+}): RankingEntry[] {
+  const scope = (source: readonly AchievementRow[], periods: readonly string[]): AchievementRow[] => {
+    const months = new Set(periods);
+    return source.filter((row) => {
+      if (!months.has(row.period) || !isRowPublished(row, options.publishedKeys)) return false;
+      if (!row.lineCode || (options.lines.size > 0 && !options.lines.has(row.lineCode))) return false;
+      const key = rankingHrKey(row.dmHrId);
+      if (!key) return false;
+      return !options.active || options.active.has(key);
+    });
+  };
+  const nameOf = (hrId: string) => options.people.get(rankingHrKey(hrId))?.name ?? "District Manager";
+  const names = { lineName, regionName: (code: string) => code, areaName: (code: string) => code, employeeName: nameOf };
+  const ranked = (nodes: VsTargetNode[]) =>
+    nodes
+      .filter((node) => node.current.targetValue > 0 && node.current.achievementValue != null)
+      .filter((node) => options.admitsPerson(rankingHrKey(node.key)))
+      .sort(
+        (left, right) =>
+          (right.current.achievementValue ?? 0) - (left.current.achievementValue ?? 0) ||
+          right.current.actualValue - left.current.actualValue,
+      );
+
+  const currentRows = scope(options.rows, options.periods);
+  const current = ranked(rollupByDm(currentRows, null, names));
+  const priorRanks = new Map<string, number>();
+  if (options.priorPeriods.length > 0) {
+    ranked(rollupByDm(scope(options.priorRows, options.priorPeriods), null, names)).forEach((node, index) =>
+      priorRanks.set(rankingHrKey(node.key), index + 1),
+    );
+  }
+
+  // His row names the line carrying most of his team's money, as a rep's row does.
+  const lineWeight = new Map<string, Map<string, number>>();
+  for (const row of currentRows) {
+    const key = rankingHrKey(row.dmHrId);
+    let weights = lineWeight.get(key);
+    if (!weights) lineWeight.set(key, (weights = new Map<string, number>()));
+    weights.set(row.lineCode ?? "", (weights.get(row.lineCode ?? "") ?? 0) + row.actualValue);
+  }
+
+  return current.map((node, index) => {
+    const key = rankingHrKey(node.key);
+    const person = options.people.get(key);
+    const lineCode = [...(lineWeight.get(key)?.entries() ?? [])].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+    const rank = index + 1;
+    const priorRank = options.priorPeriods.length > 0 ? priorRanks.get(key) ?? null : null;
+    return {
+      key,
+      hrId: person?.hrId ?? node.key,
+      name: person?.name ?? node.name,
+      title: person?.title ?? "District Manager",
+      lineCode,
+      lineLabel: lineName(lineCode),
+      regionName: person?.regionName ?? "",
+      hasPhoto: person?.hasPhoto ?? false,
+      rank,
+      achievementPercent: (node.current.achievementValue ?? 0) * 100,
+      salesValue: node.current.actualValue,
+      coveredValue: node.current.gradedActualValue,
+      targetValue: node.current.targetValue,
+      priorRank,
+      trend: priorRank == null ? null : priorRank - rank,
+    };
+  });
 }

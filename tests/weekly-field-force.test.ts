@@ -351,4 +351,44 @@ export function runWeeklyFieldForceTests() {
     100,
     "with no seat model the money is still counted — it is unattributed, not lost",
   );
+
+  // ── 6. an area only a district manager covers is HIS row, never "Not attributed" ─────────────
+  // Owner, 2026-10-20, asked and answering "Show under his name": Karim Selim's CNS district owns
+  // area AB7 with no rep seat under it. Its sales are his row; a vacant district's area and an area
+  // nobody owns stay in the residue; the line total does not move.
+  const withManagerArea = selectFieldForceSeats(SEATS, nameOf, [
+    { line_code: "cns", area_code: "AB7", dm_seat_id: "SEAT-CNS-DM-AB" },
+    { line_code: "cns", area_code: "AB1", dm_seat_id: "SEAT-CNS-DM-AB" },
+  ]);
+  assert.equal(
+    withManagerArea.managerOnlyAreas?.get(fieldForceKey("CNS", "AB7"))?.managerName,
+    "Karim Selim",
+    "the district manager is named on his rep-less area",
+  );
+  assert.equal(
+    withManagerArea.managerOnlyAreas?.has(fieldForceKey("CNS", "AB1")),
+    false,
+    "an area with a rep seat stays the rep's",
+  );
+  const managerGrid = buildPortalWeeklyFieldForce({
+    rows: [
+      factRow({ areaCode: "AB7", salesValue: 70, salesUnits: 7 }),
+      factRow({ areaCode: "ZZ9", salesValue: 30, salesUnits: 3 }),
+      factRow({ areaCode: "AB1", salesValue: 50, salesUnits: 5 }),
+    ],
+    areaSplit: null,
+    seatIndex: withManagerArea,
+    depotWeekGaps: [],
+  });
+  const managerRow = managerGrid.reps.find((row) => row.kind === "manager");
+  assert.equal(managerRow?.label, "Karim Selim — AB7, no rep seat");
+  assert.equal(managerRow?.managerName, "Karim Selim", "it groups under him on a National Sales Manager's screen");
+  assert.equal(managerRow?.value, 70);
+  assert.equal(managerGrid.totals.unattributedValue, 30, "only the area nobody owns is left unattributed");
+  assert.equal(managerGrid.totals.value, 150, "the line total is unchanged");
+  assert.equal(
+    managerGrid.totals.exactValue + managerGrid.totals.allocatedValue + managerGrid.totals.unattributedValue,
+    managerGrid.totals.value,
+    "the three attribution buckets still partition the total",
+  );
 }

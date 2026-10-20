@@ -7,7 +7,10 @@
 //
 // Scope comes free: `getMarketingRoiReport` already resolves the viewer's own visibility
 // (`resolveMarketingRoiScope`) — company-wide for the oversight roles, the hierarchy subtree for a
-// manager, own seat plus his own area AND line for a Medical Rep. Nothing here widens it.
+// manager, own seat plus his own area AND line for a Medical Rep, and for a National Sales Manager
+// his subtree plus every campaign on his line whoever ran it (owner, 2026-10-20), so the Product
+// and Group Product Managers who spend on his line get a row of their own on his Scorecard.
+// Nothing here widens it.
 //
 // 🔴 THE STATUS LIST IS PASSED EXPLICITLY, EVERY TIME. An empty list is NOT "everything": the
 // engine reads it as its executive default, approved money only (`resolveRoiStatusScope`), which

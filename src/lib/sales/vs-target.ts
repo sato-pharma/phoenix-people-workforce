@@ -1084,6 +1084,89 @@ export function rollupByDm(rows: AchievementRow[], prior: AchievementRow[] | nul
 }
 
 /**
+ * Add finished totals together and recompute the percentages from the sums — never an average of
+ * percentages (see addRow). Every field is a plain sum, so the result is exactly what the parts say.
+ */
+function sumTotals(parts: readonly VsTargetTotals[]): VsTargetTotals {
+  const total = emptyTotals();
+  for (const part of parts) {
+    total.actualValue += part.actualValue;
+    total.actualUnits += part.actualUnits;
+    total.targetValue += part.targetValue;
+    total.targetUnits += part.targetUnits;
+    total.gradedActualValue += part.gradedActualValue;
+    total.gradedActualUnits += part.gradedActualUnits;
+    total.coveredActualValue += part.coveredActualValue;
+    total.coveredActualUnits += part.coveredActualUnits;
+    total.uncoveredActualValue += part.uncoveredActualValue;
+    total.coveredKeys += part.coveredKeys;
+    total.uncoveredKeys += part.uncoveredKeys;
+  }
+  return sealTotals(total);
+}
+
+/**
+ * Per Regional Manager (owner, 2026-10-20: Sales vs Target had no Regional Manager level).
+ *
+ * A Regional Manager's node is the SUM of the district-manager nodes beneath him and nothing else.
+ * Rows are grouped by the Regional Manager `regionalManagerOf` names (the occupied RSM seat over the
+ * row's DM seat), then by district manager inside him; each district manager's slice is totalled
+ * exactly as rollupByDm totals it, and his node adds those totals up — sales value, target value and
+ * the graded actual alike — so his % is the one his districts' sums give, recomputed, never averaged.
+ * No figure is re-derived: every number is a Monthly Closing value already on a row.
+ *
+ * A row with no seated district manager (a vacant district) is left out on purpose: it has no
+ * district-manager node either, so including it would make his row read more than the districts the
+ * District Managers level lists. Pure — the caller supplies the seat lookup.
+ */
+export function rollupByRegionalManager(
+  rows: AchievementRow[],
+  priorRows: AchievementRow[] | null,
+  names: VsTargetNames,
+  regionalManagerOf: (row: AchievementRow) => string | null,
+): VsTargetNode[] {
+  const fold = (source: AchievementRow[]) => {
+    const grouped = new Map<string, Map<string, AchievementRow[]>>();
+    for (const row of source) {
+      if (!row.dmHrId) continue;
+      const regionalManager = regionalManagerOf(row);
+      if (!regionalManager) continue;
+      let byDm = grouped.get(regionalManager);
+      if (!byDm) {
+        byDm = new Map();
+        grouped.set(regionalManager, byDm);
+      }
+      const bucket = byDm.get(row.dmHrId);
+      if (bucket) bucket.push(row);
+      else byDm.set(row.dmHrId, [row]);
+    }
+    const totals = new Map<string, VsTargetTotals>();
+    for (const [regionalManager, byDm] of grouped) {
+      totals.set(regionalManager, sumTotals([...byDm.values()].map((dmRows) => totalRows(dmRows))));
+    }
+    return totals;
+  };
+
+  const currentTotals = fold(rows);
+  const priorTotals = priorRows ? fold(priorRows) : null;
+
+  return [...currentTotals.entries()]
+    .map(([key, current]) => {
+      const prior = priorTotals ? priorTotals.get(key) ?? emptyTotals() : null;
+      return {
+        key,
+        name: names.employeeName(key),
+        // The same level the District Managers roll-up carries: a person-level node.
+        level: "rep" as const,
+        current,
+        prior,
+        growth: growthOf(current, prior),
+      };
+    })
+    .sort((left, right) => right.current.actualValue - left.current.actualValue);
+}
+
+/**
  * Per product, across whatever scope the caller already filtered to.
  *
  * The first build had no product dimension at all, which left the page with a one-bar

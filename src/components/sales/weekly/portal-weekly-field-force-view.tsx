@@ -914,6 +914,7 @@ function WeekChip({
 
 function toneOf(rep: FieldForceRep): { chip: string; bar: string } {
   if (rep.kind === "vacant") return { chip: "bg-amber-100 text-amber-700", bar: "bg-amber-400" };
+  if (rep.kind === "manager") return { chip: "bg-sky-100 text-sky-700", bar: "bg-sky-400" };
   if (rep.kind === "unattributed") return { chip: "bg-slate-200 text-slate-500", bar: "bg-slate-300" };
   return { chip: "bg-orange-100 text-orange-600", bar: "bg-orange-400" };
 }

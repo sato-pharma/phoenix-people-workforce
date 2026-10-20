@@ -261,6 +261,23 @@ export type MarketingRoiScope = {
    * Empty for every seat but the Medical Rep, exactly like `visibleAreaIds`.
    */
   visibleAreaLineNames: Set<string>;
+  /**
+   * The LINE route, National Sales Manager only (owner, 2026-10-20: "He sees every campaign on his
+   * line, whoever ran it") — the viewer's own line plus every line on his `line_scope_override`,
+   * lower-cased.
+   *
+   * The requester route above walks the manager chain, and the Product Managers, Group Product
+   * Managers and the Marketing Manager sit in the Marketing department under the Marketing
+   * Manager, so not one of their campaigns ever reached the NSM whose line they were spent on. This
+   * is the second door beside it: a request is ALSO his when it is on one of these lines, whoever
+   * raised it. A request's lines are the requester's seat line plus every promoted product's line
+   * (all of them, never the confidential-masked list), so a request spanning two lines reaches the
+   * NSM of each. An unknown line is never his. The decision is `lineRouteAdmitsRequest`.
+   *
+   * It widens WHICH requests he sees, never which product names are revealed — `canRevealRestricted`
+   * is untouched. Empty for every other seat, so the route is inert for them.
+   */
+  visibleLineRouteNames: Set<string>;
   /** the viewer may opt-in to reveal confidential products. */
   canRevealRestricted: boolean;
 };

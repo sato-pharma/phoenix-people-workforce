@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import type { AccessContext, PhoenixRole } from "../src/lib/auth/permissions.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
@@ -6,9 +7,13 @@ import {
   buildEmployee360Scope,
   canViewEmployee360Subject,
   isCompany360Viewer,
+  isEmployee360ExcludedSubject,
   resolveEmployee360VisibleRows,
   type Employee360Scope,
 } from "../src/lib/employee-360/access.ts";
+import { planEmployee360Sections, type Employee360SectionSignals } from "../src/lib/employee-360/report-sections.ts";
+import { resolveEmployee360RoleCategory } from "../src/lib/employee-360/roles.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // Locks the owner-confirmed Employee 360 viewer scope (2026-07-18):
 //   CEO / SFE Manager / Super Admin → whole company
@@ -198,8 +203,8 @@ export async function runEmployee360AccessTests() {
   // (mirrors NSM/PM/GPM — added 2026-08-09). Real case: a Marketing Manager sits on
   // the Head Office line (4) while the Product/Group Product Managers they oversee
   // sit on the real business lines, so without an override they match nobody; with
-  // one, they must see their own-department PM on that line but never a Sales
-  // employee who merely happens to share the same overridden line number. ──
+  // one, they see their own-department PM on that line AND (owner, 2026-10-20) the
+  // Sales field force of that line — but never a non-field Sales person on it. ──
   const mktMgr = row("MKM-1", "Marketing Manager", null, 4, 2); // Head-Office line, Marketing dept
   const mktPm = row("PM-M1", "Product Manager", "MKM-1", 2, 2); // Marketing PM, line-2 (collides with NSM-P's Sales line-2)
   const rowsWithMarketing = [...rows, mktMgr, mktPm];
@@ -230,9 +235,192 @@ export async function runEmployee360AccessTests() {
     true,
     "Marketing Manager with a line override sees their own Marketing PM on that line",
   );
+  // Owner, 2026-10-20 ("when you filter by manager you find no manager … every single role that
+  // is applicable to appear in a module — find it and show it"): the field force a Marketing-
+  // department line viewer oversees is in SALES, so the department-safe rule left these viewers
+  // with nobody to open. A field-force subject on the overridden line is admitted across
+  // departments; a NON-field Sales person on that line is still refused.
   assert.equal(
     canViewEmployee360Subject(mktMgrCtx, rows.find((r) => r.hrId === "RP1")!, mktMgrOverrideScope),
-    false,
-    "Marketing Manager's override must NOT cross into a Sales employee who merely shares the overridden line",
+    true,
+    "Marketing Manager with a line override sees the Sales Medical Rep on that line — the field force is in Sales, never in Marketing",
   );
+  assert.equal(
+    canViewEmployee360Subject(mktMgrCtx, rows.find((r) => r.hrId === "DM-P")!, mktMgrOverrideScope),
+    true,
+    "…and the Sales District Manager on that line",
+  );
+  // …but only BELOW him (risk review, 2026-10-20; the owner's downward rule of 2026-09-04): the
+  // line's National Sales Manager, whose report carries his expense claims, is not his to open.
+  assert.equal(
+    canViewEmployee360Subject(mktMgrCtx, rows.find((r) => r.hrId === "NSM-P")!, mktMgrOverrideScope),
+    false,
+    "the Marketing Manager's cross-department reach stops below the National Sales Manager",
+  );
+  assert.equal(
+    canViewEmployee360Subject(mktMgrCtx, row("SF-2", "Finance Manager", null, 2, 1), mktMgrOverrideScope),
+    false,
+    "Marketing Manager's override must NOT cross into a NON-field Sales person who merely shares the overridden line",
+  );
+  assert.equal(
+    canViewEmployee360Subject(mktMgrCtx, rows.find((r) => r.hrId === "R1")!, mktMgrOverrideScope),
+    false,
+    "the override still bounds the line: a line-1 rep is not on a line-2 override",
+  );
+
+  // ── Product Manager in the MARKETING department, no override (owner, 2026-10-20). The real
+  // shape: every Product and Group Product Manager is in Marketing, the field force of his line
+  // is in Sales. Before the fix PM-MK1 saw only himself — not one medical rep, district manager
+  // or regional manager of the line he markets. ──
+  const pmMarketing = row("PM-MK1", "Product Manager", "MKM-1", 1, 2); // line 1, Marketing dept
+  const salesOfficeLine1 = row("SO-1", "Finance Manager", null, 1, 1); // non-field, Sales dept, line 1
+  const rowsWithMarketingPm = [...rows, mktMgr, pmMarketing, salesOfficeLine1];
+  const pmMk = new Set(
+    (await resolveEmployee360VisibleRows(rowsWithMarketingPm, ctx("Product Manager", "PM-MK1", "line"))).map((r) => r.hrId),
+  );
+  assert.deepEqual(
+    pmMk,
+    new Set(["PM-MK1", "R1", "R2", "R3"]),
+    "a Marketing-department Product Manager sees his own line's Sales medical reps + himself — the rung below his",
+  );
+  // Risk review, 2026-10-20: the waiver once admitted the line's whole field force, so a Product
+  // Manager could open the National and Regional Sales Managers' reports, expense claims included.
+  // Downward only (owner, 2026-09-04): a District Manager is his own rung, the managers above it
+  // are above him, and a peer Product Manager in Sales is neither below him nor in his department.
+  for (const notBelow of ["NSM-A", "RM-A", "DM-A", "DM-A2", "PM-A"]) {
+    assert.ok(!pmMk.has(notBelow), `a Product Manager's cross-department reach stops below his rung: ${notBelow} is out`);
+  }
+  assert.ok(!pmMk.has("RP1") && !pmMk.has("DM-P") && !pmMk.has("NSM-P"), "…and nobody on another line");
+  const pmMkScope = await buildEmployee360Scope(rowsWithMarketingPm, ctx("Product Manager", "PM-MK1", "line"));
+  assert.equal(
+    canViewEmployee360Subject(ctx("Product Manager", "PM-MK1", "line"), salesOfficeLine1, pmMkScope),
+    false,
+    "the department waiver is for the field force only — a non-field Sales person on his line stays out",
+  );
+
+  // Group Product Manager: the same rule, through the role gate rather than the override.
+  const gpmMarketing = row("GPM-MK1", "Group Product Manager", "MKM-1", 2, 2); // line 2, Marketing dept
+  const gpmMk = new Set(
+    (await resolveEmployee360VisibleRows([...rows, gpmMarketing], ctx("Group Product Manager", "GPM-MK1", "line"))).map((r) => r.hrId),
+  );
+  assert.deepEqual(
+    gpmMk,
+    new Set(["GPM-MK1", "DM-P", "RP1"]),
+    "a Marketing-department Group Product Manager sees her line's Sales reps and District Managers + herself",
+  );
+  assert.ok(!gpmMk.has("NSM-P"), "…never the National Sales Manager above her rung");
+
+  // The National Sales Manager is NOT one of the three: his line rule stays department-safe, so a
+  // Marketing-department Product Manager on his line is not his to open.
+  const nsmWithMarketingPm = new Set(
+    (await resolveEmployee360VisibleRows(rowsWithMarketingPm, ctx("National Sales Manager", "NSM-A", "line"))).map((r) => r.hrId),
+  );
+  assert.ok(!nsmWithMarketingPm.has("PM-MK1"), "the NSM's line scope stays department-safe");
+  assert.ok(nsmWithMarketingPm.has("R1"), "…and still holds his own line's Sales field force");
+
+  await runEmployee360RegionalManagerReportTests();
+}
+
+// The Regional Sales Manager is back in Employee 360, with a report tailored to him (owner,
+// 2026-10-20: "bring him back but do not show empty data, tailor the report on him").
+async function runEmployee360RegionalManagerReportTests() {
+  // ── The per-person exclusion is gone: he is a subject for every viewer that reaches him ──
+  assert.equal(isEmployee360ExcludedSubject("PD-0001"), false, "the Regional Sales Manager is no longer excluded");
+  assert.equal(isEmployee360ExcludedSubject("PD0001"), false, "…in either spelling of his HR id");
+  const accessCode = stripComments(readFileSync("src/lib/employee-360/access.ts", "utf8"));
+  assert.ok(!accessCode.includes('"PD-0001"'), "no code in the 360 access file names him any more");
+
+  assert.equal(resolveEmployee360RoleCategory("Regional Sales Manager"), "regional-manager");
+  const rsm = row("PD-0001", "Regional Sales Manager", "NSM-P", 2, 1);
+  const rsmDm = row("DM-P2", "District Manager", "PD-0001", 2, 1);
+  const rsmRep = row("RP2", "Medical Representative", "DM-P2", 2, 1);
+  const withRsm = [...rows, rsm, rsmDm, rsmRep];
+  const seenBy = async (context: AccessContext) =>
+    new Set((await resolveEmployee360VisibleRows(withRsm, context)).map((r) => r.hrId));
+  assert.ok((await seenBy(ctx("CEO", "C-1", "company"))).has("PD-0001"), "the CEO opens the Regional Sales Manager's 360");
+  assert.ok((await seenBy(ctx("Super Admin", "SA-1", "company"))).has("PD-0001"), "so does the Super Admin");
+  assert.ok((await seenBy(ctx("National Sales Manager", "NSM-P", "line"))).has("PD-0001"), "his line's NSM opens it");
+  const own = await seenBy(ctx("Regional Manager", "PD-0001", "hierarchy"));
+  assert.deepEqual(own, new Set(["PD-0001", "DM-P2", "RP2"]), "he opens his own report and his whole region");
+
+  // ── The tailored report: manager sections when they carry data, never a rep-only or empty one ──
+  const empty: Employee360SectionSignals = {
+    productiveVisits: 0,
+    doublesReceived: 0,
+    leadershipHasData: false,
+    salesHasData: false,
+    expensesHaveData: false,
+  };
+  const full: Employee360SectionSignals = {
+    productiveVisits: 14,
+    doublesReceived: 0,
+    leadershipHasData: true,
+    salesHasData: true,
+    expensesHaveData: true,
+  };
+  const repOnly = ["showComparison", "showCampaign", "showCheckin", "showReceivedSide", "showOwnSales", "showBricks"] as const;
+
+  const rmFull = planEmployee360Sections("regional-manager", full, true);
+  assert.equal(rmFull.isLeader, true);
+  assert.equal(rmFull.hidesEmptySections, true);
+  assert.equal(rmFull.showLeadership, true, "his double-visits and coaching delivered render");
+  assert.equal(rmFull.showTeamSales, true, "his region's sales roll-up renders");
+  assert.equal(rmFull.showOwnVisits, true, "his own field visits render");
+  assert.equal(rmFull.showExpenses, true, "his expenses render when the page allows them");
+  assert.equal(rmFull.showDoublesReceived, false, "no 'Doubles received' tile when nobody accompanied him");
+  for (const key of repOnly) assert.equal(rmFull[key], false, `a Regional Manager never gets the rep-only ${key}`);
+
+  const rmEmpty = planEmployee360Sections("regional-manager", empty, true);
+  for (const key of ["showLeadership", "showTeamSales", "showOwnVisits", "showDoublesReceived", "showExpenses"] as const) {
+    assert.equal(rmEmpty[key], false, `an empty ${key} section is not drawn on his report`);
+  }
+  for (const key of repOnly) assert.equal(rmEmpty[key], false, `…and still no rep-only ${key}`);
+  assert.equal(planEmployee360Sections("regional-manager", full, false).showExpenses, false, "the page's expense gate still decides first");
+  assert.equal(
+    planEmployee360Sections("regional-manager", { ...empty, doublesReceived: 2 }, true).showDoublesReceived,
+    true,
+    "a manager who was accompanied keeps the tile",
+  );
+
+  // Every other family keeps the composition it had before — only the Regional Manager is tailored.
+  const dm = planEmployee360Sections("district-manager", empty, true);
+  assert.equal(dm.hidesEmptySections, false);
+  for (const key of ["showLeadership", "showTeamSales", "showOwnVisits", "showDoublesReceived", "showExpenses"] as const) {
+    assert.equal(dm[key], true, `a District Manager keeps ${key} as before`);
+  }
+  const nsm = planEmployee360Sections("national-sales-manager", empty, true);
+  assert.equal(nsm.showOwnVisits && nsm.showTeamSales && nsm.showLeadership, true, "the NSM keeps every section as before");
+  const rep = planEmployee360Sections("medical-rep", empty, false);
+  for (const key of repOnly) assert.equal(rep[key], true, `a Medical Rep keeps ${key}`);
+  assert.equal(rep.showLeadership || rep.showTeamSales, false, "a Medical Rep has no leadership or team-sales section");
+  assert.equal(planEmployee360Sections("training-manager", full, true).showTeamSales, false, "a Training Manager has no team sales");
+  assert.equal(planEmployee360Sections("product-manager", empty, true).showCampaign, true, "a Product Manager keeps the campaign mix");
+
+  // ── The page renders the plan, not a parallel inline rule ──
+  const view = stripComments(readFileSync("src/components/employee-360/employee-360-view.tsx", "utf8"));
+  assert.match(view, /const plan = planEmployee360Sections\(/, "the 360 view takes its sections from the domain plan");
+  for (const flag of [
+    "plan.showComparison && comparison",
+    "plan.showLeadership && summary.leadership",
+    "plan.showTeamSales ? <SalesSection",
+    "plan.showOwnVisits ? (",
+    "plan.showDoublesReceived ? (",
+    "plan.showOwnSales ? <SalesSection",
+    "plan.showBricks && summary.bricks",
+    "plan.showExpenses ? (",
+  ]) {
+    assert.ok(view.includes(flag), `the view gates a section on ${flag}`);
+  }
+  assert.ok(!view.includes('const showCheckin = category === "medical-rep"'), "no inline section rule survives beside the plan");
+
+  // The detail pages still load his team development and compliance (both gates name his family).
+  for (const page of [
+    "app/(admin)/employee-360/[hrId]/page.tsx",
+    "app/employee-portals/employee-360/[hrId]/page.tsx",
+    "app/employee-portals/employee-360/page.tsx",
+  ]) {
+    const source = stripComments(readFileSync(page, "utf8"));
+    const gates = source.split('roleCategory === "regional-manager"').length - 1;
+    assert.equal(gates, 2, `${page} loads Team Health and Team Compliance for a Regional Manager`);
+  }
 }

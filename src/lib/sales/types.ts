@@ -106,6 +106,8 @@ export type SalesDashboardFilterOptions = {
   families: string[];
   lines: string[];
   managers: string[];
+  /** `managers` value → the manager's name. The value is the filter key; the name is what is shown. */
+  managerLabels?: Record<string, string>;
   periods: string[];
   products: string[];
   salesTypes: string[];

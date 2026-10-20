@@ -77,8 +77,19 @@
  * they are stamped Head Office rather than their own product line. A row is only placeable if
  * its manager is on the same chart: stamping a Product Manager "Anti Infective" would keep her
  * on a line-scoped Anti Infective view while her manager — the Marketing Manager, a Head
- * Office row — was stripped from it, leaving her hanging off a parent that is not there. The
- * marketing branch appears or disappears as one piece.
+ * Office row — was stripped from it, leaving her hanging off a parent that is not there.
+ *
+ * ## …but a line chart still finds them, through `ownLineName` (owner, 2026-10-20)
+ *
+ * Stamped Head Office and nothing else, the marketers left EVERY line chart — the Pedia Product
+ * and Group Product Managers were missing from each Pedia chart, their own included, although they
+ * are line-scoped viewers of exactly that line (owner: "every single role that is applicable to
+ * appear in a module — find it and show it"). So a marketer's row also carries `ownLineName`, the
+ * sales line its `line_id` names, while `lineId`/`lineName` stay Head Office for the gates above.
+ * Line mode (`scopeAuOrganogramRows`) keeps a row whose `ownLineName` is on the chart AND the Head
+ * Office managers above it, so the placement rule still holds: she never hangs off a parent that
+ * is not drawn. A line-4 person (the Training Manager, Finance, HR) carries no `ownLineName` and
+ * still never rides onto a line chart — only the managers on a kept marketer's own chain do.
  */
 
 import { resolveEmployeeDepartmentName } from "@/lib/employees/employee-org-labels";
@@ -180,6 +191,12 @@ export type BuildHeadOfficeRowsOptions = {
    * can resolve the link (the seat source) passes this in.
    */
   teamNameFor?: (employee: HeadOfficeEmployeeRow) => string | null;
+  /**
+   * Resolves a sales `line_id` to its line name, for `ownLineName` (owner, 2026-10-20 — see the
+   * header). The seat source passes the seat model's own line names. Optional: without it no row
+   * carries an own line and the branch behaves exactly as before.
+   */
+  lineNameFor?: (lineId: number) => string | null;
 };
 
 /** A synthetic, stable seat identity. Prefixed so it can never be read as an `au.seats` id. */
@@ -238,6 +255,7 @@ export function buildHeadOfficeOrganogramRows(
     // No team unless a caller can resolve the link. The twin this used to default to is gone, and
     // it was blank on every row anyway — so this default emits exactly what it emitted before.
     teamNameFor = () => null,
+    lineNameFor = () => null,
   } = options;
   const ceoKey = ceoNodeKey ? canonicalHrIdKey(ceoNodeKey) : null;
 
@@ -384,6 +402,12 @@ export function buildHeadOfficeOrganogramRows(
       // Both set — see the invariants note in this file's header. Neither is optional.
       lineId: HEAD_OFFICE_LINE_ID,
       lineName: HEAD_OFFICE_LINE_NAME,
+      // A marketer's own sales line, so a line chart can keep him (owner, 2026-10-20). Head Office
+      // proper (line 4) carries none.
+      ownLineName:
+        typeof employee.line_id === "number" && employee.line_id !== HEAD_OFFICE_LINE_ID
+          ? lineNameFor(employee.line_id)
+          : null,
       managerHrId,
       managerName,
       managerReplacementForHrId: null,

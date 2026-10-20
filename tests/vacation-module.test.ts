@@ -5,6 +5,12 @@ const serviceSource = readFileSync(
   new URL("../src/lib/vacation/service.ts", import.meta.url),
   "utf8",
 );
+// The visibility switch was lifted into its own module on 2026-10-20 (role-coverage sweep); the
+// scope pins below read it there, and service.ts must keep delegating to it.
+const visibilityScopeSource = readFileSync(
+  new URL("../src/lib/vacation/visibility-scope.ts", import.meta.url),
+  "utf8",
+);
 const vacationEmailSource = readFileSync(
   new URL("../src/lib/vacation/email.ts", import.meta.url),
   "utf8",
@@ -150,13 +156,18 @@ export function runVacationModuleTests() {
   // (OF-0001, A-1, A-4). TEAM is the same direct-reports-only scope District Manager/Manager use.
   // Regression guard: if a future edit moves the role back into the COMPANY case (or removes it
   // from TEAM), this must fail.
-  assert.doesNotMatch(
+  assert.match(
     serviceSource,
+    /import \{ getVacationVisibilityScope, isAllVacationVisibilityAccess \} from "@\/lib\/vacation\/visibility-scope";/,
+    "the vacation service reads its visibility scope from the one switch in visibility-scope.ts",
+  );
+  assert.doesNotMatch(
+    visibilityScopeSource,
     /case "Finance Manager":\s*\n\s*return "COMPANY";/,
     "Finance Manager must not be scoped to company-wide vacation report visibility",
   );
   assert.match(
-    serviceSource,
+    visibilityScopeSource,
     /case "Finance Manager":\s*\n\s*return "TEAM";/,
     "Finance Manager must be scoped to TEAM (self + direct reports) vacation report visibility",
   );
@@ -264,7 +275,7 @@ export function runVacationModuleTests() {
   assert.match(serviceSource, /input\.request\.status !== "pending_manager"/);
   assert.match(serviceSource, /Forbidden: only assigned pending vacation approvers can decide this request/);
   assert.match(serviceSource, /accessMatchesHrId\(access, request\.managerHrId\)/);
-  assert.match(serviceSource, /access\.scope === "system" \|\| access\.role === "Super Admin"/);
+  assert.match(visibilityScopeSource, /access\.scope === "system" \|\| access\.role === "Super Admin"/);
   assert.match(serviceSource, /roles: PhoenixRole\[\] = \["Super Admin"\]/, "getHrRecipients must default to Super Admin while allowing an admin-editable override");
   assert.match(serviceSource, /\.in\("role", roles\)/);
   assert.match(serviceSource, /managerOfManagerHrId/);

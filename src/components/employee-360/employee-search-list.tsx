@@ -22,22 +22,20 @@ import {
   EMPLOYEE_360_ROLE_ORDER,
   type Employee360RoleCategory,
 } from "@/lib/employee-360/roles";
+import type { Employee360ListItem } from "@/lib/employee-360/list-items";
+import {
+  buildEmployee360ManagerChain,
+  employee360ManagerOptions,
+  matchesEmployee360Manager,
+} from "@/lib/employee-360/list-manager-filter";
 import {
   phxFieldClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
 
-export type Employee360ListItem = {
-  hrId: string;
-  displayName: string;
-  jobTitle: string | null;
-  lineName: string | null;
-  areaName: string | null;
-  regionName: string | null;
-  managerName: string | null;
-  employmentStatus: string | null;
-  category: Employee360RoleCategory;
-};
+// The card shape is built on the server (buildEmployee360ListItems); re-exported so the pages keep
+// importing it from here.
+export type { Employee360ListItem };
 
 const TAB_ICON: Record<Employee360RoleCategory, LucideIcon> = {
   "medical-rep": Stethoscope,
@@ -174,13 +172,18 @@ export function EmployeeSearchList({
 
   const inTab = useMemo(() => employees.filter((e) => e.category === activeTab), [employees, activeTab]);
 
+  // Owner, 2026-10-20: choosing a manager keeps his own card and everyone beneath him, and the
+  // options carry every manager on the chain — not only the direct managers of this tab's cards.
+  // The chain is built from every tab's cards plus each card's `managersAbove`.
+  const managerChain = useMemo(() => buildEmployee360ManagerChain(employees), [employees]);
+
   const options = useMemo(
     () => ({
       lineName: uniqueSorted(inTab.map((e) => e.lineName)),
       areaName: uniqueSorted(inTab.map((e) => e.areaName)),
-      managerName: uniqueSorted(inTab.map((e) => e.managerName)),
+      managerName: employee360ManagerOptions(inTab, managerChain),
     }),
-    [inTab],
+    [inTab, managerChain],
   );
 
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
@@ -190,13 +193,13 @@ export function EmployeeSearchList({
     return inTab.filter((e) => {
       if (filters.lineName && e.lineName !== filters.lineName) return false;
       if (filters.areaName && e.areaName !== filters.areaName) return false;
-      if (filters.managerName && e.managerName !== filters.managerName) return false;
+      if (filters.managerName && !matchesEmployee360Manager(e, filters.managerName, managerChain)) return false;
       if (!q) return true;
       return [e.displayName, e.hrId, e.jobTitle, e.lineName, e.areaName, e.regionName, e.managerName]
         .filter(Boolean)
         .some((field) => String(field).toLowerCase().includes(q));
     });
-  }, [inTab, query, filters]);
+  }, [inTab, query, filters, managerChain]);
 
   // Group cards by line (divider between lines); Medical Reps also sub-group by DM.
   const grouped = useMemo(

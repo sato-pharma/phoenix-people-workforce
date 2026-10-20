@@ -3,6 +3,7 @@ import {
   HR_ADVISORY_COMPENSATION_JOB_TITLES,
   type AccessContext,
 } from "@/lib/auth/permissions";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -243,17 +244,18 @@ export async function getPayslipCenterEmployeeOptions(access: AccessContext) {
   // before any search is typed, so filtering only the results would still have handed a restricted
   // viewer the name of every employee in the company.
   const audienceFilter = payslipAudienceOrFilter(audience);
-  const baseQuery = supabase
-    .from("salary_records")
-    .select("hr_id,full_name,line,area,job_title,salary_batches!inner(status)")
-    .in("salary_batches.status", publishedPayslipStatuses);
-  const initialResult = await (audienceFilter ? baseQuery.or(audienceFilter) : baseQuery)
-    .order("full_name", { ascending: true })
-    .limit(2000);
-  const data: unknown[] | null = initialResult.data;
-  const error: unknown = initialResult.error;
-
-  if (error) throw error;
+  // EVERY published row, paged. This read is one row per person per published month, and PostgREST
+  // answers at most 1,000 rows however large the `.limit()`: the old `.limit(2000)` read stood at
+  // 989 rows for 188 people on 20 Oct 2026, so the next published month would have quietly dropped
+  // the people at the end of the alphabet from the picker (owner, 2026-10-20: "every single role
+  // that is applicable to appear in a module").
+  const data = await fetchAllRows<unknown>(() => {
+    const baseQuery = supabase
+      .from("salary_records")
+      .select("hr_id,full_name,line,area,job_title,salary_batches!inner(status)")
+      .in("salary_batches.status", publishedPayslipStatuses);
+    return (audienceFilter ? baseQuery.or(audienceFilter) : baseQuery).order("full_name", { ascending: true });
+  }, "id");
 
   const optionsByKey = new Map<string, PayslipCenterEmployeeOption>();
   ((data ?? []) as Array<Partial<Pick<SalaryRecordLookupRow, "area" | "full_name" | "hr_id" | "job_title" | "line">>>).forEach((row) => {

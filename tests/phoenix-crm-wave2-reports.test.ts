@@ -145,6 +145,41 @@ export function runPhoenixCrmWave2ReportTests(): void {
     assert.deepEqual(withManager[1]?.totals, { am: 1, pharmacies: 2, pm: 6 }, "a rep's row is exactly what it was");
   }
 
+  // ── The lines' product managers get a row too (owner, 2026-10-20: "EVERYSINGLE ROLE THATS APLLICABLE TOAPPEAR") ──
+  //
+  // 🔴 HE HOLDS NO SEAT, SO HIS ROW IS KEYED BY HIM AND IS MARKED SEATLESS — and like every manager's row it never
+  //    reaches the month's three figures: the visit he rode is already on the rep's row.
+  {
+    const withProductManager = buildTeamCalendar(
+      "2026-02",
+      [
+        {
+          kind: "manager",
+          manager: "Hoda Kamal",
+          person: "Nadia Samir",
+          seatId: "product-manager:B-155",
+          seatless: true,
+          territory: "Product Manager · Pedia",
+        },
+        ...people,
+      ],
+      {
+        leave: [{ day: "2026-02-09", seatId: "product-manager:B-155" }],
+        visits: [
+          { counts: { am: 0, pharmacies: 0, pm: 1 }, day: "2026-02-04", seatId: "product-manager:B-155" },
+          { counts: { am: 0, pharmacies: 0, pm: 1 }, day: "2026-02-04", seatId: "S1" },
+        ],
+      },
+    );
+    const row = withProductManager[0];
+    assert.equal(row?.seatless, true, "his row says it is no seat, so the screen opens no seat page on it");
+    assert.equal(row?.kind, "manager", "and it is a manager's row");
+    assert.equal(row?.days[3]?.shape, "pm", "the afternoon he rode with a rep colours his day");
+    assert.equal(row?.days[8]?.shape, "leave", "and HR's leave reaches his row by the same key");
+    assert.deepEqual(teamCalendarTotals(withProductManager), { am: 0, pharmacies: 0, pm: 1 }, "but the month sums the reps' rows only");
+    assert.equal(withProductManager[1]?.seatless, undefined, "a rep's row is a seat, as every row was before");
+  }
+
   {
     const service = stripComments(readFileSync("src/lib/phoenix-crm/server/team-calendar.ts", "utf8"));
     // Never upward, and the SAME reach the Managers report uses — not a second definition of "his managers".
@@ -156,11 +191,59 @@ export function runPhoenixCrmWave2ReportTests(): void {
     // A ride-along is the rule the manager's plan report judges by, read from the countable view.
     assert.match(service, /countsAsManagersDoubleVisit\(visit, hrId\)/, "a ride-along is a double or chain visit naming him");
     assert.equal((service.match(/foldVisitRow\(fold, /g) ?? []).length, 2, "and it folds through the one function a rep's visit folds through");
+    // The lines' product managers (owner, 2026-10-20): the one rule for who is given them, never in test mode, read
+    // into the SAME list of people as the seat managers, judged by his own plan report's rule, keyed by him.
+    assert.match(
+      service,
+      /const productManagers =\s*isTest \|\| viewer\.basis !== "all"\s*\? \[\]\s*: \(await loadScopeProductManagers\(viewer, seats\)\)\.filter\(\(manager\) => !seatHolders\.has\(manager\.hrId\)\);/,
+      "the product managers come from the one rule, for the company readers only — the National Sales Manager's calendar stays field force only (owner, 2026-10-20: \"Keep it as is\") — none in the test world, and a seat holder keeps his seat's row",
+    );
+    assert.match(service, /countsAsPlannersVisitWithRep\(visit, hrId\)/, "his ride-along is the visit naming him in his own slot");
+    assert.match(service, /"id, seat_id, visit_date, list_type, pharmacy_name, customer_validated, kind, manager_hr_id, senior_hr_id, product_manager_hr_id"/, "and that slot is read");
+    assert.match(service, /return `product-manager:\$\{hrId\}`;/, "his row is keyed by him, never by a seat");
+    assert.match(service, /seatless: true,/, "and marked as no seat");
+    assert.match(service, /buildTeamCalendar\(month, \[\.\.\.managerPeople, \.\.\.productManagerPeople, \.\.\.people\]/, "drawn after the seat managers, before the reps");
     // A manager's row never opens a rep's day page — that page is a territory's. Since 2026-10-20 it opens ITS OWN
     // page, `/manager-day/<seat>/<day>`, which lists his visits card by card.
     const tab = stripComments(readFileSync("src/components/phoenix-crm/calendar-tab.tsx", "utf8"));
     assert.match(tab, /const page = row\.kind === "manager" \? "manager-day" : "day";/, "a manager's cell links to the manager's own day page, never to a territory page");
     assert.equal((tab.match(/href=\{dayHref\(row, day\.day, test\)\}/g) ?? []).length, 2, "neither the desktop row nor the phone card builds the link any other way");
+    // A product manager's row opens nothing — there is no seat for a page to be opened on (owner, 2026-10-20).
+    assert.match(
+      tab,
+      /if \(row\.seatless\) return false;\s*if \(row\.kind === "manager"\) return opensTheDay\(day\);/,
+      "a seatless row is never a link, and the check comes before a manager's own",
+    );
+  }
+
+  // ── The reports' "Manager" filter (owner, 2026-10-20: "when filter by manager u find no manager") ─────────────
+  //
+  // 🔴 ONE NARROWING, IN EVERY REPORT THAT TAKES THE FILTER, AND NEVER WIDER THAN THE VIEWER: the territories under the
+  //    seats that manager holds (`territoriesUnderManager`), refused in one sentence when he is not one of the viewer's.
+  {
+    for (const path of [
+      "src/lib/phoenix-crm/server/reports.ts",
+      "src/lib/phoenix-crm/server/daily-plan-report.ts",
+      "src/lib/phoenix-crm/server/brick-report.ts",
+    ]) {
+      const text = stripComments(readFileSync(path, "utf8"));
+      assert.match(text, /territoriesUnderManager\(viewer\.org, viewer\.hrId, viewer\.basis, /, `${path} narrows by the one rule, from the viewer's own reach`);
+      assert.match(text, /if \(under\) seats = seats\.filter\(\(seat\) => under\.has\(seat\.seatId\)\);/, `${path} only ever narrows its own territories`);
+      assert.match(text, /if \(!under \|\| seats\.length === 0\) throw forbiddenError\("This manager is outside your scope\."\);/, `${path} refuses a manager outside the viewer's reach`);
+    }
+    const reports = stripComments(readFileSync("src/lib/phoenix-crm/server/reports.ts", "utf8"));
+    // The managers offered are the viewer's own, with the territories under each, and the screen narrows by them.
+    assert.match(reports, /managers: managerEntries/, "the scope hands the screen its managers");
+    assert.match(reports, /for \(const member of managersInScope\(viewer\.org, viewer\.hrId, viewer\.basis\)\) \{/, "never one above the viewer");
+    // The per-manager board names the lines' product managers too — for the readers the one rule gives them to.
+    assert.match(reports, /: \(await loadScopeProductManagers\(viewer, chosen\.seats\)\)\.filter\(\(manager\) => !seatHolders\.has\(manager\.hrId\)\);/, "the product managers join the per-manager board");
+    assert.match(reports, /p_hr_ids: \[\.\.\.managers\.map\(\(member\) => member\.hrId\), \.\.\.productManagers\.map\(\(manager\) => manager\.hrId\)\]/, "and are read by the same function as the seat managers");
+    for (const route of ["app/api/phoenix-crm/reports/route.ts", "app/api/phoenix-crm/reports/export/route.ts"]) {
+      assert.match(stripComments(readFileSync(route, "utf8")), /managerHrId: search\.get\("managerHrId"\),/, `${route} passes the filter to the service`);
+    }
+    const reportsTab = stripComments(readFileSync("src/components/phoenix-crm/reports-tab.tsx", "utf8"));
+    assert.match(reportsTab, /<option value="">Every manager<\/option>/, "the screen offers the filter, unset by default");
+    assert.match(reportsTab, /managerHrId: chosenManager \? chosenManager\.hrId : null,/, "and sends the chosen manager");
   }
 
   // ── The calendar's screen ────────────────────────────────────────────────────────────────────

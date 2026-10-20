@@ -19,6 +19,7 @@ import {
   VISIT_ROLLUP_MAX_LINES,
   type RollupVisitRow,
 } from "../src/lib/phoenix-crm/visit-rollup-rules.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Phoenix CRM — the hourly routine-visit rollup (owner, 2026-10-05: "in nsm and sfe i want every
@@ -211,6 +212,25 @@ export function runPhoenixCrmVisitRollupTests(): void {
     assert.ok(route.includes("withDeadMansSwitch(VISIT_ROLLUP_JOB_SLUG"), "and pings the dead-man's switch");
     assert.ok(route.includes("export async function POST"), "cron-job.org may POST");
     assert.ok(route.includes("export const maxDuration = 60"), "and the handler caps its duration");
+  }
+
+  // ── 7 · a manager's visit on a vacant territory is filed under HIM, never under nobody ────────────
+  // (owner, 2026-10-20: "EVERYSINGLE ROLE THATS APLLICABLE TOAPPEAR IN A MODULE FIND ANAD SHOW"). A visit he logged
+  // on a seat with no rep carries no rep id, and the rollup used to print it as "Unknown person".
+  {
+    const onVacant = buildVisitRollupRecipients([{ seatId: "SEAT-PED-REP2", repHrId: "B-40" }], org, (hrId) => (hrId === "B-40" ? "Mina Farouk" : names(hrId)), SFE);
+    assert.equal(onVacant.find((entry) => entry.hrId === "A-12")?.visits[0]?.repName, "Mina Farouk", "the person handed in is the one named");
+
+    const runner = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/visit-rollup.ts", import.meta.url), "utf8"));
+    assert.match(runner, /const VISIT_COLUMNS = "id, seat_id, rep_hr_id, manager_hr_id";/, "the hour's read carries the manager on the visit");
+    assert.match(
+      runner,
+      /const personOf = \(row: VisitRow\) => personOnTheVisit\(\{ managerHrId: row\.manager_hr_id, repHrId: row\.rep_hr_id \}\);/,
+      "the person on the visit is the rep, or the manager when there is no rep — the integrity board's own rule",
+    );
+    assert.match(runner, /liveRows\.map\(\(row\) => \(\{ seatId: row\.seat_id, repHrId: personOf\(row\) \}\)\)/, "and that person is who each visit is filed under");
+    assert.match(runner, /const person = personOf\(row\);\s*if \(person\) needed\.add\(person\);/, "and whose name is read");
+    assert.doesNotMatch(runner, /seatId: row\.seat_id, repHrId: row\.rep_hr_id/, "never the rep column alone");
   }
 
   console.log("phoenix-crm visit rollup: OK");

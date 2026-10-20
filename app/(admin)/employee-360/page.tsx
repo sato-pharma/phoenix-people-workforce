@@ -9,8 +9,7 @@ import {
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { resolveEmployee360VisibleRows } from "@/lib/employee-360/access";
-import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
-import { bridgeEmployeeLineToOfficial } from "@/lib/sales/access-scope";
+import { buildEmployee360ListItems } from "@/lib/employee-360/list-items";
 
 export const dynamic = "force-dynamic";
 
@@ -23,27 +22,9 @@ export default async function Employee360IndexPage() {
   // 360-specific gate opens the module to every role but scopes WHO each viewer
   // sees (self / team / hierarchy / line / reps / whole company).
   const visibleRows = await resolveEmployee360VisibleRows(rows, access);
-  const employees: Employee360ListItem[] = visibleRows
-    .map((row) => {
-      const category = resolveEmployee360RoleCategory(row.jobTitle ?? row.positionTitle);
-      if (!category) return null;
-      return {
-        hrId: row.hrId,
-        displayName: row.displayName || row.fullName,
-        jobTitle: row.jobTitle,
-        // Canonicalize the line name so the duplicate master rows ("Anti Inf"
-        // id=53 vs "Anti infective" id=1) collapse to ONE line in the filter,
-        // cards, and hero. Single source of truth for line spelling.
-        lineName: bridgeEmployeeLineToOfficial(row.lineName),
-        areaName: row.areaName,
-        regionName: row.regionName,
-        managerName: row.managerName,
-        employmentStatus: row.employmentStatus,
-        category,
-      } satisfies Employee360ListItem;
-    })
-    .filter((e): e is Employee360ListItem => e !== null)
-    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  // One builder for every Employee 360 list: canonical line spelling, and each card's manager chain
+  // walked over the whole directory so the Manager filter reaches every manager above it.
+  const employees: Employee360ListItem[] = buildEmployee360ListItems(visibleRows, rows);
 
   const lineCount = new Set(employees.map((e) => e.lineName).filter(Boolean)).size;
   const areaCount = new Set(employees.map((e) => e.areaName).filter(Boolean)).size;

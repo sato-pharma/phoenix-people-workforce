@@ -47,7 +47,7 @@ import { getDoubleVisitPortalFocus } from "@/lib/double-visit-analytics/service"
 import type { DoubleVisitPortalFocus } from "@/lib/double-visit-analytics/types";
 import { getNsmCrmCompliance, nsmCrmComplianceUnavailable, type NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
 import { loadRepRankStanding, type RepRankStanding } from "@/lib/employee-portal/rep-rank";
-import { resolveServingRoster } from "@/lib/employee-portal/serving-roster";
+import { resolveServingRoster, servingRosterManagers } from "@/lib/employee-portal/serving-roster";
 import { getLatestLineEarlyBirds, type EarlyBirdsWinnerRecord } from "@/lib/early-birds/service";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { logError } from "@/lib/observability/log";
@@ -750,9 +750,10 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
           managerName: m.managerName ? display(m.managerHrId, m.managerName) : m.managerName,
         }));
 
-      // CRM first-visit compliance over the full line roster (all reps + DSMs), not just the top 10,
-      // and off the org tree rather than the sales rows — the sales fallback stays for a seat the
-      // tree cannot resolve.
+      // CRM first-visit compliance over the full line roster (all reps + every manager), not just the
+      // top 10, and off the org tree rather than the sales rows — the sales fallback stays for a seat
+      // the tree cannot resolve. The managers are the Regional Manager AND the district managers: the
+      // board left the Regional Manager out until 2026-10-20 (owner, 2026-10-20; serving-roster.ts).
       const crmInput = {
         reps:
           servingRoster?.reps ??
@@ -760,12 +761,12 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
             repMembers.map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
             directoryRows,
           ),
-        dsms:
-          servingRoster?.dsms ??
-          activeRosterOnly(
-            dsms.map((d) => ({ hrId: d.hrId, name: d.name })),
-            directoryRows,
-          ),
+        dsms: servingRoster
+          ? servingRosterManagers(servingRoster)
+          : activeRosterOnly(
+              dsms.map((d) => ({ hrId: d.hrId, name: d.name })),
+              directoryRows,
+            ),
       };
       const crm = await getNsmCrmCompliance(crmInput).catch((error: unknown) => {
         logPortalFailure(
@@ -845,12 +846,14 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
             regional.topReps.map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
             directoryRows,
           ),
-        dsms:
-          servingRoster?.dsms ??
-          activeRosterOnly(
-            dsms.map((d) => ({ hrId: d.hrId, name: d.name })),
-            directoryRows,
-          ),
+        // The same manager tier as the line board; a region holds no other Regional Manager, so in
+        // practice this is his district managers.
+        dsms: servingRoster
+          ? servingRosterManagers(servingRoster)
+          : activeRosterOnly(
+              dsms.map((d) => ({ hrId: d.hrId, name: d.name })),
+              directoryRows,
+            ),
       };
       const crm = await getNsmCrmCompliance(crmInput).catch((error: unknown) => {
         logPortalFailure(

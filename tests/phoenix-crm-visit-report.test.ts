@@ -25,8 +25,15 @@ import {
   readVisitReportFilter,
   visitReportFilterOptions,
   visitReportFilterParams,
+  visitReportParticipants,
   type VisitReportFilter,
 } from "../src/lib/phoenix-crm/visit-report-filters.ts";
+import type { ManagerDayVisit } from "../src/lib/phoenix-crm/manager-visit-detail.ts";
+import {
+  MANAGER_OWN_VISIT_FIELDS,
+  MANAGER_OWN_VISIT_TYPE,
+  managerOwnVisitReportRow,
+} from "../src/lib/phoenix-crm/visit-report-own-visits.ts";
 import {
   VISIT_REPORT_CATEGORIES,
   VISIT_REPORT_FIELDS,
@@ -172,6 +179,11 @@ function checkPeriod(): void {
   assert.equal(resolveVisitReportPeriod({ cairoToday: today, from: "2026-07-16", kind: "rep", to: today }).ok, true, "92 days exactly is allowed for a rep");
   assert.equal(resolveVisitReportPeriod({ cairoToday: today, from: "2026-09-14", kind: "district", to: today }).ok, false, "a district is capped at 31 days");
   assert.equal(resolveVisitReportPeriod({ cairoToday: today, from: "2026-09-15", kind: "district", to: today }).ok, true, "31 days exactly is allowed for a district");
+  // A manager's report (owner, 2026-10-20) runs across every territory he went out on, so it is capped as a district is.
+  const managerTooLong = resolveVisitReportPeriod({ cairoToday: today, from: "2026-09-14", kind: "manager", to: today });
+  assert.equal(managerTooLong.ok, false, "a manager is capped at 31 days");
+  assert.equal(managerTooLong.ok ? null : managerTooLong.error, "Choose at most 31 days for a manager.", "and the sentence names a manager");
+  assert.equal(resolveVisitReportPeriod({ cairoToday: today, from: "2026-09-15", kind: "manager", to: today }).ok, true, "31 days exactly is allowed for a manager");
 }
 
 // ── 2 · the values and the sequence ─────────────────────────────────────────────────────────────
@@ -320,6 +332,8 @@ function row(index: number, over: Partial<VisitReportRow> = {}): VisitReportRow 
     placeLabel: null,
     placeLat: null,
     placeLon: null,
+    // Everyone on the visit (owner, 2026-10-20): by default only the person it is credited to.
+    participants: [over.repName ?? "Mahmoud Adel"],
     planned: true,
     repName: "Mahmoud Adel",
     savedAtIso: `2026-10-0${index}T07:00:00Z`,
@@ -360,6 +374,93 @@ function checkDashboard(): void {
 
   const empty = buildVisitReportDashboard({ days: [], fields, filled: {}, rows: [] });
   assert.equal(empty.tiles.find((tile) => tile.label === "On the plan")?.value, "—", "no visits is a dash, never 0%");
+}
+
+// ── 3 · a manager's own visits (owner, 2026-10-20: "Show, keep out of reps") ────────────────────
+
+function ownVisit(overrides: Partial<ManagerDayVisit> = {}): ManagerDayVisit {
+  return {
+    address: "12 Mostafa El-Nahas St, Nasr City",
+    areaName: "Cairo East",
+    awaitingValidation: false,
+    brickName: "Nasr City 3",
+    bucket: "AM",
+    comment: "Asked for samples",
+    customerName: "Dr. Hala Mansour",
+    date: "2026-10-05",
+    grade: "A",
+    hasPin: true,
+    id: "own:1",
+    inVacantTerritory: false,
+    kind: "single",
+    kindLabel: "Single visit, alone",
+    listType: null,
+    loggedAt: "2026-10-05T08:42:00Z",
+    loggedHalf: "AM",
+    managerHrId: "B-120",
+    pharmacyName: null,
+    placeLabel: null,
+    placeSource: "saved_place",
+    planned: true,
+    products: ["Lacto Advanced"],
+    source: "own",
+    speciality: "Cardiology",
+    territoryName: null,
+    withPeople: [],
+    ...overrides,
+  };
+}
+
+function checkOwnVisits(): void {
+  // Every field his own visit can fill is a real catalogue field, and none of them is a position or a photo:
+  // his own visit is asked for neither (owner, 2026-10-20), so his row can never say one is missing.
+  for (const key of MANAGER_OWN_VISIT_FIELDS) {
+    const field = visitReportField(key);
+    assert.ok(field, `${key} is a catalogue field`);
+    assert.notEqual(field.category, "location", `${key} is not a location field`);
+  }
+  assert.ok(!(MANAGER_OWN_VISIT_FIELDS as ReadonlyArray<string>).includes("visitPhoto"), "no photo field is filled on his row");
+
+  const fields = ["visitDate", "repName", "customerName", "visitType", "brick", "distanceFromPlace", "locationFlag", "visitPhoto"].map(
+    (key) => visitReportField(key)!,
+  );
+  const own = managerOwnVisitReportRow(ownVisit(), "Karim Fouad", fields);
+  assert.equal(own.ownVisit, true, "his own visit is marked as his");
+  assert.equal(own.repName, "Karim Fouad", "under his own name");
+  assert.deepEqual(own.participants, ["Karim Fouad"], "and it names nobody else — no rep");
+  assert.equal(own.visitType, MANAGER_OWN_VISIT_TYPE, "never 'Single visit', the words a rep's own visit is counted under");
+  assert.equal(own.customerName, "Dr. Hala Mansour");
+  assert.equal(own.values.brick, "Nasr City 3", "where it was, as his record kept it");
+  for (const key of ["visitLat", "visitLon", "placeLat", "placeLon", "distanceMeters", "locationFlag"] as const) {
+    assert.equal(own[key], null, `${key} is blank on his row — no position is asked of his own visit`);
+  }
+  for (const key of ["distanceFromPlace", "locationFlag", "visitPhoto"]) {
+    assert.equal(own.values[key], null, `${key} is blank, never a "No" that reads as something he failed to do`);
+  }
+  assert.deepEqual(Object.keys(own.values).sort(), fields.map((field) => field.key).sort(), "only the chosen fields are carried");
+  const vacant = managerOwnVisitReportRow(ownVisit({ inVacantTerritory: true }), "Karim Fouad", fields);
+  assert.equal(vacant.values.visitType, `${MANAGER_OWN_VISIT_TYPE} · vacant area`, "a vacant area's doctor says so");
+
+  // 🔴 THE DASHBOARD NEVER COUNTS HIS ROW. It is listed in the table and the file; every tile is worked out without it.
+  const rows = [row(1), row(2, { planned: false }), own];
+  const dashboard = buildVisitReportDashboard({
+    days: ["2026-10-01", "2026-10-02", "2026-10-05"],
+    fields,
+    filled: countVisitReportFilled(rows, fields),
+    rows,
+  });
+  const visitsTile = dashboard.tiles.find((tile) => tile.label === "Visits");
+  assert.equal(visitsTile?.value, "2", "the two rep visits, never his own");
+  assert.match(visitsTile?.hint ?? "", /^2 days with visits/, "his own visit's day is not a day with counted visits");
+  assert.match(visitsTile?.hint ?? "", /plus 1 of the manager's own visit, listed and counted in no figure/, "and the tile says his row is there");
+  assert.equal(dashboard.tiles.find((tile) => tile.label === "On the plan")?.value, "50%", "1 of the 2 rep visits — his planned visit is not added");
+  const withoutOwn = buildVisitReportDashboard({ days: ["2026-10-01", "2026-10-02"], fields, filled: countVisitReportFilled(rows.slice(0, 2), fields), rows: rows.slice(0, 2) });
+  assert.deepEqual(
+    dashboard.tiles.filter((tile) => tile.label !== "Visits"),
+    withoutOwn.tiles.filter((tile) => tile.label !== "Visits"),
+    "every other tile is exactly what it would be without him",
+  );
+  assert.deepEqual(dashboard.panels, withoutOwn.panels, "and so is every panel");
 }
 
 // ── 4 · the workbook, read back out of the emitted bytes ───────────────────────────────────────
@@ -530,6 +631,27 @@ function checkFilters(): void {
   assert.equal(narrowedView.dashboard.tiles.find((tile) => tile.label === "Visits")?.value, "2", "the dashboard counts what is shown");
   assert.equal(narrowedView.dashboard.tiles.find((tile) => tile.label === "Far from the place")?.value, "100%", "1 of the 1 measured");
   assert.match(narrowedView.dashboard.panels.find((panel) => panel.id === "next-steps")?.note ?? "", /Recorded on 1 of 2 visits/);
+
+  // 🔴 "WHO VISITED" IS EVERYONE ON THE VISIT (owner, 2026-10-20: "when filter by manager u find no manager"). The
+  // district manager on a double visit and the product manager the rep ticked are choices too — the visit is still
+  // credited to the rep, and a row built before the list existed still answers for its own person.
+  const withManagers = [
+    row(1, { participants: ["Aya Ibrahim", "Karim Fouad"], repName: "Aya Ibrahim", visitType: "Double visit" }),
+    row(2, { participants: ["Hany Saad", "Nadia Samir"], repName: "Hany Saad", visitType: "Product manager visit" }),
+    row(3, { participants: [], repName: "Hany Saad" }),
+  ];
+  const whoIs = (who: string) =>
+    withManagers.filter((entry) => matchesVisitReportFilter(entry, { ...EMPTY_VISIT_REPORT_FILTER, who })).map((entry) => entry.visitId);
+  assert.deepEqual(whoIs("Karim Fouad"), ["V1"], "the manager on a double visit can be chosen");
+  assert.deepEqual(whoIs("Nadia Samir"), ["V2"], "and so can the product manager the rep ticked");
+  assert.deepEqual(whoIs("Hany Saad"), ["V2", "V3"], "the rep still finds his own visits, an old row without the list included");
+  assert.deepEqual(visitReportParticipants(withManagers[2]!), ["Hany Saad"], "an empty list falls back to the person the visit is credited to");
+  assert.deepEqual(
+    visitReportFilterOptions(withManagers).who,
+    ["Aya Ibrahim", "Hany Saad", "Karim Fouad", "Nadia Samir"],
+    "the choice offers every person on the answer's visits, managers included",
+  );
+  assert.equal(withManagers[0]!.repName, "Aya Ibrahim", "and the visit stays the rep's");
 }
 
 // ── 4 · the workbook's lead columns ─────────────────────────────────────────────────────────────
@@ -661,7 +783,40 @@ function checkSource(): void {
   // Whose visit: the integrity board's own rule, never the seat's occupant.
   assert.match(loader, /personOnTheVisit\(\{/, "the loader names a visit's person with the integrity board's rule");
   assert.ok(!loader.includes("seat?.occupantHrId"), "and never falls back to whoever holds the seat");
-  assert.match(loader, /person: whoseVisit\(visit\)/, "a day's order is per person, not per seat");
+  assert.match(loader, /person: sequencePerson\(visit\)/, "a day's order is per person, not per seat");
+  assert.match(
+    loader,
+    /const sequencePerson = \(visit: Row\): string \| null => target\.personHrId \?\? whoseVisit\(visit\);/,
+    "on a manager's report the order is HIS day; on any other it is the visit's own person",
+  );
+
+  // A manager's report (owner, 2026-10-20: "when filter by manager u find no manager").
+  assert.match(
+    loader,
+    /const MANAGER_VISIT_COLUMNS = \["manager_hr_id", "senior_hr_id", "product_manager_hr_id"\] as const;/,
+    "a manager is read by every slot a rep's visit can name him in — the product manager's included",
+  );
+  assert.match(loader, /managersInScope\(viewer\.org, viewer\.hrId, viewer\.basis\)/, "the managers offered are the ones this viewer reads, never above him");
+  assert.match(loader, /await loadScopeProductManagers\(viewer, seats\)/, "and the lines' product managers, by the one rule for who is given them");
+  assert.match(loader, /await scopeManagers\(viewer, readableSeats\(viewer\)\)\)\.find\(/, "a manager not on the picker is a 404, never a read");
+  assert.ok(!loader.includes("repCount > 0"), "an all-vacant district is still a district to report on");
+  // His own single visits: through the one door, as display rows, and the table is never named here.
+  assert.match(
+    loader,
+    /import \{ loadManagerOwnVisitRows[^}]*\} from "@\/lib\/phoenix-crm\/server\/manager-plan-readers";/,
+    "his own visits come through the adapter",
+  );
+  assert.match(
+    loader,
+    /loadManagerOwnVisitRows\(\{ end: period\.to, isTest: includeTest, managerHrIds: \[manager\.hrId\], start: period\.from \}\)/,
+    "for the one manager the picker offered, over the chosen period",
+  );
+  assert.ok(!loader.includes("phoenix_crm_manager_visits"), "the loader never names his own visits' table");
+  assert.match(loader, /managerOwnVisitReportRow\(own, managerName, fields\)/, "each is a display row built by the pure module");
+  const ownRows = source("src/lib/phoenix-crm/visit-report-own-visits.ts");
+  assert.ok(!/getSupabaseAdmin|\.from\(|phoenix_crm_/.test(ownRows), "the row builder reads nothing — it is handed the record the adapter read");
+  const dashboardSource = source("src/lib/phoenix-crm/visit-report-dashboard.ts");
+  assert.match(dashboardSource, /const rows = input\.rows\.filter\(\(row\) => row\.ownVisit !== true\);/, "the dashboard's figures leave his own visits out");
   assert.match(loader, /locationFlag: visitLocationFlagLabel\(visit, detail\)/, "the row head says when the Super Admin entered a visit later, in the reader's own sight");
   assert.match(loader, /const detail = readsLocationDetail\(viewer\);/, "and that sight is the one every other screen asks");
   assert.match(loader, /readsLocationDetail: detail,/, "the values get the same sight as the row head");
@@ -740,6 +895,7 @@ export async function runPhoenixCrmVisitReportTests(): Promise<void> {
     ["2 · the sequence facts", checkSequence],
     ["3 · the dashboard", checkDashboard],
     ["3 · the result filters", checkFilters],
+    ["3 · a manager's own visits", checkOwnVisits],
     ["4 · the workbook read back", checkWorkbook],
     ["4 · the workbook's lead columns", checkWorkbookLead],
     ["5 · the source pins", checkSource],

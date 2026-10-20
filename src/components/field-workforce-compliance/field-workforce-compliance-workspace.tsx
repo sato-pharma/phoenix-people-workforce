@@ -50,6 +50,7 @@ import {
   type FieldWorkforceGroupScorecard,
 } from "@/lib/field-workforce-compliance/scorecards";
 import { cn } from "@/lib/utils";
+import { buildManagerChain, managerFilterOptions, matchesManagerFilter } from "@/lib/org/manager-filter";
 import { handlePossibleSessionDeath } from "@/lib/auth/client-session";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { HeadOfficeAttendancePanel } from "@/components/field-workforce-compliance/head-office-attendance-panel";
@@ -297,9 +298,11 @@ type HierarchyFilterState = {
 
 type HierarchyItem = {
   areaName?: string | null;
+  employeeName?: string | null;
   employmentStatus?: string | null;
   lineName?: string | null;
   managerName?: string | null;
+  managersAbove?: readonly (string | null | undefined)[] | null;
   roleName?: string | null;
   teamName?: string | null;
 };
@@ -322,7 +325,24 @@ const hierarchyFilterConfig = [
   ["employmentStatus", "Status"],
 ] as const;
 
+// The Manager filter walks the reporting chain the rows themselves carry (src/lib/org/manager-filter.ts):
+// choosing a manager keeps his own row and everybody beneath him, and the options include every
+// manager up the chain. It used to list only the rows' direct managers and match
+// `row.managerName === selected`, so a manager was never found in his own filter and a National
+// Sales Manager's choice showed his district managers and none of their reps (owner, 2026-10-20).
+const managerChainByItems = new WeakMap<readonly HierarchyItem[], Map<string, string>>();
+
+function managerChainFor(items: readonly HierarchyItem[]) {
+  let chain = managerChainByItems.get(items);
+  if (!chain) {
+    chain = buildManagerChain(items);
+    managerChainByItems.set(items, chain);
+  }
+  return chain;
+}
+
 function uniqueHierarchyOptions<T extends HierarchyItem>(items: T[], key: keyof HierarchyFilterState) {
+  if (key === "managerName") return managerFilterOptions(items, managerChainFor(items));
   return [...new Set(items.map((item) => item[key as keyof HierarchyItem]).filter((value): value is string => Boolean(value)))].sort((left, right) => left.localeCompare(right));
 }
 
@@ -330,10 +350,12 @@ function hasHierarchyData<T extends HierarchyItem>(items: T[]) {
   return hierarchyFilterConfig.some(([key]) => uniqueHierarchyOptions(items, key).length > 0);
 }
 
-function matchesHierarchyFilters<T extends HierarchyItem>(item: T, filters: HierarchyFilterState) {
+function matchesHierarchyFilters<T extends HierarchyItem>(item: T, filters: HierarchyFilterState, items: readonly T[]) {
   return hierarchyFilterConfig.every(([key]) => {
     const selected = filters[key];
-    return selected === "All" || item[key as keyof HierarchyItem] === selected;
+    if (selected === "All") return true;
+    if (key === "managerName") return matchesManagerFilter(item, selected, managerChainFor(items));
+    return item[key as keyof HierarchyItem] === selected;
   });
 }
 
@@ -976,7 +998,7 @@ function TeamCalendarPanel({ employees }: { employees: FieldWorkforceEmployeeSum
     const needle = query.trim().toLowerCase();
     return employees.filter((employee) =>
       (!needle || `${employee.employeeName} ${employee.hrId}`.toLowerCase().includes(needle)) &&
-      matchesHierarchyFilters(employee, hierarchyFilters),
+      matchesHierarchyFilters(employee, hierarchyFilters, employees),
     );
   }, [employees, hierarchyFilters, query]);
 
@@ -1282,7 +1304,7 @@ function MonthlySummaryTable({
     const needle = query.trim().toLowerCase();
     return employees.filter((employee) =>
       (!needle || `${employee.employeeName} ${employee.hrId}`.toLowerCase().includes(needle)) &&
-      matchesHierarchyFilters(employee, hierarchyFilters),
+      matchesHierarchyFilters(employee, hierarchyFilters, employees),
     );
   }, [employees, hierarchyFilters, query]);
 
@@ -1666,7 +1688,7 @@ function ReviewWorkspacePanels({
     const needle = employeeSearch.trim().toLowerCase();
     return result.employees.filter((employee) =>
       (!needle || `${employee.employeeName} ${employee.hrId}`.toLowerCase().includes(needle)) &&
-      matchesHierarchyFilters(employee, hierarchyFilters),
+      matchesHierarchyFilters(employee, hierarchyFilters, result.employees),
     );
   }, [employeeSearch, hierarchyFilters, result.employees]);
 
@@ -1748,7 +1770,7 @@ function RecommendationRows({
     return recommendations.filter((recommendation) => {
       if (severity !== "All" && recommendation.severity !== severity) return false;
       if (decisionStatus !== "All" && recommendation.decisionStatus !== decisionStatus) return false;
-      if (!matchesHierarchyFilters(recommendation, hierarchyFilters)) return false;
+      if (!matchesHierarchyFilters(recommendation, hierarchyFilters, recommendations)) return false;
       if (!needle) return true;
       return `${recommendation.employeeName} ${recommendation.employeeCode} ${recommendation.sourceLabel}`.toLowerCase().includes(needle);
     });
@@ -2053,7 +2075,7 @@ function FinalActionsTable({
 }) {
   const [hierarchyFilters, setHierarchyFilters] = useState<HierarchyFilterState>(emptyHierarchyFilters);
   const filteredActions = useMemo(() =>
-    actions.filter((action) => matchesHierarchyFilters(action, hierarchyFilters)),
+    actions.filter((action) => matchesHierarchyFilters(action, hierarchyFilters, actions)),
   [actions, hierarchyFilters]);
 
   return (

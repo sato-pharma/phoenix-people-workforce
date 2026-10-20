@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { isPortalWeeklyRole } from "@/lib/sales/weekly/portal-weekly-dashboard";
+import { mayReadManagersWeeklySales } from "@/lib/sales/weekly/portal-weekly-dashboard";
 import {
   getPortalWeeklyProductUnits,
   WEEKLY_PRODUCT_UNITS_MONTHS,
@@ -36,10 +36,9 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "read");
-    // The admin Field Sales pages render this same review, so a company executive reaches it here
-    // too — on the full COMPANY tier, resolved server-side exactly as the dashboard feed does.
-    const isCompanyExecutive = access.role === "CEO" || access.role === "Super Admin";
-    if (!isPortalWeeklyRole(access.role) && !isCompanyExecutive) {
+    // The admin Field Sales pages render this same review, so a company-wide reader reaches it here
+    // too — on his own tier, resolved server-side exactly as the dashboard feed does.
+    if (!mayReadManagersWeeklySales(access.role)) {
       return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
     }
 

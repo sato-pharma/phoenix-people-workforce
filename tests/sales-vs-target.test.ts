@@ -13,12 +13,15 @@ import {
   publishedPeriodKeysOf,
   rollupBricks,
   rollupByArea,
+  rollupByDm,
+  rollupByRegionalManager,
   rollupByRep,
   shiftPeriod,
   splitPeriodAtPublication,
   totalRows,
   type BrickSalesRow,
   type VsTargetNames,
+  type VsTargetNode,
 } from "../src/lib/sales/vs-target.ts";
 import {
   filterBricksForBound,
@@ -455,5 +458,86 @@ export function runSalesVsTargetTests() {
     vsTargetSource.includes("return dropRowsWithNoSalesLine(rows.map((row) => ({"),
     "loadAchievementRangeUncached must wrap its mapper in dropRowsWithNoSalesLine — filtering BEFORE " +
       "the cache, so a cached range can never replay the Head Office leak",
+  );
+
+  runRegionalManagerRollupTests();
+}
+
+/**
+ * Owner, 2026-10-20: Sales vs Target had District Managers and no Regional Manager level. The
+ * Regional Manager node may only ever be the SUM of the District Manager nodes beneath him — sales
+ * value, target value and graded actual — with his % recomputed from those sums.
+ */
+function runRegionalManagerRollupTests() {
+  // DM 2001 and DM 2002 sit under Regional Manager 3001; DM 2003 reports straight to the NSM; the
+  // vacant district (no dmHrId) sits under 3001's seat too but has no District Manager row.
+  const rsmOfSeat: Record<string, string> = { "DM-A": "3001", "DM-B": "3001", "DM-V": "3001" };
+  const regionalManagerOf = (entry: AchievementRow) => (entry.dmSeatId ? rsmOfSeat[entry.dmSeatId] ?? null : null);
+  const rmNames: VsTargetNames = {
+    ...names,
+    employeeName: (hrId) => ({ "3001": "Rania Regional", "2001": "Dina A", "2002": "Dalia B" })[hrId] ?? hrId,
+  };
+
+  const current: AchievementRow[] = [
+    // DM-A: two products, one month with a target.
+    row({ dmSeatId: "DM-A", dmHrId: "2001", productCode: "P1", actualValue: 1000, targetValue: 1200, hasTarget: true }),
+    row({ dmSeatId: "DM-A", dmHrId: "2001", productCode: "P2", actualValue: 300, targetValue: null, hasTarget: false }),
+    // DM-B: a month it carries a target in, and an earlier month it carries none in — graded per
+    // district, exactly as the District Managers level grades him.
+    row({ dmSeatId: "DM-B", dmHrId: "2002", actualValue: 500, targetValue: 1000, hasTarget: true }),
+    row({ period: "2026-07", dmSeatId: "DM-B", dmHrId: "2002", actualValue: 700, targetValue: null, hasTarget: false }),
+    // DM-A in July with a target: if the RM were graded on his own pooled months, DM-B's untargeted
+    // July would leak into his numerator. Summing the district totals keeps it out.
+    row({ period: "2026-07", dmSeatId: "DM-A", dmHrId: "2001", actualValue: 50, targetValue: 100, hasTarget: true }),
+    // Vacant district under him, and a district outside his region — neither is his.
+    row({ dmSeatId: "DM-V", dmHrId: null, actualValue: 9999, targetValue: 9999, hasTarget: true }),
+    row({ dmSeatId: "DM-C", dmHrId: "2003", actualValue: 4000, targetValue: 5000, hasTarget: true }),
+  ];
+  const prior: AchievementRow[] = [
+    row({ period: "2026-07", dmSeatId: "DM-A", dmHrId: "2001", actualValue: 800, targetValue: 900, hasTarget: true }),
+    row({ period: "2026-07", dmSeatId: "DM-B", dmHrId: "2002", actualValue: 200, targetValue: 400, hasTarget: true }),
+  ];
+
+  const regional = rollupByRegionalManager(current, prior, rmNames, regionalManagerOf);
+  assert.equal(regional.length, 1, "one Regional Manager, one node");
+  const [node] = regional;
+  assert.equal(node.key, "3001");
+  assert.equal(node.name, "Rania Regional", "a Regional Manager is shown by name, never by HR id");
+
+  const dmNodes = rollupByDm(current, prior, rmNames).filter((dm) => dm.key === "2001" || dm.key === "2002");
+  const sum = (pick: (totals: VsTargetNode["current"]) => number) =>
+    dmNodes.reduce((total, dm) => total + pick(dm.current), 0);
+  assert.equal(node.current.actualValue, sum((totals) => totals.actualValue), "his sales are his districts' sales added up");
+  assert.equal(node.current.targetValue, sum((totals) => totals.targetValue), "his target is his districts' targets added up");
+  assert.equal(node.current.gradedActualValue, sum((totals) => totals.gradedActualValue));
+  assert.equal(
+    node.current.achievementValue,
+    sum((totals) => totals.gradedActualValue) / sum((totals) => totals.targetValue),
+    "his % is recomputed from the summed figures, never an average of his districts' percentages",
+  );
+  assert.equal(node.current.actualValue, 1000 + 300 + 500 + 700 + 50, "the vacant district and the NSM's own district are not his");
+  assert.equal(node.prior?.actualValue, 800 + 200, "the prior month is summed the same way");
+  assert.equal(node.growth, (2550 - 1000) / 1000);
+
+  // No Regional Manager anywhere → no level at all, never an empty row.
+  assert.deepEqual(rollupByRegionalManager(current, null, rmNames, () => null), []);
+
+  // Wiring the unit tests cannot see: the page builder reads the seat tree for company and line
+  // viewers only, and the dashboard offers the level only when it has rows.
+  const pageSource = stripComments(readFileSync(new URL("../src/lib/sales/vs-target-page.ts", import.meta.url), "utf8"));
+  assert.ok(
+    /resolved\.kind === "company" \|\| resolved\.kind === "line" \? loadSalesSeatTree\(\)/.test(pageSource),
+    "the Regional Managers level is built for a company or line viewer only",
+  );
+  assert.ok(
+    /regionalManagers: rollupByRegionalManager\(rows, priorRows, names,/.test(pageSource),
+    "the dashboard payload carries the Regional Managers roll-up of the scoped, published rows",
+  );
+  const dashboardSource = stripComments(
+    readFileSync(new URL("../src/components/sales/vs-target/vs-target-dashboard.tsx", import.meta.url), "utf8"),
+  );
+  assert.ok(
+    dashboardSource.includes('if (data.regionalManagers.length > 0) levels.push("regionalManagers");'),
+    "the Regional Managers chip appears whenever the payload has Regional Manager rows",
   );
 }

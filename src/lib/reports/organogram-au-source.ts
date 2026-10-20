@@ -373,14 +373,23 @@ export async function buildOrganogramSeatReport(
   // Head Office seats at all — so those employees are assembled from the employee master
   // and hung off the CEO node. Appended here, at the single source every organogram and
   // vacancy-tree caller reads, so the existing boundaries apply to it untouched:
-  // `scopeAuOrganogramRows` drops the branch in line mode (its rows name a line), and
-  // `getOrganogramReport` strips it in company mode for anyone without
+  // `scopeAuOrganogramRows` drops the branch in line mode (its rows name a line) — except a
+  // marketer whose OWN line is on the chart, kept with the Head Office managers above him
+  // (owner, 2026-10-20) — and `getOrganogramReport` strips it in company mode for anyone without
   // `canAccessHeadOffice`. See organogram-head-office.ts.
   const ceoSeat = tree.find((s) => s.seat_tier === "CEO" && !isDropped(s));
   const occupiedHrIds = new Set<string>();
+  // The seat model's own line names by line id (`au.lines`: 1 Anti infective, 2 Pedia, 3 CNS —
+  // the same ids `employees.line_id` carries), so a marketer's `ownLineName` is spelled exactly
+  // as the sales rows of that line spell theirs. No extra query.
+  const lineNameById = new Map<number, string>();
   for (const s of tree) {
     const key = canonicalHrIdKey(s.occupant_hr_id);
     if (key) occupiedHrIds.add(key);
+    const lineId = s.line_id == null ? null : Number(s.line_id);
+    if (lineId != null && Number.isFinite(lineId) && s.line_name && !lineNameById.has(lineId)) {
+      lineNameById.set(lineId, s.line_name);
+    }
   }
   // Open HEAD OFFICE seats, so the chart shows a department's unfilled roles the way it
   // already shows an unfilled sales seat. Filtered in SQL to line 4 + open — a sales vacancy
@@ -414,12 +423,21 @@ export async function buildOrganogramSeatReport(
     // The Head Office branch reads the same employee rows, so it resolves the team the same way.
     // Without this the two halves of one chart would disagree about where a team name comes from.
     teamNameFor,
+    lineNameFor: (lineId) => lineNameById.get(lineId) ?? null,
   });
 
   return { organogramRows: [...rows, ...headOfficeRows], rows: [], summary: { ...emptySummary } };
 }
 
-/** Scope the seat rows to the viewer's line(s); CEO (line-less) is always kept. */
+/**
+ * Scope the seat rows to the viewer's line(s); CEO (line-less) is always kept.
+ *
+ * A Head Office row whose `ownLineName` is an allowed line — a Product or Group Product Manager of
+ * that line — is kept too, with every row above it on its manager chain (owner, 2026-10-20: the
+ * Pedia Product and Group Product Managers were on no Pedia chart, their own included). The chain
+ * is what keeps each kept marketer placeable: her Head Office manager is drawn with her. Nothing
+ * else of Head Office comes along.
+ */
 export function scopeAuOrganogramRows(
   rows: OrganogramReportRow[],
   options: { mode: "company" | "line"; lineName?: string | null; lineNames?: string[] | null },
@@ -430,8 +448,29 @@ export function scopeAuOrganogramRows(
       .filter((l): l is string => Boolean(l))
       .map((l) => normalizeLineName(l)),
   );
+  const onAllowedLine = (line: string | null | undefined) => Boolean(line) && allowed.has(normalizeLineName(line));
+
+  // Within one emitted chart a manager pointer is the exact string of its parent's hrId (the seat
+  // source and the Head Office branch both emit it that way), so the climb compares raw keys.
+  const rowByHrId = new Map<string, OrganogramReportRow>();
+  for (const row of rows) {
+    if (row.hrId && !rowByHrId.has(row.hrId)) rowByHrId.set(row.hrId, row);
+  }
+  const keptAncestors = new Set<string>();
+  for (const row of rows) {
+    if (onAllowedLine(row.lineName) || !onAllowedLine(row.ownLineName)) continue;
+    let managerKey = row.managerHrId ?? null;
+    while (managerKey && !keptAncestors.has(managerKey)) {
+      const manager = rowByHrId.get(managerKey);
+      if (!manager) break;
+      keptAncestors.add(managerKey);
+      managerKey = manager.managerHrId ?? null;
+    }
+  }
+
   return rows.filter((row) => {
     if (!row.lineName) return true; // CEO / line-less leadership
-    return allowed.has(normalizeLineName(row.lineName));
+    if (onAllowedLine(row.lineName) || onAllowedLine(row.ownLineName)) return true;
+    return Boolean(row.hrId) && keptAncestors.has(row.hrId);
   });
 }

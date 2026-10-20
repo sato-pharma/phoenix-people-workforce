@@ -391,6 +391,9 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // them to a shell that bounces them.
   "src/lib/retention-risk/messages.ts",
   "src/lib/support-requests/service.ts",
+  // HR Operations reads the whole company's vacation report (her 2026-08-29 company scope, carried
+  // into this second, parallel scope switch on 2026-10-20). Reading only — approvals are gated apart.
+  "src/lib/vacation/visibility-scope.ts",
   "src/lib/workflow-control/definitions.ts",
   // ── The Talent Acquisition seat (HR Resourcing), 2026-10-08 ──────────────────────────────────
   // Each file below names HR Resourcing because the owner ticked that page for her on the access

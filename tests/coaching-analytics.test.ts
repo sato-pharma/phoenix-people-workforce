@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
 import {
   buildCoachingReportAnalytics,
   buildCoachingScoreAnalytics,
@@ -292,6 +293,20 @@ export function runCoachingAnalyticsTests() {
   assert.match(portalTmCoachingSource, /buildCoachingReportAnalytics/);
   assert.doesNotMatch(adminAnalyticsPageSource, /function buildAnalytics/);
   assert.doesNotMatch(portalTmCoachingSource, /function buildAnalytics/);
+  // The rep comparison, coverage table and filter options are built from the DIRECTORY, so each
+  // surface narrows it by the coaching access rule before building them (owner, 2026-10-20) — the
+  // admin page and its API listed every line's reps as uncoached to a line or team manager.
+  for (const [surface, source] of [
+    ["the admin coaching analytics page", adminAnalyticsPageSource],
+    ["the coaching analytics API", routeSource],
+  ] as const) {
+    const code = stripComments(source);
+    assert.match(code, /const employees = scopeCoachingDirectoryForAccess\(access, directory\);/, `${surface} must scope the directory by the coaching access rule`);
+    assert.match(code, /,\s*directory\]\s*=\s*await Promise\.all\(\[/, `${surface} must read the raw directory as \`directory\`, never straight into \`employees\``);
+  }
+  const portalAnalyticsCode = stripComments(readFileSync("app/employee-portals/coaching-analytics/page.tsx", "utf8"));
+  assert.match(portalAnalyticsCode, /const scopedEmployees = scopeCoachingDirectoryForAccess\(access, employees\);/, "the portal coaching analytics page uses the same scope helper");
+  assert.match(portalAnalyticsCode, /employees: scopedEmployees,/, "the portal comparison is built from the scoped directory");
   assert.match(adminAnalyticsPageSource, /initialReportFilters = \{ year: currentYear \}/);
   assert.match(adminAnalyticsPageSource, /initialFilters=\{\{ year: String\(currentYear\) \}\}/);
   assert.match(portalTmCoachingSource, /initialReportFilters = \{ year: currentYear \}/);

@@ -41,6 +41,12 @@ import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 import { loadEmployeeNameMap, loadProductNameMap } from "@/lib/sales/monthly-targets";
 import {
+  loadSalesSeatTree,
+  regionalManagerAbove,
+  vacantDistrictLabel,
+  type SalesSeatTree,
+} from "@/lib/sales/seat-hierarchy";
+import {
   SALES_VS_TARGET_FLOOR,
   isRowPublished,
   loadPublishedPeriodKeys,
@@ -48,7 +54,7 @@ import {
   salesVsTargetPeriods,
   totalRows,
 } from "@/lib/sales/vs-target";
-import { filterRowsForBound, resolveVsTargetBound } from "@/lib/sales/vs-target-scope";
+import { filterRowsForBound, resolveVsTargetBound, type VsTargetBound } from "@/lib/sales/vs-target-scope";
 
 import type {
   CompanyDsmPerformanceData,
@@ -105,6 +111,11 @@ type MemberAgg = {
   units: number;
   /** For the rep grain: the DM seat this rep's rows resolved to (first seen). */
   dmHrId: string | null;
+  /**
+   * For the rep grain: the DM SEAT of the first row that resolved to no DM — a vacant district. Read
+   * only while `dmHrId` stays null, to name that district instead of "Unassigned District".
+   */
+  vacantDmSeatId: string | null;
   products: Map<string, { sales: number; coveredSales: number; target: number; units: number }>;
 };
 
@@ -143,11 +154,23 @@ export function activePeriodsOf(rows: AchievementRow[], publishedKeys: ReadonlyS
   ).sort((a, b) => b.localeCompare(a));
 }
 
-/** Load the window scoped to ONE viewer's bound (NSM line, DSM areas, rep self, …). */
+/**
+ * The bound one viewer's performance rows are cut to. The vs-target bound, with one narrowing: a
+ * Regional Manager reads these pages ONLY through his seat's areas (owner, 2026-10-20, when MRs and
+ * DSMs Performance opened to him). An RM whose seat did not resolve falls through
+ * resolveVsTargetBound to his whole LINE — the National Sales Manager's view — so that case fails
+ * CLOSED here, the same rule getRmRegionalPerformance keeps for his landing page.
+ */
+export function performanceBoundFor(role: AccessContext["role"], bound: VsTargetBound): VsTargetBound {
+  if (role === "Regional Manager" && bound.kind !== "areas") return { kind: "none" };
+  return bound;
+}
+
+/** Load the window scoped to ONE viewer's bound (NSM line, DSM / RM areas, rep self, …). */
 async function loadScopedRows(
   ctx: AccessContext,
 ): Promise<{ rows: AchievementRow[]; activePeriods: string[]; publishedKeys: Set<string> }> {
-  const bound = await resolveVsTargetBound(ctx);
+  const bound = performanceBoundFor(ctx.role, await resolveVsTargetBound(ctx));
   const { rows: windowRows, publishedKeys } = await loadWindowRows();
   const rows = filterRowsForBound(windowRows, bound);
   return { rows, activePeriods: activePeriodsOf(rows, publishedKeys), publishedKeys };
@@ -182,7 +205,16 @@ function aggregate(rows: AchievementRow[], grain: Grain): Map<string, MemberAgg>
     if (!hrId) continue; // rows with no resolved occupant belong at area level, not here
     let agg = map.get(hrId);
     if (!agg) {
-      agg = { hrId, fullActual: 0, coveredActual: 0, target: 0, units: 0, dmHrId: null, products: new Map() };
+      agg = {
+        hrId,
+        fullActual: 0,
+        coveredActual: 0,
+        target: 0,
+        units: 0,
+        dmHrId: null,
+        vacantDmSeatId: null,
+        products: new Map(),
+      };
       map.set(hrId, agg);
     }
     const target = row.targetValue ?? 0;
@@ -191,6 +223,7 @@ function aggregate(rows: AchievementRow[], grain: Grain): Map<string, MemberAgg>
     agg.target += target;
     if (row.hasTarget) agg.coveredActual += row.actualValue;
     if (grain === "rep" && row.dmHrId && !agg.dmHrId) agg.dmHrId = row.dmHrId;
+    if (grain === "rep" && !row.dmHrId && row.dmSeatId && !agg.vacantDmSeatId) agg.vacantDmSeatId = row.dmSeatId;
 
     const productCode = row.productCode || "UNKNOWN";
     let product = agg.products.get(productCode);
@@ -211,9 +244,9 @@ function toMember(
   agg: MemberAgg,
   employeeNames: Map<string, string>,
   productNames: Map<string, string>,
-  managerHrId: string | null,
-  managerName: string | null,
+  manager: ResolvedManager,
 ): DsmTeamMemberData {
+  const { managerHrId, managerName, vacantManagerSeatId } = manager;
   const products: DsmTeamMemberProductData[] = Array.from(agg.products.entries())
     .map(([code, product]) => ({
       achievementPercent: product.target > 0 ? (product.coveredSales / product.target) * 100 : 0,
@@ -231,6 +264,7 @@ function toMember(
     name: employeeNames.get(agg.hrId) ?? "Unnamed employee",
     managerHrId,
     managerName,
+    ...(vacantManagerSeatId ? { vacantManagerSeatId } : {}),
     position: 0,
     products,
     totalSales: agg.fullActual,
@@ -245,8 +279,11 @@ function rankMembers(members: DsmTeamMemberData[]): DsmTeamMemberData[] {
     .map((member, index) => ({ ...member, position: index + 1 }));
 }
 
+/** A member's manager: a person, or — for a rep under a vacant district — that district's seat. */
+type ResolvedManager = { managerHrId: string | null; managerName: string | null; vacantManagerSeatId?: string | null };
+
 /** How each member's manager (DM for reps, NSM for DMs) is resolved. */
-type ManagerResolver = (agg: MemberAgg) => { managerHrId: string | null; managerName: string | null };
+type ManagerResolver = (agg: MemberAgg) => ResolvedManager;
 
 /** Ranked member list for a set of rows at the given grain. Pure. */
 function membersFromRows(
@@ -258,19 +295,72 @@ function membersFromRows(
 ): DsmTeamMemberData[] {
   const aggMap = aggregate(rows, grain);
   return rankMembers(
-    Array.from(aggMap.values()).map((agg) => {
-      const manager = managerFor(agg);
-      return toMember(agg, employeeNames, productNames, manager.managerHrId, manager.managerName);
-    }),
+    Array.from(aggMap.values()).map((agg) => toMember(agg, employeeNames, productNames, managerFor(agg))),
   );
 }
 
-/** A rep's manager is the DM seat its rows resolved to. */
-function repManagerResolver(employeeNames: Map<string, string>): ManagerResolver {
-  return (agg) => ({
-    managerHrId: agg.dmHrId,
-    managerName: agg.dmHrId ? employeeNames.get(agg.dmHrId) ?? null : null,
-  });
+/**
+ * A rep's manager is the DM seat its rows resolved to. When that seat was vacant (no row named a
+ * DM), the rep is placed under the seat itself — "Vacant — Alex-BHR", from the seat tree — rather
+ * than in one "Unassigned District" bucket shared by every vacant district (owner, 2026-10-20).
+ * A rep with no district seat at all (the "Others" bucket) keeps the old unassigned label.
+ */
+function repManagerResolver(employeeNames: Map<string, string>, seats: SalesSeatTree): ManagerResolver {
+  return (agg) => {
+    if (agg.dmHrId) return { managerHrId: agg.dmHrId, managerName: employeeNames.get(agg.dmHrId) ?? null };
+    const vacantLabel = vacantDistrictLabel(agg.vacantDmSeatId, seats);
+    if (!vacantLabel) return { managerHrId: null, managerName: null };
+    return { managerHrId: null, managerName: vacantLabel, vacantManagerSeatId: agg.vacantDmSeatId };
+  };
+}
+
+/**
+ * Medical-rep members of a set of rows, each under its DM — or its vacant district. Pure: exported
+ * so the vacant-district label is pinned without a database.
+ */
+export function repMembersFromRows(
+  rows: AchievementRow[],
+  employeeNames: Map<string, string>,
+  productNames: Map<string, string>,
+  seats: SalesSeatTree,
+): DsmTeamMemberData[] {
+  return membersFromRows(rows, "rep", employeeNames, productNames, repManagerResolver(employeeNames, seats));
+}
+
+/**
+ * Regional Manager roll-up rows (owner, 2026-10-20: the DSMs view had no Regional Manager row).
+ *
+ * Each row is the SUM of the district-manager rows beneath him and nothing else: every row with a
+ * seated DM whose DM seat hangs off an occupied RSM seat is folded under that RSM's occupant, by the
+ * same `aggregate` that builds the DM rows. So his sales, target and covered sales are exactly those
+ * DM rows added up, and his % is recomputed from the sums, as every row here is. A vacant district
+ * under him (no `dmHrId`) is left out on purpose — it has no DM row either, and is the same
+ * reconciliation slice it already is on the page — so his row never reads more than the districts
+ * listed under him.
+ *
+ * Built apart from `dsms`, never inside it: a Regional Manager added to that list would be counted
+ * as one more DSM and his districts twice. `excludeHrId` drops the viewer's own row (an RM looking at
+ * his own region would only see himself). `nsm` is who each Regional Manager reports to. Pure.
+ */
+export function regionalManagerMembersFromRows(
+  rows: AchievementRow[],
+  seats: SalesSeatTree,
+  employeeNames: Map<string, string>,
+  productNames: Map<string, string>,
+  nsm: { hrId: string | null; name: string | null },
+  excludeHrId?: string | null,
+): DsmTeamMemberData[] {
+  const exclude = String(excludeHrId ?? "").trim().toUpperCase();
+  const underRegionalManagers: AchievementRow[] = [];
+  for (const row of rows) {
+    if (!row.dmHrId) continue;
+    const rsm = regionalManagerAbove(row.dmSeatId, seats);
+    if (!rsm) continue;
+    if (exclude && rsm.hrId.trim().toUpperCase() === exclude) continue;
+    // Re-keyed, never re-priced: the row's own values go under the RSM's occupant.
+    underRegionalManagers.push({ ...row, dmHrId: rsm.hrId });
+  }
+  return membersFromRows(underRegionalManagers, "dm", employeeNames, productNames, dmManagerResolver(nsm.hrId, nsm.name));
 }
 
 /** A DM's manager is the line's NSM (fixed per line). */
@@ -306,7 +396,11 @@ export async function buildNsmDsmPerformanceFromSos(
   requested: string | string[] | null | undefined,
 ): Promise<NsmDsmPerformanceData> {
   const { rows, activePeriods, publishedKeys } = await loadScopedRows(ctx);
-  const [employeeNames, productNames] = await Promise.all([loadEmployeeNameMap(), loadProductNameMap()]);
+  const [employeeNames, productNames, seats] = await Promise.all([
+    loadEmployeeNameMap(),
+    loadProductNameMap(),
+    loadSalesSeatTree(),
+  ]);
 
   const used = selectRows(rows, activePeriods, requested, publishedKeys);
   const nsmHrId = ctx.hrId ? String(ctx.hrId) : null;
@@ -314,10 +408,19 @@ export async function buildNsmDsmPerformanceFromSos(
 
   const dsms = membersFromRows(used, "dm", employeeNames, productNames, dmManagerResolver(nsmHrId, nsmName));
   const totals = headlineTotals(used);
+  // Reconciled against the DSM rows only — the Regional Manager rows below are sums OF those rows.
   const { unattributedSales, unattributedTarget } = reconcileUnattributed(totals, dsms);
 
   return {
     dsms,
+    regionalManagers: regionalManagerMembersFromRows(
+      used,
+      seats,
+      employeeNames,
+      productNames,
+      { hrId: nsmHrId, name: nsmName },
+      ctx.hrId,
+    ),
     periods: activePeriods,
     lineAchievementPercent: totals.achievementPercent,
     dsmCount: dsms.length,
@@ -338,10 +441,14 @@ export async function buildDsmTeamPerformanceFromSos(
   requested: string | string[] | null | undefined,
 ): Promise<DsmTeamPerformanceData> {
   const { rows, activePeriods, publishedKeys } = await loadScopedRows(ctx);
-  const [employeeNames, productNames] = await Promise.all([loadEmployeeNameMap(), loadProductNameMap()]);
+  const [employeeNames, productNames, seats] = await Promise.all([
+    loadEmployeeNameMap(),
+    loadProductNameMap(),
+    loadSalesSeatTree(),
+  ]);
 
   const used = selectRows(rows, activePeriods, requested, publishedKeys);
-  const members = membersFromRows(used, "rep", employeeNames, productNames, repManagerResolver(employeeNames));
+  const members = repMembersFromRows(used, employeeNames, productNames, seats);
   const totals = headlineTotals(used);
   const { unattributedSales, unattributedTarget } = reconcileUnattributed(totals, members);
 
@@ -383,13 +490,17 @@ export async function buildCompanyMedRepPerformanceFromSos(
   lineMetaByCode: Map<string, SosCompanyLineMeta>,
 ): Promise<CompanyMedRepPerformanceData> {
   const { rows, activePeriods, publishedKeys } = await loadCompanyRows(new Set(lineMetaByCode.keys()));
-  const [employeeNames, productNames] = await Promise.all([loadEmployeeNameMap(), loadProductNameMap()]);
+  const [employeeNames, productNames, seats] = await Promise.all([
+    loadEmployeeNameMap(),
+    loadProductNameMap(),
+    loadSalesSeatTree(),
+  ]);
   const used = selectRows(rows, activePeriods, requested, publishedKeys);
 
   const lines: CompanyMedRepPerformanceLine[] = [];
   for (const [lineCode, meta] of lineMetaByCode) {
     const lineRows = used.filter((row) => row.lineCode === lineCode);
-    const members = membersFromRows(lineRows, "rep", employeeNames, productNames, repManagerResolver(employeeNames));
+    const members = repMembersFromRows(lineRows, employeeNames, productNames, seats);
     if (members.length === 0) continue;
     const totals = headlineTotals(lineRows);
     const lineUnattributed = reconcileUnattributed(totals, members);
@@ -438,7 +549,11 @@ export async function buildCompanyDsmPerformanceFromSos(
   lineMetaByCode: Map<string, SosCompanyLineMeta>,
 ): Promise<CompanyDsmPerformanceData> {
   const { rows, activePeriods, publishedKeys } = await loadCompanyRows(new Set(lineMetaByCode.keys()));
-  const [employeeNames, productNames] = await Promise.all([loadEmployeeNameMap(), loadProductNameMap()]);
+  const [employeeNames, productNames, seats] = await Promise.all([
+    loadEmployeeNameMap(),
+    loadProductNameMap(),
+    loadSalesSeatTree(),
+  ]);
   const used = selectRows(rows, activePeriods, requested, publishedKeys);
 
   const lines: CompanyDsmPerformanceLine[] = [];
@@ -460,6 +575,10 @@ export async function buildCompanyDsmPerformanceFromSos(
       nsmName: meta.nsmName,
       performance: {
         dsms,
+        regionalManagers: regionalManagerMembersFromRows(lineRows, seats, employeeNames, productNames, {
+          hrId: meta.nsmHrId,
+          name: meta.nsmName,
+        }),
         periods: activePeriods,
         lineAchievementPercent: totals.achievementPercent,
         dsmCount: dsms.length,
@@ -513,14 +632,18 @@ export async function buildRmRegionalPerformanceFromSos(
       ? relevantAll.filter((row) => row.lineCode != null && lineCodes.has(row.lineCode))
       : relevantAll;
   const activePeriods = activePeriodsOf(relevant, publishedKeys);
-  const [employeeNames, productNames] = await Promise.all([loadEmployeeNameMap(), loadProductNameMap()]);
+  const [employeeNames, productNames, seats] = await Promise.all([
+    loadEmployeeNameMap(),
+    loadProductNameMap(),
+    loadSalesSeatTree(),
+  ]);
   const used = selectRows(relevant, activePeriods, requested, publishedKeys);
 
   const dsms = membersFromRows(used, "dm", employeeNames, productNames, dmManagerResolver(nsm.hrId, nsm.name))
     .filter((dsm) => isInRegion(dsm.hrId))
     .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
 
-  const topReps = membersFromRows(used, "rep", employeeNames, productNames, repManagerResolver(employeeNames))
+  const topReps = repMembersFromRows(used, employeeNames, productNames, seats)
     .filter((rep) => isInRegion(rep.hrId) || isInRegion(rep.managerHrId))
     .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
 

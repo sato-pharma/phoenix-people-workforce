@@ -19,7 +19,8 @@ export const dynamic = "force-dynamic";
  * The page gate is ROI Tracking's own (`allowCompanyOversight: true`), not a set of its own: this
  * is the ROI report grouped by person, so its audience is that report's audience. WHICH rows a
  * viewer sees is decided server-side by `resolveMarketingRoiScope` — a National Sales Manager gets
- * the managers under him, a company-wide oversight role gets everyone.
+ * the managers under him plus whoever ran a campaign on his line (owner, 2026-10-20: the Product
+ * and Group Product Managers), a company-wide oversight role gets everyone.
  */
 export default async function AdminMarketingManagerScorecardPage() {
   await assertMarketingAdminPageAccess({ allowCompanyOversight: true });

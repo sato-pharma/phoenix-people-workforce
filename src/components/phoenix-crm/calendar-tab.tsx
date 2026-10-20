@@ -172,13 +172,16 @@ function dayHref(row: { seatId: string; kind?: "rep" | "manager" }, day: string,
 /**
  * Whether a cell is a link. A rep's cell opens on a working day (or, for the Super Admin, to enter what was
  * missed); a manager's opens only on a day he worked, because there is no record to enter on a manager's seat.
+ * A product manager's row opens nothing (owner, 2026-10-20): he holds no seat, so there is no day page to open
+ * on it — his cell explains the day in the panel below the grid, and each visit he rode is on the rep's day.
  */
 function cellOpens(
-  row: { seatId: string; kind?: "rep" | "manager" },
+  row: { seatId: string; kind?: "rep" | "manager"; seatless?: boolean },
   day: TeamCalendarDay,
   entrySeats: ReadonlySet<string>,
   entryThrough: string | null,
 ): boolean {
+  if (row.seatless) return false;
   if (row.kind === "manager") return opensTheDay(day);
   return opensTheDay(day) || opensForEntry(entrySeats, entryThrough, row.seatId, day);
 }
@@ -559,7 +562,13 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                   HR has approved leave covering this day.
                 </p>
               ) : null}
-              {chosen.row.kind === "manager" ? (
+              {chosen.row.seatless ? (
+                <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
+                  A product manager&apos;s day: their own single visits plus the visits a rep logged naming them as
+                  the product manager. They hold no territory, so the day has no page of its own: each visit they
+                  joined opens from that rep&apos;s row. Counted in none of the month&apos;s totals.
+                </p>
+              ) : chosen.row.kind === "manager" ? (
                 <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-600">
                   A manager&apos;s day: their own single visits plus the visits they joined a rep on. A day with
                   either opens in full, in a new tab. A day spent on admin, a meeting or travel is not drawn here.

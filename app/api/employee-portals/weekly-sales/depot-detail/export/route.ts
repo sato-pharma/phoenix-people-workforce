@@ -10,7 +10,7 @@ import {
   loadWeeklySalesDepotDetail,
   parseWeeklySalesDetailManagerParams,
 } from "@/lib/sales/weekly/depot-detail-service";
-import { isPortalWeeklyRole } from "@/lib/sales/weekly/portal-weekly-dashboard";
+import { mayReadManagersWeeklySales } from "@/lib/sales/weekly/portal-weekly-dashboard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,8 +21,7 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "read");
-    const isCompanyExecutive = access.role === "CEO" || access.role === "Super Admin";
-    if (!isPortalWeeklyRole(access.role) && !isCompanyExecutive) {
+    if (!mayReadManagersWeeklySales(access.role)) {
       return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
     }
     await assertExportRateLimit({

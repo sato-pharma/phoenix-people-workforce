@@ -162,6 +162,11 @@ export function isMedicalRep(input: {
  * medical representatives kept, 6 district sales managers and 1 product manager dropped. A manager
  * carries no doctor plan of his own, so he lands at "No plan" on two of the three measures and
  * drags the team averages toward a number that describes nobody.
+ *
+ * That still holds for the REP rows. Since 2026-10-20 (owner: "add manager row and every dm kpis is
+ * calculated based on his reps averag") the KPIs board also lists its managers — but as a separate
+ * list of AVERAGES of the rep rows this function keeps (crm/kpis-manager-rows.ts), never by letting a
+ * manager back through here, so his own thin CRM activity is still never scored as a rep's.
  */
 export function keepMedicalRepsOnly<T extends { jobTitle: string | null }>(rows: readonly T[]): T[] {
   return rows.filter((row) => isMedicalRep({ placement: null, jobTitle: row.jobTitle }));

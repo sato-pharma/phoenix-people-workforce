@@ -6,6 +6,7 @@ import { DOCTOR_LIST_PORTAL_ROLES } from "@/lib/crm/doctor-list-roles";
 import { canViewMarketingCoverageReport } from "@/lib/marketing-requests/coverage-report-access";
 import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
 import { isNamedProductionPlanningPerson } from "@/lib/production-planning/access";
+import { isFullOrganogramPinnedHrId } from "@/lib/reports/organogram-pinned-accounts";
 import { VISUAL_AIDS_PORTAL_ROLES } from "@/lib/visual-aids/rules";
 
 export type EmployeePortalNavVisibility = {
@@ -635,7 +636,14 @@ export function resolveEmployeePortalNavVisibility(
     resolvedRole === "District Manager" || resolvedRole === "Regional Manager";
   const hideMyPerformanceTab = hideMyPerformanceTabRoles.has(resolvedRole);
   const showTeamPerformanceTab = isDistrictManager && !isHeadOfficeManagerRung;
-  const showMedRepsPerformanceTab = isNationalSalesManager;
+  // MRs Performance and DSMs Performance — the National Sales Manager's line roll-ups, and since
+  // 2026-10-20 the Regional Manager's too (owner: "every single role that's applicable to appear in
+  // a module"). His landing page already listed his districts and his top reps, and Team
+  // Performance told him it was for District Sales Managers only, so he had no page for either.
+  // Both pages admit him by the same two roles and the data is the same builder, bounded to his own
+  // seat's areas (resolveVsTargetBound) — never his whole line.
+  const isPerformanceRollupRole = isNationalSalesManager || isRegionalManager;
+  const showMedRepsPerformanceTab = isPerformanceRollupRole;
   // Reps List — the portal twin of /admin/reps-list, scoped to the viewer's own reach. The owner
   // asked for it on 2026-08-31: "every manager in the employee portal has a scoped reps list."
   //
@@ -749,7 +757,7 @@ export function resolveEmployeePortalNavVisibility(
 
   return {
     showDashboardTab: !isTrainingManager,
-    showDsmsPerformanceTab: isNationalSalesManager,
+    showDsmsPerformanceTab: isPerformanceRollupRole,
     showTeamCalendarTab: isNationalSalesManager,
     showFieldAbsenceTab: isNationalSalesManager,
     // The isHeadOffice branch is line/department-based, so a District or Regional Manager sitting
@@ -809,12 +817,13 @@ export function resolveEmployeePortalNavVisibility(
     // isA3Account added 2026-09-02 (owner: "show the full organogram to sama mosaad account"). The
     // rung DOES now hold organogram:read in defaultPermissionMatrix, but the enforcing gates
     // (canAccessCompanyOrganogram / canAccessHeadOffice in src/lib/reports/organogram.ts) are
-    // pinned to HR_ID A-3, so surfacing the link for the whole rung would hand her two colleagues
-    // a row that redirects — the dead link tests/sfe-manager-nav-dead-links.test.ts exists for.
-    // This flag is her ONLY door: system-navigation.ts's portal Organogram entry deliberately does
-    // NOT list "Manager", because that file cannot express an HR_ID, so adding the role there
-    // would fail tests/organogram-nav-link-exists-for-every-role-that-can-open-it.test.ts as a
-    // dead link for the other two. The cost is that the command palette cannot offer it to her.
+    // pinned by HR_ID (A-3, and AB since 2026-10-20), so surfacing the link for the whole rung
+    // would hand A-14 a row that redirects — the dead link tests/sfe-manager-nav-dead-links.test.ts
+    // exists for. This flag is the pinned accounts' ONLY door: system-navigation.ts's portal
+    // Organogram entry deliberately does NOT list "Manager", because that file cannot express an
+    // HR_ID, so adding the role there would fail
+    // tests/organogram-nav-link-exists-for-every-role-that-can-open-it.test.ts as a dead link for
+    // A-14. The cost is that the command palette cannot offer it to them.
     //
     // Training Manager added 2026-09-10 (owner: A-7 reported the organogram missing). This is the
     // SAME hole the 2026-08-25 fix was written for, one layer further in, and it stayed open
@@ -825,8 +834,13 @@ export function resolveEmployeePortalNavVisibility(
     // canAccessCompanyOrganogram and holds organogram:read, so the page has served him the whole
     // chart on request the entire time — exactly the "granted on paper, unreachable in the
     // product" shape, and the third time this page has paid for it.
+    //
+    // The pinned accounts are read from src/lib/reports/organogram-pinned-accounts.ts, the SAME list
+    // the two enforcing gates read, so the link and the page cannot disagree. That list gained AB,
+    // the R&D Manager the QPPV reports to (owner, 2026-10-20); A-14 stays outside, with no link.
+    // `isA3Account` is no longer the organogram door — it still carries her other carve-outs only.
     showOrganogramTab:
-      isA3Account ||
+      isFullOrganogramPinnedHrId(viewerHrId) ||
       showMedRepsPerformanceTab ||
       resolvedRole === "District Manager" ||
       isRegionalManager ||
@@ -942,9 +956,11 @@ export function resolveEmployeePortalNavVisibility(
     // src/lib/recruitment/interview-calendar.ts, which the page itself also asks.
     showInterviewCalendarTab: hasInterviewCalendarAccess === true,
     // Personally device-tracked employees see their own punch history; a head-of-department
-    // Marketing Manager also gets the tab to review their team's attendance (self + direct reports,
-    // gated server-side by canViewEmployeeAttendanceReport on /employee-portals/fingerprint-analytics).
-    showFingerprintReportTab: hasDeviceMapping === true || isMarketingManager,
+    // Marketing Manager also gets the tab to review their team's attendance (self + her subtree,
+    // gated server-side by assertCanViewEmployeeAttendance on /employee-portals/fingerprint-analytics).
+    // So does the generic "Manager" seat (the R&D Manager has reports): the page admits him through
+    // his attendance:read grant and the picker lists the same team (owner, 2026-10-20).
+    showFingerprintReportTab: hasDeviceMapping === true || isMarketingManager || isHeadOfficeManagerRung,
     // No role test on purpose. `phoenixCrmEntryAvailable` (src/lib/phoenix-crm/server/page.ts) is the
     // module's own gate and already answers permission, territory and line opening together; a second
     // list of roles here would drift from it the first time the owner opens or closes a line.
@@ -1039,14 +1055,17 @@ export function resolveEmployeePortalNavVisibility(
       // (TERRITORY_DRILLDOWN_ROLES / isTerritoryLinePickerRole, the server-side gate this mirrors).
       resolvedRole === "Super Admin" ||
       resolvedRole === "CEO",
-    // Mirrors PORTAL_CRM_ROLES exactly (Medical Rep / DSM / RM / NSM). Uses the explicit
-    // "District Manager" check, NOT isDistrictManager, so the Head-Office "Manager" rung — which has
-    // no field reps and would get an empty grid — is excluded, matching the page's own gate.
+    // Mirrors PORTAL_CRM_ROLES exactly (Medical Rep / DSM / RM / NSM, and since 2026-10-20 the
+    // Product and Group Product Manager on their own line). Uses the explicit "District Manager"
+    // check, NOT isDistrictManager, so the Head-Office "Manager" rung — which has no field reps and
+    // would get an empty grid — is excluded, matching the page's own gate.
     showCrmMasterTab:
       isMedicalRep ||
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
-      isNationalSalesManager,
+      isNationalSalesManager ||
+      isProductManager ||
+      isGroupProductManager,
     // Mirrors PORTAL_TERRITORY_MANAGEMENT_ROLES in src/lib/territory-management/service.ts, which is
     // the enforcing gate; this flag only surfaces the sidebar link. Spelled out rather than imported
     // for the same reason as the excuse gate above — that module pulls in the Supabase server client,

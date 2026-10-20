@@ -46,6 +46,7 @@ import {
   territoriesInScope,
 } from "@/lib/business-review/scope-filter";
 import type { ReviewLine } from "@/lib/business-review/canonical";
+import { peopleForReviewFilter, peopleInReviewView } from "@/lib/business-review/people-view";
 import type { ReviewPersonRow } from "@/lib/business-review/sources/roles";
 import {
   defaultSelectionFor,
@@ -289,32 +290,28 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
     const keptSeats = new Set(filter.dmSeatIds);
     const fAreas: AreaSummary[] = [];
     const fDms: DmSummary[] = [];
-    const fPeople: ReviewPersonRow[] = [];
+    const peopleByLine: Partial<Record<ReviewLine, readonly ReviewPersonRow[]>> = {};
     let months: string[] = [];
 
     for (const line of filter.lines) {
       const lineDs = getReviewDataset(review, line);
       months = lineDs.meta.months;
-      const surviving = new Set(
-        filter.territories.filter((t) => t.line === line && t.areaCode != null).map((t) => t.areaCode as string),
-      );
+      peopleByLine[line] = lineDs.people;
       for (const a of areasByLine[line] ?? []) {
         if (keptAreas.has(`${line}:${a.areaCode ?? ""}`)) fAreas.push(a);
       }
       for (const d of lineDs.dms) {
         if (d.dmSeatId != null && keptSeats.has(d.dmSeatId)) fDms.push(d);
       }
-      for (const p of lineDs.people) {
-        const keep =
-          filter.applied.areaCodes.length > 0
-            ? // AREAS were chosen, so a colleague in the same district but another area is not in
-              // this view. Keying on the seat would widen the people back out to the whole district
-              // while every sales figure on the page showed the chosen areas.
-              p.areaCode != null && surviving.has(p.areaCode)
-            : p.dmSeatId != null && keptSeats.has(p.dmSeatId);
-        if (keep) fPeople.push(p);
-      }
     }
+    // The same people the pack exports — a manager who rode in these districts is in them, whether or
+    // not he logged a visit of his own (owner, 2026-10-20). See people-view.ts.
+    const fPeople = peopleForReviewFilter({
+      companyPeople: getReviewCompany(review).people,
+      filter,
+      peopleByLine,
+      scope,
+    });
 
     const only = filter.lines.length === 1 ? filter.lines[0] : null;
     const onlyDs = only ? getReviewDataset(review, only) : null;
@@ -505,9 +502,11 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
   // the page down with it: the achievement, spend and activity figures are all still correct, so
   // the panels are dropped and everything else renders.
   // The people this viewer may see: the ones whose own month-by-month attribution placed them in
-  // one of HIS districts. Never the line's people, which is what the deep tab showed before the
-  // 2026-09-26 line-scoping fix.
-  const seatIds = new Set(scope.dmSeatIds);
+  // one of HIS districts, and the managers who rode with a rep standing there (owner, 2026-10-20).
+  // Never the line's people, which is what the deep tab showed before the 2026-09-26 line-scoping fix.
+  const seatPeople = peopleInReviewView([
+    { people: ds.people, view: { kind: "seats", seatIds: new Set(scope.dmSeatIds) } },
+  ]);
   // A district pack. `narrowSelection` keeps catalogue order, so two people who tick the same
   // metrics get the same page in the same sequence.
   const metrics = requested == null
@@ -540,7 +539,7 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
       areas={areas.map(withAreaBand)}
       concentration={concentration}
       dms={dms.map(withDmBand)}
-      people={ds.people.filter((p) => p.dmSeatId != null && seatIds.has(p.dmSeatId))}
+      people={seatPeople}
       metrics={metrics}
       picker={
         <PackPicker

@@ -83,7 +83,7 @@ const GROUPS: ReadonlyArray<{ key: FacetKey; title: string; hint: string }> = [
   { key: "lines", title: "Product line", hint: "From the employee record, not the CRM." },
   { key: "regions", title: "Region", hint: "The company's regions." },
   { key: "areas", title: "Area", hint: "The rep's own area." },
-  { key: "managers", title: "Reports to", hint: "Direct manager on the org tree." },
+  { key: "managers", title: "Reports to", hint: "Any manager above the rep on the org tree." },
   { key: "titles", title: "Job title", hint: "Medical Rep, DSM, and anyone else in reach." },
   { key: "coverage", title: "Coverage band", hint: "Share of the planned list reached at all." },
   { key: "frequency", title: "Frequency band", hint: "Exact is the only pass." },
@@ -384,8 +384,9 @@ export function KpisFilterBar({
               const options = optionsFor(group.key);
               // A facet with one option is hidden, not just an empty one. Selecting the only value
               // there is cannot change a single row, and offering it implies the board holds other
-              // kinds of people. Job title is normally this now that the page is medical reps only
-              // — it reappears by itself the day a rep turns up with no title recorded.
+              // kinds of people. Job title is normally this now that the rep rows are medical reps
+              // only — it reappears by itself the day a rep turns up with no title recorded. The
+              // manager rows (owner, 2026-10-20) add no options here: every facet counts reps.
               if (options.length <= 1) return null;
               const selected = selectedFor(group.key);
               return (

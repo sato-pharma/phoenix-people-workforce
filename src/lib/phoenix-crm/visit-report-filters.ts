@@ -17,7 +17,7 @@ import type { VisitReportField, VisitReportRow, VisitReportView } from "@/lib/ph
 export type VisitReportPlannedFilter = "planned" | "unplanned";
 
 export type VisitReportFilter = {
-  /** Who visited, by name, exactly as the rows carry it. */
+  /** Who visited, by name, exactly as the rows carry it — ANY person on the visit, not only the one it is credited to. */
   who: string | null;
   /** One visit day, YYYY-MM-DD. */
   day: string | null;
@@ -72,8 +72,18 @@ function positionOf(row: VisitReportRow): string {
   return row.locationFlag ?? NO_POSITION;
 }
 
+/**
+ * Everyone on the visit, by name (owner, 2026-10-20: "when filter by manager u find no manager"). "Who visited"
+ * used to offer and match the person a visit is CREDITED to alone, so the district, regional or national manager
+ * on a double or chain visit, and the product manager the rep ticked, could never be chosen. A row that carries no
+ * list — one built before the field existed — still answers for the person it is credited to.
+ */
+export function visitReportParticipants(row: Pick<VisitReportRow, "participants" | "repName">): string[] {
+  return Array.isArray(row.participants) && row.participants.length > 0 ? row.participants : [row.repName];
+}
+
 export function matchesVisitReportFilter(row: VisitReportRow, filter: VisitReportFilter): boolean {
-  if (filter.who && row.repName !== filter.who) return false;
+  if (filter.who && !visitReportParticipants(row).includes(filter.who)) return false;
   if (filter.day && row.visitDate !== filter.day) return false;
   if (filter.planned === "planned" && !row.planned) return false;
   if (filter.planned === "unplanned" && row.planned) return false;
@@ -98,7 +108,7 @@ export function visitReportFilterOptions(rows: ReadonlyArray<VisitReportRow>): V
   return {
     days: visitReportDays(rows),
     positions,
-    who: [...new Set(rows.map((row) => row.repName))].sort((left, right) => left.localeCompare(right)),
+    who: [...new Set(rows.flatMap((row) => visitReportParticipants(row)))].sort((left, right) => left.localeCompare(right)),
   };
 }
 

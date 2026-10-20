@@ -296,6 +296,7 @@ function buildManagerProfile(
   visitLog: DoubleVisitLogEntry[],
   mrScores: DoubleVisitMrScore[],
   periodFilter: PeriodFilter,
+  teamMrHrIds: string[] | null | undefined = null,
 ) {
   // All-period rows for this manager — drives the stable summary chips.
   // A chain visit is in BOTH managers' records (owner, 2026-10-08): each finds it under his own name.
@@ -347,8 +348,14 @@ function buildManagerProfile(
   const vacantTerritories = allByMr.filter((r) => r.hrId == null).sort((a, b) => b.visits - a.visits);
   const vacantVisits = vacantTerritories.reduce((s, r) => s + r.visits, 0);
 
-  // Direct-report MRs this manager never visited (any period).
-  const neglectedMrs = mrScores.filter((s) => hk(s.managerHrId) === managerKey && !visitedKeysAll.has(hk(s.hrId)));
+  // Team MRs this manager never visited (any period). The team is his WHOLE team — every rep beneath
+  // a DSM, RM or NSM, the same population his coverage figure counts — so an RM or NSM, whose reps
+  // report to his DSMs rather than to him, no longer reads an empty list (owner, 2026-10-20). A
+  // manager with no org team (no team list on his summary) keeps the direct-report reading.
+  const teamKeys = teamMrHrIds ? new Set(teamMrHrIds.map((hrId) => hk(hrId)).filter(Boolean)) : null;
+  const neglectedMrs = mrScores.filter(
+    (s) => (teamKeys ? teamKeys.has(hk(s.hrId)) : hk(s.managerHrId) === managerKey) && !visitedKeysAll.has(hk(s.hrId)),
+  );
 
   // Concentration / over-focus signal from the real-MR breakdown.
   const scopedTotal = mrBreakdown.reduce((s, r) => s + r.visits, 0);
@@ -874,8 +881,17 @@ export function DoubleVisitAnalyticsWorkspace({
   }, [visitLog]);
 
   const managerProfile = useMemo(
-    () => (selectedManagerKey ? buildManagerProfile(selectedManagerKey, visitLog, dashboard.mrScores, periodFilter) : null),
-    [selectedManagerKey, visitLog, dashboard.mrScores, periodFilter],
+    () =>
+      selectedManagerKey
+        ? buildManagerProfile(
+            selectedManagerKey,
+            visitLog,
+            dashboard.mrScores,
+            periodFilter,
+            summaryByKey.get(selectedManagerKey)?.teamMrHrIds ?? null,
+          )
+        : null,
+    [selectedManagerKey, visitLog, dashboard.mrScores, periodFilter, summaryByKey],
   );
 
   // By-MR list: search only. Period scopes each MR's expanded history, never row
@@ -1637,14 +1653,14 @@ export function DoubleVisitAnalyticsWorkspace({
                   </Card>
                 )}
 
-                {/* Neglected MRs (direct reports not visited) */}
+                {/* Neglected MRs (his whole team, not visited — owner, 2026-10-20) */}
                 {managerProfile.neglectedMrs.length > 0 && (
                   <Card className="rounded border border-rose-200 bg-rose-50 p-0 shadow-sm">
                     <div className="border-b border-rose-200 px-5 py-4">
                       <h3 className="text-base font-black text-rose-800">
-                        {managerProfile.neglectedMrs.length} Direct-Report MR{managerProfile.neglectedMrs.length !== 1 ? "s" : ""} Not Visited
+                        {managerProfile.neglectedMrs.length} Team MR{managerProfile.neglectedMrs.length !== 1 ? "s" : ""} Not Visited
                       </h3>
-                      <p className="text-sm text-rose-600">These MRs report to this manager but received zero DVs in the current snapshot. Click one to see its history.</p>
+                      <p className="text-sm text-rose-600">These MRs are in this manager&apos;s team but received zero DVs in the current snapshot. Click one to see its history.</p>
                     </div>
                     <div className="px-5 py-3">
                       <div className="flex flex-wrap gap-2">
@@ -1655,7 +1671,7 @@ export function DoubleVisitAnalyticsWorkspace({
                             onClick={() => focusMr(m)}
                             className="rounded border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100"
                           >
-                            {m.mrName} <span className="text-rose-400">({m.hrId})</span>
+                            {m.mrName}
                           </button>
                         ))}
                       </div>

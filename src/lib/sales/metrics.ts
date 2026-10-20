@@ -101,6 +101,11 @@ export const SALES_ACHIEVEMENT_WINDOW_LABEL = "2026 to date";
 export type SalesManagerPerformanceMember = {
   managerHrId?: string | null;
   managerName?: string | null;
+  /**
+   * The vacant District Manager seat a rep sits under when there is no `managerHrId` — see
+   * DsmTeamMemberData. Each vacant seat is its own group, named by `managerName` ("Vacant — …").
+   */
+  vacantManagerSeatId?: string | null;
   totalSales: number;
   totalTarget: number;
 };
@@ -109,6 +114,8 @@ export type SalesManagerPerformanceGroup<TMember extends SalesManagerPerformance
   achievementPercent: number;
   managerHrId: string;
   managerName: string;
+  /** True for a vacant district's group — there is no manager to show, only the seat. */
+  isVacantSeat: boolean;
   members: TMember[];
   totalSales: number;
   totalTarget: number;
@@ -117,12 +124,16 @@ export type SalesManagerPerformanceGroup<TMember extends SalesManagerPerformance
 export function buildSalesManagerPerformanceGroups<TMember extends SalesManagerPerformanceMember>(
   members: TMember[],
 ): Array<SalesManagerPerformanceGroup<TMember>> {
-  const groups = new Map<string, { managerName: string; members: TMember[] }>();
+  const groups = new Map<string, { managerName: string; isVacantSeat: boolean; members: TMember[] }>();
 
   for (const member of members) {
-    const managerHrId = member.managerHrId || "unassigned";
+    // A vacant seat groups under its own key, never the shared "unassigned" one (owner, 2026-10-20):
+    // two vacant districts must not merge into one bucket under whichever label arrived first.
+    const vacantSeatId = member.managerHrId ? null : member.vacantManagerSeatId || null;
+    const managerHrId = member.managerHrId || (vacantSeatId ? `vacant:${vacantSeatId}` : "unassigned");
     const group = groups.get(managerHrId) ?? {
       managerName: member.managerName || "Unassigned District",
+      isVacantSeat: vacantSeatId != null,
       members: [],
     };
     group.members.push(member);
@@ -137,6 +148,7 @@ export function buildSalesManagerPerformanceGroups<TMember extends SalesManagerP
         achievementPercent: salesAchievementRate(totalSales, totalTarget) * 100,
         managerHrId,
         managerName: group.managerName,
+        isVacantSeat: group.isVacantSeat,
         members: group.members,
         totalSales,
         totalTarget,

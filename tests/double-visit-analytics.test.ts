@@ -421,6 +421,19 @@ export function runDoubleVisitAnalyticsTests() {
   const exec = buildExecutiveSummary(execSummaries, [], execKpis, execEmployees, visitedKeysByManager);
   assert.ok(exec.idleManagers.some((m) => m.hrId === canonicalHrIdKey("B-99")), "DSM with zero DVs is idle");
   assert.ok(!exec.idleManagers.some((m) => m.hrId === canonicalHrIdKey("B-10")), "active DSM is not idle");
+  // An idle field manager carries his team size (owner, 2026-10-20), counted like an active one's:
+  // active medical reps only, anywhere beneath him; a role with no field team carries null.
+  const idleTeamEmployees = [
+    ...execEmployees,
+    employee({ fullName: "Idle Team DSM", hrId: "B-98", jobTitle: "District Sales Manager", positionTitle: "District Sales Manager" }),
+    employee({ fullName: "Idle Team Rep", hrId: "M-81", managerHrId: "B-98" }),
+    employee({ fullName: "Left Rep", hrId: "M-82", managerHrId: "B-98", employmentStatus: "resigned" }),
+    employee({ fullName: "Idle PM", hrId: "A-11", jobTitle: "Product Manager", positionTitle: "Product Manager" }),
+  ];
+  const idleTeamExec = buildExecutiveSummary(execSummaries, [], execKpis, idleTeamEmployees, visitedKeysByManager);
+  assert.equal(idleTeamExec.idleManagers.find((m) => m.hrId === canonicalHrIdKey("B-98"))?.teamMrCount, 1, "an idle DSM's team is his active reps, never a leaver");
+  assert.equal(idleTeamExec.idleManagers.find((m) => m.hrId === canonicalHrIdKey("B-99"))?.teamMrCount, 0, "an idle DSM with no reps has a team of 0");
+  assert.equal(idleTeamExec.idleManagers.find((m) => m.hrId === canonicalHrIdKey("A-11"))?.teamMrCount, null, "a role with no field team carries no team size");
   assert.ok(exec.roleRollups.some((r) => r.roleCode === "DSM"), "DSM rollup present");
   assert.ok(exec.roleRollups.some((r) => r.roleCode === "PM"), "PM rollup present");
   const ampm = exec.insights.find((i) => i.id === "ampm-imbalance");

@@ -3,6 +3,7 @@ import { logError } from "@/lib/observability/log";
 import { isDayActivity, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { pharmacyNameKey, pharmacyNamesOnVisit, visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { countsAsManagersDoubleVisit } from "@/lib/phoenix-crm/double-visit-plan-rules";
+import { countsAsPlannersVisitWithRep } from "@/lib/phoenix-crm/manager-plan-rules";
 import { managerChain, managersInScope, personKey, territoryName, territoryReviewer, type ChainMember, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
   buildTeamCalendar,
@@ -24,6 +25,7 @@ import { chunk } from "@/lib/phoenix-crm/server/db";
 import { loadManagerOwnVisitDays } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readSeatGroups } from "@/lib/phoenix-crm/server/reports";
+import { loadScopeProductManagers, type ScopeProductManager } from "@/lib/phoenix-crm/server/scope-product-managers";
 import { seatTierTitle } from "@/lib/phoenix-crm/server/territory";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { loadApprovedLeaveDays, type ApprovedLeaveDay } from "@/lib/vacation/approved-leave-days";
@@ -154,17 +156,37 @@ export async function loadTeamCalendar(
   //    `managersInScope` is the same reach the Managers report uses. Only a manager with a territory in
   //    THIS grid is drawn, so a district on a line that has not opened is not a row of blank days.
   const managers = isTest ? [] : managersOnGrid(viewer, seats);
+  // 🔴 AND THE LINES' PRODUCT MANAGERS GET A ROW TOO (owner, 2026-10-20: "EVERYSINGLE ROLE THATS APLLICABLE
+  //    TOAPPEAR IN A MODULE FIND ANAD SHOW"). A Product Manager holds no seat, so `managersInScope` never named
+  //    him and the visits he rode with these reps stood on the reps' rows only. Who is given them is
+  //    `loadScopeProductManagers`'s one rule, narrowed HERE to the company readers: the National Sales Manager's
+  //    calendar stays field force only (owner, 2026-10-20, asked this exact question: "Keep it as is" — "his Team
+  //    Calendar stays field force only"), though his per-manager board does carry them. The test world draws none,
+  //    as it draws no seat manager. A person who also holds a seat keeps the seat's row.
+  const seatHolders = new Set(managers.map((member) => member.hrId));
+  const productManagers =
+    isTest || viewer.basis !== "all"
+      ? []
+      : (await loadScopeProductManagers(viewer, seats)).filter((manager) => !seatHolders.has(manager.hrId));
 
-  const [visits, activities, people, leave, managerPeople, managerVisits] = await Promise.all([
+  const [visits, activities, people, leave, managerPeople, productManagerPeople, managerVisits] = await Promise.all([
     loadVisitDays(seatIds, isTest, bounds),
     loadActivityDays(seatIds, isTest, bounds),
     describePeople(viewer, seats),
-    loadLeaveDays([...seats, ...managers.map((member) => member.seat)], bounds),
+    loadLeaveDays(
+      [
+        ...seats,
+        ...managers.map((member) => member.seat),
+        ...productManagers.map((manager) => ({ occupantHrId: manager.hrId, seatId: productManagerRowKey(manager.hrId) })),
+      ],
+      bounds,
+    ),
     describeManagers(viewer, managers),
-    loadManagerDays(managers, new Set(seatIds), isTest, bounds),
+    describeProductManagers(viewer, productManagers),
+    loadManagerDays(managers, productManagers, new Set(seatIds), isTest, bounds),
   ]);
 
-  const rows = buildTeamCalendar(month, [...managerPeople, ...people], {
+  const rows = buildTeamCalendar(month, [...managerPeople, ...productManagerPeople, ...people], {
     activities,
     leave: leave.days,
     visits: [...visits, ...managerVisits],
@@ -340,6 +362,39 @@ async function describeManagers(viewer: PhoenixCrmViewer, members: readonly Chai
     );
 }
 
+/** A product manager's row key: no seat, so a key that can never collide with one (a seat id is a uuid). */
+function productManagerRowKey(hrId: string): string {
+  return `product-manager:${hrId}`;
+}
+
+/**
+ * A product manager's row (owner, 2026-10-20): his name, his app role and the lines he is named on, and the
+ * person he reports to as his A.Manager column — read from the product-manager roster the viewer already
+ * carries, never from a seat he does not hold. Sorted by role, then line, then name.
+ */
+async function describeProductManagers(viewer: PhoenixCrmViewer, productManagers: readonly ScopeProductManager[]): Promise<TeamCalendarPerson[]> {
+  if (productManagers.length === 0) return [];
+  const above = new Map<string, string | null>();
+  for (const manager of productManagers) {
+    const roster = viewer.productManagers.find((entry) => personKey(entry.hrId) === manager.hrId);
+    above.set(manager.hrId, personKey(roster?.managerHrId ?? null));
+  }
+  const names = await loadPeopleNames([...productManagers.map((manager) => manager.hrId), ...above.values()]);
+  return productManagers
+    .map((manager): TeamCalendarPerson => {
+      const managerHrId = above.get(manager.hrId) ?? null;
+      return {
+        kind: "manager",
+        manager: managerHrId ? nameOf(names, managerHrId) : null,
+        person: nameOf(names, manager.hrId),
+        seatId: productManagerRowKey(manager.hrId),
+        seatless: true,
+        territory: [manager.role, manager.lineNames.join(" + ")].filter(Boolean).join(" · "),
+      };
+    })
+    .sort((left, right) => left.territory.localeCompare(right.territory) || left.person.localeCompare(right.person));
+}
+
 /**
  * A manager's days, each on the row of HIS seat: the single visits he logged himself (AM or PM by the
  * half it was planned in, or the Cairo half it was logged in) and the visits he rode with a rep.
@@ -353,15 +408,27 @@ async function describeManagers(viewer: PhoenixCrmViewer, members: readonly Chai
  *    nobody has validated waits exactly as it waits on the rep's own row. It is also on the rep's row —
  *    each of the two people worked it — which is why nothing here reaches the totals. Only visits in
  *    territories this viewer already reads are kept: never wider than the grid.
+ *
+ * 🔴 A PRODUCT MANAGER'S RIDE-ALONG IS THE REP'S VISIT NAMING HIM IN ITS PRODUCT-MANAGER SLOT
+ *    (`countsAsPlannersVisitWithRep`, the rule his own plan report judges by, owner 2026-10-17), and his row is
+ *    keyed `product-manager:<hr id>` (owner, 2026-10-20). His own single visits come through the same door as
+ *    a seat manager's — one list of people, one read.
  */
 async function loadManagerDays(
   managers: readonly ChainMember[],
+  productManagers: readonly ScopeProductManager[],
   territorySeatIds: ReadonlySet<string>,
   isTest: boolean,
   bounds: { from: string; to: string },
 ): Promise<CalendarVisitDay[]> {
-  if (managers.length === 0) return [];
+  if (managers.length === 0 && productManagers.length === 0) return [];
   const seatOf = new Map(managers.map((member) => [member.hrId, member.seat.seatId]));
+  const productManagerIds = new Set<string>();
+  for (const manager of productManagers) {
+    if (seatOf.has(manager.hrId)) continue;
+    seatOf.set(manager.hrId, productManagerRowKey(manager.hrId));
+    productManagerIds.add(manager.hrId);
+  }
   const hrIds = [...seatOf.keys()];
   const fold = newVisitFold();
 
@@ -378,25 +445,33 @@ async function loadManagerDays(
 
   const seen = new Set<string>();
   for (const part of chunk(hrIds, 100)) {
-    for (const column of ["manager_hr_id", "senior_hr_id"] as const) {
+    for (const column of ["manager_hr_id", "senior_hr_id", "product_manager_hr_id"] as const) {
+      // The product-manager slot is asked of the product managers only, and not at all when none is drawn.
+      const asked = column === "product_manager_hr_id" ? part.filter((hrId) => productManagerIds.has(hrId)) : part;
+      if (asked.length === 0) continue;
       const rows = await fetchAllRowsKeyset<Row>(
         () =>
           getSupabaseAdmin()
             .from("phoenix_crm_countable_visits")
-            .select("id, seat_id, visit_date, list_type, pharmacy_name, customer_validated, kind, manager_hr_id, senior_hr_id")
+            .select("id, seat_id, visit_date, list_type, pharmacy_name, customer_validated, kind, manager_hr_id, senior_hr_id, product_manager_hr_id")
             .eq("is_test", isTest)
             .gte("visit_date", bounds.from)
             .lte("visit_date", bounds.to)
-            .in(column, part),
+            .in(column, asked),
         { cursorColumn: "id", cursorOf: (row) => String(row.id) },
       );
       for (const row of rows) {
         const day = cleanDay(row.visit_date);
         if (!day || !territorySeatIds.has(String(row.seat_id ?? ""))) continue;
-        const visit = { kind: row.kind, managerHrId: row.manager_hr_id, seniorHrId: row.senior_hr_id };
-        for (const hrId of new Set([personKey(String(row.manager_hr_id ?? "")), personKey(String(row.senior_hr_id ?? ""))])) {
+        const visit = { kind: row.kind, managerHrId: row.manager_hr_id, productManagerHrId: row.product_manager_hr_id, seniorHrId: row.senior_hr_id };
+        const named = [row.manager_hr_id, row.senior_hr_id, row.product_manager_hr_id].map((value) => personKey(String(value ?? "")));
+        for (const hrId of new Set(named)) {
           const seatId = hrId ? seatOf.get(hrId) : undefined;
-          if (!hrId || !seatId || !countsAsManagersDoubleVisit(visit, hrId)) continue;
+          if (!hrId || !seatId) continue;
+          // A seat manager rode it when it is a double or chain visit naming him; a product manager when it
+          // names him in his own slot — each by the rule his own plan report already judges by.
+          const rode = productManagerIds.has(hrId) ? countsAsPlannersVisitWithRep(visit, hrId) : countsAsManagersDoubleVisit(visit, hrId);
+          if (!rode) continue;
           // The two reads overlap on a visit naming him in both slots, and a chain visit can name two
           // managers — one visit, once per manager.
           const once = `${String(row.id)}|${hrId}`;
@@ -539,7 +614,7 @@ async function latestWorkedMonth(
  * report already does (`plan-leave.ts` LEAVE_UNREAD_NOTE).
  */
 async function loadLeaveDays(
-  seats: readonly OrgSeat[],
+  seats: ReadonlyArray<Pick<OrgSeat, "seatId" | "occupantHrId">>,
   bounds: { from: string; to: string },
 ): Promise<{ days: { seatId: string; day: string }[]; unread: boolean }> {
   const seatsByHrId = new Map<string, string[]>();

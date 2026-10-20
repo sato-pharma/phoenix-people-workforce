@@ -19,6 +19,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import {
+  buildPrivateCalendarHierarchyIndex,
   canReadPrivateCalendarEmployee,
   buildPrivateCalendarTeamSummary,
   configuredPrivateCalendarGlobalHrIds,
@@ -403,7 +404,10 @@ export async function getPrivateCalendarWorkspace(input: {
   const { start, end } = monthBounds(input.year, input.month);
   const employees = await getEmployeeDirectoryRows();
   const globalHrIds = configuredPrivateCalendarGlobalHrIds();
-  const visibleEmployees = sortEmployees(employees.filter((employee) => canReadPrivateCalendarEmployee(input.access, employee, globalHrIds)));
+  const byCanonicalHrId = buildPrivateCalendarHierarchyIndex(employees);
+  const visibleEmployees = sortEmployees(
+    employees.filter((employee) => canReadPrivateCalendarEmployee(input.access, employee, globalHrIds, { byCanonicalHrId })),
+  );
   const selectedEmployee = selectedEmployeeFromRequest({
     access: input.access,
     employees,

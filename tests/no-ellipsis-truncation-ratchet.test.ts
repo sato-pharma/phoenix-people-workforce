@@ -240,8 +240,11 @@ import { stripComments } from "./support/comment-strip.ts";
  *
  * 144 -> 141 on 2026-10-19: the Recruitment premium sweep. Three cuts became wraps — the Intake
  * Health dead-letter error, which now prints in full, among them.
+ *
+ * 141 -> 140 on 2026-10-20: the approval exceptions desk in Direct Orders stopped cutting a
+ * name (#6177), lowered here so the ground cannot be given back.
  */
-const BASELINE = 141;
+const BASELINE = 140;
 
 const ROOTS = ["app", "src"];
 

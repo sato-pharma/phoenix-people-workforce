@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 /**
  * Regression guard for the employee portal's self-scoped "My Visits" CRM module
  * (src/lib/employee-portal/my-crm-visits.ts, app/employee-portals/visits/page.tsx).
@@ -143,6 +145,25 @@ export function runCrmVisitsSelfScopeTests() {
     page,
     /access\.scope !== "hierarchy" && access\.scope !== "team"/,
     "a viewer with neither scope must resolve to an empty team (no tab)",
+  );
+
+  // 4b. The National Sales Manager is line-scoped, so the subtree rule gave him an empty tab while
+  //     every manager beneath him had one (owner, 2026-10-20). He resolves through the doctor-coverage
+  //     line scope — downward-only, override-aware — and fails closed on anything but an agent list,
+  //     BEFORE the scope gate that would otherwise return nobody. Read with comments stripped, so a
+  //     commented-out branch cannot satisfy it.
+  const pageCode = stripComments(page);
+  const nsmIdx = pageCode.indexOf('if (access.role === "National Sales Manager") {');
+  const gateIdx = pageCode.indexOf('if (access.scope !== "hierarchy" && access.scope !== "team") return [];');
+  assert.ok(nsmIdx >= 0, "the Team Visits resolver must carry a National Sales Manager branch");
+  assert.ok(gateIdx > nsmIdx, "the NSM branch must run before the hierarchy/team scope gate");
+  const nsmBranch = pageCode.slice(nsmIdx, gateIdx);
+  assert.match(nsmBranch, /const lineScope = await getDoctorCoverageScope\(access\);/, "the NSM's team is his doctor-coverage line scope");
+  assert.match(nsmBranch, /if \(lineScope\.kind !== "agents"\) return \[\];/, "a scope that is not an agent list resolves to nobody");
+  assert.match(
+    nsmBranch,
+    /lineScope\.agentHrIds\.filter\(\(hrId\) => normalizeHrIdForAccess\(hrId\) !== viewerKey\)/,
+    "the NSM's own visits stay on his own tabs",
   );
 
   // 5. A truncated list must never read as a complete one.

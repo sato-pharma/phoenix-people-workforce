@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { AttendancePolicyCard } from "@/components/attendance/attendance-policy-card";
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { FingerprintAnalytics, type FingerprintTarget } from "@/components/employee-portal/fingerprint-analytics";
-import { getEmployeeAttendanceData, loadAttendanceDirectReports } from "@/lib/attendance/employee-attendance";
+import { getEmployeeAttendanceData, loadAttendancePickerReports } from "@/lib/attendance/employee-attendance";
 import { loadAttendancePolicyExplainer } from "@/lib/attendance/policy-explainer-loader";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -42,11 +42,12 @@ export default async function FingerprintAnalyticsPage() {
   // shown a deduction rule that is never applied to them.
   const policyExplainer = await loadAttendancePolicyExplainer(hrId);
 
-  // Managers may also view their direct reports' reports. The first target is
-  // always the signed-in user; reports are appended only when they exist.
-  let directReports: Awaited<ReturnType<typeof loadAttendanceDirectReports>> = [];
+  // Managers may also view their reports' reports — a manager seat his whole subtree, the same
+  // people the per-person API admits (loadAttendancePickerReports; owner, 2026-10-20). The first
+  // target is always the signed-in user; reports are appended only when they exist.
+  let directReports: Awaited<ReturnType<typeof loadAttendancePickerReports>> = [];
   try {
-    directReports = await loadAttendanceDirectReports(hrId);
+    directReports = await loadAttendancePickerReports(access);
   } catch (error) {
     // Not a banner, and deliberately: the attendance read above already surfaces its own failure
     // through `initialError`, and this one only costs the manager the OTHER names in his picker —
@@ -69,7 +70,7 @@ export default async function FingerprintAnalyticsPage() {
     ...directReports.map((report) => ({
       hrId: report.hrId,
       label: report.fullName,
-      sublabel: report.jobTitle || "Direct report",
+      sublabel: report.jobTitle || "Report",
       isSelf: false,
     })),
   ];

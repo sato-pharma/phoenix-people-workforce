@@ -1,8 +1,19 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
-import { joinKpiRows, buildKpiPodium, type KpiRepRow } from "../src/lib/crm/kpis-board.ts";
+import {
+  joinKpiRows,
+  buildKpiPodium,
+  sumKpiTeamTotals,
+  type KpiDirectoryEntry,
+  type KpiRepRow,
+} from "../src/lib/crm/kpis-board.ts";
+import { buildKpiManagerRows, KPI_MANAGER_MEASURES, kpiRepMeasures } from "../src/lib/crm/kpis-manager-rows.ts";
+import { isAgentInScope, type DoctorCoverageScope } from "../src/lib/crm/doctor-coverage-roles.ts";
+import { normalizeHrIdForAccess } from "../src/lib/hr-id.ts";
 import {
   applyKpiFilters,
+  applyKpiManagerFilters,
   buildKpiFacets,
   buildKpisQuery,
   amBandOf,
@@ -386,6 +397,34 @@ export function runKpiFacetTests() {
     facets.coverage.every((option) => option.count > 0),
     "no band is offered with a zero count",
   );
+
+  // "Reports to" walks the whole chain (owner, 2026-10-20: "when you filter by manager you find no
+  // manager"). A National Sales Manager is offered, counted once per rep beneath him, and choosing
+  // him keeps every one of those reps — not only the reps whose direct manager he is.
+  const chained = [
+    row({ agentCrmId: 11, managerName: "District One", managersAbove: ["National One"] }),
+    row({ agentCrmId: 12, managerName: "District Two", managersAbove: ["Regional One", "National One"] }),
+    row({ agentCrmId: 13, managerName: "District Three", managersAbove: [] }),
+    row({ agentCrmId: 14, managerName: null }),
+  ];
+  assert.deepEqual(
+    buildKpiFacets(chained).managers.map((option) => [option.value, option.count]),
+    [
+      ["District One", 1],
+      ["District Three", 1],
+      ["District Two", 1],
+      ["National One", 2],
+      ["Regional One", 1],
+      [UNASSIGNED_FACET_KEY, 1],
+    ],
+    "every manager on the chain is offered, with the reps beneath him counted",
+  );
+  const kept = (managers: string[]) =>
+    applyKpiFilters(chained, filters({ managers })).map((entry) => entry.agentCrmId).sort();
+  assert.deepEqual(kept(["National One"]), [11, 12], "choosing the National Sales Manager keeps every rep under him");
+  assert.deepEqual(kept(["Regional One"]), [12], "choosing the Regional Manager keeps his reps only");
+  assert.deepEqual(kept(["District Two"]), [12], "a district manager still keeps exactly his own reps");
+  assert.deepEqual(kept([UNASSIGNED_FACET_KEY]), [14], "'Not recorded' is still the rows with no manager at all");
 }
 
 // ── 6. The podium ranks nobody it cannot honestly rank ────────────────────────────────────────
@@ -600,6 +639,270 @@ export function runKpiMedicalRepOnlyTests() {
     0,
     "no query string can bring a dropped manager back — the narrowing happens above the filter layer",
   );
+
+  // Managers come back on 2026-10-20 — as rows of AVERAGES in a list of their own, never as rep rows.
+  runKpiManagerRowChecks();
+}
+
+// ── 8b. Manager rows: each manager is the average of the rows directly beneath him ─────────────
+//
+// Owner, 2026-10-20: "add manager row and every dm kpis is calculated based on his reps averag and
+// nsm based on dsms av and so on". Every check below is a way of getting that wrong that still
+// prints a plausible number: a no-plan rep averaged in as 0, a National Sales Manager averaged over
+// every rep at the bottom of his tree instead of over his managers, AM and PM folded into one figure,
+// a manager slipping into the rep list or its totals, and a manager row averaging reps the viewer
+// may not see.
+
+type OrgPerson = { hrId: string; name: string; title: string; manager: string | null; area: string | null };
+
+const MANAGER_ORG: readonly OrgPerson[] = [
+  { hrId: "C-1", name: "Chief Exec", title: "Chief Executive Officer", manager: null, area: null },
+  { hrId: "N-1", name: "Nadia National", title: "National Sales Manager", manager: "C-1", area: null },
+  { hrId: "R-1", name: "Rami Regional", title: "Regional Sales Manager", manager: "N-1", area: null },
+  { hrId: "D-1", name: "Dina District", title: "District Sales Manager", manager: "N-1", area: "GZ1" },
+  { hrId: "D-2", name: "Dalia District", title: "District Sales Manager", manager: "R-1", area: "GZ2" },
+  // A District Manager reporting straight to the top, past the national line.
+  { hrId: "D-3", name: "Dora District", title: "District Sales Manager", manager: "C-1", area: "GZ3" },
+  { hrId: "MR-1", name: "Rep A", title: "Medical Representative", manager: "D-1", area: "GZ1" },
+  { hrId: "MR-2", name: "Rep B", title: "Medical Representative", manager: "D-1", area: "GZ1" },
+  { hrId: "MR-3", name: "Rep C", title: "Medical Representative", manager: "D-1", area: "GZ1" },
+  { hrId: "MR-4", name: "Rep D", title: "Medical Representative", manager: "D-2", area: "GZ2" },
+  { hrId: "MR-5", name: "Rep E", title: "Medical Representative", manager: "D-2", area: "GZ2" },
+  { hrId: "MR-6", name: "Rep F", title: "Medical Representative", manager: "D-2", area: "GZ2" },
+  { hrId: "MR-8", name: "Rep H", title: "Medical Representative", manager: "D-3", area: "GZ3" },
+];
+
+function managerOrgDirectory(): KpiDirectoryEntry[] {
+  const byId = new Map(MANAGER_ORG.map((person) => [person.hrId, person]));
+  return MANAGER_ORG.map((person) => {
+    const chain: string[] = [];
+    let next = person.manager ? byId.get(person.manager) : undefined;
+    while (next) {
+      chain.push(next.name);
+      next = next.manager ? byId.get(next.manager) : undefined;
+    }
+    return {
+      hrId: person.hrId,
+      displayName: person.name,
+      lineName: "Pedia",
+      regionName: person.hrId === "C-1" ? null : "Giza",
+      areaName: person.area,
+      managerName: chain[0] ?? null,
+      managersAbove: chain.slice(1),
+      managerHrId: person.manager,
+      jobTitle: person.title,
+    };
+  });
+}
+
+/** Each rep's printed figures. MR-3 and MR-8 have calls but no plan: "No plan" on coverage and frequency. */
+function managerOrgReps(): KpiRepRow[] {
+  const figures: Record<string, Partial<KpiRepRow>> = {
+    "MR-1": { coveragePct: 90, frequencyPct: 80, amAttainmentPct: 100, pmAttainmentPct: 30 },
+    "MR-2": { coveragePct: 70, frequencyPct: 60, amAttainmentPct: 50, pmAttainmentPct: 90 },
+    "MR-3": { hasMeasurablePlan: false, coveragePct: 0, frequencyPct: 0, amAttainmentPct: 75, pmAttainmentPct: 60 },
+    "MR-4": { coveragePct: 30, frequencyPct: 20, amAttainmentPct: 45, pmAttainmentPct: 40 },
+    "MR-5": { coveragePct: 30, frequencyPct: 20, amAttainmentPct: 45, pmAttainmentPct: 40 },
+    "MR-6": { coveragePct: 30, frequencyPct: 20, amAttainmentPct: 45, pmAttainmentPct: 40 },
+    "MR-8": { hasMeasurablePlan: false, coveragePct: 0, frequencyPct: 0, amAttainmentPct: 20, pmAttainmentPct: 10 },
+  };
+  return MANAGER_ORG.filter((person) => person.hrId.startsWith("MR-")).map((person, index) => {
+    const own = figures[person.hrId] ?? {};
+    const planned = own.hasMeasurablePlan ?? true;
+    const manager = MANAGER_ORG.find((candidate) => candidate.hrId === person.manager);
+    return row({
+      agentCrmId: 100 + index,
+      agentHrId: person.hrId.toLowerCase(),
+      repName: person.name,
+      areaName: person.area,
+      managerName: manager?.name ?? null,
+      jobTitle: person.title,
+      ...own,
+      meetsCoverageFloor: planned ? (own.coveragePct ?? 0) >= 95 : null,
+    });
+  });
+}
+
+function runKpiManagerRowChecks() {
+  const directory = managerOrgDirectory();
+  const reps = managerOrgReps();
+  const repsBefore = structuredClone(reps);
+  const totalsBefore = sumKpiTeamTotals(reps);
+  const podiumBefore = buildKpiPodium(reps);
+
+  const managers = buildKpiManagerRows({ reps, directory });
+  const named = (name: string) => {
+    const found = managers.find((manager) => manager.name === name);
+    if (!found) throw new assert.AssertionError({ message: `${name} has a manager row` });
+    return found;
+  };
+
+  assert.deepEqual(
+    managers.map((manager) => manager.name),
+    ["Chief Exec", "Dora District", "Nadia National", "Dina District", "Rami Regional", "Dalia District"],
+    "tree order: each manager before the managers beneath him, siblings by name",
+  );
+
+  // A DISTRICT MANAGER is the simple mean of HIS reps' rows.
+  const dina = named("Dina District");
+  assert.equal(dina.level, "district");
+  assert.equal(dina.hrId, "d-1", "keyed by the canonical lower-cased hr id, the same form as a rep row's");
+  assert.equal(dina.directReps, 3);
+  assert.equal(dina.directManagers, 0);
+  assert.equal(dina.averagedRows, 3);
+  assert.equal(dina.repsBeneath, 3);
+  assert.equal(
+    dina.coveragePct,
+    80,
+    "his coverage is the mean of 90 and 70 — the no-plan rep is LEFT OUT, not averaged in as 0 (that would read 53)",
+  );
+  assert.equal(dina.measured.coveragePct, 2, "and the row says only two of his three reps went into that figure");
+  assert.equal(dina.frequencyPct, 70);
+  assert.equal(dina.measured.frequencyPct, 2);
+
+  // AM AND PM ARE TWO AVERAGES (owner, 2026-09-04: "this two and this ten. Don't never get average").
+  assert.equal(dina.amAttainmentPct, 75, "AM is the mean of the three AM figures — 100, 50 and 75");
+  assert.equal(dina.pmAttainmentPct, 60, "PM is the mean of the three PM figures — 30, 90 and 60 — on its own");
+  assert.equal(dina.measured.amAttainmentPct, 3, "the no-plan rep still has calls, so he IS measured on AM");
+  assert.ok(
+    KPI_MANAGER_MEASURES.includes("amAttainmentPct") && KPI_MANAGER_MEASURES.includes("pmAttainmentPct"),
+    "AM and PM attainment are separate measures",
+  );
+  assert.ok(
+    !("callRateAttainmentPct" in dina) && !("attainmentPct" in dina),
+    "there is no combined AM+PM figure on a manager row at all",
+  );
+
+  // EVERY MANAGER ABOVE averages the rows DIRECTLY beneath him — never every rep at the bottom.
+  const rami = named("Rami Regional");
+  assert.equal(rami.level, "regional");
+  assert.equal(rami.directManagers, 1);
+  assert.equal(rami.directReps, 0);
+  assert.equal(rami.coveragePct, 30, "a Regional Manager over one District Manager carries that DM's figures");
+
+  const nadia = named("Nadia National");
+  assert.equal(nadia.level, "national");
+  assert.equal(nadia.directManagers, 2);
+  assert.equal(nadia.averagedRows, 2);
+  assert.equal(nadia.repsBeneath, 6, "six reps beneath her, counted once each");
+  assert.equal(
+    nadia.coveragePct,
+    55,
+    "the NSM's coverage is the mean of her two managers' rows (80 and 30) — NOT 50, the mean of the five planned reps beneath her",
+  );
+  assert.equal(nadia.frequencyPct, 45, "the mean of 70 and 20 — not 40, the mean of the reps");
+  assert.equal(nadia.amAttainmentPct, 60, "AM: the mean of 75 and 45");
+  assert.equal(nadia.pmAttainmentPct, 50, "PM: the mean of 60 and 40, apart from AM");
+
+  // A manager whose rows beneath carry NO value on a measure has none either — never a 0.
+  const dora = named("Dora District");
+  assert.equal(dora.coveragePct, null, "his only rep has no plan, so his coverage is null rather than 0");
+  assert.equal(dora.frequencyPct, null);
+  assert.equal(dora.measured.coveragePct, 0);
+  assert.equal(dora.amAttainmentPct, 20, "while his AM is still measured");
+
+  const chief = named("Chief Exec");
+  assert.equal(chief.level, "other");
+  assert.equal(chief.reportsTo, null);
+  assert.equal(chief.repsBeneath, 7);
+  assert.equal(chief.averagedRows, 2);
+  assert.equal(chief.coveragePct, 55, "Dora's null is left out of the CEO's coverage, so it is Nadia's 55 alone");
+  assert.equal(chief.measured.coveragePct, 1);
+  assert.equal(chief.amAttainmentPct, 40, "and on AM both are measured: the mean of 60 and 20");
+  assert.equal(chief.pmAttainmentPct, 30, "PM: the mean of 50 and 10");
+
+  // What one rep row contributes: the figure it PRINTS, or nothing where it prints a marker.
+  const noFeed = kpiRepMeasures(row({ noGpsFeed: true }));
+  assert.equal(noFeed.amAttainmentPct, null, "a 'No GPS feed' rep is not averaged into the proved figures");
+  assert.equal(noFeed.amReportedRate, 3, "but his reported rate still is");
+  const noCalls = kpiRepMeasures(row({ hasCallRate: false, totalCalls: 0 }));
+  assert.equal(noCalls.amAttainmentPct, null, "a 'No calls' rep is not averaged in as 0%");
+  assert.equal(noCalls.amReportedRate, null);
+  assert.equal(noCalls.campaignShare, null);
+
+  // THE REP LIST, ITS TOTALS AND ITS PODIUM ARE UNTOUCHED — a manager is never a rep row.
+  assert.deepEqual(reps, repsBefore, "building the manager rows changes no rep row");
+  assert.deepEqual(sumKpiTeamTotals(reps), totalsBefore, "the team totals are the reps' totals, unchanged");
+  assert.deepEqual(buildKpiPodium(reps), podiumBefore, "the podium is the reps' podium, unchanged");
+  const managerKeys = new Set(managers.map((manager) => manager.hrId));
+  assert.ok(
+    reps.every((rep) => !managerKeys.has(rep.agentHrId ?? "")),
+    "no manager appears among the rep rows",
+  );
+  const boardSource = readFileSync(new URL("../src/lib/crm/kpis-board.ts", import.meta.url), "utf8");
+  assert.match(boardSource, /sumKpiTeamTotals\(reps\)/, "the board's totals are summed over the rep rows");
+  assert.match(boardSource, /buildKpiPodium\(reps, /, "and its podium is built from the rep rows");
+  assert.doesNotMatch(
+    boardSource,
+    /(?:sumKpiTeamTotals|buildKpiPodium|buildKpiFacets|applyKpiFilters|kpiTeamFigures)\((?:scoped)?[mM]anagers/,
+    "no manager row ever reaches the totals, the podium, the facets or the rep filters",
+  );
+  assert.match(
+    boardSource,
+    /buildKpiManagerRows\(\{\s*reps: scopedReps,/,
+    "manager rows are built from the scoped rep rows BEFORE any filter, so a filter never changes an average",
+  );
+
+  // THE SCOPE GATE. A Regional Manager's board: his scope reaches his District Manager and her reps
+  // and nothing else. A rep outside it is never averaged, and the managers above him get no row.
+  const rsmScope: DoctorCoverageScope = {
+    kind: "agents",
+    basis: "team",
+    agentHrIds: ["D-2", "MR-4", "MR-5", "MR-6"],
+    label: "Rami's team",
+  };
+  const scopedReps = joinKpiRows({
+    callRates: [
+      callRateFixture({ agentCrmId: 201, agentHrId: "MR-1", agentName: "Rep A" }),
+      callRateFixture({ agentCrmId: 204, agentHrId: "MR-4", agentName: "Rep D" }),
+      callRateFixture({ agentCrmId: 205, agentHrId: "MR-5", agentName: "Rep E" }),
+    ],
+    docLists: [],
+    scope: rsmScope,
+    workingDays: 1,
+    directory,
+  });
+  assert.equal(scopedReps.length, 2, "the rep outside Rami's reach is dropped by the scope gate before anything is averaged");
+  const viewerKey = normalizeHrIdForAccess("R-1");
+  const visible = buildKpiManagerRows({
+    reps: scopedReps,
+    directory,
+    canSee: (hrId) => isAgentInScope(rsmScope, hrId) || normalizeHrIdForAccess(hrId) === viewerKey,
+  });
+  assert.deepEqual(
+    visible.map((manager) => manager.name),
+    ["Rami Regional", "Dalia District"],
+    "he sees himself and his scope down: no row for Nadia or the CEO above him, and none for Dina, whose rep he cannot reach",
+  );
+  assert.equal(visible[0]?.repsBeneath, 2, "and his own row counts only the reps his scope let through");
+  assert.equal(
+    buildKpiManagerRows({ reps: scopedReps, directory, canSee: (hrId) => isAgentInScope(rsmScope, hrId) }).some(
+      (manager) => manager.name === "Rami Regional",
+    ),
+    false,
+    "his own row comes from the viewer arm, not from his scope list",
+  );
+  assert.match(
+    boardSource,
+    /canSee: \(hrId\) =>\s*isAgentInScope\(scope, hrId\) \|\| \(viewerKey != null && normalizeHrIdForAccess\(hrId\) === viewerKey\)/,
+    "the board gates manager rows with the same two arms",
+  );
+
+  // THE FILTERS. "Reports to" keeps the chosen manager and every manager beneath him; "Not recorded"
+  // keeps none; an area filter hides a manager only where his own record names a different area.
+  assert.deepEqual(
+    applyKpiManagerFilters(managers, filters({ managers: ["Nadia National"] })).map((manager) => manager.name),
+    ["Nadia National", "Dina District", "Rami Regional", "Dalia District"],
+    "Reports to Nadia keeps her own row and every manager beneath her, and not the CEO or Dora",
+  );
+  assert.equal(applyKpiManagerFilters(managers, filters({ managers: [UNASSIGNED_FACET_KEY] })).length, 0);
+  assert.deepEqual(
+    applyKpiManagerFilters(managers, filters({ areas: ["GZ1"] })).map((manager) => manager.name),
+    ["Chief Exec", "Nadia National", "Dina District", "Rami Regional"],
+    "area GZ1 drops the District Managers of GZ2 and GZ3 and keeps the managers whose record names no area",
+  );
+  const filtered = applyKpiManagerFilters(managers, filters({ areas: ["GZ1"] }));
+  assert.equal(filtered.find((manager) => manager.name === "Nadia National")?.coveragePct, 55, "a filter never changes an average");
 }
 
 // ── 9. A percentage early in a window is a position, not a score ──────────────────────────────

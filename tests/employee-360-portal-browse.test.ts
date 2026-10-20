@@ -1,6 +1,114 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
+import { buildEmployee360ListItems } from "../src/lib/employee-360/list-items.ts";
+import {
+  buildEmployee360ManagerChain,
+  employee360ManagerOptions,
+  matchesEmployee360Manager,
+} from "../src/lib/employee-360/list-manager-filter.ts";
+import { stripComments } from "./support/comment-strip.ts";
+
+function directoryRow(
+  hrId: string,
+  name: string,
+  jobTitle: string,
+  manager: { hrId: string; name: string } | null,
+): EmployeeDirectoryRow {
+  return {
+    hrId,
+    displayName: name,
+    fullName: name,
+    jobTitle,
+    positionTitle: jobTitle,
+    managerHrId: manager?.hrId ?? null,
+    managerName: manager?.name ?? null,
+    lineName: "Pedia",
+    areaName: null,
+    regionName: null,
+    employmentStatus: "active",
+  } as EmployeeDirectoryRow;
+}
+
+/**
+ * Owner, 2026-10-20: "when you filter by manager you find no manager … every single role that is
+ * applicable to appear in a module — find it and show it." The Employee 360 list offered only the
+ * direct managers of the open tab's cards and matched `managerName === selected`, so a Regional or
+ * National Sales Manager was never offered on the Medical Reps tab, and nothing beneath a manager's
+ * own reports ever matched him.
+ */
+function runEmployee360ListManagerFilterTests() {
+  // CEO → National SM → Regional SM → District SM → two reps. The Regional SM's card is NOT visible
+  // to this viewer (left out of `visible`), which is the case the server-side chain exists for.
+  const ceo = directoryRow("AA", "Anwar CEO", "Chief Executive Officer", null);
+  const nsm = directoryRow("N-1", "Nadia National", "National Sales Manager", { hrId: "AA", name: "Anwar CEO" });
+  const rsm = directoryRow("R-1", "Rami Regional", "Regional Manager", { hrId: "N-1", name: "Nadia National" });
+  const dsm = directoryRow("D-1", "Dina District", "District Manager", { hrId: "R-1", name: "Rami Regional" });
+  const rep1 = directoryRow("M-1", "Mona Rep", "Medical Representative", { hrId: "D-1", name: "Dina District" });
+  const rep2 = directoryRow("M-2", "Maged Rep", "Medical Representative", { hrId: "D-1", name: "Dina District" });
+  const otherDsm = directoryRow("D-2", "Dalia District", "District Manager", { hrId: "N-1", name: "Nadia National" });
+  const otherRep = directoryRow("M-3", "Mostafa Rep", "Medical Representative", { hrId: "D-2", name: "Dalia District" });
+  const directory = [ceo, nsm, rsm, dsm, rep1, rep2, otherDsm, otherRep];
+  const visible = [nsm, dsm, rep1, rep2, otherDsm, otherRep];
+
+  const items = buildEmployee360ListItems(visible, directory);
+  const byId = new Map(items.map((item) => [item.hrId, item]));
+  assert.deepEqual(
+    byId.get("M-1")?.managersAbove,
+    ["Rami Regional", "Nadia National", "Anwar CEO"],
+    "a card carries every manager above its direct manager, walked over the WHOLE directory — through the Regional SM this viewer cannot open",
+  );
+  assert.equal(byId.has("R-1"), false, "the cards are still exactly the visible rows — only names travel");
+
+  const chain = buildEmployee360ManagerChain(items);
+  const reps = items.filter((item) => item.category === "medical-rep");
+  const repOptions = employee360ManagerOptions(reps, chain);
+  for (const manager of ["Dina District", "Rami Regional", "Nadia National", "Dalia District"]) {
+    assert.ok(
+      repOptions.includes(manager),
+      `${manager} must be offered on the Medical Reps tab — the options carry every manager on the chain, not only the reps' direct managers`,
+    );
+  }
+
+  const repsUnder = (manager: string) =>
+    reps.filter((item) => matchesEmployee360Manager(item, manager, chain)).map((item) => item.hrId).sort();
+  assert.deepEqual(repsUnder("Dina District"), ["M-1", "M-2"], "a District SM keeps his own reps");
+  assert.deepEqual(
+    repsUnder("Rami Regional"),
+    ["M-1", "M-2"],
+    "a Regional SM keeps the reps two levels beneath him — the match walks the chain, it is not managerName === selected",
+  );
+  assert.deepEqual(
+    repsUnder("Nadia National"),
+    ["M-1", "M-2", "M-3"],
+    "a National SM keeps every rep of his line, through both district managers",
+  );
+  assert.deepEqual(repsUnder("Dalia District"), ["M-3"], "…and a sibling district manager keeps only hers");
+
+  const managers = items.filter((item) => item.category === "district-manager");
+  assert.deepEqual(
+    managers.filter((item) => matchesEmployee360Manager(item, "Dina District", chain)).map((item) => item.hrId),
+    ["D-1"],
+    "choosing a manager keeps his OWN card on the tab that holds it",
+  );
+
+  // The list uses the shared rule — never a hand-rolled `managerName ===` again.
+  const listSource = stripComments(readFileSync("src/components/employee-360/employee-search-list.tsx", "utf8"));
+  assert.doesNotMatch(
+    listSource,
+    /e\.managerName !== filters\.managerName/,
+    "the Manager filter must not compare the direct manager's name only",
+  );
+  assert.match(listSource, /matchesEmployee360Manager\(e, filters\.managerName, managerChain\)/);
+  assert.match(listSource, /managerName: employee360ManagerOptions\(inTab, managerChain\)/);
+  assert.match(listSource, /buildEmployee360ManagerChain\(employees\)/, "the chain is built from every tab's cards, not one tab");
+  for (const page of ["app/(admin)/employee-360/page.tsx", "app/employee-portals/employee-360/page.tsx"]) {
+    const pageSource = stripComments(readFileSync(page, "utf8"));
+    assert.match(pageSource, /buildEmployee360ListItems\(visibleRows, /, `${page} builds its cards through the shared builder`);
+  }
+}
+
 // Employee 360's employee-portal surface only ever showed the viewer's OWN
 // record. A company-wide viewer whose own record isn't field-force (Talent
 // Acquisition today) always hit "Not covered by Employee 360" — the
@@ -162,4 +270,6 @@ export function runEmployee360PortalBrowseTests() {
     accessSource.indexOf("isWithinManagerHierarchy", dmBranchIdx) > dmBranchIdx,
     "the District Manager branch must use isWithinManagerHierarchy (full subtree)",
   );
+
+  runEmployee360ListManagerFilterTests();
 }

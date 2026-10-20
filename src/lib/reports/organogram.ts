@@ -1,6 +1,5 @@
 import {
   type AccessContext,
-  hrIdsMatch,
   normalizeHrId,
   normalizeHrIdForAccess,
   normalizeLineName,
@@ -18,6 +17,7 @@ import {
 } from "@/lib/reports/vacancies";
 import { buildOrganogramSeatReport, scopeAuOrganogramRows } from "@/lib/reports/organogram-au-source";
 import { isValidOrganogramAsOfMonth } from "@/lib/reports/organogram-as-of";
+import { isFullOrganogramPinnedHrId } from "@/lib/reports/organogram-pinned-accounts";
 
 export type OrganogramScopeMode = "company" | "line";
 
@@ -68,28 +68,30 @@ function uniqueCount(values: Array<string | null>) {
  * directly whether they should get it too and chose her account alone, so naming the ROLE here —
  * the shape used for the Finance Manager and both HR seats — is precisely what must NOT happen.
  *
- * This is not a new pattern for this account: resolveEmployeePortalNavVisibility already carries
- * an `isA3Account` carve-out (src/lib/employee-portal/navigation.ts) turning her Report It and
- * Planning Calendar tabs on and her expense/incentive tabs off, for the same reason — she is one
- * person whose portal does not match her rung.
+ * AB — Dr. Sahar Khalil, R&D Manager, the person the QPPV reports to, pinned the same way (owner,
+ * 2026-10-20: the R&D Manager gets the same company chart the QPPV has, Head Office included).
+ * Still by HR_ID, never the rung: A-14 Regulatory Affairs stays outside.
+ *
+ * The list lives in src/lib/reports/organogram-pinned-accounts.ts, dependency-free, because the
+ * portal sidebar flag (resolveEmployeePortalNavVisibility in src/lib/employee-portal/navigation.ts)
+ * reads the SAME list — the gate that admits a pinned account and the link that offers it cannot
+ * drift apart. Her other portal carve-outs (`isA3Account`: Report It and Planning Calendar on, the
+ * expense and incentive tabs off) stay hers alone; the pin grants the organogram and nothing else.
  *
  * Compared with hrIdsMatch, never `===`: HR_IDs are stored mixed-case in production (`A-3`,
  * not `a-3`), so a plain comparison matches nobody with no error — which would present as the
  * owner's change never having shipped.
  */
-const FULL_ORGANOGRAM_PINNED_HR_IDS = ["A-3"] as const;
-
 export function isFullOrganogramPinnedAccount(access: Pick<AccessContext, "hrId" | "loginId">) {
-  return FULL_ORGANOGRAM_PINNED_HR_IDS.some(
-    (pinned) => hrIdsMatch(access.hrId, pinned) || hrIdsMatch(access.loginId, pinned),
-  );
+  return isFullOrganogramPinnedHrId(access.hrId) || isFullOrganogramPinnedHrId(access.loginId);
 }
 
 export function canAccessHeadOffice(access: AccessContext) {
   return (
-    // A-3 is Head Office staff herself (QPPV). Without this she would hold the company chart and
-    // have her own department filtered out of it — the same trap documented for the Finance
-    // Manager below, where the one part of the tree the viewer sits in is the part that vanishes.
+    // A-3 is Head Office staff herself (QPPV), and so is AB, the R&D Manager she reports to (pinned
+    // owner, 2026-10-20). Without this they would hold the company chart and have their own
+    // department filtered out of it — the same trap documented for the Finance Manager below, where
+    // the one part of the tree the viewer sits in is the part that vanishes.
     isFullOrganogramPinnedAccount(access) ||
     access.role === "Super Admin" ||
     access.role === "CEO" ||

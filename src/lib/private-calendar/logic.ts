@@ -1,4 +1,4 @@
-import { normalizeHrIdForAccess } from "@/lib/hr-id";
+import { canonicalHrIdKey, normalizeHrIdForAccess } from "@/lib/hr-id";
 import { sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -8,6 +8,7 @@ import type { VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import type { ManagerDayPlan } from "@/lib/phoenix-crm/manager-day-plan";
 import type { ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
 import type { DisputeAttachment } from "@/lib/dispute-center/types.ts";
+import { isWithinManagerHierarchy, type SeatContinuitySubject } from "@/lib/workforce/hierarchy-resolver";
 import {
   summarizePrivateCalendarVisits,
   type PrivateCalendarActivityKind,
@@ -281,12 +282,51 @@ export function isPrivateCalendarGlobalViewer(
 
 export function canReadPrivateCalendarEmployee(
   access: AccessContext,
-  employee: Pick<EmployeeDirectoryRow, "hrId" | "managerHrId">,
+  employee: Pick<EmployeeDirectoryRow, "hrId" | "managerHrId"> & { pendingManagerReplacementForHrId?: string | null },
   globalHrIds?: readonly string[],
+  options?: { byCanonicalHrId?: ReadonlyMap<string, SeatContinuitySubject> },
 ) {
   if (isPrivateCalendarGlobalViewer(access, globalHrIds)) return true;
   if (hrIdsMatch(access.hrId, employee.hrId) || hrIdsMatch(access.loginId, employee.hrId)) return true;
-  return hrIdsMatch(access.hrId, employee.managerHrId) || hrIdsMatch(access.loginId, employee.managerHrId);
+  if (hrIdsMatch(access.hrId, employee.managerHrId) || hrIdsMatch(access.loginId, employee.managerHrId)) return true;
+  // A Regional or National Sales Manager manages THROUGH his district managers, so a direct-report
+  // match showed him his district managers and not one medical rep (owner, 2026-10-20: "when you
+  // filter by manager you find no manager … every single role that is applicable to appear").
+  // He sees his whole reporting subtree, by the same walker and for the same two roles as the
+  // employee directory's canSeeEmployee — every other manager keeps self plus direct reports.
+  if (
+    options?.byCanonicalHrId &&
+    (access.role === "Regional Manager" || access.role === "National Sales Manager")
+  ) {
+    const viewerKey = canonicalHrIdKey(access.hrId);
+    if (!viewerKey) return false;
+    return isWithinManagerHierarchy({
+      employee: {
+        managerHrId: employee.managerHrId,
+        pendingManagerReplacementForHrId: employee.pendingManagerReplacementForHrId ?? null,
+      },
+      byCanonicalHrId: options.byCanonicalHrId,
+      viewerCanonicalHrId: viewerKey,
+      canonicalize: (value) => canonicalHrIdKey(value),
+    });
+  }
+  return false;
+}
+
+/** The seat-continuity index canReadPrivateCalendarEmployee climbs for a Regional or National Sales Manager. */
+export function buildPrivateCalendarHierarchyIndex(
+  rows: readonly (Pick<EmployeeDirectoryRow, "hrId" | "managerHrId"> & { pendingManagerReplacementForHrId?: string | null })[],
+): Map<string, SeatContinuitySubject> {
+  const index = new Map<string, SeatContinuitySubject>();
+  for (const row of rows) {
+    const key = canonicalHrIdKey(row.hrId);
+    if (!key) continue;
+    index.set(key, {
+      managerHrId: row.managerHrId,
+      pendingManagerReplacementForHrId: row.pendingManagerReplacementForHrId ?? null,
+    });
+  }
+  return index;
 }
 
 export function mapPrivateCalendarEmployee(employee: EmployeeDirectoryRow): PrivateCalendarEmployeeOption {
@@ -306,8 +346,9 @@ export function resolvePrivateCalendarVisibleEmployees(
   employees: EmployeeDirectoryRow[],
   globalHrIds?: readonly string[],
 ) {
+  const byCanonicalHrId = buildPrivateCalendarHierarchyIndex(employees);
   return employees
-    .filter((employee) => canReadPrivateCalendarEmployee(access, employee, globalHrIds))
+    .filter((employee) => canReadPrivateCalendarEmployee(access, employee, globalHrIds, { byCanonicalHrId }))
     .map(mapPrivateCalendarEmployee)
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
 }

@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 
-import { canViewEmployeeAttendanceReport, resolveAttendanceScopeHrIds } from "../src/lib/attendance/employee-attendance.ts";
+import { readFileSync } from "node:fs";
+
+import {
+  canViewEmployeeAttendanceReport,
+  isHierarchyAttendanceViewer,
+  loadAttendancePickerReports,
+  resolveAttendanceScopeHrIds,
+} from "../src/lib/attendance/employee-attendance.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Security boundary for the Fingerprint Analytics manager view:
@@ -180,4 +188,37 @@ export async function runAttendanceManagerViewAccessTests() {
     /Forbidden/,
     "missing hrId on a non-bypass caller must be denied",
   );
+
+  // ── Every manager seat reaches his whole subtree (owner, 2026-10-20) ──────────────────────────
+  // The picker offered direct reports only, so a Regional Manager saw his DSMs and none of the reps
+  // the API already let him open, and a National Sales Manager or a head-office manager never saw
+  // anyone two levels down. One predicate now decides the picker, the per-person gate and the bulk
+  // exports together.
+  for (const scope of ["hierarchy", "line", "team"] as const) {
+    assert.equal(isHierarchyAttendanceViewer({ scope }), true, `a ${scope}-scoped manager seat must reach his whole subtree`);
+  }
+  for (const scope of ["self", "company", "system", "none"] as const) {
+    assert.equal(isHierarchyAttendanceViewer({ scope }), false, `a ${scope}-scoped viewer must not take the subtree path`);
+  }
+  assert.deepEqual(
+    await loadAttendancePickerReports({ hrId: "F-1", role: "Finance Manager", scope: "company" }),
+    [],
+    "the self-only Finance Manager's picker must offer nobody, because the API refuses everybody but himself",
+  );
+  assert.deepEqual(
+    await loadAttendancePickerReports({ hrId: null, role: "Manager", scope: "team" }),
+    [],
+    "no HR id, no reports",
+  );
+  const attendanceSource = stripComments(readFileSync("src/lib/attendance/employee-attendance.ts", "utf8"));
+  const pickerAt = attendanceSource.indexOf("export async function loadAttendancePickerReports(");
+  assert.ok(pickerAt > -1, "loadAttendancePickerReports must exist");
+  assert.match(
+    attendanceSource.slice(pickerAt, pickerAt + 600),
+    /includeSubtree: isHierarchyAttendanceViewer\(context\)/,
+    "the picker must widen by the same predicate as the per-person gate",
+  );
+  const pageSource = stripComments(readFileSync("app/employee-portals/fingerprint-analytics/page.tsx", "utf8"));
+  assert.match(pageSource, /loadAttendancePickerReports\(access\)/, "the Attendance Analytics picker must be built from the viewer's access");
+  assert.doesNotMatch(pageSource, /loadAttendanceDirectReports\(/, "the picker must never again be direct reports only");
 }

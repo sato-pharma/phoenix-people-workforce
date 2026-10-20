@@ -31,7 +31,7 @@ import {
   type DailyPlanSourceVisit,
 } from "@/lib/phoenix-crm/daily-plan-report";
 import { leaveDatesFor } from "@/lib/phoenix-crm/plan-leave";
-import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { territoriesUnderManager, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
@@ -79,6 +79,14 @@ function chooseTerritory(viewer: PhoenixCrmViewer, raw: ReportFilterInput): OrgS
   if (lineCode) {
     seats = seats.filter((seat) => seat.lineCode === lineCode);
     if (seats.length === 0) throw forbiddenError("This line is outside your scope.");
+  }
+  // The manager filter (owner, 2026-10-20: "when filter by manager u find no manager") — the same narrowing as
+  // `chooseTerritories`: the territories under the seats he holds, and refused when he is not one of the viewer's.
+  const managerHrId = trimmed(raw.managerHrId);
+  if (managerHrId) {
+    const under = territoriesUnderManager(viewer.org, viewer.hrId, viewer.basis, managerHrId);
+    if (under) seats = seats.filter((seat) => under.has(seat.seatId));
+    if (!under || seats.length === 0) throw forbiddenError("This manager is outside your scope.");
   }
   const seatId = trimmed(raw.seatId);
   if (seatId) {

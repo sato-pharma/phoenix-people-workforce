@@ -369,9 +369,21 @@ export function cleanVisitReportViewName(value: unknown): string | null {
 
 // ── The period ───────────────────────────────────────────────────────────────────────────────────
 
-/** One rep may be read over a quarter; a district is several reps' worth of rows, so a month. */
+/**
+ * One rep may be read over a quarter; a district is several reps' worth of rows, so a month — and so is a
+ * manager (owner, 2026-10-20), whose visits run across every territory he went out on.
+ */
 export const VISIT_REPORT_MAX_DAYS_REP = 92;
 export const VISIT_REPORT_MAX_DAYS_DISTRICT = 31;
+
+/**
+ * Who a report is about: one rep's territory, a district, or a MANAGER — every visit he was on with a rep, as the
+ * double or chain visit's manager or senior, or as the product manager the rep ticked (owner, 2026-10-20: "when
+ * filter by manager u find no manager"). A manager's report ALSO lists the single visits he logged alone, as rows
+ * under his own name (owner, 2026-10-20, multiple choice: "Show, keep out of reps") — `ownVisit` marks them, no
+ * rep's row and no dashboard figure ever counts one, and none is asked for a location or a photo.
+ */
+export type VisitReportTargetKind = "rep" | "district" | "manager";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -386,7 +398,7 @@ export function resolveVisitReportPeriod(input: {
   from: unknown;
   to: unknown;
   cairoToday: string;
-  kind: "rep" | "district";
+  kind: VisitReportTargetKind;
 }): VisitReportPeriodResult {
   const from = typeof input.from === "string" ? input.from.trim() : "";
   const to = typeof input.to === "string" ? input.to.trim() : "";
@@ -399,7 +411,8 @@ export function resolveVisitReportPeriod(input: {
   const days = dayNumber(last) - dayNumber(from) + 1;
   const cap = input.kind === "rep" ? VISIT_REPORT_MAX_DAYS_REP : VISIT_REPORT_MAX_DAYS_DISTRICT;
   if (days > cap) {
-    return { ok: false, error: input.kind === "rep" ? `Choose at most ${cap} days for one rep.` : `Choose at most ${cap} days for a district.` };
+    const forWhom = input.kind === "rep" ? "one rep" : input.kind === "manager" ? "a manager" : "a district";
+    return { ok: false, error: `Choose at most ${cap} days for ${forWhom}.` };
   }
   return { ok: true, days, from, to: last };
 }
@@ -418,6 +431,12 @@ export type VisitReportRow = {
   savedAtIso: string;
   /** Whose visit it is: the rep, or the manager on his own visit — never the seat's occupant. */
   repName: string;
+  /**
+   * EVERYONE on the visit, by name: the person it is credited to first, then the manager, the senior manager and
+   * the product manager who came along (owner, 2026-10-20). "Who visited" matches any of them, so the manager on
+   * a double visit can be chosen as well as the rep; `repName` still says whose visit it is.
+   */
+  participants: string[];
   customerName: string;
   listType: string;
   visitType: string;
@@ -430,6 +449,13 @@ export type VisitReportRow = {
   distanceMeters: number | null;
   locationFlag: string | null;
   values: Record<string, VisitReportValue>;
+  /**
+   * A single visit the manager logged ALONE, shown under his own name (owner, 2026-10-20: "Show, keep out of
+   * reps"). A display row: the dashboard's figures leave it out, it is on no rep's row, and it carries no
+   * distance, no location verdict and no photo verdict — his own visit needs none of them. Absent on every
+   * visit a rep logged.
+   */
+  ownVisit?: boolean;
 };
 
 export type VisitReportDashboardTile = { label: string; value: string; hint?: string };
@@ -447,10 +473,10 @@ export type VisitReportDashboardPanel = {
 
 export type VisitReportDashboard = { tiles: VisitReportDashboardTile[]; panels: VisitReportDashboardPanel[] };
 
-export type VisitReportTarget = { kind: "rep" | "district"; id: string };
+export type VisitReportTarget = { kind: VisitReportTargetKind; id: string };
 
 export type VisitReportView = {
-  target: { kind: "rep" | "district"; id: string; name: string; reps: string[] };
+  target: { kind: VisitReportTargetKind; id: string; name: string; reps: string[] };
   period: { from: string; to: string; days: number };
   selected: string[];
   total: number;
@@ -464,12 +490,20 @@ export type VisitReportView = {
 
 export type VisitReportScopeRep = { id: string; label: string; repName: string; lineName: string | null; districtName: string | null };
 export type VisitReportScopeDistrict = { id: string; label: string; lineName: string | null; repCount: number };
+/** A manager the picker offers: `id` is the person, since a product manager holds no seat and a manager may hold two. */
+export type VisitReportScopeManager = { id: string; label: string; name: string; title: string };
 
 export type VisitReportScopeView = {
   cairoToday: string;
   defaults: { from: string; to: string };
   reps: VisitReportScopeRep[];
+  /** Every district of the viewer's reach — an all-vacant one too, since its visits are still somebody's work. */
   districts: VisitReportScopeDistrict[];
+  /**
+   * Every manager the viewer reads (`managersInScope`, never upward) who stands above one of his territories, and the
+   * lines' product managers where he is given them (`loadScopeProductManagers`) — owner, 2026-10-20.
+   */
+  managers: VisitReportScopeManager[];
   /** What this reader is — the page offers exactly the fields up to this sight. */
   sight: VisitReportReaderTier;
 };

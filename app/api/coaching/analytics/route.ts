@@ -4,6 +4,7 @@ import {
   getCoachingQuarterlySummary,
   getCoachingReports,
   getCoachingScoreAnalyticsForReports,
+  scopeCoachingDirectoryForAccess,
 } from "@/lib/coaching/service";
 import {
   buildCoachingReportAnalytics,
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
     const access = await requireCoachingPermission(request, "read");
     const filters = enforceAnalyticsScope(filtersFromRequest(request), access);
     const reports = await getCoachingReports(filters, access);
-    const [quarterlySummary, scoreAnalytics, employees] = await Promise.all([
+    const [quarterlySummary, scoreAnalytics, directory] = await Promise.all([
       getCoachingQuarterlySummary({
         medicalRepHrId: filters.medicalRepHrId,
         quarter: filters.quarter,
@@ -53,6 +54,9 @@ export async function GET(request: Request) {
       getCoachingScoreAnalyticsForReports(reports),
       getEmployeeDirectoryRows(),
     ]);
+    // Same scope as the page that calls this on every filter change (owner, 2026-10-20): the rep
+    // comparison is built from the directory, so an unscoped one undoes the page's own narrowing.
+    const employees = scopeCoachingDirectoryForAccess(access, directory);
     const hasOrgFilters = Boolean(filters.lineId || filters.areaId || filters.teamId);
 
     return NextResponse.json({

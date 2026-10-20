@@ -70,7 +70,9 @@ export function runHrIdAliasNormalizationTests() {
   assert.doesNotMatch(approvalsHubSource, /\(e\.hrId \?\? ""\)\.toUpperCase\(\) === hrId\.toUpperCase\(\)/, "no remaining raw decider comparison");
 
   const ceoCommandCenterSource = readFileSync("src/lib/ceo/command-center.ts", "utf8");
-  assert.match(ceoCommandCenterSource, /hrIdsMatch\(k, s\.managerHrId\)/, "CEO command-center managers-on-leave match uses hrIdsMatch");
+  // The candidates come from the whole active directory since 2026-10-20 (managerOnLeaveCandidates),
+  // and the match against the leave map is still hrIdsMatch.
+  assert.match(ceoCommandCenterSource, /hrIdsMatch\(hrId, candidate\.hrId\)/, "CEO command-center managers-on-leave match uses hrIdsMatch");
 
   const employeePhotoSource = readFileSync("src/lib/employees/employee-photo.ts", "utf8");
   assert.doesNotMatch(employeePhotoSource, /\.eq\("hr_id", hrId\.toUpperCase\(\)\)/, "employee-photo queries canonicalize the HR_ID filter");

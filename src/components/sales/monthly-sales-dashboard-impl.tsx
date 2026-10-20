@@ -213,12 +213,15 @@ function FilterSelect({
   icon,
   value,
   options,
+  optionLabels,
   onChange,
 }: {
   label: string;
   icon: React.ReactNode;
   value: string;
   options: string[];
+  /** Option value → what the user reads, where the value is a key (the Manager filter's names). */
+  optionLabels?: Record<string, string>;
   onChange: (next: string) => void;
 }) {
   return (
@@ -235,7 +238,7 @@ function FilterSelect({
         <option value="">All</option>
         {options.map((option) => (
           <option key={option} value={option}>
-            {option}
+            {optionLabels?.[option] ?? option}
           </option>
         ))}
       </select>
@@ -291,6 +294,7 @@ export function MonthlySalesDashboard({
         periods: [],
         salesTypes: [],
         managers: [],
+        managerLabels: {},
         territories: [],
         products: [],
         families: [],
@@ -621,6 +625,7 @@ export function MonthlySalesDashboard({
             icon={<Users className="h-3 w-3" />}
             value={filters.manager}
             options={options.managers}
+            optionLabels={options.managerLabels}
             onChange={(next) => setFilters((current) => ({ ...current, manager: next }))}
           />
           <MultiSelectFilter

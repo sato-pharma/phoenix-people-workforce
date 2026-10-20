@@ -9,6 +9,13 @@ import {
   type AccessContext,
 } from "../src/lib/auth/permissions.ts";
 import { applyWeeklyAccessScope, type WeeklyAccessScope } from "../src/lib/sales/weekly/access.ts";
+import {
+  COMPANY_WEEKLY_READER_ROLES,
+  PORTAL_WEEKLY_ROLES,
+  isCompanyWeeklyReader,
+  mayReadManagersWeeklySales,
+} from "../src/lib/sales/weekly/portal-weekly-dashboard.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 function readSource(rel: string): string {
   return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
@@ -125,6 +132,60 @@ export async function runWeeklySalesAccessTests() {
       await canAccessWeeklyMappingTemplate(context),
       allowed.has(role),
       `${role} must ${allowed.has(role) ? "reach" : "NOT reach"} the weekly mapping template workbook`,
+    );
+  }
+
+  // ── the managers' Weekly Sales dashboard: every role access.ts gives weekly access reaches it ──
+  // Owner, 2026-10-20: every role a module applies to must find it. access.ts gives the SFE Manager
+  // full weekly access and his own overview links him to /admin/field-sales/weekly-sales, yet that
+  // page and all five of its feeds admitted the CEO and the Super Admin alone and sent him back to
+  // /admin. One predicate now gates the page and every feed.
+  const accessSource = stripComments(readSource("../src/lib/sales/weekly/access.ts")).replace(/\s+/g, " ");
+  assert.match(
+    accessSource,
+    /if \(ctx\.role === "SFE Manager"\) \{ return \{ tier: "full", canViewRestricted: false \}; \}/,
+    "the premise: access.ts gives the SFE Manager full weekly access, minus the confidential Lacto Basic",
+  );
+  assert.deepEqual([...COMPANY_WEEKLY_READER_ROLES].sort(), ["CEO", "SFE Manager", "Super Admin"]);
+  const managersFeed = new Set<string>([...PORTAL_WEEKLY_ROLES, ...COMPANY_WEEKLY_READER_ROLES]);
+  for (const role of phoenixRoles) {
+    assert.equal(
+      mayReadManagersWeeklySales(role),
+      managersFeed.has(role),
+      `${role} must ${managersFeed.has(role) ? "reach" : "NOT reach"} the managers' Weekly Sales feeds`,
+    );
+  }
+  assert.equal(
+    mayReadManagersWeeklySales("SFE Manager"),
+    true,
+    "THE SFE MANAGER MUST REACH THE WEEKLY SALES DASHBOARD HIS OWN ACCESS SCOPE ALREADY GRANTS — he was refused by every gate until 2026-10-20",
+  );
+  assert.equal(mayReadManagersWeeklySales("Medical Rep"), false, "a rep reads his own area's screen, never the managers' feeds");
+  assert.equal(isCompanyWeeklyReader("National Sales Manager"), false, "a field manager reads the portal, not the company host");
+
+  const page = stripComments(readSource("../app/(admin)/admin/field-sales/weekly-sales/page.tsx")).replace(/\s+/g, " ");
+  assert.match(
+    page,
+    /if \(!\(isCompanyWeeklyReader\(access\.role\) \|\| canAccessSystemAdministratorWorkspace\(access\)\)\) \{ redirect\("\/admin"\);/,
+    "the admin Weekly Sales page admits the company-wide readers through the shared list",
+  );
+  for (const route of [
+    "../app/api/employee-portals/weekly-sales/route.ts",
+    "../app/api/employee-portals/weekly-sales/export/route.ts",
+    "../app/api/employee-portals/weekly-sales/product-units/route.ts",
+    "../app/api/employee-portals/weekly-sales/depot-detail/route.ts",
+    "../app/api/employee-portals/weekly-sales/depot-detail/export/route.ts",
+  ]) {
+    const source = stripComments(readSource(route)).replace(/\s+/g, " ");
+    assert.match(
+      source,
+      /if \(!mayReadManagersWeeklySales\(access\.role\)\) \{ return NextResponse\.json\(\{ success: false, error: "Forbidden\." \}, \{ status: 403 \}\);/,
+      `${route} gates on the one shared predicate`,
+    );
+    assert.doesNotMatch(
+      source,
+      /access\.role === "CEO" \|\| access\.role === "Super Admin"/,
+      `${route} still names the two-role list that refused the SFE Manager`,
     );
   }
 }

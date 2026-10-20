@@ -84,6 +84,14 @@ export function runProbationDvValidationTests() {
     assert.equal(v.validationReason, "evaluator_role_not_eligible");
   }
 
+  // The Regional Sales Manager counts like the National Sales Manager (owner, 2026-10-20).
+  {
+    const v = validateDvDay(day({ evaluatorHrId: "RSM-1" }),
+      ctx({ evaluatorAppRoleByHrId: new Map([["rsm-1", "Regional Manager"]]), managerHrIdByEmployee: new Map() }));
+    assert.equal(v.dvStatus, "validated", "a Regional Sales Manager's double visit with a probation rep is an evaluation");
+    assert.equal(v.evaluatorRole, "nsm", "and it is counted in the National Sales Manager's bucket");
+  }
+
   // P3-T06 window: DV date before/after the probation window => rejected.
   assert.equal(validateDvDay(day({ dvDate: "2026-04-01" }), ctx()).dvStatus, "rejected");
   assert.equal(validateDvDay(day({ dvDate: "2026-08-01" }), ctx()).dvStatus, "rejected");

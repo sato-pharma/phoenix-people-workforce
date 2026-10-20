@@ -20,6 +20,7 @@ import {
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
 import { mapPhoenixRoleToAccessScopeType } from "../src/lib/auth/supabase-identity.ts";
+import { getVacationVisibilityScope } from "../src/lib/vacation/visibility-scope.ts";
 import {
   getSections,
   permissionAllowed,
@@ -167,6 +168,12 @@ export async function runHrOperationsCompanyScopeTests() {
     "she maintains leave balances (job description, ops 2), which is this report",
   );
   assert.equal(
+    getVacationVisibilityScope(operations),
+    "COMPANY",
+    "the leave module's Vacation Report is the third parallel scope switch — it stayed SELF after " +
+      "this ruling, so her own rail row opened a report holding only herself (found 2026-10-20)",
+  );
+  assert.equal(
     canReadCompanyActivityReport(operations),
     true,
     "she reconciles attendance against leave before payroll closure (ops 2), which is this report",
@@ -196,6 +203,7 @@ export async function runHrOperationsCompanyScopeTests() {
   assert.equal(getPayrollScope({ role: ADVISORY }), "SELF", "Aya's job description does not mention payroll at all");
   assert.equal(canReadCompanyVacationReport(advisory), false, "leave administration is Yasmine's section 2");
   assert.equal(canReadCompanyActivityReport(advisory), false, "leave administration is Yasmine's section 2");
+  assert.equal(getVacationVisibilityScope(advisory), "SELF", "the retired seat reads only itself in the leave module");
   assert.equal(mapPhoenixRoleToAccessScopeType(ADVISORY), "SELF", "her provisioning mirror moves with her scope");
 
   // ── 4. No row a seat is offered opens a hub AT ALL ─────────────────────────────────────────

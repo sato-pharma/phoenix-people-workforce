@@ -12,6 +12,7 @@ import {
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   getPortalWeeklyDashboard,
+  isCompanyWeeklyReader,
   toPortalWeeklyScopeView,
   type PortalWeeklyComparison,
   type PortalWeeklyFilters,
@@ -32,10 +33,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Company-scope re-host of the portal Weekly Sales dashboard for the CEO / Super Admin.
-// The loader resolves scope from the SESSION (CEO / Super Admin ⇒ full tier: all lines,
-// all regions, restricted products visible), so this page adds no widening of its own —
-// it only hosts the same dashboard the field roles use, inside the admin shell.
+// Company-scope re-host of the portal Weekly Sales dashboard for the company-wide readers — the
+// CEO, the Super Admin and the SFE Manager (isCompanyWeeklyReader). The loader resolves scope from
+// the SESSION (CEO / Super Admin ⇒ full tier with restricted products; the SFE Manager ⇒ full tier
+// without the confidential Lacto Basic, or his own product list), so this page adds no widening of
+// its own — it only hosts the same dashboard the field roles use, inside the admin shell.
 
 function parseFilters(params: { [key: string]: string | string[] | undefined }): PortalWeeklyFilters {
   const list = (value: string | string[] | undefined): string[] => {
@@ -90,8 +92,8 @@ async function CompanyWeeklyContent({
   let fieldForce: PortalWeeklyFieldForce | null = null;
   let loadError: string | null = null;
   try {
-    // Company scope, so this is every rep on every tracked line — the CEO / Super Admin view of the
-    // same Field Force tab the district and national managers open.
+    // Company scope, so this is every rep on every tracked line — the company-wide readers' view of
+    // the same Field Force tab the district and national managers open.
     const result = await getPortalWeeklyDashboard(filters, access, { includeFieldForce: true });
     data = result.data;
     scope = toPortalWeeklyScopeView(result.scope);
@@ -128,7 +130,9 @@ export default async function CompanyWeeklySalesPage({
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) redirect("/login");
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
-  if (!(access.role === "CEO" || canAccessSystemAdministratorWorkspace(access))) {
+  // The SFE Manager is admitted with the CEO: his overview links here, and access.ts already gives
+  // him full weekly access — he was sent back to /admin until 2026-10-20 (owner, 2026-10-20).
+  if (!(isCompanyWeeklyReader(access.role) || canAccessSystemAdministratorWorkspace(access))) {
     redirect("/admin");
   }
   await assertPermission(access, "sales", "read");

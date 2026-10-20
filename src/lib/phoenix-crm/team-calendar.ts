@@ -77,6 +77,13 @@ export type TeamCalendarPerson = {
    * never added into the month's totals: a ride-along is already on the rep's row.
    */
   kind?: "rep" | "manager";
+  /**
+   * A manager who holds NO organogram seat — a line's Product Manager or Group Product Manager (owner,
+   * 2026-10-20: "EVERYSINGLE ROLE THATS APLLICABLE TOAPPEAR IN A MODULE FIND ANAD SHOW"). His row is keyed
+   * `product-manager:<hr id>`, which is no seat, so no page can be opened on it: his cells explain the day in
+   * the panel below the grid instead. Absent means the row is a seat, which is what every row was before.
+   */
+  seatless?: boolean;
 };
 
 export type TeamCalendarRow = TeamCalendarPerson & {

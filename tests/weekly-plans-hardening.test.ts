@@ -64,7 +64,9 @@ export function runWeeklyPlansHardeningTests() {
   );
   assert.match(
     calendarServiceSource,
-    /if \(!isAllowedCalendarOwner\(item\)\) return false;/,
+    // The viewer is passed only for its acting-District-Manager set (owner, 2026-10-20); the gate is
+    // still owner-eligibility, before any viewer-scoped matrix logic.
+    /if \(!isAllowedCalendarOwner\(item, viewer\)\) return false;/,
     "shared calendar must still gate on owner-eligibility before any viewer-scoped matrix logic",
   );
   assert.match(

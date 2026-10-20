@@ -48,11 +48,17 @@ import {
   resolveVisitParticipants,
   territoriesBelow,
   territoriesInScope,
+  territoriesUnderManager,
   territoryName,
   territoryReviewer,
   type OrgIndex,
   type OrgSeat,
 } from "../src/lib/phoenix-crm/scope.ts";
+import {
+  productManagerRolesFor,
+  readsLineProductManagers,
+  scopeProductManagersOf,
+} from "../src/lib/phoenix-crm/server/scope-product-managers.ts";
 import { normalizeArea, suggestForDay, type PlannerCustomer, type PlannerPlace } from "../src/lib/phoenix-crm/suggestions.ts";
 import {
   clockValue,
@@ -1023,6 +1029,57 @@ function runScopeTests() {
     seat("DMb", "ACTING_DM", "T-60", ["CEO", "RSMa", "DMa", "DMb"]),
   ]);
   assert.deepEqual(people(managersInScope(upward, "T-50", "tree")), ["T-50"], "a manager above you stays out even when they also sit on a seat beneath you");
+
+  // The reports' "Manager" filter (owner, 2026-10-20: "when filter by manager u find no manager"): the territories
+  // under one of the viewer's managers, by the seats that manager holds — and null for anyone the viewer does not read.
+  const under = (viewerHrId: string | null, basis: "tree" | "all", managerHrId: string) => {
+    const found = territoriesUnderManager(org, viewerHrId, basis, managerHrId);
+    return found === null ? null : [...found].sort();
+  };
+  assert.deepEqual(under("T-2", "tree", "t-3"), ["R1", "R2", "R7"], "a national manager narrows to one of his district managers, by any spelling of the id");
+  assert.deepEqual(under("T-2", "tree", "T-2"), ["R1", "R2", "R3", "R4", "R5", "R7"], "or to his own seat");
+  assert.deepEqual(under("T-2", "tree", "T-104"), ["R4", "R5"], "an acting district manager is the territories under his acting seat");
+  assert.equal(under("T-3", "tree", "T-2"), null, "never the viewer's own manager: the filter cannot reach upward");
+  assert.equal(under("T-2", "tree", "T-101"), null, "a rep is not a manager to filter by");
+  assert.equal(under("T-2", "tree", "T-999"), null, "nor a stranger");
+  assert.deepEqual(under(null, "all", "T-3"), ["R1", "R2", "R7"], "the company view reaches every manager");
+  assert.equal(under(null, "all", "T-1"), null, "and never the CEO");
+
+  // The lines' product managers a report names beside the seat holders (owner, 2026-10-20: "EVERYSINGLE ROLE THATS
+  // APLLICABLE TOAPPEAR IN A MODULE FIND ANAD SHOW"). A product manager holds no seat, so who is given them is a rule
+  // of its own: the company readers and a national sales manager, never a district or regional manager.
+  const nsmSeat = org.seats.get("NSM1") as OrgSeat;
+  const dmSeat = org.seats.get("DM1") as OrgSeat;
+  assert.equal(readsLineProductManagers({ basis: "all", managerSeats: [] }), true, "a company reader is given them");
+  assert.equal(readsLineProductManagers({ basis: "tree", managerSeats: [nsmSeat] }), true, "and a national sales manager");
+  assert.equal(readsLineProductManagers({ basis: "tree", managerSeats: [dmSeat] }), false, "never a district manager — no seat of his is above a product manager");
+  assert.equal(readsLineProductManagers({ basis: "tree", managerSeats: [] }), false, "nor a rep");
+  assert.equal(productManagerRolesFor({ basis: "all" }), null, "a company reader gets every role the line offers its reps");
+  assert.deepEqual(
+    [...(productManagerRolesFor({ basis: "tree" }) ?? [])].sort(),
+    ["Group Product Manager", "Product Manager"],
+    "a national sales manager gets the product manager roles only — never the person they report to",
+  );
+  const lines = [
+    { lineCode: "CNS", lineName: "CNS", managers: [{ hrId: "b-155", role: "Product Manager" }, { hrId: "B-9", role: "Marketing Manager" }] },
+    { lineCode: "PD", lineName: "Pedia", managers: [{ hrId: "B-155", role: "Product Manager" }, { hrId: "B-160", role: "Group Product Manager" }] },
+    { lineCode: "AI", lineName: null, managers: [{ hrId: "  ", role: "Product Manager" }] },
+  ];
+  assert.deepEqual(
+    scopeProductManagersOf(lines, null),
+    [
+      { hrId: "B-155", lineCodes: ["CNS", "PD"], lineNames: ["CNS", "Pedia"], role: "Product Manager" },
+      { hrId: "B-9", lineCodes: ["CNS"], lineNames: ["CNS"], role: "Marketing Manager" },
+      { hrId: "B-160", lineCodes: ["PD"], lineNames: ["Pedia"], role: "Group Product Manager" },
+    ],
+    "each person once, carrying every line he is named on, and a blank id names nobody",
+  );
+  assert.deepEqual(
+    scopeProductManagersOf(lines, productManagerRolesFor({ basis: "tree" })).map((manager) => manager.hrId),
+    ["B-155", "B-160"],
+    "the Marketing Manager is a company reader's only",
+  );
+  assert.deepEqual(scopeProductManagersOf([], null), [], "no line, nobody");
 
   // Who was on a visit.
   const onR1 = { index: org, territorySeatId: "R1", managerHrId: null, seniorHrId: null } as const;

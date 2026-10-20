@@ -291,13 +291,18 @@ async function loadManagerPlanItems(access: AccessContext, start: string, end: s
 }
 
 async function loadBirthdayItems(access: AccessContext, viewerLineName: string | null, year: number, month: number): Promise<CalendarItem[]> {
-  if (!viewerLineName) return [];
+  // A calendar administrator (the desk that publishes company-wide) sees EVERY line's birthdays.
+  // Everybody on that desk sits on the Head Office line, so the line filter below showed the desk
+  // Head Office birthdays only and not one of the field force's (owner, 2026-10-20: "others only
+  // for head office employees and you find no field force"). Everyone else keeps their own line.
+  const companyWide = canPublishCompanyWide(access.role);
+  if (!companyWide && !viewerLineName) return [];
   try {
     const rows = await getEmployeeDirectoryRows();
     const viewerHrId = normalizeHrId(access.hrId);
     const monthPrefix = String(month).padStart(2, "0");
     return rows
-      .filter((row) => row.birthDate && sameLine(row.lineName, viewerLineName))
+      .filter((row) => row.birthDate && (companyWide || sameLine(row.lineName, viewerLineName)))
       .filter((row) => monthDayKey(row.birthDate as string).slice(0, 2) === monthPrefix)
       .map((row) => {
         const isSelf = normalizeHrId(row.hrId) === viewerHrId;
@@ -312,8 +317,8 @@ async function loadBirthdayItems(access: AccessContext, viewerLineName: string |
           category: "event" as const,
           time: null,
           location: null,
-          scope: "line" as const,
-          lineName: viewerLineName,
+          scope: companyWide ? ("company" as const) : ("line" as const),
+          lineName: companyWide ? row.lineName : viewerLineName,
           description: null,
           canManage: false,
         };

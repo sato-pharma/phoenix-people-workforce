@@ -784,12 +784,18 @@ export function filterOrganogramRows(
 
   const selectedLineKey = effectiveLineFilter.trim().toLowerCase();
   const isOfficeSelected = selectedLineKey === "office" || selectedLineKey === "head office";
+  // A sales line also holds the Head Office marketers whose OWN line it is — the Product and Group
+  // Product Managers of that line (owner, 2026-10-20; `ownLineName`, organogram-head-office.ts).
+  // Their Head Office managers then ride in through the leadership chain below, so each one is
+  // drawn under a manager who is on the chart.
+  const onSelectedSalesLine = (row: OrganogramRow) =>
+    normalizeNameKey(row.lineName) === normalizeNameKey(effectiveLineFilter) ||
+    (Boolean(row.ownLineName) && normalizeNameKey(row.ownLineName) === normalizeNameKey(effectiveLineFilter));
   const selectedLineRows = effectiveLineFilter
     ? rows.filter((row) =>
         isOfficeSelected
           ? normalizeNameKey(row.lineName) === normalizeNameKey(effectiveLineFilter)
-          : normalizeNameKey(row.lineName) === normalizeNameKey(effectiveLineFilter) &&
-            isOrganogramVisibleRow(row),
+          : onSelectedSalesLine(row) && isOrganogramVisibleRow(row),
       )
     : rows;
 
@@ -851,8 +857,7 @@ export function filterOrganogramRows(
       !effectiveLineFilter ||
       (isOfficeSelected
         ? normalizeNameKey(row.lineName) === normalizeNameKey(effectiveLineFilter) || officeDescendantHrIdsToKeep.has(normalizeHrIdKey(row.hrId))
-        : normalizeNameKey(row.lineName) === normalizeNameKey(effectiveLineFilter) &&
-          isOrganogramVisibleRow(row));
+        : onSelectedSalesLine(row) && isOrganogramVisibleRow(row));
 
     return keepLeadershipChain || matchesSelectedLine;
   });

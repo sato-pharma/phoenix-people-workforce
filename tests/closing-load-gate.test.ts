@@ -134,6 +134,13 @@ export async function runClosingLoadGateTests() {
       /export function loadMonthlyClosingPartsWithStoreSplit\([\s\S]*?closingLoadGate\.load\(input, options\)/.test(loader),
       "loadMonthlyClosingPartsWithStoreSplit must go through the gate",
     );
+    // Read raw: the annotation IS a comment. Without it the Phoenix MCP reader's bundle keeps the
+    // closing loader and its service-role REST client, and mcp-security fails (2026-10-20).
+    const rawLoader = readFileSync("src/lib/sales/monthly-closing-with-store-split.ts", "utf8");
+    assert.ok(
+      /const closingLoadGate = \/\* @__PURE__ \*\/ createClosingLoadGate<MonthlyClosingParts>\(\{[\s\S]*?maxConcurrent: \/\* @__PURE__ \*\/ closingLoadConcurrency\(\),/.test(rawLoader),
+      "the top-level gate is built through pure-marked calls, so a bundle that never loads a closing can drop it",
+    );
     const route = stripComments(readFileSync("app/api/sales/monthly-closing/route.ts", "utf8"));
     assert.ok(
       /reuseMs: searchParams\.get\("fresh"\) === "1" \? 0 : CLOSING_SCREEN_REUSE_MS/.test(route),

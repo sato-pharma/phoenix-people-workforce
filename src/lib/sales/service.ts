@@ -429,9 +429,30 @@ function dmName(record: ScopedRecord) {
   return record.employeeLookupKey || record.employeeName || "Unassigned";
 }
 
-function managerKey(record: ScopedRecord) {
+function managerKey(record: Pick<ScopedRecord, "employeeHrId" | "employeeLookupKey" | "employeeName" | "line" | "managerHrId">) {
   if (isSalesOthersBucket(record)) return "Unassigned DSM";
   return record.managerHrId ? `DSM [${record.managerHrId}]` : "Unassigned DSM";
+}
+
+/**
+ * The dashboard's Manager filter. Its VALUE stays `managerKey` — what the filter matches on — and
+ * its LABEL is the manager's name, the same one the Manager Performance table prints: the option
+ * list used to read "DSM [B-12]" codes (owner, 2026-10-20, names never codes). Sorted by that name.
+ */
+export function salesManagerFilterOptions(
+  records: ReadonlyArray<Pick<ScopedRecord, "employeeHrId" | "employeeLookupKey" | "employeeName" | "line" | "managerHrId">>,
+  peopleLabels: Map<string, string>,
+): { managers: string[]; managerLabels: Record<string, string> } {
+  const managerLabels: Record<string, string> = {};
+  for (const record of records) {
+    const key = managerKey(record);
+    if (key in managerLabels) continue;
+    managerLabels[key] = key === "Unassigned DSM" ? key : personLabel(peopleLabels, record.managerHrId, key);
+  }
+  const managers = Object.keys(managerLabels).sort(
+    (left, right) => managerLabels[left].localeCompare(managerLabels[right]) || left.localeCompare(right),
+  );
+  return { managers, managerLabels };
 }
 
 function isNsmDirectoryEmployee(employee: { hrId?: string | null; jobTitle?: string | null; positionTitle?: string | null } | undefined) {
@@ -1022,7 +1043,10 @@ export async function getSalesDashboard(
   const peopleLabels = await getSalesPeopleLabels([
     ...companyRecords.map((record) => record.ownership.owner_manager_hr_id ?? record.managerHrId),
     ...companyRecords.map((record) => record.ownership.owner_employee_hr_id ?? record.employeeHrId),
+    // Every manager the filter offers, not only those inside the current slice.
+    ...records.map((record) => record.managerHrId),
   ]);
+  const managerFilter = salesManagerFilterOptions(records, peopleLabels);
 
   const managerGroupsMap = aggregate(dsmAttributableRecords, (record) =>
     personLabel(peopleLabels, record.ownership.owner_manager_hr_id ?? record.managerHrId, managerKey(record))
@@ -1147,7 +1171,8 @@ export async function getSalesDashboard(
       lines: uniq(records.map((record) => record.line)),
       periods: uniq(records.map((record) => record.period)),
       salesTypes: uniq(records.map((record) => record.salesType)),
-      managers: uniq(records.map((record) => managerKey(record))),
+      managers: managerFilter.managers,
+      managerLabels: managerFilter.managerLabels,
       territories: uniq(records.map((record) => record.territory)),
       products: uniq(records.map((record) => record.product)),
       families: uniq(records.map((record) => record.family)),

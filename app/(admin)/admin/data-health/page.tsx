@@ -3,10 +3,12 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { DataHealthDashboard } from "@/components/admin/data-health-dashboard";
+import { RoleCoverageAuditView } from "@/components/admin/role-coverage-audit";
 import { Card } from "@/components/ui/card";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { canAccess } from "@/lib/auth/permissions";
 import { getDataHealthStats, getSalaryFlags } from "@/lib/admin/service";
+import { getRoleCoverageAudit } from "@/lib/admin/role-coverage/audit";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
@@ -19,17 +21,53 @@ export default async function DataHealthPage() {
   }
 
   return (
-    <Suspense
-      fallback={
-        <AppRouteLoadingState
-          title="Loading Data Health"
-          description="Auditing workforce, access, sales ownership, and payroll flags."
-        />
-      }
-    >
-      <DataHealthContent />
-    </Suspense>
+    <div className="space-y-6">
+      <Suspense
+        fallback={
+          <AppRouteLoadingState
+            title="Loading Data Health"
+            description="Auditing workforce, access, sales ownership, and payroll flags."
+          />
+        }
+      >
+        <DataHealthContent />
+      </Suspense>
+      {/* Role Coverage streams on its own: it calls every registered module's own people list, and
+          one slow module must never hold the governance queues above it. */}
+      <Suspense
+        fallback={
+          <AppRouteLoadingState
+            title="Loading Role Coverage"
+            description="Reading each module's own people list and comparing it with today's roster."
+          />
+        }
+      >
+        <RoleCoverageContent />
+      </Suspense>
+    </div>
   );
+}
+
+async function RoleCoverageContent() {
+  // Data fetch and JSX stay separated (react-hooks/error-boundaries: no JSX inside try/catch).
+  let audit: Awaited<ReturnType<typeof getRoleCoverageAudit>> | null = null;
+  let loadError: string | null = null;
+  try {
+    audit = await getRoleCoverageAudit();
+  } catch (error) {
+    console.error("Failed to load the Role Coverage audit:", error);
+    loadError = error instanceof Error ? error.message : "Unknown error occurred";
+  }
+
+  if (!audit) {
+    return (
+      <Card className="border border-rose-200 bg-white p-6">
+        <h2 className="text-lg font-black tracking-tight text-rose-900">Role Coverage could not be measured</h2>
+        <p className="mt-1 break-words text-sm text-rose-700">{loadError ?? "Unknown error occurred"}</p>
+      </Card>
+    );
+  }
+  return <RoleCoverageAuditView audit={audit} />;
 }
 
 async function DataHealthContent() {

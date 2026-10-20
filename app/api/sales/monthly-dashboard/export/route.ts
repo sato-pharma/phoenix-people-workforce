@@ -38,7 +38,8 @@ function firstValue(value: string | null): string | undefined {
 /** Filename segment for one filter value: single code, or empty. */
 function seg(value: string | undefined): string | null {
   if (!value) return null;
-  return value.toLowerCase().replace(/\s+/g, "-");
+  // ASCII only: a Content-Disposition header refuses anything else, and a name can carry it.
+  return value.toLowerCase().replace(/\s+/g, "-").replace(/[^!-~]/g, "") || null;
 }
 
 export async function GET(request: Request) {
@@ -72,7 +73,9 @@ export async function GET(request: Request) {
     });
 
     const parts = ["phoenix-monthly-sales-dashboard"];
-    for (const part of [seg(filters.line), seg(filters.salesType), seg(filters.territory), seg(filters.manager), seg(filters.family)]) {
+    // The file is named by the manager's NAME, never the filter's `DSM [hr id]` key (owner rule: names, never codes).
+    const managerName = filters.manager ? (data.filters.managerLabels?.[filters.manager] ?? filters.manager) : undefined;
+    for (const part of [seg(filters.line), seg(filters.salesType), seg(filters.territory), seg(managerName), seg(filters.family)]) {
       if (part) parts.push(part);
     }
     const filename = `${parts.join("_")}_${generatedAtIso.slice(0, 10)}.xlsx`;

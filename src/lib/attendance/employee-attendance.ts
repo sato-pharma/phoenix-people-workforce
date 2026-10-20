@@ -239,7 +239,8 @@ export function isSelfOnlyAttendanceViewer(context: Pick<AccessContext, "role">)
  *    (canAccessFingerprintReport → employees:read). Before the ruling the panel answered 403 for
  *    every request it was asked to approve. The bulk list scoper below is deliberately NOT widened:
  *    the ruling covered the per-person view, and the bulk exports keep their existing scope.
- *  - any other manager — their DIRECT reports only (target.managerHrId === caller).
+ *  - any other manager — their DIRECT reports (target.managerHrId === caller). A manager seat's
+ *    deeper subtree is admitted by assertCanViewEmployeeAttendance, which can read the directory.
  *
  * Pure + exact-match; the security boundary for the manager view. Guests / no-scope
  * are denied outright.
@@ -301,9 +302,9 @@ export async function assertCanViewEmployeeAttendance(
   if (canViewEmployeeAttendanceReport(context, { hrId: target, managerHrId: null })) {
     return;
   }
-  // A hierarchy-scoped viewer reaches their whole subtree, which the pure single-edge predicate
-  // below cannot express (it only ever sees the target's immediate manager). Checked before the
-  // single-row lookup so the common case still costs one query at most.
+  // A manager seat (isHierarchyAttendanceViewer) reaches their whole subtree, which the pure
+  // single-edge predicate below cannot express (it only ever sees the target's immediate manager).
+  // Checked before the single-row lookup so the common case still costs one query at most.
   if (isHierarchyAttendanceViewer(context)) {
     const subtree = new Set(
       (await loadAttendanceSubtreeHrIds(context.hrId)).map((hrId) => normalizeAttendanceHrId(hrId) ?? hrId),
@@ -325,14 +326,20 @@ export async function assertCanViewEmployeeAttendance(
 
 /**
  * True when this viewer's attendance reach follows their whole management subtree rather than just
- * their direct reports — i.e. a `hierarchy`-scoped role (Regional Manager, see scopeForRole).
+ * their direct reports — every manager seat: `hierarchy` (Regional Manager), `line` (National Sales
+ * Manager, Product / Group Product / Marketing Manager) and `team` (District Manager, Manager) — see
+ * scopeForRole.
  *
  * A one-level rule is wrong for them in a way that matters: an RM owns the attendance-driven
  * deduction days of every Medical Rep in their region, but those reps report to a DSM, so a
- * direct-reports-only check showed the RM only their 3 DSMs and hid all 14 reps.
+ * direct-reports-only check showed the RM only their 3 DSMs and hid all 14 reps. The same rule hid
+ * every rep from a National Sales Manager and every second-level report from a head-office manager
+ * (owner, 2026-10-20: "every single role that is applicable to appear in a module"). The subtree is
+ * downward only, so nobody reaches a peer or a manager above him. Company-scoped seats keep their own
+ * lines in the two functions that call this, and the self-only Finance Manager stops before it.
  */
-function isHierarchyAttendanceViewer(context: AccessContext): boolean {
-  return context.scope === "hierarchy";
+export function isHierarchyAttendanceViewer(context: Pick<AccessContext, "scope">): boolean {
+  return context.scope === "hierarchy" || context.scope === "line" || context.scope === "team";
 }
 
 /**
@@ -418,9 +425,23 @@ export async function loadAttendanceDirectReports(
 }
 
 /**
+ * The reports a viewer's Attendance Analytics picker offers (/employee-portals/fingerprint-analytics)
+ * — exactly the people assertCanViewEmployeeAttendance admits for him, so the picker never lists a
+ * name the per-person API then refuses, nor hides one it would serve. A manager seat gets his whole
+ * subtree; anyone else his direct reports. Self is not included: the page adds it as "My report".
+ * The self-only Finance Manager gets nobody (owner, 2026-08-10).
+ */
+export async function loadAttendancePickerReports(
+  context: Pick<AccessContext, "hrId" | "role" | "scope">,
+): Promise<AttendanceReportTarget[]> {
+  if (!context.hrId || isSelfOnlyAttendanceViewer(context)) return [];
+  return loadAttendanceDirectReports(context.hrId, { includeSubtree: isHierarchyAttendanceViewer(context) });
+}
+
+/**
  * hrIds `context` may see in bulk attendance exports/reports: `null` means no
  * restriction (whole company). Mirrors `canViewEmployeeAttendanceReport`'s bypass
- * (self / whole-company viewers / direct reports only) for list-scoped callers, with ONE
+ * (self / whole-company viewers / reports, a manager seat's whole subtree) for list-scoped callers, with ONE
  * deliberate difference: HR Operations. The owner's 2026-09-17 ruling opened any one person's
  * report to it and did not cover bulk lists, so here it keeps self + direct reports. That path
  * reads Supabase and is not unit-tested; do not "align" the two without a ruling on the lists.

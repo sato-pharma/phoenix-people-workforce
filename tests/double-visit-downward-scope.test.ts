@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
+  buildManagerSummariesDetailed,
   buildScopedDoubleVisitDashboardCore,
   filterEmployeesForDoubleVisitAccess,
   filterRowsForAccess,
   resolveDoubleVisitAccessScope,
 } from "../src/lib/double-visit-analytics/service.ts";
-import { canAccessCoachingEmployee } from "../src/lib/coaching/service.ts";
+import { stripComments } from "./support/comment-strip.ts";
+import { canAccessCoachingEmployee, scopeCoachingDirectoryForAccess } from "../src/lib/coaching/service.ts";
 import { buildDownwardCut } from "../src/lib/crm/doctor-coverage-scope.ts";
 import { canonicalHrIdKey, normalizeHrIdForAccess } from "../src/lib/hr-id.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
@@ -261,4 +264,107 @@ export function runDoubleVisitDownwardScopeTests() {
     true,
     "coaching: company oversight is untouched",
   );
+
+  // ── 11. Coaching role coverage (owner, 2026-10-20: every role a module applies to finds its people).
+  // The SFE Manager's own seat is on the Head Office line, so the line branch found no field rep at
+  // all; he reads coaching company-wide. Z-9 is not even in the directory — oversight needs no seat.
+  const sfeCoach = access("SFE Manager", "Z-9");
+  assert.equal(canAccessCoachingEmployee(sfeCoach, byId("REP-1"), employees), true, "coaching: the SFE Manager opens a field rep's reports");
+  assert.equal(canAccessCoachingEmployee(sfeCoach, byId("REP-9"), employees), true, "coaching: the SFE Manager opens every line, not one");
+  assert.equal(scopeCoachingDirectoryForAccess(sfeCoach, employees).length, employees.length, "coaching analytics: the SFE Manager's directory is the whole company");
+
+  // A Product Manager sits in Marketing while the reps he coaches sit in Sales: "same department"
+  // hid every rep on his own line. He now reads his line like a Group Product Manager, and the ladder
+  // still keeps him to the seats beneath his own.
+  const byDepartment = employees.map((e) => ({
+    ...e,
+    departmentName: ["A-8", "P-2", "M-1"].includes(e.hrId) ? "Marketing" : "Sales",
+  }));
+  const deptById = (id: string) => byDepartment.find((e) => e.hrId === id)!;
+  assert.equal(canAccessCoachingEmployee(pm, deptById("REP-1"), byDepartment), true, "coaching: a Marketing-department PM opens a Sales rep on his own line");
+  assert.equal(canAccessCoachingEmployee(pm, deptById("D-1"), byDepartment), false, "coaching: the cross-department line view still cuts a same-line DSM");
+  assert.equal(canAccessCoachingEmployee(pm, deptById("REP-9"), byDepartment), false, "coaching: the cross-department line view never reaches another line");
+  assert.deepEqual(
+    scopeCoachingDirectoryForAccess(pm, byDepartment).map((e) => e.hrId).sort(),
+    ["A-8", "REP-1", "REP-2", "S-1"],
+    "coaching analytics: a PM's directory is himself, his own report and his line's reps — nobody above or beside him",
+  );
+  // The National Sales Manager stays department-safe: a Marketing seat on his line is not his.
+  assert.equal(
+    canAccessCoachingEmployee(access("National Sales Manager", "N-1"), deptById("P-2"), byDepartment),
+    false,
+    "coaching: an NSM still never opens a Marketing seat that merely shares his line",
+  );
+
+  // ── 12. Double-visit role coverage (owner, 2026-10-20: every role a module applies to finds its people).
+  // 12a. A Product Manager's line OVERRIDE (doctor_coverage_config.line_overrides, keyed by the access
+  //      key) reaches his second line, exactly as doctor coverage reads it — and the ladder still cuts.
+  const overrides = { lineOverrides: { [k("A-8")]: [1, 2] } };
+  const overrideScope = resolveDoubleVisitAccessScope(pm, employees, overrides);
+  assert.equal(overrideScope.all, false);
+  if (!overrideScope.all) {
+    assert.ok(overrideScope.allowedHrIds.has(k("REP-9")), "an override's second line brings its reps onto a PM's board");
+    assert.ok(overrideScope.allowedHrIds.has(k("REP-1")), "his recorded line stays when the override names it too");
+    for (const id of ["M-1", "D-1", "P-2"]) {
+      assert.ok(!overrideScope.allowedHrIds.has(k(id)), `an override never readmits ${id}, whom the downward rule cut`);
+    }
+  }
+  const secondLineOnly = resolveDoubleVisitAccessScope(pm, employees, { lineOverrides: { [k("A-8")]: [2] } });
+  if (!secondLineOnly.all) {
+    assert.ok(!secondLineOnly.allowedHrIds.has(k("REP-1")), "the override WINS over the recorded line, as in doctor coverage");
+    assert.ok(secondLineOnly.allowedHrIds.has(k("S-1")), "his own subtree is never lost to an override");
+  }
+  assert.ok(
+    filterEmployeesForDoubleVisitAccess(employees, pm, overrides).some((e) => k(e.hrId) === k("REP-9")),
+    "the scoped directory carries the override's line too",
+  );
+  // A visit he did not make himself, to a rep on the second line: only the override admits it.
+  const secondLineVisit = [row({ visitor: "CRM:888", visited: "REP-9", visits: 2, line: "CNS" })] as unknown as Rows;
+  assert.equal(filterRowsForAccess(secondLineVisit, pm, employees).length, 0, "without the override, the second line's visits stay off his board");
+  assert.equal(filterRowsForAccess(secondLineVisit, pm, employees, overrides).length, 1, "with it, a visit to a rep on his second line is on his board");
+
+  // 12b. The SFE Manager is an allowed double visitor with his own code, yet the By Manager tab never
+  //      listed him: he sits above no rep in the org chart and was missing from the functional roles.
+  const withSfe = [
+    ...employees,
+    person({ hrId: "SF-1", fullName: "SFE Head", jobTitle: "SFE Manager", lineId: 4, lineName: "Head Office" }),
+  ];
+  const sfeVisitCore = buildScopedDoubleVisitDashboardCore({
+    access: access("CEO", "Z-1"),
+    dateTo: "2026-09-30",
+    employees: withSfe,
+    rows: [row({ visitor: "SF-1", visited: "REP-1", visits: 3 })] as unknown as Rows,
+  });
+  const sfeReport = sfeVisitCore.executiveReports.find((r) => ck(r.managerHrId) === ck("SF-1"));
+  assert.ok(sfeReport, "the SFE Manager appears in the By Manager list once he double-visits");
+  assert.equal(sfeReport!.expectedMrCount, 1, "and his report is scoped to the reps he actually visited, never the whole company");
+
+  // 12c. The manager profile's "not visited" list is his WHOLE team. An NSM's reps report to his DSMs,
+  //      so the direct-report filter always read empty; the summary now carries the team's HR ids.
+  const { summaries: teamSummaries } = buildManagerSummariesDetailed(
+    [row({ visitor: "N-1", visited: "REP-1", visits: 2 }), row({ visitor: "A-8", visited: "REP-1", visits: 3 })] as unknown as Rows,
+    employees,
+    "2026-09-30",
+  );
+  const nsmSummary = teamSummaries.find((s) => s.managerHrId === ck("N-1"));
+  assert.ok(nsmSummary, "the NSM has a summary");
+  const nsmTeam = nsmSummary!.teamMrHrIds ?? [];
+  assert.equal(nsmTeam.length, nsmSummary!.teamMrCount, "the team list is exactly the population the coverage figure counts");
+  assert.ok(nsmTeam.includes("REP-1") && nsmTeam.includes("REP-2"), "reps two levels beneath him (under his DSM) are in his team");
+  assert.ok(!nsmTeam.includes("REP-9"), "another line's rep is not");
+  assert.equal(teamSummaries.find((s) => s.managerHrId === ck("A-8"))?.teamMrHrIds, null, "a PM has no org team, so no team list");
+  const workspaceCode = stripComments(
+    readFileSync("src/components/double-visit-analytics/double-visit-analytics-workspace.tsx", "utf8"),
+  );
+  assert.match(
+    workspaceCode,
+    /summaryByKey\.get\(selectedManagerKey\)\?\.teamMrHrIds \?\? null,/,
+    "the manager profile is handed the selected manager's whole team",
+  );
+  assert.match(
+    workspaceCode,
+    /\(s\) => \(teamKeys \? teamKeys\.has\(hk\(s\.hrId\)\) : hk\(s\.managerHrId\) === managerKey\) && !visitedKeysAll\.has\(hk\(s\.hrId\)\),/,
+    "the not-visited list reads the team, falling back to direct reports only for a manager with no org team",
+  );
+  assert.doesNotMatch(workspaceCode, /\(\{m\.hrId\}\)/, "the not-visited buttons show names, never HR codes");
 }

@@ -16,6 +16,8 @@ import { runEmployee360VisitClassificationTests } from "./employee-360-visit-cla
 import { runEmployee360DoubleVisitCountTests } from "./employee-360-double-visit-count.test.ts";
 import { runEmployee360TeamPlanComplianceTests } from "./employee-360-team-plan-compliance.test.ts";
 import { runEmployee360PeriodCairoTests } from "./employee-360-period-cairo.test.ts";
+import { runRoleCoverageAuditTests } from "./role-coverage-audit.test.ts";
+import { runManagerFilterTests } from "./manager-filter.test.ts";
 import { runErrorMonitorNewIssueDiffTests } from "./error-monitor-new-issue-diff.test.ts";
 import { runOutstationReviewMapRasterTests } from "./outstation-review-map-raster.test.ts";
 import { runErrorMonitorDerivedStatusTests } from "./error-monitor-derived-status.test.ts";
@@ -10427,6 +10429,14 @@ await runTest(
 await runTest(
   "an employee's extra ticket is refused once HR has decided the claim — only a submitted or needs-review claim takes one, so an accepted claim can no longer have a higher total re-pushed to its payroll row unseen; the refusal comes before any file is uploaded or the claim written, the write is itself pinned to the open statuses, the function no longer touches payroll, the route answers 409, the employee screen offers the button only on a Pending claim, and a journey stop shares the same single list of open statuses",
   runOutstationExtraTicketAfterDecisionTests,
+);
+await runTest(
+  "the Role Coverage audit on Data Health: a person is bucketed by job function (a Senior Medical Representative is a medical rep, a Senior District Manager a district manager, the Chief Executive his own bucket), a reps-only list is reported missing every manager rung that holds people and names them, a partial rung is reported partial, a role nobody holds is never a gap, a role left out on purpose is reported with its reason and never as a gap — unless the page shows it anyway — and every registered module names its roles, its page, its people list and the function its probe calls",
+  runRoleCoverageAuditTests,
+);
+await runTest(
+  "filter by manager finds the manager and his whole team: choosing a district manager shows his own row and his reps, choosing a National Sales Manager shows him, his district managers and every rep beneath them, the options carry every manager up the chain even on a reps-only list, a loop in the data never hangs, and every Field Workforce Compliance tab matches and offers its Manager filter through that chain",
+  runManagerFilterTests,
 );
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

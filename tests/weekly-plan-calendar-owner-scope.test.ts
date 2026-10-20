@@ -322,4 +322,49 @@ export function runWeeklyPlanCalendarOwnerScopeTests() {
     true,
     "HR Advisory sees every Anti Infective Product Manager's plan now, not just one named exception",
   );
+
+  // --- An acting District Manager (owner, 2026-10-20): she holds the District Manager APP role but
+  // keeps a Medical Representative title, so the title test alone dropped her plans from every
+  // calendar. The viewer context's districtManagerHrIds (active District Manager sign-ins) makes her
+  // an owner; a real rep is still not one, and a context built without the set keeps the title rule. ---
+  const actingDmItem = planItem({ employeeHrId: "R-77", employeeJobTitle: "Medical Representative", lineName: "CNS" });
+  const realRepItem = planItem({ employeeHrId: "R-78", employeeJobTitle: "Medical Representative", lineName: "CNS" });
+  const actingDmKeys = new Set([normalizeHrIdForAccess("R-77") ?? ""]);
+  assert.equal(
+    isPlanItemVisibleToViewer(actingDmItem, viewer({ hrId: "A-7", role: "Training Manager", districtManagerHrIds: actingDmKeys })),
+    true,
+    "an acting District Manager's plan is on the calendar once her app role is known",
+  );
+  assert.equal(
+    isPlanItemVisibleToViewer(realRepItem, viewer({ hrId: "A-7", role: "Training Manager", districtManagerHrIds: actingDmKeys })),
+    false,
+    "a Medical Representative without the District Manager app role is still not a calendar owner",
+  );
+  assert.equal(
+    isPlanItemVisibleToViewer(actingDmItem, UNRESTRICTED_VIEWER),
+    false,
+    "without the app-role set, ownership is decided by title alone, as before",
+  );
+  assert.equal(
+    isPlanItemVisibleToViewer(
+      actingDmItem,
+      viewer({
+        hrId: "RM-1",
+        role: "Regional Manager",
+        lineName: "CNS",
+        directReportHrIds: new Set([normalizeHrIdForAccess("R-77") ?? ""]),
+        districtManagerHrIds: actingDmKeys,
+      }),
+    ),
+    true,
+    "her own Regional Manager sees her plan as one of his District Managers'",
+  );
+  assert.equal(
+    isPlanItemVisibleToViewer(
+      actingDmItem,
+      viewer({ hrId: "DM-2", role: "District Manager", lineName: "CNS", districtManagerHrIds: actingDmKeys }),
+    ),
+    false,
+    "a peer District Manager still never sees another District Manager's plan",
+  );
 }

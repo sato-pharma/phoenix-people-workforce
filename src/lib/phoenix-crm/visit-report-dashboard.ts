@@ -87,7 +87,15 @@ export function buildVisitReportDashboard(input: {
   days: ReadonlyArray<string>;
   filled: Readonly<Record<string, number>>;
 }): VisitReportDashboard {
-  const { rows, fields, days, filled } = input;
+  const { fields } = input;
+  // 🔴 A MANAGER'S OWN SINGLE VISIT IS A ROW, NEVER A FIGURE (owner, 2026-10-20: "Show, keep out of reps"). It is
+  // listed under his name in the table and on the file, and every tile and panel here is worked out without it —
+  // a "visits per person per working day" that counted it would be a call rate built from the one table no rate
+  // may read.
+  const rows = input.rows.filter((row) => row.ownVisit !== true);
+  const ownVisits = input.rows.length - rows.length;
+  const days = ownVisits === 0 ? input.days : visitReportDays(rows);
+  const filled = ownVisits === 0 ? input.filled : countVisitReportFilled(rows, fields);
   const chosen = new Set(fields.map((field) => field.key));
   const total = rows.length;
 
@@ -99,7 +107,13 @@ export function buildVisitReportDashboard(input: {
   const far = measured.filter((row) => row.locationFlag === FAR).length;
 
   const tiles: VisitReportDashboardTile[] = [
-    { label: "Visits", value: total.toLocaleString("en-US"), hint: `${days.length} day${days.length === 1 ? "" : "s"} with visits` },
+    {
+      label: "Visits",
+      value: total.toLocaleString("en-US"),
+      hint: `${days.length} day${days.length === 1 ? "" : "s"} with visits${
+        ownVisits === 0 ? "" : ` · plus ${ownVisits} of the manager's own visit${ownVisits === 1 ? "" : "s"}, listed and counted in no figure`
+      }`,
+    },
     {
       label: "Visits per person per working day",
       value: repDays.size === 0 ? "—" : (total / repDays.size).toFixed(1),

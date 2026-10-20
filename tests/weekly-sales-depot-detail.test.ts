@@ -1159,7 +1159,7 @@ export async function runWeeklySalesDepotDetailTests() {
     const source = readSource(route);
     assert.match(
       source,
-      /const isCompanyExecutive = access\.role === "CEO" \|\| access\.role === "Super Admin";\s+if \(!isPortalWeeklyRole\(access\.role\) && !isCompanyExecutive\) \{\s+return NextResponse\.json\(\{ success: false, error: "Forbidden\." \}, \{ status: 403 \}\);/,
+      /if \(!mayReadManagersWeeklySales\(access\.role\)\) \{\s+return NextResponse\.json\(\{ success: false, error: "Forbidden\." \}, \{ status: 403 \}\);/,
       `${route} keeps the managers' Weekly Sales gate, so a Medical Rep is refused`,
     );
     assert.match(source, /loadWeeklySalesDepotDetail\(/, `${route} reads through the scoped managers' loader`);

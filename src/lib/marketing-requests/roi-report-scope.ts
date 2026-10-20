@@ -19,22 +19,116 @@ import type {
 // ─────────────────────────────────────────────────────────────────────────────
 // Pure scope + filter-option logic for the Marketing ROI Filter Engine.
 //
-// Nothing here touches the DB or the network. `resolveMarketingRoiScope` mirrors
-// the EXACT visibility decision `canSeeMarketingRequest` makes (it calls the same
-// `canSeeMarketingHierarchyRecord`), so the report can SQL-prefilter to visible
-// requests instead of loading 200 rows and discarding most. `computeMarketing
-// FilterOptions` enforces the locked "never show a dead filter" rule against a
-// viewer's already-scoped visible request set.
+// Nothing here touches the DB or the network. `resolveMarketingRoiScope`'s requester
+// route mirrors the EXACT visibility decision `canSeeMarketingRequest` makes (it calls
+// the same `canSeeMarketingHierarchyRecord`), so the report can SQL-prefilter to
+// visible requests instead of loading 200 rows and discarding most. Two ROI-only
+// routes sit beside it and are deliberately WIDER than `canSeeMarketingRequest`: the
+// Medical Rep's territory route (`territoryRouteAdmitsRequest`, 2026-09-18/30) and the
+// National Sales Manager's line route (`lineRouteAdmitsRequest`, owner 2026-10-20).
+// `computeMarketingFilterOptions` enforces the locked "never show a dead filter" rule
+// against a viewer's already-scoped visible request set.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Options that inject data the pure scope function cannot derive from the
- *  directory alone (PM/GPM product ownership — see plan §A). */
+ *  directory alone (PM/GPM product ownership — see plan §A; the NSM's line overrides). */
 export type ResolveMarketingRoiScopeOptions = {
   /** product codes this PM/GPM owns; null = not yet set up (page shows nothing). */
   ownedProductCodes?: Set<string> | null;
   /** line names this PM/GPM owns (for the line filter). */
   ownedLineNames?: Set<string> | null;
+  /**
+   * The viewer's `app_auth_users.line_scope_override` — read ONLY for a National Sales Manager
+   * (see `resolveLineRouteOverride` in roi-report-service.ts). It ADDS to his own seat line for the
+   * line route; it is ignored for every other role, so passing it can never widen anyone else.
+   */
+  lineScopeOverride?: Iterable<string | null | undefined> | null;
 };
+
+/** The one role that runs the line route (owner, 2026-10-20). */
+export const LINE_ROUTE_ROLE = "National Sales Manager" as const;
+
+/** Exactly the territory route's own line normalization (trim + lower-case), so the two routes can
+ *  never read one line name two ways. */
+function normalizeRouteLineName(value: string | null | undefined): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+/**
+ * The line(s) a marketing request is ON — the requester's seat line plus every promoted product's
+ * line, normalized. Built from ALL the request's products, never the confidential-masked list, so
+ * masking a product can neither widen nor narrow who may see the row. A request spanning two lines
+ * is on both. Empty = the line is unknown, which neither the territory route nor the line route
+ * ever admits.
+ *
+ * One builder for every gate (the report, View Sales, the reverse lookup and the Coverage Report),
+ * so no gate can read a request's lines differently from another.
+ */
+export function collectRequestLineNames(
+  requesterLineName: string | null | undefined,
+  productLineNames: Iterable<string | null | undefined>,
+): Set<string> {
+  const lines = new Set<string>();
+  for (const candidate of [requesterLineName, ...productLineNames]) {
+    const lineName = normalizeRouteLineName(candidate);
+    if (lineName) lines.add(lineName);
+  }
+  return lines;
+}
+
+/**
+ * The viewer's lines for the LINE route — National Sales Manager only (owner, 2026-10-20).
+ *
+ * His own seat line (`employees.line_id` → the directory's `lineName`) plus every line on his
+ * `line_scope_override`. Every other role gets an empty set, so the route is inert for them: a
+ * District Manager, Regional Manager or Medical Rep scope is exactly what it was.
+ */
+export function resolveViewerLineRouteNames(
+  access: AccessContext,
+  employeeRows: EmployeeDirectoryRow[],
+  viewerHrId: string | null,
+  lineScopeOverride: Iterable<string | null | undefined> | null | undefined,
+): Set<string> {
+  const lineNames = new Set<string>();
+  if (access.role !== LINE_ROUTE_ROLE) return lineNames;
+  if (viewerHrId) {
+    for (const row of employeeRows) {
+      if (normalizeHrId(row.hrId) !== viewerHrId) continue;
+      const lineName = normalizeRouteLineName(row.lineName);
+      if (lineName) lineNames.add(lineName);
+    }
+  }
+  for (const candidate of lineScopeOverride ?? []) {
+    const lineName = normalizeRouteLineName(candidate);
+    if (lineName) lineNames.add(lineName);
+  }
+  return lineNames;
+}
+
+/**
+ * THE line-route decision, in one pure place (owner, 2026-10-20: a National Sales Manager "sees
+ * every campaign on his line, whoever ran it").
+ *
+ * The requester route walks the manager chain, and Product Managers, Group Product Managers and
+ * the Marketing Manager report up the MARKETING department, so their campaigns on his line never
+ * reached him. This admits a request raised by ANYBODY when it is on one of his lines — the
+ * requester's seat line or any promoted product's line (`collectRequestLineNames`). An unknown
+ * line is never his, and a viewer with no lines (every seat but the NSM) admits nothing here.
+ *
+ * It decides WHICH requests he sees, never which product names he sees: confidential products stay
+ * masked by `canRevealRestricted` exactly as for every other row he has.
+ */
+export function lineRouteAdmitsRequest(
+  scope: Pick<MarketingRoiScope, "visibleLineRouteNames">,
+  requestLineNames: Iterable<string | null | undefined>,
+): boolean {
+  if (scope.visibleLineRouteNames.size === 0) return false;
+  for (const candidate of requestLineNames) {
+    const lineName = normalizeRouteLineName(candidate);
+    if (lineName && scope.visibleLineRouteNames.has(lineName)) return true;
+  }
+  return false;
+}
 
 function emptyScope(
   access: AccessContext,
@@ -53,6 +147,7 @@ function emptyScope(
     visibleProductCodes: null,
     visibleAreaIds: new Set<number>(),
     visibleAreaLineNames: new Set<string>(),
+    visibleLineRouteNames: new Set<string>(),
     canRevealRestricted: canViewRestrictedProducts(access.role),
     ...overrides,
   };
@@ -150,6 +245,12 @@ export function territoryRouteAdmitsRequest(
  *    2026-09-30): every request whose target customer sits in their own area AND
  *    which is on their own line, whoever raised it. See `viewerAreaScope` below —
  *    an area is shared by every line's rep, so the area alone is not the bound.
+ *  - A National Sales Manager additionally gets a LINE route
+ *    (`visibleLineRouteNames`, owner 2026-10-20: "He sees every campaign on his
+ *    line, whoever ran it"): every request on his own line or a line on his
+ *    `line_scope_override`, whoever raised it — in practice the Product, Group
+ *    Product and Marketing Managers' campaigns, which sit outside his chain. The
+ *    decision is `lineRouteAdmitsRequest`; it never reveals a confidential product.
  */
 export function resolveMarketingRoiScope(
   access: AccessContext,
@@ -213,6 +314,7 @@ export function resolveMarketingRoiScope(
   }
 
   const territory = viewerAreaScope(access, employeeRows, viewerHrId);
+  const lineRoute = resolveViewerLineRouteNames(access, employeeRows, viewerHrId, opts.lineScopeOverride);
 
   return emptyScope(access, {
     viewerHrId,
@@ -225,6 +327,7 @@ export function resolveMarketingRoiScope(
     visibleProductCodes: null,
     visibleAreaIds: territory.areaIds,
     visibleAreaLineNames: territory.lineNames,
+    visibleLineRouteNames: lineRoute,
     canRevealRestricted,
   });
 }
