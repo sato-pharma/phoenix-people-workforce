@@ -785,7 +785,7 @@ export function ValidationReviewsBoard({
                   </div>
                 ) : (
                   <Paged key={filterKey} noun="customers" rows={filteredReopened} size={PAGE_ROWS}>
-                    {(rows) => <ReopenedCustomerList rows={rows} />}
+                    {(rows) => <ReopenedCustomerList mode={mode} rows={rows} />}
                   </Paged>
                 )}
               </AdminTableShell>

@@ -33,6 +33,7 @@ import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, CrmTable, crmTdClassName, crmTextareaClassName, crmThClassName } from "@/components/phoenix-crm/ui";
+import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
 import { adviseOnTimetable } from "@/lib/phoenix-crm/place-check-advice";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import type { SeatedCustomer, SeatedTimetable } from "@/lib/phoenix-crm/shared-place-groups";
@@ -70,6 +71,16 @@ function decidesOnReview(customer: SeatedCustomer): boolean {
 
 function Who({ customer, mode }: { customer: SeatedCustomer; mode: PlaceCheckNotesMode }) {
   const dated = customer.state === "sent_back" ? "Sent back" : customer.state === "in_use" ? "Seated" : "Held";
+  // Who approved or refused him and when (owner, 2026-10-20) — the company board only. A rejected row
+  // that can be taken back already prints the same two facts on its own card (`RestoreSeated`).
+  const stamp =
+    mode === "team" || (customer.state === "rejected" && customer.restorable)
+      ? null
+      : customer.state === "in_use"
+        ? decisionStamp("Approved", customer.decidedByName, customer.decidedAtText)
+        : customer.state === "sent_back" || customer.state === "rejected"
+          ? decisionStamp("Refused", customer.decidedByName, customer.decidedAtText)
+          : null;
   return (
     <div className="min-w-0 space-y-1">
       <p className="break-words text-sm font-black text-slate-900" dir="auto">
@@ -81,6 +92,7 @@ function Who({ customer, mode }: { customer: SeatedCustomer; mode: PlaceCheckNot
       <p className="break-words text-xs text-slate-500">
         {dated} {customer.atText}
       </p>
+      {stamp ? <p className="break-words text-xs font-semibold text-slate-700">{stamp}</p> : null}
       <div className="flex min-w-0 flex-wrap gap-1">
         {customer.state === "waiting" ? <CrmPill tone="warn">{mode === "team" ? "Still being checked" : "Waiting for you"}</CrmPill> : null}
         {customer.state === "rejected" ? <CrmPill tone="bad">{mode === "team" ? "Settled" : "Rejected"}</CrmPill> : null}
