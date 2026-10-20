@@ -156,13 +156,13 @@ export async function POST(request: Request) {
       // A tap on one of our own interactive menus. Handled before anything else: it carries no text
       // and no document, so it would otherwise fall through to "ignored" and the applicant's answer
       // would be dropped silently. Never throws — a failed answer must not fail the delivery.
-      // Needs a phone number: the menus were sent to one. A tap from a username sender with no phone
-      // falls through to the no-phone record below.
-      if (message.interactiveReplyId && message.from && !message.historical) {
+      // A username sender with no phone is keyed on their user id (BSUID) — the menus were sent to it.
+      const conversationKey = message.from ?? message.userId;
+      if (message.interactiveReplyId && conversationKey && !message.historical) {
         const replyOutcome = await handleClassifyReply({
           phoneNumberId: message.deliveredToPhoneNumberId,
           rowId: message.interactiveReplyId,
-          waId: message.from,
+          waId: conversationKey,
         }).catch((replyError) => {
           logError("WhatsApp classification reply handling threw", {
             error: replyError,
@@ -177,7 +177,7 @@ export async function POST(request: Request) {
           const extraReplyOutcome = await handleExtraQuestionReply({
             phoneNumberId: message.deliveredToPhoneNumberId,
             rowId: message.interactiveReplyId,
-            waId: message.from,
+            waId: conversationKey,
           }).catch((extraError) => {
             logError("WhatsApp screening extra-question reply handling threw", {
               error: extraError,
@@ -270,8 +270,15 @@ export async function POST(request: Request) {
       // them, and the owner decided the same day that a username sender is sent nothing. The caption
       // alone is the source context, since the text buffer is keyed on a phone number too.
       //
-      // Everything else — a greeting, a tap — is RECORDED as one intake event and goes no further.
-      // Never throws.
+      // 🔴 A CV FROM A USERNAME SENDER NOW OPENS THE QUESTIONS (owner, 20 Oct 2026: a woman who wrote
+      // to the HR line from a username was never asked anything). The conversation is keyed on the
+      // user id (BSUID) instead of a phone, every send addresses it through Meta's `recipient` field
+      // (whatsapp-recipient.ts), and her taps and typed answers come back here keyed the same way. The
+      // 15 Sep "sent nothing" decision was about interns, whose videos and submission ids are taken
+      // above and never reach this point; only a CV document opens a conversation.
+      //
+      // Everything else — a greeting, a tap with no conversation — is RECORDED as one intake event and
+      // goes no further. Never throws.
       if (!message.from) {
         if (message.document) {
           let sourceContext: WhatsAppSourceContext | null = null;
@@ -289,8 +296,41 @@ export async function POST(request: Request) {
             providerMessageId: message.wamid,
             source: "whatsapp_webhook",
           });
+          if (enqueued && message.userId && classifyPromptsSent < MAX_CLASSIFY_PROMPTS_PER_DELIVERY) {
+            const classifyOutcome = await startClassification({
+              cvWamid: message.wamid,
+              historical: message.historical,
+              isImportSender: false,
+              phoneNumberId: message.deliveredToPhoneNumberId,
+              waId: message.userId,
+            });
+            if (classifyOutcome === "asked" || classifyOutcome === "reasked") classifyPromptsSent += 1;
+          }
           outcomes.push({ outcome: enqueued ? "no_phone_cv_enqueued" : "no_phone_cv_duplicate", wamid: message.wamid });
           continue;
+        }
+        // A typed answer from a username sender who is mid-conversation — their salary, an "Other".
+        if (message.text && message.userId && !message.historical) {
+          const typed = await handleClassifyText({
+            phoneNumberId: message.deliveredToPhoneNumberId,
+            text: message.text,
+            waId: message.userId,
+          }).catch(() => "no_session" as const);
+          if (typed === "advanced" || typed === "unusable_text") {
+            outcomes.push({ outcome: `classify_${typed}`, wamid: message.wamid });
+            continue;
+          }
+          if (typed === "not_awaiting_text") {
+            const extraTyped = await handleExtraQuestionText({
+              phoneNumberId: message.deliveredToPhoneNumberId,
+              text: message.text,
+              waId: message.userId,
+            }).catch(() => "no_session" as const);
+            if (extraTyped === "advanced" || extraTyped === "unusable_text" || extraTyped === "completed") {
+              outcomes.push({ outcome: `extra_${extraTyped}`, wamid: message.wamid });
+              continue;
+            }
+          }
         }
         const recorded = await recordUnattributedWhatsAppMessage({ kind: "no_phone", message });
         outcomes.push({ outcome: `no_phone_${recorded.outcome}`, wamid: message.wamid });

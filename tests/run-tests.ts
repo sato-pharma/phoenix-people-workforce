@@ -281,6 +281,7 @@ import { runWhatsAppScreeningQuestionRoleScopeTests } from "./whatsapp-screening
 import { runWhatsAppScreeningConditionalFlowTests } from "./whatsapp-screening-conditional-flow.test.ts";
 import { runWhatsAppQuestionPromptsTests } from "./whatsapp-question-prompts.test.ts";
 import { runWhatsAppAutoRepliesTests } from "./whatsapp-auto-replies.test.ts";
+import { runWhatsAppUsernameRecipientTests } from "./whatsapp-username-recipient.test.ts";
 import { runRecruitmentPipelineMetricsTests } from "./recruitment-pipeline-metrics.test.ts";
 import { runRecruitmentHiringManagerPushTests } from "./recruitment-hiring-manager-push.test.ts";
 import { runRecruitmentSimplifyTests } from "./recruitment-simplify.test.ts";
@@ -3250,6 +3251,10 @@ await runTest(
 await runTest(
   "WhatsApp automatic replies, owner-editable (a reworded reply reaches only its own situation, blank means back to the default rather than silence, the file-size limit stays a token, the closing summary's generated answer lines stay generated, and the three senders actually load the saved wording)",
   runWhatsAppAutoRepliesTests,
+);
+await runTest(
+  "WhatsApp username sender (a sender with no phone is keyed on the user id, Meta is addressed through recipient and never to, and the webhook opens the questions for their CV)",
+  runWhatsAppUsernameRecipientTests,
 );
 await runTest("recruitment pipeline metrics (time to hire, stalled applications, offers out vs accepted — a finished application is never counted as stalled)", runRecruitmentPipelineMetricsTests);
 await runTest(
