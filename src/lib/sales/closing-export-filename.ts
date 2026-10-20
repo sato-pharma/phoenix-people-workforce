@@ -3,12 +3,19 @@ import { monthLabel } from "@/lib/sales/monthly-closing-export";
 /**
  * What a downloaded Monthly Closing workbook is called.
  *
- * The owner's order is MONTH, LINE, REGION:
- *   phoenix-monthly-closing-jul-2026-anti-infective-delta-2.xlsx
+ * Two shapes, by what the workbook covers (owner, 2026-10-20: "when exporting it by region,
+ * manager-region-type; if the total sheet, then line name-month-type"):
+ *
+ *   one region   <manager>-<region>-<type>-<month>      mohamed-ali-delta-2-monthly-closing-jul-2026.xlsx
+ *   the total    <line>-<month>-<type>                  anti-infective-jul-2026-monthly-closing.xlsx
+ *
+ * The MONTH is kept at the end of the region shape although the owner's pattern did not list it: the
+ * reader saves one region's file for several months, and without it they would all share one name.
+ * The manager is the one who runs that region on the line's organogram; where none can be named the
+ * region leads, so the name never carries a blank or a code.
  *
  * A workbook that names its own scope survives being forwarded. Several files all called
- * "phoenix-monthly-closing.xlsx" sitting in one mail thread do not — and month, line and region is
- * exactly what someone has to ask about when they cannot tell two of them apart.
+ * "phoenix-monthly-closing.xlsx" sitting in one mail thread do not.
  */
 
 /** Slug for one filename segment: lowercase, hyphenated, never empty. */
@@ -21,6 +28,9 @@ function slugSegment(value: string | null | undefined): string {
       .toLowerCase() || "all"
   );
 }
+
+/** The label `regionScopeLabel` gives a workbook that spans more than one region, or none. */
+const ALL_REGIONS_LABEL = "all regions";
 
 /**
  * The single region a workbook covers, or "all regions" when it spans more than one.
@@ -37,10 +47,16 @@ export function regionScopeLabel(regionNames: Iterable<string | null | undefined
   for (const name of regionNames) {
     const trimmed = (name ?? "").trim();
     if (trimmed) distinct.add(trimmed);
-    if (distinct.size > 1) return "all regions";
+    if (distinct.size > 1) return ALL_REGIONS_LABEL;
   }
   const [only] = distinct;
-  return only ?? "all regions";
+  return only ?? ALL_REGIONS_LABEL;
+}
+
+/** True when `region` names one region, as `regionScopeLabel` returns it. */
+export function coversOneRegion(region: string | null | undefined): boolean {
+  const label = (region ?? "").trim().toLowerCase();
+  return label !== "" && label !== ALL_REGIONS_LABEL;
 }
 
 /**
@@ -53,6 +69,11 @@ export function regionScopeLabel(regionNames: Iterable<string | null | undefined
  *   through unchanged, so the file reads jul-2026-to-sep-2026 and can never pass for a single month.
  */
 export function closingFileName(parts: {
+  /**
+   * The name of the manager who runs the one region this workbook covers. Ignored for a workbook
+   * that spans several regions. Names, never codes; null names no one and the region leads.
+   */
+  manager?: string | null;
   /**
    * "xlsm" (the default for the premium workbook) or "xlsx". The premium workbook is the owner's
    * macro-enabled engine and can be served either way. The .xlsm keeps his button bar live — 36
@@ -67,9 +88,13 @@ export function closingFileName(parts: {
   period: string | null | undefined;
   region: string;
 }): string {
-  const stem = parts.kind ? `phoenix-monthly-closing-${parts.kind}` : "phoenix-monthly-closing";
+  const type = parts.kind ? `monthly-closing-${parts.kind}` : "monthly-closing";
   // monthLabel turns "2026-07" into "Jul 2026" — the same wording the sheets inside use, so the
   // file and its contents never disagree about which month this is.
   const month = slugSegment(monthLabel((parts.period ?? "").trim()));
-  return `${stem}-${month}-${slugSegment(parts.line)}-${slugSegment(parts.region)}.${parts.extension ?? "xlsx"}`;
+  const extension = parts.extension ?? "xlsx";
+  if (!coversOneRegion(parts.region)) return `${slugSegment(parts.line)}-${month}-${type}.${extension}`;
+  const manager = (parts.manager ?? "").trim();
+  const lead = manager ? [slugSegment(manager), slugSegment(parts.region)] : [slugSegment(parts.region)];
+  return `${[...lead, type, month].join("-")}.${extension}`;
 }

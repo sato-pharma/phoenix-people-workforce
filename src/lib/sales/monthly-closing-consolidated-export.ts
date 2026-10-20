@@ -29,7 +29,7 @@ import {
   describeConsolidatedClosing,
   relabelConsolidatedWorkbook,
 } from "@/lib/sales/closing-consolidated";
-import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
+import { resolveClosingFileName } from "@/lib/sales/closing-export-file-name";
 import type { ClosingExportFilter } from "@/lib/sales/closing-export-payload";
 import { loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
 import { maskedClosingClientCodes, withoutMaskedSourceRows } from "@/lib/sales/closing-source-mask";
@@ -324,11 +324,11 @@ export async function buildConsolidatedClosingWorkbook(input: {
 
   return {
     buffer,
-    fileName: closingFileName({
+    fileName: await resolveClosingFileName({
       kind: "consolidated",
       line: matrix.line ?? input.line,
       period: consolidatedFilePeriod(periods),
-      region: regionScopeLabel(matrix.regions.map((region) => region.regionName)),
+      regionNames: (matrix.regions.map((region) => region.regionName)),
     }),
     periods,
     skipped,

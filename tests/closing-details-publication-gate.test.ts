@@ -233,7 +233,7 @@ export function runClosingDetailsPublicationGateTests() {
     "a gated viewer's month picker offers published months only",
   );
 
-  const fullBranchReturnAt = exportRoute.indexOf("return fileResponse(buffer, closingFileName({", disjunctionAt);
+  const fullBranchReturnAt = exportRoute.indexOf("return fileResponse(buffer, await resolveClosingFileName({", disjunctionAt);
   assert.ok(fullBranchReturnAt > disjunctionAt, "the full-workbook branch still returns its own file");
   const exportGateAt = exportRoute.indexOf("gateClosingDetailsPeriod(");
   assert.ok(
