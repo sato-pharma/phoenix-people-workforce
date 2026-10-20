@@ -200,6 +200,7 @@ export default async function EmployeePortalEmployee360DetailPage({
   ) {
     try {
       teamLifecycle = await getEmployee360TeamLifecycle({
+        subjectHrId: target.hrId,
         teamHrIds,
         employees: rows,
         window: { from: period.current.from, to: period.current.to },

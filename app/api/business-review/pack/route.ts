@@ -34,6 +34,7 @@ import { renderPackPdf } from "@/lib/business-review/pack/pdf";
 import { renderPackPptx } from "@/lib/business-review/pack/pptx";
 import { renderPackWorkbook } from "@/lib/business-review/pack/workbook";
 import { packContentDisposition, packFileName } from "@/lib/business-review/pack/filename";
+import { peopleForReviewFilter } from "@/lib/business-review/people-view";
 import { applyRepScope, applySeatScope, loadReviewPortalScope } from "@/lib/business-review/portal-scope";
 import {
   lineLabelOf,
@@ -47,6 +48,7 @@ import type { ReviewPersonRow } from "@/lib/business-review/sources/roles";
 import type { AreaSummary } from "@/lib/business-review/types";
 import { OFFICIAL_LINE, type ReviewLine } from "@/lib/business-review/canonical";
 import {
+  getReviewCompany,
   getReviewDataset,
   loadBusinessReview,
   loadReviewConcentration,
@@ -159,7 +161,6 @@ export async function GET(request: Request) {
     const keptSeats = new Set(filter.dmSeatIds);
     const areas: PackArea[] = [];
     const dms: PackDm[] = [];
-    const people: ReviewPersonRow[] = [];
 
     for (const line of filter.lines) {
       const ds = dsByLine.get(line);
@@ -167,11 +168,6 @@ export async function GET(request: Request) {
       // The line is named on the row only when the pack spans more than one; a column repeating one
       // value is noise.
       const lineLabel = multiLine ? lineLabelOf(line) : null;
-      const survivingCodes = new Set(
-        filter.territories
-          .filter((t) => t.line === line && t.areaCode != null)
-          .map((t) => t.areaCode as string),
-      );
 
       for (const area of areasByLine[line] ?? []) {
         if (keptAreas.has(`${line}:${area.areaCode ?? ""}`)) areas.push({ ...area, lineLabel });
@@ -180,25 +176,24 @@ export async function GET(request: Request) {
       // `keptSeats` names the whole district — and the district row is the WHOLE district's list,
       // marketing and outstation. "Own territory and nothing else" (owner, 2026-09-26) means the rep
       // reads his own AREA, which carries its own figures; the model reads cost off the area when no
-      // district row is present. The same rule as the people filter directly below.
+      // district row is present. The same rule as the people below, which hold him alone.
       if (scope.kind !== "rep") {
         for (const dm of ds.dms) {
           if (dm.dmSeatId != null && keptSeats.has(dm.dmSeatId)) dms.push({ ...dm, lineLabel });
         }
       }
-      for (const person of ds.people) {
-        const keep =
-          scope.kind === "rep"
-            ? person.hrId.toUpperCase() === scope.hrId
-            : filter.applied.areaCodes.length > 0
-              // AREAS were chosen, so a colleague in the same district but a different area is not
-              // in this pack. Keying on the seat here would quietly widen the people back out to the
-              // whole district while every sales figure showed the chosen areas.
-              ? person.areaCode != null && survivingCodes.has(person.areaCode)
-              : person.dmSeatId != null && keptSeats.has(person.dmSeatId);
-        if (keep) people.push(person);
-      }
     }
+
+    // The people, through the one rule the page uses too — a manager who rode in these districts is
+    // in them, whether or not he logged a visit of his own (owner, 2026-10-20). See people-view.ts.
+    const peopleByLine: Partial<Record<ReviewLine, readonly ReviewPersonRow[]>> = {};
+    for (const [line, ds] of dsByLine) peopleByLine[line] = ds.people;
+    const people: ReviewPersonRow[] = peopleForReviewFilter({
+      companyPeople: getReviewCompany(review).people,
+      filter,
+      peopleByLine,
+      scope,
+    });
 
     // The work beside the money (owner, 2026-10-01). Everything the linked read is told comes from
     // what SURVIVED the scope and the filter above — the reps standing in these areas, these district

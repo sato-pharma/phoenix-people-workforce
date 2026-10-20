@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
+  DIRECT_REPORTS_DISTRICT_NAME,
   assertDistrictInScope,
   assertRepInRoster,
   resolveEarlyBirdsScopeFrom,
@@ -258,4 +259,71 @@ export function runEarlyBirdsScopeTests() {
       );
     }
   }
+
+  runVacantSeatScopeTests();
+}
+
+/**
+ * Owner, 2026-10-20: "when filter by manager u find no manager … u find no field force." A rep
+ * under a VACANT district seat reports straight to the NSM in the directory (production:
+ * AI-0029, under the vacant Alex-BHR seat, reports to AI-0008), and the NSM's board dropped his own
+ * key unconditionally — so that rep was on no board her NSM could open. Equally, reps whose manager
+ * has LEFT still point at him, and that district fell off every line.
+ */
+function runVacantSeatScopeTests() {
+  const directory: EarlyBirdsScopeRow[] = [
+    ...DIRECTORY,
+    // A medical rep reporting straight to the AI NSM — the vacant district's rep. NOT a district.
+    row({ hrId: "AI-0029", displayName: "AI Direct Rep", lineId: LINE_AI, managerHrId: "AI-0008", regionName: "Alexandria" }),
+    // Two reps whose District Manager left (no directory row): one AI, one CNS.
+    row({ hrId: "AI-R9", displayName: "AI Orphan Rep", lineId: LINE_AI, managerHrId: "AI-0050", regionName: "Delta" }),
+    row({ hrId: "CNS-R9", displayName: "CNS Orphan Rep", lineId: LINE_CNS, managerHrId: "CNS-0099", regionName: "Giza" }),
+    // Pedia's Regional Manager: a District Manager under him, and a rep reporting straight to him.
+    row({ hrId: "PD-0001", displayName: "Pedia RSM", jobTitle: "Regional Sales Manager", lineId: LINE_PEDIA, managerHrId: "A-12" }),
+    row({ hrId: "PD-DM2", displayName: "Pedia DSM Two", jobTitle: "District Sales Manager", lineId: LINE_PEDIA, managerHrId: "PD-0001" }),
+    row({ hrId: "PD-R2", displayName: "Pedia Rep Two", lineId: LINE_PEDIA, managerHrId: "PD-DM2" }),
+    row({ hrId: "PD-R7", displayName: "Pedia Direct Rep", lineId: LINE_PEDIA, managerHrId: "PD-0001" }),
+  ];
+
+  // ── The NSM keeps the reps who report straight to him ───────────────────────────
+  const ai = resolveEarlyBirdsScopeFrom(directory, viewer("AI-0008", "National Sales Manager"));
+  assert.deepEqual(
+    keys(ai),
+    ["ai0001", "ai0008", "ai0050", "aiadm", "b12"],
+    "the AI NSM sees his own direct reps and the district whose manager left, beside his real districts",
+  );
+  const own = ai.districts.find((district) => district.hrIdKey === "ai0008");
+  assert.equal(own?.name, DIRECT_REPORTS_DISTRICT_NAME, "his own district reads as his direct reports, never his own name");
+  assert.equal(own?.hrId, "AI-0008", "and opens his own reps' board");
+
+  // ── A district whose manager left is named by its region, never by an HR id ─────
+  const vacant = ai.districts.find((district) => district.hrIdKey === "ai0050");
+  assert.equal(vacant?.name, "Vacant — Delta");
+  assert.equal(vacant?.hrId, "AI-0050", "the stored spelling, so the board's manager_hr_id reads still match it");
+  assert.equal(
+    ai.districts.some((district) => district.hrIdKey === "cns0099"),
+    false,
+    "a vacant district on ANOTHER line is never his — the line guard holds for vacant districts too",
+  );
+  assert.deepEqual(
+    keys(resolveEarlyBirdsScopeFrom(directory, viewer("B-122", "National Sales Manager"))),
+    ["b118", "cns0099"],
+    "the CNS NSM gets the CNS vacant district, and still never himself (no rep reports straight to him)",
+  );
+  const ceo = resolveEarlyBirdsScopeFrom(directory, viewer("AA", "CEO"));
+  assert.equal(
+    ceo.districts.find((district) => district.hrIdKey === "cns0099")?.name,
+    "Vacant — Giza",
+    "a company-wide viewer sees the vacant district by name too, never as a code",
+  );
+
+  // ── A Regional Manager with a direct rep still sees every district under him ────
+  // He manages a rep, so he IS a district; the District Manager branch used to stop there and
+  // show him only his own direct reps.
+  const rsm = resolveEarlyBirdsScopeFrom(directory, viewer("PD-0001", "Regional Manager"));
+  assert.deepEqual(keys(rsm), ["pd0001", "pddm2"], "his own direct reps AND the districts under him");
+  assert.equal(rsm.districts.find((district) => district.hrIdKey === "pd0001")?.name, DIRECT_REPORTS_DISTRICT_NAME);
+
+  // The District Manager rule is unchanged for a real District Manager.
+  assert.deepEqual(keys(resolveEarlyBirdsScopeFrom(directory, viewer("PD-DM2", "District Manager"))), ["pddm2"]);
 }

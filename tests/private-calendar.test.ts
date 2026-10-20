@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
 import {
+  buildPrivateCalendarHierarchyIndex,
   canReadPrivateCalendarEmployee,
   buildPrivateCalendarTeamSummary,
   derivePrivateCalendarExceptions,
@@ -40,6 +41,24 @@ export async function runPrivateCalendarTests() {
   assert.equal(canReadPrivateCalendarEmployee(access({ hrId: "M-1", role: "Manager", scope: "team" }), indirectReport), false, "manager cannot read indirect report calendar");
   assert.equal(canReadPrivateCalendarEmployee(access({ hrId: "M-1", role: "Manager", scope: "team" }), unrelated), false, "manager cannot read unrelated employee calendar");
   assert.equal(canReadPrivateCalendarEmployee(access({ hrId: "AA", role: "CEO", scope: "company" }), unrelated), true, "CEO can read all private calendars");
+  // A Regional or National Sales Manager manages through his district managers — owner, 2026-10-20:
+  // "when you filter by manager you find no manager". With the directory index he reads his whole
+  // subtree, down to the medical rep; every other manager keeps self plus direct reports.
+  const nsm = { hrId: "N-1", managerHrId: "AA" };
+  const districtManager = { hrId: "D-1", managerHrId: "N-1" };
+  const rep = { hrId: "R-1", managerHrId: "D-1" };
+  const otherLineRep = { hrId: "R-9", managerHrId: "D-9" };
+  const otherLineDistrict = { hrId: "D-9", managerHrId: "N-9" };
+  const byCanonicalHrId = buildPrivateCalendarHierarchyIndex([nsm, districtManager, rep, otherLineRep, otherLineDistrict]);
+  const nsmAccess = access({ hrId: "N-1", loginId: "N-1", role: "National Sales Manager", scope: "line" });
+  assert.equal(canReadPrivateCalendarEmployee(nsmAccess, rep, undefined, { byCanonicalHrId }), true, "a National Sales Manager reads a medical rep two levels down");
+  assert.equal(canReadPrivateCalendarEmployee(nsmAccess, districtManager, undefined, { byCanonicalHrId }), true, "a National Sales Manager reads his district manager");
+  assert.equal(canReadPrivateCalendarEmployee(nsmAccess, otherLineRep, undefined, { byCanonicalHrId }), false, "a National Sales Manager never reads another line's rep");
+  assert.equal(canReadPrivateCalendarEmployee(nsmAccess, rep), false, "without the directory index the walk never runs — a single-row caller stays conservative");
+  const rsmAccess = access({ hrId: "D-1", loginId: "D-1", role: "Regional Manager", scope: "hierarchy" });
+  assert.equal(canReadPrivateCalendarEmployee(rsmAccess, rep, undefined, { byCanonicalHrId }), true, "a Regional Manager reads his subtree too");
+  const plainManager = access({ hrId: "N-1", loginId: "N-1", role: "Manager", scope: "team" });
+  assert.equal(canReadPrivateCalendarEmployee(plainManager, rep, undefined, { byCanonicalHrId }), false, "a head-office Manager keeps direct reports only, even with the index");
   assert.equal(canReadPrivateCalendarEmployee(access({ hrId: "B-10", role: "Employee", scope: "self" }), unrelated), true, "configured HR manager ID can read all private calendars");
   assert.equal(isPrivateCalendarGlobalViewer(access({ hrId: "admin-HR", loginId: "admin-HR" })), true, "admin-HR is a configured global viewer");
 

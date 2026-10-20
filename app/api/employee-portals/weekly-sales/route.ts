@@ -4,7 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   getPortalWeeklyDashboard,
-  isPortalWeeklyRole,
+  mayReadManagersWeeklySales,
   toPortalWeeklyScopeView,
   type PortalWeeklyFilters,
 } from "@/lib/sales/weekly/portal-weekly-dashboard";
@@ -39,12 +39,10 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "read");
-    // Company executives consume this same feed from the admin Field Sales pages
-    // (/admin/field-sales/weekly-sales). Scope still resolves server-side from the
-    // session — CEO / Super Admin land on the full COMPANY tier and cannot widen
-    // anything via query params.
-    const isCompanyExecutive = access.role === "CEO" || access.role === "Super Admin";
-    if (!isPortalWeeklyRole(access.role) && !isCompanyExecutive) {
+    // The company-wide readers (CEO, Super Admin, SFE Manager) consume this same feed from the
+    // admin Field Sales pages (/admin/field-sales/weekly-sales). Scope still resolves server-side
+    // from the session — each lands on his own tier and cannot widen anything via query params.
+    if (!mayReadManagersWeeklySales(access.role)) {
       return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
     }
 

@@ -4285,6 +4285,12 @@ export type DsmTeamMemberData = {
   name: string;
   managerHrId: string | null;
   managerName: string | null;
+  /**
+   * Set only when `managerHrId` is null because the rep's District Manager seat was VACANT for the
+   * period: that seat's id, so each vacant district groups as itself, while `managerName` reads
+   * "Vacant — <district>" instead of "Unassigned District" (owner, 2026-10-20).
+   */
+  vacantManagerSeatId?: string | null;
   position: number;
   products: DsmTeamMemberProductData[];
   totalSales: number;
@@ -4358,6 +4364,31 @@ export async function getDsmTeamPerformance(
     // (see sos-team-performance.ts), not from sales_records. Scope is applied inside the
     // builder by resolveVsTargetBound — a line bound for an NSM, an area bound for a DSM —
     // so these numbers reconcile exactly with the /sales-vs-target page.
+    return await buildDsmTeamPerformanceFromSos(access, options.period ?? null);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The MRs Performance page's data: every medical rep in the viewer's reach, for the National Sales
+ * Manager (his line) and — since 2026-10-20 (owner) — the Regional Manager (his own seat's areas;
+ * the builder fails closed for an RM whose seat did not resolve). The same builder as
+ * getDsmTeamPerformance, kept apart from it on purpose: that function also feeds the expense forms'
+ * medical-trip rep list, and widening IT to the RM would have changed an expense form nobody asked
+ * to change.
+ */
+export async function getMedRepsPerformance(
+  access: AccessContext,
+  options: { period?: string | string[] | null } = {},
+): Promise<DsmTeamPerformanceData | null> {
+  try {
+    const currentUser = await resolvePortalCurrentUser(access);
+    if (!currentUser?.hrId) return null;
+
+    const currentRole = normalizeRole(currentUser.role);
+    if (currentRole !== "National Sales Manager" && currentRole !== "Regional Manager") return null;
+
     return await buildDsmTeamPerformanceFromSos(access, options.period ?? null);
   } catch {
     return null;
@@ -4608,6 +4639,13 @@ async function computeLineTopAchievers(
 
 export type NsmDsmPerformanceData = {
   dsms: DsmTeamMemberData[];
+  /**
+   * Each Regional Manager on the line, as the SUM of the district-manager rows that report to him
+   * through an RSM seat (owner, 2026-10-20) — never a figure of its own, and never inside `dsms`, so
+   * no DSM count, distribution or reconciliation counts a district twice. Empty for a line with no
+   * Regional Manager, and for the Regional Manager's own view (it would be himself).
+   */
+  regionalManagers: DsmTeamMemberData[];
   periods: string[];
   lineAchievementPercent: number;
   dsmCount: number;
@@ -5025,11 +5063,13 @@ export async function getNsmDsmPerformance(
     if (!currentUser?.hrId) return null;
 
     const currentRole = normalizeRole(currentUser.role);
-    if (currentRole !== "National Sales Manager") return null;
+    // Regional Manager added 2026-10-20 (owner) — DSMs Performance is his page too now.
+    if (currentRole !== "National Sales Manager" && currentRole !== "Regional Manager") return null;
 
     // The DSM roll-up is now sourced from Source of Sales + Targets via the shared
     // achievement engine (see sos-team-performance.ts), not from sales_records. The
-    // builder scopes to the NSM's line through resolveVsTargetBound.
+    // builder scopes to the NSM's line, or the RM's own seat's areas, through
+    // resolveVsTargetBound.
     return await buildNsmDsmPerformanceFromSos(access, options.period ?? null);
   } catch {
     return null;

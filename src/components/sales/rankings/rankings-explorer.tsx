@@ -31,6 +31,7 @@ import {
   chipClass,
   formatEgp,
 } from "@/components/sales/target-visuals";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 import type { RankingEntry, RankingWindowMode } from "@/lib/sales/rankings";
 import type { RankingOption, RankingsPageData } from "@/lib/sales/rankings-page";
@@ -388,7 +389,7 @@ export function RankingsExplorer({ data }: { data: RankingsPageData }) {
   const [queryDraft, setQueryDraft] = useState(data.filters.query);
 
   const push = useCallback(
-    (next: Partial<{ mode: string; period: string; lines: string[]; titles: string[]; regions: string[]; q: string }>) => {
+    (next: Partial<{ mode: string; period: string; lines: string[]; titles: string[]; regions: string[]; q: string; manager: string }>) => {
       const params = new URLSearchParams();
       const mode = next.mode ?? data.mode;
       const period = next.period ?? data.window.anchor;
@@ -396,6 +397,7 @@ export function RankingsExplorer({ data }: { data: RankingsPageData }) {
       const titles = next.titles ?? [...data.filters.titles];
       const regions = next.regions ?? [...data.filters.regions];
       const query = next.q ?? data.filters.query;
+      const manager = next.manager ?? data.filters.manager ?? "";
       if (mode !== "published") {
         params.set("mode", mode);
         if (period) params.set("period", period);
@@ -406,6 +408,7 @@ export function RankingsExplorer({ data }: { data: RankingsPageData }) {
       if (titles.length > 0) params.set("titles", titles.join(","));
       if (regions.length > 0) params.set("regions", regions.join(","));
       if (query.trim()) params.set("q", query.trim());
+      if (manager.trim()) params.set("manager", manager.trim());
       startTransition(() => router.replace(`${pathname}?${params.toString()}`, { scroll: false }));
     },
     [data.filters, data.mode, data.window.anchor, pathname, router],
@@ -557,6 +560,33 @@ export function RankingsExplorer({ data }: { data: RankingsPageData }) {
             selected={data.filters.regions}
           />
 
+          {/* A manager's reps, found by his NAME (owner, 2026-10-20). A list rather than a row of
+              chips: every District, Regional and National Sales Manager above the board is offered,
+              which is far more names than a chip row can carry legibly. */}
+          {data.managerOptions.length > 0 || data.filters.manager ? (
+            <label className="flex flex-wrap items-center gap-2">
+              <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Manager</span>
+              <span className="min-w-0 flex-1 sm:max-w-xs">
+                <select
+                  aria-label="Filter by manager"
+                  className={phxSelectClassName}
+                  onChange={(event) => push({ manager: event.target.value })}
+                  value={data.filters.manager ?? ""}
+                >
+                  <option value="">All managers</option>
+                  {data.filters.manager && !data.managerOptions.some((option) => option.value === data.filters.manager) ? (
+                    <option value={data.filters.manager}>{data.filters.manager}</option>
+                  ) : null}
+                  {data.managerOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </span>
+            </label>
+          ) : null}
+
           <form
             className="flex flex-wrap items-center gap-2"
             onSubmit={(event) => {
@@ -672,6 +702,25 @@ export function RankingsExplorer({ data }: { data: RankingsPageData }) {
             </p>
           ) : (
             <BoardTable entries={data.boards.overall} showLine={data.filters.lines.length !== 1} />
+          )}
+        </SectionCard>
+
+        {/* ── The District Managers (owner, 2026-10-20) ──
+            Each ranked by his TEAM's sales against his team's target, read from the published
+            Monthly Closing's own district figure — the same board, the same table and cards, never
+            a sum of the rows above. Every manager on it, never a top slice. */}
+        <SectionCard
+          icon={BarChart3}
+          subtitle={`${data.boards.districtManagers.length} ranked · team sales against team target · ${data.window.rangeLabel}`}
+          title={`District Managers — ${scopeLabel}`}
+        >
+          {data.boards.districtManagers.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-600">
+              No District Manager can be ranked in this window with these filters. A district with no target in the
+              window is not ranked — its achievement would be arithmetic, not performance.
+            </p>
+          ) : (
+            <BoardTable entries={data.boards.districtManagers} showLine={data.filters.lines.length !== 1} />
           )}
         </SectionCard>
       </div>

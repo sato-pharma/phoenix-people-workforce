@@ -165,7 +165,8 @@ export function CrmFirstVisitBoard({
           <div className="grid grid-cols-2 gap-px bg-slate-200">
             {[
               { label: "Reps submitted", submitted: crm.reps.submitted, total: crm.reps.total },
-              { label: "DSMs submitted", submitted: crm.dsms.submitted, total: crm.dsms.total },
+              // "Managers", not "DSMs": a line's tier holds its Regional Manager too (owner, 2026-10-20).
+              { label: "Managers submitted", submitted: crm.dsms.submitted, total: crm.dsms.total },
             ].map((s) => {
               const complete = s.total > 0 && s.submitted >= s.total;
               return (
@@ -249,7 +250,7 @@ export function CrmFirstVisitBoard({
                 {crm.dsms.missing.length > 0 && (
                   <div>
                     <p className="mb-1.5 flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
-                      <AlertTriangle className="h-3 w-3 text-rose-500" /> DSMs ({crm.dsms.missing.length})
+                      <AlertTriangle className="h-3 w-3 text-rose-500" /> Managers ({crm.dsms.missing.length})
                     </p>
                     <PersonChips people={crm.dsms.missing} tone="danger" />
                   </div>

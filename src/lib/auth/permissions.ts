@@ -1780,16 +1780,18 @@ const defaultPermissionMatrix: PermissionMap = {
     // The grant is ROLE-keyed because the matrix has no per-user layer — role_permission_overrides
     // keys on role_name and there is no user-scoped equivalent — but the OWNER'S DECISION was one
     // account, not the rung. So the two page gates in src/lib/reports/organogram.ts pin the actual
-    // view to HR_ID A-3 (isFullOrganogramPinnedAccount), and this grant is deliberately the widest
-    // of the three conditions rather than the operative one.
+    // view to named HR_IDs (isFullOrganogramPinnedAccount, reading
+    // src/lib/reports/organogram-pinned-accounts.ts): A-3, and since 2026-10-20 AB, the R&D Manager
+    // the QPPV reports to (owner). This grant is deliberately the widest of the three conditions
+    // rather than the operative one.
     //
-    // That leaves the other two Manager accounts (A-14 Regulatory Affairs, AB R&D Manager) holding
-    // organogram:read and seeing nothing, which is safe and was measured, not assumed: every
-    // organogram route asserts this permission and THEN re-asks the scope question
+    // That leaves the third Manager account (A-14 Regulatory Affairs) holding organogram:read and
+    // seeing nothing, which is safe and was measured, not assumed: every organogram route asserts
+    // this permission and THEN re-asks the scope question
     // (canAccessCompanyOrganogram || isLineScopedOrganogramRole) before returning a row — see
     // app/api/reports/organogram/{route,contact-numbers,whatsapp/[hrId],employee/[hrId]}. A Manager
-    // who is not A-3 falls through every one of those to a 403, the portal page redirects them, and
-    // resolveEmployeePortalNavVisibility offers no link. This is the ONE entry in this file where
+    // who is not pinned falls through every one of those to a 403, the portal page redirects them,
+    // and resolveEmployeePortalNavVisibility offers no link. This is the ONE entry in this file where
     // "granted on paper, bounced in practice" is the intended state rather than the bug.
     organogram: ["read"],
     payroll: ["read", "export"],

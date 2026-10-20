@@ -21,6 +21,7 @@
  */
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { buildManagersAboveByHrId } from "@/lib/org/manager-filter";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { collapseDuplicateVisitSubmissions, scanVisitsForRangeCreditingPartners } from "@/lib/crm/reads";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
@@ -637,7 +638,10 @@ function summarizeLoggingTiming(timeline: FieldWorkforceDayCell[]): FieldWorkfor
   return { avgFirstLoggedTime, lateStartDayCount, timedDayCount: timedDays.length };
 }
 
-function toEmployeeReference(employee: DirectoryRow): FieldWorkforceEmployeeReference {
+function toEmployeeReference(
+  employee: DirectoryRow,
+  managersAboveByHrId?: ReadonlyMap<string, string[]>,
+): FieldWorkforceEmployeeReference {
   return {
     areaName: employee.areaName,
     departmentName: employee.departmentName,
@@ -650,6 +654,7 @@ function toEmployeeReference(employee: DirectoryRow): FieldWorkforceEmployeeRefe
     lineName: employee.lineName,
     managerHrId: employee.managerHrId,
     managerName: employee.managerName,
+    managersAbove: managersAboveByHrId?.get(canonicalHrIdKey(employee.hrId) ?? "") ?? null,
     regionName: employee.regionName,
     roleName: employee.positionTitle ?? employee.jobTitle,
     teamName: employee.teamName,
@@ -909,7 +914,11 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
   const holidays = await loadHolidays(month, year);
 
   const preview = buildFieldWorkforceCompliancePreview({
-    employeeReferences: directory.map(toEmployeeReference),
+    // The whole reporting chain, so the Manager filter reaches a National Sales Manager (owner, 2026-10-20).
+    employeeReferences: (() => {
+      const managersAboveByHrId = buildManagersAboveByHrId(directory, canonicalHrIdKey);
+      return directory.map((employee) => toEmployeeReference(employee, managersAboveByHrId));
+    })(),
     holidayCalendarReachable: holidays.calendarReachable,
     holidayConnected: holidays.connected,
     holidayMessage: holidays.message,

@@ -510,10 +510,34 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     "src/lib/calendar/service.ts",
     "src/lib/action-center/decided-for-me.ts",
     "src/lib/phoenix-crm/server/visit-report.ts",
+    // His own single visits as display rows (owner, 2026-10-20: "Show, keep out of reps"): the Field Activity day.
+    "src/lib/field-activity/report.ts",
   ]) {
     const text = source(outside);
     assert.match(text, /@\/lib\/phoenix-crm\/server\/manager-plan-readers/, `${outside} reads his week through the one adapter`);
     assert.equal(/@\/lib\/phoenix-crm\/server\/manager-plan-(rows|queue|report|hub)"/.test(text), false, `${outside} never reaches past the adapter`);
+    assert.equal(text.includes("phoenix_crm_manager_visits"), false, `${outside} never names his own visits' table`);
+  }
+  // 🔴 THE DISPLAY ROWS LIVE IN THE ADAPTER (owner, 2026-10-20, multiple choice: "Show, keep out of reps — his own
+  // visits appear under his name in the Visit Report and the Field Activity day, never in a rep's totals"). Both
+  // screens reach his own visits through `loadManagerOwnVisitRows`, which hands back the detail reader's records and
+  // nothing else — no count, no rate, nothing a KPI could be built from.
+  {
+    const adapter = source("src/lib/phoenix-crm/server/manager-plan-readers.ts");
+    assert.match(adapter, /export async function loadManagerOwnVisitRows\(input: \{/, "the display-row reader is the adapter's");
+    assert.match(
+      adapter,
+      /return readOwnVisitDetails\(\{ end: input\.end, isTest: input\.isTest \?\? false, managerHrIds: input\.managerHrIds, start: input\.start \}\);/,
+      "and it is the detail reader's own records, read for exactly the managers and days asked",
+    );
+    assert.match(
+      adapter,
+      /import \{ loadManagerOwnVisitDetails as readOwnVisitDetails \} from "@\/lib\/phoenix-crm\/server\/manager-visit-details";/,
+      "through the one manager-*.ts file that reads the table",
+    );
+    for (const screen of ["src/lib/phoenix-crm/server/visit-report.ts", "src/lib/field-activity/report.ts"]) {
+      assert.match(source(screen), /loadManagerOwnVisitRows\(\{/, `${screen} reads his own visits as display rows`);
+    }
   }
   for (const quiet of ["src/lib/phoenix-crm/server/manager-plan-readers.ts", "src/lib/phoenix-crm/server/manager-plan-queue.ts"]) {
     assert.equal(/from "@\/lib\/(notifications\/|phoenix-crm\/server\/notifications)/.test(source(quiet)), false, `${quiet} imports no notice sender — it would close the import cycle through notifications/in-app.ts`);

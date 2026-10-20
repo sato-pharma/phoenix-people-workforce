@@ -7,6 +7,9 @@ import { getSfeCrmFieldAnalytics, type SfeCrmFieldAnalytics } from "@/lib/crm/sf
 import { getSfeDoctorCoverage, type SfeDoctorCoverageBoard } from "@/lib/crm/sfe-doctor-coverage";
 import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
+import type { DoubleVisitIdleManager, DoubleVisitManagerSummary } from "@/lib/double-visit-analytics/types";
+import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { adaptersFor } from "@/lib/needs-you/sources";
 import { loadNeedsYouSources } from "@/lib/needs-you/service";
@@ -628,6 +631,101 @@ export type CeoDvManagerRow = {
   coveragePct: number | null;
 };
 
+/**
+ * The CEO's double-visit table. `managerSummaries` holds only managers who did at least one double
+ * visit, so the managers doing worst — none at all — were the ones the table could never show
+ * (owner, 2026-10-20). The double-visit module already lists them as `idleManagers`; each is
+ * appended as a zero row, with his whole team counted neglected, and never twice.
+ */
+export function ceoDvManagerRows(
+  managerSummaries: readonly DoubleVisitManagerSummary[],
+  idleManagers: readonly DoubleVisitIdleManager[],
+): CeoDvManagerRow[] {
+  const rows: CeoDvManagerRow[] = managerSummaries.map((s) => ({
+    managerHrId: s.managerHrId,
+    managerName: s.managerName,
+    role: s.role ?? null,
+    roleCode: s.roleCode ?? null,
+    lineName: s.lineName ?? null,
+    distinctMrs: s.distinctMrs,
+    overFocusedMrCount: s.overFocusedMrCount,
+    neglectedMrCount: s.neglectedMrCount ?? null,
+    neglectIndex:
+      s.neglectedMrCount != null && s.teamMrCount
+        ? Math.round((s.neglectedMrCount / s.teamMrCount) * 100) / 100
+        : null,
+    teamMrCount: s.teamMrCount ?? null,
+    daysSinceLastDv: s.daysSinceLastDv ?? null,
+    coveragePct: s.coveragePct ?? null,
+  }));
+  for (const idle of idleManagers) {
+    if (rows.some((row) => hrIdsMatch(row.managerHrId, idle.hrId))) continue;
+    const team = idle.teamMrCount ?? null;
+    const hasTeam = team != null && team > 0;
+    rows.push({
+      managerHrId: idle.hrId,
+      managerName: idle.name,
+      role: idle.role,
+      roleCode: idle.roleCode,
+      lineName: idle.lineName ?? null,
+      distinctMrs: 0,
+      overFocusedMrCount: 0,
+      neglectedMrCount: hasTeam ? team : null,
+      neglectIndex: hasTeam ? 1 : null,
+      teamMrCount: team,
+      daysSinceLastDv: null,
+      coveragePct: hasTeam ? 0 : null,
+    });
+  }
+  return rows;
+}
+
+export type CeoManagerOnLeaveCandidate = { hrId: string; name: string; role: string };
+
+/**
+ * Who can be a "manager on leave": every person at least one other active employee reports to —
+ * head office and field force alike. It used to be drawn from the double-visit list, which names
+ * only field managers who rode along this month, so every head-office manager was invisible and
+ * the card read 0 most of the month (owner, 2026-10-20). `rows` must be the ACTIVE directory
+ * (`getEmployeeDirectoryRows({ includeInactive: false })`), so a manager who has left is not one.
+ */
+export function managerOnLeaveCandidates(
+  rows: readonly Pick<EmployeeDirectoryRow, "displayName" | "fullName" | "hrId" | "jobTitle" | "managerHrId">[],
+): CeoManagerOnLeaveCandidate[] {
+  const managerKeys = new Set<string>();
+  for (const row of rows) {
+    const managerKey = normalizeHrIdForAccess(row.managerHrId);
+    if (managerKey && managerKey !== normalizeHrIdForAccess(row.hrId)) managerKeys.add(managerKey);
+  }
+  const seen = new Set<string>();
+  const candidates: CeoManagerOnLeaveCandidate[] = [];
+  for (const row of rows) {
+    const key = normalizeHrIdForAccess(row.hrId);
+    if (!key || !managerKeys.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    candidates.push({
+      hrId: row.hrId,
+      name: row.displayName || row.fullName || row.hrId,
+      role: row.jobTitle?.trim() || "Manager",
+    });
+  }
+  return candidates.sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/** The candidates with an approved leave covering `todayIso` in `leaveMap`. */
+export function managersOnLeaveToday(
+  candidates: readonly CeoManagerOnLeaveCandidate[],
+  leaveMap: ReadonlyMap<string, ReadonlySet<string>>,
+  todayIso: string,
+): CeoManagerOnLeaveCandidate[] {
+  return candidates.filter((candidate) => {
+    for (const [hrId, dates] of leaveMap) {
+      if (hrIdsMatch(hrId, candidate.hrId) && dates.has(todayIso)) return true;
+    }
+    return false;
+  });
+}
+
 export type CeoRoiSignal = {
   startedStrong: number;
   startedWeak: number;
@@ -760,7 +858,7 @@ export async function getCeoLandingDeferred(
   // adminSignals is likewise reused from the fast path when it succeeded there (avoids
   // recomputing the same 6 heavy sub-fetches + getPlatformMetrics a second time per page
   // load); only re-fetched here if the fast path didn't compute it or its fetch failed.
-  const [dvR, expenseR, attendanceR, marketingR, adminSignalsR, crmFieldR, weeklyR, targetsR, imsR, doctorCoverageR] = await Promise.allSettled([
+  const [dvR, expenseR, attendanceR, marketingR, adminSignalsR, crmFieldR, weeklyR, targetsR, imsR, doctorCoverageR, activeDirectoryR] = await Promise.allSettled([
     getDoubleVisitDashboardData({ access }),
     includeExpense ? getOutstationExpenseCommandData(access, { preset: "30d" }) : Promise.resolve(null),
     includeAttendance ? getAttendanceAnalytics() : Promise.resolve(null),
@@ -779,6 +877,9 @@ export async function getCeoLandingDeferred(
     includeDoctorCoverage
       ? getDoctorCoverageScope(access).then((scope) => getSfeDoctorCoverage({ scope }))
       : Promise.resolve(null),
+    // "Managers on leave today" sits inside the attendance section, so it is read only where that
+    // section renders.
+    includeAttendance ? getEmployeeDirectoryRows({ includeInactive: false }) : Promise.resolve(null),
   ]);
 
   const dv = dvR.status === "fulfilled" ? dvR.value : null;
@@ -805,59 +906,42 @@ export async function getCeoLandingDeferred(
   if (!adminSignals) dataUnavailable.push("Executive risk signals");
   if (adminSignals?.dataUnavailable.length) dataUnavailable.push(...adminSignals.dataUnavailable);
 
-  // Double-visit manager rows
+  // Double-visit manager rows — the managers with zero double visits included (ceoDvManagerRows).
   const dvOut = dv
     ? {
-        managerRows: dv.managerSummaries.map((s) => ({
-          managerHrId: s.managerHrId,
-          managerName: s.managerName,
-          role: s.role ?? null,
-          roleCode: s.roleCode ?? null,
-          lineName: s.lineName ?? null,
-          distinctMrs: s.distinctMrs,
-          overFocusedMrCount: s.overFocusedMrCount,
-          neglectedMrCount: s.neglectedMrCount ?? null,
-          neglectIndex:
-            s.neglectedMrCount != null && s.teamMrCount
-              ? Math.round((s.neglectedMrCount / s.teamMrCount) * 100) / 100
-              : null,
-          teamMrCount: s.teamMrCount ?? null,
-          daysSinceLastDv: s.daysSinceLastDv ?? null,
-          coveragePct: s.coveragePct ?? null,
-        })),
+        managerRows: ceoDvManagerRows(dv.managerSummaries, dv.executiveSummary.idleManagers),
         dateFrom: dv.dateFrom,
         dateTo: dv.dateTo,
       }
     : null;
 
-  // Managers on leave today — derive from DV manager list + leave map
+  // Managers on leave today — every active manager in the directory (managerOnLeaveCandidates).
   let managersOnLeave: CeoLandingDeferredData["managersOnLeave"] = null;
-  if (dv && dv.managerSummaries.length > 0) {
+  if (includeAttendance) {
     // "On leave TODAY" means the Cairo calendar day — the same clock `crmDateTo` above already
     // uses. Production runs UTC, so from 21:00 UTC onward this asked the leave map about
     // yesterday, and a manager on leave on the new Cairo day read as present until 03:00.
     const todayIso = cairoTodayIso();
-    const hrIds = dv.managerSummaries.map((s) => s.managerHrId).filter(Boolean);
+    const activeDirectory = activeDirectoryR.status === "fulfilled" ? activeDirectoryR.value : null;
+    const candidates = activeDirectory ? managerOnLeaveCandidates(activeDirectory) : null;
     try {
-      const leaveMap = await getApprovedLeaveDayMap({
-        dateFromIso: todayIso,
-        dateToIso: todayIso,
-        employeeHrIds: hrIds,
-      });
-      managersOnLeave = dv.managerSummaries
-        .filter((s) => {
-          for (const [k, dates] of leaveMap) {
-            if (hrIdsMatch(k, s.managerHrId) && dates.has(todayIso)) return true;
-          }
-          return false;
-        })
-        .map((s) => ({
-          hrId: s.managerHrId,
-          name: s.managerName,
-          role: s.role ?? s.roleCode ?? "Manager",
-        }));
+      if (!candidates) throw new Error("employee directory unavailable");
+      // An empty list must not reach the lookup: with no HR ids it reads every leave in the company.
+      managersOnLeave = candidates.length === 0
+        ? []
+        : managersOnLeaveToday(
+            candidates,
+            await getApprovedLeaveDayMap({
+              dateFromIso: todayIso,
+              dateToIso: todayIso,
+              employeeHrIds: candidates.map((candidate) => candidate.hrId),
+            }),
+            todayIso,
+          );
     } catch {
-      managersOnLeave = [];
+      // Never a quiet zero: a failed read stays null and is named in the banner.
+      managersOnLeave = null;
+      dataUnavailable.push("Managers on leave");
     }
   }
 

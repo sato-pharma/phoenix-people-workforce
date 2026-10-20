@@ -142,6 +142,14 @@ export type OrganogramReportRow = OrganogramWorkFields & {
   jobTitle: string | null;
   lineId: number | null;
   lineName: string | null;
+  /**
+   * The product line a Head Office row's person actually works, when it is a sales line — a Product
+   * or Group Product Manager pulled into the Head Office branch by manager chain. Set only there,
+   * and null on every other row. `lineName` stays "Head Office" (the gates key off it); a line chart
+   * reads this to keep the marketer, and the Head Office managers above him, on his own line
+   * (owner, 2026-10-20 — organogram-head-office.ts).
+   */
+  ownLineName?: string | null;
   managerHrId: string | null;
   managerReplacementForHrId?: string | null;
   managerName: string | null;

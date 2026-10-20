@@ -17,6 +17,7 @@
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { loadRepEstablishment } from "@/lib/employee-portal/rep-establishment";
+import { buildManagerChain, managerFilterOptions } from "@/lib/org/manager-filter";
 import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
 import { lineName } from "@/lib/sales/monthly-targets";
 import {
@@ -46,6 +47,8 @@ export type RankingsSearchParams = {
   titles?: string;
   regions?: string;
   q?: string;
+  /** A manager's name — see RankingFilters.manager. */
+  manager?: string;
 };
 
 export type RankingOption = { value: string; label: string };
@@ -71,6 +74,11 @@ export type RankingsPageData = {
   lineOptions: RankingOption[];
   titleOptions: RankingOption[];
   regionOptions: RankingOption[];
+  /**
+   * The managers the board can be narrowed to, by NAME (never an HR code): every direct manager of
+   * a rep the window can score, and every manager above them (owner, 2026-10-20).
+   */
+  managerOptions: RankingOption[];
   /** True when nothing at all has been published yet — the page says so rather than showing zeros. */
   nothingPublished: boolean;
 };
@@ -164,6 +172,7 @@ export async function buildRankingsPage(params: RankingsSearchParams): Promise<R
     titles: splitList(params.titles),
     regions: splitList(params.regions),
     query: String(params.q ?? "").trim(),
+    manager: String(params.manager ?? "").trim(),
   };
 
   const { current } = salesVsTargetPeriods();
@@ -185,13 +194,14 @@ export async function buildRankingsPage(params: RankingsSearchParams): Promise<R
         prior: null,
       },
       filters: { ...EMPTY_RANKING_FILTERS, ...filters },
-      boards: { overall: [], byLine: [], ranked: 0, seats: null, vacant: null },
+      boards: { overall: [], byLine: [], ranked: 0, districtManagers: [], seats: null, vacant: null },
       focus: null,
       publishedMonths: [],
       anchorOptions: [],
       lineOptions: [],
       titleOptions: [],
       regionOptions: [],
+      managerOptions: [],
       nothingPublished: true,
     };
   }
@@ -243,6 +253,7 @@ export async function buildRankingsPage(params: RankingsSearchParams): Promise<R
   const linesInWindow = new Set<string>();
   const titles = new Map<string, number>();
   const regions = new Map<string, number>();
+  const scoredPeople = new Map<string, RankingPerson>();
   for (const row of rows) {
     if (!windowMonths.has(row.period)) continue;
     if (!row.lineCode || !publishedKeys.has(`${row.lineCode}|${row.period}`)) continue;
@@ -252,7 +263,13 @@ export async function buildRankingsPage(params: RankingsSearchParams): Promise<R
     const person = people.get(key);
     if (person?.title) titles.set(person.title, (titles.get(person.title) ?? 0) + 1);
     if (person?.regionName) regions.set(person.regionName, (regions.get(person.regionName) ?? 0) + 1);
+    if (person) scoredPeople.set(key, person);
   }
+  const managerChain = buildManagerChain([...people.values()].map((person) => ({ employeeName: person.name, managerName: person.managerName })));
+  const managerNames = managerFilterOptions(
+    [...scoredPeople.values()].map((person) => ({ employeeName: person.name, managerName: person.managerName })),
+    managerChain,
+  );
 
   const byName = (a: RankingOption, b: RankingOption) => a.label.localeCompare(b.label);
   return {
@@ -268,6 +285,7 @@ export async function buildRankingsPage(params: RankingsSearchParams): Promise<R
       .sort(byName),
     titleOptions: [...titles.keys()].map((title) => ({ value: title, label: title })).sort(byName),
     regionOptions: [...regions.keys()].map((region) => ({ value: region, label: region })).sort(byName),
+    managerOptions: managerNames.map((name) => ({ value: name, label: name })),
     nothingPublished: false,
   };
 }

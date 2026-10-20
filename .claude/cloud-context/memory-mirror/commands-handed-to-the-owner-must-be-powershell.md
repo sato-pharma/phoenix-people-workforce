@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: e94a655d-2c8b-49f4-9c2c-ad15fddfe252
-  modified: 2026-09-27T17:14:37.426Z
+  modified: 2026-10-19T19:07:12.901Z
 ---
 
 **Any command handed to the owner to run himself must be Windows PowerShell 5.1, not bash.** His
@@ -22,6 +22,12 @@ is Git Bash, so `&&` works there and the habit carries over invisibly.
 **How to apply:**
 - Two separate lines, never `&&`. The working directory persists between his pastes, so one `cd`
   first and the rest bare.
+- 🔴 **Never write `~` in a path handed to him.** PowerShell expands `~` for its own cmdlets but
+  NOT in an argument to a native program, so `node ~/.claude/scripts/x.mjs` reaches node as the
+  literal string and dies `Cannot find module 'C:\Users\satoh\~\.claude\scripts\x.mjs'`. It cost him
+  a round trip on 2026-10-19 on the account-session importer. Write
+  `node "$env:USERPROFILE\.claude\scripts\x.mjs"`, and have the script itself print that spelling
+  (build its own hint from `process.argv[1]`, never a hand-typed path).
 - Read [[the terminal]] with `mcp__terminal__read_terminal` before assuming he did not run it - a
   parser error looks like silence.
 - Use a **plain, untagged** code fence for anything he must run with his own hands. A ```bash fence

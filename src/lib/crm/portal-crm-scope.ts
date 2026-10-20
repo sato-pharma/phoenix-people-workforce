@@ -9,13 +9,19 @@
 // rung would be the anomaly. Removing them is one entry in PORTAL_CRM_ROLES.
 //
 // The subtree walk is NOT reimplemented here. resolveDoubleVisitAccessScope already does exactly this
-// job for the same four roles, and has already been fixed once for a real RM leak (label expansion
-// pulled in cross-line reps and reps in uncovered regions). Reusing it means the two surfaces cannot
-// disagree about "who reports to me".
+// job for the four reporting-tree roles, and has already been fixed once for a real RM leak (label
+// expansion pulled in cross-line reps and reps in uncovered regions). Reusing it means the two
+// surfaces cannot disagree about "who reports to me".
+//
+// The Product Manager and Group Product Manager joined on 2026-10-20 (owner: every role a module
+// applies to must find its people). Their reach is a product LINE, not a reporting tree, so they
+// resolve through the doctor-coverage line scope — the CRM boards' own boundary for exactly these
+// seats: their line (and a second line from its overrides), downward only, nobody at or above them.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalHrIdKey, normalizeHrIdForAccess } from "@/lib/hr-id";
+import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import { resolveDoubleVisitAccessScope } from "@/lib/double-visit-analytics/service";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { crmScopeNothing, type CrmViewerScope } from "@/lib/crm/viewer-scope";
@@ -33,9 +39,15 @@ export const PORTAL_CRM_ROLES = [
   "District Manager",
   "Regional Manager",
   "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
 ] as const satisfies readonly PhoenixRole[];
 
+/** The portal CRM roles whose reach is a product line, resolved by the doctor-coverage line scope. */
+export const LINE_SCOPED_PORTAL_CRM_ROLES = ["Product Manager", "Group Product Manager"] as const satisfies readonly PhoenixRole[];
+
 const portalCrmRoleSet = new Set<PhoenixRole>(PORTAL_CRM_ROLES);
+const lineScopedPortalCrmRoleSet = new Set<PhoenixRole>(LINE_SCOPED_PORTAL_CRM_ROLES);
 
 export function isPortalCrmRole(role: PhoenixRole | string | null | undefined): boolean {
   return portalCrmRoleSet.has(String(role ?? "").trim() as PhoenixRole);
@@ -70,20 +82,31 @@ export function toPortalCrmScopeView(scope: CrmViewerScope, role: string): Porta
  *  - a viewer we cannot locate in the directory -> nothing
  *  - a directory read failure -> nothing (the throw propagates; the page renders its error state)
  *  - resolveDoubleVisitAccessScope answering `{all:true}` -> nothing, NOT company-wide. None of the
- *    four portal roles can produce that today, but if a future edit adds one of them to that
+ *    four reporting-tree roles can produce that today, but if a future edit adds one of them to that
  *    function's company-wide list, this path must not silently widen CRM.
+ *  - a line-scoped role whose doctor-coverage scope is anything but an explicit agent list (a
+ *    `company` answer, or `none`) -> nothing, for the same reason.
  */
 export async function resolvePortalCrmScope(access: AccessContext): Promise<CrmViewerScope> {
   if (!isPortalCrmRole(access.role)) return crmScopeNothing();
 
   const directory = await getEmployeeDirectory();
   const employees = directory.employees;
-  const dvScope = resolveDoubleVisitAccessScope(access, employees);
-  if (dvScope.all) return crmScopeNothing();
 
-  // dvScope.allowedHrIds holds NORMALIZED keys. The CRM query needs the RAW employees.hr_id values
+  // Both resolvers answer in NORMALIZED keys here. The CRM query needs the RAW employees.hr_id values
   // (applyMasterFilters -> expandHrIdFilterValues handles casing), so map keys back to real ids.
-  const allowedKeys = dvScope.allowedHrIds;
+  let allowedKeys: ReadonlySet<string>;
+  if (lineScopedPortalCrmRoleSet.has(access.role)) {
+    const lineScope = await getDoctorCoverageScope(access);
+    if (lineScope.kind !== "agents") return crmScopeNothing();
+    allowedKeys = new Set(
+      lineScope.agentHrIds.map((hrId) => normalizeHrIdForAccess(hrId)).filter((key): key is string => Boolean(key)),
+    );
+  } else {
+    const dvScope = resolveDoubleVisitAccessScope(access, employees);
+    if (dvScope.all) return crmScopeNothing();
+    allowedKeys = dvScope.allowedHrIds;
+  }
   const hrIds: string[] = [];
   const keys = new Set<string>();
   const lineNames = new Set<string>();

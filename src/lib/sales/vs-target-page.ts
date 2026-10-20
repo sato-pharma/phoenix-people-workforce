@@ -22,6 +22,7 @@ import {
 } from "@/lib/sales/monthly-targets";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 import { applyAchievementAreaMerges, getMergedAreaName } from "@/lib/sales/closing-area-merges";
+import { loadSalesSeatTree, regionalManagerAbove, type SalesSeat } from "@/lib/sales/seat-hierarchy";
 import {
   SALES_VS_TARGET_FLOOR,
   buildTrend,
@@ -39,6 +40,7 @@ import {
   rollupByArea,
   rollupByDm,
   rollupByProduct,
+  rollupByRegionalManager,
   rollupByRegion,
   rollupByRep,
   rollupByTeam,
@@ -93,6 +95,11 @@ export type VsTargetDashboardData = {
   areas: VsTargetNode[];
   reps: VsTargetNode[];
   managers: VsTargetNode[];
+  /**
+   * Regional Managers (owner, 2026-10-20) — each the sum of the District Manager nodes under his
+   * seat. Filled for a company or line viewer only; empty otherwise, and then the level is hidden.
+   */
+  regionalManagers: VsTargetNode[];
   /** Product mix — real analysis for a scope that has only one month loaded. */
   products: VsTargetNode[];
   /** Best and worst measurable performers at the most useful level for this viewer. */
@@ -222,6 +229,14 @@ export async function buildVsTargetDashboard(
     visibleLevelsForBound(resolved).rep ? loadEmployeeNameMap() : new Map<string, string>(),
   );
   employeeNamesLoad.catch(() => {});
+  // The seat tree feeds ONLY the Regional Managers level, which a company or line viewer gets
+  // (owner, 2026-10-20). A district manager or Regional Manager reading his own areas would find
+  // only himself there, so it is not read for him. Best effort: a failed read is an empty tree,
+  // which hides the level and changes no figure.
+  const seatTreeLoad = boundLoad.then((resolved) =>
+    resolved.kind === "company" || resolved.kind === "line" ? loadSalesSeatTree() : new Map<string, SalesSeat>(),
+  );
+  seatTreeLoad.catch(() => {});
   // The channel split's attribution pass, when the month is already named in the request: it is
   // the month the dashboard will show, so the pass starts now rather than after the range lands. Its
   // result is read only if that month turns out to be published, exactly as before.
@@ -248,6 +263,7 @@ export async function buildVsTargetDashboard(
       areas: [],
       reps: [],
       managers: [],
+      regionalManagers: [],
       products: [],
       leaders: { top: [], bottom: [], level: "Area" },
       trend: [],
@@ -264,9 +280,10 @@ export async function buildVsTargetDashboard(
     };
   }
 
-  const [[rangeRows, areaNames, productNames, targetBearing, publishedKeys], employeeNames] = await Promise.all([
+  const [[rangeRows, areaNames, productNames, targetBearing, publishedKeys], employeeNames, seatTree] = await Promise.all([
     windowLoads,
     employeeNamesLoad,
+    seatTreeLoad,
   ]);
 
   // Scope FIRST — everything below derives from these arrays.
@@ -357,6 +374,9 @@ export async function buildVsTargetDashboard(
     areas: areaNodes,
     reps: repNodes,
     managers: levels.rep ? rollupByDm(rows, priorRows, names) : [],
+    regionalManagers: rollupByRegionalManager(rows, priorRows, names, (row) =>
+      regionalManagerAbove(row.dmSeatId, seatTree)?.hrId ?? null,
+    ),
     products: rollupByProduct(rows, priorRows, (code) => productNames.get(code.toUpperCase()) ?? "Unnamed product"),
     leaders,
     trend: buildTrend(scopedAll, trendPeriods),

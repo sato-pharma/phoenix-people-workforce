@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Phoenix CRM — the Visit report generator: pick a rep or a district and a period, choose the fields,
+ * Phoenix CRM — the Visit report generator: pick a rep, a manager or a district and a period, choose the fields,
  * press Apply, and read the dashboard, the map and every visit — or download the same thing as one
  * workbook tab (owner, 2026-10-15).
  *
@@ -61,11 +61,12 @@ import {
   visitReportStarterFields,
   type VisitReportSavedView,
   type VisitReportScopeView,
+  type VisitReportTargetKind,
   type VisitReportView,
 } from "@/lib/phoenix-crm/visit-report-fields";
 
 export type VisitReportInitial = {
-  /** `rep:<seat id>` or `district:<seat id>`, as the picker's own value. */
+  /** `rep:<seat id>`, `district:<seat id>` or `manager:<hr id>`, as the picker's own value. */
   target: string;
   from: string;
   to: string;
@@ -73,7 +74,7 @@ export type VisitReportInitial = {
   apply: boolean;
 };
 
-type Applied = { kind: "rep" | "district"; id: string; from: string; to: string; fields: string[] };
+type Applied = { kind: VisitReportTargetKind; id: string; from: string; to: string; fields: string[] };
 
 const REPORT_ENDPOINT = "/api/phoenix-crm/visit-report";
 const EXPORT_ENDPOINT = "/api/phoenix-crm/visit-report/export";
@@ -103,10 +104,11 @@ function writeLastFields(keys: ReadonlyArray<string>): void {
   }
 }
 
-function splitTarget(value: string): { kind: "rep" | "district"; id: string } | null {
+function splitTarget(value: string): { kind: VisitReportTargetKind; id: string } | null {
   const [kind, ...rest] = value.split(":");
   const id = rest.join(":");
-  if ((kind !== "rep" && kind !== "district") || !id) return null;
+  // A manager is a person, not a seat (owner, 2026-10-20: "when filter by manager u find no manager").
+  if ((kind !== "rep" && kind !== "district" && kind !== "manager") || !id) return null;
   return { id, kind };
 }
 
@@ -219,7 +221,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
 
   const apply = () => {
     if (!parsedTarget) {
-      setError("Choose a rep or a district first.");
+      setError("Choose a rep, a manager or a district first.");
       return;
     }
     const period = resolveVisitReportPeriod({ cairoToday: scope.cairoToday, from, kind: parsedTarget.kind, to });
@@ -351,17 +353,23 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
       >
         <CrmBlock title="1 · Who and when">
           <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
-            <CrmField htmlFor="visit-report-target" label="Rep or district">
+            <CrmField htmlFor="visit-report-target" label="Rep, manager or district">
               <CrmSelect id="visit-report-target" onChange={(event) => setTarget(event.target.value)} value={target}>
-                <option value="">Choose a rep or a district</option>
+                <option value="">Choose a rep, a manager or a district</option>
                 {scope.reps.map((rep) => (
                   <option key={`rep:${rep.id}`} value={`rep:${rep.id}`}>
                     Rep — {rep.label}
                   </option>
                 ))}
+                {scope.managers.map((manager) => (
+                  <option key={`manager:${manager.id}`} value={`manager:${manager.id}`}>
+                    Manager — {manager.label}
+                  </option>
+                ))}
                 {scope.districts.map((district) => (
                   <option key={`district:${district.id}`} value={`district:${district.id}`}>
-                    District — {district.label} · {countText(district.repCount)} rep{district.repCount === 1 ? "" : "s"}
+                    District — {district.label} ·{" "}
+                    {district.repCount === 0 ? "every seat vacant" : `${countText(district.repCount)} rep${district.repCount === 1 ? "" : "s"}`}
                   </option>
                 ))}
               </CrmSelect>
@@ -402,7 +410,9 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
             ))}
           </div>
           <p className="mt-2 text-xs font-medium leading-5 text-slate-500">
-            One rep up to 92 days; a district up to 31 days. Days after today are cut off.
+            One rep up to 92 days; a manager or a district up to 31 days. A manager&apos;s report holds every visit a rep logged
+            with that manager and, under the manager&apos;s own name, the visits made alone — those count in no rep&apos;s figure. Days after today are
+            cut off.
           </p>
         </CrmBlock>
 
@@ -611,7 +621,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
                 {dayLabelWithYear(view.period.from)} to {dayLabelWithYear(view.period.to)} ·{" "}
                 {narrowed ? `${countText(shown.total)} of ${countText(view.total)} visits shown` : `${countText(view.total)} visit${view.total === 1 ? "" : "s"}`} ·{" "}
                 {countText(view.selected.length)} field{view.selected.length === 1 ? "" : "s"}
-                {view.target.kind === "district" ? ` · ${countText(view.target.reps.length)} reps` : ""}
+                {view.target.kind === "district" || view.target.kind === "manager" ? ` · ${countText(view.target.reps.length)} reps` : ""}
               </>
             }
           >

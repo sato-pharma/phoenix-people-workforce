@@ -44,6 +44,9 @@ export type KpiFilterableRow = {
   regionName: string | null;
   areaName: string | null;
   managerName: string | null;
+  /** Every manager above `managerName`, nearest first. Optional: a row without it is matched on its
+   * direct manager alone, exactly as before. */
+  managersAbove?: readonly string[] | null;
   jobTitle: string | null;
 
   workingDays: number;
@@ -826,6 +829,47 @@ function normalizeFacet(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
+/**
+ * "Reports to" keeps a rep under ANY manager chosen on his chain — his district manager, the
+ * regional manager above him, the national sales manager above that. Matching the direct manager
+ * alone meant a National Sales Manager could never be found on this board (owner, 2026-10-20).
+ */
+function matchesManagerFacet(selected: string[], row: KpiFilterableRow): boolean {
+  if (selected.length === 0) return true;
+  if (matchesFacet(selected, row.managerName)) return true;
+  return (row.managersAbove ?? []).some((name) => normalizeFacet(name) !== "" && matchesFacet(selected, name));
+}
+
+/** The "Reports to" options: each rep counted under his direct manager AND every manager above. */
+export function buildKpiManagerFacet(rows: readonly KpiFilterableRow[]): KpiFacetOption[] {
+  const counts = new Map<string, { label: string; count: number }>();
+  const add = (value: string, label: string) => {
+    const existing = counts.get(value);
+    if (existing) existing.count += 1;
+    else counts.set(value, { label, count: 1 });
+  };
+  for (const row of rows) {
+    const direct = row.managerName?.trim() ?? "";
+    if (!direct) {
+      add(UNASSIGNED_FACET_KEY, UNASSIGNED_FACET_LABEL);
+      continue;
+    }
+    const names = new Set<string>([direct]);
+    for (const above of row.managersAbove ?? []) {
+      const name = above?.trim();
+      if (name) names.add(name);
+    }
+    for (const name of names) add(name, name);
+  }
+  return Array.from(counts, ([value, entry]) => ({ value, label: entry.label, count: entry.count })).sort(
+    (left, right) => {
+      if (left.value === UNASSIGNED_FACET_KEY) return 1;
+      if (right.value === UNASSIGNED_FACET_KEY) return -1;
+      return left.label.localeCompare(right.label);
+    },
+  );
+}
+
 function matchesFacet(selected: string[], value: string | null): boolean {
   if (selected.length === 0) return true;
   const target = normalizeFacet(value);
@@ -862,7 +906,7 @@ export function applyKpiFilters<T extends KpiFilterableRow>(rows: readonly T[], 
     if (!matchesFacet(filters.lines, row.lineName)) return false;
     if (!matchesFacet(filters.regions, row.regionName)) return false;
     if (!matchesFacet(filters.areas, row.areaName)) return false;
-    if (!matchesFacet(filters.managers, row.managerName)) return false;
+    if (!matchesManagerFacet(filters.managers, row)) return false;
     if (!matchesFacet(filters.titles, row.jobTitle)) return false;
     if (filters.coverage.length > 0 && !filters.coverage.includes(coverageBandOf(row))) return false;
     if (filters.frequency.length > 0 && !filters.frequency.includes(frequencyBandOf(row))) return false;
@@ -878,6 +922,74 @@ export function applyKpiFilters<T extends KpiFilterableRow>(rows: readonly T[], 
   });
 
   return sortKpiRows(filtered, filters.sort, filters.direction);
+}
+
+/**
+ * A MANAGER row as the filter engine reads it — crm/kpis-manager-rows.ts's `KpiManagerRow`
+ * satisfies it structurally (owner, 2026-10-20: "add manager row"). Described here rather than
+ * imported, for the same bundle reason as {@link KpiFilterableRow}.
+ */
+export type KpiManagerFilterableRow = {
+  /** The manager himself. */
+  name: string;
+  jobTitle: string | null;
+  lineName: string | null;
+  regionName: string | null;
+  areaName: string | null;
+  /** His own manager's name. */
+  reportsTo: string | null;
+  /** The managers above `reportsTo`, nearest first. */
+  managersAbove: readonly string[];
+};
+
+/**
+ * Line, region, area and job title narrow a manager row by HIS OWN record, but only where that
+ * record HAS the field: a National Sales Manager whose record names no area is not hidden by an area
+ * filter he has nothing to be compared on. Where the field is recorded it must match, exactly as on
+ * a rep row.
+ */
+function matchesWhereRecorded(selected: string[], value: string | null): boolean {
+  if (selected.length === 0 || normalizeFacet(value) === "") return true;
+  return matchesFacet(selected, value);
+}
+
+/**
+ * "Reports to" keeps the chosen manager's OWN row and every manager row beneath him — the same reach
+ * it gives the rep rows. "Not recorded" asks for the reps whose manager is not on file, and no
+ * manager row is built from those, so it keeps none.
+ */
+function matchesManagerRowFacet(selected: string[], row: KpiManagerFilterableRow): boolean {
+  if (selected.length === 0) return true;
+  const chosen = selected.map(normalizeFacet).filter((choice) => choice !== "" && choice !== UNASSIGNED_FACET_KEY);
+  return [row.name, row.reportsTo, ...row.managersAbove].some((name) => {
+    const target = normalizeFacet(name);
+    return target !== "" && chosen.includes(target);
+  });
+}
+
+/**
+ * Narrows the manager rows by the SAME filter state as the rep rows. They are built from the scoped
+ * rep rows before any filter, so a manager's averages never change with a filter; a filter only
+ * decides which manager rows are shown. The bands, flags and ranges judge one rep's own work and are
+ * not applied here; the order is the tree order the rows were built in, whatever the rep sort.
+ */
+export function applyKpiManagerFilters<T extends KpiManagerFilterableRow>(rows: readonly T[], filters: KpiFilterState): T[] {
+  const needle = filters.query.trim().toLowerCase();
+  return rows.filter((row) => {
+    if (!matchesWhereRecorded(filters.lines, row.lineName)) return false;
+    if (!matchesWhereRecorded(filters.regions, row.regionName)) return false;
+    if (!matchesWhereRecorded(filters.areas, row.areaName)) return false;
+    if (!matchesWhereRecorded(filters.titles, row.jobTitle)) return false;
+    if (!matchesManagerRowFacet(filters.managers, row)) return false;
+    if (needle) {
+      const haystack = [row.name, row.jobTitle, row.lineName, row.regionName, row.areaName, row.reportsTo]
+        .filter((part): part is string => Boolean(part))
+        .join(" ")
+        .toLowerCase();
+      if (!haystack.includes(needle)) return false;
+    }
+    return true;
+  });
 }
 
 /** Sorts a copy. Nulls park last in BOTH directions — see the note on `sortKey`. */
@@ -978,7 +1090,7 @@ export function buildKpiFacets(rows: readonly KpiFilterableRow[]): KpiFacets {
     lines: buildKpiFacet(rows, (row) => row.lineName),
     regions: buildKpiFacet(rows, (row) => row.regionName),
     areas: buildKpiFacet(rows, (row) => row.areaName),
-    managers: buildKpiFacet(rows, (row) => row.managerName),
+    managers: buildKpiManagerFacet(rows),
     titles: buildKpiFacet(rows, (row) => row.jobTitle),
     coverage: bandFacet(rows, coverageBandOf),
     frequency: bandFacet(rows, frequencyBandOf),
@@ -997,6 +1109,11 @@ export function buildKpiFacets(rows: readonly KpiFilterableRow[]): KpiFacets {
 // Reps Plans board already owned; the two agreed on every live row and disagreed on one branch.
 // Do not reintroduce a copy: this file's no-imports rule is about SERVER modules, and medical-rep.ts
 // imports nothing at all, so there is no bundle reason to have a local one.
+//
+// It still decides the REP rows, and so every facet, count, band, total and podium above. Managers
+// reach the board since 2026-10-20 (owner: "add manager row") as a SEPARATE list of averages —
+// crm/kpis-manager-rows.ts, `board.managers` — filtered by `applyKpiManagerFilters` and never mixed
+// into the rep rows or anything counted from them.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WHEN A PERCENTAGE IS A POSITION AND NOT YET A SCORE.

@@ -37,6 +37,7 @@ import {
   buildManagerSummariesDetailed,
   filterRowsForAccess,
   liveDoubleVisitRowsFromMirror,
+  loadDoubleVisitScopeOptions,
   resolveDoubleVisitAccessScope,
   type DoubleVisitDbRow,
   type MirrorVisitRow,
@@ -337,9 +338,11 @@ export async function loadDoubleVisitAuditData(input: {
       PHOENIX_VISIT_DETAIL_COLUMNS,
   });
 
-  const resolutions = await getCrmIdentityResolutions();
+  // The board's own scope options (a Product Manager's second line), so the workbook keeps matching
+  // the screen (owner, 2026-10-20).
+  const [resolutions, scopeOptions] = await Promise.all([getCrmIdentityResolutions(), loadDoubleVisitScopeOptions()]);
   const dbRows = liveDoubleVisitRowsFromMirror(mirrorRows, employees, resolutions);
-  const scopedRows = filterRowsByPeriod(filterRowsForAccess(dbRows, access, employees), period);
+  const scopedRows = filterRowsByPeriod(filterRowsForAccess(dbRows, access, employees, scopeOptions), period);
 
   // id → the mirror's crm ids (for the GPS check-in match) and the real customer/contact name,
   // which the resolved db row doesn't carry — so the dated detail names the doctor who was seen.

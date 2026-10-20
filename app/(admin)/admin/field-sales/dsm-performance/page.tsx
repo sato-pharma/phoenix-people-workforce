@@ -309,6 +309,16 @@ export default async function CompanyDsmPerformancePage({
                 totalLabel="Line Sales"
                 unattributedSales={line.performance.unattributedSales}
               />
+              {/* Regional Managers on this line (owner, 2026-10-20): each row totals the seated
+                  districts under his seat, so it sits apart from the DSM ranking above. */}
+              {line.performance.regionalManagers.length > 0 && (
+                <div className="min-w-0 space-y-3 border-t border-slate-100 pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-orange-600">
+                    Regional Managers — {line.lineName}
+                  </p>
+                  <TeamLeaderboardTable members={line.performance.regionalManagers} />
+                </div>
+              )}
               <details className="group">
                 <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-orange-600 hover:text-orange-700">
                   Product depth — {line.lineName} DSMs

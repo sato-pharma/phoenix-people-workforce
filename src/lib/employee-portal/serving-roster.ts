@@ -23,10 +23,19 @@
 // empty allow-list, so a viewer whose seat resolves to nobody can be told apart from a manager whose
 // reps have filed nothing. A caller that gets `null` back from this module keeps whatever roster it
 // already had — degrading to the sales roster is the old behaviour, never to an empty list.
+//
+// THE REGIONAL MANAGER IS ON HIS NATIONAL MANAGER'S ROSTER (owner, 2026-10-20: "many modules all
+// over Phoenix show only reports on reps, and when you filter by manager you find no manager"). The
+// split used to know two kinds of people, medical reps and district managers, so the Regional Sales
+// Manager standing between them on a line's org tree was dropped without a word: the National Sales
+// Manager's CRM First Visit board never listed him, never counted him and never ranked his first
+// ride. He is his own group here, so the board can check him with the other managers while the
+// "districts" head count stays a count of districts.
 
 import { getManagerScope } from "@/lib/crm/manager-scope";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isDistrictManagerEmployee, isMedicalRepDirectoryEmployee } from "@/lib/employee-portal/service";
+import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 
 export type ServingRosterPerson = { hrId: string; name: string };
@@ -36,7 +45,25 @@ export type ServingRoster = {
   reps: ServingRosterPerson[];
   /** Active district managers in the subtree — empty for a District Manager, who anchors reps only. */
   dsms: ServingRosterPerson[];
+  /** Active regional managers in the subtree — in practice only a National Sales Manager's line holds one. */
+  regionalManagers: ServingRosterPerson[];
 };
+
+/**
+ * Everyone on the roster the daily CRM board checks as a MANAGER — regional managers first, then the
+ * district managers. A manager "submits" by a visit of his own or by riding with a rep, the same rule
+ * for both, so they share the board's manager tier; the head counts still read `dsms` alone.
+ */
+export function servingRosterManagers(roster: ServingRoster): ServingRosterPerson[] {
+  return [...roster.regionalManagers, ...roster.dsms];
+}
+
+function isRegionalManagerDirectoryRow(row: Pick<ServingRosterDirectoryRow, "jobTitle" | "positionTitle">): boolean {
+  return (
+    resolveJobFunctionRole(row.jobTitle) === "Regional Manager" ||
+    resolveJobFunctionRole(row.positionTitle) === "Regional Manager"
+  );
+}
 
 /** Only the directory fields the split below reads, so the pure core is fixture-testable. */
 export type ServingRosterDirectoryRow = Pick<
@@ -45,7 +72,8 @@ export type ServingRosterDirectoryRow = Pick<
 >;
 
 /**
- * Pure core: split one already-authorised allow-list into reps and district managers.
+ * Pure core: split one already-authorised allow-list into reps, district managers and regional
+ * managers.
  *
  * `agentHrIds` comes from the org-tree walk, so this function widens nobody's access — it only
  * labels and names the people already in scope. The viewer is removed from her own roster: an
@@ -63,6 +91,7 @@ export function pickServingRoster(input: {
 
   const reps: ServingRosterPerson[] = [];
   const dsms: ServingRosterPerson[] = [];
+  const regionalManagers: ServingRosterPerson[] = [];
   const seen = new Set<string>();
 
   for (const row of input.directoryRows) {
@@ -78,10 +107,15 @@ export function pickServingRoster(input: {
     if (isDistrictManagerEmployee(row)) {
       seen.add(key);
       dsms.push(person);
+      continue;
+    }
+    if (isRegionalManagerDirectoryRow(row)) {
+      seen.add(key);
+      regionalManagers.push(person);
     }
   }
 
-  return { reps, dsms };
+  return { reps, dsms, regionalManagers };
 }
 
 /**
@@ -107,7 +141,9 @@ export async function resolveServingRoster(input: {
     if (scope.kind !== "agents") return null;
     const directoryRows = await getEmployeeDirectoryRows();
     const roster = pickServingRoster({ agentHrIds: scope.agentHrIds, directoryRows, viewerHrId });
-    return roster.reps.length === 0 && roster.dsms.length === 0 ? null : roster;
+    return roster.reps.length === 0 && roster.dsms.length === 0 && roster.regionalManagers.length === 0
+      ? null
+      : roster;
   } catch {
     return null;
   }

@@ -31,6 +31,7 @@ import {
 import { seatIdIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
 import { loadLiveTeamSeatIds } from "@/lib/phoenix-crm/server/live-teams";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
+import { personOnTheVisit } from "@/lib/phoenix-crm/location-integrity";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { managerChain } from "@/lib/phoenix-crm/scope";
 import {
@@ -46,9 +47,12 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 const HOUR_MS = 60 * 60 * 1000;
 /** How many managers are being sent their rollup at once. */
 const DELIVERIES_AT_ONCE = 4;
-const VISIT_COLUMNS = "id, seat_id, rep_hr_id";
+// `manager_hr_id` too (owner, 2026-10-20: "EVERYSINGLE ROLE THATS APLLICABLE TOAPPEAR"): a visit a manager logged on
+// a vacant territory carries no rep, and the roll-up named it after nobody. It is now filed under the person on the
+// visit — the rep, or the manager when there is no rep (`personOnTheVisit`, the rule the integrity board names by).
+const VISIT_COLUMNS = "id, seat_id, rep_hr_id, manager_hr_id";
 
-type VisitRow = { id: string; seat_id: string | null; rep_hr_id: string | null };
+type VisitRow = { id: string; seat_id: string | null; rep_hr_id: string | null; manager_hr_id: string | null };
 
 export type VisitRollupRun = {
   windowStart: string;
@@ -130,8 +134,10 @@ export async function runPhoenixCrmVisitRollup(
 
   // Every id the rollup names or addresses: the reps, the NSMs above each visit's seat, the SFE Managers.
   const needed = new Set<string>(sfeHrIds);
+  const personOf = (row: VisitRow) => personOnTheVisit({ managerHrId: row.manager_hr_id, repHrId: row.rep_hr_id });
   for (const row of liveRows) {
-    if (row.rep_hr_id) needed.add(row.rep_hr_id);
+    const person = personOf(row);
+    if (person) needed.add(person);
     if (row.seat_id) {
       const nsmHrId = managerChain(org, row.seat_id).find((member) => member.seat.tier === "NSM")?.hrId ?? null;
       if (nsmHrId) needed.add(nsmHrId);
@@ -140,7 +146,7 @@ export async function runPhoenixCrmVisitRollup(
   const names = await loadPeopleNames(needed);
 
   const recipients = buildVisitRollupRecipients(
-    liveRows.map((row) => ({ seatId: row.seat_id, repHrId: row.rep_hr_id })),
+    liveRows.map((row) => ({ seatId: row.seat_id, repHrId: personOf(row) })),
     org,
     (hrId) => nameOf(names, hrId),
     sfeHrIds,

@@ -46,7 +46,7 @@ function norm(value: string | null | undefined): string {
 /**
  * Resolve the evaluator's probation role for a specific employee:
  *   - DM: the evaluator IS the employee's direct manager (relationship, not a global role).
- *   - NSM / TM / PM|GPM: from the evaluator's app_auth_users role.
+ *   - NSM (the Regional Sales Manager counted as one) / TM / PM|GPM: from the evaluator's app_auth_users role.
  *   - PM/GPM is not applicable on the CNS line (mirrors existing probation feedback logic).
  * Returns null when the evaluator holds none of the eligible roles for this employee.
  */
@@ -66,7 +66,9 @@ export function resolveEvaluatorRole(
   }
 
   const appRole = ctx.evaluatorAppRoleByHrId.get(evaluator) ?? "";
-  if (appRole === "National Sales Manager") return { role: "nsm", reason: null };
+  // The Regional Sales Manager counts exactly like the National Sales Manager (owner, 2026-10-20,
+  // asked whether his double visit with a probation rep should count: "Yes, count it like the NSM").
+  if (appRole === "National Sales Manager" || appRole === "Regional Manager") return { role: "nsm", reason: null };
   if (appRole === "Training Manager") return { role: "tm", reason: null };
   if (appRole === "Product Manager" || appRole === "Group Product Manager") {
     if (norm(lineName) === "cns") {

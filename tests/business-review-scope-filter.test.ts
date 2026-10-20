@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import type { ReviewLine } from "@/lib/business-review/canonical";
+import { resolveReviewWindow } from "@/lib/business-review/period";
+import { peopleForReviewFilter, peopleInReviewView } from "@/lib/business-review/people-view";
 import type { ReviewPortalScope } from "@/lib/business-review/portal-scope";
 import {
   filterChoices,
@@ -10,6 +12,9 @@ import {
   territoriesInScope,
   type FilterableTerritory,
 } from "@/lib/business-review/scope-filter";
+import type { AttributionMap } from "@/lib/business-review/sources/attribution";
+import { buildRoleFacts, type ReviewDirectory, type ReviewPersonRow } from "@/lib/business-review/sources/roles";
+import type { VisitAgentFact, VisitManagerFact } from "@/lib/business-review/sources/visits";
 import type { AreaSummary } from "@/lib/business-review/types";
 
 import { stripComments } from "./support/comment-strip.ts";
@@ -73,6 +78,118 @@ const repScope: ReviewPortalScope = {
 };
 
 const codes = (t: readonly FilterableTerritory[]) => t.map((x) => `${x.line}:${x.areaCode}`).sort();
+
+// ── block 16's month: three reps, and three managers who ride with them and log no visit of their own ──
+const AUG = "2026-08";
+const STOOD: Record<string, { areaCode: string; dmSeatId: string; lineCode: string }> = {
+  "REP-A": { areaCode: "AX1", dmSeatId: "SEAT-CNS-SAAD", lineCode: "cns" },
+  "REP-B": { areaCode: "CA1", dmSeatId: "SEAT-CNS-MINA", lineCode: "cns" },
+  "REP-P": { areaCode: "AX1", dmSeatId: "SEAT-PED-ALAA", lineCode: "pedia" },
+};
+const AUG_ATTRIBUTION: AttributionMap = {
+  liveTreeOnlyHrIds: new Set<string>(),
+  place: (hrId) => {
+    const hit = STOOD[String(hrId ?? "").toUpperCase()];
+    return hit ? { ...hit, dmHrId: null, placedFromLiveTree: false, regionCode: null } : null;
+  },
+  unplaceableHrIds: new Set<string>(),
+};
+
+function augVisits(hrId: string, fieldVisits: number, customers: number[]): VisitAgentFact {
+  return {
+    accompaniedVisits: 0,
+    adminRows: 0,
+    agentCrmId: null,
+    agentHrId: hrId,
+    agentName: null,
+    byLabel: new Map<string, number>(),
+    campaignVisits: 0,
+    customers: new Set(customers),
+    customersAm: new Set<number>(),
+    customersPharmacy: new Set<number>(),
+    customersPm: new Set(customers),
+    fieldVisits,
+    period: AUG,
+    regularVisits: fieldVisits,
+    specialityContacts: new Map([["", new Set(customers)]]),
+    specialityVisits: new Map([["", fieldVisits]]),
+    visitSplit: { am: 0, pharmacies: 0, pm: fieldVisits },
+  };
+}
+
+function augRides(hrId: string, ridesByRep: Record<string, number>, customers: number[]): VisitManagerFact {
+  const rides = Object.values(ridesByRep).reduce((sum, n) => sum + n, 0);
+  return {
+    customers: new Set(customers),
+    customersAm: new Set<number>(),
+    customersPharmacy: new Set<number>(),
+    customersPm: new Set(customers),
+    managerHrId: hrId,
+    managerName: null,
+    period: AUG,
+    rideSplit: { am: 0, pharmacies: 0, pm: rides },
+    rides,
+    ridesByRep: new Map(Object.entries(ridesByRep)),
+  };
+}
+
+function augDirectory(): ReviewDirectory {
+  const entries: [string, string, string][] = [
+    ["REP-A", "Rep Alex", "Medical Rep"],
+    ["REP-B", "Rep Cairo", "Medical Rep"],
+    ["REP-P", "Rep Pedia", "Medical Rep"],
+    ["DM-SAAD", "Saad Mohamed Saad Salama", "District Manager"],
+    ["NSM-CNS", "The CNS National Sales Manager", "National Sales Manager"],
+    ["SFE-1", "The SFE Manager", "SFE Manager"],
+  ];
+  const directory: ReviewDirectory = new Map();
+  for (const [hrId, name, role] of entries) {
+    directory.set(hrId, {
+      employmentStatus: "active",
+      hireDate: null,
+      hrId,
+      jobTitle: role,
+      lastWorkingDate: null,
+      lineId: null,
+      name,
+      role,
+    });
+  }
+  return directory;
+}
+
+/** One month of activity through the real role builder — so the ride seats are the builder's own. */
+function augRoleFacts() {
+  return buildRoleFacts({
+    attribution: AUG_ATTRIBUTION,
+    directory: augDirectory(),
+    figurePeriods: new Set([AUG]),
+    lineIdByCode: {},
+    marketing: { facts: [], periodsWithData: [], totalRows: 0 },
+    outstation: { facts: [], periodsWithData: [], totalRows: 0 },
+    visits: {
+      activity: [],
+      agents: [augVisits("REP-A", 10, [1, 2, 3]), augVisits("REP-B", 8, [4, 5]), augVisits("REP-P", 6, [7])],
+      collapsedRows: 0,
+      excludedAgentRows: 0,
+      managers: [
+        // The district manager rides with his own rep and logs nothing himself.
+        augRides("DM-SAAD", { "REP-A": 5 }, [1, 2]),
+        // The national manager rides in both of his line's districts.
+        augRides("NSM-CNS", { "REP-A": 3, "REP-B": 7 }, [1, 4]),
+        // The SFE Manager rides on two lines in one month.
+        augRides("SFE-1", { "REP-A": 2, "REP-P": 4 }, [2, 7]),
+      ],
+      periodsWithData: [AUG],
+      totalRows: 0,
+      unattributableRows: 0,
+    },
+    window: resolveReviewWindow(AUG, AUG, [AUG]).window,
+  });
+}
+
+const byId = (people: readonly ReviewPersonRow[], hrId: string) => people.find((person) => person.hrId === hrId);
+const ids = (people: readonly ReviewPersonRow[]) => people.map((person) => person.hrId).sort();
 
 export function runBusinessReviewScopeFilterTests() {
   // ------------------------------------------------------------------ 1. the scope, before any filter
@@ -470,5 +587,121 @@ export function runBusinessReviewScopeFilterTests() {
     assert.ok(wide.label.includes("Alex-BHR"), "the first regions are still NAMED");
     assert.match(wide.label, /and \d+ more regions/, "and the rest counted, after names — never only a number");
     assert.ok(wide.label.length < 90, `a label this long would break the file name: ${wide.label.length} chars`);
+  }
+
+  // ------------------------------------------------------------------ 16. 🔴 a manager who rode here is in the view
+  // Owner, 2026-10-20: "show only reports on reps and when filter by manager you find no manager."
+  // The page and the pack kept a person only when his OWN visits' seat was kept, so a manager who
+  // rides and logs nothing himself — every National Sales Manager, the Regional Manager, the Product
+  // Managers, the SFE Manager, a riding-only District Manager — was in no district, line or company
+  // view. The people now come from people-view.ts, through the seats of the reps each manager rode with.
+  {
+    const facts = augRoleFacts();
+    assert.ok(facts.byLine.cns && facts.byLine.pedia, "both lines the reps stood on get their own tables");
+    const cns = facts.byLine.cns.people;
+    const pedia = facts.byLine.pedia.people;
+    const peopleByLine = { cns, pedia };
+
+    // The builder records WHERE each ride happened — the rep's seat and area, not the manager's own.
+    const dm = byId(cns, "DM-SAAD");
+    assert.equal(dm?.dmSeatId, null, "the riding-only district manager has no seat of his own visits");
+    assert.deepEqual(dm?.ridesBySeat, { "SEAT-CNS-SAAD": { reps: 1, rides: 5 } }, "his rides are filed under the seat his rep stood in");
+    assert.deepEqual(
+      byId(cns, "NSM-CNS")?.ridesBySeat,
+      { "SEAT-CNS-MINA": { reps: 1, rides: 7 }, "SEAT-CNS-SAAD": { reps: 1, rides: 3 } },
+      "a national manager's rides are split across the districts he rode in",
+    );
+    assert.deepEqual(byId(cns, "NSM-CNS")?.ridesByArea, { AX1: { reps: 1, rides: 3 }, CA1: { reps: 1, rides: 7 } });
+    assert.deepEqual(byId(pedia, "SFE-1")?.ridesBySeat, { "SEAT-PED-ALAA": { reps: 1, rides: 4 } }, "each line's list holds its own rides");
+    assert.equal(byId(cns, "REP-A")?.ridesBySeat, undefined, "a rep rides with nobody and carries no ride tally");
+
+    // A district manager's own district: his reps AND every manager who rode there.
+    const dmFilter = resolveReviewFilter(dmScope, territoriesInScope(dmScope, BY_LINE), {});
+    const district = peopleForReviewFilter({ companyPeople: facts.people, filter: dmFilter, peopleByLine, scope: dmScope });
+    assert.deepEqual(
+      ids(district),
+      ["DM-SAAD", "NSM-CNS", "REP-A", "SFE-1"],
+      "A MANAGER WHO RODE IN THIS DISTRICT MUST BE IN ITS PEOPLE. Keeping only the seat of his own visits drops every manager who rides and logs nothing himself — the district manager, the national manager and the SFE Manager here.",
+    );
+    assert.ok(!byId(district, "REP-B"), "a rep standing in another district is still not in this one");
+
+    // 🔴 Found only through his rides, he carries only the rides he gave HERE.
+    const nsm = byId(district, "NSM-CNS");
+    assert.deepEqual(
+      [nsm?.ridesLed, nsm?.repsCoached, nsm?.fieldVisits, nsm?.customers],
+      [3, 1, 0, 0],
+      "the national manager's whole line (10 rides, 2 reps) must never print inside one district as that district's",
+    );
+    // Risk review, 2026-10-20: his ride tallies name every district and area he rode in, so they
+    // leave the row with everything else of his that lies outside this view.
+    assert.deepEqual(
+      [nsm?.ridesBySeat, nsm?.ridesByArea],
+      [undefined, undefined],
+      "a ride-only row never carries where he rode in other districts",
+    );
+    const own = byId(district, "DM-SAAD");
+    assert.deepEqual([own?.ridesLed, own?.customers], [5, 2], "everything the district manager did lies here, so his row stands whole");
+
+    // The same rule on the district seat page, which reads the seats straight off the scope.
+    assert.deepEqual(
+      ids(peopleInReviewView([{ people: cns, view: { kind: "seats", seatIds: new Set(["SEAT-CNS-SAAD"]) } }])),
+      ["DM-SAAD", "NSM-CNS", "REP-A", "SFE-1"],
+    );
+
+    // Chosen AREAS keep the managers who rode in them, and nobody from the district's other areas.
+    const areaFilter = resolveReviewFilter(company, territoriesInScope(company, BY_LINE), { area: "CA1", line: "cns" });
+    const area = peopleForReviewFilter({ companyPeople: facts.people, filter: areaFilter, peopleByLine, scope: company });
+    assert.deepEqual(ids(area), ["NSM-CNS", "REP-B"], "the area's rep and the manager who rode with him there");
+    assert.equal(byId(area, "NSM-CNS")?.ridesLed, 7);
+
+    // A line keeps its whole list — it is already that line's own people.
+    const lineFilter = resolveReviewFilter(company, territoriesInScope(company, BY_LINE), { line: "cns" });
+    assert.equal(lineFilter.level, "line");
+    const line = peopleForReviewFilter({ companyPeople: facts.people, filter: lineFilter, peopleByLine, scope: company });
+    assert.deepEqual(ids(line), ["DM-SAAD", "NSM-CNS", "REP-A", "REP-B", "SFE-1"], "every manager who rode on the line is in the line");
+    assert.equal(byId(line, "NSM-CNS")?.ridesLed, 10, "at line level nothing is cut");
+
+    // The whole company is the company's own list: one row per person, never once per line.
+    const companyFilter = resolveReviewFilter(company, territoriesInScope(company, BY_LINE), {});
+    assert.equal(companyFilter.level, "company");
+    const whole = peopleForReviewFilter({ companyPeople: facts.people, filter: companyFilter, peopleByLine, scope: company });
+    assert.equal(whole.filter((person) => person.hrId === "SFE-1").length, 1, "the SFE Manager rides on two lines and is ONE person");
+    assert.equal(byId(whole, "SFE-1")?.ridesLed, 6);
+    assert.equal(whole.length, 6);
+
+    // A region spanning two lines folds the cross-line rider into one row, rides added, no customers.
+    const regionFilter = resolveReviewFilter(company, territoriesInScope(company, BY_LINE), { region: "Alex-BHR" });
+    assert.deepEqual(regionFilter.lines, ["cns", "pedia"]);
+    const region = peopleForReviewFilter({ companyPeople: facts.people, filter: regionFilter, peopleByLine, scope: company });
+    assert.equal(region.filter((person) => person.hrId === "SFE-1").length, 1, "one row for the SFE Manager across both lines");
+    const sfe = byId(region, "SFE-1");
+    assert.deepEqual([sfe?.ridesLed, sfe?.repsCoached, sfe?.customers], [6, 2, 0]);
+
+    // A medical rep is himself and nobody else, whoever rode with him.
+    const repA: ReviewPortalScope = { hrId: "REP-A", kind: "rep", label: "Rep Alex", line: "cns", viewerName: "Rep Alex" };
+    const repRows = peopleForReviewFilter({
+      companyPeople: facts.people,
+      filter: resolveReviewFilter(repA, territoriesInScope(repA, BY_LINE), {}),
+      peopleByLine,
+      scope: repA,
+    });
+    assert.deepEqual(ids(repRows), ["REP-A"], "a rep's view never names the managers who rode with him");
+
+    // Both callers read the people through this one rule, and neither keeps the own-seat-only test.
+    const route = stripComments(readFileSync("app/api/business-review/pack/route.ts", "utf8"));
+    const page = stripComments(readFileSync(PAGE, "utf8"));
+    assert.ok(route.includes("peopleForReviewFilter({"), "the pack route must read its people through people-view.ts");
+    assert.ok(
+      page.includes("peopleForReviewFilter({") && page.includes("peopleInReviewView(["),
+      `${PAGE}: the narrowed view and the district view must both read their people through people-view.ts`,
+    );
+    for (const [label, source] of [["the pack route", route], ["the portal page", page]] as const) {
+      assert.ok(
+        !/\.people\.filter\(\(p\) => p\.dmSeatId != null/.test(source) &&
+          !/person\.dmSeatId != null && keptSeats\.has/.test(source) &&
+          !/p\.dmSeatId != null && keptSeats\.has\(p\.dmSeatId\)/.test(source),
+        `${label} still keeps a person by the seat of his own visits alone — the test that dropped every riding manager`,
+      );
+    }
   }
 }

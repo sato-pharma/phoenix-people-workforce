@@ -12,6 +12,8 @@
 //   Training Manager · HR Advisory · HR Operations → all Medical Reps + self only
 //   Regional Manager                            → their full multi-level hierarchy + self
 //   National Sales Manager · Product Manager · Group Product Manager · Marketing Manager → their line + self
+//     (the three Marketing-department roles see their line's field force BELOW them across
+//     departments — owner, 2026-10-20; see MARKETING_LINE_360_ROLES and its downward reach)
 //   District Manager · Manager                  → their direct team + self
 //   Medical Rep · everyone else                 → self only
 //
@@ -24,12 +26,13 @@
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
-import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
+import { type Employee360RoleCategory, resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
 import { canonicalHrIdKey, hrIdsMatch } from "@/lib/hr-id";
 import {
   isWithinManagerHierarchy,
   lineScopeIncludesEmployee,
   sameWorkforceDepartment,
+  sameWorkforceLine,
   type SeatContinuitySubject,
 } from "@/lib/workforce/hierarchy-resolver";
 
@@ -46,17 +49,22 @@ const MEDICAL_REP_ONLY_360_ROLES = new Set<PhoenixRole>([
 ]);
 
 /**
- * Employees removed from Employee 360 entirely (owner-requested, 2026-07-30).
+ * Employees removed from Employee 360 entirely — a per-person business decision, not a role rule.
  *
- * Nobody may open these reports — not the whole-company roles, not their own manager, and not the
- * person themselves. This is a per-person business decision, not a role rule, so it is keyed by
- * HR_ID (same shape as TALENT_ACQUISITION_SALARY_REDACTED_HR_IDS in src/lib/auth/permissions.ts).
- * Compared through canonicalHrIdKey so "PD-0001" and "PD0001" both match.
+ * Nobody may open a listed person's report — not the whole-company roles, not their own manager, and
+ * not the person themselves. Keyed by HR_ID (same shape as TALENT_ACQUISITION_SALARY_REDACTED_HR_IDS
+ * in src/lib/auth/permissions.ts) and compared through canonicalHrIdKey, so "AB-0001" and "AB0001"
+ * both match.
  *
- * PD-0001 — Regional Manager (owner-requested removal).
+ * EMPTY since the owner reversed the only entry (owner, 2026-10-20: "bring him back but do not show
+ * empty data, tailor the report on him"). The Regional Sales Manager listed here on 2026-07-30 is a
+ * 360 subject again, and his report is tailored to a regional manager in
+ * planEmployee360Sections (src/lib/employee-360/report-sections.ts). The mechanism stays so a future
+ * per-person removal is one line; never re-add him without the owner's word.
  */
+const EMPLOYEE_360_EXCLUDED_SOURCE_HR_IDS: readonly string[] = [];
 const EMPLOYEE_360_EXCLUDED_HR_IDS: ReadonlySet<string> = new Set(
-  ["PD-0001"].map((hrId) => canonicalHrIdKey(hrId)).filter((key): key is string => Boolean(key)),
+  EMPLOYEE_360_EXCLUDED_SOURCE_HR_IDS.map((hrId) => canonicalHrIdKey(hrId)).filter((key): key is string => Boolean(key)),
 );
 
 /** True when this person is excluded from Employee 360 for every viewer, including themselves. */
@@ -122,6 +130,51 @@ const LINE_SCOPED_ROLES = new Set<PhoenixRole>([
   "Marketing Manager",
 ]);
 
+/**
+ * The line-scoped viewers who sit in the MARKETING department while the line they oversee is
+ * worked by the SALES field force. Owner, 2026-10-20: "every single role that is applicable to
+ * appear in a module — find it and show it." The department-safe line rule (same line AND same
+ * department) left these three with no medical rep, district manager or regional manager at all,
+ * because none of them is in Marketing. For them, and in Employee 360 only, a FIELD-FORCE subject on
+ * their line(s) is admitted whatever its department. A non-field person (an office role that shares
+ * the line) still needs the same department, so this widens to the field force and nowhere else.
+ * The shared `lineScopeIncludesEmployee` stays department-safe for every other module.
+ */
+const MARKETING_LINE_360_ROLES = new Set<PhoenixRole>([
+  "Product Manager",
+  "Group Product Manager",
+  "Marketing Manager",
+]);
+
+/**
+ * How far DOWN the field force each marketing viewer's department waiver reaches: strictly below his
+ * own rung on the seat ladder (Product Manager 2, Group Product Manager 3, as SEAT_RANK in
+ * src/lib/crm/doctor-coverage-scope.ts ranks them), never level with it and never above it. That is
+ * the owner's downward rule (2026-09-04). Without this cut the waiver also admitted the line's
+ * National and Regional Sales Managers, whose reports carry their expense and outstation claims
+ * (risk review, 2026-10-20). The Marketing Manager is not on the ladder, so he is held to the Group
+ * Product Manager's reach, the rung beneath him. A subject is admitted only when EVERY title it
+ * carries (job and position) is in the reach, so a mixed record counts at its more senior title,
+ * the way buildDownwardCut ranks one.
+ */
+const MARKETING_LINE_360_FIELD_REACH: ReadonlyMap<PhoenixRole, ReadonlySet<Employee360RoleCategory>> = new Map<
+  PhoenixRole,
+  ReadonlySet<Employee360RoleCategory>
+>([
+  ["Product Manager", new Set<Employee360RoleCategory>(["medical-rep"])],
+  ["Group Product Manager", new Set<Employee360RoleCategory>(["medical-rep", "district-manager"])],
+  ["Marketing Manager", new Set<Employee360RoleCategory>(["medical-rep", "district-manager"])],
+]);
+
+function isWithinMarketingFieldReach(role: PhoenixRole, subject: Employee360SubjectRow): boolean {
+  const reach = MARKETING_LINE_360_FIELD_REACH.get(role);
+  if (!reach) return false;
+  const categories = [subject.jobTitle, subject.positionTitle]
+    .map((title) => resolveEmployee360RoleCategory(title))
+    .filter((category): category is Employee360RoleCategory => category != null);
+  return categories.length > 0 && categories.every((category) => reach.has(category));
+}
+
 /** Build the reusable scope lookups from the full directory for one viewer. */
 export async function buildEmployee360Scope(
   rows: EmployeeDirectoryRow[],
@@ -163,8 +216,9 @@ export function canViewEmployee360Subject(
 ): boolean {
   if (context.source === "guest" || context.scope === "none") return false;
 
-  // Owner-requested exclusion (2026-07-30): these people are removed from Employee 360 entirely —
-  // no viewer may open their report, INCLUDING themselves and the company-wide roles. Checked before
+  // Per-person exclusion: a listed person is removed from Employee 360 entirely — no viewer may open
+  // their report, INCLUDING themselves and the company-wide roles. The list is empty since the owner
+  // brought its only entry back (owner, 2026-10-20); the gate stays for the next one. Checked before
   // every other branch (above the system/CEO short-circuit and the self check) so nothing can
   // re-admit them. Because this is the single gate behind the admin index, the admin detail route,
   // the portal self report, the portal detail route AND resolveEmployee360VisibleRows, excluding
@@ -218,28 +272,40 @@ export function canViewEmployee360Subject(
 
   // NSM / PM / GPM / Marketing Manager: their line(s). A line_scope_override (e.g. a
   // Group PM or Marketing Manager spanning multiple lines) replaces the own-single-line
-  // rule with its explicit line set — always department-safe, so an override only ever
-  // widens WHICH lines are visible, never which department (mirrors the vacation
-  // module's LINE scope; see hierarchy-resolver.ts).
+  // rule with its explicit line set. For the NSM it stays department-safe, so an override
+  // only ever widens WHICH lines are visible, never which department (mirrors the vacation
+  // module's LINE scope; see hierarchy-resolver.ts). For the three Marketing-department roles
+  // the department test is waived for a field-force subject BELOW them (owner, 2026-10-20 —
+  // MARKETING_LINE_360_ROLES), or they would see no field force at all; the downward reach keeps
+  // the line's sales managers, and their expense claims, out of it.
   if (
     role === "National Sales Manager" ||
     role === "Product Manager" ||
     role === "Group Product Manager" ||
     role === "Marketing Manager"
   ) {
+    const fieldForceAcrossDepartments =
+      MARKETING_LINE_360_ROLES.has(role) && isEmployee360Subject(subject) && isWithinMarketingFieldReach(role, subject);
     if (scope.allowedLineKeys) {
       if (!scope.viewer) return false;
       const subjectLine = String(subject.lineName ?? "").trim().toLowerCase();
       return (
         subjectLine !== "" &&
         scope.allowedLineKeys.has(subjectLine) &&
-        sameWorkforceDepartment(
-          { departmentId: scope.viewer.departmentId, departmentName: scope.viewer.departmentName },
-          { departmentId: subject.departmentId, departmentName: subject.departmentName },
-        )
+        (fieldForceAcrossDepartments ||
+          sameWorkforceDepartment(
+            { departmentId: scope.viewer.departmentId, departmentName: scope.viewer.departmentName },
+            { departmentId: subject.departmentId, departmentName: subject.departmentName },
+          ))
       );
     }
     if (!scope.viewer) return false;
+    if (fieldForceAcrossDepartments) {
+      return sameWorkforceLine(
+        { lineId: scope.viewer.lineId, lineName: scope.viewer.lineName },
+        { lineId: subject.lineId, lineName: subject.lineName },
+      );
+    }
     return lineScopeIncludesEmployee(
       {
         lineId: scope.viewer.lineId,

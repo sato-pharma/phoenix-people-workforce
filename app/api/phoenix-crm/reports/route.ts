@@ -67,8 +67,8 @@ export const dynamic = "force-dynamic";
 //             the visits that promised to chase it. No sales figure. Managers only
 //   samples   samples and materials left, by month, by product and territory — a record, never a stock
 //             balance. Managers only
-// Filters: seatId, lineCode, from, to, month, includeTest (the Super Admin's only). Scope runs
-// downward only and is applied in the service.
+// Filters: seatId, lineCode, managerHrId (owner, 2026-10-20 — one of the viewer's managers), from, to, month,
+// includeTest (the Super Admin's only). Scope runs downward only and is applied in the service.
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
@@ -78,6 +78,9 @@ export async function GET(request: Request) {
     const filters: ReportFilterInput = {
       seatId: search.get("seatId"),
       lineCode: search.get("lineCode"),
+      // One of the viewer's managers (owner, 2026-10-20: "when filter by manager u find no manager"); refused in
+      // the service when he is not the viewer's.
+      managerHrId: search.get("managerHrId"),
       includeTest: search.get("includeTest"),
       from: search.get("from"),
       to: search.get("to"),

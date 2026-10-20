@@ -16,6 +16,9 @@ import {
   isFullOrganogramPinnedAccount,
   isLineScopedOrganogramRole,
 } from "../src/lib/reports/organogram.ts";
+import { FULL_ORGANOGRAM_PINNED_HR_IDS } from "../src/lib/reports/organogram-pinned-accounts.ts";
+import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * ONE account — HR_ID A-3 — sees the full company organogram; the rest of its rung does not.
@@ -29,6 +32,10 @@ import {
  * Manager). Every previous grant of this page named a ROLE (Finance Manager, SFE Manager, both HR
  * seats), which here would have handed the whole company chart to two people the owner did not
  * name. He was asked directly and chose her account alone.
+ *
+ * On 2026-10-20 the owner named a SECOND account: AB, Dr. Sahar Khalil, the R&D Manager the QPPV
+ * reports to, gets the same company chart, Head Office included (block 5). Still by HR_ID — A-14
+ * stays outside, and blocks 2 and 4 still hold for her.
  *
  * ## The shape that results, and why each half is deliberate
  *
@@ -100,7 +107,7 @@ export async function runA3FullOrganogramTests() {
   assert.equal(
     canAccessCompanyOrganogram(colleague),
     false,
-    "A-14 (Regulatory Affairs) must NOT reach the company chart — the owner named one account",
+    "A-14 (Regulatory Affairs) must NOT reach the company chart — the owner named accounts, not the rung",
   );
   assert.equal(
     isLineScopedOrganogramRole(colleague),
@@ -129,7 +136,7 @@ export async function runA3FullOrganogramTests() {
 
   // ── 4. system-navigation.ts must stay silent about this rung ─────────────────────────────────
   // Her sidebar row comes from showOrganogramTab alone. That file gates by ROLE and cannot express
-  // an HR_ID, so listing "Manager" there would offer A-14 and AB a link the page bounces.
+  // an HR_ID, so listing "Manager" there would offer A-14 a link the page bounces.
   // buildPermissionLookup, never a hand-rolled double loop: tests/permission-lookup-totality
   // ratchets the number of files that copy it, and a copy that drifts fails OPEN — every
   // unlisted key reads as false, so a link would silently vanish and the assertion would pass
@@ -144,7 +151,42 @@ export async function runA3FullOrganogramTests() {
     offered,
     false,
     'system-navigation.ts must not list "Manager" on the portal Organogram entry: it would be a ' +
-      "dead link for the two Managers who are not A-3, and A-3 already has her row from " +
-      "showOrganogramTab",
+      "dead link for the Manager who is not pinned (A-14), and the pinned accounts already have " +
+      "their row from showOrganogramTab",
+  );
+
+  // ── 5. AB, the R&D Manager the QPPV reports to: the same chart (owner, 2026-10-20) ────────────
+  const sahar = createAccessContext({ hrId: "AB", role: "Manager" });
+  assert.deepEqual([...FULL_ORGANOGRAM_PINNED_HR_IDS], ["A-3", "AB"], "exactly two pinned accounts — never the rung");
+  assert.equal(await canAccess(sahar, "organogram", "read"), true, "AB holds the rung's organogram:read");
+  assert.equal(canAccessCompanyOrganogram(sahar), true, "AB reads the chart in COMPANY mode, like the QPPV");
+  assert.equal(canAccessHeadOffice(sahar), true, "AB keeps the Head Office rows — the branch she and the QPPV sit in");
+  assert.equal(canViewOrganogramSensitiveFields(sahar), false, "AB gets the chart, never the pay behind it");
+  for (const spelling of ["AB", "ab", " ab "]) {
+    assert.equal(
+      isFullOrganogramPinnedAccount({ hrId: spelling, loginId: null }),
+      true,
+      `the AB pin must survive the spelling ${JSON.stringify(spelling)}`,
+    );
+  }
+  assert.equal(isFullOrganogramPinnedAccount({ hrId: null, loginId: "AB" }), true, "loginId is honoured for AB too");
+  const saharNav = resolveEmployeePortalNavVisibility("Manager", "Manager", null, null, "AB");
+  assert.equal(saharNav.showOrganogramTab, true, "AB is OFFERED the Organogram tab — the page and the link agree");
+  // The pin grants the organogram and nothing else: AB does not inherit the QPPV's other carve-outs.
+  const colleagueNav = resolveEmployeePortalNavVisibility("Manager", "Manager", null, null, "A-14");
+  for (const key of ["showExpenseActionTab", "showExpenseDashboardTab", "showIncentiveTab", "showMyPerformanceTab"] as const) {
+    assert.equal(saharNav[key], colleagueNav[key], `AB's ${key} follows the rung, not the QPPV's carve-out`);
+  }
+
+  // The gate and the link read ONE list, so they cannot drift apart.
+  const organogramCode = stripComments(readFileSync("src/lib/reports/organogram.ts", "utf8"));
+  const navigationCode = stripComments(readFileSync("src/lib/employee-portal/navigation.ts", "utf8"));
+  assert.ok(
+    organogramCode.includes('from "@/lib/reports/organogram-pinned-accounts"'),
+    "the two organogram gates read the shared pinned list",
+  );
+  assert.ok(
+    /showOrganogramTab:\s*isFullOrganogramPinnedHrId\(viewerHrId\)/.test(navigationCode),
+    "the portal Organogram link reads the same shared pinned list",
   );
 }

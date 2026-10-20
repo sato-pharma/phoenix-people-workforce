@@ -23,6 +23,8 @@ import { queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { managerVisitWhereLines } from "@/lib/phoenix-crm/manager-visit-detail";
+import { loadManagerOwnVisitRows } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import {
   PHOENIX_VISIT_DETAIL_COLUMNS,
   pickPhoenixVisitDetailRow,
@@ -33,6 +35,7 @@ import {
   cairoWallClockIso,
   type FieldActivityCheckinRow,
   type FieldActivityLeaveRow,
+  type FieldActivityOwnVisitRow,
   type FieldActivityReport,
   type FieldActivityPunchRow,
   type FieldActivitySubject,
@@ -341,11 +344,34 @@ export async function loadFieldActivityReport(input: {
       .filter((row) => (row.status ?? "").toLowerCase() === "approved");
   }
 
+  // 🔴 HIS OWN SINGLE VISITS, ON HIS OWN DAY (owner, 2026-10-20, multiple choice: "Show, keep out of reps — his own
+  // visits appear under his name in the Visit Report and the Field Activity day, never in a rep's totals. Still no
+  // GPS or photo required"). Read through `manager-plan-readers.ts`, the ONE door out of their table, for the subject
+  // alone — the person this report's own access already admitted — and handed to the model as display rows: listed
+  // on the day, added to no count. Nobody but a manager has any, so a rep's report reads nothing here.
+  const ownVisits: FieldActivityOwnVisitRow[] = (
+    await loadManagerOwnVisitRows({ end: toIso.slice(0, 10), managerHrIds: [employee.hrId], start: fromIso.slice(0, 10) })
+  ).map((own) => ({
+    comment: own.comment,
+    customerName: own.customerName,
+    date: own.date,
+    grade: own.grade,
+    half: own.bucket === "PM" ? "PM" : "AM",
+    inVacantTerritory: own.inVacantTerritory,
+    // A REAL instant, converted once here to the Cairo wall clock every other clock on this report speaks in.
+    loggedAt: cairoWallClockIso(own.loggedAt),
+    planned: own.planned,
+    products: own.products,
+    speciality: own.speciality,
+    where: managerVisitWhereLines(own).join(", ") || null,
+  }));
+
   return buildFieldActivityReport({
     subject,
     fromIso,
     toIso,
     visits,
+    ownVisits,
     checkins,
     partnerVisits,
     trips,

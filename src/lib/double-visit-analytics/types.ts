@@ -141,6 +141,12 @@ export type DoubleVisitManagerSummary = {
   role: string | null;
   roleCode: DoubleVisitRoleCode | null;
   teamMrCount: number | null;
+  /**
+   * The HR ids behind `teamMrCount` — every active medical rep anywhere beneath a DSM/RM/NSM — so the
+   * manager profile's "not visited" list names the same team the coverage figure counts, not only his
+   * direct reports (owner, 2026-10-20). Null exactly when `teamMrCount` is.
+   */
+  teamMrHrIds?: string[] | null;
   totalDvs: number;
 };
 
@@ -189,6 +195,12 @@ export type DoubleVisitIdleManager = {
   name: string;
   role: string;
   roleCode: DoubleVisitRoleCode;
+  /**
+   * Active medical reps anywhere beneath a DSM/RM/NSM — the same team the active summaries count —
+   * so a manager with zero double visits reads as every one of them neglected, not as a blank.
+   * Null for a role with no field team (owner, 2026-10-20).
+   */
+  teamMrCount?: number | null;
 };
 
 export type DoubleVisitExecutiveSummary = {

@@ -181,6 +181,27 @@ export function managersInScope(index: OrgIndex, hrId: string | null | undefined
   return members;
 }
 
+/**
+ * The territories under one of the viewer's managers — the reports' "Manager" filter (owner, 2026-10-20: "when
+ * filter by manager u find no manager"). The line and territory filters could only ever reach a rep; this one
+ * reaches every manager the viewer reads, by the seats that manager holds.
+ *
+ * Null when the person is NOT one of the viewer's managers (`managersInScope`), so a filter is never wider than
+ * its viewer and never reaches upward. The answer can still name territories outside the viewer's scope when the
+ * manager also sits somewhere else — the caller always narrows its own territories with it, never the reverse.
+ */
+export function territoriesUnderManager(
+  index: OrgIndex,
+  viewerHrId: string | null | undefined,
+  basis: ScopeBasis,
+  managerHrId: string | null | undefined,
+): Set<string> | null {
+  const key = personKey(managerHrId);
+  if (!key || !managersInScope(index, viewerHrId, basis).some((member) => member.hrId === key)) return null;
+  const held = heldManagerSeats(index, key).map((seat) => seat.seatId);
+  return new Set(territoriesBelow(index, held).map((seat) => seat.seatId));
+}
+
 export type VisitParticipants = {
   repHrId: string | null;
   managerHrId: string | null;

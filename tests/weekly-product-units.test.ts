@@ -445,7 +445,11 @@ export function runWeeklyProductUnitsTests() {
 
   const route = readSource("../app/api/employee-portals/weekly-sales/product-units/route.ts");
   assert.match(route, /assertPermission\(access, "sales", "read"\)/, "the route enforces the permission server-side");
-  assert.match(route, /isPortalWeeklyRole\(access\.role\)/, "and the same role list the dashboard feed uses");
+  assert.match(
+    route,
+    /if \(!mayReadManagersWeeklySales\(access\.role\)\)/,
+    "and the same role gate the dashboard feed uses — the one shared predicate (owner, 2026-10-20)",
+  );
   assert.doesNotMatch(route, /accessScope|regionCodes|lineCodes/, "the query carries the month window and nothing that could widen scope");
 
   // ── 5. the screen: one declared scroll box, shared ─────────────────────────────────────────

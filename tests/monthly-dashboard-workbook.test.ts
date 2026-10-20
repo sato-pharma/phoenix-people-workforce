@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import ExcelJS from "exceljs";
 
@@ -6,7 +7,9 @@ import {
   buildMonthlySalesDashboardWorkbook,
   describeMonthlyDashboardFilters,
 } from "../src/lib/sales/monthly-dashboard-workbook.ts";
+import { salesManagerFilterOptions } from "../src/lib/sales/service.ts";
 import type { SalesDashboardData } from "../src/lib/sales/types.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 const META = {
   exportedByName: "A-9",
@@ -123,6 +126,40 @@ export async function runMonthlyDashboardWorkbookTests() {
   assert.match(describeMonthlyDashboardFilters({ line: "Pedia", territory: "Cairo" }), /Line: Pedia/);
   assert.match(describeMonthlyDashboardFilters({ line: "Pedia", territory: "Cairo" }), /Territory: Cairo/);
   assert.match(describeMonthlyDashboardFilters({}), /No filters applied/);
+
+  // The Manager filter shows NAMES, never "DSM [B-12]" (owner, 2026-10-20). Its value stays the key
+  // the server filters on, so a chosen name still narrows the same rows.
+  const managerFilter = salesManagerFilterOptions(
+    [
+      { employeeHrId: "M-1", employeeLookupKey: null, employeeName: "Rep One", line: "CNS", managerHrId: "B-12" },
+      { employeeHrId: "M-2", employeeLookupKey: null, employeeName: "Rep Two", line: "CNS", managerHrId: "B-12" },
+      { employeeHrId: "M-3", employeeLookupKey: null, employeeName: "Rep Three", line: "Pedia", managerHrId: "B-13" },
+      { employeeHrId: "M-4", employeeLookupKey: null, employeeName: "Rep Four", line: "Pedia", managerHrId: null },
+    ],
+    new Map([
+      ["b-12", "Saad Salama"],
+      ["b-13", "Amr Adel"],
+    ]),
+  );
+  assert.deepEqual(
+    managerFilter.managers,
+    ["DSM [B-13]", "DSM [B-12]", "Unassigned DSM"],
+    "each manager is offered once, under the key the filter matches on, ordered by the name the user reads",
+  );
+  assert.deepEqual(
+    managerFilter.managerLabels,
+    { "DSM [B-12]": "Saad Salama", "DSM [B-13]": "Amr Adel", "Unassigned DSM": "Unassigned DSM" },
+    "every manager option is labelled with his name, never his HR code",
+  );
+  const describedManager = describeMonthlyDashboardFilters({ manager: "DSM [B-12]" }, managerFilter.managerLabels);
+  assert.match(describedManager, /Manager: Saad Salama/, "the export's cover names the chosen manager");
+  assert.doesNotMatch(describedManager, /B-12/, "the export's cover never prints the manager's HR code");
+  const dashboardUi = stripComments(readFileSync("src/components/sales/monthly-sales-dashboard-impl.tsx", "utf8"));
+  assert.match(
+    dashboardUi,
+    /options=\{options\.managers\}\s+optionLabels=\{options\.managerLabels\}/,
+    "the Manager dropdown must print the names the server sends beside the keys",
+  );
 
   const buffer = await buildMonthlySalesDashboardWorkbook({
     data: fixture(),

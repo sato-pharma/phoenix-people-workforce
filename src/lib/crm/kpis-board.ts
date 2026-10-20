@@ -56,6 +56,15 @@
 // SCOPE IS THE SECURITY BOUNDARY. Every row is filtered through
 // getDoctorCoverageScope before it is returned — a District Manager sees his own
 // reps and nobody else's. The nav config hiding a link is UX only.
+//
+// MANAGER ROWS (owner, 2026-10-20: "add manager row and every dm kpis is
+// calculated based on his reps averag and nsm based on dsms av and so on"). The
+// rep rows are still medical reps only; each manager gets a row of his own in a
+// SEPARATE list, `managers`, whose every figure is the average of the rows
+// directly beneath him — see crm/kpis-manager-rows.ts. They are built from the
+// finished, scoped rep rows, so they reach no rep the viewer cannot already see,
+// and only for managers the viewer may see (himself and his scope down). Nothing
+// counted from `reps` — totals, podium, facets, bands — ever reads them.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
@@ -65,6 +74,7 @@ import {
 } from "@/lib/crm/doctor-coverage-scope";
 import {
   applyKpiFilters,
+  applyKpiManagerFilters,
   buildKpiFacets,
   COVERAGE_TARGET_FLOOR_PCT,
   EMPTY_KPI_FILTERS,
@@ -73,8 +83,10 @@ import {
   type KpiFilterState,
 } from "@/lib/crm/kpis-filters";
 import { kpiIndexOf, type KpiIndex } from "@/lib/crm/kpi-index";
+import { buildKpiManagerRows, type KpiManagerRow } from "@/lib/crm/kpis-manager-rows";
 import { keepMedicalRepsOnly } from "@/lib/crm/medical-rep";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { buildManagersAboveByHrId } from "@/lib/org/manager-filter";
 import { canonicalHrIdKey, normalizeHrIdForAccess } from "@/lib/hr-id";
 import { loadCallRateReport } from "@/lib/crm/call-rate-service";
 import { resolveKpiBoardAgents } from "@/lib/crm/kpi-board-agents";
@@ -184,6 +196,9 @@ export type KpiRepRow = {
   regionName: string | null;
   areaName: string | null;
   managerName: string | null;
+  /** Every manager ABOVE `managerName` on the org tree, nearest first — so the "Reports to" filter
+   * can find a rep under a Regional or National Sales Manager, not only under his district manager. */
+  managersAbove?: string[];
   jobTitle: string | null;
 
   // ── Call rate (the selected period) ───────────────────────────────────────
@@ -523,6 +538,15 @@ export type KpisBoard = {
   /** The rows AFTER the advanced filters. Every total and podium below is computed from these. */
   reps: KpiRepRow[];
   /**
+   * THE MANAGER ROWS (owner, 2026-10-20), after the same filters — a separate list, never mixed
+   * into `reps`, so no total, podium, facet or band on this board counts a manager. Each figure is
+   * the average of the rows directly beneath him (his medical reps for a District Manager, the
+   * managers reporting to him above that), built from the scoped rep rows BEFORE any filter, so a
+   * filter changes which managers are shown and never what they average. In tree order. See
+   * crm/kpis-manager-rows.ts.
+   */
+  managers: KpiManagerRow[];
+  /**
    * How many reps the viewer's SCOPE contains, before any filter narrowed it.
    *
    * Printed beside the filtered count so "12 of 73" is always on screen. A filtered board that says
@@ -798,6 +822,7 @@ export function joinKpiRows(input: {
     regionName: null,
     areaName: null,
     managerName: null,
+    managersAbove: [],
     jobTitle: null,
     workingDays,
     amVerified: 0,
@@ -929,6 +954,7 @@ export function joinKpiRows(input: {
       row.regionName = identity.regionName;
       row.areaName = identity.areaName;
       row.managerName = identity.managerName;
+      row.managersAbove = [...(identity.managersAbove ?? [])];
       row.jobTitle = identity.jobTitle;
       // The directory's display name is the nickname-aware one and is what the owner's
       // human-readable-names rule asks for; the CRM's agent name is the vendor's spelling. Prefer
@@ -959,6 +985,11 @@ export type KpiDirectoryEntry = {
   regionName: string | null;
   areaName: string | null;
   managerName: string | null;
+  /** The managers above `managerName`, nearest first. Optional so a fixture can leave it out. */
+  managersAbove?: readonly string[];
+  /** His manager's hr id — the link the manager rows climb (crm/kpis-manager-rows.ts). The join
+   * itself never reads it. */
+  managerHrId?: string | null;
   jobTitle: string | null;
 };
 
@@ -1091,6 +1122,7 @@ export async function getKpisBoard(input: {
     scopeLabel: "",
     scopeReason: null,
     reps: [],
+    managers: [],
     kpiReports: [],
     scopedReps: 0,
     noGpsFeedShown: 0,
@@ -1209,6 +1241,24 @@ export async function getKpisBoard(input: {
     ? 0
     : countCallRateWorkingDays(range.dateFrom, range.windowEnd, windowHolidays.dates);
 
+  // The whole reporting chain, walked by HR id over the full directory, so "Reports to" can offer a
+  // Regional or National Sales Manager and keep every rep beneath him (owner, 2026-10-20: "when you
+  // filter by manager you find no manager").
+  const managersAboveByHrId = buildManagersAboveByHrId(employees, canonicalHrIdKey);
+  // ONE mapping of the directory, read by the join (identity on each rep row) and by the manager
+  // rows (the org links they climb), so the two can never describe a person differently.
+  const directory: KpiDirectoryEntry[] = employees.map((employee) => ({
+    hrId: employee.hrId,
+    displayName: employee.displayName || employee.fullName || null,
+    lineName: employee.lineName?.trim() || null,
+    regionName: employee.regionName?.trim() || null,
+    areaName: employee.areaName?.trim() || null,
+    managerName: employee.managerName?.trim() || null,
+    managersAbove: managersAboveByHrId.get(canonicalHrIdKey(employee.hrId) ?? "") ?? [],
+    managerHrId: employee.managerHrId?.trim() || null,
+    jobTitle: employee.jobTitle?.trim() || null,
+  }));
+
   const allInScope = joinKpiRows({
     callRates: callRate.reps,
     docLists: docList.reps,
@@ -1218,24 +1268,18 @@ export async function getKpisBoard(input: {
     pmTarget: PM_CALL_RATE_TARGET,
     pharmacyTarget: PHARMACY_CALL_RATE_TARGET,
     basis: callRate.basis ?? "verified",
-    directory: employees.map((employee) => ({
-      hrId: employee.hrId,
-      displayName: employee.displayName || employee.fullName || null,
-      lineName: employee.lineName?.trim() || null,
-      regionName: employee.regionName?.trim() || null,
-      areaName: employee.areaName?.trim() || null,
-      managerName: employee.managerName?.trim() || null,
-      jobTitle: employee.jobTitle?.trim() || null,
-    })),
+    directory,
   });
 
-  // MEDICAL REPS ONLY — owner, 2026-09-03. This runs BEFORE the facets and the totals, so the
-  // whole page describes one population: 63 of the 70 rows in scope that September, with 6 district
-  // sales managers and 1 product manager dropped. A manager carries no doctor plan of his own, so
-  // he scores "No plan" on two of the three measures and pulls the team averages toward a number
-  // that describes nobody. ONE rule decides this for every CRM board — crm/medical-rep.ts, which
-  // Reps Plans reaches through its seat-aware arm and this board through the title arm, because the
-  // seat model never enters here.
+  // MEDICAL REPS ONLY — owner, 2026-09-03 — for the REP rows. This runs BEFORE the facets and the
+  // totals, so the whole page describes one population: 63 of the 70 rows in scope that September,
+  // with 6 district sales managers and 1 product manager dropped. A manager carries no doctor plan of
+  // his own, so as a rep row he scores "No plan" on two of the three measures and pulls the team
+  // averages toward a number that describes nobody. ONE rule decides this for every CRM board —
+  // crm/medical-rep.ts, which Reps Plans reaches through its seat-aware arm and this board through
+  // the title arm, because the seat model never enters here. Managers come back on 2026-10-20 as
+  // rows of a different kind — the averages of the rows beneath them, in `managers` below — and
+  // never as rep rows, so this narrowing and everything counted from it stand unchanged.
   const scopedReps = keepMedicalRepsOnly(allInScope);
 
   // PHASE 6. Restamped BEFORE the facets, filters, podium and totals, so every one of them reads the
@@ -1270,12 +1314,30 @@ export async function getKpisBoard(input: {
     }
   }
 
+  // THE MANAGER ROWS (owner, 2026-10-20: "add manager row and every dm kpis is calculated based on
+  // his reps averag and nsm based on dsms av and so on"). Built HERE, after the medical-reps rule and
+  // the Phoenix restamp, so a manager averages the very numbers his reps' rows print — and from
+  // `scopedReps`, before any filter, so a filter decides which managers are shown, never what they
+  // average. Two gates, both narrowing: only reps the scope already let through are averaged, and a
+  // manager gets a row only when the viewer may see him — anyone inside his scope, or himself. The
+  // downward rule (owner, 2026-09-04: "you see yourself and your scope down") keeps a viewer's own
+  // manager off his board, and that manager's row could only have averaged part of his team anyway.
+  const viewerKey = normalizeHrIdForAccess(input.access.hrId);
+  const scopedManagers = buildKpiManagerRows({
+    reps: scopedReps,
+    directory,
+    canSee: (hrId) =>
+      isAgentInScope(scope, hrId) || (viewerKey != null && normalizeHrIdForAccess(hrId) === viewerKey),
+  });
+
   // Facets are built from the SCOPED rows and the filters applied after, in that order. Building
   // them from the filtered rows instead would make every facet collapse to whatever is already
   // selected — pick "Pedia" and Line would then offer only Pedia, with no way back except editing
   // the URL by hand.
   const facets = buildKpiFacets(scopedReps);
   const reps = applyKpiFilters(scopedReps, filters);
+  // The same filter state, read the way a manager row can answer it — see applyKpiManagerFilters.
+  const managers = applyKpiManagerFilters(scopedManagers, filters);
 
   // THE COVERAGE TAB'S DOCTOR LISTS, for one rep. Chosen from `reps` — after the scope gate AND the
   // filters — so a URL can only ever open a rep who is already on screen. Read from whichever rules
@@ -1367,6 +1429,7 @@ export async function getKpisBoard(input: {
     isCurrentMonth: docList.isCurrentMonth,
     scopeLabel: scope.kind === "company" ? scope.label : scope.label,
     reps,
+    managers,
     coverageDetail,
     kpiReports,
     scopedReps: scopedReps.length,

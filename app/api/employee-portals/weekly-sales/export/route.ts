@@ -8,7 +8,7 @@ import {
 } from "@/lib/sales/weekly/portal-weekly-export";
 import {
   getPortalWeeklyDashboard,
-  isPortalWeeklyRole,
+  mayReadManagersWeeklySales,
   toPortalWeeklyScopeView,
   type PortalWeeklyFilters,
 } from "@/lib/sales/weekly/portal-weekly-dashboard";
@@ -39,10 +39,9 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "read");
-    // Company executives export from the admin Field Sales pages — same session-side
-    // scope resolution as the dashboard feed (CEO / Super Admin ⇒ full COMPANY tier).
-    const isCompanyExecutive = access.role === "CEO" || access.role === "Super Admin";
-    if (!isPortalWeeklyRole(access.role) && !isCompanyExecutive) {
+    // The company-wide readers export from the admin Field Sales pages — same session-side
+    // scope resolution and the same gate as the dashboard feed.
+    if (!mayReadManagersWeeklySales(access.role)) {
       return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
     }
 
