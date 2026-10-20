@@ -27,6 +27,7 @@
 import { CRM_DOUBLE_VISIT_TYPE_CODES, queryOwnVisitsOfDepartedAgents, resolveVisitTime, scanVisitsForRangeCreditingPartners } from "@/lib/crm/reads";
 import { isPharmacyVisitRow, visitCountBucket, type VisitCountBucket } from "@/lib/crm/visit-count-buckets";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { parseListType, PHARMACY_LIST_TYPE } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import {
   buildFieldAbsenceCalendar,
   FIELD_ABSENCE_SOURCE_LABELS,
@@ -141,7 +142,9 @@ export function countOwnVisits(rows: ReadonlyArray<{ managerHrId: string; date: 
   for (const row of rows) {
     const key = personKey(row.managerHrId);
     if (!key || !row.date) continue;
-    const bucket: VisitCountBucket = row.bucket === "Pharmacy" ? "Pharmacies" : row.bucket === "AM" ? "AM" : "PM";
+    // The one list_type parser: a pharmacy is a third list, never swallowed into AM or PM.
+    const listType = parseListType(row.bucket);
+    const bucket: VisitCountBucket = listType === PHARMACY_LIST_TYPE ? "Pharmacies" : listType;
     out.push({ bucket, creditKeys: [key], date: row.date.slice(0, 10), own: true, time: cairoClockTime(row.loggedAt) });
   }
   return out;

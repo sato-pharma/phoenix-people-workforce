@@ -7,9 +7,9 @@ import {
 } from "@/lib/payroll/policy";
 
 /**
- * PAYMENT MODE AND PAYROLL ELIGIBLE STAY WITH THE HR MANAGER. The salary-blind HR Operations
- * Specialist (isSalaryBlindRole, role key "HR Administration") edits bank name and bank account,
- * and never these two.
+ * PAYMENT MODE AND PAYROLL ELIGIBLE STAY WITH THE HR MANAGER. The salary-blind seat (the one
+ * isSalaryBlindRole answers true for — the HR Operations Specialist) edits bank name and bank
+ * account, and never these two.
  *
  * Owner, 2026-10-20: "can change bank account but never a paymode". Payroll eligible decides
  * whether the person is paid at all, so it is held the same way — and so is EMPLOYMENT STATUS,
