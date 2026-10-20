@@ -92,6 +92,7 @@ function PlaceButton({
 export function PlaceTabStrip({
   area,
   byPlace,
+  loading = false,
   onChange,
   places,
   region,
@@ -100,6 +101,8 @@ export function PlaceTabStrip({
 }: {
   area: string | null;
   byPlace: WorkspaceCounts["byPlace"] | undefined;
+  /** The tab's regions are on their way — said as loading, never as a failure. */
+  loading?: boolean;
   onChange: (place: { region: string | null; area: string | null }) => void;
   places: WorkspacePlaces | null;
   region: string | null;
@@ -107,6 +110,9 @@ export function PlaceTabStrip({
   /** The whole tab's count, for "All regions". */
   tabCount: number | null;
 }) {
+  if (!places && loading) {
+    return <p className="text-xs font-semibold text-slate-500">Loading the regions…</p>;
+  }
   if (!places) {
     return <p className="text-xs font-semibold text-slate-500">The regions could not be loaded; the list shows every region.</p>;
   }

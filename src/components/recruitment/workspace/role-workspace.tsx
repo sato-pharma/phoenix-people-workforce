@@ -62,7 +62,7 @@ import { useWorkspaceActions } from "@/components/recruitment/workspace/use-work
 import { useWorkspaceCounts, useWorkspaceRows } from "@/components/recruitment/workspace/use-workspace-rows";
 import { filterQuery, pageQuery } from "@/components/recruitment/workspace/workspace-format";
 import { buildCvFolderTree, type CvFolderNode, type CvFolderRow } from "@/lib/recruitment/cv-folder-tree";
-import { receivedRangeProblem, type WorkspaceFilters } from "@/lib/recruitment/workspace/filters";
+import { activeFilterCount, emptyWorkspaceFilters, receivedRangeProblem, type WorkspaceFilters } from "@/lib/recruitment/workspace/filters";
 import {
   FOLDERS_TAB,
   NEEDS_PLACING,
@@ -129,7 +129,12 @@ function typingInField(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
   if (!element) return false;
   const tag = element.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || element.isContentEditable;
+  // A tick box or a radio holds no text: a row's tick must not swallow J, K or S until the next click.
+  if (tag === "INPUT") {
+    const type = (element as HTMLInputElement).type;
+    return type !== "checkbox" && type !== "radio";
+  }
+  return tag === "TEXTAREA" || tag === "SELECT" || element.isContentEditable;
 }
 
 /** What scrolls the page this element sits in: its nearest scrolling ancestor, else the document. */
@@ -165,6 +170,8 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
   const [pinned, setPinned] = useState(true);
   const [chrome, setChrome] = useState(0);
   const [headerHeight, setHeaderHeight] = useState(0);
+  // When the page was opened: an EMPTY list still asks for arrivals since then (it has no newest CV to ask from).
+  const [loadedAt] = useState(() => new Date().toISOString());
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
@@ -224,6 +231,35 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
     }
   }, [problem]);
 
+  // The opened CV can sit OFF the list (a link past page 1, a managers' folder, a filter that dropped
+  // it): it is drawn from `extraRow`, so every decision patches and restores that copy too. Otherwise
+  // the pane keeps the old status and Undo, holding no "before", reverts nothing.
+  const extraRef = useRef<WorkspaceRow | null>(props.initialOpenedRow);
+  const setExtra = useCallback((row: WorkspaceRow | null) => {
+    extraRef.current = row;
+    setExtraRow(row);
+  }, []);
+  const actionRows = useMemo(
+    () => ({
+      ...rows,
+      patchRows: (ids: readonly string[], patch: Partial<WorkspaceRow> | ((row: WorkspaceRow) => WorkspaceRow)) => {
+        const before = rows.patchRows(ids, patch);
+        const extra = extraRef.current;
+        if (!extra || !ids.includes(extra.id) || before.some((row) => row.id === extra.id)) return before;
+        setExtra(typeof patch === "function" ? patch(extra) : { ...extra, ...patch });
+        return [...before, extra];
+      },
+      restoreRows: (previous: readonly WorkspaceRow[]) => {
+        rows.restoreRows(previous);
+        const extra = extraRef.current;
+        const back = extra ? previous.find((row) => row.id === extra.id) : undefined;
+        if (back) setExtra(back);
+      },
+      rowById: (id: string) => rows.rowById(id) ?? (extraRef.current?.id === id ? extraRef.current : null),
+    }),
+    [rows, setExtra],
+  );
+
   const actions = useWorkspaceActions({
     archivedMode: () => filtersRef.current.archived,
     canWork: viewer.canWork,
@@ -231,7 +267,7 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
     foldersChanged: () => void refreshFolders(),
     problem,
     push: undo.push,
-    rows,
+    rows: actionRows,
   });
 
   // ── The opened CV ────────────────────────────────────────────────────────────────────────────────
@@ -247,17 +283,22 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
     window.history.replaceState(window.history.state, "", search ? `${path}?${search}` : path);
   }, []);
 
+  // Only the newest tab's answer may write: a quick tab-to-tab press must not leave an older reply on screen.
+  const metaSequence = useRef(0);
   const loadMeta = useCallback(
     async (nextTab: WorkspaceTabKey) => {
       if (nextTab === FOLDERS_TAB) return;
+      const mine = ++metaSequence.current;
       try {
         const data = await getJson(`/api/recruitment/workspace/meta?tab=${nextTab}`);
+        if (mine !== metaSequence.current) return;
         setMeta({
           answerFilters: Array.isArray(data.answerFilters) ? (data.answerFilters as WorkspaceAnswerFilter[]) : null,
           places: (data.places as WorkspacePlaces | undefined) ?? null,
           tab: nextTab,
         });
       } catch {
+        if (mine !== metaSequence.current) return;
         setMeta({ answerFilters: null, places: null, tab: nextTab });
       }
     },
@@ -270,7 +311,7 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
       const current = filtersRef.current;
       if (options.reload && current.candidate) {
         const visible = rows.rowById(current.candidate);
-        if (visible) setExtraRow(visible);
+        if (visible) setExtra(visible);
       }
       filtersRef.current = next;
       setFilters(next);
@@ -283,7 +324,7 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
       }
       if (options.meta && next.tab) void loadMeta(next.tab);
     },
-    [counts, loadMeta, rows, writeUrl],
+    [counts, loadMeta, rows, setExtra, writeUrl],
   );
 
   const changeTab = (nextTab: WorkspaceTabKey) => {
@@ -338,7 +379,7 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
           problem("That CV is not open to you, or it is no longer in Recruitment.");
           return;
         }
-        setExtraRow(found);
+        setExtra(found);
       } catch (error) {
         problem(error instanceof Error ? error.message : "That CV could not be opened.");
         return;
@@ -347,6 +388,8 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
     open(id);
   };
 
+  // Next pressed on the last loaded row: the next page is asked for, and the CV after it opens when it lands.
+  const openAfterLoad = useRef<number | null>(null);
   const step = (delta: 1 | -1) => {
     if (list.length === 0) return;
     if (openedIndex < 0) {
@@ -355,7 +398,10 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
     }
     const next = openedIndex + delta;
     if (next >= 0 && next < list.length) open(list[next].id);
-    else if (next >= list.length && rows.state.nextCursor) void rows.loadMore(query);
+    else if (next >= list.length && rows.state.nextCursor) {
+      openAfterLoad.current = next;
+      void rows.loadMore(query);
+    }
   };
 
   const tick = (id: string, checked: boolean, withShift: boolean) => {
@@ -397,6 +443,13 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [listLoading, loadMore, loadingMore, nextCursor, query]);
+  // The CV Next was pressed for opens once its page has landed (no deps: it reads the newest list).
+  useEffect(() => {
+    const at = openAfterLoad.current;
+    if (at === null || loadingMore) return;
+    openAfterLoad.current = null;
+    if (at < list.length) open(list[at].id);
+  });
 
   // ── The keyboard ─────────────────────────────────────────────────────────────────────────────────
   const keys = useRef<(event: KeyboardEvent) => void>(() => undefined);
@@ -437,9 +490,11 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
       }
       if (!openedRow || !viewer.canWork) return;
       if (key === "x") tick(openedRow.id, !selected.has(openedRow.id), false);
-      else if (key === "s" && openedRow.status !== "hired") void actions.decide([openedRow.id], "shortlisted");
-      else if (key === "b" && openedRow.status !== "hired") void actions.decide([openedRow.id], "backup");
-      else if (key === "r" && openedRow.status !== "hired") setPanel("reject");
+      // The keys obey the buttons' own rules: a press that would re-write the same status (and restart its
+      // overdue clock) is not made.
+      else if (key === "s" && openedRow.status !== "hired" && openedRow.status !== "shortlisted") void actions.decide([openedRow.id], "shortlisted");
+      else if (key === "b" && openedRow.status !== "hired" && openedRow.status !== "backup") void actions.decide([openedRow.id], "backup");
+      else if (key === "r" && openedRow.status !== "hired" && openedRow.status !== "rejected") setPanel("reject");
       else if (key === "m" && openedRow.status !== "hired") setPanel("manager");
     };
   });
@@ -479,13 +534,17 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
   const headTop = `calc(var(--ws-chrome, 0px) / var(--phx-scale-applied, 1) + ${pinned ? headerHeight : 0}px)`;
   const rowMargin = `calc(var(--ws-chrome, 0px) / var(--phx-scale-applied, 1) + ${pinned ? headerHeight : 0}px + 8px)`;
 
+  // Any filter at all, place included, so an empty list never blames the tab for what a filter hid.
+  const filtered = activeFilterCount(filters) > 0 || Boolean(filters.region || filters.area);
   const emptyMessage = searching
     ? `Nobody in your tabs matches “${filters.search}”. Search reads names, phone numbers, emails and the CV's own text.`
     : tab === NEEDS_PLACING
       ? "Every CV is in its tab. A CV lands here when the applicant's reply did not say which role — place it by hand or ask again on WhatsApp."
       : tab === FOLDERS_TAB
-        ? "Choose a folder on the left to see its CVs, or file CVs into a folder from any tab."
-        : filters.region || filters.area || Object.keys(filters.answers).length || filters.statuses.length
+        ? filters.folderIds.length
+          ? "This folder holds no CV yet. File CVs into it from any tab."
+          : "No CV is filed in a folder yet. File CVs into a folder from any tab."
+        : filtered
           ? "No CV here matches these filters. Clear a filter, or choose another region."
           : `No ${workspaceTabLabels[tab]} CVs yet. They arrive here as applicants answer the WhatsApp bot or the careers form.`;
 
@@ -518,7 +577,7 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
 
   const rowList = (
     <div className={candidateTableFrameClassName}>
-      <NewCvsBar key={query} onShow={() => void rows.reload(query)} query={query} since={newest} />
+      <NewCvsBar key={query} onShow={() => apply(filtersRef.current, { reload: true })} query={query} since={newest ?? loadedAt} />
       {rows.state.error ? (
         <div className="p-3">
           <WorkspaceNotice message={rows.state.error} onClose={rows.clearError} />
@@ -527,12 +586,19 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
       {rows.state.loading ? (
         <RowSkeleton />
       ) : list.length === 0 ? (
+        // A failed read is said by the notice above, never followed by "nothing here".
+        rows.state.error ? null : (
         <RecruitmentEmptyState
           action={
-            filters.search || Object.keys(filters.answers).length || filters.statuses.length ? (
+            activeFilterCount(filters) > 0 ? (
               <button
                 className="text-sm font-bold text-orange-700 underline-offset-2 hover:underline"
-                onClick={() => apply({ ...filtersRef.current, answers: {}, search: "", statuses: [] }, { reload: true })}
+                onClick={() =>
+                  apply(
+                    { ...emptyWorkspaceFilters(), area: filtersRef.current.area, region: filtersRef.current.region, tab: filtersRef.current.tab },
+                    { reload: true },
+                  )
+                }
                 type="button"
               >
                 Clear the search and filters
@@ -542,6 +608,7 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
           message={emptyMessage}
           title={searching ? "No match" : "Nothing here yet"}
         />
+        )
       ) : (
         <div style={{ "--ws-head-top": headTop, "--ws-row-margin": rowMargin } as CSSProperties}>
           <CandidateTable
@@ -623,13 +690,16 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
                   <Keyboard aria-hidden className="h-3.5 w-3.5" />
                   Shortcuts
                 </button>
-                <a
-                  className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-white/20"
-                  href={previousHref}
-                >
-                  <History aria-hidden className="h-3.5 w-3.5" />
-                  Previous workspace
-                </a>
+                {/* The previous workspace opens for the seats that work the pool; the CEO, who reads only, would bounce off it. */}
+                {viewer.canWork ? (
+                  <a
+                    className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-white/20"
+                    href={previousHref}
+                  >
+                    <History aria-hidden className="h-3.5 w-3.5" />
+                    Previous workspace
+                  </a>
+                ) : null}
               </>
             }
             badges={
@@ -677,6 +747,7 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
                 area={filters.area}
                 byPlace={counts.counts?.byPlace}
                 onChange={(place) => apply({ ...filtersRef.current, ...place }, { reload: true })}
+                loading={meta.tab !== tab}
                 places={meta.tab === tab ? meta.places : null}
                 region={filters.region}
                 tab={roleTab}

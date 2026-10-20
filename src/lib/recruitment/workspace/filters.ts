@@ -9,6 +9,7 @@
 // parse the same way. Days and times are CAIRO wall-clock, converted to UTC instants here.
 
 import {
+  FOLDERS_TAB,
   NEEDS_PLACING,
   isWorkspaceTabKey,
   type WorkspaceTabKey,
@@ -50,7 +51,11 @@ export type WorkspaceFilters = {
   /** An AU area code (Medical Rep only). */
   area: string | null;
   statuses: string[];
+  /** Statuses to HIDE (owner, 20 Oct 2026: "exclude shortlisted, exclude rejected"). Never also in `statuses`. */
+  excludeStatuses: string[];
   sources: CandidateSourceKey[];
+  /** Sources to hide. Never also in `sources`. */
+  excludeSources: CandidateSourceKey[];
   datePick: QuickDatePick | null;
   /** YYYY-MM-DD, Cairo. Ignored while a quick pick is set. */
   fromDate: string | null;
@@ -63,6 +68,8 @@ export type WorkspaceFilters = {
   answers: Record<string, string[]>;
   missing: boolean | null;
   callResults: CallResult[];
+  /** Latest call results to hide; a CV never called stays in. Never also in `callResults`. */
+  excludeCallResults: CallResult[];
   returned: boolean | null;
   overdue: boolean | null;
   folderIds: string[];
@@ -78,7 +85,9 @@ export function emptyWorkspaceFilters(): WorkspaceFilters {
     region: null,
     area: null,
     statuses: [],
+    excludeStatuses: [],
     sources: [],
+    excludeSources: [],
     datePick: null,
     fromDate: null,
     fromTime: null,
@@ -87,6 +96,7 @@ export function emptyWorkspaceFilters(): WorkspaceFilters {
     answers: {},
     missing: null,
     callResults: [],
+    excludeCallResults: [],
     returned: null,
     overdue: null,
     folderIds: [],
@@ -144,10 +154,13 @@ export function parseWorkspaceFilters(params: ParamsLike): WorkspaceFilters {
   filters.region = region && (region === "unspecified" || CODE_RE.test(region)) ? region : null;
   const area = params.get("area");
   filters.area = area && CODE_RE.test(area) ? area : null;
-  filters.statuses = list(params.get("status")).filter((s) => (candidateStatuses as readonly string[]).includes(s));
-  filters.sources = list(params.get("source")).filter((s): s is CandidateSourceKey =>
-    (candidateSources as readonly string[]).includes(s),
-  );
+  const isStatus = (s: string) => (candidateStatuses as readonly string[]).includes(s);
+  const isSource = (s: string): s is CandidateSourceKey => (candidateSources as readonly string[]).includes(s);
+  filters.statuses = list(params.get("status")).filter(isStatus);
+  // A value both kept and hidden is a contradiction no screen can produce; keeping wins.
+  filters.excludeStatuses = list(params.get("notStatus")).filter((s) => isStatus(s) && !filters.statuses.includes(s));
+  filters.sources = list(params.get("source")).filter(isSource);
+  filters.excludeSources = list(params.get("notSource")).filter((s): s is CandidateSourceKey => isSource(s) && !filters.sources.includes(s));
   const pick = params.get("date");
   filters.datePick = pick && (quickDatePicks as readonly string[]).includes(pick) ? (pick as QuickDatePick) : null;
   filters.fromDate = validDate(params.get("from"));
@@ -165,6 +178,7 @@ export function parseWorkspaceFilters(params: ParamsLike): WorkspaceFilters {
   }
   filters.missing = bool(params.get("missing"));
   filters.callResults = list(params.get("call")).filter(isCallResult);
+  filters.excludeCallResults = list(params.get("notCall")).filter((r): r is CallResult => isCallResult(r) && !filters.callResults.includes(r));
   filters.returned = bool(params.get("returned"));
   filters.overdue = bool(params.get("overdue"));
   filters.folderIds = list(params.get("folder")).filter((id) => isUuid(id));
@@ -183,7 +197,9 @@ export function serializeWorkspaceFilters(filters: WorkspaceFilters): URLSearchP
   if (filters.region) params.set("region", filters.region);
   if (filters.area) params.set("area", filters.area);
   if (filters.statuses.length) params.set("status", filters.statuses.join(LIST_SEP));
+  if (filters.excludeStatuses.length) params.set("notStatus", filters.excludeStatuses.join(LIST_SEP));
   if (filters.sources.length) params.set("source", filters.sources.join(LIST_SEP));
+  if (filters.excludeSources.length) params.set("notSource", filters.excludeSources.join(LIST_SEP));
   if (filters.datePick) params.set("date", filters.datePick);
   else {
     if (filters.fromDate) params.set("from", filters.fromDate);
@@ -197,6 +213,7 @@ export function serializeWorkspaceFilters(filters: WorkspaceFilters): URLSearchP
   }
   if (filters.missing !== null) params.set("missing", filters.missing ? "1" : "0");
   if (filters.callResults.length) params.set("call", filters.callResults.join(LIST_SEP));
+  if (filters.excludeCallResults.length) params.set("notCall", filters.excludeCallResults.join(LIST_SEP));
   if (filters.returned !== null) params.set("returned", filters.returned ? "1" : "0");
   if (filters.overdue !== null) params.set("overdue", filters.overdue ? "1" : "0");
   if (filters.folderIds.length) params.set("folder", filters.folderIds.join(LIST_SEP));
@@ -232,8 +249,12 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && b.every((item) => a.includes(item));
 }
 
-/** Which press the status filter matches — null when the statuses were ticked one by one into some other set. */
-export function decisionModeOf(statuses: readonly string[]): DecisionMode | null {
+/**
+ * Which press the status filter matches — null when the statuses were ticked one by one into some
+ * other set, or when any status is hidden (then "All" would claim every status while some are not shown).
+ */
+export function decisionModeOf(statuses: readonly string[], excludeStatuses: readonly string[] = []): DecisionMode | null {
+  if (excludeStatuses.length) return null;
   if (statuses.length === 0) return "all";
   if (sameSet(statuses, UNDECIDED_STATUSES)) return "undecided";
   if (sameSet(statuses, DECIDED_STATUSES)) return "decided";
@@ -251,15 +272,48 @@ export function decisionModeCount(mode: DecisionMode, byStatus: Partial<Record<s
   return keys.reduce((sum, key) => sum + (byStatus[key] ?? 0), 0);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Show only · Hide — one value, three states (owner, 20 Oct 2026: "a filter to exclude, for example,
+// exclude shortlisted, exclude rejected")
+// ---------------------------------------------------------------------------------------------
+//
+// Status, source and call result each hold two lists: the values to KEEP (show only these) and the
+// values to HIDE. A value is in at most one of them, so every press moves it out of the other list.
+
+export type KeepOrHide = "any" | "only" | "hide";
+
+export function keepOrHideOf<T extends string>(keep: readonly T[], hide: readonly T[], value: T): KeepOrHide {
+  return keep.includes(value) ? "only" : hide.includes(value) ? "hide" : "any";
+}
+
+/** "Show only" pressed on a value: toggles it in `keep` and takes it out of `hide`. */
+export function pressKeep<T extends string>(keep: readonly T[], hide: readonly T[], value: T): { keep: T[]; hide: T[] } {
+  return {
+    keep: keep.includes(value) ? keep.filter((item) => item !== value) : [...keep, value],
+    hide: hide.filter((item) => item !== value),
+  };
+}
+
+/** "Hide" pressed on a value: toggles it in `hide` and takes it out of `keep`. */
+export function pressHide<T extends string>(keep: readonly T[], hide: readonly T[], value: T): { keep: T[]; hide: T[] } {
+  return {
+    keep: keep.filter((item) => item !== value),
+    hide: hide.includes(value) ? hide.filter((item) => item !== value) : [...hide, value],
+  };
+}
+
 /** How many filters beyond tab/place/candidate are set — the "Clear filters (3)" count. */
 export function activeFilterCount(filters: WorkspaceFilters): number {
   let n = 0;
   if (filters.statuses.length) n += 1;
+  if (filters.excludeStatuses.length) n += 1;
   if (filters.sources.length) n += 1;
+  if (filters.excludeSources.length) n += 1;
   if (filters.datePick || filters.fromDate || filters.toDate) n += 1;
   n += Object.values(filters.answers).filter((v) => v.length).length;
   if (filters.missing !== null) n += 1;
   if (filters.callResults.length) n += 1;
+  if (filters.excludeCallResults.length) n += 1;
   if (filters.returned !== null) n += 1;
   if (filters.overdue !== null) n += 1;
   if (filters.folderIds.length) n += 1;
@@ -390,17 +444,23 @@ export function workspaceDbParams(
     if (filters.area) p.area = filters.area;
   }
   if (filters.statuses.length) p.statuses = filters.statuses;
+  if (filters.excludeStatuses.length) p.exclude_statuses = filters.excludeStatuses;
   if (filters.sources.length) p.sources = filters.sources;
+  if (filters.excludeSources.length) p.exclude_sources = filters.excludeSources;
   if (from) p.from = from;
   if (to) p.to = to;
   const answers = Object.fromEntries(Object.entries(filters.answers).filter(([, values]) => values.length));
   if (Object.keys(answers).length) p.answers = answers;
   if (filters.missing !== null) p.missing = filters.missing;
   if (filters.callResults.length) p.call_results = filters.callResults;
+  if (filters.excludeCallResults.length) p.exclude_call_results = filters.excludeCallResults;
   if (filters.returned !== null) p.returned = filters.returned;
   if (filters.overdue !== null) p.overdue = filters.overdue;
   const folderIds = options.folderIdsExpanded ?? filters.folderIds;
   if (folderIds.length) p.folder_ids = folderIds;
+  // The Folders tab sends no tab, so without a folder it would read the whole pool. It lists only what
+  // sits in a folder: the caller expands "every folder" into ids, and with no folder at all it is empty.
+  else if (tab === FOLDERS_TAB && !options.candidateIds) p.candidate_ids = [];
   if (filters.search) p.search = filters.search;
   if (options.searchIds?.length) p.search_ids = options.searchIds;
   if (options.candidateIds) p.candidate_ids = options.candidateIds;

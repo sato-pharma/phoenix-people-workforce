@@ -17,8 +17,9 @@
 import { ChevronRight, FolderClosed, FolderOpen, FolderPlus, Loader2, MoveRight, PenLine, Trash2, Users } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
-import { adminChipDepthClassName, adminPanelDepthClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
+import { adminChipDepthClassName } from "@/components/admin/admin-design-tokens";
 import { deleteRequest, patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
+import { RecruitmentEmptyState, RecruitmentPanel } from "@/components/recruitment/recruitment-premium";
 import { cvDangerButton, cvDarkButton, cvGhostButton } from "@/components/recruitment/workspace/cv-actions";
 import { errorText } from "@/components/recruitment/workspace/workspace-format";
 import { phxFieldClassName, phxSelectClassName } from "@/components/ui/form-tokens";
@@ -263,14 +264,9 @@ export function FoldersTree({
   );
 
   return (
-    <section className={`min-w-0 border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
-      <div className={cn("flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-white", adminPanelHeaderClassName)}>
-        <h2 className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.12em]">
-          <FolderOpen aria-hidden className="h-4 w-4 text-orange-300" />
-          Your folders
-          <span className="border border-orange-400/40 bg-orange-500/15 px-1.5 text-phx-xs font-black tabular-nums text-orange-100">{total}</span>
-        </h2>
-        {canManage ? (
+    <RecruitmentPanel
+      actions={
+        canManage ? (
           <button
             className="inline-flex items-center gap-1 border border-white/25 bg-white/10 px-2 py-1 text-xs font-bold text-white transition hover:bg-white/20"
             onClick={() => edit({ kind: "create", parentId: null })}
@@ -279,8 +275,12 @@ export function FoldersTree({
             <FolderPlus aria-hidden className="h-3.5 w-3.5" />
             New folder
           </button>
-        ) : null}
-      </div>
+        ) : undefined
+      }
+      count={total}
+      icon={<FolderOpen aria-hidden className="h-4 w-4" />}
+      title="Your folders"
+    >
       <div className="p-2">
         {problem ? (
           <p className="mb-2 break-words border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-bold text-rose-800" dir="auto" role="alert">
@@ -289,9 +289,11 @@ export function FoldersTree({
         ) : null}
         {formFor(null)}
         {tree.length === 0 ? (
-          <p className="px-2 py-4 text-sm font-medium text-slate-600">
-            {canManage ? "No folders yet. Make one with “New folder”, then file CVs into it from any tab." : "No folders yet."}
-          </p>
+          <RecruitmentEmptyState
+            icon={<FolderClosed aria-hidden className="h-5 w-5" />}
+            message={canManage ? "Make one with “New folder”, then file CVs into it from any tab." : "HR has not made a folder yet."}
+            title="No folders yet"
+          />
         ) : (
           renderNodes(tree)
         )}
@@ -301,7 +303,7 @@ export function FoldersTree({
           </button>
         ) : null}
       </div>
-    </section>
+    </RecruitmentPanel>
   );
 }
 
@@ -317,14 +319,11 @@ export function ManagersFolders({
 }) {
   const [open, setOpen] = useState<string | null>(null);
   return (
-    <section className={`min-w-0 border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
-      <div className={cn("flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-white", adminPanelHeaderClassName)}>
-        <h2 className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.12em]">
-          <Users aria-hidden className="h-4 w-4 text-orange-300" />
-          Managers&apos; folders
-        </h2>
-        <span className="text-xs font-semibold text-slate-300">Read only — what each manager has on their shelf</span>
-      </div>
+    <RecruitmentPanel
+      description="Read only — what each manager has on their shelf"
+      icon={<Users aria-hidden className="h-4 w-4" />}
+      title="Managers’ folders"
+    >
       {shelves === null ? (
         <div className="p-3">
           <button className={cvGhostButton} onClick={onLoad} type="button">
@@ -332,7 +331,11 @@ export function ManagersFolders({
           </button>
         </div>
       ) : shelves.length === 0 ? (
-        <p className="p-3 text-sm font-medium text-slate-600">No manager holds a folder with CVs in it yet.</p>
+        <RecruitmentEmptyState
+          icon={<Users aria-hidden className="h-5 w-5" />}
+          message="A CV sent to a manager lands on their shelf, filed by area."
+          title="No manager holds a CV yet"
+        />
       ) : (
         <ul className="divide-y divide-slate-100">
           {shelves.map((shelf) => {
@@ -386,6 +389,6 @@ export function ManagersFolders({
           })}
         </ul>
       )}
-    </section>
+    </RecruitmentPanel>
   );
 }

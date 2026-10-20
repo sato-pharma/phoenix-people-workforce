@@ -66,7 +66,8 @@ export function useUndoQueue(onProblem: (message: string) => void) {
       const id = nextId.current++;
       const entry: Entry = { ...action, id, state: "open" };
       if (action.kind === "pending") pending.current.set(id, entry);
-      setEntries((current) => [...current.slice(-3), entry]);
+      // Every entry is kept until its 10 seconds end (Undo looks it up here); only the newest four are drawn.
+      setEntries((current) => [...current, entry]);
       const timer = setTimeout(() => {
         timers.current.delete(id);
         if (action.kind !== "pending" || !action.commit) {
@@ -156,7 +157,7 @@ export function UndoToasts({
       className="pointer-events-none fixed bottom-4 right-4 z-[70] flex w-[min(26rem,calc(100vw-2rem))] flex-col gap-2"
     >
       <style>{"@keyframes phx-ws-undo{from{transform:scaleX(1)}to{transform:scaleX(0)}}"}</style>
-      {entries.map((entry) => (
+      {entries.slice(-4).map((entry) => (
         <div
           className={cn("pointer-events-auto relative border border-slate-800 bg-slate-950 text-white", adminPanelDepthClassName)}
           key={entry.id}
