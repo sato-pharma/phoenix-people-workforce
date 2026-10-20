@@ -15,14 +15,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { deleteJson, deleteRequest, getJson, patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
+import { deleteJson, deleteRequest, getJson, patchJson, postJson, putJson } from "@/components/recruitment/recruitment-fetch";
 import type { UndoAction, UndoBeacon } from "@/components/recruitment/workspace/undo-toast";
 import type { RemovedRow } from "@/components/recruitment/workspace/use-workspace-rows";
 import { answerEditKey, errorText } from "@/components/recruitment/workspace/workspace-format";
 import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
 import type { InterviewBooking } from "@/lib/recruitment/interview-calendar-types";
 import type { ArchivedMode } from "@/lib/recruitment/workspace/filters";
-import type { WorkspaceRoleTab } from "@/lib/recruitment/workspace/role-tabs";
+import { placingRoleLabel, placingShape, type PlacingInput } from "@/lib/recruitment/workspace/placing-rules";
+import { workspaceRoleTabLabels, type WorkspaceRoleTab } from "@/lib/recruitment/workspace/role-tabs";
 import type { WorkspaceAnswerChip, WorkspacePlacement, WorkspaceRow } from "@/lib/recruitment/workspace/types";
 import { callResultLabels, rejectionReasonLabels, type CallResult, type RejectionReason } from "@/lib/recruitment/workspace/vocabulary";
 
@@ -529,7 +530,75 @@ export function useWorkspaceActions({
     [countsSoon, push, rows],
   );
 
-  return { archive, askAgain, askAgainHold, booked, callResult, decide, fileInFolder, merge, place, reject, remove, saveAnswer, sendSorry, sendToManager };
+  /**
+   * "Place this candidate": HR's typed answers saved and the person filed, in one press. `leaves` is
+   * true on Needs placing — a placed person is no longer in that list, so the row goes, and Undo puts
+   * it back and takes the filing out again. The answers HR typed stay saved on Undo: they are true
+   * whichever tab the person sits in, and each carries its "added by HR" mark.
+   */
+  const placeWithAnswers = useCallback(
+    async (row: WorkspaceRow, input: PlacingInput, options: { leaves: boolean; editorName: string | null }) => {
+      const tab = placingShape(input.roleFamily).tab;
+      const hadTab = tab ? row.placements.some((placement) => placement.tab === tab) : true;
+      const previous = tab ? row.placements.find((placement) => placement.tab === tab) ?? null : null;
+      const data = await putJson(`${CANDIDATES}/${row.id}/answers`, input);
+      const placements = Array.isArray(data.placements) ? (data.placements as WorkspacePlacement[]) : row.placements;
+      const now = new Date().toISOString();
+      const mark = { at: now, hrId: "", name: options.editorName };
+      const typed: Record<string, string | null> = { ...input.answers };
+      if (input.roleFamily) typed.role = placingRoleLabel(input.roleFamily);
+      const removed = options.leaves ? rows.removeRows([row.id]) : [];
+      const before = options.leaves
+        ? []
+        : rows.patchRows([row.id], (current) => ({
+            ...current,
+            answers: current.answers.map((chip) =>
+              Object.prototype.hasOwnProperty.call(typed, chip.key)
+                ? { ...chip, addedByHr: typed[chip.key] === null ? null : mark, rawValue: typed[chip.key], value: typed[chip.key] }
+                : chip,
+            ),
+            placements,
+          }));
+      countsSoon();
+      push({
+        kind: "applied",
+        message: `Placed ${row.name}${tab ? ` · ${workspaceRoleTabLabels[tab]}` : ""}`,
+        restore: () => {
+          rows.reinsertRows(removed);
+          rows.restoreRows(before);
+          countsSoon();
+        },
+        revert: async () => {
+          if (!tab) return;
+          if (hadTab && previous) {
+            await patchJson(`${CANDIDATES}/${row.id}/placement`, { areaCode: previous.areaCode, regionCode: previous.regionCode, roleTab: previous.tab });
+          } else if (!hadTab) {
+            await patchJson(`${CANDIDATES}/${row.id}/placement`, { remove: true, roleTab: tab });
+          }
+        },
+      });
+      return placements;
+    },
+    [countsSoon, push, rows],
+  );
+
+  return {
+    archive,
+    askAgain,
+    askAgainHold,
+    booked,
+    callResult,
+    decide,
+    fileInFolder,
+    merge,
+    place,
+    placeWithAnswers,
+    reject,
+    remove,
+    saveAnswer,
+    sendSorry,
+    sendToManager,
+  };
 }
 
 export type WorkspaceActions = ReturnType<typeof useWorkspaceActions>;

@@ -8,7 +8,7 @@
 // role, region or area re-files the person (placed by `hr`), and the stored completeness follows.
 
 import { writeAuditLog } from "@/lib/admin/audit";
-import { candidateRoleFamilies, candidateRoleFamilyOrNull } from "@/lib/recruitment/candidate-role-family";
+import { candidateRoleFamilies, candidateRoleFamilyLabels, candidateRoleFamilyOrNull } from "@/lib/recruitment/candidate-role-family";
 import { getCandidate } from "@/lib/recruitment/candidates";
 import { mapCandidate, recruitmentDb, type CandidateDbRow } from "@/lib/recruitment/db";
 import type { Candidate } from "@/lib/recruitment/types";
@@ -26,15 +26,25 @@ export function answerMarkKey(editKey: string): string {
 }
 
 /**
- * The role family a typed role answer names: a family code as the workspace sends it, else the
- * family its words read as. Null when it names none.
+ * The role family a typed role answer names: a family code, or a family's own menu label exactly as
+ * the placing form saves it ("Medical Rep"), else the family its words read as. Null when it names none.
  */
 export function roleFamilyForTypedRole(value: string | null): string | null {
   const text = value?.trim() ?? "";
   if (!text) return null;
   if ((candidateRoleFamilies as readonly string[]).includes(text)) return text;
+  const folded = text.toLowerCase();
+  const byLabel = candidateRoleFamilies.find((family) => candidateRoleFamilyLabels[family].toLowerCase() === folded);
+  if (byLabel) return byLabel;
   return candidateRoleFamilyOrNull(text);
 }
+
+/**
+ * `refile: false` and `recompute: false` are for a caller saving several answers in one go (the
+ * placing form): it files the person and recomputes completeness ONCE, after the last answer, rather
+ * than once per answer.
+ */
+export type AnswerSaveOptions = { refile?: boolean; recompute?: boolean };
 
 /** Saves one edited answer on the candidate's record and returns the record. */
 export async function saveCandidateWhatsAppAnswer(
@@ -42,6 +52,7 @@ export async function saveCandidateWhatsAppAnswer(
   key: string,
   value: unknown,
   actor?: AnswerEditActor | null,
+  options: AnswerSaveOptions = {},
 ): Promise<Candidate> {
   const existing = await getCandidate(candidateId);
   if (!existing) throw new Error("Candidate not found.");
@@ -92,7 +103,7 @@ export async function saveCandidateWhatsAppAnswer(
   const row = data as CandidateDbRow;
 
   // Re-filed from the corrected answers — HR's filing, so the bot never moves it back.
-  if (key === "job_title" || key === "region" || key === "area") {
+  if (options.refile !== false && (key === "job_title" || key === "region" || key === "area")) {
     await placeFromAnswers({
       areaName: (row.preferred_area_name as string | null) ?? null,
       candidateId,
@@ -102,7 +113,7 @@ export async function saveCandidateWhatsAppAnswer(
       roleFamily: (row.declared_role_family as string | null) ?? null,
     });
   }
-  await recomputeCompleteness([candidateId]);
+  if (options.recompute !== false) await recomputeCompleteness([candidateId]);
 
   return mapCandidate(row);
 }

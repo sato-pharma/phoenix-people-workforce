@@ -823,12 +823,16 @@ export async function runRecruitmentScreeningPageTests() {
     "transform: scale does not reflow — it scales the picture and leaves the scroll box the wrong size",
   );
   // Fit only ever SHRINKS. A pane wider than the page would otherwise blow a PDF's raster up into a
-  // blurry one and silently change the modal, where the document already fitted.
+  // blurry one and silently change the modal, where the document already fitted. The arithmetic moved
+  // to `cv-fit-zoom.ts` on 2026-10-20, when the workspace's half-page CV began fitting page 1 DOWN as
+  // well as across; the cap at 1 is the same rule, and the viewer must fit through that one function.
+  const fitZoom = read("src/components/recruitment/cv-fit-zoom.ts");
   assert.match(
-    viewer,
-    /Math\.min\(1, paneWidth \/ naturalWidth\)/,
+    fitZoom,
+    /return clampZoom\(Math\.min\(1, across, down\)\);/,
     "fitting must never enlarge a document on its own — that is what the + button is for",
   );
+  assert.match(viewer, /\bcvFitZoom\(\{/, "the viewer fits through cvFitZoom, never a second copy of the arithmetic");
   // The PAGE element, not the container's scrollWidth. scrollWidth is the wrong number here and
   // misleadingly close to the right one: measured live, an 816px page in a 637px pane reported 727.
   // `.cv-text-page` joined the list on 2026-09-27: a Word 97-2003 .doc read as text is dressed at the

@@ -10,6 +10,10 @@
 //
 // The editor opens IN the chip's place, inside the same wrapping row, so it can never push the page
 // sideways the way a floating panel near the right edge does.
+//
+// `variant="cell"` is the same answer inside a cell of the candidate table, where the column head is
+// already the question: the value alone, in reading size, the "added by HR" mark under it, and the
+// same amber "Missing · add" and the same editor.
 
 import { Check, PenLine, Plus, X } from "lucide-react";
 import { useState } from "react";
@@ -28,6 +32,7 @@ export function AnswerChip({
   onSave,
   options,
   today,
+  variant = "chip",
 }: {
   canEdit: boolean;
   chip: WorkspaceAnswerChip;
@@ -36,6 +41,8 @@ export function AnswerChip({
   /** The question's options, when it is a choice; free text otherwise. */
   options?: readonly AnswerOption[];
   today: string;
+  /** "cell": the value alone, for a table cell whose column head names the question. */
+  variant?: "chip" | "cell";
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(chip.rawValue ?? "");
@@ -127,6 +134,47 @@ export function AnswerChip({
           </span>
         ) : null}
       </span>
+    );
+  }
+
+  const cell = variant === "cell";
+  const openEditor = (event: { stopPropagation: () => void }) => {
+    event.stopPropagation();
+    open();
+  };
+
+  if (cell) {
+    if (chip.value === null) {
+      const missingCell = "inline-flex max-w-full flex-wrap items-center gap-1 border border-dashed border-amber-400 bg-amber-50/70 px-1.5 py-0.5 text-xs font-bold text-amber-900";
+      return canEdit ? (
+        <button className={cn(missingCell, "transition hover:border-amber-600 hover:bg-amber-100")} onClick={openEditor} title={`Add the answer to “${chip.label}”`} type="button">
+          <Plus aria-hidden className="h-3 w-3" />
+          Missing · add
+        </button>
+      ) : (
+        <span className={missingCell}>Missing</span>
+      );
+    }
+    const byHrCell = chip.addedByHr;
+    const valueCell = (
+      <>
+        <span className="break-words text-sm font-semibold leading-5 text-slate-900" dir="auto">
+          {chip.value}
+          {canEdit ? <PenLine aria-hidden className="ml-1 inline h-3 w-3 text-slate-300 group-hover:text-orange-600" /> : null}
+        </span>
+        {byHrCell ? (
+          <span className="block text-phx-xs font-bold text-violet-700" title={byHrCell.name ?? undefined}>
+            {`added by HR${byHrCell.name ? ` · ${byHrCell.name}` : ""}${byHrCell.at ? ` · ${cairoDayLabel(byHrCell.at, today)}` : ""}`}
+          </span>
+        ) : null}
+      </>
+    );
+    return canEdit ? (
+      <button className="group block w-full text-left transition hover:text-orange-800" onClick={openEditor} title={`Edit “${chip.label}”`} type="button">
+        {valueCell}
+      </button>
+    ) : (
+      <span className="block">{valueCell}</span>
     );
   }
 
