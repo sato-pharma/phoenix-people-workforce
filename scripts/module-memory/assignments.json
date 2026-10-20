@@ -71,6 +71,7 @@
   "a-locked-closing-blocks-a-rollup-rebuild-on-an-unlocked-line": "sales-closing",
   "a-long-bash-heredoc-is-truncated-and-bash-blames-eof": "sales-closing",
   "a-mailbox-window-makes-a-series-look-younger-than-it-is": "sales-imports",
+  "a-main-build-step-can-be-cancelled-with-no-code-fault": "engineering",
   "a-main-only-check-makes-a-prs-green-meaningless": "engineering",
   "a-managers-own-visit-never-requires-gps-or-a-live-photo": "phoenix-crm",
   "a-manual-scheduled-task-run-leaves-no-trace": "sessions",
