@@ -466,7 +466,7 @@ export type RepVisitRow = RepVisitGroup & {
   key: string;
   territoryName: string;
   lineName: string | null;
-  /** The rep's name, or "Managers' own visits" for visits no rep was on. */
+  /** The rep's name; for visits no rep was on, the manager's name with "(own visits)", or "Managers' own visits" when none is recorded. */
   repName: string;
 };
 
@@ -533,16 +533,20 @@ export async function loadVisitsReport(viewer: PhoenixCrmViewer, raw: ReportFilt
   ]);
   const seatsById = new Map(chosen.seats.map((seat) => [seat.seatId, seat]));
   const { groups, totals } = groupVisitsByRep(asRows(data).filter((row) => seatsById.has(String(row.seat_id))));
-  const names = await loadPeopleNames(groups.map((group) => group.repHrId));
+  const names = await loadPeopleNames(groups.map((group) => group.repHrId ?? group.managerHrId));
   const rows = groups
     .map((group) => {
       const seat = seatsById.get(group.seatId) as OrgSeat;
       return {
         ...group,
-        key: `${group.seatId}|${group.repHrId ?? "managers"}`,
+        key: `${group.seatId}|${group.repHrId ?? "managers"}|${group.managerHrId ?? ""}`,
         territoryName: territoryName(seat),
         lineName: seat.lineName,
-        repName: group.repHrId ? nameOf(names, group.repHrId) : "Managers' own visits",
+        repName: group.repHrId
+          ? nameOf(names, group.repHrId)
+          : group.managerHrId
+            ? `${nameOf(names, group.managerHrId)} (own visits)`
+            : "Managers' own visits",
       };
     })
     .sort(

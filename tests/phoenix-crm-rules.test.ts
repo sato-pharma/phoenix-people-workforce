@@ -886,6 +886,23 @@ function runReportRuleTests() {
   assert.equal(rep.pm.visits, 17);
   assert.equal(visits.groups[2].pm.visits, 0, "a figure that is not a positive count reads 0");
 
+  // Managers' own visits split by NAME (owner, 2026-10-20): two managers on one territory are two groups,
+  // and a ride-along's manager never splits the rep's own row.
+  {
+    const own = groupVisitsByRep([
+      { seat_id: "R1", rep_hr_id: null, manager_hr_id: "M-1", visit_date: "2026-10-04", list_type: "PM", visits: 1 },
+      { seat_id: "R1", rep_hr_id: null, manager_hr_id: "M-2", visit_date: "2026-10-04", list_type: "PM", visits: 2 },
+      { seat_id: "R1", rep_hr_id: null, manager_hr_id: "M-1", visit_date: "2026-10-05", list_type: "PM", visits: 1 },
+      { seat_id: "R1", rep_hr_id: "T-101", manager_hr_id: "M-1", visit_date: "2026-10-04", list_type: "PM", visits: 4 },
+      { seat_id: "R1", rep_hr_id: "T-101", manager_hr_id: null, visit_date: "2026-10-05", list_type: "PM", visits: 3 },
+    ]);
+    assert.deepEqual(
+      own.groups.map((group) => [group.repHrId, group.managerHrId, group.pm.visits]),
+      [[null, "M-1", 2], [null, "M-2", 2], ["T-101", null, 7]],
+      "each manager's own visits are a group of their own; the rep's row ignores the manager on a ride-along",
+    );
+  }
+
   // ── Plan against actual ─────────────────────────────────────────────────────────────────────────
   const plan = groupPlanByTerritory([
     { seat_id: "R1", day: "2026-10-04", list_type: "PM", planned: 12, visited_planned: 9, missed: 3, unplanned: 2 },

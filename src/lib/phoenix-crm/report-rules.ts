@@ -197,6 +197,12 @@ export type RepVisitGroup = {
   seatId: string;
   /** Null for visits a manager entered on their own (no rep on the visit). */
   repHrId: string | null;
+  /**
+   * The manager who made these visits on their own — set ONLY where `repHrId` is null, so two managers
+   * on one territory are two groups and no longer one anonymous line. Null on every rep group: a
+   * ride-along stays on the rep it was made with.
+   */
+  managerHrId: string | null;
   days: RepVisitDay[];
   /** Days with at least one visit. */
   visitDays: number;
@@ -213,10 +219,11 @@ export function groupVisitsByRep(rows: ReadonlyArray<Row>): { groups: RepVisitGr
     const date = textOf(row.visit_date);
     if (!seatId || !date) continue;
     const repHrId = textOf(row.rep_hr_id);
-    const key = `${seatId}|${repHrId ?? ""}`;
+    const managerHrId = repHrId === null ? textOf(row.manager_hr_id) : null;
+    const key = `${seatId}|${repHrId ?? ""}|${managerHrId ?? ""}`;
     let group = groups.get(key);
     if (!group) {
-      group = { seatId, repHrId, days: [], visitDays: 0, am: emptyVisitCounts(), pm: emptyVisitCounts(), byDay: new Map() };
+      group = { seatId, repHrId, managerHrId, days: [], visitDays: 0, am: emptyVisitCounts(), pm: emptyVisitCounts(), byDay: new Map() };
       groups.set(key, group);
     }
     let day = group.byDay.get(date);

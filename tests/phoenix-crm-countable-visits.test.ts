@@ -430,5 +430,14 @@ export async function runPhoenixCrmCountableVisitsTests(): Promise<void> {
     }
   }
 
+  // ── The per-day report names a manager's own visits (owner, 2026-10-20) ───────────────────────
+  {
+    const body = functionBody(source("supabase/migrations/20261020052000_phoenix_crm_by_day_names_the_manager.sql"), "phoenix_crm_report_visits_by_day");
+    const own = "(case when v.rep_hr_id is null then v.manager_hr_id end)";
+    assert.equal(body.split(own).length - 1, 4, "both CTEs select and group by the manager, and only where no rep was on the visit");
+    assert.ok(body.includes("and w.manager_hr_id is not distinct from c.manager_hr_id"), "the waiting count joins on the manager too");
+    assert.ok(body.includes("from public.phoenix_crm_countable_visits v"), "still counted through the view");
+  }
+
   console.log("phoenix-crm countable visits: OK");
 }
