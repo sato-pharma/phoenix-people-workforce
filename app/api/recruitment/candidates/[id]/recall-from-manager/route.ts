@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import { recallCandidateFromManager } from "@/lib/recruitment/manager-recall";
 import {
@@ -26,6 +27,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "recruitment", "update");
     const { id } = await params;
+    await assertCandidateVisible(access, id);
     const body = await readJsonObject(request);
     const managerHrId = str(body.managerHrId) ?? "";
     if (!managerHrId) {

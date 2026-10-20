@@ -230,7 +230,7 @@ export async function runRecruitmentPageReadsTests() {
   }
 
   // ── 8 · the pages and the workspace use it ───────────────────────────────────────────────────────
-  for (const page of ["app/(admin)/recruitment/page.tsx", "app/employee-portals/recruitment/page.tsx"]) {
+  for (const page of ["app/(admin)/recruitment/previous/page.tsx", "app/employee-portals/recruitment/page.tsx"]) {
     const source = read(page);
     assert.ok(source.includes("await settleRecruitmentPage({"), `${page} settles its reads one by one`);
     assert.ok(!/Promise\.all\(\s*\[\s*getRecruitmentDashboard/.test(source), `${page} must not go back to one all-or-nothing Promise.all`);

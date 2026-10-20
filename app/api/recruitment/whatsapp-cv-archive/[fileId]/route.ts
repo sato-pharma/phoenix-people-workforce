@@ -28,7 +28,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ file
     if (!isUuid(fileId)) {
       return NextResponse.json({ error: "not_found", message: "File not found.", success: false }, { status: 404 });
     }
-    const file = await getWhatsAppCvArchiveFile(fileId);
+    // The Talent Acquisition fence (owner, 2026-10-20) rides in the viewer: an HR applicant's CV reads as not found.
+    const file = await getWhatsAppCvArchiveFile(fileId, { access });
     if (!file) {
       return NextResponse.json({ error: "not_found", message: "File not found.", success: false }, { status: 404 });
     }

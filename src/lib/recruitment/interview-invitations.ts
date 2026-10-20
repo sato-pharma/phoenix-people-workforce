@@ -96,21 +96,24 @@ async function candidateContact(booking: InterviewBooking): Promise<{ dial: stri
 }
 
 /** The interviewer: the mobile number and work e-mail in Employee Master. */
-async function interviewerContact(hrId: string): Promise<{ dial: string | null; contact: InvitationContact }> {
-  const { data, error } = await recruitmentDb().from("employees").select("hr_id,mobile_number,work_email").in("hr_id", hrIdLookupKeys(hrId)).limit(1);
+async function interviewerContact(hrId: string): Promise<{ dial: string | null; contact: InvitationContact; jobTitle: string | null }> {
+  const { data, error } = await recruitmentDb().from("employees").select("hr_id,mobile_number,work_email,job_title").in("hr_id", hrIdLookupKeys(hrId)).limit(1);
   if (error) throw error;
   const row = ((data ?? [])[0] ?? {}) as Record<string, unknown>;
   const dial = toWhatsAppDialNumber(textOrNull(row.mobile_number));
-  return { contact: contactFrom({ dial, email: textOrNull(row.work_email), source: "Employee Master" }), dial };
+  return { contact: contactFrom({ dial, email: textOrNull(row.work_email), source: "Employee Master" }), dial, jobTitle: textOrNull(row.job_title) };
 }
 
 // ── The plan ────────────────────────────────────────────────────────────────────────────────────
 
-function factsOf(booking: InterviewBooking): InvitationFacts {
+/** `interviewerTitle` is the lead interviewer's job title from Employee Master, for the candidate's line. */
+function factsOf(booking: InterviewBooking, interviewerTitle: string | null): InvitationFacts {
   return {
     candidateJobTitle: booking.candidateJobTitle,
     candidateName: booking.candidateName,
     dateKey: booking.dateKey,
+    interviewerName: booking.interviewerName,
+    interviewerTitle,
     platform: booking.platform,
     startMinutes: booking.startMinutes,
     zoomJoinUrl: booking.zoomJoinUrl,
@@ -148,13 +151,15 @@ async function loadLog(bookingId: string): Promise<InvitationLogEntry[]> {
   }));
 }
 
-type Prepared = { booking: InterviewBooking; plan: InvitationPlan };
+type Prepared = { booking: InterviewBooking; facts: InvitationFacts; plan: InvitationPlan };
 
 async function prepare(caller: InterviewCalendarCaller, bookingId: string): Promise<Prepared> {
   const booking = await getInterviewBooking(caller, bookingId);
   requireCalendarAccess(caller, "book", weekStartFor(booking.dateKey));
 
-  const facts = factsOf(booking);
+  // Read first: the candidate's invitation names the interviewer with their job title.
+  const person = booking.interviewerHrId ? await interviewerContact(booking.interviewerHrId) : null;
+  const facts = factsOf(booking, person?.jobTitle ?? null);
   const zoomProblem = booking.platform === "zoom" && !booking.zoomJoinUrl ? ZOOM_NOT_READY : null;
 
   const candidate = await candidateContact(booking);
@@ -167,8 +172,7 @@ async function prepare(caller: InterviewCalendarCaller, bookingId: string): Prom
   };
 
   let interviewerPlan: InvitationRecipientPlan | null = null;
-  if (booking.interviewerHrId) {
-    const person = await interviewerContact(booking.interviewerHrId);
+  if (person) {
     const name = booking.interviewerName ?? "colleague";
     interviewerPlan = {
       contact: person.contact,
@@ -181,6 +185,7 @@ async function prepare(caller: InterviewCalendarCaller, bookingId: string): Prom
 
   return {
     booking,
+    facts,
     plan: { bookingId: booking.id, candidate: candidatePlan, interviewer: interviewerPlan, log: await loadLog(booking.id), platform: booking.platform },
   };
 }
@@ -254,9 +259,9 @@ export async function emailInterviewInvitation(
   if (!to) throw new Error(`${plan.name} has no e-mail address on file.`);
   if (kind === "invitation" && plan.problem) throw new Error(plan.problem);
 
-  const greeting = firstNameOf(plan.name);
-  const message = buildInvitationMessage({ facts: factsOf(prepared.booking), kind, name: greeting, recipient });
-  const rendered = renderInvitationEmail(greeting, message, kind);
+  const message = buildInvitationMessage({ facts: prepared.facts, kind, name: firstNameOf(plan.name), recipient });
+  // The message's own greeting, so the e-mail says "Hello Dr Nevin" exactly as the WhatsApp text does.
+  const rendered = renderInvitationEmail(message.greeting, message, kind);
 
   const record = (status: "sent" | "failed", detail: string | null) =>
     writeLog(caller, bookingId, { channel: "email", destination: to, detail, kind, recipient, status });

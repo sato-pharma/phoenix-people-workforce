@@ -18,6 +18,7 @@ import {
   requireRecruitmentAccess,
   str,
 } from "@/app/api/recruitment/_lib/http";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +52,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ cand
   try {
     const access = await requireRecruitmentAccess(request, "hiring_interviews", "read");
     const { candidateId } = await params;
+    await assertCandidateVisible(access, candidateId);
     await assertCanComment(access, candidateId);
     return NextResponse.json({ comments: await listCandidateComments(candidateId), success: true });
   } catch (error) {
@@ -75,6 +77,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ can
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "hiring_interviews", "update");
     const { candidateId } = await params;
+    await assertCandidateVisible(access, candidateId);
     await assertCanComment(access, candidateId);
 
     const body = str((await readJsonObject(request)).body);

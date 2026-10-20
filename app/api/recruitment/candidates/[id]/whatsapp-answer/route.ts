@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import { saveCandidateWhatsAppAnswer } from "@/lib/recruitment/whatsapp-answer-edit";
 import { whatsAppAnswerEditPayload } from "@/lib/recruitment/whatsapp-answer-edit-rules";
@@ -26,9 +27,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
-    await requireRecruitmentAccess(request, "candidates", "update");
+    const access = await requireRecruitmentAccess(request, "candidates", "update");
 
     const { id } = await params;
+    await assertCandidateVisible(access, id);
     const candidateId = str(id);
     if (!candidateId) return recruitmentProblem("Which candidate?", 400);
 
@@ -39,7 +41,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const check = whatsAppAnswerEditPayload(key, body.value ?? null, {});
     if (!check.ok) return recruitmentProblem(check.message, 400);
 
-    const candidate = await saveCandidateWhatsAppAnswer(candidateId, key, body.value ?? null);
+    // Who typed it: the "added by HR" mark and the audit row both need the HR id (owner, 2026-10-20).
+    const candidate = await saveCandidateWhatsAppAnswer(candidateId, key, body.value ?? null, {
+      hrId: access.hrId ?? null,
+      loginId: access.loginId ?? null,
+    });
     return NextResponse.json({ candidate, success: true });
   } catch (error) {
     return recruitmentApiError(error, "Could not save that answer.");

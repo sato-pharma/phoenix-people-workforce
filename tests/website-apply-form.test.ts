@@ -19,9 +19,10 @@ import {
  */
 
 // The saved built-in audiences as production holds them (verified 2026-09-21): region, area and
-// background are all scoped to the sales/field families and NOT to human_resources, while experience
-// and salary carry no override and so are asked to everyone. An HR applicant is therefore asked
-// exactly experience + salary of the six.
+// background are all scoped to the sales/field families and NOT to the HR families (human_resources,
+// and talent_acquisition, which the careers form's Talent Acquisition seat maps to since 2026-10-20),
+// while experience and salary carry no override and so are asked to everyone. An HR applicant is
+// therefore asked exactly experience + salary of the six.
 const HR_AUDIENCES: SavedAudiences = new Map<string, readonly string[]>([
   ["area", ["medical_rep", "district_manager", "area_regional_manager", "national_sales_manager", "sales"]],
   [
@@ -43,7 +44,7 @@ const HR_AUDIENCES: SavedAudiences = new Map<string, readonly string[]>([
 ]);
 
 const ATS_EXTRA: ScreeningQuestion = {
-  appliesToRoleFamilies: ["human_resources"],
+  appliesToRoleFamilies: ["human_resources", "talent_acquisition"],
   bodyText: "Have you used an ATS before?",
   id: "q-ats",
   isActive: true,
@@ -57,7 +58,7 @@ const ATS_EXTRA: ScreeningQuestion = {
 };
 
 const NOTE_EXTRA: ScreeningQuestion = {
-  appliesToRoleFamilies: ["human_resources"],
+  appliesToRoleFamilies: ["human_resources", "talent_acquisition"],
   bodyText: "Anything else you would like us to know?",
   id: "q-note",
   isActive: true,
@@ -96,7 +97,10 @@ export function runWebsiteApplyFormTests() {
   const role =resolveWebsiteApplyRole("talent_acquisition_specialist");
   assert.ok(role, "the launch role must resolve");
   assert.equal(role.jobTitle, "Talent Acquisition Specialist");
-  assert.equal(role.roleFamily, "human_resources");
+  // Its own family since 2026-10-20 (owner: a Talent Acquisition tab). `human_resources` is the menu
+  // row retired on 6 Oct and files nobody — every careers applicant for this seat would wait in Needs
+  // placing.
+  assert.equal(role.roleFamily, "talent_acquisition");
   assert.equal(resolveWebsiteApplyRole("nope"), null);
   assert.equal(resolveWebsiteApplyRole(null), null);
   // The two office families ride "other" — the bot asks them neither region nor area.

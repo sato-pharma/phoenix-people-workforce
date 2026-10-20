@@ -12,7 +12,7 @@ import { attachEmployeeCvOnCreate } from "@/lib/employees/employee-cv";
 import { openAndAnnounceCrmAccountSetup } from "@/lib/crm/account-setup-notify";
 import { openAndAnnounceNewHireMailboxes } from "@/lib/new-hire-mailbox/notify";
 import { hrIdsMatch } from "@/lib/hr-id";
-import { recordHireFromOfferLetter } from "@/lib/recruitment/offer-outcome-sync";
+import { recordHireFromCandidate, recordHireFromOfferLetter } from "@/lib/recruitment/offer-outcome-sync";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   employeeDirectoryErrorMessage,
@@ -133,6 +133,10 @@ export async function POST(request: Request) {
       // Set when the hire was started from an ACCEPTED job offer letter (?fromOffer=). Used only to
       // point that letter, and the candidate behind it, at the employee this save creates.
       offerId?: string;
+      // Set when the hire was started from "Mark as hired" in the recruitment workspace
+      // (?fromCandidate=). Used to mark that candidate hired, close the filled seat's requisition,
+      // and copy their CV across when no file was chosen on the form.
+      fromCandidateId?: string;
     };
 
     if (!payload.employee) {
@@ -189,6 +193,15 @@ export async function POST(request: Request) {
         offerId: payload.offerId,
       });
     }
+    // The fifth door, at the same moment and for the same reason: the candidate the form was opened
+    // for becomes Hired and the seat's requisition closes before any follow-up can throw. Best effort.
+    if (isNewEmployee && payload.fromCandidateId?.trim()) {
+      await recordHireFromCandidate({
+        actorHrId: access.hrId ?? null,
+        candidateId: payload.fromCandidateId,
+        hrId: newEmployeeHrId,
+      });
+    }
     const accessProvisioning = isNewEmployee
       ? await provisionNewHireAccess({
         actor: { loginId: access.loginId ?? null, role: access.role },
@@ -210,6 +223,7 @@ export async function POST(request: Request) {
       ? await attachEmployeeCvOnCreate({
         actorHrId: access.hrId ?? null,
         applicationId: payload.fromApplicationId ?? null,
+        candidateId: payload.fromCandidateId ?? null,
         cvDraftFileName: payload.cvDraftFileName ?? null,
         cvDraftId: payload.cvDraftId ?? null,
         hrId: newEmployeeHrId,

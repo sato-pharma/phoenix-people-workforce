@@ -26,7 +26,7 @@ import {
   Undo2,
   UserPlus,
 } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AdminTableShell } from "@/components/admin/admin-design-system";
@@ -268,6 +268,27 @@ export function OfferComposer({
 
   const [draft, setDraft] = useState<Draft>(() => blankDraft(templates));
   const [savedId, setSavedId] = useState<string | null>(null);
+
+  /**
+   * "Send an offer" from the recruitment workspace opens this screen as
+   * `/offers?candidate=<id>&vacancy=<id>&title=<offer title>`.
+   *
+   * THE ARROW STAYS RECRUITMENT -> OFFERS. Nothing here imports recruitment code: the name and the
+   * address are FETCHED from the candidate's own route, under the viewer's own grant (a viewer who
+   * cannot read candidates simply gets the title and seat, and types the person), and the letter is
+   * pointed at the candidate afterwards through the recruitment side's own writer,
+   * `PATCH /api/recruitment/candidates/<id>/offer-letter` — the same door a recruiter uses by hand.
+   * Every prefilled box stays editable; approving and sending stay his click here.
+   */
+  const searchParams = useSearchParams();
+  const prefillCandidateId = searchParams?.get("candidate") ?? null;
+  const prefillVacancyId = searchParams?.get("vacancy") ?? null;
+  const prefillTitle = searchParams?.get("title") ?? null;
+  const appliedPrefillRef = useRef<string | null>(null);
+  // The candidate THIS form was filled for. Held in state, not re-read from the URL, so a second
+  // letter typed into the same screen after the first was sent is never pointed at them.
+  const [linkCandidateId, setLinkCandidateId] = useState<string | null>(null);
+  const linkedOfferRef = useRef<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [previewHtml, setPreviewHtml] = useState<string>("");
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -511,6 +532,74 @@ export function OfferComposer({
     }));
   }
 
+  useEffect(() => {
+    if (!prefillCandidateId) return;
+    const key = `${prefillCandidateId}|${prefillVacancyId ?? ""}|${prefillTitle ?? ""}`;
+    if (appliedPrefillRef.current === key) return;
+    appliedPrefillRef.current = key;
+
+    let cancelled = false;
+    // Scheduled, not inline: react-hooks/set-state-in-effect is an ERROR in this repo.
+    const timer = setTimeout(async () => {
+      if (prefillTitle) chooseTitle(prefillTitle);
+      if (prefillVacancyId && vacancies.some((option) => String(option.vacancyId) === prefillVacancyId)) {
+        chooseVacancy(prefillVacancyId);
+      }
+      setSavedId(null);
+      linkedOfferRef.current = null;
+      setLinkCandidateId(prefillCandidateId);
+      try {
+        const response = await fetch(`/api/recruitment/candidates/${encodeURIComponent(prefillCandidateId)}`, {
+          cache: "no-store",
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          profile?: { candidate?: { email?: string | null; fullName?: string | null } };
+        };
+        if (cancelled) return;
+        const person = response.ok ? payload.profile?.candidate : undefined;
+        if (!person) {
+          onReport("Could not load the candidate's name and address — type them in.", "error");
+          return;
+        }
+        setDraft((current) => ({
+          ...current,
+          candidateEmail: current.candidateEmail || (person.email ?? "").trim(),
+          candidateName: current.candidateName || (person.fullName ?? "").trim(),
+        }));
+      } catch {
+        if (!cancelled) onReport("Could not load the candidate's name and address — type them in.", "error");
+      }
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // chooseTitle/chooseVacancy are declarations in this component body; the ref guard applies the
+    // prefill once per link, and re-running on anything else would overwrite what was typed since.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillCandidateId, prefillVacancyId, prefillTitle]);
+
+  /**
+   * Point the candidate this form was filled for at the letter just saved — once per letter, best
+   * effort. The offer is already saved; a refused link is said, never turned into a failed save.
+   */
+  async function linkLetterToCandidate(offerId: string) {
+    if (!linkCandidateId || linkedOfferRef.current === offerId) return;
+    linkedOfferRef.current = offerId;
+    try {
+      await call(`/api/recruitment/candidates/${encodeURIComponent(linkCandidateId)}/offer-letter`, "PATCH", { offerId });
+    } catch (error) {
+      linkedOfferRef.current = null;
+      onReport(
+        `The offer was saved, but it could not be linked to the candidate's record: ${
+          error instanceof Error ? error.message : "the link was refused"
+        }`,
+        "error",
+      );
+    }
+  }
+
   async function call(url: string, method: string, body?: unknown) {
     const response = await fetch(url, {
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -732,6 +821,7 @@ export function OfferComposer({
       }
       onOffers([offer, ...offers.filter((existing) => existing.id !== offer.id)]);
       onReport(`Draft saved for ${offer.candidateName}. Reference ${offer.reference || "not set"}.`, "success");
+      await linkLetterToCandidate(offer.id);
       return offer.id;
     } catch (error) {
       onReport(error instanceof Error ? error.message : "Could not save this offer.", "error");
@@ -747,6 +837,8 @@ export function OfferComposer({
    */
   function openDraft(offer: OfferRecord) {
     markReferenceTyped(true);
+    // A different letter: the candidate a link opened this screen for is not its candidate.
+    setLinkCandidateId(null);
     setSavedId(offer.id);
     setDraft(draftFromOffer(offer, templates));
     onReport(`Opened the draft for ${offer.candidateName} (${offer.reference}). Check it, then press Send offer.`, "success");
@@ -805,6 +897,8 @@ export function OfferComposer({
       }
 
       setSavedId(null);
+      // The next letter typed here is for somebody else.
+      setLinkCandidateId(null);
       // A fresh form gets a fresh generated reference. Without this reset, a manually typed
       // reference from the offer just sent would suppress generation for every offer after it.
       markReferenceTyped(false);

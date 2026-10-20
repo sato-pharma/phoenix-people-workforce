@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { inboxApiError, inboxForbidden } from "@/app/api/whatsapp-inbox/_lib/inbox-http";
 import { assertSameOriginMutation, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
-import { markInboxConversationRead } from "@/lib/whatsapp-inbox/store";
+import { assertInboxConversationVisibleTo, markInboxConversationRead } from "@/lib/whatsapp-inbox/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +19,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const forbidden = inboxForbidden(access);
     if (forbidden) return forbidden;
     const { id } = await params;
+    // The Talent Acquisition fence (owner, 2026-10-20): a chat with an HR applicant answers as if absent.
+    await assertInboxConversationVisibleTo(access, id);
     const result = await markInboxConversationRead(id);
     return NextResponse.json({ success: true, ...result });
   } catch (error) {

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import { recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
@@ -18,6 +19,7 @@ export async function GET(
     const access = await resolveAccessContext(request);
     const caller = await interviewCalendarCaller(access, request);
     const { candidateId, fileId } = await params;
+    await assertCandidateVisible(access, candidateId, "File not found.");
     const download = await getInterviewCalendarCandidateFile(caller, candidateId, fileId);
     if (!download) {
       return NextResponse.json({ error: "not_found", message: "File not found.", success: false }, { status: 404 });

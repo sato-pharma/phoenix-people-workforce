@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import { mergeCandidates } from "@/lib/recruitment/candidate-merge-service";
 import {
@@ -27,6 +28,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "candidates", "update");
     const { id } = await params;
+    await assertCandidateVisible(access, id);
     const body = await readJsonObject(request);
 
     const duplicateId = str(body.duplicateId);
@@ -37,6 +39,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       );
     }
 
+    await assertCandidateVisible(access, duplicateId);
     const result = await mergeCandidates(access, { duplicateId, survivorId: id });
     return NextResponse.json({ ...result, success: true });
   } catch (error) {

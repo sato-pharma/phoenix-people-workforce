@@ -9,7 +9,8 @@ import {
   str,
 } from "@/app/api/recruitment/_lib/http";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { saveInboxAttachmentToCandidate } from "@/lib/whatsapp-inbox/store";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
+import { assertInboxMessageVisibleTo, saveInboxAttachmentToCandidate } from "@/lib/whatsapp-inbox/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,10 +25,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ mes
     const forbidden = inboxForbidden(access);
     if (forbidden) return forbidden;
     const { messageId } = await params;
+    // The Talent Acquisition fence (owner, 2026-10-20): neither the message nor the person may be an HR applicant's.
+    await assertInboxMessageVisibleTo(access, messageId);
 
     const body = await readJsonObject(request);
     const candidateId = str(body.candidateId);
     if (!candidateId) return recruitmentProblem("Pick the candidate to save this to.", 400);
+    await assertCandidateVisible(access, candidateId);
     const kind = str(body.kind) === "other" ? "other" : "cv";
 
     const saved = await saveInboxAttachmentToCandidate({ access, candidateId, kind, messageId });

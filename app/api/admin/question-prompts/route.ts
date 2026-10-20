@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 import { assertScreeningQuestionsAccess } from "@/lib/recruitment/inbound/whatsapp-screening-questions-admin";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { afterResponse } from "@/lib/http/after-response";
+import { recomputeCompletenessForRoles } from "@/lib/recruitment/workspace/completeness";
 import {
   builtInPrompts,
   type OptionLabel,
@@ -144,6 +146,9 @@ export async function POST(request: Request) {
       optionOrder: Array.isArray(body.optionOrder) ? body.optionOrder : [],
       sectionTitle: typeof body.sectionTitle === "string" ? body.sectionTitle : null,
     });
+
+    // A built-in question re-scoped to other roles changes what each person still owes.
+    await afterResponse("question_prompts_recompute_completeness", () => recomputeCompletenessForRoles(null));
 
     const overrides = await loadQuestionPromptOverrides();
     return NextResponse.json({ prompts: promptsWithOverrides(overrides) });

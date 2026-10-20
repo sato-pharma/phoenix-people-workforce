@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import {
   addCandidateComment,
@@ -36,8 +37,9 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireRecruitmentAccess(request, "candidates", "read");
+    const access = await requireRecruitmentAccess(request, "candidates", "read");
     const { id } = await params;
+    await assertCandidateVisible(access, id);
     const notes = await listCandidateComments(id);
     return NextResponse.json({ notes, success: true });
   } catch (error) {
@@ -51,6 +53,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "recruitment", "update");
     const { id } = await params;
+    await assertCandidateVisible(access, id);
 
     const payload = await readJsonObject(request);
     const body = (str(payload.body) ?? "").trim();

@@ -28,6 +28,8 @@ export async function GET(request: Request) {
     if (line && !findWhatsAppInboxLine(line)) return recruitmentProblem("Unknown WhatsApp number.", 400);
     const limit = Number(url.searchParams.get("limit"));
     const result = await listInboxConversations({
+      // The Talent Acquisition fence (owner, 2026-10-20) is applied inside, by who is reading.
+      access,
       limit: Number.isFinite(limit) && limit > 0 ? limit : undefined,
       phoneNumberId: line,
       area: url.searchParams.get("area"),

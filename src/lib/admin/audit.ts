@@ -291,6 +291,14 @@ export type AuditEntityType =
   // an area has already gone out. Best-effort (`writeAuditLog`): it observes a finished file and must
   // never be able to take it away. audit_logs has no CHECK on entity_type, so no migration.
   | "job_post_download"
+  // The rebuilt Recruitment workspace (owner, 19–20 Oct 2026). `recruitment_candidate` is a decision
+  // on one candidate from the workspace — placing them in a tab, a call result, a rejection with its
+  // reason, the archive; `recruitment_candidate_answer` is HR typing an answer the applicant never
+  // gave (the "added by HR" mark); `recruitment_settings` is the re-ask switch and the rejection
+  // message's wording. audit_logs has no CHECK on entity_type, so no migration.
+  | "recruitment_candidate"
+  | "recruitment_candidate_answer"
+  | "recruitment_settings"
   // A step in shutting a leaver's Turbify mailbox. Turbify publishes no email API, so Phoenix
   // cannot observe the mailbox — an audit row is the only record that a named admin claimed a
   // step was done. Written BEFORE the state changes, carrying the old values, so a later

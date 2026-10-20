@@ -13,12 +13,15 @@
 
 import { logError } from "@/lib/observability/log";
 import { recruitmentDb } from "@/lib/recruitment/db";
+import { applyExtraAnswerToCandidate, mergeExtraAnswers } from "@/lib/recruitment/inbound/whatsapp-answer-sync";
 import {
+  applyAnswersBeforeClosing,
   finishSession,
-  findCandidateForSender,
   isWhatsAppClassifyEnabled,
 } from "@/lib/recruitment/inbound/whatsapp-classify-session";
 import { SESSION_COLUMNS, type SessionRow } from "@/lib/recruitment/inbound/whatsapp-classify-session-row";
+import { linkSessionsToCandidates } from "@/lib/recruitment/inbound/whatsapp-session-link";
+import { recomputeCompleteness } from "@/lib/recruitment/workspace/completeness";
 import { sendClassifyMenu, sendWhatsAppText } from "@/lib/recruitment/inbound/whatsapp-interactive";
 import {
   buildExtraQuestionMenu,
@@ -164,8 +167,10 @@ async function sendQuestion(
 }
 
 /** Same shape as the private closeSession in whatsapp-classify-session.ts — marks the conversation
- *  done without running the finish flow, for a window that closed mid-loop. */
+ *  done without running the finish flow, for a window that closed mid-loop. What the applicant DID
+ *  answer is saved onto the candidate first (owner, 2026-10-20). */
 async function closeIncompleteSession(sessionId: string): Promise<void> {
+  await applyAnswersBeforeClosing(sessionId);
   const supabase = recruitmentDb();
   await supabase
     .from(SESSIONS_TABLE)
@@ -198,14 +203,21 @@ export async function startExtraQuestionLoop(
   activeQuestions: readonly ScreeningQuestion[],
 ): Promise<void> {
   // The first question this applicant is actually asked: a conditional one cannot be first, since it
-  // depends on an answer nobody has given yet.
-  const first = nextActiveQuestion(activeQuestions, new Set());
+  // depends on an answer nobody has given yet. A conversation RESUMED after "Ask again" starts with
+  // the answers already on the candidate (whatsapp-classify-resume-plan.ts), so those are stepped
+  // over; a fresh one holds none and starts at the top, exactly as before.
+  const supabase = recruitmentDb();
+  const { data: held } = await supabase.from(SESSIONS_TABLE).select("extra_answers").eq("id", session.id).maybeSingle();
+  const answered = ((held as { extra_answers: Record<string, string> | null } | null)?.extra_answers ?? {}) as Record<
+    string,
+    string
+  >;
+  const first = nextActiveQuestion(activeQuestions, new Set(Object.keys(answered)), answered);
   const withPhone = { ...session, phone_number_id: session.phone_number_id ?? fallbackPhoneNumberId };
   if (!first) {
     await finishSession(withPhone, fallbackPhoneNumberId);
     return;
   }
-  const supabase = recruitmentDb();
   await supabase
     .from(SESSIONS_TABLE)
     .update({ extra_current_question_key: first.questionKey, step: "extra", updated_at: new Date().toISOString() })
@@ -258,6 +270,8 @@ async function applyExtraDecision(input: {
         updated_at: nowIso,
       })
       .eq("id", session.id);
+    // Saved onto the candidate as given, not only when the loop finishes (owner, 2026-10-20).
+    await applyExtraAnswerToCandidate(session, currentQuestionKey, decision.answerValue);
     await sendQuestion(withPhone, decision.nextQuestion);
     return "advanced";
   }
@@ -407,48 +421,61 @@ async function finishExtraQuestionLoop(
 ): Promise<void> {
   const answers = session.extra_answers ?? {};
   if (Object.keys(answers).length > 0) {
-    const candidateId = session.applied_candidate_id ?? (await findCandidateForSender(session.wa_id).catch(() => null));
-    if (candidateId) {
-      const supabase = recruitmentDb();
-      await supabase.from("ats_candidates").update({ screening_extra_answers: answers }).eq("id", candidateId);
+    // By the safe links, and merged key by key: the whole-map write this replaced erased any answer HR
+    // had added to a question the applicant never reached.
+    try {
+      const candidateId = (await linkSessionsToCandidates([session])).get(session.id) ?? null;
+      if (candidateId) {
+        await mergeExtraAnswers(candidateId, answers, { keepHrAnswers: true });
+        await recomputeCompleteness([candidateId]);
+      }
+    } catch (error) {
+      logError("WhatsApp extra answers could not be written at the finish", {
+        error,
+        labels: { event: "whatsapp_extra_question_finish_write_failed" },
+      });
     }
   }
   await finishSession(session, fallbackPhoneNumberId, closingText ? { closingText } : undefined);
 }
 
 /**
- * Applies a completed-but-unapplied loop's answers to a candidate that has just been created —
- * the extra-answers analogue of applyPendingClassification. Called by the intake worker right
- * alongside it: the applicant can finish the whole conversation (fixed six AND extra questions)
- * before the CV finishes processing, and without this those answers would sit on the session row
- * and never reach the candidate.
+ * Applies a loop's answers to a candidate that has just been created — the extra-answers analogue of
+ * applyPendingClassification, called by the intake worker right after it, for the same race: the
+ * applicant can answer before the CV finishes processing.
+ *
+ * FINISHED OR NOT, and AFTER applyPendingClassification (owner, 2026-10-20). Two defects closed here:
+ *
+ *   1. Only completed loops were read, so the answers of an applicant still mid-loop when their CV
+ *      landed reached the candidate only if they finished. Every answer is now saved as it is given,
+ *      so an open loop is safe to apply — the next answers follow it.
+ *   2. This read `applied_at IS NULL`, and the call just before it — applyPendingClassification —
+ *      SETS `applied_at` on that same conversation. So whenever both ran, this found nothing, and
+ *      every extra answer given before the CV was processed was silently lost. It now also takes the
+ *      conversation already applied to THIS candidate.
+ *
+ * Which conversation is decided by the three safe links, never the number alone; answers are merged
+ * key by key, never as a whole map.
  */
 export async function applyPendingExtraAnswers(input: { waId: string; candidateId: string }): Promise<boolean> {
   if (!isWhatsAppClassifyEnabled()) return false;
   try {
     const supabase = recruitmentDb();
-    // `completed_at IS NOT NULL` is load-bearing, not a narrowing filter — same reason as its
-    // classify-session twin, applyPendingClassification. Without it, a loop still mid-question is the
-    // only row for this wa_id and becomes this query's answer: a partial `extra_answers` snapshot
-    // gets frozen onto the candidate, and nothing re-syncs the rest if the applicant keeps answering,
-    // because this function is only invoked once, from the intake worker's own candidate-creation
-    // race. `finishExtraQuestionLoop` already writes the full, final answers unconditionally once the
-    // loop actually completes — this function exists only to catch a loop that finished BEFORE the
-    // candidate existed, never one still in progress.
     const { data } = await supabase
       .from(SESSIONS_TABLE)
-      .select(EXTRA_SESSION_COLUMNS)
+      .select(`${EXTRA_SESSION_COLUMNS},started_at`)
       .eq("wa_id", input.waId)
-      .is("applied_at", null)
-      .not("completed_at", "is", null)
-      .order("completed_at", { ascending: false })
-      .limit(1);
-    const session = ((data ?? [])[0] ?? null) as ExtraSessionRow | null;
+      .or(`applied_at.is.null,applied_candidate_id.eq.${input.candidateId}`)
+      .order("started_at", { ascending: false })
+      .limit(5);
+    const sessions = ((data ?? []) as ExtraSessionRow[]).filter((row) => Object.keys(row.extra_answers ?? {}).length > 0);
+    if (sessions.length === 0) return false;
+    const links = await linkSessionsToCandidates(sessions);
+    const session = sessions.find((row) => links.get(row.id) === input.candidateId) ?? null;
     if (!session) return false;
-    const answers = session.extra_answers ?? {};
-    if (Object.keys(answers).length === 0) return false;
-    await supabase.from("ats_candidates").update({ screening_extra_answers: answers }).eq("id", input.candidateId);
-    return true;
+    const written = await mergeExtraAnswers(input.candidateId, session.extra_answers ?? {}, { keepHrAnswers: true });
+    await recomputeCompleteness([input.candidateId]);
+    return written > 0;
   } catch (error) {
     logError("WhatsApp screening extra answers failed to apply to a new candidate", {
       error,

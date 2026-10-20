@@ -79,11 +79,6 @@ const MOBILE_CARD_PATHS = [
  * answer is "convert it" and an exemption list is how a rule quietly stops applying.
  */
 const EXEMPT: Record<string, string> = {
-  "src/components/recruitment/recruitment-workspace.tsx":
-    "The final-selection board is five candidates side by side — the comparison IS the content, " +
-    "and cards would put the things being compared on separate screens, which defeats it. It " +
-    "declares no minimum width, uses px-2/text-xs (80px of padding, not 160px), and already " +
-    "sits in an overflow-x-auto. Scrolling a comparison grid sideways is the expected gesture.",
   "app/(admin)/admin/private-calendars/page.tsx":
     "Reachable from the HR sidebar since 2026-10-08 (Private Calendars on the Talent Acquisition " +
     "seat). Five <th> tags, but a phone never sees five columns: Title, Line and Area / Department " +

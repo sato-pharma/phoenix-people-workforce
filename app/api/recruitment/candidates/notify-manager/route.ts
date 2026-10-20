@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidatesVisible } from "@/lib/recruitment/workspace/fence";
 
 import { sendCandidatesToManager } from "@/lib/recruitment/candidates";
 import {
@@ -50,6 +51,8 @@ export async function POST(request: Request) {
 
     // The position rides along optionally. A body that names none still sends — see positionInput.
     // The folder on his shelf is optional too: left out, it is chosen from the position and the CV.
+    // A batch naming someone she may not see is refused whole, as not found (owner, 2026-10-20).
+    await assertCandidatesVisible(access, candidateIds);
     const result = await sendCandidatesToManager(access, candidateIds, managerHrId, positionInput(body), str(body.folderArea));
     return NextResponse.json({ result, success: true });
   } catch (error) {

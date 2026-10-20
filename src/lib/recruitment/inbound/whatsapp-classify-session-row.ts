@@ -33,7 +33,13 @@ export type SessionRow = {
   expected_salary: string | null;
   last_prompt_wamid: string | null;
   applied_candidate_id: string | null;
+  /**
+   * The CV that opened (or last re-opened) the conversation. Read so the bot can find whose answers
+   * these are by the CV, not by the number (whatsapp-session-link.ts, rule 2). Optional because rows
+   * built by hand in the tests predate it.
+   */
+  cv_wamid?: string | null;
 };
 
 export const SESSION_COLUMNS =
-  "id,wa_id,phone_number_id,step,job_title_family,job_title_other_text,background,background_other_text,region_code,region_other_text,area_name,area_other_text,experience,expected_salary,last_prompt_wamid,applied_candidate_id";
+  "id,wa_id,phone_number_id,step,job_title_family,job_title_other_text,background,background_other_text,region_code,region_other_text,area_name,area_other_text,experience,expected_salary,last_prompt_wamid,applied_candidate_id,cv_wamid";

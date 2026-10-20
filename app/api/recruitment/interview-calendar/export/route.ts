@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { fenceInterviewBookings } from "@/lib/recruitment/workspace/fence";
 
 import { recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
@@ -41,8 +42,11 @@ export async function GET(request: Request) {
     }
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:recruitment:interview-calendar" });
 
+    const weekData = await listInterviewCalendarWeek(caller, week);
     const model = buildInterviewCalendarExportModel({
-      ...(await listInterviewCalendarWeek(caller, week)),
+      ...weekData,
+      // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's interview is not in her file.
+      bookings: await fenceInterviewBookings(access, weekData.bookings),
       now: new Date(),
       origin: trustedOriginForRedirect(request),
       weekStart: weekStartFor(week),

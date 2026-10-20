@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import { CvExtractionError, extractCandidateFieldsFromCv } from "@/lib/recruitment/cv-extraction";
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { assertSameOriginMutation, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
 import { isForbiddenError } from "@/lib/auth/server";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       windowMs: 60_000,
     });
     const { id } = await params;
+    await assertCandidateVisible(access, id);
     const body = (await request.json().catch(() => ({}))) as { positionKey?: unknown };
     const positionKey = typeof body.positionKey === "string" && body.positionKey ? body.positionKey : undefined;
     const result = await extractCandidateFieldsFromCv(id, access, positionKey);
@@ -37,6 +39,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         { error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden."), success: false },
         { status: 403 },
       );
+    }
+    // The Talent Acquisition fence's "not found" (owner, 2026-10-20), never an extraction failure.
+    if (error instanceof ApiError && error.status === 404) {
+      return NextResponse.json({ error: error.code, message: error.message, success: false }, { status: 404 });
     }
     if (isApiRateLimitError(error)) {
       return NextResponse.json(

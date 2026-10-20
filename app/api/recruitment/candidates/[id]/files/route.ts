@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import { mirrorCandidateCvsToDrive } from "@/lib/recruitment/drive-cv-mirror";
 import { listCandidateFiles, uploadCandidateFile } from "@/lib/recruitment/files";
@@ -15,8 +16,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireRecruitmentAccess(request, "candidates", "read");
+    const access = await requireRecruitmentAccess(request, "candidates", "read");
     const { id } = await params;
+    await assertCandidateVisible(access, id);
     const files = await listCandidateFiles(id);
     return NextResponse.json({ success: true, files });
   } catch (error) {
@@ -30,6 +32,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "candidates", "update");
     const { id } = await params;
+    await assertCandidateVisible(access, id);
     const formData = await request.formData();
     const file = formData.get("file");
     if (!(file instanceof File)) {

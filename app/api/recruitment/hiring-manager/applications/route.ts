@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { listApplications } from "@/lib/recruitment/applications";
 import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
+import { fenceRowsByCandidate } from "@/lib/recruitment/workspace/fence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +13,8 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await requireRecruitmentAccess(request, "hiring_interviews", "read");
-    const applications = await listApplications(access);
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is not on her list.
+    const applications = await fenceRowsByCandidate(access, await listApplications(access), (application) => application.candidateId);
     return NextResponse.json({ success: true, applications });
   } catch (error) {
     return recruitmentApiError(error, "Failed to load your candidates.");

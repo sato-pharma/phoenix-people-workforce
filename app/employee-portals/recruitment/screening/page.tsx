@@ -114,6 +114,8 @@ async function ScreeningContent({
   // The one-press Attach to requisition: Admin or Talent Acquisition only (owner, 2026-10-16), and
   // only a reader who may decide at all — its route asserts candidates:update as well.
   const workspace = await loadScreeningWorkspace(access.hrId, filters, {
+    // The Talent Acquisition fence (owner, 2026-10-20) is applied inside, by who is reading.
+    access,
     canAttachToRequisition: canDecide && canAttachToRequisition(access),
     canSendToManagers: canUpdate,
   });

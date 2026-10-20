@@ -1,66 +1,102 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 /**
- * The intake worker races a WhatsApp applicant's own conversation: `applyPendingClassification`
- * and `applyPendingExtraAnswers` exist to catch a conversation that FINISHED before the CV worker
- * created the candidate row, backfilling the answers the moment the candidate appears. Both are
- * documented as acting on a "completed-but-unapplied" session — but neither query actually filtered
- * on `completed_at`, only on `applied_at IS NULL`. When the worker instead won the race — the
- * candidate appears while the applicant is still mid-conversation — the query's only remaining row
- * for that sender IS the in-progress session, and it became the answer: a snapshot of whatever was
- * answered so far (often just the role, or the role plus one or two more) froze onto the candidate,
- * `preferences_declared_at`/`applied_at` included. Nothing ever re-syncs the region, area,
- * experience, salary or extra answers the applicant goes on to give after that point, because
- * `applied_at` is now set and neither function is ever invoked again for that session.
+ * The intake worker races a WhatsApp applicant's own conversation: `applyPendingClassification` and
+ * `applyPendingExtraAnswers` catch the answers given BEFORE the CV worker created the candidate row,
+ * and backfill them the moment the candidate appears.
  *
- * Production held 24 `ats_candidates` rows in exactly this state on 2026-09-11 — `preferences_
- * declared_at` set, joined session `completed_at` still null — spread across every step from
- * `background` to `salary`, confirming this is not one unlucky race but the query's normal fallback
- * behavior whenever the worker beats the conversation.
+ * RE-PINNED 2026-10-20, at the owner's instruction that an applicant's answers are saved AS GIVEN and
+ * an unfinished conversation's answers are recovered. Until then both functions read only COMPLETED
+ * conversations (`completed_at IS NOT NULL`): a partial snapshot written here was never re-synced —
+ * nothing wrote the region, area, experience or salary the applicant went on to give — so freezing
+ * one was worse than writing nothing (24 candidates in that state on 2026-09-11). Every answer is now
+ * written onto the candidate as it lands (whatsapp-answer-sync.ts), so that reason is gone, and the
+ * completed-only filter had become the defect: the first answers of every applicant whose CV beat
+ * their taps reached nothing but the session table.
  *
- * `.not("completed_at", "is", null)` is the fix in both files: this test pins its presence in the
- * exact query it belongs to, the same source-pinning approach whatsapp-finished-sweep.test.ts uses
- * for the sibling class of "assert a Postgrest filter chain shape" that a live/fake Supabase client
- * would otherwise be needed to exercise.
+ * What is pinned instead:
+ *
+ *   1. Neither query filters on `completed_at` any more — an open conversation is read.
+ *   2. Neither trusts the phone number alone: the conversation applied is the one whose SAFE link
+ *      (whatsapp-session-link.ts — the bot's own link, the CV that opened it, a sender with one person)
+ *      is this very candidate. A forwarder's number never hands one applicant's answers to another.
+ *   3. THE applied_at DEFECT. `applyPendingClassification` stamps `applied_at`, and the intake worker
+ *      calls `applyPendingExtraAnswers` straight after it — which read `applied_at IS NULL`, so it found
+ *      nothing and every extra answer given before the CV was processed was lost. Both now also take
+ *      the conversation already applied to THIS candidate.
+ *   4. An in-progress conversation is linked, not stamped done: `applied_at` is written only for a
+ *      finished one, so `applied_at` keeps meaning "the finished answers were applied".
  */
 export function runWhatsAppPendingBackfillCompletedOnlyTests() {
-  const classifySource = readFileSync(
-    new URL("../src/lib/recruitment/inbound/whatsapp-classify-session.ts", import.meta.url),
-    "utf8",
+  const classifySource = stripComments(
+    readFileSync(new URL("../src/lib/recruitment/inbound/whatsapp-classify-session.ts", import.meta.url), "utf8"),
+  );
+  const extraSource = stripComments(
+    readFileSync(new URL("../src/lib/recruitment/inbound/whatsapp-screening-questions-session.ts", import.meta.url), "utf8"),
+  );
+  const workerSource = stripComments(
+    readFileSync(new URL("../src/lib/recruitment/inbound/intake-worker.ts", import.meta.url), "utf8"),
   );
 
-  // ── applyPendingClassification only backfills a COMPLETED session ─────────────────────────────
+  const body = (source: string, name: string): string => {
+    const start = source.indexOf(`export async function ${name}(`);
+    assert.ok(start >= 0, `${name} is still exported`);
+    const next = source.indexOf("\nexport ", start + 1);
+    return source.slice(start, next < 0 ? undefined : next);
+  };
+  const classifyBackfill = body(classifySource, "applyPendingClassification");
+  const extraBackfill = body(extraSource, "applyPendingExtraAnswers");
+
+  // ── 1. An open conversation is read ────────────────────────────────────────────────────────────
+  for (const [name, fn] of [
+    ["applyPendingClassification", classifyBackfill],
+    ["applyPendingExtraAnswers", extraBackfill],
+  ] as const) {
+    assert.equal(
+      /completed_at",\s*"is",\s*null/.test(fn),
+      false,
+      `${name} filters on completed_at again, so an applicant still mid-conversation when their CV lands has their first answers stranded in the session table`,
+    );
+
+    // ── 3. The conversation already applied to this candidate is taken too ───────────────────────
+    assert.ok(
+      /\.or\(`applied_at\.is\.null,applied_candidate_id\.eq\.\$\{input\.candidateId\}`\)/.test(fn),
+      `${name} reads only applied_at IS NULL again — applyPendingClassification stamps applied_at first, so the extra answers find nothing and are lost`,
+    );
+
+    // ── 2. The safe link decides, never the number alone ──────────────────────────────────────────
+    assert.ok(/linkSessionsToCandidates\(sessions\)/.test(fn), `${name} no longer asks the safe links whose conversation this is`);
+    assert.ok(
+      /links\.get\(row\.id\) === input\.candidateId/.test(fn),
+      `${name} applies a conversation whose safe link is not this candidate — a forwarder's applicant's answers would land on someone else`,
+    );
+  }
+
+  // ── 4. Linked, not stamped done, while it is still open ─────────────────────────────────────────
   assert.ok(
-    /\.is\("applied_at",\s*null\)\s*\n\s*\.not\("completed_at",\s*"is",\s*null\)\s*\n\s*\.not\("job_title_family",\s*"is",\s*null\)/.test(
+    /writeClassification\(input\.candidateId, session, \{ finished: Boolean\(session\.completed_at\) \}\)/.test(classifyBackfill),
+    "an in-progress conversation must not be stamped applied_at — that column means the FINISHED answers were applied",
+  );
+  assert.ok(
+    /options\.finished\s*\n?\s*\?\s*\{ applied_at: nowIso, applied_candidate_id: candidateId, updated_at: nowIso \}\s*\n?\s*:\s*\{ applied_candidate_id: candidateId \}/.test(
       classifySource,
     ),
-    "applyPendingClassification lost its completed_at guard, so a still-open session becomes its only candidate row and gets a permanent partial snapshot written onto the candidate",
+    "writeClassification stamps applied_at only for a finished conversation, and links an open one",
   );
 
-  // The whole point of the filter is to stop the query falling back to an in-progress row when no
-  // completed one exists yet — so `completed_at` must gate the WHERE clause, not merely order the
-  // results (nullsFirst ordering was the pre-fix code's only nod to it, and it still let a lone
-  // in-progress row win when it was the only row for that sender).
+  // ── The extra answers are merged key by key, never written as a whole map ───────────────────────
   assert.equal(
-    /order\("completed_at",\s*\{\s*ascending:\s*false,\s*nullsFirst:\s*false\s*\}\)/.test(classifySource),
+    /update\(\{\s*screening_extra_answers:/.test(extraSource),
     false,
-    "applyPendingClassification reverted to ordering by completed_at instead of filtering on it, which still lets a lone in-progress session win when it's the only row for that sender",
+    "the extra answers are written as a whole map again, which erases an answer HR added to a question the applicant never reached",
   );
+  assert.ok(/mergeExtraAnswers\(input\.candidateId,/.test(extraBackfill), "the backfill merges key by key");
 
-  const extraSource = readFileSync(
-    new URL("../src/lib/recruitment/inbound/whatsapp-screening-questions-session.ts", import.meta.url),
-    "utf8",
-  );
-
-  // ── applyPendingExtraAnswers — the extra-question analogue, same bug shape ─────────────────────
-  // finishExtraQuestionLoop already writes the full, final extra_answers unconditionally once the
-  // loop truly completes, so this backfill exists only to catch a loop that finished before the
-  // candidate existed — never one still mid-question.
-  assert.ok(
-    /\.select\(EXTRA_SESSION_COLUMNS\)\s*\n\s*\.eq\("wa_id",\s*input\.waId\)\s*\n\s*\.is\("applied_at",\s*null\)\s*\n\s*\.not\("completed_at",\s*"is",\s*null\)/.test(
-      extraSource,
-    ),
-    "applyPendingExtraAnswers lost its completed_at guard, so a loop still mid-question can have its partial extra_answers frozen onto the candidate the moment the CV worker creates it",
-  );
+  // ── The worker still calls both, classification first ───────────────────────────────────────────
+  const classifyCall = workerSource.indexOf("await applyPendingClassification(");
+  const extraCall = workerSource.indexOf("await applyPendingExtraAnswers(");
+  assert.ok(classifyCall >= 0 && extraCall > classifyCall, "the intake worker applies the six, then the extra answers");
 }

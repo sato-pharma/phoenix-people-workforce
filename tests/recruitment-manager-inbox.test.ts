@@ -45,10 +45,12 @@ function read(relativePath: string): string {
 
 function digestRow(overrides: Partial<DailyCvDigestRow> = {}): DailyCvDigestRow {
   return {
-    appliedForJobTitle: "Medical Representative",
     // 09:00 UTC on 15 Aug is 12:00 in Cairo — comfortably inside the same Cairo day either side of
     // the DST boundary, so this fixture never depends on the offset in force.
     createdAt: "2026-08-15T09:00:00.000Z",
+    missingAnswerKeys: [],
+    // Filed by the applicant's own replies: Medical Rep, the Alex-BHR region, one AU area.
+    placements: [{ areaCode: "AB2", areaName: "Smouha", regionCode: "AB", tab: "medical_rep" }],
     source: "email",
     status: "new",
     ...overrides,
@@ -270,9 +272,10 @@ export async function runRecruitmentManagerInboxTests() {
   // ── 6 · One digest a day, not one alert per CV ──────────────────────────────
   const rows: DailyCvDigestRow[] = [
     digestRow(),
-    digestRow({ appliedForJobTitle: "Medical Representative", status: "shortlisted" }),
-    digestRow({ appliedForJobTitle: "District Sales Manager", source: "whatsapp" }),
-    digestRow({ appliedForJobTitle: null }),
+    digestRow({ missingAnswerKeys: ["salary"], status: "shortlisted" }),
+    digestRow({ placements: [{ regionCode: "CA", tab: "district_manager" }], source: "whatsapp" }),
+    // Nobody filed them — their replies named no role a tab holds.
+    digestRow({ placements: [] }),
     // Yesterday in Cairo — must not be counted, and must not be silently included by an
     // off-by-one on the day boundary.
     digestRow({ createdAt: "2026-08-14T09:00:00.000Z" }),
@@ -283,14 +286,16 @@ export async function runRecruitmentManagerInboxTests() {
   assert.equal(digest.total, 4, "only the four rows stamped on that Cairo day count");
   assert.equal(digest.awaitingReview, 3, "the shortlisted one has been looked at; the other three have not");
   assert.equal(digest.dayKey, "2026-08-15");
+  // By the workspace's own tabs and the places the applicant's replies gave (owner's plan, 20 Oct
+  // 2026) — never by the CV-read "Applying for", which a CV fills and which may never decide a tab.
   assert.deepEqual(
-    digest.byJobTitle,
+    digest.byPlace,
     [
-      { count: 2, label: "Medical Representative" },
-      { count: 1, label: "District Sales Manager" },
-      { count: 1, label: "Role not stated" },
+      { area: "AB2", count: 2, incomplete: 1, label: "Medical Rep · Smouha", region: "AB", tab: "medical_rep" },
+      { area: null, count: 1, incomplete: 0, label: "District Manager · Cairo", region: "CA", tab: "district_manager" },
+      { area: null, count: 1, incomplete: 0, label: "Needs placing", region: null, tab: "needs_placing" },
     ],
-    "biggest group first, ties alphabetical — and a blank title is its own group, never dropped",
+    "RED the owner's tab order, the AU area's own name (or the region's), and nobody filed is Needs placing, never dropped",
   );
   assert.deepEqual(
     digest.bySource,
@@ -302,8 +307,9 @@ export async function runRecruitmentManagerInboxTests() {
   );
   // The numbers under the total have to add up to it, or the digest is lying about the day.
   assert.equal(
-    digest.byJobTitle.reduce((sum, group) => sum + group.count, 0),
+    digest.byPlace.reduce((sum, group) => sum + group.count, 0),
     digest.total,
+    "one tab each here, so the places add up to the day",
   );
   assert.equal(
     digest.bySource.reduce((sum, group) => sum + group.count, 0),
@@ -312,8 +318,10 @@ export async function runRecruitmentManagerInboxTests() {
 
   const message = dailyCvDigestMessage(digest);
   assert.match(message, /3 of them are still waiting for a first look\./);
-  assert.match(message, /Medical Representative — 2/);
-  assert.match(message, /Role not stated — 1/);
+  assert.match(message, /Medical Rep · Smouha: 2 new, 1 incomplete/, "RED the owner's own example line");
+  assert.match(message, /District Manager · Cairo: 1 new\n/, "no ', 0 incomplete' noise when nothing is missing");
+  assert.match(message, /Needs placing: 1 new/);
+  assert.doesNotMatch(message, /Applying for/, "the CV-read role is gone from the summary");
   assert.doesNotMatch(message, /…|\.\.\.|and \d+ (more|others)/, "the owner's rule: text is never truncated");
   assert.equal(dailyCvDigestTitle(digest), "4 CVs arrived today");
   assert.equal(dailyCvDigestTitle(buildDailyCvDigest([digestRow()], "2026-08-15")), "1 CV arrived today");
@@ -354,8 +362,10 @@ export async function runRecruitmentManagerInboxTests() {
   assert.equal(inboundCvAlertReason({ bulkArrival: true, fileAttached: true }), null);
   assert.match(
     notify,
-    /const reason = inboundCvAlertReason\(input\);\s*\n\s*if \(!reason\) return;[\s\S]{0,200}?hrIdsForRoles/,
-    "the gate must come BEFORE the recipient lookup — this runs on every single inbound CV",
+    // The Talent Acquisition fence check (owner, 2026-10-20) sits between the gate and the lookup — a
+    // database read too, so it must also come AFTER the gate.
+    /const reason = inboundCvAlertReason\(input\);\s*\n\s*if \(!reason\) return;[\s\S]{0,700}?candidateHiddenFrom\([\s\S]{0,400}?hrIdsForRoles/,
+    "the gate must come BEFORE the fence check and the recipient lookup — this runs on every single inbound CV",
   );
   // The two events share one notification, so neither may inherit the other's words. An applicant
   // being told their CV "could not be attached" is the failure this guards.

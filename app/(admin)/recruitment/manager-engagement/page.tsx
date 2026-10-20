@@ -8,6 +8,7 @@ import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-prem
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canViewManagerCvEngagement, loadManagerCvEngagement } from "@/lib/recruitment/manager-cv-engagement";
+import { fenceManagerEngagementReport } from "@/lib/recruitment/workspace/fence";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,10 @@ export default async function ManagerEngagementPage() {
     redirect("/employee-portals");
   }
 
-  const report = await loadManagerCvEngagement(access);
+  const everyone = await loadManagerCvEngagement(access);
+  // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is neither listed nor counted.
+  // The two people this page admits never hide HR people, so this returns at once for them.
+  const report = await fenceManagerEngagementReport(access, everyone);
 
   return (
     <PageContainer>

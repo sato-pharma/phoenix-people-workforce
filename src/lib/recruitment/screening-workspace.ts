@@ -121,6 +121,8 @@ import {
   type WhatsAppApplicantsView,
 } from "@/lib/recruitment/whatsapp-applicant-filters";
 import { loadWhatsAppApplicantsView } from "@/lib/recruitment/whatsapp-applicants-loader";
+import { fenceRowsByCandidate } from "@/lib/recruitment/workspace/fence";
+import type { AccessContext } from "@/lib/auth/permissions";
 import type { CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import type { ScreeningRatingFilter } from "@/lib/recruitment/candidate-rating";
 import { loadRequisitionMatchInputs } from "@/lib/recruitment/requisition-attach";
@@ -316,7 +318,12 @@ function locationOf(
 export async function loadScreeningWorkspace(
   viewerHrId: string | null | undefined,
   filters: ScreeningQueueFilters = {},
-  options: { canSendToManagers?: boolean; canAttachToRequisition?: boolean } = {},
+  options: {
+    canSendToManagers?: boolean;
+    canAttachToRequisition?: boolean;
+    /** Who is reading — REQUIRED, so no page can forget the Talent Acquisition fence (owner, 2026-10-20). */
+    access: Pick<AccessContext, "role" | "scope">;
+  },
 ): Promise<ScreeningWorkspace> {
   const canSendToManagers = Boolean(options.canSendToManagers);
   // Admin or Talent Acquisition only (owner, 2026-10-16). The page decides, holding the AccessContext.
@@ -334,7 +341,7 @@ export async function loadScreeningWorkspace(
   // time is the difference between one round trip and seven on a page that is already the slowest in
   // the module.
   const [
-    allCandidates,
+    everyCandidate,
     views,
     otherViewers,
     liveClaims,
@@ -342,7 +349,7 @@ export async function loadScreeningWorkspace(
     openVacancies,
     positionSuggestions,
     interviewToday,
-    decisionHistory,
+    everyDecision,
     rowFindings,
     whatsAppView,
   ] = await Promise.all([
@@ -370,8 +377,22 @@ export async function loadScreeningWorkspace(
     loadRowFindings(),
     // The WhatsApp Applicants page's own rows, and only when the link carries a search from it. The
     // same loader that page uses, so both pages find the same people.
-    whatsAppSearch ? loadWhatsAppApplicantsView() : Promise.resolve<WhatsAppApplicantsView | null>(null),
+    whatsAppSearch ? loadWhatsAppApplicantsView({ access: options.access }) : Promise.resolve<WhatsAppApplicantsView | null>(null),
   ]);
+
+  // THE TALENT ACQUISITION FENCE (owner, 2026-10-20). Every candidate this page shows, counts or opens
+  // comes from `allCandidates`, so the HR applicants leave it here, once, before any pile is built —
+  // and the throughput trend below drops their decisions too. Free for every viewer it does not apply to.
+  const allCandidates = await fenceRowsByCandidate(options.access, everyCandidate, (candidate) => candidate.id);
+  const keptIds = allCandidates.length === everyCandidate.length ? null : new Set(allCandidates.map((candidate) => candidate.id));
+  const hiddenIds = new Set(keptIds ? everyCandidate.map((candidate) => candidate.id).filter((id) => !keptIds.has(id)) : []);
+  const decisionHistory =
+    hiddenIds.size === 0
+      ? everyDecision
+      : {
+          ...everyDecision,
+          firstDecisionAt: new Map([...everyDecision.firstDecisionAt].filter(([candidateId]) => !hiddenIds.has(candidateId))),
+        };
 
   // The open requisitions a CV can be attached to, named from the seats just read. After the batch
   // rather than inside it, because the names come from that batch's vacancy list.

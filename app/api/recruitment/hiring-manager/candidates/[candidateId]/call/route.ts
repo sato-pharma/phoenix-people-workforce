@@ -26,6 +26,7 @@ import {
   requireRecruitmentAccess,
   str,
 } from "@/app/api/recruitment/_lib/http";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 import type { AccessContext } from "@/lib/auth/permissions";
 
 export const runtime = "nodejs";
@@ -98,6 +99,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "hiring_interviews", "update");
     const { candidateId } = await params;
+    await assertCandidateVisible(access, candidateId);
 
     const body = await readJsonObject(request);
     const action = str(body.action);
@@ -172,6 +174,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ cand
   try {
     const access = await requireRecruitmentAccess(request, "hiring_interviews", "read");
     const { candidateId } = await params;
+    await assertCandidateVisible(access, candidateId);
     await assertCanAct(access, candidateId);
     return NextResponse.json({ claim: await loadCallClaim(candidateId), success: true });
   } catch (error) {

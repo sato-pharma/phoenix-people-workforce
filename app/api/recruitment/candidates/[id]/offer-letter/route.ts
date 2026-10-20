@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import { setCandidateOfferLetter } from "@/lib/recruitment/candidate-offer-link";
 import {
@@ -34,9 +35,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
-    await requireRecruitmentAccess(request, "candidates", "update");
+    const access = await requireRecruitmentAccess(request, "candidates", "update");
 
     const { id } = await params;
+    await assertCandidateVisible(access, id);
     const candidateId = str(id);
     if (!candidateId) {
       return NextResponse.json(

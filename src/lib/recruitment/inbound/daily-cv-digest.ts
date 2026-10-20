@@ -12,13 +12,30 @@
 // digest exists to answer "is there work waiting, and what kind" in one line, and the names are one
 // click away on a screen built to show them.
 //
+// GROUPED BY THE WORKSPACE'S OWN TABS (owner's plan, 20 Oct 2026): "Medical Rep · Alex-BHR: 3 new,
+// 1 incomplete" — role tab, then the AU area (or the region, where the tab has no areas), each the
+// way the applicant's OWN replies filed them (`ats_candidate_placements`). Nobody filed is counted
+// under Needs placing. The old "Applying for" breakdown read `applied_for_job_title`, which the CV
+// reading fills, and the owner's rule is that a CV never decides where a person is filed — so it is
+// gone from here. "Incomplete" is the stored completeness (`missing_answer_keys` not empty).
+//
 // The pure half (buildDailyCvDigest, dailyCvDigestMessage) takes rows and returns text, so the
 // wording and the counting are unit-testable without a database, a clock or a notification.
 
+import { candidateRegionLabels, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { isUnreviewedCandidateStatus } from "@/lib/recruitment/candidate-status";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { cairoDateKey, cairoHour } from "@/lib/recruitment/inbound/whatsapp-health";
 import { intakeSourceLabel } from "@/lib/recruitment/intake-source";
+import { listPlacementsFor } from "@/lib/recruitment/workspace/placements-db";
+import {
+  NEEDS_PLACING,
+  personVisibleToViewer,
+  workspaceRoleTabLabels,
+  workspaceRoleTabs,
+  workspaceViewer,
+  type WorkspaceRoleTab,
+} from "@/lib/recruitment/workspace/role-tabs";
 
 /** Why one arriving CV still earns its own alert, or `null` when the digest covers it. */
 export type InboundCvAlertReason = "no_file" | "applicant";
@@ -87,33 +104,55 @@ export const DAILY_CV_DIGEST_CAIRO_HOUR = 18;
  */
 const LOOKBACK_HOURS = 36;
 
+/** Where one arrival is filed — one entry per tab, as `ats_candidate_placements` holds it. */
+export type DailyCvDigestPlacement = {
+  tab: WorkspaceRoleTab;
+  regionCode?: string | null;
+  areaCode?: string | null;
+  areaName?: string | null;
+};
+
 /** What the digest needs off a candidate row. Nothing else is read, so nothing else can go stale. */
 export type DailyCvDigestRow = {
-  appliedForJobTitle?: string | null;
   createdAt?: string | null;
   source?: string | null;
   status?: string | null;
+  /** Empty or absent = Needs placing. */
+  placements?: readonly DailyCvDigestPlacement[] | null;
+  /** The stored completeness: answer keys the applicant has not given. Absent = not computed yet. */
+  missingAnswerKeys?: readonly string[] | null;
 };
 
 export type DailyCvDigestGroup = { count: number; label: string };
 
+/** One "Medical Rep · Alex-BHR: 3 new, 1 incomplete" line, with what the workspace link needs. */
+export type DailyCvDigestPlace = {
+  label: string;
+  tab: WorkspaceRoleTab | typeof NEEDS_PLACING;
+  region: string | null;
+  area: string | null;
+  /** Arrived that Cairo day. */
+  count: number;
+  /** Of those, with at least one answer still missing. */
+  incomplete: number;
+};
+
 export type DailyCvDigest = {
   /** Of the day's arrivals, how many nobody has looked at yet. */
   awaitingReview: number;
-  byJobTitle: DailyCvDigestGroup[];
+  /**
+   * By the tab and place the applicant's own replies filed them in, in the owner's tab order with
+   * Needs placing last. A person filed in two tabs is counted in both, so these may add up to more
+   * than `total` — never fewer: everyone is in a tab or in Needs placing.
+   */
+  byPlace: DailyCvDigestPlace[];
   bySource: DailyCvDigestGroup[];
   /** Africa/Cairo YYYY-MM-DD — the day being reported, and the throttle bucket. */
   dayKey: string;
   total: number;
 };
 
-/**
- * What the AI reads off the CV when the applicant says what they are applying for. Blank is common
- * and is shown as its own group rather than being dropped: "9 of today's 21 did not say" is exactly
- * the kind of thing a recruiter wants to know, and a silently omitted group would make the numbers
- * under the total stop adding up to it.
- */
-const UNSTATED_JOB_TITLE = "Role not stated";
+const NEEDS_PLACING_LABEL = "Needs placing";
 
 const UNRECORDED_SOURCE = "Source not recorded";
 
@@ -141,6 +180,66 @@ function isOnCairoDay(createdAt: string | null | undefined, dayKey: string): boo
   return cairoDateKey(stamped) === dayKey;
 }
 
+function regionLabel(code: string | null | undefined): string | null {
+  const key = String(code ?? "").trim().toUpperCase();
+  if (!key) return null;
+  return candidateRegionLabels[key as CandidateRegionCode] ?? null;
+}
+
+/**
+ * One place per row and tab. The AU area's own name where the reply gave one, else the region's name,
+ * else the tab alone — never a code on screen.
+ */
+function placesOf(row: DailyCvDigestRow): Array<Omit<DailyCvDigestPlace, "count" | "incomplete">> {
+  const placements = (row.placements ?? []).filter((placement) => workspaceRoleTabs.includes(placement.tab));
+  if (placements.length === 0) {
+    return [{ area: null, label: NEEDS_PLACING_LABEL, region: null, tab: NEEDS_PLACING }];
+  }
+  return placements.map((placement) => {
+    const areaName = String(placement.areaName ?? "").trim() || null;
+    const region = String(placement.regionCode ?? "").trim() || null;
+    const where = areaName ?? regionLabel(region);
+    return {
+      area: areaName ? String(placement.areaCode ?? "").trim() || null : null,
+      label: where ? `${workspaceRoleTabLabels[placement.tab]} · ${where}` : workspaceRoleTabLabels[placement.tab],
+      region,
+      tab: placement.tab,
+    };
+  });
+}
+
+/** Tab order first (Needs placing last), then biggest first, ties alphabetical. */
+function groupByPlace(rows: readonly DailyCvDigestRow[]): DailyCvDigestPlace[] {
+  const groups = new Map<string, DailyCvDigestPlace>();
+  for (const row of rows) {
+    const incomplete = (row.missingAnswerKeys ?? []).length > 0;
+    const seen = new Set<string>();
+    for (const place of placesOf(row)) {
+      const key = `${place.tab}|${place.label}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const group = groups.get(key) ?? { ...place, count: 0, incomplete: 0 };
+      group.count += 1;
+      if (incomplete) group.incomplete += 1;
+      groups.set(key, group);
+    }
+  }
+  const tabRank = (tab: DailyCvDigestPlace["tab"]) => {
+    const at = (workspaceRoleTabs as readonly string[]).indexOf(tab);
+    return at >= 0 ? at : workspaceRoleTabs.length;
+  };
+  return Array.from(groups.values()).sort(
+    (left, right) =>
+      tabRank(left.tab) - tabRank(right.tab) || right.count - left.count || left.label.localeCompare(right.label),
+  );
+}
+
+/** "3 new, 1 incomplete" — the incomplete half only when there is one. */
+export function dailyCvDigestPlaceLine(place: DailyCvDigestPlace): string {
+  const counts = place.incomplete > 0 ? `${place.count} new, ${place.incomplete} incomplete` : `${place.count} new`;
+  return `${place.label}: ${counts}`;
+}
+
 /**
  * Pure. Rows in, counts out — the caller decides which rows to hand over and the day key decides
  * which of them count.
@@ -149,10 +248,7 @@ export function buildDailyCvDigest(rows: readonly DailyCvDigestRow[], dayKey: st
   const arrived = rows.filter((row) => isOnCairoDay(row.createdAt, dayKey));
   return {
     awaitingReview: arrived.filter((row) => isUnreviewedCandidateStatus(row.status)).length,
-    byJobTitle: groupByLabel(
-      arrived.map((row) => row.appliedForJobTitle),
-      UNSTATED_JOB_TITLE,
-    ),
+    byPlace: groupByPlace(arrived),
     bySource: groupByLabel(
       arrived.map((row) => sourceLabel(row.source)),
       UNRECORDED_SOURCE,
@@ -168,7 +264,7 @@ export function dailyCvDigestTitle(digest: DailyCvDigest): string {
 
 /**
  * The message body. Every group is listed — no ellipsis and no "and N others", per the owner's
- * standing rule that text is never truncated. The number of distinct job titles in a single day is
+ * standing rule that text is never truncated. The number of distinct places in a single day is
  * bounded by the number of CVs in that day, which is ~21.
  */
 export function dailyCvDigestMessage(digest: DailyCvDigest): string {
@@ -182,8 +278,8 @@ export function dailyCvDigestMessage(digest: DailyCvDigest): string {
   );
 
   lines.push("");
-  lines.push("Applying for:");
-  for (const group of digest.byJobTitle) lines.push(`- ${group.label} — ${group.count}`);
+  lines.push("By tab and place:");
+  for (const place of digest.byPlace) lines.push(`- ${dailyCvDigestPlaceLine(place)}`);
 
   lines.push("");
   lines.push("Arrived by:");
@@ -192,45 +288,78 @@ export function dailyCvDigestMessage(digest: DailyCvDigest): string {
   return lines.join("\n");
 }
 
-const DIGEST_COLUMNS = "applied_for_job_title,created_at,source,status";
-const PRE_MIGRATION_DIGEST_COLUMNS = "created_at,source,status";
+const DIGEST_COLUMNS = "id,created_at,source,status,declared_role_family,missing_answer_keys";
+const PRE_MIGRATION_DIGEST_COLUMNS = "id,created_at,source,status";
 
 type CandidateDigestDbRow = {
-  applied_for_job_title?: string | null;
+  id: string;
   created_at?: string | null;
   source?: string | null;
   status?: string | null;
+  declared_role_family?: string | null;
+  missing_answer_keys?: string[] | null;
 };
 
-function mapDigestRow(row: CandidateDigestDbRow): DailyCvDigestRow {
-  return {
-    appliedForJobTitle: row.applied_for_job_title ?? null,
-    createdAt: row.created_at ?? null,
-    source: row.source ?? null,
-    status: row.status ?? null,
-  };
-}
+/** A digest row plus what the Talent Acquisition fence reads. */
+export type DailyCvDigestSourceRow = DailyCvDigestRow & { id: string; declaredRoleFamily: string | null };
 
 /**
- * Reads the recent candidate rows the digest might report on. Four columns only — never `select("*")`,
- * which would drag every jsonb extraction block across the Atlantic for a job that needs a count.
+ * Reads the recent candidate rows the digest might report on, with where each is filed. A handful of
+ * columns only — never `select("*")`, which would drag every jsonb extraction block across the
+ * Atlantic for a job that needs a count.
  *
- * The narrow select is retried without `applied_for_job_title` on a 42703 (undefined column), which
- * is the pre-migration state: 20260815200000_candidate_applied_for_role adds it, that migration is a
- * separate announced production step, and the code reaches production on the merge — so there is a
- * real window in which new code reads a table without that column. Every other error is thrown.
+ * The narrow select is retried without the workspace columns on a 42703 (undefined column): the
+ * workspace migration is a separate production step from the merge that ships this code, and in that
+ * window the digest still counts the day — everyone simply reads as filed nowhere yet. Every other
+ * error is thrown.
  */
-export async function loadRecentCandidateDigestRows(now: Date = new Date()): Promise<DailyCvDigestRow[]> {
+export async function loadRecentCandidateDigestRows(now: Date = new Date()): Promise<DailyCvDigestSourceRow[]> {
   const since = new Date(now.getTime() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
   const supabase = recruitmentDb();
 
+  let rows: CandidateDigestDbRow[];
   const first = await supabase.from("ats_candidates").select(DIGEST_COLUMNS).gte("created_at", since);
-  if (!first.error) return ((first.data ?? []) as CandidateDigestDbRow[]).map(mapDigestRow);
-  if ((first.error as { code?: string }).code !== "42703") throw first.error;
+  if (!first.error) {
+    rows = (first.data ?? []) as CandidateDigestDbRow[];
+  } else {
+    if ((first.error as { code?: string }).code !== "42703") throw first.error;
+    const fallback = await supabase.from("ats_candidates").select(PRE_MIGRATION_DIGEST_COLUMNS).gte("created_at", since);
+    if (fallback.error) throw fallback.error;
+    rows = (fallback.data ?? []) as CandidateDigestDbRow[];
+  }
 
-  const fallback = await supabase.from("ats_candidates").select(PRE_MIGRATION_DIGEST_COLUMNS).gte("created_at", since);
-  if (fallback.error) throw fallback.error;
-  return ((fallback.data ?? []) as CandidateDigestDbRow[]).map(mapDigestRow);
+  const placements = await listPlacementsFor(rows.map((row) => String(row.id)));
+  return rows.map((row) => ({
+    createdAt: row.created_at ?? null,
+    declaredRoleFamily: row.declared_role_family ?? null,
+    id: String(row.id),
+    missingAnswerKeys: row.missing_answer_keys ?? null,
+    placements: (placements.get(String(row.id)) ?? []).map((placement) => ({
+      areaCode: placement.areaCode,
+      areaName: placement.areaName,
+      regionCode: placement.regionCode,
+      tab: placement.roleTab,
+    })),
+    source: row.source ?? null,
+    status: row.status ?? null,
+  }));
+}
+
+/**
+ * The rows a fenced viewer may count. PURE. The Talent Acquisition seat never sees an HR applicant
+ * (her manager's seat or her own), not even as a number in a summary — the same rule, by person, as
+ * every screen (`personVisibleToViewer`).
+ */
+export function digestRowsVisibleTo(rows: readonly DailyCvDigestSourceRow[], hideHrPeople: boolean): DailyCvDigestSourceRow[] {
+  if (!hideHrPeople) return [...rows];
+  // The Talent Acquisition seat's own viewer — the one role the fence applies to.
+  const viewer = workspaceViewer({ role: "HR Resourcing", scope: "company" });
+  return rows.filter((row) =>
+    personVisibleToViewer(viewer, {
+      declaredRoleFamily: row.declaredRoleFamily,
+      placementTabs: (row.placements ?? []).map((placement) => placement.tab),
+    }),
+  );
 }
 
 /** True only inside the one Cairo hour the digest is allowed to send in. Pure, so the gate is testable. */
@@ -243,8 +372,15 @@ export function isDailyCvDigestTime(now: Date = new Date()): boolean {
   return isDailyCvDigestHour(cairoHour(now));
 }
 
-/** Builds today's digest from live data. Returns a digest with total 0 when nothing arrived. */
-export async function buildTodaysCvDigest(now: Date = new Date()): Promise<DailyCvDigest> {
+/**
+ * Builds today's digest from live data. Returns a digest with total 0 when nothing arrived.
+ * `hideHrPeople` is the viewer's `workspaceViewer(access).hidesHrPeople`: the 18:00 notice goes to
+ * the Super Admin only and passes nothing; Talent Acquisition's panel passes hers.
+ */
+export async function buildTodaysCvDigest(
+  now: Date = new Date(),
+  options: { hideHrPeople?: boolean } = {},
+): Promise<DailyCvDigest> {
   const rows = await loadRecentCandidateDigestRows(now);
-  return buildDailyCvDigest(rows, cairoDateKey(now));
+  return buildDailyCvDigest(digestRowsVisibleTo(rows, options.hideHrPeople === true), cairoDateKey(now));
 }

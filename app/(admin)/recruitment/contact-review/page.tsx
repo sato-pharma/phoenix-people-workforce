@@ -9,6 +9,7 @@ import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canReviewCandidateContacts } from "@/lib/recruitment/access";
 import { listContactReviewQueue } from "@/lib/recruitment/contact-review-service";
+import { fenceRowsByCandidate } from "@/lib/recruitment/workspace/fence";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,8 @@ export default async function ContactReviewPage() {
 
   let rows;
   try {
-    rows = await listContactReviewQueue();
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is not on the queue she reads.
+    rows = await fenceRowsByCandidate(access, await listContactReviewQueue(), (row) => row.candidateId);
   } catch (error) {
     const message = String((error as { message?: unknown })?.message ?? error);
     return (

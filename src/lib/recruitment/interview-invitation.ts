@@ -25,6 +25,7 @@
 // year with no leading zero, and the time is twelve-hour with one, exactly as he wrote them.
 
 import { systemInterviewVenue } from "@/config/system-settings";
+import { titledFirstName } from "@/lib/recruitment/candidate-greeting";
 import type { InterviewPlatform } from "@/lib/recruitment/interview-calendar-types";
 
 export type InvitationRecipient = "candidate" | "interviewer";
@@ -70,6 +71,13 @@ export type InvitationFacts = {
   zoomJoinUrl: string | null;
   candidateName: string;
   candidateJobTitle: string | null;
+  /**
+   * The lead interviewer and their job title, as the candidate's invitation names them — "•
+   * Interviewer: Ahmed Nour (Senior HR Manager)", the line of the owner's own invitation (owner,
+   * 2026-10-20: "add the interviewer name in the invitation and title"). Absent when none is chosen.
+   */
+  interviewerName?: string | null;
+  interviewerTitle?: string | null;
 };
 
 export type InvitationLine = { label: string; value: string };
@@ -82,6 +90,8 @@ export type InvitationMessage = {
   rows: InvitationLine[];
   /** The one button the e-mail carries: join the Zoom, or open the map. */
   action: { href: string; label: string } | null;
+  /** The name after "Hello" — "Dr Nevin" for a candidate, the plain first name for an interviewer. */
+  greeting: string;
 };
 
 /** The greeting's name: the first word, so "Hello Nevin" and never "Hello Nevin Adel Hassan". */
@@ -121,7 +131,10 @@ const SPACED_LABELS = new Set(["LinkedIn", "Website"]);
 
 export function buildInvitationMessage(input: { recipient: InvitationRecipient; kind: InvitationKind; name: string; facts: InvitationFacts }): InvitationMessage {
   const { facts, kind, recipient } = input;
-  const hello = `Hello ${greetingName(input.name)}`;
+  // A candidate is greeted "Dr" before the first name (owner, 2026-10-20, candidate-greeting.ts); the
+  // interviewer, a colleague, by the plain first name. No name at all is still "Hello there".
+  const greeting = recipient === "candidate" && input.name.trim() ? titledFirstName(greetingName(input.name)) : greetingName(input.name);
+  const hello = `Hello ${greeting}`;
   const when: InvitationLine[] = [
     { label: "Date", value: invitationDate(facts.dateKey) },
     { label: "Time", value: invitationTime(facts.startMinutes) },
@@ -131,6 +144,7 @@ export function buildInvitationMessage(input: { recipient: InvitationRecipient; 
     const lines = companyLines();
     return {
       action: { href: VENUE.mapUrl, label: "Open the location on the map" },
+      greeting,
       rows: lines,
       subject: "Sato Pharma — how to find us",
       text: `${hello}\n\nKindly find below our company details.\n\n${bulletText(lines.map((line) => [line]))}`,
@@ -151,6 +165,7 @@ export function buildInvitationMessage(input: { recipient: InvitationRecipient; 
     const rows = [...who, ...when, ...where];
     return {
       action,
+      greeting,
       rows,
       subject: `Interview with ${facts.candidateName} — ${invitationDate(facts.dateKey)}, ${invitationTime(facts.startMinutes)}`,
       text: `${hello}\n\nKindly find below the interview details.\n\n${bulletText([who, when, ...where.map((line) => [line])])}`,
@@ -158,12 +173,20 @@ export function buildInvitationMessage(input: { recipient: InvitationRecipient; 
   }
 
   const company = companyLines().slice(2);
-  const rows = [...when, ...where, ...company];
+  // Who they will meet, in the owner's own format — "• Interviewer: Name (Title)" — on its own line
+  // after the time, and the name in the subject too (owner, 2026-10-20).
+  const interviewerName = facts.interviewerName?.trim() || null;
+  const interviewerTitle = facts.interviewerTitle?.trim() || null;
+  const interviewer: InvitationLine[] = interviewerName
+    ? [{ label: "Interviewer", value: interviewerTitle ? `${interviewerName} (${interviewerTitle})` : interviewerName }]
+    : [];
+  const rows = [...when, ...interviewer, ...where, ...company];
   return {
     action,
+    greeting,
     rows,
-    subject: `Interview invitation — Sato Pharma, ${invitationDate(facts.dateKey)}`,
-    text: `${hello}\n\nKindly find below the interview details.\n\n${bulletText([when, ...where.map((line) => [line]), ...company.map((line) => [line])])}`,
+    subject: `Interview invitation${interviewerName ? ` with ${interviewerName}` : ""} — Sato Pharma, ${invitationDate(facts.dateKey)}`,
+    text: `${hello}\n\nKindly find below the interview details.\n\n${bulletText([when, ...(interviewer.length ? [interviewer] : []), ...where.map((line) => [line]), ...company.map((line) => [line])])}`,
   };
 }
 

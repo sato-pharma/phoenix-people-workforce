@@ -167,7 +167,7 @@ export async function runRecruitmentPoolRoundTripsTests() {
     "the head-count path and the row-count path share one remainder rule",
   );
 
-  for (const page of ["app/(admin)/recruitment/page.tsx", "app/employee-portals/recruitment/page.tsx"]) {
+  for (const page of ["app/(admin)/recruitment/previous/page.tsx", "app/employee-portals/recruitment/page.tsx"]) {
     const source = read(page);
     assert.match(
       source,

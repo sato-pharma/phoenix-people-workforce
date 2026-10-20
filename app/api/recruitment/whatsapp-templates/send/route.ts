@@ -10,6 +10,7 @@ import {
 } from "@/app/api/recruitment/_lib/http";
 import { resolveCommentAuthor } from "@/lib/recruitment/candidate-comments";
 import { assertPermission } from "@/lib/auth/permissions";
+import { candidateHiddenFrom } from "@/lib/recruitment/workspace/fence";
 import { templateAllowedForCandidate } from "@/lib/recruitment/whatsapp-templates/variables";
 import { loadCandidateSendContext, manualSendAutoValues } from "@/lib/recruitment/whatsapp-templates/candidate-context";
 import { loadEmployeeSendContext } from "@/lib/recruitment/whatsapp-templates/employee-context";
@@ -86,7 +87,10 @@ export async function POST(request: Request) {
 
     const author = await resolveCommentAuthor(access.hrId).catch(() => ({ jobTitle: null, name: null }));
 
-    const candidate = candidateId ? await loadCandidateSendContext(candidateId, author.name) : null;
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant cannot be messaged from her
+    // seat — the same "not found" a missing candidate gets, so the refusal tells her nothing.
+    const hidden = candidateId ? await candidateHiddenFrom(access, candidateId) : false;
+    const candidate = candidateId && !hidden ? await loadCandidateSendContext(candidateId, author.name) : null;
     if (candidateId && !candidate) {
       return recruitmentProblem("That candidate was not found.", 404);
     }

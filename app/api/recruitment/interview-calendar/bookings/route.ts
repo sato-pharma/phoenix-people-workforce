@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertSameOriginMutation, readJsonObject, recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { assertCandidateVisible, fenceInterviewBookings } from "@/lib/recruitment/workspace/fence";
 import {
   CV_UPLOAD_LIMIT_BYTES,
   createInterviewBooking,
@@ -34,20 +35,29 @@ export async function GET(request: Request) {
     const day = params.get("day");
     const headers = { "Cache-Control": "no-store" };
 
+    // The Talent Acquisition fence (owner, 2026-10-20): every branch hands back only the interviews of
+    // people this viewer may see — an HR applicant's interview is simply not on her calendar. Free for
+    // everyone else (src/lib/recruitment/workspace/fence.ts).
     if (params.get("awaiting") === "outcome") {
       // Scoped inside the domain module to the interviews this caller may SET an outcome on — the
       // lead interviewer or the calendar's owner — so it is a prompt, never a list of other
       // people's work.
-      return NextResponse.json({ bookings: await listInterviewsAwaitingOutcome(caller), success: true }, { headers });
+      const bookings = await fenceInterviewBookings(access, await listInterviewsAwaitingOutcome(caller));
+      return NextResponse.json({ bookings, success: true }, { headers });
     }
     if (candidateId) {
-      const bookings = await listUpcomingInterviewsForCandidate(caller, candidateId);
+      const bookings = await fenceInterviewBookings(access, await listUpcomingInterviewsForCandidate(caller, candidateId));
       return NextResponse.json({ bookings, success: true }, { headers });
     }
     if (day) {
-      return NextResponse.json({ success: true, ...(await listInterviewCalendarDay(caller, day)) }, { headers });
+      const dayData = await listInterviewCalendarDay(caller, day);
+      return NextResponse.json(
+        { success: true, ...dayData, bookings: await fenceInterviewBookings(access, dayData.bookings) },
+        { headers },
+      );
     }
-    return NextResponse.json({ success: true, ...(await listInterviewCalendarWeek(caller, params.get("week") ?? "")) }, { headers });
+    const week = await listInterviewCalendarWeek(caller, params.get("week") ?? "");
+    return NextResponse.json({ success: true, ...week, bookings: await fenceInterviewBookings(access, week.bookings) }, { headers });
   } catch (error) {
     return recruitmentApiError(error, "Could not load the interview calendar.");
   }
@@ -80,6 +90,9 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     const caller = await interviewCalendarCaller(access, request);
     const { body, cv } = await readBookingRequest(request);
+    // A hidden person cannot be booked by a viewer who may not see them: the id answers as unknown.
+    const bookedCandidateId = typeof body.candidateId === "string" ? body.candidateId.trim() : "";
+    if (bookedCandidateId) await assertCandidateVisible(access, bookedCandidateId);
     const result = await createInterviewBooking(
       caller,
       {

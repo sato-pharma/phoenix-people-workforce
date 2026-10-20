@@ -11,6 +11,7 @@ import { canAccess, isHrAuthorityRole, resolveNavigationMode, type AccessContext
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { candidatePageHref, parseCandidatePageId } from "@/lib/recruitment/candidate-page-link";
 import { loadCandidateRecord } from "@/lib/recruitment/candidate-record";
+import { candidateHiddenFrom } from "@/lib/recruitment/workspace/fence";
 
 export const dynamic = "force-dynamic";
 
@@ -70,9 +71,13 @@ async function CandidateContent({ access, candidateId }: { access: AccessContext
 
   // Same separate question as the admin page: `candidates: read` is a wider set of seats than
   // `offers: read`, and an offer letter is where the salary lives.
-  const record = candidateId
-    ? await loadCandidateRecord(candidateId, { withOffer: await canAccess(access, "offers", "read") })
-    : null;
+  // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is "no such candidate" to her,
+  // the same page a deleted record gets — asked before the record is read at all.
+  const hidden = candidateId ? await candidateHiddenFrom(access, candidateId) : true;
+  const record =
+    candidateId && !hidden
+      ? await loadCandidateRecord(candidateId, { withOffer: await canAccess(access, "offers", "read") })
+      : null;
   if (!record) {
     return (
       <EmployeePortalEmptyState

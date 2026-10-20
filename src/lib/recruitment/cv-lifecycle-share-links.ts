@@ -238,6 +238,8 @@ export async function assertCvLifecycleShareToken(token: string): Promise<Record
 }
 
 export type ResolvedCvLifecycleFeed = {
+  /** Who made the link. The feed has no viewer, so the Talent Acquisition fence follows its maker. */
+  createdByHrId: string | null;
   daily: CvLifecycleDailyRow[];
   label: string | null;
   rows: CvLifecycleRow[];
@@ -261,6 +263,7 @@ export async function resolveCvLifecycleShareLink(token: string): Promise<Resolv
     .then(undefined, () => undefined);
 
   return {
+    createdByHrId: link.created_by_hr_id ? String(link.created_by_hr_id) : null,
     daily: buildDailyChannelRollup(rows),
     label: link.label ? String(link.label) : null,
     rows,

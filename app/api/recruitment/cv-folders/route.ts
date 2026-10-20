@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { fenceCandidateIds } from "@/lib/recruitment/workspace/fence";
 
 import { buildCvFolderTree } from "@/lib/recruitment/cv-folder-tree";
 import { createCvFolder, loadCvFolderCabinet } from "@/lib/recruitment/cv-folder-tree-db";
@@ -27,10 +28,13 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request) {
   try {
-    await requireRecruitmentAccess(request, "candidates", "read");
+    const access = await requireRecruitmentAccess(request, "candidates", "read");
     const cabinet = await loadCvFolderCabinet();
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is neither listed nor counted.
+    const visible = await fenceCandidateIds(access, [...cabinet.members.values()].flat());
+    const members = new Map([...cabinet.members].map(([folderId, ids]) => [folderId, ids.filter((id) => visible.has(id))]));
     return NextResponse.json({
-      folders: buildCvFolderTree(cabinet.rows, cabinet.members),
+      folders: buildCvFolderTree(cabinet.rows, members),
       success: true,
     });
   } catch (error) {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertSameOriginMutation, readJsonObject, recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { assertInterviewBookingVisible } from "@/lib/recruitment/workspace/fence";
 import {
   cancelInterviewBooking,
   getInterviewBooking,
@@ -22,6 +23,7 @@ export async function GET(request: Request, { params }: Context) {
     const access = await resolveAccessContext(request);
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
+    await assertInterviewBookingVisible(access, id);
     const booking = await getInterviewBooking(caller, id);
     return NextResponse.json({ booking, success: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
@@ -36,6 +38,7 @@ export async function PATCH(request: Request, { params }: Context) {
     const access = await resolveAccessContext(request);
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
+    await assertInterviewBookingVisible(access, id);
     const body = await readJsonObject(request);
     const booking = await updateInterviewBooking(caller, id, {
       dateKey: body.dateKey,
@@ -64,6 +67,7 @@ export async function DELETE(request: Request, { params }: Context) {
     const access = await resolveAccessContext(request);
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
+    await assertInterviewBookingVisible(access, id);
     const result = await cancelInterviewBooking(caller, id);
     return NextResponse.json({ success: true, ...result });
   } catch (error) {

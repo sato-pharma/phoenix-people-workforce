@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertSameOriginMutation, readJsonObject, recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { assertInterviewBookingVisible } from "@/lib/recruitment/workspace/fence";
 import { interviewCalendarCaller, saveInterviewScorecard } from "@/lib/recruitment/interview-calendar";
 
 export const runtime = "nodejs";
@@ -17,6 +18,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const access = await resolveAccessContext(request);
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
+    await assertInterviewBookingVisible(access, id);
     const body = await readJsonObject(request);
     const booking = await saveInterviewScorecard(caller, id, { comment: body.comment, rating: body.rating, verdict: body.verdict });
     return NextResponse.json({ booking, success: true });

@@ -9,6 +9,7 @@ import {
   requireRecruitmentAccess,
   str,
 } from "@/app/api/recruitment/_lib/http";
+import { assertApplicationVisible } from "@/lib/recruitment/workspace/fence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "hiring_interviews", "update");
     const { id } = await params;
+    await assertApplicationVisible(access, id);
     const body = await readJsonObject(request);
     const action = str(body.action) as RecruitmentActionKey | null;
     if (!action || !allowedActions.has(action)) {

@@ -41,6 +41,7 @@ import { resolveAutoReply, type AutoReplyOverrides } from "@/lib/recruitment/inb
 import { loadAutoReplyOverrides } from "@/lib/recruitment/inbound/whatsapp-auto-replies-store";
 import { sendWhatsAppText } from "@/lib/recruitment/inbound/whatsapp-interactive";
 import { isWhatsAppImportSender } from "@/lib/recruitment/inbound/whatsapp-payload-parser";
+import { bySendersOnlyCandidate } from "@/lib/recruitment/inbound/whatsapp-session-link";
 
 /** How far back "we already handled this sender" looks. Matches the classify session's own day-ish
  *  rhythm and Meta's 24h service window, so a person who writes again tomorrow is asked again. */
@@ -60,6 +61,12 @@ export type TextOnlyContext = {
   hasOpenClassifySession: boolean;
   /** This sender produced a candidate inside the window — they are not missing a CV. */
   hasRecentCv: boolean;
+  /**
+   * This number belongs to a candidate still open with questions unanswered or no tab yet (typically
+   * their reply to "Ask again"): the bot picks their conversation up where their answers stop (owner,
+   * 2026-10-20) instead of asking for a CV they already sent. Optional: absent means "no".
+   */
+  canResume?: boolean;
   /** Prior text-only events already recorded for this sender inside the window. */
   priorTextOnlyEventsInWindow: number;
   /** The outbound half's kill switch (see isTextOnlyReplyEnabled). */
@@ -78,6 +85,7 @@ export type TextOnlyAction = {
     | "import_sender"
     | "historical"
     | "classify_open"
+    | "resume"
     | "already_applied"
     | "already_handled"
     | "reply_disabled"
@@ -109,6 +117,10 @@ export function decideTextOnlyAction(context: TextOnlyContext): TextOnlyAction {
   if (context.isImportSender) return { ...NOTHING, reason: "import_sender" };
   if (context.historical) return { ...NOTHING, reason: "historical" };
   if (context.hasOpenClassifySession) return { ...NOTHING, reason: "classify_open" };
+  // Their reply to "Ask again": the bot asks the next missing question itself, so nobody is asked for
+  // a CV they already sent and nobody is notified about a conversation the bot is carrying. Recorded,
+  // because the record is what makes a Meta redelivery a no-op.
+  if (context.canResume) return { ask: false, notify: false, record: true, reason: "resume" };
 
   const first = context.priorTextOnlyEventsInWindow === 0;
 
@@ -310,7 +322,68 @@ export function textOnlySenderLabel(contactName: string | null | undefined, phon
   return name.length > 0 ? `${name} (${phone})` : phone;
 }
 
-type SenderHistory = { hasOpenClassifySession: boolean; hasRecentCv: boolean; priorTextOnlyEventsInWindow: number };
+type SenderHistory = {
+  hasOpenClassifySession: boolean;
+  hasRecentCv: boolean;
+  priorTextOnlyEventsInWindow: number;
+  /** The candidate this number's reply to "Ask again" resumes, or null. */
+  resumeCandidateId: string | null;
+};
+
+/**
+ * The candidate a text from this number resumes (owner, 2026-10-20), or null. Whose number it is:
+ *
+ *   1. the person the WhatsApp Inbox chat with this number is linked to — "Ask again" links it when
+ *      it sends, so a reply to the follow-up always finds them;
+ *   2. else the sender's only candidate — every CV this number ever sent became that one person (the
+ *      same rule 3 the bot's answers use; a forwarder's number, whose CVs became several people,
+ *      resumes nobody).
+ *
+ * And only when there is something to pick up: the person is still open (not hired, rejected or
+ * archived) and either has questions unanswered or is not filed in any tab yet. Never a guess from
+ * the number's newest CV.
+ */
+export async function findResumeCandidate(input: { waId: string }): Promise<string | null> {
+  const supabase = recruitmentDb();
+  const { data: chats, error } = await supabase
+    .from("whatsapp_inbox_conversations")
+    .select("candidate_id")
+    .eq("contact_key", input.waId)
+    .not("candidate_id", "is", null);
+  if (error) throw error;
+  let ids = Array.from(
+    new Set(((chats ?? []) as Array<{ candidate_id: string | null }>).map((row) => row.candidate_id).filter(Boolean)),
+  ) as string[];
+  if (ids.length === 0) {
+    const probe = { applied_candidate_id: null, cv_wamid: null, id: "sender", wa_id: input.waId };
+    const only = (await bySendersOnlyCandidate([probe])).get("sender");
+    ids = only ? [only] : [];
+  }
+  if (ids.length === 0) return null;
+
+  const { data: candidates, error: candidateError } = await supabase
+    .from("ats_candidates")
+    .select("id,status,archived_at,missing_answer_keys,followup_sent_at")
+    .in("id", ids)
+    .is("archived_at", null)
+    .order("followup_sent_at", { ascending: false, nullsFirst: false });
+  if (candidateError) throw candidateError;
+  const open = ((candidates ?? []) as Array<{ id: string; status: string | null; missing_answer_keys: string[] | null }>).filter(
+    (row) => row.status !== "hired" && row.status !== "rejected",
+  );
+  if (open.length === 0) return null;
+
+  const { data: placed, error: placedError } = await supabase
+    .from("ats_candidate_placements")
+    .select("candidate_id")
+    .in(
+      "candidate_id",
+      open.map((row) => row.id),
+    );
+  if (placedError) throw placedError;
+  const filed = new Set(((placed ?? []) as Array<{ candidate_id: string }>).map((row) => row.candidate_id));
+  return open.find((row) => (row.missing_answer_keys ?? []).length > 0 || !filed.has(row.id))?.id ?? null;
+}
 
 /**
  * Reads the three facts the decision needs about this sender inside the window.
@@ -345,10 +418,14 @@ export async function loadSenderHistory(input: { phone: string; waId: string; no
   if (priorTextOnly.error) throw priorTextOnly.error;
   if (recentCv.error) throw recentCv.error;
 
+  // Only worth a read when no conversation is open — an open one is answered by the bot already.
+  const resumeCandidateId = session.data ? null : await findResumeCandidate({ waId: input.waId });
+
   return {
     hasOpenClassifySession: Boolean(session.data),
     hasRecentCv: (recentCv.count ?? 0) > 0,
     priorTextOnlyEventsInWindow: priorTextOnly.count ?? 0,
+    resumeCandidateId,
   };
 }
 
@@ -474,6 +551,7 @@ export async function handleTextOnlyMessage(input: {
   try {
     const history = await loadSenderHistory({ now, phone, waId: input.waId });
     const action = decideTextOnlyAction({
+      canResume: Boolean(history.resumeCandidateId),
       historical: false,
       hasOpenClassifySession: history.hasOpenClassifySession,
       hasRecentCv: history.hasRecentCv,
@@ -498,6 +576,35 @@ export async function handleTextOnlyMessage(input: {
     if (!recorded) return { asked: false, reason: "duplicate" };
 
     const withinBudget = input.repliesSent < MAX_TEXT_ONLY_REPLIES_PER_DELIVERY;
+
+    if (action.reason === "resume" && history.resumeCandidateId) {
+      if (!withinBudget) return { asked: false, reason: "budget" };
+      // Loaded here, not at the top: the conversation module is the whole bot, and this file stays light
+      // for the pure decision above and the tests that read it.
+      const { resumeClassification } = await import("@/lib/recruitment/inbound/whatsapp-classify-session");
+      const resumed = await resumeClassification({
+        candidateId: history.resumeCandidateId,
+        phoneNumberId: input.deliveredToPhoneNumberId,
+        waId: input.waId,
+      });
+      if (resumed === "asked") return { asked: true, reason: "resume" };
+      // Nothing left to ask, or the send failed: a person wrote to us and the bot did not answer, so
+      // a human hears about it.
+      await notifyInboundWhatsAppTextOnly({
+        alreadyApplied: true,
+        asked: false,
+        askedAboutTheJob: classifyTextOnlyEnquiry(input.body) === "asked_about_the_job",
+        preview: previewInboundText(input.body),
+        senderLabel: textOnlySenderLabel(input.contactName, phone),
+        wamid: input.wamid,
+      }).catch((notifyError) => {
+        logError("WhatsApp text-only notification failed", {
+          error: notifyError,
+          labels: { event: "whatsapp_text_only_notify_failed", wamid: input.wamid },
+        });
+      });
+      return { asked: false, reason: "resume" };
+    }
     const asked =
       action.ask && withinBudget
         ? await askForCvFile({

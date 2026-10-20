@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertApplicationVisible } from "@/lib/recruitment/workspace/fence";
 
 import { getApplication } from "@/lib/recruitment/applications";
 import { buildHireDraft } from "@/lib/recruitment/hire-draft";
@@ -20,6 +21,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   try {
     const access = await requireRecruitmentAccess(request, "recruitment", "read");
     const { id } = await params;
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's application answers as if absent.
+    await assertApplicationVisible(access, id);
 
     const application = await getApplication(access, id);
     if (!application) {

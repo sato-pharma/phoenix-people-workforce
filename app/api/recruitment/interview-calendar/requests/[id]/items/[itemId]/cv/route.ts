@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertInterviewRequestItemVisible } from "@/lib/recruitment/workspace/fence";
 
 import { recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
@@ -18,6 +19,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const access = await resolveAccessContext(request);
     const caller = await interviewCalendarCaller(access, request);
     const { id, itemId } = await params;
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's CV answers as if absent.
+    await assertInterviewRequestItemVisible(access, itemId);
     const download = await getInterviewRequestItemCv(caller, id, itemId);
     if (!download) {
       return NextResponse.json({ error: "not_found", message: "No CV is on record for this person.", success: false }, { status: 404 });

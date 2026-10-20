@@ -93,8 +93,13 @@ export function runCandidateCommentLinksAndInAppTests() {
   );
   assert.equal(
     adminTwinOfPortalCandidatesHref({ canOpenPersonalInbox: true, canOpenRecruitment: false, candidateId: CANDIDATE_ID }),
+    `/recruitment/candidates?${CANDIDATE_LINK_PARAM}=${CANDIDATE_ID}`,
+    "the CEO cannot open the recruitment pages, but has his own inbox — the admin twin of this very list, opened on that CV",
+  );
+  assert.equal(
+    adminTwinOfPortalCandidatesHref({ canOpenPersonalInbox: true, canOpenRecruitment: false, candidateId: "not-a-uuid" }),
     "/recruitment/candidates",
-    "the CEO cannot open the recruitment pages, but has his own inbox — the admin twin of this very list",
+    "a cut-off id still opens his list, without a candidate the page would refuse",
   );
   assert.equal(
     adminTwinOfPortalCandidatesHref({ canOpenPersonalInbox: false, canOpenRecruitment: false, candidateId: CANDIDATE_ID }),

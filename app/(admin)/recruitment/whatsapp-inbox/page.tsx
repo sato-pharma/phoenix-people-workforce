@@ -37,7 +37,7 @@ export default async function WhatsAppInboxPage() {
 
   let initial;
   try {
-    initial = await listInboxConversations({});
+    initial = await listInboxConversations({ access });
   } catch (error) {
     // An error state, never an empty list: "nobody has written" and "the inbox could not be read"
     // must not look the same.

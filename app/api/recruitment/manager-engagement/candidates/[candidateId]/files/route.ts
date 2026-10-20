@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import { recruitmentApiError } from "@/app/api/recruitment/_lib/http";
@@ -26,6 +27,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ cand
       );
     }
     const { candidateId } = await params;
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant answers as if absent.
+    await assertCandidateVisible(access, candidateId);
     // The report is scoped to the reader's line, so its preview must be too — see the helper.
     if (!(await canViewManagerEngagementCandidate(access, candidateId))) {
       return NextResponse.json(

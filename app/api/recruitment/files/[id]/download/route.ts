@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateFileVisible } from "@/lib/recruitment/workspace/fence";
 
 import { recruitmentFileResponse } from "@/lib/recruitment/file-response";
 import { getFileForDownload } from "@/lib/recruitment/files";
@@ -9,8 +10,10 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireRecruitmentAccess(request, "candidates", "read");
+    const access = await requireRecruitmentAccess(request, "candidates", "read");
     const { id } = await params;
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's file answers as if absent.
+    await assertCandidateFileVisible(access, id);
     const download = await getFileForDownload(id);
     if (!download) {
       return NextResponse.json({ error: "not_found", message: "File not found.", success: false }, { status: 404 });

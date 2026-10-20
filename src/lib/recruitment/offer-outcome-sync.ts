@@ -23,7 +23,9 @@
 // or the declined-offer status). A failed tidy-up must not turn that success into an error the user
 // then presses again, so a failure is logged and the caller carries on.
 
-import { hrIdForStorage } from "@/lib/hr-id";
+import { systemAccessContext } from "@/lib/auth/permissions";
+import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
+import { isUuid } from "@/lib/http/uuid";
 import { logError } from "@/lib/observability/log";
 import {
   declineAcceptedOffersForEmployee,
@@ -35,6 +37,7 @@ import type { OfferRecord } from "@/lib/offers/types";
 import { recordCandidateStatusEvent } from "@/lib/recruitment/candidates";
 import { candidateForOfferLetter } from "@/lib/recruitment/candidate-offer-link";
 import { recruitmentDb } from "@/lib/recruitment/db";
+import { runRequisitionWorkflow } from "@/lib/recruitment/requisitions";
 
 type CandidateMove = "already" | "kept" | "moved" | "none";
 
@@ -61,6 +64,17 @@ async function moveCandidateOfLetter(
   if (candidate.status === to) return "already";
   if (onlyFrom && !onlyFrom.includes(candidate.status)) return "kept";
 
+  await writeCandidateMove(candidate, to, note, actorHrId);
+  return "moved";
+}
+
+/** The status write and its history line — one shape for every door in this file. */
+async function writeCandidateMove(
+  candidate: { id: string; status: string },
+  to: "hired" | "rejected",
+  note: string,
+  actorHrId: string | null,
+): Promise<void> {
   const changedAt = new Date().toISOString();
   const { error } = await recruitmentDb()
     .from("ats_candidates")
@@ -69,6 +83,9 @@ async function moveCandidateOfLetter(
       status_changed_at: changedAt,
       status_changed_by_hr_id: actorHrId,
       status_note: note,
+      // A hire is not a rejection: an earlier rejection's reason goes with it, as on every other move
+      // out of Rejected.
+      ...(to === "hired" ? { rejection_reason: null, rejection_reason_note: null } : {}),
       updated_at: changedAt,
     })
     .eq("id", candidate.id);
@@ -81,7 +98,6 @@ async function moveCandidateOfLetter(
     note,
     toStatus: to,
   });
-  return "moved";
 }
 
 function sameEmployee(left: string | null | undefined, right: string): boolean {
@@ -211,4 +227,93 @@ export async function recordOfferDeclinedByCandidate(input: {
     });
     return "error";
   }
+}
+
+/** Requisition piles a filled seat still leaves open — the autopilot's own `FILLABLE_STATUSES`. */
+const FILLABLE_REQUISITION_STATUSES: readonly string[] = ["req_open", "req_published", "req_on_hold"];
+
+export type HireFromCandidateOutcome = {
+  candidate: CandidateMove | "error";
+  /** Requisitions this call closed (marked filled). */
+  requisitionsClosed: number;
+};
+
+/**
+ * The FIFTH door: an employee was just created by HR's Add Employee, opened from "Mark as hired" in
+ * the recruitment workspace (`?fromCandidate=<id>`, sent back by the form as `fromCandidateId`).
+ *
+ * The candidate is found by the id the form was OPENED for — held in the form's state, never re-read
+ * from the URL — and moved to hired with its history line (a candidate already hired is left alone,
+ * so a second save cannot stack a second line). Then the seat: `closeVacancyOnHire` matches a vacancy
+ * by footprint, not by the seat picked, so the vacancy actually filled is READ BACK (status filled,
+ * filled by this new HR id) and that vacancy's still-open requisitions are marked filled with the
+ * system context, exactly as the hourly requisition autopilot would — which stays the backstop if
+ * this misses. Best effort, like every door here: the employee is already saved.
+ */
+export async function recordHireFromCandidate(input: {
+  actorHrId: string | null;
+  candidateId: string;
+  hrId: string;
+}): Promise<HireFromCandidateOutcome> {
+  const hrId = String(input.hrId ?? "").trim();
+  const candidateId = String(input.candidateId ?? "").trim();
+  // Not a candidate id at all (a hand-made body): nothing to mark, and no failed read logged as a fault.
+  if (!hrId || !isUuid(candidateId)) return { candidate: "none", requisitionsClosed: 0 };
+
+  let candidate: CandidateMove | "error" = "none";
+  try {
+    const { data, error } = await recruitmentDb().from("ats_candidates").select("id,status").eq("id", candidateId).maybeSingle();
+    if (error) throw new Error(error.message);
+    const row = data as { id: string; status: string } | null;
+    if (!row) {
+      candidate = "none";
+    } else if (row.status === "hired") {
+      candidate = "already";
+    } else {
+      await writeCandidateMove(
+        row,
+        "hired",
+        `Joined the company as ${hrId}; recorded from the recruitment workspace when the employee record was created.`,
+        hrIdForStorage(input.actorHrId),
+      );
+      candidate = "moved";
+    }
+  } catch (error) {
+    logError("A hire was saved but its candidate could not be marked hired", {
+      error: error instanceof Error ? error : new Error(String(error)),
+      labels: { candidate_id: candidateId, event: "candidate_hire_sync_failed", hr_id: hrId },
+    });
+    candidate = "error";
+  }
+
+  let requisitionsClosed = 0;
+  try {
+    const supabase = recruitmentDb();
+    const { data: filled, error: filledError } = await supabase
+      .from("position_vacancies")
+      .select("id")
+      .eq("status", "filled")
+      .in("filled_by_hr_id", hrIdLookupKeys(hrId));
+    if (filledError) throw new Error(filledError.message);
+    const vacancyIds = ((filled ?? []) as Array<{ id: number | string }>).map((row) => String(row.id));
+    if (vacancyIds.length > 0) {
+      const { data: requisitions, error: requisitionError } = await supabase
+        .from("ats_requisitions")
+        .select("id,status")
+        .in("vacancy_id", vacancyIds)
+        .in("status", [...FILLABLE_REQUISITION_STATUSES]);
+      if (requisitionError) throw new Error(requisitionError.message);
+      for (const requisition of (requisitions ?? []) as Array<{ id: string }>) {
+        await runRequisitionWorkflow(requisition.id, "req_fill", systemAccessContext);
+        requisitionsClosed += 1;
+      }
+    }
+  } catch (error) {
+    logError("A hire was saved but its seat's requisition could not be closed; the hourly autopilot will", {
+      error: error instanceof Error ? error : new Error(String(error)),
+      labels: { candidate_id: candidateId, event: "candidate_hire_requisition_close_failed", hr_id: hrId },
+    });
+  }
+
+  return { candidate, requisitionsClosed };
 }

@@ -44,6 +44,7 @@ import { DEFAULT_CANDIDATE_STATUS } from "@/lib/recruitment/candidate-status";
 // what "waiting 7 days" means.
 import { cairoDateLabel, daysWaiting } from "@/lib/recruitment/stale-send-check";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { workspaceHref } from "@/lib/recruitment/workspace/links";
 
 /**
  * How long a CV may sit unlooked-at before the recruitment desk is told.
@@ -68,8 +69,11 @@ export const TRIAGE_BACKLOG_OVERDUE_AFTER_DAYS = 7;
  */
 export const TRIAGE_BACKLOG_CHANNELS = ["in_app", "telegram", "push"] as const;
 
-/** Where the desk lands — the workspace whose `notYetReviewed` tile shows this same queue. */
-export const TRIAGE_BACKLOG_ACTION_URL = "/recruitment";
+/**
+ * Where the desk lands — the workspace filtered to the same queue this counts (status New), so the
+ * tab counts under the filter say where the waiting CVs are.
+ */
+export const TRIAGE_BACKLOG_ACTION_URL = workspaceHref({ statuses: [DEFAULT_CANDIDATE_STATUS] });
 
 /** The age bands the summary reports, longest first. `from` is inclusive, `to` exclusive. */
 const AGE_BANDS: ReadonlyArray<{ from: number; label: string; to: number }> = [

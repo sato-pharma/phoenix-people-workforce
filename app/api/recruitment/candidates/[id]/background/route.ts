@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import {
   backgroundConfirmationOutcomes,
@@ -39,6 +40,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const access = await requireRecruitmentAccess(request, "candidates", "update");
 
     const { id } = await params;
+    await assertCandidateVisible(access, id);
     const candidateId = str(id);
     if (!candidateId) {
       return NextResponse.json(

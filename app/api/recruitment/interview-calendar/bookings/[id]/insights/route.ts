@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { assertInterviewBookingVisible } from "@/lib/recruitment/workspace/fence";
 import { interviewCalendarCaller } from "@/lib/recruitment/interview-calendar";
 import { getInterviewZoomInsights } from "@/lib/recruitment/interview-calendar-zoom-extras";
 
@@ -16,6 +17,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const access = await resolveAccessContext(request);
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
+    await assertInterviewBookingVisible(access, id);
     const refresh = new URL(request.url).searchParams.get("refresh") === "1";
     const insights = await getInterviewZoomInsights(caller, { id, kind: "booking" }, { refresh });
     return NextResponse.json({ insights, success: true }, { headers: { "Cache-Control": "no-store" } });

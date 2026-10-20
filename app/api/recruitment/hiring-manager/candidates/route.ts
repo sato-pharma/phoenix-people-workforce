@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { loadCallClaims } from "@/lib/recruitment/candidate-call-claims-db";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
 import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
+import { fenceRowsByCandidate } from "@/lib/recruitment/workspace/fence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,8 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await requireRecruitmentAccess(request, "hiring_interviews", "read");
-    const candidates = await listCandidatesSentToManager(access.hrId);
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant pushed to her does not arrive.
+    const candidates = await fenceRowsByCandidate(access, await listCandidatesSentToManager(access.hrId), (candidate) => candidate.id);
     const claims = await loadCallClaims(candidates.map((candidate) => candidate.id));
     return NextResponse.json({
       callClaims: claims,

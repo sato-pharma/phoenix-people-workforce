@@ -12,6 +12,7 @@ import { canAccess, isHrAuthorityRole, type AccessContext } from "@/lib/auth/per
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { parseCandidatePageId } from "@/lib/recruitment/candidate-page-link";
 import { loadCandidateRecord } from "@/lib/recruitment/candidate-record";
+import { candidateHiddenFrom } from "@/lib/recruitment/workspace/fence";
 
 export const dynamic = "force-dynamic";
 
@@ -68,9 +69,13 @@ async function CandidateContent({ access, rawId }: { access: AccessContext; rawI
   // The offer letter is read ONLY for a viewer who may see offer letters. `candidates: read` is a
   // wider set of seats than `offers: read`, and a letter is where the salary lives — so this is a
   // separate question from "may they open the record", and it is asked separately.
-  const record = candidateId
-    ? await loadCandidateRecord(candidateId, { withOffer: await canAccess(access, "offers", "read") })
-    : null;
+  // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is "no such candidate" to her,
+  // the same page a deleted record gets — asked before the record is read at all.
+  const hidden = candidateId ? await candidateHiddenFrom(access, candidateId) : true;
+  const record =
+    candidateId && !hidden
+      ? await loadCandidateRecord(candidateId, { withOffer: await canAccess(access, "offers", "read") })
+      : null;
   if (!record) {
     return (
       <CandidateFallback

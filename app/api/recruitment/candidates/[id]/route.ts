@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import { deleteCandidate, getCandidateProfile, updateCandidate } from "@/lib/recruitment/candidates";
 import { getLatestCvExtraction, recordAppliedExtractionFields } from "@/lib/recruitment/cv-extraction";
@@ -20,8 +21,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireRecruitmentAccess(request, "candidates", "read");
+    const access = await requireRecruitmentAccess(request, "candidates", "read");
     const { id } = await params;
+    await assertCandidateVisible(access, id);
     const profile = await getCandidateProfile(id);
     if (!profile) {
       return NextResponse.json({ error: "not_found", message: "Candidate not found.", success: false }, { status: 404 });
@@ -51,8 +53,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
-    await requireRecruitmentAccess(request, "candidates", "update");
+    const access = await requireRecruitmentAccess(request, "candidates", "update");
     const { id } = await params;
+    await assertCandidateVisible(access, id);
     const body = await readJsonObject(request);
     const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
 
@@ -130,6 +133,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "candidates", "delete");
     const { id } = await params;
+    await assertCandidateVisible(access, id);
     await deleteCandidate(access, id);
     return NextResponse.json({ success: true });
   } catch (error) {

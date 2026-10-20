@@ -9,7 +9,8 @@ import {
   str,
 } from "@/app/api/recruitment/_lib/http";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { linkInboxConversation } from "@/lib/whatsapp-inbox/store";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
+import { assertInboxConversationVisibleTo, linkInboxConversation } from "@/lib/whatsapp-inbox/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,11 +27,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const forbidden = inboxForbidden(access);
     if (forbidden) return forbidden;
     const { id } = await params;
+    // The Talent Acquisition fence (owner, 2026-10-20): a chat with an HR applicant answers as if absent.
+    await assertInboxConversationVisibleTo(access, id);
 
     const body = await readJsonObject(request);
     const candidateId = str(body.candidateId);
     const employeeHrId = str(body.employeeHrId);
     if (candidateId && employeeHrId) return recruitmentProblem("Link the chat to a candidate or an employee, not both.", 400);
+    // Nor can a chat be tied to an HR applicant from her seat.
+    if (candidateId) await assertCandidateVisible(access, candidateId);
 
     const result = await linkInboxConversation({ access, candidateId, conversationId: id, employeeHrId });
     await writeRequiredAuditLog({

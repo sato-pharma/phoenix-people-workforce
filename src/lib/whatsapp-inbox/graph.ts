@@ -276,3 +276,37 @@ export async function listApprovedTemplates(businessAccountId: string): Promise<
   }
   return templates.sort((a, b) => a.name.localeCompare(b.name) || a.language.localeCompare(b.language));
 }
+
+/**
+ * Where ONE template stands with Meta, whatever its status — the approved-only list above cannot say
+ * "waiting for approval" or "rejected". Added 2026-10-20 for the recruitment "Ask again" follow-up, so
+ * the button can say why it is not sendable yet instead of failing on send.
+ * `missing` = no template of that name and language on this business account. Throws on a failed read.
+ */
+export type TemplateApprovalStatus = "approved" | "pending" | "rejected" | "missing";
+
+export async function readTemplateStatus(
+  businessAccountId: string,
+  name: string,
+  language: string,
+): Promise<TemplateApprovalStatus> {
+  const url =
+    `https://graph.facebook.com/${graphApiVersion()}/${businessAccountId}/message_templates` +
+    `?fields=name,language,status&name=${encodeURIComponent(name)}&limit=100`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken()}` },
+    signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
+  });
+  const body = (await response.json().catch(() => null)) as
+    | { data?: Array<{ name?: string; language?: string; status?: string }>; error?: { message?: string } }
+    | null;
+  if (!response.ok) {
+    throw new Error(`WhatsApp did not return the template: ${body?.error?.message ?? `status ${response.status}`}`);
+  }
+  const match = (body?.data ?? []).find((row) => row.name === name && row.language === language);
+  if (!match) return "missing";
+  const status = String(match.status ?? "").toUpperCase();
+  if (status === "APPROVED") return "approved";
+  if (status === "REJECTED" || status === "DISABLED" || status === "PAUSED") return "rejected";
+  return "pending";
+}

@@ -31,6 +31,10 @@ import {
 import { listCandidateCardFiles } from "@/lib/recruitment/files";
 import { listViewerTeamManagers } from "@/lib/recruitment/hiring-manager-team";
 import { listManagerFolderFilings } from "@/lib/recruitment/manager-folders";
+import { isUuid } from "@/lib/http/uuid";
+import { fenceDistrictBoards, fenceRowsByCandidate } from "@/lib/recruitment/workspace/fence";
+import { answerChipsByCandidate, loadAnswerChipContext } from "@/components/recruitment/workspace/manager-answer-chips";
+import { cairoToday } from "@/lib/recruitment/workspace/filters";
 
 export const dynamic = "force-dynamic";
 
@@ -95,13 +99,24 @@ export default async function EmployeePortalRecruitmentCandidatesPage({
   //     CVs of applicants who asked for that area. The owner, 2026-08-31: "you will make a folder
   //     per district manager. Each folder has his areas ... he click the folder and open he find all
   //     CVs." Scoped to his own seats, and empty for anybody who holds none.
-  const [applications, sentToMe, team, filings, areaOptions, districtBoards] = await Promise.all([
+  //   • the question set — so each CV's answers read as the workspace's labelled chips (owner,
+  //     2026-10-20: the manager portal draws the workspace's own rows). Started now, read later; a
+  //     failed read leaves the rows saying they hold no answers, never a blank page.
+  const chipContextLoad = loadAnswerChipContext().catch(() => null);
+  const [everyApplication, everySentToMe, team, filings, areaOptions, everyDistrictBoard] = await Promise.all([
     listApplications(access),
     listCandidatesSentToManager(access.hrId),
     listViewerTeamManagers(access),
     listManagerFolderFilings(access.hrId),
     listCandidateFolderAreaOptions(),
     listDistrictBoardsForManager(access.hrId),
+  ]);
+  // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is on none of these lists, so no
+  // card, file, claim or count below can name one. Free for every viewer it does not apply to.
+  const [applications, sentToMe, districtBoards] = await Promise.all([
+    fenceRowsByCandidate(access, everyApplication, (application) => application.candidateId),
+    fenceRowsByCandidate(access, everySentToMe, (candidate) => candidate.id),
+    fenceDistrictBoards(access, everyDistrictBoard),
   ]);
   const myCandidates = applications.filter((application) => application.candidate && application.requisition);
 
@@ -167,6 +182,23 @@ export default async function EmployeePortalRecruitmentCandidatesPage({
       : application,
   );
 
+  // The answer chips, read off the SAME candidates the cards draw — the redacted ones — so a chip can
+  // never carry what the card itself hides.
+  const chipContext = await chipContextLoad;
+  const answerChips = chipContext
+    ? answerChipsByCandidate(
+        [
+          ...visibleSentToMe,
+          ...visibleApplications.flatMap((application) => (application.candidate ? [application.candidate] : [])),
+          ...visibleDistrictBoards.flatMap((board) => board.folders.flatMap((folder) => folder.candidates)),
+        ],
+        chipContext,
+      )
+    : {};
+  // A notification's `?candidate=` opens that CV on arrival, when it is one of his.
+  const linked = (await searchParams)[CANDIDATE_LINK_PARAM];
+  const initialOpenId = typeof linked === "string" && isUuid(linked) ? linked : null;
+
   return (
     <EmployeePortalPageShell
       badge="Hiring"
@@ -175,15 +207,18 @@ export default async function EmployeePortalRecruitmentCandidatesPage({
     >
       <RecruitmentCandidatesPortal
         areaOptions={areaOptions}
+        initialAnswerChips={answerChips}
         initialApplications={visibleApplications}
         initialCallClaims={callClaims}
         initialDistrictBoards={visibleDistrictBoards}
         initialUnseenIds={unseenIds}
         initialFilings={filings}
         initialFiles={initialFiles}
+        initialOpenId={initialOpenId}
         initialOpeners={openers}
         initialSentToMe={visibleSentToMe}
         initialTeam={team}
+        today={cairoToday()}
         viewerHrId={access.hrId}
       />
     </EmployeePortalPageShell>

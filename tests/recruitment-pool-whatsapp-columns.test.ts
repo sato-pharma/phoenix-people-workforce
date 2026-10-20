@@ -341,7 +341,7 @@ export async function runRecruitmentPoolWhatsAppColumnsTests() {
     /labelOnlyForScreenReaders \? "sr-only" : `mb-1 block break-words normal-case \$\{phxLabelTextClassName\}`/,
     "hidden from sight, never removed: the input keeps its accessible name",
   );
-  for (const page of ["app/(admin)/recruitment/page.tsx", "app/employee-portals/recruitment/page.tsx"]) {
+  for (const page of ["app/(admin)/recruitment/previous/page.tsx", "app/employee-portals/recruitment/page.tsx"]) {
     const source = read(page);
     assert.ok(source.includes("whatsappQuestions: () => loadPoolWhatsAppQuestions(),"), `${page} must read the question list`);
     assert.ok(source.includes("whatsappQuestions={whatsappQuestions}"), `${page} must hand it to the pool`);

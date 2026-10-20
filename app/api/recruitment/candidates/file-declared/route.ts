@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { fenceRowsByCandidate } from "@/lib/recruitment/workspace/fence";
 
 import { fileCandidateToFolder, listCandidates } from "@/lib/recruitment/candidates";
 import { collectSuggestedFilings } from "@/lib/recruitment/candidate-folder-suggestion";
@@ -40,10 +41,12 @@ export async function POST(request: Request) {
       : null;
 
     // The slim read: the folder suggestions come from WhatsApp answers, never the repeating CV blocks.
-    const [candidates, canonicalAreas] = await Promise.all([
+    const [everyone, canonicalAreas] = await Promise.all([
       listCandidates({ withRepeatingCvBlocks: false }),
       listCanonicalMedicalRepAreaNames(),
     ]);
+    // The Talent Acquisition fence (owner, 2026-10-20): she neither files nor hears about an HR applicant.
+    const candidates = await fenceRowsByCandidate(access, everyone, (candidate) => candidate.id);
     const { filings, skipped } = collectSuggestedFilings(candidates, canonicalAreas);
     const targets = wanted ? filings.filter((filing) => wanted.has(filing.candidateId)) : filings;
 

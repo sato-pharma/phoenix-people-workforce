@@ -6,11 +6,14 @@ Owner's decisions, 2026-10-06. The rule bullet in `.claude/rules/recruitment.md`
 
 1. What are you applying for? (taps **HR Section Head** — it took the row Finance held on the full 10-row list; Finance stays addable on the Screening Questions screen.)
 2. What did you graduate in? (the built-in background question; the seat was added to its audience.)
-3. **Are you based in Cairo?** `hrsh_cairo` — **No ends the conversation.** Yes asks `hrsh_residence` (current area of residence).
-4. `hrsh_age_band` — how old are you.
-5. `hrsh_pharma` — experience in pharmaceutical companies. **Yes** asks `hrsh_medrep_hiring` and `hrsh_ats_experience`; **No** skips both.
-6. `hrsh_current_salary` — current monthly net salary, typed.
-7. `hrsh_start_date` — when could you start.
+3. **Are you based in Cairo?** `oc_cairo` (shared with Office Coordinator since 20 Oct 2026; it was `hrsh_cairo`) — **No ends the conversation.** Yes asks `hrsh_residence` (current area of residence).
+4. `field_age_band` — how old are you (shared; it was `hrsh_age_band`, the same five bands).
+5. `hr_ats_experience` and `hr_medrep_hiring` — the recruitment-system and medical-rep hiring questions, shared with Talent Acquisition and asked to every applicant since 20 Oct 2026 (they were the `hrsh_*` twins, asked only after a Yes to `hrsh_pharma`).
+6. `hrsh_pharma` — experience in pharmaceutical companies (no longer gates anything).
+7. `hrsh_current_salary` — current monthly net salary, typed.
+8. `oc_start_date` — when could you start (shared; it was `hrsh_start_date`).
+
+**One question, one name (owner, 2026-10-20; migration `20261020020000_ats_recruitment_one_question_one_name`).** The five twins were retired (`is_active = false`, never deleted) and their key rewritten in every stored answer, chat and `show_if`. The order follows `sort_order`, so the shared questions sit where their rows sit; `hrsh_residence` moved to sort 1 so it still follows Cairo.
 
 The built-in `experience` and `salary` audiences are explicit lists of every role **except** `hr_section_head` (its pharma and current-salary questions replace them); `region` and `area` were already sales-only. **A role added later must be added to the `experience` and `salary` audience lists to be asked them**, exactly as it has to be for `background`.
 

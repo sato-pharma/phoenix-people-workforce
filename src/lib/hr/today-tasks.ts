@@ -47,6 +47,7 @@ import {
 } from "@/lib/recruitment/candidate-status";
 import { intakeSourceLabel } from "@/lib/recruitment/intake-source";
 import { applicationStageLabels } from "@/lib/recruitment/labels";
+import { HR_WORKSPACE_BASE_PATH, workspaceCandidateHref } from "@/lib/recruitment/workspace/links";
 
 /** How many named rows a task shows before it says how many more there are. */
 export const ITEM_PREVIEW_LIMIT = 6;
@@ -728,7 +729,10 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
           const days = daysSince(row.lastStageChangedAt);
           return {
             age: waitingLabel(days),
-            href: "/hr/recruitment",
+            // The person's own CV in the workspace; a row with no candidate record has none to open.
+            href: row.candidate?.id
+              ? workspaceCandidateHref(row.candidate.id, null, { basePath: HR_WORKSPACE_BASE_PATH })
+              : "/hr/recruitment",
             id: row.id,
             meta: [
               applicationStageLabels[row.stage],

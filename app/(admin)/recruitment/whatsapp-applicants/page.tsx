@@ -48,8 +48,9 @@ export default async function WhatsAppApplicantsPage() {
   // Archive that cannot be read says so, and never takes the applicants list down with it.
   const [view, archive] = canViewCandidates
     ? await Promise.all([
-        loadWhatsAppApplicantsView(),
-        loadWhatsAppCvArchiveView().catch((error: unknown) => {
+        // The Talent Acquisition fence (owner, 2026-10-20) rides in the viewer on both reads.
+        loadWhatsAppApplicantsView({ access }),
+        loadWhatsAppCvArchiveView({ access }).catch((error: unknown) => {
           console.error("[whatsapp-applicants] the WhatsApp CV Archive could not be read", error);
           return "unavailable" as const;
         }),

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import { loadCandidateTimeline } from "@/lib/recruitment/candidate-timeline-loader";
 import { getCandidateProfile } from "@/lib/recruitment/candidates";
@@ -29,8 +30,9 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireRecruitmentAccess(request, "candidates", "read");
+    const access = await requireRecruitmentAccess(request, "candidates", "read");
     const { id } = await params;
+    await assertCandidateVisible(access, id);
 
     const profile = await getCandidateProfile(id);
     if (!profile) {

@@ -9,6 +9,7 @@ import {
   listInterviewRequestsInbox,
   listMyInterviewRequests,
 } from "@/lib/recruitment/interview-requests";
+import { assertCandidatesVisible, fenceInterviewRequests } from "@/lib/recruitment/workspace/fence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,14 +28,15 @@ export async function GET(request: Request) {
     const caller = await interviewCalendarCaller(access, request);
     const params = new URL(request.url).searchParams;
     const headers = { "Cache-Control": "no-store" };
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's CV leaves every request, and a
+    // request that was only about HR applicants leaves the list. Someone from outside always stays.
     if (params.get("mine")) {
-      return NextResponse.json({ requests: await listMyInterviewRequests(caller), success: true }, { headers });
+      const mine = await listMyInterviewRequests(caller);
+      return NextResponse.json({ requests: await fenceInterviewRequests(access, mine), success: true }, { headers });
     }
     const includeCancelled = Boolean(params.get("includeCancelled"));
-    return NextResponse.json(
-      { requests: await listInterviewRequestsInbox(caller, { includeCancelled }), success: true },
-      { headers },
-    );
+    const inbox = await listInterviewRequestsInbox(caller, { includeCancelled });
+    return NextResponse.json({ requests: await fenceInterviewRequests(access, inbox), success: true }, { headers });
   } catch (error) {
     return recruitmentApiError(error, "Could not load the interview requests.");
   }
@@ -102,6 +104,11 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     const caller = await interviewCalendarCaller(access, request);
     const { body, items } = await readRequest(request);
+    // A request may not name a person this viewer may not see: the whole request answers as unknown.
+    await assertCandidatesVisible(
+      access,
+      items.map((item) => item.candidateId).filter((id): id is string => Boolean(id)),
+    );
 
     const serviceItems: InterviewRequestItemInput[] = [];
     for (const item of items) {

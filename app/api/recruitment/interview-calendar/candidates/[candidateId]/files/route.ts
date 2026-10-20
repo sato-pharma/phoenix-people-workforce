@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import { recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
@@ -18,6 +19,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ cand
     const access = await resolveAccessContext(request);
     const caller = await interviewCalendarCaller(access, request);
     const { candidateId } = await params;
+    await assertCandidateVisible(access, candidateId);
     const files = await listInterviewCalendarCandidateFiles(caller, candidateId);
     return NextResponse.json({ files, success: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

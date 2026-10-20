@@ -9,6 +9,7 @@ import {
   requireRecruitmentAccess,
   str,
 } from "@/app/api/recruitment/_lib/http";
+import { assertApplicationVisible } from "@/lib/recruitment/workspace/fence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const { id } = await params;
 
     const existing = await getInterviewRow(id);
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's round answers as not there.
+    await assertApplicationVisible(access, existing.applicationId, "Interview not found.");
     if (existing.interviewType !== hiringManagerInterviewType(access.role)) {
       return NextResponse.json(
         { error: "forbidden", message: "Only your own interview round can be recorded here.", success: false },

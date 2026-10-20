@@ -329,6 +329,13 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/probation/service.ts",
   "src/lib/recruitment/access.ts",
   "src/lib/recruitment/account-activation.ts",
+  // daily-cv-digest.ts and recruitment-notify.ts name "HR Resourcing", added 2026-10-20 with the
+  // rebuilt workspace (owner: Talent Acquisition sees every tab except HR Section Head and Talent
+  // Acquisition). Reviewed verdict: each names the seat only to apply the Talent Acquisition fence —
+  // the 18:00 digest and her CV notices drop the HR applicants she may not see. They can only REMOVE
+  // rows from what she already received; they grant nothing.
+  "src/lib/recruitment/inbound/daily-cv-digest.ts",
+  "src/lib/recruitment/inbound/recruitment-notify.ts",
   // Names HR Operations in isInterviewCalendarOwner, added 2026-09-21. Owner, that day: "make
   // Yasmeena HR Operations full access and control to it as admin". Reviewed verdict: it GRANTS
   // reach, and only to the interview calendar: she books, moves and cancels interviews, shares the
@@ -355,6 +362,12 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // her successor inherits it). It grants nothing and gates nothing, like role-recipients.ts: being
   // the owner gives her no grant she did not already hold.
   "src/lib/recruitment/requisition-autopilot.ts",
+  // fence.ts and role-tabs.ts name "HR Resourcing", added 2026-10-20 with the rebuilt workspace.
+  // Reviewed verdict: a GATE that can only NARROW. role-tabs.ts keeps the HR Section Head and Talent
+  // Acquisition tabs out of her tab list, and fence.ts answers an HR applicant as not-found at every
+  // boundary that returns a candidate. Her candidates and recruitment grants are unchanged.
+  "src/lib/recruitment/workspace/fence.ts",
+  "src/lib/recruitment/workspace/role-tabs.ts",
   "src/lib/reports/organogram.ts",
   "src/lib/resignations/service.ts",
   // src/lib/sato-email/access.ts left this list on 2026-10-08: it named only the retired HR Advisory seat.

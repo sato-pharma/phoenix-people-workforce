@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { fenceCandidateIds } from "@/lib/recruitment/workspace/fence";
 
 import { searchCandidateCvs, CV_SEARCH_MIN_LENGTH } from "@/lib/recruitment/cv-search";
 import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
@@ -30,7 +31,10 @@ export async function GET(request: Request) {
     }
 
     const result = await searchCandidateCvs(access, query);
-    return NextResponse.json({ ...result, success: true });
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's CV text is not searched for her.
+    const visible = await fenceCandidateIds(access, result.hits.map((hit) => hit.candidateId));
+    const hits = result.hits.filter((hit) => visible.has(hit.candidateId));
+    return NextResponse.json({ ...result, hits, success: true });
   } catch (error) {
     return recruitmentApiError(error, "Failed to search CV contents.");
   }

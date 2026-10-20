@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { fenceCandidateIds } from "@/lib/recruitment/workspace/fence";
 
 import { createCandidate, searchCandidates } from "@/lib/recruitment/candidates";
 import type { CreateCandidateInput } from "@/lib/recruitment/types";
@@ -16,13 +17,16 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    await requireRecruitmentAccess(request, "candidates", "read");
+    const access = await requireRecruitmentAccess(request, "candidates", "read");
     const url = new URL(request.url);
-    const candidates = await searchCandidates({
+    const found = await searchCandidates({
       q: url.searchParams.get("q"),
       status: url.searchParams.get("status"),
       source: url.searchParams.get("source"),
     });
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is not in her results at all.
+    const visible = await fenceCandidateIds(access, found.map((candidate) => candidate.id));
+    const candidates = found.filter((candidate) => visible.has(candidate.id));
     return NextResponse.json({ success: true, candidates });
   } catch (error) {
     return recruitmentApiError(error, "Failed to load candidates.");

@@ -7,9 +7,12 @@ import { AdminInsightChip } from "@/components/admin/admin-design-system";
 import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { RecruitmentCandidatesPortal } from "@/components/employee-portal/recruitment-candidates-portal";
+import { answerChipsByCandidate, loadAnswerChipContext } from "@/components/recruitment/workspace/manager-answer-chips";
 import { canAccess, canOpenPersonalCandidateInbox } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { isUuid } from "@/lib/http/uuid";
 import { listApplications } from "@/lib/recruitment/applications";
+import { CANDIDATE_LINK_PARAM } from "@/lib/recruitment/candidate-page-link";
 import {
   redactCandidateContact,
   revealPhoneToViewer,
@@ -27,6 +30,8 @@ import {
 import { listCandidateCardFiles } from "@/lib/recruitment/files";
 import { listViewerTeamManagers } from "@/lib/recruitment/hiring-manager-team";
 import { listManagerFolderFilings } from "@/lib/recruitment/manager-folders";
+import { fenceDistrictBoards, fenceRowsByCandidate } from "@/lib/recruitment/workspace/fence";
+import { cairoToday } from "@/lib/recruitment/workspace/filters";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +39,11 @@ export const dynamic = "force-dynamic";
 // Manager/National Sales Manager reach via the employee portal — CEO's primary surface is
 // the admin shell, not the employee portal, so this is a thin admin-shell wrapper around
 // the exact same RecruitmentCandidatesPortal component, not a new UI.
-export default async function AdminRecruitmentCandidatesPage() {
+export default async function AdminRecruitmentCandidatesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const access = await resolveAccessContextFromPage();
 
   if (!canOpenPersonalCandidateInbox(access) || !(await canAccess(access, "hiring_interviews", "read"))) {
@@ -50,12 +59,16 @@ export default async function AdminRecruitmentCandidatesPage() {
         />
       }
     >
-      <AdminRecruitmentCandidatesContent />
+      <AdminRecruitmentCandidatesContent searchParams={searchParams} />
     </Suspense>
   );
 }
 
-async function AdminRecruitmentCandidatesContent() {
+async function AdminRecruitmentCandidatesContent({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const access = await resolveAccessContextFromPage();
   // Already scoped: listApplications() filters to only the requisitions this caller is
   // the hiring manager (or recruitment owner) for — see canSeeApplication in
@@ -78,13 +91,24 @@ async function AdminRecruitmentCandidatesContent() {
   // renders the identical component, and the component treats an empty board list as "this caller
   // holds no areas". Leaving it out here would not hide the folders politely — it would tell a
   // manager who holds ten areas that he has no candidates at all, over folders that are full.
-  const [applications, sentToMe, team, filings, areaOptions, districtBoards] = await Promise.all([
+  // The question set, so each CV's answers read as the workspace's labelled chips — the same rows the
+  // portal twin draws. Started now, read later; a failed read leaves the rows saying they hold no
+  // answers, never a blank page.
+  const chipContextLoad = loadAnswerChipContext().catch(() => null);
+  const [everyApplication, everySentToMe, team, filings, areaOptions, everyDistrictBoard] = await Promise.all([
     listApplications(access),
     listCandidatesSentToManager(access.hrId),
     listViewerTeamManagers(access),
     listManagerFolderFilings(access.hrId),
     listCandidateFolderAreaOptions(),
     listDistrictBoardsForManager(access.hrId),
+  ]);
+  // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is on none of these lists, so no
+  // card, file, claim or count below can name one. Free for every viewer it does not apply to.
+  const [applications, sentToMe, districtBoards] = await Promise.all([
+    fenceRowsByCandidate(access, everyApplication, (application) => application.candidateId),
+    fenceRowsByCandidate(access, everySentToMe, (candidate) => candidate.id),
+    fenceDistrictBoards(access, everyDistrictBoard),
   ]);
   const myCandidates = applications.filter((application) => application.candidate && application.requisition);
 
@@ -132,6 +156,24 @@ async function AdminRecruitmentCandidatesContent() {
       : application,
   );
 
+  // The answer chips, read off the SAME candidates the cards draw — the redacted ones — so a chip can
+  // never carry what the card itself hides.
+  const chipContext = await chipContextLoad;
+  const answerChips = chipContext
+    ? answerChipsByCandidate(
+        [
+          ...visibleSentToMe,
+          ...visibleApplications.flatMap((application) => (application.candidate ? [application.candidate] : [])),
+          ...visibleDistrictBoards.flatMap((board) => board.folders.flatMap((folder) => folder.candidates)),
+        ],
+        chipContext,
+      )
+    : {};
+  // A `?candidate=` link opens that CV on arrival, when it is one of his (the same parameter the
+  // portal twin reads).
+  const linked = (await searchParams)[CANDIDATE_LINK_PARAM];
+  const initialOpenId = typeof linked === "string" && isUuid(linked) ? linked : null;
+
   return (
     <PageContainer>
       <div className="mx-auto max-w-5xl space-y-6">
@@ -160,15 +202,18 @@ async function AdminRecruitmentCandidatesContent() {
         />
         <RecruitmentCandidatesPortal
           areaOptions={areaOptions}
+          initialAnswerChips={answerChips}
           initialApplications={visibleApplications}
           initialCallClaims={callClaims}
           initialDistrictBoards={visibleDistrictBoards}
-        initialUnseenIds={unseenIds}
+          initialUnseenIds={unseenIds}
           initialFilings={filings}
           initialFiles={initialFiles}
+          initialOpenId={initialOpenId}
           initialOpeners={openers}
           initialSentToMe={visibleSentToMe}
           initialTeam={team}
+          today={cairoToday()}
           viewerHrId={access.hrId}
         />
       </div>
