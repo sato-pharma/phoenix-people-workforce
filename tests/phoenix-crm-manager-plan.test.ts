@@ -1566,6 +1566,16 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     false,
     "the address is never sent only for a vacant area again — that is the defect he reported",
   );
+
+  // ── A customer nobody has yet is added FROM the single-visit screen, the same way (owner, 2026-10-20) ──
+  // His words, under "No customer of the districts you plan in goes by that name. Add the customer to
+  // Manager's own list from Team first.": "make him able to create from the same screen the same way".
+  const findBody = functionBody(singleVisits, "function FindCustomer(");
+  assert.equal(/from Team first/.test(singleVisits), false, "the screen never sends him to Team to add a customer first");
+  assert.match(findBody, /<ManagerCustomerForm[\s\S]*defaultName=\{name\.trim\(\)\}[\s\S]*onAdded=\{added\}/, "the Add-a-customer form opens right there, on the name he searched for");
+  assert.match(findBody, /onPick\(ownLogging\(\{ \.\.\.customer, vacant: areas\.find\(\(entry\) => entry\.seatId === customer\.areaSeatId\)\?\.vacant === true \}\)\)/, "and the customer he added opens the visit log next, a vacant area's rule included");
+  assert.match(findBody, /Add a new customer/, "the button says what it does");
+  assert.match(source("src/components/phoenix-crm/manager-customer-form.tsx"), /const \[name, setName\] = useState\(defaultName \?\? ""\);/, "the shared form takes the name already typed");
   assert.match(
     singleVisits,
     /Where the customer is · \{logging\.vacant \? "one of the first two is needed" : "optional"\}/,

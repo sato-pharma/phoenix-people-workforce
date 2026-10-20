@@ -508,6 +508,14 @@ vacant area's recorded. A visit that recorded nothing still prints nothing. **No
 and the `_address` CHECK are from `20261019103745`, and the `_vacant_place` CHECK only ever constrained a
 vacant visit.
 
+**A customer nobody has yet is added from the same screen (later the same day).** A name search that found
+nobody used to answer *"Add the customer to Manager's own list from Team first."* He sent that screen with
+*"make him able to create from the same screen the same way"*. Now "Add a new customer" sits under the
+search, and in that answer, and opens the very `ManagerCustomerForm` Team uses, on the name he typed and the
+area he chose. Saving adds the customer to Manager's own list exactly as Team does (same route, same rules),
+and the visit log opens on that customer next, with the address the form recorded; in a vacant area the
+address-or-location rule applies as for any customer there.
+
 **Audited and left alone:** the territory Add-visit hand-over (`fileAsOwnSingleVisit`) always sends a
 captured pin, so the place rule was already answered there; adding a customer to Manager's own list is
 unchanged, by his 19 Oct ruling.

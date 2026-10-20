@@ -161,7 +161,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # lockfile or workspace settings are involved, npm ships inside node:24-alpine anyway,
 # and pnpm here would need corepack + a store for zero benefit in this final image layer.
 RUN cd /tmp && npm init -y >/dev/null 2>&1 \
- && npm install --omit=dev puppeteer-core@25.9.0 >/dev/null 2>&1 \
+ && npm install --omit=dev puppeteer-core@25.13.0 >/dev/null 2>&1 \
  && cp -R /tmp/node_modules/. /app/node_modules/ \
  && rm -rf /tmp/node_modules /tmp/package.json /tmp/package-lock.json
 
