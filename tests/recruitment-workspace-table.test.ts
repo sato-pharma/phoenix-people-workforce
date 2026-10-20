@@ -12,6 +12,13 @@
 //     sum to 100 — a short total leaves a column unsized under `table-fixed`, a long one overflows.
 //   * The table switches on its OWN width (`@container`), never the window's: beside an opened CV it
 //     is half the page on a wide screen. Every container breakpoint in it is the one constant.
+//   * The table's head stays pinned while the rows scroll (owner, the same day): every head cell is
+//     sticky at `--ws-head-top`, under the workspace's own pinned header, and the frame overrides the
+//     shell's `:has(> table)` overflow — left as a scroll box, the frame never scrolls and the head
+//     never moves. A row stepped into view stops below the head as well as the header.
+//   * The viewer measures the page in its OWN pixels (offsetWidth/offsetHeight), the same pixels it
+//     reads the pane in. getBoundingClientRect carries the admin shell's screen zoom (90%), so a page
+//     measured that way fitted 1/0.9 too big and page 1's foot sat under the pane.
 //   * The pane is a fixed HEIGHT, not a cap: the document needs a definite box to fit page 1 into,
 //     and a `max-height` pane scrolls as a whole, taking the action bar out of view with it.
 //   * `placingRefusal` is what the placing route refuses before any write — no role, a role off the
@@ -107,7 +114,14 @@ function columnTests(): void {
 
 function tableSourceTests(): void {
   const table = code("src/components/recruitment/workspace/candidate-table.tsx");
-  assert.match(table, /className="@container"/, "the table switches on its own width");
+  assert.match(
+    table,
+    /<div className="@container !overflow-visible" style=\{\{ "--ws-head-h": `\$\{headHeight\}px` \} as CSSProperties\}>/,
+    "the table switches on its own width, in a frame that never scrolls on its own",
+  );
+  assert.match(table, /const headCell =\s*"sticky top-\[var\(--ws-head-top,0px\)\] z-20 /, "every head cell pins under the workspace's header");
+  assert.match(table, /<thead ref=\{headRef\}>/, "the head's height is measured");
+  assert.match(table, /scroll-mt-\[calc\(var\(--ws-row-margin,0px\)\+var\(--ws-head-h,0px\)\)\]/, "a row stepped into view stops below the pinned head");
   assert.match(table, /className="hidden w-full table-fixed border-collapse md:table"/, "a fixed table on a desktop");
   assert.match(table, /data-portal-desktop-table/);
   assert.match(table, /<colgroup>/, "a colgroup sizes the columns");
@@ -121,6 +135,12 @@ function tableSourceTests(): void {
 
   const shell = code("src/components/recruitment/workspace/role-workspace.tsx");
   assert.match(shell, /grid-cols-\[minmax\(0,1fr\)_minmax\(0,1fr\)\]/, "an opened CV halves the page");
+  assert.match(
+    shell,
+    /const headTop = `calc\(var\(--ws-chrome, 0px\) \/ var\(--phx-scale-applied, 1\) \+ \$\{pinned \? headerHeight : 0\}px\)`;/,
+    "the head pins just under the pinned header",
+  );
+  assert.match(shell, /"--ws-head-top": headTop/, "and the table is told where");
   assert.match(shell, /style=\{\{ height: cvHeight, top: cvTop \}\}/, "the pane is a fixed HEIGHT, pinned under the app's bar");
   assert.doesNotMatch(shell, /maxHeight/, "never a max-height pane that scrolls as a whole");
   assert.match(shell, /className=\{`sticky min-w-0 self-start overflow-hidden /, "the pane itself never scrolls");
@@ -138,6 +158,11 @@ function tableSourceTests(): void {
   const viewer = code("src/components/recruitment/cv-preview-modal.tsx");
   assert.match(viewer, /from "@\/components\/recruitment\/cv-fit-zoom"/, "the viewer uses the pinned arithmetic");
   assert.doesNotMatch(viewer, /function cvFitZoom\b/, "and keeps no copy of its own");
+  const measure = viewer.slice(viewer.indexOf("if (!canFit || loading || naturalWidth !== null) return;"), viewer.indexOf("const observer = new ResizeObserver((entries)"));
+  assert.ok(measure.length > 200, "the page-measuring effect is where the test expects it");
+  assert.match(measure, /measured = Math\.max\(measured, page\.offsetWidth\)/, "the page's width in its own pixels");
+  assert.match(measure, /\? first\.offsetHeight : 0/, "page 1's height in its own pixels");
+  assert.doesNotMatch(measure, /getBoundingClientRect\(\)\.(?:width|height)/, "never in the screen-zoomed pixels the pane is not read in");
 
   // A retry after a save that stored the new role and then failed sees "no role change"; if the stale
   // answer-filed tabs were cleared only on a change, the person would stay filed in two tabs.

@@ -474,7 +474,9 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
   // the CV inside has a definite box to fit page 1 into.
   const cvTop = `calc(var(--ws-chrome, 0px) / var(--phx-scale-applied, 1) + ${PANE_GAP_PX}px)`;
   const cvHeight = `calc(100vh / var(--phx-scale-applied, 1) - var(--ws-chrome, 0px) / var(--phx-scale-applied, 1) - ${PANE_GAP_PX * 2}px)`;
-  // A row scrolled into view stops below the pinned header, never under it.
+  // The table's own head pins just under that header (or under the app's bar when the header is not
+  // pinned), and a row scrolled into view stops below both, never under them.
+  const headTop = `calc(var(--ws-chrome, 0px) / var(--phx-scale-applied, 1) + ${pinned ? headerHeight : 0}px)`;
   const rowMargin = `calc(var(--ws-chrome, 0px) / var(--phx-scale-applied, 1) + ${pinned ? headerHeight : 0}px + 8px)`;
 
   const emptyMessage = searching
@@ -541,7 +543,7 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
           title={searching ? "No match" : "Nothing here yet"}
         />
       ) : (
-        <div style={{ "--ws-row-margin": rowMargin } as CSSProperties}>
+        <div style={{ "--ws-head-top": headTop, "--ws-row-margin": rowMargin } as CSSProperties}>
           <CandidateTable
             answerOptions={answerOptions}
             canEdit={viewer.canWork}
