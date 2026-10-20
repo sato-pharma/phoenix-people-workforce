@@ -474,18 +474,19 @@ export function canWriteAsRep(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: b
  * (`20261010161139_phoenix_crm_day_activities_count_on_the_managers_own_seat.sql`). The rep's own day
  * stays `canWriteAsRep`'s, and the Super Admin records nothing in the field.
  *
- * District tiers only (`DM`, `ACTING_DM`): the owner's word was about the District Sales Manager, and
- * a regional or national manager is not widened by it.
+ * District and regional tiers (`DM`, `ACTING_DM`, `RSM`): the owner's word was the District Sales
+ * Manager, widened the same night to the regional manager ("let regional managers record their own day
+ * too"). A national manager is not widened by either.
  */
 export function ownDaySeat(viewer: PhoenixCrmViewer, seat: OrgSeat): OrgSeat | null {
   if (viewer.isSuperAdmin || !viewer.canCreate) return null;
   if (viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId)) return null;
   if (!viewer.scopeTerritories.some((entry) => entry.seatId === seat.seatId)) return null;
   const member = managerChain(viewer.org, seat.seatId).find((entry) => entry.hrId === viewer.hrId);
-  return member && DISTRICT_MANAGER_TIERS.has(member.seat.tier) ? member.seat : null;
+  return member && OWN_DAY_MANAGER_TIERS.has(member.seat.tier) ? member.seat : null;
 }
 
-const DISTRICT_MANAGER_TIERS = new Set(["DM", "ACTING_DM"]);
+const OWN_DAY_MANAGER_TIERS = new Set(["DM", "ACTING_DM", "RSM"]);
 
 /**
  * Writing a day activity: the territory's own rep on his territory, or a district manager on his own
