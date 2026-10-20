@@ -1,6 +1,7 @@
 import { ResignationsWorkspace } from "@/components/resignations/resignations-workspace";
 import { redirect } from "next/navigation";
 
+import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
@@ -38,6 +39,7 @@ export default async function ResignationsPage() {
   return (
     <ResignationsWorkspace
       canExportHistory={await canAccess(access, "resignations", "export")}
+      canExportTab={!isSalaryBlindRole(access.role)}
       canCreate={await canAccess(access, "resignations", "create")}
       canDecide={await canAccess(access, "resignations", "approve")}
       canEditDates={await canChangeResignationDates(access)}
