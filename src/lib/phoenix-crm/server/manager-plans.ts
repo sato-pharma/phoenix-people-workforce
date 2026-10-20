@@ -30,6 +30,7 @@ import { fieldWeekStart, isIsoDay, weeklyPlanDueOn } from "@/lib/phoenix-crm/cal
 import {
   findManagerPlanScope,
   flagManagerCustomer,
+  freeSingleVisitHalves,
   halfOfListType,
   isManagerAskLive,
   isManagerDayOpen,
@@ -86,6 +87,7 @@ import {
 } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { assertSingleVisitPlanFits, loadLoggedSingleVisitHalves, plannedSingleVisitHalves } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
 import { managerApproversFor, managerWriterScopes } from "@/lib/phoenix-crm/server/manager-plan-writers";
+import { loadApprovedSingleVisitDates } from "@/lib/phoenix-crm/server/manager-single-visit-day-rows";
 import {
   EDIT_ASK_COLUMNS,
   editAskRowOf,
@@ -402,10 +404,13 @@ export type ManagerPlanBoardView = {
   activities: Array<{ key: string; label: string }>;
   days: ManagerBoardDay[];
   /**
-   * A district manager's single-visit half-days this week, counted as the save counts them — his planned
-   * ones AND the halves of visits he has already logged. Null for every other planner.
+   * A district manager's single-visit half-days of his FREE day this week, counted as the save counts them —
+   * his planned ones AND the halves of visits he has already logged, less those on a date his managers
+   * approved. Null for every other planner.
    */
   singleVisitHalvesUsed: number | null;
+  /** The dates of this week his managers approved as another day of single visits (owner, 2026-10-20). */
+  singleVisitDaysApproved: string[] | null;
 };
 
 export { managerPlace };
@@ -447,6 +452,7 @@ function emptyView(viewer: PhoenixCrmViewer, isTest: boolean, mode: "own" | "pic
     activities: managerAdminActivities("dm"),
     days: [],
     singleVisitHalvesUsed: null,
+    singleVisitDaysApproved: null,
   };
 }
 
@@ -532,10 +538,11 @@ async function buildBoard(
   // The reps' own weeks: the chosen scope's, and every rep a saved half-day already names — so a ticked
   // customer is still flagged when the board shows another district.
   const repSeatIds = dedupeIds([...team.map((entry) => entry.seatId), ...slots.map((slot) => slot.repSeatId)]);
-  const [slotCustomers, repWeeks, loggedSingleVisitHalves] = await Promise.all([
+  const [slotCustomers, repWeeks, loggedSingleVisitHalves, approvedSingleVisitDates] = await Promise.all([
     loadManagerSlotCustomers(slots.map((slot) => slot.slotId)),
     loadRepWeeks(repSeatIds, weekStart, isTest, oldCrmRepsOf([...team.map((entry) => ({ seatId: entry.seatId, hrId: entry.occupantHrId })), ...slots.map((slot) => ({ seatId: slot.repSeatId, hrId: slot.repHrId }))])),
     writer.kind === "dm" ? loadLoggedSingleVisitHalves({ managerHrId, weekStart, isTest }) : Promise.resolve(null),
+    writer.kind === "dm" ? loadApprovedSingleVisitDates({ managerHrId, weekStart, isTest }) : Promise.resolve(null),
   ]);
   const scopeSeatOccupants = [...scopes, ...slots.map((slot) => ({ dmSeatId: slot.scopeDmSeatId }))].map((scope) =>
     scope.dmSeatId ? viewer.org.seats.get(scope.dmSeatId)?.occupantHrId : null,
@@ -560,8 +567,11 @@ async function buildBoard(
   view.scopes = scopeChoices(viewer, writer, scopes, names);
   view.scope = chosen?.key ?? null;
   view.activities = managerAdminActivities(writer.kind);
-  // The count the save refuses by: the plan's single-visit halves and the visits he has already logged.
-  view.singleVisitHalvesUsed = loggedSingleVisitHalves ? new Set([...plannedSingleVisitHalves(slots), ...loggedSingleVisitHalves]).size : null;
+  // The count the save refuses by: the plan's single-visit halves and the visits he has already logged, less
+  // those on a date his managers approved — an approved date is paid for by its approval.
+  const approvedDates = approvedSingleVisitDates ?? new Set<string>();
+  view.singleVisitHalvesUsed = loggedSingleVisitHalves ? freeSingleVisitHalves(new Set([...plannedSingleVisitHalves(slots), ...loggedSingleVisitHalves]), approvedDates).size : null;
+  view.singleVisitDaysApproved = approvedSingleVisitDates ? [...approvedSingleVisitDates].sort() : null;
 
   const latestAsk = asks[0] ?? null;
   // An ask is open at either of its two steps: with the regional manager, then with the NSM above him.

@@ -19,6 +19,11 @@ import {
   dmPlansInPhoenixCrmFor,
   dmSingleVisitCapError,
   dmSingleVisitLimitLine,
+  DM_SINGLE_VISIT_EXTRA_DAYS_MAX,
+  freeSingleVisitHalves,
+  isSingleVisitDayAskLive,
+  singleVisitDayAskError,
+  singleVisitDayAskStatusLabel,
   flagManagerCustomer,
   halfOfListType,
   isManagerDayOpen,
@@ -818,7 +823,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     assert.match(body, /secondStep: true,/, `${name}: the NSM is told when the regional manager agrees`);
   }
   const actions = source("src/components/approvals-hub/manager-plan-decision-actions.tsx");
-  assert.equal(actions.split("stage: target.stage ?? undefined").length - 1, 2, "the Hub sends the step it showed, for the ask and the removal");
+  assert.equal(actions.split("stage: target.stage ?? undefined").length - 1, 3, "the Hub sends the step it showed, for the ask, the removal and the day of single visits");
 
   // The database: the step never depends on who decides, the code running before it keeps working, and an
   // ask nobody finished deciding closes with its week at either step.
@@ -1112,14 +1117,14 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
 
   // The routes: every writer reaches them with read — the writer rule decides, never the create grant.
   const routeFiles = filesUnder("app/api/phoenix-crm/manager-plans").filter((file) => file.endsWith("/route.ts"));
-  assert.equal(routeFiles.length, 14, "the fourteen manager-plan routes");
+  assert.equal(routeFiles.length, 16, "the sixteen manager-plan routes");
   for (const file of routeFiles) {
     const text = source(file);
     assert.match(text, /assertPermission\(access, "phoenix_crm", "read"\)/, `${file} asks read`);
     assert.equal(/assertPermission\(access, "phoenix_crm", "(create|approve|update)"\)/.test(text), false, `${file} never asks a grant only a district manager holds`);
   }
   const registry = source("src/lib/security/access-registry.ts").split("\n").filter((line) => line.includes('pattern: "/api/phoenix-crm/manager-plans'));
-  assert.equal(registry.length, 17, "seventeen declarations across the fourteen routes");
+  assert.equal(registry.length, 20, "twenty declarations across the sixteen routes");
   for (const line of registry) assert.ok(line.includes('permission: { resource: "phoenix_crm", action: "read" }'), `declared on read: ${line.trim().slice(0, 120)}`);
 
   // 🔴 `read` at the door makes the SERVICE the gate: a Medical Rep holds `read` too. So each of the ten
@@ -1127,6 +1132,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   // approver's. A new manager-plan POST with no row here fails — it cannot copy the `read` door without
   // declaring the gate behind it (the registry's own permission audit cannot tell the two apart).
   const writerGate = /assertManagerPlanWriter\(viewer\)/;
+  const dayAsksFile = "src/lib/phoenix-crm/server/manager-single-visit-days.ts";
   const plansFile = "src/lib/phoenix-crm/server/manager-plans.ts";
   const customersFile = "src/lib/phoenix-crm/server/manager-customers.ts";
   // One function serves the send AND the decision, so each of those rows is held to ITS OWN branch, and
@@ -1155,6 +1161,9 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     { route: "/api/phoenix-crm/manager-plans/customers/removal", service: "requestManagerCustomerRemoval", file: customersFile, gate: [writerGate] },
     { route: "/api/phoenix-crm/manager-plans/customers/removal/decide", service: "decideManagerCustomerRemoval", file: customersFile, gate: [/managerAskDeciderRole\(viewer/] },
     { route: "/api/phoenix-crm/manager-plans/visits", service: "logManagerVisit", file: "src/lib/phoenix-crm/server/manager-visits.ts", gate: [writerGate] },
+    // His ask for a second or third day of single visits (owner, 2026-10-20).
+    { route: "/api/phoenix-crm/manager-plans/single-visit-days", service: "askSingleVisitDay", file: dayAsksFile, gate: [writerGate, /writer\.kind !== "dm"/] },
+    { route: "/api/phoenix-crm/manager-plans/single-visit-days/decide", service: "decideSingleVisitDay", file: dayAsksFile, gate: [/managerAskDeciderRole\(viewer/] },
   ];
   const registeredPosts = accessRegistry
     .filter((entry) => entry.pattern.startsWith("/api/phoenix-crm/manager-plans") && entry.methods.includes("POST"))
@@ -1207,26 +1216,115 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
 
   // His two screens show the count the save and the log refuse by — the plan's halves AND the logged
   // visits' — never the plan alone, which said "1 of 2" while the save refused (owner, 2026-10-19).
-  assert.equal(dmSingleVisitLimitLine(1), "Single visits are limited to one day a week, which is two half-days. This week holds 1 of 2.");
+  assert.equal(
+    dmSingleVisitLimitLine(1),
+    "One day of single visits a week needs no approval, which is two half-days. This week holds 1 of 2. A second or third day needs your managers' approval first.",
+  );
+  assert.equal(
+    dmSingleVisitLimitLine(2, 1),
+    "One day of single visits a week needs no approval, which is two half-days. This week holds 2 of 2. 1 more day is approved by your managers.",
+  );
+  assert.match(dmSingleVisitLimitLine(2, 2), /2 more days are approved by your managers\.$/);
   assert.match(functionBody(capSource, "export async function loadSingleVisitHalvesUsed("), /plannedSingleVisitHalves\([\s\S]*loadLoggedSingleVisitHalves\(input\)/, "the limit counts through the two functions the screens read");
   assert.match(
     functionBody(source("src/lib/phoenix-crm/server/manager-plans.ts"), "async function buildBoard("),
-    /writer\.kind === "dm" \? loadLoggedSingleVisitHalves\(\{ managerHrId, weekStart, isTest \}\)[\s\S]*view\.singleVisitHalvesUsed = loggedSingleVisitHalves \? new Set\(\[\.\.\.plannedSingleVisitHalves\(slots\), \.\.\.loggedSingleVisitHalves\]\)\.size : null;/,
-    "the board's count is the plan's single-visit halves together with the visits he has logged",
+    /writer\.kind === "dm" \? loadLoggedSingleVisitHalves\(\{ managerHrId, weekStart, isTest \}\)[\s\S]*view\.singleVisitHalvesUsed = loggedSingleVisitHalves \? freeSingleVisitHalves\(new Set\(\[\.\.\.plannedSingleVisitHalves\(slots\), \.\.\.loggedSingleVisitHalves\]\), approvedDates\)\.size : null;/,
+    "the board's count is the plan's single-visit halves together with the visits he has logged, less his approved dates",
   );
   const planBoard = source("src/components/phoenix-crm/manager-plan-board.tsx");
-  assert.match(planBoard, /dmSingleVisitLimitLine\(view\.singleVisitHalvesUsed\)/, "the board shows the server's count");
+  assert.match(planBoard, /dmSingleVisitLimitLine\(view\.singleVisitHalvesUsed, view\.singleVisitDaysApproved\?\.length \?\? 0\)/, "the board shows the server's count");
   assert.equal(/entry\.kind === "single_visit"\)\.length/.test(planBoard), false, "the board never counts the plan's halves alone");
   assert.match(
     functionBody(source("src/lib/phoenix-crm/server/manager-visits.ts"), "export async function loadManagerToday("),
     /writer\.kind === "dm" \? loadSingleVisitAllowance\(\{ managerHrId: viewer\.hrId, weekStart, date: day, isTest \}\) : Promise\.resolve\(null\)/,
     "My single visits reads a district manager's allowance, and nobody else's",
   );
-  assert.match(capSource, /unplannedFitsNow: dmSingleVisitCapError\(used, singleVisitHalfKey\(input\.date, halfNow\(\)\), "visit"\) === null/, "whether an unplanned visit fits now is the log's own test");
+  assert.match(capSource, /unplannedFitsNow: dmSingleVisitCapError\(used, singleVisitHalfKey\(input\.date, halfNow\(\)\), "visit", approvedDates\) === null/, "whether an unplanned visit fits now is the log's own test");
   const singleVisitsScreen = source("src/components/phoenix-crm/manager-single-visits.tsx");
-  assert.match(singleVisitsScreen, /dmSingleVisitLimitLine\(view\.singleVisitLimit\.used\)/, "My single visits shows the count before he finds a customer");
+  assert.match(singleVisitsScreen, /dmSingleVisitLimitLine\(view\.singleVisitLimit\.used, view\.singleVisitLimit\.approvedDays\)/, "My single visits shows the count before he finds a customer");
   assert.match(singleVisitsScreen, /logging \? null : view\.singleVisitLimit\?\.unplannedFitsNow === false \? \(/, "a full week offers no unplanned log to be refused after the form");
-  assert.match(singleVisitsScreen, /<CrmNote tone="warn">\s*Log an unplanned customer is closed for the rest of this week/, "and says so where the button would be, so it never reads as a missing button (owner, 2026-10-20)");
+  assert.match(singleVisitsScreen, /<CrmNote tone="warn">\s*Log an unplanned customer is closed for now/, "and says so where the button would be, so it never reads as a missing button (owner, 2026-10-20)");
+
+  // ── The second and third day: his managers approve one named date (owner, 2026-10-20) ──────────
+
+  assert.equal(DM_SINGLE_VISIT_EXTRA_DAYS_MAX, 2, "the second and the third day, at most");
+  const approved = new Set(["2026-10-27"]);
+  assert.equal(dmSingleVisitCapError(twoUsed, singleVisitHalfKey("2026-10-27", "AM"), "plan", approved), null, "an approved date takes a single visit after the free day is spent");
+  assert.equal(dmSingleVisitCapError(twoUsed, singleVisitHalfKey("2026-10-27", "PM"), "visit", approved), null, "on both its halves, logged as well as planned");
+  assert.match(dmSingleVisitCapError(twoUsed, singleVisitHalfKey("2026-10-28", "AM"), "plan", approved) ?? "", /until your managers approve another day/, "a date not approved is still refused, and the words say how to ask");
+  const spentOnApproved = new Set([...twoUsed, singleVisitHalfKey("2026-10-27", "AM"), singleVisitHalfKey("2026-10-27", "PM")]);
+  assert.equal(freeSingleVisitHalves(spentOnApproved, approved).size, 2, "an approved date's half-days never spend the free day");
+  assert.equal(
+    dmSingleVisitCapError(new Set([singleVisitHalfKey("2026-10-27", "AM"), singleVisitHalfKey("2026-10-27", "PM")]), singleVisitHalfKey("2026-10-24", "AM"), "plan", approved),
+    null,
+    "with the approved day used, the free day is still whole",
+  );
+
+  // The ask: a field day of this week or the coming one, from today on, never a holiday, one ask a date,
+  // two a week.
+  const asking = { cairoToday: "2026-10-20", holiday: null, heldDates: new Set<string>() };
+  assert.equal(singleVisitDayAskError({ ...asking, date: "2026-10-21" }), null, "tomorrow may be asked");
+  assert.equal(singleVisitDayAskError({ ...asking, date: "2026-10-20" }), null, "so may today");
+  assert.match(singleVisitDayAskError({ ...asking, date: "2026-10-19" }) ?? "", /has passed/, "never a day gone");
+  assert.match(singleVisitDayAskError({ ...asking, date: "2026-10-23" }) ?? "", /field day/, "never a Friday");
+  assert.match(singleVisitDayAskError({ ...asking, date: "2026-11-07" }) ?? "", /this week or the coming one/, "never past the coming week");
+  assert.match(singleVisitDayAskError({ ...asking, date: "2026-10-21", holiday: "Armed Forces Day" }) ?? "", /public holiday/, "never a holiday");
+  assert.match(singleVisitDayAskError({ ...asking, date: "2026-10-21", heldDates: new Set(["2026-10-21"]) }) ?? "", /already asked/, "one ask a date");
+  assert.match(
+    singleVisitDayAskError({ ...asking, date: "2026-10-22", heldDates: new Set(["2026-10-20", "2026-10-21"]) }) ?? "",
+    /two more days of single visits at most/,
+    "two asked or approved a week at most",
+  );
+  assert.equal(singleVisitDayAskError({ ...asking, date: "2026-10-24", heldDates: new Set(["2026-10-20", "2026-10-21"]) }), null, "the coming week counts its own two");
+  assert.equal(isSingleVisitDayAskLive("pending", "2026-10-21", "2026-10-21"), true, "an ask is live on its own day");
+  assert.equal(isSingleVisitDayAskLive("first_approved", "2026-10-20", "2026-10-21"), false, "and closed once the day passed");
+  assert.equal(isSingleVisitDayAskLive("approved", "2026-10-22", "2026-10-21"), false, "a decided ask waits on nobody");
+  assert.equal(singleVisitDayAskStatusLabel("pending", "Hany Saad", true), "Waiting for Hany Saad");
+  assert.equal(singleVisitDayAskStatusLabel("first_approved", "Ali Hassan", false), "Closed when the day passed");
+
+  // The server: a district manager asks, the approvers come from the organogram and are stored on the ask,
+  // a step is decided only by its holder, and the limit reads the approved dates on every path.
+  const dayAsks = source(dayAsksFile);
+  const askBody = functionBody(dayAsks, "export async function askSingleVisitDay(");
+  assert.match(askBody, /managerApproversFor\(viewer\.org, writer\)/, "the ask goes to the regional manager, then the NSM above him — or the NSM alone");
+  assert.match(askBody, /second_approver_hr_id: approvers\.secondHrId,/, "the second approver is stored on the ask");
+  assert.match(askBody, /singleVisitDayAskError\(/, "the ask is checked before it is sent");
+  assert.doesNotMatch(askBody, /Write why you need another day/, "writing why is optional (owner, 2026-10-20: \"make writing why optional\")");
+  const decideDay = functionBody(dayAsks, "export async function decideSingleVisitDay(");
+  assert.match(decideDay, /if \(!stage \|\| \(body\.stage !== undefined && body\.stage !== stage\)\) throw conflictError\(/, "a page left open on a step already taken is refused");
+  assert.match(decideDay, /managerAskDeciderRole\(viewer, \{ stage, approverHrId: ask\.approverHrId, secondApproverHrId: ask\.secondApproverHrId, isTest \}\)/, "only that step's holder decides it");
+  assert.match(decideDay, /secondStep: true,/, "the NSM is told when the regional manager agrees");
+  assert.match(decideDay, /if \(decision === "refuse" && !note\) throw validationError\(/, "a refusal carries a note");
+  for (const fn of ["assertSingleVisitPlanFits", "assertSingleVisitLogFits", "loadSingleVisitAllowance"]) {
+    assert.match(functionBody(capSource, `export async function ${fn}(`), /loadWeekSingleVisits\(input\)/, `${fn} reads the approved dates with the half-days`);
+  }
+  assert.match(capSource, /loadApprovedSingleVisitDates\(input\)/, "the approved dates are read from the asks");
+  assert.match(source("app/api/cron/phoenix-crm-plan-reminder/route.ts"), /singleVisitDays = await runSingleVisitDayExpiry\(\);/, "an ask nobody decided closes with its day");
+  assert.ok(PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES.includes("manager_single_visit_day_expired"), "the expired ask goes in-app and by Telegram only");
+
+  // Who is told: the approver, the NSM after the regional manager, and the district manager — never a rep.
+  const dayNotice = {
+    kind: "manager_plan" as const,
+    seat: null,
+    plannerKind: "dm" as const,
+    managerHrId: "PD-0040",
+    recordId: "11111111-1111-1111-1111-111111111111",
+    planId: null,
+    weekStart: "2026-10-17",
+    note: "Launch week at the Alexandria hospitals",
+    customerName: null,
+    byAdministrator: false,
+    visitDate: "2026-10-21",
+  };
+  const [waitingDay] = managerPlanDeliveries({ ...dayNotice, step: "single_visit_day_waiting", recipientHrId: "PD-0001", actorHrId: "PD-0040", version: 1 }, stepNames);
+  assert.equal(waitingDay?.eventType, "manager_single_visit_day_waiting");
+  assert.deepEqual(waitingDay?.recipients, ["PD-0001"], "the ask goes to its approver alone");
+  assert.match(waitingDay?.message ?? "", /as another day of single visits this week/, "the approver reads the day and what it is for");
+  const [decidedDay] = managerPlanDeliveries({ ...dayNotice, step: "single_visit_day_decided", recipientHrId: "PD-0040", actorHrId: "A-12", version: 3, approved: true }, stepNames);
+  assert.equal(decidedDay?.eventType, "manager_single_visit_day_decided");
+  assert.match(decidedDay?.title ?? "", /is approved for single visits$/, "the district manager reads the answer");
+  const [expiredDay] = managerPlanDeliveries({ ...dayNotice, step: "single_visit_day_expired", recipientHrId: "PD-0040", actorHrId: null, version: 0 }, stepNames);
+  assert.equal(expiredDay?.eventType, "manager_single_visit_day_expired");
 
   // ── The weekly-plan audit, group C (owner, 2026-10-18) ──────────────────────────────────────────
 

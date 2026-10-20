@@ -159,6 +159,8 @@ const ACTIONABLE_APPROVAL_NOTIFICATIONS: Record<
   "phoenix_crm:manager_plan_waiting": { domain: "plan", idField: "planId" },
   "phoenix_crm:manager_plan_edit_waiting": { domain: "plan", idField: "requestId" },
   "phoenix_crm:manager_list_removal_waiting": { domain: "plan", idField: "requestId" },
+  // His ask for a second or third day of single visits (owner, 2026-10-20), decided in the same Hub.
+  "phoenix_crm:manager_single_visit_day_waiting": { domain: "plan", idField: "requestId" },
 };
 
 const VACATION_REQUEST_SUBMITTED_ACTIONABLE_STATUS = "Pending your approval";

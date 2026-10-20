@@ -1430,7 +1430,7 @@ function isPlanHrActor(access: Pick<AccessContext, "role" | "scope">): boolean {
 const PLAN_ACTIVE_STATUSES: EmployeePlanStatus[] = ["submitted", "manager_approved", "final_approved", "edit_requested"];
 
 // "list_removal" is the district manager's ask to take a customer off his own Phoenix CRM list.
-export type PlanApprovalStage = "manager" | "ceo" | "hr" | "edit_request" | "list_removal";
+export type PlanApprovalStage = "manager" | "ceo" | "hr" | "edit_request" | "list_removal" | "single_visit_day";
 
 export type PlanBucketItem = {
   id: string;
@@ -1449,8 +1449,9 @@ export type PlanBucketItem = {
   title?: string;
 };
 
-function crmManagerPlanTitle(item: Pick<ManagerQueueItem, "stage" | "weekStart" | "customerName">): string {
+function crmManagerPlanTitle(item: Pick<ManagerQueueItem, "stage" | "weekStart" | "customerName" | "visitDate">): string {
   const week = item.weekStart ? formatPhoenixLongDate(item.weekStart) : "";
+  if (item.stage === "single_visit_day") return `Another day of single visits · ${item.visitDate ? formatPhoenixLongDate(item.visitDate) : "a day"}`;
   if (item.stage === "removal") return `Remove from Manager's own list · ${item.customerName ?? "a customer"}`;
   if (item.stage === "edit") return `Ask to edit · week of ${week}`;
   return `Weekly plan · week of ${week}`;
@@ -1461,7 +1462,15 @@ function crmManagerPlanBucketItem(
   employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
 ): PlanBucketItem {
   const stage: PlanApprovalStage =
-    item.stage === "first" ? "manager" : item.stage === "second" ? "ceo" : item.stage === "edit" ? "edit_request" : "list_removal";
+    item.stage === "first"
+      ? "manager"
+      : item.stage === "second"
+        ? "ceo"
+        : item.stage === "edit"
+          ? "edit_request"
+          : item.stage === "single_visit_day"
+            ? "single_visit_day"
+            : "list_removal";
   return {
     id: item.id,
     source: "crm_manager",
@@ -1618,8 +1627,8 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
     }
   }
 
-  // Phoenix CRM district-manager items: the week (first or second stage), his ask to edit it, and his
-  // ask to take a customer off his own list. Each is counted once — never also by Phoenix CRM's own
+  // Phoenix CRM district-manager items: the week (first or second stage), his ask to edit it, his ask to
+  // take a customer off his own list, and his ask for another day of single visits. Each is counted once — never also by Phoenix CRM's own
   // Needs You count, which reads the reps' plans only.
   for (const item of crmQueue?.awaiting ?? []) awaiting.push(crmManagerPlanBucketItem(item, directory.employees));
   for (const item of crmQueue?.upcoming ?? []) upcoming.push(crmManagerPlanBucketItem(item, directory.employees));
@@ -1747,7 +1756,7 @@ async function fetchPlanKindsForIds(ids: string[]): Promise<Map<string, string>>
 export async function getResponderPlanHistory(access: AccessContext): Promise<ResponderHistoryItem[]> {
   const [all, crmDecisions, directory] = await Promise.all([
     getMyApprovalHistory(access).catch(() => [] as HistoricalApprovalItem[]),
-    // The Phoenix CRM district-manager weeks, asks to edit and own-list removals he decided.
+    // The Phoenix CRM district-manager weeks, asks to edit, own-list removals and single-visit days he decided.
     loadManagerDecisionsBy(access.hrId, Boolean(access.testPersona)).catch(() => []),
     getEmployeeDirectory(),
   ]);
@@ -1767,6 +1776,7 @@ export async function getResponderPlanHistory(access: AccessContext): Promise<Re
       stage: decision.kind === "plan" ? "first" : decision.kind,
       weekStart: decision.weekStart,
       customerName: decision.customerName,
+      visitDate: decision.visitDate,
     }),
     decision: decision.decision,
     decidedAt: decision.decidedAt,
@@ -1789,6 +1799,11 @@ function crmRequestStatus(
   }
   // An ask or a removal waits at either step: on the regional manager, then on the NSM above him.
   if (record.status === "pending" || record.status === "first_approved") return waiting;
+  if (record.kind === "single_visit_day") {
+    if (record.status === "approved") return { label: "Approved", tone: "approved" };
+    if (record.status === "expired") return { label: "Closed when the day passed", tone: "neutral" };
+    return { label: "Refused", tone: "rejected" };
+  }
   if (record.status === "reopened") return { label: "Reopened for editing", tone: "approved" };
   if (record.status === "removed") return { label: "Removed from the list", tone: "approved" };
   if (record.status === "expired") return { label: "Expired with the week", tone: "neutral" };
@@ -1798,7 +1813,7 @@ function crmRequestStatus(
 export async function getMyPlanRequestItems(access: AccessContext): Promise<MyRequestItem[]> {
   const [all, crmRequests, directory] = await Promise.all([
     getMyRequestItems(access).catch(() => [] as MyRequestItem[]),
-    // The district manager's own Phoenix CRM weeks, asks to edit and own-list removals.
+    // The district manager's own Phoenix CRM weeks, asks to edit, own-list removals and single-visit days.
     loadManagerOwnRequests(access.hrId, Boolean(access.testPersona)).catch(() => []),
     getEmployeeDirectory(),
   ]);
@@ -1815,6 +1830,7 @@ export async function getMyPlanRequestItems(access: AccessContext): Promise<MyRe
         stage: record.kind === "plan" ? "first" : record.kind,
         weekStart: record.weekStart,
         customerName: record.customerName,
+        visitDate: record.visitDate,
       }).replace("Remove from Manager's own list", "Remove from my own list"),
       statusLabel: status.label,
       statusTone: status.tone,
@@ -2603,6 +2619,7 @@ function planStageStatusLabel(stage: PlanApprovalStage, viewerIsCeo = true): str
   if (stage === "ceo") return viewerIsCeo ? "Needs CEO approval" : "Needs your approval";
   if (stage === "edit_request") return "Edit request — decide";
   if (stage === "list_removal") return "Customer removal — decide";
+  if (stage === "single_visit_day") return "Day of single visits — decide";
   return "Needs HR acknowledgement";
 }
 

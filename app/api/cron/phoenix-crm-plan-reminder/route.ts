@@ -5,6 +5,7 @@ import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
 import { PLAN_REMINDER_JOB_SLUG } from "@/lib/phoenix-crm/plan-reminder-rules";
 import { runManagerPlanEditExpiry } from "@/lib/phoenix-crm/server/manager-plans";
+import { runSingleVisitDayExpiry } from "@/lib/phoenix-crm/server/manager-single-visit-days";
 import { runPhoenixCrmPlanEditExpiry, type PlanEditExpiryRun } from "@/lib/phoenix-crm/server/plan-edit-expiry";
 import { runPhoenixCrmPlanReminder } from "@/lib/phoenix-crm/server/plan-reminder";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
@@ -56,9 +57,21 @@ export async function GET(request: Request) {
     });
     managerPlanEdits = { error: clientSafeErrorMessage(error, "Phoenix CRM district-manager plan-edit expiry failed.") };
   }
+  // And his ask for another day of single visits whose day passed undecided (owner, 2026-10-20) — its own
+  // step too. In-app and Telegram, never email or the phone.
+  let singleVisitDays: { expired: number; told: number } | { error: string };
+  try {
+    singleVisitDays = await runSingleVisitDayExpiry();
+  } catch (error) {
+    logError("Phoenix CRM district-manager single-visit-day expiry failed", {
+      error,
+      labels: { event: "cron_step_failed", job: PLAN_REMINDER_JOB_SLUG, step: "manager_single_visit_day_expiry" },
+    });
+    singleVisitDays = { error: clientSafeErrorMessage(error, "Phoenix CRM district-manager single-visit-day expiry failed.") };
+  }
   try {
     const result = await withDeadMansSwitch(PLAN_REMINDER_JOB_SLUG, () => runPhoenixCrmPlanReminder());
-    return NextResponse.json({ success: true, ...result, planEdits, managerPlanEdits });
+    return NextResponse.json({ success: true, ...result, planEdits, managerPlanEdits, singleVisitDays });
   } catch (error) {
     logError("Phoenix CRM plan reminder failed", {
       error,

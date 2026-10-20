@@ -263,6 +263,18 @@ const REFUSALS: Record<string, Refusal> = {
   manager_customer_not_found: { status: 404, message: "This customer is no longer on Manager's own list. Reload the page." },
   manager_customer_not_active: { status: 409, message: "This customer is already waiting to come off the list. Reload the page." },
   manager_customer_removal_decided: { status: 409, message: "This removal was already decided. Reload the page." },
+  // His ask for a second or third day of single visits (owner, 2026-10-20).
+  single_visit_day_not_field: { status: 400, message: "Choose a field day — Saturday to Thursday." },
+  single_visit_day_passed: { status: 409, message: "This day has passed. Choose today or a later day." },
+  single_visit_day_too_far: { status: 400, message: "Choose a day of this week or the coming one." },
+  single_visit_day_already_asked: { status: 409, message: "This day is already asked for. Its answer shows under Single visit." },
+  single_visit_days_full: { status: 409, message: "Two more days of single visits are already asked for or approved this week — that is the most a week holds." },
+  single_visits_days_full: {
+    status: 409,
+    message: "A week holds two more days of single visits at most — the second and the third. Both are already asked for.",
+  },
+  single_visit_day_not_found: { status: 404, message: "This ask for a day of single visits is no longer there. Reload the page." },
+  single_visit_day_decided: { status: 409, message: "This ask for a day of single visits was already answered. Reload the page." },
   // The same-seat duplicate merge (owner, 2026-10-08). Only the one-off script reaches these — the
   // function is service-role only — so the reader is whoever runs it, and each names the pair it skips.
   keeper_is_loser: { status: 400, message: "A customer cannot be merged into itself. Choose two different records." },

@@ -540,8 +540,9 @@ export function runApprovalsHubTests() {
   // ── Plan Phase 2 enhancements ────────────────────────────────────────────────
   // Edit-request stage + overdue-first sort, all reusing the existing plan workflow (no new routing).
   // "list_removal" joined 2026-10-16: a district manager's ask to remove a customer from Manager's own
-  // list waits on his RSM/NSM in this same queue (docs/phoenix-crm-manager-plan.md).
-  assert.match(svc, /export type PlanApprovalStage = "manager" \| "ceo" \| "hr" \| "edit_request" \| "list_removal";/, "the edit-request decision is surfaced as its own stage");
+  // list waits on his RSM/NSM in this same queue (docs/phoenix-crm-manager-plan.md). "single_visit_day"
+  // joined 2026-10-20: his ask for a second or third day of single visits waits there too.
+  assert.match(svc, /export type PlanApprovalStage = "manager" \| "ceo" \| "hr" \| "edit_request" \| "list_removal" \| "single_visit_day";/, "the edit-request decision is surfaced as its own stage");
   assert.match(svc, /PLAN_ACTIVE_STATUSES[\s\S]*?"edit_requested"/, "edit_requested plans are fetched into the responder buckets");
   assert.match(svc, /const byMostOverdue = /, "the awaiting list sorts most-overdue first");
   assert.match(svc, /function computePlanComposition\(/, "plan composition summary is computed server-side");

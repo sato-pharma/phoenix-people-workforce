@@ -1,5 +1,6 @@
 /**
- * Phoenix CRM — one manager's week, his ask to edit it, or his ask to take a customer off his own list, as
+ * Phoenix CRM — one manager's week, his ask to edit it, his ask to take a customer off his own list, or a
+ * district manager's ask for another day of single visits (owner, 2026-10-20), as
  * the Approvals Hub's plan page shows it (owner, 2026-10-16: "decided in the Approvals Hub, as today"). A
  * district manager's since 2026-10-16; a regional, national or product manager's since 2026-10-17. The
  * Hub's page falls through to this when the id is not a legacy plan.
@@ -18,14 +19,19 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { addDaysIso } from "@/lib/crm/dates";
 import { formatPhoenixDateTime, formatPhoenixLongDate } from "@/lib/i18n/format";
 import {
+  DM_SINGLE_VISIT_HALF_DAYS_MAX,
+  freeSingleVisitHalves,
   isManagerAskLive,
+  isSingleVisitDayAskLive,
   managerAskStage,
   managerPlannerTitle,
   managerPlanStage,
   managerPlanStatusLabel,
   returnStageOfApproved,
+  singleVisitDayAskStatusLabel,
   type ManagerPlanStage,
   type ManagerPlanStatus,
+  type SingleVisitDayAskStatus,
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
@@ -39,6 +45,8 @@ import {
 } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { loadEditAskRow, loadEditAsks, loadManagerPlanRow, type ManagerEditAskRow, type ManagerPlanRow } from "@/lib/phoenix-crm/server/manager-plan-rows";
 import { loadManagerPlanBoardFor, type ManagerPlanBoardView } from "@/lib/phoenix-crm/server/manager-plans";
+import { loadSingleVisitHalvesUsed } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
+import { loadApprovedSingleVisitDates, loadSingleVisitDayAskRow } from "@/lib/phoenix-crm/server/manager-single-visit-day-rows";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 
 /** "closed": an ask that ended with its week, undecided at that step. */
@@ -120,7 +128,33 @@ export type ManagerHubRemovalDetail = {
   isOwner: boolean;
 };
 
-export type ManagerHubDetail = { kind: "not_found" } | ManagerHubPlanDetail | ManagerHubRemovalDetail;
+/** A district manager's ask for another day of single visits (owner, 2026-10-20). */
+export type ManagerHubSingleVisitDayDetail = {
+  kind: "single_visit_day";
+  isTest: boolean;
+  requestId: string;
+  managerName: string;
+  managerTitle: string;
+  visitDateText: string;
+  weekText: string;
+  /** Optional: he may ask without writing why. */
+  reason: string | null;
+  status: SingleVisitDayAskStatus;
+  statusLabel: string;
+  decisionNote: string | null;
+  /** What his week already spends on single visits, so the approver reads the ask against it. */
+  weekLine: string;
+  /** The step it waits on — sent back with the decision. */
+  stage: ManagerPlanStage | null;
+  steps: ManagerHubStep[];
+  decideAs: ManagerPlanDeciderRole | null;
+  /** At the first step, the NSM who approves after it — the day opens only then. */
+  thenName: string | null;
+  version: number;
+  isOwner: boolean;
+};
+
+export type ManagerHubDetail = { kind: "not_found" } | ManagerHubPlanDetail | ManagerHubRemovalDetail | ManagerHubSingleVisitDayDetail;
 
 const NOT_FOUND: ManagerHubDetail = { kind: "not_found" };
 
@@ -402,8 +436,76 @@ async function removalDetail(viewer: PhoenixCrmViewer, id: string): Promise<Mana
   };
 }
 
+async function singleVisitDayDetail(viewer: PhoenixCrmViewer, id: string): Promise<ManagerHubDetail | null> {
+  const ask = await loadSingleVisitDayAskRow(id);
+  if (!ask) return null;
+  if (ask.isTest !== viewer.isTestPersona) return NOT_FOUND;
+  if (!mayOpen(viewer, ask.managerHrId, [ask.approverHrId, ask.secondApproverHrId])) return NOT_FOUND;
+  const input = { managerHrId: ask.managerHrId, weekStart: ask.weekStart, isTest: ask.isTest };
+  const [names, used, approvedDates] = await Promise.all([
+    loadPeopleNames([ask.managerHrId, ask.approverHrId, ask.secondApproverHrId, ask.firstDecidedByHrId, ask.decidedByHrId]),
+    loadSingleVisitHalvesUsed(input),
+    loadApprovedSingleVisitDates(input),
+  ]);
+  const live = isSingleVisitDayAskLive(ask.status, ask.visitDate, viewer.cairoToday);
+  const stage = live ? managerAskStage(ask.status) : null;
+  const waitingOn = ask.status === "pending" ? ask.approverHrId : ask.status === "first_approved" ? ask.secondApproverHrId : null;
+  const free = freeSingleVisitHalves(used, approvedDates).size;
+  const otherApproved = [...approvedDates].filter((date) => date !== ask.visitDate).length;
+  return {
+    kind: "single_visit_day",
+    isTest: ask.isTest,
+    requestId: ask.requestId,
+    managerName: nameOf(names, ask.managerHrId),
+    managerTitle: managerPlannerTitle("dm"),
+    visitDateText: formatPhoenixLongDate(ask.visitDate),
+    weekText: `Week of ${formatPhoenixLongDate(ask.weekStart)}`,
+    reason: ask.reason,
+    status: ask.status,
+    statusLabel: singleVisitDayAskStatusLabel(ask.status, waitingOn ? nameOf(names, waitingOn) : null, live),
+    decisionNote: ask.decisionNote ?? ask.firstDecisionNote,
+    weekLine: `The day of single visits without approval: ${free} of ${DM_SINGLE_VISIT_HALF_DAYS_MAX} half-days used this week.${
+      otherApproved > 0 ? ` ${otherApproved === 1 ? "One other day is" : `${otherApproved} other days are`} already approved.` : ""
+    }`,
+    stage,
+    steps: askSteps(
+      {
+        askedLabel: "Asked for the day",
+        askerHrId: ask.managerHrId,
+        askedAt: ask.createdAt,
+        status:
+          ask.status === "pending"
+            ? live
+              ? "open"
+              : "expired"
+            : ask.status === "first_approved"
+              ? live
+                ? "first_approved"
+                : "expired"
+              : ask.status,
+        approverHrId: ask.approverHrId,
+        secondApproverHrId: ask.secondApproverHrId,
+        firstDecidedByHrId: ask.firstDecidedByHrId,
+        firstDecidedRole: ask.firstDecidedRole,
+        firstDecidedAt: ask.firstDecidedAt,
+        decidedByHrId: ask.decidedByHrId,
+        decidedRole: ask.decidedRole,
+        decidedAt: ask.decidedAt,
+      },
+      names,
+    ),
+    decideAs: stage
+      ? managerAskDeciderRole(viewer, { stage, approverHrId: ask.approverHrId, secondApproverHrId: ask.secondApproverHrId, isTest: ask.isTest })
+      : null,
+    thenName: stage === "first" && ask.secondApproverHrId ? nameOf(names, ask.secondApproverHrId) : null,
+    version: ask.version,
+    isOwner: ask.managerHrId === viewer.hrId,
+  };
+}
+
 /**
- * The page for one id: a week, an ask to edit a week (shown on its week), or an own-list removal. Not
+ * The page for one id: a week, an ask to edit a week (shown on its week), an ask for another day of single
+ * visits, or an own-list removal. Not
  * found for an id the viewer may not open — never a hint that it exists.
  */
 export async function loadManagerPlanHubDetail(access: AccessContext, id: string): Promise<ManagerHubDetail> {
@@ -421,5 +523,7 @@ export async function loadManagerPlanHubDetail(access: AccessContext, id: string
     const askPlan = await loadManagerPlanRow(ask.planId, ask.isTest);
     return askPlan ? planDetail(viewer, askPlan, ask.requestId) : NOT_FOUND;
   }
+  const dayAsk = await singleVisitDayDetail(viewer, id);
+  if (dayAsk) return dayAsk;
   return removalDetail(viewer, id);
 }

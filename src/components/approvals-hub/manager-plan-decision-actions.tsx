@@ -15,8 +15,8 @@ import {
 } from "@/components/ui/form-tokens";
 
 /**
- * The decision on a district manager's Phoenix CRM week, his ask to edit it, or his ask to take a customer
- * off his own list (owner, 2026-10-16: decided in the Approvals Hub — Approve, Return the week, Return one
+ * The decision on a district manager's Phoenix CRM week, his ask to edit it, his ask to take a customer
+ * off his own list, or his ask for another day of single visits (owner, 2026-10-20) (owner, 2026-10-16: decided in the Approvals Hub — Approve, Return the week, Return one
  * day). The server decides who may press each button; this panel is rendered only for the viewer the page
  * already found to be the step's holder or the Administrator.
  *
@@ -27,9 +27,19 @@ import {
 type Target =
   | { kind: "plan"; planId: string; version: number; returnableDays: Array<{ date: string; dateText: string }>; thenName: string | null }
   | { kind: "edit"; requestId: string; version: number; stage: "first" | "second" | null; thenName: string | null }
-  | { kind: "removal"; customerId: string; requestedAt: string | null; stage: "first" | "second" | null; thenName: string | null };
+  | { kind: "removal"; customerId: string; requestedAt: string | null; stage: "first" | "second" | null; thenName: string | null }
+  | { kind: "single_visit_day"; requestId: string; version: number; stage: "first" | "second" | null; thenName: string | null };
 
-type Choice = "approve" | "return_week" | "return_day" | "reopen" | "refuse_edit" | "approve_removal" | "refuse_removal";
+type Choice =
+  | "approve"
+  | "return_week"
+  | "return_day"
+  | "reopen"
+  | "refuse_edit"
+  | "approve_removal"
+  | "refuse_removal"
+  | "approve_day"
+  | "refuse_day";
 
 const NOTE_REQUIRED: Record<Choice, boolean> = {
   approve: false,
@@ -39,6 +49,8 @@ const NOTE_REQUIRED: Record<Choice, boolean> = {
   refuse_edit: true,
   approve_removal: false,
   refuse_removal: true,
+  approve_day: false,
+  refuse_day: true,
 };
 
 const CONFIRM_LABEL: Record<Choice, string> = {
@@ -49,6 +61,8 @@ const CONFIRM_LABEL: Record<Choice, string> = {
   refuse_edit: "Keep it as sent",
   approve_removal: "Remove from Manager's own list",
   refuse_removal: "Keep it on Manager's own list",
+  approve_day: "Approve the day",
+  refuse_day: "Refuse the day",
 };
 
 export function ManagerPlanDecisionActions({ target, byAdministrator, backHref }: { target: Target; byAdministrator: boolean; backHref: string }) {
@@ -86,6 +100,9 @@ export function ManagerPlanDecisionActions({ target, byAdministrator, backHref }
     } else if (target.kind === "edit") {
       endpoint = "/api/phoenix-crm/manager-plans/edit-requests/decide";
       body = { requestId: target.requestId, version: target.version, stage: target.stage ?? undefined, decision: choice === "reopen" ? "reopen" : "refuse", note: text };
+    } else if (target.kind === "single_visit_day") {
+      endpoint = "/api/phoenix-crm/manager-plans/single-visit-days/decide";
+      body = { requestId: target.requestId, version: target.version, stage: target.stage ?? undefined, decision: choice === "approve_day" ? "approve" : "refuse", note: text };
     } else {
       endpoint = "/api/phoenix-crm/manager-plans/customers/removal/decide";
       body = {
@@ -124,7 +141,9 @@ export function ManagerPlanDecisionActions({ target, byAdministrator, backHref }
       ? `After you, ${target.thenName} approves the week too.`
       : target.kind === "edit"
         ? `After you, ${target.thenName} approves too. The week reopens only then.`
-        : `After you, ${target.thenName} approves too. The customer stays on the list until then.`
+        : target.kind === "single_visit_day"
+          ? `After you, ${target.thenName} approves too. The day opens for single visits only then.`
+          : `After you, ${target.thenName} approves too. The customer stays on the list until then.`
     : null;
   const confirmLabel = (value: Choice): string =>
     target.thenName && value === "reopen" ? "Approve the reopening" : target.thenName && value === "approve_removal" ? "Approve the removal" : CONFIRM_LABEL[value];
@@ -142,7 +161,7 @@ export function ManagerPlanDecisionActions({ target, byAdministrator, backHref }
               You are deciding in place of the approver. It is recorded and shown as decided by the Administrator.
             </p>
           ) : null}
-          {choice === "approve" || choice === "reopen" || choice === "approve_removal" ? passesOnNote : null}
+          {choice === "approve" || choice === "reopen" || choice === "approve_removal" || choice === "approve_day" ? passesOnNote : null}
           {choice === "return_day" && target.kind === "plan" ? (
             <label className="block">
               <span className={phxLabelClassName}>
@@ -224,6 +243,16 @@ export function ManagerPlanDecisionActions({ target, byAdministrator, backHref }
             </button>
             <button type="button" onClick={() => open("refuse_removal")} className={`${outline} border-rose-500 text-rose-700 hover:bg-rose-50`}>
               <XCircle className="h-4 w-4" /> Keep it on Manager&apos;s own list
+            </button>
+          </>
+        ) : null}
+        {target.kind === "single_visit_day" ? (
+          <>
+            <button type="button" onClick={() => open("approve_day")} className={phxButtonApproveClassName}>
+              <CheckCircle2 className="h-4 w-4" /> Approve the day
+            </button>
+            <button type="button" onClick={() => open("refuse_day")} className={`${outline} border-rose-500 text-rose-700 hover:bg-rose-50`}>
+              <XCircle className="h-4 w-4" /> Refuse the day
             </button>
           </>
         ) : null}

@@ -40,6 +40,7 @@ import { useEffect, useEffectEvent, useId, useRef, useState, type ReactNode } fr
 import { crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { countText, plural } from "@/components/phoenix-crm/format";
 import { ManagerCustomerForm } from "@/components/phoenix-crm/manager-customer-form";
+import { ManagerSingleVisitDayAsk } from "@/components/phoenix-crm/manager-single-visit-day-ask";
 import { CrmStepFooter, CrmStepForm, CrmStepNext, type CrmStep } from "@/components/phoenix-crm/step-form";
 import {
   CrmBlock,
@@ -59,6 +60,7 @@ import {
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import {
+  DM_SINGLE_VISIT_HALF_DAYS_MAX,
   dmSingleVisitLimitLine,
   MANAGER_PLAN_NOTE_MAX,
   MANAGER_PLAN_REASON_MAX,
@@ -873,7 +875,7 @@ function HalfStep({
       {draft.kind === "admin" ? <AdminPart canEdit={canEdit} draft={draft} idPrefix={idPrefix} onDraft={onDraft} view={view} /> : null}
       {draft.kind === "single_visit"
         ? (districtGate ?? (
-            <SingleVisitPart canEdit={canEdit} draft={draft} half={half} idPrefix={idPrefix} onDraft={onDraft} slot={slot} test={test} view={view} />
+            <SingleVisitPart canEdit={canEdit} date={day.date} draft={draft} half={half} idPrefix={idPrefix} onDraft={onDraft} slot={slot} test={test} view={view} />
           ))
         : null}
 
@@ -1099,6 +1101,7 @@ function AdminPart({
 
 function SingleVisitPart({
   canEdit,
+  date,
   draft,
   half,
   idPrefix,
@@ -1108,6 +1111,7 @@ function SingleVisitPart({
   view,
 }: {
   canEdit: boolean;
+  date: string;
   draft: HalfDraft;
   half: ManagerHalf;
   idPrefix: string;
@@ -1153,14 +1157,24 @@ function SingleVisitPart({
     area.reload();
   }
 
-  // A district manager has one day of single visits a week at most — two half-days (owner, 2026-10-19). The
-  // count is the server's — his planned halves AND the visits he has logged — so it never says "1 of 2"
-  // while the save refuses because a logged visit already holds the second half-day.
+  // A district manager has one day of single visits a week without approval — two half-days (owner,
+  // 2026-10-19). The count is the server's — his planned halves AND the visits he has logged — so it never
+  // says "1 of 2" while the save refuses because a logged visit already holds the second half-day. A second
+  // or third day is his managers' to approve, one named date at a time (owner, 2026-10-20), asked for here.
 
   return (
     <div className="grid min-w-0 gap-4">
       {view.writer?.kind === "dm" && view.singleVisitHalvesUsed !== null ? (
-        <p className="break-words text-xs font-semibold leading-5 text-slate-500">{dmSingleVisitLimitLine(view.singleVisitHalvesUsed)}</p>
+        <p className="break-words text-xs font-semibold leading-5 text-slate-500">
+          {dmSingleVisitLimitLine(view.singleVisitHalvesUsed, view.singleVisitDaysApproved?.length ?? 0)}
+        </p>
+      ) : null}
+      {/* Asked where it bites: once the free day is spent and this date is not one his managers approved. */}
+      {view.writer?.kind === "dm" &&
+      canEdit &&
+      (view.singleVisitHalvesUsed ?? 0) >= DM_SINGLE_VISIT_HALF_DAYS_MAX &&
+      !(view.singleVisitDaysApproved ?? []).includes(date) ? (
+        <ManagerSingleVisitDayAsk preferDate={date} test={test} />
       ) : null}
       <CrmChoice columns={3} label="Area" onChange={(areaSeatId) => onDraft({ ...draft, areaSeatId, customers: [] })} options={areaOptions} value={draft.areaSeatId} />
 

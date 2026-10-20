@@ -3,8 +3,9 @@
  *
  * His RSM or NSM decides the week in the Hub (owner, 2026-10-16), so the Hub's plan buckets, its badge,
  * the bell's `plan` domain and Needs You all read this file beside the legacy `employee_plan_headers`.
- * Three things wait on a person here: a sent week (first or second stage), his ask to edit a sent week,
- * and his ask to take a customer off his own list.
+ * Four things wait on a person here: a sent week (first or second stage), his ask to edit a sent week,
+ * his ask to take a customer off his own list, and his ask for another day of single visits (owner,
+ * 2026-10-20) — live only until its day passes.
  *
  * 🔴 NO NOTICE SENDER IS IMPORTED HERE, AND NONE MAY BE. `notifications/in-app.ts` imports the Hub's
  * reader to decide whether a notice is still actionable, so a sender reached from here closes the
@@ -17,8 +18,10 @@
  * counted in his awaiting bucket, and he reaches it through the company feeds.
  */
 
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import {
   isManagerAskLive,
+  isSingleVisitDayAskLive,
   isManagerPlanStatus,
   managerAskStage,
   managerPlanStage,
@@ -34,21 +37,28 @@ import {
   type ManagerEditAskRow,
   type ManagerPlanRow,
 } from "@/lib/phoenix-crm/server/manager-plan-rows";
+import {
+  loadOpenSingleVisitDayAsks,
+  loadSingleVisitDayAsksDecidedBy,
+  loadSingleVisitDayAsksOf,
+} from "@/lib/phoenix-crm/server/manager-single-visit-day-rows";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
 
-export type ManagerQueueStage = "first" | "second" | "edit" | "removal";
+export type ManagerQueueStage = "first" | "second" | "edit" | "removal" | "single_visit_day";
 
 export type ManagerQueueItem = {
-  /** The plan id, the ask-to-edit id or the own-list customer id: the Hub's detail page resolves all three. */
+  /** The plan id, the ask id or the own-list customer id: the Hub's detail page resolves every one. */
   id: string;
   stage: ManagerQueueStage;
   managerHrId: string;
   weekStart: string | null;
   /** The own-list customer's name, for a removal. */
   customerName: string | null;
+  /** The date an ask for another day of single visits names. */
+  visitDate?: string | null;
   /** When it started waiting: the send, or the ask. */
   waitingSince: string;
 };
@@ -145,7 +155,13 @@ export function managerQueuePlace(me: string, stage: "first" | "second" | null, 
 export async function loadManagerPlanQueue(hrId: string | null | undefined, isTest: boolean): Promise<ManagerQueueBuckets> {
   const me = personKey(hrId);
   if (!me) return { awaiting: [], upcoming: [] };
-  const [plans, asks, removals] = await Promise.all([loadOpenPlans(isTest), loadOpenEditAsks(isTest), loadOpenRemovals(isTest)]);
+  const [plans, asks, removals, dayAsks] = await Promise.all([
+    loadOpenPlans(isTest),
+    loadOpenEditAsks(isTest),
+    loadOpenRemovals(isTest),
+    loadOpenSingleVisitDayAsks(isTest),
+  ]);
+  const cairoToday = currentCairoDateOnlyIso();
 
   const awaiting: ManagerQueueItem[] = [];
   const upcoming: ManagerQueueItem[] = [];
@@ -193,6 +209,19 @@ export async function loadManagerPlanQueue(hrId: string | null | undefined, isTe
       waitingSince: textOrNull(row.removal_requested_at) ?? textOrNull(row.created_at) ?? "",
     });
   }
+  for (const ask of dayAsks) {
+    // 🔴 An ask whose day has passed decides nothing: the daily pass closes it, and until then no queue holds it.
+    if (sameKey(ask.managerHrId, me) || !isSingleVisitDayAskLive(ask.status, ask.visitDate, cairoToday)) continue;
+    file(managerQueuePlace(me, managerAskStage(ask.status), ask.approverHrId, ask.secondApproverHrId), {
+      id: ask.requestId,
+      stage: "single_visit_day",
+      managerHrId: ask.managerHrId,
+      weekStart: ask.weekStart,
+      customerName: null,
+      visitDate: ask.visitDate,
+      waitingSince: ask.createdAt ?? "",
+    });
+  }
   return { awaiting, upcoming };
 }
 
@@ -200,10 +229,12 @@ export async function loadManagerPlanQueue(hrId: string | null | undefined, isTe
 
 export type ManagerRequestRecord = {
   id: string;
-  kind: "plan" | "edit" | "removal";
+  kind: "plan" | "edit" | "removal" | "single_visit_day";
   managerHrId: string;
   weekStart: string | null;
   customerName: string | null;
+  /** The date an ask for another day of single visits names. */
+  visitDate?: string | null;
   /**
    * The plan's status; for an ask or a removal: pending / first_approved (the regional manager agreed,
    * the NSM above him decides next) / reopened / refused / expired / removed.
@@ -215,11 +246,11 @@ export type ManagerRequestRecord = {
   waitingOnHrId: string | null;
 };
 
-/** Every week he sent, every ask to edit and every ask to take a customer off his list — newest first. */
+/** Every week he sent, every ask to edit, every ask to take a customer off his list and every ask for a day of single visits — newest first. */
 export async function loadManagerOwnRequests(hrId: string | null | undefined, isTest: boolean): Promise<ManagerRequestRecord[]> {
   const me = personKey(hrId);
   if (!me) return [];
-  const [planRows, askRows, removalRows] = await Promise.all([
+  const [planRows, askRows, removalRows, dayAsks] = await Promise.all([
     fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
@@ -244,6 +275,7 @@ export async function loadManagerOwnRequests(hrId: string | null | undefined, is
           .not("removal_requested_at", "is", null),
       byId,
     ),
+    loadSingleVisitDayAsksOf(me, isTest),
   ]);
   const out: ManagerRequestRecord[] = [];
   const askRowList = askRows.map(editAskRowOf).filter((row): row is ManagerEditAskRow => row !== null);
@@ -301,25 +333,44 @@ export async function loadManagerOwnRequests(hrId: string | null | undefined, is
             : null,
     });
   }
+  const cairoToday = currentCairoDateOnlyIso();
+  for (const ask of dayAsks) {
+    const open = ask.status === "pending" || ask.status === "first_approved";
+    const live = isSingleVisitDayAskLive(ask.status, ask.visitDate, cairoToday);
+    out.push({
+      id: ask.requestId,
+      kind: "single_visit_day",
+      managerHrId: ask.managerHrId,
+      weekStart: ask.weekStart,
+      customerName: null,
+      visitDate: ask.visitDate,
+      status: open && !live ? "expired" : ask.status,
+      submittedAt: ask.createdAt ?? "",
+      decisionNote: ask.decisionNote ?? ask.firstDecisionNote,
+      waitingOnHrId: !live ? null : ask.status === "pending" ? ask.approverHrId : ask.status === "first_approved" ? ask.secondApproverHrId : null,
+    });
+  }
   return out.sort((left, right) => right.submittedAt.localeCompare(left.submittedAt));
 }
 
 export type ManagerDecisionRecord = {
   /** The plan id, ask id or own-list customer id the decision was made on. */
   id: string;
-  kind: "plan" | "edit" | "removal";
+  kind: "plan" | "edit" | "removal" | "single_visit_day";
   managerHrId: string;
   weekStart: string | null;
   customerName: string | null;
+  /** The date an ask for another day of single visits names. */
+  visitDate?: string | null;
   decision: "approved" | "returned" | "rejected";
   decidedAt: string;
 };
 
-/** Every decision this person made on a district manager's week, ask to edit or own-list removal. */
+/** Every decision this person made on a district manager's week, ask to edit, own-list removal or ask for a day of single visits. */
 export async function loadManagerDecisionsBy(hrId: string | null | undefined, isTest: boolean): Promise<ManagerDecisionRecord[]> {
   const me = personKey(hrId);
   if (!me) return [];
-  const [eventRows, removalRows] = await Promise.all([
+  const [eventRows, removalRows, dayAsks] = await Promise.all([
     fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
@@ -339,6 +390,7 @@ export async function loadManagerDecisionsBy(hrId: string | null | undefined, is
           .eq("is_test", isTest),
       byId,
     ),
+    loadSingleVisitDayAsksDecidedBy(me, isTest),
   ]);
 
   // The events carry no world of their own: the plan they sit on does.
@@ -379,6 +431,15 @@ export async function loadManagerDecisionsBy(hrId: string | null | undefined, is
     } else if (sameKey(textOrNull(row.removal_first_decided_by_hr_id), me)) {
       // A first step is only ever an approval: a refusal there closes the ask as its last step.
       out.push({ ...base, decision: "approved", decidedAt: textOrNull(row.removal_first_decided_at) ?? "" });
+    }
+  }
+  for (const ask of dayAsks) {
+    const base = { id: ask.requestId, kind: "single_visit_day" as const, managerHrId: ask.managerHrId, weekStart: ask.weekStart, customerName: null, visitDate: ask.visitDate };
+    if (sameKey(ask.decidedByHrId, me)) {
+      out.push({ ...base, decision: ask.status === "approved" ? "approved" : "rejected", decidedAt: ask.decidedAt ?? "" });
+    } else if (sameKey(ask.firstDecidedByHrId, me)) {
+      // A first step is only ever an approval: a refusal there closes the ask as its last step.
+      out.push({ ...base, decision: "approved", decidedAt: ask.firstDecidedAt ?? "" });
     }
   }
   return out.sort((left, right) => right.decidedAt.localeCompare(left.decidedAt));
