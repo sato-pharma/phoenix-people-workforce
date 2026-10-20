@@ -47,8 +47,14 @@ export type UnitKind = "mass" | "count";
  * Excel sheet can say the right word: Ivyronc is `ml`, Guamusin is `g`. The product columns are
  * still named `_ml` for the one product that existed when they were created, which is why the
  * migration carries a `comment on column` on each of them.
+ *
+ * 🔴 `mg` EXISTS BECAUSE THE GEOMETRY COLUMNS ARE INTEGERS AND A TABLET IS NOT A WHOLE GRAM.
+ * Royanoxicam's film-coated tablet weighs 155 mg, and `dose_ml` is an `integer` with a
+ * `run_volume_ml % dose_ml = 0` CHECK behind it — so grams would have to store 0.155 and the row
+ * would not insert at all. In milligrams the batch is 31,000,000 and the dose 155, which divides
+ * to exactly 200,000 tablets. The LARGE label is still the kilogram, so the tile reads 31 kg.
  */
-export type MeasureUnit = "ml" | "g";
+export type MeasureUnit = "ml" | "g" | "mg";
 
 /** What a composition's `qty_per_basis` is measured against. Matches the migration's CHECK. */
 export type CompositionBasis =
@@ -83,7 +89,22 @@ export const COMPOSITION_BASES: readonly CompositionBasis[] = [
   "per_box",
 ] as const;
 
-export const MEASURE_UNITS: readonly MeasureUnit[] = ["ml", "g"] as const;
+export const MEASURE_UNITS: readonly MeasureUnit[] = ["ml", "g", "mg"] as const;
+
+/**
+ * How many of a measure unit make up the LARGE unit its big figures are read in — a litre, or a
+ * kilogram.
+ *
+ * 🔴 THE DIVISOR IS NOT ALWAYS 1,000. It was, for as long as the only pairs were ml→L and g→kg, so
+ * the planner divided by a literal thousand. A milligram geometry read through that divisor turns
+ * Royanoxicam's 31,000,000 mg batch into "31,000 kg" — a thousand-fold overstatement on the tile
+ * the owner reads the batch size off, with every other figure on the screen still correct.
+ */
+export const MEASURE_UNITS_PER_LARGE: Record<MeasureUnit, bigint> = {
+  g: BigInt(1000),
+  mg: BigInt(1_000_000),
+  ml: BigInt(1000),
+};
 
 /**
  * A measure unit read FAIL-SAFE off a database row.

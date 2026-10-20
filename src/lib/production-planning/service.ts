@@ -55,6 +55,7 @@ import {
   formatPct,
   formatQty,
   MATERIAL_SUPPLIERS,
+  MEASURE_UNITS_PER_LARGE,
   parseNonNegativeQty,
   parsePct,
   parseQty,
@@ -988,7 +989,11 @@ export function computePlan(data: ProductionPlanningData, body: PlanRequestInput
   });
 
   const costTotals = totalCosts(costed);
-  const litres = (ml: bigint) => formatQty((ml * QTY_SCALE) / BigInt(1000));
+  // The product's own measure unit picks the divisor — 1,000 for a litre or a kilogram, 1,000,000
+  // for the kilogram a milligram geometry is read in. The wire field is still called
+  // `…Litres` for the one product that existed when it was named, like the `_ml` columns.
+  const perLarge = MEASURE_UNITS_PER_LARGE[product.measureUnit];
+  const litres = (ml: bigint) => formatQty((ml * QTY_SCALE) / perLarge);
 
   // Grouped Latin digits, built here rather than in the component, so the sentence under the tiles
   // and the workbook's own header line read identically.

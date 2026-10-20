@@ -16,6 +16,7 @@ import {
   writeTable,
 } from "@/lib/sales/sales-workbook-kit";
 
+import { MEASURE_UNITS_PER_LARGE } from "./rules";
 import {
   coerceProductionPlanningLanguage,
   formatNumberLatin,
@@ -220,6 +221,10 @@ export async function buildProductionPlanningWorkbook(
   // The unit pair the labels follow. From the PLAN and not the product, so a plan exported for the
   // powder cannot be labelled with the syrup's millilitres even if the product lookup above fell back.
   const measure = S.measureUnitLabels(plan.measureUnit);
+  // How many small units make one large one, for the two cells that convert between them. A literal
+  // 1,000 was right while the only pairs were ml→L and g→kg; a milligram geometry divided by it
+  // writes Royanoxicam's 31 kg batch into the sheet as 31,000 kg, inside a live FORMULA he can see.
+  const perLarge = Number(MEASURE_UNITS_PER_LARGE[plan.measureUnit]);
   // Built once: the per-dose label states the product's own dose, so it cannot be a flat constant.
   const basisLabels = S.basisLabels({
     dose: formatNumberLatin(product?.doseMl ?? "0"),
@@ -271,7 +276,13 @@ export async function buildProductionPlanningWorkbook(
   // drift apart. 100,000 جم and 100 كجم are one batch; he asked to read the second.
   const runSizeLargeRow = row;
   labelCell(sheet, runSizeLargeRow, `${S.runSizeLabel(plan.measureUnit)} (${measure.large})`);
-  formulaCell(sheet, runSizeLargeRow, `$B$${runVolumeRow}/1000`, num(product?.runVolumeMl) / 1000, VALUE_FMT);
+  formulaCell(
+    sheet,
+    runSizeLargeRow,
+    `$B$${runVolumeRow}/${perLarge}`,
+    num(product?.runVolumeMl) / perLarge,
+    VALUE_FMT,
+  );
   row += 1;
 
   const goodMlRow = row;
@@ -404,7 +415,13 @@ export async function buildProductionPlanningWorkbook(
 
   const litresRow = row;
   labelCell(sheet, litresRow, `${PPL.sheetTotalVolume} (${measure.large})`);
-  formulaCell(sheet, litresRow, `$B$${runsRow}*${RUN_VOLUME}/1000`, num(plan.totalVolumeLitres), VALUE_FMT);
+  formulaCell(
+    sheet,
+    litresRow,
+    `$B$${runsRow}*${RUN_VOLUME}/${perLarge}`,
+    num(plan.totalVolumeLitres),
+    VALUE_FMT,
+  );
   row += 1;
 
   const dosesRow = row;

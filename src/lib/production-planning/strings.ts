@@ -164,9 +164,15 @@ export const PP = {
   // instead of the product. `measureUnitLabels` picks the pair; the arithmetic never changed.
   unitKilogram: "كجم",
   unitGram: "جم",
+  // And the same pair again for a product measured in MILLIGRAMS. A film-coated tablet weighs 155
+  // mg, so milligram is the only unit in which Royanoxicam's dose is a whole number — the geometry
+  // columns are integers. The LARGE word stays the kilogram: a 31,000,000 mg batch is 31 kg, which
+  // is the figure the owner states it in.
+  unitMilligram: "مجم",
   unitBox: "علبة",
   unitBottle: "زجاجة",
   unitSachet: "كيس",
+  unitTablet: "قرص",
   unitSample: "عينة",
   roundedUpNote: "التشغيلات بأعداد صحيحة، فتم التقريب لأعلى",
   exactRunsNote: "الاحتياج الدقيق",
@@ -491,9 +497,11 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   unitMl: "ml",
   unitKilogram: "kg",
   unitGram: "g",
+  unitMilligram: "mg",
   unitBox: "box",
   unitBottle: "bottle",
   unitSachet: "sachet",
+  unitTablet: "tablet",
   unitSample: "sample",
   roundedUpNote: "Runs are whole, so this is rounded up",
   exactRunsNote: "Exact requirement",
@@ -933,15 +941,30 @@ export type ProductMeasure = {
  * unit-free — a run is `runVolume / dose` whatever the unit — but every label was written when the
  * only product was a syrup, so a powder in 5 g sachets rendered "5 مل". This pair is what the labels
  * follow instead, and `measure_unit` on the product row is what picks it.
+ *
+ * 🔴 EVERY BRANCH HERE IS A `Record<MeasureUnit, …>`, NEVER A TERNARY, SINCE THE THIRD UNIT LANDED.
+ * A `unit === "g" ? … : …` sends an unlisted unit down the SYRUP branch silently, which is exactly
+ * how Royanoxicam's 155 mg tablet would have rendered "155 مل" — the same defect this pair was
+ * created to fix for the powder. A record is exhaustive at compile time: a fourth unit fails the
+ * type gate instead of quietly labelling itself in millilitres.
  */
 export function measureUnitLabelsAr(unit: MeasureUnit): { small: string; large: string } {
-  return unit === "g" ? { large: PP.unitKilogram, small: PP.unitGram } : { large: PP.unitLitre, small: PP.unitMl };
+  const labels: Record<MeasureUnit, { small: string; large: string }> = {
+    g: { large: PP.unitKilogram, small: PP.unitGram },
+    // A milligram geometry is still READ in kilograms: 31,000,000 mg is the owner's own "31 kg".
+    mg: { large: PP.unitKilogram, small: PP.unitMilligram },
+    ml: { large: PP.unitLitre, small: PP.unitMl },
+  };
+  return labels[unit];
 }
 
 export function measureUnitLabelsEn(unit: MeasureUnit): { small: string; large: string } {
-  return unit === "g"
-    ? { large: PP_EN.unitKilogram, small: PP_EN.unitGram }
-    : { large: PP_EN.unitLitre, small: PP_EN.unitMl };
+  const labels: Record<MeasureUnit, { small: string; large: string }> = {
+    g: { large: PP_EN.unitKilogram, small: PP_EN.unitGram },
+    mg: { large: PP_EN.unitKilogram, small: PP_EN.unitMilligram },
+    ml: { large: PP_EN.unitLitre, small: PP_EN.unitMl },
+  };
+  return labels[unit];
 }
 
 /**
@@ -955,11 +978,17 @@ export function measureUnitLabelsEn(unit: MeasureUnit): { small: string; large: 
  * sachets"*).
  */
 export function saleableUnitWordAr(unit: MeasureUnit): string {
-  return unit === "g" ? PP.unitSachet : PP.unitBox;
+  const words: Record<MeasureUnit, string> = { g: PP.unitSachet, mg: PP.unitTablet, ml: PP.unitBox };
+  return words[unit];
 }
 
 export function saleableUnitWordEn(unit: MeasureUnit): string {
-  return unit === "g" ? PP_EN.unitSachet : PP_EN.unitBox;
+  const words: Record<MeasureUnit, string> = {
+    g: PP_EN.unitSachet,
+    mg: PP_EN.unitTablet,
+    ml: PP_EN.unitBox,
+  };
+  return words[unit];
 }
 
 /**
@@ -1021,11 +1050,21 @@ export function unitsWithBoxesEn(parts: {
  * been a SALEABLE-UNIT column; it was only ever the noun that was wrong, so the noun is what moves.
  */
 export function runActualLabelAr(unit: MeasureUnit): string {
-  return unit === "g" ? "الأكياس الناتجة فعليًا" : PP.runActualGoodUnits;
+  const labels: Record<MeasureUnit, string> = {
+    g: "الأكياس الناتجة فعليًا",
+    mg: "الأقراص الناتجة فعليًا",
+    ml: PP.runActualGoodUnits,
+  };
+  return labels[unit];
 }
 
 export function runActualLabelEn(unit: MeasureUnit): string {
-  return unit === "g" ? "Sachets actually produced" : PP_EN.runActualGoodUnits;
+  const labels: Record<MeasureUnit, string> = {
+    g: "Sachets actually produced",
+    mg: "Tablets actually produced",
+    ml: PP_EN.runActualGoodUnits,
+  };
+  return labels[unit];
 }
 
 /**
@@ -1037,11 +1076,23 @@ export function runActualLabelEn(unit: MeasureUnit): string {
  * described a liquid, on the tile and on the exported sheet alike.
  */
 export function runSizeLabelAr(unit: MeasureUnit): string {
-  return unit === "g" ? PP.tileRunWeight : PP.tileRunVolume;
+  // A tablet batch is weighed too — the owner states Royanoxicam's as "batch size is 31 kg" — so
+  // milligrams take the WEIGHT noun beside the powder, and only the syrup keeps "حجم".
+  const labels: Record<MeasureUnit, string> = {
+    g: PP.tileRunWeight,
+    mg: PP.tileRunWeight,
+    ml: PP.tileRunVolume,
+  };
+  return labels[unit];
 }
 
 export function runSizeLabelEn(unit: MeasureUnit): string {
-  return unit === "g" ? PP_EN.tileRunWeight : PP_EN.tileRunVolume;
+  const labels: Record<MeasureUnit, string> = {
+    g: PP_EN.tileRunWeight,
+    mg: PP_EN.tileRunWeight,
+    ml: PP_EN.tileRunVolume,
+  };
+  return labels[unit];
 }
 
 /**
