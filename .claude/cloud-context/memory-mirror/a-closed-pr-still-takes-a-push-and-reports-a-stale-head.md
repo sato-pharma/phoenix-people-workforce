@@ -1,11 +1,11 @@
 ---
 name: a-closed-pr-still-takes-a-push-and-reports-a-stale-head
-description: "a CLOSED PR's branch still accepts a push, and its headRefOid stays frozen at the sha it had when it closed — so wait-pr.mjs answers GREEN on the OLD sha and reads as merge-ready; check state before building on any PR"
+description: "a CLOSED PR's branch still accepts a push, and its headRefOid stays frozen at the sha it had when it closed — wait-pr.mjs used to answer GREEN on the OLD sha (fixed 2026-10-20, on main since roll-up #6202 at 11:40 Cairo: it now exits 5 CLOSED); still check state before building on any PR"
 metadata:
   node_type: memory
   type: project
   originSessionId: 640c7c13-5a83-45ef-a78e-4e3e126c4e1f
-  modified: 2026-10-04T06:28:40.608Z
+  modified: 2026-10-20T08:41:18.655Z
 ---
 
 **A closed PR keeps answering as though it were open.** Measured 2026-10-04 on roll-up #5305:
@@ -21,6 +21,11 @@ metadata:
   checks=pass`.** It is correct about what it looked at and silent about the PR being closed, so the
   line reads exactly like a merge-ready verdict on work I had just pushed. Same shape as the false-green
   bugs that script exists to prevent — the gap is PR *state*, which it does not report.
+
+**FIXED 2026-10-20 (owner asked for it):** `scripts/wait-pr.mjs` now reads `state` with `mergedAt` on every
+poll and ends a CLOSED, unmerged PR at **exit 5** (`CLOSED without merging`) before grading any check; an
+unreadable state keeps waiting; `--ship` was already safe. Pinned by case 11 of `tests/wait-pr.test.ts`;
+account in `docs/testing.md`, "Waiting for the gate", fourth shape. The paragraph above is the history.
 
 **The tell is the head sha, and the right reading is the opposite of the obvious one.** When
 `headRefOid` disagrees with `git rev-parse origin/<branch>` after a successful push, ask

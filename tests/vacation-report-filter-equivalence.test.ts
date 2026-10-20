@@ -117,7 +117,7 @@ export function runVacationReportFilterEquivalenceTests() {
   // through — so all 10 write sites inherit complete coverage from one line.
   assert.match(
     invalidation,
-    /includes\("leave"\)\)\s*\{[\s\S]*?revalidateTag\(COMPANY_VACATION_REPORT_CACHE_TAG, "max"\);[\s\S]*?revalidateTag\(VACATION_REPORT_ROWS_CACHE_TAG, "max"\);[\s\S]*?\}/,
+    /includes\("leave"\)\)\s*\{[\s\S]*?revalidateTag\(COMPANY_VACATION_REPORT_CACHE_TAG, \{ expire: 0 \}\);[\s\S]*?revalidateTag\(VACATION_REPORT_ROWS_CACHE_TAG, \{ expire: 0 \}\);[\s\S]*?\}/,
     "the leave block must bust VACATION_REPORT_ROWS_CACHE_TAG alongside the company-report tag",
   );
 

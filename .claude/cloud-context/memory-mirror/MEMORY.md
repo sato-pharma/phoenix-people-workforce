@@ -75,4 +75,4 @@ Put each new memory note's pointer here, one line. The fold (`node scripts/modul
 
 
 
-- [the HR Operations Specialist seat: his 2026-10-20 decisions](hr-operations-specialist-seat-owner-decisions.md) - role "HR Administration" (Yasmeena) is salary-blind except the renewal annex, prints 8 papers, reviews daily/weekly reports in DAYS only and never decides; a manager's own visits COUNT in his own row of her field report; "HR Operations" is shown "HR Generalist", empty, its alerts fall to the Super Admin.
+- [a main build step can be cancelled with no code fault](a-main-build-step-can-be-cancelled-with-no-code-fault.md) - validate's Build ended "The operation was canceled" at 8m38s with static/unit/checks green, so the release gate skipped and the deploy was withheld; `gh run rerun <push run> --failed` fixed the CI and the next merge carried production forward; cause unproven.

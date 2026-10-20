@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 061d8c97-37ba-4e99-8b5d-a309001b06a0
-  modified: 2026-10-20T05:58:04.642Z
+  modified: 2026-10-20T06:32:27.009Z
 ---
 
 Built 2026-10-20 (branch `codex/yasmeen-seat`, plan `~/.claude/plans/go-start-every-spicy-quiche.md`). His multiple-choice answers that day:
@@ -17,7 +17,7 @@ Built 2026-10-20 (branch `codex/yasmeen-seat`, plan `~/.claude/plans/go-start-ev
 - **A manager's own visits (phoenix_crm_manager_visits) COUNT in that manager's own row** of her field report (his pick from an example: "Show the 6 visits") — never credited to anyone else. Consistent with the locked rule that own visits count only in the manager's own report. See [[a-managers-own-visit-never-requires-gps-or-a-live-photo]].
 - **Interview Calendar: she can VIEW it only** (his pick, 2026-10-20) — a Viewer like the CEO via `seesWholeInterviewCalendar`; ownership stays with the HR Operations seat (empty, so the Super Admin alone). Never re-propose making her its admin again.
 - Arabic title for the empty HR Generalist seat: **أخصائي موارد بشرية** (his pick, confirmed); hers stays اخصائي موارد بشرية.
-- **Bank details** (2026-10-20, his words "can change bank account but never a paymode"): she may change bank name/account; she NEVER changes payment mode — and payroll eligible is locked for her too (Claude's call, same reason: it decides whether a person is paid).
+- **Bank details** (2026-10-20, his words "can change bank account but never a paymode"): she may change bank name/account; she NEVER changes payment mode — and payroll eligible is locked for her too (Claude's call, same reason: it decides whether a person is paid), and so is **employment status** (Claude's call: "inactive" turns payroll eligible off; resigned/terminated were already workflow-only). Save writes the stored values back; import blocks a row that changes any of the three.
 - **Resignation Complete stays HIS** ("You press Complete", 2026-10-20): she marks for review and follows up; Complete is approval-level like Approve/Reject. She also may NOT re-date a resignation (the last working day moves leaver pay — past the 25th pays the month in full).
 - **Office days the weekly review never lists** (absent/no punch, single punch, late with 0 policy days): "Mark them not carried" — listed with her answer, his decision kept for the record, "not carried to payroll", no EGP; the month-end Fingerprint connector stays the ONLY writer of fingerprint deductions.
 - 🔴 Migration `20261020064831` (seat) goes to production only AFTER the new code serves: the workflow registry runs roles through parseRoleStrict, so old code skips the whole module and every leave/contract/resignation transition fails.

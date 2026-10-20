@@ -98,11 +98,18 @@ export function invalidateExecutiveDashboardCache(
     // there for up to HISTORICAL_REVALIDATE_SECONDS (6h). Previously only the CRM-signal approve
     // route busted this tag, so every other mutation path went stale silently.
     if (uniqueModules.includes("leave")) {
-      revalidateTag(COMPANY_VACATION_REPORT_CACHE_TAG, "max");
+      revalidateTag(COMPANY_VACATION_REPORT_CACHE_TAG, { expire: 0 });
       // Also bust the cross-request base read that every vacation-report surface shares. Every
       // vacation write already routes through here with ['leave'], so this one line gives complete
       // write-path coverage for the cached loadAllVacationRequestRowsCached rows.
-      revalidateTag(VACATION_REPORT_ROWS_CACHE_TAG, "max");
+      //
+      // EXPIRED AT ONCE, NOT "max" (2026-10-20). In Next 16 `"max"` is stale-while-revalidate: the
+      // next read is still served the OLD rows while a fresh copy loads behind it. The page's
+      // router.refresh() after a save is that next read, so an HR edit of a request's dates came
+      // back showing the old dates — three saves for VAC-0686 landed in the database and the screen
+      // never moved. `{ expire: 0 }` makes the next read wait for the fresh rows (updateTag is the
+      // same thing but only exists in Server Actions, and these writes are route handlers).
+      revalidateTag(VACATION_REPORT_ROWS_CACHE_TAG, { expire: 0 });
     }
     // The Finance Command Center's numbers come from committed payroll, decided expenses and
     // leave steps. Without this its 300s TTL is the only thing between a confirmed payroll run
