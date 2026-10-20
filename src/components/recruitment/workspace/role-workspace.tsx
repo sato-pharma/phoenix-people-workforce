@@ -39,7 +39,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 
 import { AdminCallout, AdminInsightChip } from "@/components/admin/admin-design-system";
-import { adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminControlDepthClassName, adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
 import { PageContainer } from "@/components/layout/page-container";
 import type { ManagerPickerOption } from "@/components/recruitment/manager-picker";
 import { getJson, postJson } from "@/components/recruitment/recruitment-fetch";
@@ -87,6 +87,11 @@ const SPLIT_MIN_WIDTH = 1100;
 const PANE_GAP_PX = 8;
 /** The header pins from this width; on a phone it would eat the screen. */
 const PIN_MIN_WIDTH = 1024;
+/**
+ * The page header's two buttons. The header is the slim LIGHT hero, so they wear the dense light button
+ * (white text on a 10% white fill, drawn for a dark banner, read as nothing on production, 2026-10-20).
+ */
+const headerActionClassName = `inline-flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 ${adminControlDepthClassName}`;
 
 export type RoleWorkspaceViewer = {
   canWork: boolean;
@@ -682,21 +687,14 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
           <RecruitmentPageHeader
             actions={
               <>
-                <button
-                  className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-white/20"
-                  onClick={() => setShortcuts(true)}
-                  type="button"
-                >
-                  <Keyboard aria-hidden className="h-3.5 w-3.5" />
+                <button className={headerActionClassName} onClick={() => setShortcuts(true)} type="button">
+                  <Keyboard aria-hidden className="h-3.5 w-3.5 text-orange-600" />
                   Shortcuts
                 </button>
                 {/* The previous workspace opens for the seats that work the pool; the CEO, who reads only, would bounce off it. */}
                 {viewer.canWork ? (
-                  <a
-                    className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-white/20"
-                    href={previousHref}
-                  >
-                    <History aria-hidden className="h-3.5 w-3.5" />
+                  <a className={headerActionClassName} href={previousHref}>
+                    <History aria-hidden className="h-3.5 w-3.5 text-orange-600" />
                     Previous workspace
                   </a>
                 ) : null}

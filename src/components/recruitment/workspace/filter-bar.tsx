@@ -171,7 +171,7 @@ function KeepHideTile({
           {label}
         </span>
         {count !== undefined && count !== null ? (
-          <span className={cn("tabular-nums font-semibold", state === "hide" ? "text-rose-500" : "text-slate-400")}>{NUMBER.format(count)}</span>
+          <span className={cn("shrink-0 tabular-nums font-semibold", state === "hide" ? "text-rose-500" : "text-slate-400")}>{NUMBER.format(count)}</span>
         ) : null}
       </button>
       <button
@@ -429,14 +429,15 @@ export function FilterBar({
           <span className="sr-only">Search every tab by name, phone, email or the CV&apos;s text</span>
           <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
-            className={cn(phxFieldClassName, "h-10 pl-9 pr-16 text-sm")}
+            className={cn(phxFieldClassName, "h-10 pl-9 pr-9 text-sm sm:pr-16")}
             dir="auto"
             onChange={(event) => typeSearch(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Escape" && searchDraft) typeSearch("");
             }}
-            placeholder="Search every tab — name, phone, email, CV text"
+            placeholder="Search name, phone, email, CV text"
             ref={searchRef}
+            title="Searches every tab"
             type="search"
             value={searchDraft}
           />
@@ -577,7 +578,9 @@ export function FilterBar({
       {/* 3 · Status — every status with its count; the name shows only it, the eye hides it */}
       <div className="flex flex-wrap items-center gap-2">
         <LineLabel>Status</LineLabel>
-        <div aria-label="Status — show only or hide" className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5" role="group">
+        {/* basis-64: on a phone the group wants a whole line, so "More filters" drops under it instead of
+            squeezing every tile into a sliver where the count slides under the eye. */}
+        <div aria-label="Status — show only or hide" className="flex min-w-0 flex-1 basis-64 flex-wrap items-center gap-1.5" role="group">
           {candidateStatuses.map((status) => (
             <KeepHideTile
               count={byStatus ? (byStatus[status] ?? 0) : null}
@@ -589,7 +592,7 @@ export function FilterBar({
               swatch={statusEdgeClassName[status]}
             />
           ))}
-          <span className="inline-flex items-center gap-1 text-phx-xs font-semibold text-slate-400">
+          <span className="inline-flex items-center gap-1 whitespace-nowrap text-phx-xs font-semibold text-slate-400">
             Name = show only · <EyeOff aria-hidden className="h-3 w-3" /> = hide
           </span>
         </div>
