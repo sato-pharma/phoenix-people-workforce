@@ -435,7 +435,7 @@ export function FilterBar({
             onKeyDown={(event) => {
               if (event.key === "Escape" && searchDraft) typeSearch("");
             }}
-            placeholder="Search name, phone, email, CV text"
+            placeholder="Search name, phone, email, CV"
             ref={searchRef}
             title="Searches every tab"
             type="search"
