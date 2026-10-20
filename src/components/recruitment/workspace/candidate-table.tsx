@@ -25,9 +25,16 @@
 //
 // A ROW CAN CARRY A DETAIL ROW under it (`detailFor`) — the "Place this candidate" form on Needs
 // placing, so he reads the CV whole on the right while he answers on the left.
+//
+// THE HEAD STAYS PINNED while the rows scroll (owner, 20 Oct 2026: "these headers, pin them, fixed
+// while scrolling"): every head cell is sticky at `--ws-head-top`, which the workspace sets to just
+// under its own pinned tabs and filters. The frame round the table is `!overflow-visible` for it —
+// `globals.css` gives every `:has(> table)` box `overflow-x: auto`, which makes it a scroll box of its
+// own, and a sticky cell inside a box that never scrolls never moves. This table is `table-fixed`
+// across its width, so it has nothing to scroll sideways anyway.
 
 import { ChevronDown } from "lucide-react";
-import { Fragment, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
 import { adminPanelDepthClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 import { phxCheckInputClassName } from "@/components/ui/form-tokens";
@@ -58,7 +65,8 @@ const COL_WIDTH = "w-[var(--ws-compact)] @min-[1180px]:w-[var(--ws-wide)]";
 // The rightmost column in view carries no rule of its own — the frame draws that edge.
 const LAST_WIDE = "@min-[1180px]:border-r-0";
 const LAST_COMPACT = "border-r-0";
-const headCell = "border-r border-white/10 px-3 py-2.5 text-left align-bottom text-phx-xs font-black uppercase tracking-[0.1em] text-slate-100";
+const headCell =
+  "sticky top-[var(--ws-head-top,0px)] z-20 border-r border-white/10 px-3 py-2.5 text-left align-bottom text-phx-xs font-black uppercase tracking-[0.1em] text-slate-100";
 const bodyCell = "border-r border-slate-200 px-3 py-2.5 align-top";
 
 function ignoreChange() {
@@ -108,6 +116,17 @@ export function CandidateTable({
   viewingTab: string | null;
 }) {
   const ticks = canSelect && Boolean(onSelect);
+  // The pinned head's own height, so a row stepped into view (j/k, the arrows) stops below it too.
+  const headRef = useRef<HTMLTableSectionElement | null>(null);
+  const [headHeight, setHeadHeight] = useState(0);
+  useEffect(() => {
+    const head = headRef.current;
+    if (!head) return;
+    const observer = new ResizeObserver(() => setHeadHeight(head.offsetHeight));
+    observer.observe(head);
+    setHeadHeight(head.offsetHeight);
+    return () => observer.disconnect();
+  }, []);
   const wideColumns = columnsFor(WIDE_COLUMNS, ticks);
   const compactColumns = columnsFor(COMPACT_COLUMNS, ticks);
   const tick = (row: WorkspaceRow) =>
@@ -175,7 +194,7 @@ export function CandidateTable({
   };
 
   return (
-    <div className="@container">
+    <div className="@container !overflow-visible" style={{ "--ws-head-h": `${headHeight}px` } as CSSProperties}>
       <table aria-label="Candidates" className="hidden w-full table-fixed border-collapse md:table" data-portal-desktop-table>
         <colgroup>
           {wideColumns.map((column, index) => (
@@ -186,7 +205,7 @@ export function CandidateTable({
             />
           ))}
         </colgroup>
-        <thead>
+        <thead ref={headRef}>
           <tr className={`${adminPanelHeaderClassName} text-white`}>
             {ticks ? (
               <th className={cn(headCell, "px-0 text-center")} scope="col">
@@ -224,8 +243,8 @@ export function CandidateTable({
               <Fragment key={row.id}>
                 <tr
                   className={cn(
-                    // A row scrolled into view stops under the pinned header, not beneath it.
-                    "cursor-pointer scroll-mt-[var(--ws-row-margin,0px)] border-t border-slate-200 transition-colors",
+                    // A row scrolled into view stops under the pinned header and the table's pinned head.
+                    "cursor-pointer scroll-mt-[calc(var(--ws-row-margin,0px)+var(--ws-head-h,0px))] border-t border-slate-200 transition-colors",
                     opened ? "bg-orange-50/80" : selected.has(row.id) ? "bg-sky-50/60" : index % 2 === 1 ? "bg-slate-50/70" : "bg-white",
                     !opened ? "hover:bg-orange-50/40" : null,
                     row.archivedAt ? "opacity-80" : null,

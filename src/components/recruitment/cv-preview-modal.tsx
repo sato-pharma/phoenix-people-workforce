@@ -228,13 +228,19 @@ export function CvDocumentView({
     // `canvas` is one rasterised PDF page; `.cv-text-page` is a legacy .doc read as text, which is
     // dressed at the same fixed Word width so it fits by the same mechanism as the other two. All
     // three are the real thing a reader is trying to fit.
+    //
+    // offsetWidth/offsetHeight, never getBoundingClientRect: the pane below is read in its own CSS
+    // pixels (clientHeight, ResizeObserver), and the admin shell's screen zoom (`zoom` on `main`, 90%
+    // by default) reaches getBoundingClientRect but not offset*. Mixing the two made every fit too
+    // big by the screen zoom — measured live on 2026-10-20 at 90%: zoom 0.7086 where 0.6393 fits, and
+    // page 1's foot 66px under the pane with it scrolled to the top.
     const pages = content.querySelectorAll<HTMLElement>(".docx, .cv-text-page, canvas");
     let measured = 0;
-    for (const page of pages) measured = Math.max(measured, page.getBoundingClientRect().width);
+    for (const page of pages) measured = Math.max(measured, page.offsetWidth);
     // Page 1's height, for "fit page": the first rasterised PDF page or the first Word page section.
     // A legacy .doc is one long `.cv-text-page` with no page breaks — nothing to fit down to.
     const first = content.querySelector<HTMLElement>(".docx, canvas");
-    const firstHeight = first && !content.querySelector(".cv-text-page") ? first.getBoundingClientRect().height : 0;
+    const firstHeight = first && !content.querySelector(".cv-text-page") ? first.offsetHeight : 0;
     // Padding around the page, so "fit" leaves the document a margin instead of jamming it edge
     // to edge against the panel beside it.
     if (measured > 0) setNaturalWidth(measured + 32);
