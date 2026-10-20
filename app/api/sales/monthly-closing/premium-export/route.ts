@@ -11,7 +11,7 @@ import {
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
 import { fillClosingEngine } from "@/lib/sales/closing-engine-fill";
-import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
+import { resolveClosingFileName } from "@/lib/sales/closing-export-file-name";
 import { buildClosingNoOfficeSheet } from "@/lib/sales/closing-no-office-sheet";
 import { loadClosingExportPayload } from "@/lib/sales/closing-export-payload";
 import { sealClosingSelection, sealedRepCardPdfBase } from "@/lib/sales/closing-pdf-link-seal";
@@ -270,12 +270,12 @@ export async function POST(request: Request) {
       reviewSheets: appendedSheets,
       ...(macros ? {} : { pdfLink, repCardPdfBase }),
     });
-    const fileName = closingFileName({
+    const fileName = await resolveClosingFileName({
       extension: macros ? "xlsm" : "xlsx",
       kind: "premium",
       line: payload.line,
       period: payload.period,
-      region: regionScopeLabel(payload.matrix.regions.map((region) => region.regionName)),
+      regionNames: (payload.matrix.regions.map((region) => region.regionName)),
     });
     return new Response(new Uint8Array(buffer), {
       headers: {

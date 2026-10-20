@@ -7,7 +7,7 @@ import {
   readsUnpublishedClosings,
   unpublishedClosingMessage,
 } from "@/lib/sales/closing-details-publication-gate";
-import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
+import { resolveClosingFileName } from "@/lib/sales/closing-export-file-name";
 import {
   buildScopedRepRankingExport,
   isRepRankingLine,
@@ -197,11 +197,11 @@ export async function POST(request: Request) {
     return new Response(new Uint8Array(ranked.buffer), {
       headers: {
         "Cache-Control": "no-store",
-        "Content-Disposition": `attachment; filename="${closingFileName({
+        "Content-Disposition": `attachment; filename="${await resolveClosingFileName({
           kind: "details",
           line: details.line,
           period: details.period,
-          region: regionScopeLabel((function* () {
+          regionNames: ((function* () {
             for (const row of details.rows) {
               yield row.operationalRegionName || row.regionName;
             }

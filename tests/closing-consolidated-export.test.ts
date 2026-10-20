@@ -158,11 +158,11 @@ export async function runClosingConsolidatedExportTests() {
   assert.equal(describeConsolidatedMonths(["2026-07", "2026-09"]), "July 2026, September 2026 (2 months)");
   assert.equal(
     closingFileName({ kind: "consolidated", line: "Pedia", period: consolidatedFilePeriod(["2026-07", "2026-08", "2026-09"]), region: "all regions" }),
-    "phoenix-monthly-closing-consolidated-jul-2026-to-sep-2026-pedia-all-regions.xlsx",
+    "pedia-jul-2026-to-sep-2026-monthly-closing-consolidated.xlsx",
   );
   assert.equal(
     closingFileName({ extension: "xlsm", kind: "premium-consolidated", line: "CNS", period: consolidatedFilePeriod(["2026-08", "2026-09"]), region: "Cairo" }),
-    "phoenix-monthly-closing-premium-consolidated-aug-2026-to-sep-2026-cns-cairo.xlsm",
+    "cairo-monthly-closing-premium-consolidated-aug-2026-to-sep-2026.xlsm",
   );
 
   // ── The premium fill, relabelled for the span ────────────────────────────────────────────────

@@ -25,7 +25,7 @@ import {
 import { buildClosingEngineFill } from "@/lib/sales/closing-engine-data";
 import { buildClosingNoOfficeSheet } from "@/lib/sales/closing-no-office-sheet";
 import { fillClosingEngine } from "@/lib/sales/closing-engine-fill";
-import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
+import { resolveClosingFileName } from "@/lib/sales/closing-export-file-name";
 import type { ClosingExportFilter } from "@/lib/sales/closing-export-payload";
 import { loadClosingPerformanceReview, PERFORMANCE_REVIEW_MONTHS } from "@/lib/sales/closing-performance-review";
 import { loadDistributorNameIndex } from "@/lib/sales/closing-details-distributor-names";
@@ -146,12 +146,12 @@ export async function buildConsolidatedPremiumClosing(input: {
 
   return {
     buffer,
-    fileName: closingFileName({
+    fileName: await resolveClosingFileName({
       extension: input.macros ? "xlsm" : "xlsx",
       kind: "premium-consolidated",
       line: matrix.line ?? input.line,
       period: consolidatedFilePeriod(parts.periods),
-      region: regionScopeLabel(matrix.regions.map((region) => region.regionName)),
+      regionNames: (matrix.regions.map((region) => region.regionName)),
     }),
     periods: parts.periods,
     skipped: parts.skipped,

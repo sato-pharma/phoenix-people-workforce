@@ -1350,12 +1350,12 @@ export async function runClosingEngineExportTests() {
   // ── The file the owner receives is named for a month, a line and a scope ─────────────────────
   assert.equal(
     closingFileName({ extension: "xlsm", kind: "premium", line: "CNS", period: "2026-07", region: "Cairo" }),
-    "phoenix-monthly-closing-premium-jul-2026-cns-cairo.xlsm",
+    "cairo-monthly-closing-premium-jul-2026.xlsm",
     "the month reads the way the sheets inside read it, so the file and its contents never disagree",
   );
   assert.equal(
     closingFileName({ kind: "premium", line: "CNS", period: "2026-07", region: "Cairo" }),
-    "phoenix-monthly-closing-premium-jul-2026-cns-cairo.xlsx",
+    "cairo-monthly-closing-premium-jul-2026.xlsx",
     "the default stays .xlsx — a macro attachment is stripped by too many mail systems to be the default",
   );
 

@@ -14,7 +14,7 @@ import {
 import { gateClosingDetailsPeriod } from "@/lib/sales/closing-details-publication-gate";
 import { type ClosingDetailsFilters, loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
 import { maskedClosingClientCodes, withoutMaskedSourceRows } from "@/lib/sales/closing-source-mask";
-import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
+import { resolveClosingFileName } from "@/lib/sales/closing-export-file-name";
 import {
   buildScopedRepRankingExport,
   isRepRankingLine,
@@ -605,10 +605,10 @@ export async function POST(request: Request) {
       });
       // The region comes from the matrix the workbook was actually built from, so a filtered export
       // is named for the region it was narrowed to rather than for the whole line.
-      return fileResponse(buffer, closingFileName({
+      return fileResponse(buffer, await resolveClosingFileName({
         line: matrix.line ?? "",
         period: matrix.period ?? "",
-        region: regionScopeLabel((function* () {
+        regionNames: ((function* () {
           for (const region of workbookMatrix.regions) {
             yield region.regionName;
           }
@@ -759,11 +759,11 @@ export async function POST(request: Request) {
         rows: details.rows,
       });
       if (ranked) {
-        return fileResponse(ranked.buffer, closingFileName({
+        return fileResponse(ranked.buffer, await resolveClosingFileName({
           kind: "details",
           line: details.line,
           period: details.period,
-          region: regionScopeLabel((function* () {
+          regionNames: ((function* () {
             for (const row of details.rows) {
               yield row.operationalRegionName || row.regionName;
             }
@@ -793,11 +793,11 @@ export async function POST(request: Request) {
     // These rows are already narrowed to this caller's own access, so a District Manager's file is
     // named for their region without the route having to re-derive the scope. The matrix's region,
     // as on every sheet inside the file.
-    return fileResponse(buffer, closingFileName({
+    return fileResponse(buffer, await resolveClosingFileName({
       kind: "details",
       line: details.line,
       period: details.period,
-      region: regionScopeLabel((function* () {
+      regionNames: ((function* () {
         for (const row of details.rows) {
           yield row.operationalRegionName || row.regionName;
         }
