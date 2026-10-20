@@ -197,7 +197,8 @@ export function VisitStart({
   test,
 }: {
   /**
-   * The territory's own rep describes his day; a manager entering a visit for him does not. Null while
+   * The territory's own rep describes his day, and so does a district manager (on his own seat, never
+   * the rep's — owner, 2026-10-20); anyone else entering a visit for him does not. Null while
    * the day is still loading — the portal's "+ Add visit" opens this screen before the day has
    * answered, and saying "recorded by the territory's own rep" to that very rep was wrong (owner walk,
    * 2026-09-30).
