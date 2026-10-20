@@ -374,6 +374,7 @@ const BOUNDARIES: Array<[file: string, calls: Record<string, number>]> = [
   ["app/api/recruitment/candidates/[id]/rejection-message/route.ts", { assertCandidateVisible: 2 }],
   ["app/api/recruitment/candidates/[id]/ask-again/route.ts", { assertCandidateVisible: 1 }],
   ["app/api/recruitment/candidates/[id]/placement/route.ts", { assertCandidateVisible: 1 }],
+  ["app/api/recruitment/candidates/[id]/answers/route.ts", { assertCandidateVisible: 2 }],
   ["app/api/recruitment/candidates/[id]/call-result/route.ts", { assertCandidateVisible: 1 }],
   ["app/api/recruitment/candidates/[id]/reject/route.ts", { assertCandidateVisible: 1 }],
   ["app/api/recruitment/workspace/cv/[candidateId]/route.ts", { assertCandidateVisible: 1 }],

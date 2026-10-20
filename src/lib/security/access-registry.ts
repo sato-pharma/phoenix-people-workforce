@@ -1539,6 +1539,10 @@ export const accessRegistry = [
   // (one or many), and the 30-day archive (or bringing one back). Each refuses the CEO and fences
   // the Talent Acquisition seat by person before any work.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/recruitment/candidates/*/placement", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
+  // "Place this candidate" (owner, 20 Oct 2026): GET reads the form — the roles, the questions, the
+  // regions and areas, the answers on record — and PUT saves HR's typed answers and files the person
+  // once. Same grant and work gate as the placement above, fenced by person before any read.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "PUT"], pattern: "/api/recruitment/candidates/*/answers", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/candidates/*/call-result", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/candidates/*/reject", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/recruitment/candidates/*/archive", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),

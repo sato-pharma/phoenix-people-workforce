@@ -363,7 +363,7 @@ export function FilterBar({
       ) : null}
 
       {expanded ? (
-        <div className="grid grid-cols-1 gap-x-5 gap-y-3.5 border-t border-slate-200 pt-3 md:grid-cols-2 2xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-x-5 gap-y-3.5 border-t border-slate-200 pt-3 @min-[640px]:grid-cols-2 @min-[1100px]:grid-cols-3">
           <FilterGroup legend="Status">
             {candidateStatuses.map((status) => (
               <CheckTile checked={filters.statuses.includes(status)} key={status} onChange={() => set({ statuses: toggle(filters.statuses, status) })}>

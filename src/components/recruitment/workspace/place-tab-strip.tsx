@@ -10,10 +10,13 @@
 //
 // The places and the seats come from the server (`loadWorkspacePlaces`), grouped exactly as the bot
 // groups areas, so a tab here and a reply there can never disagree about where an area belongs.
+//
+// Each level is one segmented bar, drawn like the role strip above it: a recessed track, the chosen
+// place lifted white with the orange rule under it, and the CV count a tabular badge.
 
 import { MapPin } from "lucide-react";
 
-import { adminChipDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminChipDepthClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 import { tabsWithAreas, type WorkspaceRoleTab } from "@/lib/recruitment/workspace/role-tabs";
 import type { WorkspaceCounts, WorkspacePlaces } from "@/lib/recruitment/workspace/types";
 import { cn } from "@/lib/utils";
@@ -59,10 +62,9 @@ function PlaceButton({
     <button
       aria-pressed={selected}
       className={cn(
-        "inline-flex min-h-8 items-center gap-1.5 border px-2.5 py-1 text-left text-xs font-bold transition",
-        selected
-          ? cn("border-orange-400 bg-orange-50 text-slate-950", adminChipDepthClassName)
-          : "border-slate-200 bg-white text-slate-700 hover:border-slate-400",
+        "relative inline-flex min-h-8 items-center gap-1.5 px-2.5 py-1 text-left text-xs font-bold transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-1",
+        selected ? cn("bg-white text-slate-950", adminChipDepthClassName) : "text-slate-600 hover:bg-white/70 hover:text-slate-900",
       )}
       onClick={onClick}
       type="button"
@@ -70,12 +72,19 @@ function PlaceButton({
       <span className="break-words" dir="auto">
         {label}
       </span>
-      {seatLine ? <span className="font-semibold text-emerald-700">{`· ${seatLine}`}</span> : null}
+      {seatLine ? <span className="font-semibold text-emerald-700">{seatLine}</span> : null}
       {count !== null ? (
-        <span className={cn("font-semibold tabular-nums", selected ? "text-orange-800" : "text-slate-500")}>
-          {`· ${NUMBER.format(count)} ${count === 1 ? "CV" : "CVs"}`}
+        <span
+          className={cn(
+            "border px-1.5 text-phx-xs font-black tabular-nums",
+            selected ? "border-orange-200 bg-orange-50 text-orange-700" : "border-slate-200 bg-white/80 text-slate-500",
+          )}
+          title={`${NUMBER.format(count)} ${count === 1 ? "CV" : "CVs"}`}
+        >
+          {NUMBER.format(count)}
         </span>
       ) : null}
+      {selected ? <span aria-hidden className="absolute inset-x-2 bottom-0 h-0.5 bg-orange-500" /> : null}
     </button>
   );
 }
@@ -107,8 +116,8 @@ export function PlaceTabStrip({
 
   return (
     <div className="space-y-1.5">
-      <div aria-label="Regions" className="flex flex-wrap items-center gap-1.5" role="group">
-        <span className="inline-flex items-center gap-1 pr-1 text-phx-xs font-black uppercase tracking-wide text-slate-500">
+      <div aria-label="Regions" className={cn("flex flex-wrap items-center gap-1 border border-slate-200 bg-slate-100/80 p-1", adminRecessedDepthClassName)} role="group">
+        <span className="inline-flex items-center gap-1 px-1.5 text-phx-xs font-black uppercase tracking-wide text-slate-500">
           <MapPin aria-hidden className="h-3.5 w-3.5 text-orange-600" />
           Region
         </span>
@@ -138,8 +147,12 @@ export function PlaceTabStrip({
         />
       </div>
       {withAreas && chosenRegion && chosenRegion.areas.length > 0 ? (
-        <div aria-label={`Areas in ${chosenRegion.name}`} className="flex flex-wrap items-center gap-1.5 border-l-2 border-orange-200 pl-2.5" role="group">
-          <span className="pr-1 text-phx-xs font-black uppercase tracking-wide text-slate-500">Area</span>
+        <div
+          aria-label={`Areas in ${chosenRegion.name}`}
+          className={cn("flex flex-wrap items-center gap-1 border border-l-2 border-slate-200 border-l-orange-300 bg-slate-100/80 p-1", adminRecessedDepthClassName)}
+          role="group"
+        >
+          <span className="px-1.5 text-phx-xs font-black uppercase tracking-wide text-slate-500">Area</span>
           <PlaceButton
             count={regionCount(byPlace, chosenRegion.code)}
             label={`All of ${chosenRegion.name}`}

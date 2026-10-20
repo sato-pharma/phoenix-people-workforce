@@ -16,12 +16,21 @@
 // the notes and the timeline sit behind `candidates: read`, which he does not hold, and the chat
 // behind the inbox's own gate. Those parts are not drawn at all; one quiet line says why.
 //
+// THE HALF-PAGE CV (`fill`, owner, 20 Oct 2026: "i want the full page to be halfed and the cv 1 page
+// is fully appearing with no need to scroll … and add the action buttons"). In the workspace the card
+// is a column exactly as tall as its pane, and it never scrolls as a whole: a dark two-line header
+// (name, status, source, received; phone, email, where they are filed), the action bar — always in
+// view, its choices opening as a drawer OVER the document — one slim tab row carrying the star and
+// the zoom, and the document filling the rest at "fit page", so page 1 shows whole. Only the document
+// scrolls, and only when he goes on to page 2.
+//
 // THE SAME CARD SERVES THE MANAGER PORTAL (`mode="manager"`). There, the CV document and the
 // manager's own controls are handed in by the portal — its "I will call" gate decides when a phone
 // and a download appear — and nothing here reaches an HR-only route.
 
 import { ArrowLeft, ChevronDown, ChevronUp, Eye, FileText, GitMerge, Mail, Phone, PhoneCall, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { adminChipDepthClassName, adminPanelHeaderClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 import { CvDocumentView } from "@/components/recruitment/cv-preview-modal";
@@ -69,7 +78,22 @@ type ProfileState =
  * through the workspace's own narrow read-only route — the files and nothing else — never the
  * recruitment team's candidate route, which carries notes he does not hold the grant for.
  */
-function CvFileSection({ candidateId, canRate, readOnly = false }: { candidateId: string; canRate: boolean; readOnly?: boolean }) {
+function CvFileSection({
+  candidateId,
+  canRate,
+  fill = false,
+  readOnly = false,
+  starTarget = null,
+  toolbarTarget = null,
+}: {
+  candidateId: string;
+  canRate: boolean;
+  /** The half-page CV: the document fills the box at "fit page"; the star and zoom live in the tab row. */
+  fill?: boolean;
+  readOnly?: boolean;
+  starTarget?: HTMLElement | null;
+  toolbarTarget?: HTMLElement | null;
+}) {
   const [state, setState] = useState<ProfileState>({ phase: "loading" });
   const [rating, setRating] = useState<CandidateRating | null>(null);
   const [ratingBusy, setRatingBusy] = useState(false);
@@ -99,36 +123,81 @@ function CvFileSection({ candidateId, canRate, readOnly = false }: { candidateId
   }, [candidateId, readOnly]);
 
   if (state.phase === "loading") {
-    return <div aria-busy="true" className="h-[32rem] animate-pulse bg-slate-100" role="status" />;
+    return <div aria-busy="true" className={cn("animate-pulse bg-slate-100", fill ? "h-full" : "h-[32rem]")} role="status" />;
   }
   if (state.phase === "failed") {
     return (
-      <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800" dir="auto" role="alert">
+      <p className={cn("border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800", fill ? "m-3" : null)} dir="auto" role="alert">
         {state.message}
       </p>
     );
   }
   const file = primaryCvFile(state.files);
   const others = state.files.filter((item) => item.id !== file?.id);
+  const stars = canRate ? (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">Your star</span>
+      <CandidateStars
+        busy={ratingBusy}
+        onRate={(next) => {
+          const previous = rating;
+          setRating(next);
+          setRatingBusy(true);
+          saveRating(candidateId, next)
+            .catch(() => setRating(previous))
+            .finally(() => setRatingBusy(false));
+        }}
+        rating={rating}
+      />
+    </span>
+  ) : null;
+  const otherFiles =
+    others.length > 0 ? (
+      <div className={cn("flex flex-wrap items-center gap-1.5", fill ? "shrink-0 border-t border-slate-200 bg-white px-3 py-1.5" : null)}>
+        <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">Other files</span>
+        {others.map((item) => (
+          <a
+            className={`inline-flex items-center gap-1 border border-slate-200 bg-white px-2 py-0.5 text-xs font-bold text-slate-700 hover:border-orange-300 ${adminChipDepthClassName}`}
+            href={fileUrl(item.id)}
+            key={item.id}
+          >
+            <FileText aria-hidden className="h-3 w-3" />
+            <span className="break-words" dir="auto">
+              {item.fileName}
+            </span>
+          </a>
+        ))}
+      </div>
+    ) : null;
+
+  if (fill) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        {stars && starTarget ? createPortal(stars, starTarget) : null}
+        {file ? (
+          <CvDocumentView
+            allowDownload
+            className="min-h-0 flex-1 overflow-y-auto bg-slate-100"
+            downloadUrl={fileUrl(file.id)}
+            fileName={file.fileName}
+            fit="page"
+            mimeType={file.mimeType}
+            toolbarTarget={toolbarTarget}
+          />
+        ) : (
+          <p className="m-3 flex items-center gap-2 border border-dashed border-slate-300 bg-white px-3 py-6 text-sm font-semibold text-slate-600">
+            <FileText aria-hidden className="h-4 w-4 text-slate-400" />
+            No readable CV is attached. The Answers tab holds what the applicant told the bot.
+          </p>
+        )}
+        {otherFiles}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2.5">
-      {canRate ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">Your star</span>
-          <CandidateStars
-            busy={ratingBusy}
-            onRate={(next) => {
-              const previous = rating;
-              setRating(next);
-              setRatingBusy(true);
-              saveRating(candidateId, next)
-                .catch(() => setRating(previous))
-                .finally(() => setRatingBusy(false));
-            }}
-            rating={rating}
-          />
-        </div>
-      ) : null}
+      {stars ? <div className="flex flex-wrap items-center gap-2">{stars}</div> : null}
       {file ? (
         <div className={`min-h-[28rem] border border-slate-200 bg-slate-50 ${adminRecessedDepthClassName}`}>
           <CvDocumentView
@@ -144,23 +213,7 @@ function CvFileSection({ candidateId, canRate, readOnly = false }: { candidateId
           No readable CV is attached. The answers below are what the applicant told the bot.
         </p>
       )}
-      {others.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">Other files</span>
-          {others.map((item) => (
-            <a
-              className={`inline-flex items-center gap-1 border border-slate-200 bg-white px-2 py-0.5 text-xs font-bold text-slate-700 hover:border-orange-300 ${adminChipDepthClassName}`}
-              href={fileUrl(item.id)}
-              key={item.id}
-            >
-              <FileText aria-hidden className="h-3 w-3" />
-              <span className="break-words" dir="auto">
-                {item.fileName}
-              </span>
-            </a>
-          ))}
-        </div>
-      ) : null}
+      {otherFiles}
     </div>
   );
 }
@@ -201,6 +254,7 @@ export function OpenedCv({
   canHire = false,
   canWork,
   cvDocument,
+  fill = false,
   folders = [],
   hasNext,
   hasPrevious,
@@ -227,6 +281,8 @@ export function OpenedCv({
   canWork: boolean;
   /** The manager portal hands its own document view (its download gate lives there). */
   cvDocument?: ReactNode;
+  /** The workspace's half-page CV: a column exactly as tall as its pane (see the header). */
+  fill?: boolean;
   folders?: readonly CvFolderNode[];
   hasNext: boolean;
   hasPrevious: boolean;
@@ -275,6 +331,197 @@ export function OpenedCv({
       ];
   const onSaveAnswer =
     canEdit && actions ? (target: WorkspaceRow, chip: WorkspaceAnswerChip, value: string | null) => actions.saveAnswer(target, chip, value, viewerName) : undefined;
+  // Where the half-page CV's drawer, star and zoom are drawn. Callback refs: each is a real element
+  // by the time anything is portalled into it.
+  const [drawerHost, setDrawerHost] = useState<HTMLElement | null>(null);
+  const [starSlot, setStarSlot] = useState<HTMLElement | null>(null);
+  const [zoomSlot, setZoomSlot] = useState<HTMLElement | null>(null);
+
+  if (fill) {
+    const navButton = "inline-flex h-8 w-8 items-center justify-center border border-white/20 bg-white/10 text-white transition hover:bg-white/20 disabled:opacity-30";
+    return (
+      <section aria-label={`CV of ${row.name}`} className="flex h-full min-h-0 min-w-0 flex-col bg-white" id="ws-opened-cv">
+        {/* 1 — the header: who, and how to reach them */}
+        <div className={cn("shrink-0 px-3 py-2 text-white", adminPanelHeaderClassName)}>
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+            <div className="flex min-w-0 grow basis-56 flex-wrap items-center gap-x-2 gap-y-1">
+              {layout === "sheet" ? (
+                <button
+                  className="inline-flex h-8 shrink-0 items-center gap-1 border border-white/20 bg-white/10 px-2 text-xs font-bold text-white transition hover:bg-white/20"
+                  onClick={onClose}
+                  type="button"
+                >
+                  <ArrowLeft aria-hidden className="h-3.5 w-3.5" />
+                  Back
+                </button>
+              ) : null}
+              <h2 className="break-words text-base font-black leading-6 tracking-tight text-white" dir="auto">
+                {row.name}
+              </h2>
+              <span className={cn("border px-1.5 py-px text-phx-xs font-black uppercase tracking-[0.06em]", chipToneClassName[statusTone[row.status]])}>
+                {candidateStatusLabels[row.status]}
+              </span>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              {position ? <span className="pr-1 text-xs font-bold tabular-nums text-slate-300">{position}</span> : null}
+              {hasNext || hasPrevious ? (
+                <>
+                  <button aria-label="Previous CV" className={navButton} disabled={!hasPrevious} onClick={onPrevious} title="Previous (↑ or K)" type="button">
+                    <ChevronUp aria-hidden className="h-4 w-4" />
+                  </button>
+                  <button aria-label="Next CV" className={navButton} disabled={!hasNext} onClick={onNext} title="Next (↓ or J)" type="button">
+                    <ChevronDown aria-hidden className="h-4 w-4" />
+                  </button>
+                </>
+              ) : null}
+              {layout === "split" ? (
+                <button aria-label="Close the CV" className={navButton} onClick={onClose} title="Close (Esc)" type="button">
+                  <X aria-hidden className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
+          </div>
+          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-slate-300">
+            <span>{`${candidateSourceLabels[row.source] ?? row.source} · Received ${cairoStamp(row.receivedAt, today)}`}</span>
+            {hr && row.phone ? (
+              <a className="inline-flex items-center gap-1 font-bold text-white hover:text-orange-300" dir="ltr" href={`tel:${row.phone}`}>
+                <Phone aria-hidden className="h-3.5 w-3.5 text-orange-300" />
+                <span className="tabular-nums">{row.phone}</span>
+              </a>
+            ) : null}
+            {hr && row.email ? (
+              <a className="inline-flex items-center gap-1 break-all font-bold text-white hover:text-orange-300" href={`mailto:${row.email}`}>
+                <Mail aria-hidden className="h-3.5 w-3.5 text-orange-300" />
+                {row.email}
+              </a>
+            ) : null}
+            {row.placements.length > 0 ? (
+              <span className="break-words" dir="auto" title={row.placements.map(placedByLabel).join(" · ")}>
+                {`In ${row.placements.map(placementLabel).join(" · ")}`}
+              </span>
+            ) : (
+              <span className="font-bold text-amber-300">Needs placing</span>
+            )}
+          </p>
+        </div>
+
+        {/* 2 — the action bar, always in view */}
+        {readOnly ? (
+          <p className="flex shrink-0 items-center gap-1.5 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+            <Eye aria-hidden className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+            Read only — notes and the WhatsApp chat stay with the recruitment team.
+          </p>
+        ) : null}
+        {hr && canWork && actions ? (
+          <div className={`shrink-0 border-b border-slate-200 bg-slate-50 px-3 py-2 ${adminRecessedDepthClassName}`}>
+            <CvActions
+              actions={actions}
+              canDelete={canDelete}
+              canHire={canHire}
+              canWork={canWork}
+              folders={folders}
+              managers={managers}
+              onCompleteMissing={() => setSection("answers")}
+              onPanel={onPanel ?? (() => undefined)}
+              panel={panel}
+              panelTarget={drawerHost}
+              roleTabs={roleTabs}
+              row={row}
+              showCallResult
+              today={today}
+              viewerName={viewerName}
+              viewingTab={viewingTab}
+            />
+          </div>
+        ) : null}
+        {row.duplicate && hr ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-900">
+            <GitMerge aria-hidden className="h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 grow break-words font-semibold" dir="auto">
+              {`Looks like the same person as ${row.duplicate.otherCandidateIds.length === 1 ? "another record" : `${row.duplicate.otherCandidateIds.length} other records`} — ${row.duplicate.reason}`}
+            </span>
+            {canWork && actions
+              ? row.duplicate.otherCandidateIds.map((otherId, index) => (
+                  <button
+                    className="inline-flex h-7 items-center gap-1 border border-amber-500 bg-white px-2 text-xs font-bold text-amber-900 transition hover:bg-amber-100"
+                    key={otherId}
+                    onClick={() => actions.merge(row.id, otherId)}
+                    type="button"
+                  >
+                    <GitMerge aria-hidden className="h-3.5 w-3.5" />
+                    {row.duplicate && row.duplicate.otherCandidateIds.length > 1 ? `Merge record ${index + 1} into this one` : "Merge it into this one"}
+                  </button>
+                ))
+              : null}
+          </div>
+        ) : null}
+
+        {/* 3 — one slim tab row, the star and the zoom at its end */}
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-slate-200 bg-white px-2">
+          <div aria-label="Parts of this CV" className="flex flex-wrap" role="tablist">
+            {sections.map((tab) => (
+              <button
+                aria-selected={tab.key === section}
+                className={cn(
+                  "inline-flex h-9 items-center border-b-2 px-3 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400",
+                  tab.key === section ? "border-orange-500 text-slate-950" : "border-transparent text-slate-500 hover:text-slate-900",
+                )}
+                key={tab.key}
+                onClick={() => setSection(tab.key)}
+                role="tab"
+                type="button"
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1">
+            <span className="contents" ref={setStarSlot} />
+            <span className="contents" ref={setZoomSlot} />
+          </div>
+        </div>
+
+        {/* 4 — the document: the only part that scrolls */}
+        <div className="relative min-h-0 flex-1">
+          {section === "cv" ? (
+            <CvFileSection
+              canRate={!readOnly && canWork}
+              candidateId={row.id}
+              fill
+              key={readOnly ? `ceo-${row.id}` : row.id}
+              readOnly={readOnly}
+              starTarget={starSlot}
+              toolbarTarget={zoomSlot}
+            />
+          ) : null}
+          {section === "answers" ? (
+            <div className="h-full overflow-y-auto p-3">
+              <AnswersSection answerOptions={answerOptions} canEdit={canEdit} onSaveAnswer={onSaveAnswer} row={row} today={today} />
+            </div>
+          ) : null}
+          {section === "whatsapp" && hr && !readOnly ? (
+            <div className="h-full space-y-2.5 overflow-y-auto p-3">
+              <CandidateChat candidateId={row.id} key={row.id} name={row.name} phone={row.phone} today={today} />
+              <p className="text-xs font-medium text-slate-500">Replies go out on the recruitment WhatsApp line, inside WhatsApp&apos;s 24-hour window.</p>
+              <WhatsAppReplyBox candidateId={row.id} key={`reply-${row.id}`} />
+            </div>
+          ) : null}
+          {section === "notes" && hr && !readOnly ? (
+            <div className="h-full overflow-y-auto p-3">
+              <WorkstationNotesTab canWrite={canWork} candidateId={row.id} />
+            </div>
+          ) : null}
+          {section === "timeline" && hr && !readOnly ? (
+            <div className="h-full overflow-y-auto p-3">
+              <WorkstationTimelineTab candidateId={row.id} />
+            </div>
+          ) : null}
+          {/* A chosen action's drawer, over the document; empty (and gone) when none is open. */}
+          <div className="absolute inset-x-0 top-0 z-20 max-h-full overflow-y-auto empty:hidden" ref={setDrawerHost} />
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section aria-label={`CV of ${row.name}`} className="min-w-0 bg-white" id="ws-opened-cv">

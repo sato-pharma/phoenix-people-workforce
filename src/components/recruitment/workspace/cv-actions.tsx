@@ -15,7 +15,9 @@
 // Every press goes through `use-workspace-actions.ts`, so each carries its 10-second Undo.
 //
 // Each choice opens IN the card, under the buttons — a floating menu near the edge of a narrow
-// screen is how a page grows a sideways scroll.
+// screen is how a page grows a sideways scroll. In the half-page CV (owner, 20 Oct 2026: "add the
+// action buttons", in view, with page 1 of the CV whole beside the list) a choice opens as a drawer
+// OVER the document instead (`panelTarget`), so the page under it never moves and the bar stays put.
 
 import {
   Archive,
@@ -37,6 +39,7 @@ import {
   X,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { adminControlDepthClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { FolderChoice } from "@/components/recruitment/folder-choice";
@@ -44,7 +47,14 @@ import { ScheduleInterviewButton } from "@/components/recruitment/interview-cale
 import { ManagerPicker, type ManagerPickerOption } from "@/components/recruitment/manager-picker";
 import { getJson, patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import type { WorkspaceActions } from "@/components/recruitment/workspace/use-workspace-actions";
-import { errorText, missingAnswerCount, placementLabel, placedByLabel } from "@/components/recruitment/workspace/workspace-format";
+import { PlacingForm } from "@/components/recruitment/workspace/placing-form";
+import {
+  cairoStamp,
+  errorText,
+  missingAnswerCount,
+  placementLabel,
+  placedByLabel,
+} from "@/components/recruitment/workspace/workspace-format";
 import {
   phxButtonApproveDenseClassName,
   phxButtonDangerDenseClassName,
@@ -57,22 +67,24 @@ import {
 import { flattenCvFolderTree, type CvFolderNode } from "@/lib/recruitment/cv-folder-tree";
 import { AUTOMATIC_FOLDER, foldersToOffer } from "@/lib/recruitment/folder-choice";
 import { offerComposerHref } from "@/lib/recruitment/workspace/links";
+import { NEEDS_PLACING, workspaceRoleTabLabels, type WorkspaceRoleTab, type WorkspaceTabKey } from "@/lib/recruitment/workspace/role-tabs";
+import type { WorkspaceRow } from "@/lib/recruitment/workspace/types";
 import {
-  tabsWithAreas,
-  tabsWithRegions,
-  workspaceRoleTabLabels,
-  type WorkspaceRoleTab,
-  type WorkspaceTabKey,
-} from "@/lib/recruitment/workspace/role-tabs";
-import type { WorkspacePlaces, WorkspaceRow } from "@/lib/recruitment/workspace/types";
-import { rejectionReasonLabels, rejectionReasons, rejectionRefusal, type RejectionReason } from "@/lib/recruitment/workspace/vocabulary";
+  callResultLabels,
+  callResults,
+  rejectionReasonLabels,
+  rejectionReasons,
+  rejectionRefusal,
+  type CallResult,
+  type RejectionReason,
+} from "@/lib/recruitment/workspace/vocabulary";
 import { cn } from "@/lib/utils";
 
 export type CvPanel = "reject" | "sorry" | "manager" | "hire" | "folder" | "delete" | "place";
 
 // Lifted like every house control, and flat again when greyed — a disabled button that still floats
 // reads as pressable.
-const button = `inline-flex h-9 items-center justify-center gap-1.5 border px-3 text-xs font-bold transition disabled:pointer-events-none disabled:opacity-45 ${adminControlDepthClassName} disabled:shadow-none`;
+const button = `inline-flex h-8 items-center justify-center gap-1.5 border px-2.5 text-xs font-bold transition disabled:pointer-events-none disabled:opacity-45 ${adminControlDepthClassName} disabled:shadow-none`;
 export const cvGhostButton = cn(button, "border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50");
 export const cvApproveButton = cn(button, phxButtonApproveDenseClassName);
 export const cvDangerButton = cn(button, phxButtonDangerDenseClassName);
@@ -464,49 +476,33 @@ function PlacePanel({
   onClose,
   roleTabs,
   row,
+  viewerName,
+  viewingTab,
 }: {
   actions: WorkspaceActions;
   onClose: () => void;
   roleTabs: readonly WorkspaceRoleTab[];
   row: WorkspaceRow;
+  viewerName: string | null;
+  viewingTab: WorkspaceTabKey | null;
 }) {
-  const [tab, setTab] = useState<WorkspaceRoleTab | "">("");
-  const [places, setPlaces] = useState<WorkspacePlaces | null>(null);
-  const [region, setRegion] = useState("");
-  const [area, setArea] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
-  const chooseTab = async (next: WorkspaceRoleTab | "") => {
-    setTab(next);
-    setRegion("");
-    setArea("");
-    setPlaces(null);
-    if (!next || !tabsWithRegions.includes(next)) return;
-    try {
-      const data = await getJson(`/api/recruitment/workspace/meta?tab=${next}`);
-      setPlaces((data.places as WorkspacePlaces) ?? null);
-    } catch (error) {
-      setProblem(errorText(error, "The regions could not be loaded."));
-    }
-  };
-
-  const run = async (input: { roleTab: WorkspaceRoleTab; regionCode?: string | null; areaCode?: string | null; remove?: boolean }) => {
+  const takeOut = async (roleTab: WorkspaceRoleTab) => {
     setBusy(true);
     setProblem(null);
     try {
-      await actions.place(row, input);
-      if (!input.remove) onClose();
+      await actions.place(row, { remove: true, roleTab });
     } catch (error) {
-      setProblem(errorText(error, "The placement was not saved."));
+      setProblem(errorText(error, "The CV was not taken out of that tab."));
     } finally {
       setBusy(false);
     }
   };
 
-  const regionEntry = places?.regions.find((entry) => entry.code === region) ?? null;
   return (
-    <PanelBox onClose={onClose} title="Place in a tab">
+    <PanelBox onClose={onClose} title={row.placements.length ? "Tabs — and place it again" : "Place this candidate"}>
       {row.placements.length > 0 ? (
         <ul className="space-y-1">
           {row.placements.map((placement) => (
@@ -518,7 +514,7 @@ function PlacePanel({
               <button
                 className="text-xs font-bold text-rose-700 underline-offset-2 hover:underline disabled:opacity-50"
                 disabled={busy}
-                onClick={() => void run({ remove: true, roleTab: placement.tab })}
+                onClick={() => void takeOut(placement.tab)}
                 type="button"
               >
                 Take out
@@ -529,58 +525,17 @@ function PlacePanel({
       ) : (
         <p className="text-sm font-medium text-slate-600">Not in any tab yet — the applicant&apos;s reply did not say which role.</p>
       )}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <select aria-label="Role tab" className={cn(phxSelectClassName, "h-9 text-sm")} onChange={(event) => void chooseTab(event.target.value as WorkspaceRoleTab | "")} value={tab}>
-          <option value="">Choose the role…</option>
-          {roleTabs.map((value) => (
-            <option key={value} value={value}>
-              {workspaceRoleTabLabels[value]}
-            </option>
-          ))}
-        </select>
-        {tab && tabsWithRegions.includes(tab) ? (
-          <select
-            aria-label="Region"
-            className={cn(phxSelectClassName, "h-9 text-sm")}
-            disabled={!places}
-            onChange={(event) => {
-              setRegion(event.target.value);
-              setArea("");
-            }}
-            value={region}
-          >
-            <option value="">{places ? "Region (optional)" : "Loading regions…"}</option>
-            {(places?.regions ?? []).map((entry) => (
-              <option key={entry.code} value={entry.code}>
-                {entry.name}
-              </option>
-            ))}
-          </select>
-        ) : null}
-        {tab && tabsWithAreas.includes(tab) && regionEntry ? (
-          <select aria-label="Area" className={cn(phxSelectClassName, "h-9 text-sm")} onChange={(event) => setArea(event.target.value)} value={area}>
-            <option value="">Area (optional)</option>
-            {regionEntry.areas.map((entry) => (
-              <option key={entry.code} value={entry.code}>
-                {entry.name}
-              </option>
-            ))}
-          </select>
-        ) : null}
-      </div>
       {problem ? <Problem>{problem}</Problem> : null}
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          className={cvDarkButton}
-          disabled={!tab || busy}
-          onClick={() => tab && void run({ areaCode: area || null, regionCode: region || null, roleTab: tab })}
-          type="button"
-        >
-          <Tags aria-hidden className="h-3.5 w-3.5" />
-          Place here
-        </button>
-        <span className="text-xs font-medium text-slate-500">Marked “added by HR” with your name.</span>
-      </div>
+      <PlacingForm
+        actions={actions}
+        editorName={viewerName}
+        framed={false}
+        key={row.id}
+        leaves={viewingTab === NEEDS_PLACING && row.placements.length === 0}
+        onPlaced={onClose}
+        roleTabs={roleTabs}
+        row={row}
+      />
     </PanelBox>
   );
 }
@@ -599,8 +554,12 @@ export function CvActions({
   onCompleteMissing,
   onPanel,
   panel,
+  panelTarget = null,
   roleTabs,
   row,
+  showCallResult = false,
+  today = "",
+  viewerName = null,
   viewingTab,
 }: {
   actions: WorkspaceActions;
@@ -612,8 +571,16 @@ export function CvActions({
   onCompleteMissing: () => void;
   onPanel: (panel: CvPanel | null) => void;
   panel: CvPanel | null;
+  /** Open each choice as a drawer in this element (over the CV) instead of under the bar. */
+  panelTarget?: HTMLElement | null;
   roleTabs: readonly WorkspaceRoleTab[];
   row: WorkspaceRow;
+  /** The one-tap call results as a "Call result" drop-down in the bar (the half-page CV). */
+  showCallResult?: boolean;
+  /** Today in Cairo, for "Last call · 19 Oct". */
+  today?: string;
+  /** The reader's own name, for a call or an answer they record. */
+  viewerName?: string | null;
   viewingTab: WorkspaceTabKey | null;
 }) {
   if (!canWork) {
@@ -629,10 +596,69 @@ export function CvActions({
   const tabPlacement = row.placements.find((placement) => placement.tab === viewingTab) ?? row.placements[0] ?? null;
   const offerHref = offerComposerHref(row.id, null, tabPlacement?.tab ?? null, tabPlacement?.botRoleFamily ?? null);
   const hired = row.status === "hired";
+  const panelBody = (
+    <>
+      {panel === "reject" ? (
+        <RejectPanel actions={actions} onClose={() => onPanel(null)} onRejected={() => onPanel("sorry")} rows={[row]} />
+      ) : null}
+      {panel === "sorry" ? <SorryPanel actions={actions} onClose={() => onPanel(null)} row={row} /> : null}
+      {panel === "manager" ? (
+        <ManagerPanel actions={actions} managers={managers} onClose={() => onPanel(null)} panelId={`ws-manager-${row.id}`} rows={[row]} />
+      ) : null}
+      {panel === "folder" ? <FolderPanel actions={actions} folders={folders} onClose={() => onPanel(null)} rows={[row]} /> : null}
+      {panel === "hire" ? <HirePanel onClose={() => onPanel(null)} row={row} /> : null}
+      {panel === "place" ? (
+        <PlacePanel actions={actions} onClose={() => onPanel(null)} roleTabs={roleTabs} row={row} viewerName={viewerName} viewingTab={viewingTab} />
+      ) : null}
+      {panel === "delete" ? (
+        <PanelBox onClose={() => onPanel(null)} title="Delete this CV for good?">
+          <p className="text-sm font-medium text-slate-700" dir="auto">
+            {`${row.name} — the record, its files and its history are removed. It is deleted 10 seconds after you press, so Undo can still stop it.`}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className={cvDangerButton}
+              onClick={() => {
+                actions.remove(row.id);
+                onPanel(null);
+              }}
+              type="button"
+            >
+              <Trash2 aria-hidden className="h-3.5 w-3.5" />
+              Delete for good
+            </button>
+            <button className={cvGhostButton} onClick={() => onPanel(null)} type="button">
+              Keep it
+            </button>
+          </div>
+        </PanelBox>
+      ) : null}
+    </>
+  );
+  const lastCall = row.latestCall ? `Last call: ${callResultLabels[row.latestCall.result]} · ${cairoStamp(row.latestCall.at, today)}` : null;
 
   return (
     <div className="space-y-2.5">
       <div className="flex flex-wrap items-center gap-1.5">
+        {showCallResult ? (
+          <select
+            aria-label="Call result"
+            className={cn(phxSelectClassName, "h-8 w-auto max-w-full px-2 text-xs font-bold")}
+            onChange={(event) => {
+              const result = event.target.value as CallResult | "";
+              if (result) actions.callResult(row.id, result, null, viewerName);
+            }}
+            title={lastCall ?? "Record how the call went"}
+            value=""
+          >
+            <option value="">{row.latestCall ? `Call · ${callResultLabels[row.latestCall.result]}` : "Call result…"}</option>
+            {callResults.map((result) => (
+              <option key={result} value={result}>
+                {callResultLabels[result]}
+              </option>
+            ))}
+          </select>
+        ) : null}
         <button
           className={cvApproveButton}
           disabled={hired || row.status === "shortlisted"}
@@ -740,39 +766,7 @@ export function CvActions({
         ) : null}
       </div>
 
-      {panel === "reject" ? (
-        <RejectPanel actions={actions} onClose={() => onPanel(null)} onRejected={() => onPanel("sorry")} rows={[row]} />
-      ) : null}
-      {panel === "sorry" ? <SorryPanel actions={actions} onClose={() => onPanel(null)} row={row} /> : null}
-      {panel === "manager" ? (
-        <ManagerPanel actions={actions} managers={managers} onClose={() => onPanel(null)} panelId={`ws-manager-${row.id}`} rows={[row]} />
-      ) : null}
-      {panel === "folder" ? <FolderPanel actions={actions} folders={folders} onClose={() => onPanel(null)} rows={[row]} /> : null}
-      {panel === "hire" ? <HirePanel onClose={() => onPanel(null)} row={row} /> : null}
-      {panel === "place" ? <PlacePanel actions={actions} onClose={() => onPanel(null)} roleTabs={roleTabs} row={row} /> : null}
-      {panel === "delete" ? (
-        <PanelBox onClose={() => onPanel(null)} title="Delete this CV for good?">
-          <p className="text-sm font-medium text-slate-700" dir="auto">
-            {`${row.name} — the record, its files and its history are removed. It is deleted 10 seconds after you press, so Undo can still stop it.`}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              className={cvDangerButton}
-              onClick={() => {
-                actions.remove(row.id);
-                onPanel(null);
-              }}
-              type="button"
-            >
-              <Trash2 aria-hidden className="h-3.5 w-3.5" />
-              Delete for good
-            </button>
-            <button className={cvGhostButton} onClick={() => onPanel(null)} type="button">
-              Keep it
-            </button>
-          </div>
-        </PanelBox>
-      ) : null}
+      {panel && panelTarget ? createPortal(<div className="p-2">{panelBody}</div>, panelTarget) : panelBody}
     </div>
   );
 }

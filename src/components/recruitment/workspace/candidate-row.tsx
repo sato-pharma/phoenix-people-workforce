@@ -74,7 +74,94 @@ function returnedText(returned: NonNullable<WorkspaceRow["returned"]>): string {
   return why ? `${who}: ${why}` : who;
 }
 
+/**
+ * A row's flags — "5 of 6 answered", overdue, a possible duplicate, the latest call, returned by a
+ * manager, the interview, rejected, sent to, archived, folders, also applied for, needs placing — in
+ * one place, so the table's Candidate cell and the phone card can never show two different sets.
+ */
+export function RowFlags({
+  extraFlags,
+  mode = "hr",
+  row,
+  showEveryPlacement = false,
+  today,
+  viewingTab,
+}: {
+  extraFlags?: ReactNode;
+  mode?: "hr" | "manager";
+  row: WorkspaceRow;
+  showEveryPlacement?: boolean;
+  today: string;
+  viewingTab: string | null;
+}) {
+  const completeness = completenessLabel(row.completeness);
+  const missing = row.completeness ? row.completeness.expected - row.completeness.given : 0;
+  const interview = interviewChip(row.interview, today);
+  const elsewhere = showEveryPlacement ? row.placements : otherPlacements(row, viewingTab);
+  return (
+    <>
+      {completeness ? (
+        <RowFlag
+          icon={missing > 0 ? <AlertTriangle aria-hidden className="h-3 w-3" /> : <CheckCircle2 aria-hidden className="h-3 w-3" />}
+          tone={missing > 0 ? "amber" : "emerald"}
+        >
+          {completeness}
+        </RowFlag>
+      ) : null}
+      {row.overdue ? (
+        <RowFlag tone="rose">
+          {row.overdue.kind === "shortlisted"
+            ? `Overdue · shortlisted ${row.overdue.days} days, no action`
+            : `Overdue · with the manager ${row.overdue.days} days, no reply`}
+        </RowFlag>
+      ) : null}
+      {row.duplicate ? (
+        <RowFlag icon={<Copy aria-hidden className="h-3 w-3" />} title={row.duplicate.reason} tone="amber">
+          Possible duplicate
+        </RowFlag>
+      ) : null}
+      {row.latestCall ? (
+        <RowFlag
+          icon={<PhoneCall aria-hidden className="h-3 w-3" />}
+          title={row.latestCall.note ?? undefined}
+          tone={row.latestCall.result === "interested" ? "emerald" : row.latestCall.result === "not_interested" ? "rose" : "slate"}
+        >
+          {`${callResultLabels[row.latestCall.result]} · ${cairoDayLabel(row.latestCall.at, today)}`}
+        </RowFlag>
+      ) : null}
+      {row.returned ? (
+        <RowFlag icon={<Undo2 aria-hidden className="h-3 w-3" />} tone="orange">
+          {returnedText(row.returned)}
+        </RowFlag>
+      ) : null}
+      {interview ? <RowFlag tone={interview.tone}>{interview.label}</RowFlag> : null}
+      {row.status === "rejected" && row.rejection?.reason ? (
+        <RowFlag title={row.rejection.note ?? undefined} tone="rose">
+          {`Rejected · ${rejectionReasonLabels[row.rejection.reason]}${row.rejection.note ? ` — ${row.rejection.note}` : ""}`}
+        </RowFlag>
+      ) : null}
+      {row.latestSend && mode === "hr" ? (
+        <RowFlag tone="orange">{`Sent to ${row.latestSend.managerName ?? "a manager"} · ${cairoDayLabel(row.latestSend.sentAt, today)}`}</RowFlag>
+      ) : null}
+      {row.archivedAt ? <RowFlag tone="slate">{`Archived · ${cairoDayLabel(row.archivedAt, today)}`}</RowFlag> : null}
+      {row.folders.length > 0 && mode === "hr" ? (
+        <RowFlag icon={<FolderOpen aria-hidden className="h-3 w-3" />} tone="slate">
+          {row.folders.map((folder) => folder.name).join(", ")}
+        </RowFlag>
+      ) : null}
+      {elsewhere.length > 0 && mode === "hr" ? (
+        <RowFlag tone="sky">
+          {`${showEveryPlacement ? "In" : "Also applied for"} ${elsewhere.map(placementLabel).join(" · ")}`}
+        </RowFlag>
+      ) : null}
+      {row.placements.length === 0 && mode === "hr" ? <RowFlag tone="amber">Needs placing</RowFlag> : null}
+      {extraFlags}
+    </>
+  );
+}
+
 export function CandidateRow({
+  anchorId,
   answerOptions,
   canEdit,
   extraFlags,
@@ -89,6 +176,8 @@ export function CandidateRow({
   today,
   viewingTab,
 }: {
+  /** The row's element id, for scrolling it into view; `ws-row-<id>` unless the caller has its own. */
+  anchorId?: string;
   /** Options per answer key, so a choice question edits as a choice. */
   answerOptions?: Readonly<Record<string, readonly AnswerOption[]>>;
   canEdit: boolean;
@@ -106,10 +195,6 @@ export function CandidateRow({
   today: string;
   viewingTab: string | null;
 }) {
-  const completeness = completenessLabel(row.completeness);
-  const missing = row.completeness ? row.completeness.expected - row.completeness.given : 0;
-  const interview = interviewChip(row.interview, today);
-  const elsewhere = showEveryPlacement ? row.placements : otherPlacements(row, viewingTab);
   const lead = row.answers.filter((chip) => chip.lead);
   const rest = row.answers.filter((chip) => !chip.lead);
   const saveAnswer = onSaveAnswer ? (chip: WorkspaceAnswerChip, value: string | null) => onSaveAnswer(row, chip, value) : undefined;
@@ -123,7 +208,7 @@ export function CandidateRow({
         row.archivedAt ? "opacity-80" : null,
       )}
       data-candidate-row={row.id}
-      id={`ws-row-${row.id}`}
+      id={anchorId ?? `ws-row-${row.id}`}
     >
       <span aria-hidden className={cn("absolute inset-y-0 left-0 w-[3px]", statusEdgeClassName[row.status])} />
       {opened ? <span aria-hidden className="absolute inset-y-0 right-0 w-[3px] bg-orange-500" /> : null}
@@ -173,62 +258,7 @@ export function CandidateRow({
             <time className="text-xs font-semibold tabular-nums text-slate-600" dateTime={row.receivedAt}>
               {cairoStamp(row.receivedAt, today)}
             </time>
-            {completeness ? (
-              <RowFlag
-                icon={missing > 0 ? <AlertTriangle aria-hidden className="h-3 w-3" /> : <CheckCircle2 aria-hidden className="h-3 w-3" />}
-                tone={missing > 0 ? "amber" : "emerald"}
-              >
-                {completeness}
-              </RowFlag>
-            ) : null}
-            {row.overdue ? (
-              <RowFlag tone="rose">
-                {row.overdue.kind === "shortlisted"
-                  ? `Overdue · shortlisted ${row.overdue.days} days, no action`
-                  : `Overdue · with the manager ${row.overdue.days} days, no reply`}
-              </RowFlag>
-            ) : null}
-            {row.duplicate ? (
-              <RowFlag icon={<Copy aria-hidden className="h-3 w-3" />} title={row.duplicate.reason} tone="amber">
-                Possible duplicate
-              </RowFlag>
-            ) : null}
-            {row.latestCall ? (
-              <RowFlag
-                icon={<PhoneCall aria-hidden className="h-3 w-3" />}
-                title={row.latestCall.note ?? undefined}
-                tone={row.latestCall.result === "interested" ? "emerald" : row.latestCall.result === "not_interested" ? "rose" : "slate"}
-              >
-                {`${callResultLabels[row.latestCall.result]} · ${cairoDayLabel(row.latestCall.at, today)}`}
-              </RowFlag>
-            ) : null}
-            {row.returned ? (
-              <RowFlag icon={<Undo2 aria-hidden className="h-3 w-3" />} tone="orange">
-                {returnedText(row.returned)}
-              </RowFlag>
-            ) : null}
-            {interview ? <RowFlag tone={interview.tone}>{interview.label}</RowFlag> : null}
-            {row.status === "rejected" && row.rejection?.reason ? (
-              <RowFlag title={row.rejection.note ?? undefined} tone="rose">
-                {`Rejected · ${rejectionReasonLabels[row.rejection.reason]}${row.rejection.note ? ` — ${row.rejection.note}` : ""}`}
-              </RowFlag>
-            ) : null}
-            {row.latestSend && mode === "hr" ? (
-              <RowFlag tone="orange">{`Sent to ${row.latestSend.managerName ?? "a manager"} · ${cairoDayLabel(row.latestSend.sentAt, today)}`}</RowFlag>
-            ) : null}
-            {row.archivedAt ? <RowFlag tone="slate">{`Archived · ${cairoDayLabel(row.archivedAt, today)}`}</RowFlag> : null}
-            {row.folders.length > 0 && mode === "hr" ? (
-              <RowFlag icon={<FolderOpen aria-hidden className="h-3 w-3" />} tone="slate">
-                {row.folders.map((folder) => folder.name).join(", ")}
-              </RowFlag>
-            ) : null}
-            {elsewhere.length > 0 && mode === "hr" ? (
-              <RowFlag tone="sky">
-                {`${showEveryPlacement ? "In" : "Also applied for"} ${elsewhere.map(placementLabel).join(" · ")}`}
-              </RowFlag>
-            ) : null}
-            {row.placements.length === 0 && mode === "hr" ? <RowFlag tone="amber">Needs placing</RowFlag> : null}
-            {extraFlags}
+            <RowFlags extraFlags={extraFlags} mode={mode} row={row} showEveryPlacement={showEveryPlacement} today={today} viewingTab={viewingTab} />
           </div>
 
           {/* Line 2 */}
