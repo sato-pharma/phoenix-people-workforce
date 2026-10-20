@@ -20,6 +20,7 @@ import type { ClassifyMenu } from "@/lib/recruitment/inbound/whatsapp-classify-m
 import { menuViolations } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
 import type { OutboundLogContext } from "@/lib/recruitment/inbound/whatsapp-outbound-log";
 import { buildOutboundLogRow, recordOutboundMessage } from "@/lib/recruitment/inbound/whatsapp-outbound-log";
+import { addressedForGraph } from "@/lib/recruitment/inbound/whatsapp-recipient";
 import { recordInboxOutbound, type InboxSendDetail } from "@/lib/whatsapp-inbox/record";
 
 const DEFAULT_GRAPH_API_VERSION = "v23.0";
@@ -105,7 +106,9 @@ async function sendToGraph(
 ): Promise<WhatsAppSendResult> {
   try {
     const response = await fetch(`https://graph.facebook.com/${graphApiVersion()}/${phoneNumberId}/messages`, {
-      body: JSON.stringify(payload),
+      // The audit and the inbox keep the payload as built (`to` = whoever the conversation is keyed
+      // on); only the wire copy moves a username's id into `recipient`.
+      body: JSON.stringify(addressedForGraph(payload)),
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       method: "POST",
       signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
