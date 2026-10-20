@@ -25,6 +25,8 @@ import {
   bridgeStatusForDecision,
   decisionIsOpen,
   defaultDecisionDays,
+  degradedSubmitRefusal,
+  incompleteSectionsOf,
   isCarried,
   markDecidedElsewhere,
   MAX_DAYS,
@@ -107,6 +109,8 @@ function reportRow(overrides: Partial<HrOpsReportRow> = {}): HrOpsReportRow {
     field_from: "2026-10-19",
     field_to: "2026-10-19",
     id: REPORT_ID,
+    // A complete build, so a report fixture submits unless a case says otherwise.
+    incomplete_sections: [],
     kind: "daily",
     line_count: 4,
     office_from: "2026-10-19",
@@ -675,10 +679,25 @@ function testMigrationParity() {
     ["hr_ops_reports", HR_OPS_REPORT_COLUMNS],
     ["hr_ops_report_lines", HR_OPS_LINE_COLUMNS],
   ] as const;
+  // Every LATER migration of this module counts too: a column added by an `alter table … add
+  // column` is as defined as one in the create-table body, and the code selects both.
+  const added = new Map<string, Set<string>>();
+  const migrations = readdirSync(path.join(ROOT, "supabase/migrations"));
+  for (const name of migrations.filter((entry) => entry.includes("hr_ops") && !MIGRATION.endsWith(entry))) {
+    const later = stripSqlComments(read(path.posix.join("supabase/migrations", name)));
+    for (const match of later.matchAll(/alter table\s+public\.([a-z_]+)[\s\S]*?add column(?: if not exists)?\s+([a-z_]+)/g)) {
+      const columns = added.get(match[1]) ?? new Set<string>();
+      columns.add(match[2]);
+      added.set(match[1], columns);
+    }
+  }
   for (const [table, columns] of tables) {
     const body = new RegExp(`create table if not exists public\\.${table} \\(([\\s\\S]*?)\\n\\);`).exec(sql)?.[1];
     assert.ok(body, `the migration lost its ${table} table`);
-    const defined = new Set([...body.matchAll(/^\s+([a-z_]+)\s+(?:uuid|text|date|jsonb|integer|numeric|timestamptz)/gm)].map((entry) => entry[1]));
+    const defined = new Set([
+      ...[...body.matchAll(/^\s+([a-z_]+)\s+(?:uuid|text|date|jsonb|integer|numeric|timestamptz)/gm)].map((entry) => entry[1]),
+      ...(added.get(table) ?? []),
+    ]);
     for (const column of columns.split(",")) {
       assert.ok(defined.has(column), `${table}.${column} is selected by the code but not defined by the migration`);
     }
@@ -878,6 +897,58 @@ function testCronOrder() {
   assert.match(retryBlock, /catch \(error\)[\s\S]*result\.failures\.push\(/, "a retry failure is returned, never thrown");
 }
 
+/**
+ * THE SUBMIT GATE. A section whose source fails builds as `lines: []` with the reason named, so a
+ * degraded FIRST build has no rows to sweep and nothing flagged: `submitReport` would find nothing
+ * waiting, auto-decide the report on the spot, and `buildHrOpsReport` would answer `frozen` for
+ * ever after, with those days never reaching the weekly attendance review and no screen saying so.
+ * The gate is a pure predicate over one report row, so it is pinned here rather than by a build
+ * that needs a database.
+ */
+function testDegradedSubmitGate() {
+  // What the column can hold, read safely. An absent or unrecognised value reads as COMPLETE —
+  // that is how every report built before the column behaves, and those must stay submittable.
+  assert.deepEqual(incompleteSectionsOf(undefined), []);
+  assert.deepEqual(incompleteSectionsOf(null), []);
+  assert.deepEqual(incompleteSectionsOf([]), []);
+  assert.deepEqual(incompleteSectionsOf("field"), [], "a bare string is not a list of sections");
+  assert.deepEqual(incompleteSectionsOf(["nope"]), [], "an unrecognised section is dropped");
+  assert.deepEqual(incompleteSectionsOf(["field"]), ["field"]);
+  assert.deepEqual(incompleteSectionsOf(["field", "office", "field"]), ["office", "field"], "deduplicated, in HR_OPS_SECTIONS order");
+
+  assert.equal(degradedSubmitRefusal({ incomplete_sections: [] }), null, "a clean build submits");
+  assert.equal(degradedSubmitRefusal({}), null, "a report built before the column submits");
+  const one = degradedSubmitRefusal({ incomplete_sections: ["office"] });
+  assert.ok(one, "a degraded section refuses the submit");
+  assert.match(one, /Head office/, "it names the section in her words, never a code");
+  assert.match(one, /rebuilt/, "and says what clears it");
+  assert.doesNotMatch(one, /EGP|amount/i, "no money reaches her, here or anywhere");
+  const both = degradedSubmitRefusal({ incomplete_sections: ["field", "office"] });
+  assert.ok(both && /Head office \(fingerprint\) and Field force \(visits\)/.test(both), "both are named by their own labels, in section order");
+
+  // The gate runs BEFORE the status write, so the auto-decide below it is unreachable for a
+  // degraded report — which is the whole point: nothing flagged would otherwise freeze it.
+  const review = code("src/lib/hr-ops-reports/review.ts");
+  const refusal = review.indexOf("degradedSubmitRefusal(");
+  const submitWrite = review.indexOf('status: "submitted"');
+  const autoDecide = review.indexOf('status: "decided"');
+  assert.ok(refusal > 0, "submitReport reads the gate");
+  assert.ok(submitWrite > refusal, "and refuses before it writes 'submitted'");
+  assert.ok(autoDecide > submitWrite, "the auto-decide stays below that write");
+
+  // Both build branches store the fact, so a clean rebuild CLEARS it and a degraded one sets it.
+  const build = code("src/lib/hr-ops-reports/build.ts");
+  assert.equal(build.split("incomplete_sections: incompleteList").length - 1, 2, "the create AND the refresh branch store it");
+  assert.match(build, /HR_OPS_SECTIONS\.filter\(\(section\) => built\.incomplete\[section\]\)/, "from the per-section build result");
+  assert.match(build, /!built\.incomplete\[line\.section\]/, "and the stale sweep still skips an incomplete section's rows");
+
+  // She is told before she reaches for Submit, and the button is not offered while it stands.
+  assert.match(code("src/lib/hr-ops-reports/serialize.ts"), /submitBlockedReason: degradedSubmitRefusal\(report\)/, "the view carries the reason");
+  const workspace = code("src/components/hr-ops-reports/hr-ops-reports-workspace.tsx");
+  assert.match(workspace, /report\.submitBlockedReason \?/, "the workspace shows it");
+  assert.match(workspace, /report\.submitBlockedReason !== null/, "and Submit is disabled by it");
+}
+
 export function runHrOpsReportsTests() {
   testPeriods();
   testOfficeJudgment();
@@ -892,4 +963,5 @@ export function runHrOpsReportsTests() {
   testNoMoney();
   testQueue();
   testCronOrder();
+  testDegradedSubmitGate();
 }

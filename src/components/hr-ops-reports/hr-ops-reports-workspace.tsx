@@ -365,6 +365,9 @@ export function HrOpsReportsWorkspace({
                   <StatusBadge label={report.statusLabel} status={report.status} />
                 </div>
                 <Progress report={report} />
+                {report.submitBlockedReason ? (
+                  <p className="border border-rose-200 bg-rose-50 p-3 text-xs font-black text-rose-900">{report.submitBlockedReason}</p>
+                ) : null}
                 {report.warnings.length ? (
                   <ul className="space-y-1 border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900">
                     {report.warnings.map((warning) => (
@@ -386,7 +389,7 @@ export function HrOpsReportsWorkspace({
                     <button
                       type="button"
                       className={phxButtonAccentClassName}
-                      disabled={busy || toAnswer > 0}
+                      disabled={busy || toAnswer > 0 || report.submitBlockedReason !== null}
                       onClick={() =>
                         void run(async () => {
                           await hrOpsApi("POST", `/api/hr-ops-reports/${report.id}/submit`);
@@ -398,9 +401,11 @@ export function HrOpsReportsWorkspace({
                       Submit to the HR Manager
                     </button>
                     <span className="text-xs text-slate-600">
-                      {toAnswer > 0
-                        ? `${toAnswer} flagged ${toAnswer === 1 ? "row still needs" : "rows still need"} your answer.`
-                        : "Every flagged row has your answer. Once submitted the report cannot be changed."}
+                      {report.submitBlockedReason
+                        ? "This report waits for a clean rebuild before it can be submitted."
+                        : toAnswer > 0
+                          ? `${toAnswer} flagged ${toAnswer === 1 ? "row still needs" : "rows still need"} your answer.`
+                          : "Every flagged row has your answer. Once submitted the report cannot be changed."}
                     </span>
                   </div>
                 ) : null}

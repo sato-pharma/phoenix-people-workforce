@@ -16,7 +16,7 @@ import { buildOfficeSection } from "./office-section";
 import { periodEnd, periodTitle } from "./periods";
 import { lineFlags } from "./rules";
 import { findReportByPeriod, getDecidedLinesInWindow, getReportLines, LINES_TABLE, REPORTS_TABLE, storeError } from "./store";
-import { HrOpsReportsError, type HrOpsLineDraft, type HrOpsPeriod, type HrOpsReportRow, type HrOpsSection } from "./types";
+import { HR_OPS_SECTIONS, HrOpsReportsError, type HrOpsLineDraft, type HrOpsPeriod, type HrOpsReportRow, type HrOpsSection } from "./types";
 
 export type HrOpsBuildResult = {
   reportId: string;
@@ -61,18 +61,13 @@ export function dedupeLines(lines: readonly HrOpsLineDraft[]): HrOpsLineDraft[] 
 /**
  * Build both sections for a period. Each degrades alone; what it could not read is returned.
  *
- * 🔴 `incomplete` NAMES EVERY SECTION THAT REPORTED SOMETHING, AND THE STALE SWEEP BELOW LEAVES ITS
- * ROWS ALONE. A section whose read failed does not throw — it comes back `lines: []` with the reason
- * named — so the rows it did not produce this time are no proof that they no longer apply. The cron
- * refreshes a report still with her TWICE a Cairo day, so sweeping on a degraded second run deleted
- * exactly the flagged rows she had not answered yet, and the report then submitted with nothing
- * waiting and those days never reached the weekly attendance review. Every warning either builder
- * raises means a source could not be read in full, so any warning stands the sweep down.
+ * `incomplete` marks each section whose build raised a warning — meaning a source behind its ROWS
+ * could not be read in full — and the stale sweep in `buildHrOpsReport` leaves those rows alone.
  */
 export async function buildPeriodLines(
   period: HrOpsPeriod,
   today: string,
-): Promise<{ incomplete: HrOpsSection[]; lines: HrOpsLineDraft[]; warnings: string[] }> {
+): Promise<{ incomplete: Record<HrOpsSection, boolean>; lines: HrOpsLineDraft[]; warnings: string[] }> {
   const [office, field] = await Promise.all([
     period.officeFrom && period.officeTo
       ? buildOfficeSection({ from: period.officeFrom, to: period.officeTo }).catch((error) => ({
@@ -87,9 +82,7 @@ export async function buildPeriodLines(
         }))
       : Promise.resolve({ lines: [], warnings: [] }),
   ]);
-  const incomplete: HrOpsSection[] = [];
-  if (office.warnings.length > 0) incomplete.push("office");
-  if (field.warnings.length > 0) incomplete.push("field");
+  const incomplete = { field: field.warnings.length > 0, office: office.warnings.length > 0 };
   return { incomplete, lines: dedupeLines([...office.lines, ...field.lines]), warnings: [...office.warnings, ...field.warnings] };
 }
 
@@ -123,6 +116,10 @@ export async function buildHrOpsReport(input: { period: HrOpsPeriod; today: stri
   const now = new Date().toISOString();
 
   let report: HrOpsReportRow;
+  // Stored on the report, not only said in `build_warnings`: `submitReport` refuses while it is
+  // non-empty (rules.ts `degradedSubmitRefusal`), so a build that could not read a section cannot be
+  // frozen with its rows missing. A clean build writes `[]` and clears it.
+  const incompleteList = HR_OPS_SECTIONS.filter((section) => built.incomplete[section]);
   const windows = {
     field_from: period.fieldFrom,
     field_to: period.fieldTo,
@@ -132,7 +129,7 @@ export async function buildHrOpsReport(input: { period: HrOpsPeriod; today: stri
   if (existing) {
     const { data, error } = await supabase
       .from(REPORTS_TABLE)
-      .update({ ...windows, build_warnings: built.warnings, rebuilt_at: now, updated_at: now })
+      .update({ ...windows, build_warnings: built.warnings, incomplete_sections: incompleteList, rebuilt_at: now, updated_at: now })
       .eq("id", existing.id)
       .eq("status", "in_review")
       .select("*")
@@ -147,7 +144,7 @@ export async function buildHrOpsReport(input: { period: HrOpsPeriod; today: stri
     const { data, error } = await supabase
       .from(REPORTS_TABLE)
       .upsert(
-        { ...windows, build_warnings: built.warnings, built_at: now, kind: period.kind, period_key: period.periodKey, status: "in_review" },
+        { ...windows, build_warnings: built.warnings, built_at: now, incomplete_sections: incompleteList, kind: period.kind, period_key: period.periodKey, status: "in_review" },
         { ignoreDuplicates: true, onConflict: "period_key" },
       )
       .select("*")
@@ -193,13 +190,18 @@ export async function buildHrOpsReport(input: { period: HrOpsPeriod; today: stri
   }
 
   // A row the refreshed build no longer produces goes — unless she or he already acted on it, in
-  // which case it stays, so no answer anyone gave is ever lost. A SECTION THAT REPORTED A FAILURE IS
-  // NOT SWEPT AT ALL (`buildPeriodLines`): its absent rows mean "not read", not "no longer applies".
+  // which case it stays, so no answer anyone gave is ever lost.
+  //
+  // 🔴 A SECTION WHOSE BUILD RAISED A WARNING IS NOT SWEPT AT ALL: its absent rows mean "could not
+  // be read", never "no longer applies". A section whose source fails does not throw — it comes back
+  // `lines: []` with the reason named — and the cron refreshes a report still with her TWICE a Cairo
+  // day, so sweeping on a degraded second run deleted exactly the flagged rows she had not answered
+  // yet. `line_count` dropped, nothing turned red, and `submitReport` then found nothing waiting:
+  // the report could be submitted and decided with those days gone from the weekly review for good.
   if (existing) {
     const current = new Set(rows.map((row) => lineKey(row)));
-    const incomplete = new Set<HrOpsSection>(built.incomplete);
     const stale = (await getReportLines(report.id, "id,section,hr_key,work_date,review_action,decision"))
-      .filter((line) => !incomplete.has(line.section) && !current.has(lineKey(line)) && !line.review_action && !line.decision)
+      .filter((line) => !built.incomplete[line.section] && !current.has(lineKey(line)) && !line.review_action && !line.decision)
       .map((line) => line.id);
     for (let index = 0; index < stale.length; index += BATCH) {
       const { error } = await supabase.from(LINES_TABLE).delete().in("id", stale.slice(index, index + BATCH)).eq("report_id", report.id);

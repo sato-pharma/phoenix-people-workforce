@@ -11,6 +11,7 @@ import {
   decidedElsewhereText,
   decisionIsOpen,
   defaultDecisionDays,
+  degradedSubmitRefusal,
   isCarried,
   isDecidable,
   lineFlags,
@@ -54,6 +55,11 @@ export type HrOpsReportView = {
   fieldTo: string | null;
   lineCount: number;
   warnings: string[];
+  /**
+   * Why this report cannot be submitted yet, because a section's last build could not read a
+   * source in full (rules.ts `degradedSubmitRefusal`). Null when it may be submitted.
+   */
+  submitBlockedReason: string | null;
   builtAt: string;
   rebuiltAt: string | null;
   submittedAt: string | null;
@@ -185,6 +191,7 @@ export function viewReport(report: HrOpsReportRow, lines?: readonly HrOpsReportL
     rebuiltAt: report.rebuilt_at,
     status: report.status,
     statusLabel: HR_OPS_STATUS_LABELS[report.status] ?? report.status,
+    submitBlockedReason: degradedSubmitRefusal(report),
     submittedAt: report.submitted_at,
     title: anchor ? periodTitle({ anchor, fieldTo: report.field_to, kind: report.kind, officeTo: report.office_to }) : report.period_key,
     warnings: warningsOf(report.build_warnings),

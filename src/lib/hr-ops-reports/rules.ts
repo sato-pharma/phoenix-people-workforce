@@ -18,6 +18,8 @@ import { formatDayLong, parsePeriodKey } from "./periods";
 import {
   HR_OPS_DECISIONS,
   HR_OPS_REVIEW_ACTIONS,
+  HR_OPS_SECTION_LABELS,
+  HR_OPS_SECTIONS,
   HrOpsReportsError,
   isHrOpsFlag,
   toDays,
@@ -28,6 +30,7 @@ import {
   type HrOpsReportKind,
   type HrOpsReportLineRow,
   type HrOpsReviewAction,
+  type HrOpsSection,
 } from "./types";
 
 /**
@@ -94,6 +97,37 @@ export function markDecidedElsewhere<T extends Pick<HrOpsReportLineRow, "report_
       decided_elsewhere: { anchor: other.period.anchor, kind: other.report.kind, lineId: other.row.id, reportId: other.row.report_id },
     };
   });
+}
+
+/**
+ * The sections a report's last build could not read in full, as `incomplete_sections` stores them.
+ * Anything unrecognised is dropped: an absent column, a null, or a value written by an older build
+ * reads as a COMPLETE report, which is exactly how every report built before the column behaves.
+ */
+export function incompleteSectionsOf(value: unknown): HrOpsSection[] {
+  const raw = Array.isArray(value) ? value : [];
+  return HR_OPS_SECTIONS.filter((section) => raw.includes(section));
+}
+
+/**
+ * 🔴 WHY A DEGRADED REPORT CANNOT BE SUBMITTED. A section whose source fails does not throw — it
+ * builds as `lines: []` with the reason named — so its rows are simply absent. The stale sweep is
+ * stood down for such a section (build.ts), but a degraded FIRST build has no rows to sweep at all:
+ * nothing is flagged, so `submitReport` finds nothing waiting and auto-decides the report on the
+ * spot, after which `buildHrOpsReport` answers `skipped: "frozen"` for ever. Those days then never
+ * reach the weekly attendance review and no screen says so — `build_warnings` was stored and only
+ * ever displayed. This is the gate: while a section is incomplete the report waits for a clean
+ * rebuild, which clears the field and sweeps that section properly.
+ *
+ * Returns the sentence to show her, or null when the report may be submitted. Pure — a predicate
+ * over one report row, so the rule is pinned by the suite rather than by a build that needs a
+ * database.
+ */
+export function degradedSubmitRefusal(report: { incomplete_sections?: unknown }): string | null {
+  const sections = incompleteSectionsOf(report.incomplete_sections);
+  if (sections.length === 0) return null;
+  const named = sections.map((section) => HR_OPS_SECTION_LABELS[section]).join(" and ");
+  return `${named} could not be read in full when this report was last built, so rows may be missing — it cannot be submitted until it has been rebuilt cleanly. The next scheduled run rebuilds it, and the HR Manager can rebuild it now.`;
 }
 
 /** A row she must answer before she can submit: it has an issue and was not decided elsewhere. */
