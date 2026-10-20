@@ -458,6 +458,17 @@ required check names and required each to be *present and not `PENDING`*. It pri
 other two as finished. Fixing the empty-list hole had not fixed the bug; it had only moved it, because
 both versions enumerated the states that mean *wait*, and there was always one more.
 
+**The third shape, found in `scripts/wait-pr.mjs` on 2026-10-20 (#6194, head `e580286fe`).** The
+script allow-listed nothing at all on the NAMES: it filtered `gh pr checks` down to the required
+names *that had a row*, then called the gate green when none of those rows was pending. The required
+`checks` job only starts after `static` and the three `unit` jobs finish, so for most of a run it has
+**no row**, and the script printed `GREEN on e580286fe: validate=pass` and exited 0 with `static` still
+running and `mergeStateStatus` BLOCKED — a session merging on that notification would have merged
+unverified code. A required context that is not in the listing is an unfinished check, so
+`requiredRows()` now gives every required name a row (`absent` when it has none), and green means
+**every one of those rows is `pass`**; `skipping`, `cancel` and any bucket the script has not met also
+keep it waiting. Pinned by case 10 of `tests/wait-pr.test.ts`.
+
 **So the rule is about the shape, not the state names.** Read the required contexts live from
 `branches/main/protection/required_status_checks` (never from a doc — see the paragraph above), and
 treat the gate as green **only when every one of them is literally `SUCCESS`**. Absent, `QUEUED`,
