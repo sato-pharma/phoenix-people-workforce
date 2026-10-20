@@ -19,6 +19,9 @@ export type AuditEntityType =
   | "attendance_digest_confirm"
   | "attendance_digest_dispute"
   | "attendance_digest_dispute_review"
+  // Added 2026-10-20: one run carrying the Super Admin's decisions in the HR daily and weekly reports
+  // into the weekly attendance review (src/lib/hr-ops-reports/bridge.ts) — the counts only.
+  | "hr_ops_report_bridge_run"
   // Added 2026-09-15 with the release step: the Super Admin taking a day out before anyone sees
   // it, releasing a week to its employees, the employee's salary-or-balance choice, and the daily
   // job settling an unanswered day to salary once its deadline passed.

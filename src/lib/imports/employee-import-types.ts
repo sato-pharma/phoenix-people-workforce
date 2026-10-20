@@ -342,4 +342,18 @@ export type EmployeeImportPlanOptions = {
   firstDataRowNumber?: number;
   existingState?: ExistingImportState;
   useOrgRuleEngine?: boolean;
+  /**
+   * The importer never sees a salary (isSalaryBlindRole — the HR Operations Specialist). The plan
+   * then carries no money figure at all: a filled money cell blocks its row, every compensation
+   * amount on a planned row is null, and the position-policy salary step is skipped, so nothing is
+   * computed, reported or written. Payment mode is not money and still imports. Set by the SERVER
+   * from the access context, never from the request. See employee-import-salary-blind.ts.
+   */
+  salaryBlind?: boolean;
+  /**
+   * False when the importer lacks `employees:create`: every employee row whose Employee ID is not in
+   * `existingState.employeeHrIds`, and every vacant-position row, is refused instead of creating
+   * anyone. Omitted or true keeps today's behaviour (an unknown Employee ID becomes a new employee).
+   */
+  allowNewEmployees?: boolean;
 };

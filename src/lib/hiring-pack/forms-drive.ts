@@ -255,8 +255,23 @@ export type DriveTemplate = {
  * CURRENT TEMPLATES ONLY — an archived row is a superseded edition, readable through the Archive,
  * and listing it here would put two editions of one paper side by side with nothing saying which is
  * in force. The same rule the package tabs follow.
+ *
+ * `paperScope` — the papers a viewer is limited to (SEAT_PRINTABLE_DOCUMENTS, the HR Operations
+ * Specialist, owner 2026-10-20), or null for every paper. With a scope the drive holds only those
+ * built-in papers, no company template, and no folder left empty by the filter.
  */
-export function buildFormsDrive(templates: readonly DriveTemplate[] = []): FormsDriveFolder[] {
+export function buildFormsDrive(
+  templates: readonly DriveTemplate[] = [],
+  paperScope: readonly string[] | null = null,
+): FormsDriveFolder[] {
+  if (paperScope) {
+    return buildFormsDrive([])
+      .map((folder) => ({
+        ...folder,
+        entries: folder.entries.filter((entry) => paperScope.includes(entry.document)),
+      }))
+      .filter((folder) => folder.entries.length > 0);
+  }
   const names: Record<string, string> = {};
   const groups: Record<string, string> = {};
   for (const template of templates) {

@@ -4,7 +4,7 @@ import { isWithinManagerHierarchy, type SeatContinuitySubject } from "@/lib/work
 import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { hrBundleGrants } from "@/lib/auth/hr-functions";
+import { hrBundleGrants, isSalaryBlindRole } from "@/lib/auth/hr-functions";
 // Temporary per-account module suspensions. Imported for its VALUE; module-locks.ts imports only
 // TYPES back from this file, so there is no runtime cycle between the two.
 import { isModuleLockedForAccess } from "@/lib/auth/module-locks";
@@ -2566,11 +2566,19 @@ export function matchesHrAdvisoryCompensationAudience(
  * the employee master end to end, including the salary columns of the seven seniors this list
  * names, so redacting her both hid figures she is accountable for and silently emptied them out of
  * the export she maintains the records with.
+ *
+ * AND the HR Operations Specialist seat, on EVERY row (owner, 2026-10-20: she never sees a salary,
+ * an allowance, an insurance or a tax amount anywhere). Her round trip is safe where HR
+ * Operations' was not, because every write path she can reach treats her money as ABSENT rather
+ * than blank: the save drops the money keys (app/api/employees/route.ts) and the import refuses a
+ * filled money cell and writes none (app/api/imports/employees/*), so a blanked cell can never
+ * reach a stored figure.
  */
 export function isSalaryRedactedForViewer(
   context: Pick<AccessContext, "role">,
   hrId: string | null | undefined,
 ): boolean {
+  if (isSalaryBlindRole(context.role)) return true;
   if (context.role !== "HR Advisory") return false;
   return HR_ADVISORY_SALARY_REDACTED_HR_IDS.has(normalizeHrId(hrId ?? ""));
 }
@@ -2588,6 +2596,9 @@ function redactSalaryFields(row: EmployeeDirectoryRow, context: AccessContext): 
   // she is expected to maintain. That matters more than it reads: this function also runs over the
   // employee master export, and a blanked cell there is indistinguishable from one the user cleared
   // on purpose by the time the importer sees it.
+  //
+  // The HR Operations Specialist (isSalaryBlindRole) is blanked on every row through the first rule.
+  // Bank name, bank account, has-bank-account and payment mode are NOT money and stay on her rows.
   const outsideHerCompensationAudience =
     context.role === "HR Advisory" &&
     !matchesHrAdvisoryCompensationAudience({ hrId: row.hrId, jobTitle: row.jobTitle }, context.hrId);
@@ -2677,6 +2688,11 @@ export async function canAccessAttendanceSetup(
   context: AccessContext,
   action: Extract<PermissionAction, "read" | "update"> = "read",
 ) {
+  // The salary-blind seat holds employees:read/update for the Employee Master, and that key used to
+  // carry her into Attendance Setup too — the device mappings, the policies (deduction rates), the
+  // holiday calendar and the machine sync. She reviews attendance only through her own Daily &
+  // Weekly Reports (owner, 2026-10-20), so the setup is closed to her by name.
+  if (isSalaryBlindRole(context.role)) return false;
   return canAccess(context, "employees", action);
 }
 
@@ -2698,12 +2714,32 @@ export async function assertAttendanceSetupPermission(
  */
 export async function canAccessFingerprintReport(context: AccessContext) {
   if (context.role === "CEO") return true;
+  // The company report prices every late minute and absent day in EGP. The salary-blind seat holds
+  // employees:read for the Employee Master only; her own punches stay on My Workspace (owner,
+  // 2026-10-20: she reviews attendance only through her own Daily & Weekly Reports).
+  if (isSalaryBlindRole(context.role)) return false;
   return canAccess(context, "employees", "read");
 }
 
 export async function assertFingerprintReportPermission(context: AccessContext) {
   if (!(await canAccessFingerprintReport(context))) {
     throw new Error(`Forbidden: ${context.role} cannot read the fingerprint attendance report.`);
+  }
+}
+
+/**
+ * The company Attendance Monthly Summary and its export — every employee's month, with the total
+ * deduction value in EGP. `employees:read` as before, except the salary-blind seat (owner,
+ * 2026-10-20), who holds that key for the Employee Master only.
+ */
+export async function canAccessAttendanceMonthlySummary(context: AccessContext) {
+  if (isSalaryBlindRole(context.role)) return false;
+  return canAccess(context, "employees", "read");
+}
+
+export async function assertAttendanceMonthlySummaryPermission(context: AccessContext) {
+  if (!(await canAccessAttendanceMonthlySummary(context))) {
+    throw new Error(`Forbidden: ${context.role} cannot read the attendance monthly summary.`);
   }
 }
 

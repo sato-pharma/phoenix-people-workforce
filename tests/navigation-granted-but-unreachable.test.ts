@@ -319,8 +319,10 @@ export async function runNavigationGrantedButUnreachableTests(): Promise<void> {
     `expected 150+ gate-readable routes, read ${gates.filter((g) => g.readable).length} (202)`,
   );
   // 18 since 2026-10-08 (HR Resourcing, the Talent Acquisition seat). Every floor below was re-run
-  // with the new role in place and none of them moved below its threshold.
-  assert.equal(phoenixRoles.length, 18, "the role list changed — re-measure every floor below");
+  // with the new role in place and none of them moved below its threshold. 19 since 2026-10-20 (HR
+  // Administration, the HR Operations Specialist seat): no floor below counts per role except the
+  // Super Admin's, and a new role can only ADD to the offered set, so none of them can fall.
+  assert.equal(phoenixRoles.length, 19, "the role list changed — re-measure every floor below");
   assert.ok(
     offeredByRole.get("Super Admin" as PhoenixRole)!.hrefs.size >= 100,
     `Super Admin should be offered 100+ links, got ${offeredByRole.get("Super Admin" as PhoenixRole)!.hrefs.size} (171)`,

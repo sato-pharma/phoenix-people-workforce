@@ -54,6 +54,7 @@ import {
 import { hasMissingEmployeeRecordData } from "@/lib/employees/employee-record-health";
 import { countHiresInWindow, countStartingAfter } from "@/lib/employees/hires-in-window";
 import { getExcuseWorkspace } from "@/lib/excuses/service";
+import { loadHrOpsReportsQueue } from "@/lib/hr-ops-reports/queue";
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import { hrefOutsideSeatFence } from "@/lib/auth/seat-page-fences";
 import { toHrNamespacePath } from "@/lib/navigation/shell-headers";
@@ -269,6 +270,7 @@ export type SourceKey =
   | "contracts"
   | "deductions"
   | "directory"
+  | "hrOpsReports"
   | "offers"
   | "probation"
   | "probationOutcomes"
@@ -358,6 +360,19 @@ const SOURCES_BY_FUNCTION: Record<HrFunctionKey, readonly SourceKey[]> = {
   recognition: [],
   // HR Reminders is the team's own notes page, not a backlog: it loads nothing here.
   team_reminders: [],
+  // The HR Operations Specialist seat's two functions (2026-10-20).
+  //
+  // `attendance_review` reads her Daily & Weekly Reports queue: report titles and row COUNTS, never
+  // a row and never a day total, so nothing on her landing page is a figure about money.
+  //
+  // `people_master` reads the same three sources `people_records` does — it is the same personnel
+  // work with every salary withheld — and only for COUNTS: the directory rows hold a base salary on
+  // the server, and no tile, chart or task below lets one out (each carries a count, a name, a job
+  // title or an area). Every link it draws goes to a page her seat opens and that is itself
+  // salary-blind for her — the Employee Directory, Contract Renewal, Resignations — never Employee
+  // 360, which shows pay and is fenced off her seat (src/lib/auth/seat-page-fences.ts).
+  attendance_review: ["hrOpsReports"],
+  people_master: ["contracts", "directory", "resignations"],
 };
 
 /** The seat's functions, straight from the permission bundle. Never a second hand-kept list. */
@@ -384,6 +399,7 @@ export type HrCommandSources = Partial<{
   contracts: Awaited<ReturnType<typeof getContractRenewalDashboardData>>;
   deductions: Awaited<ReturnType<typeof getCompanyMonthSummaryByCategory>>;
   directory: Awaited<ReturnType<typeof getEmployeeDirectory>>;
+  hrOpsReports: Awaited<ReturnType<typeof loadHrOpsReportsQueue>>;
   offers: Awaited<ReturnType<typeof listOffers>>;
   probation: Awaited<ReturnType<typeof getProbationRows>>;
   probationOutcomes: Awaited<ReturnType<typeof getProbationOutcomesAnalytics>>;
@@ -772,6 +788,45 @@ const TILES_BY_FUNCTION: Record<
   recognition: () => [],
   // NONE. The reminders page is the team's own notes, not a queue this dashboard counts.
   team_reminders: () => [],
+  // The HR Operations Specialist's review queue (2026-10-20). Counts of reports and rows, all on
+  // her own Daily & Weekly Reports page; the days a row carries are never summed here.
+  attendance_review: (loaded) => {
+    const queue = loaded.hrOpsReports;
+    if (!queue) return null;
+    const { inReview, rowsToAnswer, submitted } = queue.summary;
+    return [
+      tile("hr-reports-to-review", "Reports To Review", inReview, "still with you", "/hr/hr-reports", inReview > 0 ? "amber" : "emerald"),
+      tile("hr-reports-rows", "Rows To Answer", rowsToAnswer, "flagged, no answer yet", "/hr/hr-reports", rowsToAnswer > 0 ? "amber" : "emerald"),
+      tile("hr-reports-submitted", "With The HR Manager", submitted, "waiting on his decision", "/hr/hr-reports"),
+    ];
+  },
+  // The people_records tiles with every link pointed at a page this seat opens (SOURCES_BY_FUNCTION).
+  people_master: (loaded) => {
+    const directory = loaded.directory;
+    if (!directory) return null;
+    const incomplete = directory.employees.filter(
+      (employee) => isActiveDirectoryEmployee(employee) && hasMissingEmployeeRecordData(employee),
+    ).length;
+    const tiles = [
+      tile("headcount", "Active Headcount", directory.summary.activeEmployees, "active employees", "/hr/employees", "emerald"),
+      tile("incomplete-records", "Incomplete Records", incomplete, "missing required data", "/hr/employees", incomplete > 0 ? "amber" : "emerald"),
+      tile("no-manager", "No Manager Set", directory.summary.employeesWithoutManagers, "records to complete", "/hr/employees", directory.summary.employeesWithoutManagers > 0 ? "amber" : "emerald"),
+    ];
+    if (loaded.resignations) {
+      const summary = loaded.resignations.summary;
+      tiles.push(
+        tile("resignations-open", "Resignations In Flight", summary.pending + summary.approved, "not yet completed", "/hr/resignations", summary.pending > 0 ? "amber" : "slate"),
+      );
+    }
+    if (loaded.contracts) {
+      const summary = loaded.contracts.summary;
+      tiles.push(
+        tile("contracts-active", "Renewals In Flight", summary.activeRequests, "open requests", "/hr/contracts", summary.activeRequests > 0 ? "amber" : "slate"),
+        tile("contracts-hr", "At HR Review", summary.hrReview, "your step", "/hr/contracts", summary.hrReview > 0 ? "amber" : "emerald"),
+      );
+    }
+    return tiles;
+  },
   // NONE, and for `cv_lookup` this is the privacy decision recorded in SOURCES_BY_FUNCTION rather
   // than "nothing to count": any figure counting candidates would put the size of the pool on the
   // landing page of the one seat the pool is withheld from. Returning an empty array drops the group
@@ -804,6 +859,7 @@ const CHART_COLORS = {
 export const DEDUCTION_CATEGORY_LABELS: Record<DeductionsCategory, string> = {
   crm: "CRM",
   crm_half_day: "Half day (CRM)",
+  field_review: "Field day (reviewed)",
   fingerprint: "Fingerprint",
   insufficient_balance_vacation: "Insufficient balance",
   loan: "Loan",
@@ -940,6 +996,45 @@ const CHARTS_BY_FUNCTION: Record<
   workforce_context: () => [],
   recognition: () => [],
   team_reminders: () => [],
+  /**
+   * Her review queue as a shape: the newest reports, oldest first, each split into the flagged rows
+   * still waiting for her answer and the rows she has answered. A run of orange is a backlog
+   * building; a report that is all grey is one she has finished.
+   */
+  attendance_review: (loaded) => {
+    const queue = loaded.hrOpsReports;
+    if (!queue) return [];
+    const series: HrCommandChartSeries[] = [
+      { color: CHART_COLORS.primary, key: "waiting", name: "Waiting for your answer" },
+      { color: CHART_COLORS.decided, key: "answered", name: "Answered" },
+    ];
+    const rows = [...queue.reports]
+      .reverse()
+      .map((report) => ({ answered: report.progress.reviewed, label: report.shortLabel, waiting: report.progress.toReview }));
+    return [
+      {
+        caption:
+          "Every recent report, oldest first. Orange is a flagged row still waiting for your answer; grey is a row you have answered. The HR Manager decides each one after you submit.",
+        emptyLabel: "No report has a flagged row yet. The first report appears the morning after a working day.",
+        href: "/hr/hr-reports",
+        hrefLabel: "Open Daily & Weekly Reports",
+        key: "hr-reports-review",
+        rows,
+        series,
+        title: "Flagged rows in recent reports",
+      },
+    ];
+  },
+  /**
+   * The people_records charts (joiners and leavers, renewals ahead), linking to the pages this seat
+   * opens. Same builder, so the two seats' shapes cannot be counted two ways — only re-pointed.
+   */
+  people_master: (loaded) =>
+    CHARTS_BY_FUNCTION.people_records(loaded).map((chart) =>
+      chart.key === "headcount-movement"
+        ? { ...chart, href: "/hr/employees", hrefLabel: "Open Employee Directory" }
+        : chart,
+    ),
 
   /**
    * The HR support desk as a fortnight rather than three totals — the Talent Acquisition seat's
@@ -1357,6 +1452,7 @@ export const SOURCE_LABELS: Record<SourceKey, string> = {
   contracts: "Contract renewals",
   deductions: "Deductions month",
   directory: "Employee directory",
+  hrOpsReports: "Daily & Weekly Reports",
   offers: "Job offers",
   probation: "Probation cases",
   probationOutcomes: "Probation outcomes",
@@ -1553,6 +1649,11 @@ export async function getHrCommandCenterData(
     needed.has("vacationsToday")
       ? safe("vacationsToday", () => listOnVacationToday(), failures).then((value) => {
           loaded.vacationsToday = value;
+        })
+      : null,
+    needed.has("hrOpsReports")
+      ? safe("hrOpsReports", () => loadHrOpsReportsQueue(), failures).then((value) => {
+          loaded.hrOpsReports = value;
         })
       : null,
   ]);

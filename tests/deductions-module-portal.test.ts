@@ -72,6 +72,8 @@ export async function runDeductionsModulePortalTests(): Promise<void> {
       insufficient_balance_vacation: "unpaid_vacations",
       loan: "loans",
       other: "other_deductions",
+      // A field day reviewed in the HR operations report pays through the CRM column (owner, 2026-10-20).
+      field_review: "crm",
     };
     for (const category of deductionsCategories) {
       const mapped = mapPublicationLine(publicationLineRow({ category }));

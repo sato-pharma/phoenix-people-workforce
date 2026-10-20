@@ -1,10 +1,10 @@
 ---
 paths:
-  - "src/lib/{employees,employee-lifecycle,employee-360,hr,hr-reminders,resignations,retention,retention-risk,lifecycle-risk,new-hire-mailbox}/**"
-  - "src/components/{employees,employee-360,hr,hr-reminders,people,resignations,retention,new-hire-mailbox}/**"
-  - "app/**/{employees,employee-360,resignations,retention,people-management,hr-command-center,hr-reminders,new-hire-mailboxes,test-accounts,account-activation}/**"
+  - "src/lib/{employees,employee-lifecycle,employee-360,hr,hr-reminders,hr-ops-reports,resignations,retention,retention-risk,lifecycle-risk,new-hire-mailbox}/**"
+  - "src/components/{employees,employee-360,hr,hr-reminders,hr-ops-reports,people,resignations,retention,new-hire-mailbox}/**"
+  - "app/**/{employees,employee-360,resignations,retention,people-management,hr-command-center,hr-reminders,hr-reports,hr-ops-reports,new-hire-mailboxes,test-accounts,account-activation}/**"
   - "tests/*{employee,hr-,resignation,retention,lifecycle,hire,leaver,test-account}*"
-  - "supabase/migrations/*{employee,resignation,retention,lifecycle,hire,hr_team_reminders}*"
+  - "supabase/migrations/*{employee,resignation,retention,lifecycle,hire,hr_team_reminders,hr_ops_reports}*"
 ---
 
 # Module memory — Employees and the HR lifecycle

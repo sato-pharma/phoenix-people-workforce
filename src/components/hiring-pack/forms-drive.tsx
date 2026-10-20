@@ -78,6 +78,11 @@ type Props = {
   selectedHrId: string;
   loadingEmployee: boolean;
   onOpenForEmployee: (entry: FormsDriveEntry, hrId: string) => void;
+  /**
+   * The papers this viewer is limited to, or null/absent for every paper — see `buildFormsDrive`.
+   * The register at the foot is filtered the same way by its own route.
+   */
+  paperScope?: readonly string[] | null;
 };
 
 function formatIssuedAt(iso: string): string {
@@ -117,8 +122,9 @@ export function FormsDrive({
   selectedHrId,
   loadingEmployee,
   onOpenForEmployee,
+  paperScope = null,
 }: Props) {
-  const folders = useMemo(() => buildFormsDrive(templates), [templates]);
+  const folders = useMemo(() => buildFormsDrive(templates, paperScope), [templates, paperScope]);
   const groups = useMemo(() => {
     const byDocument: Record<string, string> = {};
     for (const template of templates) byDocument[template.document] = template.group;

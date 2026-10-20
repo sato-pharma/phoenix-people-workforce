@@ -328,8 +328,8 @@ async function runDailyNotifications(request: Request) {
         skippedReason: message,
       })),
     ),
-    // Probation Day 30 / 60 / 75 milestone emails (owner, 2026-09-29): To Yasmeena Elsafory, with
-    // Omar Gawish on BCC. On the DAILY cron rather than the 5-minute one the retired fan-out used — a
+    // Probation Day 30 / 60 / 75 milestone emails (owner, 2026-09-29; since 2026-10-20 To Omar
+    // Gawish alone). On the DAILY cron rather than the 5-minute one the retired fan-out used — a
     // milestone is a calendar event, and one idempotent pass a day is all it needs.
     processProbationMilestoneEmails().catch(
       onJobFailure("daily-probation-milestone-emails", (message) => ({

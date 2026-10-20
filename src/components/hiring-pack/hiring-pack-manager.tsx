@@ -38,7 +38,7 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -58,6 +58,7 @@ import {
   useCompanyTemplates,
   type StoredTemplate,
 } from "@/components/hiring-pack/use-company-templates";
+import type { PaperStore } from "@/lib/hiring-pack/paper-fields";
 import {
   asPrintableDocument,
   documentDefaultCopies,
@@ -738,7 +739,34 @@ type Props = {
   initialPack: HiringPackData | null;
   /** Every sales line, for the "Department" picker on the facts editor. */
   lines: { id: number; name: string }[];
+  /**
+   * The papers this viewer is limited to, or null (the default) for every paper. Set for a seat
+   * named in SEAT_PRINTABLE_DOCUMENTS — the HR Operations Specialist, owner 2026-10-20 — from
+   * `hrFormsAccessFor` on the server. Every card, the drive and the package lists show only these;
+   * the company templates, the Archive, the Template Studio, the contract's own "What you fill in"
+   * and the layout editor are not offered. The server refuses everything else regardless — this is
+   * so nothing on her screen 403s her halfway.
+   */
+  paperScope?: readonly HiringPackDocument[] | null;
+  /** True for the salary-blind seat: no salary or insurance-wage box on screen. */
+  withholdSalary?: boolean;
 };
+
+/**
+ * The hiring profile is the contract's own terms, and its route stays employee_documents:update —
+ * so a seat limited to its own papers sees those values locked on the page rather than typing over
+ * them and being refused. Module scope so the editor's frame wiring is not re-run every render.
+ */
+const SCOPED_SEAT_READ_ONLY_STORES: readonly PaperStore[] = ["profile"];
+
+/** What a seat limited to its own papers is offered of the company templates: nothing. Stable. */
+const NO_TEMPLATES: StoredTemplate[] = [];
+
+/**
+ * Which papers this screen offers — null for every paper. Read by `DocumentCard`, so a card outside
+ * the viewer's papers renders nothing and each call site stays exactly as it was.
+ */
+const PaperScopeContext = createContext<readonly HiringPackDocument[] | null>(null);
 
 export function HiringPackManager({
   canManage,
@@ -746,7 +774,10 @@ export function HiringPackManager({
   initialError,
   initialPack,
   lines,
+  paperScope = null,
+  withholdSalary = false,
 }: Props) {
+  const scoped = paperScope !== null;
   const [pack, setPack] = useState<HiringPackData | null>(initialPack);
   const [selectedHrId, setSelectedHrId] = useState(initialPack?.employee.hrId ?? "");
   const [form, setForm] = useState<FormState>(initialPack ? formFromPack(initialPack) : emptyForm());
@@ -1324,6 +1355,7 @@ export function HiringPackManager({
   // top read -1183px at a scroll of 1500. With `clip` the nearest scroll container is the page, so
   // it sticks to the viewport, and the corners are still clipped.
   return (
+    <PaperScopeContext.Provider value={paperScope}>
     <div className="relative overflow-clip rounded-[34px] border border-phx-line bg-phx-paper p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
       <div className="flex flex-col gap-5">
         <AdminPageHero
@@ -1368,8 +1400,9 @@ export function HiringPackManager({
           candidates={candidates}
           loadingEmployee={busy === "load"}
           onOpenForEmployee={(entry, hrId) => void openForEmployee(entry, hrId)}
+          paperScope={paperScope}
           selectedHrId={selectedHrId}
-          templates={companyTemplates.templates}
+          templates={scoped ? NO_TEMPLATES : companyTemplates.templates}
         />
 
         <div className="scroll-mt-4" ref={editorRef} />
@@ -1380,6 +1413,11 @@ export function HiringPackManager({
             // guessed from a role in the browser. Changing what every future contract states about
             // the employer is that class of act, not the class of correcting one person's ID.
             canEditCompany={companyTemplates.canManage}
+            // A seat limited to its own papers: no layout editing (that route is not hers), the
+            // hiring profile locked, and the salary locked on the salary-blind seat.
+            canEditLayout={!scoped}
+            readOnlyStores={scoped ? SCOPED_SEAT_READ_ONLY_STORES : undefined}
+            withholdSalary={withholdSalary}
             copies={resolveCopyCount(copies[preview.documentKey], preview.documentKey)}
             documentLabel={documentLabel(preview.documentKey, customTemplateNames)}
             hrId={pack.employee.hrId}
@@ -1586,7 +1624,7 @@ export function HiringPackManager({
 
                 <div>
                   <h3 className="text-sm font-black uppercase tracking-[0.1em] text-phx-ink">
-                    Salary, line and department
+                    {withholdSalary ? "Line and department" : "Salary, line and department"}
                   </h3>
                   <p className="mt-0.5 text-xs font-semibold text-phx-ink-soft">
                     {employee.departed
@@ -1594,6 +1632,13 @@ export function HiringPackManager({
                       : "Changes here go through the same record the payroll and organogram tools read."}
                   </p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {/*
+                      NOT SHOWN TO THE SALARY-BLIND SEAT (owner, 2026-10-20: the HR Operations
+                      Specialist never sees a salary or an insurance wage). The server already sends
+                      her no figure and drops one she sends; this keeps an empty box from asking.
+                    */}
+                    {withholdSalary ? null : (
+                    <>
                     <div>
                       <label className={labelClassName} htmlFor="hiring-pack-fact-baseSalary">
                         Base salary <span className="text-phx-ink-faint">الأجر الأساسي · EGP</span>
@@ -1628,6 +1673,8 @@ export function HiringPackManager({
                         salary and this follows.
                       </p>
                     </div>
+                    </>
+                    )}
                     <div>
                       <label className={labelClassName} htmlFor="hiring-pack-fact-lineId">
                         Line <span className="text-phx-ink-faint">الخط</span>
@@ -1689,6 +1736,12 @@ export function HiringPackManager({
 
             {activePackage === "newHire" ? (
               <div className="flex flex-col gap-5">
+                {/*
+                  The contract's and Form 1's own values — not offered to a seat limited to its own
+                  papers: neither paper is hers, and the hiring profile they save to stays
+                  employee_documents:update on the server.
+                */}
+                {scoped ? null : (
                 <AdminTableShell
                   action={
                     canManage ? (
@@ -1772,11 +1825,13 @@ export function HiringPackManager({
                     </div>
                   </div>
                 </AdminTableShell>
+                )}
 
-                <div className="grid gap-3 lg:grid-cols-2">
+                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
                   <DocumentCard
                     busy={busy === "sign-contract"}
                     canManage={canManage}
+                    document="contract"
                     copies={copies.contract}
                     gaps={gapsFor(pack.gaps, "contract")}
                     onCopiesChange={(value) => setCopiesFor("contract", value)}
@@ -1795,6 +1850,7 @@ export function HiringPackManager({
                   <DocumentCard
                     busy={busy === "sign-form1"}
                     canManage={canManage}
+                    document="form1"
                     copies={copies.form1}
                     gaps={gapsFor(pack.gaps, "form1")}
                     onCopiesChange={(value) => setCopiesFor("form1", value)}
@@ -1817,10 +1873,11 @@ export function HiringPackManager({
                   الخدمة"). It is not signature-tracked, for the same reason the custody receipts are not:
                   a paper filed in a drawer, where the honest record is none. See `SIGNABLE_DOCUMENTS`.
                 */}
-                <div className="grid gap-3">
+                <div className="grid gap-3 empty:hidden">
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
+                    document="workerDataForm"
                     copies={copies.workerDataForm}
                     gaps={gapsFor(pack.gaps, "workerDataForm")}
                     onCopiesChange={(value) => setCopiesFor("workerDataForm", value)}
@@ -1849,10 +1906,11 @@ export function HiringPackManager({
                   devices, and somebody who is handed a laptop and a phone on his first morning needs
                   both papers on his first morning.
                 */}
-                <div className="grid gap-3 lg:grid-cols-2">
+                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
+                    document="custodyLaptop"
                     copies={copies.custodyLaptop}
                     gaps={gapsFor(pack.gaps, "custodyLaptop")}
                     onCopiesChange={(value) => setCopiesFor("custodyLaptop", value)}
@@ -1872,6 +1930,7 @@ export function HiringPackManager({
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
+                    document="custodyMobile"
                     copies={copies.custodyMobile}
                     gaps={gapsFor(pack.gaps, "custodyMobile")}
                     onCopiesChange={(value) => setCopiesFor("custodyMobile", value)}
@@ -1899,10 +1958,11 @@ export function HiringPackManager({
                   together because the choice is made once, by one person, at one moment, and putting
                   the notice in the leaver tab would hide it until after the decision it announces.
                 */}
-                <div className="grid gap-3 lg:grid-cols-2">
+                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
+                    document="contractRenewal"
                     copies={copies.contractRenewal}
                     gaps={gapsFor(pack.gaps, "contractRenewal")}
                     onCopiesChange={(value) => setCopiesFor("contractRenewal", value)}
@@ -1922,6 +1982,7 @@ export function HiringPackManager({
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
+                    document="contractNonRenewal"
                     copies={copies.contractNonRenewal}
                     gaps={gapsFor(pack.gaps, "contractNonRenewal")}
                     onCopiesChange={(value) => setCopiesFor("contractNonRenewal", value)}
@@ -1944,10 +2005,11 @@ export function HiringPackManager({
                   SATO'S OWN JOINING PAPERS — signed or completed on the day somebody arrives, beside
                   the contract and Form 1 rather than after them, because that is when they are used.
                 */}
-                <div className="grid gap-3 lg:grid-cols-2">
+                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
                   <DocumentCard
                     busy={busy === "sign-nda"}
                     canManage={canManage}
+                    document="nda"
                     copies={copies.nda}
                     gaps={gapsFor(pack.gaps, "nda")}
                     onCopiesChange={(value) => setCopiesFor("nda", value)}
@@ -1967,6 +2029,7 @@ export function HiringPackManager({
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
+                    document="appointmentDocsReceipt"
                     copies={copies.appointmentDocsReceipt}
                     gaps={gapsFor(pack.gaps, "appointmentDocsReceipt")}
                     onCopiesChange={(value) => setCopiesFor("appointmentDocsReceipt", value)}
@@ -1985,10 +2048,11 @@ export function HiringPackManager({
                   />
                 </div>
 
-                <div className="grid gap-3 lg:grid-cols-2">
+                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
+                    document="socialStatusSheet"
                     copies={copies.socialStatusSheet}
                     gaps={gapsFor(pack.gaps, "socialStatusSheet")}
                     onCopiesChange={(value) => setCopiesFor("socialStatusSheet", value)}
@@ -2013,10 +2077,11 @@ export function HiringPackManager({
                   is a precondition of the second. Both are shown so that is visible, and neither
                   carries a date Phoenix guessed.
                 */}
-                <div className="grid gap-3 lg:grid-cols-2">
+                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
+                    document="absenceWarning"
                     copies={copies.absenceWarning}
                     gaps={gapsFor(pack.gaps, "absenceWarning")}
                     onCopiesChange={(value) => setCopiesFor("absenceWarning", value)}
@@ -2036,6 +2101,7 @@ export function HiringPackManager({
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
+                    document="deemedResignation"
                     copies={copies.deemedResignation}
                     gaps={gapsFor(pack.gaps, "deemedResignation")}
                     onCopiesChange={(value) => setCopiesFor("deemedResignation", value)}
@@ -2060,10 +2126,11 @@ export function HiringPackManager({
                   BASIC salary; the Arabic one states the BASE salary (owner, 2026-09-20), so the two
                   are different figures on purpose.
                 */}
-                <div className="grid gap-3 lg:grid-cols-2">
+                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
+                    document="salaryLetterEn"
                     copies={copies.salaryLetterEn}
                     gaps={gapsFor(pack.gaps, "salaryLetterEn")}
                     onCopiesChange={(value) => setCopiesFor("salaryLetterEn", value)}
@@ -2083,6 +2150,7 @@ export function HiringPackManager({
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
+                    document="salaryLetterAr"
                     copies={copies.salaryLetterAr}
                     gaps={gapsFor(pack.gaps, "salaryLetterAr")}
                     onCopiesChange={(value) => setCopiesFor("salaryLetterAr", value)}
@@ -2105,7 +2173,9 @@ export function HiringPackManager({
                   employeeSelected={Boolean(pack)}
                   onOpen={(template) => openTemplate(template, "preview")}
                   onPrint={(template) => openTemplate(template, "print")}
-                  templates={joiningTemplates}
+                  // A company template may print anything at all, so a seat limited to its own
+                  // papers is offered none (the server refuses `custom:<uuid>` to her too).
+                  templates={scoped ? NO_TEMPLATES : joiningTemplates}
                 />
               </div>
             ) : null}
@@ -2232,10 +2302,11 @@ export function HiringPackManager({
                   </div>
                 </AdminTableShell>
 
-                <div className="grid gap-3 lg:grid-cols-2">
+                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
                   <DocumentCard
                     busy={busy === "sign-form6"}
                     canManage={canManage}
+                    document="form6"
                     copies={copies.form6}
                     gaps={gapsFor(pack.gaps, "form6")}
                     onCopiesChange={(value) => setCopiesFor("form6", value)}
@@ -2259,6 +2330,7 @@ export function HiringPackManager({
                     <DocumentCard
                       busy={busy === "sign-resignation"}
                       canManage={canManage}
+                      document="resignation"
                       copies={copies.resignation}
                       gaps={gapsFor(pack.gaps, "resignation")}
                       onCopiesChange={(value) => setCopiesFor("resignation", value)}
@@ -2277,6 +2349,7 @@ export function HiringPackManager({
                     <DocumentCard
                       busy={busy === "sign-mutualTermination"}
                       canManage={canManage}
+                      document="mutualTermination"
                       copies={copies.mutualTermination}
                       gaps={gapsFor(pack.gaps, "mutualTermination")}
                       onCopiesChange={(value) => setCopiesFor("mutualTermination", value)}
@@ -2310,6 +2383,7 @@ export function HiringPackManager({
                   <DocumentCard
                     busy={busy === "sign-clearanceEmployee"}
                     canManage={canManage}
+                    document="clearanceEmployee"
                     copies={copies.clearanceEmployee}
                     gaps={gapsFor(pack.gaps, "clearanceEmployee")}
                     onCopiesChange={(value) => setCopiesFor("clearanceEmployee", value)}
@@ -2327,6 +2401,7 @@ export function HiringPackManager({
                   <DocumentCard
                     busy={busy === "sign-clearanceCompany"}
                     canManage={canManage}
+                    document="clearanceCompany"
                     copies={copies.clearanceCompany}
                     gaps={gapsFor(pack.gaps, "clearanceCompany")}
                     onCopiesChange={(value) => setCopiesFor("clearanceCompany", value)}
@@ -2349,10 +2424,11 @@ export function HiringPackManager({
                   files with almost the same name, and the one mistake worth designing against is
                   filing the wrong one at the wrong end of a career.
                 */}
-                <div className="grid gap-3 lg:grid-cols-2">
+                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
+                    document="appointmentDocsReturn"
                     copies={copies.appointmentDocsReturn}
                     gaps={gapsFor(pack.gaps, "appointmentDocsReturn")}
                     onCopiesChange={(value) => setCopiesFor("appointmentDocsReturn", value)}
@@ -2380,6 +2456,7 @@ export function HiringPackManager({
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
+                    document="experienceCertificate"
                     copies={copies.experienceCertificate}
                     gaps={gapsFor(pack.gaps, "experienceCertificate")}
                     onCopiesChange={(value) => setCopiesFor("experienceCertificate", value)}
@@ -2409,6 +2486,7 @@ export function HiringPackManager({
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
+                    document="experienceCertificateEn"
                     copies={copies.experienceCertificateEn}
                     gaps={gapsFor(pack.gaps, "experienceCertificateEn")}
                     onCopiesChange={(value) => setCopiesFor("experienceCertificateEn", value)}
@@ -2435,7 +2513,7 @@ export function HiringPackManager({
                   employeeSelected={Boolean(pack)}
                   onOpen={(template) => openTemplate(template, "preview")}
                   onPrint={(template) => openTemplate(template, "print")}
-                  templates={leavingTemplates}
+                  templates={scoped ? NO_TEMPLATES : leavingTemplates}
                 />
               </div>
             ) : null}
@@ -2447,18 +2525,26 @@ export function HiringPackManager({
           </AdminCallout>
         )}
 
-        <TemplateArchive
-          employeeSelected={Boolean(pack)}
-          onPreview={(document, versionId) => openPreview(document, versionId)}
-          onPrint={(document, versionId) => requestPrint(document, versionId)}
-        />
+        {/*
+          The Archive reprints superseded versions of every paper and the Studio uploads and prints
+          company templates — neither is offered to a seat limited to its own papers.
+        */}
+        {scoped ? null : (
+          <>
+            <TemplateArchive
+              employeeSelected={Boolean(pack)}
+              onPreview={(document, versionId) => openPreview(document, versionId)}
+              onPrint={(document, versionId) => requestPrint(document, versionId)}
+            />
 
-        <TemplateStudio
-          companyTemplates={companyTemplates}
-          employeeSelected={Boolean(pack)}
-          onPreview={(document, versionId) => openPreview(document, versionId)}
-          onPrint={(document, versionId) => requestPrint(document, versionId)}
-        />
+            <TemplateStudio
+              companyTemplates={companyTemplates}
+              employeeSelected={Boolean(pack)}
+              onPreview={(document, versionId) => openPreview(document, versionId)}
+              onPrint={(document, versionId) => requestPrint(document, versionId)}
+            />
+          </>
+        )}
 
         {printRequest ? (
           <PrintOptionsDialog
@@ -2478,6 +2564,7 @@ export function HiringPackManager({
         ) : null}
       </div>
     </div>
+    </PaperScopeContext.Provider>
   );
 }
 
@@ -2878,7 +2965,19 @@ function PackageCompanyTemplates({
   );
 }
 
-function DocumentCard({
+type DocumentCardProps = Parameters<typeof DocumentCardBody>[0] & {
+  /** The paper this card prints — compared with the viewer's papers (`PaperScopeContext`). */
+  document: HiringPackDocument;
+};
+
+/** One paper's card, or nothing when the paper is outside this viewer's papers. */
+function DocumentCard({ document, ...props }: DocumentCardProps) {
+  const scope = useContext(PaperScopeContext);
+  if (scope && !scope.includes(document)) return null;
+  return <DocumentCardBody {...props} />;
+}
+
+function DocumentCardBody({
   busy,
   canManage,
   copies,

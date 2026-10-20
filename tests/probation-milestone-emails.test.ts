@@ -1,8 +1,11 @@
-// Probation Day 30 / 60 / 75 milestone emails — owner rule, 2026-09-29.
+// Probation Day 30 / 60 / 75 milestone emails — owner rule, 2026-09-29, recipient changed 2026-10-20.
 //
-// The rule being pinned: these three emails go to Yasmeena Elsafory (HR-009) ALONE, with Omar
-// Gawish (B-10) on CC, and they ride their OWN notification type so re-enabling them never
-// re-opens the `probation` policy the owner switched off on 2026-07-19.
+// The rule being pinned: these three emails go to Omar Gawish (B-10) ALONE ("To you only", owner,
+// 2026-10-20 — from 2026-09-29 they went to the HR Generalist of the day with him on BCC), and they
+// ride their OWN notification type so re-enabling them never re-opens the `probation` policy the
+// owner switched off on 2026-07-19. The change of recipient must not re-send a milestone the
+// earlier recipient already received; tests/vacant-seat-recipients.test.ts pins that rule's
+// behaviour, and this file pins its wiring.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -10,7 +13,6 @@ import { readFileSync } from "node:fs";
 import { PROBATION_TOTAL_DAYS } from "../src/lib/probation/date.ts";
 import {
   PROBATION_MILESTONES,
-  PROBATION_MILESTONE_BCC_HR_IDS,
   PROBATION_MILESTONE_TO_HR_ID,
   milestoneCrossingDate,
   milestoneIsDue,
@@ -29,13 +31,8 @@ export function runProbationMilestoneEmailsTests() {
   // ── The recipients, which are the whole point of the owner's instruction ──
   assert.equal(
     PROBATION_MILESTONE_TO_HR_ID,
-    "HR-009",
-    "the ONLY To recipient is Yasmeena Elsafory (HR-009) — owner, 2026-09-29",
-  );
-  assert.deepEqual(
-    [...PROBATION_MILESTONE_BCC_HR_IDS],
-    ["B-10"],
-    "Omar Gawish (B-10) is the only BCC — owner, 2026-09-29",
+    "B-10",
+    "the ONLY recipient is Omar Gawish (B-10) — owner, 2026-10-20: \"To you only\"",
   );
   // Regression guard: the retired 2026-07 fan-out resolved CEO/HR/DM/NSM/SFE stakeholders per case.
   // Any of those lookups reappearing here means the fan-out is creeping back in.
@@ -45,23 +42,21 @@ export function runProbationMilestoneEmailsTests() {
       `${banned} must not reappear — the milestone email is addressed to one person, not a stakeholder set`,
     );
   }
-  // One notification, one recipient: the sweep addresses HR-009 directly rather than looping.
+  // One notification, one recipient: the sweep addresses the owner directly rather than looping.
   assert.match(
     sweep,
     /recipientHrId: PROBATION_MILESTONE_TO_HR_ID/,
     "the single To recipient is the named constant, not a resolved list",
   );
-  assert.match(sweep, /^\s+bcc,$/m, "the resolved BCC addresses are passed to the email");
-  // BCC, NOT CC — "to her only" (owner, 2026-09-29). A CC would print his address on her copy.
+  // "To you only": no bcc and no cc of its own. The standing admin BCC every automated email
+  // carries (send-phoenix-email.ts) is his own mailbox, so it adds nobody.
   assert.ok(
-    !/^\s+cc[,:]/m.test(sweep),
-    "the owner is BCC, never CC — Yasmeena must be the only recipient the delivered mail shows",
+    !/^\s+bcc[,:]/m.test(sweep) && !/^\s+cc[,:]/m.test(sweep),
+    "the milestone email names no bcc and no cc — the owner is its only recipient",
   );
-  // The BCC address is read live from employees.work_email, so a mailbox change follows the record.
-  assert.match(
-    sweep,
-    /from\("employees"\)\s*\.select\("hr_id, work_email"\)/,
-    "BCC addresses are resolved from the live employee record, never hardcoded",
+  assert.ok(
+    !/PROBATION_MILESTONE_BCC_HR_IDS|resolveBccAddresses/.test(sweep),
+    "the per-email BCC list is gone with the old recipient",
   );
 
   // ── Its own notification type, so the owner's `probation` OFF ruling is untouched ──
@@ -80,7 +75,7 @@ export function runProbationMilestoneEmailsTests() {
   assert.equal(
     milestonePolicy!.includeHrInbox,
     false,
-    "the shared HR inbox is NOT added — the recipient list is Yasmeena and the owner, nobody else",
+    "the shared HR inbox is NOT added — the recipient is the owner, nobody else",
   );
   const legacyPolicy = defaultEmailNotificationPolicies.find((p) => p.type === "probation");
   assert.ok(legacyPolicy, "the legacy probation policy still exists");
@@ -152,10 +147,23 @@ export function runProbationMilestoneEmailsTests() {
   assert.match(sweep, /isDateBeforeProbationEmailFreshStart/, "the sweep applies the fresh-start guard");
 
   // ── Idempotency: one email per (case, milestone), so a daily re-run is a no-op ──
+  // The key string is FROZEN at its 2026-09-29 form; the change of recipient must not re-send.
   assert.match(
     sweep,
-    /idempotencyKey: `probation:milestone:\$\{c\.id\}:day\$\{m\.day\}:\$\{PROBATION_MILESTONE_TO_HR_ID\}`/,
-    "the dedup key is per case, per milestone day, per recipient",
+    /return `probation:milestone:\$\{caseId\}:day\$\{milestoneDay\}:\$\{PROBATION_MILESTONE_KEY_SUFFIX\}`;/,
+    "the dedup key is per case and per milestone day, ending in the frozen suffix",
+  );
+  assert.match(sweep, /idempotencyKey: eventKey,/, "the email is sent under that key");
+  assert.match(
+    sweep,
+    /const toSend = milestoneKeysToSend\(dueKeys, await readMilestoneEvents\(dueKeys\), PROBATION_MILESTONE_TO_HR_ID\);/,
+    "what was already sent is read before anything is sent, and an earlier recipient's milestone is skipped",
+  );
+  assert.match(sweep, /if \(!toSend\.has\(eventKey\)\) continue;/, "a milestone already delivered is not handed to the notification layer");
+  assert.match(
+    sweep,
+    /if \(error\) throw new Error\(`Probation milestone sweep could not read what was already sent/,
+    "an unreadable sent-list stops the run instead of guessing that nothing was sent",
   );
 
   // ── The sweep must not email someone who has already left ──

@@ -219,7 +219,7 @@ export const accessRegistry = [
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/ireports360-visits-sync", reason: "Scheduled iReports360 visits sync route guarded by cron controls." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/ireports360-visits-reconcile", reason: "Scheduled wide iReports360 reconciliation sync route guarded by cron controls." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/ireports360-visits-live-sync", reason: "Scheduled high-frequency morning iReports360 visits sync route guarded by cron controls." }),
-  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/probation-milestones", reason: "Probation Day 30/60/75 milestone emails — To Yasmeena Elsafory, BCC the owner. The sweep also rides the daily notifications cron; this route runs ONLY it, so a catch-up need not wait for 06:36 Cairo and does not re-fire that route's other 29 sub-jobs. Guarded by CRON_SECRET; idempotent per (case, milestone, recipient), so a repeat call sends nothing." }),
+  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/probation-milestones", reason: "Probation Day 30/60/75 milestone emails — To the owner alone. The sweep also rides the daily notifications cron; this route runs ONLY it, so a catch-up need not wait for 06:36 Cairo and does not re-fire that route's other 29 sub-jobs. Guarded by CRON_SECRET; idempotent per (case, milestone), so a repeat call sends nothing." }),
   tokenApi({ authMode: "machine-token", methods: ["POST"], pattern: "/api/mcp-source/authorize", reason: "Owner-only live authorization for the isolated MCP reader. Disabled unless PHOENIX_MCP_SOURCE_ENABLED is true; a dedicated bearer secret with no development bypass; reads every input uncached and fails closed." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/background-jobs", reason: "Durable background-job worker drain guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/attendance-weekly-digest", reason: "Weekly attendance review clock — build a closed week for the Super Admin's release (sends nothing), settle days unanswered past their deadline to salary, apply settled answers to payroll; guarded by CRON_SECRET." }),
@@ -659,6 +659,24 @@ export const accessRegistry = [
   // cannot fill in.
   sessionApi({ methods: readOnly, pattern: "/api/hiring-pack/**", permission: { resource: "employee_documents", action: "read" } }),
   sessionApi({ methods: ["PUT", "POST", "DELETE"], pattern: "/api/hiring-pack/**", permission: { resource: "employee_documents", action: "update" }, csrfRequired: true }),
+  // The routes the HR Operations Specialist (`HR Administration`, owner 2026-10-20) also reaches.
+  // Each is gated by src/lib/hiring-pack/paper-access.ts, hence domain-helper: every role that held
+  // employee_documents still passes on it exactly as declared above, and a seat named in
+  // SEAT_PRINTABLE_DOCUMENTS passes on the business grant of its own papers instead — contracts for
+  // the renewal pair, resignations for the leaving papers — and only for those papers. The pack and
+  // every response carrying it come back blanked of money for her (packForViewer).
+  //
+  // The pack itself (GET /api/hiring-pack/:hrId) has NO entry of its own on purpose: a one-segment
+  // `:hrId` pattern is longer than `**` and would capture every sibling GET — custom-templates,
+  // document-fields, company-details, signature, field-fill-rate — and wave them through as
+  // domain-helper. It stays on the read entry above, and its handler admits her through the same
+  // assertMayUseHrForms. Its profile PUT stays employee_documents:update — closed to her.
+  sessionApi({ methods: readOnly, pattern: "/api/hiring-pack/:hrId/print", permission: [{ resource: "employee_documents", action: "read" }, { resource: "contracts", action: "read" }, { resource: "resignations", action: "read" }], guard: "domain-helper" }),
+  sessionApi({ methods: ["PUT"], pattern: "/api/hiring-pack/:hrId/facts", permission: [{ resource: "employee_documents", action: "update" }, { resource: "employees", action: "update" }], guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: ["PUT"], pattern: "/api/hiring-pack/:hrId/offboarding", permission: [{ resource: "employee_documents", action: "update" }, { resource: "contracts", action: "update" }, { resource: "resignations", action: "update" }], guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: ["POST"], pattern: "/api/hiring-pack/:hrId/sign", permission: [{ resource: "employee_documents", action: "update" }, { resource: "resignations", action: "update" }], guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: ["POST"], pattern: "/api/hiring-pack/manual", permission: [{ resource: "employee_documents", action: "read" }, { resource: "contracts", action: "read" }, { resource: "resignations", action: "read" }], guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: ["GET", "POST"], pattern: "/api/hiring-pack/paper-register", permission: [{ resource: "employee_documents", action: "read" }, { resource: "contracts", action: "read" }, { resource: "resignations", action: "read" }], guard: "domain-helper", csrfRequired: true }),
   // ── Business cards ─────────────────────────────────────────────────────────────────────────
   // POST only because the chosen people and their on-screen corrections travel in a body; it writes
   // nothing and returns a file, so the resource is read. The handler also requires an HR seat.
@@ -2117,6 +2135,15 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: false }, methods: ["DELETE"], pattern: "/api/hr-reminders/:id", permission: { resource: "hr_reminders", action: "delete" }, csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/hr-reminders/:id/comments", permission: { resource: "hr_reminders", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/hr-reminders/:id/comments", permission: { resource: "hr_reminders", action: "create" }, csrfRequired: true }),
+  // HR Daily & Weekly Reports (2026-10-20): the HR Operations Specialist reviews (read/update), the
+  // Super Admin decides, prices and rebuilds (approve). Days only on every route but `priced`.
+  sessionApi({ methods: ["GET"], pattern: "/api/hr-ops-reports", permission: { resource: "hr_ops_reports", action: "read" } }),
+  sessionApi({ methods: ["GET"], pattern: "/api/hr-ops-reports/:id", permission: { resource: "hr_ops_reports", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/hr-ops-reports/:id/review", permission: { resource: "hr_ops_reports", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/hr-ops-reports/:id/submit", permission: { resource: "hr_ops_reports", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/hr-ops-reports/:id/decide", permission: { resource: "hr_ops_reports", action: "approve" }, csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/hr-ops-reports/:id/priced", permission: { resource: "hr_ops_reports", action: "approve" } }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/hr-ops-reports/rebuild", permission: { resource: "hr_ops_reports", action: "approve" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/weekly-plans", permission: { resource: "weekly_plans", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/weekly-plans", permission: { resource: "weekly_plans", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/weekly-plans/export", permission: { resource: "weekly_plans", action: "read" }, guard: "domain-helper" }),

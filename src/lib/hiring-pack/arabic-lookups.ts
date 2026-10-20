@@ -86,9 +86,9 @@ export const JOB_TITLE_AR_SEEDS: readonly ArabicSeed[] = [
   // specialist. The row above stays: contracts already signed name it, and this table matches the
   // data rather than correcting it.
   { en: "HR Operations Specialist", ar: "اخصائي موارد بشرية", confirmed: true, people: 1 }, // his wording, carried with her
-  // The old seat's new title. Nobody holds it yet, and the Arabic is a PROPOSAL until the owner
-  // gives his wording for the next holder.
-  { en: "HR Generalist", ar: "اخصائي موارد بشرية عام", confirmed: false, people: 0 },
+  // The old seat's new title. Nobody holds it yet; the Arabic is the owner's own pick, 2026-10-20,
+  // for whoever is hired into it.
+  { en: "HR Generalist", ar: "أخصائي موارد بشرية", confirmed: true, people: 0 }, // his wording
   // His own title, 2026-10-09: "give HR Manager the Arabic مدير ادارة الموارد البشرية". He was
   // promoted from HR Section Head that day and `employees.job_title` for B-10 moved with it, so the
   // seed has to move too — this table matches `employees.job_title` exactly, and a title with no

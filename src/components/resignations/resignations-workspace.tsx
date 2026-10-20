@@ -66,6 +66,12 @@ type Props = {
    * history" button renders — /api/resignations/export asserts the same permission itself.
    */
   canExportHistory?: boolean;
+  /**
+   * resignations:create, resolved on the server by the page. It only decides whether "New
+   * resignation" renders — the HR Operations Specialist follows resignations the owner submits and
+   * never starts one; POST /api/resignations asserts the same permission itself.
+   */
+  canCreate?: boolean;
   initialData: ResignationDashboardData | null;
   initialError: string | null;
   /** The portal route supplies its own page header, so it suppresses the hero. */
@@ -88,6 +94,7 @@ function newForm(): CreateResignationInput {
 
 export function ResignationsWorkspace({
   canExportHistory = false,
+  canCreate = false,
   initialData,
   initialError,
   surface = "admin",
@@ -110,6 +117,9 @@ export function ResignationsWorkspace({
   const records = React.useMemo(() => data?.records ?? [], [data]);
   const candidates = React.useMemo(() => data?.payrollCandidates ?? [], [data]);
   const employees = data?.employees ?? [];
+  // The server withheld every settlement figure for this seat (isSalaryBlindRole). The money
+  // columns go, and one plain line says why — never a 0 or a dash that reads like "nothing owed".
+  const settlementWithheld = data?.settlementWithheld === true;
 
   const search = query.trim().toLowerCase();
   const matches = (text: string) => !search || text.toLowerCase().includes(search);
@@ -416,9 +426,11 @@ export function ResignationsWorkspace({
 
   const toolbar = (
     <>
-      <RgButton kind={surface === "admin" ? "onDark" : "quiet"} onClick={() => setCreating(true)}>
-        New resignation
-      </RgButton>
+      {canCreate ? (
+        <RgButton kind={surface === "admin" ? "onDark" : "quiet"} onClick={() => setCreating(true)}>
+          New resignation
+        </RgButton>
+      ) : null}
       <RgButton
         disabled={busy === "reload"}
         kind={surface === "admin" ? "onDark" : "quiet"}
@@ -512,6 +524,12 @@ export function ResignationsWorkspace({
             </RgSelect>
           </div>
         </div>
+
+        {settlementWithheld && tab !== "candidates" ? (
+          <p className="border-b border-slate-100 px-3 py-2 text-[11px] font-semibold leading-relaxed text-slate-600">
+            Salary and settlement amounts are not shown for your seat.
+          </p>
+        ) : null}
 
         {leaversHoldingDevices.length > 0 ? (
           <div className="border-b border-rose-200 bg-rose-50 px-3 py-3">
@@ -648,24 +666,28 @@ export function ResignationsWorkspace({
                   <PortalRecordFields
                     fields={[
                       { label: "Effective", value: formatResignationDate(record.effectiveDate) },
-                      { label: "Base salary", value: formatEgp(record.settlement?.baseSalary) },
-                      {
-                        label: "Days paid",
-                        value: record.settlement ? record.settlement.daysWorked : "-",
-                      },
-                      { label: "Due this month", value: formatEgp(record.settlement?.total) },
-                      {
-                        label: "Split",
-                        value: record.settlement ? (
-                          <RgSplit
-                            covered={record.settlement.coveredByFirstPart}
-                            firstPart={formatEgp(record.settlement.firstPart)}
-                            secondPart={formatEgp(record.settlement.secondPart)}
-                          />
-                        ) : (
-                          "—"
-                        ),
-                      },
+                      ...(settlementWithheld
+                        ? []
+                        : [
+                            { label: "Base salary", value: formatEgp(record.settlement?.baseSalary) },
+                            {
+                              label: "Days paid",
+                              value: record.settlement ? record.settlement.daysWorked : "-",
+                            },
+                            { label: "Due this month", value: formatEgp(record.settlement?.total) },
+                            {
+                              label: "Split",
+                              value: record.settlement ? (
+                                <RgSplit
+                                  covered={record.settlement.coveredByFirstPart}
+                                  firstPart={formatEgp(record.settlement.firstPart)}
+                                  secondPart={formatEgp(record.settlement.secondPart)}
+                                />
+                              ) : (
+                                "—"
+                              ),
+                            },
+                          ]),
                     ]}
                   />
                 </PortalRecordCard>
@@ -675,10 +697,14 @@ export function ResignationsWorkspace({
               <>
                 <RgTh>Employee</RgTh>
                 <RgTh>Effective</RgTh>
-                <RgTh align="right">Base salary</RgTh>
-                <RgTh align="right">Days paid</RgTh>
-                <RgTh align="right">Due this month</RgTh>
-                <RgTh>Split</RgTh>
+                {settlementWithheld ? null : (
+                  <>
+                    <RgTh align="right">Base salary</RgTh>
+                    <RgTh align="right">Days paid</RgTh>
+                    <RgTh align="right">Due this month</RgTh>
+                    <RgTh>Split</RgTh>
+                  </>
+                )}
                 <RgTh align="right">{tab === "action" ? "Actions" : "Closed by"}</RgTh>
               </>
             }
@@ -721,26 +747,30 @@ export function ResignationsWorkspace({
                     />
                   </RgTd>
                   <RgTd className="text-slate-500">{formatResignationDate(record.effectiveDate)}</RgTd>
-                  <RgTd className="text-right text-slate-500">
-                    {formatEgp(record.settlement?.baseSalary)}
-                  </RgTd>
-                  <RgTd className="text-right text-slate-500">
-                    {record.settlement ? record.settlement.daysWorked : "-"}
-                  </RgTd>
-                  <RgTd className="text-right font-bold text-slate-900">
-                    {formatEgp(record.settlement?.total)}
-                  </RgTd>
-                  <RgTd>
-                    {record.settlement ? (
-                      <RgSplit
-                        covered={record.settlement.coveredByFirstPart}
-                        firstPart={formatEgp(record.settlement.firstPart)}
-                        secondPart={formatEgp(record.settlement.secondPart)}
-                      />
-                    ) : (
-                      <span className="text-slate-300">—</span>
-                    )}
-                  </RgTd>
+                  {settlementWithheld ? null : (
+                    <>
+                      <RgTd className="text-right text-slate-500">
+                        {formatEgp(record.settlement?.baseSalary)}
+                      </RgTd>
+                      <RgTd className="text-right text-slate-500">
+                        {record.settlement ? record.settlement.daysWorked : "-"}
+                      </RgTd>
+                      <RgTd className="text-right font-bold text-slate-900">
+                        {formatEgp(record.settlement?.total)}
+                      </RgTd>
+                      <RgTd>
+                        {record.settlement ? (
+                          <RgSplit
+                            covered={record.settlement.coveredByFirstPart}
+                            firstPart={formatEgp(record.settlement.firstPart)}
+                            secondPart={formatEgp(record.settlement.secondPart)}
+                          />
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </RgTd>
+                    </>
+                  )}
                   <RgTd className="text-right">{recordControls(record, rowBusy)}</RgTd>
                 </tr>
               );

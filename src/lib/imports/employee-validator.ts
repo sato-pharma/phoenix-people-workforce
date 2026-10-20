@@ -8,6 +8,12 @@ import {
   buildPersonNameIndex,
   nicknameCollisionIssues,
 } from "@/lib/imports/employee-name-collision";
+import {
+  NEW_EMPLOYEE_NOT_ALLOWED_CODE,
+  rowHasMoneyValue,
+  SALARY_BLIND_MONEY_COLUMNS_CODE,
+  withoutMoney,
+} from "@/lib/imports/employee-import-salary-blind";
 import type {
   DetectedEmployeeColumn,
   EmployeeImportField,
@@ -919,18 +925,46 @@ export function validateEmployeeImportRows(
       });
     }
 
-    for (const field of numericImportFields) {
-      const rawNumber = normalizeTextValue(valueFor(record.source, mapping, field));
-      const parsedNumber = field === "basicSalary" || field === "baseSalary"
-        ? record.compensation[field]
-        : record.compensation[field as keyof typeof record.compensation];
-      if (rawNumber && parsedNumber === null) {
+    if (options.salaryBlind) {
+      // THE SALARY-BLIND SEAT CARRIES NO FIGURE (employee-import-salary-blind.ts). The routes refuse
+      // a file with a filled money column before planning; this is the row-level backstop for a
+      // caller that skipped that, so a figure can never ride in on a row that "only" fails a number
+      // check. Then every amount on the row is blanked, so nothing downstream computes, reports or
+      // writes one — the number check below would only describe a cell she must leave empty.
+      const filledMoneyFields = numericImportFields.filter((field) =>
+        normalizeTextValue(valueFor(record.source, mapping, field)) !== null,
+      );
+      for (const field of filledMoneyFields) {
         validationErrors.push({
           rowNumber: record.rowNumber,
           field,
-          code: "invalid_numeric_value",
-          message: `${field} must be a valid numeric value.`,
+          code: SALARY_BLIND_MONEY_COLUMNS_CODE,
+          message: "This seat cannot import salary figures — clear this cell.",
         });
+      }
+      if (filledMoneyFields.length === 0 && rowHasMoneyValue(record.source)) {
+        // A second copy of a money header: the mapping reads only the first, the row still carries one.
+        validationErrors.push({
+          rowNumber: record.rowNumber,
+          code: SALARY_BLIND_MONEY_COLUMNS_CODE,
+          message: "This seat cannot import salary figures — clear every salary, allowance, insurance and tax cell.",
+        });
+      }
+      withoutMoney(record);
+    } else {
+      for (const field of numericImportFields) {
+        const rawNumber = normalizeTextValue(valueFor(record.source, mapping, field));
+        const parsedNumber = field === "basicSalary" || field === "baseSalary"
+          ? record.compensation[field]
+          : record.compensation[field as keyof typeof record.compensation];
+        if (rawNumber && parsedNumber === null) {
+          validationErrors.push({
+            rowNumber: record.rowNumber,
+            field,
+            code: "invalid_numeric_value",
+            message: `${field} must be a valid numeric value.`,
+          });
+        }
       }
     }
 
@@ -997,7 +1031,9 @@ export function validateEmployeeImportRows(
       });
     }
 
-    if (record.rowType === "employee") {
+    // Skipped for the salary-blind seat: this step writes fuel and cost of living onto EVERY row,
+    // blank or not, and prints the amounts in its warnings — a figure she must never see or write.
+    if (record.rowType === "employee" && !options.salaryBlind) {
       const standardAllowances = resolveStandardSalaryAllowances({
         departmentName: record.departmentName,
         employeeHrId: record.hrId,
@@ -1309,6 +1345,30 @@ export function validateEmployeeImportRows(
         code: "manager_hr_id_not_found",
         message: `Manager HR_ID ${record.managerHrId} was not found in the file or provided database snapshot.`,
       });
+    }
+  }
+
+  // AN IMPORTER WITHOUT `employees:create` UPDATES THE PEOPLE ALREADY IN THE MASTER AND ADDS NOBODY.
+  // An Employee ID the master does not hold would otherwise become a new active employee (and a new
+  // seat, via the insert trigger), and a vacant-position row would open a seat — both are creating.
+  // The row is refused by name so she sees which line to take out; the rest of the file still runs.
+  if (options.allowNewEmployees === false) {
+    const knownEmployeeHrIds = canonicalHrIdSet(options.existingState?.employeeHrIds);
+    for (const record of records) {
+      if (record.rowType === "vacant_position") {
+        validationErrors.push({
+          rowNumber: record.rowNumber,
+          code: NEW_EMPLOYEE_NOT_ALLOWED_CODE,
+          message: "Opening a vacant position is not part of this seat — remove this row.",
+        });
+      } else if (record.hrId && !knownEmployeeHrIds.has(canonicalHrIdKey(record.hrId)!)) {
+        validationErrors.push({
+          rowNumber: record.rowNumber,
+          field: "hrId",
+          code: NEW_EMPLOYEE_NOT_ALLOWED_CODE,
+          message: `Employee ID ${record.hrId} is not in the master, and adding a new employee is not part of this seat — remove this row or correct the ID.`,
+        });
+      }
     }
   }
 

@@ -841,6 +841,12 @@ const HR_SEAT_SELF_SERVICE: Partial<Record<PermissionResource, PermissionAction[
   overview: READ_ONLY,
   report_it: ["read", "create"],
   support_requests: ["create"],
+  // Request her own business card. applyHardPermissionBoundaries SETS this sender `create` on every
+  // role that is not an HR authority (the same shape as support_requests above), so naming it here
+  // changes no grant — it keeps the HR Operations Specialist seat, the first seat outside
+  // hrAuthorityRoles, traceable to this floor, which rule 6 of tests/hr-function-governance.test.ts
+  // requires of every grant an HR seat holds.
+  business_card_requests: ["create"],
 };
 
 const FUNCTIONS_BY_KEY = new Map(HR_FUNCTIONS.map((fn) => [fn.key, fn]));

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { assertMayUseHrForms, packForViewer } from "@/lib/hiring-pack/paper-access";
 import {
   getHiringPack,
   hiringPackErrorMessage,
@@ -40,10 +41,12 @@ function apiError(error: unknown) {
 export async function GET(request: Request, { params }: { params: Promise<{ hrId: string }> }) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "employee_documents", "read");
+    // employee_documents as before, or a seat in SEAT_PRINTABLE_DOCUMENTS on its own papers' grants
+    // — which for the salary-blind seat means the pack comes back with every money field blanked.
+    await assertMayUseHrForms(access, "read");
     const { hrId } = await params;
 
-    return NextResponse.json(await getHiringPack(hrId));
+    return NextResponse.json(packForViewer(access, await getHiringPack(hrId)));
   } catch (error) {
     const { message, status } = apiError(error);
     return NextResponse.json({ error: "hiring_pack_load_failed", message }, { status });
@@ -56,6 +59,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ hrId
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
+    // STILL employee_documents, deliberately — the HR Operations Specialist is NOT let in here. The
+    // hiring profile is the contract's own terms (duration, dates, the underperformance and
+    // training-bond clauses) and Form 1's registration codes, and changing a contract stays his
+    // decision (owner, 2026-10-20). Her papers' facts and exit details save through /facts and
+    // /offboarding, which she may use.
     await assertPermission(access, "employee_documents", "update");
     const { hrId } = await params;
     const payload = (await request.json()) as HiringPackProfileInput;

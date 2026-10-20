@@ -100,8 +100,29 @@ type EmployeeManagementProps = {
    * would fail, and grants nothing.
    */
   canEdit?: boolean;
+  /**
+   * False for a viewer who may change an employee but not ADD one — the HR Operations Specialist,
+   * whose grant is employees:[read, update, export, import]. POST /api/employees asserts
+   * employees:create on a save with no original Employee ID, so this hides the Add Employee doors
+   * that would fail and grants nothing. Defaults to false for the same reason canEdit does.
+   */
+  canCreate?: boolean;
+  /**
+   * resignations:create, resolved by the page. Resign and Declined call routes that assert
+   * employees:update AND resignations:create AND vacancies:create, so canEdit alone offered both
+   * buttons to the HR Operations Specialist (update, no resignations:create — the owner submits a
+   * resignation and she follows it up) and 403'd her on press. Hides the two doors; grants nothing.
+   */
+  canStartResignation?: boolean;
   initialData?: EmployeeDirectoryData | null;
   initialError?: string | null;
+  /**
+   * True for the salary-blind seat (isSalaryBlindRole). The server already sends this viewer no
+   * money and drops any money she sends; this hides the boxes that would only ever be empty, skips
+   * the net-salary calculation, and makes the save carry no money key at all. Bank name, bank
+   * account, has-bank-account and payment mode are not money and stay.
+   */
+  salaryBlind?: boolean;
 };
 
 type EmployeeSaveResponse = EmployeeDirectoryData & {
@@ -822,7 +843,56 @@ function employeeRowKey(employee: EmployeeDirectoryRow, index: number) {
   ].join(":");
 }
 
-function formToPayload(form: EmployeeFormState, originalHrId: string | null): EmployeeMutationInput {
+/**
+ * The keys a salary-blind save leaves out entirely. OMITTED, never sent as null: the server reads
+ * an absent money key as "this save says nothing about pay" and keeps the stored figure, and the
+ * flexible salary details in particular are WIPED by an empty array. The server drops them for
+ * this seat anyway (app/api/employees/route.ts) — this is so the request never carries them.
+ */
+const SALARY_BLIND_OMITTED_KEYS = [
+  "baseSalary",
+  "basicSalary",
+  "extraCostOfLiving",
+  "fuelAllowance",
+  "grossSalary",
+  "medicalInsurance",
+  "netSalary",
+  "salaryDetails",
+  "socialInsurance",
+  "socialInsuranceWage",
+  "taxes",
+] as const satisfies ReadonlyArray<keyof EmployeeMutationInput>;
+
+/** Said instead of opening Add Employee for a viewer without employees:create, whichever door she used. */
+const ADD_EMPLOYEE_NOT_IN_SEAT =
+  "Adding a new employee is not part of your seat — you can edit the people already in the master.";
+
+/** The Payroll Reference rows the salary-blind seat is not shown — every money figure, nothing else. */
+const SALARY_BLIND_HIDDEN_MASTER_LABELS: ReadonlySet<string> = new Set([
+  "Basic Salary",
+  "Base Salary",
+  "Gross Salary",
+  "Net Salary",
+  "Fuel Allowance",
+  "Extra Cost of Living",
+  "Medical Insurance",
+  "Social Insurance",
+  "Taxes",
+]);
+
+function formToPayload(
+  form: EmployeeFormState,
+  originalHrId: string | null,
+  options: { salaryBlind?: boolean } = {},
+): EmployeeMutationInput {
+  const payload = formToFullPayload(form, originalHrId);
+  if (options.salaryBlind) {
+    for (const key of SALARY_BLIND_OMITTED_KEYS) delete payload[key];
+  }
+  return payload;
+}
+
+function formToFullPayload(form: EmployeeFormState, originalHrId: string | null): EmployeeMutationInput {
   const optionalNumber = (value: string) => (value ? Number(value) : null);
   const optionalText = (value: string) => value.trim() || null;
 
@@ -1001,8 +1071,11 @@ export function EmployeeManagement({
   // default is only ever reached by a THIRD page that forgets, and read-only is the safe way for
   // that to be wrong.
   canEdit = false,
+  canCreate = false,
+  canStartResignation = false,
   initialData = null,
   initialError = null,
+  salaryBlind = false,
 }: EmployeeManagementProps) {
   const [data, setData] = React.useState<EmployeeDirectoryData | null>(
     initialData,
@@ -1389,8 +1462,11 @@ export function EmployeeManagement({
   );
 
   function updateSalaryDriver(key: "netSalary" | "jobTitle", value: string) {
+    // The salary-blind seat edits the title as a plain field: no salary is derived from it.
     setForm((current) =>
-      withSalaryAutofill({ ...current, [key]: value }, salaryOverridesRef.current),
+      salaryBlind
+        ? { ...current, [key]: value }
+        : withSalaryAutofill({ ...current, [key]: value }, salaryOverridesRef.current),
     );
   }
 
@@ -1399,6 +1475,8 @@ export function EmployeeManagement({
    * emptying it hands the box back to auto-fill.
    */
   function updateSalaryField(key: SalaryAutofillKey, value: string) {
+    // Unreachable for the salary-blind seat (no money box renders), and refused if it ever were.
+    if (salaryBlind) return;
     const pinned = value.trim().length > 0;
     if (pinned) salaryOverridesRef.current.add(key);
     else salaryOverridesRef.current.delete(key);
@@ -1518,17 +1596,21 @@ export function EmployeeManagement({
   }
 
   function validateEmployeeForm() {
-    const numericFields: Array<[keyof EmployeeFormState, string]> = [
-      ["basicSalary", "Basic Salary"],
-      ["baseSalary", "Base Salary"],
-      ["grossSalary", "Gross Salary"],
-      ["netSalary", "Net Salary"],
-      ["fuelAllowance", "Fuel Allowance"],
-      ["extraCostOfLiving", "Extra Cost of Living"],
-      ["medicalInsurance", "Medical Insurance"],
-      ["socialInsurance", "Social Insurance"],
-      ["taxes", "Taxes"],
-    ];
+    // None for the salary-blind seat: her save carries no money, so there is nothing to check and a
+    // message naming a salary box she cannot see would only confuse.
+    const numericFields: Array<[keyof EmployeeFormState, string]> = salaryBlind
+      ? []
+      : [
+        ["basicSalary", "Basic Salary"],
+        ["baseSalary", "Base Salary"],
+        ["grossSalary", "Gross Salary"],
+        ["netSalary", "Net Salary"],
+        ["fuelAllowance", "Fuel Allowance"],
+        ["extraCostOfLiving", "Extra Cost of Living"],
+        ["medicalInsurance", "Medical Insurance"],
+        ["socialInsurance", "Social Insurance"],
+        ["taxes", "Taxes"],
+      ];
 
     if (!form.hrId.trim()) return "Employee ID is required.";
     if (!form.fullName.trim()) return "Full Name is required.";
@@ -1567,6 +1649,10 @@ export function EmployeeManagement({
     setEditingHrId(null);
     setOfferLinkId(null);
     setVacancySeatLabel(null);
+    if (!canCreate) {
+      setError(ADD_EMPLOYEE_NOT_IN_SEAT);
+      return;
+    }
     clearSeatCandidatePicker();
     salaryOverridesRef.current = new Set();
     setForm(emptyForm);
@@ -1594,6 +1680,11 @@ export function EmployeeManagement({
     // Scheduled rather than run inline: react-hooks/set-state-in-effect is an ERROR in this repo,
     // so every setState below has to sit inside the callback.
     const timer = setTimeout(async () => {
+      // Every arrival below opens ADD Employee, so a viewer who may not add one is told so instead.
+      if (!canCreate) {
+        setError(ADD_EMPLOYEE_NOT_IN_SEAT);
+        return;
+      }
       try {
         const response = await fetch(
           `/api/recruitment/applications/${encodeURIComponent(hireApplicationId)}/hire-draft`,
@@ -1664,6 +1755,10 @@ export function EmployeeManagement({
     // Scheduled, not inline, for the same reason as the effect above: react-hooks/set-state-in-effect
     // is an ERROR in this repo.
     const timer = setTimeout(async () => {
+      if (!canCreate) {
+        setError(ADD_EMPLOYEE_NOT_IN_SEAT);
+        return;
+      }
       try {
         const response = await fetch(`/api/offers/${encodeURIComponent(hireOfferId)}/hire-draft`, {
           cache: "no-store",
@@ -1791,6 +1886,10 @@ export function EmployeeManagement({
     // Scheduled rather than run inline for the same reason as the draft effect above:
     // react-hooks/set-state-in-effect is an ERROR in this repo.
     const timer = setTimeout(() => {
+      if (!canCreate) {
+        setError(ADD_EMPLOYEE_NOT_IN_SEAT);
+        return;
+      }
       setEditingHrId(null);
       setOfferLinkId(null);
       setAutoGeneratedHrId(null);
@@ -1837,6 +1936,10 @@ export function EmployeeManagement({
     let cancelled = false;
     // Scheduled, not inline: react-hooks/set-state-in-effect is an ERROR in this repo.
     const timer = setTimeout(async () => {
+      if (!canCreate) {
+        setError(ADD_EMPLOYEE_NOT_IN_SEAT);
+        return;
+      }
       try {
         const response = await fetch(
           `/api/recruitment/candidates/${encodeURIComponent(hireCandidateId)}/hire-draft`,
@@ -1936,6 +2039,9 @@ export function EmployeeManagement({
       }
       if (masterArrival.action === "edit") {
         startEdit(person);
+      } else if (!canStartResignation) {
+        // The organogram's Resign link, followed by a viewer who may edit but not record a departure.
+        setError("Recording a resignation is not part of your seat, so the resignation form is not available to you.");
       } else {
         startResignation(person);
       }
@@ -2225,7 +2331,7 @@ export function EmployeeManagement({
               // requisition closed and their CV copied, in this same save.
               ...(candidateLinkId ? { fromCandidateId: candidateLinkId } : {}),
             }),
-          employee: formToPayload(form, editingHrId),
+          employee: formToPayload(form, editingHrId, { salaryBlind }),
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -2592,12 +2698,12 @@ export function EmployeeManagement({
               {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-4 w-4" />}
               <span className="hidden lg:inline">Sync</span>
             </Button>
-            {canEdit ? (
+            {canEdit && canCreate ? (
               <Button className="h-11 gap-2 rounded-2xl bg-phx-accent px-6 text-xs font-bold text-white shadow-[0_14px_30px_rgba(249,115,22,0.3)] transition-all hover:bg-phx-accent-hover hover:shadow-[0_18px_36px_rgba(249,115,22,0.4)] focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1" onClick={startCreate}>
                 <UserPlus className="h-4 w-4" />
                 Add Employee
               </Button>
-            ) : (
+            ) : canEdit ? null : (
               <span className="inline-flex h-10 items-center rounded-2xl border border-white/20 bg-white/10 px-4 text-xs font-bold uppercase tracking-[0.12em] text-slate-200">
                 View only
               </span>
@@ -2916,7 +3022,7 @@ export function EmployeeManagement({
                             Seat
                           </Button>
                           ) : null}
-                          {canEdit && isDeclineOfferEligible(employee, todayInCairo()) ? (
+                          {canEdit && canStartResignation && isDeclineOfferEligible(employee, todayInCairo()) ? (
                           <Button
                             className="h-9 flex-1 gap-1.5 rounded-xl border-amber-200 bg-amber-50 text-xs font-bold text-amber-800 hover:bg-amber-100"
                             onClick={() => startDeclineOffer(employee)}
@@ -2927,7 +3033,7 @@ export function EmployeeManagement({
                             Declined
                           </Button>
                           ) : null}
-                          {canEdit ? (
+                          {canEdit && canStartResignation ? (
                           <Button
                             className="h-9 flex-1 gap-1.5 rounded-xl border-rose-200 bg-rose-50 text-xs font-bold text-rose-700 hover:bg-rose-100"
                             onClick={() => startResignation(employee)}
@@ -3194,7 +3300,7 @@ export function EmployeeManagement({
                           >
                             <ArrowLeftRight className="h-4 w-4" />
                           </Button>
-                          {isDeclineOfferEligible(employee, todayInCairo()) ? (
+                          {canStartResignation && isDeclineOfferEligible(employee, todayInCairo()) ? (
                           <Button
                             className="h-8 w-8 rounded-xl p-0 text-phx-ink-soft hover:bg-amber-50 hover:text-amber-700 hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
                             onClick={() => startDeclineOffer(employee)}
@@ -3204,6 +3310,7 @@ export function EmployeeManagement({
                             <UserMinus className="h-4 w-4" />
                           </Button>
                           ) : null}
+                          {canStartResignation ? (
                           <Button
                             className="h-8 w-8 rounded-xl p-0 text-phx-ink-soft hover:bg-rose-50 hover:text-rose-600 hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
                             onClick={() => startResignation(employee)}
@@ -3212,6 +3319,7 @@ export function EmployeeManagement({
                           >
                             <UserX className="h-4 w-4" />
                           </Button>
+                          ) : null}
                           </>
                           ) : null}
                         </div>
@@ -3391,7 +3499,9 @@ export function EmployeeManagement({
                     <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">{group.title}</h3>
                   </div>
                   <dl className="grid gap-1.5">
-                    {group.rows.map(([label, value]) => (
+                    {group.rows
+                      .filter(([label]) => !(salaryBlind && SALARY_BLIND_HIDDEN_MASTER_LABELS.has(String(label))))
+                      .map(([label, value]) => (
                       <div className="grid grid-cols-[140px_1fr] gap-3 border-b border-phx-paper py-2 last:border-0" key={String(label)}>
                         <dt className="text-xs font-medium text-phx-ink-faint">{label}</dt>
                         <dd className="text-sm font-medium text-phx-ink" dir="auto">{masterText(value)}</dd>
@@ -3400,7 +3510,7 @@ export function EmployeeManagement({
                   </dl>
                 </section>
               ))}
-              {masterDetailsEmployee?.salaryDetails?.length ? (
+              {!salaryBlind && masterDetailsEmployee?.salaryDetails?.length ? (
                 <section className="rounded-2xl border border-phx-line bg-white p-4 shadow-sm transition-all hover:shadow-md hover:border-phx-line/80">
                   <div className="mb-3 flex items-center gap-2">
                     <div className="h-1.5 w-1.5 rounded-full bg-[#0EA5E9]" />
@@ -3666,20 +3776,19 @@ export function EmployeeManagement({
                     onChange={(value) => {
                       const selected = lookups.positions.find((p) => p.value === value);
                       const nextJobTitle = selected?.label ?? form.jobTitle;
-                      setForm((prev) =>
-                        // The position sets the title, and the title sets the allowances.
-                        withSalaryAutofill(
-                          {
-                            ...prev,
-                            areaId: "",
-                            departmentId: isSalesPositionTitle(nextJobTitle) && salesDepartmentId ? salesDepartmentId : prev.departmentId,
-                            managerHrId: "",
-                            positionId: value,
-                            jobTitle: nextJobTitle,
-                          },
-                          salaryOverridesRef.current,
-                        ),
-                      );
+                      setForm((prev) => {
+                        const next = {
+                          ...prev,
+                          areaId: "",
+                          departmentId: isSalesPositionTitle(nextJobTitle) && salesDepartmentId ? salesDepartmentId : prev.departmentId,
+                          managerHrId: "",
+                          positionId: value,
+                          jobTitle: nextJobTitle,
+                        };
+                        // The position sets the title, and the title sets the allowances — except for
+                        // the salary-blind seat, whose save carries no allowance to set.
+                        return salaryBlind ? next : withSalaryAutofill(next, salaryOverridesRef.current);
+                      });
                     }}
                     options={lookups.positions}
                     placeholder="Select position"
@@ -3919,6 +4028,17 @@ export function EmployeeManagement({
                   <div className="h-2 w-2 rounded-full bg-[#14B8A6]" />
                   <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">Payroll Reference</h3>
                 </div>
+                {/* The salary-blind seat sees none of the money boxes — her save carries no money
+                    and the server drops any it is sent. The statuses, numbers, dates and bank
+                    details below are not money and stay. */}
+                {salaryBlind ? (
+                  <div className="rounded-xl border border-teal-100 bg-teal-50/50 p-4 text-phx-xs leading-relaxed text-phx-ink-2">
+                    <p className="font-bold text-[#0F766E] mb-1 uppercase tracking-tight">No salary figures</p>
+                    Salary, allowance, insurance and tax amounts are kept by the HR Manager and are not
+                    shown in this seat. The bank details and the insurance records below are yours to keep up
+                    to date.
+                  </div>
+                ) : (
                 <div className="rounded-xl border border-teal-100 bg-teal-50/50 p-4 text-phx-xs leading-relaxed text-phx-ink-2">
                   <p className="font-bold text-[#0F766E] mb-1 uppercase tracking-tight">Type the Net Salary</p>
                   Base, basic, gross, fuel, extra cost of living, insurance wage, social insurance and taxes are
@@ -3926,7 +4046,10 @@ export function EmployeeManagement({
                   social insurance ceiling. Every box stays editable: type your own number into any of them and it
                   is kept, clear it to hand it back to the calculation.
                 </div>
+                )}
                 <div className="grid gap-4 sm:grid-cols-2">
+                  {salaryBlind ? null : (
+                  <>
                   <TextField
                     label="Basic Salary"
                     onChange={(value) => updateSalaryField("basicSalary", value)}
@@ -3976,6 +4099,8 @@ export function EmployeeManagement({
                     type="number"
                     value={form.medicalInsurance}
                   />
+                  </>
+                  )}
                   <SelectField
                     label="In Medical Insurance"
                     onChange={(value) => updateForm("medicalInsuranceStatus", value)}
@@ -3983,6 +4108,8 @@ export function EmployeeManagement({
                     placeholder="Select status"
                     value={form.medicalInsuranceStatus}
                   />
+                  {salaryBlind ? null : (
+                  <>
                   <TextField
                     label="Social Insurance"
                     onChange={(value) => updateSalaryField("socialInsurance", value)}
@@ -3997,6 +4124,8 @@ export function EmployeeManagement({
                     type="number"
                     value={form.socialInsuranceWage}
                   />
+                  </>
+                  )}
                   <SelectField
                     label="In Social Insurance"
                     onChange={(value) => updateForm("socialInsuranceStatus", value)}
@@ -4004,6 +4133,7 @@ export function EmployeeManagement({
                     placeholder="Select status"
                     value={form.socialInsuranceStatus}
                   />
+                  {salaryBlind ? null : (
                   <TextField
                     label="Taxes"
                     onChange={(value) => updateSalaryField("taxes", value)}
@@ -4011,6 +4141,7 @@ export function EmployeeManagement({
                     type="number"
                     value={form.taxes}
                   />
+                  )}
                   <SelectField
                     label="Has Bank Account"
                     onChange={(value) => updateForm("hasBankAccount", value)}
@@ -4113,6 +4244,7 @@ export function EmployeeManagement({
                     value={form.kaabElamaalRefund}
                   />
                 </div>
+                {salaryBlind ? null : (
                 <div className="rounded-2xl border border-[#D7EAF8] bg-[#F8FCFF] p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -4200,6 +4332,7 @@ export function EmployeeManagement({
                     ))}
                   </div>
                 </div>
+                )}
               </div>
 
               {/* Section 7: Lifecycle / System */}

@@ -147,7 +147,9 @@ export default async function EmployeePortalVacanciesPage({
   // The same capability POST /api/employees asserts. This page is read by managers who
   // cannot hire as well as by those who can, so the one-press hire is offered only to the
   // second group — resolved here on the server, never inferred in the browser.
-  const canAddEmployee = await canAccess(access, "employees", "update");
+  // employees:create, not update, since the HR Operations Specialist seat (2026-10-20): she edits
+  // the master but does not add to it, and POST /api/employees asserts create on every add.
+  const canAddEmployee = await canAccess(access, "employees", "create");
 
   const isNsm = data.roleView === "nsm";
   const params = await searchParams;

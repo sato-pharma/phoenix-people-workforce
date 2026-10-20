@@ -48,10 +48,14 @@ function money(value: number | null | undefined): string | null {
  * Talent-Acquisition-for-named-seniors carve-out, mirrored from
  * isSalaryRedactedForViewer) while keeping the rest of the Compensation
  * section — bank, insurance status — visible.
+ *
+ * `omitSalary` goes one step further for the seat that never sees a salary (isSalaryBlindRole):
+ * the money rows are left out of the payload altogether, label and all, so her popup and her PDF
+ * show payment mode and bank without a column of blanks that reads like "no salary on file".
  */
 export function buildOrganogramEmployeeDetail(
   employee: EmployeeDirectoryRow,
-  options: { canViewSensitive: boolean; redactSalary: boolean },
+  options: { canViewSensitive: boolean; redactSalary: boolean; omitSalary?: boolean },
 ): OrganogramEmployeeDetail {
   const sections: OrganogramDetailSection[] = [
     {
@@ -112,20 +116,26 @@ export function buildOrganogramEmployeeDetail(
     // redactSalary blanks only the money figures, never the whole section — the
     // matching write-side guard (isSalaryRedactedForViewer) lives in the
     // employees POST handler.
-    const salary = (value: number | null | undefined) => (options.redactSalary ? null : money(value));
+    const salary = (value: number | null | undefined) =>
+      options.redactSalary || options.omitSalary ? null : money(value);
+    const moneyItems = options.omitSalary
+      ? []
+      : [
+          { label: "Base salary", value: salary(employee.baseSalary) },
+          { label: "Basic salary", value: salary(employee.basicSalary) },
+          { label: "Gross salary", value: salary(employee.grossSalary) },
+          { label: "Net salary", value: salary(employee.netSalary) },
+          { label: "Fuel allowance", value: salary(employee.fuelAllowance) },
+          { label: "Extra cost of living", value: salary(employee.extraCostOfLiving) },
+          { label: "Medical insurance", value: salary(employee.medicalInsurance) },
+          { label: "Social insurance", value: salary(employee.socialInsurance) },
+          { label: "Social insurance wage", value: salary(employee.socialInsuranceWage) },
+          { label: "Taxes", value: salary(employee.taxes) },
+        ];
     sections.push({
       title: "Compensation",
       items: [
-        { label: "Base salary", value: salary(employee.baseSalary) },
-        { label: "Basic salary", value: salary(employee.basicSalary) },
-        { label: "Gross salary", value: salary(employee.grossSalary) },
-        { label: "Net salary", value: salary(employee.netSalary) },
-        { label: "Fuel allowance", value: salary(employee.fuelAllowance) },
-        { label: "Extra cost of living", value: salary(employee.extraCostOfLiving) },
-        { label: "Medical insurance", value: salary(employee.medicalInsurance) },
-        { label: "Social insurance", value: salary(employee.socialInsurance) },
-        { label: "Social insurance wage", value: salary(employee.socialInsuranceWage) },
-        { label: "Taxes", value: salary(employee.taxes) },
+        ...moneyItems,
         { label: "Payment mode", value: text(employee.salaryPaymentMode) },
         { label: "Bank", value: text(employee.bankName) },
         { label: "Bank account", value: text(employee.bankAccount) },

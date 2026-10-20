@@ -64,6 +64,11 @@ import { resolvePersonalWorkspaceTabs } from "../src/lib/workspace/personal-work
 // HR Resourcing — the Talent Acquisition seat — since 2026-10-08. HR Advisory left the namespace
 // the same evening, when the owner retired the HR Business Partner seat.
 const HR_ROLES: PhoenixRole[] = ["HR Operations", "HR Resourcing"];
+// Every seat that works in the /hr namespace. The HR Operations Specialist seat (HR Administration)
+// joined on 2026-10-20. It is NOT in HR_ROLES above: the leak and closure claims below were measured
+// for the two wider seats, and her narrow seat (no recruiting, no attendance, no payroll pages) is
+// checked on its own in section 7 rather than diluting them.
+const HR_NAMESPACE_SEATS: PhoenixRole[] = [...HR_ROLES, "HR Administration"];
 const ALL_MODES: NavigationMode[] = ["admin", "employee-portal", "hr"];
 
 function lookupFor(role: PhoenixRole): PermissionLookup {
@@ -342,6 +347,18 @@ export function runHrUrlNamespaceTests() {
       assert.ok(isHrNamespacePath(href), `${role} sees a non-namespace href in /hr mode: ${href}`);
     }
   }
+  // The HR Operations Specialist (2026-10-20) is a deliberately narrow seat: read on that day her
+  // rail is nine rows (Overview, Employee Directory, Organogram, Contract Renewal, Resignations, HR
+  // Reminders, Request Vacation, Submit Excuse, Report It), so her floor is eight, not ten.
+  {
+    const role: PhoenixRole = "HR Administration";
+    const hrefs = sidebarHrefs(hrNavigationSections, "hr", role);
+    assert.ok(hrefs.length >= 8, `${role} should see a populated /hr sidebar, got ${hrefs.length} rows`);
+    assert.equal(new Set(hrefs).size, hrefs.length, `${role}'s /hr sidebar must not repeat an href`);
+    for (const href of hrefs) {
+      assert.ok(isHrNamespacePath(href), `${role} sees a non-namespace href in /hr mode: ${href}`);
+    }
+  }
 
   // 8 ── Active-row detection survives EITHER usePathname() behaviour after a middleware rewrite.
   // Whether the client router reports the browser path (/hr/probation) or the rewritten one
@@ -378,11 +395,12 @@ export function runHrUrlNamespaceTests() {
   const inNamespace = (Object.keys(permissionMatrix) as PhoenixRole[]).filter((role) => usesHrNamespace(role));
   assert.deepEqual(
     inNamespace.sort(),
-    [...HR_ROLES].sort(),
-    "exactly the two HR seats use the /hr namespace — HR Resourcing (the Talent Acquisition seat) " +
-      "joined and HR Advisory left on 2026-10-08, both the owner's decisions; adding a third is a decision, not a side effect",
+    [...HR_NAMESPACE_SEATS].sort(),
+    "exactly the three HR seats use the /hr namespace — HR Resourcing (the Talent Acquisition seat) " +
+      "joined and HR Advisory left on 2026-10-08, and HR Administration (the HR Operations Specialist " +
+      "seat) joined on 2026-10-20, each the owner's decision; adding a fourth is a decision, not a side effect",
   );
-  assert.equal(hrNamespaceRoles.size, 2);
+  assert.equal(hrNamespaceRoles.size, 3);
 
   // 11 ── The shell header cannot be forged, and `/hr` cannot become a second spelling of the API.
   //

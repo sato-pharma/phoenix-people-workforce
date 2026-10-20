@@ -1,5 +1,6 @@
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
 import { canSeeEmployee, hrIdsMatch, normalizeHrId, systemAccessContext, type AccessContext } from "@/lib/auth/permissions";
 import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
@@ -759,26 +760,39 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
     }
   }
 
+  const scopedAccess = access ?? systemAccessContext;
+  // THE SEAT THAT NEVER SEES A SALARY follows every resignation to the completed cycle and is shown
+  // no money on the way (owner, 2026-10-20). Withheld HERE, where the data leaves the server, so
+  // every caller of this read — the page, the API, the command centres, the approvals hub — carries
+  // the same nulls: no settlement preview (it is built from the base salary and allowances) and no
+  // signed value on a device still held. `settlementWithheld` tells the screen to say so in words,
+  // never to print a zero or a dash that reads like "nothing is owed".
+  const settlementWithheld = isSalaryBlindRole(scopedAccess.role);
+
   const allWorkflowRecords = mappedResignations.map((record) => {
+    const outstandingDevices =
+      outstandingDevicesByHrId.get(String(record.employeeHrId ?? "").trim().toLowerCase()) ?? [];
     return {
       ...record,
       createdByName: record.createdBy
         ? actorNameByHrId.get(normalizeHrId(record.createdBy) ?? "") ?? null
         : null,
       hireDate: hireDateByHrId.get(normalizeHrId(record.employeeHrId) ?? "") ?? null,
-      settlement: buildResignationSettlementPreview(
-        salaryByHrId.get(normalizeHrId(record.employeeHrId) ?? "") ?? null,
-        record.effectiveDate,
-        employeesByHrId.get(normalizeHrId(record.employeeHrId))?.employmentStatus ?? record.employeeStatus ?? null,
-        hireDateByHrId.get(normalizeHrId(record.employeeHrId) ?? "") ?? null,
-      ),
+      settlement: settlementWithheld
+        ? null
+        : buildResignationSettlementPreview(
+            salaryByHrId.get(normalizeHrId(record.employeeHrId) ?? "") ?? null,
+            record.effectiveDate,
+            employeesByHrId.get(normalizeHrId(record.employeeHrId))?.employmentStatus ?? record.employeeStatus ?? null,
+            hireDateByHrId.get(normalizeHrId(record.employeeHrId) ?? "") ?? null,
+          ),
       // Beside the settlement, because the custody receipt says final dues follow the return.
-      outstandingDevices:
-        outstandingDevicesByHrId.get(String(record.employeeHrId ?? "").trim().toLowerCase()) ?? [],
+      outstandingDevices: settlementWithheld
+        ? outstandingDevices.map((device) => ({ ...device, agreedValueEgp: null }))
+        : outstandingDevices,
       employeeStatus: employeesByHrId.get(normalizeHrId(record.employeeHrId))?.employmentStatus ?? record.employeeStatus ?? null,
     };
   });
-  const scopedAccess = access ?? systemAccessContext;
   const workflowRecords = isCompanyResignationReader(scopedAccess)
     ? allWorkflowRecords
     : allWorkflowRecords.filter((record) => {
@@ -844,7 +858,7 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
     total: records.length,
   };
 
-  return { employees, payrollCandidates, records, summary };
+  return { employees, payrollCandidates, records, settlementWithheld, summary };
 }
 
 /**

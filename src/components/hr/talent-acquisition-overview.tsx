@@ -122,6 +122,7 @@ export type TalentAcquisitionIdentity = {
  * `RECRUITING_TASK_KEYS` is the only set of tasks this page passes.
  */
 const TASK_ICONS: Record<HrFunctionKey, LucideIcon> = {
+  attendance_review: Fingerprint,
   cv_lookup: FileSearch,
   employee_requests: LifeBuoy,
   engagement_retention: HeartPulse,
@@ -129,6 +130,7 @@ const TASK_ICONS: Record<HrFunctionKey, LucideIcon> = {
   hr_communication: Mail,
   hr_governance: ShieldCheck,
   payroll_inputs: FileSpreadsheet,
+  people_master: IdCard,
   people_records: IdCard,
   performance_probation: Hourglass,
   recognition: Award,

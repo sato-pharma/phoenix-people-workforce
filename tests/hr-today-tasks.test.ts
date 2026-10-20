@@ -335,6 +335,8 @@ export async function runHrTodayTasksTests() {
       contracts: { rows: [] },
       deductions: { pending: {}, willPublish: {} },
       directory: { employees: [], lookups: { workforceVacancies: [] } },
+      // The HR Operations Specialist's Daily & Weekly Reports queue (2026-10-20).
+      hrOpsReports: { reports: [], summary: { inReview: 0, rowsToAnswer: 0, rowsToDecide: 0, submitted: 0 } },
       offers: [],
       probation: [],
       // The probation OUTCOMES aggregate, which the Talent Acquisition seat's retention KPI
@@ -396,7 +398,11 @@ export async function runHrTodayTasksTests() {
       // she had the day this was written. The floor was eight until the
       // Clearance module was removed (owner, 2026-09-01) and took three of her tasks with it — lower
       // it again only for a removal of that kind, never to make a thinning panel go green.
-      const floor = 6;
+      //
+      // The HR Operations Specialist (HR Administration, 2026-10-20) is a deliberately narrow seat:
+      // her day is the Daily & Weekly Reports review, the resignations she follows, the renewals at
+      // HR review, and the records with no manager — four, and raising a renewal is not hers.
+      const floor = name === "HR Administration" ? 4 : 6;
       assert.ok(
         tasks.length >= floor,
         `${name} gets only ${tasks.length} task(s) — this page's opening panel IS the seat's day, and a day with ${tasks.length} rows in it is the two-row board this test exists to stop. Tasks: ${keys.join(", ") || "(none)"}`,
@@ -411,6 +417,8 @@ export async function runHrTodayTasksTests() {
       // The Talent Acquisition seat (2026-10-08): the pipeline and the two request desks she works.
       // workforce_context is read-only reference and carries no queue of its own.
       "HR Resourcing": ["recruiting", "employee_requests"],
+      // The HR Operations Specialist seat (2026-10-20): her reports review and the personnel records.
+      "HR Administration": ["attendance_review", "people_master"],
     };
     for (const name of seats) {
       const covered = new Set((days.get(name) ?? []).map((item) => item.functionKey));
@@ -451,6 +459,23 @@ export async function runHrTodayTasksTests() {
         !resourcingKeys.has(key),
         `the Talent Acquisition seat is offered '${key}', which reads a source her bundle does not justify loading`,
       );
+    }
+    // Above all, the HR Operations Specialist is never handed "raise-contract-renewals": raising a
+    // renewal is the owner's decision (owner, 2026-10-20 — she tracks and prepares the papers).
+    assert.ok(
+      !(days.get("HR Administration") ?? []).some((item) => item.key === "raise-contract-renewals"),
+      "the HR Operations Specialist is offered 'raise-contract-renewals' — creating a renewal is not hers",
+    );
+    // Her reports queue is hers alone, and none of her rows sends her to Employee 360, which shows
+    // pay and is fenced off her seat.
+    const specialistDay = days.get("HR Administration") ?? [];
+    assert.ok(specialistDay.some((item) => item.key === "review-hr-reports"), "the HR Operations Specialist lost her 'review-hr-reports' task");
+    for (const [name, tasks] of days) {
+      if (name === "HR Administration") continue;
+      assert.ok(!tasks.some((item) => item.key === "review-hr-reports"), `${name} is offered the HR Operations Specialist's reports review`);
+    }
+    for (const item of specialistDay) {
+      assert.ok(!item.href.includes("employee-360"), `the HR Operations Specialist's '${item.key}' links to Employee 360 (${item.href})`);
     }
   }
 

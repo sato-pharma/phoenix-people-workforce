@@ -35,7 +35,7 @@ import {
 import type { DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import { loadDocumentFieldLayout } from "@/lib/hiring-pack/field-layout-store";
 import { loadHrSignatureUri } from "@/lib/hiring-pack/hr-signature";
-import type { PrintableDocument } from "@/lib/hiring-pack/document-registry";
+import { isPaperOpenToRole, type PrintableDocument } from "@/lib/hiring-pack/document-registry";
 import {
   renderClearanceCompanyHtml,
   renderClearanceEmployeeHtml,
@@ -389,6 +389,19 @@ export async function renderHiringPaper(input: {
 }): Promise<RenderedPaper | PaperRefusal> {
   const { access, document: requested, hrId } = input;
   const requestedVersion = input.version ?? null;
+
+  // THE SEAT'S OWN PAPER LIST — the choke point. A seat named in SEAT_PRINTABLE_DOCUMENTS prints its
+  // listed built-in papers and nothing else, before the pack is even read: the print, hand-typed
+  // and sign routes all render through here, so a route that forgot its own check still cannot
+  // hand her another paper (owner, 2026-10-20). Every other role passes untouched.
+  if (!isPaperOpenToRole(access.role, requested)) {
+    return {
+      code: "forbidden_paper_for_seat",
+      message: "This paper is not one your role prints.",
+      ok: false,
+      status: 403,
+    };
+  }
 
   // An explicit version, for reprinting an ARCHIVED template from the Archive screen.
   //

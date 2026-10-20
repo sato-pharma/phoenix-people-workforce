@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { MonthlyAttendanceSummary } from "@/components/attendance/monthly-attendance-summary";
 import { getMonthlyAttendanceSummary, resolveSummaryMonth } from "@/lib/attendance/monthly-summary";
-import { canAccess } from "@/lib/auth/permissions";
+import { canAccess, canAccessAttendanceMonthlySummary } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +14,11 @@ type PageProps = {
 export default async function AttendanceMonthlySummaryPage({ searchParams }: PageProps) {
   const access = await resolveAccessContextFromPage();
   if (!await canAccess(access, "employees", "read")) {
+    redirect("/employee-portals");
+  }
+  // Every employee's month with its deduction value in EGP — closed to the salary-blind seat, who
+  // holds employees:read for the Employee Master only (owner, 2026-10-20).
+  if (!(await canAccessAttendanceMonthlySummary(access))) {
     redirect("/employee-portals");
   }
 

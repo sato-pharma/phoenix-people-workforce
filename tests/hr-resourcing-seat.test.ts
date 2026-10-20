@@ -405,9 +405,24 @@ export async function runHrResourcingSeatTests() {
     [...match[1].matchAll(/'([^']+)'/g)].map((name) => name[1]),
   );
   assert.equal(arrays.length, 3, "the three role CHECK constraints are re-added");
+  // The role list AS OF that migration: every role except the HR Operations Specialist seat (HR
+  // Administration), which the 2026-10-20 migration below added. A migration is history and is never
+  // edited, so this pins what it wrote rather than what phoenixRoles holds today.
+  const rolesOn20261008 = phoenixRoles.filter((role) => role !== "HR Administration");
   for (const names of arrays) {
-    assert.deepEqual(names, [...phoenixRoles], "each constraint lists phoenixRoles exactly, in order");
+    assert.deepEqual(names, [...rolesOn20261008], "each constraint lists phoenixRoles as of 2026-10-08 exactly, in order");
   }
+  // ...and the newest constraint migration lists phoenixRoles exactly, so an account can be given
+  // every role the code knows and none it does not.
+  const latestRoleMigration = source("supabase/migrations/20261020064831_hr_operations_specialist_seat.sql");
+  const latestArrays = [...latestRoleMigration.matchAll(/array\[([^\]]*)\]/g)]
+    .map((match) => [...match[1].matchAll(/'([^']+)'/g)].map((name) => name[1]))
+    .filter((names) => names.length > 1);
+  assert.equal(latestArrays.length, 3, "the 2026-10-20 migration re-adds the three role CHECK constraints");
+  for (const names of latestArrays) {
+    assert.deepEqual(names, [...phoenixRoles], "each 2026-10-20 constraint lists phoenixRoles exactly, in order");
+  }
+  assert.match(latestRoleMigration, /insert into public\.roles[\s\S]*'hr_administration',\s*'HR Administration'/);
   assert.match(migration, /insert into public\.roles[\s\S]*'hr_resourcing',\s*'HR Resourcing'/);
   assert.doesNotMatch(
     migration,

@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { EmployeeManagement } from "@/components/employees/employee-management";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
+import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
 import { canAccess, filterEmployeeDirectoryForAccess, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
@@ -72,12 +73,18 @@ async function EmployeesContent({ access }: { access: AccessContext }) {
   // is exactly why it never showed up — it is a hole waiting for the first portal seat to be
   // granted the employee master, not a live fault.
   const canEdit = await canAccess(access, "employees", "update");
+  // The same two props the admin copy passes, for the same reasons.
+  const canCreate = await canAccess(access, "employees", "create");
+  const canStartResignation = await canAccess(access, "resignations", "create");
 
   return (
     <EmployeeManagement
+      canCreate={canCreate}
       canEdit={canEdit}
+      canStartResignation={canStartResignation}
       initialData={initialData}
       initialError={initialError}
+      salaryBlind={isSalaryBlindRole(access.role)}
     />
   );
 }

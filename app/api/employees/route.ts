@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
 import {
   assertPermission,
   canReadEmployeeDirectory,
@@ -146,12 +147,41 @@ export async function POST(request: Request) {
       );
     }
 
-    // A viewer whose read access to this row's salary is redacted (see
-    // isSalaryRedactedForViewer) never has the real figures to submit — their
-    // edit form necessarily carries blanked-out values. Splice the CURRENT
-    // real values back in before the upsert so an unrelated edit (e.g. a
-    // phone number fix) can never silently wipe this employee's real salary.
-    if (isSalaryRedactedForViewer(access, payload.employee.hrId)) {
+    // `originalHrId` is only present when an EXISTING employee is being edited, so a blank one is a
+    // CREATE — and adding a person is `employees:create`, not `update`. Every seat that held update
+    // also held create until the HR Operations Specialist (owner, 2026-10-20: she does not add an
+    // employee), so this check refuses nobody who could create before.
+    if (!payload.employee.originalHrId?.trim()) {
+      await assertPermission(access, "employees", "create");
+    }
+
+    // THE SALARY-BLIND SEAT SENDS NO MONEY, AND WHATEVER IT SENDS IS DROPPED. Every money key is
+    // set to `undefined` — NEVER `null` — because the two mean different things downstream:
+    // employeeCompensationColumns omits an undefined/null money column on an update (the stored
+    // figure survives), but upsertEmployeeCompensation writes `salary_details` for anything that is
+    // not undefined, and a null there is normalised to `[]`, wiping the stored details. Undefined is
+    // "this save says nothing about pay", which is exactly what she is entitled to say.
+    if (isSalaryBlindRole(access.role)) {
+      payload.employee = {
+        ...payload.employee,
+        baseSalary: undefined,
+        basicSalary: undefined,
+        extraCostOfLiving: undefined,
+        fuelAllowance: undefined,
+        grossSalary: undefined,
+        medicalInsurance: undefined,
+        netSalary: undefined,
+        salaryDetails: undefined,
+        socialInsurance: undefined,
+        socialInsuranceWage: undefined,
+        taxes: undefined,
+      };
+    } else if (isSalaryRedactedForViewer(access, payload.employee.hrId)) {
+      // A viewer whose read access to this row's salary is redacted (see
+      // isSalaryRedactedForViewer) never has the real figures to submit — their
+      // edit form necessarily carries blanked-out values. Splice the CURRENT
+      // real values back in before the upsert so an unrelated edit (e.g. a
+      // phone number fix) can never silently wipe this employee's real salary.
       const currentRow = (await getEmployeeDirectory()).employees.find((employee) =>
         hrIdsMatch(employee.hrId, payload.employee?.hrId ?? ""),
       );

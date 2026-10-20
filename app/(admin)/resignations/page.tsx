@@ -37,6 +37,7 @@ export default async function ResignationsPage() {
   return (
     <ResignationsWorkspace
       canExportHistory={await canAccess(access, "resignations", "export")}
+      canCreate={await canAccess(access, "resignations", "create")}
       initialData={initialData}
       initialError={initialError}
     />

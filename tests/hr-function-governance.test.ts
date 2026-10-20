@@ -14,6 +14,7 @@ import {
 } from "../src/lib/auth/hr-functions.ts";
 import {
   canAccess,
+  isHrAuthorityRole,
   normalizeRole,
   permissionMatrix,
   phoenixCompanyJobTitles,
@@ -166,7 +167,8 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // Reviewed verdict: DISPLAY ONLY, and it describes a restriction rather than creating one. Both
   // strings are arguments to displayTitleForRole(), which turns a role KEY into the job title the
   // company actually uses — the notice renders "readable by the HR Business Partner … not visible
-  // to the HR Operations Coordinator". Nothing branches on either value: no gate, no query filter,
+  // to the HR Generalist" (titled HR Operations Coordinator until 2026-10-20). Nothing branches on
+  // either value: no gate, no query filter,
   // no audience list. The register's real gate is canAccess(access, "retention", "read") in
   // app/(admin)/retention/page.tsx, which this change does not touch.
   //
@@ -211,6 +213,11 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // Advisory is deliberately NOT here — her contracts grant is READ_ONLY in the catalogue ("she
   // advises on renewals and cannot change one"), so a reminder whose whole subject is a pending
   // recommendation is not hers to act on, and mailing her one would assert otherwise.
+  //
+  // HR Administration (the HR Operations Specialist seat) joined the same list on 2026-10-20: she
+  // tracks renewals and prepares their papers. Same verdict — a notification audience, granting
+  // nothing. Her people_master function already composes `contracts: read/update`, and the reminder
+  // carries no salary figure (its metrics are name, title, area, line, renewal date and the run).
   "app/api/notifications/contract-renewals/route.ts",
   "src/config/system-navigation.ts",
   "src/lib/admin/access-control.ts",
@@ -225,7 +232,22 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // COMPANY_READ), which is why this is a per-seat note and not a general invariant.
   // src/config/system-settings.ts left this list on 2026-10-08: it named only the retired HR Advisory seat.
   "src/lib/auth/supabase-identity.ts",
+  // Names HR Administration in isCompanyContractReader, added 2026-10-20 with the HR Operations
+  // Specialist seat. Reviewed verdict: it GRANTS reach — every contract, company-wide, READ — and is
+  // listed for that reason, the same verdict as HR Operations beside it. It hands her nothing her
+  // brief withholds: people_master composes contracts read+update (track and prepare papers, owner,
+  // 2026-10-20), and creating, renewing, not renewing or cancelling one stays his. contracts:delete
+  // stays a boundary.
   "src/lib/contracts/service.ts",
+  // Names HR Administration in SEAT_PRINTABLE_DOCUMENTS, added 2026-10-20. Reviewed verdict: it GRANTS
+  // reach — eight BUILT-IN papers she may print without holding employee_documents (which the hard
+  // boundary strips from her, since she is outside hrAuthorityRoles). It hands her nothing her brief
+  // withholds and is NARROWER than the key: no company template (`custom:<uuid>`), no template studio,
+  // and only the papers of the two moments the owner gave her — the contract renewal she prepares and
+  // the resignation she follows up. The renewal annex prints the salary, and that is the owner's one
+  // money exception for her; none of the other seven prints an amount. Every seat not named keeps the
+  // employee_documents check it had before.
+  "src/lib/hiring-pack/document-registry.ts",
   // src/lib/distribution-lists/access.ts left this list on 2026-10-08: it named only the retired HR Advisory seat.
   // Names HR Operations in isDeductionsReadActor, added 2026-09-03 with the page above. Reviewed
   // verdict: it GRANTS reach, and it is the wider half of the two — the page is a door, this is the
@@ -266,9 +288,10 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/employees/employee-cv.ts",
   "src/lib/excuses/service.ts",
   "src/lib/hiring-documents/service.ts",
-  // Names HR Operations and HR Resourcing in REMINDER_TEAM_ROLES, added 2026-10-17. Reviewed verdict: it
+  // Names HR Operations and HR Resourcing in REMINDER_TEAM_ROLES, added 2026-10-17, and HR
+  // Administration from 2026-10-20. Reviewed verdict: it
   // GRANTS no reach. It only names who is on the HR team for the shared-notes page, and the page's
-  // access is the `hr_reminders` grant both seats' bundles carry through `team_reminders`; the file adds
+  // access is the `hr_reminders` grant every seat's bundle carries through `team_reminders`; the file adds
   // the one thing the matrix cannot say, which teammates a note may be shared WITH. Nothing a job
   // description withholds is handed over: a note is private until its author shares it.
   "src/lib/hr-reminders/access.ts",
@@ -307,6 +330,12 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // his word, while the grant and the sidebar row stay.
   "src/lib/hr/talent-acquisition-logic.ts",
   "src/lib/notifications/role-recipients.ts",
+  // Names HR Operations in HR_GENERALIST_SEAT / VACANT_SEAT_STAND_INS, added 2026-10-20 when the seat
+  // was left empty for a future hire (owner: every notice addressed to it goes to him until then).
+  // Reviewed verdict: a NOTIFICATION AUDIENCE, granting nothing. It decides only who RECEIVES a notice
+  // addressed to an empty seat — the Super Admin, who holds every resource already — and it reads
+  // app_auth_users to learn whether the seat is empty. No page opens and no query widens.
+  "src/lib/notifications/vacant-seat.ts",
   // Names HR Resourcing in `noticeHiddenFromSeat` / `noticeFetchLimit`, added 2026-10-16 so her
   // notification center holds a new CV, interview requests and accepted offers only. Reviewed
   // verdict: it can only ever REMOVE rows from her own band. The deny-list drops recruitment alert
@@ -316,7 +345,8 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // Names both seats in `sectionDrawerRoles`, added 2026-10-16 with the tiled drawer rail. Reviewed
   // verdict: presentation only. `usesSectionDrawers` is read by the sidebar renderer AFTER
   // `getSections` has decided which rows exist, so it cannot add, remove or re-gate a row; the
-  // seats' access is whatever the permission matrix already gave them.
+  // seats' access is whatever the permission matrix already gave them. HR Administration (the HR
+  // Operations Specialist seat) joined the list on 2026-10-20 under the same verdict.
   "src/lib/navigation/active-path.ts",
   // The offer joining form (owner, 2026-10-08). It names HR Operations only as the ACTOR of
   // provisionNewHireAccess, to take that seat's create-only, rank-bounded door: it can make one NEW
@@ -368,6 +398,13 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // boundary that returns a candidate. Her candidates and recruitment grants are unchanged.
   "src/lib/recruitment/workspace/fence.ts",
   "src/lib/recruitment/workspace/role-tabs.ts",
+  // organogram.ts names HR Administration in canAccessCompanyOrganogram, and resignations/service.ts
+  // in isCompanyResignationReader, both added 2026-10-20 with the HR Operations Specialist seat.
+  // Reviewed verdict: each GRANTS a company-wide READ — the whole chart, every resignation — and is
+  // listed for that reason. Neither hands her money: canViewOrganogramSensitiveFields admits her for
+  // the personal and bank rows, but both organogram employee routes pass omitSalary for
+  // isSalaryBlindRole, and the settlement on a resignation is withheld for it too. organogram:update and
+  // resignations:delete stay boundaries, and she holds no resignations:create (the owner submits).
   "src/lib/reports/organogram.ts",
   "src/lib/resignations/service.ts",
   // src/lib/sato-email/access.ts left this list on 2026-10-08: it named only the retired HR Advisory seat.
@@ -430,7 +467,9 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/private-calendar/logic.ts",
   // REMOVES reach and can only ever remove it: the per-seat page fence. Naming a seat here closes a
   // page her keys would otherwise open (the CV Database, the Probation Tracker, the attendance and
-  // planning screens, Payslips Center) and opens nothing.
+  // planning screens, Payslips Center) and opens nothing. The HR Operations Specialist seat (HR
+  // Administration) joined it on 2026-10-20: company attendance, Employee 360, both deduction
+  // screens, the vacation request desk and the Payslips Center are closed to her.
   "src/lib/auth/seat-page-fences.ts",
   // GRANTS her the Business Cards print screen through business_card_requests:update, the desk she
   // already works — instead of employee_documents, which carries contracts and salary letters and
@@ -593,8 +632,8 @@ export async function runHrFunctionGovernanceTests() {
   // that; HR Operations is capped to read/create/update/export/import with delete withheld from
   // both). Narrowing is the safe direction and is allowed. WIDENING is what must never happen.
   const SET_NOT_FILTERED: readonly string[] = [
-    // The one resource applyHardPermissionBoundaries assigns rather than intersects, so it is the
-    // only place a post-composition grant can appear. Pinned below rather than waved through.
+    // A resource applyHardPermissionBoundaries assigns rather than intersects, so it is a place a
+    // post-composition grant can appear. Pinned below rather than waved through.
     "support_requests",
   ];
   for (const name of bundleNames) {
@@ -621,15 +660,39 @@ export async function runHrFunctionGovernanceTests() {
         );
       }
     }
-    // ...and the one widening path, pinned explicitly so a second one cannot be added quietly.
+    // ...and the widening path, pinned explicitly so a second one cannot be added quietly. The
+    // staff set (read the inbox, work it, export it) belongs to an HR AUTHORITY seat only; every
+    // other seat gets the sender's `create`, like every employee. The HR Operations Specialist
+    // (HR Administration, 2026-10-20) is the first HR seat outside hrAuthorityRoles — the owner gave
+    // her no request desk — so she is pinned to the sender set, not the staff set.
+    const supportActions = isHrAuthorityRole(name as PhoenixRole)
+      ? ["create", "export", "read", "update"]
+      : ["create"];
     assert.deepEqual(
       live.support_requests?.slice().sort(),
-      ["create", "export", "read", "update"],
-      `${name} must hold the HR support-staff action set. This one resource is SET by ` +
-        "applyHardPermissionBoundaries rather than filtered, so it is the only grant in the matrix " +
-        "that hr-functions.ts does not fully control.",
+      supportActions,
+      `${name} must hold the ${isHrAuthorityRole(name as PhoenixRole) ? "HR support-staff" : "sender"} ` +
+        "action set. This resource is SET by applyHardPermissionBoundaries rather than filtered, so it " +
+        "is a grant in the matrix that hr-functions.ts does not fully control.",
+    );
+    // business_card_requests is SET the same way. It is not skipped above: every action the matrix
+    // holds must also be composed (the floor's sender `create`, or employee_requests' desk), and it
+    // is pinned here to the same split.
+    assert.deepEqual(
+      live.business_card_requests?.slice().sort(),
+      supportActions,
+      `${name} must hold the ${isHrAuthorityRole(name as PhoenixRole) ? "request-desk" : "sender"} ` +
+        "action set on business_card_requests, which applyHardPermissionBoundaries SETS.",
     );
   }
+  // The seats that are NOT an HR authority, named, so a seat cannot fall out of hrAuthorityRoles
+  // (and lose the request desks, the hiring documents and the recruitment pipeline at once) without
+  // this list being edited on purpose.
+  assert.deepEqual(
+    bundleNames.filter((name) => !isHrAuthorityRole(name as PhoenixRole)),
+    ["HR Administration"],
+    "only the HR Operations Specialist seat (HR Administration) sits outside hrAuthorityRoles",
+  );
   const permissionsSource = readFileSync("src/lib/auth/permissions.ts", "utf8");
   for (const name of bundleNames) {
     // A plain substring check, not a regex: the escapes in a RegExp built from a template

@@ -103,8 +103,9 @@ type OrgChartTreeProps = {
   theme?: OrgChartTheme;
   kpiLabels?: OrgChartKpiLabels;
   /**
-   * Whether this viewer may change employee records (`employees:update`). Decides whether a
-   * vacancy popup offers "Add employee to this seat" and whether each person's tile carries the
+   * Whether this viewer may add employees (`employees:create` — `update` until 2026-10-20, when the
+   * HR Operations Specialist seat began editing the master without adding to it). Decides whether
+   * a vacancy popup offers "Add employee to this seat" and whether each person's tile carries the
    * Edit and Resign buttons into Employee Master; resolved server-side on the page, never
    * inferred here.
    */

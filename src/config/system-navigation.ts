@@ -328,7 +328,7 @@ export const adminNavigationSectionSeeds = [
       // answered EGP 0 payroll, EGP 0 sales and EGP 0 expenses for HR Advisory, and EGP 0 sales /
       // EGP 0 expenses for HR Operations, because their scopes resolve to nothing on those
       // aggregates while the tiles render regardless. /admin is now the Super Admin's alone.
-      { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], excludedRoles: ["CEO", "SFE Manager", "Finance Manager", "HR Operations", "HR Resourcing"] },
+      { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], excludedRoles: ["CEO", "SFE Manager", "Finance Manager", "HR Operations", "HR Resourcing", "HR Administration"] },
     ],
     // Heading restored on owner instruction (2026-08-08). It was blanked for the SFE Manager on
     // 2026-08-02, where this section resolves to a single button; Super Admin and CEO see several
@@ -2278,6 +2278,13 @@ const hrNavigationSectionSeeds = [
       // `excludedRoles`, so without it these rows would silently relocate on his rail as well.
       { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
       { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
+      // HR Forms for the HR Operations Specialist (owner, 2026-10-20). She prints eight papers — the
+      // renewal pair and the leaving papers — and holds no employee_documents (she is outside
+      // hrAuthorityRoles, which strips it), so the row above can never render for her. No
+      // permission: the page's own gate (hrFormsAccessFor, src/lib/hiring-pack/paper-access.ts)
+      // admits her on her contracts/resignations grants and shows her only her own papers, and every
+      // API route asserts the same rule. `excludedRoles` keeps the Super Admin's row where it was.
+      { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", roles: ["HR Administration"], excludedRoles: ["Super Admin"] },
       { href: "/hr/business-cards", icon: IdCard, label: "Business Cards", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
       // The Interview Calendar, for HR Operations — the owner made her its admin on 2026-09-21 ("full
       // access and control to it as admin"), so isInterviewCalendarOwner admits her seat. The
@@ -2285,7 +2292,9 @@ const hrNavigationSectionSeeds = [
       // shown a "Recruitment" heading (tests/cv-database-recruiting-boundary.test.ts), so her row
       // lives here. No permission: the calendar's own ownership is the gate, and every API route
       // asserts it. `excludedRoles` keeps the Super Admin's row under Recruitment, as above.
-      { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
+      // HR Administration (the HR Operations Specialist, 2026-10-20) shares the row as a Viewer —
+      // the owner's "She can view it only"; seesWholeInterviewCalendar admits her, read only.
+      { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", roles: ["HR Operations", "HR Administration"], excludedRoles: ["Super Admin"] },
       // CV Lookup — owner, 2026-09-30: HR Operations may SEARCH the CV database and open only what
       // the search returns, and must not have the database itself.
       //
@@ -2471,6 +2480,13 @@ const hrNavigationSectionSeeds = [
       // it is FLAT, NOT HUBBED. So the cards each seat clears and this list did not already carry are
       // written out here, and the hub door is gone. Gates copied from attendanceManagementPageItems,
       // narrowed to the two seats this catalogue serves.
+      //
+      // The HR Operations Specialist's own review (owner, 2026-10-20): the daily and weekly
+      // fingerprint and field-visit reports, where she confirms, rejects or recommends days for the
+      // HR Manager to decide. FIRST in the section because it is her day's work, and the company
+      // attendance pages below are fenced off her seat. `excludedRoles` keeps the Super Admin's HR
+      // rail as it was — he decides from the same page on the admin rail.
+      { href: "/hr/hr-reports", icon: ClipboardCheck, label: "Daily & Weekly Reports", permissions: [{ resource: "hr_ops_reports", action: "read" }], roles: ["HR Administration"], excludedRoles: ["Super Admin"] },
       { href: "/hr/attendance/monthly-summary", icon: CalendarCheck, label: "Monthly Summary", permissions: [{ resource: "employees" }] },
       { href: "/hr/attendance/fingerprint-report", icon: FileSpreadsheet, label: "Fingerprint Report", permissions: [{ resource: "employees" }], roles: ["HR Operations"] },
       { href: "/hr/attendance/holiday-calendar", icon: CalendarClock, label: "Holiday Calendar", permissions: [{ resource: "employees", action: "read" }], roles: ["HR Operations"] },
@@ -3450,6 +3466,20 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     // reviewer list) and redirects otherwise — this row only decides who SEES the link.
     // system-navigation hiding a link is UX; the page-level check is the boundary.
     roles: systemAdministratorNavigationRoles,
+  },
+  {
+    // HR Daily & Weekly Reports (owner, 2026-10-20). ONE page for both ends: the HR Operations
+    // Specialist reviews each row (hr_ops_reports:update), and the Super Admin decides it
+    // (hr_ops_reports:approve) and sees what a day costs — the page picks the view from the grant,
+    // and the amount never leaves the server for her. Listed here so the /hr namespace (which may
+    // only NARROW this registry) can give her the row.
+    href: "/hr-reports",
+    icon: ClipboardCheck,
+    label: "Daily & Weekly Reports",
+    description:
+      "The daily and weekly fingerprint and field-visit reports: every flagged day confirmed, rejected or given recommended days by HR, then decided by the HR Manager. Days only until he decides.",
+    permissions: [{ resource: "hr_ops_reports", action: "read" }],
+    roles: ["Super Admin", "HR Administration"],
   },
   {
     href: "/attendance/monthly-summary",
@@ -5103,6 +5133,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           // alongside the day it argues with, and the same evidence answers both.
           "/attendance/weekly-review",
           "/attendance/disputes",
+          // HR's review of the same days, before they reach the weekly review (2026-10-20).
+          "/hr-reports",
         ],
       },
       {

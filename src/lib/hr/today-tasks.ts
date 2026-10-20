@@ -347,7 +347,9 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
    */
   const directoryFunctionKey: HrFunctionKey = holds("workforce_insight")
     ? "workforce_insight"
-    : "people_records";
+    : holds("people_master")
+      ? "people_master"
+      : "people_records";
   /**
    * The same problem for the support desk, which two functions work: `engagement_retention` on HR
    * Advisory and `employee_requests` on the Talent Acquisition seat (2026-10-08).
@@ -355,6 +357,51 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
   const supportFunctionKey: HrFunctionKey = holds("engagement_retention")
     ? "engagement_retention"
     : "employee_requests";
+  /**
+   * And for the personnel records, which two functions keep: `people_records` on HR Operations and
+   * `people_master` on the HR Operations Specialist (2026-10-20) — the same work with every salary
+   * withheld. Her links go to the pages her seat opens: the Employee Directory, never Employee 360,
+   * which shows pay and is fenced off her seat.
+   */
+  const peopleFunctionKey: HrFunctionKey = holds("people_master") ? "people_master" : "people_records";
+  const recordsHref = peopleFunctionKey === "people_master" ? "/hr/employees" : "/hr/employee-360";
+  const recordsHrefLabel = peopleFunctionKey === "people_master" ? "Open Employee Directory" : "Open Employee 360";
+
+  // ── The Daily & Weekly Reports ─────────────────────────────────────────────
+  // The HR Operations Specialist's own review (2026-10-20): every report still with her, the oldest
+  // first. A report with every flagged row answered is still hers until she submits it, so it stays
+  // a row here ("ready to submit") rather than dropping off silently.
+  if (loaded.hrOpsReports) {
+    const withHer = loaded.hrOpsReports.reports.filter((report) => report.status === "in_review");
+    tasks.push(
+      task({
+        action: "Review",
+        clearLabel: "Every report has been answered and sent to the HR Manager.",
+        detail:
+          "A daily or weekly fingerprint and field-visit report is waiting for you. Confirm, reject or recommend days on every flagged row, with a reason, then submit it — the HR Manager decides.",
+        functionKey: "attendance_review",
+        href: "/hr/hr-reports",
+        hrefLabel: "Open Daily & Weekly Reports",
+        items: withHer.map((report) => {
+          const days = daysSince(report.builtAt);
+          const rows = report.progress.toReview;
+          return {
+            age: waitingLabel(days),
+            href: `/hr/hr-reports?report=${encodeURIComponent(report.id)}`,
+            id: report.id,
+            meta: rows > 0 ? `${rows} flagged ${pluralise(rows, "row", "rows")} to answer` : "Every flagged row answered — ready to submit",
+            name: report.title,
+            sortKey: days,
+            // A daily report is built the morning after its day; one still open two days later is late.
+            urgent: days >= 2,
+          };
+        }),
+        key: "review-hr-reports",
+        subject: "Daily & weekly reports",
+        title: (count) => `Review ${count} ${pluralise(count, "report", "reports")}`,
+      }),
+    );
+  }
 
   // ── Performance & probation ────────────────────────────────────────────────
   // First because it is the only one of these with a legal clock on it: a probation decision not
@@ -421,7 +468,7 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
         clearLabel: "No resignation is waiting on HR.",
         detail:
           "A resignation has been submitted and is waiting on HR. Nothing downstream of it can start until it moves — not the final settlement, not the seat going back on the organogram.",
-        functionKey: "people_records",
+        functionKey: peopleFunctionKey,
         href: "/hr/resignations",
         hrefLabel: "Open Resignations",
         items: awaitingHr.map((row) => {
@@ -467,7 +514,7 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
         clearLabel: "No contract renewal is waiting on HR.",
         detail:
           "The manager has reviewed this renewal and it is waiting on HR before the new contract can be issued.",
-        functionKey: "people_records",
+        functionKey: peopleFunctionKey,
         href: "/hr/contracts",
         hrefLabel: "Open Contract Renewal",
         items: atHrReview.map((row) => {
@@ -493,40 +540,45 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
     // page counts REQUESTS; a contract that reaches its date with no request raised appears in no
     // figure anywhere and simply lapses, with nobody notified. Two populations, one of them
     // invisible — exactly the disagreement the recruiting tasks above this block exist to surface.
-    const expiring = rows.filter((row) => {
-      if (row.workflow) return false;
-      const until = daysUntil(row.contract_renewal_date);
-      return until !== null && until <= RENEWAL_HORIZON_DAYS;
-    });
-    tasks.push(
-      task({
-        action: "Raise",
-        clearLabel: `Every contract due in the next ${RENEWAL_HORIZON_DAYS} days has a renewal behind it.`,
-        detail: `The contract reaches its renewal date within ${RENEWAL_HORIZON_DAYS} days and no renewal request has been raised, so it appears in no renewal figure and lapses with nobody notified.`,
-        functionKey: "people_records",
-        href: "/hr/contracts",
-        hrefLabel: "Open Contract Renewal",
-        items: expiring.map((row) => {
-          const until = daysUntil(row.contract_renewal_date);
-          return {
-            age: renewalLabel(until),
-            href: "/hr/contracts",
-            id: row.hr_id,
-            meta: [row.job_title, row.area, formatDateValue(row.contract_renewal_date)]
-              .filter(Boolean)
-              .join(" · "),
-            name: row.full_name,
-            sortKey: until === null ? 0 : 10_000 - until,
-            // Already lapsed, or inside the notice a two-step renewal needs to be issued in.
-            urgent: until !== null && until <= RENEWAL_NOTICE_DAYS,
-          };
+    //
+    // NOT for the HR Operations Specialist: raising a renewal is the owner's decision (2026-10-20 —
+    // she tracks and prepares the papers), and her contracts grant has no `create`.
+    if (peopleFunctionKey === "people_records") {
+      const expiring = rows.filter((row) => {
+        if (row.workflow) return false;
+        const until = daysUntil(row.contract_renewal_date);
+        return until !== null && until <= RENEWAL_HORIZON_DAYS;
+      });
+      tasks.push(
+        task({
+          action: "Raise",
+          clearLabel: `Every contract due in the next ${RENEWAL_HORIZON_DAYS} days has a renewal behind it.`,
+          detail: `The contract reaches its renewal date within ${RENEWAL_HORIZON_DAYS} days and no renewal request has been raised, so it appears in no renewal figure and lapses with nobody notified.`,
+          functionKey: "people_records",
+          href: "/hr/contracts",
+          hrefLabel: "Open Contract Renewal",
+          items: expiring.map((row) => {
+            const until = daysUntil(row.contract_renewal_date);
+            return {
+              age: renewalLabel(until),
+              href: "/hr/contracts",
+              id: row.hr_id,
+              meta: [row.job_title, row.area, formatDateValue(row.contract_renewal_date)]
+                .filter(Boolean)
+                .join(" · "),
+              name: row.full_name,
+              sortKey: until === null ? 0 : 10_000 - until,
+              // Already lapsed, or inside the notice a two-step renewal needs to be issued in.
+              urgent: until !== null && until <= RENEWAL_NOTICE_DAYS,
+            };
+          }),
+          key: "raise-contract-renewals",
+          subject: "Expiring contracts",
+          title: (count) =>
+            `Raise a renewal for ${count} expiring ${pluralise(count, "contract", "contracts")}`,
         }),
-        key: "raise-contract-renewals",
-        subject: "Expiring contracts",
-        title: (count) =>
-          `Raise a renewal for ${count} expiring ${pluralise(count, "contract", "contracts")}`,
-      }),
-    );
+      );
+    }
   }
 
   // ── The attendance desk ────────────────────────────────────────────────────
@@ -854,7 +906,7 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
   // Only for the seats whose job a missing manager is. The Talent Acquisition seat loads the
   // directory too — `recruiting` compares requisitions against open seats — but fixing somebody's
   // reporting line is personnel-record work her seat was not given, so the row is not hers to carry.
-  if (loaded.directory && (holds("workforce_insight") || holds("people_records"))) {
+  if (loaded.directory && (holds("workforce_insight") || holds("people_records") || holds("people_master"))) {
     // `isMissingRequiredManager`, not a bare `!managerHrId` — the same predicate the No Manager Set
     // tile counts with. A plain null test also catches the seats for which a manager is OPTIONAL
     // (the top of the tree reports to nobody by definition), which put a permanent, unfixable task
@@ -869,11 +921,11 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
         detail:
           "An employee with no manager is outside every approval chain — their leave, expenses and coaching reach nobody.",
         functionKey: directoryFunctionKey,
-        href: "/hr/employee-360",
-        hrefLabel: "Open Employee 360",
+        href: recordsHref,
+        hrefLabel: recordsHrefLabel,
         items: orphaned.map((employee) => ({
           age: null,
-          href: "/hr/employee-360",
+          href: recordsHref,
           id: employee.hrId,
           meta: [employee.jobTitle, employee.areaName].filter(Boolean).join(" · "),
           name: employee.displayName,
