@@ -153,7 +153,7 @@ export function runRecruitmentWorkspaceExcludeFiltersTests() {
     "RED: on a phone the status tiles keep a whole line, so a count never slides under the eye",
   );
   assert.ok(
-    bar.includes("pr-9 text-sm sm:pr-16") && bar.includes('placeholder="Search name, phone, email, CV text"'),
-    "RED: the search box must show its whole placeholder on a 375px phone, never cut mid-word",
+    bar.includes("pr-9 text-sm sm:pr-16") && bar.includes('placeholder="Search name, phone, email, CV"'),
+    "RED: the search box must show its whole placeholder on a 375px phone, never cut mid-word (measured 217px of 251 at 375px; the 248px wording still clipped on production)",
   );
 }
