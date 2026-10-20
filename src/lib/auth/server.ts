@@ -8,6 +8,8 @@ import {
   type TestPersonaLink,
 } from "@/lib/auth/permissions";
 import { assertNotTestAccount, assertTestAccountMayRun, canBeMirrored } from "@/lib/auth/test-persona";
+import { applySeatView, assertNotSeatView, assertSeatViewMayRun } from "@/lib/auth/seat-view";
+import { phoenixSeatViewCookieName } from "@/lib/auth/seat-view-constants";
 import {
   evaluateAppSessionRow,
   refreshAppSessionIdle,
@@ -675,13 +677,17 @@ function mayUseRecentSessionCopy(request: Request): boolean {
 async function resolveAccessContextInner(request: Request): Promise<AccessContext> {
   const cookieHeader = request.headers.get("cookie");
   const allowRecentCopy = mayUseRecentSessionCopy(request);
+  const sessionToken = getCookieValue(cookieHeader, phoenixSessionCookieName);
   const sessionContext = await resolveSessionAccessContext(
-    getCookieValue(cookieHeader, phoenixSessionCookieName),
+    sessionToken,
     { allowRecentCopy },
   );
 
   if (sessionContext) {
-    return sessionContext;
+    // VIEW AS SEAT (seat-view.ts): honoured on the browser cookie path only, on top of the owner's own
+    // live Super Admin session — never on the bearer path below, never on a dev preview.
+    return applySeatView(sessionContext, sessionToken, getCookieValue(cookieHeader, phoenixSeatViewCookieName))
+      ?? sessionContext;
   }
 
   // Native clients (the Android app) carry the same signed session token in an Authorization
@@ -731,6 +737,9 @@ export async function resolveAccessContext(request: Request): Promise<AccessCont
   // try/catch turns it into a 403 with the sentence (src/lib/auth/test-persona.ts) — which was FALSE
   // in 552 route files until 2026-10-02, see isForbiddenError below.
   assertTestAccountMayRun(access, request);
+  // THE SEAT VIEW WRITE GUARD — the same choke point for the Super Admin's read-only View as Seat:
+  // every write is refused except leaving the view, and so are reads that would leave a row behind.
+  assertSeatViewMayRun(access, request);
   return access;
 }
 
@@ -751,7 +760,9 @@ const resolveAccessContextFromPageInner = cache(async (): Promise<AccessContext>
   });
 
   if (sessionContext) {
-    return sessionContext;
+    // VIEW AS SEAT — the page-side twin of the API resolver's layering above.
+    return applySeatView(sessionContext, cookieValue, cookieStore.get(phoenixSeatViewCookieName)?.value)
+      ?? sessionContext;
   }
 
   if (isLocalDevelopmentRequest(headerStore)) {
@@ -786,6 +797,9 @@ export async function resolveAccessContextFromPage(): Promise<AccessContext> {
   // A server action arrives as a POST to a PAGE, which the API guard above never sees. Next marks
   // it with the `next-action` header; a test account never runs one.
   if (access.testPersona && (await headers()).get("next-action")) assertNotTestAccount(access);
+  // A seat view refuses a server action AND a form posted before the page's script loaded — the same
+  // two signals that keep a write off the session copy (pageRequestMayUseRecentCopy).
+  if (access.seatView && !pageRequestMayUseRecentCopy(await headers())) assertNotSeatView(access);
   return access;
 }
 
@@ -817,6 +831,20 @@ export const resolveViewerIdentityFromPage = cache(async (accessContext?: Access
   const access = accessContext ?? await resolveAccessContextFromPage();
   const fallbackName = access.loginId || formatHrIdForDisplay(access.hrId) || "User";
   const fallbackRole = access.role;
+
+  // VIEW AS SEAT: the topbar shows the SEAT (and, for a portal seat, the person) — never the owner, and
+  // never a lookup of the SEAT-VIEW login, which has no account row.
+  if (access.seatView) {
+    const seatTitle = displayTitleForAccount(null, fallbackRole);
+    const personName = access.seatView.personName?.trim() || null;
+    const displayName = personName ?? seatTitle;
+    return {
+      displayName,
+      initials: buildInitials(displayName),
+      roleLabel: personName ? seatTitle : "Read-only seat view",
+      imageUrl: access.hrId ? await resolveViewerPhotoUrl(access.hrId) : null,
+    };
+  }
 
   if (access.source === "dev-header" || (!access.loginId && !access.hrId)) {
     return {

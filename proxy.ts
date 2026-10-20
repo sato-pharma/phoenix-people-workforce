@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { isNativeClientRequest } from "@/lib/auth/native-session";
 import { resolveRootRedirectPath } from "@/lib/auth/root-landing";
+import { phoenixSeatViewCookieName } from "@/lib/auth/seat-view-constants";
 import { phoenixSessionCookieName } from "@/lib/auth/session-token";
 import { CANDIDATE_LINK_PARAM, PORTAL_CANDIDATES_PATH } from "@/lib/recruitment/candidate-page-link";
 import { resolvePortalCandidatesRedirectPath } from "@/lib/recruitment/portal-candidates-redirect";
@@ -136,6 +137,9 @@ function portalCandidatesRedirectResponse(request: NextRequest) {
   const method = request.method.toUpperCase();
   if (method !== "GET" && method !== "HEAD") return null;
   if (request.nextUrl.pathname !== PORTAL_CANDIDATES_PATH) return null;
+  // During the Super Admin's View as Seat the page must show what the VIEWED seat sees; this shortcut
+  // reads the real session's role and would send a manager's view away from its own candidates.
+  if (request.cookies.get(phoenixSeatViewCookieName)?.value) return null;
 
   try {
     const destination = resolvePortalCandidatesRedirectPath(

@@ -4,9 +4,21 @@
 // workspace … rebuild from scratch", then the full phased plan).
 //
 // WHAT IT HOLDS. A pinned header — the role tabs, the place tabs with their counts and vacant seats,
-// the filter bar — over the funnel and the rows; the opened CV beside the rows on a wide container
-// (a 40/60 split) or as a full-screen sheet on a phone; the bulk bar while rows are ticked; the
-// 10-second Undo; the "N new CVs" bar; the "?" sheet.
+// the filter bar — over the funnel and the candidates' bordered table; the bulk bar while rows are
+// ticked; the 10-second Undo; the "N new CVs" bar; the "?" sheet.
+//
+// THE OPENED CV HALVES THE PAGE (owner, 20 Oct 2026: "i want the full page to be halfed and the cv 1
+// page is fully appearing with no need to scroll … add the action buttons"). On a wide page the whole
+// page splits 1fr / 1fr: everything above stays in the left half with the table, and the right half is
+// the CV pane — pinned under the app's own bar, a FIXED height (the window less that bar), never
+// scrolling as a whole: its header, the action bar and the tab row stay put and page 1 is fitted into
+// the rest. Opening a CV first scrolls the page the few pixels it takes for the pane to be pinned, so
+// page 1's foot is never under the window's edge. On a narrow page the CV is the same column as a
+// full-screen sheet.
+//
+// NEEDS PLACING places by hand: the opened row there carries the "Place this candidate" form under it
+// (Applying for, then the region, then only that region's areas, then that role's questions), so the
+// CV reads whole on the right while HR types on the left; a save files the person and opens the next.
 //
 // THE URL IS THE ONLY STATE THAT OUTLIVES A PRESS. Tab, place, every filter and the opened CV are
 // written to the address bar with `replaceState` as they change, so a copied link opens exactly this
@@ -33,7 +45,7 @@ import type { ManagerPickerOption } from "@/components/recruitment/manager-picke
 import { getJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { RecruitmentEmptyState, RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { BulkBar } from "@/components/recruitment/workspace/bulk-bar";
-import { CandidateRow } from "@/components/recruitment/workspace/candidate-row";
+import { CandidateTable, candidateTableFrameClassName } from "@/components/recruitment/workspace/candidate-table";
 import type { CvPanel } from "@/components/recruitment/workspace/cv-actions";
 import { FilterBar } from "@/components/recruitment/workspace/filter-bar";
 import { FoldersTree, ManagersFolders, type ManagerShelfView } from "@/components/recruitment/workspace/folders-view";
@@ -41,6 +53,7 @@ import { FunnelStrip } from "@/components/recruitment/workspace/funnel-strip";
 import { NewCvsBar } from "@/components/recruitment/workspace/new-cvs-bar";
 import { OpenedCv } from "@/components/recruitment/workspace/opened-cv";
 import { PlaceTabStrip } from "@/components/recruitment/workspace/place-tab-strip";
+import { PlacingForm } from "@/components/recruitment/workspace/placing-form";
 import { RoleTabStrip } from "@/components/recruitment/workspace/role-tab-strip";
 import { RowSkeleton } from "@/components/recruitment/workspace/row-skeleton";
 import { ShortcutSheet } from "@/components/recruitment/workspace/shortcut-sheet";
@@ -68,8 +81,10 @@ import type {
 } from "@/lib/recruitment/workspace/types";
 import { cn } from "@/lib/utils";
 
-/** The split opens beside the rows from this container width; below it the CV is a full-screen sheet. */
+/** The page halves for an opened CV from this width of the page itself; below it the CV is a sheet. */
 const SPLIT_MIN_WIDTH = 1100;
+/** The gap kept between the pinned CV pane and the app's bar above it, and the window's foot below. */
+const PANE_GAP_PX = 8;
 /** The header pins from this width; on a phone it would eat the screen. */
 const PIN_MIN_WIDTH = 1024;
 
@@ -117,6 +132,15 @@ function typingInField(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || element.isContentEditable;
 }
 
+/** What scrolls the page this element sits in: its nearest scrolling ancestor, else the document. */
+function scrollerOf(element: HTMLElement): Element {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight) return node;
+  }
+  return document.scrollingElement ?? document.documentElement;
+}
+
 function membersMap(record: Record<string, string[]>): Map<string, string[]> {
   return new Map(Object.entries(record));
 }
@@ -144,7 +168,6 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
-  const listAreaRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -164,16 +187,15 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
   // ── Measuring: the split, the pin, and the shell's own sticky chrome ─────────────────────────────
   useEffect(() => {
     const observers: ResizeObserver[] = [];
+    // Both read the PAGE's own width: the split halves the page, so the half it leaves the list can
+    // never be what decides whether it splits (that would flip it back and forth).
     const root = rootRef.current;
     if (root) {
-      const observer = new ResizeObserver(([entry]) => setPinned(entry.contentRect.width >= PIN_MIN_WIDTH));
+      const observer = new ResizeObserver(([entry]) => {
+        setPinned(entry.contentRect.width >= PIN_MIN_WIDTH);
+        setWide(entry.contentRect.width >= SPLIT_MIN_WIDTH);
+      });
       observer.observe(root);
-      observers.push(observer);
-    }
-    const list = listAreaRef.current;
-    if (list) {
-      const observer = new ResizeObserver(([entry]) => setWide(entry.contentRect.width >= SPLIT_MIN_WIDTH));
-      observer.observe(list);
       observers.push(observer);
     }
     const header = headerRef.current;
@@ -287,7 +309,23 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
     apply({ ...filtersRef.current, candidate: id });
     if (!id) return;
     if (viewer.canWork) void postJson(`/api/recruitment/candidates/${id}/seen`, {}).catch(() => undefined);
-    requestAnimationFrame(() => document.getElementById(`ws-row-${id}`)?.scrollIntoView({ block: "nearest" }));
+    requestAnimationFrame(() => {
+      // 1 — the half-page pane pins only once the page has scrolled past what sits above it; until then
+      // its foot (and page 1's) is under the window's edge. Scroll exactly that far, never further.
+      const pane = document.getElementById("ws-cv-pane");
+      if (pane) {
+        const scale = Number.parseFloat(getComputedStyle(pane).getPropertyValue("--phx-scale-applied")) || 1;
+        const appBar = document.querySelector<HTMLElement>(".phx-navrow-scope > .sticky")?.offsetHeight ?? 0;
+        const pinnedAt = appBar + PANE_GAP_PX * scale;
+        const below = pane.getBoundingClientRect().top - pinnedAt;
+        if (below > 1) scrollerOf(pane).scrollBy({ top: below });
+      }
+      // 2 — the row itself into view: the table's row on a wide page, the card on a phone.
+      const target = [`ws-row-${id}`, `ws-card-${id}`]
+        .map((key) => document.getElementById(key))
+        .find((element) => element && element.getClientRects().length > 0);
+      target?.scrollIntoView({ block: "nearest" });
+    });
   };
 
   /** Open a CV that may not be on this list (the managers' folders, a search hit). */
@@ -427,8 +465,19 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
   const exportHref = !viewer.canExport || (tab === FOLDERS_TAB && filters.folderIds.length === 0) ? null : `/api/recruitment/workspace/export?${query}`;
   const stickyTop = `calc(var(--ws-chrome, 0px) / var(--phx-scale-applied, 1))`;
   const rootStyle = { "--ws-chrome": `${chrome}px` } as CSSProperties;
-  const cvTop = `calc(var(--ws-chrome, 0px) / var(--phx-scale-applied, 1) + ${pinned ? headerHeight : 0}px + 12px)`;
-  const cvMaxHeight = `calc(100vh / var(--phx-scale-applied, 1) - var(--ws-chrome, 0px) / var(--phx-scale-applied, 1) - ${pinned ? headerHeight : 0}px - 24px)`;
+  const nextAfter = (id: string): string | null => {
+    const at = list.findIndex((row) => row.id === id);
+    if (at < 0) return null;
+    return list[at + 1]?.id ?? list[at - 1]?.id ?? null;
+  };
+  // The pane pins under the app's bar and is exactly the window less that bar: a HEIGHT, not a cap, so
+  // the CV inside has a definite box to fit page 1 into.
+  const cvTop = `calc(var(--ws-chrome, 0px) / var(--phx-scale-applied, 1) + ${PANE_GAP_PX}px)`;
+  const cvHeight = `calc(100vh / var(--phx-scale-applied, 1) - var(--ws-chrome, 0px) / var(--phx-scale-applied, 1) - ${PANE_GAP_PX * 2}px)`;
+  // The table's own head pins just under that header (or under the app's bar when the header is not
+  // pinned), and a row scrolled into view stops below both, never under them.
+  const headTop = `calc(var(--ws-chrome, 0px) / var(--phx-scale-applied, 1) + ${pinned ? headerHeight : 0}px)`;
+  const rowMargin = `calc(var(--ws-chrome, 0px) / var(--phx-scale-applied, 1) + ${pinned ? headerHeight : 0}px + 8px)`;
 
   const emptyMessage = searching
     ? `Nobody in your tabs matches “${filters.search}”. Search reads names, phone numbers, emails and the CV's own text.`
@@ -450,6 +499,7 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
       folders={folderTree}
       hasNext={openedIndex >= 0 && (openedIndex < list.length - 1 || Boolean(rows.state.nextCursor))}
       hasPrevious={openedIndex > 0}
+      fill
       layout={showSplit ? "split" : "sheet"}
       managers={props.managers}
       onClose={() => open(null)}
@@ -467,7 +517,7 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
   ) : null;
 
   const rowList = (
-    <div className={`min-w-0 border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
+    <div className={candidateTableFrameClassName}>
       <NewCvsBar key={query} onShow={() => void rows.reload(query)} query={query} since={newest} />
       {rows.state.error ? (
         <div className="p-3">
@@ -493,24 +543,39 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
           title={searching ? "No match" : "Nothing here yet"}
         />
       ) : (
-        <div role="list">
-          {list.map((row) => (
-            <div key={row.id} role="listitem">
-              <CandidateRow
-                answerOptions={answerOptions}
-                canEdit={viewer.canWork}
-                onSaveAnswer={viewer.canWork ? (target, chip, value) => actions.saveAnswer(target, chip, value, viewer.name) : undefined}
-                onSelect={viewer.canWork ? tick : undefined}
-                onToggle={(id) => open(filters.candidate === id ? null : id)}
-                opened={row.id === openedId}
-                row={row}
-                selected={selected.has(row.id)}
-                showEveryPlacement={searching || tab === FOLDERS_TAB}
-                today={today}
-                viewingTab={tab}
-              />
-            </div>
-          ))}
+        <div style={{ "--ws-head-top": headTop, "--ws-row-margin": rowMargin } as CSSProperties}>
+          <CandidateTable
+            answerOptions={answerOptions}
+            canEdit={viewer.canWork}
+            canSelect={viewer.canWork}
+            detailFor={
+              // Needs placing: the opened row carries the placing form, with the CV whole beside it. On a
+              // narrow page the CV is a sheet over the list, and "Place in a tab" in its bar opens the same form.
+              tab === NEEDS_PLACING && viewer.canWork && showSplit
+                ? (row) => (
+                    <PlacingForm
+                      actions={actions}
+                      editorName={viewer.name}
+                      key={row.id}
+                      leaves={row.placements.length === 0}
+                      onClose={() => open(null)}
+                      onPlaced={() => open(nextAfter(row.id))}
+                      roleTabs={viewer.roleTabs}
+                      row={row}
+                    />
+                  )
+                : undefined
+            }
+            onSaveAnswer={viewer.canWork ? (target, chip, value) => actions.saveAnswer(target, chip, value, viewer.name) : undefined}
+            onSelect={viewer.canWork ? tick : undefined}
+            onToggle={(id) => open(filters.candidate === id ? null : id)}
+            openedId={openedId}
+            rows={list}
+            selected={selected}
+            showEveryPlacement={searching || tab === FOLDERS_TAB}
+            today={today}
+            viewingTab={tab}
+          />
         </div>
       )}
       {rows.state.nextCursor && !rows.state.loading ? (
@@ -541,140 +606,143 @@ export function RoleWorkspace(props: RoleWorkspaceProps) {
 
   return (
     <PageContainer>
-      <div className="min-w-0 space-y-4" ref={rootRef} style={rootStyle}>
-        <RecruitmentPageHeader
-          actions={
-            <>
-              <button
-                className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-white/20"
-                onClick={() => setShortcuts(true)}
-                type="button"
-              >
-                <Keyboard aria-hidden className="h-3.5 w-3.5" />
-                Shortcuts
-              </button>
-              <a
-                className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-white/20"
-                href={previousHref}
-              >
-                <History aria-hidden className="h-3.5 w-3.5" />
-                Previous workspace
-              </a>
-            </>
-          }
-          badges={
-            tabCounts ? (
+      <div
+        className={cn("min-w-0", showSplit ? "grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start gap-3" : null)}
+        ref={rootRef}
+        style={rootStyle}
+      >
+        <div className="@container min-w-0 space-y-3">
+          <RecruitmentPageHeader
+            actions={
               <>
-                {viewer.seesNeedsPlacing && (tabCounts[NEEDS_PLACING] ?? 0) > 0 ? (
-                  <AdminInsightChip tone="orange">{`${tabCounts[NEEDS_PLACING]} need placing`}</AdminInsightChip>
-                ) : null}
-                {!viewer.canWork ? <AdminInsightChip tone="slate">Read only</AdminInsightChip> : null}
-              </>
-            ) : null
-          }
-          description="Every CV filed by the role the applicant chose, with their answers on the row. Decide, send, book and file without leaving the list."
-          eyebrow="People Management"
-          icon={<BriefcaseBusiness className="h-3.5 w-3.5" />}
-          title="Recruitment"
-        />
-
-        {props.notices.map((message) => (
-          <AdminCallout key={message} tone="warning">
-            {message}
-          </AdminCallout>
-        ))}
-        {props.unavailable.length > 0 ? (
-          <AdminCallout tone="warning">{`Not loaded just now: ${props.unavailable.join(", ")}. The rest of the page is current.`}</AdminCallout>
-        ) : null}
-        {problems.map((message, index) => (
-          <WorkspaceNotice key={`${index}-${message}`} message={message} onClose={() => setProblems((current) => current.filter((_, at) => at !== index))} />
-        ))}
-
-        <div
-          className={cn("space-y-2.5 bg-[#F3F6FA] pb-2.5", pinned ? "sticky z-30 pt-1" : null)}
-          ref={headerRef}
-          style={pinned ? { top: stickyTop } : undefined}
-        >
-          <RoleTabStrip
-            counts={tabCounts}
-            onChange={changeTab}
-            roleTabs={viewer.roleTabs}
-            seesNeedsPlacing={viewer.seesNeedsPlacing}
-            value={tab}
-          />
-          {roleTab && !searching && tabsWithRegions.includes(roleTab) ? (
-            <PlaceTabStrip
-              area={filters.area}
-              byPlace={counts.counts?.byPlace}
-              onChange={(place) => apply({ ...filtersRef.current, ...place }, { reload: true })}
-              places={meta.tab === tab ? meta.places : null}
-              region={filters.region}
-              tab={roleTab}
-              tabCount={tabCounts?.[roleTab] ?? null}
-            />
-          ) : null}
-          <FilterBar
-            answerFilters={meta.tab === tab ? meta.answerFilters : []}
-            byStatus={counts.counts?.byStatus}
-            exportHref={exportHref}
-            filters={filters}
-            folders={folderTree}
-            key={tab}
-            onChange={(next) => apply(next, { reload: true })}
-            onSearch={(value) => apply({ ...filtersRef.current, search: value }, { reload: true })}
-            rangeProblem={rangeProblem}
-            searchRef={searchRef}
-            total={counts.counts?.total ?? null}
-          />
-        </div>
-
-        {tab !== FOLDERS_TAB ? <FunnelStrip funnel={counts.counts?.funnel ?? null} unavailable={!counts.counts} /> : null}
-
-        {searching ? (
-          <p className="text-xs font-semibold text-slate-600">
-            {`Searching every tab you can see for “${filters.search}”. Each result says which tab it sits in.`}
-          </p>
-        ) : null}
-
-        <div className={cn(tab === FOLDERS_TAB ? "grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]" : null)}>
-          {tab === FOLDERS_TAB ? (
-            <div className="min-w-0 space-y-4">
-              <FoldersTree
-                canManage={viewer.canWork}
-                onChanged={refreshFolders}
-                onSelect={(id) => apply({ ...filtersRef.current, candidate: null, folderIds: id ? [id] : [] }, { reload: true })}
-                selectedId={filters.folderIds[0] ?? null}
-                tree={folderTree}
-              />
-              <ManagersFolders
-                onLoad={() => {
-                  // The page reads the managers' shelves for a visit on the Folders tab; ask it again.
-                  router.push(`${pathname ?? "/recruitment"}?${pageQuery({ ...filtersRef.current, tab: FOLDERS_TAB })}`, { scroll: false });
-                }}
-                onOpenCandidate={(id) => void openAnywhere(id)}
-                shelves={props.managerShelves}
-              />
-            </div>
-          ) : null}
-          <div className="min-w-0" ref={listAreaRef}>
-            <div className={cn(showSplit ? "grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] items-start gap-3" : null)}>
-              {rowList}
-              {showSplit ? (
-                <div
-                  className={`sticky min-w-0 overflow-y-auto border border-slate-200 bg-white ${adminPanelDepthClassName}`}
-                  style={{ maxHeight: cvMaxHeight, top: cvTop }}
+                <button
+                  className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-white/20"
+                  onClick={() => setShortcuts(true)}
+                  type="button"
                 >
-                  {opened}
-                </div>
-              ) : null}
-            </div>
+                  <Keyboard aria-hidden className="h-3.5 w-3.5" />
+                  Shortcuts
+                </button>
+                <a
+                  className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-white/20"
+                  href={previousHref}
+                >
+                  <History aria-hidden className="h-3.5 w-3.5" />
+                  Previous workspace
+                </a>
+              </>
+            }
+            badges={
+              tabCounts ? (
+                <>
+                  {viewer.seesNeedsPlacing && (tabCounts[NEEDS_PLACING] ?? 0) > 0 ? (
+                    <AdminInsightChip tone="orange">{`${tabCounts[NEEDS_PLACING]} need placing`}</AdminInsightChip>
+                  ) : null}
+                  {!viewer.canWork ? <AdminInsightChip tone="slate">Read only</AdminInsightChip> : null}
+                </>
+              ) : null
+            }
+            description="Every CV filed by the role the applicant chose, with their answers on the row. Decide, send, book and file without leaving the list."
+            eyebrow="People Management"
+            icon={<BriefcaseBusiness className="h-3.5 w-3.5" />}
+            title="Recruitment"
+          />
+
+          {props.notices.map((message) => (
+            <AdminCallout key={message} tone="warning">
+              {message}
+            </AdminCallout>
+          ))}
+          {props.unavailable.length > 0 ? (
+            <AdminCallout tone="warning">{`Not loaded just now: ${props.unavailable.join(", ")}. The rest of the page is current.`}</AdminCallout>
+          ) : null}
+          {problems.map((message, index) => (
+            <WorkspaceNotice key={`${index}-${message}`} message={message} onClose={() => setProblems((current) => current.filter((_, at) => at !== index))} />
+          ))}
+
+          <div
+            className={cn("space-y-3 bg-[#F3F6FA] pb-3", pinned ? "sticky z-30 pt-1" : null)}
+            ref={headerRef}
+            style={pinned ? { top: stickyTop } : undefined}
+          >
+            <RoleTabStrip
+              counts={tabCounts}
+              onChange={changeTab}
+              roleTabs={viewer.roleTabs}
+              seesNeedsPlacing={viewer.seesNeedsPlacing}
+              value={tab}
+            />
+            {roleTab && !searching && tabsWithRegions.includes(roleTab) ? (
+              <PlaceTabStrip
+                area={filters.area}
+                byPlace={counts.counts?.byPlace}
+                onChange={(place) => apply({ ...filtersRef.current, ...place }, { reload: true })}
+                places={meta.tab === tab ? meta.places : null}
+                region={filters.region}
+                tab={roleTab}
+                tabCount={tabCounts?.[roleTab] ?? null}
+              />
+            ) : null}
+            <FilterBar
+              answerFilters={meta.tab === tab ? meta.answerFilters : []}
+              byStatus={counts.counts?.byStatus}
+              exportHref={exportHref}
+              filters={filters}
+              folders={folderTree}
+              key={tab}
+              onChange={(next) => apply(next, { reload: true })}
+              onSearch={(value) => apply({ ...filtersRef.current, search: value }, { reload: true })}
+              rangeProblem={rangeProblem}
+              searchRef={searchRef}
+              total={counts.counts?.total ?? null}
+            />
+          </div>
+
+          {tab !== FOLDERS_TAB ? <FunnelStrip funnel={counts.counts?.funnel ?? null} unavailable={!counts.counts} /> : null}
+
+          {searching ? (
+            <p className="text-xs font-semibold text-slate-600">
+              {`Searching every tab you can see for “${filters.search}”. Each result says which tab it sits in.`}
+            </p>
+          ) : null}
+
+          <div className={cn(tab === FOLDERS_TAB ? "grid grid-cols-1 items-start gap-4 @min-[1100px]:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]" : null)}>
+            {tab === FOLDERS_TAB ? (
+              <div className="min-w-0 space-y-4">
+                <FoldersTree
+                  canManage={viewer.canWork}
+                  onChanged={refreshFolders}
+                  onSelect={(id) => apply({ ...filtersRef.current, candidate: null, folderIds: id ? [id] : [] }, { reload: true })}
+                  selectedId={filters.folderIds[0] ?? null}
+                  tree={folderTree}
+                />
+                <ManagersFolders
+                  onLoad={() => {
+                    // The page reads the managers' shelves for a visit on the Folders tab; ask it again.
+                    router.push(`${pathname ?? "/recruitment"}?${pageQuery({ ...filtersRef.current, tab: FOLDERS_TAB })}`, { scroll: false });
+                  }}
+                  onOpenCandidate={(id) => void openAnywhere(id)}
+                  shelves={props.managerShelves}
+                />
+              </div>
+            ) : null}
+            <div className="min-w-0">{rowList}</div>
           </div>
         </div>
+        {showSplit ? (
+          <div
+            className={`sticky min-w-0 self-start overflow-hidden border border-slate-200 bg-white ${adminPanelDepthClassName}`}
+            id="ws-cv-pane"
+            style={{ height: cvHeight, top: cvTop }}
+          >
+            {opened}
+          </div>
+        ) : null}
       </div>
 
       {!showSplit && opened && typeof document !== "undefined"
         ? createPortal(
-            <div aria-label={`CV of ${openedRow?.name ?? ""}`} aria-modal="true" className="fixed inset-0 z-[60] overflow-y-auto bg-white" role="dialog">
+            <div aria-label={`CV of ${openedRow?.name ?? ""}`} aria-modal="true" className="fixed inset-0 z-[60] overflow-hidden bg-white" role="dialog">
               {opened}
             </div>,
             document.body,

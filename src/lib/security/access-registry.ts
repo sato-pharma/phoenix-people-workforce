@@ -195,6 +195,11 @@ export const accessRegistry = [
   // Same Super Admin + dev-only gate as the preview route above: read-only candidate listing
   // that powers the picker's Line -> Region -> Area -> Name cascade client-side.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/dev-auth/candidates", permission: null, guard: "domain-helper" }),
+  // View as Seat (src/lib/auth/seat-view.ts): the Super Admin opens a read-only view of a seat on top of
+  // the live session; assertSeatViewOwner is the in-route gate and the start writes a required audit row.
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/admin/seat-view/start", permission: null, guard: "domain-helper" }),
+  // Leaving the view: the one write a seat view may send. Clears the view cookie; the audit row is best effort.
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/admin/seat-view/exit", permission: null, guard: "domain-helper" }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/resend", reason: "Resend webhook signature/secret protected." }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/brevo", reason: "Brevo transactional webhook is protected by a shared secret token (?token= / x-brevo-token) verified against BREVO_WEBHOOK_SECRET." }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/sentry", reason: "Sentry alert webhook is protected by the HMAC-SHA256 signature in sentry-hook-signature, verified against SENTRY_WEBHOOK_SECRET; it only forwards a short error summary to the owner's Telegram." }),
@@ -1552,6 +1557,10 @@ export const accessRegistry = [
   // (one or many), and the 30-day archive (or bringing one back). Each refuses the CEO and fences
   // the Talent Acquisition seat by person before any work.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/recruitment/candidates/*/placement", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
+  // "Place this candidate" (owner, 20 Oct 2026): GET reads the form — the roles, the questions, the
+  // regions and areas, the answers on record — and PUT saves HR's typed answers and files the person
+  // once. Same grant and work gate as the placement above, fenced by person before any read.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "PUT"], pattern: "/api/recruitment/candidates/*/answers", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/candidates/*/call-result", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/candidates/*/reject", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/recruitment/candidates/*/archive", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),

@@ -28,6 +28,7 @@ import { HorizontalNavProvider, LowerNavRow, UpperNavRow } from "@/components/la
 import { RouteTransitionProvider } from "@/components/layout/route-transition-provider";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { SeatViewBanner } from "@/components/layout/seat-view-banner";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
 import { usesAdminChrome } from "@/lib/navigation/active-path";
@@ -222,6 +223,15 @@ export async function AppShell({
             >
               <div className="phx-navrow-scope flex min-w-0 flex-1 flex-col">
                 <div className="sticky top-0 z-30">
+                  {/* VIEW AS SEAT (src/lib/auth/seat-view.ts): on every page of a view, above the
+                      seat's own chrome, so a read-only view is never taken for the real seat. */}
+                  {access.seatView ? (
+                    <SeatViewBanner
+                      expiresAt={access.seatView.expiresAt}
+                      personName={access.seatView.personName}
+                      seatTitle={displayTitleForAccount(access.hrId, access.role)}
+                    />
+                  ) : null}
                   {showTopbar && (
                     <Topbar
                       currentRole={access.role}

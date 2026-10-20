@@ -178,10 +178,12 @@ import { runRecruitmentWorkspaceFiltersTests } from "./recruitment-workspace-fil
 import { runRecruitmentRejectionReasonsTests } from "./recruitment-rejection-reasons.test.ts";
 import { runRecruitmentTaFenceTests } from "./recruitment-ta-fence.test.ts";
 import { runRecruitmentWorkspaceScreenTests } from "./recruitment-workspace-screen.test.ts";
+import { runRecruitmentWorkspaceTableTests } from "./recruitment-workspace-table.test.ts";
 import { runRecruitmentWhatsAppAnswersSavedTests } from "./recruitment-whatsapp-answers-saved.test.ts";
 import { runRecruitmentHireFromCandidateTests } from "./recruitment-hire-from-candidate.test.ts";
 import { runRecruitmentAutoArchiveTests } from "./recruitment-auto-archive.test.ts";
 import { runRecruitmentDigestByTabTests } from "./recruitment-digest-by-tab.test.ts";
+import { runRecruitmentAnswerEditFenceTests } from "./recruitment-answer-edit-fence.test.ts";
 import { runRecruitmentWorkspaceExportTests } from "./recruitment-workspace-export.test.ts";
 import { runRecruitmentPipelineStateMachineTests } from "./recruitment-pipeline-state-machine.test.ts";
 import { runRecruitmentReadinessTests } from "./recruitment-readiness.test.ts";
@@ -2539,6 +2541,7 @@ import { runCiTreeReuseDryrunTests } from "./ci-tree-reuse-dryrun.test.ts";
 import { runNextBuildCpuCapTests } from "./next-build-cpu-cap.test.ts";
 import { runAttributionFreezesPublishedMonthsTests } from "./attribution-freezes-published-months.test.ts";
 import { runTestAccountTests } from "./test-accounts.test.ts";
+import { runSeatViewTests } from "./seat-view.test.ts";
 import { runNeedsYouTelegramBudgetTests } from "./needs-you-telegram-budget.test.ts";
 import { runNeedsYouSummaryGuardTests } from "./needs-you-summary-guard.test.ts";
 import { runNeedsYouEmailOwnerOnlyTests } from "./needs-you-email-owner-only.test.ts";
@@ -3110,10 +3113,12 @@ await runTest("recruitment workspace filters", runRecruitmentWorkspaceFiltersTes
 await runTest("recruitment rejection reasons", runRecruitmentRejectionReasonsTests);
 await runTest("recruitment ta fence", runRecruitmentTaFenceTests);
 await runTest("recruitment workspace screen", runRecruitmentWorkspaceScreenTests);
+await runTest("recruitment workspace table, half-page CV and placing by hand", runRecruitmentWorkspaceTableTests);
 await runTest("recruitment whatsapp answers saved as given", runRecruitmentWhatsAppAnswersSavedTests);
 await runTest("recruitment Mark as hired (seats ranked area > region > tab; the fifth door marks the candidate hired and closes the requisition)", runRecruitmentHireFromCandidateTests);
 await runTest("recruitment auto-archive (rejections older than 30 days, from the rejection; returns held; never deleted)", runRecruitmentAutoArchiveTests);
 await runTest("recruitment daily CVs by tab and place (fenced for Talent Acquisition; every notice lands on its filtered pile)", runRecruitmentDigestByTabTests);
+await runTest("recruitment typing a role is filing a CV (the answer edit refuses an HR tab for Talent Acquisition and the CEO's read-only seat)", runRecruitmentAnswerEditFenceTests);
 await runTest("recruitment workspace export (one column per question; blank when never asked; names link; two gates)", runRecruitmentWorkspaceExportTests);
 await runTest("recruitment pipeline state machine", runRecruitmentPipelineStateMachineTests);
 await runTest("recruitment readiness", runRecruitmentReadinessTests);
@@ -9991,6 +9996,10 @@ await runTest(
 await runTest(
   "TEST ACCOUNTS (owner, 2026-09-27): a production login that lives inside a real employee's portal and never saves as her — every write outside Phoenix CRM is refused in resolveAccessContext before a route runs, and a server action too; inside Phoenix CRM every read and save is a test entry whatever flag the screen sends; a test manager decides test entries only, as the reviewer he mirrors, never the SFE step; his reach is the mirrored person's, never the company; only an employee-portal role can be mirrored; and the nightly behaviour verdict and the hourly allowances never count a test row",
   runTestAccountTests,
+);
+await runTest(
+  "VIEW AS SEAT (owner, 2026-10-20): the Super Admin sees the live site as another seat, read only — every write route on disk is refused except leaving the view, and every GET that writes as it reads is refused or named with the reason it records nothing as the seat; the view is honoured only on top of his own live Super Admin session, the exact session id and login it was signed for, never on a test account, a dev-header sweep or another view; its token never passes as a session token or the reverse and dies within the hour; an office seat is viewed by role alone and a portal seat only as one real person; the payroll and outstation decision guards treat it as a preview; and both resolvers, both shells, sign-out, the proxy shortcut, the routes, the registry and the menu carry it",
+  runSeatViewTests,
 );
 await runTest(
   "tier 2 may phrase and order but never reassure, count or quietly drop an item: a day where any source could not be read gets NO written summary whatever the model returned (the calm sentence on the morning something was waiting is the one failure this surface cannot survive), a lead claiming completeness is refused because that verdict is the board's and not the model's, a number the board does not hold is refused as a hallucinated fact while the board's own figures pass, an ordering that does not cover every item exactly once is refused because that is how a model silently omits one, a well-formed answer IS attached so the guard is not merely strict, the verdict type carries nothing but a lead and an ordering so no model output can ever replace a fact, the prompt is given no failure count and no verdict so the model has no vocabulary with which to reassure, and every refusal names a reason the digest prints rather than degrading silently",

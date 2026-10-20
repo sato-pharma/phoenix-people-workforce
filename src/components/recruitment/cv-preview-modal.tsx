@@ -16,6 +16,7 @@ import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { buildCvPreviewFailureReport, CvPreviewNotice, type CvPreviewStage } from "@/lib/recruitment/cv-preview-failure-report";
 import { hasPhoneLike, maskPhoneLike } from "@/lib/recruitment/cv-phone-redaction";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { MAX_ZOOM, MIN_ZOOM, ZOOM_STEP, clampZoom, cvFitZoom } from "@/components/recruitment/cv-fit-zoom";
 
 /**
  * May the reader take a COPY of this document away?
@@ -76,6 +77,19 @@ type CvDocumentProps = CvDownloadAllowance & {
    * that survives someone opening it on a smaller screen.
    */
   fitToWidth?: boolean;
+  /**
+   * What the fit fits. "width" (the default, every caller before 2026-10-20): a whole page across.
+   * "page": the WHOLE of page 1, across and down, inside the box it is given — the recruitment
+   * workspace's half-page CV (owner, 2026-10-20: "the cv 1 page is fully appearing with no need to
+   * scroll"). That box must have a definite height. An old Word .doc is read as one long text page
+   * with no page breaks, so it has no page 1 to fit and stays at fit width.
+   */
+  fit?: "width" | "page";
+  /**
+   * Draw the zoom controls into this element (the caller's own toolbar row) instead of a sticky bar
+   * over the document, so they cost the document no height. Null or absent: the sticky bar.
+   */
+  toolbarTarget?: HTMLElement | null;
 };
 
 type Props = CvDownloadAllowance & {
@@ -127,14 +141,8 @@ function base64ToBytes(encoded: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-/** How far the reader may push the zoom by hand, and the step the buttons move in. */
-const MIN_ZOOM = 0.35;
-const MAX_ZOOM = 2;
-const ZOOM_STEP = 0.15;
-
-function clampZoom(value: number): number {
-  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
-}
+/** The sticky zoom bar's own height (a 32px button, 6px above and below, a 1px rule). */
+const ZOOM_BAR_HEIGHT = 45;
 
 /**
  * The CV itself, rendered in place — no dialog, no chrome, no close button.
@@ -152,6 +160,8 @@ export function CvDocumentView({
   mimeType,
   redactPhones = false,
   fitToWidth = true,
+  fit = "width",
+  toolbarTarget = null,
 }: CvDocumentProps) {
   const kind = detectCvFileKind(mimeType ?? "", fileName);
   const separator = downloadUrl.includes("?") ? "&" : "?";
@@ -195,9 +205,14 @@ export function CvDocumentView({
   const contentRef = useRef<HTMLDivElement | null>(null);
   /** The document's own page width in CSS pixels, measured once while nothing is zoomed. */
   const [naturalWidth, setNaturalWidth] = useState<number | null>(null);
+  /** Page 1's own height, measured with the width. Null for a legacy .doc, which has no pages. */
+  const [naturalHeight, setNaturalHeight] = useState<number | null>(null);
   const [paneWidth, setPaneWidth] = useState<number | null>(null);
-  /** null = follow the width. A number = the reader took over with the +/- buttons. */
+  const [paneHeight, setPaneHeight] = useState<number | null>(null);
+  /** null = follow the fit. A number = the reader took over with the +/- buttons. */
   const [manualZoom, setManualZoom] = useState<number | null>(null);
+  /** Which fit "follow the fit" means: the caller's, until the reader presses the other one. */
+  const [fitMode, setFitMode] = useState<"width" | "page">(fit);
 
   // Measure the page ONCE, the first time the document has finished painting. It has to happen at
   // zoom 1 or the reading is in already-scaled pixels and every resize would compound the last
@@ -213,12 +228,23 @@ export function CvDocumentView({
     // `canvas` is one rasterised PDF page; `.cv-text-page` is a legacy .doc read as text, which is
     // dressed at the same fixed Word width so it fits by the same mechanism as the other two. All
     // three are the real thing a reader is trying to fit.
+    //
+    // offsetWidth/offsetHeight, never getBoundingClientRect: the pane below is read in its own CSS
+    // pixels (clientHeight, ResizeObserver), and the admin shell's screen zoom (`zoom` on `main`, 90%
+    // by default) reaches getBoundingClientRect but not offset*. Mixing the two made every fit too
+    // big by the screen zoom — measured live on 2026-10-20 at 90%: zoom 0.7086 where 0.6393 fits, and
+    // page 1's foot 66px under the pane with it scrolled to the top.
     const pages = content.querySelectorAll<HTMLElement>(".docx, .cv-text-page, canvas");
     let measured = 0;
-    for (const page of pages) measured = Math.max(measured, page.getBoundingClientRect().width);
+    for (const page of pages) measured = Math.max(measured, page.offsetWidth);
+    // Page 1's height, for "fit page": the first rasterised PDF page or the first Word page section.
+    // A legacy .doc is one long `.cv-text-page` with no page breaks — nothing to fit down to.
+    const first = content.querySelector<HTMLElement>(".docx, canvas");
+    const firstHeight = first && !content.querySelector(".cv-text-page") ? first.offsetHeight : 0;
     // Padding around the page, so "fit" leaves the document a margin instead of jamming it edge
     // to edge against the panel beside it.
     if (measured > 0) setNaturalWidth(measured + 32);
+    if (firstHeight > 0) setNaturalHeight(firstHeight + 32);
   }, [canFit, loading, naturalWidth]);
 
   // And re-fit whenever the column changes size — the screening page has a collapsible facts panel
@@ -229,10 +255,13 @@ export function CvDocumentView({
     if (!pane) return;
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width ?? 0;
+      const height = entries[0]?.contentRect.height ?? 0;
       if (width > 0) setPaneWidth(width);
+      if (height > 0) setPaneHeight(height);
     });
     observer.observe(pane);
     setPaneWidth(pane.clientWidth || null);
+    setPaneHeight(pane.clientHeight || null);
     return () => observer.disconnect();
   }, [canFit]);
 
@@ -241,11 +270,24 @@ export function CvDocumentView({
   // changes the modal — where the document already fits and nobody complained — into something
   // nobody asked for. This exists to fix a document too big for its column, and that is all it does
   // by itself. Wanting it larger is a real thing to want, and it is what the + button is for.
-  const fitZoom = canFit && naturalWidth && paneWidth ? clampZoom(Math.min(1, paneWidth / naturalWidth)) : 1;
-  const zoom = manualZoom ?? fitZoom;
   // Nothing to offer until the page has been measured; a zoom control that reads 100% while the
   // document is still blank invites a click that does nothing.
   const showZoomControl = canFit && naturalWidth !== null && !error;
+  // "Fit page" is only on offer where there is a page 1 to fit; the bar, when it sits over the
+  // document, is height the page cannot use.
+  const canFitPage = naturalHeight !== null;
+  const activeFit: "width" | "page" = canFitPage ? fitMode : "width";
+  const barInside = showZoomControl && !toolbarTarget;
+  const fitZoom = canFit
+    ? cvFitZoom({
+        mode: activeFit,
+        pageHeight: naturalHeight,
+        pageWidth: naturalWidth,
+        paneHeight: paneHeight === null ? null : paneHeight - (barInside ? ZOOM_BAR_HEIGHT : 0),
+        paneWidth,
+      })
+    : 1;
+  const zoom = manualZoom ?? fitZoom;
 
   useEffect(() => {
     if (kind !== "docx" && kind !== "pdf" && kind !== "image") return;
@@ -625,7 +667,8 @@ export function CvDocumentView({
         <div ref={pdfContainerRef} />
       </div>
     ) : kind === "image" ? (
-      <div className="min-h-full bg-slate-100 p-4">
+      // In "fit page" the box is the pane's own height, so the whole photograph shows at once.
+      <div className={`${fit === "page" ? "h-full" : "min-h-full"} bg-slate-100 p-4`}>
         {loading ? <p className="p-1 text-sm text-slate-500">Loading preview…</p> : null}
         {failureNotice}
         {imageUrl ? (
@@ -699,48 +742,61 @@ export function CvDocumentView({
 
   if (!canFit) return <div className={className}>{documentBody}</div>;
 
+  const fitButton = (mode: "width" | "page", label: string, title: string) => (
+    <button
+      className={`flex h-8 items-center px-2.5 text-phx-xs font-bold transition ${
+        manualZoom === null && activeFit === mode ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white hover:text-slate-900"
+      }`}
+      onClick={() => {
+        setFitMode(mode);
+        setManualZoom(null);
+      }}
+      title={title}
+      type="button"
+    >
+      {label}
+    </button>
+  );
+
+  // The icons stay 14px — this is still meant to be quiet — but each BUTTON is 32px square. `p-1`
+  // around a 14px icon measured 22px at 375px, under the 24px floor a pointer target is meant to
+  // clear, and small enough that zooming a CV on a phone is a game of chance. The chrome is
+  // transparent until hover, so the larger target costs nothing visually.
+  const zoomControls = (
+    <>
+      <button
+        aria-label="Zoom out"
+        className="flex h-8 w-8 items-center justify-center text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:opacity-40"
+        disabled={zoom <= MIN_ZOOM + 0.001}
+        onClick={() => setManualZoom(clampZoom(zoom - ZOOM_STEP))}
+        type="button"
+      >
+        <Minus className="h-3.5 w-3.5" />
+      </button>
+      <span className="min-w-[3.25rem] text-center text-phx-xs font-bold tabular-nums text-slate-700">{Math.round(zoom * 100)}%</span>
+      <button
+        aria-label="Zoom in"
+        className="flex h-8 w-8 items-center justify-center text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:opacity-40"
+        disabled={zoom >= MAX_ZOOM - 0.001}
+        onClick={() => setManualZoom(clampZoom(zoom + ZOOM_STEP))}
+        type="button"
+      >
+        <Plus className="h-3.5 w-3.5" />
+      </button>
+      {canFitPage ? fitButton("page", "Fit page", "Fit the whole of page 1 in this box, and keep fitting it when the box changes size") : null}
+      {fitButton("width", "Fit width", "Fit a whole page to this column, and keep fitting it when the column changes size")}
+    </>
+  );
+
   return (
     <div className={className} ref={paneRef}>
-      {showZoomControl ? (
+      {showZoomControl && toolbarTarget ? createPortal(<div className="flex flex-wrap items-center gap-1">{zoomControls}</div>, toolbarTarget) : null}
+      {barInside ? (
         // Sticky, because the reason to reach for it is usually three pages down. Small and quiet:
         // this is a reading surface, and a toolbar that competes with the CV for attention has
         // already lost the point.
         <div className="sticky top-0 z-10 flex items-center justify-end gap-1 border-b border-slate-200/70 bg-slate-100/90 px-3 py-1.5 backdrop-blur">
-          {/* The icon stays 14px — this is still meant to be quiet — but the BUTTON is 32px square.
-              `p-1` around a 14px icon measured 22px at 375px, under the 24px floor a pointer target
-              is meant to clear, and small enough that zooming a CV on a phone is a game of chance.
-              The chrome is transparent until hover, so the larger target costs nothing visually. */}
-          <button
-            aria-label="Zoom out"
-            className="flex h-8 w-8 items-center justify-center text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:opacity-40"
-            disabled={zoom <= MIN_ZOOM + 0.001}
-            onClick={() => setManualZoom(clampZoom(zoom - ZOOM_STEP))}
-            type="button"
-          >
-            <Minus className="h-3.5 w-3.5" />
-          </button>
-          <span className="min-w-[3.25rem] text-center text-phx-xs font-bold tabular-nums text-slate-700">
-            {Math.round(zoom * 100)}%
-          </span>
-          <button
-            aria-label="Zoom in"
-            className="flex h-8 w-8 items-center justify-center text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:opacity-40"
-            disabled={zoom >= MAX_ZOOM - 0.001}
-            onClick={() => setManualZoom(clampZoom(zoom + ZOOM_STEP))}
-            type="button"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-          <button
-            className={`ml-1 flex h-8 items-center px-2.5 text-phx-xs font-bold transition ${
-              manualZoom === null ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white hover:text-slate-900"
-            }`}
-            onClick={() => setManualZoom(null)}
-            title="Fit a whole page to this column, and keep fitting it when the column changes size"
-            type="button"
-          >
-            Fit width
-          </button>
+          {zoomControls}
         </div>
       ) : null}
       {/*

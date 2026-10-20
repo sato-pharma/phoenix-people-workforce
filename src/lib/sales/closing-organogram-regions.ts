@@ -815,3 +815,78 @@ export async function loadSplitRegions(
 ): Promise<SplitRegions> {
   return splitRegionsFrom(await loadLineOperationalRegions(othersLookupLineCode(officialLine), period));
 }
+
+/**
+ * The manager who runs each operational region on a line, for naming a downloaded workbook:
+ * region name (lower-cased, trimmed) -> manager's English full name.
+ *
+ * Reads the same three views the region grouping and `loadRegionBySubmitter` read — the current
+ * line-area map (region -> district-manager seat), the org tree (seat -> occupant) and the region
+ * names — so the manager is the one the closing's own region is drawn from. A region whose seats
+ * hold more than one person, a vacant seat, or an unreadable view is simply absent: the file is then
+ * named for the region alone. It never throws and never guesses; a name is a courtesy, not data.
+ *
+ * Current structure only. The map's dated rows decide which areas a past month's region held; the
+ * manager named on a file is whoever runs the region today.
+ */
+export async function loadRegionManagerNames(lineCode: string | null | undefined): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  const code = othersLookupLineCode(lineCode);
+  if (!code) return names;
+  try {
+    const supabase = getSupabaseAdmin();
+    const [mapResult, treeResult, regionResult] = await Promise.all([
+      supabase.from("au_v_line_area_map").select("operational_region_code,dm_seat_id").eq("line_code", code),
+      supabase.from("au_v_org_tree").select("seat_id,occupant_hr_id").eq("line_code", code),
+      supabase.from("au_v_regions").select("region_code,region_name"),
+    ]);
+    if (mapResult.error || treeResult.error || regionResult.error) return names;
+
+    const occupantBySeat = new Map<string, string>();
+    (treeResult.data ?? []).forEach((row) => {
+      const typed = row as { seat_id?: string | null; occupant_hr_id?: string | null };
+      const seat = String(typed.seat_id ?? "").trim();
+      const hrId = String(typed.occupant_hr_id ?? "").trim();
+      if (seat && hrId) occupantBySeat.set(seat, hrId);
+    });
+    const hrIdsByRegion = new Map<string, Set<string>>();
+    (mapResult.data ?? []).forEach((row) => {
+      const typed = row as { operational_region_code?: string | null; dm_seat_id?: string | null };
+      const region = up(typed.operational_region_code);
+      const hrId = occupantBySeat.get(String(typed.dm_seat_id ?? "").trim());
+      if (!region || !hrId) return;
+      const held = hrIdsByRegion.get(region) ?? new Set<string>();
+      held.add(hrId);
+      hrIdsByRegion.set(region, held);
+    });
+    const hrIds = [...new Set([...hrIdsByRegion.values()].flatMap((held) => [...held]))];
+    if (hrIds.length === 0) return names;
+
+    const employeeResult = await supabase.from("employees").select("hr_id,full_name").in("hr_id", hrIds);
+    if (employeeResult.error) return names;
+    const nameByHrId = new Map<string, string>();
+    (employeeResult.data ?? []).forEach((row) => {
+      const typed = row as { hr_id?: string | null; full_name?: string | null };
+      const hrId = String(typed.hr_id ?? "").trim();
+      const fullName = String(typed.full_name ?? "").trim();
+      if (hrId && fullName) nameByHrId.set(hrId, fullName);
+    });
+    const regionNameByCode = new Map<string, string>();
+    (regionResult.data ?? []).forEach((row) => {
+      const typed = row as { region_code?: string | null; region_name?: string | null };
+      const regionCode = up(typed.region_code);
+      const regionName = String(typed.region_name ?? "").trim();
+      if (regionCode && regionName) regionNameByCode.set(regionCode, regionName);
+    });
+
+    hrIdsByRegion.forEach((held, regionCode) => {
+      if (held.size !== 1) return;
+      const regionName = regionNameByCode.get(regionCode);
+      const manager = nameByHrId.get([...held][0]);
+      if (regionName && manager) names.set(regionName.toLowerCase(), manager);
+    });
+    return names;
+  } catch {
+    return names;
+  }
+}

@@ -98,6 +98,7 @@ import {
   Undo2,
   Unlink,
   UserCog,
+  ScanEye,
   UserRoundPlus,
   UserRoundSearch,
   Users,
@@ -3200,6 +3201,15 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin"],
   },
   {
+    href: "/admin/view-as-seat",
+    icon: ScanEye,
+    label: "View as Seat",
+    description:
+      "See the live site exactly as another seat sees it — an office seat, or one person in a field or portal seat. Read only: nothing is saved, sent or decided, and the view ends by itself after an hour.",
+    // The page and both routes refuse anyone else (src/lib/auth/seat-view-service.ts assertSeatViewOwner).
+    roles: ["Super Admin"],
+  },
+  {
     href: "/admin/dev-preview",
     icon: UserCog,
     label: "Dev Preview (Real Data)",
@@ -5438,6 +5448,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
         sectionId: "admin-tools-personal",
         hrefs: [
           "/admin/sidebar-layout",
+          "/admin/view-as-seat",
           "/admin/dev-preview",
         ],
       },

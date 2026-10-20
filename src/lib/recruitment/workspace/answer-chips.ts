@@ -54,6 +54,7 @@ import {
   candidateWhatsAppAnswers,
 } from "@/lib/recruitment/whatsapp-answers";
 import { MISSING_ANSWER } from "@/lib/recruitment/workspace/filters";
+import { PLACING_BUILT_IN_KEYS, type PlacingQuestion } from "@/lib/recruitment/workspace/placing-rules";
 import { roleTabForFamily, type WorkspaceTabKey } from "@/lib/recruitment/workspace/role-tabs";
 import type { WorkspaceAnswerChip, WorkspaceAnswerFilter } from "@/lib/recruitment/workspace/types";
 
@@ -417,6 +418,39 @@ export function buildAnswerFilters(
     filters.sort((a, b) => rank(a.key) - rank(b.key));
   }
   return filters;
+}
+
+/**
+ * The questions the "Place this candidate" form asks for one role (owner, 20 Oct 2026). PURE.
+ *
+ * The built-ins that role is asked — Graduated in, Years of experience, Expected monthly net salary —
+ * through their saved audiences, then every ACTIVE admin question that role is asked, in the admin's
+ * order; his six lead, as they do on the table. A built-in stores the label tapped and an admin
+ * question stores its option's title, so each choice's value IS its title. A follow-up keeps its
+ * `show_if`, and the form asks it only when the answer it follows says so (`visiblePlacingQuestions`).
+ */
+export function placingQuestionsFor(roleFamily: string, context: AnswerChipContext): PlacingQuestion[] {
+  const questions: PlacingQuestion[] = [];
+  for (const key of PLACING_BUILT_IN_KEYS) {
+    if (!audienceAppliesToRole(context.builtInAudience[BUILT_IN_STEP[key]], roleFamily)) continue;
+    const titles =
+      key === "background" ? Object.values(candidateBackgroundLabels) : key === "experience" ? Object.values(candidateExperienceLabels) : [];
+    questions.push({ key, label: answerChipLabel(key), options: titles.map((title) => ({ title, value: title })), showIf: null });
+  }
+  for (const question of context.questions) {
+    if (!question.isActive || !questionAppliesToRole(question, roleFamily)) continue;
+    questions.push({
+      key: question.key,
+      label: answerChipLabel(question.key, question),
+      options: question.kind === "tappable" ? question.options : [],
+      showIf: question.showIf,
+    });
+  }
+  const rank = (key: string) => {
+    const at = (MEDICAL_REP_LEAD_KEYS as readonly string[]).indexOf(key);
+    return at === -1 ? MEDICAL_REP_LEAD_KEYS.length : at;
+  };
+  return questions.map((question, index) => ({ index, question })).sort((a, b) => rank(a.question.key) - rank(b.question.key) || a.index - b.index).map(({ question }) => question);
 }
 
 /** Every key `buildAnswerFilters` can offer, so a caller reads stored values for exactly those. */
