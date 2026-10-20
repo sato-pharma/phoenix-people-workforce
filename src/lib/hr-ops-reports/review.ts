@@ -11,9 +11,18 @@ import { assertNotTestAccount } from "@/lib/auth/test-persona";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { notifyReportSubmitted } from "./notify";
-import { decidedElsewhereText, isCarried, needsReview, reportProgress, validateReview, type ReviewInput } from "./rules";
+import { decidedElsewhereText, degradedSubmitRefusal, isCarried, needsReview, reportProgress, validateReview, type ReviewInput } from "./rules";
 import { getReport, getReportLines, LINES_TABLE, REPORTS_TABLE, storeError, withDecidedElsewhere } from "./store";
 import { HrOpsReportsError, type HrOpsReportLineRow, type HrOpsReportRow } from "./types";
+
+/**
+ * The spelling an actor column stores. `access.hrId` is the lowercase comparison key, never the
+ * stored id, so it goes through `hrIdForStorage` exactly as `decide.ts` does for the decider —
+ * one row's reviewer and decider then resolve to a name the same way.
+ */
+function actorHrId(access: AccessContext): string | null {
+  return hrIdForStorage(access.hrId) ?? access.loginId ?? null;
+}
 
 async function openReportForReview(reportId: string): Promise<HrOpsReportRow> {
   const report = await getReport(reportId);
@@ -57,10 +66,7 @@ export async function reviewLines(access: AccessContext, reportId: string, body:
   }
 
   const now = new Date().toISOString();
-  // `access.hrId` is the lowercase comparison key, never the stored spelling: the same
-  // `hrIdForStorage` the submit below and `decide.ts` use, so one row's reviewer and decider resolve
-  // to a name the same way.
-  const reviewer = hrIdForStorage(access.hrId) ?? access.loginId ?? null;
+  const reviewer = actorHrId(access);
   for (const review of reviews) {
     const { error: writeError } = await getSupabaseAdmin()
       .from(LINES_TABLE)
@@ -80,10 +86,17 @@ export async function reviewLines(access: AccessContext, reportId: string, body:
   return { saved: reviews.length };
 }
 
-/** Hand the report to the HR Manager. Every flagged row must have her answer first. */
+/**
+ * Hand the report to the HR Manager. Every flagged row must have her answer first — and the report
+ * must have been built from sources that could all be read, or it is not frozen at all
+ * (rules.ts `degradedSubmitRefusal`): a degraded build's rows are missing, not absent on purpose,
+ * and submitting auto-decides a report with nothing flagged.
+ */
 export async function submitReport(access: AccessContext, reportId: string): Promise<{ report: HrOpsReportRow }> {
   assertNotTestAccount(access);
-  await openReportForReview(reportId);
+  const open = await openReportForReview(reportId);
+  const degraded = degradedSubmitRefusal(open);
+  if (degraded) throw new HrOpsReportsError(degraded, 409);
   // With the person-day columns, so a day decided in another report since the build is carried, not
   // a row still waiting for her answer.
   const lines = await getReportLines(reportId, "id,report_id,section,hr_key,work_date,flags,carried_from_line_id,review_action,decision", true);
@@ -94,7 +107,7 @@ export async function submitReport(access: AccessContext, reportId: string): Pro
   const now = new Date().toISOString();
   const { data, error } = await getSupabaseAdmin()
     .from(REPORTS_TABLE)
-    .update({ status: "submitted", submitted_at: now, submitted_by_hr_id: hrIdForStorage(access.hrId) ?? access.loginId ?? null, updated_at: now })
+    .update({ status: "submitted", submitted_at: now, submitted_by_hr_id: actorHrId(access), updated_at: now })
     .eq("id", reportId)
     .eq("status", "in_review")
     .select("*")

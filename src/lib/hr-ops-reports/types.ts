@@ -166,6 +166,8 @@ export type HrOpsReportRow = {
   status: HrOpsReportStatus;
   line_count: number;
   build_warnings: unknown;
+  /** The sections whose last build could not read a source behind their rows in full. */
+  incomplete_sections: unknown;
   built_at: string;
   rebuilt_at: string | null;
   submitted_at: string | null;
@@ -227,7 +229,7 @@ export type HrOpsDecidedElsewhere = {
 };
 
 export const HR_OPS_REPORT_COLUMNS =
-  "id,kind,period_key,office_from,office_to,field_from,field_to,status,line_count,build_warnings,built_at,rebuilt_at,submitted_at,submitted_by_hr_id,decided_at,decided_by_hr_id,created_at,updated_at";
+  "id,kind,period_key,office_from,office_to,field_from,field_to,status,line_count,build_warnings,incomplete_sections,built_at,rebuilt_at,submitted_at,submitted_by_hr_id,decided_at,decided_by_hr_id,created_at,updated_at";
 
 export const HR_OPS_LINE_COLUMNS =
   "id,report_id,section,work_date,hr_id,hr_key,employee_name,job_title,line_name,area_name,manager_name,metrics,flags,suggested_days,review_action,review_reason,review_comment,recommended_days,reviewed_by_hr_id,reviewed_at,decision,decided_days,decided_by_hr_id,decided_at,bridge_status,bridge_ref,bridge_message,bridged_at,carried_from_line_id,created_at,updated_at";
