@@ -1,7 +1,7 @@
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { dayActivityLabel, parseDayActivityDraft, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { isActivityEnteredForRep } from "@/lib/phoenix-crm/missed-records";
-import { readTestFlag, territoryForRead, territoryForRepWrite, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readTestFlag, territoryForDayWrite, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { validationError } from "@/lib/http/api-errors";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -136,9 +136,12 @@ export async function loadDayActivities(
 /**
  * Write or clear one day's activity.
  *
- * The territory's own rep, exactly like his list and his plan — `territoryForRepWrite`. A manager
- * enters a VISIT on a rep's territory (he was there, with him) but never a day activity, which is a
- * statement about how the rep spent his own day.
+ * The territory's own rep on his territory, exactly like his list and his plan — `territoryForRepWrite`
+ * — or a DISTRICT manager on HIS OWN seat (`territoryForDayWrite`, owner 2026-10-20: "let her record
+ * the day"). A manager enters a VISIT on a rep's territory (he was there, with him) but never a day
+ * activity ON THAT TERRITORY, which is a statement about how the rep spent his own day: one row per
+ * seat per day, so a manager's meeting written there would replace the rep's. The row lands on the
+ * manager's own seat instead, with his own hr id as the person whose day it is.
  *
  * The date is the viewer's VISIT day and is not taken from the body: back-dating a day activity is
  * the same hole as back-dating a visit, and the module closed that one already. Since 2026-09-29 that
@@ -148,7 +151,7 @@ export async function saveDayActivity(
   viewer: PhoenixCrmViewer,
   raw: { seatId: unknown; test: unknown; activityType?: unknown; halfDay?: unknown; note?: unknown; clear?: unknown },
 ): Promise<{ cleared: boolean; activity: DayActivityRow | null }> {
-  const { seat, isTest } = territoryForRepWrite(viewer, raw.seatId, readTestFlag(raw.test));
+  const { seat, isTest } = territoryForDayWrite(viewer, raw.seatId, readTestFlag(raw.test));
 
   if (raw.clear === true) {
     await callPhoenixCrm("phoenix_crm_save_day_activity", {

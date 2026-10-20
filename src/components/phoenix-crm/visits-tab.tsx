@@ -1145,8 +1145,8 @@ export function VisitsTab({
   if (step) {
     return (
       <AddFlow
-        canSetDayActivity={date !== null ? false : view ? view.canSetDayActivity : null}
-        dayActivity={date === null && view ? view.dayActivity : null}
+        canSetDayActivity={date !== null ? false : view ? view.canSetDayActivity || view.canSetOwnDayActivity : null}
+        dayActivity={date === null && view ? (view.canSetOwnDayActivity ? view.ownDayActivity : view.dayActivity) : null}
         onActivitySaved={(activity, label) => {
           closeFlow();
           setSaved({ kind: "activity", label, halfDay: activity?.halfDay ?? false });
