@@ -145,7 +145,7 @@ export function runRecruitmentWorkspaceExcludeFiltersTests() {
 
   // ── 10 · The production sweep, 21 Oct 2026: what only a phone and a light page showed ──
   assert.ok(
-    shell.includes("const headerActionClassName = cn(") && !shell.includes("border-white/20 bg-white/10 px-3 py-1.5"),
+    shell.includes("const headerActionClassName = `inline-flex") && !shell.includes("border-white/20 bg-white/10 px-3 py-1.5"),
     "RED: Shortcuts and Previous workspace sit on the LIGHT hero, so white text on a white tint is invisible",
   );
   assert.ok(

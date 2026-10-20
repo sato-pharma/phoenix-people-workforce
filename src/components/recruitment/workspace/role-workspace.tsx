@@ -91,10 +91,7 @@ const PIN_MIN_WIDTH = 1024;
  * The page header's two buttons. The header is the slim LIGHT hero, so they wear the dense light button
  * (white text on a 10% white fill, drawn for a dark banner, read as nothing on production, 2026-10-20).
  */
-const headerActionClassName = cn(
-  "inline-flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100",
-  adminControlDepthClassName,
-);
+const headerActionClassName = `inline-flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 ${adminControlDepthClassName}`;
 
 export type RoleWorkspaceViewer = {
   canWork: boolean;
