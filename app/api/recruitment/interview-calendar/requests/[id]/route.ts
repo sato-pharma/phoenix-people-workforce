@@ -4,6 +4,7 @@ import { assertSameOriginMutation, recruitmentApiError } from "@/app/api/recruit
 import { resolveAccessContext } from "@/lib/auth/server";
 import { interviewCalendarCaller } from "@/lib/recruitment/interview-calendar";
 import { cancelInterviewRequest, getInterviewRequest } from "@/lib/recruitment/interview-requests";
+import { assertInterviewRequestVisible, fenceInterviewRequest } from "@/lib/recruitment/workspace/fence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +17,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const access = await resolveAccessContext(request);
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
-    return NextResponse.json({ request: await getInterviewRequest(caller, id), success: true }, { headers: { "Cache-Control": "no-store" } });
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's CV is not on the request she
+    // reads, and a request only about HR applicants answers as gone.
+    const found = await fenceInterviewRequest(access, await getInterviewRequest(caller, id));
+    return NextResponse.json({ request: found, success: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return recruitmentApiError(error, "Could not load the interview request.");
   }
@@ -29,7 +33,10 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     const access = await resolveAccessContext(request);
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
-    return NextResponse.json({ request: await cancelInterviewRequest(caller, id), success: true });
+    // Asked BEFORE the cancel, so a request only about HR applicants cannot be withdrawn by her either.
+    await assertInterviewRequestVisible(access, id);
+    const cancelled = await fenceInterviewRequest(access, await cancelInterviewRequest(caller, id));
+    return NextResponse.json({ request: cancelled, success: true });
   } catch (error) {
     return recruitmentApiError(error, "Could not cancel the interview request.");
   }

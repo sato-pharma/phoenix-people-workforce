@@ -26,6 +26,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { isIsoDate, parseLetterDate } from "@/lib/offers/dates";
 import type { OfferRecord } from "@/lib/offers/types";
 import type { DailyCvDigest } from "@/lib/recruitment/inbound/daily-cv-digest";
+import { HR_WORKSPACE_BASE_PATH, workspaceHref } from "@/lib/recruitment/workspace/links";
 
 /** The seat this page is built for. The route's gate, and the only bundle it ever renders. */
 export const TALENT_ACQUISITION_SEAT: HrBundleName = "HR Resourcing";
@@ -739,10 +740,23 @@ export function buildLineVacancyTiles(input: {
   });
 }
 
-/** The CVs Received card. `windowPhrase` is `describeWindow(...)`: "in October", or "11 Sep – 22 Sep". */
-export function buildCvsReceivedTile(count: number, windowPhrase: string): HrCommandTile {
+/**
+ * The CVs Received card. `windowPhrase` is `describeWindow(...)`: "in October", or "11 Sep – 22 Sep".
+ * With the window, the card opens the workspace on the same received dates (Cairo, inclusive) and
+ * with archived rejections included — the count includes them, so the rows it opens must too.
+ */
+export function buildCvsReceivedTile(
+  count: number,
+  windowPhrase: string,
+  window?: { fromIso: string; toIso: string } | null,
+): HrCommandTile {
   return {
-    href: "/hr/recruitment",
+    href: window
+      ? workspaceHref(
+          { archived: "include", fromDate: window.fromIso, toDate: window.toIso },
+          { basePath: HR_WORKSPACE_BASE_PATH },
+        )
+      : "/hr/recruitment",
     key: "cvs-received",
     label: "CVs Received",
     sub: `received ${windowPhrase}`,

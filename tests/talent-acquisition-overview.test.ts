@@ -551,7 +551,9 @@ function testTheTodayPanelsNeverDrawAFailureAsAQuietDay() {
     /if \(cvToday\.status === "hidden"\) return null;/,
     "a seat that may not read candidates gets NO CVs panel — never a 'could not load' for something it was never allowed to see",
   );
-  assert.ok(cv.includes("digest.byJobTitle"), "the CVs panel lists the digest's role breakdown");
+  assert.ok(cv.includes("digest.byPlace"), "the CVs panel lists the digest's tab-and-place breakdown");
+  assert.ok(!cv.includes("byJobTitle"), "and no longer the CV-read 'Applying for' — a CV never decides where a person is filed");
+  assert.match(cv, /href=\{placeHref\(place\)\}/, "each tab-and-place line opens that tab in the workspace");
   assert.ok(cv.includes("digest.bySource"), "and its channel breakdown");
   assert.ok(!/and \$\{|more`|\.slice\(0, ?\d/.test(cv), "every group is listed — no 'and N more', no cut list");
 
@@ -561,7 +563,11 @@ function testTheTodayPanelsNeverDrawAFailureAsAQuietDay() {
     /canAccess\(access, "candidates", "read"\)/,
     "the CVs are asked for only when her seat may read candidates",
   );
-  assert.match(data, /buildTodaysCvDigest\(now\)/, "and counted by the 18:00 summary's own builder, so the two never disagree");
+  assert.match(
+    data,
+    /buildTodaysCvDigest\(now, \{ hideHrPeople: workspaceViewer\(access\)\.hidesHrPeople \}\)/,
+    "and counted by the 18:00 summary's own builder, so the two never disagree — fenced for her seat, so no HR applicant is counted",
+  );
   assert.match(data, /listInterviewCalendarDay\(caller, todayKey\)/, "today's interviews come through the calendar's own day reader and gate");
   assert.match(
     data,

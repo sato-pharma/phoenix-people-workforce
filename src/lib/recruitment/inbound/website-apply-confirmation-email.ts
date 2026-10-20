@@ -17,7 +17,7 @@ import { systemEmail } from "@/config/system-settings";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { escapeHtml } from "@/lib/hiring-pack/render-shared";
 import { emailNotificationsEnabled } from "@/lib/notifications/email";
-import { firstNameOf } from "@/lib/recruitment/whatsapp-templates/candidate-context";
+import { candidateGreetingName } from "@/lib/recruitment/candidate-greeting";
 import { renderSatoEmail } from "@/lib/sato-email/render";
 import { satoEmailFrom } from "@/lib/sato-email/service";
 
@@ -36,7 +36,8 @@ export type WebsiteApplyConfirmationContent = {
 export function renderWebsiteApplyConfirmationEmail(
   content: WebsiteApplyConfirmationContent,
 ): { subject: string; html: string; text: string } {
-  const name = firstNameOf(content.fullName);
+  // "Dear Dr Mariam": every candidate is greeted with Dr (owner, 2026-10-20 — candidate-greeting.ts).
+  const name = candidateGreetingName(content.fullName);
   const role = content.roleTitle.trim();
   const subject = `We've received your application — ${role}`;
   const rendered = renderSatoEmail({

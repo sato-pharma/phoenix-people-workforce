@@ -5,6 +5,7 @@ import {
   formatDocumentList,
   selectCandidateSuppliedNames,
 } from "../src/lib/hiring-documents/candidate-supplied.ts";
+import { candidateGreetingName } from "../src/lib/recruitment/candidate-greeting.ts";
 import { firstNameOf, softenShoutedName } from "../src/lib/recruitment/whatsapp-templates/candidate-context.ts";
 import {
   formatDialNumberForDisplay,
@@ -195,6 +196,18 @@ export function runWhatsAppMessageTemplateTests() {
   assert.equal(firstNameOf("  Aya   Mohamed  "), "Aya", "extra whitespace does not become the name");
   assert.equal(firstNameOf("Mr. Ahmed Nour"), "Ahmed", "an honorific from a CV header is not the first name");
   assert.equal(firstNameOf("Dr Sara Ali"), "Sara", "an honorific without a full stop is also stripped");
+
+  // ── "Dr" before every candidate's first name (owner, 2026-10-20) ─────────────────────────────
+  // The GREETING only: candidate_first_name carries it, candidate_name stays the stored name, and an
+  // employee (a contract renewal, a salary increase) is greeted by the plain first name.
+  assert.equal(candidateGreetingName("Aya Mohamed Hassan"), "Dr Aya", "a candidate is greeted Dr and the first name");
+  assert.equal(candidateGreetingName("Dr. Sara Ali"), "Dr Sara", "a CV's own Dr. never doubles");
+  assert.equal(candidateGreetingName("SHAABAN ABDELHAKIM"), "Dr Shaaban", "the shout is still softened");
+  assert.equal(candidateGreetingName("   "), "", "no name stays empty, so the template still refuses to send \"Dear Dr ,\"");
+  const candidateContext = readFileSync("src/lib/recruitment/whatsapp-templates/candidate-context.ts", "utf8");
+  assert.match(candidateContext, /candidate_first_name: candidateGreetingName\(fullName\)/, "the template's first name is the titled one");
+  assert.match(candidateContext, /candidate_name: fullName,/, "while the full name stays exactly as recorded");
+  assert.doesNotMatch(readFileSync("src/lib/recruitment/whatsapp-templates/employee-context.ts", "utf8"), /candidateGreetingName/, "an employee is never titled");
 
   // ── a SHOUTED name is softened for the greeting, and only for the greeting ───────────────────
   //

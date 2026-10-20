@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertApplicationVisible } from "@/lib/recruitment/workspace/fence";
 
 import { isOfferResponse } from "@/lib/recruitment/offer-rules";
 import {
@@ -22,8 +23,10 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireRecruitmentAccess(request, "recruitment", "read");
+    const access = await requireRecruitmentAccess(request, "recruitment", "read");
     const { id } = await params;
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's application answers as if absent.
+    await assertApplicationVisible(access, id);
     const offer = await getOffer(id);
     return NextResponse.json({ success: true, offer });
   } catch (error) {
@@ -44,6 +47,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "recruitment", "update");
     const { id } = await params;
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's application answers as if absent.
+    await assertApplicationVisible(access, id);
     const body = await readJsonObject(request);
     const intent = str(body.intent);
     const reason = str(body.reason);

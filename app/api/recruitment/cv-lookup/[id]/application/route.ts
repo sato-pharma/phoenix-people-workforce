@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
@@ -52,6 +53,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (!isUuid(id)) {
       return NextResponse.json({ error: "not_found", message: "Application not found.", success: false }, { status: 404 });
     }
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's file answers as if absent.
+    await assertCandidateVisible(access, id, "Application not found.");
     await assertExportRateLimit({
       actor: access.loginId ?? access.hrId,
       request,

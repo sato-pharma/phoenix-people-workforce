@@ -11,6 +11,7 @@ import {
   requireRecruitmentAccess,
   str,
 } from "@/app/api/recruitment/_lib/http";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,6 +55,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "hiring_interviews", "update");
     const { candidateId } = await params;
+    await assertCandidateVisible(access, candidateId);
     await assertCanFile(access, candidateId);
 
     const body = await readJsonObject(request);
@@ -93,6 +95,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ c
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "hiring_interviews", "update");
     const { candidateId } = await params;
+    await assertCandidateVisible(access, candidateId);
     await assertCanFile(access, candidateId);
 
     await unfileCandidateForManager(access, candidateId);

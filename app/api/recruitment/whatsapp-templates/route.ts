@@ -11,6 +11,7 @@ import {
 } from "@/app/api/recruitment/_lib/http";
 import { resolveCommentAuthor } from "@/lib/recruitment/candidate-comments";
 import { assertPermission } from "@/lib/auth/permissions";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 import { templateAllowedForCandidate } from "@/lib/recruitment/whatsapp-templates/variables";
 import { loadCandidateSendContext, manualSendAutoValues } from "@/lib/recruitment/whatsapp-templates/candidate-context";
 import { loadEmployeeSendContext } from "@/lib/recruitment/whatsapp-templates/employee-context";
@@ -58,6 +59,9 @@ export async function GET(request: Request) {
       ? allTemplates.filter((template) => templateAllowedForCandidate(template))
       : allTemplates;
 
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's number and name never reach
+    // her through the send dialog — the candidate answers as if absent.
+    if (candidateId) await assertCandidateVisible(access, candidateId);
     const candidate = candidateId ? await loadCandidateSendContext(candidateId, author.name) : null;
 
     // THE EMPLOYEE TARGET CARRIES ITS OWN GATE. This branch returns a staff member's name, job title

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { fenceRowsByCandidate } from "@/lib/recruitment/workspace/fence";
 
 import { listSeatHireApplications } from "@/lib/recruitment/applications";
 import { buildSeatHireCandidates } from "@/lib/recruitment/seat-hire-candidates";
@@ -25,7 +26,12 @@ export async function GET(request: Request) {
     const access = await requireRecruitmentAccess(request, "recruitment", "read");
     const url = new URL(request.url);
 
-    const applications = await listSeatHireApplications(access);
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is never offered for a seat.
+    const applications = await fenceRowsByCandidate(
+      access,
+      await listSeatHireApplications(access),
+      (application) => application.candidateId,
+    );
     const candidates = buildSeatHireCandidates(applications, {
       areaId: url.searchParams.get("areaId"),
       lineId: url.searchParams.get("lineId"),

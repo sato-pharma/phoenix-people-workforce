@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertSameOriginMutation, readJsonObject, recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { fenceInterviewBookings } from "@/lib/recruitment/workspace/fence";
 import {
   cancelInterviewSession,
   getInterviewSession,
@@ -22,7 +23,9 @@ export async function GET(request: Request, { params }: Context) {
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
     const result = await getInterviewSession(caller, id);
-    return NextResponse.json({ success: true, ...result }, { headers: { "Cache-Control": "no-store" } });
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's slot is not shown to her.
+    const bookings = await fenceInterviewBookings(access, result.bookings);
+    return NextResponse.json({ success: true, ...result, bookings }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return recruitmentApiError(error, "Could not load the interview session.");
   }

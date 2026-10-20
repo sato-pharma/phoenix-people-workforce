@@ -240,6 +240,8 @@ export const accessRegistry = [
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/distributor-upload-overdue-nudge", reason: "Tells Super Admin and the SFE Manager which distributor files for the month just closed are later than that same distributor's file was last month (owner decision 2026-09-03, asked directly: sfe, plus you and Super Admins). Exists because nothing watched the eighteen hand-uploaded files the monthly closing is assembled from: July 2026 was built on four of its eighteen sources, 84% of its value absent, and every tab rendered immaculately. Judges each distributor against its own previous arrival day rather than one company-wide deadline, because July's files landed across ten days, so a single deadline would either nag ten distributors that are on time or stay silent on the one that is genuinely late. In-app/Telegram/push only, never email - the house rule for lateness reminders since 2026-07-25. Silent once the period is locked. Reads distributor names, periods and batch totals; no PII. Re-sends nothing on a repeat run - the idempotency key carries the Cairo date and the summed day count; guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/recruitment-manager-cv-reminders", reason: "The manager CV folder reminder (owner, 2026-10-16: the folder keeps notifying until its CV is opened): hourly, 08:00-21:59 Cairo, one message per manager who holds folders, naming the CVs sent to the manager and not yet opened. In-app, Telegram and push, never email; guarded by CRON_SECRET. dryRun=1 sends nothing." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/recruitment-requisition-autopilot", reason: "The requisition autopilot (owner, 2026-10-16: no manual work in recruitment): hourly, opens an already-open requisition for each empty seat with none — owned by the Talent Acquisition seat, no approval, no notice — and fills or cancels each requisition whose seat row is filled or cancelled. Acts as the system through the requisition service and the workflow registry; parked seats and replacements for somebody still employed are left alone. dryRun=1 writes nothing." }),
+  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/recruitment-whatsapp-reask", reason: "The in-window WhatsApp re-ask (owner, 2026-10-20: it \"stays off until you switch it on\"): every 30 minutes, and only while ats_recruitment_settings.whatsapp_reask_enabled is true, re-sends the current question ONCE to an open chat quiet for 2+ hours whose last inbound message is under 22 hours old, then stamps reasked_at. Otherwise it returns at once and sends nothing." }),
+  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/recruitment-archive-rejections", reason: "Daily 03:29 Cairo: archives (never deletes) every CV rejected more than 30 days ago, measured from the rejection; holds a manager's return still waiting on HR; sends nothing. dryRun=1 writes nothing. Guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/interview-reminders", reason: "Reminds the District Manager or above chosen to conduct an interview on the calendar (owner, 2026-09-20): the evening before from 5 PM Cairo with the day's list, and an hour before each interview — in-app, email and Telegram. Every ten minutes; a message's idempotency key means a repeat tells nobody twice. Reads the calendar as the system and notifies only the interviewer named on the row." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/phoenix-crm-daily-digest", reason: "Phoenix CRM's 06:55 Cairo digest (owner, 2026-09-26): to each DISTRICT MANAGER, about the previous field day, in-app + Telegram and never e-mail, which the module blocks on its module key. A CLEAN MANAGER IS TOLD NOTHING — most mornings most managers hear nothing at all, and that is the feature rather than the cron failing. Reads the whole company's exceptions board as the system, writes nothing, and its idempotency key is per manager per DAY so a retry or a double fire reaches nobody twice." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/phoenix-crm-plan-reminder", reason: "Phoenix CRM's \"your coming week is not sent\" reminder (owner, 2026-10-02), 12:57 and 17:57 Cairo: to the rep and their district manager, in the teams that have started, from the day a week is due until it starts. In-app, Telegram and push, never email; guarded by CRON_SECRET." }),
@@ -547,6 +549,7 @@ export const accessRegistry = [
   // this registry keeps saying what actually gates the route.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST", "DELETE"], pattern: "/api/admin/screening-questions", permission: { resource: "recruitment", action: "update" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/question-prompts", permission: { resource: "recruitment", action: "update" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/screening-questions/settings", permission: { resource: "recruitment", action: "update" }, guard: "domain-helper", csrfRequired: true }),
   // The third editor on the same screen: the automatic WhatsApp replies the bot sends by itself.
   // Same helper, same gate, same reason the two above carry `guard: "domain-helper"`.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/whatsapp-auto-replies", permission: { resource: "recruitment", action: "update" }, guard: "domain-helper", csrfRequired: true }),
@@ -1512,6 +1515,42 @@ export const accessRegistry = [
   // to the record, so `candidates:update` (Super Admin and Talent Acquisition) with its own audit row,
   // ahead of the catch-all whose candidates:read is only the authority to look.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/recruitment/candidates/*/whatsapp-answer", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
+  // The rebuilt Recruitment workspace (owner, 19–20 Oct 2026). Its rows, counts, tab meta and the
+  // "N new CVs" poll are read through ONE SQL filter whose allowed tabs and Talent Acquisition fence
+  // the server sets from the session — so the gate is the named workspace viewer
+  // (`workspaceViewer` in src/lib/recruitment/workspace/role-tabs.ts), which also admits the CEO
+  // read-only without granting him candidates:read (`tests/ceo-account-contract.test.ts`).
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/workspace/rows", permission: null, guard: "domain-helper" }),
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/workspace/counts", permission: null, guard: "domain-helper" }),
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/workspace/meta", permission: null, guard: "domain-helper" }),
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/workspace/arrivals", permission: null, guard: "domain-helper" }),
+  // One candidate's CV file, read only, for anyone the workspace admits — the CEO included (owner,
+  // 2026-10-20: "answers and optional the cv file"). The files and nothing else; fenced by person.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/recruitment/workspace/cv/*", permission: null, guard: "domain-helper" }),
+  // The filtered tab as a Sato-identity workbook, one column per question. recruitment:export, then
+  // the same viewer rule as the rows, so the Talent Acquisition fence holds in the file too.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/workspace/export", permission: { resource: "recruitment", action: "export" } }),
+  // Its writes: HR placing a candidate in a tab, a one-tap call result, a rejection with its reason
+  // (one or many), and the 30-day archive (or bringing one back). Each refuses the CEO and fences
+  // the Talent Acquisition seat by person before any work.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/recruitment/candidates/*/placement", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/candidates/*/call-result", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/candidates/*/reject", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/recruitment/candidates/*/archive", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/candidates/bulk-reject", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
+  // The WhatsApp follow-ups — each sent ONLY on HR's press, never automatically: the one-click
+  // rejection message (inside the 24-hour window; GET says whether it can send and why not) and
+  // "Ask again on WhatsApp" (the Meta-approved follow-up template, one candidate or a ticked batch).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/candidates/*/rejection-message", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/candidates/*/ask-again", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/candidates/ask-again", permission: { resource: "candidates", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/recruitment/whatsapp/followup-template", permission: { resource: "candidates", action: "read" } }),
+  // "Mark as hired": GET lists the seats this person could take (candidates:read, and canHire false
+  // with the reason for a viewer without employees:update); POST (employees:update) hands back the
+  // Add Employee link for the seat chosen; hire-draft is that form's prefill. NONE of them writes —
+  // the hire is the employee record Add Employee saves (recordHireFromCandidate, the fifth door).
+  sessionApi({ methods: ["GET", "POST"], pattern: "/api/recruitment/candidates/*/hire", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/candidates/*/hire-draft", permission: { resource: "employees", action: "update" } }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/candidates/**", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
   // CV LOOKUP — the search-only CV access the owner asked for on 2026-09-30 (HR Operations may find
   // a CV she searches for; she may not have the pool). TWO CONCRETE ENTRIES AND NO WILDCARD, so the

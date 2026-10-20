@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidatesVisible } from "@/lib/recruitment/workspace/fence";
 
 import {
   fileCandidatesInCvFolder,
@@ -53,6 +54,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
     const mode: CvFolderFileMode = requested;
 
+    // A batch naming someone she may not see is refused whole, as not found (owner, 2026-10-20).
+    await assertCandidatesVisible(access, candidateIds);
     const result = await fileCandidatesInCvFolder(access, { candidateIds, folderId: id, mode });
     return NextResponse.json({ ...result, mode, success: true });
   } catch (error) {
@@ -73,12 +76,13 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
-    await requireRecruitmentAccess(request, "candidates", "update");
+    const access = await requireRecruitmentAccess(request, "candidates", "update");
     const { id } = await params;
     const body = await readJsonObject(request);
 
     const candidateIds = candidateIdList(body);
     if (candidateIds.length === 0) return recruitmentProblem("Pick at least one CV to take out.", 400);
+    await assertCandidatesVisible(access, candidateIds);
 
     const result = await removeCandidatesFromCvFolder({ candidateIds, folderId: id });
     return NextResponse.json({ ...result, success: true });

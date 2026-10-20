@@ -18,11 +18,26 @@
 // forwarder, one whose CV is not a candidate yet). Rule 1 has no foreign key behind it, so a merge can
 // leave it pointing at a candidate that no longer exists. When it does, the next rule is tried
 // instead of the conversation being lost.
+//
+// The three rules live in inbound/whatsapp-session-link.ts since 20 Oct 2026, because the bot now
+// writes each answer onto the candidate as it is given and must find the person the same way.
+//
+// THE TALENT ACQUISITION FENCE. Handed the viewer, the list and one application drop every HR
+// applicant for the Talent Acquisition seat (workspace/fence.ts): a conversation whose tapped role is
+// an HR one, and a conversation joined to a person the fence hides. Gone, never counted.
 
+import type { AccessContext } from "@/lib/auth/permissions";
 import { mapCandidate, recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { loadSavedAudiences } from "@/lib/recruitment/inbound/whatsapp-classify-session";
 import { loadAllQuestions } from "@/lib/recruitment/inbound/whatsapp-screening-questions-session";
+import {
+  MESSAGE_ID_BATCH,
+  PAGE_LIMIT,
+  PAGE_SIZE,
+  readEveryPage,
+  SESSION_LINK_RULES,
+} from "@/lib/recruitment/inbound/whatsapp-session-link";
 import type { WhatsAppApplicantRow, WhatsAppApplicantsView } from "@/lib/recruitment/whatsapp-applicant-filters";
 import type { Candidate } from "@/lib/recruitment/types";
 import {
@@ -32,6 +47,8 @@ import {
   type WhatsAppApplicantSession,
 } from "@/lib/recruitment/whatsapp-applicants";
 import { countsOnWhatsAppApplicants } from "@/lib/recruitment/whatsapp-cv-archive";
+import { fenceApplies, fenceCandidateIds } from "@/lib/recruitment/workspace/fence";
+import { HR_ROLE_FAMILIES } from "@/lib/recruitment/workspace/role-tabs";
 
 const SESSIONS_TABLE = "ats_whatsapp_classification_sessions";
 const INTAKE_TABLE = "ats_cv_intake_events";
@@ -63,37 +80,6 @@ type SessionDbRow = Omit<WhatsAppApplicantSession, "candidate_id"> & {
   applied_candidate_id: string | null;
 };
 
-/** Supabase serves at most 1000 rows a request, whatever `.limit()` asks for. */
-const PAGE_SIZE = 1000;
-/** 50,000 rows. Far past anything this reads, and a list with people silently missing is worse than an error. */
-const PAGE_LIMIT = 50;
-
-/**
- * A WhatsApp message id is about 60 characters, against 36 for the ids `chunkIds` is sized for. A
- * phone number is shorter, and 50 keeps both well inside the request-size limit db-batch.ts describes.
- */
-const MESSAGE_ID_BATCH = 50;
-
-/**
- * Every row a read returns, page by page. `readPage` must order on something unique: `.range()`
- * over an unordered read can repeat one page's rows and skip another's without an error.
- */
-async function readEveryPage<TRow>(
-  what: string,
-  readPage: (from: number, to: number) => PromiseLike<{ data: unknown; error: unknown }>,
-): Promise<TRow[]> {
-  const rows: TRow[] = [];
-  for (let page = 0; page < PAGE_LIMIT; page += 1) {
-    const from = page * PAGE_SIZE;
-    const { data, error } = await readPage(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    const batch = (data ?? []) as TRow[];
-    rows.push(...batch);
-    if (batch.length < PAGE_SIZE) return rows;
-  }
-  throw new Error(`${what} paging stopped at ${PAGE_LIMIT * PAGE_SIZE} rows. Refusing to show a list with people missing.`);
-}
-
 /** Every conversation where the job title was tapped: the people the page is about. */
 async function loadStartedSessions(): Promise<SessionDbRow[]> {
   const supabase = recruitmentDb();
@@ -106,86 +92,6 @@ async function loadStartedSessions(): Promise<SessionDbRow[]> {
       .order("id", { ascending: true })
       .range(from, to),
   );
-}
-
-/** Rule 1: the candidate the bot itself wrote the answers onto. */
-function byBotLink(sessions: readonly SessionDbRow[]): Map<string, string> {
-  const proposed = new Map<string, string>();
-  for (const session of sessions) {
-    const candidateId = textOrNull(session.applied_candidate_id);
-    if (candidateId) proposed.set(session.id, candidateId);
-  }
-  return proposed;
-}
-
-/**
- * Rule 2: the candidate made from the CV that opened the conversation. The message id is unique per
- * channel, so each id matches one intake row at most and a batch can never pass the page limit.
- */
-async function byOpeningCv(sessions: readonly SessionDbRow[]): Promise<Map<string, string>> {
-  const sessionsByMessage = new Map<string, string[]>();
-  for (const session of sessions) {
-    const messageId = textOrNull(session.cv_wamid);
-    if (!messageId) continue;
-    sessionsByMessage.set(messageId, [...(sessionsByMessage.get(messageId) ?? []), session.id]);
-  }
-
-  const proposed = new Map<string, string>();
-  const supabase = recruitmentDb();
-  for (const batch of chunkIds([...sessionsByMessage.keys()], MESSAGE_ID_BATCH)) {
-    const { data, error } = await supabase
-      .from(INTAKE_TABLE)
-      .select("provider_message_id,candidate_id")
-      .eq("channel", "whatsapp")
-      .in("provider_message_id", batch)
-      .not("candidate_id", "is", null);
-    if (error) throw error;
-    for (const row of (data ?? []) as { provider_message_id: string | null; candidate_id: string | null }[]) {
-      const messageId = textOrNull(row.provider_message_id);
-      const candidateId = textOrNull(row.candidate_id);
-      if (!messageId || !candidateId) continue;
-      for (const sessionId of sessionsByMessage.get(messageId) ?? []) proposed.set(sessionId, candidateId);
-    }
-  }
-  return proposed;
-}
-
-/**
- * Rule 3: the sender's candidate, only when every CV the number sent became that one candidate. A
- * number whose CVs became two or more people is a forwarder, and its conversation stays unjoined.
- */
-async function bySendersOnlyCandidate(sessions: readonly SessionDbRow[]): Promise<Map<string, string>> {
-  const senders = [...new Set(sessions.map((session) => textOrNull(session.wa_id)).filter((waId): waId is string => Boolean(waId)))];
-  const candidatesBySender = new Map<string, Set<string>>();
-  const supabase = recruitmentDb();
-  for (const batch of chunkIds(senders, MESSAGE_ID_BATCH)) {
-    const rows = await readEveryPage<{ sender_identifier: string | null; candidate_id: string | null }>(
-      "WhatsApp intake",
-      (from, to) =>
-        supabase
-          .from(INTAKE_TABLE)
-          .select("id,sender_identifier,candidate_id")
-          .in("sender_identifier", batch.map((waId) => `+${waId}`))
-          .not("candidate_id", "is", null)
-          .order("id", { ascending: true })
-          .range(from, to),
-    );
-    for (const row of rows) {
-      const sender = textOrNull(row.sender_identifier);
-      const candidateId = textOrNull(row.candidate_id);
-      if (!sender || !candidateId) continue;
-      const found = candidatesBySender.get(sender) ?? new Set<string>();
-      found.add(candidateId);
-      candidatesBySender.set(sender, found);
-    }
-  }
-
-  const proposed = new Map<string, string>();
-  for (const session of sessions) {
-    const found = candidatesBySender.get(`+${session.wa_id}`);
-    if (found && found.size === 1) proposed.set(session.id, [...found][0]);
-  }
-  return proposed;
 }
 
 type CandidateDbRow = { id: string; full_name: string | null; status: string | null; governorate: string | null };
@@ -283,7 +189,7 @@ async function joinToCandidates(
   candidates: Map<string, WhatsAppApplicantCandidate>,
 ): Promise<Map<string, string>> {
   const joined = new Map<string, string>();
-  for (const rule of [byBotLink, byOpeningCv, bySendersOnlyCandidate]) {
+  for (const rule of SESSION_LINK_RULES) {
     const open = sessions.filter((session) => !joined.has(session.id));
     if (open.length === 0) break;
     const proposed = await rule(open);
@@ -295,16 +201,44 @@ async function joinToCandidates(
   return joined;
 }
 
+/** Who is looking. Optional so the scripts and tests that read the whole list keep working. */
+export type WhatsAppApplicantsViewer = { access?: Pick<AccessContext, "role" | "scope"> | null };
+
+/** A conversation whose own tapped role is an HR one: hidden from the Talent Acquisition seat. */
+function isHrConversation(session: { job_title_family: string | null }): boolean {
+  return Boolean(session.job_title_family && HR_ROLE_FAMILIES.includes(session.job_title_family));
+}
+
+/**
+ * The conversations this viewer may see, and the joins that survive. Free for everyone the fence does
+ * not apply to; for the Talent Acquisition seat one batched read of the joined people.
+ */
+async function fenceConversations<TSession extends { id: string; job_title_family: string | null }>(
+  viewer: WhatsAppApplicantsViewer | undefined,
+  sessions: readonly TSession[],
+  joined: Map<string, string>,
+): Promise<TSession[]> {
+  const access = viewer?.access ?? null;
+  if (!access || !fenceApplies(access)) return [...sessions];
+  const visible = await fenceCandidateIds(access, [...joined.values()]);
+  return sessions.filter((session) => {
+    if (isHrConversation(session)) return false;
+    const candidateId = joined.get(session.id);
+    return !candidateId || visible.has(candidateId);
+  });
+}
+
 /** Everything the WhatsApp Applicants page shows, read once per visit. */
-export async function loadWhatsAppApplicantsView(): Promise<WhatsAppApplicantsView> {
-  const [sessions, questions, audiences] = await Promise.all([
+export async function loadWhatsAppApplicantsView(viewer?: WhatsAppApplicantsViewer): Promise<WhatsAppApplicantsView> {
+  const [allSessions, questions, audiences] = await Promise.all([
     loadStartedSessions(),
     loadAllQuestions(),
     loadSavedAudiences(),
   ]);
 
   const candidates = new Map<string, WhatsAppApplicantCandidate>();
-  const joined = await joinToCandidates(sessions, candidates);
+  const joined = await joinToCandidates(allSessions, candidates);
+  const sessions = await fenceConversations(viewer, allSessions, joined);
   await Promise.all([attachUnconfirmedGovernorates(candidates), markCvFolderMembers(candidates)]);
 
   return buildWhatsAppApplicantsView({
@@ -340,7 +274,10 @@ export type WhatsAppApplication = {
  * pressing Print is looking at the row, and `markCvFolderMembers` is left out on purpose because it is
  * the only step that would drop them.
  */
-export async function loadWhatsAppApplication(sessionId: string): Promise<WhatsAppApplication | null> {
+export async function loadWhatsAppApplication(
+  sessionId: string,
+  viewer?: WhatsAppApplicantsViewer,
+): Promise<WhatsAppApplication | null> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
     .from(SESSIONS_TABLE)
@@ -353,8 +290,11 @@ export async function loadWhatsAppApplication(sessionId: string): Promise<WhatsA
   const session = data as unknown as SessionDbRow;
 
   const candidates = new Map<string, WhatsAppApplicantCandidate>();
-  const candidateId = (await joinToCandidates([session], candidates)).get(session.id);
+  const joinedOne = await joinToCandidates([session], candidates);
+  const candidateId = joinedOne.get(session.id);
   if (!candidateId) return null;
+  // Hidden from this viewer reads exactly like no such application.
+  if ((await fenceConversations(viewer, [session], joinedOne)).length === 0) return null;
 
   // The fourth read fills a map the builder below reads, so it is awaited with the rest and answers nothing.
   const [questions, audiences, candidate] = await Promise.all([

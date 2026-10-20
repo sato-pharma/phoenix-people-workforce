@@ -1,6 +1,6 @@
 import { inboxApiError, inboxForbidden } from "@/app/api/whatsapp-inbox/_lib/inbox-http";
 import { requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
-import { getInboxAttachment } from "@/lib/whatsapp-inbox/store";
+import { assertInboxMessageVisibleTo, getInboxAttachment } from "@/lib/whatsapp-inbox/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +21,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ mess
     const forbidden = inboxForbidden(access);
     if (forbidden) return forbidden;
     const { messageId } = await params;
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's attachment answers as if absent.
+    await assertInboxMessageVisibleTo(access, messageId);
 
     const attachment = await getInboxAttachment(messageId);
     const mimeType = attachment.mimeType.split(";")[0]!.trim().toLowerCase();

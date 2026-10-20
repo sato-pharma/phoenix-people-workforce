@@ -36,6 +36,7 @@ import { createSystemNotification, createSystemNotificationForRecipients } from 
 import { logError } from "@/lib/observability/log";
 import { recruitmentDeskAlertRoles } from "@/lib/recruitment/access";
 import { managerLabel } from "@/lib/recruitment/person-labels";
+import { workspaceHref } from "@/lib/recruitment/workspace/links";
 import {
   STALE_SEND_ESCALATE_AFTER_DAYS,
   STALE_SEND_NUDGE_AFTER_DAYS,
@@ -67,8 +68,23 @@ export const STALE_SEND_CHANNELS = ["in_app", "telegram", "push"] as const;
 /** Where a manager lands from the nudge — the same screen the original send links to. */
 export const STALE_SEND_MANAGER_ACTION_URL = "/employee-portals/recruitment-candidates";
 
-/** Where the recruitment desk lands from the escalation. */
+/**
+ * Where the recruitment desk lands from a manager-hold return (`manager-hold-return.ts` reads this).
+ * The stranded escalation below lands on the filtered workspace instead (`strandedEscalationHref`).
+ */
 export const STALE_SEND_TA_ACTION_URL = "/recruitment";
+
+/**
+ * Where the stranded escalation lands: the workspace filtered to CVs with a manager, and to the
+ * OVERDUE ones when every stranded send is a manager not answering — that is exactly the workspace's
+ * own overdue rule (with a manager past STALE_SEND_ESCALATE_AFTER_DAYS). A send stranded because the
+ * manager can no longer answer may be younger than that, so with one of those in the set the overdue
+ * filter is left off rather than hiding it.
+ */
+export function strandedEscalationHref(stranded: ReadonlyArray<{ reason: StrandedReason }>): string {
+  const allOverdue = stranded.length > 0 && stranded.every((send) => send.reason === "no_answer");
+  return workspaceHref({ overdue: allOverdue ? true : null, statuses: ["sent_to_manager"] });
+}
 
 /** One candidate sitting in `sent_to_manager`, narrowed to what the rule reads. */
 export type SentCandidate = {
@@ -426,9 +442,10 @@ export async function runStaleSendCheck(now: Date = new Date()): Promise<StaleSe
       const recipients = await recruitmentDeskHrIds();
       if (recipients.length > 0) {
         const strandedIds = plan.stranded.map((send) => send.id).sort();
+        const strandedHref = strandedEscalationHref(plan.stranded);
         const result = await createSystemNotificationForRecipients(
           {
-            actionUrl: STALE_SEND_TA_ACTION_URL,
+            actionUrl: strandedHref,
             category: "recruitment",
             channels: [...STALE_SEND_CHANNELS],
             eventType: "recruitment_stale_send_stranded",
@@ -442,7 +459,7 @@ export async function runStaleSendCheck(now: Date = new Date()): Promise<StaleSe
             },
             module: "recruitment",
             priority: "high",
-            telegram: { ctaLabel: "Open recruitment", ctaUrl: STALE_SEND_TA_ACTION_URL },
+            telegram: { ctaLabel: "Open recruitment", ctaUrl: strandedHref },
             title: `${count(plan.stranded.length, "CV")} stuck with a hiring manager`,
           },
           recipients,

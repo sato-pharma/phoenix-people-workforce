@@ -130,7 +130,7 @@ export function RecruitmentPanel({
             {icon ? <span className="text-orange-300">{icon}</span> : null}
             <h2 className="break-words text-sm font-black uppercase tracking-[0.12em] text-white">{title}</h2>
             {count !== undefined && count !== null ? (
-              <span className="border border-orange-400/40 bg-orange-500/15 px-1.5 py-0.5 text-phx-2xs font-black tabular-nums text-orange-100">
+              <span className="border border-orange-400/40 bg-orange-500/15 px-1.5 py-0.5 text-phx-xs font-black tabular-nums text-orange-100">
                 {count}
               </span>
             ) : null}
@@ -234,7 +234,7 @@ export function RecruitmentTabBar<K extends string>({
             {tab.count !== undefined && tab.count !== null ? (
               <span
                 className={cn(
-                  "border px-1.5 text-phx-2xs font-black tabular-nums",
+                  "border px-1.5 text-phx-xs font-black tabular-nums",
                   selected ? "border-orange-200 bg-orange-50 text-orange-700" : "border-slate-200 bg-white/80 text-slate-500",
                 )}
               >
@@ -266,7 +266,7 @@ export function RecruitmentPill({ children, tone }: { children: ReactNode; tone:
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 border px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.06em]",
+        "inline-flex items-center gap-1 border px-1.5 py-0.5 text-phx-xs font-bold uppercase tracking-[0.06em]",
         recruitmentPillToneClassName[tone],
         adminChipDepthClassName,
       )}

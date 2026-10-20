@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import {
   assertSameOriginMutation,
@@ -43,6 +44,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "hiring_interviews", "update");
     const { id } = await params;
+    await assertCandidateVisible(access, id);
     if (!id) return validationError("A candidate id is required.");
 
     if (!access.hrId) {

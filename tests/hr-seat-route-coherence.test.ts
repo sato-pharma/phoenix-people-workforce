@@ -186,6 +186,11 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "it that day through time_attendance at the owner's request. The row therefore carries no roles " +
     "gate. Read-only either way — approving a plan belongs to the sales ladder and neither seat " +
     "holds any weekly_plans write action",
+  // The rebuilt Recruitment workspace (owner, 2026-10-20) gates on the named workspace viewer rather
+  // than a resource, because it also admits the CEO read-only without candidates:read.
+  "/hr/recruitment":
+    "workspaceViewer(access).canRead — TRUE for HR Resourcing (a work role that may decide, send and " +
+    "file). HR Operations holds no recruitment grant, so the row never renders for it",
   "/hr/recruitment/manager-engagement":
     "canViewManagerCvEngagement(access) — a ROLE SET, not a resource, so the row carries roles: " +
     '["HR Advisory"] beside its recruitment permission and the two must be read together. TRUE for ' +

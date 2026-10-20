@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import { markCandidateSeen } from "@/lib/recruitment/candidate-views";
 import {
@@ -36,6 +37,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "candidates", "read");
     const { id } = await params;
+    await assertCandidateVisible(access, id);
 
     // Scoped to the CALLER, never to an HR_ID from the body. "Have I seen this" is a question
     // about the person asking it, and accepting a viewer id from a request would let one person

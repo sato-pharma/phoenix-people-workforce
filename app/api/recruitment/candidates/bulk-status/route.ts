@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidatesVisible } from "@/lib/recruitment/workspace/fence";
 
 import { bulkUpdateCandidateStatus } from "@/lib/recruitment/candidates";
 import {
@@ -67,6 +68,8 @@ export async function POST(request: Request) {
       return validationError(`Keep the note under ${CANDIDATE_STATUS_NOTE_MAX_LENGTH} characters.`);
     }
 
+    // A batch naming someone she may not see is refused whole, as not found (owner, 2026-10-20).
+    await assertCandidatesVisible(access, ids);
     const result = await bulkUpdateCandidateStatus(access, ids, status, note);
     // `moved` carries each candidate's previous status, which is what the undo control restores —
     // it cannot be read back afterwards because the row has already been overwritten.

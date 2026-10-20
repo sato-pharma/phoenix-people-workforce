@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { afterResponse } from "@/lib/http/after-response";
 import {
   assertScreeningQuestionsAccess,
   deleteScreeningQuestion,
@@ -9,6 +10,7 @@ import {
   type ScreeningQuestionDraft,
 } from "@/lib/recruitment/inbound/whatsapp-screening-questions-admin";
 import type { ScreeningQuestionKind, ScreeningQuestionOption } from "@/lib/recruitment/inbound/whatsapp-screening-questions";
+import { recomputeCompletenessForRoles } from "@/lib/recruitment/workspace/completeness";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -104,6 +106,9 @@ export async function POST(request: Request) {
       actorHrId: access.hrId ?? null,
       questions: body.questions.map(parseDraft),
     });
+    // A question added, removed or re-scoped changes what every person it reaches still owes, and the
+    // workspace sorts and filters on the stored numbers. Past the response: the pool is a few hundred.
+    await afterResponse("screening_questions_recompute_completeness", () => recomputeCompletenessForRoles(null));
     return NextResponse.json(result);
   } catch (error) {
     return failure(error, "screening_questions_save_failed");
@@ -124,6 +129,7 @@ export async function DELETE(request: Request) {
     }
 
     await deleteScreeningQuestion({ id });
+    await afterResponse("screening_questions_recompute_completeness", () => recomputeCompletenessForRoles(null));
     return NextResponse.json({ success: true });
   } catch (error) {
     return failure(error, "screening_question_delete_failed");

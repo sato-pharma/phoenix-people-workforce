@@ -113,6 +113,16 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // scripts/cronjob-sync.mjs exactly, and lands in the SAME sitting as its cron job. NO watchingSince:
   // a new declaration, never a restored one.
   { slug: "phoenix-recruitment-manager-cv-reminders", kind: "cron", schedule: "41 * * * *", graceSeconds: 2 * HOUR },
+  // 03:29 Cairo, daily (owner, 2026-10-20: rejections leave the tabs for the archive after 30 days —
+  // never deleted, still searchable, one click back). A minute no other job holds. Must match
+  // scripts/cronjob-sync.mjs exactly. NO watchingSince: a new declaration.
+  { slug: "phoenix-recruitment-archive-rejections", kind: "cron", schedule: "29 3 * * *", graceSeconds: 2 * HOUR },
+  // Every 30 minutes on :01 and :31 (owner, 2026-10-20: the in-window WhatsApp re-ask "stays off
+  // until you switch it on"). The route returns at once while ats_recruitment_settings says off, and
+  // still pings its heartbeat, so the check stays a straight half-hourly one. :01 and :31 are odd
+  // minutes no other job holds (*/2 takes every even one). Must match scripts/cronjob-sync.mjs
+  // exactly, and lands in the SAME sitting as its cron job. NO watchingSince: a new declaration.
+  { slug: "phoenix-recruitment-whatsapp-reask", kind: "cron", schedule: "1,31 * * * *", graceSeconds: 1 * HOUR },
   // 06:55 Cairo, every day — before the field day starts, and on :55 so a red execution names one
   // job. Daily rather than field-days-only: the job runs on a Friday too and simply finds the
   // Thursday before, which is what keeps its heartbeat a straight daily one. Must match

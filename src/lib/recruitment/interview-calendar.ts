@@ -2195,6 +2195,16 @@ async function applyOutcomeToCandidate(
       } else if (current !== effect.status) {
         const day = cairoDateKey(new Date(row.starts_at));
         await updateCandidateStatus(caller.access, row.candidate_id, effect.status, `Interview outcome: ${interviewOutcomeLabels[outcome]} (${day})`);
+        // A rejection the interview made carries its reason, so the workspace counts it with the
+        // others ("Failed the interview") instead of as a rejection nobody explained. Only where the
+        // status really moved here — a candidate already rejected keeps the reason HR gave.
+        if (effect.status === "rejected") {
+          const { error: reasonError } = await recruitmentDb()
+            .from("ats_candidates")
+            .update({ rejection_reason: "failed_interview" })
+            .eq("id", row.candidate_id);
+          if (reasonError) throw reasonError;
+        }
         notes.push(`Their status is now ${candidateStatusLabels[effect.status]}.`);
       }
     }

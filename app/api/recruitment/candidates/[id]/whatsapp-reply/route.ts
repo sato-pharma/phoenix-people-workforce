@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import {
   assertSameOriginMutation,
@@ -27,8 +28,9 @@ const MAX_REPLY_LENGTH = 4096;
  */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireRecruitmentAccess(request, "recruitment", "update");
+    const access = await requireRecruitmentAccess(request, "recruitment", "update");
     const { id } = await params;
+    await assertCandidateVisible(access, id);
     const target = await resolveCandidateReplyTarget(id);
     if (!target) {
       return NextResponse.json({ canReply: false, reason: "no_conversation" });
@@ -74,6 +76,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "recruitment", "update");
     const { id } = await params;
+    await assertCandidateVisible(access, id);
 
     const body = await readJsonObject(request);
     const text = str(body.text)?.trim() ?? "";

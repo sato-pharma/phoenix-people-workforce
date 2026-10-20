@@ -64,12 +64,13 @@ function runWordingTests() {
   assert.equal(greetingName("  Nevin   Adel Hassan "), "Nevin", "the first word");
   assert.equal(greetingName(""), "there", "never \"Hello ,\"");
 
-  // The owner's message, character for character: an office interview to the candidate.
+  // The owner's message, character for character: an office interview to the candidate — greeted
+  // "Dr" before the first name, as every candidate is (owner, 2026-10-20).
   const office = buildInvitationMessage({ facts: OFFICE, kind: "invitation", name: "Nevin", recipient: "candidate" });
   assert.equal(
     office.text,
     [
-      "Hello Nevin",
+      "Hello Dr Nevin",
       "",
       "Kindly find below the interview details.",
       "",
@@ -87,6 +88,24 @@ function runWordingTests() {
     "an office invitation is the owner's own wording",
   );
   assert.equal(office.action?.href, systemInterviewVenue.mapUrl, "and the e-mail's button opens the map");
+  assert.equal(office.greeting, "Dr Nevin", "the e-mail greets with the same name the text does");
+  assert.equal(buildInvitationMessage({ facts: OFFICE, kind: "invitation", name: "", recipient: "candidate" }).greeting, "there", "no name is \"Hello there\", never \"Hello Dr there\"");
+  assert.equal(office.subject, "Interview invitation — Sato Pharma, 21-9-2026", "with no interviewer chosen the subject names none");
+  assert.doesNotMatch(office.text, /Interviewer:/, "and the text has no empty interviewer line");
+
+  // The interviewer the candidate will meet, in the owner's own format, and in the subject (owner,
+  // 2026-10-20: "add the interviewer name in the invitation and title").
+  const withInterviewer = buildInvitationMessage({
+    facts: { ...OFFICE, interviewerName: "Ahmed Nour", interviewerTitle: "Senior HR Manager" },
+    kind: "invitation",
+    name: "Nevin",
+    recipient: "candidate",
+  });
+  assert.match(withInterviewer.text, /• Date: 21-9-2026\n• Time: 04:00 PM\n\n• Interviewer: Ahmed Nour \(Senior HR Manager\)\n\n• Location: /, "after the time, on its own line, name and title");
+  assert.equal(withInterviewer.subject, "Interview invitation with Ahmed Nour — Sato Pharma, 21-9-2026", "the subject names the interviewer");
+  assert.ok(withInterviewer.rows.some((row) => row.label === "Interviewer" && row.value === "Ahmed Nour (Senior HR Manager)"), "and the e-mail's table carries the same line");
+  const untitled = buildInvitationMessage({ facts: { ...OFFICE, interviewerName: "Ahmed Nour", interviewerTitle: null }, kind: "invitation", name: "Nevin", recipient: "candidate" });
+  assert.match(untitled.text, /• Interviewer: Ahmed Nour\n/, "an interviewer with no job title on file is named without empty brackets");
 
   // Zoom swaps the place for the link — no office address on an online interview.
   const zoom = buildInvitationMessage({
@@ -107,7 +126,7 @@ function runWordingTests() {
 
   // The interviewer is told WHO they are meeting.
   const interviewer = buildInvitationMessage({ facts: OFFICE, kind: "invitation", name: "Omar", recipient: "interviewer" });
-  assert.match(interviewer.text, /^Hello Omar\n/);
+  assert.match(interviewer.text, /^Hello Omar\n/, "a colleague is greeted by the plain first name — the \"Dr\" is for candidates");
   assert.match(interviewer.text, /• Candidate: Nevin Adel/);
   assert.match(interviewer.text, /• Applied for: Medical Representative/);
   assert.match(interviewer.text, /• Date: 21-9-2026\n• Time: 04:00 PM/);
@@ -181,7 +200,9 @@ function runWiringTests() {
   assert.match(applied, /applied_candidate_id/, "read from the conversation the bot wrote onto");
   assert.match(applied, /people\.delete\(candidateId\)[\s\S]*people\.size === 0/, "a forwarder's number is refused");
   // The interviewer: Employee Master.
-  assert.match(functionBody(invitations, "interviewerContact"), /"employees"[\s\S]*mobile_number,work_email/, "the interviewer's number and e-mail are Employee Master's");
+  assert.match(functionBody(invitations, "interviewerContact"), /"employees"[\s\S]*mobile_number,work_email,job_title/, "the interviewer's number, e-mail and job title are Employee Master's");
+  assert.match(functionBody(invitations, "prepare"), /factsOf\(booking, person\?\.jobTitle \?\? null\)/, "the candidate's invitation is built with the interviewer's job title");
+  assert.match(functionBody(invitations, "emailInterviewInvitation"), /renderInvitationEmail\(message\.greeting, message, kind\)/, "the e-mail greets with the message's own (titled) name");
 
   // The interviewer is checked against Employee Master before it is stored.
   assert.match(functionBody(calendar, "resolveInterviewer"), /loadPeople\(/, "an interviewer must be a real employee");

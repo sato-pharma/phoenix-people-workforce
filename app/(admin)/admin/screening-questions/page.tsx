@@ -2,6 +2,7 @@ import { ListChecks } from "lucide-react";
 
 import { AdminInsightChip } from "@/components/admin/admin-design-system";
 import { BuiltInQuestionsEditor, type BuiltInPromptRow } from "@/components/admin/built-in-questions-editor";
+import { RecruitmentSettingsPanel } from "@/components/admin/recruitment-settings-panel";
 import { ScreeningQuestionsManager } from "@/components/admin/screening-questions-manager";
 import {
   WhatsAppAutoRepliesEditor,
@@ -17,6 +18,7 @@ import {
   listScreeningQuestions,
   type ScreeningQuestionAdminRow,
 } from "@/lib/recruitment/inbound/whatsapp-screening-questions-admin";
+import { loadRecruitmentSettingsView, type RecruitmentSettingsView } from "@/lib/recruitment/recruitment-settings-db";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +43,7 @@ export default async function ScreeningQuestionsPage() {
   let questions: ScreeningQuestionAdminRow[] = [];
   let prompts: BuiltInPromptRow[] = [];
   let autoReplies: AutoReplyEditorRow[] = [];
+  let settings: RecruitmentSettingsView | null = null;
   let initialError: string | null = null;
 
   try {
@@ -71,6 +74,10 @@ export default async function ScreeningQuestionsPage() {
     // best-effort in the store, so the editor renders on the code defaults even when the table is
     // unreachable or not yet migrated.
     autoReplies = await listAutoReplies();
+
+    // The re-ask switch and the rejection message (owner, 2026-10-20). Never throws: a failed read
+    // answers the defaults, and the re-ask default is OFF.
+    settings = await loadRecruitmentSettingsView();
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Screening questions failed to load.";
   }
@@ -105,6 +112,7 @@ export default async function ScreeningQuestionsPage() {
       {prompts.length > 0 ? <BuiltInQuestionsEditor initialPrompts={prompts} /> : null}
       <ScreeningQuestionsManager embedded initialError={initialError} initialQuestions={questions} />
       {autoReplies.length > 0 ? <WhatsAppAutoRepliesEditor initialReplies={autoReplies} /> : null}
+      {settings ? <RecruitmentSettingsPanel initialSettings={settings} /> : null}
     </div>
   );
 }

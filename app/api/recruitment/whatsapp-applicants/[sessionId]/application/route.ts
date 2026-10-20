@@ -49,7 +49,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ sess
       scope: "export:recruitment:whatsapp-application",
     });
 
-    const application = await loadWhatsAppApplication(sessionId);
+    // The Talent Acquisition fence (owner, 2026-10-20) rides in the viewer: an HR applicant's sheet reads as not found.
+    const application = await loadWhatsAppApplication(sessionId, { access });
     if (!application) {
       return NextResponse.json({ error: "not_found", message: "Application not found.", success: false }, { status: 404 });
     }

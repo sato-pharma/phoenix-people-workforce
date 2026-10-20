@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertApplicationVisible } from "@/lib/recruitment/workspace/fence";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { addDays, DEFAULT_OFFER_VALIDITY_DAYS, todayInCairo } from "@/lib/offers/dates";
@@ -59,6 +60,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     await assertPermission(access, "offers", "create");
 
     const { id } = await params;
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's application answers as if absent.
+    await assertApplicationVisible(access, id);
     const application = await getApplication(access, id);
     if (!application) {
       return NextResponse.json({ message: "That application no longer exists.", success: false }, { status: 404 });

@@ -8,6 +8,7 @@ import { ReturnedCvsQueue } from "@/components/recruitment/returned-cvs-queue";
 import { canAccess, isHrAuthorityRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listReturnedCvQueue } from "@/lib/recruitment/district-returns";
+import { fenceReturnedCvQueue } from "@/lib/recruitment/workspace/fence";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,8 @@ export default async function ReturnedCvsPage() {
     redirect("/employee-portals");
   }
 
-  const groups = await listReturnedCvQueue();
+  // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is not in the queue, nor in its totals.
+  const groups = await fenceReturnedCvQueue(access, await listReturnedCvQueue());
 
   return (
     <PageContainer>

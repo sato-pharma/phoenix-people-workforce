@@ -9,6 +9,7 @@ import { satoLogoDataUri } from "@/lib/offers/brand";
 import { buildCandidateRecordBodyHtml } from "@/lib/recruitment/candidate-record-print";
 import { candidateRecordPrintCss } from "@/lib/recruitment/candidate-record-print-css";
 import { loadCandidateRecordPrint } from "@/lib/recruitment/candidate-record-print-loader";
+import { candidateHiddenFrom } from "@/lib/recruitment/workspace/fence";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,8 @@ export default async function CandidateRecordPrintPage({ params }: { params: Pro
     redirect("/employee-portals");
   }
 
+  // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's sheet is "not found", read or not.
+  if (await candidateHiddenFrom(access, id)) notFound();
   const record = await loadCandidateRecordPrint(id);
   if (!record) notFound();
 

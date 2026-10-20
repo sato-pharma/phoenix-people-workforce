@@ -356,9 +356,13 @@ export async function runHrCommandCenterTests() {
             "namespace — AppShell would bounce it back and the seat would pay a redirect per click",
         );
 
-        if (!offered.has(tile.href)) {
-          if (tile.href in DASHBOARD_DESTINATIONS_THAT_ARE_NOT_ROWS) {
-            exemptionsUsed.add(tile.href);
+        // The PAGE a tile opens. A query only filters the page its row opens — the recruitment
+        // tiles land on that seat's own workspace pre-filtered ("?status=new", 2026-10-20) — so it
+        // never makes a destination the seat cannot reach.
+        const page = tile.href.split(/[?#]/)[0]!;
+        if (!offered.has(page)) {
+          if (page in DASHBOARD_DESTINATIONS_THAT_ARE_NOT_ROWS) {
+            exemptionsUsed.add(page);
           } else {
             failures.push(
               `${seat}: tile "${tile.label}" (${group.functionKey}) links to ${tile.href}, which is ` +

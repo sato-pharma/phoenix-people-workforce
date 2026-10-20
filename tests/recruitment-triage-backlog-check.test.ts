@@ -218,7 +218,11 @@ export async function runRecruitmentTriageBacklogCheckTests(): Promise<void> {
 
     const source = withoutComments(read(MODULE));
     assert.doesNotMatch(source, /"email"/, "and no email channel is named anywhere in the module");
-    assert.equal(TRIAGE_BACKLOG_ACTION_URL, "/recruitment", "the desk lands on the workspace");
+    assert.equal(
+      TRIAGE_BACKLOG_ACTION_URL,
+      "/recruitment?status=new",
+      "the desk lands on the workspace filtered to the very queue this counts",
+    );
   }
 
   // ── 10. The loader must PAGE, and the run must stay silent at zero ─────────

@@ -719,6 +719,8 @@ export type EmployeeCvCreateResult = {
 export async function attachEmployeeCvOnCreate(input: {
   actorHrId?: string | null;
   applicationId?: string | null;
+  /** The candidate "Mark as hired" opened the form for — a hire with no application behind it. */
+  candidateId?: string | null;
   cvDraftFileName?: string | null;
   cvDraftId?: string | null;
   hrId: string;
@@ -746,11 +748,14 @@ export async function attachEmployeeCvOnCreate(input: {
     }
   }
 
-  if (input.applicationId) {
+  // An application names its candidate; a hire from the recruitment workspace names the candidate
+  // directly, because most people there never had an application row. Either finds the same file.
+  if (input.applicationId || input.candidateId) {
     try {
       const copied = await copyCandidateCvToEmployee({
         actorHrId: input.actorHrId ?? null,
-        applicationId: input.applicationId,
+        applicationId: input.applicationId ?? null,
+        candidateId: input.applicationId ? null : (input.candidateId ?? null),
         hrId: input.hrId,
       });
       if (copied) return { attached: true, fileName: copied.fileName, source: copied.source, warnings };

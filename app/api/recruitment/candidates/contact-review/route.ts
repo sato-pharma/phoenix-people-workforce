@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidatesVisible, fenceRowsByCandidate } from "@/lib/recruitment/workspace/fence";
 
 import { applyContactProposals, listContactReviewQueue } from "@/lib/recruitment/contact-review-service";
 import {
@@ -23,8 +24,9 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request) {
   try {
-    await requireRecruitmentAccess(request, "recruitment", "read");
-    const rows = await listContactReviewQueue();
+    const access = await requireRecruitmentAccess(request, "recruitment", "read");
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is not on her queue.
+    const rows = await fenceRowsByCandidate(access, await listContactReviewQueue(), (row) => row.candidateId);
     return NextResponse.json({ rows, success: true });
   } catch (error) {
     return recruitmentApiError(error, "Failed to load the contact-details review list.");
@@ -45,7 +47,7 @@ export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
-    await requireRecruitmentAccess(request, "recruitment", "update");
+    const access = await requireRecruitmentAccess(request, "recruitment", "update");
     const body = await readJsonObject(request);
 
     const raw = Array.isArray(body.candidateIds) ? body.candidateIds : [];
@@ -57,6 +59,7 @@ export async function POST(request: Request) {
       );
     }
 
+    await assertCandidatesVisible(access, candidateIds);
     const result = await applyContactProposals({
       candidateIds,
       highConfidenceOnly: bool(body.highConfidenceOnly) ?? false,

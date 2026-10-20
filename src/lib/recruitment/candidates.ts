@@ -1050,6 +1050,9 @@ export async function updateCandidateStatus(
       // so carrying a July rejection reason forward onto an August shortlist would be a lie — and
       // the reason itself is not lost, it is on the event row below.
       status_note: cleanNote,
+      // The rejection REASON belongs to the rejection, exactly like the note: a CV moved out of
+      // Rejected by hand takes its reason with it, as an Undo does (`clearRejectionReasons`).
+      ...(next === "rejected" ? {} : { rejection_reason: null, rejection_reason_note: null }),
       updated_at: changedAt,
     })
     .eq("id", id)
@@ -1134,6 +1137,8 @@ export async function setCandidateRating(
 export type BulkStatusMove = {
   id: string;
   fromStatus: string | null;
+  /** The status note it carried before, so an Undo puts that back rather than an empty note. */
+  fromNote: string | null;
   toStatus: CandidateStatus;
 };
 
@@ -1203,6 +1208,13 @@ export async function bulkUpdateCandidateStatus(
   }
 
   const supabase = recruitmentDb();
+  // Read before the write: the function replaces the note and answers only with the earlier status.
+  const noteBefore = new Map<string, string | null>();
+  for (const batch of chunkIds(unique)) {
+    const { data: rows, error: readError } = await supabase.from("ats_candidates").select("id,status_note").in("id", batch);
+    if (readError) throw readError;
+    for (const row of (rows ?? []) as Array<{ id: string; status_note: string | null }>) noteBefore.set(row.id, row.status_note);
+  }
   const { data, error } = await supabase.rpc("ats_bulk_set_candidate_status", {
     // hrIdForStorage, never the raw session value: `access.hrId` is the LOWERCASE comparison
     // key, and 178 of 179 employee rows are mixed case. Writing the raw key here is how
@@ -1218,10 +1230,19 @@ export async function bulkUpdateCandidateStatus(
   const moved: BulkStatusMove[] = (
     (data ?? []) as Array<{ candidate_id?: string | null; from_status?: string | null }>
   ).map((row) => ({
+    fromNote: noteBefore.get(String(row.candidate_id ?? "")) ?? null,
     fromStatus: row.from_status ?? null,
     id: String(row.candidate_id ?? ""),
     toStatus: next,
   }));
+
+  // A batch moved OUT of Rejected takes its reasons with it, as one candidate does.
+  if (next !== "rejected") {
+    await clearRejectionReasons(
+      supabase,
+      moved.filter((row) => row.fromStatus === "rejected" && row.id).map((row) => row.id),
+    );
+  }
 
   const movedIds = new Set(moved.map((row) => row.id));
   return {
@@ -1323,12 +1344,32 @@ export async function revertCandidateStatuses(
     }))
     .filter((row) => Boolean(row.id) && Boolean(row.status));
 
+  // The rejection REASON belongs to the rejection. An Undo that takes a CV back out of Rejected must
+  // take its reason with it, or the row would go on counting as "Salary too high" in every report
+  // that counts rejections by reason (owner, 2026-10-20, #24) for a person nobody rejected. A CV put
+  // back INTO Rejected keeps whatever reason it still carries.
+  await clearRejectionReasons(
+    supabase,
+    restored.filter((row) => row.status !== "rejected").map((row) => row.id),
+  );
+
   const restoredIds = new Set(restored.map((row) => row.id));
   return {
     missing: clean.map((move) => move.id).filter((id) => !restoredIds.has(id)),
     requested: clean.length,
     restored,
   };
+}
+
+/** Take the rejection reason (and its note) off CVs that are no longer rejected. */
+async function clearRejectionReasons(supabase: ReturnType<typeof recruitmentDb>, ids: string[]): Promise<void> {
+  for (const batch of chunkIds(ids)) {
+    const { error } = await supabase
+      .from("ats_candidates")
+      .update({ rejection_reason: null, rejection_reason_note: null })
+      .in("id", batch);
+    if (error) throw error;
+  }
 }
 
 /**

@@ -18,8 +18,9 @@ export function runWebsiteApplyConfirmationEmailTests() {
   assert.match(html, /Talent Acquisition Specialist/);
   assert.match(text, /Talent Acquisition Specialist/);
 
-  // Greeted by FIRST name only (firstNameOf), never the whole string.
-  assert.match(html, /Dear Mariam,/);
+  // Greeted "Dr" and the FIRST name only, never the whole string (owner, 2026-10-20: every
+  // candidate is greeted with Dr — candidateGreetingName).
+  assert.match(html, /Dear Dr Mariam,/);
   assert.doesNotMatch(html, /Dear Mariam Adel Hassan/);
 
   // SATO identity, not the Phoenix shell: the readable letter carries the SATO house-template

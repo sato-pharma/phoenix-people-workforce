@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertApplicationVisible } from "@/lib/recruitment/workspace/fence";
 
 import { sendCandidateToHiringManager } from "@/lib/recruitment/applications";
 import {
@@ -24,6 +25,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "recruitment", "update");
     const { id } = await params;
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's application answers as if absent.
+    await assertApplicationVisible(access, id);
     const result = await sendCandidateToHiringManager(access, id);
     return NextResponse.json({ success: true, result });
   } catch (error) {

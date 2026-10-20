@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertApplicationVisible } from "@/lib/recruitment/workspace/fence";
 
 import { createInterview, listInterviewsForApplication } from "@/lib/recruitment/interviews";
 import { interviewTypes, type InterviewType } from "@/lib/recruitment/types";
@@ -17,6 +18,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   try {
     const access = await requireRecruitmentAccess(request, "recruitment", "read");
     const { id } = await params;
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's application answers as if absent.
+    await assertApplicationVisible(access, id);
     const interviews = await listInterviewsForApplication(access, id);
     return NextResponse.json({ success: true, interviews });
   } catch (error) {
@@ -30,6 +33,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "recruitment", "update");
     const { id } = await params;
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's application answers as if absent.
+    await assertApplicationVisible(access, id);
     const body = await readJsonObject(request);
     const interviewType = str(body.interviewType);
     if (!interviewType || !(interviewTypes as readonly string[]).includes(interviewType)) {

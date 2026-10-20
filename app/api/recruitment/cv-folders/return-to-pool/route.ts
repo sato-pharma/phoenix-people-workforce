@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidatesVisible } from "@/lib/recruitment/workspace/fence";
 
 import { returnCandidatesToPoolFromCvFolders } from "@/lib/recruitment/cv-folder-tree-db";
 import {
@@ -29,12 +30,14 @@ export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
-    await requireRecruitmentAccess(request, "candidates", "update");
+    const access = await requireRecruitmentAccess(request, "candidates", "update");
     const body = await readJsonObject(request);
 
     const raw = Array.isArray(body.candidateIds) ? body.candidateIds : [];
     const candidateIds = [...new Set(raw.map((value) => String(value ?? "").trim()).filter(Boolean))];
     if (candidateIds.length === 0) return recruitmentProblem("Pick at least one CV to return.", 400);
+    // The Talent Acquisition fence (owner, 2026-10-20): a batch naming an HR applicant is refused whole, as not found.
+    await assertCandidatesVisible(access, candidateIds);
 
     const result = await returnCandidatesToPoolFromCvFolders(candidateIds);
     return NextResponse.json({ ...result, success: true });

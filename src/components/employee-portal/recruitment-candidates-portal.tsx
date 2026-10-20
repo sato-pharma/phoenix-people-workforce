@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { BriefcaseBusiness, CalendarClock, CheckCircle2, ClipboardCheck, Folder, Inbox } from "lucide-react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { BriefcaseBusiness, CalendarClock, CheckCircle2, ClipboardCheck, Folder, Inbox, PhoneCall } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +26,10 @@ import { CandidateFolderControl } from "@/components/employee-portal/candidate-f
 import { DistrictFoldersSection } from "@/components/employee-portal/district-folders-section";
 import { ManagerFoldersSection } from "@/components/employee-portal/manager-folders-section";
 import { TeamCandidatesSection, type TeamManagerOption } from "@/components/employee-portal/team-candidates-section";
+import { CandidateRow, RowFlag } from "@/components/recruitment/workspace/candidate-row";
+import { managerWorkspaceRow } from "@/components/recruitment/workspace/manager-row";
+import { OpenedCv } from "@/components/recruitment/workspace/opened-cv";
+import { cairoDayLabel } from "@/components/recruitment/workspace/workspace-format";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { dateOnly } from "@/lib/format/date-only";
 import { APPLIED_FOR_SOURCE_LABEL, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
@@ -50,13 +54,13 @@ import {
 } from "@/lib/recruitment/manager-folder-shelf";
 import { groupCandidatesByPosition, shouldShowGroupHeadings } from "@/lib/recruitment/position-folder";
 import type { Candidate, Interview, TeamCandidateFile } from "@/lib/recruitment/types";
+import type { WorkspaceAnswerChip } from "@/lib/recruitment/workspace/types";
 import {
   phxFieldClassName,
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { adminPanelDepthClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
-import { cn } from "@/lib/utils";
 
 type Props = {
   /**
@@ -134,7 +138,86 @@ type Props = {
   initialTeam: TeamManagerOption[];
   /** Only used to decide which comments offer a Delete — every delete is re-checked server-side. */
   viewerHrId: string | null;
+  /**
+   * Every CV's answers as the workspace's labelled chips, keyed by candidate id — built on the server
+   * from the applicant's own replies, with the same labels HR reads ("one question, one name").
+   * Absent for a CV means its row says it holds no answers, never a guess from the CV.
+   */
+  initialAnswerChips?: Record<string, WorkspaceAnswerChip[]>;
+  /** The CV a notification linked to (`?candidate=`), opened on arrival. */
+  initialOpenId?: string | null;
+  /**
+   * Today in Cairo, from the server — a render never reads the clock (hydration). Only its YEAR is
+   * read: a date in another year prints its year. Absent, every date prints its year, which is
+   * still true and never differs between the server and the browser.
+   */
+  today?: string;
 };
+
+/**
+ * ONE CV OPEN AT A TIME, across every list on this screen (owner, 20 Oct 2026: the workspace's
+ * "pressing a name opens the CV in place; pressing it again closes it; one is open at a time").
+ * Every card reads it, so the sent list, the position cards and the folders behave as one list.
+ */
+type ManagerOpenState = {
+  chips: Record<string, WorkspaceAnswerChip[]>;
+  openId: string | null;
+  today: string;
+  toggle: (candidateId: string) => void;
+};
+
+const ManagerOpenContext = createContext<ManagerOpenState>({ chips: {}, openId: null, today: "", toggle: () => undefined });
+
+function stayPut() {
+  // A CV opened on its own card has no list to walk; Previous and Next are not drawn.
+}
+
+/**
+ * One CV on this screen: the workspace's two-line row, and under it — when pressed — the opened CV
+ * with the manager's own controls. The frame is square and lifted, like every list on the portal.
+ */
+function ManagerCvFrame({
+  candidate,
+  cvDocument,
+  files,
+  flags,
+  slot,
+}: {
+  candidate: Candidate;
+  cvDocument: ReactNode;
+  files: TeamCandidateFile[];
+  flags: ReactNode;
+  slot: ReactNode;
+}) {
+  const { chips, openId, today, toggle } = useContext(ManagerOpenContext);
+  const opened = openId === candidate.id;
+  const row = managerWorkspaceRow(candidate, { answers: chips[candidate.id], hasCvFile: files.length > 0 });
+  return (
+    <div className={`scroll-mt-24 border-x border-t border-slate-200 bg-white ${adminPanelDepthClassName}`} id={`candidate-${candidate.id}`}>
+      <CandidateRow canEdit={false} extraFlags={flags} mode="manager" onToggle={toggle} opened={opened} row={row} today={today} viewingTab={null} />
+      {opened ? (
+        <div className="border-b border-slate-200">
+          <OpenedCv
+            canWork={false}
+            cvDocument={cvDocument}
+            hasNext={false}
+            hasPrevious={false}
+            layout="split"
+            managerSlot={slot}
+            mode="manager"
+            onClose={() => toggle(candidate.id)}
+            onNext={stayPut}
+            onPrevious={stayPut}
+            position={null}
+            row={row}
+            today={today}
+            viewingTab={null}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 async function getJson(url: string): Promise<Record<string, unknown>> {
   const res = await fetch(url);
@@ -168,18 +251,6 @@ const stageLabels: Record<string, { label: string; tone: RecruitmentPillTone }> 
 
 function stageBadge(stage: string): { label: string; tone: RecruitmentPillTone } {
   return stageLabels[stage] ?? { label: "With recruitment", tone: "slate" };
-}
-
-/**
- * One inbox card's frame — square, lifted off the page by the house panel shadow, with a left rail
- * that says at a glance whether the card is waiting on THIS manager (orange) or already settled
- * (a quiet slate line). The rail is colour only; the words on the card still say the same thing.
- */
-function inboxCardClassName(waitingOnYou: boolean) {
-  return cn(
-    `scroll-mt-24 space-y-4 border border-slate-200 border-l-4 bg-white p-4 sm:p-5 ${adminPanelDepthClassName}`,
-    waitingOnYou ? "border-l-orange-500" : "border-l-slate-300",
-  );
 }
 
 /** A heading inside a card: a small icon, then the words, in the module's uppercase label style. */
@@ -231,8 +302,10 @@ const hiringManagerCriteria = [
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div className="min-w-0">
-      <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">{label}</p>
-      <p className="mt-0.5 break-words font-semibold text-slate-800">{value?.trim() ? value : "—"}</p>
+      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="mt-0.5 break-words font-semibold text-slate-800" dir="auto">
+        {value?.trim() ? value : "—"}
+      </p>
     </div>
   );
 }
@@ -359,21 +432,22 @@ function CandidateCard({
     .filter(Boolean)
     .join(" · ");
 
-  return (
-    <article className={inboxCardClassName(canAct)} id={`candidate-${candidate.id}`}>
+  const { today } = useContext(ManagerOpenContext);
+  const flags = (
+    <>
+      <RowFlag icon={<BriefcaseBusiness aria-hidden="true" className="h-3 w-3" />} tone="slate">
+        {`${requisition.jobTitle} · ${requisition.requisitionCode}`}
+      </RowFlag>
+      <RowFlag tone={badge.tone}>{badge.label}</RowFlag>
+      {canAct ? <RowFlag tone="orange">Waiting on you</RowFlag> : null}
+      {hmInterview?.scheduledAt ? <RowFlag tone="sky">{`Your interview · ${cairoDayLabel(hmInterview.scheduledAt, today)}`}</RowFlag> : null}
+    </>
+  );
+
+  const slot = (
+    <>
       <CandidateCallNotice claim={call.claim} viewerHrId={viewerHrId} />
       <CandidateOpenedNotice candidateId={candidate.id} />
-
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="break-words text-base font-black tracking-tight text-slate-950">{candidate.fullName}</p>
-          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
-            <BriefcaseBusiness aria-hidden="true" className="h-3.5 w-3.5 text-slate-400" />
-            {requisition.jobTitle} · {requisition.requisitionCode}
-          </p>
-        </div>
-        <RecruitmentPill tone={badge.tone}>{badge.label}</RecruitmentPill>
-      </div>
 
       <div className={factsWellClassName}>
         <Field label="Email" value={candidate.email} />
@@ -390,13 +464,6 @@ function CandidateCard({
         {candidate.hasMedicalRepExperience ? <Field label="Medical Rep tenure" value={tenureLine} /> : null}
       </div>
 
-      <CandidateCvActions
-        candidateId={candidate.id}
-        candidateName={candidate.fullName}
-        initialFiles={files}
-        showPhoneNumbers={call.mine}
-      />
-
       <CandidateCallControl
         canAct={canAct}
         candidateId={candidate.id}
@@ -407,25 +474,32 @@ function CandidateCard({
 
       <CandidateCommentThread candidateId={candidate.id} viewerHrId={viewerHrId} />
 
-      {error ? <p className="text-xs text-rose-600">{error}</p> : null}
+      {error ? (
+        <p className="text-xs font-semibold text-rose-700" dir="auto" role="alert">
+          {error}
+        </p>
+      ) : null}
 
       {canAct && !hmInterview ? (
         <div className="space-y-2 border-t border-slate-100 pt-3">
           <CardSectionHeading icon={<CalendarClock className="h-3.5 w-3.5" />}>Schedule your interview</CardSectionHeading>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <input
+              aria-label="Interview date and time"
               className={phxFieldClassName}
               onChange={(event) => setScheduledAt(event.target.value)}
               type="datetime-local"
               value={scheduledAt}
             />
             <input
+              aria-label="Location"
               className={phxFieldClassName}
               onChange={(event) => setLocation(event.target.value)}
               placeholder="Location (or phone/video)"
               value={location}
             />
             <input
+              aria-label="Meeting link"
               className={phxFieldClassName}
               onChange={(event) => setMeetingLink(event.target.value)}
               placeholder="Meeting link (optional)"
@@ -445,7 +519,7 @@ function CandidateCard({
           </CardSectionHeading>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {hiringManagerCriteria.map((criterion) => (
-              <label className="flex items-center justify-between gap-2 text-xs text-slate-600" key={criterion.key}>
+              <label className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600" key={criterion.key}>
                 {criterion.label}
                 <select
                   className={phxSelectClassName}
@@ -463,7 +537,9 @@ function CandidateCard({
             ))}
           </div>
           <textarea
+            aria-label="Feedback notes"
             className={phxTextareaClassName}
+            dir="auto"
             onChange={(event) => setNotes(event.target.value)}
             placeholder="Feedback notes"
             rows={2}
@@ -479,7 +555,24 @@ function CandidateCard({
           </div>
         </div>
       ) : null}
-    </article>
+    </>
+  );
+
+  return (
+    <ManagerCvFrame
+      candidate={candidate}
+      cvDocument={
+        <CandidateCvActions
+          candidateId={candidate.id}
+          candidateName={candidate.fullName}
+          initialFiles={files}
+          showPhoneNumbers={call.mine}
+        />
+      }
+      files={files}
+      flags={flags}
+      slot={slot}
+    />
   );
 }
 
@@ -518,6 +611,7 @@ function SentCandidateCard({
   const [hidden, setHidden] = useState(false);
   // A CV sent to this manager is fully his — number, file, everything (owner, 2026-10-16).
   const call = useCandidateCall(initial, initialClaim, viewerHrId, true);
+  const { today } = useContext(ManagerOpenContext);
 
   /**
    * Hide this CV from HIS folders — one press, no reason (owner, 2026-10-16: "make district manager
@@ -601,8 +695,21 @@ function SentCandidateCard({
     );
   }
 
-  return (
-    <article className={inboxCardClassName(awaitingAnswer)} id={`candidate-${candidate.id}`}>
+  const appliedFor = candidateRowAppliedFor(candidate);
+  const flags = (
+    <>
+      {awaitingAnswer ? <RowFlag tone="orange">Waiting on you</RowFlag> : null}
+      {notified ? <RowFlag tone="slate">{`Sent to you · ${cairoDayLabel(notified.sentAt, today)}`}</RowFlag> : null}
+      {call.claim ? (
+        <RowFlag icon={<PhoneCall aria-hidden="true" className="h-3 w-3" />} tone={call.mine ? "emerald" : "amber"}>
+          {call.mine ? "You will call" : `${call.claim.managerName ?? "Another manager"} will call`}
+        </RowFlag>
+      ) : null}
+    </>
+  );
+
+  const slot = (
+    <>
       {/* Who has taken this CV, at the TOP of the card. A manager must know it is somebody else's
           before he reads a word of it, not after he has formed an opinion at the foot of the card. */}
       <CandidateCallNotice claim={call.claim} viewerHrId={viewerHrId} />
@@ -610,28 +717,19 @@ function SentCandidateCard({
           must know a colleague has already looked before he reads a word of it. */}
       <CandidateOpenedNotice candidateId={candidate.id} />
 
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="break-words text-base font-black tracking-tight text-slate-950">{candidate.fullName}</p>
-          {/* The one question a manager opens this card to answer. Read through the same evidence
-              ladder the pool table uses, because `applied_for_job_title` is filled on 15 of the 555
-              production rows — reading only that made this line say "no role stated" on 540 CVs.
-              The source is named in the hover text, so a derived role never reads as a stated one. */}
-          {(() => {
-            const appliedFor = candidateRowAppliedFor(candidate);
-            return (
-              <p
-                className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500"
-                title={appliedFor.source ? `${APPLIED_FOR_SOURCE_LABEL[appliedFor.source]}: ${appliedFor.evidence}` : undefined}
-              >
-                <BriefcaseBusiness aria-hidden="true" className="h-3.5 w-3.5 text-slate-400" />
-                {appliedFor.text ? `Applying for ${appliedFor.text}` : "No role stated on the application"}
-              </p>
-            );
-          })()}
-        </div>
-        <RecruitmentPill tone={awaitingAnswer ? "orange" : "slate"}>{candidateStatusLabel(candidate.status)}</RecruitmentPill>
-      </div>
+      {/* The one question a manager opens this card to answer. Read through the same evidence
+          ladder the pool table uses, because `applied_for_job_title` is filled on 15 of the 555
+          production rows — reading only that made this line say "no role stated" on 540 CVs.
+          The source is named in the hover text, so a derived role never reads as a stated one. */}
+      <p
+        className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-slate-700"
+        title={appliedFor.source ? `${APPLIED_FOR_SOURCE_LABEL[appliedFor.source]}: ${appliedFor.evidence}` : undefined}
+      >
+        <BriefcaseBusiness aria-hidden="true" className="h-4 w-4 text-orange-500" />
+        <span className="min-w-0 break-words" dir="auto">
+          {appliedFor.text ? `Applying for ${appliedFor.text}` : "No role stated on the application"}
+        </span>
+      </p>
 
       <div className={factsWellClassName}>
         {/* Hidden until he takes the CV. The owner, 2026-09-09 — and it is the reservation that
@@ -651,12 +749,6 @@ function SentCandidateCard({
       </div>
 
       <div className="flex flex-wrap items-start gap-2">
-        <CandidateCvActions
-        candidateId={candidate.id}
-        candidateName={candidate.fullName}
-        initialFiles={files}
-        showPhoneNumbers={call.mine}
-      />
         {/* The third answer, and the one the owner asked for on 2026-08-30: neither "Interview" nor
             "Not interested" is true of a good CV that simply is not needed this month. Filing writes
             to HIS shelf only - the recruitment team's pool does not move. */}
@@ -673,7 +765,11 @@ function SentCandidateCard({
         </Button>
       </div>
 
-      {error ? <p className="text-xs text-rose-600">{error}</p> : null}
+      {error ? (
+        <p className="text-xs font-semibold text-rose-700" dir="auto" role="alert">
+          {error}
+        </p>
+      ) : null}
 
       {/* ONE FIELD, NOT TWO. The owner, 2026-09-09: *"I have two fields for your answer and your
           comments — merge them into one field, no need two fields."* There is only one thing to
@@ -684,7 +780,7 @@ function SentCandidateCard({
         <div className="border-t border-slate-100 pt-3">
           <p className="flex flex-wrap items-start gap-1.5 break-words text-xs text-slate-500">
             <CheckCircle2 aria-hidden="true" className="mt-px h-3.5 w-3.5 flex-none text-emerald-600" />
-            <span className="min-w-0">
+            <span className="min-w-0" dir="auto">
               You answered: {candidateStatusLabel(candidate.status)}
               {candidate.statusNote?.trim() ? ` — ${candidate.statusNote}` : ""}
             </span>
@@ -735,7 +831,24 @@ function SentCandidateCard({
         }
         viewerHrId={viewerHrId}
       />
-    </article>
+    </>
+  );
+
+  return (
+    <ManagerCvFrame
+      candidate={candidate}
+      cvDocument={
+        <CandidateCvActions
+          candidateId={candidate.id}
+          candidateName={candidate.fullName}
+          initialFiles={files}
+          showPhoneNumbers={call.mine}
+        />
+      }
+      files={files}
+      flags={flags}
+      slot={slot}
+    />
   );
 }
 
@@ -753,18 +866,33 @@ export function RecruitmentCandidatesPortal(props: Props) {
 
 function RecruitmentCandidatesPortalBody({
   areaOptions,
+  initialAnswerChips,
   initialApplications,
   initialCallClaims: callClaims,
   initialDistrictBoards,
   initialFilings,
   initialFiles: files,
+  initialOpenId,
   initialSentToMe: sentToMe,
   initialTeam,
   initialUnseenIds,
+  today,
   viewerHrId,
 }: Props) {
   const [applications, setApplications] = useState(initialApplications);
   const [filings, setFilings] = useState<ManagerFolderFilings>(initialFilings);
+  // The CV a notification named opens on arrival; after that one press opens, the same press closes.
+  const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null);
+  const toggle = useCallback((candidateId: string) => setOpenId((current) => (current === candidateId ? null : candidateId)), []);
+  const openState = useMemo(
+    () => ({ chips: initialAnswerChips ?? {}, openId, today: today ?? "", toggle }),
+    [initialAnswerChips, openId, today, toggle],
+  );
+
+  // Bring the linked CV into view once, on arrival. A DOM call, not state: nothing re-renders.
+  useEffect(() => {
+    if (initialOpenId) document.getElementById(`candidate-${initialOpenId}`)?.scrollIntoView({ block: "start" });
+  }, [initialOpenId]);
 
   // The manager's own shelf, folded by the RECRUITER's own partition function so a folder means one
   // thing on both screens. `live` is what still needs him; `shelves` is what he kept for later.
@@ -864,111 +992,113 @@ function RecruitmentCandidatesPortalBody({
   }
 
   return (
-    <div className="space-y-6">
-      {/* Sent-to-you first, deliberately: this is the list the notification links to, and it is the
-          one that needs an answer. The requisition-based applications below are the longer route
-          and are already sitting in a workflow. */}
-      {liveSends.length > 0 ? (
-        <RecruitmentPanel
-          bodyClassName="space-y-4 bg-slate-50/60 p-3 sm:p-4"
-          count={liveSends.length}
-          description={
-            <>
-              CVs the recruitment team asked you to look at. A CV in one of your folders stays until it is taken back
-              or you return it; any other CV goes back to the recruitment team after {MANAGER_HOLD_DAYS} days.
-            </>
-          }
-          icon={<Inbox aria-hidden="true" className="h-4 w-4" />}
-          title="Sent to you"
-        >
-          {/* ── One folder per position ───────────────────────────────────────────────────────
-              The owner, 2026-08-28: "he goes to a folder called Nasr City Medical Reps ... he can
-              look at the same page when he wants a certain position." A manager filling a seat
-              reads the CVs for that seat together, and a flat newest-first list interleaves five
-              vacancies, so comparing two candidates for one job means scrolling past three for
-              other ones.
+    <ManagerOpenContext.Provider value={openState}>
+      <div className="space-y-6">
+        {/* Sent-to-you first, deliberately: this is the list the notification links to, and it is the
+            one that needs an answer. The requisition-based applications below are the longer route
+            and are already sitting in a workflow. */}
+        {liveSends.length > 0 ? (
+          <RecruitmentPanel
+            bodyClassName="space-y-4 bg-slate-50/60 p-3 sm:p-4"
+            count={liveSends.length}
+            description={
+              <>
+                CVs the recruitment team asked you to look at. A CV in one of your folders stays until it is taken back
+                or you return it; any other CV goes back to the recruitment team after {MANAGER_HOLD_DAYS} days.
+              </>
+            }
+            icon={<Inbox aria-hidden="true" className="h-4 w-4" />}
+            title="Sent to you"
+          >
+            {/* ── One folder per position ───────────────────────────────────────────────────────
+                The owner, 2026-08-28: "he goes to a folder called Nasr City Medical Reps ... he can
+                look at the same page when he wants a certain position." A manager filling a seat
+                reads the CVs for that seat together, and a flat newest-first list interleaves five
+                vacancies, so comparing two candidates for one job means scrolling past three for
+                other ones.
 
-              Headings appear only once there is more than one GROUP to separate — and the sends
-              with no position count as one of those groups. A lone folder with nothing beside it
-              is just a list, and a heading on it would separate nothing. */}
-          {showGroupHeadings
-            ? positionFolders.map((folder) => (
-                <div className="space-y-3" key={folder.key}>
-                  <PositionFolderHeading count={folder.candidates.length} label={folder.label} />
-                  {folder.candidates.map((candidate) => (
-                    renderSentCard(candidate)
-                  ))}
-                </div>
-              ))
-            : positionFolders.flatMap((folder) =>
-                folder.candidates.map((candidate) => renderSentCard(candidate)),
-              )}
-          {/* Sent before a position could be chosen, or sent without one. Never hidden — each is a
-              real person somebody was asked to review — but kept apart from the folders rather than
-              filed under an invented heading that would read like a vacancy of its own. */}
-          {unfiledSends.length > 0 ? (
-            <div className="space-y-3">
-              {showGroupHeadings ? <PositionFolderHeading count={unfiledSends.length} label="No position given" /> : null}
-              {unfiledSends.map((candidate) => (
-                renderSentCard(candidate)
-              ))}
-            </div>
-          ) : null}
-        </RecruitmentPanel>
-      ) : null}
-
-      {/* His shelf, immediately under the list it was filled from — a CV he "kept for later" has to
-          be somewhere he can see he kept it, or the button reads as a delete. Renders nothing at all
-          until the first CV is filed. */}
-      <ManagerFoldersSection renderCandidate={renderSentCard} shelves={shelves} totalFiled={filedCount} />
-
-      {/* His own areas, after the CVs he owes an answer on and before his team's. This is a place to
-          go looking rather than a queue: nobody is waiting on him for anything in here, so it must
-          not sit above the list that is. */}
-      <DistrictFoldersSection
-        boards={areaBoards}
-        callClaims={callClaims}
-        files={files}
-        ownFolders
-        renderOwnCard={(candidate) => renderSentCard(sentById.get(candidate.id) ?? candidate)}
-        unseenIds={unseenIds}
-        viewerHrId={viewerHrId}
-      />
-
-      {/* After the caller's own CVs, deliberately. The ones sent to HIM are the ones he still owes an
-          answer on; his team's are for oversight and carry no obligation, so they must not push his
-          own queue below the fold. */}
-      <TeamCandidatesSection
-        managers={initialTeam}
-        viewerHrId={viewerHrId}
-      />
-
-      {applications.length > 0 ? (
-        <section className="space-y-4">
-          {sentToMe.length > 0 ? (
-            <div className="flex flex-wrap items-start gap-x-3 gap-y-1 border-b border-slate-200 pb-2">
-              <BriefcaseBusiness aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-orange-500" />
-              <div className="min-w-0 grow basis-64">
-                <h2 className="flex flex-wrap items-center gap-2 text-sm font-black uppercase tracking-[0.12em] text-slate-900">
-                  Your open positions
-                  <RecruitmentPill tone="slate">{applications.length}</RecruitmentPill>
-                </h2>
-                <p className="mt-0.5 text-xs text-slate-500">Candidates assigned to a position you are the hiring manager for.</p>
+                Headings appear only once there is more than one GROUP to separate — and the sends
+                with no position count as one of those groups. A lone folder with nothing beside it
+                is just a list, and a heading on it would separate nothing. */}
+            {showGroupHeadings
+              ? positionFolders.map((folder) => (
+                  <div className="space-y-3" key={folder.key}>
+                    <PositionFolderHeading count={folder.candidates.length} label={folder.label} />
+                    {folder.candidates.map((candidate) => (
+                      renderSentCard(candidate)
+                    ))}
+                  </div>
+                ))
+              : positionFolders.flatMap((folder) =>
+                  folder.candidates.map((candidate) => renderSentCard(candidate)),
+                )}
+            {/* Sent before a position could be chosen, or sent without one. Never hidden — each is a
+                real person somebody was asked to review — but kept apart from the folders rather than
+                filed under an invented heading that would read like a vacancy of its own. */}
+            {unfiledSends.length > 0 ? (
+              <div className="space-y-3">
+                {showGroupHeadings ? <PositionFolderHeading count={unfiledSends.length} label="No position given" /> : null}
+                {unfiledSends.map((candidate) => (
+                  renderSentCard(candidate)
+                ))}
               </div>
-            </div>
-          ) : null}
-          {applications.map((application) => (
-            <CandidateCard
-              application={application}
-              claim={callClaims[application.candidate?.id ?? ""] ?? null}
-              files={files[application.candidate?.id ?? ""] ?? []}
-              key={application.id}
-              onChanged={reload}
-              viewerHrId={viewerHrId}
-            />
-          ))}
-        </section>
-      ) : null}
-    </div>
+            ) : null}
+          </RecruitmentPanel>
+        ) : null}
+
+        {/* His shelf, immediately under the list it was filled from — a CV he "kept for later" has to
+            be somewhere he can see he kept it, or the button reads as a delete. Renders nothing at all
+            until the first CV is filed. */}
+        <ManagerFoldersSection renderCandidate={renderSentCard} shelves={shelves} totalFiled={filedCount} />
+
+        {/* His own areas, after the CVs he owes an answer on and before his team's. This is a place to
+            go looking rather than a queue: nobody is waiting on him for anything in here, so it must
+            not sit above the list that is. */}
+        <DistrictFoldersSection
+          boards={areaBoards}
+          callClaims={callClaims}
+          files={files}
+          ownFolders
+          renderOwnCard={(candidate) => renderSentCard(sentById.get(candidate.id) ?? candidate)}
+          unseenIds={unseenIds}
+          viewerHrId={viewerHrId}
+        />
+
+        {/* After the caller's own CVs, deliberately. The ones sent to HIM are the ones he still owes an
+            answer on; his team's are for oversight and carry no obligation, so they must not push his
+            own queue below the fold. */}
+        <TeamCandidatesSection
+          managers={initialTeam}
+          viewerHrId={viewerHrId}
+        />
+
+        {applications.length > 0 ? (
+          <section className="space-y-4">
+            {sentToMe.length > 0 ? (
+              <div className="flex flex-wrap items-start gap-x-3 gap-y-1 border-b border-slate-200 pb-2">
+                <BriefcaseBusiness aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-orange-500" />
+                <div className="min-w-0 grow basis-64">
+                  <h2 className="flex flex-wrap items-center gap-2 text-sm font-black uppercase tracking-[0.12em] text-slate-900">
+                    Your open positions
+                    <RecruitmentPill tone="slate">{applications.length}</RecruitmentPill>
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-500">Candidates assigned to a position you are the hiring manager for.</p>
+                </div>
+              </div>
+            ) : null}
+            {applications.map((application) => (
+              <CandidateCard
+                application={application}
+                claim={callClaims[application.candidate?.id ?? ""] ?? null}
+                files={files[application.candidate?.id ?? ""] ?? []}
+                key={application.id}
+                onChanged={reload}
+                viewerHrId={viewerHrId}
+              />
+            ))}
+          </section>
+        ) : null}
+      </div>
+    </ManagerOpenContext.Provider>
   );
 }

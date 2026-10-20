@@ -193,6 +193,25 @@ const JOBS = {
     // manager follows. None on most fires.
     requestTimeout: 300,
   },
+  "recruitment-archive-rejections": {
+    title: "Phoenix — archive old rejections",
+    path: "/api/cron/recruitment-archive-rejections",
+    // 03:29 Cairo daily (owner, 2026-10-20): every rejection older than 30 days leaves the workspace's
+    // tabs for the archive — never deleted, still searchable. Matches JOB_SCHEDULES exactly.
+    schedule: { hours: [3], minutes: [29], mdays: [-1], months: [-1], wdays: [-1] },
+    // One indexed read and one batched update; sends nothing.
+    requestTimeout: 300,
+  },
+  "recruitment-whatsapp-reask": {
+    title: "Phoenix — WhatsApp re-ask (in-window)",
+    path: "/api/cron/recruitment-whatsapp-reask",
+    // Every 30 minutes on :01 and :31 (owner, 2026-10-20). Sends nothing until the re-ask switch on
+    // the Screening Questions screen is on — it starts OFF. Then re-asks each quiet applicant ONCE,
+    // inside WhatsApp's 24-hour window, at most 20 a run. Matches JOB_SCHEDULES exactly.
+    schedule: { hours: [-1], minutes: [1, 31], mdays: [-1], months: [-1], wdays: [-1] },
+    // One indexed read of the open sessions, then at most 20 sends — none while the switch is off.
+    requestTimeout: 300,
+  },
   "phoenix-crm-daily-digest": {
     title: "Phoenix — CRM daily digest",
     path: "/api/cron/phoenix-crm-daily-digest",

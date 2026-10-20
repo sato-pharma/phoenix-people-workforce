@@ -11,6 +11,7 @@ import {
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { INBOX_UPLOAD_MAX_BYTES } from "@/lib/whatsapp-inbox/graph";
 import { sendInboxMedia, sendInboxTemplate, sendInboxText } from "@/lib/whatsapp-inbox/send";
+import { assertInboxConversationVisibleTo } from "@/lib/whatsapp-inbox/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +34,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const forbidden = inboxForbidden(access);
     if (forbidden) return forbidden;
     const { id } = await params;
+    // The Talent Acquisition fence (owner, 2026-10-20): a chat with an HR applicant answers as if absent.
+    await assertInboxConversationVisibleTo(access, id);
 
     const contentType = request.headers.get("content-type") ?? "";
     if (contentType.includes("multipart/form-data")) {

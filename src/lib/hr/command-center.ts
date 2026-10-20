@@ -58,6 +58,8 @@ import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/forma
 import { hrefOutsideSeatFence } from "@/lib/auth/seat-page-fences";
 import { toHrNamespacePath } from "@/lib/navigation/shell-headers";
 import { listOffers } from "@/lib/offers/service";
+import { fenceHrDashboardSources } from "@/lib/recruitment/workspace/fence";
+import { HR_WORKSPACE_BASE_PATH, workspaceHref } from "@/lib/recruitment/workspace/links";
 import type { OfferStatus } from "@/lib/offers/types";
 import { getProbationOutcomesAnalytics } from "@/lib/probation/intelligence/outcomes-analytics";
 import {
@@ -571,8 +573,10 @@ const TILES_BY_FUNCTION: Record<
     // that the task list also calls, so the two cannot drift apart again.
     const tiles = [
       tile("open-requisitions", "Open Requisitions", dashboard.summary.openRequisitions, "raised in the ATS", "/hr/recruitment", dashboard.summary.openRequisitions > 0 ? "amber" : "slate"),
-      tile("awaiting-review", "Awaiting Review", pool.new, "CVs with no decision yet", "/hr/recruitment", pool.new > 0 ? "amber" : "slate"),
-      tile("with-managers", "With Hiring Managers", pool.sent_to_manager, "CVs a manager is reviewing", "/hr/recruitment"),
+      // Each candidate tile opens the workspace on the pile it counts (the requisition tiles keep the
+      // workspace root: requisitions have no tab there).
+      tile("awaiting-review", "Awaiting Review", pool.new, "CVs with no decision yet", workspaceHref({ statuses: ["new"] }, { basePath: HR_WORKSPACE_BASE_PATH }), pool.new > 0 ? "amber" : "slate"),
+      tile("with-managers", "With Hiring Managers", pool.sent_to_manager, "CVs a manager is reviewing", workspaceHref({ statuses: ["sent_to_manager"] }, { basePath: HR_WORKSPACE_BASE_PATH })),
       tile("active-candidates", "Active Candidates", live, "still in the pipeline", "/hr/cv-database"),
       // A PERIOD, not a lifetime. A lifetime hired total printed beside "Awaiting Review", "With
       // Hiring Managers" and "Active Candidates" — all counts of the pipeline as it stands — reads
@@ -1552,6 +1556,16 @@ export async function getHrCommandCenterData(
         })
       : null,
   ]);
+
+  // The Talent Acquisition fence (owner, 2026-10-20), before any task or tile names a person. A fence
+  // that cannot read takes the named sources away (listed as unavailable), never hands them over
+  // unfenced. Free for every other seat.
+  await fenceHrDashboardSources(access, loaded).catch(() => {
+    if (loaded.recruitment) failures.push("recruitment");
+    if (loaded.offers) failures.push("offers");
+    loaded.recruitment = undefined;
+    loaded.offers = undefined;
+  });
 
   return {
     groups: buildHrCommandGroups(seat, loaded),

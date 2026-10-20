@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertInterviewBookingVisible } from "@/lib/recruitment/workspace/fence";
 
 import { assertSameOriginMutation, recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
@@ -21,6 +22,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const access = await resolveAccessContext(request);
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's CV answers as if absent.
+    await assertInterviewBookingVisible(access, id);
     return recruitmentFileResponse(request, await getInterviewExternalCv(caller, id));
   } catch (error) {
     return recruitmentApiError(error, "Could not open the CV.");
@@ -37,6 +40,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const access = await resolveAccessContext(request);
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
+    await assertInterviewBookingVisible(access, id);
     const form = await request.formData();
     const file = form.get("cv");
     if (!file || typeof file === "string") throw new Error("Choose a CV file to upload.");

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible, fenceRowsByCandidate } from "@/lib/recruitment/workspace/fence";
 
 import {
   createApplication,
@@ -21,7 +22,8 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await requireRecruitmentAccess(request, "recruitment", "read");
-    const applications = await listApplications(access);
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's applications are not listed.
+    const applications = await fenceRowsByCandidate(access, await listApplications(access), (application) => application.candidateId);
     return NextResponse.json({ success: true, applications });
   } catch (error) {
     return recruitmentApiError(error, "Failed to load applications.");
@@ -60,9 +62,13 @@ export async function POST(request: Request) {
       };
     }
 
+    // An existing person filed against a requisition must be one she can see — else "not found".
+    const existingCandidateId = str(body.candidateId);
+    if (existingCandidateId) await assertCandidateVisible(access, existingCandidateId);
+
     const input: CreateApplicationInput = {
       requisitionId,
-      candidateId: str(body.candidateId),
+      candidateId: existingCandidateId,
       candidate,
       source: str(body.source),
     };

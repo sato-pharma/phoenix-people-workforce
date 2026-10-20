@@ -79,6 +79,7 @@ import {
   shouldReaskParkedSession,
   typedAnswerTooLongText,
   type ClassifyMenu,
+  type ClassifyReaskPrompt,
 } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
 import {
   candidateDisplayName,
@@ -86,6 +87,24 @@ import {
 } from "@/lib/recruitment/inbound/whatsapp-conversation-mirror";
 import { mirrorCandidateCvsToDrive } from "@/lib/recruitment/drive-cv-mirror";
 import { sendClassifyMenu, sendWhatsAppText } from "@/lib/recruitment/inbound/whatsapp-interactive";
+// Each answer onto the candidate as it is given (owner, 2026-10-20). That file imports
+// classificationPayload/sessionAreaLabel back from this one — function declarations, safe across the
+// cycle for the same reason the extra-question loop below is.
+import {
+  afterSessionAnswersWritten,
+  applyBuiltInAnswerToCandidate,
+  mergeExtraAnswers,
+  readAnswerMarks,
+} from "@/lib/recruitment/inbound/whatsapp-answer-sync";
+import { linkSessionsToCandidates } from "@/lib/recruitment/inbound/whatsapp-session-link";
+import {
+  firstUnansweredBuiltIn,
+  prefilledBuiltInKeys,
+  RESUME_CANDIDATE_COLUMNS,
+  sessionPrefillFromCandidate,
+  type ResumeCandidateRow,
+} from "@/lib/recruitment/inbound/whatsapp-classify-resume-plan";
+import { BUILT_IN_ANSWER_KEYS, recomputeCompleteness } from "@/lib/recruitment/workspace/completeness";
 // The admin-defined extra-question loop this conversation optionally continues into once the fixed
 // six finish. whatsapp-screening-questions-session.ts imports finishSession/findCandidateForSender/
 // isWhatsAppClassifyEnabled back from this file — all `function` declarations, which are hoisted and
@@ -97,6 +116,7 @@ import {
   resendExtraQuestion,
   startExtraQuestionLoop,
 } from "@/lib/recruitment/inbound/whatsapp-screening-questions-session";
+import { nextActiveQuestion } from "@/lib/recruitment/inbound/whatsapp-screening-questions";
 
 const SESSIONS_TABLE = "ats_whatsapp_classification_sessions";
 
@@ -352,33 +372,71 @@ async function advanceAfterBuiltIn(input: {
 }): Promise<"advanced" | "asked_other"> {
   const { after, nowIso, patch, session } = input;
   const supabase = recruitmentDb();
-  const withPhone = { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId };
   // The session as it will be AFTER this answer. `patch` routinely holds the very field the next
   // decision reads — the role on question 1, the region on question 3 — so the decision is made
   // against the merged row and never against the stale one it was loaded from.
   const answered = { ...session, ...patch } as SessionRow;
 
-  const next = nextBuiltInQuestion({
-    after,
-    audiences: await loadSavedAudiences(),
-    // Tapped or typed — either is a region on file. A TYPED one has no region code, which is what
-    // sends the area question down its typed path below rather than to a menu listing some other
-    // region's areas.
-    hasRegion: Boolean(answered.region_code || answered.region_other_text),
-    roleFamily: answered.job_title_family,
-  });
+  const audiences = await loadSavedAudiences();
+  const nextAfter = (key: BuiltInQuestionKey) =>
+    nextBuiltInQuestion({
+      after: key,
+      audiences,
+      // Tapped or typed — either is a region on file. A TYPED one has no region code, which is what
+      // sends the area question down its typed path below rather than to a menu listing some other
+      // region's areas.
+      hasRegion: Boolean(answered.region_code || answered.region_other_text),
+      roleFamily: answered.job_title_family,
+    });
+  // A question this conversation already holds an answer to is stepped over. A fresh conversation
+  // never holds a LATER answer, so for it this is the plain next question; a RESUMED one (the
+  // applicant replied to "Ask again") starts pre-filled from their record and is asked only what is
+  // still missing (whatsapp-classify-resume-plan.ts).
+  const alreadyAnswered = prefilledBuiltInKeys(answered);
+  let next = nextAfter(after);
+  while (next && alreadyAnswered.has(next)) next = nextAfter(next);
 
-  const write = (extra: Record<string, string>) =>
-    supabase
+  // Every path below writes the answer exactly once through here, and the answer then goes straight
+  // onto the candidate — saved as given, not only when the conversation finishes (owner, 2026-10-20).
+  const write = async (extra: Record<string, string>) => {
+    await supabase
       .from(SESSIONS_TABLE)
       .update({ ...patch, ...extra, updated_at: nowIso })
       .eq("id", session.id);
+    await applyBuiltInAnswerToCandidate(answered, after);
+  };
 
   if (!next) {
     await write({});
     await finishFixedSix(answered, input.phoneNumberId);
     return "advanced";
   }
+
+  const asked = await askBuiltInQuestion({
+    next,
+    park: (step) => write({ step }),
+    phoneNumberId: input.phoneNumberId,
+    session: answered,
+  });
+  return asked.kind;
+}
+
+/**
+ * Parks the conversation on one of the six and asks it. `park` writes the step (and, from
+ * `advanceAfterBuiltIn`, the answer that led here) BEFORE the send, so a typed answer that arrives
+ * even after a failed send is still understood. Shared by the next-question path and a resumed
+ * conversation's first question.
+ */
+async function askBuiltInQuestion(input: {
+  session: SessionRow;
+  next: BuiltInQuestionKey;
+  park: (step: string) => Promise<void>;
+  phoneNumberId: string | null;
+}): Promise<{ kind: "advanced" | "asked_other"; sent: boolean }> {
+  const { next, park } = input;
+  const answered = input.session;
+  const withPhone = { ...answered, phone_number_id: answered.phone_number_id ?? input.phoneNumberId };
+  const write = (extra: { step: string }) => park(extra.step);
 
   if (next === "area") {
     // Two ways the area question cannot be a menu, and both end as a TYPED answer rather than as a
@@ -395,18 +453,17 @@ async function advanceAfterBuiltIn(input: {
         });
       }
       await write({ step: "area_other" });
-      await sendPromptText(withPhone, areaOtherPromptText());
-      return "asked_other";
+      return { kind: "asked_other", sent: await sendPromptText(withPhone, areaOtherPromptText()) };
     }
     await write({ step: "area" });
-    await sendStep(
+    const sentArea = await sendStep(
       withPhone,
       areaMenu(answered.region_code as CandidateRegionCode, areas),
       // The only prompt carrying a token: an owner-written "Which area inside {region}?" needs the
       // region they just chose. Passed here rather than derived in sendStep, which cannot know it.
       candidateRegionLabels[answered.region_code as CandidateRegionCode],
     );
-    return "advanced";
+    return { kind: "advanced", sent: sentArea };
   }
 
   if (next === "salary") {
@@ -414,13 +471,11 @@ async function advanceAfterBuiltIn(input: {
     // rather than by sendStep, and it must stay parked even if the send fails, so a typed answer
     // that arrives anyway is still understood.
     await write({ step: "salary" });
-    await sendPromptText(withPhone, await salaryPromptWithOverride());
-    return "advanced";
+    return { kind: "advanced", sent: await sendPromptText(withPhone, await salaryPromptWithOverride()) };
   }
 
   await write({ step: next });
-  await sendStep(withPhone, BUILT_IN_MENUS[next]());
-  return "advanced";
+  return { kind: "advanced", sent: await sendStep(withPhone, BUILT_IN_MENUS[next]()) };
 }
 
 /**
@@ -455,12 +510,46 @@ async function sendPromptText(
   return true;
 }
 
-async function closeSession(sessionId: string, _reason: string): Promise<void> {
+async function closeSession(sessionId: string, reason: string): Promise<void> {
   const supabase = recruitmentDb();
+  // A conversation the applicant walked away from is closed with what they DID answer saved first
+  // (owner, 2026-10-20): every answer normally reached the candidate as it was given, and this is the
+  // net under the one that could not — the candidate did not exist yet at the time.
+  if (reason === "window_closed") await applyAnswersBeforeClosing(sessionId);
   await supabase
     .from(SESSIONS_TABLE)
     .update({ completed_at: new Date().toISOString(), step: "done", updated_at: new Date().toISOString() })
     .eq("id", sessionId);
+}
+
+/**
+ * Writes an abandoned conversation's answers — the six and any extra ones — onto its candidate before
+ * it is closed. Best effort and silent: the applicant is gone, and a candidate not found yet is
+ * picked up by the intake worker's backfill.
+ */
+export async function applyAnswersBeforeClosing(sessionId: string): Promise<void> {
+  try {
+    const { data } = await recruitmentDb()
+      .from(SESSIONS_TABLE)
+      .select(`${SESSION_COLUMNS},extra_answers`)
+      .eq("id", sessionId)
+      .maybeSingle();
+    const row = data as (SessionRow & { extra_answers: Record<string, string> | null }) | null;
+    if (!row || !row.job_title_family) return;
+    const candidateId = (await linkSessionsToCandidates([row])).get(row.id) ?? null;
+    if (!candidateId) return;
+    await writeClassification(candidateId, row, { finished: true });
+    const extras = row.extra_answers ?? {};
+    if (Object.keys(extras).length > 0) {
+      await mergeExtraAnswers(candidateId, extras, { keepHrAnswers: true });
+      await recomputeCompleteness([candidateId]);
+    }
+  } catch (error) {
+    logError("WhatsApp answers could not be saved before the conversation closed", {
+      error,
+      labels: { event: "whatsapp_classify_close_apply_failed" },
+    });
+  }
 }
 
 // ── Opening the conversation, when a CV lands ────────────────────────────────────────────────────
@@ -554,7 +643,7 @@ export async function startClassification(input: StartClassificationInput): Prom
  * conversation's state — nothing in the flow reads it — but it is how long the applicant has been
  * quiet, which is the only thing separating a stalled conversation from a live one.
  */
-type OpenSessionRow = SessionRow & {
+export type OpenSessionRow = SessionRow & {
   updated_at: string | null;
   /** Which admin-defined question the `extra` step is waiting on. Null on every other step. */
   extra_current_question_key: string | null;
@@ -585,9 +674,7 @@ async function reaskOpenSession(
 ): Promise<StartClassificationOutcome> {
   if (!shouldReaskParkedSession({ nowMs: Date.now(), updatedAt: session.updated_at })) return "already_open";
 
-  const areaNames =
-    session.step === "area" && session.region_code ? await areaNamesForRegion(session.region_code) : [];
-  const prompt = reaskPromptForStep({ areaNames, regionCode: session.region_code, step: session.step });
+  const prompt = await parkedQuestionPrompt(session);
   if (!prompt) return "already_open";
 
   const supabase = recruitmentDb();
@@ -595,29 +682,158 @@ async function reaskOpenSession(
   // front of this person, and after a re-ask that is the one that just arrived.
   await supabase.from(SESSIONS_TABLE).update({ cv_wamid: input.cvWamid }).eq("id", session.id);
 
+  return (await sendParkedQuestion(session, prompt, input.phoneNumberId)) ? "reasked" : "send_failed";
+}
+
+/**
+ * What a parked conversation is waiting on, as something to send again — or null when there is
+ * nothing to re-ask. A row on `extra` with no current key is unreachable in a healthy session —
+ * treated as nothing to re-ask, never as a reason to guess at a question.
+ */
+async function parkedQuestionPrompt(session: OpenSessionRow): Promise<ClassifyReaskPrompt | null> {
+  const areaNames =
+    session.step === "area" && session.region_code ? await areaNamesForRegion(session.region_code) : [];
+  const prompt = reaskPromptForStep({ areaNames, regionCode: session.region_code, step: session.step });
+  if (!prompt) return null;
+  if (prompt.kind === "extra" && !session.extra_current_question_key) return null;
+  return prompt;
+}
+
+/** Sends a parked conversation's question again. True when it reached them. */
+async function sendParkedQuestion(
+  session: OpenSessionRow,
+  prompt: ClassifyReaskPrompt,
+  fallbackPhoneNumberId: string | null,
+): Promise<boolean> {
   // A row written before the phone number was recorded still has to be answerable, so the delivery's
   // own number stands in — the same fallback every other send in this file uses.
-  const target = { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId };
+  const target = { ...session, phone_number_id: session.phone_number_id ?? fallbackPhoneNumberId };
 
   // The extra question is the one prompt this file cannot build: it lives in the database and is
-  // scoped to the role the applicant tapped, so the loop that owns it re-sends it. A row on `extra`
-  // with no current key is unreachable in a healthy session — treated as nothing to re-ask, never
-  // as a reason to guess at a question.
+  // scoped to the role the applicant tapped, so the loop that owns it re-sends it. False when the
+  // question has since gone, so it reads as nothing sent.
   if (prompt.kind === "extra") {
-    if (!session.extra_current_question_key) return "already_open";
-    const reasked = await resendExtraQuestion(
-      target,
-      session.extra_current_question_key,
-      session.job_title_family,
-    );
-    return reasked ? "reasked" : "send_failed";
+    return resendExtraQuestion(target, session.extra_current_question_key ?? "", session.job_title_family);
   }
+  return prompt.kind === "menu"
+    ? sendStep(target, prompt.menu, prompt.regionLabel)
+    : sendPromptText(target, prompt.kind === "salary" ? await salaryPromptWithOverride() : prompt.body);
+}
 
-  const sent =
-    prompt.kind === "menu"
-      ? await sendStep(target, prompt.menu, prompt.regionLabel)
-      : await sendPromptText(target, prompt.kind === "salary" ? await salaryPromptWithOverride() : prompt.body);
-  return sent ? "reasked" : "send_failed";
+/**
+ * The half-hourly re-ask (owner, 2026-10-20; app/api/cron/recruitment-whatsapp-reask): an applicant
+ * who went quiet mid-conversation is asked the question they stopped on ONCE more, while WhatsApp's
+ * 24-hour window is still open. Same prompt, same send as a new CV's re-ask above — one code path.
+ * The caller decides who is due and stamps `reasked_at`; this only sends.
+ */
+export async function reaskQuietSession(
+  session: OpenSessionRow,
+): Promise<"reasked" | "nothing_to_ask" | "send_failed"> {
+  const prompt = await parkedQuestionPrompt(session);
+  if (!prompt) return "nothing_to_ask";
+  return (await sendParkedQuestion(session, prompt, null)) ? "reasked" : "send_failed";
+}
+
+export type ResumeClassificationOutcome = "disabled" | "already_open" | "not_found" | "nothing_to_ask" | "asked" | "send_failed";
+
+/**
+ * The applicant replied to "Ask again" (the approved follow-up template, whatsapp-followup-template.ts):
+ * open a NEW conversation for the candidate they already are and ask the first question still
+ * missing (owner, 2026-10-20: the bot picks the conversation up where their answers stop).
+ *
+ * The conversation starts PRE-FILLED with every answer already on their record
+ * (whatsapp-classify-resume-plan.ts), and is linked to them from the first moment
+ * (`applied_candidate_id`, the bot's own link), so each new answer goes straight onto this person
+ * and never onto whoever else shares the number. Nothing already answered is asked again (but the
+ * role, for someone filed in no tab yet — the plan's "Needs placing starts from the role menu"): the
+ * six step over a held answer, the extra questions start after the ones held, and an answer HR typed
+ * in keeps its mark, because the finish writes only the questions HR has not marked.
+ *
+ * One open conversation per number, as everywhere: one already open is left to run. Their reply
+ * opened the 24-hour window seconds ago, so the question lands.
+ */
+export async function resumeClassification(input: {
+  candidateId: string;
+  waId: string;
+  phoneNumberId: string | null;
+}): Promise<ResumeClassificationOutcome> {
+  if (!isWhatsAppClassifyEnabled()) return "disabled";
+  try {
+    const supabase = recruitmentDb();
+    const { data: open } = await supabase
+      .from(SESSIONS_TABLE)
+      .select("id")
+      .eq("wa_id", input.waId)
+      .is("completed_at", null)
+      .maybeSingle();
+    if (open) return "already_open";
+
+    const { data: row, error } = await supabase
+      .from("ats_candidates")
+      .select(RESUME_CANDIDATE_COLUMNS)
+      .eq("id", input.candidateId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) return "not_found";
+
+    const prefill = sessionPrefillFromCandidate(row as unknown as ResumeCandidateRow);
+    // Someone filed in no tab yet starts from the role menu, whatever role is on record — the role
+    // they tap is what files them. Everything else they already answered is still stepped over.
+    const { count: placements, error: placedError } = await supabase
+      .from("ats_candidate_placements")
+      .select("id", { count: "exact", head: true })
+      .eq("candidate_id", input.candidateId);
+    if (placedError) throw placedError;
+    const next: BuiltInQuestionKey | null =
+      (placements ?? 0) === 0 ? "job_title" : firstUnansweredBuiltIn(prefill, await loadSavedAudiences());
+    let active: Awaited<ReturnType<typeof listActiveScreeningQuestions>> = [];
+    if (!next) {
+      active = await listActiveScreeningQuestions(prefill.job_title_family);
+      const answeredExtras = new Set(Object.keys(prefill.extra_answers));
+      if (!nextActiveQuestion(active, answeredExtras, prefill.extra_answers)) return "nothing_to_ask";
+    }
+
+    const { data: inserted, error: insertError } = await supabase
+      .from(SESSIONS_TABLE)
+      .insert({
+        ...prefill,
+        applied_candidate_id: input.candidateId,
+        phone_number_id: input.phoneNumberId,
+        step: next ?? "extra",
+        wa_id: input.waId,
+      })
+      .select(SESSION_COLUMNS)
+      .single();
+    if (insertError) {
+      // The one-open-conversation index: a conversation opened between the read and the insert.
+      if ((insertError as { code?: string }).code === "23505") return "already_open";
+      throw insertError;
+    }
+    const session = inserted as SessionRow;
+
+    if (next) {
+      const asked = await askBuiltInQuestion({
+        next,
+        park: async (step) => {
+          await supabase
+            .from(SESSIONS_TABLE)
+            .update({ step, updated_at: new Date().toISOString() })
+            .eq("id", session.id);
+        },
+        phoneNumberId: input.phoneNumberId,
+        session,
+      });
+      return asked.sent ? "asked" : "send_failed";
+    }
+    await startExtraQuestionLoop(session, input.phoneNumberId, active);
+    return "asked";
+  } catch (error) {
+    logError("A WhatsApp conversation could not be resumed after Ask again", {
+      error,
+      labels: { event: "whatsapp_classify_resume_failed" },
+    });
+    return "send_failed";
+  }
 }
 
 // ── Handling a tap ───────────────────────────────────────────────────────────────────────────────
@@ -1066,7 +1282,9 @@ export async function findCandidateForSender(waId: string): Promise<string | nul
  */
 export async function applyClassificationToCandidate(session: SessionRow): Promise<boolean> {
   try {
-    const candidateId = session.applied_candidate_id ?? (await findCandidateForSender(session.wa_id));
+    // By the three safe links (whatsapp-session-link.ts), never "the newest CV from this number": on a
+    // forwarder's number that is somebody else's CV, and these answers would land on a stranger.
+    const candidateId = (await linkSessionsToCandidates([session])).get(session.id) ?? null;
     if (!candidateId) return false;
     return writeClassification(candidateId, session);
   } catch (error) {
@@ -1078,8 +1296,18 @@ export async function applyClassificationToCandidate(session: SessionRow): Promi
   }
 }
 
-async function writeClassification(candidateId: string, session: SessionRow): Promise<boolean> {
-  const supabase = recruitmentDb();
+/**
+ * The candidate columns the conversation's answers write, keyed as `writeClassification` has always
+ * written them. `only` narrows it to the columns of those questions — what the bot writes the moment
+ * ONE answer is given (whatsapp-answer-sync.ts), so a later answer never re-writes an earlier one HR
+ * may have corrected since. One map for both, so an answer saved as given and an answer saved at the
+ * finish can never land in different columns.
+ */
+export function classificationPayload(
+  session: SessionRow,
+  only?: readonly BuiltInQuestionKey[],
+): Record<string, unknown> {
+  const wants = (key: BuiltInQuestionKey) => !only || only.includes(key);
   const nowIso = new Date().toISOString();
 
   // Only the fields the applicant actually answered are written. An unanswered question must leave
@@ -1090,25 +1318,28 @@ async function writeClassification(candidateId: string, session: SessionRow): Pr
   // the single place that decision is made, so the thank-you message, the owner's Telegram mirror
   // and this column can never disagree about what the applicant said.
   const roleLabel = sessionRoleLabel(session);
-  if (roleLabel) payload.applied_for_job_title = roleLabel;
+  if (wants("job_title") && roleLabel) payload.applied_for_job_title = roleLabel;
+  // The role FAMILY they tapped, raw — what the workspace files them by (owner, 2026-10-20: "we
+  // folder based on whatsapp replies"). The label above is for reading; this is the code.
+  if (wants("job_title") && session.job_title_family) payload.declared_role_family = session.job_title_family;
   // The graduation background, as a single read-back label (their typed words for "Other", the code's
   // label otherwise). One column, the same shape as `applied_for_job_title`: a fixed vocabulary for a
   // tapped answer, free text only when they said "Other". Nothing reads it back on screen yet — it is
   // captured now and surfaced later, exactly as region/area were before the screening card read them.
   const backgroundLabel = sessionBackgroundLabel(session);
-  if (backgroundLabel) payload.declared_background = backgroundLabel;
+  if (wants("background") && backgroundLabel) payload.declared_background = backgroundLabel;
   // The code column takes ONLY a real code. A typed region is words, and words in a code column is
   // the shape that produced undefined label lookups and NaN sort keys in production on 2026-08-24 —
   // so it gets its own column instead. An area is a name either way, so both forms share one.
-  if (session.region_code) payload.preferred_region_code = session.region_code;
-  if (session.region_other_text) payload.preferred_region_name = session.region_other_text;
+  if (wants("region") && session.region_code) payload.preferred_region_code = session.region_code;
+  if (wants("region") && session.region_other_text) payload.preferred_region_name = session.region_other_text;
   const areaLabel = sessionAreaLabel(session);
-  if (areaLabel) payload.preferred_area_name = areaLabel;
+  if (wants("area") && areaLabel) payload.preferred_area_name = areaLabel;
   // The two screening answers. Experience is a fixed band read back to its label (same read-back rule
   // as the role); expected salary is stored VERBATIM — never coerced, because "negotiable", a range,
   // or Arabic numerals are all truthful answers a recruiter reads, and a numeric column would drop them.
   const experienceLabel = sessionExperienceLabel(session);
-  if (experienceLabel) payload.declared_experience = experienceLabel;
+  if (wants("experience") && experienceLabel) payload.declared_experience = experienceLabel;
   // …and until 2026-09-02 the verbatim answer was aimed at `expected_salary`, which is NUMERIC. The
   // comment above was right about the intent and wrong about the destination, so every answer that
   // was not a bare number failed the cast — 31 of the 42 answered in production. The damage was
@@ -1119,50 +1350,104 @@ async function writeClassification(candidateId: string, session: SessionRow): Pr
   // Verbatim words go to the text column, which is what a recruiter reads. The numeric column is
   // filled only when the answer really is a figure, so everything that already reads it — the
   // workspace's salary cell, the merge borrow list — keeps working unchanged.
-  if (session.expected_salary) {
+  if (wants("salary") && session.expected_salary) {
     payload.declared_expected_salary = session.expected_salary;
     const figure = parseDeclaredSalaryFigure(session.expected_salary);
     if (figure !== null) payload.expected_salary = figure;
   }
+  return payload;
+}
+
+/** The built-in questions this conversation has an answer to — the marks the applicant now owns. */
+function answeredBuiltInKeys(session: SessionRow): BuiltInQuestionKey[] {
+  return [...prefilledBuiltInKeys(session)];
+}
+
+/**
+ * Writes the conversation's answers onto the candidate, re-files the person and recomputes their
+ * completeness. `finished` stamps `applied_at` — "the finished answers were applied" — and is false
+ * only for the intake backfill of a conversation still in progress, which links the candidate
+ * (`applied_candidate_id`) so every later answer follows it, without claiming the conversation done.
+ */
+async function writeClassification(
+  candidateId: string,
+  session: SessionRow,
+  options: { finished: boolean } = { finished: true },
+): Promise<boolean> {
+  const supabase = recruitmentDb();
+  const nowIso = new Date().toISOString();
+  // Every answer normally reached the candidate the moment it was given; this write repeats them. An
+  // answer HR corrected SINCE (its "added by HR" mark) is the newer word and is left as HR wrote it.
+  const marks = await readAnswerMarks(candidateId);
+  const unmarked = answeredBuiltInKeys(session).filter((key) => !(BUILT_IN_ANSWER_KEYS[key] in marks));
+  const payload = classificationPayload(session, unmarked);
 
   const { error } = await supabase.from("ats_candidates").update(payload).eq("id", candidateId);
   if (error) throw error;
 
   await supabase
     .from(SESSIONS_TABLE)
-    .update({ applied_at: nowIso, applied_candidate_id: candidateId, updated_at: nowIso })
+    .update(
+      options.finished
+        ? { applied_at: nowIso, applied_candidate_id: candidateId, updated_at: nowIso }
+        : { applied_candidate_id: candidateId },
+    )
     .eq("id", session.id);
+
+  // The person is filed where their answers say (unless HR's correction stands) and the stored
+  // completeness follows. Best effort: the answers above are what matters, and they are written.
+  try {
+    await afterSessionAnswersWritten({ candidateId, placing: true, session });
+  } catch (followUpError) {
+    logError("WhatsApp answers were written but the filing or completeness could not follow", {
+      error: followUpError,
+      labels: { event: "whatsapp_classify_followup_failed" },
+    });
+  }
   return true;
 }
 
 /**
- * Applies a completed-but-unapplied conversation to a candidate that has just been created.
- * Called by the intake worker: the applicant can finish tapping before the CV finishes processing,
- * and without this their answers would sit in the session table and never reach the record.
+ * Applies a conversation's answers to a candidate that has just been created. Called by the intake
+ * worker: the applicant can tap faster than the CV is processed, and without this their answers would
+ * sit in the session table and never reach the record.
+ *
+ * FINISHED OR NOT (owner, 2026-10-20: answers are saved as given, and an unfinished conversation's
+ * answers are recovered). Until that day this read only COMPLETED conversations (`completed_at IS NOT
+ * NULL`), because a partial snapshot written here was never re-synced: nothing wrote the region, area,
+ * experience or salary the applicant went on to give. Every answer is now written onto the candidate
+ * as it lands (whatsapp-answer-sync.ts), so an in-progress conversation is safe to apply — and NOT
+ * applying it left the first answers of every applicant whose CV beat their taps nowhere but the
+ * session table. Production held 24 such candidates on 2026-09-11.
+ *
+ * WHICH CONVERSATION. One this candidate's own CV opened, or that the sender only ever used for this
+ * one person — the three safe links decide, never the number alone. A finished one is stamped
+ * applied; one still in progress is linked (`applied_candidate_id`) and left open, so the rest of
+ * its answers follow it.
+ *
+ * `applied_at IS NULL OR applied_candidate_id = <this candidate>`: a conversation already applied to
+ * this same person is read again, so a backfill that ran half-way is finished, and one applied to
+ * somebody else is never taken.
  */
 export async function applyPendingClassification(input: { waId: string; candidateId: string }): Promise<boolean> {
   if (!isWhatsAppClassifyEnabled()) return false;
   try {
     const supabase = recruitmentDb();
-    // `completed_at IS NOT NULL` is load-bearing, not a narrowing filter: without it, an applicant
-    // who is still mid-conversation when this worker races in (job_title answered, nothing else yet)
-    // is the ONLY row for their wa_id, so it becomes this query's answer — writing a permanent
-    // snapshot of an UNFINISHED conversation onto the candidate, `preferences_declared_at` included.
-    // Nothing then re-syncs the region/area/experience/salary they go on to answer, because
-    // `applied_at` is now set and this function never runs again for that session. Production held 24
-    // such candidates on 2026-09-11, spread across every step from `background` to `salary`.
     const { data } = await supabase
       .from(SESSIONS_TABLE)
-      .select(SESSION_COLUMNS)
+      .select(`${SESSION_COLUMNS},completed_at,started_at`)
       .eq("wa_id", input.waId)
-      .is("applied_at", null)
-      .not("completed_at", "is", null)
+      .or(`applied_at.is.null,applied_candidate_id.eq.${input.candidateId}`)
       .not("job_title_family", "is", null)
-      .order("completed_at", { ascending: false })
-      .limit(1);
-    const session = ((data ?? [])[0] ?? null) as SessionRow | null;
+      .order("started_at", { ascending: false })
+      .limit(5);
+    const sessions = (data ?? []) as Array<SessionRow & { completed_at: string | null }>;
+    if (sessions.length === 0) return false;
+    const links = await linkSessionsToCandidates(sessions);
+    // Newest first; the first conversation whose safe link is this very candidate.
+    const session = sessions.find((row) => links.get(row.id) === input.candidateId) ?? null;
     if (!session) return false;
-    return writeClassification(input.candidateId, session);
+    return writeClassification(input.candidateId, session, { finished: Boolean(session.completed_at) });
   } catch (error) {
     logError("WhatsApp classification failed to apply to a new candidate", {
       error,

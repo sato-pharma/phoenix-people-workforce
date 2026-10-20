@@ -21,6 +21,8 @@ import {
   type DailyCvDigest,
 } from "@/lib/recruitment/inbound/daily-cv-digest";
 import { cairoDateKey, type WhatsAppIntakeHealth } from "@/lib/recruitment/inbound/whatsapp-health";
+import { candidateHiddenFrom } from "@/lib/recruitment/workspace/fence";
+import { workspaceCandidateHref, workspaceHref } from "@/lib/recruitment/workspace/links";
 
 async function hrIdsForRoles(roles: readonly PhoenixRole[]): Promise<string[]> {
   const supabase = getSupabaseAdmin();
@@ -68,7 +70,18 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
   const reason = inboundCvAlertReason(input);
   if (!reason) return;
 
-  const recipientHrIds = await hrIdsForRoles(recruitmentAlertRoles);
+  // The Talent Acquisition fence is by PERSON and reaches her notifications too: an HR applicant (her
+  // manager's seat or her own) is never named to her, here or anywhere. Asked of the fence itself, so
+  // the rule is the one every screen uses; a check that cannot answer leaves her off (fail closed) —
+  // the Super Admin still hears of the CV either way.
+  const hiddenFromTalentAcquisition = await candidateHiddenFrom(
+    { role: "HR Resourcing", scope: "company" },
+    input.candidateId,
+  ).catch(() => true);
+  // The desk list IS the alert list without her, so a hidden person goes to the desk alone.
+  const recipientHrIds = hiddenFromTalentAcquisition
+    ? await hrIdsForRoles(recruitmentDeskAlertRoles)
+    : await hrIdsForRoles(recruitmentAlertRoles);
   if (recipientHrIds.length === 0) return;
 
   const channelLabel = input.channel === "whatsapp" ? "WhatsApp" : "email";
@@ -85,9 +98,9 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
 
   await createSystemNotificationForRecipients(
     {
-      // Deep-links to this candidate's profile (the workspace reads ?candidate=) rather than the
-      // module landing page — the fields to review are on the profile, not findable from a list.
-      actionUrl: `/recruitment?candidate=${encodeURIComponent(input.candidateId)}`,
+      // Deep-links to this candidate's opened CV in the workspace rather than the module landing
+      // page — the fields to review are on the CV, not findable from a list.
+      actionUrl: workspaceCandidateHref(input.candidateId),
       eventType: "recruitment_inbound_cv",
       message,
       metadata: {
@@ -109,8 +122,13 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
 }
 
 /**
- * ONE notification a day naming how many CVs arrived, what they applied for and which channel
- * brought them — the replacement for the 628 per-CV deliveries measured over 30 days.
+ * ONE notification a day naming how many CVs arrived, which tab and place their own replies filed
+ * them in, and which channel brought them — the replacement for the 628 per-CV deliveries measured
+ * over 30 days.
+ *
+ * It goes to `recruitmentDeskAlertRoles` (the Super Admin) only, so it is built unfenced; the Talent
+ * Acquisition seat reads the same figures on her own panel, fenced (`buildTodaysCvDigest`'s
+ * `hideHrPeople`).
  *
  * Throttled by the SAME mechanism as the alerts above, and it is worth being precise about how that
  * works because the caller fires this six times inside the digest hour: the Cairo-dated
@@ -135,9 +153,9 @@ export async function notifyDailyCvDigest(digest: DailyCvDigest): Promise<void> 
 
   await createSystemNotificationForRecipients(
     {
-      // The pool itself, not a candidate — the digest is about a day, and the day's arrivals are
-      // what the Candidates tab opens on, sorted newest first.
-      actionUrl: "/recruitment",
+      // The workspace filtered to today's arrivals (Cairo), not a candidate — the digest is about a
+      // day, and the place lines in the message say which tabs to open from there.
+      actionUrl: workspaceHref({ datePick: "today" }),
       channels: ["in_app", "telegram", "push"],
       eventType: "recruitment_daily_cv_digest",
       message: dailyCvDigestMessage(digest),

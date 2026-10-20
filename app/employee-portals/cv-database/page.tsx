@@ -9,6 +9,7 @@ import { canAccess, isHrAuthorityRole, resolveNavigationMode } from "@/lib/auth/
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { cvLibraryRowsFromCandidates } from "@/lib/cv/cv-library";
 import { listCandidates } from "@/lib/recruitment/candidates";
+import { fenceRowsByCandidate } from "@/lib/recruitment/workspace/fence";
 import { listScreeningQuestions } from "@/lib/recruitment/inbound/whatsapp-screening-questions-admin";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,9 @@ export default async function EmployeePortalCvDatabasePage() {
   }
 
   // The slim read: no CV Database row reads the repeating CV blocks, which are 59% of the pool's bytes.
-  const [candidates, screeningQuestions] = await Promise.all([listCandidates({ withRepeatingCvBlocks: false }), listScreeningQuestions()]);
+  const [everyone, screeningQuestions] = await Promise.all([listCandidates({ withRepeatingCvBlocks: false }), listScreeningQuestions()]);
+  // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is not in her CV database.
+  const candidates = await fenceRowsByCandidate(access, everyone, (candidate) => candidate.id);
   const questionLabels = new Map(screeningQuestions.map((question) => [question.questionKey, question.bodyText]));
   const rows = cvLibraryRowsFromCandidates(candidates, questionLabels);
 

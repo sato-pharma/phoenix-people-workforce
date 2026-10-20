@@ -6,6 +6,7 @@ import { canAccess, isHrAuthorityRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { isUuid } from "@/lib/http/uuid";
 import { candidateApplicationPrintPath } from "@/lib/recruitment/whatsapp-application-file";
+import { candidateHiddenFrom } from "@/lib/recruitment/workspace/fence";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,10 @@ export default async function CandidateApplicationPrintPage({ params }: { params
   ) {
     redirect("/employee-portals");
   }
+
+  // The Talent Acquisition fence (owner, 2026-10-20): the route behind this sheet answers 404 for an HR
+  // applicant; the page says the same before it draws anything.
+  if (await candidateHiddenFrom(access, id)) notFound();
 
   return <CandidateApplicationPrint candidateId={id} />;
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { fenceCandidateIds } from "@/lib/recruitment/workspace/fence";
 
 import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
 import { CV_LOOKUP_MIN_LENGTH, recordCvLookupSearch, searchCvLookup } from "@/lib/recruitment/cv-lookup";
@@ -38,7 +39,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ hits: [], query: query.trim(), success: true, truncated: false });
     }
 
-    const result = await searchCvLookup(access, query);
+    const found = await searchCvLookup(access, query);
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is never a hit for her, nor counted.
+    const visible = await fenceCandidateIds(access, found.hits.map((hit) => hit.candidateId));
+    const result = { ...found, hits: found.hits.filter((hit) => visible.has(hit.candidateId)) };
     await recordCvLookupSearch({
       access,
       query: result.query,

@@ -6,6 +6,7 @@ import {
   cvLifecycleCsvFor,
   resolveCvLifecycleShareLink,
 } from "@/lib/recruitment/cv-lifecycle-share-links";
+import { fenceCvLifecycleFeed } from "@/lib/recruitment/workspace/fence";
 import { systemDeployment } from "@/config/system-settings";
 
 export const runtime = "nodejs";
@@ -31,7 +32,8 @@ export const maxDuration = 60;
 export async function GET(_request: Request, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
-    const feed = await resolveCvLifecycleShareLink(token);
+    // A link the Talent Acquisition seat made never carries an HR applicant (owner, 2026-10-20).
+    const feed = await fenceCvLifecycleFeed(await resolveCvLifecycleShareLink(token));
 
     // The CONFIGURED public URL, never the request's own origin. Behind Railway's proxy the
     // request origin is the container's internal bind address, so every "Open in Phoenix" link

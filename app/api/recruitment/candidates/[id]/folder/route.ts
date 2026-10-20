@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 import { fileCandidateToFolder, returnCandidateToPool } from "@/lib/recruitment/candidates";
 import {
@@ -43,6 +44,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "candidates", "update");
     const { id } = await params;
+    await assertCandidateVisible(access, id);
     const body = await readJsonObject(request);
 
     const kind = str(body.kind);
@@ -78,8 +80,9 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
-    await requireRecruitmentAccess(request, "candidates", "update");
+    const access = await requireRecruitmentAccess(request, "candidates", "update");
     const { id } = await params;
+    await assertCandidateVisible(access, id);
 
     const candidate = await returnCandidateToPool(id);
     return NextResponse.json({ candidate, success: true });

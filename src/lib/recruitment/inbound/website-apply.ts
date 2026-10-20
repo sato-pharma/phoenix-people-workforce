@@ -50,6 +50,7 @@ import {
   parseDeclaredSalaryFigure,
   REGION_OTHER_MAX,
 } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
+import { mergeExtraAnswers } from "@/lib/recruitment/inbound/whatsapp-answer-sync";
 import { regionPlaceHint } from "@/lib/recruitment/inbound/whatsapp-classify-place-hints";
 import {
   builtInQuestionAppliesToRole,
@@ -62,6 +63,8 @@ import {
   type ScreeningQuestion,
 } from "@/lib/recruitment/inbound/whatsapp-screening-questions";
 import { listActiveScreeningQuestions } from "@/lib/recruitment/inbound/whatsapp-screening-questions-session";
+import { recomputeCompleteness } from "@/lib/recruitment/workspace/completeness";
+import { placeFromAnswers } from "@/lib/recruitment/workspace/placements-db";
 
 // ── The role registry ────────────────────────────────────────────────────────────────────────────
 // One row per position the careers form is opened for. Written generically so a second position is a
@@ -95,10 +98,14 @@ export type WebsiteApplyRole = {
 };
 
 const WEBSITE_APPLY_ROLES: Readonly<Record<WebsiteApplyRoleKey, WebsiteApplyRole>> = {
+  // Its own family since 20 Oct 2026 (owner: a Talent Acquisition tab of its own). It was
+  // `human_resources`, the WhatsApp menu row retired on 6 Oct, which files nobody: the workspace would
+  // have put every careers-form applicant for this seat in Needs placing. The questions scoped to
+  // `human_resources` were widened to `talent_acquisition` the same day, so the form asks what it did.
   talent_acquisition_specialist: {
     jobTitle: "Talent Acquisition Specialist",
     key: "talent_acquisition_specialist",
-    roleFamily: "human_resources",
+    roleFamily: "talent_acquisition",
     title: "Talent Acquisition Specialist",
   },
   national_sales_manager: {
@@ -730,6 +737,7 @@ export type WebsiteApplyOutcome =
 async function applyWebsiteClassification(
   candidateId: string,
   classification: WebsiteApplyClassification,
+  roleFamily: CandidateRoleFamily,
 ): Promise<void> {
   const supabase = recruitmentDb();
   const nowIso = new Date().toISOString();
@@ -757,12 +765,28 @@ async function applyWebsiteClassification(
   if (classification.regionCode) payload.preferred_region_code = classification.regionCode;
   if (classification.regionOtherText) payload.preferred_region_name = classification.regionOtherText;
   if (classification.areaName) payload.preferred_area_name = classification.areaName;
-  if (Object.keys(classification.extraAnswers).length > 0) {
-    payload.screening_extra_answers = classification.extraAnswers;
-  }
+  // The role family they picked, raw — what the workspace files them by, the same column the WhatsApp
+  // bot writes (owner, 2026-10-20: filed from the applicant's own answers, never the CV).
+  payload.declared_role_family = roleFamily;
 
   const { error } = await supabase.from("ats_candidates").update(payload).eq("id", candidateId);
   if (error) throw error;
+
+  // The extra answers key by key, as the bot merges them — never the whole map, which would erase an
+  // answer HR had added for a matched candidate. These are new answers, so they win over HR's marks.
+  if (Object.keys(classification.extraAnswers).length > 0) {
+    await mergeExtraAnswers(candidateId, classification.extraAnswers);
+  }
+
+  // Filed where the answers say (placed by `website`), then the stored completeness. Never throws.
+  await placeFromAnswers({
+    areaName: classification.areaName,
+    candidateId,
+    placedBy: "website",
+    regionCode: classification.regionCode,
+    roleFamily,
+  });
+  await recomputeCompleteness([candidateId]);
 }
 
 /**
@@ -803,7 +827,7 @@ export async function submitWebsiteApplication(input: WebsiteApplySubmission): P
       return { message: "Something went wrong. Please try again.", ok: false, reason: "error" };
     }
     try {
-      await applyWebsiteClassification(candidateId, input.classification);
+      await applyWebsiteClassification(candidateId, input.classification, input.role.roleFamily);
     } catch (error) {
       // The candidate and CV are already safely captured; the screening answers are best-effort on
       // top of that — never fail the application for them. Logged so a systematic failure is visible.

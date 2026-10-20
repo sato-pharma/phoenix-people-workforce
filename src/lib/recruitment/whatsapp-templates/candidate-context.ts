@@ -13,6 +13,7 @@ import { candidateSuppliedDocumentList } from "@/lib/hiring-documents/candidate-
 // The offers module's own reader. recruitment -> offers is the permitted direction and the
 // only one; nothing under src/lib/offers/ imports anything from recruitment.
 import { getOffer } from "@/lib/offers/service";
+import { candidateGreetingName } from "@/lib/recruitment/candidate-greeting";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import { offerCanGiveAStartDate } from "@/lib/recruitment/offer-start-date-rule";
 import { toWhatsAppDialNumber } from "@/lib/recruitment/whatsapp-templates/send-link";
@@ -110,53 +111,10 @@ export type CandidateSendContext = {
   autoValues: Record<AutoVariableKey, string>;
 };
 
-/**
- * The candidate's first name.
- *
- * Egyptian names are given-name-first, so the first token is the right one — the owner's own example
- * opens "Dear Aya". A single-token name returns itself rather than an empty string, which is the
- * difference between "Dear Aya" and "Dear ,".
- *
- * Honorifics are stripped because CV headers routinely carry them and "Dear Mr. Ahmed Nour" read as
- * a first name gives "Dear Mr.".
- */
-const HONORIFICS = new Set(["mr", "mr.", "mrs", "mrs.", "ms", "ms.", "dr", "dr.", "eng", "eng.", "miss"]);
-
-export function firstNameOf(fullName: string): string {
-  const tokens = fullName
-    .trim()
-    .split(/\s+/u)
-    .filter((token) => !HONORIFICS.has(token.toLowerCase()));
-  return softenShoutedName(tokens[0] ?? fullName.trim());
-}
-
-/**
- * "SHAABAN" -> "Shaaban", for the greeting only.
- *
- * 18% of the candidate pool — 160 of 890, measured on production 2026-09-08 — carries an ALL-CAPS
- * first name, because that is how the CV said it or how the importer received it. Left alone, nearly
- * one applicant in five opens an interview invitation that begins "Dear SHAABAN", which reads as
- * shouting at somebody you are trying to hire. This is the one place a stored name is spoken TO a
- * person rather than displayed, so it is the one place the shape matters.
- *
- * ONLY THE GREETING. The stored `full_name` is untouched and `candidate_name` still renders exactly
- * as recorded — an identity field is evidence and must not be rewritten to look tidy. This softens a
- * copy of the first token on its way into one sentence.
- *
- * IT ONLY FIRES ON A SHOUT. A name already carrying a lower-case letter is left exactly as typed, so
- * "McDonald", "van der Berg" and "eSSam" survive — the failure a blanket title-caser produces is
- * mangling the names it was not aimed at, which is why this refuses to touch anything that is not
- * uniformly upper case. Arabic and other uncased scripts have no upper case to detect and fall
- * through unchanged.
- *
- * Internal separators keep their capital: "ABDEL-RAHMAN" -> "Abdel-Rahman", not "Abdel-rahman".
- */
-export function softenShoutedName(token: string): string {
-  if (!/[A-Z]/u.test(token) || /[a-z]/u.test(token)) return token;
-  return token
-    .toLowerCase()
-    .replace(/(^|[-'\u2019])([a-z])/gu, (_whole, sep: string, letter: string) => sep + letter.toUpperCase());
-}
+// The first-name rules (honorifics stripped, a shouted name softened) and the "Dr" every candidate
+// is greeted with live in candidate-greeting.ts, which is client-safe; re-exported for the callers
+// that already read them from here.
+export { firstNameOf, softenShoutedName } from "@/lib/recruitment/candidate-greeting";
 
 /**
  * Load one candidate and work out everything that can be answered without asking.
@@ -239,7 +197,8 @@ export async function loadCandidateSendContext(
 
   return {
     autoValues: {
-      candidate_first_name: firstNameOf(fullName),
+      // "Dear Dr Aya": every candidate is greeted with Dr (owner, 2026-10-20) — see candidate-greeting.ts.
+      candidate_first_name: candidateGreetingName(fullName),
       candidate_name: fullName,
       company_name: systemLegalEntity.legalNameEn,
       // A CANDIDATE HAS NO CONTRACT. Empty rather than absent, for the same reason as the

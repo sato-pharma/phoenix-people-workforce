@@ -5,6 +5,7 @@ import { loadCallClaim } from "@/lib/recruitment/candidate-call-claims-db";
 import { recruitmentFileResponse } from "@/lib/recruitment/file-response";
 import { downloadHiringManagerCandidateFile, isCandidateSentToCaller } from "@/lib/recruitment/hiring-manager-view";
 import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,6 +64,7 @@ export async function GET(
   try {
     const access = await requireRecruitmentAccess(request, "hiring_interviews", "read");
     const { candidateId, fileId } = await params;
+    await assertCandidateVisible(access, candidateId);
 
     // Asked BEFORE the file is fetched. A refusal that first downloads several megabytes out of
     // Drive is the same refusal with a bill attached.

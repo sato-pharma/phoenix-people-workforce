@@ -90,7 +90,8 @@ export function adminCandidateHref(candidateId: string | string[] | null | undef
  *
  *   · can open the recruitment pages  → that candidate's own page when the link names one (it
  *     carries the notes and the history), the recruitment hub when it does not;
- *   · can open the personal inbox     → the admin twin of this very list, the one the CEO uses;
+ *   · can open the personal inbox     → the admin twin of this very list, the one the CEO uses,
+ *     opened on that candidate when the link names one (the page reads `?candidate=`);
  *   · anybody else                    → null, and the caller keeps its old `/overview`.
  *
  * `canOpenRecruitment` is the admin candidate page's own gate, passed in rather than re-derived, so
@@ -102,7 +103,9 @@ export function adminTwinOfPortalCandidatesHref(input: {
   candidateId: string | string[] | null | undefined;
 }): string | null {
   if (input.canOpenRecruitment) return adminCandidateHref(input.candidateId);
-  return input.canOpenPersonalInbox ? "/recruitment/candidates" : null;
+  if (!input.canOpenPersonalInbox) return null;
+  const id = parseCandidatePageId(input.candidateId);
+  return id ? `/recruitment/candidates?${CANDIDATE_LINK_PARAM}=${encodeURIComponent(id)}` : "/recruitment/candidates";
 }
 
 /**

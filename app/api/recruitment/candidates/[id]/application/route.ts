@@ -12,6 +12,7 @@ import {
   attachmentDisposition,
 } from "@/lib/recruitment/whatsapp-application-file";
 import { canOpenWhatsAppApplications } from "@/lib/recruitment/whatsapp-application-access";
+import { assertCandidateVisible } from "@/lib/recruitment/workspace/fence";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
@@ -45,6 +46,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (!isUuid(id)) {
       return NextResponse.json({ error: "not_found", message: "Application not found.", success: false }, { status: 404 });
     }
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's file answers as if absent.
+    await assertCandidateVisible(access, id, "Application not found.");
     await assertExportRateLimit({
       actor: access.loginId ?? access.hrId,
       request,

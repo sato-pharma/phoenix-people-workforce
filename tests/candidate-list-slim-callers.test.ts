@@ -12,7 +12,7 @@ import { stripComments } from "./support/comment-strip.ts";
 const SLIM_CALLERS = [
   "app/(admin)/cv-database/page.tsx",
   "app/employee-portals/cv-database/page.tsx",
-  "app/(admin)/recruitment/page.tsx",
+  "app/(admin)/recruitment/previous/page.tsx",
   "app/employee-portals/recruitment/page.tsx",
   "src/lib/recruitment/contact-review-service.ts",
   "app/api/recruitment/candidates/file-declared/route.ts",

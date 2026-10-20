@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertCandidatesVisible } from "@/lib/recruitment/workspace/fence";
 
 import { revertCandidateStatuses, type StatusRevert } from "@/lib/recruitment/candidates";
 import { BULK_DECISION_MAX } from "@/lib/recruitment/candidate-status";
@@ -56,6 +57,8 @@ export async function POST(request: Request) {
       return validationError("Every restore needs a candidate and the status to put back.");
     }
 
+    // An undo naming someone she may not see is refused whole, as not found (owner, 2026-10-20).
+    await assertCandidatesVisible(access, moves.map((move) => move.id));
     const result = await revertCandidateStatuses(access, moves);
     return NextResponse.json({ ...result, success: true });
   } catch (error) {

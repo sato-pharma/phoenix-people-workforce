@@ -29,6 +29,7 @@ import {
   type InboxPositionRecord,
 } from "@/lib/whatsapp-inbox/position-filter";
 import { WHATSAPP_INBOX_CONVERSATIONS_TABLE, WHATSAPP_INBOX_MESSAGES_TABLE } from "@/lib/whatsapp-inbox/record";
+import { fenceApplies, inboxConversationsHiddenFrom } from "@/lib/recruitment/workspace/fence";
 
 export const WHATSAPP_INBOX_MEDIA_BUCKET = "whatsapp-inbox-media";
 
@@ -352,6 +353,8 @@ export function clampInboxListLimit(value: number | null | undefined): number {
 }
 
 export async function listInboxConversations(input: {
+  /** Who is reading: the Talent Acquisition seat never sees a chat with an HR applicant (owner, 2026-10-20). */
+  access: Pick<AccessContext, "role" | "scope">;
   phoneNumberId?: string | null;
   search?: string | null;
   unreadOnly?: boolean;
@@ -367,6 +370,10 @@ export async function listInboxConversations(input: {
   // after. Without one, the database cuts the page as before. Region and area ride on the position.
   const place = parseInboxPlaceFilter(input);
   const position = place.position;
+  // THE TALENT ACQUISITION FENCE. Her list reads every chat the filters allow (up to the ceiling, the
+  // same way a position filter does), drops the HR applicants' chats, and cuts the page after — so a
+  // page is never short and no count includes a chat she cannot open. Everyone else pays nothing.
+  const fenced = fenceApplies(input.access);
   // The list shows the newest chats first and grows on request. `totalCount` is every chat matching
   // the filters, so the screen can say how many there are and offer the rest, rather than letting
   // the page size pass for the whole inbox.
@@ -374,7 +381,7 @@ export async function listInboxConversations(input: {
     .from(WHATSAPP_INBOX_CONVERSATIONS_TABLE)
     .select(CONVERSATION_COLUMNS, { count: "exact" })
     .order("last_message_at", { ascending: false, nullsFirst: false })
-    .limit(position ? INBOX_LIST_MAX : limit);
+    .limit(position || fenced ? INBOX_LIST_MAX : limit);
   if (input.phoneNumberId) query = query.eq("phone_number_id", input.phoneNumberId);
   if (input.unreadOnly) query = query.gt("unread_count", 0);
   const search = sanitizeInboxSearch(input.search);
@@ -386,14 +393,23 @@ export async function listInboxConversations(input: {
   }
   const { count, data, error } = await query;
   if (error) throw error;
-  const matched = (data ?? []) as ConversationRow[];
+  const read = (data ?? []) as ConversationRow[];
+  const hiddenChats = fenced ? await inboxConversationsHiddenFrom(input.access, read.map(fenceRowOf)) : new Set<string>();
+  const matched = hiddenChats.size > 0 ? read.filter((row) => !hiddenChats.has(row.id)) : read;
 
-  let unreadQuery = supabase.from(WHATSAPP_INBOX_CONVERSATIONS_TABLE).select("unread_count").gt("unread_count", 0).limit(1000);
+  let unreadQuery = supabase
+    .from(WHATSAPP_INBOX_CONVERSATIONS_TABLE)
+    .select("id, candidate_id, contact_wa_id, unread_count")
+    .gt("unread_count", 0)
+    .limit(1000);
   if (input.phoneNumberId) unreadQuery = unreadQuery.eq("phone_number_id", input.phoneNumberId);
-  const { data: unreadRows } = await unreadQuery;
-  const totalUnread = ((unreadRows ?? []) as Array<{ unread_count: number }>).reduce((sum, row) => sum + row.unread_count, 0);
+  const { data: unreadRead } = await unreadQuery;
+  const unreadAll = (unreadRead ?? []) as Array<Pick<ConversationRow, "id" | "candidate_id" | "contact_wa_id" | "unread_count">>;
+  const hiddenUnread = fenced ? await inboxConversationsHiddenFrom(input.access, unreadAll.map(fenceRowOf)) : new Set<string>();
+  const totalUnread = unreadAll.filter((row) => !hiddenUnread.has(row.id)).reduce((sum, row) => sum + row.unread_count, 0);
 
-  const positions = await positionsFor(matched);
+  // Without a position filter only the page's own chats are placed, as before the fence.
+  const positions = await positionsFor(position ? matched : matched.slice(0, limit));
   const narrowed = position ? matched.filter((row) => matchesInboxPlaceFilter(positions.get(row.id) ?? [], place)) : matched;
   // The Area menu lists the areas people chose for this position and region, whatever area is picked now.
   const areaOptions = inboxAreaOptions(positions.values(), place);
@@ -410,9 +426,50 @@ export async function listInboxConversations(input: {
   return {
     areaOptions,
     conversations: rows.map((row) => summarize(row, names, now, positions, cvs)),
-    totalCount: position ? narrowed.length : Math.max(count ?? 0, rows.length),
+    // Fenced and unfiltered by position: every chat was read when the count fits the ceiling, so the
+    // fenced length is exact; past it, the database count less the chats this read hid.
+    totalCount: position
+      ? narrowed.length
+      : fenced
+        ? (count ?? 0) <= read.length
+          ? narrowed.length
+          : Math.max((count ?? 0) - hiddenChats.size, rows.length)
+        : Math.max(count ?? 0, rows.length),
     totalUnread,
   };
+}
+
+function fenceRowOf(row: Pick<ConversationRow, "id" | "candidate_id" | "contact_wa_id">) {
+  return { candidateId: row.candidate_id, contactWaId: row.contact_wa_id, id: row.id };
+}
+
+/**
+ * The Talent Acquisition fence for one chat (owner, 2026-10-20): a chat with an HR applicant answers
+ * exactly as a chat that does not exist. Free for every viewer the fence does not apply to.
+ */
+export async function assertInboxConversationVisibleTo(
+  access: Pick<AccessContext, "role" | "scope">,
+  conversationId: string,
+): Promise<void> {
+  if (!fenceApplies(access)) return;
+  const row = await loadConversationRow(conversationId);
+  const hidden = await inboxConversationsHiddenFrom(access, [fenceRowOf(row)]);
+  if (hidden.has(row.id)) throw new WhatsAppInboxNotFoundError();
+}
+
+/** The same fence for one message, by the chat it belongs to. */
+export async function assertInboxMessageVisibleTo(
+  access: Pick<AccessContext, "role" | "scope">,
+  messageId: string,
+): Promise<void> {
+  if (!fenceApplies(access)) return;
+  const message = await loadMessageRow(messageId);
+  try {
+    await assertInboxConversationVisibleTo(access, message.conversation_id);
+  } catch (error) {
+    if (error instanceof WhatsAppInboxNotFoundError) throw new WhatsAppInboxNotFoundError("That message no longer exists.");
+    throw error;
+  }
 }
 
 async function loadConversationRow(conversationId: string): Promise<ConversationRow> {

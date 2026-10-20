@@ -9,6 +9,7 @@ import {
   requireRecruitmentAccess,
   str,
 } from "@/app/api/recruitment/_lib/http";
+import { assertApplicationVisible } from "@/lib/recruitment/workspace/fence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   try {
     const access = await requireRecruitmentAccess(request, "hiring_interviews", "read");
     const { id } = await params;
+    await assertApplicationVisible(access, id);
     const interviews = await listInterviewsForApplication(access, id);
     return NextResponse.json({ success: true, interviews });
   } catch (error) {
@@ -36,6 +38,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "hiring_interviews", "update");
     const { id } = await params;
+    await assertApplicationVisible(access, id);
     const body = await readJsonObject(request);
     const interview = await createInterview(access, id, {
       interviewType: hiringManagerInterviewType(access.role),

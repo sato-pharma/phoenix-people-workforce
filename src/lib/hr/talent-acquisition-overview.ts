@@ -132,7 +132,13 @@ import {
   weekStartFor,
 } from "@/lib/recruitment/interview-calendar-week";
 import { countCandidatesReceivedInWindow } from "@/lib/recruitment/cvs-received";
+import {
+  fenceCandidatesReceivedCount,
+  fenceHrDashboardSources,
+  fenceInterviewBookings,
+} from "@/lib/recruitment/workspace/fence";
 import { buildTodaysCvDigest } from "@/lib/recruitment/inbound/daily-cv-digest";
+import { workspaceViewer } from "@/lib/recruitment/workspace/role-tabs";
 import { countInterviewVolume } from "@/lib/recruitment/interview-volume";
 import { listOnVacationToday, type OnVacationTodayRow } from "@/lib/vacation/on-vacation-today";
 import { isZoomConfigured } from "@/lib/zoom/meetings";
@@ -190,14 +196,19 @@ function fenced<T extends { href: string }>(seat: HrBundleName, rows: readonly T
  * view being instant rather than a navigation; they are parallel, and the grid's weeks are already
  * Sunday-started so `weekStartFor` only normalises them.
  */
-async function listMonthInterviews(caller: InterviewCalendarCaller, weekStarts: string[]) {
+async function listMonthInterviews(caller: InterviewCalendarCaller, access: AccessContext, weekStarts: string[]) {
   const results = await Promise.all(
-    weekStarts.map((start) => listInterviewCalendarWeek(caller, start).catch(() => null)),
+    weekStarts.map((start) =>
+      listInterviewCalendarWeek(caller, start)
+        // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant's interview is not on her month.
+        .then((week) => fenceInterviewBookings(access, week.bookings))
+        .catch(() => null),
+    ),
   );
   return {
     // A week that refused takes its interviews off the grid, so the page has to SAY that happened.
     failedWeeks: results.filter((result) => result === null).length,
-    interviews: results.flatMap((result) => (result?.bookings ?? []).map(toTalentInterview)),
+    interviews: results.flatMap((bookings) => (bookings ?? []).map(toTalentInterview)),
   };
 }
 
@@ -239,10 +250,19 @@ async function loadCalendar(
 
   const caller = await interviewCalendarCaller(access).catch(() => null);
   const [mine, todays, workspace, role, abilities, canRequest] = await Promise.all([
-    caller ? listMyUpcomingInterviews(caller, now).catch(() => null) : null,
+    // Both FENCED for her seat (owner, 2026-10-20): an HR applicant's interview is never on her page.
+    caller
+      ? listMyUpcomingInterviews(caller, now)
+          .then((bookings) => fenceInterviewBookings(access, bookings))
+          .catch(() => null)
+      : null,
     // Today's interviews, read through the calendar's own DAY reader and its own gate — the same
     // bookings the week grid draws, never a second query of the table.
-    caller ? listInterviewCalendarDay(caller, todayKey).catch(() => null) : null,
+    caller
+      ? listInterviewCalendarDay(caller, todayKey)
+          .then(async (day) => ({ ...day, bookings: await fenceInterviewBookings(access, day.bookings) }))
+          .catch(() => null)
+      : null,
     getCompanyCalendarWorkspace(access, year, month).catch(() => null),
     resolveInterviewCalendarRole(access).catch(() => null),
     interviewCalendarAbilities(access).catch(() => ({
@@ -267,7 +287,7 @@ async function loadCalendar(
     ),
   ];
   const { failedWeeks: failedMonthWeeks, interviews: monthInterviews } = caller
-    ? await listMonthInterviews(caller, monthWeekStarts)
+    ? await listMonthInterviews(caller, access, monthWeekStarts)
     : { failedWeeks: 0, interviews: [] };
   const monthJoiners = joinersBetween(
     offers ?? [],
@@ -361,6 +381,16 @@ export async function getTalentAcquisitionOverview(
       : null,
   ]);
 
+  // The Talent Acquisition fence (owner, 2026-10-20), before any task, tile or calendar names a
+  // person. A fence that cannot read takes the named sources away (said at the foot of the page),
+  // never hands them over unfenced. Free for every other seat.
+  await fenceHrDashboardSources(access, loaded).catch(() => {
+    if (loaded.recruitment) failures.push("recruitment");
+    if (loaded.offers) failures.push("offers");
+    loaded.recruitment = undefined;
+    loaded.offers = undefined;
+  });
+
   /**
    * The reads this page owns outright, named in the words a person reads.
    *
@@ -400,18 +430,24 @@ export async function getTalentAcquisitionOverview(
     // The CVs received today, by the daily digest's own builder — the same count the 18:00 summary
     // sends, so the panel and that summary can never disagree. Asked only when her seat may read
     // candidates; a refusal or a failed read is NULL, and NULL is named below, never drawn as zero.
+    // FENCED for her seat: an HR applicant is never counted on her page (the workspace's own rule).
     canAccess(access, "candidates", "read")
       .then(async (allowed): Promise<TalentCvToday> =>
-        allowed ? { digest: await buildTodaysCvDigest(now), status: "loaded" } : { status: "hidden" },
+        allowed
+          ? { digest: await buildTodaysCvDigest(now, { hideHrPeople: workspaceViewer(access).hidesHrPeople }), status: "loaded" }
+          : { status: "hidden" },
       )
       .catch((): TalentCvToday => {
         pageUnavailable.push("CVs received today");
         return { status: "failed" };
       }),
     // The CVs received in the Hired card's window. Null when her seat may not read candidates or
-    // the read failed; the card is then ABSENT, never drawn as "0 CVs received".
+    // the read failed; the card is then ABSENT, never drawn as "0 CVs received". FENCED for her seat:
+    // the HR applicants who arrived in the window come off her figure (owner, 2026-10-20).
     canAccess(access, "candidates", "read")
-      .then((allowed) => (allowed ? countCandidatesReceivedInWindow(hiredWindow) : null))
+      .then(async (allowed) =>
+        allowed ? fenceCandidatesReceivedCount(access, hiredWindow, await countCandidatesReceivedInWindow(hiredWindow)) : null,
+      )
       .catch((): null => {
         pageUnavailable.push("CVs received");
         return null;
@@ -463,7 +499,7 @@ export async function getTalentAcquisitionOverview(
               openSeatLineNames: openWorkforceSeats(loaded.directory).map((seatRow) => seatRow.lineName),
             })
           : []),
-        ...(cvsReceived === null ? [] : [buildCvsReceivedTile(cvsReceived, describeWindow(hiredWindow))]),
+        ...(cvsReceived === null ? [] : [buildCvsReceivedTile(cvsReceived, describeWindow(hiredWindow), hiredWindow)]),
         // The shared builder serves the HR command centre too; her page keeps only two of its figures.
         ...(buildRecruitingTiles(loaded) ?? []).filter((tile) =>
           TALENT_KEPT_BUILDER_TILE_KEYS.includes(tile.key),

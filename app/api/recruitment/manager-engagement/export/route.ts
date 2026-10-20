@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { fenceManagerEngagementReport } from "@/lib/recruitment/workspace/fence";
 
 import { recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
@@ -51,10 +52,12 @@ export async function GET(request: Request) {
 
     const query = new URL(request.url).searchParams.get("q") ?? "";
     const generatedAtIso = new Date().toISOString();
-    const [report, exportedBy] = await Promise.all([
+    const [everyone, exportedBy] = await Promise.all([
       loadManagerCvEngagement(access),
       resolveManagerEngagementViewerName(access),
     ]);
+    // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is neither listed nor counted.
+    const report = await fenceManagerEngagementReport(access, everyone);
     const rows = filterManagerEngagementRows(report.rows, query);
 
     const buffer = await buildManagerEngagementWorkbook({

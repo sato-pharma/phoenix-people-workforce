@@ -345,14 +345,32 @@ export function runCvLifecycleFeedTests() {
   //   * a view written with WITH is never flattened into its reader, so the five CV-text functions
   //     ran for every file on every page instead of only for the rows the page returns.
   const migrationsDir = path.join(repoRoot, "supabase/migrations");
-  const liveViewFile = fs
+  const viewMigrations = fs
     .readdirSync(migrationsDir)
     .filter((name) => name.endsWith(".sql"))
     .sort()
-    .filter((name) =>
-      fs.readFileSync(path.join(migrationsDir, name), "utf8").includes("create or replace view public.ats_v_cv_lifecycle"),
-    )
-    .at(-1)!;
+    .map((name) => ({ name, sql: fs.readFileSync(path.join(migrationsDir, name), "utf8") }))
+    .filter(({ sql }) => sql.includes("create or replace view public.ats_v_cv_lifecycle"));
+  // A migration may instead REWRITE the live definition — pg_get_viewdef, one select-list column
+  // swapped, nothing retyped (2026-10-20: the age column reading the kept `field_age_band` key
+  // first). The body it carries forward is the last one written out in full, so that is the one the
+  // shape pins below read; the rewrite itself is held to swapping one output column, never a join,
+  // a WITH or a filter, and to restating security_invoker, which CREATE OR REPLACE VIEW drops.
+  const rewritesLive = (sql: string) => sql.includes("pg_get_viewdef('public.ats_v_cv_lifecycle'::regclass)");
+  const fullDefinitions = viewMigrations.filter(({ sql }) => !rewritesLive(sql));
+  const liveViewFile = fullDefinitions.at(-1)!.name;
+  for (const rewrite of viewMigrations.filter(({ name, sql }) => name > liveViewFile && rewritesLive(sql))) {
+    const fragments = [...rewrite.sql.matchAll(/v_(?:old|new) text := '((?:[^']|'')*)'/g)].map((match) => match[1]!.toLowerCase());
+    assert.ok(fragments.length === 2, `${rewrite.name}: a rewrite of the live view must name exactly one old and one new fragment`);
+    for (const fragment of fragments) {
+      assert.ok(/ as \w+$/.test(fragment), `${rewrite.name}: a rewrite may swap one output column ("… AS name"), nothing else`);
+      assert.ok(!/\b(join|with|where|from)\b/.test(fragment), `${rewrite.name}: a rewrite must not touch a join, a WITH, a FROM or a filter`);
+    }
+    assert.ok(
+      rewrite.sql.includes("create or replace view public.ats_v_cv_lifecycle with (security_invoker = on) as"),
+      `${rewrite.name}: a rewrite must restate security_invoker — CREATE OR REPLACE VIEW replaces the view's options`,
+    );
+  }
   const liveViewSql = fs.readFileSync(path.join(migrationsDir, liveViewFile), "utf8");
   const viewBody = liveViewSql
     .slice(liveViewSql.indexOf("create or replace view public.ats_v_cv_lifecycle"))
