@@ -14,7 +14,8 @@ import { buildOrgIndex, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
  * 🔴 THE OBVIOUS IMPLEMENTATION IS THE WRONG ONE: a day activity is one row per seat per day, so
  * unlocking the tiles on the REP's seat would let a manager's meeting replace the rep's own day. The
  * row lands on the manager's OWN seat (the unified visits view already counts a day on it), and the
- * rep's day stays the rep's.
+ * rep's day stays the rep's. The regional manager was added the same night ("let regional managers
+ * record their own day too"); a national manager stays out.
  */
 
 const ROOT = new URL("../", import.meta.url);
@@ -45,6 +46,17 @@ const RSM: OrgSeat = {
   lineCode: "anti_infective",
   lineName: "Anti Infective",
   seatLabel: "AIF RSM",
+};
+/** A national manager with a rep straight under him: the tier neither of the owner's words reached. */
+const NSM: OrgSeat = { ...RSM, seatId: "SEAT-CNS-NSM", tier: "NSM", path: ["SEAT-ROOT-CEO", "SEAT-CNS-NSM"], occupantHrId: "B-1", seatLabel: "CNS NSM" };
+const NSM_REP: OrgSeat = {
+  ...RSM,
+  seatId: "SEAT-CNS-REP-N1",
+  parentSeatId: "SEAT-CNS-NSM",
+  tier: "REP",
+  path: ["SEAT-ROOT-CEO", "SEAT-CNS-NSM", "SEAT-CNS-REP-N1"],
+  occupantHrId: "B-40",
+  seatLabel: "CNS N1 rep",
 };
 const DM: OrgSeat = {
   ...RSM,
@@ -80,7 +92,7 @@ const OTHER_REP: OrgSeat = {
   occupantHrId: "B-21",
 };
 
-const org = buildOrgIndex([CEO, RSM, DM, REP, OTHER_DM, OTHER_REP]);
+const org = buildOrgIndex([CEO, RSM, DM, REP, OTHER_DM, OTHER_REP, NSM, NSM_REP]);
 
 function viewer(patch: Partial<PhoenixCrmViewer> = {}): PhoenixCrmViewer {
   return {
@@ -110,6 +122,7 @@ function viewer(patch: Partial<PhoenixCrmViewer> = {}): PhoenixCrmViewer {
 const repViewer = viewer({ hrId: "B-7", role: "Medical Rep", canApprove: false, ownTerritories: [REP], scopeTerritories: [REP], managerSeats: [] });
 const rsmViewer = viewer({ hrId: "B-3", role: "Regional Manager", scopeTerritories: [REP, OTHER_REP], managerSeats: [RSM] });
 const peerViewer = viewer({ hrId: "B-20", scopeTerritories: [OTHER_REP], managerSeats: [OTHER_DM] });
+const nsmViewer = viewer({ hrId: "B-1", role: "National Sales Manager", scopeTerritories: [NSM_REP], managerSeats: [NSM] });
 
 function refused(run: () => unknown, pattern: RegExp, message: string): void {
   assert.throws(run, (error: unknown) => error instanceof Error && pattern.test(error.message), message);
@@ -137,8 +150,15 @@ export function runPhoenixCrmDmRecordsHisDayTests(): void {
   {
     assert.equal(ownDaySeat(peerViewer, REP), null, "another district's manager is outside the chain");
     refused(() => territoryForDayWrite(peerViewer, REP.seatId, false), /Only the territory's rep/, "a peer is refused");
-    assert.equal(ownDaySeat(rsmViewer, REP), null, "the owner's word was the DISTRICT manager — a regional manager is not widened");
-    refused(() => territoryForDayWrite(rsmViewer, REP.seatId, false), /Only the territory's rep/, "a regional manager is refused");
+    // The regional manager was added the same night ("let regional managers record their own day too"):
+    // his day lands on HIS seat, past the district manager below him, never on the rep's or the DM's.
+    assert.equal(ownDaySeat(rsmViewer, REP)?.seatId, RSM.seatId, "a regional manager records his own day on his own regional seat");
+    const regional = territoryForDayWrite(rsmViewer, REP.seatId, false);
+    assert.equal(regional.seat.seatId, RSM.seatId, "never on the district manager's seat between them");
+    assert.equal(regional.own, "manager");
+    // A national manager was named in neither word.
+    assert.equal(ownDaySeat(nsmViewer, NSM_REP), null, "a national manager is not widened");
+    refused(() => territoryForDayWrite(nsmViewer, NSM_REP.seatId, false), /Only the territory's rep/, "a national manager is refused");
     assert.equal(ownDaySeat(viewer({ isSuperAdmin: true }), REP), null, "the Super Admin records nothing in the field");
     refused(() => territoryForDayWrite(viewer({ isSuperAdmin: true }), REP.seatId, false), /Super Admin does not/, "and is told so by name");
     assert.equal(ownDaySeat(viewer({ canCreate: false }), REP), null, "a role that cannot create anything records no day");
