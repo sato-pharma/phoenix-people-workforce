@@ -10,7 +10,8 @@ export const dynamic = "force-dynamic";
 
 // Hand this customer to the Direct Order validation desk.
 //
-// The body carries only an optional note: every field written on the other side is read
+// The body carries an optional note and the admin's answer to "pharmacy or nursery" (required, and
+// refused when absent): every other field written on the other side is read
 // server-side from the trusted marketing record, the same discipline
 // `ensureDirectOrderPharmacyFromDirectory` follows. A caller cannot dictate the name, the
 // geography, or the codes by editing a payload.
@@ -21,11 +22,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const { id } = await params;
     const access = await resolveAccessContext(request);
-    const body = (await request.json().catch(() => ({}))) as { notes?: string | null };
+    const body = (await request.json().catch(() => ({}))) as {
+      notes?: string | null;
+      venueType?: string | null;
+    };
 
     const result = await transferValidatedCustomerToDirectOrders(access, {
       customerId: id,
       notes: body.notes ?? null,
+      venueType: body.venueType ?? null,
     });
 
     return NextResponse.json({ ...result, success: true });

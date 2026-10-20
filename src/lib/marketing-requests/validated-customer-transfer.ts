@@ -9,6 +9,12 @@ import { applyPhotoPinTerritory, type PinnedGeography } from "@/lib/marketing-re
 import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/http/uuid";
+import {
+  VENUE_TYPE_UNANSWERED_MESSAGE,
+  parseVenueTypeChoice,
+  venueRequiresDistributorCode,
+  type VenueTypeChoice,
+} from "@/lib/venues/venue-type";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Validated Customers register, and the one-way door into Direct Orders.
@@ -1259,15 +1265,25 @@ export function resolveTransferredVenueOwnerHrId(
  *     but the column is nullable and a transfer is precisely the case that has no order behind it.
  *     The desk sees a fully-evidenced row with nothing to re-collect.
  *
+ *   • the venue's TYPE, which the admin answers in the Transfer dialog and which is REQUIRED. The
+ *     row used to be written with no `venue_type`, so the column's default filed every transferred
+ *     nursery as a PHARMACY, and the desk then refused to approve it for want of a distributor code or
+ *     a licence (حضانه الجمعيه الشرعيه, 2026-10-20 — a nursery sat unapprovable until the type was
+ *     corrected by hand). A nursery has no distributor account, so no code is written onto it.
+ *
  * The photo is referenced, NOT copied: `storage_bucket` points at `marketing-evidence` and
  * `storage_path` at the file already there. Copying bytes would double the storage for no gain and
  * create a second image that could drift from the first.
  */
 export async function transferValidatedCustomerToDirectOrders(
   access: AccessContext,
-  input: { customerId: string; notes?: string | null },
+  input: { customerId: string; notes?: string | null; venueType: VenueTypeChoice | string | null },
 ): Promise<{ transferId: string; directOrderPharmacyId: string; phoenixPharmacyCode: string }> {
   assertValidatedCustomerTransferAccess(access);
+
+  // Asked, never defaulted: an absent answer is refused in the same words every capture point uses.
+  const venueType = parseVenueTypeChoice(input.venueType);
+  if (!venueType) throw validationError(VENUE_TYPE_UNANSWERED_MESSAGE);
 
   const customerId = String(input.customerId ?? "").trim();
   if (!customerId) throw validationError("A customer id is required.");
@@ -1421,6 +1437,7 @@ export async function transferValidatedCustomerToDirectOrders(
       phoenix_pharmacy_code: phoenixPharmacyCode,
       region_code: geography.regionCode,
       trust_state: "provisional",
+      venue_type: venueType,
       verification_status: "pending_review",
     })
     .select("id, phoenix_pharmacy_code")
@@ -1440,7 +1457,9 @@ export async function transferValidatedCustomerToDirectOrders(
   // something that is not there would just relocate the phantom. When it does not exist we leave
   // the pharmacy uncoded and provisional, which is the honest state: the desk attaches the code
   // once the distributor actually issues one.
-  if (distributorCode && distributorCustomerCode) {
+  // A nursery has no distributor account, so nothing is linked onto it — registration refuses the
+  // same write, and a code on a nursery is how invented codes reached production.
+  if (venueRequiresDistributorCode(venueType) && distributorCode && distributorCustomerCode) {
     const { data: mapRow } = await supabase
       .from("source_of_sales_customer_map")
       .select("brick_id, area_code, region_code")

@@ -24,6 +24,14 @@ import {
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { cairoDateTime } from "@/components/marketing-requests/validated-customer-register";
+import { adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  VENUE_TYPES,
+  VENUE_TYPE_UNANSWERED_MESSAGE,
+  venueTypeIsAnswered,
+  venueTypeLabel,
+  type VenueTypeChoice,
+} from "@/lib/venues/venue-type";
 import type {
   ValidatedCustomerCompletenessItem,
   ValidatedCustomerDetail as Detail,
@@ -75,6 +83,9 @@ export function ValidatedCustomerDetailView({
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<"transfer" | "revert" | null>(null);
   const [revertReason, setRevertReason] = useState("");
+  // Starts unanswered on purpose: a venue type pre-selected is a venue type nobody was asked, and the
+  // desk refuses to approve a nursery that was filed as a pharmacy (2026-10-20).
+  const [venueType, setVenueType] = useState<VenueTypeChoice>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -107,11 +118,15 @@ export function ValidatedCustomerDetailView({
   }, [load]);
 
   async function runTransfer() {
+    if (!venueTypeIsAnswered(venueType)) {
+      setMessage(VENUE_TYPE_UNANSWERED_MESSAGE);
+      return;
+    }
     setBusy(true);
     setMessage(null);
     try {
       const response = await fetch(`/api/marketing-requests/validated-customers/${customerId}/transfer`, {
-        body: JSON.stringify({}),
+        body: JSON.stringify({ venueType }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -250,10 +265,48 @@ export function ValidatedCustomerDetailView({
               ? ` ${completeness.blockers} item${completeness.blockers === 1 ? " is" : "s are"} still outstanding below; you can transfer anyway.`
               : ""}
           </p>
+          <div
+            className={
+              venueTypeIsAnswered(venueType)
+                ? `mt-3 border border-slate-200 bg-white p-2 ${adminSoftDepthClassName}`
+                : "mt-3 border border-orange-300 bg-white p-2"
+            }
+          >
+            <p className="text-xs font-black uppercase tracking-wider text-slate-500">What is this venue? *</p>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              {VENUE_TYPES.map((option) => (
+                <button
+                  className={
+                    venueType === option
+                      ? "border border-orange-300 bg-orange-50 px-3 py-1.5 text-sm font-black text-orange-700"
+                      : `border border-slate-200 bg-white px-3 py-1.5 text-sm font-bold text-slate-600 hover:bg-slate-50 ${adminControlDepthClassName}`
+                  }
+                  key={option}
+                  onClick={() => setVenueType(option)}
+                  type="button"
+                >
+                  {venueTypeLabel(option)}
+                </button>
+              ))}
+            </div>
+            <p
+              className={
+                venueTypeIsAnswered(venueType)
+                  ? "mt-1 text-xs font-semibold text-slate-500"
+                  : "mt-1 text-xs font-bold text-orange-700"
+              }
+            >
+              {!venueTypeIsAnswered(venueType)
+                ? VENUE_TYPE_UNANSWERED_MESSAGE
+                : venueType === "nursery"
+                  ? "A nursery has no distributor account, so no code is carried across. The desk approves it on its location and live photo."
+                  : "A pharmacy is approved on its distributor code or its licence, so the desk will ask for one if it has neither."}
+            </p>
+          </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               className="inline-flex items-center gap-2 rounded border border-orange-300 bg-orange-600 px-4 py-2 text-sm font-black text-white disabled:opacity-50"
-              disabled={busy}
+              disabled={busy || !venueTypeIsAnswered(venueType)}
               onClick={() => void runTransfer()}
               type="button"
             >

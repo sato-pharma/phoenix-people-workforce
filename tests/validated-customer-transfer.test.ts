@@ -122,11 +122,49 @@ async function testTransferGateRefusesNonAdmins() {
   for (const role of TRANSFER_FORBIDDEN_ROLES) {
     const access = createAccessContext({ hrId: "TEST-1", role });
     await assert.rejects(
-      () => transferValidatedCustomerToDirectOrders(access, { customerId: SOME_CUSTOMER_ID }),
+      () => transferValidatedCustomerToDirectOrders(access, { customerId: SOME_CUSTOMER_ID, venueType: "pharmacy" }),
       /Forbidden/i,
       `${role} must not be able to write a pharmacy into Direct Orders`,
     );
   }
+}
+
+// 🔴 A TRANSFER IS REFUSED UNTIL THE ADMIN SAYS PHARMACY OR NURSERY (2026-10-20). The row used to be written
+// with no venue type, the column's default filed حضانه الجمعيه الشرعيه as a PHARMACY, and the Direct Order desk
+// then refused to approve it for want of a code or a licence. Absent is unanswered, never "pharmacy". The
+// refusal fires before any database read, so no database is needed here.
+async function testTransferRefusesAnUnansweredVenueType() {
+  const access = createAccessContext({ hrId: "TEST-1", role: "Super Admin" });
+  for (const venueType of [null, undefined, "", "clinic", "Hospital"]) {
+    await assert.rejects(
+      () => transferValidatedCustomerToDirectOrders(access, { customerId: SOME_CUSTOMER_ID, venueType: venueType as string | null }),
+      /pharmacy or nursery/i,
+      `a transfer with venue type ${JSON.stringify(venueType)} must be refused, never filed as a pharmacy`,
+    );
+  }
+}
+
+function testTransferFilesTheVenueWithTheAnsweredType() {
+  const source = readFileSync(new URL("../src/lib/marketing-requests/validated-customer-transfer.ts", import.meta.url), "utf8");
+  assert.match(
+    source,
+    /trust_state: "provisional",\s*venue_type: venueType,/,
+    "the Direct Order venue row carries the type the admin answered",
+  );
+  assert.match(
+    source,
+    /if \(venueRequiresDistributorCode\(venueType\) && distributorCode && distributorCustomerCode\)/,
+    "a nursery has no distributor account, so no code is linked onto it",
+  );
+  const route = readFileSync(
+    new URL("../app/api/marketing-requests/validated-customers/[id]/transfer/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(route, /venueType: body\.venueType \?\? null/, "the route forwards the admin's answer to the service");
+  const dialog = readFileSync(new URL("../src/components/marketing-requests/validated-customer-detail.tsx", import.meta.url), "utf8");
+  assert.match(dialog, /useState<VenueTypeChoice>\(null\)/, "the dialog starts the venue type unanswered");
+  assert.match(dialog, /disabled=\{busy \|\| !venueTypeIsAnswered\(venueType\)\}/, "Yes, transfer it stays disabled until it is answered");
+  assert.match(dialog, /JSON\.stringify\(\{ venueType \}\)/, "the dialog sends the answer");
 }
 
 async function testRevertGateRefusesNonAdmins() {
@@ -341,6 +379,8 @@ export async function runValidatedCustomerTransferTests() {
   await testDetailGateRefusesNonAdmins();
   await testTransferGateRefusesNonAdmins();
   await testRevertGateRefusesNonAdmins();
+  await testTransferRefusesAnUnansweredVenueType();
+  testTransferFilesTheVenueWithTheAnsweredType();
   testAllowedRolesPassThePredicate();
   testCompleteRecordReportsNothingOutstanding();
   testMissingNameIsABlocker();
