@@ -6,6 +6,7 @@ import {
   buildOrganogramAudienceOptions,
   buildOrganogramExportRows,
   collectOrganogramAudienceEmails,
+  isOrganogramCompanyEmail,
   filterOrganogramAudience,
   formatOrganogramEmailList,
   organogramAudienceKey,
@@ -70,7 +71,7 @@ const CEO = row({
   lineName: null,
   regionName: null,
   areaName: null,
-  workEmail: "ceo@phoenix.test",
+  workEmail: "ceo@satopharma.com",
 });
 
 const MINIA = row({
@@ -84,14 +85,14 @@ const MINIA = row({
   employeeJobTitle: "Medical Representative",
   employeeDepartmentName: "Sales",
   employeeTeamName: "Upper Egypt",
-  workEmail: "Acting.DM@phoenix.test",
+  workEmail: "Acting.DM@satopharma.com",
 });
 
 const ASSIUT = row({
   hrId: "AI-0100",
   fullName: "Assiut Rep",
   areaName: "Assiut",
-  workEmail: "assiut.rep@phoenix.test",
+  workEmail: "assiut.rep@satopharma.com",
 });
 
 const GIZA = row({
@@ -99,7 +100,7 @@ const GIZA = row({
   fullName: "Giza Rep",
   areaName: "Giza 2",
   regionName: "Cairo & Giza",
-  workEmail: "giza.rep@phoenix.test",
+  workEmail: "giza.rep@satopharma.com",
 });
 
 const PEDIA = row({
@@ -108,7 +109,7 @@ const PEDIA = row({
   areaName: "Tanta",
   lineName: "Pedia",
   regionName: "Delta",
-  workEmail: "pedia.rep@phoenix.test",
+  workEmail: "pedia.rep@satopharma.com",
 });
 
 const NO_EMAIL = row({
@@ -237,11 +238,11 @@ export function runOrganogramAudienceTests() {
     NO_EMAIL,
     OPEN_SEAT,
     // Same person, second seat, address differing only by case: one address out.
-    { ...MINIA, seatId: "SEAT-AIF-REP-UE1", workEmail: "acting.dm@phoenix.test" },
+    { ...MINIA, seatId: "SEAT-AIF-REP-UE1", workEmail: "acting.dm@satopharma.com" },
   ]);
   assert.deepEqual(
     collected.emails,
-    ["Acting.DM@phoenix.test", "assiut.rep@phoenix.test"],
+    ["Acting.DM@satopharma.com", "assiut.rep@satopharma.com"],
     "addresses dedupe case-insensitively and keep the first spelling",
   );
   assert.deepEqual(
@@ -250,6 +251,26 @@ export function runOrganogramAudienceTests() {
     "a whitespace-only work email counts as missing, never as an address",
   );
   assert.equal(collected.openSeats, 1, "open seats are reported, not silently dropped");
+
+  // A personal address typed into work_email (2026-10-20: three new reps, one as "gamil.com")
+  // must never reach the clipboard — it is listed as left out, like a missing address.
+  const personal = collectOrganogramAudienceEmails([
+    MINIA,
+    { ...ASSIUT, hrId: "AI-0024", workEmail: "someone@gmail.com" },
+    { ...ASSIUT, hrId: "PD-0016", workEmail: "someone@gamil.com" },
+    { ...ASSIUT, hrId: "PD-0017", workEmail: "lookalike@notsatopharma.com" },
+  ]);
+  assert.deepEqual(personal.emails, ["Acting.DM@satopharma.com"], "only company addresses survive");
+  assert.deepEqual(
+    personal.missing.map((person) => person.hrId),
+    ["AI-0024", "PD-0016", "PD-0017"],
+    "a personal or look-alike domain is left out and named, never copied",
+  );
+  assert.equal(isOrganogramCompanyEmail("Jonia.Wageh@SatoPharma.com"), true);
+  assert.equal(isOrganogramCompanyEmail("a@mail.satopharma.com"), true);
+  assert.equal(isOrganogramCompanyEmail("a@gmail.com"), false);
+  assert.equal(isOrganogramCompanyEmail("a@notsatopharma.com"), false);
+  assert.equal(isOrganogramCompanyEmail("satopharma.com"), false);
 
   assert.equal(
     formatOrganogramEmailList(["a@x.test", "b@x.test"]),
@@ -321,7 +342,7 @@ export function runOrganogramAudienceTests() {
   // The acting DM: the chart's seat title AND her real HR title, side by side.
   assert.equal(exported[0].title, "District Sales Manager");
   assert.equal(exported[0].hrJobTitle, "Medical Representative");
-  assert.equal(exported[0].workEmail, "Acting.DM@phoenix.test");
+  assert.equal(exported[0].workEmail, "Acting.DM@satopharma.com");
   assert.equal(exported[0].status, "Active");
 
   // Department and Team come from the export-only twins. The row's own departmentName /

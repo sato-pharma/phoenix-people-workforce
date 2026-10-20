@@ -198,9 +198,26 @@ export function resolveOrganogramAudienceSelection(
 /** Outlook's own separator. Gmail, Outlook Web and Apple Mail all accept it. */
 export const ORGANOGRAM_EMAIL_SEPARATOR = "; ";
 
+/**
+ * The only domain a COPIED address may belong to. `employees.work_email` is a free-text
+ * field, and on 2026-10-20 three newly hired reps had their personal Gmail typed into it
+ * (one as `gamil.com`); the copy button pasted those into a company mail's To field. A
+ * personal address is not a work email, so it never reaches the clipboard — the person is
+ * listed as left out instead, exactly like someone with no address.
+ */
+export const ORGANOGRAM_COMPANY_EMAIL_DOMAIN = "satopharma.com";
+
+export function isOrganogramCompanyEmail(email: string | null | undefined): boolean {
+  const value = email?.trim().toLowerCase() ?? "";
+  const at = value.lastIndexOf("@");
+  if (at < 1) return false;
+  const domain = value.slice(at + 1);
+  return domain === ORGANOGRAM_COMPANY_EMAIL_DOMAIN || domain.endsWith(`.${ORGANOGRAM_COMPANY_EMAIL_DOMAIN}`);
+}
+
 export type OrganogramAudienceEmails = {
   emails: string[];
-  /** People in the pick with no usable work email — surfaced, never silently dropped. */
+  /** People in the pick with no company work email — surfaced, never silently dropped. */
   missing: Array<{ hrId: string; name: string }>;
   /** Open seats in the pick, which have nobody to email. */
   openSeats: number;
@@ -231,7 +248,7 @@ export function collectOrganogramAudienceEmails(
       continue;
     }
     const email = row.workEmail?.trim() ?? "";
-    if (!email.includes("@")) {
+    if (!isOrganogramCompanyEmail(email)) {
       missing.push({ hrId: row.hrId, name: organogramAudienceName(row) });
       continue;
     }
