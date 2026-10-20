@@ -174,6 +174,12 @@ export async function runRecruitmentWorkspaceExportTests(): Promise<void> {
     ),
     "Medical Rep · Alex-BHR · Smouha · New or Shortlisted · received today · not overdue",
   );
+  // The decided toggle reads back as the word he pressed, not five statuses joined by "or".
+  assert.equal(
+    workspaceExportFilterLine({ ...emptyWorkspaceFilters(), statuses: ["shortlisted", "backup", "sent_to_manager", "rejected", "hired"] }, "medical_rep"),
+    "Medical Rep · decided",
+  );
+  assert.equal(workspaceExportFilterLine({ ...emptyWorkspaceFilters(), statuses: ["new"] }, "medical_rep"), "Medical Rep · not decided");
   assert.equal(
     workspaceExportFilterLine({ ...emptyWorkspaceFilters(), fromDate: "2026-10-01", toDate: "2026-10-15", archived: "include" }, "district_manager"),
     "District Manager · received 1 Oct 2026 to 15 Oct 2026 (Cairo) · archived included",

@@ -31,10 +31,16 @@ import { flattenCvFolderTree, type CvFolderNode } from "@/lib/recruitment/cv-fol
 import {
   MISSING_ANSWER,
   activeFilterCount,
+  decisionModeCount,
+  decisionModeLabels,
+  decisionModeOf,
+  decisionModes,
   emptyWorkspaceFilters,
+  statusesForDecisionMode,
   quickDatePickLabels,
   quickDatePicks,
   type ArchivedMode,
+  type DecisionMode,
   type QuickDatePick,
   type WorkspaceFilters,
 } from "@/lib/recruitment/workspace/filters";
@@ -184,12 +190,18 @@ export function FilterBar({
   const folderName = (id: string) => flatFolders.find((folder) => folder.id === id)?.path.join(" / ") ?? "A folder";
 
   const applied: Array<{ key: string; label: string; remove: () => void }> = [];
-  for (const status of filters.statuses) {
-    applied.push({
-      key: `status-${status}`,
-      label: `Status: ${candidateStatusLabels[status as keyof typeof candidateStatusLabels] ?? status}`,
-      remove: () => set({ statuses: filters.statuses.filter((item) => item !== status) }),
-    });
+  const decision = decisionModeOf(filters.statuses);
+  // A press of the decided toggle reads back as the one word he pressed, not five status chips.
+  if (decision === "decided" || decision === "undecided") {
+    applied.push({ key: "decision", label: decisionModeLabels[decision], remove: () => set({ statuses: [] }) });
+  } else {
+    for (const status of filters.statuses) {
+      applied.push({
+        key: `status-${status}`,
+        label: `Status: ${candidateStatusLabels[status as keyof typeof candidateStatusLabels] ?? status}`,
+        remove: () => set({ statuses: filters.statuses.filter((item) => item !== status) }),
+      });
+    }
   }
   for (const source of filters.sources) {
     applied.push({ key: `source-${source}`, label: `Source: ${candidateSourceLabels[source]}`, remove: () => set({ sources: filters.sources.filter((item) => item !== source) }) });
@@ -261,6 +273,27 @@ export function FilterBar({
             </button>
           ) : null}
         </label>
+
+        <div aria-label="Decided or not" className={`flex flex-wrap border border-slate-200 bg-white p-0.5 ${adminChipDepthClassName}`} role="group">
+          {decisionModes.map((mode: DecisionMode) => {
+            const n = decisionModeCount(mode, byStatus);
+            return (
+              <button
+                aria-pressed={decision === mode}
+                className={cn(
+                  "inline-flex items-baseline gap-1.5 px-2.5 py-1.5 text-xs font-bold transition",
+                  decision === mode ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900",
+                )}
+                key={mode}
+                onClick={() => set({ statuses: statusesForDecisionMode(mode) })}
+                type="button"
+              >
+                {decisionModeLabels[mode]}
+                {n !== null ? <span className={cn("tabular-nums", decision === mode ? "text-white/75" : "text-slate-400")}>{NUMBER.format(n)}</span> : null}
+              </button>
+            );
+          })}
+        </div>
 
         <div aria-label="Received" className={`flex flex-wrap border border-slate-200 bg-white p-0.5 ${adminChipDepthClassName}`} role="group">
           <button

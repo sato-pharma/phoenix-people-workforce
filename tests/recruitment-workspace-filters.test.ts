@@ -9,24 +9,34 @@
 //     (UTC+3 -> UTC+2), so the 29th is a 25-hour day; a range computed with a fixed offset loses or
 //     double-counts an hour of CVs there.
 //   * "to" is inclusive: a to-date keeps the whole day, a to-time keeps its whole minute.
+//   * The decided toggle (owner, 20 Oct 2026: "filter by decided and all not decided") is the status
+//     filter in one press: Not decided = New, Decided = every other status. Its two halves must cover
+//     the whole status list with nothing between them, or a CV vanishes from both.
 //   * The viewer's allowed tabs and the Talent Acquisition fence come from the SESSION. A URL that
 //     names them changes nothing — otherwise a hand-edited link could unhide HR applicants.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
+  DECIDED_STATUSES,
+  UNDECIDED_STATUSES,
   activeFilterCount,
   cairoToday,
   cairoWallClockToUtc,
+  decisionModeCount,
+  decisionModeOf,
   emptyWorkspaceFilters,
   parseWorkspaceFilters,
   receivedRange,
   receivedRangeProblem,
   serializeWorkspaceFilters,
+  statusesForDecisionMode,
   workspaceDbParams,
   type WorkspaceFilters,
 } from "../src/lib/recruitment/workspace/filters.ts";
 import { NEEDS_PLACING, workspaceViewer } from "../src/lib/recruitment/workspace/role-tabs.ts";
+import { candidateStatuses } from "../src/lib/recruitment/candidate-status.ts";
 import { OVERDUE_SENT_DAYS, OVERDUE_SHORTLIST_DAYS } from "../src/lib/recruitment/workspace/vocabulary.ts";
 
 const FOLDER_ID = "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed";
@@ -214,4 +224,38 @@ export function runRecruitmentWorkspaceFiltersTests() {
   assert.deepEqual(extras.candidate_ids, [CANDIDATE_ID]);
   assert.equal("statuses" in extras, false);
   assert.equal("from" in extras, false);
+
+  // ── The decided toggle ──
+  assert.deepEqual([...UNDECIDED_STATUSES], ["new"], "Not decided is New — nobody has moved the CV yet");
+  assert.deepEqual(
+    [...UNDECIDED_STATUSES, ...DECIDED_STATUSES].sort(),
+    [...candidateStatuses].sort(),
+    "Not decided and Decided together are every status, once — a status in neither half hides its CVs from both",
+  );
+  assert.equal(DECIDED_STATUSES.includes("new"), false);
+  assert.equal(decisionModeOf([]), "all", "All is the clean default");
+  assert.equal(decisionModeOf(statusesForDecisionMode("undecided")), "undecided");
+  assert.equal(decisionModeOf(statusesForDecisionMode("decided")), "decided");
+  assert.deepEqual(statusesForDecisionMode("all"), []);
+  assert.equal(decisionModeOf([...DECIDED_STATUSES].reverse()), "decided", "the order of the ticks does not matter");
+  assert.equal(decisionModeOf(["shortlisted"]), null, "a hand-ticked set lights no press");
+  assert.equal(decisionModeOf(["new", "shortlisted"]), null);
+  // It round-trips through the URL and reaches the database filter as the status list.
+  const decided = { ...emptyWorkspaceFilters(), statuses: statusesForDecisionMode("decided") };
+  assert.equal(decisionModeOf(parseWorkspaceFilters(serializeWorkspaceFilters(decided)).statuses), "decided");
+  assert.deepEqual(workspaceDbParams(decided, ta).statuses, [...DECIDED_STATUSES]);
+  assert.deepEqual(workspaceDbParams({ ...emptyWorkspaceFilters(), statuses: statusesForDecisionMode("undecided") }, ta).statuses, ["new"]);
+  assert.equal(activeFilterCount(decided), 1, "one press is one filter in Clear filters (n)");
+  // The numbers beside each press: production's 20 Oct mix.
+  const byStatus = { backup: 1, hired: 23, new: 20, rejected: 61, sent_to_manager: 13, shortlisted: 69 };
+  assert.equal(decisionModeCount("all", byStatus), 187);
+  assert.equal(decisionModeCount("undecided", byStatus), 20);
+  assert.equal(decisionModeCount("decided", byStatus), 167);
+  assert.equal(decisionModeCount("decided", undefined), null, "no counts yet reads as no number, never 0");
+  // It sits on the bar's always-visible line, not inside the folded "Filters" panel.
+  const bar = readFileSync(new URL("../src/components/recruitment/workspace/filter-bar.tsx", import.meta.url), "utf8");
+  const toggleAt = bar.indexOf("decisionModes.map(");
+  assert.ok(toggleAt > 0, "the filter bar draws the decided toggle");
+  assert.ok(toggleAt < bar.indexOf("{expanded ? ("), "the decided toggle is on the top line, always in view");
+  assert.ok(bar.includes("onClick={() => set({ statuses: statusesForDecisionMode(mode) })}"), "a press sets the status filter");
 }

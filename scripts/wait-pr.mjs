@@ -27,6 +27,7 @@
 //   0 the condition was reached (or the PR was already merged, for the check modes)
 //   3 the checks SETTLED RED   (settle mode only; --green keeps waiting instead)
 //   4 the deploy did not ship  (--ship: NOT LIVE / NOT MERGED / CANNOT TELL)
+//   5 the PR is CLOSED without merging (check modes) — its checks are frozen at the sha it closed on
 //   7 gave up on the timeout
 //   9 could not start (bad arguments, or the gate could not be read)
 'use strict';
@@ -54,7 +55,7 @@ const REPO = 'Gawish-1997/phoenix-people-workforce';
  * which has no network and no `gh` auth. Shape:
  *
  *   { "required": ["<a-required-check>", "<another>"],
- *     "polls": [ { "mergedAt": null, "head": "abc123def",
+ *     "polls": [ { "mergedAt": null, "state": "OPEN", "head": "abc123def",
  *                  "checks": [{ "name": "<a-required-check>", "bucket": "pending" }] }, … ] }
  *
  * The example uses placeholders on purpose: `tests/wait-pr.test.ts` asserts that no real check name
@@ -135,21 +136,23 @@ function requiredRows(checks) {
   });
 }
 
-/** One reading: whether it is merged, its head, and the bucket of each REQUIRED check. */
+/** One reading: whether it is merged or closed, its head, and the bucket of each REQUIRED check. */
 function read() {
   if (polls) {
     const p = polls[pollIndex++];
     if (!p) return null; // out of scripted readings — treated as the timeout
     return {
       mergedAt: p.mergedAt ?? null,
+      state: p.state ?? '',
       head: p.head ?? '',
       buckets: requiredRows(p.checks ?? []),
     };
   }
-  const view = JSON.parse(gh(['pr', 'view', pr, '--repo', REPO, '--json', 'mergedAt,headRefOid']) || '{}');
+  const view = JSON.parse(gh(['pr', 'view', pr, '--repo', REPO, '--json', 'mergedAt,state,headRefOid']) || '{}');
   const checks = JSON.parse(gh(['pr', 'checks', pr, '--repo', REPO, '--json', 'name,bucket']) || '[]');
   return {
     mergedAt: view.mergedAt ?? null,
+    state: view.state ?? '',
     head: view.headRefOid ?? '',
     buckets: requiredRows(checks),
   };
@@ -209,6 +212,19 @@ for (let i = 0; i < deadline; i += 1) {
   if (r.mergedAt) {
     say(`ALREADY MERGED at ${r.mergedAt}`);
     process.exit(0);
+  }
+  // 🔴 A CLOSED PR STILL ANSWERS LIKE AN OPEN ONE. Its branch keeps taking pushes, its headRefOid stays
+  // frozen at the sha it closed on, and `gh pr checks` keeps listing that sha's finished runs — so
+  // `--green` printed "GREEN on <the old sha>" for #5305 (2026-10-04), a PR that had closed unmerged
+  // 20 minutes earlier, and it read exactly like a merge-ready verdict on the work just pushed. Checked
+  // on EVERY poll, because a roll-up can fold the PR in and close it while the wait is running. A
+  // state this script cannot read ('') is not closed: it falls through and keeps waiting.
+  if (String(r.state).toUpperCase() === 'CLOSED') {
+    say(
+      `CLOSED without merging (frozen head ${String(r.head).slice(0, 9)}) — nothing to wait for, and its checks say nothing about any later push. ` +
+        'A roll-up may have carried it: read whether main holds its files before treating the work as lost.',
+    );
+    process.exit(5);
   }
   const state = summarise(r.buckets);
   last = `${state || 'no reading'} on ${String(r.head).slice(0, 9)}`;
