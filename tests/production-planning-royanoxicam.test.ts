@@ -40,7 +40,9 @@ import { stripSqlComments } from "./support/comment-strip.ts";
  * The owner sent Medizen's own two papers on 2026-10-20 — the bill of materials and page 1 of the
  * proposed declaration of composition, "بيان تركيب رويانوكسيكام فقط" — with one sentence of
  * geometry: **"batch size is 31 kg"**. A film-coated tablet weighs 155 mg, 200,000 of them are a
- * batch, and 20 go in a box.
+ * batch, and 20 go in a box. The toll manufacturer moved from Medizen to Egyphar on 2026-10-21
+ * at his word, which changed the factory and nothing else: the fixtures below carry Egyphar, and
+ * every quantity in this file is still the one off those papers.
  *
  * ── The two defects this file exists to keep fixed ──────────────────────────────────────────────
  *
@@ -61,8 +63,9 @@ import { stripSqlComments } from "./support/comment-strip.ts";
  */
 
 const MIGRATION = "supabase/migrations/20261020200000_production_planning_royanoxicam.sql";
+const FACTORY_MOVE = "supabase/migrations/20261021004800_production_planning_royanoxicam_egyphar.sql";
 
-const MEDIZEN = "loc-medizen";
+const EGYPHAR = "loc-egyphar";
 const SATO_STORE = "loc-sato";
 
 /** Royanoxicam: a fixed 31 kg batch counted in MILLIGRAMS, 155 mg a tablet, 20 tablets a box. */
@@ -143,7 +146,7 @@ function planningData(): ProductionPlanningData {
     learning: new Map(),
     level: "full",
     locations: [
-      { code: "MEDIZEN", id: MEDIZEN, isFactory: true, nameAr: "ميديزن", nameEn: "Medizen" },
+      { code: "EGYPHAR", id: EGYPHAR, isFactory: true, nameAr: "إيجيفار", nameEn: "Egyphar" },
       { code: "SATO_STORE", id: SATO_STORE, isFactory: false, nameAr: "مخزن ساتو", nameEn: "Sato store" },
     ],
     materialIdsByProductId: new Map([
@@ -157,10 +160,10 @@ function planningData(): ProductionPlanningData {
     products: [
       {
         code: "ROYANOXICAM",
-        factoryLocationId: MEDIZEN,
+        factoryLocationId: EGYPHAR,
         geometry: ROYANOXICAM,
         id: "prod-royanoxicam",
-        manufacturerName: "Medizen Pharmaceutical Industries",
+        manufacturerName: "Egyphar",
         measureUnit: "mg",
         nameAr: "رويانوكسيكام 8 مجم",
         nameEn: "Royanoxicam 8 mg",
@@ -347,7 +350,7 @@ export async function runProductionPlanningRoyanoxicamTests() {
   assert.equal(rowOf(plan, "BOX_ROYANOXICAM_20").contributesToBuyList, true);
   assert.equal(rowOf(plan, "LEAFLET_ROYANOXICAM").contributesToBuyList, true);
 
-  // Medizen's eleven still show what a run CONSUMES — the lactose is 19.9 kg plus waste — and none
+  // The factory's eleven still show what a run CONSUMES — the lactose is 19.9 kg plus waste — and none
   // of them reaches the buy list. A missing row and an excluded row are different statements.
   assert.equal(rowOf(plan, "LACTOSE_MONO_200").needed, "20.497", "19.9 kg plus the 3% default");
   assert.equal(rowOf(plan, "LACTOSE_MONO_200").contributesToBuyList, false);
@@ -445,4 +448,48 @@ export async function runProductionPlanningRoyanoxicamTests() {
     "a million milligrams to the kilogram — /1000 would print this batch as 31,000 kg",
   );
   assert.equal(Number(largeCell.result), 31, "which comes to the 31 kg he stated");
+
+  // ── The factory moved, and NOTHING ELSE DID ──────────────────────────────────────────────────
+  //
+  // Owner, 2026-10-21: "look the fctory changed from medizen to egyphar and the almunumnblister
+  // leave empty for now". The danger in a factory change is that it arrives as a rewrite — a
+  // session correcting every mention of the old factory is one careless replace away from touching
+  // a quantity, and these figures are a declaration of composition, not decoration. The assertions
+  // below read the move migration itself and refuse it the right to say anything about the
+  // formula, the geometry or the foil.
+  const moveSql = stripSqlComments(readFileSync(FACTORY_MOVE, "utf8").replace(/\r\n/g, "\n"));
+
+  assert.match(moveSql, /set\s+code\s*=\s*'EGYPHAR'/, "the move renames the factory in place");
+  assert.match(moveSql, /where\s+code\s*=\s*'MEDIZEN'/, "and it is the Medizen row it renames");
+  assert.equal(
+    /insert\s+into\s+public\.prodplan_locations/.test(moveSql),
+    false,
+    "a SECOND factory row would leave one in every picker that nothing is ever made at",
+  );
+
+  // 🔴 The whole point of this migration is that it may not touch a number.
+  assert.equal(
+    /prodplan_compositions/.test(moveSql),
+    false,
+    "the factory move writes NO composition row — a formula is not a property of the factory",
+  );
+  assert.equal(
+    /qty_per_basis|run_volume_ml|dose_ml|units_per_box/.test(moveSql),
+    false,
+    "and it touches no quantity: the batch is still 31 kg of 200,000 tablets, 20 to a box",
+  );
+  assert.equal(
+    /BLISTER_ALU_ROYANOXICAM/.test(moveSql),
+    false,
+    "the foil keeps its deliberate absence — he answered leave it empty, not guess it",
+  );
+
+  // The excipients were seeded against the ROLE and not a named company, which is the whole reason
+  // the supplier split survived a change of factory without one composition row being rewritten.
+  const seededLines = compositionRowsFromMigration();
+  assert.equal(
+    seededLines.every((row) => row.supplier === "sato" || row.supplier === "factory"),
+    true,
+    "every composition line names a ROLE, never a company — that is what made this move free",
+  );
 }
