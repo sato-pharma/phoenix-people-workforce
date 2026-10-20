@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { isUuid } from "@/lib/http/uuid";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 import { isHrOpsReportsError } from "./types";
@@ -32,5 +33,5 @@ export function hrOpsErrorResponse(error: unknown, fallback: string): NextRespon
 /** A report id as the URL carries it — a uuid, or a 404 before any read. */
 export function reportIdOrNull(value: unknown): string | null {
   const id = typeof value === "string" ? value.trim() : "";
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? id : null;
+  return isUuid(id) ? id : null;
 }
