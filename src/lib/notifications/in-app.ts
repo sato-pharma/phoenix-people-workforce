@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { isReadOnlyViewer } from "@/lib/auth/read-only-viewer";
 import {
   mapInAppNotificationRows,
   type InAppNotificationDetail,
@@ -288,8 +289,9 @@ async function archiveStaleApprovalNotifications(access: AccessContext, rows: In
   }
 
   // A test login (src/lib/auth/test-persona.ts) reads the real person's bell, so it keeps the filter
-  // below for THIS response but never writes her archive state — that row is hers.
-  if (stale.size > 0 && !access.testPersona) {
+  // below for THIS response but never writes her archive state — that row is hers. The Super Admin's
+  // View as Seat (src/lib/auth/seat-view.ts) reads a person's bell the same way and writes nothing.
+  if (stale.size > 0 && !isReadOnlyViewer(access)) {
     const identity = viewerIdentity(access);
     const now = new Date().toISOString();
     try {

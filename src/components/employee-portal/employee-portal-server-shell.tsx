@@ -5,9 +5,11 @@ import { redirect } from "next/navigation";
 import { EmployeePortalChrome } from "@/components/employee-portal/employee-portal-layout";
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 import { DocumentTitleSync } from "@/components/layout/document-title-sync";
+import { SeatViewBanner } from "@/components/layout/seat-view-banner";
 import { ModuleLockedNotice } from "@/components/layout/module-locked-notice";
 import { employeeHasActiveDeviceMapping } from "@/lib/attendance/device-user-mapping";
 import { resolveModuleLocksForAccess } from "@/lib/auth/module-locks";
+import { displayTitleForAccount } from "@/lib/auth/account-job-titles";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { isForbiddenError } from "@/lib/auth/server";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
@@ -86,12 +88,24 @@ export async function EmployeePortalServerShell({
     data = null;
   }
 
+  // VIEW AS SEAT (src/lib/auth/seat-view.ts): said on every page of a view, the empty state included.
+  const seatViewBanner = access.seatView ? (
+    <SeatViewBanner
+      expiresAt={access.seatView.expiresAt}
+      personName={access.seatView.personName}
+      seatTitle={displayTitleForAccount(access.hrId, access.role)}
+    />
+  ) : null;
+
   if (!data) {
     return (
-      <EmployeePortalEmptyState
-        message={unavailableMessage}
-        title={unavailableTitle}
-      />
+      <>
+        {seatViewBanner}
+        <EmployeePortalEmptyState
+          message={unavailableMessage}
+          title={unavailableTitle}
+        />
+      </>
     );
   }
 
@@ -158,6 +172,7 @@ export async function EmployeePortalServerShell({
         lockedModuleKeys={lockedModuleKeys}
         visibility={visibility}
       >
+        {seatViewBanner ? <div className="mb-4">{seatViewBanner}</div> : null}
         {access.testPersona ? (
           // A TEST ACCOUNT (src/lib/auth/test-persona.ts) reads a real person's portal. Said on every
           // page, so a test session can never be taken for the real one — by him, or over his shoulder.

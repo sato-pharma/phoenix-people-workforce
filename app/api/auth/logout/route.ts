@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { revokeAppSession } from "@/lib/auth/app-sessions";
 import { getRequestIp, writeAuthAudit } from "@/lib/auth/audit";
 import { phoenixDevPreviewCookieName } from "@/lib/auth/dev-preview";
+import { phoenixSeatViewCookieName } from "@/lib/auth/seat-view-constants";
 import { phoenixSessionCookieName, verifySessionToken } from "@/lib/auth/session";
 import {
   phoenixSupabaseAccessTokenCookieName,
@@ -51,6 +52,7 @@ export async function POST(request: Request) {
   cookieStore.delete(phoenixSupabaseAccessTokenCookieName);
   cookieStore.delete(phoenixSupabaseRefreshTokenCookieName);
   cookieStore.delete(phoenixDevPreviewCookieName);
+  cookieStore.delete(phoenixSeatViewCookieName);
   cookieStore.delete(phoenixSessionCookieName);
 
   if (session) {

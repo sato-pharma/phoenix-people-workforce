@@ -9,6 +9,7 @@ import {
   type NavigationMode,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { isReadOnlyViewer } from "@/lib/auth/read-only-viewer";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { randomUUID } from "node:crypto";
@@ -874,7 +875,7 @@ async function getEmployeeIdentity(access: AccessContext) {
 
 export async function getOutstationEmployeeContext(access: AccessContext) {
   const identity = await getEmployeeIdentity(access);
-  const residence = await getResidenceLocationForEmployee(identity.employeeHrId, { persist: !access.testPersona });
+  const residence = await getResidenceLocationForEmployee(identity.employeeHrId, { persist: !isReadOnlyViewer(access) });
 
   return {
     employeeArea: identity.employeeArea,
@@ -937,7 +938,7 @@ const getMedicalRepExpenseIdentity = cache(async (access: AccessContext) => {
   // The page reads this refusal through the same module — see medical-rep-expense-viewer.ts.
   assertMedicalRepExpenseRole(identity.employeeRole);
   const residence =
-    (await getResidenceLocationForEmployee(identity.employeeHrId, { persist: !access.testPersona })) ??
+    (await getResidenceLocationForEmployee(identity.employeeHrId, { persist: !isReadOnlyViewer(access) })) ??
     fallbackResidenceFromEmployee(identity.employee);
   const fromLocation = residence ? residenceSummary(residence) : "";
 
@@ -2020,7 +2021,7 @@ export async function submitOutstationRequest(
   });
 
   const identity = await getEmployeeIdentity(access);
-  const residence = await getResidenceLocationForEmployee(identity.employeeHrId, { persist: !access.testPersona });
+  const residence = await getResidenceLocationForEmployee(identity.employeeHrId, { persist: !isReadOnlyViewer(access) });
   const supabase = getSupabaseAdmin();
   // Stored for EVERY transportation type, not car only. validateLiveArrivalEvidence() above
   // already refuses a train or bus request that carries no arrival photo, so gating the

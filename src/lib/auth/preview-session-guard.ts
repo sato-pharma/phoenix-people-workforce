@@ -39,9 +39,13 @@
 import { forbiddenError } from "@/lib/http/api-errors";
 import type { AccessContext } from "@/lib/auth/permissions";
 
-/** True when this context came from dev-auth — a header sweep or the dev-preview cookie. */
-export function isPreviewSession(access: Pick<AccessContext, "source">): boolean {
-  return access.source === "dev-header";
+/**
+ * True when this context came from dev-auth — a header sweep or the dev-preview cookie — or is the
+ * Super Admin's read-only View as Seat (src/lib/auth/seat-view.ts), which is a preview by another road:
+ * it LOOKS as another seat and must decide nothing as one.
+ */
+export function isPreviewSession(access: Pick<AccessContext, "source" | "seatView">): boolean {
+  return access.source === "dev-header" || Boolean(access.seatView);
 }
 
 /**
@@ -52,10 +56,15 @@ export function isPreviewSession(access: Pick<AccessContext, "source">): boolean
  * saying so is cheaper than the hour they would otherwise spend on the 403.
  */
 export function assertRealSessionForDecision(
-  access: Pick<AccessContext, "source">,
+  access: Pick<AccessContext, "source" | "seatView">,
   what: string,
 ): void {
   if (!isPreviewSession(access)) return;
+  if (access.seatView) {
+    throw forbiddenError(
+      `You are viewing another seat, read only, so you cannot ${what} here. Leave the view to act as yourself.`,
+    );
+  }
   throw forbiddenError(
     `A dev-preview session cannot ${what}. It is a way to SEE the app as another role, not to act ` +
       `as one — and this database is production. Sign in as yourself to record a real decision.`,

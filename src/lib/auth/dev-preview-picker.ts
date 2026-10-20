@@ -99,6 +99,32 @@ export async function listDevPreviewCandidates(role: PhoenixRole): Promise<DevPr
 }
 
 /**
+ * The same catalog for several roles in ONE read of the logins and the directory — the View as Seat
+ * picker (src/components/admin/seat-view-picker.tsx) offers every portal seat at once, and asking
+ * `listDevPreviewCandidates` once per seat would read both tables once per seat.
+ */
+export async function listDevPreviewCandidatesByRole(
+  roles: readonly PhoenixRole[],
+): Promise<Partial<Record<PhoenixRole, DevPreviewCandidate[]>>> {
+  const [assignments, activeEmployeesByHrId] = await Promise.all([
+    loadActiveRoleAssignments(),
+    loadActiveEmployeesByHrId(),
+  ]);
+
+  const byRole: Partial<Record<PhoenixRole, DevPreviewCandidate[]>> = {};
+  for (const role of roles) {
+    byRole[role] = assignments
+      .filter((assignment) => assignment.role === role)
+      .map((assignment) => activeEmployeesByHrId.get(assignment.hrId))
+      .filter((employee): employee is EmployeeDirectoryRow => Boolean(employee))
+      .filter((employee, index, list) => list.findIndex((other) => other.hrId === employee.hrId) === index)
+      .map(toCandidate)
+      .sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }
+  return byRole;
+}
+
+/**
  * Auto-picks one real, active employee holding `role` that matches the given
  * line/region/area filters (any of which may be omitted). Deterministic
  * (alphabetical by name) rather than random, so the same filters always
