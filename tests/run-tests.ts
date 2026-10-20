@@ -1219,6 +1219,7 @@ import { runHrFormsCustodyTests } from "./hr-forms-custody.test.ts";
 import { runHrFormsBulkPrintTests } from "./hr-forms-bulk-print.test.ts";
 import { runHrFormsExitDocumentTests } from "./hr-forms-exit-documents.test.ts";
 import { runHrFormsNationalIdTests } from "./hr-forms-national-id.test.ts";
+import { runEmployeeNationalIdAutofillTests } from "./employee-national-id-autofill.test.ts";
 import { runHrFormsReadinessTests } from "./hr-forms-readiness.test.ts";
 import { runHrFormsWorkerDataTests } from "./hr-forms-worker-data.test.ts";
 import { runOfferBuiltinTemplateTests } from "./offer-builtin-templates.test.ts";
@@ -5177,6 +5178,10 @@ await runTest(
     + "stored answer always beats a derived one, and the governorate names stay pinned to "
     + "@/lib/geo/egypt-locations)",
   runHrFormsNationalIdTests,
+);
+await runTest(
+  "Employee Master national-ID autofill (typing the ID fills a blank gender, birth date and birth place, a typed value is never overwritten, correcting the ID moves only what the old reading placed, and a half-typed ID wipes nothing)",
+  runEmployeeNationalIdAutofillTests,
 );
 await runTest(
   "HR Forms readiness (the board counts blocking gaps per person and per document, an empty company "
