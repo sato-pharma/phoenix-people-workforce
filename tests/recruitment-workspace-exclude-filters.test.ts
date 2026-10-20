@@ -142,4 +142,18 @@ export function runRecruitmentWorkspaceExcludeFiltersTests() {
   assert.ok(rows.includes('setState({ error: errorText(error, "The CVs could not be loaded."), loading: false, loadingMore: false, nextCursor: null, rows: [] });'), "a failed reload drops the old view's rows");
   const cvActions = source("src/components/recruitment/workspace/cv-actions.tsx");
   assert.ok(cvActions.includes("event.currentTarget.blur();"), "the call result drop-down lets go of focus");
+
+  // ── 10 · The production sweep, 21 Oct 2026: what only a phone and a light page showed ──
+  assert.ok(
+    shell.includes("const headerActionClassName = `inline-flex") && !shell.includes("border-white/20 bg-white/10 px-3 py-1.5"),
+    "RED: Shortcuts and Previous workspace sit on the LIGHT hero, so white text on a white tint is invisible",
+  );
+  assert.ok(
+    bar.includes("flex min-w-0 flex-1 basis-64 flex-wrap") && bar.includes("shrink-0 tabular-nums font-semibold"),
+    "RED: on a phone the status tiles keep a whole line, so a count never slides under the eye",
+  );
+  assert.ok(
+    bar.includes("pr-9 text-sm sm:pr-16") && bar.includes('placeholder="Search name, phone, email, CV text"'),
+    "RED: the search box must show its whole placeholder on a 375px phone, never cut mid-word",
+  );
 }
