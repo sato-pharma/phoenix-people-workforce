@@ -3466,6 +3466,14 @@ when the reading is more than the line from every validated place of that custom
 - **Before anything is written.** The refusal comes before a required recording is claimed and before
   `phoenix_crm_save_visit`, so a refused visit leaves no row, no claimed recording and no notice.
 
+**From today, never backwards.** His second message the same morning: *"DONOT REFURE HISTORICAL START FROM
+TODAY WHIS RULE"* — do not refuse historical, start this rule from today. The rule lives only in the save,
+so no visit already saved is re-judged, un-counted or moved, and nothing was backfilled onto the
+refused-readings board. `FAR_VISIT_REFUSAL_FROM_DAY` (2026-10-20) closes the one way an old visit could
+still meet it: the day judged is the day the visit was CAPTURED, exactly as the save dates it — the app's
+offline anchor, else the photo slot, else now — so a visit taken with no signal before the rule and synced
+after it is never refused (`farVisitRefusalApplies`).
+
 **What the rep reads** (`VISIT_AWAY_FROM_PLACE`): *"This visit can be logged only at the customer's place,
 and your location now is not there. If you are at the place, step outside, wait a moment for the location
 to settle, then tap Log visit again."* His own work, never the line, never his metres, never a word for a

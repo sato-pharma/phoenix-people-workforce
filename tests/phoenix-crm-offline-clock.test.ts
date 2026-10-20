@@ -291,9 +291,25 @@ export function runPhoenixCrmOfflineClockTests(): void {
     // passes vacuously, so this check would have stopped biting with nothing going red.
     const regionAt = service.indexOf("const offlineClaim =");
     assert.ok(regionAt > 0, "saveVisit still reads the claim into `offlineClaim`");
-    const region = service.slice(regionAt, service.indexOf("offline_captured_at:"));
+    // 🔴 THE REGION IS THE DERIVATION ITSELF — from the claim to the first read after it — and not
+    // everything down to the save (2026-10-20). The wider slice also covered the far-visit refusal the
+    // owner ordered that day, which is a refusal about WHERE the rep stood and never about a clock, so
+    // the slice measured its neighbours (`a-source-reading-test-sliced-to-the-registry-measures-its-neighbours`).
+    // The original guarantee still holds over the whole stretch below: no refusal there turns on the clock.
+    const saveAt = service.indexOf("offline_captured_at:", regionAt);
+    const derivationEnd = service.indexOf("await Promise.all(", regionAt);
+    assert.ok(derivationEnd > regionAt && derivationEnd < saveAt, "the derivation still ends before the save, at the read that follows it");
+    const region = service.slice(regionAt, derivationEnd);
     assert.ok(region.includes("parseOfflineCaptureClaim(body)"), "and the region really is the derivation");
+    assert.ok(region.includes("offlineCapturedAt = verdict.capturedAt"), "the whole derivation, down to the value it settles on");
     assert.equal(/throw /.test(region), false, "a clock argument must never cost a rep a real visit");
+    const refusalsBeforeSave = service
+      .slice(derivationEnd, saveAt)
+      .split("\n")
+      .filter((line) => /throw /.test(line));
+    for (const line of refusalsBeforeSave) {
+      assert.doesNotMatch(line, /offline|anchor|elapsed|capturedAt/i, `🔴 no refusal between the derivation and the save may turn on the clock: ${line.trim()}`);
+    }
 
     const migration = stripSqlComments(
       readFileSync(new URL("supabase/migrations/20260927200000_phoenix_crm_offline_capture.sql", ROOT), "utf8"),

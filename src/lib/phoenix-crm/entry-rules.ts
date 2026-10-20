@@ -306,6 +306,20 @@ export type VisitPlaceVerdict = {
 export const VISIT_FAR_FROM_PLACE_DEFAULT_METERS = 300;
 
 /**
+ * 🔴 THE REFUSAL STARTS ON THIS VISIT DAY AND NEVER REACHES BACK (owner, 2026-10-20: "do not refuse
+ * historical — start from today this rule"). No saved visit is re-judged, un-counted or moved by it —
+ * the rule lives only in the save — and a visit CAPTURED before this day is never refused even when it
+ * arrives later: an app visit taken with no signal on an earlier day and synced afterwards is judged
+ * by the day it was captured (`offline_captured_at`), and so is a photo-slot save, by its slot.
+ */
+export const FAR_VISIT_REFUSAL_FROM_DAY = "2026-10-20";
+
+/** Does the far-visit refusal apply to a visit captured on this Cairo visit day (`cairoBusinessDay`)? */
+export function farVisitRefusalApplies(captureVisitDay: string): boolean {
+  return typeof captureVisitDay === "string" && /^\d{4}-\d{2}-\d{2}$/.test(captureVisitDay) && captureVisitDay >= FAR_VISIT_REFUSAL_FROM_DAY;
+}
+
+/**
  * Is this visit's reading within the line of the customer's validated place?
  *
  * - The NEAREST place decides: a customer with two clinics is at whichever door the rep stood at.

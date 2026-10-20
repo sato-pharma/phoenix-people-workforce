@@ -3,6 +3,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
+  FAR_VISIT_REFUSAL_FROM_DAY,
+  farVisitRefusalApplies,
   PLACE_MAX_ACCURACY_METERS,
   VISIT_AWAY_FROM_PLACE,
   VISIT_FAR_FROM_PLACE_DEFAULT_METERS,
@@ -108,6 +110,16 @@ export function runPhoenixCrmVisitFarRefusalTests() {
   assert.equal(verdict(north(310), [place()], 0).refused, true, "nor does a zero line refuse every visit at the door");
   assert.equal(verdict({ lat: Number.NaN, lon: Number.NaN }, [place()]).refused, false, "a fix that is not a coordinate is the reading door's refusal, never this one");
 
+  // 🔴 It starts on 20 October 2026 and never reaches back (owner, 2026-10-20: "do not refuse historical
+  // — start from today this rule").
+  assert.equal(FAR_VISIT_REFUSAL_FROM_DAY, "2026-10-20", "the day the owner ruled");
+  assert.equal(farVisitRefusalApplies("2026-10-19"), false, "🔴 a visit captured the day before the rule is never refused, whenever it arrives");
+  assert.equal(farVisitRefusalApplies("2026-10-01"), false, "nor any earlier one");
+  assert.equal(farVisitRefusalApplies("2026-10-20"), true, "the rule's own day is the first it applies to");
+  assert.equal(farVisitRefusalApplies("2026-11-03"), true, "and every day after it");
+  assert.equal(farVisitRefusalApplies(""), false, "a day that is not a day applies nothing");
+  assert.equal(farVisitRefusalApplies("20/10/2026"), false, "nor a day in another shape");
+
   // ── 2 · The words the rep reads ────────────────────────────────────────────────────────────────
   // His own work — be at the customer when you log the call — and never the line, his metres, or the
   // existence of a check (Golden Rule #1, as the owner narrowed it for this one refusal).
@@ -121,8 +133,16 @@ export function runPhoenixCrmVisitFarRefusalTests() {
   const saveVisit = functionBody(visits, /export async function saveVisit\(/);
   const ruleAt = saveVisit.indexOf("visitAwayFromValidatedPlace(");
   assert.ok(ruleAt > 0, "saveVisit asks the rule");
-  const guard = saveVisit.lastIndexOf('if (enteredAs === "rep") {', ruleAt);
-  assert.ok(guard > 0 && ruleAt - guard < 200, "🔴 only the REP's own save is asked — a visit a manager enters still saves and is flagged");
+  const guard = saveVisit.lastIndexOf('if (enteredAs === "rep" && farVisitRefusalApplies(captureDay)) {', ruleAt);
+  assert.ok(guard > 0 && ruleAt - guard < 200, "🔴 only the REP's own save is asked, and only for a visit captured from 2026-10-20 on — a manager's visit and an older one still save");
+  // 🔴 "Do not refuse historical — start from today this rule" (owner, 2026-10-20): the day judged is the
+  // day the visit was CAPTURED, exactly as the save dates it — the offline anchor, else the photo slot.
+  assert.match(
+    saveVisit,
+    /const captureDay = cairoBusinessDay\(new Date\(offlineCapturedAt \?\? issuedAt \?\? Date\.now\(\)\)\);/,
+    "the rule asks the day the visit was captured, never the day it happened to arrive",
+  );
+  assert.ok(saveVisit.indexOf("const captureDay =") < guard, "and asks it before the guard reads it");
   const recordAt = saveVisit.indexOf("await recordFarVisitRefusal(", ruleAt);
   const throwAt = saveVisit.indexOf("throw validationError(VISIT_AWAY_FROM_PLACE)", ruleAt);
   assert.ok(recordAt > ruleAt && throwAt > recordAt, "the refused attempt is kept for the SFE's board, then the rep reads his refusal");

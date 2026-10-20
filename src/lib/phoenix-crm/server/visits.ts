@@ -40,13 +40,14 @@
 
 import { refreshSharedCrmWindows } from "@/lib/crm/shared-windows";
 import { validationError } from "@/lib/http/api-errors";
-import { fieldWeekStart, isIsoDay, isRamadanDay, monthStartOf } from "@/lib/phoenix-crm/calendar";
+import { cairoBusinessDay, fieldWeekStart, isIsoDay, isRamadanDay, monthStartOf } from "@/lib/phoenix-crm/calendar";
 import { gradeTarget } from "@/lib/phoenix-crm/coverage";
 import type { DayStartView } from "@/lib/phoenix-crm/day-start-rules";
 import { loadDayStartOn } from "@/lib/phoenix-crm/server/day-start";
 import {
   DEVICE_CLOCK_TOLERANCE_MINUTES,
   deviceClockSkewMinutes,
+  farVisitRefusalApplies,
   parseGrade,
   parseProductAvailability,
   parseVisitDraft,
@@ -1394,7 +1395,12 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
   // is claimed and before the save writes anything, so a refused visit leaves no row, no claimed
   // recording and no notice behind. The refused reading itself is kept for the SFE's board, and the rep
   // reads one plain sentence about his own work: never the line, never his metres.
-  if (enteredAs === "rep") {
+  //
+  // 🔴 AND ONLY FROM 2026-10-20 ON (owner: "do not refuse historical — start from today this rule"). The
+  // day is the day the visit was CAPTURED, as the save itself will date it — the offline anchor, else the
+  // photo slot, else now — so a visit taken before the rule existed and arriving after it is never refused.
+  const captureDay = cairoBusinessDay(new Date(offlineCapturedAt ?? issuedAt ?? Date.now()));
+  if (enteredAs === "rep" && farVisitRefusalApplies(captureDay)) {
     const away = visitAwayFromValidatedPlace({
       fix: { lat: visit.lat, lon: visit.lon },
       places: placeRows.map((row) => ({
