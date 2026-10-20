@@ -463,6 +463,47 @@ export function canWriteAsRep(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: b
   return !viewer.isSuperAdmin && viewer.canCreate && viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId);
 }
 
+/**
+ * The seat a district manager records HIS OWN day on, when the territory open on his screen is a
+ * rep's (owner, 2026-10-20: *"let her record the day"* — a District Sales Manager's Add visit screen
+ * showed the seven day tiles greyed under "recorded by the territory's own rep").
+ *
+ * 🔴 IT IS HIS OWN SEAT, NEVER THE REP'S. A day activity is one row per seat per day, so writing a
+ * manager's meeting onto the rep's seat would replace the rep's own day. A district manager has no
+ * territory, so his day sits on his team seat — the precedent the unified visits view already counts
+ * (`20261010161139_phoenix_crm_day_activities_count_on_the_managers_own_seat.sql`). The rep's own day
+ * stays `canWriteAsRep`'s, and the Super Admin records nothing in the field.
+ *
+ * District tiers only (`DM`, `ACTING_DM`): the owner's word was about the District Sales Manager, and
+ * a regional or national manager is not widened by it.
+ */
+export function ownDaySeat(viewer: PhoenixCrmViewer, seat: OrgSeat): OrgSeat | null {
+  if (viewer.isSuperAdmin || !viewer.canCreate) return null;
+  if (viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId)) return null;
+  if (!viewer.scopeTerritories.some((entry) => entry.seatId === seat.seatId)) return null;
+  const member = managerChain(viewer.org, seat.seatId).find((entry) => entry.hrId === viewer.hrId);
+  return member && DISTRICT_MANAGER_TIERS.has(member.seat.tier) ? member.seat : null;
+}
+
+const DISTRICT_MANAGER_TIERS = new Set(["DM", "ACTING_DM"]);
+
+/**
+ * Writing a day activity: the territory's own rep on his territory, or a district manager on his own
+ * seat. `seat` is the seat the row lands on, `own` says whose day it is.
+ */
+export function territoryForDayWrite(
+  viewer: PhoenixCrmViewer,
+  seatId: unknown,
+  test: boolean,
+): TerritoryAccess & { own: "rep" | "manager" } {
+  const seat = territory(viewer, seatId);
+  if (viewer.canCreate && !viewer.isSuperAdmin) {
+    const mine = ownDaySeat(viewer, seat);
+    if (mine) return { seat: mine, isTest: viewer.isTestPersona, own: "manager" };
+  }
+  return { ...territoryForRepWrite(viewer, seatId, test), own: "rep" };
+}
+
 /** The twin of assertReviewer: the viewer decides this territory's requests and approves its plans. */
 export function canReviewTerritory(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): boolean {
   if (viewer.isTestPersona) return isTest && viewer.canApprove && isTerritoryReviewer(viewer.org, seat.seatId, viewer.hrId);

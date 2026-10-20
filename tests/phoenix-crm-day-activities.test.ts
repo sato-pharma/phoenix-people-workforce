@@ -157,7 +157,7 @@ export function runPhoenixCrmDayActivitiesTests(): void {
   // activity, which is a statement about how the rep spent his own day.
   {
     const service = source("src/lib/phoenix-crm/server/day-activities.ts");
-    assert.ok(service.includes("territoryForRepWrite"), "writing is the rep's own, like his list and his plan");
+    assert.ok(service.includes("territoryForDayWrite"), "writing is the rep's own on his seat, or a district manager's on HIS seat (owner, 2026-10-20)");
     assert.ok(service.includes("territoryForRead"), "reading follows the territory's own scope");
     const visits = source("src/lib/phoenix-crm/server/visits.ts");
     assert.ok(visits.includes("canSetDayActivity"), "the day view says whether this viewer may set it");

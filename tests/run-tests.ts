@@ -1982,6 +1982,7 @@ import { runPhoenixCrmDoubleVisitRequestsTests } from "./phoenix-crm-double-visi
 import { runPhoenixCrmVisitProductManagerTests } from "./phoenix-crm-visit-product-manager.test.ts";
 import { runPhoenixCrmVisitCompanyTests } from "./phoenix-crm-visit-company.test.ts";
 import { runPhoenixCrmManagerValidatesTests } from "./phoenix-crm-manager-validates.test.ts";
+import { runPhoenixCrmDmRecordsHisDayTests } from "./phoenix-crm-dm-records-his-day.test.ts";
 import { runPhoenixCrmBrickTintsTests } from "./phoenix-crm-brick-tints.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
@@ -7146,6 +7147,11 @@ await runTest(
 await runTest(
   "Phoenix CRM a district manager validates (owner's pick, 2026-10-02 — the rep stays primary and his managers join him, including on a VACANT seat, whose reference list nobody else could work through: 0 of Delta (1)'s 1,551 carried-over customers were validated the day before it started, and a visit to one counts in nothing until it is. The two obvious-looking implementations are both refused — territoryForRepWrite is NOT widened, so the plan, the day activities, the forecast and every list change stay the rep's, and a manager may validate only a CARRIED-OVER customer, because \"Add new customer\" and an out-of-list validation file a request whose first step is his own. Scope runs downward only, the screen offers him the Validate button and none of the rep's others, and the place photo slot takes the same gate so the camera cannot refuse the button)",
   runPhoenixCrmManagerValidatesTests,
+);
+
+await runTest(
+  "Phoenix CRM a district manager records his OWN day (owner, 2026-10-20: the District Sales Manager's Add visit screen showed the seven day tiles greyed under \"recorded by the territory's own rep\", and he said let her record the day — the row lands on HIS team seat, never the rep's, because a day activity is one row per seat per day and a manager's meeting on the rep's seat would replace the rep's own; district tiers only, the Super Admin and every other manager refused as before)",
+  runPhoenixCrmDmRecordsHisDayTests,
 );
 
 await runTest(

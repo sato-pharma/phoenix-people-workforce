@@ -211,7 +211,7 @@ export function runPhoenixCrmOneTapVisitTests(): void {
     // day has answered: it must say it is still opening, never tell the rep his own day is someone
     // else's to record.
     assert.ok(
-      tab.includes("canSetDayActivity={date !== null ? false : view ? view.canSetDayActivity : null}"),
+      tab.includes("canSetDayActivity={date !== null ? false : view ? view.canSetDayActivity || view.canSetOwnDayActivity : null}"),
       "a day still loading reaches the first screen as null, not as a refusal",
     );
     assert.ok(start.includes("canSetDayActivity === false ?"), "only a real refusal says the day is the territory rep's");

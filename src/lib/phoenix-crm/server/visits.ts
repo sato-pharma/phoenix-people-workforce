@@ -95,6 +95,7 @@ import { managerChain, personKey, resolveVisitParticipants, territoryReviewer, t
 import {
   canWriteAsRep,
   locationSight,
+  ownDaySeat,
   readTestFlag,
   territoryForRead,
   territoryForVisit,
@@ -515,8 +516,15 @@ export type VisitDayView = {
    * vacation module stays the only leave record.
    */
   dayActivity: DayActivityRow | null;
-  /** The rep's own day to describe; a manager enters his visits but never how he spent his day. */
+  /** The rep's own day to describe; a manager enters his visits but never how he spent his day on a rep's seat. */
   canSetDayActivity: boolean;
+  /**
+   * A DISTRICT manager describing HIS OWN day from a rep's territory (owner, 2026-10-20): true only
+   * today, only for him, and never where `canSetDayActivity` already is. It lands on his own seat, so
+   * `ownDayActivity` is what HE recorded — never the rep's, which `dayActivity` keeps.
+   */
+  canSetOwnDayActivity: boolean;
+  ownDayActivity: DayActivityRow | null;
   /**
    * Whether the reader may fill in the detail of his own visits on this day (owner, 2026-10-15).
    *
@@ -539,9 +547,11 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
   const today = viewer.visitDay;
   const date = isIsoDay(raw.date) && raw.date <= today ? raw.date : today;
   const rows = await loadVisitRows(seat.seatId, isTest, date);
-  const [names, activity, productManagerRoles, dayStart] = await Promise.all([
+  const ownSeat = date === today ? ownDaySeat(viewer, seat) : null;
+  const [names, activity, ownDayActivity, productManagerRoles, dayStart] = await Promise.all([
     loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...visitPeople(rows)]),
     loadDayActivityOn(seat.seatId, isTest, date),
+    ownSeat ? loadDayActivityOn(ownSeat.seatId, isTest, date) : Promise.resolve(null),
     productManagerRolesFor(viewer.org, seat.seatId),
     loadDayStartOn(seat.seatId, isTest, date),
   ]);
@@ -566,6 +576,8 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
     canAdd: date === today && canEnterVisits(viewer, seat.seatId, isTest),
     dayActivity: activity,
     canSetDayActivity: date === today && canWriteAsRep(viewer, seat, isTest),
+    canSetOwnDayActivity: ownSeat !== null,
+    ownDayActivity,
     canAddVisitDetail: canWriteAsRep(viewer, seat, isTest),
     dayStart,
   };
